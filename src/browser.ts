@@ -27,45 +27,6 @@ function randomElement<T>(arr: ReadonlyArray<T>): T {
     return arr[Math.floor(Math.random() * arr.length)];
 }
 
-// ─── Anti-fingerprinting patch (sostituisce playwright-stealth) ──────────────
-const STEALTH_INIT_SCRIPT = `
-(function () {
-    // Rimuove navigator.webdriver
-    Object.defineProperty(navigator, 'webdriver', { get: () => undefined, configurable: true });
-
-    // Imposta lingue italiane/inglesi realistiche
-    Object.defineProperty(navigator, 'languages', { get: () => ['it-IT', 'it', 'en-US', 'en'], configurable: true });
-
-    // Sovrascrive platform in base all'UA (approssimato)
-    const ua = navigator.userAgent;
-    const platform = ua.includes('Win') ? 'Win32' : ua.includes('Mac') ? 'MacIntel' : 'Linux x86_64';
-    Object.defineProperty(navigator, 'platform', { get: () => platform, configurable: true });
-
-    // Evita rilevamento via plugin vuoti
-    Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5], configurable: true });
-
-    // Rimuove automationControlled da Chrome
-    if (window.chrome) {
-        Object.defineProperty(window, 'chrome', {
-            get: () => ({ runtime: {}, loadTimes: () => {}, csi: () => {} }),
-            configurable: true,
-        });
-    }
-
-    // Permessi realistici
-    const originalQuery = window.navigator.permissions?.query?.bind(navigator.permissions);
-    if (originalQuery) {
-        Object.defineProperty(navigator.permissions, 'query', {
-            value: (parameters: PermissionDescriptor) =>
-                parameters.name === 'notifications'
-                    ? Promise.resolve({ state: Notification.permission } as PermissionStatus)
-                    : originalQuery(parameters),
-            configurable: true,
-        });
-    }
-})();
-`;
-
 export interface BrowserSession {
     browser: BrowserContext;
     page: Page;
@@ -76,6 +37,99 @@ export interface LaunchBrowserOptions {
     proxy?: ProxyConfig;
     sessionDir?: string;
 }
+
+const STEALTH_INIT_SCRIPT = `
+    // 1. Defeat navigator.webdriver
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    
+    // 2. Mock hardwareConcurrency and deviceMemory
+    Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
+    Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
+    
+    // 3. Mock plugins & mimeTypes
+    if (navigator.plugins.length === 0) {
+        Object.defineProperty(navigator, 'plugins', {
+            get: () => [
+                { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+                { name: 'Chrome PDF Viewer', filename: 'mhjimiaplmpugondwaidnpafkincn', description: '' },
+                { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' }
+            ]
+        });
+    }
+
+    // 4. Spoof WebGL Vendor/Renderer
+    const getParameter = WebGLRenderingContext.prototype.getParameter;
+    WebGLRenderingContext.prototype.getParameter = function(parameter) {
+        if (parameter === 37445) return 'Google Inc. (Apple)'; // VENDOR (UNMASKED_VENDOR_WEBGL)
+        if (parameter === 37446) return 'ANGLE (Apple, Apple M1 Pro, OpenGL 4.1)'; // RENDERER (UNMASKED_RENDERER_WEBGL)
+        return getParameter.apply(this, arguments);
+    };
+
+    // 5. Canvas Fingerprint Noise
+    const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
+    HTMLCanvasElement.prototype.toDataURL = function() {
+        const context = this.getContext('2d');
+        if (context) {
+            const width = this.width;
+            const height = this.height;
+            context.fillStyle = 'rgba(255,255,255,0.01)';
+            context.fillText('stealth', Math.random() * width, Math.random() * height);
+        }
+        return originalToDataURL.apply(this, arguments);
+    };
+    
+    const originalGetImageData = CanvasRenderingContext2D.prototype.getImageData;
+    CanvasRenderingContext2D.prototype.getImageData = function() {
+        const imageData = originalGetImageData.apply(this, arguments);
+        for (let i = 0; i < imageData.data.length; i += 4) {
+            imageData.data[i] = Math.max(0, Math.min(255, imageData.data[i] + (Math.random() * 2 - 1)));
+        }
+        return imageData;
+    };
+
+    // 6. AudioContext Fingerprint Noise
+    const audioContextFunc = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (audioContextFunc) {
+        const originalGetChannelData = AudioBuffer.prototype.getChannelData;
+        AudioBuffer.prototype.getChannelData = function() {
+            const results = originalGetChannelData.apply(this, arguments);
+            for (let i = 0; i < results.length; i += 100) {
+                results[i] = results[i] + (Math.random() * 0.0000001 - 0.00000005);
+            }
+            return results;
+        };
+    }
+
+    // 7. WebRTC IP Leak Prevention (Fake RTCPeerConnection)
+    if (window.RTCPeerConnection) {
+        const OriginalRTCPeerConnection = window.RTCPeerConnection;
+        window.RTCPeerConnection = function(...args) {
+            const pc = new OriginalRTCPeerConnection(...args);
+            pc.createDataChannel = () => ({ close: () => {} });
+            pc.createOffer = () => Promise.resolve({ type: 'offer', sdp: '' });
+            return pc;
+        };
+        window.RTCPeerConnection.prototype = OriginalRTCPeerConnection.prototype;
+    }
+
+    // 8. Delete Playwright CDP Traces (cdc_*)
+    for (const key of Object.keys(window)) {
+        if (key.match(/^cdc_[a-zA-Z0-9]+_/)) {
+            try { delete window[key]; } catch {}
+        }
+    }
+
+    // 9. Hardware & Sensor Mocks
+    if (navigator.permissions && navigator.permissions.query) {
+        const originalQuery = navigator.permissions.query.bind(navigator.permissions);
+        navigator.permissions.query = (parameters) => {
+            if (parameters.name === 'notifications') return Promise.resolve({ state: 'denied', onchange: null });
+            if (parameters.name === 'geolocation') return Promise.resolve({ state: 'prompt', onchange: null });
+            return originalQuery(parameters);
+        };
+    }
+    Object.defineProperty(navigator, 'getBattery', { get: () => undefined });
+`;
 
 export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise<BrowserSession> {
     const sessionDir = options.sessionDir ?? config.sessionDir;
@@ -107,9 +161,7 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
 
         try {
             const browser = await chromium.launchPersistentContext(sessionDir, contextOptions);
-
-            // Applica patch anti-fingerprinting su tutte le pagine (incluse future)
-            await browser.addInitScript({ content: STEALTH_INIT_SCRIPT });
+            await browser.addInitScript(STEALTH_INIT_SCRIPT);
 
             const existingPage = browser.pages()[0];
             const page = existingPage ?? await browser.newPage();

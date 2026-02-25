@@ -131,6 +131,11 @@ async function applyMigrations(database: Database): Promise<void> {
 
 export async function getDatabase(): Promise<Database> {
     if (db) return db;
+    if (process.env.NODE_ENV === 'production' && !config.allowSqliteInProduction) {
+        throw new Error(
+            'SQLite in produzione bloccato. Migra a PostgreSQL encrypted oppure imposta ALLOW_SQLITE_IN_PRODUCTION=true esplicitamente.'
+        );
+    }
 
     ensureParentDirectoryPrivate(config.dbPath);
 
@@ -157,4 +162,24 @@ export async function closeDatabase(): Promise<void> {
         await db.close();
         db = null;
     }
+}
+
+export async function backupDatabase(): Promise<string> {
+    const database = await getDatabase();
+    const parsedPath = path.parse(config.dbPath);
+    const dateStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const backupPath = path.join(parsedPath.dir, `${parsedPath.name}_backup_${dateStr}${parsedPath.ext}`);
+
+    // VACUUM INTO will fail if the file already exists
+    if (fs.existsSync(backupPath)) {
+        fs.unlinkSync(backupPath);
+    }
+
+    ensureParentDirectoryPrivate(backupPath);
+    const safePath = backupPath.replace(/'/g, "''");
+
+    await database.exec(`VACUUM INTO '${safePath}';`);
+    ensureFilePrivate(backupPath);
+
+    return backupPath;
 }

@@ -1,4 +1,4 @@
-import { closeDatabase, initDatabase } from './db';
+import { closeDatabase, initDatabase, backupDatabase } from './db';
 import { config, getLocalDateString } from './config';
 import { checkLogin, closeBrowser as closeBrowserSession, detectChallenge, humanDelay, isLoggedIn, launchBrowser } from './browser';
 import { randomUUID } from 'crypto';
@@ -9,6 +9,7 @@ import { runWorkflow } from './core/orchestrator';
 import { runDoctor } from './core/doctor';
 import { runSalesNavigatorListSync } from './core/salesNavigatorSync';
 import { reconcileLeadStatus } from './core/leadStateService';
+import { warmupSession } from './core/sessionWarmer';
 import {
     acquireRuntimeLock,
     cleanupPrivacyData,
@@ -46,6 +47,7 @@ import { getAccountProfileById, getRuntimeAccountProfiles } from './accountManag
 import { getProxyFailoverChain, getProxyPoolStatus } from './proxyManager';
 import { runRandomLinkedinActivity } from './workers/randomActivityWorker';
 import { addLeadToSalesNavList, createSalesNavList } from './salesnav/listActions';
+import { isOpenAIConfigured } from './ai/openaiClient';
 
 // Graceful shutdown: chiude DB prima di uscire per non lasciare job RUNNING.
 let shuttingDown = false;
@@ -83,7 +85,7 @@ function parseWorkflow(input: string | undefined): WorkflowSelection {
 function parseIntStrict(raw: string, optionName: string): number {
     const parsed = Number.parseInt(raw, 10);
     if (!Number.isFinite(parsed)) {
-        throw new Error(`Valore non valido per ${optionName}: ${raw}`);
+        throw new Error(`Valore non valido per ${optionName}: ${raw} `);
     }
     return parsed;
 }
@@ -95,7 +97,7 @@ function parseNullableCap(raw: string, optionName: string): number | null {
     }
     const parsed = parseIntStrict(raw, optionName);
     if (parsed < 0) {
-        throw new Error(`${optionName} deve essere >= 0 oppure none/null/off.`);
+        throw new Error(`${optionName} deve essere >= 0 oppure none / null / off.`);
     }
     return parsed;
 }
@@ -107,7 +109,7 @@ function parsePauseMinutes(raw: string, optionName: string): number | null {
     }
     const parsed = parseIntStrict(raw, optionName);
     if (parsed < 1) {
-        throw new Error(`${optionName} deve essere >= 1 oppure none/null/off/indefinite.`);
+        throw new Error(`${optionName} deve essere >= 1 oppure none / null / off / indefinite.`);
     }
     return parsed;
 }
@@ -116,7 +118,7 @@ function parseBoolStrict(raw: string, optionName: string): boolean {
     const normalized = raw.trim().toLowerCase();
     if (normalized === 'true' || normalized === '1' || normalized === 'yes') return true;
     if (normalized === 'false' || normalized === '0' || normalized === 'no') return false;
-    throw new Error(`Valore non valido per ${optionName}: ${raw} (usa true/false).`);
+    throw new Error(`Valore non valido per ${optionName}: ${raw} (usa true / false).`);
 }
 
 function getWorkflowValue(args: string[]): string | undefined {
@@ -215,7 +217,7 @@ const SALESNAV_LAST_SYNC_KEY = 'salesnav.last_sync_at';
 
 function createLockOwnerId(command: string): string {
     const suffix = randomUUID().split('-')[0];
-    return `${command}:${process.pid}:${suffix}`;
+    return `${command}:${process.pid}:${suffix} `;
 }
 
 function computeWorkflowLockTtlSeconds(intervalMs: number): number {
@@ -228,10 +230,10 @@ async function acquireWorkflowRunnerLock(command: string, ttlSeconds: number, me
     if (!result.acquired) {
         const holder = result.lock;
         throw new Error(
-            `[LOCK] Runner già attivo. owner=${holder?.owner_id ?? 'unknown'} heartbeat=${holder?.heartbeat_at ?? 'n/a'} expires=${holder?.expires_at ?? 'n/a'}`
+            `[LOCK] Runner già attivo.owner = ${holder?.owner_id ?? 'unknown'} heartbeat = ${holder?.heartbeat_at ?? 'n/a'} expires = ${holder?.expires_at ?? 'n/a'} `
         );
     }
-    console.log(`[LOCK] acquired key=${WORKFLOW_RUNNER_LOCK_KEY} owner=${ownerId} ttl=${ttlSeconds}s`);
+    console.log(`[LOCK] acquired key = ${WORKFLOW_RUNNER_LOCK_KEY} owner = ${ownerId} ttl = ${ttlSeconds} s`);
     return ownerId;
 }
 
@@ -244,7 +246,7 @@ async function heartbeatWorkflowRunnerLock(ownerId: string, ttlSeconds: number):
 
 async function releaseWorkflowRunnerLock(ownerId: string): Promise<void> {
     const released = await releaseRuntimeLock(WORKFLOW_RUNNER_LOCK_KEY, ownerId);
-    console.log(`[LOCK] released key=${WORKFLOW_RUNNER_LOCK_KEY} owner=${ownerId} released=${released}`);
+    console.log(`[LOCK] released key = ${WORKFLOW_RUNNER_LOCK_KEY} owner = ${ownerId} released = ${released} `);
 }
 
 async function sleepWithLockHeartbeat(totalMs: number, ownerId: string, ttlSeconds: number): Promise<void> {
@@ -400,6 +402,7 @@ function printHelp(): void {
     console.log('    (oppure con opzioni: --list, --priority, --invite-cap, --message-cap, --active)');
     console.log('  sync-status');
     console.log('  sync-run-once');
+    console.log('  db-backup');
     console.log('Alias retrocompatibili: connect, check, message');
 }
 
@@ -414,7 +417,7 @@ async function runImportCommand(args: string[]): Promise<void> {
 
     const result = await importLeadsFromCSV(filePath, listName);
     console.log(
-        `Import completato. Lead inseriti=${result.inserted}, Company target inseriti=${result.companyTargetsInserted}, Skippati=${result.skipped}, Lista=${listName}`
+        `Import completato.Lead inseriti = ${result.inserted}, Company target inseriti = ${result.companyTargetsInserted}, Skippati = ${result.skipped}, Lista = ${listName} `
     );
 }
 
@@ -429,7 +432,7 @@ async function runLoginCommand(args: string[]): Promise<void> {
     const selectedAccount = getAccountProfileById(accountRaw);
     const availableAccounts = getRuntimeAccountProfiles().map((account) => account.id);
     if (accountRaw && accountRaw !== selectedAccount.id) {
-        console.warn(`[LOGIN] account=${accountRaw} non trovato. Uso account=${selectedAccount.id}. Disponibili: ${availableAccounts.join(', ')}`);
+        console.warn(`[LOGIN] account = ${accountRaw} non trovato.Uso account = ${selectedAccount.id}.Disponibili: ${availableAccounts.join(', ')} `);
     }
 
     const session = await launchBrowser({
@@ -439,7 +442,7 @@ async function runLoginCommand(args: string[]): Promise<void> {
     });
     try {
         await session.page.goto('https://www.linkedin.com/login', { waitUntil: 'load' });
-        console.log(`Completa il login LinkedIn nella finestra aperta (account=${selectedAccount.id}, timeout ${timeoutSeconds}s)...`);
+        console.log(`Completa il login LinkedIn nella finestra aperta(account = ${selectedAccount.id}, timeout ${timeoutSeconds}s)...`);
         console.log('Il browser resta aperto finché il login non viene verificato o finché scade il timeout.');
 
         const startedAt = Date.now();
@@ -495,7 +498,7 @@ async function runLoopCommand(args: string[]): Promise<void> {
     }
 
     const maxCycles = cyclesRaw ? Math.max(1, parseIntStrict(cyclesRaw, '--cycles')) : null;
-    console.log(`[LOOP] start workflow=${workflow} dryRun=${dryRun} intervalMs=${intervalMs} cycles=${maxCycles ?? 'infinite'}`);
+    console.log(`[LOOP] start workflow = ${workflow} dryRun = ${dryRun} intervalMs = ${intervalMs} cycles = ${maxCycles ?? 'infinite'} `);
 
     const lockTtlSeconds = computeWorkflowLockTtlSeconds(intervalMs);
     const lockOwnerId = dryRun
@@ -512,7 +515,7 @@ async function runLoopCommand(args: string[]): Promise<void> {
         while (true) {
             cycle += 1;
             const started = new Date().toISOString();
-            console.log(`[LOOP] cycle=${cycle} started_at=${started}`);
+            console.log(`[LOOP] cycle = ${cycle} started_at = ${started} `);
             try {
                 if (lockOwnerId) {
                     await heartbeatWorkflowRunnerLock(lockOwnerId, lockTtlSeconds);
@@ -520,7 +523,7 @@ async function runLoopCommand(args: string[]): Promise<void> {
 
                 const doctorGate = await evaluateLoopDoctorGate(dryRun);
                 if (!doctorGate.proceed) {
-                    console.warn(`[LOOP] cycle=${cycle} skipped reason=${doctorGate.reason}`);
+                    console.warn(`[LOOP] cycle = ${cycle} skipped reason = ${doctorGate.reason} `);
                 } else {
                     const autoSiteCheck = await evaluateAutoSiteCheckDecision(dryRun);
                     if (autoSiteCheck.shouldRun) {
@@ -538,28 +541,17 @@ async function runLoopCommand(args: string[]): Promise<void> {
                             report: siteCheckReport,
                         });
 
-                        // Dopo il site-check, 10% di probabilità di visitare un profilo casuale
-                        // per diluire il pattern di scraping e rendere il traffico più naturale.
-                        if (!dryRun && Math.random() < 0.10) {
-                            const decoyProfiles = [
-                                'https://www.linkedin.com/in/satya-nadella/',
-                                'https://www.linkedin.com/in/jeffweiner08/',
-                                'https://www.linkedin.com/in/reidhoffman/',
-                                'https://www.linkedin.com/in/guyraz/',
-                                'https://www.linkedin.com/in/ariellalouis/',
-                            ];
-                            const decoy = decoyProfiles[Math.floor(Math.random() * decoyProfiles.length)];
+                        // Sostituiamo il vecchio decoy pattern basilare con il nuovo motore avanzato Session Warming
+                        if (!dryRun) {
                             try {
-                                const decoySession = await launchBrowser({ headless: config.headless });
+                                const warmupSessionInstance = await launchBrowser({ headless: config.headless });
                                 try {
-                                    await decoySession.page.goto(decoy, { waitUntil: 'domcontentloaded' });
-                                    await humanDelay(decoySession.page, 3000, 7000);
-                                    console.log(`[LOOP] decoy-visit url=${decoy}`);
+                                    await warmupSession(warmupSessionInstance.page);
                                 } finally {
-                                    await closeBrowserSession(decoySession);
+                                    await closeBrowserSession(warmupSessionInstance);
                                 }
-                            } catch {
-                                // Ignora errori nella visita decoy: non è critica
+                            } catch (e) {
+                                console.log('[LOOP] Errore nel Session Warmer, ignoro (non fatale):', e);
                             }
                         }
                     } else {
@@ -589,6 +581,22 @@ async function runLoopCommand(args: string[]): Promise<void> {
                         }
                     }
 
+                    // Auto-Backup Giornaliero SQLite
+                    if (!dryRun) {
+                        const AUTO_BACKUP_LAST_RUN_KEY = 'db_backup.last_run_at';
+                        const backupLastRunRaw = await getRuntimeFlag(AUTO_BACKUP_LAST_RUN_KEY);
+                        const shouldRunBackup = !backupLastRunRaw || (Date.now() - Date.parse(backupLastRunRaw)) > 24 * 60 * 60 * 1000;
+                        if (shouldRunBackup) {
+                            try {
+                                const backupPath = await backupDatabase();
+                                await setRuntimeFlag(AUTO_BACKUP_LAST_RUN_KEY, new Date().toISOString());
+                                console.log(`[LOOP] Auto - backup giornaliero completato: ${backupPath} `);
+                            } catch (e) {
+                                console.error(`[LOOP] Auto - backup fallito`, e);
+                            }
+                        }
+                    }
+
                     if (config.companyEnrichmentEnabled && (workflow === 'all' || workflow === 'invite')) {
                         const enrichment = await runCompanyEnrichmentBatch({
                             limit: config.companyEnrichmentBatch,
@@ -608,10 +616,10 @@ async function runLoopCommand(args: string[]): Promise<void> {
                         console.log('[LOOP] random-activity', randomActivityReport);
                     }
 
-                    console.log(`[LOOP] cycle=${cycle} completed`);
+                    console.log(`[LOOP] cycle = ${cycle} completed`);
                 }
             } catch (error) {
-                console.error(`[LOOP] cycle=${cycle} failed`, error);
+                console.error(`[LOOP] cycle = ${cycle} failed`, error);
             }
 
             if (maxCycles !== null && cycle >= maxCycles) {
@@ -778,7 +786,7 @@ async function runSalesNavAddLeadCommand(args: string[]): Promise<void> {
     const leadId = Math.max(1, parseIntStrict(leadIdRaw, '--lead-id'));
     const lead = await getLeadById(leadId);
     if (!lead) {
-        throw new Error(`Lead non trovato: ${leadId}`);
+        throw new Error(`Lead non trovato: ${leadId} `);
     }
 
     const result = await addLeadToSalesNavList(lead.linkedin_url, listName, accountId || undefined);
@@ -1064,7 +1072,7 @@ async function runStatusCommand(): Promise<void> {
             personalizationEnabled: config.aiPersonalizationEnabled,
             guardianEnabled: config.aiGuardianEnabled,
             model: config.aiModel,
-            openaiConfigured: !!config.openaiApiKey,
+            openaiConfigured: isOpenAIConfigured(),
             guardianMinIntervalMinutes: config.aiGuardianMinIntervalMinutes,
             guardianPauseMinutes: config.aiGuardianPauseMinutes,
         },
@@ -1082,7 +1090,7 @@ async function runPauseCommand(args: string[]): Promise<void> {
         : config.autoPauseMinutesOnFailureBurst;
     const pausedUntil = await setAutomationPause(minutes, reasonRaw);
     const renderedUntil = pausedUntil ?? 'manual resume';
-    console.log(`Automazione in pausa. pausedUntil=${renderedUntil} reason=${reasonRaw}`);
+    console.log(`Automazione in pausa.pausedUntil=${renderedUntil} reason = ${reasonRaw} `);
 }
 
 async function runResumeCommand(): Promise<void> {
@@ -1128,6 +1136,16 @@ async function runCompanyTargetsCommand(args: string[]): Promise<void> {
         listCompanyTargets(listName, limit),
     ]);
     console.log(JSON.stringify({ list: listName ?? 'all', total, shown: items.length, items }, null, 2));
+}
+
+async function runDbBackupCommand(): Promise<void> {
+    console.log('Avvio backup database manuale...');
+    try {
+        const backupPath = await backupDatabase();
+        console.log(`Backup completato con successo.File salvato in: ${backupPath} `);
+    } catch (e) {
+        console.error('Errore durante il backup del database:', e);
+    }
 }
 
 async function main(): Promise<void> {
@@ -1303,6 +1321,9 @@ async function main(): Promise<void> {
         case 'sync-run-once':
             await runEventSyncOnce();
             console.log('Sync eventi completato.');
+            break;
+        case 'db-backup':
+            await runDbBackupCommand();
             break;
         case 'connect':
             await runWorkflowCommand('invite', false);

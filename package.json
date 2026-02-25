@@ -12,6 +12,7 @@
     "post-modifiche": "npm run conta-problemi",
     "helper-manuali": "echo 'Esegui le correzioni manuali come da policy'",
     "start": "ts-node src/index.ts",
+    "db:backup": "ts-node src/index.ts db-backup",
     "test:unit": "ts-node src/tests/unit.ts",
     "test:integration": "ts-node src/tests/integration.ts",
     "test:e2e:dry": "ts-node src/tests/e2eDry.ts",

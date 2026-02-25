@@ -22,6 +22,7 @@ export interface ProxyPoolStatus {
 }
 
 const proxyFailureUntil = new Map<string, number>();
+const stickyProxySessions = new Map<string, ProxyConfig>();
 let rotationCursor = 0;
 let cachedPool: ProxyPoolCache = { proxies: [], signature: '' };
 
@@ -207,6 +208,31 @@ export function getProxyFailoverChain(): ProxyConfig[] {
 export function getProxy(): ProxyConfig | undefined {
     const chain = getProxyFailoverChain();
     return chain[0];
+}
+
+/**
+ * Restituisce o alloca un proxy permanente per una specifica sessionId.
+ * Assicura che la sessione usi costantemente lo stesso nodo per non allertare Linkedin con cambi IP anomali.
+ */
+export function getStickyProxy(sessionId: string): ProxyConfig | undefined {
+    // 1. Check if we already have a sticky proxy for this session
+    const existing = stickyProxySessions.get(sessionId);
+    if (existing) {
+        // Option to verify if it's failed/cooling, but for sticky IPs, 
+        // it's generally better to wait or fail than swap IP mid-session.
+        return existing;
+    }
+
+    // 2. Otherwise allocate a new proxy from the best available chain
+    const proxy = getProxy();
+    if (proxy) {
+        stickyProxySessions.set(sessionId, proxy);
+    }
+    return proxy;
+}
+
+export function releaseStickyProxy(sessionId: string): void {
+    stickyProxySessions.delete(sessionId);
 }
 
 export function markProxyFailed(proxy: ProxyConfig): void {

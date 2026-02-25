@@ -2,6 +2,7 @@
 
 ## What is already hardened
 - No stealth/evasion browser plugins in runtime dependencies.
+- No fingerprint-evasion runtime patch injected into browser pages.
 - Automatic pause/quarantine on risk bursts.
 - Sensitive log redaction (`token`, `key`, `cookie`, JWT-like values).
 - Local session and DB storage created with private-permission best effort.
@@ -40,6 +41,12 @@ It does not delete active leads/jobs.
 - Keep `OPENAI_API_KEY` only in local `.env` (never in repository files).
 - Rotate key periodically and after any suspected leak.
 - Keep `AI_PERSONALIZATION_ENABLED=false` / `AI_GUARDIAN_ENABLED=false` until dry-run validation is complete.
+- Keep `AI_ALLOW_REMOTE_ENDPOINT=false` for local-first AI and explicit privacy control.
+- If you need cloud AI (`api.openai.com`), set `AI_ALLOW_REMOTE_ENDPOINT=true` intentionally.
+
+## Database guardrail
+- SQLite is blocked in `NODE_ENV=production` unless `ALLOW_SQLITE_IN_PRODUCTION=true` is set explicitly.
+- Recommended production target: PostgreSQL with encrypted storage and managed backups.
 
 ## Dependency note
 `npm audit` currently reports high advisories related to `sqlite3` build-chain dependencies (`node-gyp` / `tar`) during install tooling.  

@@ -142,6 +142,7 @@ export interface AppConfig {
     multiAccountEnabled: boolean;
     accountProfiles: AccountProfileConfig[];
     dbPath: string;
+    allowSqliteInProduction: boolean;
     eventSyncSink: EventSyncSink;
     supabaseSyncEnabled: boolean;
     supabaseUrl: string;
@@ -158,6 +159,7 @@ export interface AppConfig {
     openaiApiKey: string;
     openaiBaseUrl: string;
     aiModel: string;
+    aiAllowRemoteEndpoint: boolean;
     aiRequestTimeoutMs: number;
     aiPersonalizationEnabled: boolean;
     aiMessageMaxChars: number;
@@ -252,6 +254,7 @@ export const config: AppConfig = {
     multiAccountEnabled: parseBoolEnv('MULTI_ACCOUNT_ENABLED', configuredAccountProfiles.length > 1),
     accountProfiles: configuredAccountProfiles,
     dbPath: resolvePathFromEnv('DB_PATH', path.join('data', 'linkedin_bot.sqlite')),
+    allowSqliteInProduction: parseBoolEnv('ALLOW_SQLITE_IN_PRODUCTION', false),
     eventSyncSink: parseEventSyncSinkEnv('EVENT_SYNC_SINK', 'SUPABASE'),
     supabaseSyncEnabled: parseBoolEnv('SUPABASE_SYNC_ENABLED', true),
     supabaseUrl: parseStringEnv('SUPABASE_URL'),
@@ -266,8 +269,9 @@ export const config: AppConfig = {
     webhookSyncTimeoutMs: Math.max(1000, parseIntEnv('WEBHOOK_SYNC_TIMEOUT_MS', 10000)),
     webhookSyncMaxRetries: Math.max(1, parseIntEnv('WEBHOOK_SYNC_MAX_RETRIES', 8)),
     openaiApiKey: parseStringEnv('OPENAI_API_KEY'),
-    openaiBaseUrl: parseStringEnv('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
-    aiModel: parseStringEnv('AI_MODEL', 'gpt-4.1-mini'),
+    openaiBaseUrl: parseStringEnv('OPENAI_BASE_URL', 'http://127.0.0.1:11434/v1'),
+    aiModel: parseStringEnv('AI_MODEL', 'llama3.1:8b'),
+    aiAllowRemoteEndpoint: parseBoolEnv('AI_ALLOW_REMOTE_ENDPOINT', false),
     aiRequestTimeoutMs: Math.max(1000, parseIntEnv('AI_REQUEST_TIMEOUT_MS', 12000)),
     aiPersonalizationEnabled: parseBoolEnv('AI_PERSONALIZATION_ENABLED', false),
     aiMessageMaxChars: Math.max(120, parseIntEnv('AI_MESSAGE_MAX_CHARS', 450)),

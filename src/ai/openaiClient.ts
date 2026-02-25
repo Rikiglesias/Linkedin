@@ -7,6 +7,19 @@ interface OpenAITextRequest {
     temperature: number;
 }
 
+function isLocalAiEndpoint(baseUrl: string): boolean {
+    try {
+        const url = new URL(baseUrl);
+        const host = url.hostname.toLowerCase();
+        if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
+            return true;
+        }
+        return host.endsWith('.local');
+    } catch {
+        return false;
+    }
+}
+
 function safeJoinUrl(baseUrl: string, suffix: string): string {
     return `${baseUrl.replace(/\/+$/, '')}${suffix}`;
 }
@@ -16,58 +29,51 @@ function extractOutputText(payload: unknown): string {
         return '';
     }
 
-    const direct = (payload as { output_text?: unknown }).output_text;
-    if (typeof direct === 'string' && direct.trim()) {
-        return direct.trim();
-    }
-
-    const output = (payload as { output?: unknown }).output;
-    if (!Array.isArray(output)) {
-        return '';
-    }
-
-    const fragments: string[] = [];
-    for (const item of output) {
-        if (!item || typeof item !== 'object') continue;
-        const content = (item as { content?: unknown }).content;
-        if (!Array.isArray(content)) continue;
-        for (const block of content) {
-            if (!block || typeof block !== 'object') continue;
-            const type = (block as { type?: unknown }).type;
-            if (type !== 'output_text') continue;
-            const text = (block as { text?: unknown }).text;
-            if (typeof text === 'string' && text.trim()) {
-                fragments.push(text.trim());
-            }
+    // Standard OpenAI format: payload.choices[0].message.content
+    const payloadObj = payload as { choices?: Array<{ message?: { content?: unknown } }> };
+    if (Array.isArray(payloadObj.choices) && payloadObj.choices.length > 0) {
+        const firstChoice = payloadObj.choices[0];
+        if (firstChoice?.message?.content && typeof firstChoice.message.content === 'string') {
+            return firstChoice.message.content.trim();
         }
     }
 
-    return fragments.join('\n').trim();
+    return '';
 }
 
 export function isOpenAIConfigured(): boolean {
-    return !!config.openaiApiKey;
+    return isLocalAiEndpoint(config.openaiBaseUrl) || !!config.openaiApiKey;
 }
 
 export async function requestOpenAIText(input: OpenAITextRequest): Promise<string> {
-    if (!config.openaiApiKey) {
+    const localEndpoint = isLocalAiEndpoint(config.openaiBaseUrl);
+    if (!config.aiAllowRemoteEndpoint && !localEndpoint) {
+        throw new Error(
+            'Endpoint AI remoto bloccato: imposta OPENAI_BASE_URL su localhost oppure AI_ALLOW_REMOTE_ENDPOINT=true.'
+        );
+    }
+    if (!config.openaiApiKey && !localEndpoint) {
         throw new Error('OPENAI_API_KEY mancante.');
     }
 
-    const response = await fetch(safeJoinUrl(config.openaiBaseUrl, '/responses'), {
+    const headers: Record<string, string> = {
+        'content-type': 'application/json',
+    };
+    if (config.openaiApiKey) {
+        headers.authorization = `Bearer ${config.openaiApiKey}`;
+    }
+
+    const response = await fetch(safeJoinUrl(config.openaiBaseUrl, '/chat/completions'), {
         method: 'POST',
-        headers: {
-            'content-type': 'application/json',
-            authorization: `Bearer ${config.openaiApiKey}`,
-        },
+        headers,
         body: JSON.stringify({
             model: config.aiModel,
-            input: [
+            messages: [
                 { role: 'system', content: input.system },
                 { role: 'user', content: input.user },
             ],
             temperature: input.temperature,
-            max_output_tokens: input.maxOutputTokens,
+            max_tokens: input.maxOutputTokens, // OpenAI uses max_tokens natively, non max_output_tokens
         }),
         signal: AbortSignal.timeout(config.aiRequestTimeoutMs),
     });
@@ -84,4 +90,3 @@ export async function requestOpenAIText(input: OpenAITextRequest): Promise<strin
     }
     return outputText;
 }
-
