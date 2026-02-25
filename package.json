@@ -1,0 +1,41 @@
+{
+  "name": "linkedin",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint src/**/*.ts",
+    "typecheck": "tsc --noEmit",
+    "conta-problemi": "npm run typecheck && npm run lint",
+    "pre-modifiche": "npm run conta-problemi",
+    "post-modifiche": "npm run conta-problemi",
+    "helper-manuali": "echo 'Esegui le correzioni manuali come da policy'",
+    "start": "ts-node src/index.ts",
+    "test:unit": "ts-node src/tests/unit.ts",
+    "test:integration": "ts-node src/tests/integration.ts",
+    "test:e2e:dry": "ts-node src/tests/e2eDry.ts",
+    "test": "npm run test:unit && npm run test:integration && npm run test:e2e:dry"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
+    "csv-parser": "^3.2.0",
+    "dotenv": "^17.3.1",
+    "playwright": "^1.58.2",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "@types/sqlite3": "^3.1.11",
+    "@typescript-eslint/eslint-plugin": "^8.56.1",
+    "@typescript-eslint/parser": "^8.56.1",
+    "eslint": "^10.0.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}

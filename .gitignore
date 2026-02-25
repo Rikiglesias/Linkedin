@@ -1,0 +1,14 @@
+node_modules/
+dist/
+
+# Runtime data and browser session
+data/*.sqlite
+data/session/
+data/session*/
+
+# Secrets
+.env
+
+# Logs
+*.log
+npm-debug.log*
