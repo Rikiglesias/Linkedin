@@ -98,6 +98,44 @@ async function run(): Promise<void> {
     const delayedLocked = await repositories.lockNextQueuedJob(['INVITE']);
     assert.equal(delayedLocked, null);
 
+    const accountQueuedA = await repositories.enqueueJob(
+        'INVITE',
+        { leadId: lead.id, localDate: '2026-02-25' },
+        `invite:${lead.id}:account-a`,
+        10,
+        3,
+        0,
+        'acc-a'
+    );
+    assert.equal(accountQueuedA, true);
+
+    const accountQueuedB = await repositories.enqueueJob(
+        'MESSAGE',
+        { leadId: lead.id, acceptedAtDate: '2026-02-25' },
+        `message:${lead.id}:account-b`,
+        10,
+        3,
+        0,
+        'acc-b'
+    );
+    assert.equal(accountQueuedB, true);
+
+    const lockedAccA = await repositories.lockNextQueuedJob(['INVITE', 'MESSAGE'], 'acc-a');
+    assert.ok(lockedAccA);
+    if (!lockedAccA) {
+        throw new Error('Lock job acc-a fallito');
+    }
+    assert.equal(lockedAccA.account_id, 'acc-a');
+    await repositories.markJobSucceeded(lockedAccA.id);
+
+    const lockedAccB = await repositories.lockNextQueuedJob(['INVITE', 'MESSAGE'], 'acc-b');
+    assert.ok(lockedAccB);
+    if (!lockedAccB) {
+        throw new Error('Lock job acc-b fallito');
+    }
+    assert.equal(lockedAccB.account_id, 'acc-b');
+    await repositories.markJobSucceeded(lockedAccB.id);
+
     await dbModule.closeDatabase();
     if (fs.existsSync(testDbPath)) {
         fs.unlinkSync(testDbPath);

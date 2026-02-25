@@ -1,22 +1,26 @@
 import { Page } from 'playwright';
-import { detectChallenge, humanDelay, simulateHumanReading } from '../browser';
+import { detectChallenge, humanDelay, humanMouseMove, humanType, simulateHumanReading } from '../browser';
 import { transitionLead } from '../core/leadStateService';
 import { getLeadById, incrementDailyStat, incrementListDailyStat } from '../core/repositories';
 import { SELECTORS } from '../selectors';
-import { InviteJobPayload } from '../types/domain';
+import { InviteJobPayload, LeadRecord } from '../types/domain';
 import { WorkerContext } from './context';
 import { ChallengeDetectedError, RetryableWorkerError } from './errors';
 import { isSalesNavigatorUrl } from '../linkedinUrl';
+import { config } from '../config';
+import { buildPersonalizedInviteNote } from '../ai/inviteNotePersonalizer';
 
 async function clickConnectOnProfile(page: Page): Promise<boolean> {
     const primaryBtn = page.locator(SELECTORS.connectButtonPrimary).first();
     if (await primaryBtn.count() > 0) {
+        await humanMouseMove(page, SELECTORS.connectButtonPrimary);
         await primaryBtn.click();
         return true;
     }
 
     const moreBtn = page.locator(SELECTORS.moreActionsButton).first();
     if (await moreBtn.count() > 0) {
+        await humanMouseMove(page, SELECTORS.moreActionsButton);
         await moreBtn.click();
         await humanDelay(page, 700, 1300);
         const connectInMenu = page.locator(SELECTORS.connectInMoreMenu).first();
@@ -40,6 +44,68 @@ async function detectInviteProof(page: Page): Promise<boolean> {
         return false;
     }
     return /invitation sent|in attesa|pending/i.test(pageText);
+}
+
+/**
+ * Tenta di inviare l'invito con nota personalizzata (se INVITE_WITH_NOTE=true).
+ * Flusso:
+ *   1. Cerca il bottone "Add a note" nel modale
+ *   2. Scrive la nota via humanType
+ *   3. Clicca "Send" dal modale
+ * Se il bottone "Add a note" non è presente, ricade su sendWithoutNote.
+ * Ritorna se l'invio è avvenuto con nota e la source della nota (template/ai).
+ */
+async function handleInviteModal(
+    page: Page,
+    lead: LeadRecord,
+    dryRun: boolean,
+    localDate: string,
+): Promise<{ sentWithNote: boolean; noteSource: 'template' | 'ai' | null }> {
+    if (dryRun) return { sentWithNote: false, noteSource: null };
+
+    // Controlla se c'è il bottone "Add a note"
+    const addNoteBtn = page.locator(SELECTORS.addNoteButton).first();
+    if (config.inviteWithNote && await addNoteBtn.count() > 0) {
+        await addNoteBtn.click();
+        await humanDelay(page, 600, 1200);
+
+        // Scrivi la nota nella textarea del modale
+        const personalizedNote = await buildPersonalizedInviteNote(lead);
+        const note = personalizedNote.note;
+        const textarea = page.locator(SELECTORS.noteTextarea).first();
+        if (await textarea.count() > 0) {
+            await humanType(page, SELECTORS.noteTextarea, note);
+            await humanDelay(page, 500, 1000);
+        }
+
+        // Clicca il tasto Send del modale
+        const sendNoteBtn = page.locator(SELECTORS.sendWithNote).first();
+        if (await sendNoteBtn.count() > 0) {
+            await humanMouseMove(page, SELECTORS.sendWithNote);
+            await sendNoteBtn.click();
+            return { sentWithNote: true, noteSource: personalizedNote.source };
+        }
+
+        // Se il bottone Send del modale non è trovato, è un errore bloccante
+        await incrementDailyStat(localDate, 'selector_failures');
+        throw new RetryableWorkerError('Send con nota non trovato nel modale', 'SEND_WITH_NOTE_NOT_FOUND');
+    }
+
+    // Fallback: invia senza nota
+    const sendWithoutNote = page.locator(SELECTORS.sendWithoutNote).first();
+    if (await sendWithoutNote.count() > 0) {
+        await sendWithoutNote.click();
+        return { sentWithNote: false, noteSource: null };
+    }
+
+    const fallback = page.locator(SELECTORS.sendFallback).first();
+    if (await fallback.count() > 0) {
+        await fallback.click();
+        return { sentWithNote: false, noteSource: null };
+    }
+
+    await incrementDailyStat(localDate, 'selector_failures');
+    throw new RetryableWorkerError('Conferma invito senza nota non trovata', 'SEND_BUTTON_NOT_FOUND');
 }
 
 export async function processInviteJob(payload: InviteJobPayload, context: WorkerContext): Promise<void> {
@@ -77,20 +143,12 @@ export async function processInviteJob(payload: InviteJobPayload, context: Worke
 
     await humanDelay(context.session.page, 900, 1800);
 
-    if (!context.dryRun) {
-        const sendWithoutNote = context.session.page.locator(SELECTORS.sendWithoutNote).first();
-        if (await sendWithoutNote.count() > 0) {
-            await sendWithoutNote.click();
-        } else {
-            const fallback = context.session.page.locator(SELECTORS.sendFallback).first();
-            if (await fallback.count() > 0) {
-                await fallback.click();
-            } else {
-                await incrementDailyStat(context.localDate, 'selector_failures');
-                throw new RetryableWorkerError('Conferma invito senza nota non trovata', 'SEND_BUTTON_NOT_FOUND');
-            }
-        }
-    }
+    const inviteResult = await handleInviteModal(
+        context.session.page,
+        lead,
+        context.dryRun,
+        context.localDate,
+    );
 
     await humanDelay(context.session.page, 1200, 2200);
     const proofOfSend = context.dryRun ? true : await detectInviteProof(context.session.page);
@@ -100,6 +158,8 @@ export async function processInviteJob(payload: InviteJobPayload, context: Worke
 
     await transitionLead(lead.id, 'INVITED', context.dryRun ? 'invite_dry_run' : 'invite_sent', {
         dryRun: context.dryRun,
+        withNote: inviteResult.sentWithNote,
+        withNoteSource: inviteResult.noteSource,
     });
     await incrementDailyStat(context.localDate, 'invites_sent');
     await incrementListDailyStat(context.localDate, lead.list_name, 'invites_sent');

@@ -1,4 +1,6 @@
 import { checkLogin, closeBrowser, detectChallenge, humanDelay, launchBrowser } from '../browser';
+import { getAccountProfileById, pickAccountIdForLead } from '../accountManager';
+import { config } from '../config';
 import { quarantineAccount } from '../risk/incidentManager';
 import { SELECTORS } from '../selectors';
 import { LeadRecord } from '../types/domain';
@@ -9,8 +11,9 @@ import {
     countLeadsByStatuses,
     countPendingOutboxEvents,
     getJobStatusCounts,
-    getLeadsByStatus,
+    getLeadsByStatusForSiteCheck,
     JobStatusCounts,
+    touchLeadSiteCheckAt,
 } from './repositories';
 import { Page } from 'playwright';
 
@@ -66,6 +69,7 @@ export interface SiteCheckReport {
 export interface SiteCheckOptions {
     limitPerStatus: number;
     autoFix: boolean;
+    staleDays?: number;
 }
 
 function isFirstDegreeBadge(text: string | null): boolean {
@@ -211,11 +215,12 @@ export async function buildFunnelReport(): Promise<FunnelReport> {
 
 export async function runSiteCheck(options: SiteCheckOptions): Promise<SiteCheckReport> {
     const limit = Math.max(1, options.limitPerStatus);
+    const staleDays = Math.max(0, options.staleDays ?? config.siteCheckStaleDays);
     const [readyInviteLeads, invitedLeads, readyMessageLeads, messagedLeads] = await Promise.all([
-        getLeadsByStatus('READY_INVITE', limit),
-        getLeadsByStatus('INVITED', limit),
-        getLeadsByStatus('READY_MESSAGE', limit),
-        getLeadsByStatus('MESSAGED', Math.max(5, Math.floor(limit / 2))),
+        getLeadsByStatusForSiteCheck('READY_INVITE', limit, staleDays),
+        getLeadsByStatusForSiteCheck('INVITED', limit, staleDays),
+        getLeadsByStatusForSiteCheck('READY_MESSAGE', limit, staleDays),
+        getLeadsByStatusForSiteCheck('MESSAGED', Math.max(5, Math.floor(limit / 2)), staleDays),
     ]);
 
     const candidates = [...readyInviteLeads, ...invitedLeads, ...readyMessageLeads, ...messagedLeads];
@@ -235,72 +240,96 @@ export async function runSiteCheck(options: SiteCheckOptions): Promise<SiteCheck
         items: [],
     };
 
-    const session = await launchBrowser();
-    try {
-        const loggedIn = await checkLogin(session.page);
-        if (!loggedIn) {
-            await quarantineAccount('SITE_CHECK_LOGIN_MISSING', {
-                reason: 'Sessione non autenticata durante site-check',
-            });
-            return report;
+    const leadsByAccount = new Map<string, LeadRecord[]>();
+    for (const lead of candidates) {
+        const accountId = pickAccountIdForLead(lead.id);
+        if (!leadsByAccount.has(accountId)) {
+            leadsByAccount.set(accountId, []);
         }
+        leadsByAccount.get(accountId)?.push(lead);
+    }
 
-        for (const lead of candidates) {
-            report.scanned += 1;
-            const signals = await inspectLeadOnSite(lead, session.page);
+    let challengeDetected = false;
+    for (const [accountId, accountLeads] of leadsByAccount) {
+        const account = getAccountProfileById(accountId);
+        const session = await launchBrowser({
+            sessionDir: account.sessionDir,
+            proxy: account.proxy,
+        });
+        try {
+            const loggedIn = await checkLogin(session.page);
+            if (!loggedIn) {
+                await quarantineAccount('SITE_CHECK_LOGIN_MISSING', {
+                    reason: 'Sessione non autenticata durante site-check',
+                    accountId,
+                });
+                return report;
+            }
 
-            if (await detectChallenge(session.page)) {
-                await quarantineAccount('SITE_CHECK_CHALLENGE_DETECTED', {
+            for (const lead of accountLeads) {
+                report.scanned += 1;
+                const signals = await inspectLeadOnSite(lead, session.page);
+                await touchLeadSiteCheckAt(lead.id);
+
+                if (await detectChallenge(session.page)) {
+                    await quarantineAccount('SITE_CHECK_CHALLENGE_DETECTED', {
+                        leadId: lead.id,
+                        status: lead.status,
+                        linkedinUrl: lead.linkedin_url,
+                        accountId,
+                    });
+                    challengeDetected = true;
+                    break;
+                }
+
+                let mismatch: string | null = null;
+                if (lead.status === 'INVITED' && signals.connected) {
+                    mismatch = 'invited_but_connected';
+                } else if (lead.status === 'INVITED' && !signals.pendingInvite && signals.canConnect) {
+                    mismatch = 'invited_but_connect_available';
+                } else if (lead.status === 'READY_INVITE' && signals.pendingInvite) {
+                    mismatch = 'ready_invite_but_pending';
+                } else if (lead.status === 'READY_INVITE' && signals.connected) {
+                    mismatch = 'ready_invite_but_connected';
+                } else if (lead.status === 'READY_MESSAGE' && signals.pendingInvite) {
+                    mismatch = 'ready_message_but_pending_invite';
+                } else if (lead.status === 'READY_MESSAGE' && !signals.connected) {
+                    mismatch = 'ready_message_but_not_connected';
+                } else if (lead.status === 'MESSAGED' && signals.pendingInvite) {
+                    mismatch = 'messaged_but_pending_invite';
+                } else if (lead.status === 'MESSAGED' && !signals.connected) {
+                    mismatch = 'messaged_but_not_connected';
+                }
+
+                if (!mismatch) {
+                    continue;
+                }
+
+                report.mismatches += 1;
+                let fixed = false;
+                if (options.autoFix) {
+                    fixed = await tryAutoFix(lead, mismatch);
+                    if (fixed) {
+                        report.fixed += 1;
+                    }
+                }
+
+                report.items.push({
                     leadId: lead.id,
                     status: lead.status,
                     linkedinUrl: lead.linkedin_url,
+                    siteSignals: signals,
+                    mismatch,
+                    fixed,
                 });
-                break;
             }
-
-            let mismatch: string | null = null;
-            if (lead.status === 'INVITED' && signals.connected) {
-                mismatch = 'invited_but_connected';
-            } else if (lead.status === 'INVITED' && !signals.pendingInvite && signals.canConnect) {
-                mismatch = 'invited_but_connect_available';
-            } else if (lead.status === 'READY_INVITE' && signals.pendingInvite) {
-                mismatch = 'ready_invite_but_pending';
-            } else if (lead.status === 'READY_INVITE' && signals.connected) {
-                mismatch = 'ready_invite_but_connected';
-            } else if (lead.status === 'READY_MESSAGE' && signals.pendingInvite) {
-                mismatch = 'ready_message_but_pending_invite';
-            } else if (lead.status === 'READY_MESSAGE' && !signals.connected) {
-                mismatch = 'ready_message_but_not_connected';
-            } else if (lead.status === 'MESSAGED' && signals.pendingInvite) {
-                mismatch = 'messaged_but_pending_invite';
-            } else if (lead.status === 'MESSAGED' && !signals.connected) {
-                mismatch = 'messaged_but_not_connected';
-            }
-
-            if (!mismatch) {
-                continue;
-            }
-
-            report.mismatches += 1;
-            let fixed = false;
-            if (options.autoFix) {
-                fixed = await tryAutoFix(lead, mismatch);
-                if (fixed) {
-                    report.fixed += 1;
-                }
-            }
-
-            report.items.push({
-                leadId: lead.id,
-                status: lead.status,
-                linkedinUrl: lead.linkedin_url,
-                siteSignals: signals,
-                mismatch,
-                fixed,
-            });
+        } finally {
+            await closeBrowser(session);
         }
-    } finally {
-        await closeBrowser(session);
+
+        if (challengeDetected) {
+            break;
+        }
     }
 
     return report;

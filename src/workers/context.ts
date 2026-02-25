@@ -4,5 +4,5 @@ export interface WorkerContext {
     session: BrowserSession;
     dryRun: boolean;
     localDate: string;
+    accountId: string;
 }
-

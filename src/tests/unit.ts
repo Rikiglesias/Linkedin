@@ -4,9 +4,12 @@ import { calculateDynamicBudget, evaluateCooldownDecision, evaluateRisk } from '
 import { hashMessage, validateMessageContent } from '../validation/messageValidator';
 import { isProfileUrl, isSalesNavigatorUrl, normalizeLinkedInUrl } from '../linkedinUrl';
 import { buildPersonalizedFollowUpMessage } from '../ai/messagePersonalizer';
+import { buildPersonalizedInviteNote } from '../ai/inviteNotePersonalizer';
 import { evaluateAiGuardian } from '../ai/guardian';
 import { ScheduleResult } from '../core/scheduler';
 import { LeadRecord } from '../types/domain';
+import { getProxy, getProxyFailoverChain } from '../proxyManager';
+import { generateInviteNote } from '../noteGenerator';
 
 async function run(): Promise<void> {
     assert.equal(isValidLeadTransition('NEW', 'READY_INVITE'), true);
@@ -73,6 +76,10 @@ async function run(): Promise<void> {
     const personalized = await buildPersonalizedFollowUpMessage(lead);
     assert.equal(personalized.message.length > 0, true);
     assert.equal(personalized.source === 'template' || personalized.source === 'ai', true);
+    const personalizedInviteNote = await buildPersonalizedInviteNote(lead);
+    assert.equal(personalizedInviteNote.note.length > 0, true);
+    assert.equal(personalizedInviteNote.note.length <= 300, true);
+    assert.equal(personalizedInviteNote.source === 'template' || personalizedInviteNote.source === 'ai', true);
 
     const schedule: ScheduleResult = {
         localDate: '2026-02-25',
@@ -107,6 +114,23 @@ async function run(): Promise<void> {
     };
     const guardian = await evaluateAiGuardian('all', schedule);
     assert.equal(guardian.decision !== null, true);
+
+    // ── proxyManager ─────────────────────────────────────────────────────────
+    // Senza PROXY_URL configurato, deve tornare undefined
+    const proxy = getProxy();
+    assert.equal(proxy === undefined || typeof proxy.server === 'string', true);
+    const proxyChain = getProxyFailoverChain();
+    assert.equal(Array.isArray(proxyChain), true);
+    assert.equal(proxyChain.every((entry) => typeof entry.server === 'string'), true);
+
+    // ── noteGenerator ────────────────────────────────────────────────────────
+    const note1 = generateInviteNote('Mario');
+    assert.equal(note1.length > 0, true);
+    assert.equal(note1.includes('Mario'), true);
+    assert.equal(note1.length <= 300, true);
+
+    const note2 = generateInviteNote('');
+    assert.equal(note2.length > 0, true); // fallback su 'collega'
 }
 
 run()

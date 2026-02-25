@@ -1,0 +1,39 @@
+{
+    "output": {
+        "filePath": "repomix-output.txt",
+        "style": "markdown",
+        "headerText": "LinkedIn Bot Codebase - Condiviso per analisi AI",
+        "instructionFilePath": "",
+        "removeComments": false,
+        "removeEmptyLines": false,
+        "showLineNumbers": true,
+        "copyToClipboard": false
+    },
+    "include": [
+        "src/**/*",
+        "package.json",
+        "tsconfig.json",
+        "eslint.config.js",
+        ".env.example",
+        "ROADMAP.md",
+        "INTEGRATIONS.md",
+        "SECURITY.md"
+    ],
+    "ignore": {
+        "useGitignore": true,
+        "useDefaultPatterns": true,
+        "customPatterns": [
+            "node_modules/**",
+            "dist/**",
+            "data/**",
+            ".env",
+            "*.log",
+            "package-lock.json",
+            "repomix-output.txt",
+            ".git/**"
+        ]
+    },
+    "security": {
+        "enableSecurityCheck": true
+    }
+}

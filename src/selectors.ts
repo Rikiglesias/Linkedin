@@ -67,5 +67,24 @@ export const SELECTORS = {
         'h1:has-text("Security verification")',
         'h1:has-text("Verifica")',
     ].join(', '),
+
+    addNoteButton: [
+        'button[aria-label="Add a note"]',
+        'button[aria-label="Aggiungi una nota"]',
+        'button:has-text("Add a note")',
+        'button:has-text("Aggiungi una nota")',
+    ].join(', '),
+
+    noteTextarea: [
+        'div[role="dialog"] textarea',
+        'div[role="dialog"] input[type="text"]',
+    ].join(', '),
+
+    sendWithNote: [
+        'div[role="dialog"] button[aria-label="Send invitation"]',
+        'div[role="dialog"] button[aria-label="Invia invito"]',
+        'div[role="dialog"] button.artdeco-button--primary:has-text("Send")',
+        'div[role="dialog"] button.artdeco-button--primary:has-text("Invia")',
+    ].join(', '),
 };
 

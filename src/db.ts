@@ -65,6 +65,7 @@ async function applyMigrations(database: Database): Promise<void> {
 
     // Hardening per DB già esistenti creati prima del sistema migrazioni.
     await ensureColumn(database, 'leads', 'list_name', `TEXT NOT NULL DEFAULT 'default'`);
+    await ensureColumn(database, 'leads', 'last_site_check_at', 'DATETIME');
     await ensureColumn(database, 'leads', 'last_error', 'TEXT');
     await ensureColumn(database, 'leads', 'blocked_reason', 'TEXT');
     await ensureColumn(database, 'leads', 'updated_at', 'DATETIME DEFAULT CURRENT_TIMESTAMP');
@@ -76,6 +77,7 @@ async function applyMigrations(database: Database): Promise<void> {
     await ensureColumn(database, 'daily_stats', 'challenges_count', 'INTEGER NOT NULL DEFAULT 0');
     await ensureColumn(database, 'daily_stats', 'selector_failures', 'INTEGER NOT NULL DEFAULT 0');
     await ensureColumn(database, 'daily_stats', 'run_errors', 'INTEGER NOT NULL DEFAULT 0');
+    await ensureColumn(database, 'jobs', 'account_id', `TEXT NOT NULL DEFAULT 'default'`);
     await database.exec(`
         CREATE TABLE IF NOT EXISTS list_daily_stats (
             date TEXT NOT NULL,
@@ -87,7 +89,9 @@ async function applyMigrations(database: Database): Promise<void> {
     `);
     await database.exec(`CREATE INDEX IF NOT EXISTS idx_list_daily_stats_list_date ON list_daily_stats(list_name, date);`);
     await database.exec(`CREATE INDEX IF NOT EXISTS idx_leads_status_list_created ON leads(status, list_name, created_at);`);
+    await database.exec(`CREATE INDEX IF NOT EXISTS idx_leads_status_last_site_check ON leads(status, last_site_check_at, created_at);`);
     await database.exec(`CREATE INDEX IF NOT EXISTS idx_jobs_type_status_next_run ON jobs(type, status, next_run_at, priority, created_at);`);
+    await database.exec(`CREATE INDEX IF NOT EXISTS idx_jobs_account_status_next_run ON jobs(account_id, status, next_run_at, priority, created_at);`);
     await database.exec(`
         CREATE TABLE IF NOT EXISTS company_targets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

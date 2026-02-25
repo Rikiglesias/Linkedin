@@ -475,6 +475,31 @@ export async function getLeadsByStatus(status: LeadStatus, limit: number): Promi
     return leads.map((lead) => ({ ...lead, status: normalizeLegacyStatus(lead.status) }));
 }
 
+export async function getLeadsByStatusForSiteCheck(status: LeadStatus, limit: number, staleDays: number): Promise<LeadRecord[]> {
+    const db = await getDatabase();
+    const normalized = normalizeLegacyStatus(status);
+    const safeLimit = Math.max(1, limit);
+    const safeStaleDays = Math.max(0, staleDays);
+    const leads = await db.all<LeadRecord[]>(
+        `
+        SELECT *
+        FROM leads
+        WHERE status = ?
+          AND (
+            last_site_check_at IS NULL
+            OR last_site_check_at <= DATETIME('now', '-' || ? || ' days')
+          )
+        ORDER BY
+            CASE WHEN last_site_check_at IS NULL THEN 0 ELSE 1 END ASC,
+            last_site_check_at ASC,
+            created_at ASC
+        LIMIT ?
+    `,
+        [normalized, safeStaleDays, safeLimit]
+    );
+    return leads.map((lead) => ({ ...lead, status: normalizeLegacyStatus(lead.status) }));
+}
+
 export async function getLeadsByStatusForList(status: LeadStatus, listName: string, limit: number): Promise<LeadRecord[]> {
     const db = await getDatabase();
     const normalized = normalizeLegacyStatus(status);
@@ -490,6 +515,19 @@ export async function getLeadsByStatusForList(status: LeadStatus, listName: stri
         [normalized, listName, limit]
     );
     return leads.map((lead) => ({ ...lead, status: normalizeLegacyStatus(lead.status) }));
+}
+
+export async function touchLeadSiteCheckAt(leadId: number): Promise<void> {
+    const db = await getDatabase();
+    await db.run(
+        `
+        UPDATE leads
+        SET last_site_check_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+    `,
+        [leadId]
+    );
 }
 
 export async function countLeadsByStatuses(statuses: LeadStatus[]): Promise<number> {
@@ -657,34 +695,59 @@ export async function enqueueJob(
     idempotencyKey: string,
     priority: number,
     maxAttempts: number,
-    initialDelaySeconds: number = 0
+    initialDelaySeconds: number = 0,
+    accountId: string = 'default'
 ): Promise<boolean> {
     const db = await getDatabase();
     const safeDelay = Math.max(0, Math.floor(initialDelaySeconds));
+    const normalizedAccountId = accountId.trim() || 'default';
     const result = await db.run(
         `
-        INSERT OR IGNORE INTO jobs (type, status, payload_json, idempotency_key, priority, max_attempts, next_run_at)
-        VALUES (?, 'QUEUED', ?, ?, ?, ?, DATETIME('now', '+' || ? || ' seconds'))
+        INSERT OR IGNORE INTO jobs (type, status, account_id, payload_json, idempotency_key, priority, max_attempts, next_run_at)
+        VALUES (?, 'QUEUED', ?, ?, ?, ?, ?, DATETIME('now', '+' || ? || ' seconds'))
     `,
-        [type, JSON.stringify(payload), idempotencyKey, priority, maxAttempts, safeDelay]
+        [type, normalizedAccountId, JSON.stringify(payload), idempotencyKey, priority, maxAttempts, safeDelay]
     );
     return (result.changes ?? 0) > 0;
 }
 
-export async function lockNextQueuedJob(allowedTypes: JobType[]): Promise<JobRecord | null> {
+export async function lockNextQueuedJob(
+    allowedTypes: JobType[],
+    accountId?: string,
+    includeLegacyDefaultQueue: boolean = false
+): Promise<JobRecord | null> {
+    if (allowedTypes.length === 0) {
+        return null;
+    }
     const db = await getDatabase();
     return withTransaction(db, async () => {
         const placeholders = allowedTypes.map(() => '?').join(', ');
+        const whereClauses = [
+            `status = 'QUEUED'`,
+            `next_run_at <= CURRENT_TIMESTAMP`,
+            `type IN (${placeholders})`,
+        ];
+        const params: unknown[] = [...allowedTypes];
+
+        const normalizedAccountId = accountId?.trim();
+        if (normalizedAccountId) {
+            if (includeLegacyDefaultQueue && normalizedAccountId !== 'default') {
+                whereClauses.push(`account_id IN (?, 'default')`);
+                params.push(normalizedAccountId);
+            } else {
+                whereClauses.push(`account_id = ?`);
+                params.push(normalizedAccountId);
+            }
+        }
+
         const job = await db.get<JobRecord>(
             `
             SELECT * FROM jobs
-            WHERE status = 'QUEUED'
-              AND next_run_at <= CURRENT_TIMESTAMP
-              AND type IN (${placeholders})
+            WHERE ${whereClauses.join('\n              AND ')}
             ORDER BY priority ASC, created_at ASC
             LIMIT 1
         `,
-            allowedTypes
+            params
         );
 
         if (!job) return null;

@@ -1,4 +1,5 @@
 import { config, getLocalDateString, getWeekStartDate } from '../config';
+import { pickAccountIdForLead } from '../accountManager';
 import { evaluateRisk, calculateDynamicBudget } from '../risk/riskEngine';
 import { JobType, RiskSnapshot } from '../types/domain';
 import {
@@ -315,13 +316,15 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
             let insertedForList = 0;
             for (const lead of inviteCandidates) {
                 const initialDelaySec = noBurstPlanner ? noBurstPlanner.nextDelaySec() : 0;
+                const accountId = pickAccountIdForLead(lead.id);
                 const inserted = await enqueueJob(
                     'INVITE',
                     { leadId: lead.id, localDate },
                     buildInviteKey(lead.id, localDate),
                     10,
                     config.retryMaxAttempts,
-                    initialDelaySec
+                    initialDelaySec,
+                    accountId
                 );
                 if (inserted) {
                     insertedForList += 1;
@@ -349,13 +352,15 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
             let insertedForList = 0;
             for (const lead of invitedLeads) {
                 const initialDelaySec = noBurstPlanner ? noBurstPlanner.nextDelaySec() : 0;
+                const accountId = pickAccountIdForLead(lead.id);
                 const inserted = await enqueueJob(
                     'ACCEPTANCE_CHECK',
                     { leadId: lead.id },
                     buildCheckKey(lead.id, localDate),
                     30,
                     config.retryMaxAttempts,
-                    initialDelaySec
+                    initialDelaySec,
+                    accountId
                 );
                 if (inserted) {
                     insertedForList += 1;
@@ -405,13 +410,15 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
             for (const lead of readyToMessage) {
                 const acceptedAtDate = lead.accepted_at ? lead.accepted_at.slice(0, 10) : localDate;
                 const initialDelaySec = noBurstPlanner ? noBurstPlanner.nextDelaySec() : 0;
+                const accountId = pickAccountIdForLead(lead.id);
                 const inserted = await enqueueJob(
                     'MESSAGE',
                     { leadId: lead.id, acceptedAtDate },
                     buildMessageKey(lead.id, acceptedAtDate),
                     20,
                     config.retryMaxAttempts,
-                    initialDelaySec
+                    initialDelaySec,
+                    accountId
                 );
                 if (inserted) {
                     insertedForList += 1;

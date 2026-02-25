@@ -33,7 +33,19 @@ function parseStringEnv(name: string, fallback: string = ''): string {
     return raw.trim();
 }
 
+function resolvePathValue(rawPath: string): string {
+    return path.isAbsolute(rawPath) ? rawPath : path.resolve(process.cwd(), rawPath);
+}
+
 export type EventSyncSink = 'SUPABASE' | 'WEBHOOK' | 'NONE';
+
+export interface AccountProfileConfig {
+    id: string;
+    sessionDir: string;
+    proxyUrl: string;
+    proxyUsername: string;
+    proxyPassword: string;
+}
 
 function parseEventSyncSinkEnv(name: string, fallback: EventSyncSink): EventSyncSink {
     const raw = parseStringEnv(name, fallback).toUpperCase();
@@ -49,6 +61,23 @@ function resolvePathFromEnv(name: string, fallbackRelativePath: string): string 
         return path.resolve(process.cwd(), fallbackRelativePath);
     }
     return path.isAbsolute(raw) ? raw : path.resolve(process.cwd(), raw);
+}
+
+function parseAccountProfileFromEnv(slot: 1 | 2): AccountProfileConfig | null {
+    const sessionDirRaw = parseStringEnv(`ACCOUNT_${slot}_SESSION_DIR`);
+    if (!sessionDirRaw) {
+        return null;
+    }
+
+    const fallbackId = `account${slot}`;
+    const id = parseStringEnv(`ACCOUNT_${slot}_ID`, fallbackId) || fallbackId;
+    return {
+        id,
+        sessionDir: resolvePathValue(sessionDirRaw),
+        proxyUrl: parseStringEnv(`ACCOUNT_${slot}_PROXY_URL`),
+        proxyUsername: parseStringEnv(`ACCOUNT_${slot}_PROXY_USERNAME`),
+        proxyPassword: parseStringEnv(`ACCOUNT_${slot}_PROXY_PASSWORD`),
+    };
 }
 
 export interface AppConfig {
@@ -101,12 +130,15 @@ export interface AppConfig {
     autoSiteCheckLimit: number;
     autoSiteCheckFix: boolean;
     autoSiteCheckIntervalHours: number;
+    siteCheckStaleDays: number;
     postRunStateSyncEnabled: boolean;
     postRunStateSyncLimit: number;
     postRunStateSyncFix: boolean;
     selectorCanaryEnabled: boolean;
     outboxAlertBacklog: number;
     sessionDir: string;
+    multiAccountEnabled: boolean;
+    accountProfiles: AccountProfileConfig[];
     dbPath: string;
     eventSyncSink: EventSyncSink;
     supabaseSyncEnabled: boolean;
@@ -132,7 +164,19 @@ export interface AppConfig {
     aiGuardianPauseMinutes: number;
     telegramBotToken: string;
     telegramChatId: string;
+    proxyUrl: string;
+    proxyUsername: string;
+    proxyPassword: string;
+    proxyListPath: string;
+    proxyFailureCooldownMinutes: number;
+    proxyRotateEveryJobs: number;
+    proxyRotateEveryMinutes: number;
+    inviteWithNote: boolean;
+    inviteNoteMode: 'template' | 'ai';
 }
+
+const configuredAccountProfiles: AccountProfileConfig[] = [parseAccountProfileFromEnv(1), parseAccountProfileFromEnv(2)]
+    .filter((profile): profile is AccountProfileConfig => profile !== null);
 
 export const config: AppConfig = {
     timezone: process.env.TIMEZONE ?? 'Europe/Rome',
@@ -184,12 +228,15 @@ export const config: AppConfig = {
     autoSiteCheckLimit: Math.max(1, parseIntEnv('AUTO_SITE_CHECK_LIMIT', 20)),
     autoSiteCheckFix: parseBoolEnv('AUTO_SITE_CHECK_FIX', true),
     autoSiteCheckIntervalHours: Math.max(1, parseIntEnv('AUTO_SITE_CHECK_INTERVAL_HOURS', 24)),
+    siteCheckStaleDays: Math.max(0, parseIntEnv('SITE_CHECK_STALE_DAYS', 2)),
     postRunStateSyncEnabled: parseBoolEnv('POST_RUN_STATE_SYNC_ENABLED', true),
     postRunStateSyncLimit: Math.max(1, parseIntEnv('POST_RUN_STATE_SYNC_LIMIT', 8)),
     postRunStateSyncFix: parseBoolEnv('POST_RUN_STATE_SYNC_FIX', true),
     selectorCanaryEnabled: parseBoolEnv('SELECTOR_CANARY_ENABLED', true),
     outboxAlertBacklog: Math.max(1, parseIntEnv('OUTBOX_ALERT_BACKLOG', 1000)),
     sessionDir: resolvePathFromEnv('SESSION_DIR', path.join('data', 'session')),
+    multiAccountEnabled: parseBoolEnv('MULTI_ACCOUNT_ENABLED', configuredAccountProfiles.length > 1),
+    accountProfiles: configuredAccountProfiles,
     dbPath: resolvePathFromEnv('DB_PATH', path.join('data', 'linkedin_bot.sqlite')),
     eventSyncSink: parseEventSyncSinkEnv('EVENT_SYNC_SINK', 'SUPABASE'),
     supabaseSyncEnabled: parseBoolEnv('SUPABASE_SYNC_ENABLED', true),
@@ -215,6 +262,15 @@ export const config: AppConfig = {
     aiGuardianPauseMinutes: Math.max(10, parseIntEnv('AI_GUARDIAN_PAUSE_MINUTES', 180)),
     telegramBotToken: parseStringEnv('TELEGRAM_BOT_TOKEN'),
     telegramChatId: parseStringEnv('TELEGRAM_CHAT_ID'),
+    proxyUrl: parseStringEnv('PROXY_URL'),
+    proxyUsername: parseStringEnv('PROXY_USERNAME'),
+    proxyPassword: parseStringEnv('PROXY_PASSWORD'),
+    proxyListPath: parseStringEnv('PROXY_LIST'),
+    proxyFailureCooldownMinutes: Math.max(1, parseIntEnv('PROXY_FAILURE_COOLDOWN_MINUTES', 30)),
+    proxyRotateEveryJobs: Math.max(0, parseIntEnv('PROXY_ROTATE_EVERY_JOBS', 0)),
+    proxyRotateEveryMinutes: Math.max(0, parseIntEnv('PROXY_ROTATE_EVERY_MINUTES', 0)),
+    inviteWithNote: parseBoolEnv('INVITE_WITH_NOTE', false),
+    inviteNoteMode: (parseStringEnv('INVITE_NOTE_MODE', 'template') === 'ai' ? 'ai' : 'template') as 'template' | 'ai',
 };
 
 // Retrocompatibilità con vecchi moduli ancora presenti nel repository.

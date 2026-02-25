@@ -26,6 +26,7 @@ export interface LeadRecord {
     invited_at: string | null;
     accepted_at: string | null;
     messaged_at: string | null;
+    last_site_check_at?: string | null;
     last_error: string | null;
     blocked_reason: string | null;
     created_at: string;
@@ -36,6 +37,7 @@ export interface JobRecord {
     id: number;
     type: JobType;
     status: JobStatus;
+    account_id: string;
     payload_json: string;
     idempotency_key: string;
     priority: number;
@@ -109,4 +111,3 @@ export interface MessageValidationResult {
     valid: boolean;
     reasons: string[];
 }
-

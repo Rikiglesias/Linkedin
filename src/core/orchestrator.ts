@@ -1,4 +1,5 @@
 import { checkLogin, closeBrowser, launchBrowser, runSelectorCanary } from '../browser';
+import { getRuntimeAccountProfiles } from '../accountManager';
 import { config, getLocalDateString, isWorkingHour } from '../config';
 import { pauseAutomation, quarantineAccount } from '../risk/incidentManager';
 import { evaluateCooldownDecision } from '../risk/riskEngine';
@@ -22,16 +23,27 @@ async function runCanaryIfNeeded(workflow: WorkflowSelection): Promise<boolean> 
         return true;
     }
 
-    const session = await launchBrowser();
-    try {
-        const loggedIn = await checkLogin(session.page);
-        if (!loggedIn) {
-            return false;
+    const accounts = getRuntimeAccountProfiles();
+    for (const account of accounts) {
+        const session = await launchBrowser({
+            sessionDir: account.sessionDir,
+            proxy: account.proxy,
+        });
+        try {
+            const loggedIn = await checkLogin(session.page);
+            if (!loggedIn) {
+                return false;
+            }
+            const canaryOk = await runSelectorCanary(session.page);
+            if (!canaryOk) {
+                return false;
+            }
+        } finally {
+            await closeBrowser(session);
         }
-        return runSelectorCanary(session.page);
-    } finally {
-        await closeBrowser(session);
     }
+
+    return true;
 }
 
 export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {

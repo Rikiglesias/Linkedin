@@ -36,6 +36,7 @@ import { getEventSyncStatus, runEventSyncOnce } from './sync/eventSync';
 import { WorkflowSelection } from './core/scheduler';
 import { isProfileUrl, isSalesNavigatorUrl, normalizeLinkedInUrl } from './linkedinUrl';
 import { Page } from 'playwright';
+import { getAccountProfileById, getRuntimeAccountProfiles } from './accountManager';
 
 // Graceful shutdown: chiude DB prima di uscire per non lasciare job RUNNING.
 let shuttingDown = false;
@@ -322,7 +323,7 @@ function printHelp(): void {
     console.log('  dry-run invite|check|message|all (oppure --workflow <valore>)');
     console.log('  run-loop [workflow] [intervalSec] [--cycles <n>] [--dry-run]');
     console.log('  autopilot [intervalSec] [--cycles <n>] [--dry-run]');
-    console.log('  login [timeoutSec]');
+    console.log('  login [timeoutSec] [--account <id_account>]');
     console.log('  doctor');
     console.log('  status');
     console.log('  funnel');
@@ -362,14 +363,26 @@ async function runImportCommand(args: string[]): Promise<void> {
 
 async function runLoginCommand(args: string[]): Promise<void> {
     const positional = getPositionalArgs(args);
-    const timeoutRaw = getOptionValue(args, '--timeout') ?? positional[0];
+    const positionalTimeout = positional.find((value) => /^\d+$/.test(value));
+    const positionalAccount = positional.find((value) => !/^\d+$/.test(value));
+    const timeoutRaw = getOptionValue(args, '--timeout') ?? positionalTimeout;
     const timeoutSeconds = timeoutRaw ? Math.max(30, parseIntStrict(timeoutRaw, '--timeout')) : 300;
     const timeoutMs = timeoutSeconds * 1000;
+    const accountRaw = getOptionValue(args, '--account') ?? positionalAccount;
+    const selectedAccount = getAccountProfileById(accountRaw);
+    const availableAccounts = getRuntimeAccountProfiles().map((account) => account.id);
+    if (accountRaw && accountRaw !== selectedAccount.id) {
+        console.warn(`[LOGIN] account=${accountRaw} non trovato. Uso account=${selectedAccount.id}. Disponibili: ${availableAccounts.join(', ')}`);
+    }
 
-    const session = await launchBrowser({ headless: false });
+    const session = await launchBrowser({
+        headless: false,
+        sessionDir: selectedAccount.sessionDir,
+        proxy: selectedAccount.proxy,
+    });
     try {
         await session.page.goto('https://www.linkedin.com/login', { waitUntil: 'load' });
-        console.log(`Completa il login LinkedIn nella finestra aperta (timeout ${timeoutSeconds}s)...`);
+        console.log(`Completa il login LinkedIn nella finestra aperta (account=${selectedAccount.id}, timeout ${timeoutSeconds}s)...`);
         console.log('Il browser resta aperto finché il login non viene verificato o finché scade il timeout.');
 
         const startedAt = Date.now();
@@ -463,9 +476,35 @@ async function runLoopCommand(args: string[]): Promise<void> {
                             reason: autoSiteCheck.reason,
                             intervalHours: config.autoSiteCheckIntervalHours,
                             limitPerStatus: config.autoSiteCheckLimit,
+                            staleDays: config.siteCheckStaleDays,
                             autoFix: config.autoSiteCheckFix,
                             report: siteCheckReport,
                         });
+
+                        // Dopo il site-check, 10% di probabilità di visitare un profilo casuale
+                        // per diluire il pattern di scraping e rendere il traffico più naturale.
+                        if (!dryRun && Math.random() < 0.10) {
+                            const decoyProfiles = [
+                                'https://www.linkedin.com/in/satya-nadella/',
+                                'https://www.linkedin.com/in/jeffweiner08/',
+                                'https://www.linkedin.com/in/reidhoffman/',
+                                'https://www.linkedin.com/in/guyraz/',
+                                'https://www.linkedin.com/in/ariellalouis/',
+                            ];
+                            const decoy = decoyProfiles[Math.floor(Math.random() * decoyProfiles.length)];
+                            try {
+                                const decoySession = await launchBrowser({ headless: config.headless });
+                                try {
+                                    await decoySession.page.goto(decoy, { waitUntil: 'domcontentloaded' });
+                                    await humanDelay(decoySession.page, 3000, 7000);
+                                    console.log(`[LOOP] decoy-visit url=${decoy}`);
+                                } finally {
+                                    await closeBrowserSession(decoySession);
+                                }
+                            } catch {
+                                // Ignora errori nella visita decoy: non è critica
+                            }
+                        }
                     } else {
                         console.log('[LOOP] auto-site-check skipped', autoSiteCheck);
                     }
@@ -729,6 +768,11 @@ async function runStatusCommand(): Promise<void> {
     const payload = {
         localDate,
         quarantine: quarantineFlag === 'true',
+        accounts: getRuntimeAccountProfiles().map((account) => ({
+            id: account.id,
+            sessionDir: account.sessionDir,
+            dedicatedProxy: !!account.proxy,
+        })),
         pause: pauseState,
         openIncidents: incidents.length,
         jobs: jobStatusCounts,
@@ -740,6 +784,7 @@ async function runStatusCommand(): Promise<void> {
             fix: config.autoSiteCheckFix,
             limitPerStatus: config.autoSiteCheckLimit,
             intervalHours: config.autoSiteCheckIntervalHours,
+            staleDays: config.siteCheckStaleDays,
             lastRunAt: autoSiteCheckLastRunAt,
         },
         stateSync: {
