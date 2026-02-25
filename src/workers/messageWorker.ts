@@ -1,4 +1,4 @@
-import { detectChallenge, humanDelay, humanType } from '../browser';
+import { detectChallenge, humanDelay, humanMouseMove, humanType, simulateHumanReading } from '../browser';
 import { transitionLead } from '../core/leadStateService';
 import { countRecentMessageHash, getLeadById, incrementDailyStat, incrementListDailyStat, storeMessageHash } from '../core/repositories';
 import { SELECTORS } from '../selectors';
@@ -35,6 +35,7 @@ export async function processMessageJob(payload: MessageJobPayload, context: Wor
 
     await context.session.page.goto(lead.linkedin_url, { waitUntil: 'domcontentloaded' });
     await humanDelay(context.session.page, 2500, 5000);
+    await simulateHumanReading(context.session.page);
 
     if (await detectChallenge(context.session.page)) {
         throw new ChallengeDetectedError();
@@ -45,6 +46,8 @@ export async function processMessageJob(payload: MessageJobPayload, context: Wor
         throw new RetryableWorkerError('Bottone messaggio non trovato', 'MESSAGE_BUTTON_NOT_FOUND');
     }
 
+    await humanMouseMove(context.session.page, SELECTORS.messageButton);
+    await humanDelay(context.session.page, 120, 320);
     await msgBtn.click();
     await humanDelay(context.session.page, 1200, 2200);
 
@@ -62,6 +65,8 @@ export async function processMessageJob(payload: MessageJobPayload, context: Wor
             await incrementDailyStat(context.localDate, 'selector_failures');
             throw new RetryableWorkerError('Bottone invio non disponibile', 'SEND_NOT_AVAILABLE');
         }
+        await humanMouseMove(context.session.page, SELECTORS.messageSendButton);
+        await humanDelay(context.session.page, 100, 300);
         await sendBtn.click();
     }
 

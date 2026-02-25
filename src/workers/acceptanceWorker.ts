@@ -35,8 +35,11 @@ export async function processAcceptanceJob(payload: AcceptanceJobPayload, contex
         return;
     }
 
+    const pendingInvite = (await context.session.page.locator(SELECTORS.invitePendingIndicators).count()) > 0;
+    const canConnect = (await context.session.page.locator(SELECTORS.connectButtonPrimary).count()) > 0;
     const badgeText = await context.session.page.locator(SELECTORS.distanceBadge).first().textContent().catch(() => '');
-    if (!isFirstDegreeBadge(badgeText)) {
+    const connectedWithoutBadge = !pendingInvite && !canConnect;
+    if (!isFirstDegreeBadge(badgeText) && !connectedWithoutBadge) {
         return;
     }
 

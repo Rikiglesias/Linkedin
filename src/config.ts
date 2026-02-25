@@ -103,6 +103,8 @@ export interface AppConfig {
     weeklyInviteLimit: number;
     softMsgCap: number;
     hardMsgCap: number;
+    messageScheduleMinDelayHours: number;
+    messageScheduleMaxDelayHours: number;
     riskWarnThreshold: number;
     riskStopThreshold: number;
     pendingRatioWarn: number;
@@ -173,6 +175,16 @@ export interface AppConfig {
     proxyRotateEveryMinutes: number;
     inviteWithNote: boolean;
     inviteNoteMode: 'template' | 'ai';
+    salesNavSyncEnabled: boolean;
+    salesNavSyncListName: string;
+    salesNavSyncListUrl: string;
+    salesNavSyncMaxPages: number;
+    salesNavSyncIntervalHours: number;
+    salesNavSyncLimit: number;
+    salesNavSyncAccountId: string;
+    randomActivityEnabled: boolean;
+    randomActivityProbability: number;
+    randomActivityMaxActions: number;
 }
 
 const configuredAccountProfiles: AccountProfileConfig[] = [parseAccountProfileFromEnv(1), parseAccountProfileFromEnv(2)]
@@ -201,6 +213,8 @@ export const config: AppConfig = {
     weeklyInviteLimit: Math.max(1, parseIntEnv('WEEKLY_INVITE_LIMIT', 120)),
     softMsgCap: Math.max(1, parseIntEnv('SOFT_MSG_CAP', 40)),
     hardMsgCap: Math.max(1, parseIntEnv('HARD_MSG_CAP', 60)),
+    messageScheduleMinDelayHours: Math.max(0, parseIntEnv('MESSAGE_SCHEDULE_MIN_DELAY_HOURS', 0)),
+    messageScheduleMaxDelayHours: Math.max(0, parseIntEnv('MESSAGE_SCHEDULE_MAX_DELAY_HOURS', 0)),
     riskWarnThreshold: parseIntEnv('RISK_WARN_THRESHOLD', 60),
     riskStopThreshold: parseIntEnv('RISK_STOP_THRESHOLD', 80),
     pendingRatioWarn: parseFloatEnv('PENDING_RATIO_WARN', 0.65),
@@ -271,6 +285,16 @@ export const config: AppConfig = {
     proxyRotateEveryMinutes: Math.max(0, parseIntEnv('PROXY_ROTATE_EVERY_MINUTES', 0)),
     inviteWithNote: parseBoolEnv('INVITE_WITH_NOTE', false),
     inviteNoteMode: (parseStringEnv('INVITE_NOTE_MODE', 'template') === 'ai' ? 'ai' : 'template') as 'template' | 'ai',
+    salesNavSyncEnabled: parseBoolEnv('SALESNAV_SYNC_ENABLED', false),
+    salesNavSyncListName: parseStringEnv('SALESNAV_SYNC_LIST_NAME', 'default'),
+    salesNavSyncListUrl: parseStringEnv('SALESNAV_SYNC_LIST_URL'),
+    salesNavSyncMaxPages: Math.max(1, parseIntEnv('SALESNAV_SYNC_MAX_PAGES', 3)),
+    salesNavSyncIntervalHours: Math.max(1, parseIntEnv('SALESNAV_SYNC_INTERVAL_HOURS', 24)),
+    salesNavSyncLimit: Math.max(1, parseIntEnv('SALESNAV_SYNC_LIMIT', 30)),
+    salesNavSyncAccountId: parseStringEnv('SALESNAV_SYNC_ACCOUNT_ID'),
+    randomActivityEnabled: parseBoolEnv('RANDOM_ACTIVITY_ENABLED', false),
+    randomActivityProbability: Math.min(1, Math.max(0, parseFloatEnv('RANDOM_ACTIVITY_PROBABILITY', 0.15))),
+    randomActivityMaxActions: Math.max(1, parseIntEnv('RANDOM_ACTIVITY_MAX_ACTIONS', 3)),
 };
 
 // Retrocompatibilità con vecchi moduli ancora presenti nel repository.

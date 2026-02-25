@@ -11,6 +11,7 @@ import { processMessageJob } from '../workers/messageWorker';
 import { ChallengeDetectedError } from '../workers/errors';
 import {
     createJobAttempt,
+    getAutomationPauseState,
     getRuntimeFlag,
     incrementDailyStat,
     lockNextQueuedJob,
@@ -94,6 +95,17 @@ async function runQueuedJobsForAccount(
         let sessionStartedAtMs = Date.now();
 
         while (true) {
+            const pauseState = await getAutomationPauseState();
+            if (pauseState.paused) {
+                await logWarn('job_runner.skipped_paused', {
+                    accountId: account.id,
+                    reason: pauseState.reason,
+                    pausedUntil: pauseState.pausedUntil,
+                    remainingSeconds: pauseState.remainingSeconds,
+                });
+                break;
+            }
+
             const job = await lockNextQueuedJob(options.allowedTypes, account.id, includeLegacyDefaultQueue);
             if (!job) break;
 

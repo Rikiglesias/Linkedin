@@ -9,11 +9,13 @@ import { ChallengeDetectedError, RetryableWorkerError } from './errors';
 import { isSalesNavigatorUrl } from '../linkedinUrl';
 import { config } from '../config';
 import { buildPersonalizedInviteNote } from '../ai/inviteNotePersonalizer';
+import { pauseAutomation } from '../risk/incidentManager';
 
 async function clickConnectOnProfile(page: Page): Promise<boolean> {
     const primaryBtn = page.locator(SELECTORS.connectButtonPrimary).first();
     if (await primaryBtn.count() > 0) {
         await humanMouseMove(page, SELECTORS.connectButtonPrimary);
+        await humanDelay(page, 120, 320);
         await primaryBtn.click();
         return true;
     }
@@ -21,10 +23,13 @@ async function clickConnectOnProfile(page: Page): Promise<boolean> {
     const moreBtn = page.locator(SELECTORS.moreActionsButton).first();
     if (await moreBtn.count() > 0) {
         await humanMouseMove(page, SELECTORS.moreActionsButton);
+        await humanDelay(page, 120, 300);
         await moreBtn.click();
         await humanDelay(page, 700, 1300);
         const connectInMenu = page.locator(SELECTORS.connectInMoreMenu).first();
         if (await connectInMenu.count() > 0) {
+            await humanMouseMove(page, SELECTORS.connectInMoreMenu);
+            await humanDelay(page, 120, 300);
             await connectInMenu.click();
             return true;
         }
@@ -46,6 +51,19 @@ async function detectInviteProof(page: Page): Promise<boolean> {
     return /invitation sent|in attesa|pending/i.test(pageText);
 }
 
+async function detectWeeklyInviteLimit(page: Page): Promise<boolean> {
+    const selectorCount = await page.locator(SELECTORS.inviteWeeklyLimitSignals).count();
+    if (selectorCount > 0) {
+        return true;
+    }
+
+    const pageText = await page.textContent('body').catch(() => '');
+    if (!pageText) {
+        return false;
+    }
+    return /weekly invitation limit|limite settimanale(?: degli)? inviti|hai raggiunto il limite settimanale/i.test(pageText);
+}
+
 /**
  * Tenta di inviare l'invito con nota personalizzata (se INVITE_WITH_NOTE=true).
  * Flusso:
@@ -63,9 +81,17 @@ async function handleInviteModal(
 ): Promise<{ sentWithNote: boolean; noteSource: 'template' | 'ai' | null }> {
     if (dryRun) return { sentWithNote: false, noteSource: null };
 
-    // Controlla se c'è il bottone "Add a note"
+    // Controlla se c'è il bottone "Add a note" (con retry breve se il modale sta caricando)
     const addNoteBtn = page.locator(SELECTORS.addNoteButton).first();
-    if (config.inviteWithNote && await addNoteBtn.count() > 0) {
+    let canAddNote = await addNoteBtn.count() > 0;
+    if (config.inviteWithNote && !canAddNote) {
+        await page.waitForSelector(SELECTORS.addNoteButton, { timeout: 2000 }).catch(() => null);
+        canAddNote = await addNoteBtn.count() > 0;
+    }
+
+    if (config.inviteWithNote && canAddNote) {
+        await humanMouseMove(page, SELECTORS.addNoteButton);
+        await humanDelay(page, 150, 350);
         await addNoteBtn.click();
         await humanDelay(page, 600, 1200);
 
@@ -82,6 +108,7 @@ async function handleInviteModal(
         const sendNoteBtn = page.locator(SELECTORS.sendWithNote).first();
         if (await sendNoteBtn.count() > 0) {
             await humanMouseMove(page, SELECTORS.sendWithNote);
+            await humanDelay(page, 120, 320);
             await sendNoteBtn.click();
             return { sentWithNote: true, noteSource: personalizedNote.source };
         }
@@ -94,12 +121,16 @@ async function handleInviteModal(
     // Fallback: invia senza nota
     const sendWithoutNote = page.locator(SELECTORS.sendWithoutNote).first();
     if (await sendWithoutNote.count() > 0) {
+        await humanMouseMove(page, SELECTORS.sendWithoutNote);
+        await humanDelay(page, 120, 300);
         await sendWithoutNote.click();
         return { sentWithNote: false, noteSource: null };
     }
 
     const fallback = page.locator(SELECTORS.sendFallback).first();
     if (await fallback.count() > 0) {
+        await humanMouseMove(page, SELECTORS.sendFallback);
+        await humanDelay(page, 120, 300);
         await fallback.click();
         return { sentWithNote: false, noteSource: null };
     }
@@ -149,6 +180,22 @@ export async function processInviteJob(payload: InviteJobPayload, context: Worke
         context.dryRun,
         context.localDate,
     );
+
+    if (!context.dryRun) {
+        const weeklyLimitReached = await detectWeeklyInviteLimit(context.session.page);
+        if (weeklyLimitReached) {
+            await pauseAutomation(
+                'WEEKLY_INVITE_LIMIT_REACHED',
+                {
+                    leadId: lead.id,
+                    linkedinUrl: lead.linkedin_url,
+                    accountId: context.accountId,
+                },
+                7 * 24 * 60
+            );
+            throw new RetryableWorkerError('Limite settimanale inviti raggiunto', 'WEEKLY_LIMIT_REACHED');
+        }
+    }
 
     await humanDelay(context.session.page, 1200, 2200);
     const proofOfSend = context.dryRun ? true : await detectInviteProof(context.session.page);

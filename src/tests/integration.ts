@@ -29,18 +29,57 @@ async function run(): Promise<void> {
     });
     assert.equal(inserted, true);
 
+    const syncedLeadInsert = await repositories.upsertSalesNavigatorLead({
+        accountName: 'Sales Co',
+        firstName: 'Luca',
+        lastName: 'Verdi',
+        jobTitle: 'Head of Sales',
+        website: '',
+        linkedinUrl: 'https://www.linkedin.com/in/luca-verdi-sync-test/',
+        listName: 'sales-list',
+    });
+    assert.equal(syncedLeadInsert.action, 'inserted');
+
+    const syncedLeadUpdate = await repositories.upsertSalesNavigatorLead({
+        accountName: 'Sales Company Spa',
+        firstName: 'Luca',
+        lastName: 'Verdi',
+        jobTitle: 'VP Sales',
+        website: '',
+        linkedinUrl: 'https://www.linkedin.com/in/luca-verdi-sync-test/',
+        listName: 'sales-list-updated',
+    });
+    assert.equal(syncedLeadUpdate.action === 'updated' || syncedLeadUpdate.action === 'unchanged', true);
+
+    const syncedLead = await repositories.getLeadByLinkedinUrl('https://www.linkedin.com/in/luca-verdi-sync-test/');
+    assert.ok(syncedLead);
+    if (!syncedLead) {
+        throw new Error('Lead sincronizzato non trovato');
+    }
+    assert.equal(syncedLead.list_name, 'sales-list-updated');
+
+    const salesNavList = await repositories.upsertSalesNavList(
+        'sales-list-updated',
+        'https://www.linkedin.com/sales/lists/people/123456789/'
+    );
+    await repositories.linkLeadToSalesNavList(salesNavList.id, syncedLead.id);
+    const salesNavLists = await repositories.listSalesNavLists(10);
+    const linkedSalesList = salesNavLists.find((item) => item.id === salesNavList.id);
+    assert.ok(linkedSalesList);
+    assert.equal((linkedSalesList?.leads_count ?? 0) >= 1, true);
+
     await repositories.promoteNewLeadsToReadyInvite(10);
     const ready = await repositories.getLeadsByStatus('READY_INVITE', 10);
-    assert.equal(ready.length, 1);
+    assert.equal(ready.length >= 1, true);
 
-    const lead = ready[0];
+    const lead = ready.find((row) => row.linkedin_url.includes('/in/mario-rossi-test/')) ?? ready[0];
     await stateService.transitionLead(lead.id, 'INVITED', 'integration_invite');
     const invited = await repositories.getLeadsByStatus('INVITED', 10);
     assert.equal(invited.length, 1);
 
     await stateService.reconcileLeadStatus(lead.id, 'READY_INVITE', 'integration_reconcile_back');
     const readyAgain = await repositories.getLeadsByStatus('READY_INVITE', 10);
-    assert.equal(readyAgain.length, 1);
+    assert.equal(readyAgain.some((row) => row.id === lead.id), true);
     await stateService.transitionLead(lead.id, 'INVITED', 'integration_invite_again');
 
     const queued = await repositories.enqueueJob(

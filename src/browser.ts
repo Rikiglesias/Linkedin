@@ -184,7 +184,15 @@ export async function detectChallenge(page: Page): Promise<boolean> {
     }
 
     const selectorMatches = await page.locator(SELECTORS.challengeSignals).count();
-    return selectorMatches > 0;
+    if (selectorMatches > 0) {
+        return true;
+    }
+
+    const pageText = (await page.textContent('body').catch(() => ''))?.toLowerCase() ?? '';
+    if (!pageText) {
+        return false;
+    }
+    return /temporarily blocked|temporaneamente bloccato|restricted your account|account limitato/.test(pageText);
 }
 
 // ─── Log-normale (Box-Muller) ─────────────────────────────────────────────────
@@ -233,9 +241,47 @@ export async function humanMouseMove(page: Page, targetSelector: string): Promis
         // Target finale (centro dell'elemento con micro-offset)
         const finalX = box.x + box.width / 2 + (Math.random() * 6 - 3);
         const finalY = box.y + box.height / 2 + (Math.random() * 4 - 2);
+        // Piccola probabilità di overshoot + correzione, per ridurre pattern troppo perfetti.
+        if (Math.random() < 0.18) {
+            const overshootX = finalX + (Math.random() * 18 - 9);
+            const overshootY = finalY + (Math.random() * 14 - 7);
+            await page.mouse.move(overshootX, overshootY, { steps: 8 });
+            await page.waitForTimeout(25 + Math.random() * 70);
+        }
         await page.mouse.move(finalX, finalY, { steps: 12 });
     } catch {
         // Se l'elemento non è visibile, ignora silenziosamente
+    }
+}
+
+/**
+ * Movimento cursor casuale non legato a click, utile per spezzare pattern
+ * durante pause lunghe tra job.
+ */
+export async function randomMouseMove(page: Page): Promise<void> {
+    try {
+        const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
+        const startX = Math.random() * viewport.width;
+        const startY = Math.random() * viewport.height;
+        const endX = Math.random() * viewport.width;
+        const endY = Math.random() * viewport.height;
+
+        await page.mouse.move(startX, startY, { steps: 6 });
+        await page.waitForTimeout(30 + Math.random() * 80);
+
+        const midX = startX + (endX - startX) * 0.5 + (Math.random() * 20 - 10);
+        const midY = startY + (endY - startY) * 0.5 + (Math.random() * 20 - 10);
+        await page.mouse.move(midX, midY, { steps: 5 });
+        await page.waitForTimeout(20 + Math.random() * 60);
+        if (Math.random() < 0.14) {
+            const overshootX = endX + (Math.random() * 24 - 12);
+            const overshootY = endY + (Math.random() * 18 - 9);
+            await page.mouse.move(overshootX, overshootY, { steps: 6 });
+            await page.waitForTimeout(20 + Math.random() * 60);
+        }
+        await page.mouse.move(endX, endY, { steps: 8 });
+    } catch {
+        // Non bloccante: se il mouse move fallisce, continua.
     }
 }
 
@@ -293,7 +339,20 @@ export async function simulateHumanReading(page: Page): Promise<void> {
 export async function interJobDelay(page: Page): Promise<void> {
     const base = Math.floor(Math.random() * 60_000) + 30_000;
     const longBreak = Math.random() < 0.08 ? Math.floor(Math.random() * 240_000) + 180_000 : 0;
-    await page.waitForTimeout(base + longBreak);
+    const totalDelay = base + longBreak;
+
+    if (Math.random() < 0.35) {
+        await randomMouseMove(page);
+    }
+
+    const split = Math.floor(totalDelay * (0.4 + Math.random() * 0.2));
+    await page.waitForTimeout(Math.max(0, split));
+
+    if (Math.random() < 0.25) {
+        await randomMouseMove(page);
+    }
+
+    await page.waitForTimeout(Math.max(0, totalDelay - split));
 }
 
 export async function runSelectorCanary(page: Page): Promise<boolean> {

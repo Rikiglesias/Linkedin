@@ -1,4 +1,7 @@
 import assert from 'assert';
+import fs from 'fs';
+import path from 'path';
+import { AccountProfileConfig, config } from '../config';
 import { isValidLeadTransition } from '../core/leadStateService';
 import { calculateDynamicBudget, evaluateCooldownDecision, evaluateRisk } from '../risk/riskEngine';
 import { hashMessage, validateMessageContent } from '../validation/messageValidator';
@@ -8,7 +11,8 @@ import { buildPersonalizedInviteNote } from '../ai/inviteNotePersonalizer';
 import { evaluateAiGuardian } from '../ai/guardian';
 import { ScheduleResult } from '../core/scheduler';
 import { LeadRecord } from '../types/domain';
-import { getProxy, getProxyFailoverChain } from '../proxyManager';
+import { getSchedulingAccountIds, pickAccountIdForLead } from '../accountManager';
+import { getProxy, getProxyFailoverChain, getProxyPoolStatus, markProxyFailed, markProxyHealthy } from '../proxyManager';
 import { generateInviteNote } from '../noteGenerator';
 
 async function run(): Promise<void> {
@@ -115,13 +119,105 @@ async function run(): Promise<void> {
     const guardian = await evaluateAiGuardian('all', schedule);
     assert.equal(guardian.decision !== null, true);
 
-    // ── proxyManager ─────────────────────────────────────────────────────────
-    // Senza PROXY_URL configurato, deve tornare undefined
-    const proxy = getProxy();
-    assert.equal(proxy === undefined || typeof proxy.server === 'string', true);
-    const proxyChain = getProxyFailoverChain();
-    assert.equal(Array.isArray(proxyChain), true);
-    assert.equal(proxyChain.every((entry) => typeof entry.server === 'string'), true);
+    // ── accountManager: round-robin uniforme/stabile ────────────────────────
+    const originalMultiAccountEnabled = config.multiAccountEnabled;
+    const originalAccountProfiles = config.accountProfiles.slice();
+    const originalSessionDir = config.sessionDir;
+    const mockedProfiles: AccountProfileConfig[] = [
+        {
+            id: 'main',
+            sessionDir: path.resolve(process.cwd(), 'data', 'session_test_main'),
+            proxyUrl: '',
+            proxyUsername: '',
+            proxyPassword: '',
+        },
+        {
+            id: 'backup',
+            sessionDir: path.resolve(process.cwd(), 'data', 'session_test_backup'),
+            proxyUrl: '',
+            proxyUsername: '',
+            proxyPassword: '',
+        },
+    ];
+    try {
+        config.multiAccountEnabled = true;
+        config.accountProfiles = mockedProfiles;
+        config.sessionDir = path.resolve(process.cwd(), 'data', 'session_test_default');
+        const schedulingAccounts = getSchedulingAccountIds();
+        assert.deepEqual(schedulingAccounts, ['main', 'backup']);
+        const assignmentCounts = new Map<string, number>();
+        for (let leadId = 1; leadId <= 200; leadId++) {
+            const assigned = pickAccountIdForLead(leadId);
+            assert.equal(assigned, pickAccountIdForLead(leadId)); // mapping stabile per lead
+            assignmentCounts.set(assigned, (assignmentCounts.get(assigned) ?? 0) + 1);
+        }
+        const mainCount = assignmentCounts.get('main') ?? 0;
+        const backupCount = assignmentCounts.get('backup') ?? 0;
+        assert.equal(Math.abs(mainCount - backupCount) <= 1, true);
+    } finally {
+        config.multiAccountEnabled = originalMultiAccountEnabled;
+        config.accountProfiles = originalAccountProfiles;
+        config.sessionDir = originalSessionDir;
+    }
+
+    // ── proxyManager: PROXY_LIST/PROXY_URL + cooldown failover ──────────────
+    const originalProxyListPath = config.proxyListPath;
+    const originalProxyUrl = config.proxyUrl;
+    const originalProxyUsername = config.proxyUsername;
+    const originalProxyPassword = config.proxyPassword;
+    const proxyListPath = path.resolve(process.cwd(), 'data', 'test_proxy_list.txt');
+    fs.writeFileSync(
+        proxyListPath,
+        [
+            '# proxy pool test',
+            '127.0.0.1:8080:userA:passA',
+            'http://127.0.0.2:8081',
+            'http://127.0.0.2:8081',
+        ].join('\n'),
+        'utf8'
+    );
+    try {
+        config.proxyListPath = proxyListPath;
+        config.proxyUrl = 'http://unused-fallback-proxy:9999';
+        config.proxyUsername = '';
+        config.proxyPassword = '';
+
+        const poolFromList = getProxyPoolStatus();
+        assert.equal(poolFromList.configured, true);
+        assert.equal(poolFromList.total, 2);
+
+        const chainFromList = getProxyFailoverChain();
+        assert.equal(chainFromList.length, 2);
+        const failedProxy = chainFromList[0];
+        markProxyFailed(failedProxy);
+        const poolAfterFailure = getProxyPoolStatus();
+        assert.equal(poolAfterFailure.cooling >= 1, true);
+
+        const chainAfterFailure = getProxyFailoverChain();
+        if (chainAfterFailure.length > 1) {
+            assert.equal(chainAfterFailure[0].server !== failedProxy.server, true);
+        }
+        markProxyHealthy(failedProxy);
+
+        config.proxyListPath = '';
+        config.proxyUrl = 'http://singleUser:singlePass@127.0.0.3:8082';
+        const poolFromUrl = getProxyPoolStatus();
+        assert.equal(poolFromUrl.configured, true);
+        assert.equal(poolFromUrl.total, 1);
+
+        const singleProxy = getProxy();
+        assert.equal(singleProxy?.server, 'http://127.0.0.3:8082');
+        assert.equal(singleProxy?.username, 'singleUser');
+        assert.equal(singleProxy?.password, 'singlePass');
+    } finally {
+        config.proxyListPath = originalProxyListPath;
+        config.proxyUrl = originalProxyUrl;
+        config.proxyUsername = originalProxyUsername;
+        config.proxyPassword = originalProxyPassword;
+        if (fs.existsSync(proxyListPath)) {
+            fs.unlinkSync(proxyListPath);
+        }
+    }
 
     // ── noteGenerator ────────────────────────────────────────────────────────
     const note1 = generateInviteNote('Mario');

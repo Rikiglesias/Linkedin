@@ -7,6 +7,7 @@ import { buildFunnelReport, runSiteCheck } from './core/audit';
 import { runCompanyEnrichmentBatch } from './core/companyEnrichment';
 import { runWorkflow } from './core/orchestrator';
 import { runDoctor } from './core/doctor';
+import { runSalesNavigatorListSync } from './core/salesNavigatorSync';
 import { reconcileLeadStatus } from './core/leadStateService';
 import {
     acquireRuntimeLock,
@@ -14,20 +15,25 @@ import {
     countCompanyTargets,
     getAutomationPauseState,
     getDailyStatsSnapshot,
+    getLeadById,
     getJobStatusCounts,
+    getSalesNavListByName,
     getRuntimeLock,
     getRuntimeFlag,
     getLeadsWithSalesNavigatorUrls,
     heartbeatRuntimeLock,
+    linkLeadToSalesNavList,
     listCompanyTargets,
     listLeadCampaignConfigs,
     listOpenIncidents,
+    listSalesNavLists,
     releaseRuntimeLock,
     recoverStuckJobs,
     resolveIncident,
     clearAutomationPause as clearPauseState,
     setAutomationPause,
     setRuntimeFlag,
+    upsertSalesNavList,
     updateLeadLinkedinUrl,
     updateLeadCampaignConfig,
 } from './core/repositories';
@@ -37,6 +43,9 @@ import { WorkflowSelection } from './core/scheduler';
 import { isProfileUrl, isSalesNavigatorUrl, normalizeLinkedInUrl } from './linkedinUrl';
 import { Page } from 'playwright';
 import { getAccountProfileById, getRuntimeAccountProfiles } from './accountManager';
+import { getProxyFailoverChain, getProxyPoolStatus } from './proxyManager';
+import { runRandomLinkedinActivity } from './workers/randomActivityWorker';
+import { addLeadToSalesNavList, createSalesNavList } from './salesnav/listActions';
 
 // Graceful shutdown: chiude DB prima di uscire per non lasciare job RUNNING.
 let shuttingDown = false;
@@ -202,6 +211,7 @@ const WORKFLOW_RUNNER_LOCK_KEY = 'workflow.runner';
 const WORKFLOW_RUNNER_MIN_TTL_SECONDS = 120;
 const WORKFLOW_RUNNER_HEARTBEAT_MS = 30_000;
 const AUTO_SITE_CHECK_LAST_RUN_KEY = 'site_check.last_run_at';
+const SALESNAV_LAST_SYNC_KEY = 'salesnav.last_sync_at';
 
 function createLockOwnerId(command: string): string {
     const suffix = randomUUID().split('-')[0];
@@ -260,6 +270,12 @@ interface AutoSiteCheckDecision {
     hoursSinceLastRun: number | null;
 }
 
+interface SalesNavSyncDecision {
+    shouldRun: boolean;
+    reason: string;
+    hoursSinceLastRun: number | null;
+}
+
 async function evaluateAutoSiteCheckDecision(dryRun: boolean): Promise<AutoSiteCheckDecision> {
     if (dryRun) {
         return { shouldRun: false, reason: 'dry_run', hoursSinceLastRun: null };
@@ -280,6 +296,40 @@ async function evaluateAutoSiteCheckDecision(dryRun: boolean): Promise<AutoSiteC
 
     const elapsedHours = (Date.now() - parsedMs) / (1000 * 60 * 60);
     if (elapsedHours >= config.autoSiteCheckIntervalHours) {
+        return {
+            shouldRun: true,
+            reason: 'interval_elapsed',
+            hoursSinceLastRun: Number.parseFloat(elapsedHours.toFixed(2)),
+        };
+    }
+
+    return {
+        shouldRun: false,
+        reason: 'interval_not_elapsed',
+        hoursSinceLastRun: Number.parseFloat(elapsedHours.toFixed(2)),
+    };
+}
+
+async function evaluateSalesNavSyncDecision(dryRun: boolean): Promise<SalesNavSyncDecision> {
+    if (dryRun) {
+        return { shouldRun: false, reason: 'dry_run', hoursSinceLastRun: null };
+    }
+    if (!config.salesNavSyncEnabled) {
+        return { shouldRun: false, reason: 'salesnav_sync_disabled', hoursSinceLastRun: null };
+    }
+
+    const lastRunRaw = await getRuntimeFlag(SALESNAV_LAST_SYNC_KEY);
+    if (!lastRunRaw) {
+        return { shouldRun: true, reason: 'never_run', hoursSinceLastRun: null };
+    }
+
+    const parsedMs = Date.parse(lastRunRaw);
+    if (!Number.isFinite(parsedMs)) {
+        return { shouldRun: true, reason: 'invalid_last_run', hoursSinceLastRun: null };
+    }
+
+    const elapsedHours = (Date.now() - parsedMs) / (1000 * 60 * 60);
+    if (elapsedHours >= config.salesNavSyncIntervalHours) {
         return {
             shouldRun: true,
             reason: 'interval_elapsed',
@@ -326,10 +376,17 @@ function printHelp(): void {
     console.log('  login [timeoutSec] [--account <id_account>]');
     console.log('  doctor');
     console.log('  status');
+    console.log('  proxy-status');
     console.log('  funnel');
     console.log('  site-check [limit] [--fix]');
     console.log('  state-sync [limit] [--fix]');
     console.log('  salesnav-resolve [limit] [--fix] [--dry-run]');
+    console.log('  salesnav-sync [listName] [--url <salesnav_list_url>] [--max-pages <n>] [--limit <n>] [--account <id>] [--dry-run]');
+    console.log('  salesnav-lists [--limit <n>]');
+    console.log('  salesnav-create-list <nome> [--account <id>]');
+    console.log('  salesnav-add-lead <leadId> <listName> [--account <id>]');
+    console.log('  salesnav-add-to-list <leadId> <listName> [--account <id>]  # alias');
+    console.log('  random-activity [--account <id>] [--max-actions <n>] [--dry-run]');
     console.log('  enrich-targets [limit] [--dry-run]');
     console.log('  pause [minutes|indefinite] [reason]');
     console.log('  resume');
@@ -509,6 +566,29 @@ async function runLoopCommand(args: string[]): Promise<void> {
                         console.log('[LOOP] auto-site-check skipped', autoSiteCheck);
                     }
 
+                    if (config.salesNavSyncEnabled && (workflow === 'all' || workflow === 'invite')) {
+                        const salesNavDecision = await evaluateSalesNavSyncDecision(dryRun);
+                        if (salesNavDecision.shouldRun) {
+                            const salesNavSyncReport = await runSalesNavigatorListSync({
+                                listName: config.salesNavSyncListName,
+                                listUrl: config.salesNavSyncListUrl || undefined,
+                                maxPages: config.salesNavSyncMaxPages,
+                                maxLeadsPerList: config.salesNavSyncLimit,
+                                dryRun,
+                                accountId: config.salesNavSyncAccountId || undefined,
+                            });
+                            await setRuntimeFlag(SALESNAV_LAST_SYNC_KEY, new Date().toISOString());
+                            console.log('[LOOP] salesnav-sync', {
+                                reason: salesNavDecision.reason,
+                                intervalHours: config.salesNavSyncIntervalHours,
+                                limitPerList: config.salesNavSyncLimit,
+                                report: salesNavSyncReport,
+                            });
+                        } else {
+                            console.log('[LOOP] salesnav-sync skipped', salesNavDecision);
+                        }
+                    }
+
                     if (config.companyEnrichmentEnabled && (workflow === 'all' || workflow === 'invite')) {
                         const enrichment = await runCompanyEnrichmentBatch({
                             limit: config.companyEnrichmentBatch,
@@ -518,6 +598,16 @@ async function runLoopCommand(args: string[]): Promise<void> {
                         console.log('[LOOP] enrichment', enrichment);
                     }
                     await runWorkflow({ workflow, dryRun });
+
+                    if (!dryRun && config.randomActivityEnabled && Math.random() <= config.randomActivityProbability) {
+                        const randomActivityReport = await runRandomLinkedinActivity({
+                            accountId: config.salesNavSyncAccountId || undefined,
+                            maxActions: config.randomActivityMaxActions,
+                            dryRun,
+                        });
+                        console.log('[LOOP] random-activity', randomActivityReport);
+                    }
+
                     console.log(`[LOOP] cycle=${cycle} completed`);
                 }
             } catch (error) {
@@ -604,6 +694,166 @@ async function runStateSyncCommand(args: string[]): Promise<void> {
         autoFix,
         report,
     }, null, 2));
+}
+
+async function runSalesNavSyncCommand(args: string[]): Promise<void> {
+    const positional = getPositionalArgs(args);
+    const dryRun = hasOption(args, '--dry-run') || positional.includes('dry-run') || positional.includes('dry');
+    const listName = getOptionValue(args, '--list') ?? positional[0] ?? config.salesNavSyncListName;
+    const listUrl = getOptionValue(args, '--url') ?? positional[1] ?? config.salesNavSyncListUrl;
+    const maxPagesRaw = getOptionValue(args, '--max-pages');
+    const maxPages = maxPagesRaw ? Math.max(1, parseIntStrict(maxPagesRaw, '--max-pages')) : config.salesNavSyncMaxPages;
+    const limitRaw = getOptionValue(args, '--limit');
+    const maxLeadsPerList = limitRaw ? Math.max(1, parseIntStrict(limitRaw, '--limit')) : config.salesNavSyncLimit;
+    const accountId = getOptionValue(args, '--account') ?? config.salesNavSyncAccountId;
+
+    const report = await runSalesNavigatorListSync({
+        listName: listName?.trim() ? listName : null,
+        listUrl: listUrl?.trim() ? listUrl : null,
+        maxPages,
+        maxLeadsPerList,
+        dryRun,
+        accountId: accountId || undefined,
+    });
+    console.log(JSON.stringify(report, null, 2));
+}
+
+async function runSalesNavListsCommand(args: string[]): Promise<void> {
+    const positional = getPositionalArgs(args);
+    const limitRaw = getOptionValue(args, '--limit') ?? positional[0];
+    const limit = limitRaw ? Math.max(1, parseIntStrict(limitRaw, '--limit')) : 200;
+    const lists = await listSalesNavLists(limit);
+    console.log(JSON.stringify({ total: lists.length, items: lists }, null, 2));
+}
+
+async function runSalesNavCreateListCommand(args: string[]): Promise<void> {
+    const positional = getPositionalArgs(args);
+    const listName = getOptionValue(args, '--name') ?? positional[0];
+    const accountId = getOptionValue(args, '--account') ?? config.salesNavSyncAccountId;
+    if (!listName || !listName.trim()) {
+        throw new Error('Specifica nome lista: salesnav-create-list <nome>');
+    }
+    const result = await createSalesNavList(listName, accountId || undefined);
+    let dbListId: number | null = null;
+    let dbSyncError: string | null = null;
+
+    if (result.ok) {
+        try {
+            const normalizedName = (result.listName ?? listName).trim();
+            if (result.listUrl) {
+                const listRow = await upsertSalesNavList(normalizedName, result.listUrl);
+                dbListId = listRow.id;
+            } else {
+                const existing = await getSalesNavListByName(normalizedName);
+                dbListId = existing?.id ?? null;
+            }
+        } catch (error) {
+            dbSyncError = error instanceof Error ? error.message : String(error);
+        }
+    }
+
+    console.log(JSON.stringify({
+        ...result,
+        dbSync: {
+            listId: dbListId,
+            synced: dbListId !== null,
+            error: dbSyncError,
+        },
+    }, null, 2));
+}
+
+async function runSalesNavAddLeadCommand(args: string[]): Promise<void> {
+    const positional = getPositionalArgs(args);
+    const leadIdRaw = getOptionValue(args, '--lead-id') ?? positional[0];
+    const listName = getOptionValue(args, '--list') ?? positional[1];
+    const accountId = getOptionValue(args, '--account') ?? config.salesNavSyncAccountId;
+
+    if (!leadIdRaw) {
+        throw new Error('Specifica leadId: salesnav-add-lead <leadId> <listName>');
+    }
+    if (!listName || !listName.trim()) {
+        throw new Error('Specifica listName: salesnav-add-lead <leadId> <listName>');
+    }
+
+    const leadId = Math.max(1, parseIntStrict(leadIdRaw, '--lead-id'));
+    const lead = await getLeadById(leadId);
+    if (!lead) {
+        throw new Error(`Lead non trovato: ${leadId}`);
+    }
+
+    const result = await addLeadToSalesNavList(lead.linkedin_url, listName, accountId || undefined);
+    const targetListName = (result.listName ?? listName).trim();
+    let dbListId: number | null = null;
+    let dbLinked = false;
+    let dbSyncError: string | null = null;
+
+    if (result.ok) {
+        try {
+            let listRow = await getSalesNavListByName(targetListName);
+            if (!listRow && result.listUrl) {
+                listRow = await upsertSalesNavList(targetListName, result.listUrl);
+            }
+            if (listRow) {
+                dbListId = listRow.id;
+                await linkLeadToSalesNavList(listRow.id, leadId);
+                dbLinked = true;
+            }
+        } catch (error) {
+            dbSyncError = error instanceof Error ? error.message : String(error);
+        }
+    }
+
+    console.log(JSON.stringify({
+        leadId,
+        listName,
+        leadUrl: lead.linkedin_url,
+        dbSync: {
+            listId: dbListId,
+            linked: dbLinked,
+            error: dbSyncError,
+        },
+        ...result,
+    }, null, 2));
+}
+
+async function runProxyStatusCommand(): Promise<void> {
+    const status = getProxyPoolStatus();
+    const failoverChain = getProxyFailoverChain().map((proxy, index) => ({
+        order: index + 1,
+        server: proxy.server,
+        auth: !!proxy.username || !!proxy.password,
+    }));
+
+    console.log(JSON.stringify({
+        ...status,
+        failoverChain,
+    }, null, 2));
+}
+
+async function runRandomActivityCommand(args: string[]): Promise<void> {
+    const positional = getPositionalArgs(args);
+    const maxActionsRaw = getOptionValue(args, '--max-actions')
+        ?? getOptionValue(args, '--actions')
+        ?? positional.find((value) => /^\d+$/.test(value));
+    const accountId = getOptionValue(args, '--account')
+        ?? positional.find((value) => {
+            const normalized = value.toLowerCase();
+            if (normalized === 'dry' || normalized === 'dry-run') return false;
+            return !value.startsWith('--') && !/^\d+$/.test(value);
+        })
+        ?? config.salesNavSyncAccountId
+        ?? undefined;
+    const dryRun = hasOption(args, '--dry-run') || positional.includes('dry') || positional.includes('dry-run');
+    const maxActions = maxActionsRaw
+        ? Math.max(1, parseIntStrict(maxActionsRaw, '--max-actions'))
+        : config.randomActivityMaxActions;
+
+    const report = await runRandomLinkedinActivity({
+        accountId: accountId || undefined,
+        maxActions,
+        dryRun,
+    });
+    console.log(JSON.stringify(report, null, 2));
 }
 
 async function runSalesNavResolveCommand(args: string[]): Promise<void> {
@@ -754,6 +1004,7 @@ async function runStatusCommand(): Promise<void> {
         syncStatus,
         runnerLock,
         autoSiteCheckLastRunAt,
+        salesNavSyncLastRunAt,
     ] = await Promise.all([
         getRuntimeFlag('account_quarantine'),
         getAutomationPauseState(),
@@ -763,6 +1014,7 @@ async function runStatusCommand(): Promise<void> {
         getEventSyncStatus(),
         getRuntimeLock(WORKFLOW_RUNNER_LOCK_KEY),
         getRuntimeFlag(AUTO_SITE_CHECK_LAST_RUN_KEY),
+        getRuntimeFlag(SALESNAV_LAST_SYNC_KEY),
     ]);
 
     const payload = {
@@ -776,6 +1028,7 @@ async function runStatusCommand(): Promise<void> {
         pause: pauseState,
         openIncidents: incidents.length,
         jobs: jobStatusCounts,
+        proxy: getProxyPoolStatus(),
         dailyStats,
         sync: syncStatus,
         runnerLock,
@@ -791,6 +1044,21 @@ async function runStatusCommand(): Promise<void> {
             postRunEnabled: config.postRunStateSyncEnabled,
             postRunLimit: config.postRunStateSyncLimit,
             postRunFix: config.postRunStateSyncFix,
+        },
+        salesNavSync: {
+            enabled: config.salesNavSyncEnabled,
+            listName: config.salesNavSyncListName,
+            listUrlConfigured: !!config.salesNavSyncListUrl.trim(),
+            maxPages: config.salesNavSyncMaxPages,
+            intervalHours: config.salesNavSyncIntervalHours,
+            limitPerList: config.salesNavSyncLimit,
+            accountId: config.salesNavSyncAccountId || null,
+            lastRunAt: salesNavSyncLastRunAt,
+        },
+        randomActivity: {
+            enabled: config.randomActivityEnabled,
+            probability: config.randomActivityProbability,
+            maxActions: config.randomActivityMaxActions,
         },
         ai: {
             personalizationEnabled: config.aiPersonalizationEnabled,
@@ -918,6 +1186,21 @@ async function main(): Promise<void> {
         case 'state-sync':
             await runStateSyncCommand(commandArgs);
             break;
+        case 'salesnav-sync':
+            await runSalesNavSyncCommand(commandArgs);
+            break;
+        case 'salesnav-lists':
+            await runSalesNavListsCommand(commandArgs);
+            break;
+        case 'salesnav-create-list':
+            await runSalesNavCreateListCommand(commandArgs);
+            break;
+        case 'salesnav-add-lead':
+            await runSalesNavAddLeadCommand(commandArgs);
+            break;
+        case 'salesnav-add-to-list':
+            await runSalesNavAddLeadCommand(commandArgs);
+            break;
         case 'salesnav-resolve':
             await runSalesNavResolveCommand(commandArgs);
             break;
@@ -926,6 +1209,12 @@ async function main(): Promise<void> {
             break;
         case 'status':
             await runStatusCommand();
+            break;
+        case 'proxy-status':
+            await runProxyStatusCommand();
+            break;
+        case 'random-activity':
+            await runRandomActivityCommand(commandArgs);
             break;
         case 'pause':
             await runPauseCommand(commandArgs);

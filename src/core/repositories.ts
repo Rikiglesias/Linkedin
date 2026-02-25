@@ -120,6 +120,96 @@ export async function updateLeadCampaignConfig(listName: string, patch: UpdateLe
     return updated;
 }
 
+export async function upsertSalesNavList(name: string, url: string): Promise<SalesNavListRecord> {
+    const db = await getDatabase();
+    const normalizedName = name.trim();
+    const normalizedUrl = normalizeLinkedInUrl(url.trim());
+    if (!normalizedName || !normalizedUrl) {
+        throw new Error('upsertSalesNavList: name/url mancanti');
+    }
+
+    await db.run(
+        `
+        INSERT INTO salesnav_lists (name, url)
+        VALUES (?, ?)
+        ON CONFLICT(name) DO UPDATE SET
+            url = excluded.url,
+            updated_at = CURRENT_TIMESTAMP
+    `,
+        [normalizedName, normalizedUrl]
+    );
+
+    const row = await db.get<SalesNavListRecord>(
+        `SELECT id, name, url, last_synced_at, created_at, updated_at FROM salesnav_lists WHERE name = ?`,
+        [normalizedName]
+    );
+    if (!row) {
+        throw new Error(`Lista SalesNav non trovata dopo upsert: ${normalizedName}`);
+    }
+    return row;
+}
+
+export async function markSalesNavListSynced(listId: number): Promise<void> {
+    const db = await getDatabase();
+    await db.run(
+        `
+        UPDATE salesnav_lists
+        SET last_synced_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+    `,
+        [listId]
+    );
+}
+
+export async function linkLeadToSalesNavList(listId: number, leadId: number): Promise<void> {
+    const db = await getDatabase();
+    await db.run(
+        `
+        INSERT OR IGNORE INTO salesnav_list_items (list_id, lead_id)
+        VALUES (?, ?)
+    `,
+        [listId, leadId]
+    );
+}
+
+export async function listSalesNavLists(limit: number = 200): Promise<SalesNavListSummary[]> {
+    const db = await getDatabase();
+    const safeLimit = Math.max(1, limit);
+    return db.all<SalesNavListSummary[]>(
+        `
+        SELECT
+            l.id,
+            l.name,
+            l.url,
+            l.last_synced_at,
+            l.created_at,
+            l.updated_at,
+            COUNT(i.id) as leads_count
+        FROM salesnav_lists l
+        LEFT JOIN salesnav_list_items i ON i.list_id = l.id
+        GROUP BY l.id, l.name, l.url, l.last_synced_at, l.created_at, l.updated_at
+        ORDER BY
+            CASE WHEN l.last_synced_at IS NULL THEN 0 ELSE 1 END ASC,
+            l.last_synced_at ASC,
+            l.name ASC
+        LIMIT ?
+    `,
+        [safeLimit]
+    );
+}
+
+export async function getSalesNavListByName(name: string): Promise<SalesNavListRecord | null> {
+    const db = await getDatabase();
+    const normalizedName = name.trim();
+    if (!normalizedName) return null;
+    const row = await db.get<SalesNavListRecord>(
+        `SELECT id, name, url, last_synced_at, created_at, updated_at FROM salesnav_lists WHERE name = ? LIMIT 1`,
+        [normalizedName]
+    );
+    return row ?? null;
+}
+
 export interface AddLeadInput {
     accountName: string;
     firstName: string;
@@ -128,6 +218,34 @@ export interface AddLeadInput {
     website: string;
     linkedinUrl: string;
     listName: string;
+}
+
+export interface UpsertSalesNavigatorLeadInput {
+    accountName: string;
+    firstName: string;
+    lastName: string;
+    jobTitle: string;
+    website: string;
+    linkedinUrl: string;
+    listName: string;
+}
+
+export interface UpsertSalesNavigatorLeadResult {
+    leadId: number;
+    action: 'inserted' | 'updated' | 'unchanged';
+}
+
+export interface SalesNavListRecord {
+    id: number;
+    name: string;
+    url: string;
+    last_synced_at: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface SalesNavListSummary extends SalesNavListRecord {
+    leads_count: number;
 }
 
 interface LeadListRow {
@@ -276,6 +394,127 @@ export async function addLead(input: AddLeadInput): Promise<boolean> {
     }
 
     return (result.changes ?? 0) > 0;
+}
+
+function normalizeTextValue(value: string): string {
+    return (value ?? '').trim();
+}
+
+function mergedLeadValue(current: string, incoming: string): string {
+    const normalizedIncoming = normalizeTextValue(incoming);
+    if (!normalizedIncoming) {
+        return current;
+    }
+    if (normalizeTextValue(current) === normalizedIncoming) {
+        return current;
+    }
+    return normalizedIncoming;
+}
+
+export async function getLeadByLinkedinUrl(linkedinUrl: string): Promise<LeadRecord | null> {
+    const db = await getDatabase();
+    const normalizedUrl = normalizeLinkedInUrl(linkedinUrl);
+    const lead = await db.get<LeadRecord>(`SELECT * FROM leads WHERE linkedin_url = ?`, [normalizedUrl]);
+    if (!lead) return null;
+    lead.status = normalizeLegacyStatus(lead.status);
+    return lead;
+}
+
+export async function upsertSalesNavigatorLead(input: UpsertSalesNavigatorLeadInput): Promise<UpsertSalesNavigatorLeadResult> {
+    const db = await getDatabase();
+    const listName = normalizeTextValue(input.listName) || 'default';
+    const linkedinUrl = normalizeLinkedInUrl(input.linkedinUrl);
+
+    return withTransaction(db, async () => {
+        await ensureLeadList(listName);
+        const existing = await db.get<LeadRecord>(`SELECT * FROM leads WHERE linkedin_url = ?`, [linkedinUrl]);
+
+        const normalizedAccountName = normalizeTextValue(input.accountName);
+        const normalizedFirstName = normalizeTextValue(input.firstName);
+        const normalizedLastName = normalizeTextValue(input.lastName);
+        const normalizedJobTitle = normalizeTextValue(input.jobTitle);
+        const normalizedWebsite = normalizeTextValue(input.website);
+
+        let leadId = 0;
+        let action: UpsertSalesNavigatorLeadResult['action'] = 'unchanged';
+
+        if (!existing) {
+            const insertResult = await db.run(
+                `
+                INSERT INTO leads
+                    (account_name, first_name, last_name, job_title, website, linkedin_url, status, list_name)
+                VALUES (?, ?, ?, ?, ?, ?, 'NEW', ?)
+            `,
+                [
+                    normalizedAccountName,
+                    normalizedFirstName,
+                    normalizedLastName,
+                    normalizedJobTitle,
+                    normalizedWebsite,
+                    linkedinUrl,
+                    listName,
+                ]
+            );
+            leadId = insertResult.lastID ?? 0;
+            action = 'inserted';
+        } else {
+            leadId = existing.id;
+            const nextAccountName = mergedLeadValue(existing.account_name, normalizedAccountName);
+            const nextFirstName = mergedLeadValue(existing.first_name, normalizedFirstName);
+            const nextLastName = mergedLeadValue(existing.last_name, normalizedLastName);
+            const nextJobTitle = mergedLeadValue(existing.job_title, normalizedJobTitle);
+            const nextWebsite = normalizeTextValue(existing.website)
+                ? existing.website
+                : mergedLeadValue(existing.website, normalizedWebsite);
+            const nextListName = listName;
+
+            const changed = nextAccountName !== existing.account_name
+                || nextFirstName !== existing.first_name
+                || nextLastName !== existing.last_name
+                || nextJobTitle !== existing.job_title
+                || nextWebsite !== existing.website
+                || nextListName !== existing.list_name;
+
+            if (changed) {
+                await db.run(
+                    `
+                    UPDATE leads
+                    SET account_name = ?,
+                        first_name = ?,
+                        last_name = ?,
+                        job_title = ?,
+                        website = ?,
+                        list_name = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                `,
+                    [
+                        nextAccountName,
+                        nextFirstName,
+                        nextLastName,
+                        nextJobTitle,
+                        nextWebsite,
+                        nextListName,
+                        leadId,
+                    ]
+                );
+                action = 'updated';
+            }
+        }
+
+        const linkedLead = leadId > 0
+            ? { id: leadId }
+            : await db.get<{ id: number }>(`SELECT id FROM leads WHERE linkedin_url = ?`, [linkedinUrl]);
+        const listRow = await db.get<{ id: number }>(`SELECT id FROM lead_lists WHERE name = ?`, [listName]);
+        if (linkedLead?.id && listRow?.id) {
+            await db.run(`INSERT OR IGNORE INTO list_leads (list_id, lead_id) VALUES (?, ?)`, [listRow.id, linkedLead.id]);
+        }
+
+        return {
+            leadId: linkedLead?.id ?? leadId,
+            action,
+        };
+    });
 }
 
 export async function addCompanyTarget(input: AddCompanyTargetInput): Promise<boolean> {

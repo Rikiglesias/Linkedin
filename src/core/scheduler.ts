@@ -409,7 +409,20 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
             let insertedForList = 0;
             for (const lead of readyToMessage) {
                 const acceptedAtDate = lead.accepted_at ? lead.accepted_at.slice(0, 10) : localDate;
-                const initialDelaySec = noBurstPlanner ? noBurstPlanner.nextDelaySec() : 0;
+                const minDelayHours = Math.max(0, config.messageScheduleMinDelayHours);
+                const maxDelayHours = Math.max(minDelayHours, config.messageScheduleMaxDelayHours);
+                let acceptanceDelaySec = 0;
+                if (maxDelayHours > 0) {
+                    const targetDelaySec = pickRandomInt(minDelayHours * 3600, maxDelayHours * 3600);
+                    const acceptedAtMs = lead.accepted_at ? Date.parse(lead.accepted_at) : NaN;
+                    const elapsedSec = Number.isFinite(acceptedAtMs)
+                        ? Math.max(0, Math.floor((Date.now() - acceptedAtMs) / 1000))
+                        : 0;
+                    acceptanceDelaySec = Math.max(0, targetDelaySec - elapsedSec);
+                }
+
+                const noBurstDelaySec = noBurstPlanner ? noBurstPlanner.nextDelaySec() : 0;
+                const initialDelaySec = acceptanceDelaySec + noBurstDelaySec;
                 const accountId = pickAccountIdForLead(lead.id);
                 const inserted = await enqueueJob(
                     'MESSAGE',

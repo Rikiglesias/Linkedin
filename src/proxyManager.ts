@@ -13,6 +13,14 @@ interface ProxyPoolCache {
     signature: string;
 }
 
+export interface ProxyPoolStatus {
+    configured: boolean;
+    total: number;
+    ready: number;
+    cooling: number;
+    rotationCursor: number;
+}
+
 const proxyFailureUntil = new Map<string, number>();
 let rotationCursor = 0;
 let cachedPool: ProxyPoolCache = { proxies: [], signature: '' };
@@ -208,4 +216,37 @@ export function markProxyFailed(proxy: ProxyConfig): void {
 
 export function markProxyHealthy(proxy: ProxyConfig): void {
     proxyFailureUntil.delete(proxyKey(proxy));
+}
+
+export function getProxyPoolStatus(): ProxyPoolStatus {
+    const pool = loadProxyPool();
+    if (pool.length === 0) {
+        return {
+            configured: false,
+            total: 0,
+            ready: 0,
+            cooling: 0,
+            rotationCursor: 0,
+        };
+    }
+
+    const now = Date.now();
+    let ready = 0;
+    let cooling = 0;
+    for (const proxy of pool) {
+        const cooldownUntil = proxyFailureUntil.get(proxyKey(proxy)) ?? 0;
+        if (cooldownUntil > now) {
+            cooling += 1;
+        } else {
+            ready += 1;
+        }
+    }
+
+    return {
+        configured: true,
+        total: pool.length,
+        ready,
+        cooling,
+        rotationCursor,
+    };
 }

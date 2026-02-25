@@ -66,6 +66,8 @@ export const SELECTORS = {
         'form[action*="checkpoint"]',
         'h1:has-text("Security verification")',
         'h1:has-text("Verifica")',
+        'div:has-text("temporarily blocked")',
+        'div:has-text("temporaneamente bloccato")',
     ].join(', '),
 
     addNoteButton: [
@@ -86,5 +88,11 @@ export const SELECTORS = {
         'div[role="dialog"] button.artdeco-button--primary:has-text("Send")',
         'div[role="dialog"] button.artdeco-button--primary:has-text("Invia")',
     ].join(', '),
-};
 
+    inviteWeeklyLimitSignals: [
+        'div:has-text("weekly invitation limit")',
+        'span:has-text("weekly invitation limit")',
+        'div:has-text("limite settimanale")',
+        'span:has-text("limite settimanale")',
+    ].join(', '),
+};
