@@ -10,6 +10,7 @@ import { isSalesNavigatorUrl } from '../linkedinUrl';
 import { config } from '../config';
 import { buildPersonalizedInviteNote } from '../ai/inviteNotePersonalizer';
 import { pauseAutomation } from '../risk/incidentManager';
+import { bridgeDailyStat, bridgeLeadStatus } from '../cloud/cloudBridge';
 
 async function clickConnectOnProfile(page: Page): Promise<boolean> {
     const primaryBtn = page.locator(SELECTORS.connectButtonPrimary).first();
@@ -210,4 +211,7 @@ export async function processInviteJob(payload: InviteJobPayload, context: Worke
     });
     await incrementDailyStat(context.localDate, 'invites_sent');
     await incrementListDailyStat(context.localDate, lead.list_name, 'invites_sent');
+    // Cloud sync non-bloccante
+    bridgeLeadStatus(lead.linkedin_url, 'INVITED', { invited_at: new Date().toISOString() });
+    bridgeDailyStat(context.localDate, context.accountId, 'invites_sent');
 }

@@ -1,11 +1,12 @@
 import { detectChallenge, humanDelay } from '../browser';
 import { transitionLead } from '../core/leadStateService';
-import { getLeadById } from '../core/repositories';
+import { getLeadById, incrementDailyStat } from '../core/repositories';
 import { SELECTORS } from '../selectors';
 import { AcceptanceJobPayload } from '../types/domain';
 import { WorkerContext } from './context';
 import { ChallengeDetectedError } from './errors';
 import { isSalesNavigatorUrl } from '../linkedinUrl';
+import { bridgeDailyStat, bridgeLeadStatus } from '../cloud/cloudBridge';
 
 function isFirstDegreeBadge(text: string | null): boolean {
     if (!text) return true;
@@ -45,4 +46,8 @@ export async function processAcceptanceJob(payload: AcceptanceJobPayload, contex
 
     await transitionLead(lead.id, 'ACCEPTED', 'acceptance_detected');
     await transitionLead(lead.id, 'READY_MESSAGE', 'message_queue_ready');
+    await incrementDailyStat(context.localDate, 'acceptances');
+    // Cloud sync non-bloccante
+    bridgeLeadStatus(lead.linkedin_url, 'ACCEPTED', { accepted_at: new Date().toISOString() });
+    bridgeDailyStat(context.localDate, context.accountId, 'acceptances');
 }

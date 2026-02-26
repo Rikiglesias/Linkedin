@@ -9,6 +9,7 @@ import { ChallengeDetectedError, RetryableWorkerError } from './errors';
 import { isSalesNavigatorUrl } from '../linkedinUrl';
 import { buildPersonalizedFollowUpMessage } from '../ai/messagePersonalizer';
 import { logInfo } from '../telemetry/logger';
+import { bridgeDailyStat, bridgeLeadStatus } from '../cloud/cloudBridge';
 
 export async function processMessageJob(payload: MessageJobPayload, context: WorkerContext): Promise<void> {
     const lead = await getLeadById(payload.leadId);
@@ -80,4 +81,7 @@ export async function processMessageJob(payload: MessageJobPayload, context: Wor
     await storeMessageHash(lead.id, messageHash);
     await incrementDailyStat(context.localDate, 'messages_sent');
     await incrementListDailyStat(context.localDate, lead.list_name, 'messages_sent');
+    // Cloud sync non-bloccante
+    bridgeLeadStatus(lead.linkedin_url, 'MESSAGED', { messaged_at: new Date().toISOString() });
+    bridgeDailyStat(context.localDate, context.accountId, 'messages_sent');
 }

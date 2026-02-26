@@ -890,7 +890,7 @@ export async function getListDailyStat(
 
 export async function incrementDailyStat(
     dateString: string,
-    field: 'invites_sent' | 'messages_sent' | 'challenges_count' | 'selector_failures' | 'run_errors',
+    field: 'invites_sent' | 'messages_sent' | 'acceptances' | 'challenges_count' | 'selector_failures' | 'run_errors',
     amount: number = 1
 ): Promise<void> {
     const db = await getDatabase();
