@@ -1,19 +1,23 @@
 # LinkedIn Bot Roadmap
 
 ## Objective
+
 Build a safer, more reliable, and measurable end-to-end automation flow:
+
 - Source lists from DB/control-plane
 - Execute invite/check/message workflows with strict safeguards
 - Keep LinkedIn state and local DB in sync
 - Reduce operational risk with adaptive policies and incident controls
 
 ## Status Legend
+
 - `todo`: not started
 - `in_progress`: currently being implemented
 - `done`: completed and verified
 - `blocked`: waiting on external input/decision
 
 ## Owners
+
 - `YOU`: business decisions, account operation, approvals
 - `AI`: implementation in codebase
 - `JOINT`: requires both
@@ -23,15 +27,15 @@ Build a safer, more reliable, and measurable end-to-end automation flow:
 | ID | Priority | Area | Task | Owner | Status | Dependencies | Done Criteria |
 |---|---|---|---|---|---|---|---|
 | P0-01 | P0 | Security | Rotate `SUPABASE_SERVICE_ROLE_KEY` and update `.env` | YOU | todo | None | Old key revoked, new key active, bot works |
-| P0-02 | P0 | Security | Verify no secrets in logs/outbox payloads | AI | todo | P0-01 | No sensitive token appears in runtime logs |
-| P0-03 | P0 | Security | Confirm private permissions on DB/session folders | AI | todo | None | `data` paths protected and documented |
+| P0-02 | P0 | Security | Verify no secrets in logs/outbox payloads | AI | done | P0-01 | No sensitive token appears in runtime logs |
+| P0-03 | P0 | Security | Confirm private permissions on DB/session folders | AI | done | None | `data` paths protected and documented |
 | P0-04 | P0 | Runtime Safety | Add global single-runner lock (no dual bot) | AI | done | None | Second process exits with lock message |
 | P0-05 | P0 | Runtime Safety | Add lock heartbeat and stale-lock recovery | AI | done | P0-04 | Crashed lock auto-recovers safely |
 | P0-06 | P0 | Runtime Safety | Run `doctor` automatically before each loop cycle | AI | done | None | Loop skips if health check fails |
 | P0-07 | P0 | Risk Engine | Implement adaptive caps per list/account | AI | done | None | Budgets auto-adjust from recent KPIs |
 | P0-08 | P0 | Risk Engine | Implement auto cooldown engine (48h/72h policy) | AI | done | P0-07 | Cooldown triggers after risk anomalies |
 | P0-09 | P0 | Risk Engine | Enforce no-burst pacing policy | AI | done | P0-07 | No clustered spikes in job execution |
-| P0-10 | P0 | Session Safety | Add session/IP/device consistency guard + auto-pause | AI | todo | None | Context drift triggers pause and incident |
+| P0-10 | P0 | Session Safety | Add session/IP/device consistency guard + auto-pause | AI | done | None | Context drift triggers pause and incident |
 
 | ID | Priority | Area | Task | Owner | Status | Dependencies | Done Criteria |
 |---|---|---|---|---|---|---|---|
@@ -63,12 +67,13 @@ Build a safer, more reliable, and measurable end-to-end automation flow:
 | P2-09 | P2 | Intelligence | Monthly review of official + community signals | JOINT | todo | None | Risk policy updated monthly |
 
 ## Execution Sequence
+
 1. Complete all `P0` tasks first.
 2. Enable `P1` control-plane and workflow intelligence.
 3. Stabilize with `P2` testing, reporting, and rollout governance.
 
 ## Immediate Next Actions
+
 1. `YOU`: rotate Supabase service key (`P0-01`).
-2. `AI`: harden secret/privacy controls in logs and runtime paths (`P0-02`, `P0-03`).
-3. `AI`: implement session/IP/device consistency guard with auto-pause (`P0-10`).
-4. `AI`: add `REVIEW_REQUIRED` guardrail state for ambiguous reconciliation (`P1-03`).
+2. `AI`: add `REVIEW_REQUIRED` guardrail state for ambiguous reconciliation (`P1-03`).
+3. `AI`: add automatic post-run state sync tests, audit `campaign_runs` (`P2-01`).
