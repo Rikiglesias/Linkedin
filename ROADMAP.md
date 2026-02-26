@@ -26,7 +26,7 @@ Build a safer, more reliable, and measurable end-to-end automation flow:
 
 | ID | Priority | Area | Task | Owner | Status | Dependencies | Done Criteria |
 |---|---|---|---|---|---|---|---|
-| P0-01 | P0 | Security | Rotate `SUPABASE_SERVICE_ROLE_KEY` and update `.env` | YOU | todo | None | Old key revoked, new key active, bot works |
+| P0-01 | P0 | Security | Rotate `SUPABASE_SERVICE_ROLE_KEY` and update `.env` | YOU | done | None | Old key revoked, new key active, bot works |
 | P0-02 | P0 | Security | Verify no secrets in logs/outbox payloads | AI | done | P0-01 | No sensitive token appears in runtime logs |
 | P0-03 | P0 | Security | Confirm private permissions on DB/session folders | AI | done | None | `data` paths protected and documented |
 | P0-04 | P0 | Runtime Safety | Add global single-runner lock (no dual bot) | AI | done | None | Second process exits with lock message |
@@ -74,6 +74,6 @@ Build a safer, more reliable, and measurable end-to-end automation flow:
 
 ## Immediate Next Actions
 
-1. `YOU`: rotate Supabase service key (`P0-01`).
-2. `AI`: add `REVIEW_REQUIRED` guardrail state for ambiguous reconciliation (`P1-03`).
-3. `AI`: add automatic post-run state sync tests, audit `campaign_runs` (`P2-01`).
+1. `AI`: add `REVIEW_REQUIRED` guardrail state for ambiguous reconciliation (`P1-03`).
+2. `JOINT`: add pending invite hygiene policy (age-based) (`P1-04`).
+3. `AI`: upgrade Supabase from sink-only to control-plane (`P1-05`).
