@@ -1,5 +1,6 @@
 import { clearAutomationPause, createIncident, pushOutboxEvent, setAutomationPause, setRuntimeFlag } from '../core/repositories';
 import { sendTelegramAlert } from '../telemetry/alerts';
+import { bridgeAccountHealth } from '../cloud/cloudBridge';
 
 export async function quarantineAccount(type: string, details: Record<string, unknown>): Promise<number> {
     const incidentId = await createIncident(type, 'CRITICAL', details);
@@ -15,6 +16,8 @@ export async function quarantineAccount(type: string, details: Record<string, un
         `incident.opened:${incidentId}`
     );
     await sendTelegramAlert(`CRITICAL incident #${incidentId}: ${type}`);
+    // Replica cloud: aggiorna health account a RED (non-bloccante)
+    bridgeAccountHealth('default', 'RED', type);
     return incidentId;
 }
 
@@ -37,6 +40,8 @@ export async function pauseAutomation(type: string, details: Record<string, unkn
         `automation.paused:${incidentId}`
     );
     await sendTelegramAlert(`WARN incident #${incidentId}: ${type}. Automazione in pausa fino a ${pausedUntil ?? 'manual resume'}`);
+    // Replica cloud: aggiorna health account a YELLOW (non-bloccante)
+    bridgeAccountHealth('default', 'YELLOW', type, pausedUntil ?? null);
     return incidentId;
 }
 
