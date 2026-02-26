@@ -71,6 +71,8 @@ export interface CloudLeadUpsert {
     messaged_at?: string | null;
     last_error?: string | null;
     blocked_reason?: string | null;
+    about?: string | null;
+    experience?: string | null;
     invite_prompt_variant?: string | null;
     invite_note_sent?: string | null;
 }

@@ -1,4 +1,4 @@
-import { BrowserSession, closeBrowser, interJobDelay, launchBrowser, checkLogin } from '../browser';
+import { BrowserSession, closeBrowser, interJobDelay, launchBrowser, checkLogin, performDecoyAction } from '../browser';
 import { getRuntimeAccountProfiles, isMultiAccountRuntimeEnabled, RuntimeAccountProfile } from '../accountManager';
 import { config } from '../config';
 import { pauseAutomation, quarantineAccount } from '../risk/incidentManager';
@@ -118,6 +118,11 @@ async function runQueuedJobsForAccount(
             });
 
             try {
+                // Azioni diversive (Decoy) per mascherare pattern del bot (20% probabilità)
+                if (Math.random() < 0.20) {
+                    await performDecoyAction(session.page);
+                }
+
                 if (job.type === 'INVITE') {
                     const parsed = parseJobPayload<{ leadId: number; localDate: string }>(job);
                     await processInviteJob(parsed.payload, workerContext);

@@ -175,6 +175,9 @@ export interface AppConfig {
     proxyFailureCooldownMinutes: number;
     proxyRotateEveryJobs: number;
     proxyRotateEveryMinutes: number;
+    proxyProviderApiEndpoint?: string;
+    proxyProviderApiKey?: string;
+    fingerprintApiEndpoint?: string;
     inviteWithNote: boolean;
     inviteNoteMode: 'template' | 'ai';
     salesNavSyncEnabled: boolean;
@@ -287,6 +290,9 @@ export const config: AppConfig = {
     proxyFailureCooldownMinutes: Math.max(1, parseIntEnv('PROXY_FAILURE_COOLDOWN_MINUTES', 30)),
     proxyRotateEveryJobs: Math.max(0, parseIntEnv('PROXY_ROTATE_EVERY_JOBS', 0)),
     proxyRotateEveryMinutes: Math.max(0, parseIntEnv('PROXY_ROTATE_EVERY_MINUTES', 0)),
+    proxyProviderApiEndpoint: parseStringEnv('PROXY_PROVIDER_API_ENDPOINT') || undefined,
+    proxyProviderApiKey: parseStringEnv('PROXY_PROVIDER_API_KEY') || undefined,
+    fingerprintApiEndpoint: parseStringEnv('FINGERPRINT_API_ENDPOINT') || undefined,
     inviteWithNote: parseBoolEnv('INVITE_WITH_NOTE', false),
     inviteNoteMode: (parseStringEnv('INVITE_NOTE_MODE', 'template') === 'ai' ? 'ai' : 'template') as 'template' | 'ai',
     salesNavSyncEnabled: parseBoolEnv('SALESNAV_SYNC_ENABLED', false),

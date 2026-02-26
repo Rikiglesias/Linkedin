@@ -8,12 +8,20 @@ const SUPABASE_KEY_PATTERN = /\bsb_(publishable|secret)_[A-Za-z0-9_-]{20,}\b/gi;
 const API_KEY_PATTERN = /\b(sk|pk|rk)_[A-Za-z0-9_-]{16,}\b/gi;
 const TELEGRAM_BOT_TOKEN_PATTERN = /\b\d{8,}:[A-Za-z0-9_-]{20,}\b/g;
 
+const EMAIL_PATTERN = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/gi;
+const LINKEDIN_URL_PATTERN = /https?:\/\/(www\.)?linkedin\.com\/(in|profile)\/[A-Za-z0-9_-]+/gi;
+const PHONE_PATTERN = /\+?\d{1,4}[-.\s]?\(?\d{1,3}\)?[-.\s]?\d{1,4}[-.\s]?\d{1,4}[-.\s]?\d{1,9}/g;
+const PII_REDACTED = '[PII_REDACTED]';
+
 function sanitizeString(input: string): string {
     return input
         .replace(JWT_PATTERN, REDACTED)
         .replace(SUPABASE_KEY_PATTERN, REDACTED)
         .replace(API_KEY_PATTERN, REDACTED)
-        .replace(TELEGRAM_BOT_TOKEN_PATTERN, REDACTED);
+        .replace(TELEGRAM_BOT_TOKEN_PATTERN, REDACTED)
+        .replace(EMAIL_PATTERN, PII_REDACTED)
+        .replace(LINKEDIN_URL_PATTERN, PII_REDACTED)
+        .replace(PHONE_PATTERN, PII_REDACTED);
 }
 
 function sanitizeArray(input: unknown[], depth: number): unknown[] {

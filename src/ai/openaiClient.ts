@@ -5,6 +5,7 @@ interface OpenAITextRequest {
     user: string;
     maxOutputTokens: number;
     temperature: number;
+    responseFormat?: 'json_object' | 'text';
 }
 
 function isLocalAiEndpoint(baseUrl: string): boolean {
@@ -74,6 +75,7 @@ export async function requestOpenAIText(input: OpenAITextRequest): Promise<strin
             ],
             temperature: input.temperature,
             max_tokens: input.maxOutputTokens, // OpenAI uses max_tokens natively, non max_output_tokens
+            ...(input.responseFormat ? { response_format: { type: input.responseFormat } } : {})
         }),
         signal: AbortSignal.timeout(config.aiRequestTimeoutMs),
     });

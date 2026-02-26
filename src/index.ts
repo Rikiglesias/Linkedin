@@ -48,6 +48,8 @@ import { getProxyFailoverChain, getProxyPoolStatus } from './proxyManager';
 import { runRandomLinkedinActivity } from './workers/randomActivityWorker';
 import { addLeadToSalesNavList, createSalesNavList } from './salesnav/listActions';
 import { isOpenAIConfigured } from './ai/openaiClient';
+import { startTelegramListener } from './cloud/telegramListener';
+import { markTelegramCommandProcessed, pollPendingTelegramCommand } from './cloud/supabaseDataClient';
 
 // Graceful shutdown: chiude DB prima di uscire per non lasciare job RUNNING.
 let shuttingDown = false;
@@ -76,7 +78,7 @@ function hasOption(args: string[], optionName: string): boolean {
 }
 
 function parseWorkflow(input: string | undefined): WorkflowSelection {
-    if (input === 'invite' || input === 'check' || input === 'message' || input === 'all') {
+    if (input === 'invite' || input === 'check' || input === 'message' || input === 'warmup' || input === 'all') {
         return input;
     }
     return 'all';
@@ -365,6 +367,34 @@ async function evaluateLoopDoctorGate(dryRun: boolean): Promise<LoopDoctorGate> 
     return { proceed: true, reason: 'doctor_ok' };
 }
 
+async function processCloudCommands(): Promise<void> {
+    const activeProfiles = getRuntimeAccountProfiles();
+    for (const profile of activeProfiles) {
+        try {
+            const cmd = await pollPendingTelegramCommand(profile.id);
+            if (!cmd) continue;
+
+            console.log(`[CLOUD] Comando ricevuto: ${cmd.command} args: ${cmd.args || 'nessuno'} (account: ${profile.id})`);
+
+            if (cmd.command === 'pausa' || cmd.command === 'pause') {
+                const minutes = cmd.args && /^[0-9]+$/.test(cmd.args) ? parseInt(cmd.args, 10) : null;
+                await setAutomationPause(minutes || null, 'TELEGRAM_COMMAND');
+                console.log(`[CLOUD] Automazione globale in pausa ${minutes ? 'per ' + minutes + ' min' : 'indefinitamente'}.`);
+            } else if (cmd.command === 'riprendi' || cmd.command === 'resume') {
+                await clearPauseState();
+                console.log(`[CLOUD] Automazione globale ripresa.`);
+            } else if (cmd.command === 'restart') {
+                console.warn('[CLOUD] Restart comandato. Uscita 0...');
+                process.exit(0);
+            }
+
+            await markTelegramCommandProcessed(cmd.id);
+        } catch (e) {
+            console.error(`[CLOUD] Errore elaborazione comando per account ${profile.id}:`, e);
+        }
+    }
+}
+
 function printHelp(): void {
     console.log('Utilizzo consigliato (Windows): .\\bot.ps1 <comando> [opzioni]');
     console.log('Alternativa: npx ts-node src/index.ts <comando> [opzioni]');
@@ -500,6 +530,11 @@ async function runLoopCommand(args: string[]): Promise<void> {
     const maxCycles = cyclesRaw ? Math.max(1, parseIntStrict(cyclesRaw, '--cycles')) : null;
     console.log(`[LOOP] start workflow = ${workflow} dryRun = ${dryRun} intervalMs = ${intervalMs} cycles = ${maxCycles ?? 'infinite'} `);
 
+    // Avvio Poller Telegram (interno o webhook) in background a inizio loop
+    if (!dryRun) {
+        await startTelegramListener().catch(e => console.error('[TELEGRAM] Errore listener background', e));
+    }
+
     const lockTtlSeconds = computeWorkflowLockTtlSeconds(intervalMs);
     const lockOwnerId = dryRun
         ? null
@@ -519,6 +554,10 @@ async function runLoopCommand(args: string[]): Promise<void> {
             try {
                 if (lockOwnerId) {
                     await heartbeatWorkflowRunnerLock(lockOwnerId, lockTtlSeconds);
+                }
+
+                if (!dryRun) {
+                    await processCloudCommands();
                 }
 
                 const doctorGate = await evaluateLoopDoctorGate(dryRun);
@@ -1333,6 +1372,9 @@ async function main(): Promise<void> {
             break;
         case 'message':
             await runWorkflowCommand('message', false);
+            break;
+        case 'warmup':
+            await runWorkflowCommand('warmup', false);
             break;
         default:
             printHelp();

@@ -95,4 +95,15 @@ export const SELECTORS = {
         'div:has-text("limite settimanale")',
         'span:has-text("limite settimanale")',
     ].join(', '),
+
+    aboutSection: [
+        'section:has(#about) .display-flex',
+        'div#about ~ div .display-flex',
+        '.pv-shared-text-with-see-more'
+    ].join(', '),
+
+    experienceSection: [
+        'section:has(#experience) ul.pvs-list',
+        'div#experience ~ div ul.pvs-list'
+    ].join(', '),
 };

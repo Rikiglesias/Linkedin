@@ -121,7 +121,8 @@ create table if not exists public.leads (
     last_site_check_at timestamptz,
     last_error text,
     blocked_reason text,
-    -- AI tracking per A/B testing
+    about text,
+    experience text,
     invite_prompt_variant text,
     invite_note_sent text,
     -- NLP intent dell'ultima risposta in inbox

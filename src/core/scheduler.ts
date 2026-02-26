@@ -17,7 +17,7 @@ import {
 } from './repositories';
 import { transitionLead } from './leadStateService';
 
-export type WorkflowSelection = 'invite' | 'check' | 'message' | 'all';
+export type WorkflowSelection = 'invite' | 'check' | 'message' | 'warmup' | 'all';
 
 export interface ScheduleResult {
     localDate: string;
@@ -52,7 +52,7 @@ export interface ListScheduleBreakdown {
 export function workflowToJobTypes(workflow: WorkflowSelection): JobType[] {
     if (workflow === 'all') return ['INVITE', 'ACCEPTANCE_CHECK', 'MESSAGE'];
     if (workflow === 'invite') return ['INVITE'];
-    if (workflow === 'check') return ['ACCEPTANCE_CHECK'];
+    if (workflow === 'check' || workflow === 'warmup') return ['ACCEPTANCE_CHECK'];
     return ['MESSAGE'];
 }
 
@@ -239,6 +239,10 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
     );
     const messageBudget = calculateDynamicBudget(config.softMsgCap, config.hardMsgCap, dailyMessagesSent, riskSnapshot.action);
 
+    // WARMUP BYPASS: nessun invio email/connessioni
+    const effectiveInviteBudget = workflow === 'warmup' ? 0 : inviteBudget;
+    const effectiveMessageBudget = workflow === 'warmup' ? 0 : messageBudget;
+
     let queuedInviteJobs = 0;
     let queuedCheckJobs = 0;
     let queuedMessageJobs = 0;
@@ -284,7 +288,7 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
     }
 
     if (workflow === 'all' || workflow === 'invite') {
-        let remainingInviteBudget = inviteBudget;
+        let remainingInviteBudget = effectiveInviteBudget;
         for (const listName of activeListNames) {
             if (remainingInviteBudget <= 0) break;
             const breakdown = listBreakdown.get(listName);
@@ -373,7 +377,7 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
     }
 
     if (workflow === 'all' || workflow === 'message') {
-        let remainingMessageBudget = messageBudget;
+        let remainingMessageBudget = effectiveMessageBudget;
         for (const listName of activeListNames) {
             if (remainingMessageBudget <= 0) break;
             const breakdown = listBreakdown.get(listName);
@@ -447,8 +451,8 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
     return {
         localDate,
         riskSnapshot,
-        inviteBudget,
-        messageBudget,
+        inviteBudget: effectiveInviteBudget,
+        messageBudget: effectiveMessageBudget,
         queuedInviteJobs,
         queuedCheckJobs,
         queuedMessageJobs,

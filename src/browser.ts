@@ -2,7 +2,14 @@ import { chromium, BrowserContext, Page } from 'playwright';
 import { config } from './config';
 import { ensureDirectoryPrivate } from './security/filesystem';
 import { SELECTORS } from './selectors';
-import { getProxyFailoverChain, markProxyFailed, markProxyHealthy, ProxyConfig } from './proxyManager';
+import { pauseAutomation } from './risk/incidentManager';
+import {
+    ProxyConfig,
+    getStickyProxy,
+    markProxyFailed,
+    markProxyHealthy,
+    releaseStickyProxy
+} from './proxyManager';
 
 // ─── User-Agent pool (Chrome reali su Windows/macOS/Linux) ──────────────────
 const USER_AGENTS = [
@@ -25,6 +32,42 @@ const VIEWPORTS = [
 
 function randomElement<T>(arr: ReadonlyArray<T>): T {
     return arr[Math.floor(Math.random() * arr.length)];
+}
+
+export interface CloudFingerprint {
+    userAgent: string;
+    viewport?: { width: number; height: number };
+}
+
+let cachedCloudFingerprints: CloudFingerprint[] | null = null;
+let lastFingerprintFetchTime = 0;
+
+async function fetchCloudFingerprints(): Promise<CloudFingerprint[]> {
+    if (!config.fingerprintApiEndpoint) return [];
+
+    // Cache di 10 minuti per evitare DDoS al provider
+    if (cachedCloudFingerprints && Date.now() - lastFingerprintFetchTime < 10 * 60 * 1000) {
+        return cachedCloudFingerprints;
+    }
+
+    try {
+        const response = await fetch(config.fingerprintApiEndpoint, {
+            headers: { 'Accept': 'application/json' },
+            signal: AbortSignal.timeout(5000)
+        });
+
+        if (response.ok) {
+            const data = await response.json() as CloudFingerprint[];
+            if (Array.isArray(data) && data.length > 0 && data[0].userAgent) {
+                cachedCloudFingerprints = data;
+                lastFingerprintFetchTime = Date.now();
+                return data;
+            }
+        }
+    } catch {
+        // Silenzioso, passa al fallback locale
+    }
+    return [];
 }
 
 export interface BrowserSession {
@@ -135,27 +178,48 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
     const sessionDir = options.sessionDir ?? config.sessionDir;
     ensureDirectoryPrivate(sessionDir);
 
-    const userAgent = randomElement(USER_AGENTS);
-    const viewport = randomElement(VIEWPORTS);
-    const proxyChain = options.proxy ? [options.proxy] : getProxyFailoverChain();
-    const launchPlan: Array<ProxyConfig | undefined> = proxyChain.length > 0 ? proxyChain : [undefined];
+    const headless = options.headless ?? config.headless;
+
+    // Check cooldown / proxy rotation
+    const autoScaleProxy = config.multiAccountEnabled; // In multiaccount leghiamo proxy a sessionDir
+
+    // Ottieni un proxy sano (magari pescando da Cloud Provider API async)
+    const selectedProxy: ProxyConfig | undefined = autoScaleProxy
+        ? await getStickyProxy(sessionDir)
+        : options.proxy;
+
+    const launchPlan: Array<ProxyConfig | undefined> = [selectedProxy];
     let lastError: unknown = null;
 
     for (let attempt = 0; attempt < launchPlan.length; attempt++) {
-        const selectedProxy = launchPlan[attempt];
+        const currentProxy = launchPlan[attempt];
+
+        // Fingerprint Rotation Logic
+        let userAgent = randomElement(USER_AGENTS);
+        let viewport = randomElement(VIEWPORTS);
+
+        const cloudFingerprints = await fetchCloudFingerprints();
+        if (cloudFingerprints.length > 0) {
+            const fp = randomElement(cloudFingerprints);
+            userAgent = fp.userAgent;
+            if (fp.viewport) {
+                viewport = fp.viewport;
+            }
+        }
+
         const contextOptions: Parameters<typeof chromium.launchPersistentContext>[1] = {
-            headless: options.headless ?? config.headless,
+            headless,
             viewport,
             userAgent,
             locale: 'it-IT',
             timezoneId: config.timezone,
         };
 
-        if (selectedProxy) {
+        if (currentProxy) {
             contextOptions.proxy = {
-                server: selectedProxy.server,
-                username: selectedProxy.username,
-                password: selectedProxy.password,
+                server: currentProxy.server,
+                username: currentProxy.username,
+                password: currentProxy.password,
             };
         }
 
@@ -165,17 +229,34 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
 
             const existingPage = browser.pages()[0];
             const page = existingPage ?? await browser.newPage();
-            if (selectedProxy) {
-                markProxyHealthy(selectedProxy);
+
+            // Global Kill-Switch 429 - Circuit Breaker
+            page.on('response', async (response) => {
+                if (response.status() === 429) {
+                    const url = response.url();
+                    if (url.includes('linkedin.com/voyager')) {
+                        console.error('\n🚨 [GLOBAL KILL-SWITCH] Ricevuto HTTP 429 (Too Many Requests) da LinkedIn APIs:', url);
+                        if (currentProxy) {
+                            console.error(`💥 Uccisione forzata del Proxy bruciato: ${currentProxy.server}`);
+                            markProxyFailed(currentProxy);
+                            releaseStickyProxy(sessionDir);
+                        }
+                        await pauseAutomation('HTTP_429_RATE_LIMIT', { url }, config.autoPauseMinutesOnFailureBurst ?? 60).catch(() => { });
+                    }
+                }
+            });
+
+            if (currentProxy) {
+                markProxyHealthy(currentProxy);
             }
             return { browser, page };
         } catch (error) {
             lastError = error;
-            if (selectedProxy) {
-                markProxyFailed(selectedProxy);
+            if (currentProxy) {
+                markProxyFailed(currentProxy);
                 if (attempt < launchPlan.length - 1) {
                     console.warn(
-                        `[PROXY] Launch fallito su ${selectedProxy.server}, provo il prossimo (${attempt + 2}/${launchPlan.length}).`
+                        `[PROXY] Launch fallito su ${currentProxy.server}, provo il prossimo (${attempt + 2}/${launchPlan.length}).`
                     );
                 }
             }
@@ -259,14 +340,15 @@ function randomLogNormal(mean: number, stdDev: number): number {
 }
 
 /**
- * Pausa con distribuzione log-normale invece di uniforme:
- * più realistica perché i tempi di reazione umani seguono questa distribuzione.
+ * Pausa con distribuzione log-normale asimmetrica (Cronometria Disfasica):
+ * Modella il timing umano con picchi veloci e occasionali distrazioni (long-tail).
  */
 export async function humanDelay(page: Page, min: number = 1500, max: number = 3500): Promise<void> {
-    const mean = (min + max) / 2;
-    const std = (max - min) / 4;
+    const mean = min + (max - min) * 0.35; // Asimmetria: centro spostato verso il basso
+    const std = (max - min) / 3;
     const raw = randomLogNormal(mean, std);
-    const delay = Math.round(Math.min(max * 1.5, Math.max(min, raw)));
+    const asymmetricDelay = Math.random() < 0.15 ? raw * (1.5 + Math.random()) : raw; // 15% di probabilità di coda lunga 
+    const delay = Math.round(Math.max(min, Math.min(max * 2.5, asymmetricDelay)));
     await page.waitForTimeout(delay);
 }
 
@@ -284,23 +366,35 @@ export async function humanMouseMove(page: Page, targetSelector: string): Promis
         await page.mouse.move(startX, startY, { steps: 10 });
         await page.waitForTimeout(40 + Math.random() * 80);
 
-        // Tappa intermedia con offset casuale (curva naturalistica)
-        const midX = startX + (box.x - startX) * 0.35 + (Math.random() * 30 - 15);
-        const midY = startY + (box.y - startY) * 0.35 + (Math.random() * 20 - 10);
-        await page.mouse.move(midX, midY, { steps: 8 });
-        await page.waitForTimeout(30 + Math.random() * 60);
+        // Tappa intermedia con offset casuale e inversione di curva naturale
+        const curveFactor = Math.random() < 0.5 ? 1 : -1;
+        const midX = startX + (box.x - startX) * 0.4 + (Math.random() * 40 * curveFactor);
+        const midY = startY + (box.y - startY) * 0.6 + (Math.random() * 40 * -curveFactor);
+        await page.mouse.move(midX, midY, { steps: Math.floor(6 + Math.random() * 5) });
+        await page.waitForTimeout(20 + Math.random() * 40);
 
         // Target finale (centro dell'elemento con micro-offset)
-        const finalX = box.x + box.width / 2 + (Math.random() * 6 - 3);
-        const finalY = box.y + box.height / 2 + (Math.random() * 4 - 2);
-        // Piccola probabilità di overshoot + correzione, per ridurre pattern troppo perfetti.
-        if (Math.random() < 0.18) {
-            const overshootX = finalX + (Math.random() * 18 - 9);
-            const overshootY = finalY + (Math.random() * 14 - 7);
-            await page.mouse.move(overshootX, overshootY, { steps: 8 });
-            await page.waitForTimeout(25 + Math.random() * 70);
+        const finalX = box.x + box.width / 2 + (Math.random() * 8 - 4);
+        const finalY = box.y + box.height / 2 + (Math.random() * 8 - 4);
+
+        // Jitter Overshoot: supera il target in base al vettore dir e torna indietro
+        if (Math.random() < 0.32) {
+            const dirX = finalX - startX;
+            const dirY = finalY - startY;
+            const length = Math.sqrt(dirX * dirX + dirY * dirY) || 1;
+            const overExt = 0.05 + Math.random() * 0.12; // 5-17% overshoot
+
+            const overshootX = finalX + (dirX / length) * (length * overExt);
+            const overshootY = finalY + (dirY / length) * (length * overExt);
+
+            await page.mouse.move(overshootX, overshootY, { steps: Math.floor(4 + Math.random() * 4) });
+            await page.waitForTimeout(30 + Math.random() * 60); // Realizzazione di aver superato il taget
+
+            // Correzione micro verso il target effettivo
+            await page.mouse.move(finalX, finalY, { steps: Math.floor(5 + Math.random() * 5) });
+        } else {
+            await page.mouse.move(finalX, finalY, { steps: Math.floor(8 + Math.random() * 6) });
         }
-        await page.mouse.move(finalX, finalY, { steps: 12 });
     } catch {
         // Se l'elemento non è visibile, ignora silenziosamente
     }
@@ -412,4 +506,37 @@ export async function runSelectorCanary(page: Page): Promise<boolean> {
     await humanDelay(page, 1200, 2000);
     const navOk = await page.locator(SELECTORS.globalNav).count();
     return navOk > 0;
+}
+
+/**
+ * Azioni Diversive Mute (Decoy):
+ * Rompe i flow di automazione navigando in sezioni casuali di LinkedIn prima
+ * di effettuare i veri task, per mascherare i pattern lineari da bot.
+ */
+export async function performDecoyAction(page: Page): Promise<void> {
+    const actions = [
+        async () => {
+            await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
+            await simulateHumanReading(page);
+        },
+        async () => {
+            await page.goto('https://www.linkedin.com/mynetwork/', { waitUntil: 'domcontentloaded' });
+            await humanDelay(page, 2000, 5000);
+            await simulateHumanReading(page);
+        },
+        async () => {
+            const terms = ['marketing', 'developer', 'ceo', 'sales', 'hr', 'tech', 'design'];
+            const search = randomElement(terms);
+            await page.goto(`https://www.linkedin.com/search/results/people/?keywords=${search}`, { waitUntil: 'domcontentloaded' });
+            await humanDelay(page, 1500, 4000);
+            await simulateHumanReading(page);
+        }
+    ];
+
+    try {
+        const decoy = randomElement(actions);
+        await decoy();
+    } catch {
+        // Ignora silenziosamente, è solo un'azione noise decoy
+    }
 }

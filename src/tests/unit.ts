@@ -74,6 +74,9 @@ async function run(): Promise<void> {
         messaged_at: null,
         last_error: null,
         blocked_reason: null,
+        about: null,
+        experience: null,
+        invite_prompt_variant: null,
         created_at: '2026-02-25T00:00:00.000Z',
         updated_at: '2026-02-25T00:00:00.000Z',
     };

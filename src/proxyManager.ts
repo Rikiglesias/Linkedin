@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { config } from './config';
+import { logInfo, logWarn } from './telemetry/logger';
 
 export interface ProxyConfig {
     server: string;
@@ -41,7 +42,8 @@ function isLikelyHostPortUserPass(value: string): boolean {
     return parts.length === 4 && !parts[0].includes('/') && !parts[1].includes('/');
 }
 
-function parseProxyEntry(rawValue: string): ProxyConfig | null {
+// Funzione Helper esportabile per parsare ProxyConfig raw
+export function parseProxyEntry(rawValue: string): ProxyConfig | null {
     const raw = rawValue.trim();
     if (!raw || raw.startsWith('#')) return null;
 
@@ -185,10 +187,94 @@ function splitByCooldown(orderedPool: ProxyConfig[]): { ready: ProxyConfig[]; co
 }
 
 /**
+ * Contatta API Esterna Provider (BrightData, Oxylabs, JSON-Server) per
+ * richiedere urgentemente un nuovo indirizzo Proxy IP rotazionale
+ * quando il pool è interamente bruciato o sotto 429.
+ */
+export async function fetchFallbackProxyFromProvider(): Promise<boolean> {
+    if (!config.proxyProviderApiEndpoint) return false;
+
+    console.log(`[PROXY] Fetching proxy d'emergenza da: ${config.proxyProviderApiEndpoint}`);
+    try {
+        const headers: Record<string, string> = { 'Accept': 'application/json' };
+        if (config.proxyProviderApiKey) {
+            headers['Authorization'] = `Bearer ${config.proxyProviderApiKey}`;
+        }
+
+        const response = await fetch(config.proxyProviderApiEndpoint, { headers, method: 'GET' });
+        if (!response.ok) {
+            throw new Error(`Proxy Provider HTTP ${response.status}`);
+        }
+
+        // Esempi previsti di output dal provider:
+        // { "proxy": "http://user:pass@host:port" } 
+        // { "ip": "1.2.3.4", "port": "8080" ... }
+        const json = await response.json();
+
+        let newProxyRaw = '';
+        if (json.proxy && typeof json.proxy === 'string') {
+            newProxyRaw = json.proxy;
+        } else if (json.ip && json.port) {
+            const auth = json.username ? `${json.username}:${json.password}@` : '';
+            newProxyRaw = `http://${auth}${json.ip}:${json.port}`;
+        } else {
+            console.warn(`[PROXY] Payload API sconosciuto:`, json);
+            return false;
+        }
+
+        const parsed = parseProxyEntry(newProxyRaw);
+        if (parsed) {
+            const finalProxy = applyGlobalCredentials(parsed);
+
+            // Unshift nel Pool in Memoria
+            cachedPool.proxies.unshift(finalProxy);
+            // Forza invalidazione timestamp su signature esistente localmente per precludere ri-load dal file
+            cachedPool.signature = `api-injected:${Date.now()}`;
+
+            // Cancella eventuali penalty per questo preciso nuovo proxy
+            markProxyHealthy(finalProxy);
+            await logInfo('proxy.api.fallback_success', { newServer: finalProxy.server });
+            return true;
+        }
+        return false;
+    } catch (e) {
+        await logWarn('proxy.api.fallback_failed', { error: e instanceof Error ? e.message : String(e) });
+        return false;
+    }
+}
+
+/**
  * Restituisce una chain di proxy ordinata:
  * - round-robin sul pool
  * - prima i proxy non in cooldown
  * - poi eventuali proxy in cooldown (fallback estremo)
+ */
+export async function getProxyFailoverChainAsync(): Promise<ProxyConfig[]> {
+    const pool = loadProxyPool();
+    if (pool.length === 0) return [];
+
+    const rotated = orderByRotation(pool);
+    const { ready, cooling } = splitByCooldown(rotated);
+    if (ready.length > 0) {
+        return ready.concat(cooling);
+    }
+
+    // Tutti in cooldown? Scalo il provider esterno se configurato.
+    if (config.proxyProviderApiEndpoint) {
+        const injected = await fetchFallbackProxyFromProvider();
+        if (injected) {
+            // Reinvochiamo noi stessi per prendere il top della catena che ora è fresco
+            const refreshedPool = loadProxyPool();
+            const reSplit = splitByCooldown(refreshedPool);
+            return reSplit.ready.concat(reSplit.cooling);
+        }
+    }
+
+    return rotated;
+}
+
+/**
+ * Retrocompatibilità sincrona. Senza API Provider.
  */
 export function getProxyFailoverChain(): ProxyConfig[] {
     const pool = loadProxyPool();
@@ -203,7 +289,7 @@ export function getProxyFailoverChain(): ProxyConfig[] {
 }
 
 /**
- * Retrocompatibilità: restituisce il primo proxy disponibile.
+ * Retrocompatibilità sincrona: restituisce il primo proxy disponibile (non usa API Provider on-demand).
  */
 export function getProxy(): ProxyConfig | undefined {
     const chain = getProxyFailoverChain();
@@ -211,10 +297,18 @@ export function getProxy(): ProxyConfig | undefined {
 }
 
 /**
+ * Restituisce il primo proxy disponibile, interpellando l'API Provider se necessario.
+ */
+export async function getProxyAsync(): Promise<ProxyConfig | undefined> {
+    const chain = await getProxyFailoverChainAsync();
+    return chain[0];
+}
+
+/**
  * Restituisce o alloca un proxy permanente per una specifica sessionId.
  * Assicura che la sessione usi costantemente lo stesso nodo per non allertare Linkedin con cambi IP anomali.
  */
-export function getStickyProxy(sessionId: string): ProxyConfig | undefined {
+export async function getStickyProxy(sessionId: string): Promise<ProxyConfig | undefined> {
     // 1. Check if we already have a sticky proxy for this session
     const existing = stickyProxySessions.get(sessionId);
     if (existing) {
@@ -224,7 +318,7 @@ export function getStickyProxy(sessionId: string): ProxyConfig | undefined {
     }
 
     // 2. Otherwise allocate a new proxy from the best available chain
-    const proxy = getProxy();
+    const proxy = await getProxyAsync();
     if (proxy) {
         stickyProxySessions.set(sessionId, proxy);
     }

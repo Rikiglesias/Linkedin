@@ -442,8 +442,8 @@ export async function upsertSalesNavigatorLead(input: UpsertSalesNavigatorLeadIn
             const insertResult = await db.run(
                 `
                 INSERT INTO leads
-                    (account_name, first_name, last_name, job_title, website, linkedin_url, status, list_name)
-                VALUES (?, ?, ?, ?, ?, ?, 'NEW', ?)
+                    (account_name, first_name, last_name, job_title, website, linkedin_url, status, list_name, about, experience, invite_prompt_variant)
+                VALUES (?, ?, ?, ?, ?, ?, 'NEW', ?, NULL, NULL, NULL)
             `,
                 [
                     normalizedAccountName,
@@ -646,6 +646,33 @@ export async function getLeadById(leadId: number): Promise<LeadRecord | null> {
     if (!lead) return null;
     lead.status = normalizeLegacyStatus(lead.status);
     return lead;
+}
+
+export async function updateLeadScrapedContext(leadId: number, about: string | null, experience: string | null): Promise<void> {
+    const db = await getDatabase();
+    await db.run(
+        `
+        UPDATE leads
+        SET about = ?,
+            experience = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+    `,
+        [about, experience, leadId]
+    );
+}
+
+export async function updateLeadPromptVariant(leadId: number, variant: string | null): Promise<void> {
+    const db = await getDatabase();
+    await db.run(
+        `
+        UPDATE leads
+        SET invite_prompt_variant = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+    `,
+        [variant, leadId]
+    );
 }
 
 export async function getLeadsWithSalesNavigatorUrls(limit: number): Promise<LeadRecord[]> {

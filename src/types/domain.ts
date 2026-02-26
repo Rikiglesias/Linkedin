@@ -29,6 +29,9 @@ export interface LeadRecord {
     last_site_check_at?: string | null;
     last_error: string | null;
     blocked_reason: string | null;
+    about: string | null;
+    experience: string | null;
+    invite_prompt_variant: string | null;
     created_at: string;
     updated_at: string | null;
 }

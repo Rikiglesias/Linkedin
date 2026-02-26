@@ -1,7 +1,7 @@
 import { Page } from 'playwright';
 import { detectChallenge, humanDelay, humanMouseMove, humanType, simulateHumanReading } from '../browser';
 import { transitionLead } from '../core/leadStateService';
-import { getLeadById, incrementDailyStat, incrementListDailyStat } from '../core/repositories';
+import { getLeadById, incrementDailyStat, incrementListDailyStat, updateLeadScrapedContext, updateLeadPromptVariant } from '../core/repositories';
 import { SELECTORS } from '../selectors';
 import { InviteJobPayload, LeadRecord } from '../types/domain';
 import { WorkerContext } from './context';
@@ -79,8 +79,8 @@ async function handleInviteModal(
     lead: LeadRecord,
     dryRun: boolean,
     localDate: string,
-): Promise<{ sentWithNote: boolean; noteSource: 'template' | 'ai' | null }> {
-    if (dryRun) return { sentWithNote: false, noteSource: null };
+): Promise<{ sentWithNote: boolean; noteSource: 'template' | 'ai' | null; variant?: string | null }> {
+    if (dryRun) return { sentWithNote: false, noteSource: null, variant: null };
 
     // Controlla se c'è il bottone "Add a note" (con retry breve se il modale sta caricando)
     const addNoteBtn = page.locator(SELECTORS.addNoteButton).first();
@@ -97,21 +97,33 @@ async function handleInviteModal(
         await humanDelay(page, 600, 1200);
 
         // Scrivi la nota nella textarea del modale
-        const personalizedNote = await buildPersonalizedInviteNote(lead);
-        const note = personalizedNote.note;
-        const textarea = page.locator(SELECTORS.noteTextarea).first();
-        if (await textarea.count() > 0) {
-            await humanType(page, SELECTORS.noteTextarea, note);
-            await humanDelay(page, 500, 1000);
+        const generatedNote = await buildPersonalizedInviteNote(lead);
+        if (generatedNote.variant) {
+            await updateLeadPromptVariant(lead.id, generatedNote.variant);
+            lead.invite_prompt_variant = generatedNote.variant;
         }
 
-        // Clicca il tasto Send del modale
-        const sendNoteBtn = page.locator(SELECTORS.sendWithNote).first();
-        if (await sendNoteBtn.count() > 0) {
-            await humanMouseMove(page, SELECTORS.sendWithNote);
-            await humanDelay(page, 120, 320);
-            await sendNoteBtn.click();
-            return { sentWithNote: true, noteSource: personalizedNote.source };
+        try {
+            await humanType(page, SELECTORS.noteTextarea, generatedNote.note);
+        } catch {
+            await incrementDailyStat(localDate, 'selector_failures');
+            throw new RetryableWorkerError('Impossibile digitare la nota', 'TYPE_ERROR');
+        }
+
+        await humanDelay(page, 400, 800); // Changed from context.session.page to page
+
+        const sendWithNote = page.locator(SELECTORS.sendWithNote).first(); // Changed from context.session.page to page
+        if (await sendWithNote.count() > 0) {
+            await humanMouseMove(page, SELECTORS.sendWithNote); // Changed from context.session.page to page
+            await humanDelay(page, 150, 400); // Changed from context.session.page to page
+
+            if (!dryRun) { // Changed from context.dryRun to dryRun
+                await sendWithNote.click();
+            } else {
+                console.log(`[DRY RUN] Inviato invito a ${lead.linkedin_url} (nota: ${generatedNote.source} - var: ${generatedNote.variant || 'none'})`);
+            }
+
+            return { sentWithNote: true, noteSource: generatedNote.source, variant: generatedNote.variant };
         }
 
         // Se il bottone Send del modale non è trovato, è un errore bloccante
@@ -125,7 +137,7 @@ async function handleInviteModal(
         await humanMouseMove(page, SELECTORS.sendWithoutNote);
         await humanDelay(page, 120, 300);
         await sendWithoutNote.click();
-        return { sentWithNote: false, noteSource: null };
+        return { sentWithNote: false, noteSource: null, variant: null };
     }
 
     const fallback = page.locator(SELECTORS.sendFallback).first();
@@ -133,7 +145,7 @@ async function handleInviteModal(
         await humanMouseMove(page, SELECTORS.sendFallback);
         await humanDelay(page, 120, 300);
         await fallback.click();
-        return { sentWithNote: false, noteSource: null };
+        return { sentWithNote: false, noteSource: null, variant: null };
     }
 
     await incrementDailyStat(localDate, 'selector_failures');
@@ -165,6 +177,38 @@ export async function processInviteJob(payload: InviteJobPayload, context: Worke
     if (await detectChallenge(context.session.page)) {
         throw new ChallengeDetectedError();
     }
+
+    // --- PHASE 7: AI Context Extraction (About & Experience) ---
+    try {
+        let extractedAbout: string | null = null;
+        let extractedExperience: string | null = null;
+
+        const aboutLocator = context.session.page.locator(SELECTORS.aboutSection).first();
+        if (await aboutLocator.isVisible()) {
+            extractedAbout = (await aboutLocator.innerText()).trim();
+        }
+
+        const expLocator = context.session.page.locator(SELECTORS.experienceSection).first();
+        if (await expLocator.isVisible()) {
+            extractedExperience = (await expLocator.innerText()).trim();
+        }
+
+        if (extractedAbout || extractedExperience) {
+            await updateLeadScrapedContext(lead.id, extractedAbout || null, extractedExperience || null);
+            lead.about = extractedAbout || null;
+            lead.experience = extractedExperience || null;
+
+            // Sync with Cloud
+            bridgeLeadStatus(lead.linkedin_url, lead.status, {
+                about: extractedAbout || null,
+                experience: extractedExperience || null
+            });
+        }
+    } catch (e) {
+        // Estrazione Opzionale. Ignorare errori di timeout o parsing DOM
+        console.warn(`[WARN] Impossibile estrarre contesto AI per lead ${lead.id}:`, e);
+    }
+    // --- END PHASE 7 ---
 
     const connectClicked = await clickConnectOnProfile(context.session.page);
     if (!connectClicked) {
@@ -208,10 +252,15 @@ export async function processInviteJob(payload: InviteJobPayload, context: Worke
         dryRun: context.dryRun,
         withNote: inviteResult.sentWithNote,
         withNoteSource: inviteResult.noteSource,
+        variant: inviteResult.variant || null
     });
     await incrementDailyStat(context.localDate, 'invites_sent');
     await incrementListDailyStat(context.localDate, lead.list_name, 'invites_sent');
     // Cloud sync non-bloccante
-    bridgeLeadStatus(lead.linkedin_url, 'INVITED', { invited_at: new Date().toISOString() });
+    bridgeLeadStatus(lead.linkedin_url, 'INVITED', {
+        invited_at: new Date().toISOString(),
+        invite_prompt_variant: inviteResult.variant || null,
+        invite_note_sent: inviteResult.sentWithNote ? 'yes' : 'no'
+    });
     bridgeDailyStat(context.localDate, context.accountId, 'invites_sent');
 }
