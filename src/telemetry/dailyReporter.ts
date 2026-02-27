@@ -2,6 +2,8 @@ import { sendTelegramAlert } from './alerts';
 import { getDailyStatsSnapshot } from '../core/repositories';
 import { getDatabase } from '../db';
 import { getLocalDateString } from '../config';
+import { getTopTimeSlots } from '../ml/timingOptimizer';
+import { getVariantLeaderboard } from '../ml/abBandit';
 
 export async function generateAndSendDailyReport(targetDate?: string): Promise<boolean> {
     const localDate = targetDate || getLocalDateString();
@@ -37,6 +39,29 @@ export async function generateAndSendDailyReport(targetDate?: string): Promise<b
         WHERE start_time LIKE ? || '%'
     `, [localDate]);
 
+    // AB Testing section
+    const abStats = await getVariantLeaderboard().catch(() => []);
+    const abSection = abStats.length > 0
+        ? [
+            `\n*🧪 A/B Varianti Note (Bandit)*`,
+            ...abStats.map(v =>
+                `• \`${v.variantId}\`: sent=${v.sent} acc=${(v.acceptanceRate * 100).toFixed(0)}% reply=${(v.replyRate * 100).toFixed(0)}% UCB=${v.ucbScore}`
+            )
+        ].join('\n')
+        : '';
+
+    // Best timing slots
+    const topSlots = await getTopTimeSlots(3).catch(() => []);
+    const DOW_LABELS = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
+    const timingSection = topSlots.length > 0
+        ? [
+            `\n*⏰ Best Time Slots (storico)*`,
+            ...topSlots.map(s =>
+                `• ${DOW_LABELS[s.dayOfWeek]} ${String(s.hour).padStart(2, '0')}:00 → score=${s.score} (n=${s.sampleSize})`
+            )
+        ].join('\n')
+        : '';
+
     // Format Report Markdown per Telegram
     const reportText = [
         `📊 *Daily Performance Summary (${localDate})* 📊`,
@@ -52,11 +77,11 @@ export async function generateAndSendDailyReport(targetDate?: string): Promise<b
         `\n*⚠️ Risk & Health*`,
         `• Errori Esecuzione (Job/Orchestrator): *${stats.runErrors}*`,
         `• Problemi Selettori UI: *${stats.selectorFailures}*`,
-        `• Challenge LinkedIn Apparse: *${stats.challengesCount}*`
-    ].join('\n');
+        `• Challenge LinkedIn Apparse: *${stats.challengesCount}*`,
+        abSection,
+        timingSection,
+    ].filter(s => s.length > 0).join('\n');
 
-    // Manda usando lo stesso sendTelegramAlert.
-    // Nessun severity prefix o usiamo `info`. Useremo un titolo per mascherare il pallino.
     await sendTelegramAlert(reportText, 'LinkedIn Bot Daily Report', 'info');
 
     console.log(`[DAILY_REPORTER] Report inviato a Telegram per la data ${localDate}`);

@@ -32,6 +32,14 @@ export function evaluateRisk(inputs: RiskInputs): RiskSnapshot {
     };
 }
 
+export function calculateAccountWarmupMultiplier(ageDays: number, maxDays: number): number {
+    if (ageDays >= maxDays) return 1.0;
+    // Linear progression from 10% to 100% over maxDays
+    const baseline = 0.1;
+    const progress = ageDays / maxDays;
+    return Math.min(1.0, baseline + (1 - baseline) * progress);
+}
+
 export function calculateDynamicBudget(
     softCap: number,
     hardCap: number,
@@ -43,8 +51,12 @@ export function calculateDynamicBudget(
     }
 
     let effectiveCap = softCap;
+
+    // We apply warmup from the caller (scheduler) now.
+
+    // Risk policy
     if (riskAction === 'WARN') {
-        effectiveCap = Math.floor(softCap * 0.5);
+        effectiveCap = Math.floor(effectiveCap * 0.5);
     }
     if (riskAction === 'STOP') {
         effectiveCap = 0;

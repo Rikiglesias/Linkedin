@@ -49,6 +49,7 @@ import { Page } from 'playwright';
 import { getAccountProfileById, getRuntimeAccountProfiles } from './accountManager';
 import { getProxyFailoverChain, getProxyPoolStatus } from './proxyManager';
 import { runRandomLinkedinActivity } from './workers/randomActivityWorker';
+import { runDeadLetterWorker } from './workers/deadLetterWorker';
 import { addLeadToSalesNavList, createSalesNavList } from './salesnav/listActions';
 import { isOpenAIConfigured } from './ai/openaiClient';
 import { startTelegramListener } from './cloud/telegramListener';
@@ -68,6 +69,31 @@ function setupGracefulShutdown(): void {
     };
     process.on('SIGINT', () => { void handler('SIGINT'); });
     process.on('SIGTERM', () => { void handler('SIGTERM'); });
+}
+
+/**
+ * Auto-restart pianificato (memory leak protection).
+ * Dopo PROCESS_MAX_UPTIME_HOURS il processo esce con code 0.
+ * PM2 o Task Scheduler lo rilanciano automaticamente.
+ */
+function setupPlannedRestart(): void {
+    const maxUptimeMs = config.processMaxUptimeHours * 60 * 60 * 1000;
+    const CHECK_INTERVAL_MS = 30 * 60 * 1000; // check ogni 30 min
+
+    const interval = setInterval(() => {
+        const uptimeMs = process.uptime() * 1000;
+        if (uptimeMs >= maxUptimeMs) {
+            const uptimeHours = (uptimeMs / 3_600_000).toFixed(1);
+            console.log(`[PLANNED_RESTART] Uptime = ${uptimeHours}h >= limit ${config.processMaxUptimeHours}h — riavvio pianificato.`);
+            clearInterval(interval);
+            // Flush DB e restarta
+            closeDatabase()
+                .catch(err => console.error('[PLANNED_RESTART] Errore chiusura DB:', err))
+                .finally(() => process.exit(0));
+        }
+    }, CHECK_INTERVAL_MS);
+
+    interval.unref(); // Non blocca il loop degli eventi
 }
 
 function getOptionValue(args: string[], optionName: string): string | undefined {
@@ -369,6 +395,9 @@ async function evaluateLoopDoctorGate(dryRun: boolean): Promise<LoopDoctorGate> 
     if (!syncOk) {
         return { proceed: false, reason: 'doctor_sync_not_configured' };
     }
+    if (!report.compliance.ok) {
+        return { proceed: false, reason: 'doctor_compliance_violation' };
+    }
     return { proceed: true, reason: 'doctor_ok' };
 }
 
@@ -647,6 +676,22 @@ async function runLoopCommand(args: string[]): Promise<void> {
                                 console.log(`[LOOP] Auto - backup giornaliero completato: ${backupPath} `);
                             } catch (e) {
                                 console.error(`[LOOP] Auto - backup fallito`, e);
+                            }
+                        }
+                    }
+
+                    // Dead Letter Queue Periodico
+                    if (!dryRun) {
+                        const DLQ_LAST_RUN_KEY = 'dlq.last_run_at';
+                        const dlqLastRunRaw = await getRuntimeFlag(DLQ_LAST_RUN_KEY);
+                        const shouldRunDlq = !dlqLastRunRaw || (Date.now() - Date.parse(dlqLastRunRaw)) > 6 * 60 * 60 * 1000; // run every 6 hours
+                        if (shouldRunDlq) {
+                            try {
+                                const dlqResult = await runDeadLetterWorker({ batchSize: 200, recycleDelaySec: 43200 });
+                                await setRuntimeFlag(DLQ_LAST_RUN_KEY, new Date().toISOString());
+                                console.log(`[LOOP] Dead Letter Worker completato. Processati: ${dlqResult.processed}, Riciclati: ${dlqResult.recycled}, Archiviati: ${dlqResult.deadLettered}`);
+                            } catch (e) {
+                                console.error('[LOOP] Dead Letter Worker fallito', e);
                             }
                         }
                     }
@@ -1222,6 +1267,7 @@ async function runDbBackupCommand(): Promise<void> {
 
 async function main(): Promise<void> {
     setupGracefulShutdown();
+    setupPlannedRestart();
     const args = process.argv.slice(2);
     const command = args[0];
     const commandArgs = args.slice(1);

@@ -1,7 +1,7 @@
 import { detectChallenge, humanDelay, humanMouseMove, humanType, simulateHumanReading } from '../browser';
 import { transitionLead } from '../core/leadStateService';
 import { countRecentMessageHash, getLeadById, incrementDailyStat, incrementListDailyStat, storeMessageHash } from '../core/repositories';
-import { SELECTORS } from '../selectors';
+import { joinSelectors } from '../selectors';
 import { MessageJobPayload } from '../types/domain';
 import { hashMessage, validateMessageContent } from '../validation/messageValidator';
 import { WorkerContext } from './context';
@@ -42,31 +42,31 @@ export async function processMessageJob(payload: MessageJobPayload, context: Wor
         throw new ChallengeDetectedError();
     }
 
-    const msgBtn = context.session.page.locator(SELECTORS.messageButton).first();
+    const msgBtn = context.session.page.locator(joinSelectors('messageButton')).first();
     if (await msgBtn.count() === 0) {
         throw new RetryableWorkerError('Bottone messaggio non trovato', 'MESSAGE_BUTTON_NOT_FOUND');
     }
 
-    await humanMouseMove(context.session.page, SELECTORS.messageButton);
+    await humanMouseMove(context.session.page, joinSelectors('messageButton'));
     await humanDelay(context.session.page, 120, 320);
     await msgBtn.click();
     await humanDelay(context.session.page, 1200, 2200);
 
-    const textbox = context.session.page.locator(SELECTORS.messageTextbox).first();
+    const textbox = context.session.page.locator(joinSelectors('messageTextbox')).first();
     if (await textbox.count() === 0) {
         await incrementDailyStat(context.localDate, 'selector_failures');
         throw new RetryableWorkerError('Textbox messaggio non trovata', 'TEXTBOX_NOT_FOUND');
     }
-    await humanType(context.session.page, SELECTORS.messageTextbox, message);
+    await humanType(context.session.page, joinSelectors('messageTextbox'), message);
     await humanDelay(context.session.page, 800, 1600);
 
     if (!context.dryRun) {
-        const sendBtn = context.session.page.locator(SELECTORS.messageSendButton).first();
+        const sendBtn = context.session.page.locator(joinSelectors('messageSendButton')).first();
         if (await sendBtn.count() === 0 || (await sendBtn.isDisabled())) {
             await incrementDailyStat(context.localDate, 'selector_failures');
             throw new RetryableWorkerError('Bottone invio non disponibile', 'SEND_NOT_AVAILABLE');
         }
-        await humanMouseMove(context.session.page, SELECTORS.messageSendButton);
+        await humanMouseMove(context.session.page, joinSelectors('messageSendButton'));
         await humanDelay(context.session.page, 100, 300);
         await sendBtn.click();
     }

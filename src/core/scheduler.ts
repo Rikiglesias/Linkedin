@@ -1,6 +1,6 @@
 import { config, getLocalDateString, getWeekStartDate } from '../config';
 import { pickAccountIdForLead, getRuntimeAccountProfiles } from '../accountManager';
-import { evaluateRisk, calculateDynamicBudget } from '../risk/riskEngine';
+import { evaluateRisk, calculateDynamicBudget, calculateAccountWarmupMultiplier } from '../risk/riskEngine';
 import { JobType, RiskSnapshot } from '../types/domain';
 import {
     countWeeklyInvites,
@@ -14,6 +14,7 @@ import {
     listLeadCampaignConfigs,
     promoteNewLeadsToReadyInvite,
     syncLeadListsFromLeads,
+    getAccountAgeDays
 } from './repositories';
 import { transitionLead } from './leadStateService';
 
@@ -233,11 +234,45 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
     const weeklyInvitesSent = await countWeeklyInvites(weekStartDate);
     const weeklyRemaining = Math.max(0, config.weeklyInviteLimit - weeklyInvitesSent);
 
-    const inviteBudget = Math.min(
-        calculateDynamicBudget(config.softInviteCap, config.hardInviteCap, dailyInvitesSent, riskSnapshot.action),
-        weeklyRemaining
-    );
-    const messageBudget = calculateDynamicBudget(config.softMsgCap, config.hardMsgCap, dailyMessagesSent, riskSnapshot.action);
+    const dbAccountAgeDays = await getAccountAgeDays();
+    const accounts = getRuntimeAccountProfiles();
+
+    let inviteBudget = 0;
+    let messageBudget = 0;
+
+    for (const account of accounts) {
+        let ageDays = dbAccountAgeDays;
+        if (account.warmupEnabled && account.warmupStartDate) {
+            const startMs = new Date(account.warmupStartDate).getTime();
+            if (!Number.isNaN(startMs)) {
+                ageDays = Math.max(0, Math.floor((Date.now() - startMs) / 86400000));
+            }
+        }
+
+        let warmupFactor = 1.0;
+        if (account.warmupEnabled) {
+            warmupFactor = calculateAccountWarmupMultiplier(ageDays, account.warmupMaxDays || 30);
+        }
+
+        const avgDailyInvites = Math.floor(dailyInvitesSent / accounts.length);
+        const avgDailyMessages = Math.floor(dailyMessagesSent / accounts.length);
+
+        const limitInvite = calculateDynamicBudget(config.softInviteCap, config.hardInviteCap, avgDailyInvites, riskSnapshot.action);
+        const limitMessage = calculateDynamicBudget(config.softMsgCap, config.hardMsgCap, avgDailyMessages, riskSnapshot.action);
+
+        const accountInviteLimit = warmupFactor < 1.0
+            ? Math.max(account.warmupMinActions || 5, Math.floor(limitInvite * warmupFactor))
+            : limitInvite;
+
+        const accountMessageLimit = warmupFactor < 1.0
+            ? Math.max(account.warmupMinActions || 5, Math.floor(limitMessage * warmupFactor))
+            : limitMessage;
+
+        inviteBudget += accountInviteLimit;
+        messageBudget += accountMessageLimit;
+    }
+
+    inviteBudget = Math.min(inviteBudget, weeklyRemaining);
 
     // WARMUP BYPASS: nessun invio email/connessioni
     const effectiveInviteBudget = workflow === 'warmup' ? 0 : inviteBudget;

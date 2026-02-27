@@ -1,0 +1,89 @@
+version: '3.9'
+
+# ═══════════════════════════════════════════════════════════════════
+# LinkedIn Bot — Docker Compose (Phase 8)
+# Services:
+#   bot       — Node.js + Playwright (il bot + API/Dashboard)
+#   db        — PostgreSQL 16 con volume persistente
+#   dashboard — Nginx che serve public/ statico
+# ═══════════════════════════════════════════════════════════════════
+
+services:
+
+  # ── Database PostgreSQL ──────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: linkedin-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bot_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-linkedin_bot}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bot_user} -d ${POSTGRES_DB:-linkedin_bot}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - linkedin-net
+
+  # ── Bot (Node.js + Playwright) ───────────────────────────────────
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: linkedin-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-bot_user}:${POSTGRES_PASSWORD:-changeme}@db:5432/${POSTGRES_DB:-linkedin_bot}
+      NODE_ENV: production
+      TZ: Europe/Rome
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./.env:/app/.env
+      - ./data:/app/data # SQLite fallback + backups + screenshots
+      - ./plugins:/app/plugins # Plugin esterni
+      - ./public:/app/public # Dashboard UI (condivisa con nginx)
+    ports:
+      - "3000:3000" # API REST + Dashboard express
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -sf http://localhost:3000/api/health || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - linkedin-net
+    shm_size: '1gb' # Richiesto da Chromium/Playwright
+
+  # ── Dashboard (Nginx) ────────────────────────────────────────────
+  dashboard:
+    image: nginx:alpine
+    container_name: linkedin-dashboard
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./public:/usr/share/nginx/html:ro
+    depends_on:
+      bot:
+        condition: service_healthy
+    networks:
+      - linkedin-net
+
+# ── Volumi e Reti ───────────────────────────────────────────────────
+volumes:
+  pg_data:
+    name: linkedin_pg_data
+
+networks:
+  linkedin-net:
+    name: linkedin-network
+    driver: bridge

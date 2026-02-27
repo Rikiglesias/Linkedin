@@ -33,6 +33,15 @@ function parseStringEnv(name: string, fallback: string = ''): string {
     return raw.trim();
 }
 
+function parseCsvEnv(name: string): string[] {
+    const raw = parseStringEnv(name);
+    if (!raw) return [];
+    return raw
+        .split(',')
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0);
+}
+
 function resolvePathValue(rawPath: string): string {
     return path.isAbsolute(rawPath) ? rawPath : path.resolve(process.cwd(), rawPath);
 }
@@ -45,6 +54,10 @@ export interface AccountProfileConfig {
     proxyUrl: string;
     proxyUsername: string;
     proxyPassword: string;
+    warmupEnabled: boolean;
+    warmupStartDate?: string;
+    warmupMaxDays: number;
+    warmupMinActions: number;
 }
 
 function parseEventSyncSinkEnv(name: string, fallback: EventSyncSink): EventSyncSink {
@@ -77,12 +90,21 @@ function parseAccountProfileFromEnv(slot: 1 | 2): AccountProfileConfig | null {
         proxyUrl: parseStringEnv(`ACCOUNT_${slot}_PROXY_URL`),
         proxyUsername: parseStringEnv(`ACCOUNT_${slot}_PROXY_USERNAME`),
         proxyPassword: parseStringEnv(`ACCOUNT_${slot}_PROXY_PASSWORD`),
+        warmupEnabled: parseBoolEnv(`ACCOUNT_${slot}_WARMUP_ENABLED`, false),
+        warmupStartDate: parseStringEnv(`ACCOUNT_${slot}_WARMUP_START_DATE`),
+        warmupMaxDays: parseIntEnv(`ACCOUNT_${slot}_WARMUP_MAX_DAYS`, 30),
+        warmupMinActions: parseIntEnv(`ACCOUNT_${slot}_WARMUP_MIN_ACTIONS`, 5),
     };
 }
 
 export interface AppConfig {
     timezone: string;
     headless: boolean;
+    dashboardAuthEnabled: boolean;
+    dashboardApiKey: string;
+    dashboardBasicUser: string;
+    dashboardBasicPassword: string;
+    dashboardTrustedIps: string[];
     workingHoursStart: number;
     workingHoursEnd: number;
     maxConcurrentJobs: number;
@@ -98,11 +120,16 @@ export interface AppConfig {
     maxRunErrorsPerDay: number;
     autoPauseMinutesOnFailureBurst: number;
     retentionDays: number;
+    profileContextExtractionEnabled: boolean;
     softInviteCap: number;
     hardInviteCap: number;
     weeklyInviteLimit: number;
     softMsgCap: number;
     hardMsgCap: number;
+    complianceEnforced: boolean;
+    complianceMaxHardInviteCap: number;
+    complianceMaxWeeklyInviteLimit: number;
+    complianceMaxHardMsgCap: number;
     messageScheduleMinDelayHours: number;
     messageScheduleMaxDelayHours: number;
     riskWarnThreshold: number;
@@ -142,6 +169,7 @@ export interface AppConfig {
     multiAccountEnabled: boolean;
     accountProfiles: AccountProfileConfig[];
     dbPath: string;
+    databaseUrl: string;
     allowSqliteInProduction: boolean;
     eventSyncSink: EventSyncSink;
     supabaseSyncEnabled: boolean;
@@ -171,6 +199,17 @@ export interface AppConfig {
     aiGuardianPauseMinutes: number;
     telegramBotToken: string;
     telegramChatId: string;
+    discordWebhookUrl: string;
+    slackWebhookUrl: string;
+    // ── Phase 8 ────────────────────────────────────────────────────────────────
+    backupRetentionDays: number;        // giorni di backup da mantenere (default 7)
+    processMaxUptimeHours: number;      // ore prima del restart pianificato (default 24)
+    hubspotApiKey: string;              // HubSpot Private App Token
+    salesforceInstanceUrl: string;      // es. https://mycompany.salesforce.com
+    salesforceClientId: string;
+    salesforceClientSecret: string;
+    hunterApiKey: string;               // Hunter.io API key
+    clearbitApiKey: string;             // Clearbit Secret Key
     proxyUrl: string;
     proxyUsername: string;
     proxyPassword: string;
@@ -178,9 +217,16 @@ export interface AppConfig {
     proxyFailureCooldownMinutes: number;
     proxyRotateEveryJobs: number;
     proxyRotateEveryMinutes: number;
+    proxyHealthCheckTimeoutMs: number;
     proxyProviderApiEndpoint?: string;
     proxyProviderApiKey?: string;
     fingerprintApiEndpoint: string;
+
+    // Warm-up policy
+    warmupEnabled: boolean;
+    warmupStartDate?: string;
+    warmupMaxDays: number;
+    warmupMinActions: number;
 
     // Hygiene settings (withdraw old pending invites)
     withdrawInvitesEnabled: boolean;
@@ -197,6 +243,7 @@ export interface AppConfig {
     randomActivityEnabled: boolean;
     randomActivityProbability: number;
     randomActivityMaxActions: number;
+    weekendPolicyEnabled: boolean;
 }
 
 const configuredAccountProfiles: AccountProfileConfig[] = [parseAccountProfileFromEnv(1), parseAccountProfileFromEnv(2)]
@@ -205,6 +252,11 @@ const configuredAccountProfiles: AccountProfileConfig[] = [parseAccountProfileFr
 export const config: AppConfig = {
     timezone: process.env.TIMEZONE ?? 'Europe/Rome',
     headless: parseBoolEnv('HEADLESS', false),
+    dashboardAuthEnabled: parseBoolEnv('DASHBOARD_AUTH_ENABLED', true),
+    dashboardApiKey: parseStringEnv('DASHBOARD_API_KEY'),
+    dashboardBasicUser: parseStringEnv('DASHBOARD_BASIC_USER'),
+    dashboardBasicPassword: parseStringEnv('DASHBOARD_BASIC_PASSWORD'),
+    dashboardTrustedIps: parseCsvEnv('DASHBOARD_TRUSTED_IPS'),
     workingHoursStart: parseIntEnv('HOUR_START', 9),
     workingHoursEnd: parseIntEnv('HOUR_END', 18),
     maxConcurrentJobs: Math.max(1, parseIntEnv('MAX_CONCURRENT_JOBS', 1)),
@@ -219,12 +271,17 @@ export const config: AppConfig = {
     maxSelectorFailuresPerDay: Math.max(1, parseIntEnv('MAX_SELECTOR_FAILURES_PER_DAY', 8)),
     maxRunErrorsPerDay: Math.max(1, parseIntEnv('MAX_RUN_ERRORS_PER_DAY', 20)),
     autoPauseMinutesOnFailureBurst: Math.max(1, parseIntEnv('AUTO_PAUSE_MINUTES_ON_FAILURE_BURST', 180)),
-    retentionDays: Math.max(7, parseIntEnv('RETENTION_DAYS', 45)),
+    retentionDays: Math.max(7, parseIntEnv('RETENTION_DAYS', 90)),
+    profileContextExtractionEnabled: parseBoolEnv('PROFILE_CONTEXT_EXTRACTION_ENABLED', false),
     softInviteCap: Math.max(1, parseIntEnv('SOFT_INVITE_CAP', 25)),
     hardInviteCap: Math.max(1, parseIntEnv('HARD_INVITE_CAP', 35)),
     weeklyInviteLimit: Math.max(1, parseIntEnv('WEEKLY_INVITE_LIMIT', 120)),
     softMsgCap: Math.max(1, parseIntEnv('SOFT_MSG_CAP', 40)),
     hardMsgCap: Math.max(1, parseIntEnv('HARD_MSG_CAP', 60)),
+    complianceEnforced: parseBoolEnv('COMPLIANCE_ENFORCED', true),
+    complianceMaxHardInviteCap: Math.max(1, parseIntEnv('COMPLIANCE_MAX_HARD_INVITE_CAP', 20)),
+    complianceMaxWeeklyInviteLimit: Math.max(1, parseIntEnv('COMPLIANCE_MAX_WEEKLY_INVITE_LIMIT', 100)),
+    complianceMaxHardMsgCap: Math.max(1, parseIntEnv('COMPLIANCE_MAX_HARD_MSG_CAP', 40)),
     messageScheduleMinDelayHours: Math.max(0, parseIntEnv('MESSAGE_SCHEDULE_MIN_DELAY_HOURS', 0)),
     messageScheduleMaxDelayHours: Math.max(0, parseIntEnv('MESSAGE_SCHEDULE_MAX_DELAY_HOURS', 0)),
     riskWarnThreshold: parseIntEnv('RISK_WARN_THRESHOLD', 60),
@@ -264,6 +321,7 @@ export const config: AppConfig = {
     multiAccountEnabled: parseBoolEnv('MULTI_ACCOUNT_ENABLED', configuredAccountProfiles.length > 1),
     accountProfiles: configuredAccountProfiles,
     dbPath: resolvePathFromEnv('DB_PATH', path.join('data', 'linkedin_bot.sqlite')),
+    databaseUrl: parseStringEnv('DATABASE_URL'),
     allowSqliteInProduction: parseBoolEnv('ALLOW_SQLITE_IN_PRODUCTION', false),
     eventSyncSink: parseEventSyncSinkEnv('EVENT_SYNC_SINK', 'SUPABASE'),
     supabaseSyncEnabled: parseBoolEnv('SUPABASE_SYNC_ENABLED', true),
@@ -293,6 +351,17 @@ export const config: AppConfig = {
     aiGuardianPauseMinutes: Math.max(10, parseIntEnv('AI_GUARDIAN_PAUSE_MINUTES', 180)),
     telegramBotToken: parseStringEnv('TELEGRAM_BOT_TOKEN'),
     telegramChatId: parseStringEnv('TELEGRAM_CHAT_ID'),
+    discordWebhookUrl: parseStringEnv('DISCORD_WEBHOOK_URL'),
+    slackWebhookUrl: parseStringEnv('SLACK_WEBHOOK_URL'),
+    // ── Phase 8 ────────────────────────────────────────────────────────────────
+    backupRetentionDays: Math.max(1, parseIntEnv('BACKUP_RETENTION_DAYS', 7)),
+    processMaxUptimeHours: Math.max(1, parseIntEnv('PROCESS_MAX_UPTIME_HOURS', 24)),
+    hubspotApiKey: parseStringEnv('HUBSPOT_API_KEY'),
+    salesforceInstanceUrl: parseStringEnv('SALESFORCE_INSTANCE_URL'),
+    salesforceClientId: parseStringEnv('SALESFORCE_CLIENT_ID'),
+    salesforceClientSecret: parseStringEnv('SALESFORCE_CLIENT_SECRET'),
+    hunterApiKey: parseStringEnv('HUNTER_API_KEY'),
+    clearbitApiKey: parseStringEnv('CLEARBIT_API_KEY'),
     proxyUrl: parseStringEnv('PROXY_URL'),
     proxyUsername: parseStringEnv('PROXY_USERNAME'),
     proxyPassword: parseStringEnv('PROXY_PASSWORD'),
@@ -300,9 +369,14 @@ export const config: AppConfig = {
     proxyFailureCooldownMinutes: Math.max(1, parseIntEnv('PROXY_FAILURE_COOLDOWN_MINUTES', 30)),
     proxyRotateEveryJobs: Math.max(0, parseIntEnv('PROXY_ROTATE_EVERY_JOBS', 0)),
     proxyRotateEveryMinutes: Math.max(0, parseIntEnv('PROXY_ROTATE_EVERY_MINUTES', 0)),
+    proxyHealthCheckTimeoutMs: Math.max(1000, parseIntEnv('PROXY_HEALTH_CHECK_TIMEOUT_MS', 5000)),
     proxyProviderApiEndpoint: parseStringEnv('PROXY_PROVIDER_API_ENDPOINT'),
     proxyProviderApiKey: parseStringEnv('PROXY_PROVIDER_API_KEY'),
     fingerprintApiEndpoint: parseStringEnv('FINGERPRINT_API_ENDPOINT'),
+    warmupEnabled: parseBoolEnv('WARMUP_ENABLED', false),
+    warmupStartDate: parseStringEnv('WARMUP_START_DATE') || undefined,
+    warmupMaxDays: Math.max(1, parseIntEnv('WARMUP_MAX_DAYS', 30)),
+    warmupMinActions: Math.max(1, parseIntEnv('WARMUP_MIN_ACTIONS', 5)),
 
     withdrawInvitesEnabled: parseBoolEnv('WITHDRAW_INVITES_ENABLED', true),
     pendingInviteMaxDays: parseIntEnv('PENDING_INVITE_MAX_DAYS', 30),
@@ -318,6 +392,7 @@ export const config: AppConfig = {
     randomActivityEnabled: parseBoolEnv('RANDOM_ACTIVITY_ENABLED', false),
     randomActivityProbability: Math.min(1, Math.max(0, parseFloatEnv('RANDOM_ACTIVITY_PROBABILITY', 0.15))),
     randomActivityMaxActions: Math.max(1, parseIntEnv('RANDOM_ACTIVITY_MAX_ACTIONS', 3)),
+    weekendPolicyEnabled: parseBoolEnv('WEEKEND_POLICY_ENABLED', true),
 };
 
 // Retrocompatibilità con vecchi moduli ancora presenti nel repository.
@@ -328,6 +403,12 @@ export const legacyLimits = {
 };
 
 export function isWorkingHour(now: Date = new Date()): boolean {
+    if (config.weekendPolicyEnabled) {
+        const day = getDayInTimezone(now, config.timezone);
+        if (day === 0 || day === 6) {
+            return false;
+        }
+    }
     const hour = getHourInTimezone(now, config.timezone);
     return hour >= config.workingHoursStart && hour < config.workingHoursEnd;
 }
@@ -350,6 +431,16 @@ export function getHourInTimezone(now: Date, timezone: string): number {
     });
     const formatted = formatter.format(now);
     return Number.parseInt(formatted, 10);
+}
+
+export function getDayInTimezone(now: Date, timezone: string): number {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone,
+        weekday: 'short',
+    });
+    const formatted = formatter.format(now);
+    const map: Record<string, number> = { 'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6 };
+    return map[formatted] ?? now.getDay();
 }
 
 export function getWeekStartDate(now: Date = new Date(), timezone: string = config.timezone): string {

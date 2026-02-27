@@ -11,10 +11,11 @@ import { buildPersonalizedInviteNote } from '../ai/inviteNotePersonalizer';
 import { evaluateAiGuardian } from '../ai/guardian';
 import { ScheduleResult } from '../core/scheduler';
 import { LeadRecord } from '../types/domain';
-import { getSchedulingAccountIds, pickAccountIdForLead } from '../accountManager';
 import { getProxy, getProxyFailoverChain, getProxyPoolStatus, markProxyFailed, markProxyHealthy } from '../proxyManager';
+import { getSchedulingAccountIds, pickAccountIdForLead } from '../accountManager';
 import { generateInviteNote } from '../noteGenerator';
 import { classifySiteMismatch, isMismatchAmbiguous } from '../core/audit';
+import { SELECTORS } from '../selectors';
 
 async function run(): Promise<void> {
     assert.equal(isValidLeadTransition('NEW', 'READY_INVITE'), true);
@@ -49,9 +50,11 @@ async function run(): Promise<void> {
     });
     assert.equal(risk.action === 'NORMAL' || risk.action === 'WARN' || risk.action === 'STOP', true);
 
+    // test dynamic budget
     const budgetNormal = calculateDynamicBudget(25, 35, 5, 'NORMAL');
     const budgetWarn = calculateDynamicBudget(25, 35, 5, 'WARN');
-    assert.equal(budgetNormal > budgetWarn, true);
+    assert.equal(budgetNormal, 20); // 25-5
+    assert.equal(budgetWarn, 7);    // floor(25*0.5)-5 = floor(12.5)-5 = 12-5 = 7
 
     const cooldownDecision = evaluateCooldownDecision({
         ...risk,
@@ -155,6 +158,9 @@ async function run(): Promise<void> {
             proxyUrl: '',
             proxyUsername: '',
             proxyPassword: '',
+            warmupEnabled: false,
+            warmupMaxDays: 30,
+            warmupMinActions: 5,
         },
         {
             id: 'backup',
@@ -162,6 +168,9 @@ async function run(): Promise<void> {
             proxyUrl: '',
             proxyUsername: '',
             proxyPassword: '',
+            warmupEnabled: false,
+            warmupMaxDays: 30,
+            warmupMinActions: 5,
         },
     ];
     try {
@@ -252,6 +261,19 @@ async function run(): Promise<void> {
 
     const note2 = generateInviteNote('');
     assert.equal(note2.note.length > 0, true); // fallback su 'collega'
+
+    // ── selectors ────────────────────────────────────────────────────────────
+    // SELECTORS è ora un array di priorità (readonly string[]).
+    // Ogni chiave deve avere almeno 2 selettori per garantire fault-tolerance UI.
+    for (const [key, value] of Object.entries(SELECTORS)) {
+        if (Array.isArray(value)) {
+            assert.equal(
+                value.length >= 2,
+                true,
+                `Selector "${key}" ha meno di 2 alternative (${value.length}). Aggiungere almeno un fallback per fault-tolerance UI.`
+            );
+        }
+    }
 }
 
 run()

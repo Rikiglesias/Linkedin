@@ -1,7 +1,7 @@
 import { chromium, BrowserContext, Page } from 'playwright';
 import { config } from './config';
 import { ensureDirectoryPrivate } from './security/filesystem';
-import { SELECTORS } from './selectors';
+import { joinSelectors } from './selectors';
 import { pauseAutomation } from './risk/incidentManager';
 import {
     ProxyConfig,
@@ -10,6 +10,28 @@ import {
     markProxyHealthy,
     releaseStickyProxy
 } from './proxyManager';
+
+// ─── Tracker Pagine e Browser (Memory Leak Protection) ──────────────
+const activeBrowsers = new Set<BrowserContext>();
+
+const cleanupBrowsers = async () => {
+    for (const browser of activeBrowsers) {
+        try {
+            await browser.close();
+        } catch { }
+    }
+    activeBrowsers.clear();
+};
+
+process.on('SIGINT', async () => {
+    await cleanupBrowsers();
+    process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+    await cleanupBrowsers();
+    process.exit(0);
+});
 
 // ─── User-Agent pool (Chrome reali su Windows/macOS/Linux) ──────────────────
 const USER_AGENTS = [
@@ -249,6 +271,7 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             if (currentProxy) {
                 markProxyHealthy(currentProxy);
             }
+            activeBrowsers.add(browser);
             return { browser, page };
         } catch (error) {
             lastError = error;
@@ -269,8 +292,139 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
     throw new Error('Impossibile avviare il browser context.');
 }
 
+// ─── UI Fallback Wrapper Functions ──────────────────────────────────────────
+
+/**
+ * Prova ogni selettore dell'array in ordine fino al primo che trova l'elemento
+ * e riesce a cliccarci sopra. Logga un WARNING ogni volta che degrada di livello.
+ * Lancia eccezione solo se tutti i selettori falliscono.
+ *
+ * @param page - Pagina Playwright
+ * @param selectors - Array di selettori CSS o XPath (quelli con "//" vengono usati come XPath)
+ * @param label - Nome descrittivo per i log (es. "Connect Button")
+ * @param timeoutPerSelector - Timeout in ms per ogni singolo tentativo (default 5000)
+ */
+export async function clickWithFallback(
+    page: Page,
+    selectors: readonly string[],
+    label: string,
+    timeoutPerSelector: number = 5000
+): Promise<void> {
+    for (let i = 0; i < selectors.length; i++) {
+        const sel = selectors[i];
+        try {
+            if (sel.startsWith('//')) {
+                // XPath – usa locator('xpath=...')
+                const loc = page.locator(`xpath=${sel}`);
+                await loc.first().click({ timeout: timeoutPerSelector });
+            } else {
+                const loc = page.locator(sel);
+                await loc.first().click({ timeout: timeoutPerSelector });
+            }
+            if (i > 0) {
+                console.warn(`[FALLBACK] clickWithFallback("${label}"): usato selettore di livello ${i} → "${sel.substring(0, 80)}". Il selettore primario potrebbe essere rotto.`);
+            }
+            return; // successo
+        } catch {
+            if (i < selectors.length - 1) {
+                console.warn(`[FALLBACK] clickWithFallback("${label}"): livello ${i} "${sel.substring(0, 60)}" non trovato, tento il prossimo...`);
+            }
+        }
+    }
+    throw new Error(`clickWithFallback("${label}"): nessun selettore ha funzionato su ${selectors.length} tentativi.`);
+}
+
+/**
+ * Aspetta che compaia almeno uno degli elementi dell'array, in ordine di priorità.
+ * Ritorna il selettore che ha avuto successo (utile per log e analisi).
+ */
+export async function waitForSelectorWithFallback(
+    page: Page,
+    selectors: readonly string[],
+    label: string,
+    timeoutPerSelector: number = 7000
+): Promise<string> {
+    for (let i = 0; i < selectors.length; i++) {
+        const sel = selectors[i];
+        try {
+            const playwrightSel = sel.startsWith('//') ? `xpath=${sel}` : sel;
+            await page.waitForSelector(playwrightSel, { timeout: timeoutPerSelector });
+            if (i > 0) {
+                console.warn(`[FALLBACK] waitForSelectorWithFallback("${label}"): comparso su selettore di livello ${i} → "${sel.substring(0, 80)}".`);
+            }
+            return sel;
+        } catch {
+            if (i < selectors.length - 1) {
+                console.warn(`[FALLBACK] waitForSelectorWithFallback("${label}"): livello ${i} timeout, provo il prossimo...`);
+            }
+        }
+    }
+    throw new Error(`waitForSelectorWithFallback("${label}"): nessun selettore trovato dopo ${selectors.length} tentativi.`);
+}
+
+/**
+ * Tenta di digitare testo in modo umano sul primo selettore funzionante dell'array.
+ * Wrapper di humanType con fallback progressivo.
+ */
+export async function typeWithFallback(
+    page: Page,
+    selectors: readonly string[],
+    text: string,
+    label: string,
+    timeoutPerSelector: number = 5000
+): Promise<void> {
+    for (let i = 0; i < selectors.length; i++) {
+        const sel = selectors[i];
+        try {
+            const playwrightSel = sel.startsWith('//') ? `xpath=${sel}` : sel;
+            const loc = page.locator(playwrightSel);
+            await loc.first().waitFor({ state: 'visible', timeout: timeoutPerSelector });
+            await loc.first().click();
+            await humanDelay(page, 200, 500);
+            for (let j = 0; j < text.length; j++) {
+                if (Math.random() < 0.03 && text.length > 3) {
+                    const wrongChar = String.fromCharCode(97 + Math.floor(Math.random() * 26));
+                    await loc.first().pressSequentially(wrongChar, { delay: Math.floor(Math.random() * 130) + 40 });
+                    await page.waitForTimeout(280 + Math.random() * 420);
+                    await loc.first().press('Backspace');
+                    await page.waitForTimeout(180 + Math.random() * 250);
+                }
+                await loc.first().pressSequentially(text[j], { delay: Math.floor(Math.random() * 150) + 40 });
+                if (Math.random() < 0.04) await humanDelay(page, 400, 1100);
+            }
+            if (i > 0) {
+                console.warn(`[FALLBACK] typeWithFallback("${label}"): digitato su selettore di livello ${i} → "${sel.substring(0, 80)}".`);
+            }
+            return;
+        } catch {
+            if (i < selectors.length - 1) {
+                console.warn(`[FALLBACK] typeWithFallback("${label}"): livello ${i} "${sel.substring(0, 60)}" non disponibile, provo il prossimo...`);
+            }
+        }
+    }
+    throw new Error(`typeWithFallback("${label}"): nessun selettore ha funzionato su ${selectors.length} tentativi.`);
+}
+
 export async function closeBrowser(session: BrowserSession): Promise<void> {
-    await session.browser.close();
+    activeBrowsers.delete(session.browser);
+    await session.browser.close().catch(() => { });
+}
+
+export async function performBrowserGC(session: BrowserSession): Promise<void> {
+    try {
+        const pages = session.browser.pages();
+        // Mantieni solo la pagina assegnata alla sessione primaria; chiudi pop-up e tab zombie
+        for (const p of pages) {
+            if (p !== session.page && !p.isClosed()) {
+                await p.close().catch(() => { });
+            }
+        }
+        // Forza anche garbage collection a livello protocollo per pulire heap isolate
+        const client = await session.page.context().newCDPSession(session.page);
+        await client.send('HeapProfiler.enable').catch(() => { });
+        await client.send('HeapProfiler.collectGarbage').catch(() => { });
+        await client.detach().catch(() => { });
+    } catch { }
 }
 
 async function hasLinkedinAuthCookie(page: Page): Promise<boolean> {
@@ -287,7 +441,7 @@ export async function isLoggedIn(page: Page): Promise<boolean> {
         return true;
     }
 
-    const count = await page.locator(SELECTORS.globalNav).count();
+    const count = await page.locator(joinSelectors('globalNav')).count();
     if (count > 0) {
         return true;
     }
@@ -316,7 +470,7 @@ export async function detectChallenge(page: Page): Promise<boolean> {
         return true;
     }
 
-    const selectorMatches = await page.locator(SELECTORS.challengeSignals).count();
+    const selectorMatches = await page.locator(joinSelectors('challengeSignals')).count();
     if (selectorMatches > 0) {
         return true;
     }
@@ -504,7 +658,7 @@ export async function interJobDelay(page: Page): Promise<void> {
 export async function runSelectorCanary(page: Page): Promise<boolean> {
     await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
     await humanDelay(page, 1200, 2000);
-    const navOk = await page.locator(SELECTORS.globalNav).count();
+    const navOk = await page.locator(joinSelectors('globalNav')).count();
     return navOk > 0;
 }
 

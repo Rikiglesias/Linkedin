@@ -2,6 +2,20 @@
 
 Questa guida descrive la procedura operativa per il rilascio in sicurezza ("Canary Rollout") e la scalata progressiva dei volumi (Ramp-Up).
 
+## 0. MCP Security Baseline (Supabase)
+
+Prima del rollout, eseguire un controllo security/performance via MCP sul progetto Supabase `Linkedin` (`project_id: ukgxmkwubcrbcvvovcto`).
+
+- Migrazione MCP applicata: `harden_public_rls_and_fk_indexes_v2` (27 Febbraio 2026)
+- Scope:
+  - RLS abilitata su: `accounts`, `campaigns`, `leads`, `prompt_variants`, `jobs_cloud`, `daily_stats_cloud`, `proxy_ips`, `telegram_commands`
+  - Policy `service_role` create per le tabelle sopra (default-deny per altri ruoli)
+  - Fix `search_path` su funzione `public.set_updated_at`
+  - Indici FK aggiunti: `campaigns(account_id)`, `daily_stats_cloud(account_id)`, `jobs_cloud(lead_id)`, `telegram_commands(account_id)`
+- Esito post-check MCP:
+  - Security advisors: `0` findings
+  - Performance advisors: restano solo `INFO` su indici non usati (nessun `ERROR`)
+
 ## 1. Preparazione Iniziale (Giorno 0)
 
 1. Assicurarsi che nel database/Supabase ci sia **UNA SOLA** lista segnata come attiva (`isActive = true`).

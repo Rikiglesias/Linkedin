@@ -2,7 +2,7 @@ import { checkLogin, closeBrowser, detectChallenge, humanDelay, launchBrowser } 
 import { getAccountProfileById, pickAccountIdForLead } from '../accountManager';
 import { config } from '../config';
 import { quarantineAccount } from '../risk/incidentManager';
-import { SELECTORS } from '../selectors';
+import { joinSelectors } from '../selectors';
 import { LeadRecord } from '../types/domain';
 import { reconcileLeadStatus, transitionLead } from './leadStateService';
 import {
@@ -100,11 +100,11 @@ async function inspectLeadOnSite(lead: LeadRecord, sessionPage: Page): Promise<S
     await sessionPage.goto(lead.linkedin_url, { waitUntil: 'domcontentloaded' });
     await humanDelay(sessionPage, 1200, 2200);
 
-    const messageButton = (await sessionPage.locator(SELECTORS.messageButton).count()) > 0;
-    const badgeText = await sessionPage.locator(SELECTORS.distanceBadge).first().textContent().catch(() => '');
+    const messageButton = (await sessionPage.locator(joinSelectors('messageButton')).count()) > 0;
+    const badgeText = await sessionPage.locator(joinSelectors('distanceBadge')).first().textContent().catch(() => '');
     const connected = messageButton && isFirstDegreeBadge(badgeText);
-    const pendingInvite = (await sessionPage.locator(SELECTORS.invitePendingIndicators).count()) > 0;
-    const canConnect = (await sessionPage.locator(SELECTORS.connectButtonPrimary).count()) > 0;
+    const pendingInvite = (await sessionPage.locator(joinSelectors('invitePendingIndicators')).count()) > 0;
+    const canConnect = (await sessionPage.locator(joinSelectors('connectButtonPrimary')).count()) > 0;
 
     return {
         pendingInvite,

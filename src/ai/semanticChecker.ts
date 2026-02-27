@@ -1,5 +1,12 @@
+import { requestOpenAIEmbeddings, isOpenAIConfigured } from './openaiClient';
+
+interface MemoryItem {
+    text: string;
+    embedding?: number[];
+}
+
 export class SemanticChecker {
-    private static memory: string[] = [];
+    private static memory: MemoryItem[] = [];
     private static MAX_MEMORY = 50;
 
     /**
@@ -31,16 +38,45 @@ export class SemanticChecker {
         return intersectionSize / unionSize;
     }
 
+    private static cosineSimilarity(vec1: number[], vec2: number[]): number {
+        if (vec1.length !== vec2.length) return 0;
+        let dotProduct = 0;
+        let normA = 0;
+        let normB = 0;
+        for (let i = 0; i < vec1.length; i++) {
+            dotProduct += vec1[i] * vec2[i];
+            normA += vec1[i] * vec1[i];
+            normB += vec2[i] * vec2[i];
+        }
+        if (normA === 0 || normB === 0) return 0;
+        return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+    }
+
     /**
      * Verifica se il nuovo testo è troppo simile ad uno degli ultimi messaggi inviati.
      * @param text Testo da verificare.
      * @param threshold Soglia (es. 0.8 per 80% di similarità).
      * @returns True se è troppo simile a qualcosa in memoria.
      */
-    public static isTooSimilar(text: string, threshold: number = 0.8): boolean {
+    public static async isTooSimilar(text: string, threshold: number = 0.8): Promise<boolean> {
+        let queryEmbedding: number[] | undefined;
+
+        if (isOpenAIConfigured()) {
+            try {
+                queryEmbedding = await requestOpenAIEmbeddings(text);
+            } catch {
+                // Fallback silently to Jaccard
+            }
+        }
+
         for (const pastMsg of this.memory) {
-            if (this.jaccardSimilarity(text, pastMsg) > threshold) {
-                return true;
+            if (queryEmbedding && pastMsg.embedding) {
+                const sim = this.cosineSimilarity(queryEmbedding, pastMsg.embedding);
+                if (sim > threshold) return true;
+            } else {
+                if (this.jaccardSimilarity(text, pastMsg.text) > threshold) {
+                    return true;
+                }
             }
         }
         return false;
@@ -49,10 +85,20 @@ export class SemanticChecker {
     /**
      * Aggiunge un nuovo messaggio alla memoria (se non è vuoto).
      */
-    public static remember(text: string): void {
+    public static async remember(text: string): Promise<void> {
         const t = text.trim();
         if (!t) return;
-        this.memory.push(t);
+
+        let embedding: number[] | undefined;
+        if (isOpenAIConfigured()) {
+            try {
+                embedding = await requestOpenAIEmbeddings(t);
+            } catch {
+                // Ignore, will fallback to jaccard
+            }
+        }
+
+        this.memory.push({ text: t, embedding });
         if (this.memory.length > this.MAX_MEMORY) {
             this.memory.shift();
         }

@@ -2,7 +2,7 @@ import { Page } from 'playwright';
 import { detectChallenge, humanDelay, humanMouseMove, humanType, simulateHumanReading } from '../browser';
 import { transitionLead } from '../core/leadStateService';
 import { getLeadById, incrementDailyStat, incrementListDailyStat, updateLeadScrapedContext, updateLeadPromptVariant } from '../core/repositories';
-import { SELECTORS } from '../selectors';
+import { joinSelectors } from '../selectors';
 import { InviteJobPayload, LeadRecord } from '../types/domain';
 import { WorkerContext } from './context';
 import { ChallengeDetectedError, RetryableWorkerError } from './errors';
@@ -11,25 +11,26 @@ import { config } from '../config';
 import { buildPersonalizedInviteNote } from '../ai/inviteNotePersonalizer';
 import { pauseAutomation } from '../risk/incidentManager';
 import { bridgeDailyStat, bridgeLeadStatus } from '../cloud/cloudBridge';
+import { selectVariant, recordSent } from '../ml/abBandit';
 
 async function clickConnectOnProfile(page: Page): Promise<boolean> {
-    const primaryBtn = page.locator(SELECTORS.connectButtonPrimary).first();
+    const primaryBtn = page.locator(joinSelectors('connectButtonPrimary')).first();
     if (await primaryBtn.count() > 0) {
-        await humanMouseMove(page, SELECTORS.connectButtonPrimary);
+        await humanMouseMove(page, joinSelectors('connectButtonPrimary'));
         await humanDelay(page, 120, 320);
         await primaryBtn.click();
         return true;
     }
 
-    const moreBtn = page.locator(SELECTORS.moreActionsButton).first();
+    const moreBtn = page.locator(joinSelectors('moreActionsButton')).first();
     if (await moreBtn.count() > 0) {
-        await humanMouseMove(page, SELECTORS.moreActionsButton);
+        await humanMouseMove(page, joinSelectors('moreActionsButton'));
         await humanDelay(page, 120, 300);
         await moreBtn.click();
         await humanDelay(page, 700, 1300);
-        const connectInMenu = page.locator(SELECTORS.connectInMoreMenu).first();
+        const connectInMenu = page.locator(joinSelectors('connectInMoreMenu')).first();
         if (await connectInMenu.count() > 0) {
-            await humanMouseMove(page, SELECTORS.connectInMoreMenu);
+            await humanMouseMove(page, joinSelectors('connectInMoreMenu'));
             await humanDelay(page, 120, 300);
             await connectInMenu.click();
             return true;
@@ -40,7 +41,7 @@ async function clickConnectOnProfile(page: Page): Promise<boolean> {
 }
 
 async function detectInviteProof(page: Page): Promise<boolean> {
-    const pendingCount = await page.locator(SELECTORS.invitePendingIndicators).count();
+    const pendingCount = await page.locator(joinSelectors('invitePendingIndicators')).count();
     if (pendingCount > 0) {
         return true;
     }
@@ -53,7 +54,7 @@ async function detectInviteProof(page: Page): Promise<boolean> {
 }
 
 async function detectWeeklyInviteLimit(page: Page): Promise<boolean> {
-    const selectorCount = await page.locator(SELECTORS.inviteWeeklyLimitSignals).count();
+    const selectorCount = await page.locator(joinSelectors('inviteWeeklyLimitSignals')).count();
     if (selectorCount > 0) {
         return true;
     }
@@ -83,28 +84,34 @@ async function handleInviteModal(
     if (dryRun) return { sentWithNote: false, noteSource: null, variant: null };
 
     // Controlla se c'è il bottone "Add a note" (con retry breve se il modale sta caricando)
-    const addNoteBtn = page.locator(SELECTORS.addNoteButton).first();
+    const addNoteBtn = page.locator(joinSelectors('addNoteButton')).first();
     let canAddNote = await addNoteBtn.count() > 0;
     if (config.inviteWithNote && !canAddNote) {
-        await page.waitForSelector(SELECTORS.addNoteButton, { timeout: 2000 }).catch(() => null);
+        await page.waitForSelector(joinSelectors('addNoteButton'), { timeout: 2000 }).catch(() => null);
         canAddNote = await addNoteBtn.count() > 0;
     }
 
     if (config.inviteWithNote && canAddNote) {
-        await humanMouseMove(page, SELECTORS.addNoteButton);
+        await humanMouseMove(page, joinSelectors('addNoteButton'));
         await humanDelay(page, 150, 350);
         await addNoteBtn.click();
         await humanDelay(page, 600, 1200);
 
         // Scrivi la nota nella textarea del modale
         const generatedNote = await buildPersonalizedInviteNote(lead);
+
+        // A/B Bandit: se ci sono variants disponibili, sovrascrivi la variante col bandit
         if (generatedNote.variant) {
-            await updateLeadPromptVariant(lead.id, generatedNote.variant);
+            const candidateVariants = [generatedNote.variant]; // estendibile con altre varianti in config
+            const banditVariant = await selectVariant(candidateVariants).catch(() => generatedNote.variant);
+            generatedNote.variant = banditVariant ?? generatedNote.variant;
+            await updateLeadPromptVariant(lead.id, generatedNote.variant!);
             lead.invite_prompt_variant = generatedNote.variant;
+            await recordSent(generatedNote.variant!).catch(() => { });
         }
 
         try {
-            await humanType(page, SELECTORS.noteTextarea, generatedNote.note);
+            await humanType(page, joinSelectors('noteTextarea'), generatedNote.note);
         } catch {
             await incrementDailyStat(localDate, 'selector_failures');
             throw new RetryableWorkerError('Impossibile digitare la nota', 'TYPE_ERROR');
@@ -112,9 +119,9 @@ async function handleInviteModal(
 
         await humanDelay(page, 400, 800); // Changed from context.session.page to page
 
-        const sendWithNote = page.locator(SELECTORS.sendWithNote).first(); // Changed from context.session.page to page
+        const sendWithNote = page.locator(joinSelectors('sendWithNote')).first();
         if (await sendWithNote.count() > 0) {
-            await humanMouseMove(page, SELECTORS.sendWithNote); // Changed from context.session.page to page
+            await humanMouseMove(page, joinSelectors('sendWithNote'));
             await humanDelay(page, 150, 400); // Changed from context.session.page to page
 
             if (!dryRun) { // Changed from context.dryRun to dryRun
@@ -132,17 +139,17 @@ async function handleInviteModal(
     }
 
     // Fallback: invia senza nota
-    const sendWithoutNote = page.locator(SELECTORS.sendWithoutNote).first();
+    const sendWithoutNote = page.locator(joinSelectors('sendWithoutNote')).first();
     if (await sendWithoutNote.count() > 0) {
-        await humanMouseMove(page, SELECTORS.sendWithoutNote);
+        await humanMouseMove(page, joinSelectors('sendWithoutNote'));
         await humanDelay(page, 120, 300);
         await sendWithoutNote.click();
         return { sentWithNote: false, noteSource: null, variant: null };
     }
 
-    const fallback = page.locator(SELECTORS.sendFallback).first();
+    const fallback = page.locator(joinSelectors('sendFallback')).first();
     if (await fallback.count() > 0) {
-        await humanMouseMove(page, SELECTORS.sendFallback);
+        await humanMouseMove(page, joinSelectors('sendFallback'));
         await humanDelay(page, 120, 300);
         await fallback.click();
         return { sentWithNote: false, noteSource: null, variant: null };
@@ -178,37 +185,36 @@ export async function processInviteJob(payload: InviteJobPayload, context: Worke
         throw new ChallengeDetectedError();
     }
 
-    // --- PHASE 7: AI Context Extraction (About & Experience) ---
-    try {
-        let extractedAbout: string | null = null;
-        let extractedExperience: string | null = null;
+    if (config.profileContextExtractionEnabled) {
+        try {
+            let extractedAbout: string | null = null;
+            let extractedExperience: string | null = null;
 
-        const aboutLocator = context.session.page.locator(SELECTORS.aboutSection).first();
-        if (await aboutLocator.isVisible()) {
-            extractedAbout = (await aboutLocator.innerText()).trim();
+            const aboutLocator = context.session.page.locator(joinSelectors('aboutSection')).first();
+            if (await aboutLocator.isVisible()) {
+                extractedAbout = (await aboutLocator.innerText()).trim();
+            }
+
+            const expLocator = context.session.page.locator(joinSelectors('experienceSection')).first();
+            if (await expLocator.isVisible()) {
+                extractedExperience = (await expLocator.innerText()).trim();
+            }
+
+            if (extractedAbout || extractedExperience) {
+                await updateLeadScrapedContext(lead.id, extractedAbout || null, extractedExperience || null);
+                lead.about = extractedAbout || null;
+                lead.experience = extractedExperience || null;
+
+                bridgeLeadStatus(lead.linkedin_url, lead.status, {
+                    about: extractedAbout || null,
+                    experience: extractedExperience || null
+                });
+            }
+        } catch (e) {
+            // Estrazione opzionale: non bloccare l'invio dell'invito.
+            console.warn(`[WARN] Impossibile estrarre contesto AI per lead ${lead.id}:`, e);
         }
-
-        const expLocator = context.session.page.locator(SELECTORS.experienceSection).first();
-        if (await expLocator.isVisible()) {
-            extractedExperience = (await expLocator.innerText()).trim();
-        }
-
-        if (extractedAbout || extractedExperience) {
-            await updateLeadScrapedContext(lead.id, extractedAbout || null, extractedExperience || null);
-            lead.about = extractedAbout || null;
-            lead.experience = extractedExperience || null;
-
-            // Sync with Cloud
-            bridgeLeadStatus(lead.linkedin_url, lead.status, {
-                about: extractedAbout || null,
-                experience: extractedExperience || null
-            });
-        }
-    } catch (e) {
-        // Estrazione Opzionale. Ignorare errori di timeout o parsing DOM
-        console.warn(`[WARN] Impossibile estrarre contesto AI per lead ${lead.id}:`, e);
     }
-    // --- END PHASE 7 ---
 
     const connectClicked = await clickConnectOnProfile(context.session.page);
     if (!connectClicked) {

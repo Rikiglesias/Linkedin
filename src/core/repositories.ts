@@ -1,5 +1,4 @@
-import { Database } from 'sqlite';
-import { getDatabase } from '../db';
+import { getDatabase, DatabaseManager } from '../db';
 import {
     JobRecord,
     JobStatus,
@@ -22,8 +21,8 @@ function parsePayload<T>(raw: string): T {
     }
 }
 
-async function withTransaction<T>(database: Database, callback: () => Promise<T>): Promise<T> {
-    await database.exec('BEGIN IMMEDIATE');
+async function withTransaction<T>(database: DatabaseManager, callback: () => Promise<T>): Promise<T> {
+    await database.exec('BEGIN'); // Postgres compat, was BEGIN IMMEDIATE
     try {
         const result = await callback();
         await database.exec('COMMIT');
@@ -61,7 +60,7 @@ export async function syncLeadListsFromLeads(): Promise<void> {
 export async function listLeadCampaignConfigs(onlyActive: boolean = false): Promise<LeadListCampaignConfig[]> {
     const db = await getDatabase();
     const rows = onlyActive
-        ? await db.all<LeadListRow[]>(
+        ? await db.query<LeadListRow>(
             `
             SELECT name, source, is_active, priority, daily_invite_cap, daily_message_cap, created_at
             FROM lead_lists
@@ -69,7 +68,7 @@ export async function listLeadCampaignConfigs(onlyActive: boolean = false): Prom
             ORDER BY priority ASC, created_at ASC, name ASC
         `
         )
-        : await db.all<LeadListRow[]>(
+        : await db.query<LeadListRow>(
             `
             SELECT name, source, is_active, priority, daily_invite_cap, daily_message_cap, created_at
             FROM lead_lists
@@ -263,7 +262,7 @@ export async function linkLeadToSalesNavList(listId: number, leadId: number): Pr
 export async function listSalesNavLists(limit: number = 200): Promise<SalesNavListSummary[]> {
     const db = await getDatabase();
     const safeLimit = Math.max(1, limit);
-    return db.all<SalesNavListSummary[]>(
+    return db.query<SalesNavListSummary>(
         `
         SELECT
             l.id,
@@ -439,6 +438,10 @@ export interface PrivacyCleanupStats {
     messageHistory: number;
     deliveredOutboxEvents: number;
     resolvedIncidents: number;
+    staleListMemberships: number;
+    staleLeadEvents: number;
+    staleMessageHistory: number;
+    staleLeads: number;
 }
 
 export interface ListLeadStatusCount {
@@ -633,7 +636,7 @@ export async function upsertSalesNavigatorLead(input: UpsertSalesNavigatorLeadIn
 
 export async function getExpiredInvitedLeads(accountId: string, olderThanDays: number): Promise<LeadRecord[]> {
     const db = await getDatabase();
-    return db.all<LeadRecord[]>(
+    return db.query<LeadRecord>(
         `SELECT * FROM leads WHERE account_id = ? AND status = 'INVITED' AND invited_at < datetime('now', '-' || ? || ' days') LIMIT 50`,
         [accountId, olderThanDays]
     );
@@ -676,7 +679,7 @@ export async function listCompanyTargets(listName: string | null, limit: number)
     const db = await getDatabase();
     const safeLimit = Math.max(1, limit);
     if (listName) {
-        return db.all<CompanyTargetRecord[]>(
+        return db.query<CompanyTargetRecord>(
             `
             SELECT id, list_name, account_name, website, source_file, status, attempts, last_error, processed_at, created_at, updated_at
             FROM company_targets
@@ -688,7 +691,7 @@ export async function listCompanyTargets(listName: string | null, limit: number)
         );
     }
 
-    return db.all<CompanyTargetRecord[]>(
+    return db.query<CompanyTargetRecord>(
         `
         SELECT id, list_name, account_name, website, source_file, status, attempts, last_error, processed_at, created_at, updated_at
         FROM company_targets
@@ -702,7 +705,7 @@ export async function listCompanyTargets(listName: string | null, limit: number)
 export async function getCompanyTargetsForEnrichment(limit: number): Promise<CompanyTargetRecord[]> {
     const db = await getDatabase();
     const safeLimit = Math.max(1, limit);
-    return db.all<CompanyTargetRecord[]>(
+    return db.query<CompanyTargetRecord>(
         `
         SELECT id, list_name, account_name, website, source_file, status, attempts, last_error, processed_at, created_at, updated_at
         FROM company_targets
@@ -747,7 +750,7 @@ export async function countCompanyTargetsByStatuses(statuses: CompanyTargetStatu
 
 export async function promoteNewLeadsToReadyInvite(limit: number): Promise<number> {
     const db = await getDatabase();
-    const leads = await db.all<{ id: number }[]>(
+    const leads = await db.query<{ id: number }>(
         `SELECT id FROM leads WHERE status = 'NEW' ORDER BY created_at ASC LIMIT ?`,
         [limit]
     );
@@ -814,7 +817,7 @@ export async function updateLeadScores(leadId: number, leadScore: number | null,
 export async function getLeadsWithSalesNavigatorUrls(limit: number): Promise<LeadRecord[]> {
     const db = await getDatabase();
     const safeLimit = Math.max(1, limit);
-    const leads = await db.all<LeadRecord[]>(
+    const leads = await db.query<LeadRecord>(
         `
         SELECT *
         FROM leads
@@ -870,7 +873,7 @@ export async function updateLeadLinkedinUrl(leadId: number, nextLinkedinUrl: str
 export async function getLeadsByStatus(status: LeadStatus, limit: number): Promise<LeadRecord[]> {
     const db = await getDatabase();
     const normalized = normalizeLegacyStatus(status);
-    const leads = await db.all<LeadRecord[]>(
+    const leads = await db.query<LeadRecord>(
         `SELECT * FROM leads WHERE status = ? ORDER BY created_at ASC LIMIT ?`,
         [normalized, limit]
     );
@@ -882,7 +885,7 @@ export async function getLeadsByStatusForSiteCheck(status: LeadStatus, limit: nu
     const normalized = normalizeLegacyStatus(status);
     const safeLimit = Math.max(1, limit);
     const safeStaleDays = Math.max(0, staleDays);
-    const leads = await db.all<LeadRecord[]>(
+    const leads = await db.query<LeadRecord>(
         `
         SELECT *
         FROM leads
@@ -905,13 +908,15 @@ export async function getLeadsByStatusForSiteCheck(status: LeadStatus, limit: nu
 export async function getLeadsByStatusForList(status: LeadStatus, listName: string, limit: number): Promise<LeadRecord[]> {
     const db = await getDatabase();
     const normalized = normalizeLegacyStatus(status);
-    const leads = await db.all<LeadRecord[]>(
+    const leads = await db.query<LeadRecord>(
         `
         SELECT *
         FROM leads
         WHERE status = ?
           AND list_name = ?
-        ORDER BY created_at ASC
+        ORDER BY
+            COALESCE(lead_score, -1) DESC,
+            created_at ASC
         LIMIT ?
     `,
         [normalized, listName, limit]
@@ -951,7 +956,7 @@ export async function getLeadStatusCountsForLists(listNames: string[]): Promise<
 
     const db = await getDatabase();
     const placeholders = listNames.map(() => '?').join(', ');
-    return db.all<ListLeadStatusCount[]>(
+    return db.query<ListLeadStatusCount>(
         `
         SELECT list_name, status, COUNT(*) as total
         FROM leads
@@ -1260,9 +1265,21 @@ export async function createIncident(
     return result.lastID ?? 0;
 }
 
+export async function countRecentIncidents(type: string, sinceHours: number): Promise<number> {
+    const db = await getDatabase();
+    const since = new Date(Date.now() - sinceHours * 3600000).toISOString();
+    // Use PostgreSQL compliant parsing or SQLite robust ISO comparisons
+    // In SQLite string comparison works. In PostgreSQL string comparison also works well for ISO8601.
+    const row = await db.get<{ count: number | string }>(
+        `SELECT COUNT(*) as count FROM account_incidents WHERE type = ? AND opened_at >= ?`,
+        [type, since]
+    );
+    return row ? Number(row.count) : 0;
+}
+
 export async function listOpenIncidents(): Promise<Array<{ id: number; type: string; severity: string; opened_at: string }>> {
     const db = await getDatabase();
-    return db.all(`SELECT id, type, severity, opened_at FROM account_incidents WHERE status = 'OPEN' ORDER BY opened_at DESC`);
+    return db.query(`SELECT id, type, severity, opened_at FROM account_incidents WHERE status = 'OPEN' ORDER BY opened_at DESC`);
 }
 
 export async function resolveIncident(incidentId: number): Promise<void> {
@@ -1290,7 +1307,7 @@ export async function pushOutboxEvent(topic: string, payload: Record<string, unk
 
 export async function getPendingOutboxEvents(limit: number): Promise<OutboxEventRecord[]> {
     const db = await getDatabase();
-    return db.all<OutboxEventRecord[]>(
+    return db.query<OutboxEventRecord>(
         `
         SELECT * FROM outbox_events
         WHERE delivered_at IS NULL
@@ -1352,7 +1369,7 @@ export async function countPendingOutboxEvents(): Promise<number> {
 
 export async function getJobStatusCounts(): Promise<JobStatusCounts> {
     const db = await getDatabase();
-    const rows = await db.all<{ status: JobStatus; total: number }[]>(
+    const rows = await db.query<{ status: JobStatus; total: number }>(
         `SELECT status, COUNT(*) as total FROM jobs GROUP BY status`
     );
 
@@ -1587,7 +1604,7 @@ export async function recordRunLog(level: 'INFO' | 'WARN' | 'ERROR', event: stri
 
 export async function getLastRunLogs(limit: number): Promise<Array<{ level: string; event: string; payload_json: string; created_at: string }>> {
     const db = await getDatabase();
-    return db.all(
+    return db.query(
         `SELECT level, event, payload_json, created_at FROM run_logs ORDER BY created_at DESC LIMIT ?`,
         [limit]
     );
@@ -1627,6 +1644,29 @@ export async function cleanupPrivacyData(retentionDays: number): Promise<Privacy
         [daysParam]
     );
 
+    const staleLeadsSubquery = `
+        SELECT id
+        FROM leads
+        WHERE status IN ('SKIPPED', 'BLOCKED', 'DEAD', 'WITHDRAWN', 'REPLIED', 'CONNECTED')
+          AND COALESCE(updated_at, created_at) < DATETIME('now', '-' || ? || ' days')
+    `;
+    const staleListMemberships = await db.run(
+        `DELETE FROM list_leads WHERE lead_id IN (${staleLeadsSubquery})`,
+        [daysParam]
+    );
+    const staleLeadEvents = await db.run(
+        `DELETE FROM lead_events WHERE lead_id IN (${staleLeadsSubquery})`,
+        [daysParam]
+    );
+    const staleMessageHistory = await db.run(
+        `DELETE FROM message_history WHERE lead_id IN (${staleLeadsSubquery})`,
+        [daysParam]
+    );
+    const staleLeads = await db.run(
+        `DELETE FROM leads WHERE id IN (${staleLeadsSubquery})`,
+        [daysParam]
+    );
+
     return {
         runLogs: runLogs.changes ?? 0,
         jobAttempts: jobAttempts.changes ?? 0,
@@ -1634,6 +1674,10 @@ export async function cleanupPrivacyData(retentionDays: number): Promise<Privacy
         messageHistory: messageHistory.changes ?? 0,
         deliveredOutboxEvents: deliveredOutboxEvents.changes ?? 0,
         resolvedIncidents: resolvedIncidents.changes ?? 0,
+        staleListMemberships: staleListMemberships.changes ?? 0,
+        staleLeadEvents: staleLeadEvents.changes ?? 0,
+        staleMessageHistory: staleMessageHistory.changes ?? 0,
+        staleLeads: staleLeads.changes ?? 0,
     };
 }
 
@@ -1826,7 +1870,7 @@ export async function getGlobalKPIData(): Promise<GlobalKPIData> {
     const db = await getDatabase();
 
     // Status counts
-    const counts = await db.all(`
+    const counts = await db.query(`
         SELECT status, COUNT(*) as count FROM leads GROUP BY status
     `) as Array<{ status: string; count: number }>;
 
@@ -1901,7 +1945,7 @@ export async function getABTestingStats(): Promise<ABTestStats[]> {
     // Count total as totalSent
     // Count ACCEPTED + READY_MESSAGE + MESSAGED + REPLIED + CONNECTED as accepted
     // Count REPLIED as replied
-    const rows = await db.all<{ variant: string, totalSent: number, totalAccepted: number, totalReplied: number }[]>(`
+    const rows = await db.query<{ variant: string, totalSent: number, totalAccepted: number, totalReplied: number }>(`
         SELECT 
             COALESCE(invite_prompt_variant, 'default') as variant,
             COUNT(id) as totalSent,
@@ -1930,3 +1974,113 @@ export async function getABTestingStats(): Promise<ABTestStats[]> {
     });
 }
 
+export async function getAccountAgeDays(): Promise<number> {
+    const db = await getDatabase();
+    const row = await db.get<{ firstDate: string }>(`
+        SELECT MIN(created_at) as firstDate FROM leads
+    `);
+
+    if (!row || !row.firstDate) {
+        return 0; // Se non ci sono leads, l'account ha 0 giorni
+    }
+
+    const firstDate = new Date(row.firstDate + 'Z'); // Convert from SQLite string to Date
+    const now = new Date();
+    const diffMs = now.getTime() - firstDate.getTime();
+
+    // Ritorna l'età in giorni interi
+    return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+}
+
+export async function getFailedJobs(limit: number): Promise<JobRecord[]> {
+    const db = await getDatabase();
+    return db.query<JobRecord>(`SELECT * FROM jobs WHERE status = 'FAILED' LIMIT ?`, [limit]);
+}
+
+export async function markJobAsDeadLetter(jobId: number, explanation: string): Promise<void> {
+    const db = await getDatabase();
+    const now = new Date().toISOString();
+    await db.run(
+        `UPDATE jobs 
+         SET status = 'DEAD_LETTER', last_error = ?, updated_at = ? 
+         WHERE id = ?`,
+        [explanation, now, jobId]
+    );
+}
+
+export async function recycleJob(jobId: number, newDelaySec: number, newPriority: number): Promise<void> {
+    const db = await getDatabase();
+    const now = new Date();
+    const nextRun = new Date(now.getTime() + newDelaySec * 1000).toISOString();
+
+    await db.run(
+        `UPDATE jobs 
+         SET status = 'QUEUED', attempts = 0, next_run_at = ?, priority = ?, updated_at = ? 
+         WHERE id = ?`,
+        [nextRun, newPriority, now.toISOString(), jobId]
+    );
+}
+
+// ─── Phase 7: ML Optimization ─────────────────────────────────────────────────
+
+/**
+ * Persiste il risultato di un'analisi NLP su una risposta in ingresso.
+ * Tabella: lead_intents (migration 016)
+ */
+export async function storeLeadIntent(
+    leadId: number,
+    intent: string,
+    subIntent: string,
+    confidence: number,
+    rawMessage: string
+): Promise<void> {
+    const db = await getDatabase();
+    await db.run(
+        `INSERT INTO lead_intents (lead_id, intent, sub_intent, confidence, raw_message)
+         VALUES (?, ?, ?, ?, ?)`,
+        [leadId, intent, subIntent, confidence, rawMessage.substring(0, 500)]
+    );
+}
+
+/**
+ * Recupera l'ultimo intent analizzato per un lead (più recente first).
+ */
+export async function getLeadIntent(
+    leadId: number
+): Promise<{ intent: string; subIntent: string; confidence: number } | null> {
+    const db = await getDatabase();
+    const row = await db.get<{ intent: string; sub_intent: string; confidence: number }>(
+        `SELECT intent, sub_intent, confidence
+         FROM lead_intents
+         WHERE lead_id = ?
+         ORDER BY analyzed_at DESC
+         LIMIT 1`,
+        [leadId]
+    );
+    if (!row) return null;
+    return { intent: row.intent, subIntent: row.sub_intent, confidence: row.confidence };
+}
+
+/**
+ * Restituisce tutte le statistiche varianti A/B per il daily report.
+ * Tabella: ab_variant_stats (migration 015)
+ */
+export async function listABVariantStats(): Promise<Array<{
+    variantId: string;
+    sent: number;
+    accepted: number;
+    replied: number;
+}>> {
+    const db = await getDatabase();
+    const rows = await db.query<{ variant_id: string; sent: number; accepted: number; replied: number }>(
+        `SELECT variant_id, sent, accepted, replied
+         FROM ab_variant_stats
+         ORDER BY sent DESC`
+    );
+    return (rows || []).map((r: { variant_id: string; sent: number; accepted: number; replied: number }) => ({
+        variantId: r.variant_id,
+        sent: r.sent,
+        accepted: r.accepted,
+        replied: r.replied,
+    }));
+}

@@ -5,6 +5,10 @@ export interface RuntimeAccountProfile {
     id: string;
     sessionDir: string;
     proxy?: ProxyConfig;
+    warmupEnabled: boolean;
+    warmupStartDate?: string;
+    warmupMaxDays: number;
+    warmupMinActions: number;
 }
 
 function parseProxyConfig(profile: AccountProfileConfig): ProxyConfig | undefined {
@@ -45,6 +49,10 @@ function toRuntimeProfile(profile: AccountProfileConfig): RuntimeAccountProfile 
         id: trimmedId || fallbackId,
         sessionDir: profile.sessionDir,
         proxy: parseProxyConfig(profile),
+        warmupEnabled: profile.warmupEnabled,
+        warmupStartDate: profile.warmupStartDate,
+        warmupMaxDays: profile.warmupMaxDays,
+        warmupMinActions: profile.warmupMinActions,
     };
 }
 
@@ -70,6 +78,10 @@ export function getRuntimeAccountProfiles(): RuntimeAccountProfile[] {
         return [{
             id: 'default',
             sessionDir: config.sessionDir,
+            warmupEnabled: config.warmupEnabled,
+            warmupStartDate: config.warmupStartDate,
+            warmupMaxDays: config.warmupMaxDays,
+            warmupMinActions: config.warmupMinActions,
         }];
     }
     return configured;
@@ -103,6 +115,10 @@ export function getAccountProfileById(accountId: string | null | undefined): Run
         return {
             id: 'default',
             sessionDir: config.sessionDir,
+            warmupEnabled: config.warmupEnabled,
+            warmupStartDate: config.warmupStartDate,
+            warmupMaxDays: config.warmupMaxDays,
+            warmupMinActions: config.warmupMinActions,
         };
     }
     if (!accountId) {

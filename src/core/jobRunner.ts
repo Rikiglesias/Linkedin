@@ -1,4 +1,4 @@
-import { BrowserSession, closeBrowser, interJobDelay, launchBrowser, checkLogin, performDecoyAction } from '../browser';
+import { BrowserSession, closeBrowser, interJobDelay, launchBrowser, checkLogin, performDecoyAction, performBrowserGC } from '../browser';
 import { getRuntimeAccountProfiles, isMultiAccountRuntimeEnabled, RuntimeAccountProfile } from '../accountManager';
 import { config } from '../config';
 import { pauseAutomation, quarantineAccount } from '../risk/incidentManager';
@@ -241,6 +241,14 @@ async function runQueuedJobsForAccount(
                 rotateReasons.push(`threshold_${rotateEveryMinutes}_minutes`);
             }
 
+            // Memory Leak Protection (Hard Limits to prevent Zombie Chromium and Heap explosion)
+            if (processedOnCurrentSession >= 500) {
+                rotateReasons.push('memory_protection_500_jobs');
+            }
+            if (Date.now() - sessionStartedAtMs >= 60 * 60 * 1000) { // 60 minutes
+                rotateReasons.push('memory_protection_60_min');
+            }
+
             if (rotateReasons.length > 0) {
                 const rotated = await rotateSessionWithLoginCheck(
                     session,
@@ -255,6 +263,9 @@ async function runQueuedJobsForAccount(
                 session = rotated;
                 processedOnCurrentSession = 0;
                 sessionStartedAtMs = Date.now();
+            } else if (processedOnCurrentSession > 0 && processedOnCurrentSession % 10 === 0) {
+                // Collect garbage proactively to prevent browser bloating
+                await performBrowserGC(session);
             }
         }
     } finally {

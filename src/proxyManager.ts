@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import * as net from 'net';
 import { config } from './config';
 import { logInfo, logWarn } from './telemetry/logger';
 
@@ -297,11 +298,61 @@ export function getProxy(): ProxyConfig | undefined {
 }
 
 /**
- * Restituisce il primo proxy disponibile, interpellando l'API Provider se necessario.
+ * Esegue un ping TCP sulla porta del proxy per verificare se è raggiungibile.
+ */
+export async function checkProxyHealth(proxy: ProxyConfig): Promise<boolean> {
+    return new Promise((resolve) => {
+        try {
+            const url = new URL(proxy.server);
+            const port = url.port ? parseInt(url.port, 10) : (url.protocol === 'https:' ? 443 : 80);
+
+            const socket = new net.Socket();
+            socket.setTimeout(config.proxyHealthCheckTimeoutMs ?? 5000);
+
+            socket.on('connect', () => {
+                socket.end();
+                resolve(true);
+            });
+
+            socket.on('timeout', () => {
+                socket.destroy();
+                resolve(false);
+            });
+
+            socket.on('error', () => {
+                socket.destroy();
+                resolve(false);
+            });
+
+            socket.connect(port, url.hostname);
+        } catch {
+            resolve(false);
+        }
+    });
+}
+
+/**
+ * Restituisce il primo proxy disponibile, interpellando l'API Provider se necessario, 
+ * ed eseguendo anche un health check proattivo prima di restituirlo.
  */
 export async function getProxyAsync(): Promise<ProxyConfig | undefined> {
-    const chain = await getProxyFailoverChainAsync();
-    return chain[0];
+    let chain = await getProxyFailoverChainAsync();
+
+    for (const proxy of chain) {
+        const isHealthy = await checkProxyHealth(proxy);
+        if (isHealthy) {
+            markProxyHealthy(proxy); // Resetta penalty su successo
+            return proxy;
+        } else {
+            console.warn(`[PROXY] Health check fallito per proxy: ${proxy.server}`);
+            markProxyFailed(proxy);
+        }
+    }
+
+    // Se tutti i ping falliscono, ritentiamo caricando di nuovo la fallback logic,
+    // oppure ritorniamo il primo (se non c'è fallback)
+    const refreshedChain = await getProxyFailoverChainAsync();
+    return refreshedChain[0];
 }
 
 /**
@@ -312,9 +363,15 @@ export async function getStickyProxy(sessionId: string): Promise<ProxyConfig | u
     // 1. Check if we already have a sticky proxy for this session
     const existing = stickyProxySessions.get(sessionId);
     if (existing) {
-        // Option to verify if it's failed/cooling, but for sticky IPs, 
-        // it's generally better to wait or fail than swap IP mid-session.
-        return existing;
+        // Verifichiamo proattivamente anche il proxy sticky
+        const isHealthy = await checkProxyHealth(existing);
+        if (isHealthy) {
+            return existing;
+        } else {
+            console.warn(`[PROXY] Sticky proxy ${existing.server} per sessione ${sessionId} fallito health check. Ne cerco uno nuovo.`);
+            markProxyFailed(existing);
+            stickyProxySessions.delete(sessionId);
+        }
     }
 
     // 2. Otherwise allocate a new proxy from the best available chain

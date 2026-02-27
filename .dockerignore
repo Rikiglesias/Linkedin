@@ -1,0 +1,9 @@
+.git
+node_modules
+dist
+data
+*.log
+repomix-output.txt
+.env
+playwright-report
+test-results

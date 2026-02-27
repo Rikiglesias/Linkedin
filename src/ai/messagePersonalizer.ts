@@ -68,7 +68,7 @@ export async function buildPersonalizedFollowUpMessage(lead: LeadRecord): Promis
 
             if (!candidate) continue;
 
-            if (SemanticChecker.isTooSimilar(candidate, 0.85)) {
+            if (await SemanticChecker.isTooSimilar(candidate, 0.85)) {
                 await logWarn('ai.personalization.too_similar_retry', { leadId: lead.id, attempt });
                 continue;
             }
@@ -93,7 +93,7 @@ export async function buildPersonalizedFollowUpMessage(lead: LeadRecord): Promis
         };
     }
 
-    SemanticChecker.remember(finalMessage);
+    await SemanticChecker.remember(finalMessage);
     return {
         message: finalMessage,
         source: 'ai',
