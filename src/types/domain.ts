@@ -7,9 +7,14 @@ export type LeadStatus =
     | 'MESSAGED'
     | 'SKIPPED'
     | 'BLOCKED'
+    | 'DEAD'
+    | 'REPLIED'
+    | 'CONNECTED'
+    | 'REVIEW_REQUIRED'
+    | 'WITHDRAWN'
     | 'PENDING'; // compat legacy
 
-export type JobType = 'INVITE' | 'ACCEPTANCE_CHECK' | 'MESSAGE';
+export type JobType = 'INVITE' | 'ACCEPTANCE_CHECK' | 'MESSAGE' | 'HYGIENE';
 
 export type JobStatus = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'DEAD_LETTER' | 'PAUSED';
 
@@ -32,6 +37,8 @@ export interface LeadRecord {
     about: string | null;
     experience: string | null;
     invite_prompt_variant: string | null;
+    lead_score: number | null;
+    confidence_score: number | null;
     created_at: string;
     updated_at: string | null;
 }
@@ -51,6 +58,20 @@ export interface JobRecord {
     last_error: string | null;
     created_at: string;
     updated_at: string | null;
+}
+
+export type RunStatus = 'RUNNING' | 'SUCCESS' | 'FAILED' | 'PAUSED';
+
+export interface CampaignRunRecord {
+    id: number;
+    start_time: string;
+    end_time: string | null;
+    status: RunStatus;
+    profiles_discovered: number;
+    invites_sent: number;
+    messages_sent: number;
+    errors_count: number;
+    created_at: string;
 }
 
 export interface InviteJobPayload {
@@ -114,3 +135,13 @@ export interface MessageValidationResult {
     valid: boolean;
     reasons: string[];
 }
+
+export interface ABTestStats {
+    variant: string;
+    totalSent: number;
+    totalAccepted: number;
+    totalReplied: number;
+    acceptanceRate: number;
+    replyRate: number;
+}
+

@@ -4,6 +4,9 @@ This bot can export control-plane events from `outbox_events` to one sink at a t
 - `SUPABASE` (table `cp_events`)
 - `WEBHOOK` (for n8n, Make, Pipedream, custom middleware)
 
+In addition, when enabled, it can pull campaign configuration from Supabase table `campaigns`
+and apply it to local `lead_lists` (control-plane mode).
+
 Set the active sink with:
 
 ```env
@@ -36,6 +39,26 @@ WEBHOOK_SYNC_MAX_RETRIES=8
 SUPABASE_SYNC_ENABLED=false
 ```
 
+## Supabase Control Plane (campaign configs)
+
+Enable remote campaign management:
+
+```env
+SUPABASE_SYNC_ENABLED=true
+SUPABASE_CONTROL_PLANE_ENABLED=true
+SUPABASE_CONTROL_PLANE_SYNC_INTERVAL_MS=300000
+SUPABASE_CONTROL_PLANE_MAX_CAMPAIGNS=500
+```
+
+Source table: `campaigns` with fields:
+- `name`
+- `is_active`
+- `priority`
+- `daily_invite_cap`
+- `daily_message_cap`
+
+The bot maps those fields into local `lead_lists` (source=`control_plane`).
+
 ## Payload format sent to Webhook sink
 
 ```json
@@ -56,6 +79,7 @@ Headers:
 
 - Check sink status: `.\bot.ps1 sync-status`
 - Force one sync batch: `.\bot.ps1 sync-run-once`
+- Force control-plane pull now: `.\bot.ps1 control-plane-sync --force`
 
 ## Notes
 

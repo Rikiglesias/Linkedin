@@ -37,7 +37,10 @@ import {
     upsertSalesNavList,
     updateLeadLinkedinUrl,
     updateLeadCampaignConfig,
+    startCampaignRun,
+    finishCampaignRun,
 } from './core/repositories';
+import { RunStatus } from './types/domain';
 import { setQuarantine } from './risk/incidentManager';
 import { getEventSyncStatus, runEventSyncOnce } from './sync/eventSync';
 import { WorkflowSelection } from './core/scheduler';
@@ -50,6 +53,8 @@ import { addLeadToSalesNavList, createSalesNavList } from './salesnav/listAction
 import { isOpenAIConfigured } from './ai/openaiClient';
 import { startTelegramListener } from './cloud/telegramListener';
 import { markTelegramCommandProcessed, pollPendingTelegramCommand } from './cloud/supabaseDataClient';
+import { generateAndSendDailyReport } from './telemetry/dailyReporter';
+import { startServer } from './api/server';
 
 // Graceful shutdown: chiude DB prima di uscire per non lasciare job RUNNING.
 let shuttingDown = false;
@@ -551,6 +556,16 @@ async function runLoopCommand(args: string[]): Promise<void> {
             cycle += 1;
             const started = new Date().toISOString();
             console.log(`[LOOP] cycle = ${cycle} started_at = ${started} `);
+
+            let runId: number | null = null;
+            let profilesDiscoveredThisRun = 0;
+            let runStatus: RunStatus = 'RUNNING';
+            const localDate = getLocalDateString();
+            const preStats = await getDailyStatsSnapshot(localDate);
+            if (!dryRun) {
+                runId = await startCampaignRun();
+            }
+
             try {
                 if (lockOwnerId) {
                     await heartbeatWorkflowRunnerLock(lockOwnerId, lockTtlSeconds);
@@ -642,6 +657,7 @@ async function runLoopCommand(args: string[]): Promise<void> {
                             maxProfilesPerCompany: config.companyEnrichmentMaxProfilesPerCompany,
                             dryRun,
                         });
+                        profilesDiscoveredThisRun += enrichment.createdLeads;
                         console.log('[LOOP] enrichment', enrichment);
                     }
                     await runWorkflow({ workflow, dryRun });
@@ -655,10 +671,27 @@ async function runLoopCommand(args: string[]): Promise<void> {
                         console.log('[LOOP] random-activity', randomActivityReport);
                     }
 
+                    runStatus = 'SUCCESS';
                     console.log(`[LOOP] cycle = ${cycle} completed`);
                 }
             } catch (error) {
                 console.error(`[LOOP] cycle = ${cycle} failed`, error);
+                runStatus = 'FAILED';
+            } finally {
+                if (runId) {
+                    const postStats = await getDailyStatsSnapshot(localDate);
+                    const invitesDiff = Math.max(0, postStats.invitesSent - preStats.invitesSent);
+                    const messagesDiff = Math.max(0, postStats.messagesSent - preStats.messagesSent);
+                    const errorsDiff = Math.max(0, postStats.runErrors - preStats.runErrors);
+
+                    await finishCampaignRun(runId, runStatus, {
+                        discovered: profilesDiscoveredThisRun,
+                        invites: invitesDiff,
+                        messages: messagesDiff,
+                        errors: errorsDiff
+                    });
+                    console.log(`[LOOP] Campaign run ${runId} completed with status ${runStatus}`);
+                }
             }
 
             if (maxCycles !== null && cycle >= maxCycles) {
@@ -1375,6 +1408,16 @@ async function main(): Promise<void> {
             break;
         case 'warmup':
             await runWorkflowCommand('warmup', false);
+            break;
+        case 'daily-report':
+            await generateAndSendDailyReport();
+            break;
+        case 'dashboard':
+            await initDatabase(); // Initialize DB for the server
+            startServer(3000);
+            console.log('Premi Ctrl+C per fermare la Dashboard e spegnere il database.');
+            // Block the process to keep the DB connection alive
+            await new Promise(() => { });
             break;
         default:
             printHelp();

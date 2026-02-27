@@ -14,11 +14,31 @@ import { LeadRecord } from '../types/domain';
 import { getSchedulingAccountIds, pickAccountIdForLead } from '../accountManager';
 import { getProxy, getProxyFailoverChain, getProxyPoolStatus, markProxyFailed, markProxyHealthy } from '../proxyManager';
 import { generateInviteNote } from '../noteGenerator';
+import { classifySiteMismatch, isMismatchAmbiguous } from '../core/audit';
 
 async function run(): Promise<void> {
     assert.equal(isValidLeadTransition('NEW', 'READY_INVITE'), true);
     assert.equal(isValidLeadTransition('READY_INVITE', 'INVITED'), true);
     assert.equal(isValidLeadTransition('INVITED', 'MESSAGED'), false);
+    assert.equal(isValidLeadTransition('READY_MESSAGE', 'REVIEW_REQUIRED'), true);
+
+    const ambiguousMismatch = classifySiteMismatch('READY_MESSAGE', {
+        pendingInvite: false,
+        connected: false,
+        messageButton: false,
+        canConnect: true,
+    });
+    assert.equal(ambiguousMismatch, 'ready_message_but_not_connected');
+    assert.equal(ambiguousMismatch ? isMismatchAmbiguous(ambiguousMismatch) : false, true);
+
+    const reconcilableMismatch = classifySiteMismatch('INVITED', {
+        pendingInvite: false,
+        connected: false,
+        messageButton: false,
+        canConnect: true,
+    });
+    assert.equal(reconcilableMismatch, 'invited_but_connect_available');
+    assert.equal(reconcilableMismatch ? isMismatchAmbiguous(reconcilableMismatch) : true, false);
 
     const risk = evaluateRisk({
         pendingRatio: 0.4,
@@ -77,6 +97,8 @@ async function run(): Promise<void> {
         about: null,
         experience: null,
         invite_prompt_variant: null,
+        lead_score: null,
+        confidence_score: null,
         created_at: '2026-02-25T00:00:00.000Z',
         updated_at: '2026-02-25T00:00:00.000Z',
     };
@@ -224,12 +246,12 @@ async function run(): Promise<void> {
 
     // ── noteGenerator ────────────────────────────────────────────────────────
     const note1 = generateInviteNote('Mario');
-    assert.equal(note1.length > 0, true);
-    assert.equal(note1.includes('Mario'), true);
-    assert.equal(note1.length <= 300, true);
+    assert.equal(note1.note.length > 0, true);
+    assert.equal(note1.note.includes('Mario'), true);
+    assert.equal(note1.note.length <= 300, true);
 
     const note2 = generateInviteNote('');
-    assert.equal(note2.length > 0, true); // fallback su 'collega'
+    assert.equal(note2.note.length > 0, true); // fallback su 'collega'
 }
 
 run()

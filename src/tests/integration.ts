@@ -68,6 +68,58 @@ async function run(): Promise<void> {
     assert.ok(linkedSalesList);
     assert.equal((linkedSalesList?.leads_count ?? 0) >= 1, true);
 
+    const cpApplyCreate = await repositories.applyControlPlaneCampaignConfigs([
+        {
+            name: 'cp-alpha',
+            isActive: true,
+            priority: 5,
+            dailyInviteCap: 12,
+            dailyMessageCap: 18,
+        },
+        {
+            name: 'cp-paused',
+            isActive: false,
+            priority: 80,
+            dailyInviteCap: null,
+            dailyMessageCap: null,
+        },
+    ]);
+    assert.equal(cpApplyCreate.fetched, 2);
+    assert.equal(cpApplyCreate.created, 2);
+    assert.equal(cpApplyCreate.updated, 0);
+
+    const cpApplyUpdate = await repositories.applyControlPlaneCampaignConfigs([
+        {
+            name: 'cp-alpha',
+            isActive: true,
+            priority: 2,
+            dailyInviteCap: 10,
+            dailyMessageCap: 14,
+        },
+        {
+            name: 'cp-paused',
+            isActive: false,
+            priority: 80,
+            dailyInviteCap: null,
+            dailyMessageCap: null,
+        },
+    ]);
+    assert.equal(cpApplyUpdate.fetched, 2);
+    assert.equal(cpApplyUpdate.updated, 1);
+    assert.equal(cpApplyUpdate.unchanged, 1);
+
+    const listsAfterControlPlane = await repositories.listLeadCampaignConfigs(false);
+    const cpAlpha = listsAfterControlPlane.find((item) => item.name === 'cp-alpha');
+    const cpPaused = listsAfterControlPlane.find((item) => item.name === 'cp-paused');
+    assert.ok(cpAlpha);
+    assert.ok(cpPaused);
+    assert.equal(cpAlpha?.source, 'control_plane');
+    assert.equal(cpAlpha?.priority, 2);
+    assert.equal(cpAlpha?.dailyInviteCap, 10);
+    assert.equal(cpAlpha?.dailyMessageCap, 14);
+    assert.equal(cpPaused?.source, 'control_plane');
+    assert.equal(cpPaused?.isActive, false);
+
     await repositories.promoteNewLeadsToReadyInvite(10);
     const ready = await repositories.getLeadsByStatus('READY_INVITE', 10);
     assert.equal(ready.length >= 1, true);

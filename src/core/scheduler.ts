@@ -1,5 +1,5 @@
 import { config, getLocalDateString, getWeekStartDate } from '../config';
-import { pickAccountIdForLead } from '../accountManager';
+import { pickAccountIdForLead, getRuntimeAccountProfiles } from '../accountManager';
 import { evaluateRisk, calculateDynamicBudget } from '../risk/riskEngine';
 import { JobType, RiskSnapshot } from '../types/domain';
 import {
@@ -50,10 +50,10 @@ export interface ListScheduleBreakdown {
 }
 
 export function workflowToJobTypes(workflow: WorkflowSelection): JobType[] {
-    if (workflow === 'all') return ['INVITE', 'ACCEPTANCE_CHECK', 'MESSAGE'];
+    if (workflow === 'all') return ['INVITE', 'ACCEPTANCE_CHECK', 'MESSAGE', 'HYGIENE'];
     if (workflow === 'invite') return ['INVITE'];
-    if (workflow === 'check' || workflow === 'warmup') return ['ACCEPTANCE_CHECK'];
-    return ['MESSAGE'];
+    if (workflow === 'check' || workflow === 'warmup') return ['ACCEPTANCE_CHECK', 'HYGIENE'];
+    return ['MESSAGE', 'HYGIENE'];
 }
 
 function buildInviteKey(leadId: number, localDate: string): string {
@@ -445,6 +445,21 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
             }
             breakdown.queuedMessageJobs += insertedForList;
             remainingMessageBudget -= insertedForList;
+        }
+    }
+
+    if (!dryRun && config.withdrawInvitesEnabled) {
+        const accounts = await getRuntimeAccountProfiles();
+        for (const acc of accounts) {
+            await enqueueJob(
+                'HYGIENE',
+                { accountId: acc.id },
+                `hygiene:${acc.id}:${localDate}`,
+                5,
+                1,
+                pickRandomInt(1800, 14400),
+                acc.id
+            );
         }
     }
 

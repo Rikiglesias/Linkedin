@@ -49,20 +49,17 @@ export interface SiteCheckItem {
     leadId: number;
     status: string;
     linkedinUrl: string;
-    siteSignals: {
-        pendingInvite: boolean;
-        connected: boolean;
-        messageButton: boolean;
-        canConnect: boolean;
-    };
-    mismatch: string;
+    siteSignals: SiteSignals;
+    mismatch: SiteMismatch;
     fixed: boolean;
+    reviewRequired: boolean;
 }
 
 export interface SiteCheckReport {
     scanned: number;
     mismatches: number;
     fixed: number;
+    reviewRequired: number;
     items: SiteCheckItem[];
 }
 
@@ -72,17 +69,34 @@ export interface SiteCheckOptions {
     staleDays?: number;
 }
 
+export interface SiteSignals {
+    pendingInvite: boolean;
+    connected: boolean;
+    messageButton: boolean;
+    canConnect: boolean;
+}
+
+export type SiteMismatch =
+    | 'invited_but_connected'
+    | 'invited_but_connect_available'
+    | 'ready_invite_but_pending'
+    | 'ready_invite_but_connected'
+    | 'ready_message_but_pending_invite'
+    | 'ready_message_but_not_connected'
+    | 'messaged_but_pending_invite'
+    | 'messaged_but_not_connected';
+
+const ambiguousMismatchSet = new Set<SiteMismatch>([
+    'ready_message_but_not_connected',
+    'messaged_but_not_connected',
+]);
+
 function isFirstDegreeBadge(text: string | null): boolean {
     if (!text) return true;
     return /1st|1°|1\b/i.test(text);
 }
 
-async function inspectLeadOnSite(lead: LeadRecord, sessionPage: Page): Promise<{
-    pendingInvite: boolean;
-    connected: boolean;
-    messageButton: boolean;
-    canConnect: boolean;
-}> {
+async function inspectLeadOnSite(lead: LeadRecord, sessionPage: Page): Promise<SiteSignals> {
     await sessionPage.goto(lead.linkedin_url, { waitUntil: 'domcontentloaded' });
     await humanDelay(sessionPage, 1200, 2200);
 
@@ -100,7 +114,7 @@ async function inspectLeadOnSite(lead: LeadRecord, sessionPage: Page): Promise<{
     };
 }
 
-async function tryAutoFix(lead: LeadRecord, mismatch: string): Promise<boolean> {
+async function tryAutoFix(lead: LeadRecord, mismatch: SiteMismatch): Promise<boolean> {
     if (mismatch === 'invited_but_connected') {
         await transitionLead(lead.id, 'ACCEPTED', 'site_check_autofix_connected');
         await transitionLead(lead.id, 'READY_MESSAGE', 'site_check_autofix_ready_message');
@@ -137,6 +151,38 @@ async function tryAutoFix(lead: LeadRecord, mismatch: string): Promise<boolean> 
     return false;
 }
 
+export function classifySiteMismatch(status: LeadRecord['status'], signals: SiteSignals): SiteMismatch | null {
+    if (status === 'INVITED' && signals.connected) {
+        return 'invited_but_connected';
+    }
+    if (status === 'INVITED' && !signals.pendingInvite && signals.canConnect) {
+        return 'invited_but_connect_available';
+    }
+    if (status === 'READY_INVITE' && signals.pendingInvite) {
+        return 'ready_invite_but_pending';
+    }
+    if (status === 'READY_INVITE' && signals.connected) {
+        return 'ready_invite_but_connected';
+    }
+    if (status === 'READY_MESSAGE' && signals.pendingInvite) {
+        return 'ready_message_but_pending_invite';
+    }
+    if (status === 'READY_MESSAGE' && !signals.connected) {
+        return 'ready_message_but_not_connected';
+    }
+    if (status === 'MESSAGED' && signals.pendingInvite) {
+        return 'messaged_but_pending_invite';
+    }
+    if (status === 'MESSAGED' && !signals.connected) {
+        return 'messaged_but_not_connected';
+    }
+    return null;
+}
+
+export function isMismatchAmbiguous(mismatch: SiteMismatch): boolean {
+    return ambiguousMismatchSet.has(mismatch);
+}
+
 export async function buildFunnelReport(): Promise<FunnelReport> {
     const [
         newCount,
@@ -147,6 +193,7 @@ export async function buildFunnelReport(): Promise<FunnelReport> {
         messagedCount,
         blockedCount,
         skippedCount,
+        reviewRequiredCount,
         pendingOutbox,
         companyTargets,
         companyTargetsNew,
@@ -163,6 +210,7 @@ export async function buildFunnelReport(): Promise<FunnelReport> {
         countLeadsByStatuses(['MESSAGED']),
         countLeadsByStatuses(['BLOCKED']),
         countLeadsByStatuses(['SKIPPED']),
+        countLeadsByStatuses(['REVIEW_REQUIRED']),
         countPendingOutboxEvents(),
         countCompanyTargets(),
         countCompanyTargetsByStatuses(['NEW']),
@@ -172,7 +220,16 @@ export async function buildFunnelReport(): Promise<FunnelReport> {
         getJobStatusCounts(),
     ]);
 
-    const totalLeads = newCount + readyInviteCount + invitedCount + acceptedCount + readyMessageCount + messagedCount + blockedCount + skippedCount;
+    const totalLeads =
+        newCount
+        + readyInviteCount
+        + invitedCount
+        + acceptedCount
+        + readyMessageCount
+        + messagedCount
+        + blockedCount
+        + skippedCount
+        + reviewRequiredCount;
     const queuedJobs = Object.values(jobs).reduce((acc, value) => acc + value, 0);
 
     return {
@@ -208,6 +265,7 @@ export async function buildFunnelReport(): Promise<FunnelReport> {
             MESSAGED: messagedCount,
             BLOCKED: blockedCount,
             SKIPPED: skippedCount,
+            REVIEW_REQUIRED: reviewRequiredCount,
         },
         jobs,
     };
@@ -229,6 +287,7 @@ export async function runSiteCheck(options: SiteCheckOptions): Promise<SiteCheck
             scanned: 0,
             mismatches: 0,
             fixed: 0,
+            reviewRequired: 0,
             items: [],
         };
     }
@@ -237,6 +296,7 @@ export async function runSiteCheck(options: SiteCheckOptions): Promise<SiteCheck
         scanned: 0,
         mismatches: 0,
         fixed: 0,
+        reviewRequired: 0,
         items: [],
     };
 
@@ -282,24 +342,7 @@ export async function runSiteCheck(options: SiteCheckOptions): Promise<SiteCheck
                     break;
                 }
 
-                let mismatch: string | null = null;
-                if (lead.status === 'INVITED' && signals.connected) {
-                    mismatch = 'invited_but_connected';
-                } else if (lead.status === 'INVITED' && !signals.pendingInvite && signals.canConnect) {
-                    mismatch = 'invited_but_connect_available';
-                } else if (lead.status === 'READY_INVITE' && signals.pendingInvite) {
-                    mismatch = 'ready_invite_but_pending';
-                } else if (lead.status === 'READY_INVITE' && signals.connected) {
-                    mismatch = 'ready_invite_but_connected';
-                } else if (lead.status === 'READY_MESSAGE' && signals.pendingInvite) {
-                    mismatch = 'ready_message_but_pending_invite';
-                } else if (lead.status === 'READY_MESSAGE' && !signals.connected) {
-                    mismatch = 'ready_message_but_not_connected';
-                } else if (lead.status === 'MESSAGED' && signals.pendingInvite) {
-                    mismatch = 'messaged_but_pending_invite';
-                } else if (lead.status === 'MESSAGED' && !signals.connected) {
-                    mismatch = 'messaged_but_not_connected';
-                }
+                const mismatch = classifySiteMismatch(lead.status, signals);
 
                 if (!mismatch) {
                     continue;
@@ -307,10 +350,24 @@ export async function runSiteCheck(options: SiteCheckOptions): Promise<SiteCheck
 
                 report.mismatches += 1;
                 let fixed = false;
+                let reviewRequired = false;
                 if (options.autoFix) {
                     fixed = await tryAutoFix(lead, mismatch);
                     if (fixed) {
                         report.fixed += 1;
+                    } else if (isMismatchAmbiguous(mismatch)) {
+                        await transitionLead(
+                            lead.id,
+                            'REVIEW_REQUIRED',
+                            `site_check_ambiguous_${mismatch}`,
+                            {
+                                mismatch,
+                                previousStatus: lead.status,
+                                siteSignals: signals,
+                            }
+                        );
+                        report.reviewRequired += 1;
+                        reviewRequired = true;
                     }
                 }
 
@@ -321,6 +378,7 @@ export async function runSiteCheck(options: SiteCheckOptions): Promise<SiteCheck
                     siteSignals: signals,
                     mismatch,
                     fixed,
+                    reviewRequired,
                 });
             }
         } finally {

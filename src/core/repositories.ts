@@ -8,8 +8,11 @@ import {
     LeadStatus,
     OutboxEventRecord,
     RiskInputs,
+    RunStatus,
+    ABTestStats,
 } from '../types/domain';
 import { normalizeLinkedInUrl } from '../linkedinUrl';
+import type { CloudAccount, CloudLeadUpsert } from '../cloud/supabaseDataClient';
 
 function parsePayload<T>(raw: string): T {
     try {
@@ -120,6 +123,90 @@ export async function updateLeadCampaignConfig(listName: string, patch: UpdateLe
     return updated;
 }
 
+export async function applyControlPlaneCampaignConfigs(
+    configs: ControlPlaneCampaignConfigInput[]
+): Promise<ApplyControlPlaneCampaignResult> {
+    const result: ApplyControlPlaneCampaignResult = {
+        fetched: configs.length,
+        applied: 0,
+        created: 0,
+        updated: 0,
+        unchanged: 0,
+        skippedInvalid: 0,
+    };
+
+    if (configs.length === 0) {
+        return result;
+    }
+
+    const db = await getDatabase();
+    await withTransaction(db, async () => {
+        for (const configItem of configs) {
+            const listName = configItem.name.trim();
+            if (!listName) {
+                result.skippedInvalid += 1;
+                continue;
+            }
+
+            const nextIsActive = configItem.isActive ? 1 : 0;
+            const nextPriority = Math.max(1, Math.floor(configItem.priority));
+            const nextInviteCap = configItem.dailyInviteCap === null ? null : Math.max(0, Math.floor(configItem.dailyInviteCap));
+            const nextMessageCap = configItem.dailyMessageCap === null ? null : Math.max(0, Math.floor(configItem.dailyMessageCap));
+
+            const existing = await db.get<LeadListRow>(
+                `
+                SELECT name, source, is_active, priority, daily_invite_cap, daily_message_cap, created_at
+                FROM lead_lists
+                WHERE name = ?
+                LIMIT 1
+            `,
+                [listName]
+            );
+
+            if (!existing) {
+                await db.run(
+                    `
+                    INSERT INTO lead_lists (name, source, is_active, priority, daily_invite_cap, daily_message_cap)
+                    VALUES (?, 'control_plane', ?, ?, ?, ?)
+                `,
+                    [listName, nextIsActive, nextPriority, nextInviteCap, nextMessageCap]
+                );
+                result.created += 1;
+                result.applied += 1;
+                continue;
+            }
+
+            const changed = existing.source !== 'control_plane'
+                || existing.is_active !== nextIsActive
+                || existing.priority !== nextPriority
+                || existing.daily_invite_cap !== nextInviteCap
+                || existing.daily_message_cap !== nextMessageCap;
+
+            if (!changed) {
+                result.unchanged += 1;
+                continue;
+            }
+
+            await db.run(
+                `
+                UPDATE lead_lists
+                SET source = 'control_plane',
+                    is_active = ?,
+                    priority = ?,
+                    daily_invite_cap = ?,
+                    daily_message_cap = ?
+                WHERE name = ?
+            `,
+                [nextIsActive, nextPriority, nextInviteCap, nextMessageCap, listName]
+            );
+            result.updated += 1;
+            result.applied += 1;
+        }
+    });
+
+    return result;
+}
+
 export async function upsertSalesNavList(name: string, url: string): Promise<SalesNavListRecord> {
     const db = await getDatabase();
     const normalizedName = name.trim();
@@ -218,6 +305,9 @@ export interface AddLeadInput {
     website: string;
     linkedinUrl: string;
     listName: string;
+    leadScore?: number | null;
+    confidenceScore?: number | null;
+    status?: LeadStatus;
 }
 
 export interface UpsertSalesNavigatorLeadInput {
@@ -228,6 +318,8 @@ export interface UpsertSalesNavigatorLeadInput {
     website: string;
     linkedinUrl: string;
     listName: string;
+    leadScore?: number | null;
+    confidenceScore?: number | null;
 }
 
 export interface UpsertSalesNavigatorLeadResult {
@@ -273,6 +365,23 @@ export interface UpdateLeadListCampaignInput {
     priority?: number;
     dailyInviteCap?: number | null;
     dailyMessageCap?: number | null;
+}
+
+export interface ControlPlaneCampaignConfigInput {
+    name: string;
+    isActive: boolean;
+    priority: number;
+    dailyInviteCap: number | null;
+    dailyMessageCap: number | null;
+}
+
+export interface ApplyControlPlaneCampaignResult {
+    fetched: number;
+    applied: number;
+    created: number;
+    updated: number;
+    unchanged: number;
+    skippedInvalid: number;
 }
 
 export interface AddCompanyTargetInput {
@@ -372,8 +481,8 @@ export async function addLead(input: AddLeadInput): Promise<boolean> {
     const result = await db.run(
         `
         INSERT OR IGNORE INTO leads
-            (account_name, first_name, last_name, job_title, website, linkedin_url, status, list_name)
-        VALUES (?, ?, ?, ?, ?, ?, 'NEW', ?)
+            (account_name, first_name, last_name, job_title, website, linkedin_url, status, list_name, lead_score, confidence_score)
+        VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, 'NEW'), ?, ?, ?)
     `,
         [
             input.accountName,
@@ -382,7 +491,10 @@ export async function addLead(input: AddLeadInput): Promise<boolean> {
             input.jobTitle,
             input.website,
             input.linkedinUrl,
+            input.status ?? null,
             input.listName,
+            input.leadScore ?? null,
+            input.confidenceScore ?? null,
         ]
     );
 
@@ -442,8 +554,8 @@ export async function upsertSalesNavigatorLead(input: UpsertSalesNavigatorLeadIn
             const insertResult = await db.run(
                 `
                 INSERT INTO leads
-                    (account_name, first_name, last_name, job_title, website, linkedin_url, status, list_name, about, experience, invite_prompt_variant)
-                VALUES (?, ?, ?, ?, ?, ?, 'NEW', ?, NULL, NULL, NULL)
+                    (account_name, first_name, last_name, job_title, website, linkedin_url, status, list_name, about, experience, invite_prompt_variant, lead_score, confidence_score)
+                VALUES (?, ?, ?, ?, ?, ?, 'NEW', ?, NULL, NULL, NULL, ?, ?)
             `,
                 [
                     normalizedAccountName,
@@ -453,6 +565,8 @@ export async function upsertSalesNavigatorLead(input: UpsertSalesNavigatorLeadIn
                     normalizedWebsite,
                     linkedinUrl,
                     listName,
+                    input.leadScore ?? null,
+                    input.confidenceScore ?? null,
                 ]
             );
             leadId = insertResult.lastID ?? 0;
@@ -515,6 +629,14 @@ export async function upsertSalesNavigatorLead(input: UpsertSalesNavigatorLeadIn
             action,
         };
     });
+}
+
+export async function getExpiredInvitedLeads(accountId: string, olderThanDays: number): Promise<LeadRecord[]> {
+    const db = await getDatabase();
+    return db.all<LeadRecord[]>(
+        `SELECT * FROM leads WHERE account_id = ? AND status = 'INVITED' AND invited_at < datetime('now', '-' || ? || ' days') LIMIT 50`,
+        [accountId, olderThanDays]
+    );
 }
 
 export async function addCompanyTarget(input: AddCompanyTargetInput): Promise<boolean> {
@@ -672,6 +794,20 @@ export async function updateLeadPromptVariant(leadId: number, variant: string | 
         WHERE id = ?
     `,
         [variant, leadId]
+    );
+}
+
+export async function updateLeadScores(leadId: number, leadScore: number | null, confidenceScore: number | null): Promise<void> {
+    const db = await getDatabase();
+    await db.run(
+        `
+        UPDATE leads
+        SET lead_score = ?,
+            confidence_score = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+    `,
+        [leadScore, confidenceScore, leadId]
     );
 }
 
@@ -1604,3 +1740,193 @@ export async function recoverStuckJobs(staleAfterMinutes: number = 30): Promise<
     );
     return result.changes ?? 0;
 }
+
+// ──────────────────────────────────────────────────────────────
+// Downsync (Cloud -> Local) Application
+// ──────────────────────────────────────────────────────────────
+
+export async function applyCloudAccountUpdates(updates: CloudAccount[]): Promise<void> {
+    if (updates.length === 0) return;
+    const db = await getDatabase();
+    await withTransaction(db, async () => {
+        for (const acc of updates) {
+            await db.run(
+                `
+                UPDATE accounts
+                SET
+                    tier = COALESCE(?, tier),
+                    health = COALESCE(?, health),
+                    quarantine_reason = COALESCE(?, quarantine_reason),
+                    quarantine_until = COALESCE(?, quarantine_until),
+                    updated_at = COALESCE(?, updated_at)
+                WHERE id = ?
+                `,
+                [
+                    acc.tier,
+                    acc.health,
+                    acc.quarantine_reason,
+                    acc.quarantine_until,
+                    acc.updated_at || new Date().toISOString(),
+                    acc.id
+                ]
+            );
+        }
+    });
+}
+
+export async function applyCloudLeadUpdates(updates: CloudLeadUpsert[]): Promise<void> {
+    if (updates.length === 0) return;
+    const db = await getDatabase();
+    await withTransaction(db, async () => {
+        for (const l of updates) {
+            await db.run(
+                `
+                UPDATE leads
+                SET
+                    status = COALESCE(?, status),
+                    invited_at = COALESCE(?, invited_at),
+                    accepted_at = COALESCE(?, accepted_at),
+                    messaged_at = COALESCE(?, messaged_at),
+                    last_error = COALESCE(?, last_error),
+                    blocked_reason = COALESCE(?, blocked_reason),
+                    lead_score = COALESCE(?, lead_score),
+                    confidence_score = COALESCE(?, confidence_score),
+                    updated_at = COALESCE(?, updated_at)
+                WHERE linkedin_url = ?
+                `,
+                [
+                    l.status,
+                    l.invited_at,
+                    l.accepted_at,
+                    l.messaged_at,
+                    l.last_error,
+                    l.blocked_reason,
+                    l.lead_score,
+                    l.confidence_score,
+                    l.updated_at || new Date().toISOString(),
+                    l.linkedin_url
+                ]
+            );
+        }
+    });
+}
+
+// ──────────────────────────────────────────────────────────────
+// KPI Analytics
+// ──────────────────────────────────────────────────────────────
+
+export interface GlobalKPIData {
+    totalLeads: number;
+    statusCounts: Record<string, number>;
+    activeCampaigns: number;
+    totalAcceptances7d: number;
+}
+
+export async function getGlobalKPIData(): Promise<GlobalKPIData> {
+    const db = await getDatabase();
+
+    // Status counts
+    const counts = await db.all(`
+        SELECT status, COUNT(*) as count FROM leads GROUP BY status
+    `) as Array<{ status: string; count: number }>;
+
+    let totalLeads = 0;
+    const statusCounts: Record<string, number> = {};
+    for (const row of counts) {
+        statusCounts[row.status] = row.count;
+        totalLeads += row.count;
+    }
+
+    // Active campaigns
+    const activeCamps = await db.get(`
+        SELECT COUNT(*) as count FROM lead_lists WHERE is_active = 1
+    `) as { count: number } | undefined;
+
+    // Acceptances in last 7 days from daily_stats
+    const weeklyAcceptancesRow = await db.get(`
+        SELECT SUM(acceptances) as count 
+        FROM daily_stats 
+        WHERE date >= date('now', '-7 days')
+    `) as { count: number } | undefined;
+
+    return {
+        totalLeads,
+        statusCounts,
+        activeCampaigns: activeCamps?.count ?? 0,
+        totalAcceptances7d: weeklyAcceptancesRow?.count ?? 0
+    };
+}
+
+export async function startCampaignRun(): Promise<number> {
+    const db = await getDatabase();
+    const result = await db.run(`
+        INSERT INTO campaign_runs (start_time, status)
+        VALUES (strftime('%Y-%m-%dT%H:%M:%f', 'now'), 'RUNNING')
+    `);
+    if (!result.lastID) {
+        throw new Error('Failed to create campaign run record');
+    }
+    return result.lastID;
+}
+
+export interface CampaignRunMetrics {
+    discovered: number;
+    invites: number;
+    messages: number;
+    errors: number;
+}
+
+export async function finishCampaignRun(runId: number, status: RunStatus, metrics: CampaignRunMetrics): Promise<void> {
+    const db = await getDatabase();
+    await db.run(
+        `
+        UPDATE campaign_runs
+        SET 
+            end_time = strftime('%Y-%m-%dT%H:%M:%f', 'now'),
+            status = ?,
+            profiles_discovered = ?,
+            invites_sent = ?,
+            messages_sent = ?,
+            errors_count = ?
+        WHERE id = ?
+    `,
+        [status, metrics.discovered, metrics.invites, metrics.messages, metrics.errors, runId]
+    );
+}
+
+export async function getABTestingStats(): Promise<ABTestStats[]> {
+    const db = await getDatabase();
+
+    // Group by invite_prompt_variant where status > INVITED
+    // Count total as totalSent
+    // Count ACCEPTED + READY_MESSAGE + MESSAGED + REPLIED + CONNECTED as accepted
+    // Count REPLIED as replied
+    const rows = await db.all<{ variant: string, totalSent: number, totalAccepted: number, totalReplied: number }[]>(`
+        SELECT 
+            COALESCE(invite_prompt_variant, 'default') as variant,
+            COUNT(id) as totalSent,
+            SUM(CASE WHEN status IN ('ACCEPTED', 'READY_MESSAGE', 'MESSAGED', 'REPLIED', 'CONNECTED') THEN 1 ELSE 0 END) as totalAccepted,
+            SUM(CASE WHEN status IN ('REPLIED', 'CONNECTED') THEN 1 ELSE 0 END) as totalReplied
+        FROM leads
+        WHERE status NOT IN ('NEW', 'READY_INVITE', 'REVIEW_REQUIRED', 'SKIPPED', 'BLOCKED', 'DEAD', 'WITHDRAWN', 'PENDING')
+          AND invite_prompt_variant IS NOT NULL
+        GROUP BY COALESCE(invite_prompt_variant, 'default')
+        ORDER BY totalSent DESC
+    `);
+
+    return rows.map(r => {
+        const totalSent = r.totalSent || 0;
+        const totalAccepted = r.totalAccepted || 0;
+        const totalReplied = r.totalReplied || 0;
+
+        return {
+            variant: r.variant,
+            totalSent,
+            totalAccepted,
+            totalReplied,
+            acceptanceRate: totalSent > 0 ? (totalAccepted / totalSent) * 100 : 0,
+            replyRate: totalSent > 0 ? (totalReplied / totalSent) * 100 : 0
+        };
+    });
+}
+

@@ -8,7 +8,9 @@ import { WorkerContext } from '../workers/context';
 import { processAcceptanceJob } from '../workers/acceptanceWorker';
 import { processInviteJob } from '../workers/inviteWorker';
 import { processMessageJob } from '../workers/messageWorker';
+import { processHygieneJob } from '../workers/hygieneWorker';
 import { ChallengeDetectedError } from '../workers/errors';
+import { transitionLead } from './leadStateService';
 import {
     createJobAttempt,
     getAutomationPauseState,
@@ -132,6 +134,9 @@ async function runQueuedJobsForAccount(
                 } else if (job.type === 'MESSAGE') {
                     const parsed = parseJobPayload<{ leadId: number; acceptedAtDate: string }>(job);
                     await processMessageJob(parsed.payload, workerContext);
+                } else if (job.type === 'HYGIENE') {
+                    const parsed = parseJobPayload<{ accountId: string }>(job);
+                    await processHygieneJob(parsed.payload, workerContext);
                 }
 
                 await markJobSucceeded(job.id);
@@ -182,6 +187,18 @@ async function runQueuedJobsForAccount(
                     },
                     `job.failed:${job.id}:${attempts}`
                 );
+
+                if (status === 'DEAD_LETTER' && (job.type === 'INVITE' || job.type === 'MESSAGE' || job.type === 'ACCEPTANCE_CHECK')) {
+                    try {
+                        const parsed = parseJobPayload<{ leadId?: number }>(job);
+                        if (parsed.payload.leadId) {
+                            await transitionLead(parsed.payload.leadId, 'REVIEW_REQUIRED', `job_dead_letter_${job.type.toLowerCase()}`);
+                            await logWarn('job.dead_letter.lead_review_required', { jobId: job.id, leadId: parsed.payload.leadId, type: job.type });
+                        }
+                    } catch {
+                        // ignore if payload cannot be parsed
+                    }
+                }
 
                 await logWarn('job.failed', {
                     jobId: job.id,

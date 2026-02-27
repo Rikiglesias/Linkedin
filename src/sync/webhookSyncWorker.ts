@@ -161,6 +161,6 @@ export async function runWebhookSyncOnce(): Promise<void> {
     const pending = await countPendingOutboxEvents();
     if (pending > config.outboxAlertBacklog) {
         await logWarn('webhook.sync.backlog_high', { pending, threshold: config.outboxAlertBacklog });
-        await sendTelegramAlert(`Outbox backlog alto: ${pending} eventi pendenti`);
+        await sendTelegramAlert(`${pending} eventi pendenti non inviati al Webhook.`, 'Outbox Backlog Alto', 'warn');
     }
 }

@@ -12,6 +12,13 @@
     "post-modifiche": "npm run conta-problemi",
     "helper-manuali": "echo 'Esegui le correzioni manuali come da policy'",
     "start": "ts-node src/index.ts",
+    "daemon:start": "pm2 start ecosystem.config.cjs --interpreter ./node_modules/.bin/ts-node",
+    "daemon:stop": "pm2 stop linkedin-bot-daemon",
+    "daemon:logs": "pm2 logs linkedin-bot-daemon",
+    "daemon:status": "pm2 status",
+    "dashboard": "ts-node src/index.ts dashboard",
+    "kpi": "ts-node src/index.ts kpi",
+    "ramp-up": "ts-node src/scripts/rampUp.ts",
     "db:backup": "ts-node src/index.ts db-backup",
     "test:unit": "ts-node src/tests/unit.ts",
     "test:integration": "ts-node src/tests/integration.ts",
@@ -24,18 +31,23 @@
   "type": "commonjs",
   "dependencies": {
     "@supabase/supabase-js": "^2.97.0",
+    "cors": "^2.8.6",
     "csv-parser": "^3.2.0",
     "dotenv": "^17.3.1",
+    "express": "^5.2.1",
     "playwright": "^1.58.2",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/node": "^25.3.0",
     "@types/sqlite3": "^3.1.11",
     "@typescript-eslint/eslint-plugin": "^8.56.1",
     "@typescript-eslint/parser": "^8.56.1",
     "eslint": "^10.0.2",
+    "pm2": "^6.0.14",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   }

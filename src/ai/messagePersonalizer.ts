@@ -3,6 +3,7 @@ import { buildFollowUpMessage } from '../messages';
 import { LeadRecord } from '../types/domain';
 import { requestOpenAIText } from './openaiClient';
 import { logWarn } from '../telemetry/logger';
+import { SemanticChecker } from './semanticChecker';
 
 export interface PersonalizedMessageResult {
     message: string;
@@ -51,36 +52,52 @@ export async function buildPersonalizedFollowUpMessage(lead: LeadRecord): Promis
         fallbackTemplate: template,
     });
 
-    try {
-        const generated = await requestOpenAIText({
-            system: systemPrompt,
-            user: `Dati lead: ${userPrompt}`,
-            maxOutputTokens: 220,
-            temperature: 0.6,
-        });
-        const finalMessage = trimToMaxChars(generated, config.aiMessageMaxChars);
-        if (!finalMessage) {
-            return {
-                message: trimToMaxChars(template, config.aiMessageMaxChars),
-                source: 'template',
-                model: null,
-            };
+    let finalMessage = '';
+    let attempt = 0;
+
+    while (attempt < 3) {
+        attempt++;
+        try {
+            const generated = await requestOpenAIText({
+                system: systemPrompt,
+                user: `Dati lead: ${userPrompt}`,
+                maxOutputTokens: 220,
+                temperature: 0.6 + (attempt * 0.15),
+            });
+            const candidate = trimToMaxChars(generated, config.aiMessageMaxChars);
+
+            if (!candidate) continue;
+
+            if (SemanticChecker.isTooSimilar(candidate, 0.85)) {
+                await logWarn('ai.personalization.too_similar_retry', { leadId: lead.id, attempt });
+                continue;
+            }
+
+            finalMessage = candidate;
+            break;
+        } catch (error) {
+            await logWarn('ai.personalization.error', {
+                leadId: lead.id,
+                error: error instanceof Error ? error.message : String(error),
+            });
+            break; // Se fallisce API usciamo dal loop e andiamo in fallback
         }
-        return {
-            message: finalMessage,
-            source: 'ai',
-            model: config.aiModel,
-        };
-    } catch (error) {
-        await logWarn('ai.personalization.fallback_template', {
-            leadId: lead.id,
-            error: error instanceof Error ? error.message : String(error),
-        });
+    }
+
+    if (!finalMessage) {
+        await logWarn('ai.personalization.fallback_template', { leadId: lead.id, reason: 'Exhausted attempts or error' });
         return {
             message: trimToMaxChars(template, config.aiMessageMaxChars),
             source: 'template',
             model: null,
         };
     }
+
+    SemanticChecker.remember(finalMessage);
+    return {
+        message: finalMessage,
+        source: 'ai',
+        model: config.aiModel,
+    };
 }
 

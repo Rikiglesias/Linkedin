@@ -15,7 +15,7 @@ export async function quarantineAccount(type: string, details: Record<string, un
         },
         `incident.opened:${incidentId}`
     );
-    await sendTelegramAlert(`CRITICAL incident #${incidentId}: ${type}`);
+    await sendTelegramAlert(`Dettagli:\n\`\`\`json\n${JSON.stringify(details, null, 2)}\n\`\`\``, `CRITICAL incident #${incidentId}: ${type}`, 'critical');
     // Replica cloud: aggiorna health account a RED (non-bloccante)
     bridgeAccountHealth('default', 'RED', type);
     return incidentId;
@@ -39,7 +39,7 @@ export async function pauseAutomation(type: string, details: Record<string, unkn
         },
         `automation.paused:${incidentId}`
     );
-    await sendTelegramAlert(`WARN incident #${incidentId}: ${type}. Automazione in pausa fino a ${pausedUntil ?? 'manual resume'}`);
+    await sendTelegramAlert(`Automazione in pausa fino a ${pausedUntil ?? 'manual resume'}\n\nDettagli:\n\`\`\`json\n${JSON.stringify(details, null, 2)}\n\`\`\``, `WARN incident #${incidentId}: ${type}`, 'warn');
     // Replica cloud: aggiorna health account a YELLOW (non-bloccante)
     bridgeAccountHealth('default', 'YELLOW', type, pausedUntil ?? null);
     return incidentId;

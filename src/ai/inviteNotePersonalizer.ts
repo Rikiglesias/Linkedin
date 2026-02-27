@@ -3,6 +3,7 @@ import { generateInviteNote } from '../noteGenerator';
 import { LeadRecord } from '../types/domain';
 import { logWarn } from '../telemetry/logger';
 import { requestOpenAIText } from './openaiClient';
+import { SemanticChecker } from './semanticChecker';
 
 export interface PersonalizedInviteNoteResult {
     note: string;
@@ -27,14 +28,15 @@ function safeFirstName(lead: LeadRecord): string {
 }
 
 export async function buildPersonalizedInviteNote(lead: LeadRecord): Promise<PersonalizedInviteNoteResult> {
-    const template = trimToMaxChars(generateInviteNote(lead.first_name ?? ''), INVITE_NOTE_MAX_CHARS);
+    const tplResult = generateInviteNote(lead.first_name ?? '');
+    const templateText = trimToMaxChars(tplResult.note, INVITE_NOTE_MAX_CHARS);
 
     if (config.inviteNoteMode !== 'ai' || !config.openaiApiKey) {
         return {
-            note: template,
+            note: templateText,
             source: 'template',
             model: null,
-            variant: null,
+            variant: tplResult.variant,
         };
     }
 
@@ -73,38 +75,54 @@ export async function buildPersonalizedInviteNote(lead: LeadRecord): Promise<Per
 
     const userPrompt = JSON.stringify(userData);
 
-    try {
-        const generated = await requestOpenAIText({
-            system: systemPrompt,
-            user: `Dati lead: ${userPrompt}`,
-            maxOutputTokens: 120,
-            temperature: isVariantB ? 0.8 : 0.6,
-        });
-        const finalNote = trimToMaxChars(generated, INVITE_NOTE_MAX_CHARS);
-        if (!finalNote) {
-            return {
-                note: template,
-                source: 'template',
-                model: null,
-                variant: null,
-            };
+    let finalNote = '';
+    let attempt = 0;
+    const baseTemp = isVariantB ? 0.8 : 0.6;
+
+    while (attempt < 3) {
+        attempt++;
+        try {
+            const generated = await requestOpenAIText({
+                system: systemPrompt,
+                user: `Dati lead: ${userPrompt}`,
+                maxOutputTokens: 120,
+                temperature: baseTemp + (attempt * 0.15),
+            });
+            const candidate = trimToMaxChars(generated, INVITE_NOTE_MAX_CHARS);
+
+            if (!candidate) continue;
+
+            if (SemanticChecker.isTooSimilar(candidate, 0.85)) {
+                await logWarn('ai.invite_note.too_similar_retry', { leadId: lead.id, attempt });
+                continue;
+            }
+
+            finalNote = candidate;
+            break;
+        } catch (error) {
+            await logWarn('ai.invite_note.error', {
+                leadId: lead.id,
+                error: error instanceof Error ? error.message : String(error),
+            });
+            break;
         }
+    }
+
+    if (!finalNote) {
+        await logWarn('ai.invite_note.fallback_template', { leadId: lead.id, reason: 'Exhausted attempts or API error' });
         return {
-            note: finalNote,
-            source: 'ai',
-            model: config.aiModel,
-            variant: variantId,
-        };
-    } catch (error) {
-        await logWarn('ai.invite_note.fallback_template', {
-            leadId: lead.id,
-            error: error instanceof Error ? error.message : String(error),
-        });
-        return {
-            note: template,
+            note: templateText,
             source: 'template',
             model: null,
-            variant: null,
+            variant: tplResult.variant,
         };
     }
+
+    SemanticChecker.remember(finalNote);
+    return {
+        note: finalNote,
+        source: 'ai',
+        model: config.aiModel,
+        variant: variantId,
+    };
 }

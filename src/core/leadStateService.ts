@@ -2,14 +2,19 @@ import { appendLeadEvent, getLeadById, pushOutboxEvent, setLeadStatus } from './
 import { LeadStatus } from '../types/domain';
 
 const allowedTransitions: Record<Exclude<LeadStatus, 'PENDING'>, LeadStatus[]> = {
-    NEW: ['READY_INVITE', 'BLOCKED'],
-    READY_INVITE: ['INVITED', 'SKIPPED', 'BLOCKED'],
-    INVITED: ['ACCEPTED', 'BLOCKED'],
-    ACCEPTED: ['READY_MESSAGE', 'BLOCKED'],
-    READY_MESSAGE: ['MESSAGED', 'BLOCKED'],
-    MESSAGED: [],
+    NEW: ['READY_INVITE', 'BLOCKED', 'REVIEW_REQUIRED', 'DEAD'],
+    READY_INVITE: ['INVITED', 'SKIPPED', 'BLOCKED', 'REVIEW_REQUIRED', 'DEAD'],
+    INVITED: ['ACCEPTED', 'CONNECTED', 'BLOCKED', 'REVIEW_REQUIRED', 'WITHDRAWN', 'DEAD'],
+    ACCEPTED: ['READY_MESSAGE', 'CONNECTED', 'BLOCKED', 'REVIEW_REQUIRED', 'DEAD'],
+    CONNECTED: ['READY_MESSAGE', 'BLOCKED', 'REVIEW_REQUIRED', 'DEAD'],
+    READY_MESSAGE: ['MESSAGED', 'BLOCKED', 'REVIEW_REQUIRED', 'DEAD'],
+    MESSAGED: ['REPLIED', 'REVIEW_REQUIRED'],
+    REPLIED: [],
     SKIPPED: [],
     BLOCKED: [],
+    DEAD: [],
+    REVIEW_REQUIRED: ['READY_INVITE', 'READY_MESSAGE', 'INVITED', 'BLOCKED', 'DEAD', 'WITHDRAWN'],
+    WITHDRAWN: ['READY_INVITE', 'DEAD'],
 };
 
 function normalize(status: LeadStatus): Exclude<LeadStatus, 'PENDING'> {

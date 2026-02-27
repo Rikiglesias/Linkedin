@@ -21,10 +21,10 @@ function parseFloatEnv(name: string, fallback: number): number {
     return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function parseBoolEnv(name: string, fallback: boolean): boolean {
-    const raw = process.env[name];
-    if (raw === undefined) return fallback;
-    return raw.toLowerCase() === 'true';
+function parseBoolEnv(name: string, defaultValue: boolean): boolean {
+    const val = process.env[name];
+    if (val === undefined || val === '') return defaultValue;
+    return val.toLowerCase() === 'true' || val === '1';
 }
 
 function parseStringEnv(name: string, fallback: string = ''): string {
@@ -150,6 +150,9 @@ export interface AppConfig {
     supabaseSyncBatchSize: number;
     supabaseSyncIntervalMs: number;
     supabaseSyncMaxRetries: number;
+    supabaseControlPlaneEnabled: boolean;
+    supabaseControlPlaneSyncIntervalMs: number;
+    supabaseControlPlaneMaxCampaigns: number;
     webhookSyncEnabled: boolean;
     webhookSyncUrl: string;
     webhookSyncSecret: string;
@@ -177,7 +180,11 @@ export interface AppConfig {
     proxyRotateEveryMinutes: number;
     proxyProviderApiEndpoint?: string;
     proxyProviderApiKey?: string;
-    fingerprintApiEndpoint?: string;
+    fingerprintApiEndpoint: string;
+
+    // Hygiene settings (withdraw old pending invites)
+    withdrawInvitesEnabled: boolean;
+    pendingInviteMaxDays: number;
     inviteWithNote: boolean;
     inviteNoteMode: 'template' | 'ai';
     salesNavSyncEnabled: boolean;
@@ -265,6 +272,9 @@ export const config: AppConfig = {
     supabaseSyncBatchSize: Math.max(1, parseIntEnv('SUPABASE_SYNC_BATCH_SIZE', 100)),
     supabaseSyncIntervalMs: Math.max(1000, parseIntEnv('SUPABASE_SYNC_INTERVAL_MS', 15000)),
     supabaseSyncMaxRetries: Math.max(1, parseIntEnv('SUPABASE_SYNC_MAX_RETRIES', 8)),
+    supabaseControlPlaneEnabled: parseBoolEnv('SUPABASE_CONTROL_PLANE_ENABLED', false),
+    supabaseControlPlaneSyncIntervalMs: Math.max(1000, parseIntEnv('SUPABASE_CONTROL_PLANE_SYNC_INTERVAL_MS', 300000)),
+    supabaseControlPlaneMaxCampaigns: Math.max(1, parseIntEnv('SUPABASE_CONTROL_PLANE_MAX_CAMPAIGNS', 500)),
     webhookSyncEnabled: parseBoolEnv('WEBHOOK_SYNC_ENABLED', false),
     webhookSyncUrl: parseStringEnv('WEBHOOK_SYNC_URL'),
     webhookSyncSecret: parseStringEnv('WEBHOOK_SYNC_SECRET'),
@@ -290,9 +300,12 @@ export const config: AppConfig = {
     proxyFailureCooldownMinutes: Math.max(1, parseIntEnv('PROXY_FAILURE_COOLDOWN_MINUTES', 30)),
     proxyRotateEveryJobs: Math.max(0, parseIntEnv('PROXY_ROTATE_EVERY_JOBS', 0)),
     proxyRotateEveryMinutes: Math.max(0, parseIntEnv('PROXY_ROTATE_EVERY_MINUTES', 0)),
-    proxyProviderApiEndpoint: parseStringEnv('PROXY_PROVIDER_API_ENDPOINT') || undefined,
-    proxyProviderApiKey: parseStringEnv('PROXY_PROVIDER_API_KEY') || undefined,
-    fingerprintApiEndpoint: parseStringEnv('FINGERPRINT_API_ENDPOINT') || undefined,
+    proxyProviderApiEndpoint: parseStringEnv('PROXY_PROVIDER_API_ENDPOINT'),
+    proxyProviderApiKey: parseStringEnv('PROXY_PROVIDER_API_KEY'),
+    fingerprintApiEndpoint: parseStringEnv('FINGERPRINT_API_ENDPOINT'),
+
+    withdrawInvitesEnabled: parseBoolEnv('WITHDRAW_INVITES_ENABLED', true),
+    pendingInviteMaxDays: parseIntEnv('PENDING_INVITE_MAX_DAYS', 30),
     inviteWithNote: parseBoolEnv('INVITE_WITH_NOTE', false),
     inviteNoteMode: (parseStringEnv('INVITE_NOTE_MODE', 'template') === 'ai' ? 'ai' : 'template') as 'template' | 'ai',
     salesNavSyncEnabled: parseBoolEnv('SALESNAV_SYNC_ENABLED', false),

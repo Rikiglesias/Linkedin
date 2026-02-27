@@ -8,6 +8,7 @@ import {
     getCompanyTargetsForEnrichment,
     setCompanyTargetStatus,
 } from './repositories';
+import { scoreLeadProfile } from '../ai/leadScorer';
 
 export interface CompanyEnrichmentOptions {
     limit?: number;
@@ -97,20 +98,41 @@ function buildSearchQueries(target: CompanyTargetRecord): string[] {
     return Array.from(unique);
 }
 
-async function extractProfileUrls(page: Parameters<typeof detectChallenge>[0], maxProfiles: number): Promise<string[]> {
-    const rawUrls = await page.$$eval('a[href*="/in/"]', (anchors) =>
-        anchors.map((anchor) => (anchor as HTMLAnchorElement).href).filter((href) => !!href)
-    );
+export interface ExtractedProfile {
+    url: string;
+    headline: string | null;
+}
 
-    const unique = new Set<string>();
-    for (const rawUrl of rawUrls) {
-        const normalized = normalizeProfileUrl(rawUrl);
+async function extractProfiles(page: Parameters<typeof detectChallenge>[0], maxProfiles: number): Promise<ExtractedProfile[]> {
+    const rawData = await page.$$eval('li.reusable-search__result-container', (elements) => {
+        return elements.map(el => {
+            const anchor = el.querySelector('span.entity-result__title-text a.app-aware-link[href*="/in/"]') as HTMLAnchorElement
+                || el.querySelector('a[href*="/in/"]') as HTMLAnchorElement;
+            const url = anchor ? anchor.href : null;
+            const headlineEl = el.querySelector('.entity-result__primary-subtitle');
+            const headline = headlineEl ? (headlineEl.textContent || '').trim() : null;
+            return { url, headline };
+        }).filter(r => !!r.url) as { url: string; headline: string | null }[];
+    });
+
+    if (rawData.length === 0) {
+        const rawUrls = await page.$$eval('a[href*="/in/"]', (anchors) =>
+            anchors.map((anchor) => (anchor as HTMLAnchorElement).href).filter((href) => !!href)
+        );
+        rawUrls.forEach(u => rawData.push({ url: u, headline: null }));
+    }
+
+    const unique = new Map<string, ExtractedProfile>();
+    for (const raw of rawData) {
+        const normalized = normalizeProfileUrl(raw.url);
         if (!normalized) continue;
-        unique.add(normalized);
+        if (!unique.has(normalized)) {
+            unique.set(normalized, { url: normalized, headline: raw.headline });
+        }
         if (unique.size >= maxProfiles) break;
     }
 
-    return Array.from(unique);
+    return Array.from(unique.values());
 }
 
 async function processCompanyTarget(
@@ -123,7 +145,7 @@ async function processCompanyTarget(
         return { matched: false, createdLeads: 0, noMatch: true, error: null };
     }
 
-    let profileUrls: string[] = [];
+    let profiles: ExtractedProfile[] = [];
     for (const query of queries) {
         const searchUrl = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(query)}`;
         await page.goto(searchUrl, { waitUntil: 'domcontentloaded' });
@@ -138,34 +160,57 @@ async function processCompanyTarget(
             throw new Error('Challenge rilevato durante enrichment');
         }
 
-        profileUrls = await extractProfileUrls(page, options.maxProfilesPerCompany);
-        if (profileUrls.length > 0) {
+        profiles = await extractProfiles(page, options.maxProfilesPerCompany);
+        if (profiles.length > 0) {
             break;
         }
     }
-    if (profileUrls.length === 0) {
+    if (profiles.length === 0) {
         return { matched: false, createdLeads: 0, noMatch: true, error: null };
     }
 
     let createdLeads = 0;
     if (!options.dryRun) {
-        for (const profileUrl of profileUrls) {
-            const names = parseNamesFromProfileUrl(profileUrl);
+        for (const profile of profiles) {
+            const names = parseNamesFromProfileUrl(profile.url);
+
+            let confidenceScore = null;
+            let leadScore = null;
+            let leadStatus: 'NEW' | 'REVIEW_REQUIRED' = 'NEW';
+
+            if (config.openaiApiKey) {
+                try {
+                    const scoreResult = await scoreLeadProfile(target.account_name, `${names.firstName} ${names.lastName}`, profile.headline);
+                    confidenceScore = scoreResult.confidenceScore;
+                    leadScore = scoreResult.leadScore;
+
+                    if (confidenceScore < 70 || leadScore < 40) {
+                        leadStatus = 'REVIEW_REQUIRED';
+                        await logInfo('company_enrichment.low_score', { url: profile.url, confidenceScore, leadScore, reason: scoreResult.reason });
+                    }
+                } catch (err) {
+                    await logWarn('company_enrichment.scoring_error', { url: profile.url, error: String(err) });
+                }
+            }
+
             const inserted = await addLead({
                 accountName: target.account_name,
                 firstName: names.firstName,
                 lastName: names.lastName,
-                jobTitle: '',
+                jobTitle: profile.headline || '',
                 website: target.website,
-                linkedinUrl: profileUrl,
+                linkedinUrl: profile.url,
                 listName: target.list_name,
+                leadScore,
+                confidenceScore,
+                status: leadStatus
             });
             if (inserted) {
                 createdLeads += 1;
             }
         }
     } else {
-        createdLeads = profileUrls.length;
+        createdLeads = profiles.length;
     }
 
     return { matched: true, createdLeads, noMatch: false, error: null };

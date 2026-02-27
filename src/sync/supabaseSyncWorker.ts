@@ -120,6 +120,6 @@ export async function runSupabaseSyncOnce(): Promise<void> {
     const pending = await countPendingOutboxEvents();
     if (pending > config.outboxAlertBacklog) {
         await logWarn('supabase.sync.backlog_high', { pending, threshold: config.outboxAlertBacklog });
-        await sendTelegramAlert(`Outbox backlog alto: ${pending} eventi pendenti`);
+        await sendTelegramAlert(`${pending} eventi pendenti non sincronizzati col cloud Supabase.`, 'Outbox Backlog Alto', 'warn');
     }
 }

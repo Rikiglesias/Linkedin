@@ -54,6 +54,7 @@ export interface CloudAccount {
     last_active_at?: string | null;
     quarantine_reason?: string | null;
     quarantine_until?: string | null;
+    updated_at?: string | null;
 }
 
 export interface CloudLeadUpsert {
@@ -73,8 +74,10 @@ export interface CloudLeadUpsert {
     blocked_reason?: string | null;
     about?: string | null;
     experience?: string | null;
-    invite_prompt_variant?: string | null;
     invite_note_sent?: string | null;
+    lead_score?: number | null;
+    confidence_score?: number | null;
+    updated_at?: string | null;
 }
 
 export interface CloudJobUpsert {
@@ -104,6 +107,15 @@ export interface PendingTelegramCommand {
     account_id: string | null;
     command: string;
     args: string | null;
+}
+
+export interface CloudCampaignConfig {
+    name: string;
+    is_active: boolean;
+    priority: number;
+    daily_invite_cap: number | null;
+    daily_message_cap: number | null;
+    updated_at?: string | null;
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -365,5 +377,125 @@ export async function checkCloudConnectivity(): Promise<boolean> {
         return !error;
     } catch {
         return false;
+    }
+}
+
+/**
+ * Legge le configurazioni campagne dal Control Plane Supabase.
+ * La tabella attesa e `campaigns`.
+ */
+export async function fetchCloudCampaignConfigs(limit: number): Promise<CloudCampaignConfig[]> {
+    const sb = getClient();
+    if (!sb) return [];
+
+    const safeLimit = Math.max(1, limit);
+    try {
+        const { data, error } = await sb
+            .from('campaigns')
+            .select('name, is_active, priority, daily_invite_cap, daily_message_cap, updated_at')
+            .order('priority', { ascending: true })
+            .order('name', { ascending: true })
+            .limit(safeLimit);
+
+        if (error || !data) {
+            await logWarn('cloud.campaigns.fetch.error', { error: error?.message ?? 'unknown' });
+            return [];
+        }
+
+        const normalized: CloudCampaignConfig[] = [];
+        for (const row of data as Array<Record<string, unknown>>) {
+            const rawName = typeof row.name === 'string' ? row.name.trim() : '';
+            if (!rawName) continue;
+
+            const rawPriority = typeof row.priority === 'number' ? row.priority : Number(row.priority ?? 100);
+            const priority = Number.isFinite(rawPriority) ? Math.max(1, Math.floor(rawPriority)) : 100;
+
+            const inviteCap = row.daily_invite_cap === null || row.daily_invite_cap === undefined
+                ? null
+                : Math.max(0, Number(row.daily_invite_cap));
+            const messageCap = row.daily_message_cap === null || row.daily_message_cap === undefined
+                ? null
+                : Math.max(0, Number(row.daily_message_cap));
+
+            normalized.push({
+                name: rawName,
+                is_active: row.is_active === false ? false : true,
+                priority,
+                daily_invite_cap: inviteCap !== null && Number.isFinite(inviteCap) ? Math.floor(inviteCap) : null,
+                daily_message_cap: messageCap !== null && Number.isFinite(messageCap) ? Math.floor(messageCap) : null,
+                updated_at: typeof row.updated_at === 'string' ? row.updated_at : null,
+            });
+        }
+        return normalized;
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        await logWarn('cloud.campaigns.fetch.exception', { error: message });
+        return [];
+    }
+}
+
+// ──────────────────────────────────────────────────────────────
+// Downsync (Bidirectional Sync)
+// ──────────────────────────────────────────────────────────────
+
+/**
+ * Legge gli accounts modificati sul cloud dopo lastSyncAt.
+ */
+export async function fetchCloudAccountsUpdates(lastSyncAt: string | null, limit: number = 100): Promise<CloudAccount[]> {
+    const sb = getClient();
+    if (!sb) return [];
+
+    const safeLimit = Math.max(1, limit);
+    try {
+        let query = sb.from('accounts').select('*').order('updated_at', { ascending: true }).limit(safeLimit);
+
+        if (lastSyncAt) {
+            query = query.gt('updated_at', lastSyncAt);
+        }
+
+        const { data, error } = await query;
+
+        if (error || !data) {
+            await logWarn('cloud.accounts.fetch_updates.error', { error: error?.message ?? 'unknown' });
+            return [];
+        }
+
+        // Cast safely
+        return data as CloudAccount[];
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        await logWarn('cloud.accounts.fetch_updates.exception', { error: message });
+        return [];
+    }
+}
+
+/**
+ * Legge i leads modificati sul cloud dopo lastSyncAt.
+ */
+export async function fetchCloudLeadsUpdates(lastSyncAt: string | null, limit: number = 500): Promise<CloudLeadUpsert[]> {
+    const sb = getClient();
+    if (!sb) return [];
+
+    const safeLimit = Math.max(1, limit);
+    try {
+        let query = sb.from('leads').select('*').order('updated_at', { ascending: true }).limit(safeLimit);
+
+        if (lastSyncAt) {
+            query = query.gt('updated_at', lastSyncAt);
+        }
+
+        const { data, error } = await query;
+
+        if (error || !data) {
+            await logWarn('cloud.leads.fetch_updates.error', { error: error?.message ?? 'unknown' });
+            return [];
+        }
+
+        // Cast safely
+        return data as CloudLeadUpsert[];
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        await logWarn('cloud.leads.fetch_updates.exception', { error: message });
+        return [];
     }
 }
