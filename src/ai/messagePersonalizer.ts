@@ -101,3 +101,54 @@ export async function buildPersonalizedFollowUpMessage(lead: LeadRecord): Promis
     };
 }
 
+/**
+ * Genera un reminder breve per lead in silenzio dopo N giorni dal primo messaggio.
+ * Tono: caldo, non invasivo, senza pressione. Max 300 char.
+ */
+export async function buildFollowUpReminderMessage(lead: LeadRecord, daysSince: number): Promise<PersonalizedMessageResult> {
+    const FOLLOW_UP_MAX_CHARS = 300;
+
+    // Template fallback
+    const firstName = safeFirstName(lead);
+    const fallback = `Ciao ${firstName}, volevo riprendere i contatti dopo il mio messaggio di qualche giorno fa. Sei disponibile per una breve chiacchierata?`;
+    const fallbackTrimmed = trimToMaxChars(fallback, FOLLOW_UP_MAX_CHARS);
+
+    if (!config.aiPersonalizationEnabled || !config.openaiApiKey) {
+        return { message: fallbackTrimmed, source: 'template', model: null };
+    }
+
+    const systemPrompt = [
+        'Sei un assistant B2B per outreach LinkedIn in italiano.',
+        'Scrivi un follow-up breve, caldo e non invadente — NON menzionare mai che stai facendo "follow-up".',
+        'Tono: naturale, umano, curioso. Niente pressione, niente emoji, niente link.',
+        `Massimo ${FOLLOW_UP_MAX_CHARS} caratteri. Solo il testo del messaggio, niente altro.`,
+    ].join(' ');
+
+    const userPrompt = JSON.stringify({
+        firstName,
+        company: lead.account_name || '',
+        role: lead.job_title || '',
+        daysSinceLastMessage: daysSince,
+        fallback: fallbackTrimmed,
+    });
+
+    try {
+        const generated = await requestOpenAIText({
+            system: systemPrompt,
+            user: `Dati lead: ${userPrompt}`,
+            maxOutputTokens: 120,
+            temperature: 0.75,
+        });
+        const candidate = trimToMaxChars(generated, FOLLOW_UP_MAX_CHARS);
+        if (candidate) {
+            return { message: candidate, source: 'ai', model: config.aiModel };
+        }
+    } catch (err) {
+        await logWarn('ai.follow_up_reminder.error', {
+            leadId: lead.id,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+
+    return { message: fallbackTrimmed, source: 'template', model: null };
+}

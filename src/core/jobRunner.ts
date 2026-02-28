@@ -10,6 +10,7 @@ import { processInviteJob } from '../workers/inviteWorker';
 import { processMessageJob } from '../workers/messageWorker';
 import { processHygieneJob } from '../workers/hygieneWorker';
 import { ChallengeDetectedError } from '../workers/errors';
+import { runFollowUpWorker } from '../workers/followUpWorker';
 import { transitionLead } from './leadStateService';
 import {
     createJobAttempt,
@@ -268,6 +269,27 @@ async function runQueuedJobsForAccount(
                 await performBrowserGC(session);
             }
         }
+
+        // ── Follow-up Phase ─────────────────────────────────────────────────
+        // Eseguito una volta sola dopo i job normali, con la stessa sessione aperta.
+        // Non bloccante: errori non propagano e non compromettono la run principale.
+        if (!sessionClosed) {
+            const followUpContext: WorkerContext = {
+                session,
+                dryRun: options.dryRun,
+                localDate: options.localDate,
+                accountId: account.id,
+            };
+            try {
+                await runFollowUpWorker(followUpContext);
+            } catch (err: unknown) {
+                await logWarn('job_runner.follow_up_phase_error', {
+                    accountId: account.id,
+                    error: err instanceof Error ? err.message : String(err),
+                });
+            }
+        }
+
     } finally {
         if (!sessionClosed) {
             await closeBrowser(session);

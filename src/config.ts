@@ -210,6 +210,9 @@ export interface AppConfig {
     salesforceClientSecret: string;
     hunterApiKey: string;               // Hunter.io API key
     clearbitApiKey: string;             // Clearbit Secret Key
+    followUpDelayDays: number;          // giorni di silenzio prima del follow-up (default 5)
+    followUpMax: number;                // max follow-up per lead (default 1)
+    followUpDailyCap: number;           // max follow-up inviabili al giorno (default 10)
     proxyUrl: string;
     proxyUsername: string;
     proxyPassword: string;
@@ -362,6 +365,9 @@ export const config: AppConfig = {
     salesforceClientSecret: parseStringEnv('SALESFORCE_CLIENT_SECRET'),
     hunterApiKey: parseStringEnv('HUNTER_API_KEY'),
     clearbitApiKey: parseStringEnv('CLEARBIT_API_KEY'),
+    followUpDelayDays: Math.max(1, parseIntEnv('FOLLOW_UP_DELAY_DAYS', 5)),
+    followUpMax: Math.max(1, parseIntEnv('FOLLOW_UP_MAX', 1)),
+    followUpDailyCap: Math.max(1, parseIntEnv('FOLLOW_UP_DAILY_CAP', 10)),
     proxyUrl: parseStringEnv('PROXY_URL'),
     proxyUsername: parseStringEnv('PROXY_USERNAME'),
     proxyPassword: parseStringEnv('PROXY_PASSWORD'),

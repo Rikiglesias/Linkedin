@@ -880,6 +880,47 @@ export async function getLeadsByStatus(status: LeadStatus, limit: number): Promi
     return leads.map((lead) => ({ ...lead, status: normalizeLegacyStatus(lead.status) }));
 }
 
+/**
+ * Restituisce i lead MESSAGED da più di delayDays giorni che non hanno
+ * ancora raggiunto il massimo di follow-up consentiti.
+ */
+export async function getLeadsForFollowUp(
+    delayDays: number,
+    maxFollowUp: number,
+    limit: number
+): Promise<LeadRecord[]> {
+    const db = await getDatabase();
+    const leads = await db.query<LeadRecord>(
+        `SELECT *
+         FROM leads
+         WHERE status = 'MESSAGED'
+           AND follow_up_count < ?
+           AND messaged_at IS NOT NULL
+           AND messaged_at <= DATETIME('now', '-' || ? || ' days')
+           AND (follow_up_sent_at IS NULL
+                OR follow_up_sent_at <= DATETIME('now', '-' || ? || ' days'))
+         ORDER BY messaged_at ASC
+         LIMIT ?`,
+        [maxFollowUp, delayDays, delayDays, limit]
+    );
+    return leads.map((lead) => ({ ...lead, status: normalizeLegacyStatus(lead.status) }));
+}
+
+/**
+ * Incrementa follow_up_count e aggiorna follow_up_sent_at per un lead.
+ */
+export async function recordFollowUpSent(leadId: number): Promise<void> {
+    const db = await getDatabase();
+    await db.run(
+        `UPDATE leads
+         SET follow_up_count   = follow_up_count + 1,
+             follow_up_sent_at = DATETIME('now'),
+             updated_at        = DATETIME('now')
+         WHERE id = ?`,
+        [leadId]
+    );
+}
+
 export async function getLeadsByStatusForSiteCheck(status: LeadStatus, limit: number, staleDays: number): Promise<LeadRecord[]> {
     const db = await getDatabase();
     const normalized = normalizeLegacyStatus(status);
@@ -1058,7 +1099,7 @@ export async function getListDailyStat(
 
 export async function incrementDailyStat(
     dateString: string,
-    field: 'invites_sent' | 'messages_sent' | 'acceptances' | 'challenges_count' | 'selector_failures' | 'run_errors',
+    field: 'invites_sent' | 'messages_sent' | 'acceptances' | 'challenges_count' | 'selector_failures' | 'run_errors' | 'follow_ups_sent',
     amount: number = 1
 ): Promise<void> {
     const db = await getDatabase();
