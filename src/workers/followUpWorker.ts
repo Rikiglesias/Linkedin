@@ -19,6 +19,7 @@ import { getLeadsForFollowUp, recordFollowUpSent, incrementDailyStat, countRecen
 import { joinSelectors } from '../selectors';
 import { hashMessage, validateMessageContent } from '../validation/messageValidator';
 import { logInfo, logWarn } from '../telemetry/logger';
+import { LeadRecord } from '../types/domain';
 import { WorkerContext } from './context';
 import { ChallengeDetectedError, RetryableWorkerError } from './errors';
 
@@ -38,8 +39,7 @@ function daysSince(iso: string | null | undefined): number {
 async function processSingleFollowUp(
     leadId: number,
     linkedinUrl: string,
-    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-    lead: any,
+    lead: LeadRecord,
     messagedAt: string | null,
     context: WorkerContext
 ): Promise<boolean> {

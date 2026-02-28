@@ -9,6 +9,11 @@ data/session*/
 # Secrets
 .env
 
-# Logs
+# Logs e file temporanei
 *.log
 npm-debug.log*
+errors.txt
+ts_analysis.txt
+eslint-report.json
+repomix-output.txt
+tsc_out.log

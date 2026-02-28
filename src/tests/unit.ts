@@ -13,7 +13,7 @@ import { ScheduleResult } from '../core/scheduler';
 import { LeadRecord } from '../types/domain';
 import { getProxy, getProxyFailoverChain, getProxyPoolStatus, markProxyFailed, markProxyHealthy } from '../proxyManager';
 import { getSchedulingAccountIds, pickAccountIdForLead } from '../accountManager';
-import { generateInviteNote } from '../noteGenerator';
+import { generateInviteNote } from '../ai/inviteNotePersonalizer';
 import { classifySiteMismatch, isMismatchAmbiguous } from '../core/audit';
 import { SELECTORS } from '../selectors';
 
