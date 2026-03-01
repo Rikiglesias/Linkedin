@@ -609,3 +609,74 @@ body {
         display: none;
     }
 }
+
+/* ── Modal (dialog) ─────────────────────────────────────────────── */
+dialog {
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+    max-width: 420px;
+    width: 90%;
+}
+
+dialog::backdrop {
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(4px);
+}
+
+.modal-inner {
+    padding: 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.modal-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.modal-label {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.modal-input {
+    background: var(--bg-card-alt);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 1rem;
+    padding: 10px 14px;
+    width: 100%;
+    outline: none;
+    transition: border-color var(--transition);
+}
+
+.modal-input:focus {
+    border-color: var(--linkedin);
+}
+
+.modal-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 4px;
+}
+
+/* ── Codice inline ──────────────────────────────────────────────── */
+code {
+    font-family: 'Courier New', monospace;
+    font-size: 0.78rem;
+    background: var(--bg-hover);
+    padding: 1px 6px;
+    border-radius: 4px;
+    color: var(--accent);
+}

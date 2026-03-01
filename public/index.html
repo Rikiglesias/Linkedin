@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Dashboard di controllo per LinkedIn Bot — monitoraggio KPI, risk score, A/B test e gestione incidenti.">
     <title>LinkedIn Bot — Dashboard</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
@@ -10,65 +11,78 @@
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-    <!-- HEADER -->
+    <!-- ── MODALE PAUSA ───────────────────────────────────────────────────── -->
+    <dialog id="pause-modal" aria-labelledby="pause-modal-title">
+        <div class="modal-inner">
+            <h2 id="pause-modal-title" class="modal-title">⏸ Metti in pausa il bot</h2>
+            <label for="pause-minutes-input" class="modal-label">Durata pausa (minuti)</label>
+            <input id="pause-minutes-input" class="modal-input" type="number" min="1" max="10080" value="60" placeholder="es. 60">
+            <div class="modal-actions">
+                <button class="btn btn-warning" id="pause-confirm-btn" onclick="confirmPause()">⏸ Conferma Pausa</button>
+                <button class="btn btn-secondary" onclick="document.getElementById('pause-modal').close()">✕ Annulla</button>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- ── HEADER ─────────────────────────────────────────────────────────── -->
     <header class="header">
         <div class="header-brand">
-            <svg class="brand-icon" viewBox="0 0 24 24" fill="currentColor">
+            <svg class="brand-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                 <path d="M19 0H5C2.24 0 0 2.24 0 5v14c0 2.76 2.24 5 5 5h14c2.76 0 5-2.24 5-5V5c0-2.76-2.24-5-5-5zm-11 19H5V8h3v11zm-1.5-12.27c-.97 0-1.75-.79-1.75-1.75S6.53 3.23 7.5 3.23c.97 0 1.75.79 1.75 1.75s-.78 1.75-1.75 1.75zM20 19h-3v-5.6c0-3.37-4-3.12-4 0V19h-3V8h3v1.77c1.39-2.58 7-2.77 7 2.47V19z"/>
             </svg>
             <span class="brand-name">LinkedIn Bot</span>
             <span class="brand-sub">Dashboard</span>
         </div>
         <div class="header-status">
-            <div id="status-badge" class="status-badge status-loading">
-                <span class="status-dot"></span>
+            <div id="status-badge" class="status-badge status-loading" aria-live="polite">
+                <span class="status-dot" aria-hidden="true"></span>
                 <span id="status-text">Connessione...</span>
             </div>
             <div class="header-actions">
-                <button id="btn-pause" class="btn btn-warning" onclick="controlPause()">⏸ Pausa</button>
-                <button id="btn-resume" class="btn btn-success" onclick="controlResume()">▶ Riprendi</button>
+                <button id="btn-pause" class="btn btn-warning" onclick="openPauseModal()" aria-label="Metti in pausa il bot">⏸ Pausa</button>
+                <button id="btn-resume" class="btn btn-success" onclick="controlResume()" aria-label="Riprendi il bot">▶ Riprendi</button>
             </div>
         </div>
     </header>
 
-    <!-- MAIN CONTENT -->
+    <!-- ── MAIN CONTENT ───────────────────────────────────────────────────── -->
     <main class="main">
 
         <!-- ROW 1: KPI Cards -->
-        <section class="kpi-grid" id="kpi-grid">
+        <section class="kpi-grid" id="kpi-grid" aria-label="KPI principali">
             <div class="kpi-card" id="kpi-invited">
-                <div class="kpi-icon">📨</div>
+                <div class="kpi-icon" aria-hidden="true">📨</div>
                 <div class="kpi-value" id="val-invited">—</div>
                 <div class="kpi-label">Inviti</div>
             </div>
             <div class="kpi-card" id="kpi-accepted">
-                <div class="kpi-icon">🤝</div>
+                <div class="kpi-icon" aria-hidden="true">🤝</div>
                 <div class="kpi-value" id="val-accepted">—</div>
                 <div class="kpi-label">Accettati</div>
             </div>
             <div class="kpi-card" id="kpi-messaged">
-                <div class="kpi-icon">💬</div>
+                <div class="kpi-icon" aria-hidden="true">💬</div>
                 <div class="kpi-value" id="val-messaged">—</div>
                 <div class="kpi-label">Messaggiati</div>
             </div>
             <div class="kpi-card" id="kpi-replied">
-                <div class="kpi-icon">✉️</div>
+                <div class="kpi-icon" aria-hidden="true">✉️</div>
                 <div class="kpi-value" id="val-replied">—</div>
                 <div class="kpi-label">Risposte</div>
             </div>
             <div class="kpi-card" id="kpi-risk">
-                <div class="kpi-icon">🛡️</div>
+                <div class="kpi-icon" aria-hidden="true">🛡️</div>
                 <div class="kpi-value" id="val-risk">—</div>
                 <div class="kpi-label">Risk Score</div>
             </div>
             <div class="kpi-card" id="kpi-total">
-                <div class="kpi-icon">🎯</div>
+                <div class="kpi-icon" aria-hidden="true">🎯</div>
                 <div class="kpi-value" id="val-total">—</div>
                 <div class="kpi-label">Lead Totali</div>
             </div>
         </section>
 
-        <!-- ROW 2: Funnel Chart + Risk Gauge -->
+        <!-- ROW 2: Funnel Chart + Conversion Rates -->
         <section class="charts-row">
             <div class="card chart-card chart-large">
                 <div class="card-header">
@@ -76,7 +90,7 @@
                     <span class="card-subtitle" id="funnel-updated">—</span>
                 </div>
                 <div class="chart-wrapper">
-                    <canvas id="funnelChart"></canvas>
+                    <canvas id="funnelChart" aria-label="Grafico funnel lead"></canvas>
                 </div>
             </div>
             <div class="card chart-card chart-small">
@@ -105,7 +119,42 @@
             </div>
         </section>
 
-        <!-- ROW 3: A/B Leaderboard + Timing Heatmap -->
+        <!-- ROW 3: Trend 7gg + Incidents -->
+        <section class="charts-row">
+            <div class="card chart-card">
+                <div class="card-header">
+                    <h2 class="card-title">📈 Attività ultimi 7 giorni</h2>
+                    <span class="card-subtitle">Inviti · Messaggi · Accettazioni</span>
+                </div>
+                <div class="chart-wrapper">
+                    <canvas id="trendChart" aria-label="Grafico trend 7 giorni"></canvas>
+                </div>
+            </div>
+            <div class="card chart-card">
+                <div class="card-header">
+                    <h2 class="card-title">🚨 Incidenti Aperti</h2>
+                    <span class="card-subtitle" id="incidents-count">—</span>
+                </div>
+                <div class="table-wrapper">
+                    <table class="data-table" id="incidents-table" aria-label="Incidenti aperti">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Tipo</th>
+                                <th>Severity</th>
+                                <th>Aperto</th>
+                                <th>Azione</th>
+                            </tr>
+                        </thead>
+                        <tbody id="incidents-tbody">
+                            <tr><td colspan="5" class="empty-state">Caricamento...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ROW 4: A/B Leaderboard + Timing Heatmap -->
         <section class="charts-row">
             <div class="card chart-card chart-medium">
                 <div class="card-header">
@@ -113,7 +162,7 @@
                     <span class="card-subtitle">Bandit Score</span>
                 </div>
                 <div class="table-wrapper">
-                    <table class="data-table" id="ab-table">
+                    <table class="data-table" id="ab-table" aria-label="A/B test varianti">
                         <thead>
                             <tr>
                                 <th>Variante</th>
@@ -140,14 +189,14 @@
             </div>
         </section>
 
-        <!-- ROW 4: Recent Runs -->
+        <!-- ROW 5: Recent Runs -->
         <section class="card full-width-card">
             <div class="card-header">
                 <h2 class="card-title">🤖 Campaign Runs Recenti</h2>
-                <button class="btn btn-sm btn-secondary" onclick="loadData()">↻ Aggiorna</button>
+                <button class="btn btn-sm btn-secondary" onclick="loadData()" aria-label="Aggiorna dati">↻ Aggiorna</button>
             </div>
             <div class="table-wrapper">
-                <table class="data-table" id="runs-table">
+                <table class="data-table" id="runs-table" aria-label="Campaign runs recenti">
                     <thead>
                         <tr>
                             <th>#</th>

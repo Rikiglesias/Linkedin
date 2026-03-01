@@ -461,3 +461,51 @@ export function getWeekStartDate(now: Date = new Date(), timezone: string = conf
     const anchorDay = String(anchor.getUTCDate()).padStart(2, '0');
     return `${anchorYear}-${anchorMonth}-${anchorDay}`;
 }
+
+/**
+ * Valida la configurazione critica all'avvio dell'applicazione.
+ * Ritorna un array di messaggi di errore (vuoto se tutto ok).
+ * Chiamare prima di startServer() o avviare il bot.
+ */
+export function validateCriticalConfig(): string[] {
+    const errors: string[] = [];
+
+    // Supabase: se sync abilitata, URL obbligatorio
+    if (config.supabaseSyncEnabled && !config.supabaseUrl) {
+        errors.push('[CONFIG] SUPABASE_URL mancante ma SUPABASE_SYNC_ENABLED=true');
+    }
+    if (config.supabaseSyncEnabled && !config.supabaseServiceRoleKey) {
+        errors.push('[CONFIG] SUPABASE_SERVICE_ROLE_KEY mancante ma SUPABASE_SYNC_ENABLED=true');
+    }
+
+    // Webhook: se sync abilitata, URL obbligatorio
+    if (config.webhookSyncEnabled && !config.webhookSyncUrl) {
+        errors.push('[CONFIG] WEBHOOK_SYNC_URL mancante ma WEBHOOK_SYNC_ENABLED=true');
+    }
+
+    // Dashboard Auth: se abilitata, almeno un metodo auth configurato
+    if (config.dashboardAuthEnabled) {
+        const hasApiKey = !!config.dashboardApiKey;
+        const hasBasicAuth = !!config.dashboardBasicUser && !!config.dashboardBasicPassword;
+        if (!hasApiKey && !hasBasicAuth) {
+            errors.push('[CONFIG] DASHBOARD_AUTH_ENABLED=true ma nessuna credenziale configurata (DASHBOARD_API_KEY o DASHBOARD_BASIC_USER/PASSWORD)');
+        }
+    }
+
+    // OpenAI: se personalizzazione abilitata, API key obbligatoria
+    if (config.aiPersonalizationEnabled && !config.openaiApiKey) {
+        errors.push('[CONFIG] OPENAI_API_KEY mancante ma AI_PERSONALIZATION_ENABLED=true');
+    }
+
+    // Database: avviso se SQLite in produzione
+    if (process.env.NODE_ENV === 'production' && !process.env.DATABASE_URL) {
+        errors.push('[CONFIG] NODE_ENV=production ma DATABASE_URL non configurata — il bot userà SQLite (non raccomandato in produzione)');
+    }
+
+    // Sessione: directory obbligatoria
+    if (!config.sessionDir) {
+        errors.push('[CONFIG] SESSION_DIR mancante — directory sessione Playwright obbligatoria');
+    }
+
+    return errors;
+}

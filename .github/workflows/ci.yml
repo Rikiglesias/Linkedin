@@ -1,0 +1,50 @@
+name: CI — Quality Gate
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  quality:
+    name: Typecheck + Lint + Audit + Tests
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [22.x]
+
+    steps:
+      - name: Checkout codice
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Installa dipendenze
+        run: npm ci
+
+      - name: TypeScript typecheck
+        run: npx tsc --noEmit
+
+      - name: ESLint
+        run: npx eslint src/**/*.ts --max-warnings 0
+
+      - name: Audit sicurezza (blocca high+critical)
+        run: npm audit --audit-level=high
+
+      - name: Unit tests
+        run: npm run test:unit
+        env:
+          NODE_ENV: test
+
+      - name: Verifica build Docker
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: linkedin-bot:ci

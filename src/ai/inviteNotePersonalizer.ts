@@ -38,7 +38,8 @@ const NOTE_TEMPLATES: ReadonlyArray<{ variant: string; render: (firstName: strin
 export function generateInviteNote(firstName: string): TemplateNoteResult {
     const name = firstName.trim() || 'collega';
     const index = Math.floor(Math.random() * NOTE_TEMPLATES.length);
-    const selected = NOTE_TEMPLATES[index]!;
+    const selected = NOTE_TEMPLATES[index] ?? NOTE_TEMPLATES[0];
+    if (!selected) return { note: `Ciao ${name}`, variant: 'TPL_FALLBACK' };
     return { note: selected.render(name), variant: selected.variant };
 }
 
@@ -96,8 +97,8 @@ export async function buildPersonalizedInviteNote(lead: LeadRecord): Promise<Per
 
     const userData: Record<string, string> = {
         firstName: safeFirstName(lead),
-        company: lead.account_name,
-        role: lead.job_title,
+        company: lead.account_name ?? '',
+        role: lead.job_title ?? '',
     };
 
     if (lead.about) userData.aboutProfile = lead.about;

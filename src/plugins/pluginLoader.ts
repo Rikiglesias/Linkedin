@@ -61,7 +61,8 @@ class PluginRegistry {
     async init(): Promise<void> {
         for (const plugin of this.plugins) {
             if (plugin.onInit) {
-                await this.safeCall(plugin.name, 'onInit', () => plugin.onInit!());
+                const fn = plugin.onInit.bind(plugin);
+                await this.safeCall(plugin.name, 'onInit', () => fn());
             }
         }
     }
@@ -70,7 +71,8 @@ class PluginRegistry {
     async shutdown(): Promise<void> {
         for (const plugin of this.plugins) {
             if (plugin.onShutdown) {
-                await this.safeCall(plugin.name, 'onShutdown', () => plugin.onShutdown!());
+                const fn = plugin.onShutdown.bind(plugin);
+                await this.safeCall(plugin.name, 'onShutdown', () => fn());
             }
         }
     }
@@ -78,7 +80,8 @@ class PluginRegistry {
     async fireInviteSent(lead: PluginLeadSnapshot, variantId?: string): Promise<void> {
         for (const p of this.plugins) {
             if (p.onInviteSent) {
-                void this.safeCall(p.name, 'onInviteSent', () => p.onInviteSent!(lead, variantId));
+                const fn = p.onInviteSent.bind(p);
+                void this.safeCall(p.name, 'onInviteSent', () => fn(lead, variantId));
             }
         }
     }
@@ -86,7 +89,8 @@ class PluginRegistry {
     async fireInviteAccepted(lead: PluginLeadSnapshot): Promise<void> {
         for (const p of this.plugins) {
             if (p.onInviteAccepted) {
-                void this.safeCall(p.name, 'onInviteAccepted', () => p.onInviteAccepted!(lead));
+                const fn = p.onInviteAccepted.bind(p);
+                void this.safeCall(p.name, 'onInviteAccepted', () => fn(lead));
             }
         }
     }
@@ -94,7 +98,8 @@ class PluginRegistry {
     async fireMessage(event: PluginMessageEvent): Promise<void> {
         for (const p of this.plugins) {
             if (p.onMessage) {
-                void this.safeCall(p.name, 'onMessage', () => p.onMessage!(event));
+                const fn = p.onMessage.bind(p);
+                void this.safeCall(p.name, 'onMessage', () => fn(event));
             }
         }
     }
@@ -102,7 +107,8 @@ class PluginRegistry {
     async fireReplyReceived(lead: PluginLeadSnapshot, message: string, intent?: string): Promise<void> {
         for (const p of this.plugins) {
             if (p.onReplyReceived) {
-                void this.safeCall(p.name, 'onReplyReceived', () => p.onReplyReceived!(lead, message, intent));
+                const fn = p.onReplyReceived.bind(p);
+                void this.safeCall(p.name, 'onReplyReceived', () => fn(lead, message, intent));
             }
         }
     }
@@ -110,7 +116,8 @@ class PluginRegistry {
     async fireDailyReport(stats: PluginDailyStats): Promise<void> {
         for (const p of this.plugins) {
             if (p.onDailyReport) {
-                void this.safeCall(p.name, 'onDailyReport', () => p.onDailyReport!(stats));
+                const fn = p.onDailyReport.bind(p);
+                void this.safeCall(p.name, 'onDailyReport', () => fn(stats));
             }
         }
     }

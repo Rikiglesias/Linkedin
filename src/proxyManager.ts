@@ -336,7 +336,7 @@ export async function checkProxyHealth(proxy: ProxyConfig): Promise<boolean> {
  * ed eseguendo anche un health check proattivo prima di restituirlo.
  */
 export async function getProxyAsync(): Promise<ProxyConfig | undefined> {
-    let chain = await getProxyFailoverChainAsync();
+    const chain = await getProxyFailoverChainAsync();
 
     for (const proxy of chain) {
         const isHealthy = await checkProxyHealth(proxy);

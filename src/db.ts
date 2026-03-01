@@ -131,7 +131,7 @@ async function ensureColumnPg(database: DatabaseManager, tableName: string, colu
     );
     if (!exists) {
         // Strip out SQLite specific stuff
-        let safeDef = definition.replace(/AUTOINCREMENT/ig, '').trim();
+        const safeDef = definition.replace(/AUTOINCREMENT/ig, '').trim();
         await database.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${safeDef}`);
     }
 }
