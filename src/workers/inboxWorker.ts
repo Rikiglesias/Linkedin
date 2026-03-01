@@ -6,6 +6,7 @@ import { WorkerExecutionResult, workerResult } from './result';
 import { getLeadByLinkedinUrl, storeLeadIntent } from '../core/repositories';
 import { transitionLead } from '../core/leadStateService';
 import { isProfileUrl, normalizeLinkedInUrl } from '../linkedinUrl';
+import { recordOutcome } from '../ml/abBandit';
 
 export interface InboxJobPayload {
     accountId: string;
@@ -123,7 +124,8 @@ export async function processInboxJob(payload: InboxJobPayload, context: WorkerC
                                 sentiment.intent,
                                 sentiment.subIntent,
                                 sentiment.confidence,
-                                rawText.trim()
+                                rawText.trim(),
+                                sentiment.entities
                             );
                             if (lead.status === 'MESSAGED') {
                                 await transitionLead(
@@ -133,9 +135,14 @@ export async function processInboxJob(payload: InboxJobPayload, context: WorkerC
                                     {
                                         intent: sentiment.intent,
                                         subIntent: sentiment.subIntent,
+                                        entities: sentiment.entities,
                                         confidence: sentiment.confidence,
                                     }
                                 );
+                                if (lead.invite_prompt_variant) {
+                                    const segmentKey = (lead.job_title || 'unknown').toLowerCase().trim() || 'unknown';
+                                    recordOutcome(lead.invite_prompt_variant, 'replied', { segmentKey }).catch(() => null);
+                                }
                             }
                         }
                     }

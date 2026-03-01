@@ -9,6 +9,7 @@ import {
     setCompanyTargetStatus,
 } from './repositories';
 import { scoreLeadProfile } from '../ai/leadScorer';
+import { isOpenAIConfigured } from '../ai/openaiClient';
 
 export interface CompanyEnrichmentOptions {
     limit?: number;
@@ -183,7 +184,7 @@ async function processCompanyTarget(
             let leadScore = null;
             let leadStatus: 'NEW' | 'REVIEW_REQUIRED' = 'NEW';
 
-            if (config.openaiApiKey) {
+            if (isOpenAIConfigured()) {
                 try {
                     const scoreResult = await scoreLeadProfile(target.account_name, `${names.firstName} ${names.lastName}`, profile.headline);
                     confidenceScore = scoreResult.confidenceScore;

@@ -1,5 +1,6 @@
 import { config } from '../config';
 import { logInfo, logWarn } from '../telemetry/logger';
+import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 
 let isPolling = false;
 let lastUpdateId = 0;
@@ -22,7 +23,12 @@ async function pollLoop(): Promise<void> {
     while (isPolling) {
         try {
             const url = `https://api.telegram.org/bot${config.telegramBotToken}/getUpdates?offset=${lastUpdateId + 1}&timeout=30`;
-            const response = await fetch(url);
+            const response = await fetchWithRetryPolicy(url, { method: 'GET' }, {
+                integration: 'telegram.long_polling',
+                circuitKey: 'telegram.polling',
+                timeoutMs: 35_000,
+                maxAttempts: 2,
+            });
             if (!response.ok) {
                 await new Promise(res => setTimeout(res, 5000));
                 continue;
@@ -106,13 +112,18 @@ async function processTelegramMessage(message: TelegramMessage): Promise<void> {
 
 async function replyToTelegram(chatId: string | number, text: string): Promise<void> {
     try {
-        await fetch(`https://api.telegram.org/bot${config.telegramBotToken}/sendMessage`, {
+        await fetchWithRetryPolicy(`https://api.telegram.org/bot${config.telegramBotToken}/sendMessage`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 chat_id: chatId,
                 text,
             })
+        }, {
+            integration: 'telegram.reply',
+            circuitKey: 'telegram.reply',
+            timeoutMs: 8_000,
+            maxAttempts: 2,
         });
     } catch (e) {
         console.error('[TELEGRAM] Errore risposta', e);

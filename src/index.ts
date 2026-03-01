@@ -10,8 +10,23 @@ import { hasOption, parseWorkflow, getWorkflowValue } from './cli/cliParser';
 import { runLoopCommand, runAutopilotCommand, runWorkflowCommand } from './cli/commands/loopCommand';
 import { runLoginCommand, runImportCommand, runFunnelCommand, runSiteCheckCommand, runStateSyncCommand, runProxyStatusCommand, runRandomActivityCommand, runEnrichTargetsCommand, runCreateProfileCommand } from './cli/commands/utilCommands';
 import { runSalesNavSyncCommand, runSalesNavListsCommand, runSalesNavCreateListCommand, runSalesNavAddLeadCommand, runSalesNavResolveCommand } from './cli/commands/salesNavCommands';
-import { runStatusCommand, runPauseCommand, runResumeCommand, runUnquarantineCommand, runResolveIncidentCommand, runPrivacyCleanupCommand, runDbBackupCommand, runCompanyTargetsCommand, runListConfigCommand, runListsCommand } from './cli/commands/adminCommands';
+import {
+    runAiQualityCommand,
+    runCompanyTargetsCommand,
+    runDbBackupCommand,
+    runListConfigCommand,
+    runListsCommand,
+    runPauseCommand,
+    runPrivacyCleanupCommand,
+    runResolveIncidentCommand,
+    runResumeCommand,
+    runSecretRotatedCommand,
+    runSecretsStatusCommand,
+    runStatusCommand,
+    runUnquarantineCommand,
+} from './cli/commands/adminCommands';
 import { startCycleTlsProxy, stopCycleTlsProxy } from './proxy/cycleTlsProxy';
+import { initPluginSystem, pluginRegistry } from './plugins/pluginLoader';
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 
@@ -58,8 +73,8 @@ function setupPlannedRestart(): void {
 
 function printHelp(): void {
     console.log('Utilizzo consigliato (Windows): .\\bot.ps1 <comando> [opzioni]');
-    console.log('Alternativa: npx ts-node src/index.ts <comando> [opzioni]');
-    console.log('Compatibilità: npm start -- <comando> [opzioni]');
+    console.log('Produzione: npm run build && npm start -- <comando> [opzioni]');
+    console.log('Sviluppo: npm run start:dev -- <comando> [opzioni]');
     console.log('Comandi principali:');
     console.log('  import --file <file.csv> --list <nome_lista>');
     console.log('  run invite|check|message|all (oppure --workflow <valore>)');
@@ -95,6 +110,9 @@ function printHelp(): void {
     console.log('  sync-status');
     console.log('  sync-run-once');
     console.log('  db-backup');
+    console.log('  ai-quality [--days <n>] [--run]');
+    console.log('  secrets-status');
+    console.log('  secret-rotated --name <SECRET_NAME> [--owner <owner>] [--expires-days <n>] [--notes <text>]');
     console.log('Alias retrocompatibili: connect, check, message');
 }
 
@@ -146,6 +164,9 @@ async function main(): Promise<void> {
     ]);
 
     await initDatabase();
+    await initPluginSystem().catch((error) => {
+        console.warn('[PLUGIN] init failed', error);
+    });
     if (!isDryRunCommand && config.useJa3Proxy && browserCommands.has(command ?? '')) {
         await startCycleTlsProxy();
     }
@@ -283,6 +304,15 @@ async function main(): Promise<void> {
         case 'db-backup':
             await runDbBackupCommand();
             break;
+        case 'ai-quality':
+            await runAiQualityCommand(commandArgs);
+            break;
+        case 'secrets-status':
+            await runSecretsStatusCommand();
+            break;
+        case 'secret-rotated':
+            await runSecretRotatedCommand(commandArgs);
+            break;
         case 'connect':
             await runWorkflowCommand('invite', false);
             break;
@@ -315,6 +345,7 @@ main()
         process.exitCode = 1;
     })
     .finally(async () => {
+        await pluginRegistry.shutdown().catch(() => { });
         await stopCycleTlsProxy().catch(() => { });
         await closeDatabase();
     });

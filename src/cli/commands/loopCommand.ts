@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from 'crypto';
-import { config, getLocalDateString } from '../../config';
+import { config, getEffectiveLoopIntervalMs, getLocalDateString } from '../../config';
 import { launchBrowser, closeBrowser as closeBrowserSession } from '../../browser';
 import {
     acquireRuntimeLock,
@@ -28,7 +28,9 @@ import { warmupSession } from '../../core/sessionWarmer';
 import { runSiteCheck } from '../../core/audit';
 import { runCompanyEnrichmentBatch } from '../../core/companyEnrichment';
 import { runRandomLinkedinActivity } from '../../workers/randomActivityWorker';
+import { runRampUpWorker } from '../../workers/rampUpWorker';
 import { runDeadLetterWorker } from '../../workers/deadLetterWorker';
+import { runSelectorLearner } from '../../selectors/learner';
 import { backupDatabase } from '../../db';
 import { runControlPlaneSync } from '../../cloud/controlPlaneSync';
 import { startTelegramListener } from '../../cloud/telegramListener';
@@ -36,6 +38,8 @@ import { markTelegramCommandProcessed, pollPendingTelegramCommand } from '../../
 import { getRuntimeAccountProfiles } from '../../accountManager';
 import { RunStatus } from '../../types/domain';
 import { getOptionValue, hasOption, parseIntStrict, parseWorkflow, getWorkflowValue, getPositionalArgs } from '../cliParser';
+import { pluginRegistry } from '../../plugins/pluginLoader';
+import { resolveCorrelationId, runWithCorrelationId } from '../../telemetry/correlation';
 
 // ─── Costanti lock ────────────────────────────────────────────────────────────
 
@@ -44,6 +48,7 @@ const WORKFLOW_RUNNER_MIN_TTL_SECONDS = 120;
 const WORKFLOW_RUNNER_HEARTBEAT_MS = 30_000;
 const AUTO_SITE_CHECK_LAST_RUN_KEY = 'site_check.last_run_at';
 const SALESNAV_LAST_SYNC_KEY = 'salesnav.last_sync_at';
+const SELECTOR_LEARNER_LAST_RUN_KEY = 'selector_learner.last_run_date';
 
 // ─── Tipi locali ──────────────────────────────────────────────────────────────
 
@@ -267,7 +272,7 @@ export async function runLoopCommand(args: string[]): Promise<void> {
         await startTelegramListener().catch(e => console.error('[TELEGRAM] Errore listener background', e));
     }
 
-    const lockTtlSeconds = computeWorkflowLockTtlSeconds(intervalMs);
+    const lockTtlSeconds = computeWorkflowLockTtlSeconds(getEffectiveLoopIntervalMs(intervalMs));
     const lockOwnerId = dryRun
         ? null
         : await acquireWorkflowRunnerLock('run-loop', lockTtlSeconds, {
@@ -415,15 +420,37 @@ export async function runLoopCommand(args: string[]): Promise<void> {
                         profilesDiscoveredThisRun += enrichment.createdLeads;
                         console.log('[LOOP] enrichment', enrichment);
                     }
-                    await runWorkflow({ workflow, dryRun });
+                    if (!dryRun && config.rampUpEnabled) {
+                        const rampUpReport = await runRampUpWorker();
+                        console.log('[LOOP] ramp-up', rampUpReport);
+                    }
+                    if (!dryRun) {
+                        const learnerLastRun = await getRuntimeFlag(SELECTOR_LEARNER_LAST_RUN_KEY);
+                        if (learnerLastRun !== localDate) {
+                            const learnerReport = await runSelectorLearner({ limit: 100, minSuccess: 3 });
+                            await setRuntimeFlag(SELECTOR_LEARNER_LAST_RUN_KEY, localDate);
+                            console.log('[LOOP] selector-learner', learnerReport);
+                        }
+                    }
+                    const cycleCorrelationId = resolveCorrelationId(`loop-${workflow}-${cycle}-${randomUUID()}`);
+                    await runWithCorrelationId(cycleCorrelationId, async () => {
+                        await runWorkflow({ workflow, dryRun });
+                    });
 
-                    if (!dryRun && config.randomActivityEnabled && Math.random() <= config.randomActivityProbability) {
+                    if (!dryRun && pluginRegistry.count === 0 && config.randomActivityEnabled && Math.random() <= config.randomActivityProbability) {
                         const randomActivityReport = await runRandomLinkedinActivity({
                             accountId: config.salesNavSyncAccountId || undefined,
                             maxActions: config.randomActivityMaxActions,
                             dryRun,
                         });
                         console.log('[LOOP] random-activity', randomActivityReport);
+                    }
+                    if (!dryRun && pluginRegistry.count > 0) {
+                        await pluginRegistry.fireIdle({
+                            cycle,
+                            workflow,
+                            localDate,
+                        });
                     }
 
                     runStatus = 'SUCCESS';
@@ -454,11 +481,12 @@ export async function runLoopCommand(args: string[]): Promise<void> {
                 break;
             }
 
-            console.log(`[LOOP] waiting ${Math.floor(intervalMs / 1000)}s before next cycle...`);
+            const effectiveIntervalMs = getEffectiveLoopIntervalMs(intervalMs);
+            console.log(`[LOOP] waiting ${Math.floor(effectiveIntervalMs / 1000)}s before next cycle...`);
             if (lockOwnerId) {
-                await sleepWithLockHeartbeat(intervalMs, lockOwnerId, lockTtlSeconds);
+                await sleepWithLockHeartbeat(effectiveIntervalMs, lockOwnerId, lockTtlSeconds);
             } else {
-                await sleep(intervalMs);
+                await sleep(effectiveIntervalMs);
             }
         }
     } finally {
@@ -484,8 +512,11 @@ export async function runAutopilotCommand(args: string[]): Promise<void> {
 }
 
 export async function runWorkflowCommand(workflow: import('../../core/scheduler').WorkflowSelection, dryRun: boolean): Promise<void> {
+    const runCorrelationId = resolveCorrelationId(`run-${workflow}-${Date.now()}-${randomUUID()}`);
     if (dryRun) {
-        await runWorkflow({ workflow, dryRun: true });
+        await runWithCorrelationId(runCorrelationId, async () => {
+            await runWorkflow({ workflow, dryRun: true });
+        });
         return;
     }
 
@@ -496,7 +527,9 @@ export async function runWorkflowCommand(workflow: import('../../core/scheduler'
         startedAt: new Date().toISOString(),
     });
     try {
-        await runWorkflow({ workflow, dryRun: false });
+        await runWithCorrelationId(runCorrelationId, async () => {
+            await runWorkflow({ workflow, dryRun: false });
+        });
         await heartbeatWorkflowRunnerLock(lockOwnerId, lockTtlSeconds);
     } finally {
         await releaseWorkflowRunnerLock(lockOwnerId);

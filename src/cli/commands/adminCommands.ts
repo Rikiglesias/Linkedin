@@ -5,22 +5,28 @@
  */
 
 import { config } from '../../config';
-import { getLocalDateString } from '../../config';
+import { getLocalDateString, isGreenModeWindow } from '../../config';
 import { backupDatabase } from '../../db';
 import {
     cleanupPrivacyData,
     countCompanyTargets,
     getAutomationPauseState,
+    getAiQualitySnapshot,
     getDailyStatsSnapshot,
+    getOperationalObservabilitySnapshot,
     getJobStatusCounts,
+    listSecretRotationStatus,
     getRuntimeFlag,
     getRuntimeLock,
+    listLatestAccountHealthSnapshots,
     listCompanyTargets,
     listLeadCampaignConfigs,
     listOpenIncidents,
     resolveIncident,
+    runAiValidationPipeline,
     clearAutomationPause as clearPauseState,
     setAutomationPause,
+    upsertSecretRotation,
     updateLeadCampaignConfig,
 } from '../../core/repositories';
 import { setQuarantine } from '../../risk/incidentManager';
@@ -56,6 +62,8 @@ export async function runStatusCommand(): Promise<void> {
         runnerLock,
         autoSiteCheckLastRunAt,
         salesNavSyncLastRunAt,
+        latestAccountHealth,
+        secretRotationStatus,
     ] = await Promise.all([
         getRuntimeFlag('account_quarantine'),
         getAutomationPauseState(),
@@ -66,6 +74,8 @@ export async function runStatusCommand(): Promise<void> {
         getRuntimeLock(WORKFLOW_RUNNER_LOCK_KEY),
         getRuntimeFlag(AUTO_SITE_CHECK_LAST_RUN_KEY),
         getRuntimeFlag(SALESNAV_LAST_SYNC_KEY),
+        listLatestAccountHealthSnapshots(20),
+        listSecretRotationStatus(config.securitySecretMaxAgeDays, config.securitySecretWarnDays),
     ]);
 
     const payload = {
@@ -111,8 +121,34 @@ export async function runStatusCommand(): Promise<void> {
             probability: config.randomActivityProbability,
             maxActions: config.randomActivityMaxActions,
         },
+        observability: await getOperationalObservabilitySnapshot(localDate),
+        accountHealth: latestAccountHealth,
+        secretRotation: {
+            maxAgeDays: config.securitySecretMaxAgeDays,
+            warnDays: config.securitySecretWarnDays,
+            summary: secretRotationStatus.reduce<Record<string, number>>((acc, row) => {
+                acc[row.status] = (acc[row.status] ?? 0) + 1;
+                return acc;
+            }, {}),
+            rows: secretRotationStatus,
+        },
+        rampUp: {
+            enabled: config.rampUpEnabled,
+            dailyIncrease: config.rampUpDailyIncrease,
+            maxCap: config.rampUpMaxCap,
+        },
+        greenMode: {
+            enabled: config.greenModeEnabled,
+            activeNow: isGreenModeWindow(),
+            startHour: config.greenModeStartHour,
+            endHour: config.greenModeEndHour,
+            budgetFactor: config.greenModeBudgetFactor,
+            intervalMultiplier: config.greenModeIntervalMultiplier,
+            aiGreenModel: config.aiGreenModel,
+        },
         ai: {
             personalizationEnabled: config.aiPersonalizationEnabled,
+            sentimentEnabled: config.aiSentimentEnabled,
             guardianEnabled: config.aiGuardianEnabled,
             model: config.aiModel,
             openaiConfigured: isOpenAIConfigured(),
@@ -239,4 +275,62 @@ export async function runListConfigCommand(commandArgs: string[]): Promise<void>
 export async function runListsCommand(): Promise<void> {
     const lists = await listLeadCampaignConfigs(false);
     console.log(JSON.stringify(lists, null, 2));
+}
+
+export async function runSecretsStatusCommand(): Promise<void> {
+    const rows = await listSecretRotationStatus(config.securitySecretMaxAgeDays, config.securitySecretWarnDays);
+    const summary = rows.reduce<Record<string, number>>((acc, row) => {
+        acc[row.status] = (acc[row.status] ?? 0) + 1;
+        return acc;
+    }, {});
+    console.log(JSON.stringify({
+        maxAgeDays: config.securitySecretMaxAgeDays,
+        warnDays: config.securitySecretWarnDays,
+        summary,
+        rows,
+    }, null, 2));
+}
+
+export async function runSecretRotatedCommand(args: string[]): Promise<void> {
+    const positional = getPositionalArgs(args);
+    const secretName = getOptionValue(args, '--name') ?? positional[0];
+    if (!secretName || !secretName.trim()) {
+        throw new Error('Specifica --name <SECRET_NAME>');
+    }
+
+    const owner = getOptionValue(args, '--owner') ?? null;
+    const notes = getOptionValue(args, '--notes') ?? null;
+    const rotatedAtRaw = getOptionValue(args, '--rotated-at');
+    const rotatedAt = rotatedAtRaw && Number.isFinite(Date.parse(rotatedAtRaw))
+        ? new Date(rotatedAtRaw).toISOString()
+        : new Date().toISOString();
+
+    const expiresDaysRaw = getOptionValue(args, '--expires-days');
+    let expiresAt: string | null = null;
+    if (expiresDaysRaw) {
+        const expiresDays = Math.max(1, parseIntStrict(expiresDaysRaw, '--expires-days'));
+        expiresAt = new Date(Date.now() + (expiresDays * 86_400_000)).toISOString();
+    }
+
+    await upsertSecretRotation(secretName.trim(), rotatedAt, owner, expiresAt, notes);
+    console.log(JSON.stringify({
+        secret: secretName.trim(),
+        owner,
+        rotatedAt,
+        expiresAt,
+        notes,
+        status: 'updated',
+    }, null, 2));
+}
+
+export async function runAiQualityCommand(args: string[]): Promise<void> {
+    const daysRaw = getOptionValue(args, '--days');
+    const days = daysRaw ? Math.max(1, parseIntStrict(daysRaw, '--days')) : 30;
+    const shouldRunValidation = hasOption(args, '--run');
+    const validationRun = shouldRunValidation ? await runAiValidationPipeline('cli') : null;
+    const snapshot = await getAiQualitySnapshot(days);
+    console.log(JSON.stringify({
+        validationRun,
+        snapshot,
+    }, null, 2));
 }

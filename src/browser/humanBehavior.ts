@@ -9,6 +9,7 @@
 import { Page } from 'playwright';
 import { config } from '../config';
 import { joinSelectors } from '../selectors';
+import { isMobilePage } from './deviceProfile';
 
 // ─── Log-normale (Box-Muller) ─────────────────────────────────────────────────
 
@@ -50,6 +51,10 @@ export async function humanDelay(page: Page, min: number = 1500, max: number = 3
  * arrivare sull'elemento target. Riduce il pattern "click istantaneo".
  */
 export async function humanMouseMove(page: Page, targetSelector: string): Promise<void> {
+    if (isMobilePage(page)) {
+        await humanSwipe(page, 'up');
+        return;
+    }
     try {
         const box = await page.locator(targetSelector).first().boundingBox();
         if (!box) return;
@@ -87,11 +92,52 @@ export async function humanMouseMove(page: Page, targetSelector: string): Promis
     }
 }
 
+export async function humanTap(page: Page, targetSelector: string): Promise<void> {
+    try {
+        const locator = page.locator(targetSelector).first();
+        const box = await locator.boundingBox();
+        if (!box) {
+            await locator.click().catch(() => null);
+            return;
+        }
+        const tapX = box.x + box.width / 2 + (Math.random() * 10 - 5);
+        const tapY = box.y + box.height / 2 + (Math.random() * 10 - 5);
+        await page.mouse.move(tapX, tapY, { steps: 5 });
+        await page.waitForTimeout(30 + Math.random() * 80);
+    } catch {
+        // Best effort.
+    }
+}
+
+export async function humanSwipe(page: Page, direction: 'up' | 'down' = 'up'): Promise<void> {
+    try {
+        const viewport = page.viewportSize() ?? { width: 390, height: 844 };
+        const startX = Math.round(viewport.width * (0.35 + Math.random() * 0.3));
+        const startY = direction === 'up'
+            ? Math.round(viewport.height * (0.75 + Math.random() * 0.1))
+            : Math.round(viewport.height * (0.3 + Math.random() * 0.1));
+        const delta = Math.round(viewport.height * (0.2 + Math.random() * 0.2));
+        const endY = direction === 'up' ? startY - delta : startY + delta;
+
+        await page.mouse.move(startX, startY, { steps: 4 });
+        await page.mouse.down();
+        await page.mouse.move(startX + randomInt(-20, 20), endY, { steps: 10 });
+        await page.mouse.up();
+        await page.waitForTimeout(120 + Math.random() * 220);
+    } catch {
+        // Non-bloccante.
+    }
+}
+
 /**
  * Movimento cursor casuale non legato a click, utile per spezzare pattern
  * durante pause lunghe tra job.
  */
 export async function randomMouseMove(page: Page): Promise<void> {
+    if (isMobilePage(page)) {
+        await humanSwipe(page, Math.random() < 0.8 ? 'up' : 'down');
+        return;
+    }
     try {
         const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
         const startX = Math.random() * viewport.width;
@@ -148,10 +194,14 @@ export async function humanType(page: Page, selector: string, text: string): Pro
  * di tornare in cima (comportamento dei lettori reali).
  */
 export async function simulateHumanReading(page: Page): Promise<void> {
-    const scrollCount = 3 + Math.floor(Math.random() * 5);
+    const mobile = isMobilePage(page);
+    const scrollCount = mobile ? 2 + Math.floor(Math.random() * 4) : 3 + Math.floor(Math.random() * 5);
     for (let i = 0; i < scrollCount; i++) {
-        const deltaY = 150 + Math.random() * 380;
+        const deltaY = mobile ? 220 + Math.random() * 420 : 150 + Math.random() * 380;
         await page.evaluate((dy: number) => window.scrollBy({ top: dy, behavior: 'smooth' }), deltaY);
+        if (mobile && Math.random() < 0.4) {
+            await humanSwipe(page, 'up');
+        }
         await humanDelay(page, 700, 2200);
     }
     if (Math.random() < 0.3) {
@@ -169,14 +219,14 @@ export async function interJobDelay(page: Page): Promise<void> {
     const maxDelay = Math.max(config.interJobMinDelaySec, config.interJobMaxDelaySec) * 1000;
     const totalDelay = randomInt(minDelay, maxDelay);
 
-    if (Math.random() < 0.35) {
+    if (Math.random() < (isMobilePage(page) ? 0.2 : 0.35)) {
         await randomMouseMove(page);
     }
 
     const split = Math.floor(totalDelay * (0.4 + Math.random() * 0.2));
     await page.waitForTimeout(Math.max(0, split));
 
-    if (Math.random() < 0.25) {
+    if (Math.random() < (isMobilePage(page) ? 0.15 : 0.25)) {
         await randomMouseMove(page);
     }
 

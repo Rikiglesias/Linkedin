@@ -15,6 +15,7 @@
 import { config } from '../config';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { getDatabase } from '../db';
+import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 
 // ─── Tipi ────────────────────────────────────────────────────────────────────
 
@@ -26,6 +27,21 @@ export interface CRMLead {
     status: string;
 }
 
+function splitFullName(fullName?: string): { firstName: string; lastName: string } {
+    const normalized = (fullName ?? '').trim().replace(/\s+/g, ' ');
+    if (!normalized) {
+        return { firstName: '', lastName: '' };
+    }
+    const parts = normalized.split(' ');
+    const firstName = parts[0] ?? '';
+    const lastName = parts.slice(1).join(' ');
+    return { firstName, lastName };
+}
+
+function cleanLinkedinUrl(raw: string | undefined): string {
+    return (raw ?? '').trim();
+}
+
 // ─── HubSpot ─────────────────────────────────────────────────────────────────
 
 /** Invia/aggiorna un contatto in HubSpot tramite REST API v3. */
@@ -33,11 +49,12 @@ export async function pushToHubSpot(lead: CRMLead): Promise<boolean> {
     if (!config.hubspotApiKey) return false;
 
     try {
+        const names = splitFullName(lead.fullName);
         const body = {
             properties: {
                 linkedin_url: lead.linkedinUrl,
-                firstname: (lead.fullName || '').split(' ')[0] || '',
-                lastname: (lead.fullName || '').split(' ').slice(1).join(' ') || '',
+                firstname: names.firstName,
+                lastname: names.lastName,
                 email: lead.email || '',
                 company: lead.company || '',
                 bot_status: lead.status,
@@ -45,13 +62,16 @@ export async function pushToHubSpot(lead: CRMLead): Promise<boolean> {
             }
         };
 
-        const res = await fetch('https://api.hubapi.com/crm/v3/objects/contacts', {
+        const res = await fetchWithRetryPolicy('https://api.hubapi.com/crm/v3/objects/contacts', {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${config.hubspotApiKey}`,
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify(body),
+        }, {
+            integration: 'hubspot.push_contact',
+            circuitKey: 'hubspot.contacts',
         });
 
         if (!res.ok && res.status !== 409) {
@@ -89,8 +109,11 @@ export async function pullFromHubSpot(): Promise<number> {
         const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
         const url = `https://api.hubapi.com/crm/v3/objects/contacts?limit=100&properties=linkedin_url,firstname,lastname,company&filterGroups=[{"filters":[{"propertyName":"lastmodifieddate","operator":"GTE","value":"${since}"}]}]`;
 
-        const res = await fetch(url, {
+        const res = await fetchWithRetryPolicy(url, {
             headers: { 'Authorization': `Bearer ${config.hubspotApiKey}` }
+        }, {
+            integration: 'hubspot.pull_contacts',
+            circuitKey: 'hubspot.contacts',
         });
 
         if (!res.ok) return 0;
@@ -101,16 +124,37 @@ export async function pullFromHubSpot(): Promise<number> {
 
         for (const contact of data.results || []) {
             const props = contact.properties;
-            const linkedinUrl = props.linkedin_url;
+            const linkedinUrl = cleanLinkedinUrl(props.linkedin_url);
             if (!linkedinUrl || !linkedinUrl.includes('linkedin.com')) continue;
+            const names = splitFullName(`${props.firstname || ''} ${props.lastname || ''}`.trim());
 
-            await db.run(
-                `INSERT INTO leads (linkedin_url, full_name, company_name, status, source, created_at)
-                 VALUES (?, ?, ?, 'READY_INVITE', 'hubspot', datetime('now'))
+            const insertResult = await db.run(
+                `INSERT INTO leads (
+                    account_name,
+                    first_name,
+                    last_name,
+                    job_title,
+                    website,
+                    linkedin_url,
+                    status,
+                    list_name,
+                    created_at,
+                    updated_at
+                )
+                 VALUES (?, ?, ?, ?, ?, ?, 'READY_INVITE', 'hubspot', datetime('now'), datetime('now'))
                  ON CONFLICT(linkedin_url) DO NOTHING`,
-                [linkedinUrl, `${props.firstname || ''} ${props.lastname || ''}`.trim(), props.company || '']
+                [
+                    props.company || '',
+                    names.firstName,
+                    names.lastName,
+                    '',
+                    '',
+                    linkedinUrl,
+                ]
             );
-            imported++;
+            if ((insertResult.changes ?? 0) > 0) {
+                imported++;
+            }
         }
 
         if (imported > 0) await logInfo('crm.hubspot.pulled', { count: imported });
@@ -139,10 +183,13 @@ async function getSalesforceToken(): Promise<string | null> {
             client_secret: config.salesforceClientSecret,
         });
 
-        const res = await fetch(`${config.salesforceInstanceUrl}/services/oauth2/token`, {
+        const res = await fetchWithRetryPolicy(`${config.salesforceInstanceUrl}/services/oauth2/token`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: params.toString(),
+        }, {
+            integration: 'salesforce.oauth_token',
+            circuitKey: 'salesforce.oauth',
         });
 
         if (!res.ok) return null;
@@ -163,21 +210,25 @@ export async function pushToSalesforce(lead: CRMLead): Promise<boolean> {
     if (!token) return false;
 
     try {
+        const names = splitFullName(lead.fullName);
         const body = {
             LinkedIn_URL__c: lead.linkedinUrl,
-            FirstName: (lead.fullName || '').split(' ')[0] || '',
-            LastName: (lead.fullName || '').split(' ').slice(1).join(' ') || 'Unknown',
+            FirstName: names.firstName,
+            LastName: names.lastName || 'Unknown',
             Account: { Name: lead.company || '' },
             Bot_Status__c: lead.status,
         };
 
-        const res = await fetch(`${config.salesforceInstanceUrl}/services/data/v58.0/sobjects/Contact`, {
+        const res = await fetchWithRetryPolicy(`${config.salesforceInstanceUrl}/services/data/v58.0/sobjects/Contact`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify(body),
+        }, {
+            integration: 'salesforce.push_contact',
+            circuitKey: 'salesforce.contacts',
         });
 
         if (!res.ok && res.status !== 400) {

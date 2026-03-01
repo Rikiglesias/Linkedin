@@ -1,9 +1,7 @@
 module.exports = {
     apps: [{
         name: "linkedin-bot-daemon",
-        script: "src/index.ts",
-        interpreter: "node_modules/.bin/ts-node",
-        interpreter_args: "--project tsconfig.json --require ts-node/register",
+        script: "dist/index.js",
         args: "run-loop",
         instances: 1,
         exec_mode: "fork",

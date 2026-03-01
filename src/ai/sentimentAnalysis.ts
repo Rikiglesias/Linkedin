@@ -1,5 +1,5 @@
 import { config } from '../config';
-import { requestOpenAIText } from './openaiClient';
+import { isOpenAIConfigured, requestOpenAIText } from './openaiClient';
 import { logWarn } from '../telemetry/logger';
 
 export type MessageIntent = 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL' | 'QUESTIONS' | 'NOT_INTERESTED' | 'UNKNOWN';
@@ -8,6 +8,7 @@ export type MessageSubIntent = 'CALL_REQUESTED' | 'PRICE_INQUIRY' | 'OBJECTION_H
 export interface SentimentAnalysisResult {
     intent: MessageIntent;
     subIntent: MessageSubIntent;
+    entities: string[];
     confidence: number;
     reasoning: string;
 }
@@ -17,6 +18,7 @@ La tua task è analizzare il messaggio in ingresso e restituire UNICAMENTE un JS
 {
   "intent": "POSITIVE" | "NEGATIVE" | "NEUTRAL" | "QUESTIONS" | "NOT_INTERESTED",
   "subIntent": "CALL_REQUESTED" | "PRICE_INQUIRY" | "OBJECTION_HANDLING" | "COMPETITOR_MENTION" | "REFERRAL" | "NONE",
+  "entities": ["<entità opzionali, lowercase, es. prezzo, budget, competitor, referral>"],
   "confidence": <numero tra 0 e 1>,
   "reasoning": "<breve motivazione della scelta>"
 }
@@ -39,12 +41,13 @@ DEFINIZIONI DEI SUB-INTENT (granulari, si abbinano all'intent macro):
 Regola fondamentale: NESSUN TESTO FUORI DAL JSON. Il tuo output DEVE essere parsabile da JSON.parse().`;
 
 export async function analyzeIncomingMessage(messageText: string): Promise<SentimentAnalysisResult> {
-    if (config.inviteNoteMode !== 'ai' || !config.openaiApiKey) {
+    if (!config.aiSentimentEnabled || !isOpenAIConfigured()) {
         return {
             intent: 'UNKNOWN',
             subIntent: 'NONE',
+            entities: [],
             confidence: 0,
-            reasoning: 'AI non configurata o disabilitata per il NLP Inbound.',
+            reasoning: 'AI sentiment non configurata o disabilitata.',
         };
     }
 
@@ -52,6 +55,7 @@ export async function analyzeIncomingMessage(messageText: string): Promise<Senti
         return {
             intent: 'NEUTRAL',
             subIntent: 'NONE',
+            entities: [],
             confidence: 1,
             reasoning: 'Messaggio vuoto o nullo.',
         };
@@ -75,10 +79,18 @@ export async function analyzeIncomingMessage(messageText: string): Promise<Senti
         ];
         const rawSubIntent = String(parsed.subIntent || 'NONE').toUpperCase() as MessageSubIntent;
         const subIntent: MessageSubIntent = validSubIntents.includes(rawSubIntent) ? rawSubIntent : 'NONE';
+        const entities = Array.isArray(parsed.entities)
+            ? parsed.entities
+                .filter((item: unknown): item is string => typeof item === 'string')
+                .map((item: string) => item.toLowerCase().trim())
+                .filter((item: string) => item.length > 0)
+                .slice(0, 12)
+            : [];
 
         return {
             intent: parsed.intent || 'UNKNOWN',
             subIntent,
+            entities,
             confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0,
             reasoning: parsed.reasoning || 'Parsing riuscito ma campi mancanti.',
         };
@@ -91,6 +103,7 @@ export async function analyzeIncomingMessage(messageText: string): Promise<Senti
         return {
             intent: 'UNKNOWN',
             subIntent: 'NONE',
+            entities: [],
             confidence: 0,
             reasoning: 'Errore generico durante la richiesta LLM o il parsing JSON.',
         };

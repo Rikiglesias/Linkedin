@@ -1,7 +1,7 @@
 import { config } from '../config';
 import { ScheduleResult, WorkflowSelection } from '../core/scheduler';
 import { getRuntimeFlag, setRuntimeFlag } from '../core/repositories';
-import { requestOpenAIText } from './openaiClient';
+import { isOpenAIConfigured, requestOpenAIText } from './openaiClient';
 
 const AI_GUARDIAN_LAST_RUN_AT_KEY = 'ai_guardian.last_run_at';
 
@@ -142,7 +142,7 @@ export async function evaluateAiGuardian(
     schedule: ScheduleResult
 ): Promise<AiGuardianResult> {
     const heuristicDecision = heuristics(schedule);
-    if (!config.aiGuardianEnabled || !config.openaiApiKey) {
+    if (!config.aiGuardianEnabled || !isOpenAIConfigured()) {
         return {
             executed: true,
             reason: 'heuristic_only',

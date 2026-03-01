@@ -1,10 +1,28 @@
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
-import { randomBytes, timingSafeEqual } from 'crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import rateLimit from 'express-rate-limit';
 import type { NextFunction, Request, Response } from 'express';
-import { getGlobalKPIData, getRiskInputs, getABTestingStats, listOpenIncidents, resolveIncident, getDailyStat, getRuntimeFlag, getRecentDailyStats, getLeadsByStatus } from '../core/repositories';
+import {
+    getABTestingStats,
+    getAiQualitySnapshot,
+    getDailyStat,
+    getGlobalKPIData,
+    getLeadsByStatus,
+    getOperationalObservabilitySnapshot,
+    getRecentDailyStats,
+    getRiskInputs,
+    getRuntimeFlag,
+    listAccountHealthSnapshots,
+    listLatestAccountHealthSnapshots,
+    listOpenIncidents,
+    listRecentBackupRuns,
+    listSecurityAuditEvents,
+    recordSecurityAuditEvent,
+    resolveIncident,
+    runAiValidationPipeline,
+} from '../core/repositories';
 import { getDatabase } from '../db';
 import { evaluatePredictiveRiskAlerts, evaluateRisk } from '../risk/riskEngine';
 import { getLocalDateString, config } from '../config';
@@ -12,13 +30,19 @@ import { pauseAutomation, resumeAutomation, setQuarantine } from '../risk/incide
 import { logError } from '../telemetry/logger';
 import { CampaignRunRecord } from '../types/domain';
 import { publishLiveEvent, subscribeLiveEvents, getLiveEventSubscribersCount, type LiveEventMessage } from '../telemetry/liveEvents';
+import { resolveCorrelationId, runWithCorrelationId } from '../telemetry/correlation';
+import { getCircuitBreakerSnapshot } from '../core/integrationPolicy';
 
 const app = express();
 app.set('trust proxy', false);
 const DASHBOARD_SESSION_COOKIE = 'dashboard_session';
 const DASHBOARD_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
-const dashboardSessions = new Map<string, number>();
-const sessionCleanupTimer = setInterval(cleanupExpiredDashboardSessions, 15 * 60 * 1000);
+const DASHBOARD_AUTH_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
+const DASHBOARD_AUTH_MAX_FAILURES = 5;
+const DASHBOARD_AUTH_LOCKOUT_MS = 30 * 60 * 1000;
+const sessionCleanupTimer = setInterval(() => {
+    void cleanupExpiredDashboardSessions().catch(() => null);
+}, 15 * 60 * 1000);
 sessionCleanupTimer.unref();
 
 // ── CORS ristretto ──────────────────────────────────────────────────────────
@@ -44,6 +68,16 @@ app.use(cors({
 }));
 
 app.use(express.json({ limit: '64kb' }));
+
+app.use((req, res, next) => {
+    const incomingCorrelation = req.header('x-correlation-id') ?? req.header('x-request-id');
+    const correlationId = resolveCorrelationId(incomingCorrelation);
+    res.setHeader('x-correlation-id', correlationId);
+    runWithCorrelationId(correlationId, () => {
+        res.locals.correlationId = correlationId;
+        next();
+    });
+});
 
 // ── Rate Limiting ────────────────────────────────────────────────────────────
 // Limite globale: 120 req/min per IP su tutti gli endpoint /api/
@@ -73,6 +107,15 @@ const controlsLimiter = rateLimit({
 });
 app.use('/api/controls/', controlsLimiter);
 
+const authSessionLimiter = rateLimit({
+    windowMs: 15 * 60_000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Troppi tentativi auth. Riprova più tardi.' },
+});
+app.use('/api/auth/session', authSessionLimiter);
+
 // ── Sicurezza Header HTTP ────────────────────────────────────────────────────
 app.use((_req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -81,7 +124,7 @@ app.use((_req, res, next) => {
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader(
         'Content-Security-Policy',
-        "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'"
+        "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
     );
     next();
 });
@@ -166,51 +209,297 @@ function parseCookieHeader(req: Request): Record<string, string> {
     return cookies;
 }
 
-function hasValidDashboardSession(req: Request): boolean {
+function getDashboardSessionTokenFromRequest(req: Request): string | null {
     const token = parseCookieHeader(req)[DASHBOARD_SESSION_COOKIE];
+    if (!token) return null;
+    const trimmed = token.trim();
+    return trimmed.length > 0 ? trimmed : null;
+}
+
+function hashDashboardSessionToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+}
+
+function buildDashboardSessionCookie(token: string, maxAgeSec: number): string {
+    const secureFlag = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+    return `${DASHBOARD_SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/api; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSec}${secureFlag}`;
+}
+
+interface DashboardSessionRow {
+    expires_at: string;
+    revoked_at: string | null;
+}
+
+interface DashboardAuthAttemptRow {
+    failed_count: number;
+    first_failed_at: string | null;
+    locked_until: string | null;
+}
+
+async function revokeDashboardSession(token: string): Promise<void> {
+    const tokenHash = hashDashboardSessionToken(token);
+    const db = await getDatabase();
+    const nowIso = new Date().toISOString();
+    await db.run(
+        `UPDATE dashboard_sessions
+            SET revoked_at = ?, last_seen_at = ?
+          WHERE token_hash = ? AND revoked_at IS NULL`,
+        [nowIso, nowIso, tokenHash]
+    );
+}
+
+async function hasValidDashboardSession(req: Request): Promise<boolean> {
+    const token = getDashboardSessionTokenFromRequest(req);
     if (!token) return false;
-    const expiresAt = dashboardSessions.get(token);
-    if (!expiresAt) return false;
-    if (expiresAt <= Date.now()) {
-        dashboardSessions.delete(token);
+
+    const tokenHash = hashDashboardSessionToken(token);
+    const db = await getDatabase();
+    const row = await db.get<DashboardSessionRow>(
+        `SELECT expires_at, revoked_at
+           FROM dashboard_sessions
+          WHERE token_hash = ?
+          LIMIT 1`,
+        [tokenHash]
+    );
+
+    if (!row || row.revoked_at) {
         return false;
     }
+
+    const expiresAtMs = Date.parse(row.expires_at);
+    if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
+        return false;
+    }
+
+    const nowIso = new Date().toISOString();
+    const refreshedExpiry = new Date(Date.now() + DASHBOARD_SESSION_TTL_MS).toISOString();
+    await db.run(
+        `UPDATE dashboard_sessions
+            SET last_seen_at = ?, expires_at = ?
+          WHERE token_hash = ?`,
+        [nowIso, refreshedExpiry, tokenHash]
+    );
     return true;
 }
 
-function createDashboardSessionCookie(res: Response): void {
+async function createDashboardSessionCookie(req: Request, res: Response): Promise<void> {
+    const currentToken = getDashboardSessionTokenFromRequest(req);
+    if (currentToken) {
+        await revokeDashboardSession(currentToken);
+    }
+
     const token = randomBytes(32).toString('hex');
-    const expiresAt = Date.now() + DASHBOARD_SESSION_TTL_MS;
-    dashboardSessions.set(token, expiresAt);
+    const tokenHash = hashDashboardSessionToken(token);
+    const nowIso = new Date().toISOString();
+    const expiresAtIso = new Date(Date.now() + DASHBOARD_SESSION_TTL_MS).toISOString();
     const maxAgeSec = Math.floor(DASHBOARD_SESSION_TTL_MS / 1000);
-    const secureFlag = process.env.NODE_ENV === 'production' ? '; Secure' : '';
-    const cookie = `${DASHBOARD_SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/api; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSec}${secureFlag}`;
-    res.setHeader('Set-Cookie', cookie);
+    const userAgent = (req.header('user-agent') ?? '').slice(0, 255);
+    const requestIp = resolveRequestIp(req);
+
+    const db = await getDatabase();
+    await db.run(
+        `INSERT INTO dashboard_sessions (
+            token_hash,
+            created_at,
+            expires_at,
+            last_seen_at,
+            created_ip,
+            user_agent
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+        [tokenHash, nowIso, expiresAtIso, nowIso, requestIp, userAgent]
+    );
+    res.setHeader('Set-Cookie', buildDashboardSessionCookie(token, maxAgeSec));
 }
 
-function cleanupExpiredDashboardSessions(): void {
-    const now = Date.now();
-    for (const [token, expiresAt] of dashboardSessions.entries()) {
-        if (expiresAt <= now) {
-            dashboardSessions.delete(token);
+function clearDashboardSessionCookie(res: Response): void {
+    const secureFlag = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+    res.setHeader(
+        'Set-Cookie',
+        `${DASHBOARD_SESSION_COOKIE}=; Path=/api; HttpOnly; SameSite=Lax; Max-Age=0${secureFlag}`
+    );
+}
+
+async function cleanupExpiredDashboardSessions(): Promise<void> {
+    const nowIso = new Date().toISOString();
+    const db = await getDatabase();
+    await db.run(
+        `DELETE FROM dashboard_sessions
+          WHERE expires_at <= ?
+             OR revoked_at IS NOT NULL`,
+        [nowIso]
+    );
+}
+
+async function isDashboardAuthLocked(requestIp: string): Promise<boolean> {
+    const db = await getDatabase();
+    const row = await db.get<{ locked_until: string | null }>(
+        `SELECT locked_until
+           FROM dashboard_auth_attempts
+          WHERE ip = ?
+          LIMIT 1`,
+        [requestIp]
+    );
+    if (!row?.locked_until) return false;
+    const lockedUntilMs = Date.parse(row.locked_until);
+    return Number.isFinite(lockedUntilMs) && lockedUntilMs > Date.now();
+}
+
+async function clearDashboardAuthFailures(requestIp: string): Promise<void> {
+    const db = await getDatabase();
+    await db.run(`DELETE FROM dashboard_auth_attempts WHERE ip = ?`, [requestIp]);
+}
+
+async function recordDashboardAuthFailure(requestIp: string): Promise<{ locked: boolean; lockedUntil: string | null }> {
+    const db = await getDatabase();
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const nowMs = now.getTime();
+    const existing = await db.get<DashboardAuthAttemptRow>(
+        `SELECT failed_count, first_failed_at, locked_until
+           FROM dashboard_auth_attempts
+          WHERE ip = ?
+          LIMIT 1`,
+        [requestIp]
+    );
+
+    let failedCount = 1;
+    let firstFailedAt = nowIso;
+    if (existing) {
+        const previousFirstMs = existing.first_failed_at ? Date.parse(existing.first_failed_at) : Number.NaN;
+        if (Number.isFinite(previousFirstMs) && (nowMs - previousFirstMs) <= DASHBOARD_AUTH_ATTEMPT_WINDOW_MS) {
+            failedCount = Number(existing.failed_count ?? 0) + 1;
+            firstFailedAt = existing.first_failed_at ?? nowIso;
         }
     }
+
+    const shouldLock = failedCount >= DASHBOARD_AUTH_MAX_FAILURES;
+    const lockedUntil = shouldLock
+        ? new Date(nowMs + DASHBOARD_AUTH_LOCKOUT_MS).toISOString()
+        : null;
+
+    if (existing) {
+        await db.run(
+            `UPDATE dashboard_auth_attempts
+                SET failed_count = ?,
+                    first_failed_at = ?,
+                    last_failed_at = ?,
+                    locked_until = ?,
+                    updated_at = ?
+              WHERE ip = ?`,
+            [failedCount, firstFailedAt, nowIso, lockedUntil, nowIso, requestIp]
+        );
+    } else {
+        await db.run(
+            `INSERT INTO dashboard_auth_attempts (
+                ip,
+                failed_count,
+                first_failed_at,
+                last_failed_at,
+                locked_until,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)`,
+            [requestIp, failedCount, firstFailedAt, nowIso, lockedUntil, nowIso]
+        );
+    }
+
+    return { locked: shouldLock, lockedUntil };
 }
 
-function dashboardAuthMiddleware(req: Request, res: Response, next: NextFunction): void {
+async function dashboardAuthMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
     if (!config.dashboardAuthEnabled) { next(); return; }
     if (req.path === '/health') { next(); return; }
+
     const requestIp = resolveRequestIp(req);
-    if (isTrustedIp(requestIp)) { next(); return; }
-    if (hasValidDashboardSession(req)) { next(); return; }
-    const authConfigured = !!config.dashboardApiKey || (!!config.dashboardBasicUser && !!config.dashboardBasicPassword);
-    if (!authConfigured) {
-        res.status(503).json({ error: 'Dashboard auth enabled but no credentials configured.' });
-        return;
+
+    try {
+        if (isTrustedIp(requestIp)) { next(); return; }
+        if (await hasValidDashboardSession(req)) { next(); return; }
+
+        const authConfigured = !!config.dashboardApiKey || (!!config.dashboardBasicUser && !!config.dashboardBasicPassword);
+        if (!authConfigured) {
+            res.status(503).json({ error: 'Dashboard auth enabled but no credentials configured.' });
+            return;
+        }
+
+        const isAuthBootstrapPath = req.path === '/auth/session';
+        if (isApiKeyAuthValid(req) || isBasicAuthValid(req)) {
+            if (isAuthBootstrapPath) {
+                await clearDashboardAuthFailures(requestIp);
+            }
+            auditSecurityEvent({
+                category: 'dashboard_auth',
+                action: 'auth_credentials_valid',
+                actor: requestIp,
+                result: 'ALLOW',
+                metadata: {
+                    path: req.path,
+                    method: req.method,
+                    bootstrap: isAuthBootstrapPath,
+                },
+            });
+            next();
+            return;
+        }
+
+        if (isAuthBootstrapPath) {
+            const alreadyLocked = await isDashboardAuthLocked(requestIp);
+            if (alreadyLocked) {
+                auditSecurityEvent({
+                    category: 'dashboard_auth',
+                    action: 'auth_locked',
+                    actor: requestIp,
+                    result: 'DENY',
+                    metadata: {
+                        path: req.path,
+                    },
+                });
+                res.status(429).json({ error: 'Troppi tentativi auth falliti. Riprova più tardi.' });
+                return;
+            }
+            const lockState = await recordDashboardAuthFailure(requestIp);
+            if (lockState.locked) {
+                auditSecurityEvent({
+                    category: 'dashboard_auth',
+                    action: 'auth_lock_triggered',
+                    actor: requestIp,
+                    result: 'DENY',
+                    metadata: {
+                        path: req.path,
+                        lockedUntil: lockState.lockedUntil,
+                    },
+                });
+                res.status(429).json({
+                    error: 'Troppi tentativi auth falliti. Accesso temporaneamente bloccato.',
+                    lockedUntil: lockState.lockedUntil,
+                });
+                return;
+            }
+            auditSecurityEvent({
+                category: 'dashboard_auth',
+                action: 'auth_failure',
+                actor: requestIp,
+                result: 'DENY',
+                metadata: {
+                    path: req.path,
+                },
+            });
+        }
+
+        auditSecurityEvent({
+            category: 'dashboard_auth',
+            action: 'auth_unauthorized',
+            actor: requestIp,
+            result: 'DENY',
+            metadata: {
+                path: req.path,
+                method: req.method,
+            },
+        });
+        res.setHeader('WWW-Authenticate', 'Basic realm="LinkedIn Bot Dashboard"');
+        res.status(401).json({ error: 'Unauthorized' });
+    } catch (error) {
+        handleApiError(res, error, 'api.auth.middleware');
     }
-    if (isApiKeyAuthValid(req) || isBasicAuthValid(req)) { next(); return; }
-    res.setHeader('WWW-Authenticate', 'Basic realm="LinkedIn Bot Dashboard"');
-    res.status(401).json({ error: 'Unauthorized' });
 }
 
 // ── Helper centralizzato per errori API ──────────────────────────────────────
@@ -219,6 +508,19 @@ function handleApiError(res: Response, err: unknown, context: string): void {
     // Non espone stack trace né dettagli interni in produzione
     void logError(context, { error: message });
     res.status(500).json({ error: 'Errore interno del server.' });
+}
+
+function auditSecurityEvent(payload: {
+    category: string;
+    action: string;
+    actor?: string | null;
+    accountId?: string | null;
+    entityType?: string | null;
+    entityId?: string | null;
+    result: string;
+    metadata?: Record<string, unknown>;
+}): void {
+    void recordSecurityAuditEvent(payload).catch(() => null);
 }
 
 interface DailyTrendRow {
@@ -264,10 +566,42 @@ app.get('/api/health', (_req, res) => {
 });
 
 // ── Session bootstrap (cookie-based auth for browser SSE/fetch) ─────────────
-app.post('/api/auth/session', (_req, res) => {
-    createDashboardSessionCookie(res);
-    cleanupExpiredDashboardSessions();
-    res.json({ success: true, ttlSeconds: Math.floor(DASHBOARD_SESSION_TTL_MS / 1000) });
+app.post('/api/auth/session', async (req, res) => {
+    try {
+        await createDashboardSessionCookie(req, res);
+        await cleanupExpiredDashboardSessions();
+        auditSecurityEvent({
+            category: 'dashboard_auth',
+            action: 'session_created',
+            actor: resolveRequestIp(req),
+            result: 'ALLOW',
+            metadata: {
+                userAgent: req.header('user-agent') ?? '',
+            },
+        });
+        res.json({ success: true, ttlSeconds: Math.floor(DASHBOARD_SESSION_TTL_MS / 1000) });
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.auth.session');
+    }
+});
+
+app.post('/api/auth/logout', async (req, res) => {
+    try {
+        const token = getDashboardSessionTokenFromRequest(req);
+        if (token) {
+            await revokeDashboardSession(token);
+        }
+        clearDashboardSessionCookie(res);
+        auditSecurityEvent({
+            category: 'dashboard_auth',
+            action: 'session_logout',
+            actor: resolveRequestIp(req),
+            result: 'ALLOW',
+        });
+        res.json({ success: true });
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.auth.logout');
+    }
 });
 
 // ── SSE stream (real-time push notifications) ────────────────────────────────
@@ -336,7 +670,12 @@ app.get('/api/kpis', async (_req, res) => {
 app.get('/api/runs', async (_req, res) => {
     try {
         const db = await getDatabase();
-        const runs = await db.query<CampaignRunRecord>(`SELECT * FROM campaign_runs ORDER BY id DESC LIMIT 10`);
+        const runs = await db.query<CampaignRunRecord>(
+            `SELECT id, start_time, end_time, status, profiles_discovered, invites_sent, messages_sent, errors_count, created_at
+             FROM campaign_runs
+             ORDER BY id DESC
+             LIMIT 10`
+        );
         res.json(runs);
     } catch (err: unknown) {
         handleApiError(res, err, 'api.runs');
@@ -396,6 +735,14 @@ app.post('/api/incidents/:id/resolve', async (req, res) => {
             return;
         }
         await resolveIncident(id);
+        auditSecurityEvent({
+            category: 'incident',
+            action: 'resolve',
+            actor: resolveRequestIp(req),
+            entityType: 'account_incident',
+            entityId: String(id),
+            result: 'ALLOW',
+        });
         publishLiveEvent('incident.resolved', { incidentId: id });
         res.json({ success: true, message: `Incidente ${id} risolto.` });
     } catch (err: unknown) {
@@ -448,6 +795,25 @@ app.get('/api/stats/trend', async (_req, res) => {
     }
 });
 
+app.get('/api/observability', async (_req, res) => {
+    try {
+        const localDate = getLocalDateString();
+        const snapshot = await getOperationalObservabilitySnapshot(localDate);
+        res.json({
+            ...snapshot,
+            thresholds: {
+                maxSelectorFailuresPerDay: config.maxSelectorFailuresPerDay,
+                maxRunErrorsPerDay: config.maxRunErrorsPerDay,
+                jobStuckMinutes: config.jobStuckMinutes,
+                workflowLoopIntervalMs: config.workflowLoopIntervalMs,
+            },
+            circuitBreakers: getCircuitBreakerSnapshot(),
+        });
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.observability');
+    }
+});
+
 // ── Predictive risk (baseline media mobile + sigma) ─────────────────────────
 app.get('/api/risk/predictive', async (_req, res) => {
     try {
@@ -487,6 +853,80 @@ app.get('/api/risk/predictive', async (_req, res) => {
         });
     } catch (err: unknown) {
         handleApiError(res, err, 'api.risk.predictive');
+    }
+});
+
+app.get('/api/ai/quality', async (req, res) => {
+    try {
+        const rawDays = Number.parseInt(String(req.query.days ?? '30'), 10);
+        const days = Number.isFinite(rawDays) ? Math.max(1, Math.min(180, rawDays)) : 30;
+        const snapshot = await getAiQualitySnapshot(days);
+        res.json(snapshot);
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.ai.quality');
+    }
+});
+
+app.post('/api/ai/quality/run', async (req, res) => {
+    try {
+        const triggeredBy = typeof req.body?.triggeredBy === 'string' && req.body.triggeredBy.trim()
+            ? req.body.triggeredBy.trim()
+            : 'dashboard';
+        const run = await runAiValidationPipeline(triggeredBy);
+        auditSecurityEvent({
+            category: 'ai_quality',
+            action: 'validation_run',
+            actor: resolveRequestIp(req),
+            result: 'ALLOW',
+            metadata: {
+                runId: run.id,
+                status: run.status,
+            },
+        });
+        res.json(run);
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.ai.quality.run');
+    }
+});
+
+app.get('/api/accounts/health', async (req, res) => {
+    try {
+        const rawLimit = Number.parseInt(String(req.query.limit ?? '25'), 10);
+        const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(100, rawLimit)) : 25;
+        const accountId = typeof req.query.accountId === 'string' ? req.query.accountId.trim() : '';
+        const rows = accountId
+            ? await listAccountHealthSnapshots(accountId, limit)
+            : await listLatestAccountHealthSnapshots(limit);
+        res.json({
+            accountId: accountId || null,
+            count: rows.length,
+            rows,
+        });
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.accounts.health');
+    }
+});
+
+app.get('/api/security/audit', async (req, res) => {
+    try {
+        const rawLimit = Number.parseInt(String(req.query.limit ?? '50'), 10);
+        const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(200, rawLimit)) : 50;
+        const category = typeof req.query.category === 'string' ? req.query.category.trim() : undefined;
+        const rows = await listSecurityAuditEvents(limit, category);
+        res.json({ count: rows.length, rows });
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.security.audit');
+    }
+});
+
+app.get('/api/backups', async (req, res) => {
+    try {
+        const rawLimit = Number.parseInt(String(req.query.limit ?? '20'), 10);
+        const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(100, rawLimit)) : 20;
+        const rows = await listRecentBackupRuns(limit);
+        res.json({ count: rows.length, rows });
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.backups');
     }
 });
 
@@ -532,15 +972,28 @@ app.post('/api/controls/pause', async (req, res) => {
         const rawMinutes = req.body.minutes;
         const minutes = typeof rawMinutes === 'number' && rawMinutes > 0 ? Math.min(rawMinutes, 10080) : 1440;
         await pauseAutomation('MANUAL_UI_PAUSE', { source: 'dashboard' }, minutes);
+        auditSecurityEvent({
+            category: 'runtime_control',
+            action: 'pause',
+            actor: resolveRequestIp(req),
+            result: 'ALLOW',
+            metadata: { minutes },
+        });
         res.json({ success: true, message: `Pausa attivata per ${minutes} minuti.` });
     } catch (err: unknown) {
         handleApiError(res, err, 'api.controls.pause');
     }
 });
 
-app.post('/api/controls/resume', async (_req, res) => {
+app.post('/api/controls/resume', async (req, res) => {
     try {
         await resumeAutomation();
+        auditSecurityEvent({
+            category: 'runtime_control',
+            action: 'resume',
+            actor: resolveRequestIp(req),
+            result: 'ALLOW',
+        });
         res.json({ success: true, message: 'Ripresa automazione.' });
     } catch (err: unknown) {
         handleApiError(res, err, 'api.controls.resume');
@@ -551,6 +1004,13 @@ app.post('/api/controls/quarantine', async (req, res) => {
     try {
         const enabled = req.body.enabled === true;
         await setQuarantine(enabled);
+        auditSecurityEvent({
+            category: 'runtime_control',
+            action: enabled ? 'quarantine_enable' : 'quarantine_disable',
+            actor: resolveRequestIp(req),
+            result: 'ALLOW',
+            metadata: { enabled },
+        });
         res.json({ success: true, message: `Quarantena ${enabled ? 'attivata' : 'disattivata'}.` });
     } catch (err: unknown) {
         handleApiError(res, err, 'api.controls.quarantine');

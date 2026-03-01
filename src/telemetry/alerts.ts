@@ -1,4 +1,5 @@
 import { config } from '../config';
+import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 
 export type AlertSeverity = 'info' | 'warn' | 'critical';
 
@@ -18,7 +19,7 @@ export async function sendTelegramAlert(message: string, title?: string, severit
 
     const endpoint = `https://api.telegram.org/bot${config.telegramBotToken}/sendMessage`;
     try {
-        await fetch(endpoint, {
+        await fetchWithRetryPolicy(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -27,6 +28,11 @@ export async function sendTelegramAlert(message: string, title?: string, severit
                 parse_mode: 'Markdown',
                 disable_web_page_preview: true,
             }),
+        }, {
+            integration: 'telegram.alert',
+            circuitKey: 'notifications.telegram',
+            timeoutMs: 8_000,
+            maxAttempts: 2,
         });
     } catch (error) {
         console.error('[WARN] Invio alert Telegram fallito', error);

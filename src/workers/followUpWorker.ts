@@ -12,11 +12,11 @@
  * Dry-run: genera messaggio senza inviarlo.
  */
 
-import { contextualReadingPause, detectChallenge, humanDelay, humanMouseMove, humanType, simulateHumanReading } from '../browser';
+import { clickWithFallback, contextualReadingPause, detectChallenge, humanDelay, humanMouseMove, simulateHumanReading, typeWithFallback } from '../browser';
 import { buildFollowUpReminderMessage } from '../ai/messagePersonalizer';
 import { config } from '../config';
-import { getLeadsForFollowUp, recordFollowUpSent, incrementDailyStat, countRecentMessageHash, storeMessageHash } from '../core/repositories';
-import { joinSelectors } from '../selectors';
+import { getLeadIntent, getLeadsForFollowUp, recordFollowUpSent, incrementDailyStat, countRecentMessageHash, storeMessageHash } from '../core/repositories';
+import { joinSelectors, SELECTORS } from '../selectors';
 import { hashMessage, validateMessageContent } from '../validation/messageValidator';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { LeadRecord } from '../types/domain';
@@ -33,6 +33,27 @@ function daysSince(iso: string | null | undefined): number {
     return Math.floor(diffMs / (1000 * 60 * 60 * 24));
 }
 
+function resolveIntentAwareDelayDays(intent: string | null | undefined): number {
+    const normalized = (intent ?? '').toUpperCase();
+    if (normalized === 'QUESTIONS') {
+        return config.followUpQuestionsDelayDays;
+    }
+    if (normalized === 'NEGATIVE') {
+        return config.followUpNegativeDelayDays;
+    }
+    if (normalized === 'NOT_INTERESTED') {
+        return config.followUpNotInterestedDelayDays;
+    }
+    return config.followUpDelayDays;
+}
+
+interface LeadIntentHint {
+    intent: string;
+    subIntent: string;
+    confidence: number;
+    entities: string[];
+}
+
 /**
  * Tenta di inviare il follow-up a un singolo lead.
  * @returns true se inviato (o simulato in dry-run), false se saltato
@@ -42,11 +63,16 @@ async function processSingleFollowUp(
     linkedinUrl: string,
     lead: LeadRecord,
     messagedAt: string | null,
+    intentHint: LeadIntentHint | null,
     context: WorkerContext
 ): Promise<boolean> {
 
     const days = daysSince(messagedAt);
-    const { message, source } = await buildFollowUpReminderMessage(lead, days);
+    const { message, source } = await buildFollowUpReminderMessage(lead, days, {
+        intent: intentHint?.intent ?? null,
+        subIntent: intentHint?.subIntent ?? null,
+        entities: intentHint?.entities ?? [],
+    });
 
     // Validazione anti-duplicata
     const messageHash = hashMessage(message);
@@ -68,25 +94,21 @@ async function processSingleFollowUp(
     }
 
     // Cerca bottone messaggio
-    const msgBtn = context.session.page.locator(joinSelectors('messageButton')).first();
-    if (await msgBtn.count() === 0) {
+    await humanMouseMove(context.session.page, joinSelectors('messageButton'));
+    await humanDelay(context.session.page, 120, 320);
+    const openedThread = await clickWithFallback(context.session.page, SELECTORS.messageButton, 'messageButton')
+        .then(() => true)
+        .catch(() => false);
+    if (!openedThread) {
         await logWarn('follow_up.button_not_found', { leadId, url: linkedinUrl });
         return false;
     }
-
-    await humanMouseMove(context.session.page, joinSelectors('messageButton'));
-    await humanDelay(context.session.page, 120, 320);
-    await msgBtn.click();
     await humanDelay(context.session.page, 1200, 2200);
 
-    // Cerca textbox
-    const textbox = context.session.page.locator(joinSelectors('messageTextbox')).first();
-    if (await textbox.count() === 0) {
+    await typeWithFallback(context.session.page, SELECTORS.messageTextbox, message, 'messageTextbox').catch(async () => {
         await incrementDailyStat(context.localDate, 'selector_failures');
         throw new RetryableWorkerError('Textbox follow-up non trovata', 'TEXTBOX_NOT_FOUND');
-    }
-
-    await humanType(context.session.page, joinSelectors('messageTextbox'), message);
+    });
     await humanDelay(context.session.page, 800, 1600);
 
     if (!context.dryRun) {
@@ -97,7 +119,10 @@ async function processSingleFollowUp(
         }
         await humanMouseMove(context.session.page, joinSelectors('messageSendButton'));
         await humanDelay(context.session.page, 100, 300);
-        await sendBtn.click();
+        await clickWithFallback(context.session.page, SELECTORS.messageSendButton, 'messageSendButton').catch(async () => {
+            await incrementDailyStat(context.localDate, 'selector_failures');
+            throw new RetryableWorkerError('Bottone invio follow-up non disponibile', 'SEND_NOT_AVAILABLE');
+        });
 
         // Persisti l'invio nel DB
         await recordFollowUpSent(leadId);
@@ -123,7 +148,15 @@ export async function runFollowUpWorker(
     context: WorkerContext,
     dailySentSoFar = 0
 ): Promise<WorkerExecutionResult> {
-    const delayDays = config.followUpDelayDays;
+    const delayDays = Math.max(
+        1,
+        Math.min(
+            config.followUpDelayDays,
+            config.followUpQuestionsDelayDays,
+            config.followUpNegativeDelayDays,
+            config.followUpNotInterestedDelayDays
+        )
+    );
     const maxFollowUp = config.followUpMax;
     const dailyCap = config.followUpDailyCap;
     const remaining = dailyCap - dailySentSoFar;
@@ -150,12 +183,25 @@ export async function runFollowUpWorker(
         if (sent + dailySentSoFar >= dailyCap) break;
 
         try {
+            const intentHint = await getLeadIntent(lead.id);
+            const requiredDelayDays = resolveIntentAwareDelayDays(intentHint?.intent);
+            const leadDaysSinceMessage = daysSince(lead.messaged_at ?? null);
+            if (leadDaysSinceMessage < requiredDelayDays) {
+                await logInfo('follow_up.skipped_not_due', {
+                    leadId: lead.id,
+                    intent: intentHint?.intent ?? 'UNKNOWN',
+                    daysSinceMessage: leadDaysSinceMessage,
+                    requiredDelayDays,
+                });
+                continue;
+            }
             attempted += 1;
             const ok = await processSingleFollowUp(
                 lead.id,
                 lead.linkedin_url,
                 lead,
                 lead.messaged_at ?? null,
+                intentHint,
                 context
             );
             if (ok) sent++;

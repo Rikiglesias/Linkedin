@@ -3,6 +3,7 @@ import { getRuntimeAccountProfiles, isMultiAccountRuntimeEnabled, RuntimeAccount
 import { config } from '../config';
 import { handleChallengeDetected, pauseAutomation, quarantineAccount } from '../risk/incidentManager';
 import { logError, logInfo, logWarn } from '../telemetry/logger';
+import { sendTelegramAlert } from '../telemetry/alerts';
 import { JobType } from '../types/domain';
 import { WorkerContext } from '../workers/context';
 import { processAcceptanceJob } from '../workers/acceptanceWorker';
@@ -23,12 +24,21 @@ import {
     markJobSucceeded,
     parseJobPayload,
     pushOutboxEvent,
+    recordAccountHealthSnapshot,
 } from './repositories';
 
 export interface RunJobsOptions {
     localDate: string;
     allowedTypes: JobType[];
     dryRun: boolean;
+}
+
+interface AccountRunHealthMetrics {
+    processed: number;
+    failed: number;
+    challenges: number;
+    deadLetters: number;
+    startedAtMs: number;
 }
 
 function retryDelayMs(attempt: number): number {
@@ -40,6 +50,72 @@ function randomInt(min: number, max: number): number {
     const low = Math.min(min, max);
     const high = Math.max(min, max);
     return Math.floor(Math.random() * (high - low + 1)) + low;
+}
+
+function evaluateAccountHealth(metrics: AccountRunHealthMetrics): {
+    health: 'GREEN' | 'YELLOW' | 'RED';
+    reason: string | null;
+    failureRate: number;
+} {
+    const failureRate = metrics.processed > 0
+        ? metrics.failed / metrics.processed
+        : 0;
+
+    if (metrics.challenges > 0 || failureRate >= config.accountHealthCriticalFailureRate) {
+        return {
+            health: 'RED',
+            reason: metrics.challenges > 0 ? 'challenge_detected' : 'failure_rate_critical',
+            failureRate,
+        };
+    }
+    if (metrics.deadLetters > 0 || failureRate >= config.accountHealthWarnFailureRate) {
+        return {
+            health: 'YELLOW',
+            reason: metrics.deadLetters > 0 ? 'dead_letters_present' : 'failure_rate_warn',
+            failureRate,
+        };
+    }
+    return {
+        health: 'GREEN',
+        reason: null,
+        failureRate,
+    };
+}
+
+async function persistAccountHealth(
+    account: RuntimeAccountProfile,
+    options: RunJobsOptions,
+    metrics: AccountRunHealthMetrics
+): Promise<void> {
+    const health = evaluateAccountHealth(metrics);
+    const durationMs = Date.now() - metrics.startedAtMs;
+    await recordAccountHealthSnapshot({
+        accountId: account.id,
+        queueProcessed: metrics.processed,
+        queueFailed: metrics.failed,
+        challenges: metrics.challenges,
+        deadLetters: metrics.deadLetters,
+        health: health.health,
+        reason: health.reason,
+        metadata: {
+            localDate: options.localDate,
+            dryRun: options.dryRun,
+            durationMs,
+            failureRate: Number.parseFloat(health.failureRate.toFixed(4)),
+        },
+    });
+
+    if (
+        !options.dryRun
+        && metrics.processed >= config.accountHealthAlertMinProcessed
+        && health.health !== 'GREEN'
+    ) {
+        await sendTelegramAlert(
+            `Account: ${account.id}\nHealth: ${health.health}\nReason: ${health.reason ?? 'n/a'}\nProcessed: ${metrics.processed}\nFailed: ${metrics.failed}\nChallenges: ${metrics.challenges}\nDeadLetters: ${metrics.deadLetters}`,
+            'Account Health Alert',
+            health.health === 'RED' ? 'critical' : 'warn'
+        );
+    }
 }
 
 async function rotateSessionWithLoginCheck(
@@ -77,6 +153,13 @@ async function runQueuedJobsForAccount(
     account: RuntimeAccountProfile,
     includeLegacyDefaultQueue: boolean
 ): Promise<void> {
+    const accountHealthMetrics: AccountRunHealthMetrics = {
+        processed: 0,
+        failed: 0,
+        challenges: 0,
+        deadLetters: 0,
+        startedAtMs: Date.now(),
+    };
     let session = await launchBrowser({
         sessionDir: account.sessionDir,
         proxy: account.proxy,
@@ -108,9 +191,20 @@ async function runQueuedJobsForAccount(
         const rotateEveryJobs = config.proxyRotateEveryJobs;
         const rotateEveryMinutes = config.proxyRotateEveryMinutes;
         const rotateEveryMs = rotateEveryMinutes > 0 ? rotateEveryMinutes * 60_000 : 0;
+        const maxJobsPerRun = Math.max(1, config.accountMaxJobsPerRun);
         let sessionStartedAtMs = Date.now();
+        let processedThisRun = 0;
 
         while (true) {
+            if (processedThisRun >= maxJobsPerRun) {
+                await logInfo('job_runner.account.fairness_quota_reached', {
+                    accountId: account.id,
+                    processedThisRun,
+                    maxJobsPerRun,
+                });
+                break;
+            }
+
             const pauseState = await getAutomationPauseState();
             if (pauseState.paused) {
                 await logWarn('job_runner.skipped_paused', {
@@ -210,11 +304,13 @@ async function runQueuedJobsForAccount(
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
                 const attempts = job.attempts + 1;
+                accountHealthMetrics.failed += 1;
 
                 await createJobAttempt(job.id, false, error instanceof Error ? error.name : 'UNKNOWN_ERROR', message, null);
                 await incrementDailyStat(options.localDate, 'run_errors');
 
                 if (error instanceof ChallengeDetectedError) {
+                    accountHealthMetrics.challenges += 1;
                     await incrementDailyStat(options.localDate, 'challenges_count');
                     let challengeLeadId: number | undefined;
                     if (job.type === 'INVITE' || job.type === 'MESSAGE' || job.type === 'ACCEPTANCE_CHECK') {
@@ -268,6 +364,7 @@ async function runQueuedJobsForAccount(
                 );
 
                 if (status === 'DEAD_LETTER' && (job.type === 'INVITE' || job.type === 'MESSAGE' || job.type === 'ACCEPTANCE_CHECK')) {
+                    accountHealthMetrics.deadLetters += 1;
                     try {
                         const parsed = parseJobPayload<{ leadId?: number }>(job);
                         if (parsed.payload.leadId) {
@@ -314,6 +411,8 @@ async function runQueuedJobsForAccount(
 
             if (processedCurrentJob) {
                 processedOnCurrentSession += 1;
+                processedThisRun += 1;
+                accountHealthMetrics.processed += 1;
                 jobsSinceDecoy += 1;
                 jobsSinceCoffeeBreak += 1;
             }
@@ -390,6 +489,7 @@ async function runQueuedJobsForAccount(
                 });
             } catch (err: unknown) {
                 if (err instanceof ChallengeDetectedError) {
+                    accountHealthMetrics.challenges += 1;
                     await incrementDailyStat(options.localDate, 'challenges_count');
                     await handleChallengeDetected({
                         source: 'follow_up_worker',
@@ -416,6 +516,7 @@ async function runQueuedJobsForAccount(
         if (!sessionClosed) {
             await closeBrowser(session);
         }
+        await persistAccountHealth(account, options, accountHealthMetrics).catch(() => null);
     }
 }
 
@@ -429,7 +530,11 @@ export async function runQueuedJobs(options: RunJobsOptions): Promise<void> {
     const accounts = getRuntimeAccountProfiles();
     for (let index = 0; index < accounts.length; index++) {
         const account = accounts[index];
-        const includeLegacyDefaultQueue = isMultiAccountRuntimeEnabled() && index === 0 && account.id !== 'default';
+        const includeLegacyDefaultQueue =
+            config.accountLegacyDefaultQueueFallback
+            && isMultiAccountRuntimeEnabled()
+            && index === 0
+            && account.id !== 'default';
         await logInfo('job_runner.account.start', {
             accountId: account.id,
             includeLegacyDefaultQueue,

@@ -1,7 +1,7 @@
-import { contextualReadingPause, detectChallenge, humanDelay, humanMouseMove, humanType, simulateHumanReading } from '../browser';
+import { clickWithFallback, contextualReadingPause, detectChallenge, humanDelay, humanMouseMove, simulateHumanReading, typeWithFallback } from '../browser';
 import { transitionLead } from '../core/leadStateService';
 import { countRecentMessageHash, getLeadById, incrementDailyStat, incrementListDailyStat, storeMessageHash } from '../core/repositories';
-import { joinSelectors } from '../selectors';
+import { joinSelectors, SELECTORS } from '../selectors';
 import { MessageJobPayload } from '../types/domain';
 import { hashMessage, validateMessageContent } from '../validation/messageValidator';
 import { WorkerContext } from './context';
@@ -47,22 +47,23 @@ export async function processMessageJob(payload: MessageJobPayload, context: Wor
         throw new ChallengeDetectedError();
     }
 
-    const msgBtn = context.session.page.locator(joinSelectors('messageButton')).first();
-    if (await msgBtn.count() === 0) {
-        throw new RetryableWorkerError('Bottone messaggio non trovato', 'MESSAGE_BUTTON_NOT_FOUND');
-    }
-
     await humanMouseMove(context.session.page, joinSelectors('messageButton'));
     await humanDelay(context.session.page, 120, 320);
-    await msgBtn.click();
+    await clickWithFallback(context.session.page, SELECTORS.messageButton, 'messageButton').catch(() => {
+        throw new RetryableWorkerError('Bottone messaggio non trovato', 'MESSAGE_BUTTON_NOT_FOUND');
+    });
     await humanDelay(context.session.page, 1200, 2200);
 
-    const textbox = context.session.page.locator(joinSelectors('messageTextbox')).first();
-    if (await textbox.count() === 0) {
+    await typeWithFallback(
+        context.session.page,
+        SELECTORS.messageTextbox,
+        message,
+        'messageTextbox',
+        5000
+    ).catch(async () => {
         await incrementDailyStat(context.localDate, 'selector_failures');
         throw new RetryableWorkerError('Textbox messaggio non trovata', 'TEXTBOX_NOT_FOUND');
-    }
-    await humanType(context.session.page, joinSelectors('messageTextbox'), message);
+    });
     await humanDelay(context.session.page, 800, 1600);
 
     if (!context.dryRun) {
@@ -73,7 +74,10 @@ export async function processMessageJob(payload: MessageJobPayload, context: Wor
         }
         await humanMouseMove(context.session.page, joinSelectors('messageSendButton'));
         await humanDelay(context.session.page, 100, 300);
-        await sendBtn.click();
+        await clickWithFallback(context.session.page, SELECTORS.messageSendButton, 'messageSendButton').catch(async () => {
+            await incrementDailyStat(context.localDate, 'selector_failures');
+            throw new RetryableWorkerError('Bottone invio non disponibile', 'SEND_NOT_AVAILABLE');
+        });
     }
 
     await transitionLead(lead.id, 'MESSAGED', context.dryRun ? 'message_dry_run' : 'message_sent');

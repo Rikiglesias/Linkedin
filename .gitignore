@@ -9,6 +9,12 @@ data/session*/
 
 # Secrets
 .env
+.env.*
+!.env.example
+.env.bak
+.env.backup
+*.env.bak
+*.env.backup
 
 # Logs e file temporanei
 *.log

@@ -3,182 +3,209 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Dashboard di controllo per LinkedIn Bot — monitoraggio KPI, risk score, A/B test e gestione incidenti.">
-    <title>LinkedIn Bot — Dashboard</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <meta name="description" content="Control room professionale per LinkedIn Bot: KPI, incidenti, review queue e timeline realtime.">
+    <title>LinkedIn Bot Control Room</title>
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-    <!-- ── MODALE PAUSA ───────────────────────────────────────────────────── -->
+    <a class="skip-link" href="#main-content">Vai al contenuto principale</a>
+
     <dialog id="pause-modal" aria-labelledby="pause-modal-title">
         <div class="modal-inner">
-            <h2 id="pause-modal-title" class="modal-title">⏸ Metti in pausa il bot</h2>
+            <h2 id="pause-modal-title" class="modal-title">Pausa automazione</h2>
             <label for="pause-minutes-input" class="modal-label">Durata pausa (minuti)</label>
-            <input id="pause-minutes-input" class="modal-input" type="number" min="1" max="10080" value="60" placeholder="es. 60">
+            <input id="pause-minutes-input" class="modal-input" type="number" min="1" max="10080" value="60">
             <div class="modal-actions">
-                <button class="btn btn-warning" id="pause-confirm-btn" onclick="confirmPause()">⏸ Conferma Pausa</button>
-                <button class="btn btn-secondary" onclick="document.getElementById('pause-modal').close()">✕ Annulla</button>
+                <button class="btn btn-warning" id="pause-confirm-btn" type="button">Conferma pausa</button>
+                <button class="btn btn-secondary" id="pause-cancel-btn" type="button">Annulla</button>
             </div>
         </div>
     </dialog>
 
-    <!-- ── HEADER ─────────────────────────────────────────────────────────── -->
     <header class="header">
-        <div class="header-brand">
-            <svg class="brand-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M19 0H5C2.24 0 0 2.24 0 5v14c0 2.76 2.24 5 5 5h14c2.76 0 5-2.24 5-5V5c0-2.76-2.24-5-5-5zm-11 19H5V8h3v11zm-1.5-12.27c-.97 0-1.75-.79-1.75-1.75S6.53 3.23 7.5 3.23c.97 0 1.75.79 1.75 1.75s-.78 1.75-1.75 1.75zM20 19h-3v-5.6c0-3.37-4-3.12-4 0V19h-3V8h3v1.77c1.39-2.58 7-2.77 7 2.47V19z"/>
-            </svg>
-            <span class="brand-name">LinkedIn Bot</span>
-            <span class="brand-sub">Dashboard</span>
+        <div class="brand-wrap">
+            <div class="brand-mark" aria-hidden="true">LB</div>
+            <div>
+                <h1 class="brand-title">LinkedIn Bot Control Room</h1>
+                <p class="brand-subtitle">Realtime Operations Dashboard</p>
+            </div>
         </div>
-        <div class="header-status">
-            <div id="status-badge" class="status-badge status-loading" aria-live="polite">
+
+        <div class="header-right">
+            <div id="status-badge" class="status-badge status-running" aria-live="polite">
                 <span class="status-dot" aria-hidden="true"></span>
-                <span id="status-text">Connessione...</span>
+                <span id="status-text">Operativo</span>
             </div>
             <div class="header-actions">
-                <button id="btn-pause" class="btn btn-warning" onclick="openPauseModal()" aria-label="Metti in pausa il bot">⏸ Pausa</button>
-                <button id="btn-resume" class="btn btn-success" onclick="controlResume()" aria-label="Riprendi il bot">▶ Riprendi</button>
+                <button id="btn-refresh" type="button" class="btn btn-secondary">Aggiorna</button>
+                <button id="btn-pause" type="button" class="btn btn-warning">Pausa</button>
+                <button id="btn-resume" type="button" class="btn btn-success">Riprendi</button>
             </div>
         </div>
     </header>
 
-    <!-- ── MAIN CONTENT ───────────────────────────────────────────────────── -->
-    <main class="main">
+    <p id="action-feedback" class="feedback" role="status" aria-live="polite"></p>
 
-        <!-- ROW 1: KPI Cards -->
-        <section class="kpi-grid" id="kpi-grid" aria-label="KPI principali">
-            <div class="kpi-card" id="kpi-invited">
-                <div class="kpi-icon" aria-hidden="true">📨</div>
-                <div class="kpi-value" id="val-invited">—</div>
-                <div class="kpi-label">Inviti</div>
-            </div>
-            <div class="kpi-card" id="kpi-accepted">
-                <div class="kpi-icon" aria-hidden="true">🤝</div>
-                <div class="kpi-value" id="val-accepted">—</div>
-                <div class="kpi-label">Accettati</div>
-            </div>
-            <div class="kpi-card" id="kpi-messaged">
-                <div class="kpi-icon" aria-hidden="true">💬</div>
-                <div class="kpi-value" id="val-messaged">—</div>
-                <div class="kpi-label">Messaggiati</div>
-            </div>
-            <div class="kpi-card" id="kpi-replied">
-                <div class="kpi-icon" aria-hidden="true">✉️</div>
-                <div class="kpi-value" id="val-replied">—</div>
-                <div class="kpi-label">Risposte</div>
-            </div>
-            <div class="kpi-card" id="kpi-risk">
-                <div class="kpi-icon" aria-hidden="true">🛡️</div>
-                <div class="kpi-value" id="val-risk">—</div>
-                <div class="kpi-label">Risk Score</div>
-            </div>
-            <div class="kpi-card" id="kpi-total">
-                <div class="kpi-icon" aria-hidden="true">🎯</div>
-                <div class="kpi-value" id="val-total">—</div>
-                <div class="kpi-label">Lead Totali</div>
-            </div>
+    <main id="main-content" class="main">
+        <section class="kpi-grid" aria-label="KPI principali">
+            <article class="kpi-card">
+                <p class="kpi-label">Inviti</p>
+                <p id="val-invited" class="kpi-value">0</p>
+            </article>
+            <article class="kpi-card">
+                <p class="kpi-label">Accettati</p>
+                <p id="val-accepted" class="kpi-value">0</p>
+            </article>
+            <article class="kpi-card">
+                <p class="kpi-label">Ready Message</p>
+                <p id="val-ready-message" class="kpi-value">0</p>
+            </article>
+            <article class="kpi-card">
+                <p class="kpi-label">Messaggiati</p>
+                <p id="val-messaged" class="kpi-value">0</p>
+            </article>
+            <article class="kpi-card">
+                <p class="kpi-label">Risposte</p>
+                <p id="val-replied" class="kpi-value">0</p>
+            </article>
+            <article class="kpi-card">
+                <p class="kpi-label">Risk Score</p>
+                <p id="val-risk" class="kpi-value">0</p>
+            </article>
+            <article class="kpi-card">
+                <p class="kpi-label">Lead totali</p>
+                <p id="val-total" class="kpi-value">0</p>
+            </article>
         </section>
 
-        <!-- ROW 2: Funnel Chart + Conversion Rates -->
-        <section class="charts-row">
-            <div class="card chart-card chart-large">
-                <div class="card-header">
-                    <h2 class="card-title">📊 Funnel Lead</h2>
-                    <span class="card-subtitle" id="funnel-updated">—</span>
+        <section class="two-col">
+            <article class="card">
+                <header class="card-header">
+                    <h2>Conversion Snapshot</h2>
+                </header>
+                <div class="metric-list">
+                    <div class="metric-row"><span>Accept Rate</span><strong id="conv-accept">0.0%</strong></div>
+                    <div class="metric-row"><span>Reply Rate</span><strong id="conv-reply">0.0%</strong></div>
+                    <div class="metric-row"><span>Msg → Reply</span><strong id="conv-msg-reply">0.0%</strong></div>
+                    <div class="metric-row"><span>Stato sistema</span><strong id="system-state" class="system-ok">Stabile</strong></div>
+                    <div class="metric-row"><span>Risk predittivo</span><strong id="risk-predictive-status">—</strong></div>
+                    <div class="metric-row"><span>Dettaglio</span><strong id="risk-predictive-detail">—</strong></div>
+                    <div class="metric-row"><span>Review queue</span><strong id="review-queue-count">0</strong></div>
+                    <div class="metric-row"><span>Challenge incidenti</span><strong id="review-queue-incidents">0</strong></div>
                 </div>
-                <div class="chart-wrapper">
-                    <canvas id="funnelChart" aria-label="Grafico funnel lead"></canvas>
-                </div>
-            </div>
-            <div class="card chart-card chart-small">
-                <div class="card-header">
-                    <h2 class="card-title">⚡ Conversion Rates</h2>
-                </div>
-                <div class="conversion-stats" id="conversion-stats">
-                    <div class="conv-item">
-                        <span class="conv-label">Accept Rate</span>
-                        <span class="conv-value" id="conv-accept">—</span>
-                    </div>
-                    <div class="conv-item">
-                        <span class="conv-label">Reply Rate</span>
-                        <span class="conv-value" id="conv-reply">—</span>
-                    </div>
-                    <div class="conv-item">
-                        <span class="conv-label">Msg → Reply</span>
-                        <span class="conv-value" id="conv-msg-reply">—</span>
-                    </div>
-                    <div class="conv-divider"></div>
-                    <div class="conv-item">
-                        <span class="conv-label">Sistema</span>
-                        <span id="system-state" class="conv-value system-ok">OK</span>
-                    </div>
-                    <div class="conv-item">
-                        <span class="conv-label">Risk Predittivo</span>
-                        <span id="risk-predictive-status" class="conv-value system-ok">—</span>
-                    </div>
-                    <div class="conv-item">
-                        <span class="conv-label">Dettaglio</span>
-                        <span id="risk-predictive-detail" class="conv-value">—</span>
-                    </div>
-                    <div class="conv-item">
-                        <span class="conv-label">Review Queue</span>
-                        <span id="review-queue-count" class="conv-value">—</span>
-                    </div>
-                    <div class="conv-item">
-                        <span class="conv-label">Challenge Incidenti</span>
-                        <span id="review-queue-incidents" class="conv-value">—</span>
-                    </div>
-                </div>
-            </div>
-        </section>
+            </article>
 
-        <!-- ROW 3: Trend 7gg + Incidents -->
-        <section class="charts-row">
-            <div class="card chart-card">
-                <div class="card-header">
-                    <h2 class="card-title">📈 Attività ultimi 7 giorni</h2>
-                    <span class="card-subtitle">Inviti · Messaggi · Accettazioni · Risk · Challenge</span>
+            <article class="card">
+                <header class="card-header">
+                    <h2>KPI Giorno vs Settimana</h2>
+                </header>
+                <div class="compare-list">
+                    <p id="kpi-compare-invites">—</p>
+                    <p id="kpi-compare-messages">—</p>
+                    <p id="kpi-compare-accept">—</p>
+                    <p id="kpi-compare-errors">—</p>
                 </div>
-                <div class="chart-wrapper">
-                    <canvas id="trendChart" aria-label="Grafico trend 7 giorni"></canvas>
-                </div>
-            </div>
-            <div class="card chart-card">
-                <div class="card-header">
-                    <h2 class="card-title">🚨 Incidenti Aperti</h2>
-                    <span class="card-subtitle" id="incidents-count">—</span>
-                </div>
-                <div class="table-wrapper">
-                    <table class="data-table" id="incidents-table" aria-label="Incidenti aperti">
+                <div class="table-wrapper compact-table">
+                    <table class="data-table" aria-label="Trend ultimi 7 giorni">
                         <thead>
                             <tr>
+                                <th>Data</th>
+                                <th>Inviti</th>
+                                <th>Msg</th>
+                                <th>Acc</th>
+                                <th>Errori</th>
+                                <th>Challenge</th>
+                                <th>Risk</th>
+                            </tr>
+                        </thead>
+                        <tbody id="trend-tbody">
+                            <tr><td colspan="7" class="empty-state">Caricamento...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </article>
+        </section>
+
+        <section class="two-col">
+            <article class="card">
+                <header class="card-header">
+                    <h2>Timeline Realtime</h2>
+                    <p class="card-subtitle">Filtri per tipo evento, account e lista</p>
+                </header>
+                <div class="filters" role="group" aria-label="Filtri timeline">
+                    <label>Tipo
+                        <select id="timeline-filter-type"></select>
+                    </label>
+                    <label>Account
+                        <select id="timeline-filter-account"></select>
+                    </label>
+                    <label>Lista
+                        <select id="timeline-filter-list"></select>
+                    </label>
+                </div>
+                <div id="timeline-list" class="timeline-list" aria-live="polite"></div>
+            </article>
+
+            <article class="card">
+                <header class="card-header">
+                    <h2>Incident Center</h2>
+                    <p id="incidents-count" class="card-subtitle">—</p>
+                </header>
+                <div class="incident-actions">
+                    <button id="btn-resolve-selected" class="btn btn-danger" type="button">Risolvi selezionati</button>
+                </div>
+                <div class="table-wrapper">
+                    <table class="data-table" aria-label="Incidenti aperti">
+                        <thead>
+                            <tr>
+                                <th>Sel</th>
                                 <th>ID</th>
                                 <th>Tipo</th>
                                 <th>Severity</th>
                                 <th>Aperto</th>
+                                <th>Drill-down</th>
                                 <th>Azione</th>
                             </tr>
                         </thead>
                         <tbody id="incidents-tbody">
-                            <tr><td colspan="5" class="empty-state">Caricamento...</td></tr>
+                            <tr><td colspan="7" class="empty-state">Caricamento...</td></tr>
                         </tbody>
                     </table>
                 </div>
-            </div>
+            </article>
         </section>
 
-        <!-- ROW 4: A/B Leaderboard + Timing Heatmap -->
-        <section class="charts-row">
-            <div class="card chart-card chart-medium">
-                <div class="card-header">
-                    <h2 class="card-title">🧪 A/B Varianti Note</h2>
-                    <span class="card-subtitle">Bandit Score</span>
-                </div>
+        <section class="two-col">
+            <article class="card">
+                <header class="card-header">
+                    <h2>Review Queue</h2>
+                    <p id="ops-priority-summary" class="card-subtitle">—</p>
+                </header>
                 <div class="table-wrapper">
-                    <table class="data-table" id="ab-table" aria-label="A/B test varianti">
+                    <table class="data-table" aria-label="Lead in review queue">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Lead</th>
+                                <th>Lista</th>
+                                <th>Priorità</th>
+                                <th>Guida risoluzione</th>
+                                <th>Azione</th>
+                            </tr>
+                        </thead>
+                        <tbody id="review-tbody">
+                            <tr><td colspan="6" class="empty-state">Caricamento...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </article>
+
+            <article class="card">
+                <header class="card-header">
+                    <h2>A/B + Timing</h2>
+                </header>
+                <div class="table-wrapper compact-table">
+                    <table class="data-table" aria-label="Classifica varianti A/B">
                         <thead>
                             <tr>
                                 <th>Variante</th>
@@ -193,50 +220,40 @@
                         </tbody>
                     </table>
                 </div>
-            </div>
-            <div class="card chart-card chart-medium">
-                <div class="card-header">
-                    <h2 class="card-title">⏰ Best Time Slots</h2>
-                    <span class="card-subtitle">Orari ad alto engagement</span>
-                </div>
-                <div class="timing-list" id="timing-list">
-                    <div class="empty-state">Caricamento...</div>
-                </div>
-            </div>
+                <div id="timing-list" class="timing-list"></div>
+            </article>
         </section>
 
-        <!-- ROW 5: Recent Runs -->
-        <section class="card full-width-card">
-            <div class="card-header">
-                <h2 class="card-title">🤖 Campaign Runs Recenti</h2>
-                <button class="btn btn-sm btn-secondary" onclick="loadData()" aria-label="Aggiorna dati">↻ Aggiorna</button>
-            </div>
+        <section class="card">
+            <header class="card-header">
+                <h2>Campaign Runs Recenti</h2>
+            </header>
             <div class="table-wrapper">
-                <table class="data-table" id="runs-table" aria-label="Campaign runs recenti">
+                <table class="data-table" aria-label="Run recenti">
                     <thead>
                         <tr>
-                            <th>#</th>
+                            <th>ID</th>
                             <th>Inizio</th>
                             <th>Fine</th>
                             <th>Status</th>
-                            <th>Profili Scoperti</th>
-                            <th>Errore</th>
+                            <th>Profili</th>
+                            <th>Inviti</th>
+                            <th>Messaggi</th>
                         </tr>
                     </thead>
                     <tbody id="runs-tbody">
-                        <tr><td colspan="6" class="empty-state">Caricamento...</td></tr>
+                        <tr><td colspan="7" class="empty-state">Caricamento...</td></tr>
                     </tbody>
                 </table>
             </div>
         </section>
-
     </main>
 
     <footer class="footer">
         <span id="last-refresh">Ultimo aggiornamento: —</span>
-        <span>LinkedIn Bot Dashboard</span>
+        <span>Control Room v2</span>
     </footer>
 
-    <script src="/app.js"></script>
+    <script type="module" src="/assets/main.js"></script>
 </body>
 </html>

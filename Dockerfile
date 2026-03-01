@@ -1,5 +1,6 @@
 # ─── Stage 1: Builder ────────────────────────────────────────────────────────
-FROM mcr.microsoft.com/playwright:v1.42.0-jammy AS builder
+ARG PLAYWRIGHT_IMAGE_TAG=v1.58.2-noble
+FROM mcr.microsoft.com/playwright:${PLAYWRIGHT_IMAGE_TAG} AS builder
 
 WORKDIR /app
 
@@ -18,7 +19,7 @@ COPY scripts/ ./scripts/
 RUN npm run build
 
 # ─── Stage 2: Runner ─────────────────────────────────────────────────────────
-FROM mcr.microsoft.com/playwright:v1.42.0-jammy AS runner
+FROM mcr.microsoft.com/playwright:${PLAYWRIGHT_IMAGE_TAG} AS runner
 
 WORKDIR /app
 
@@ -43,5 +44,5 @@ RUN mkdir -p data logs && chmod 700 data && chmod 700 logs
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -sf http://localhost:3000/api/health || exit 1
 
-# Avvio dal codice compilato (non ts-node in produzione)
-CMD ["node", "dist/index.js"]
+# Avvio dashboard/API in foreground
+CMD ["node", "dist/index.js", "dashboard"]

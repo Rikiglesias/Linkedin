@@ -2,6 +2,7 @@ import { createHmac } from 'crypto';
 import { config } from '../config';
 import { sendTelegramAlert } from '../telemetry/alerts';
 import { logInfo, logWarn } from '../telemetry/logger';
+import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 import {
     countPendingOutboxEvents,
     getPendingOutboxEvents,
@@ -11,7 +12,7 @@ import {
 } from '../core/repositories';
 
 function retryDelayMs(attempt: number): number {
-    const base = config.supabaseSyncIntervalMs;
+    const base = Math.max(1000, config.webhookSyncTimeoutMs);
     const jitter = Math.floor(Math.random() * 500);
     return base * Math.pow(2, Math.max(0, attempt - 1)) + jitter;
 }
@@ -97,11 +98,15 @@ export async function runWebhookSyncOnce(): Promise<void> {
         }
 
         try {
-            const response = await fetch(config.webhookSyncUrl, {
+            const response = await fetchWithRetryPolicy(config.webhookSyncUrl, {
                 method: 'POST',
                 headers,
                 body,
-                signal: AbortSignal.timeout(config.webhookSyncTimeoutMs),
+            }, {
+                integration: 'webhook.outbox_sync',
+                circuitKey: 'webhook.sync',
+                timeoutMs: config.webhookSyncTimeoutMs,
+                maxAttempts: 2,
             });
 
             if (!response.ok) {

@@ -1,31 +1,19 @@
 /**
- * abBandit.ts — Multi-Armed Bandit con strategia Epsilon-Greedy
- *
- * Seleziona adattativamente la variante di nota migliore tra quelle disponibili.
- * - ε = 0.15 → 15% dei casi esplora una variante casuale
- * - 85% dei casi sfrutta la variante con highest UCB score
- *
- * UCB (Upper Confidence Bound):
- *   ucb(v) = acceptanceRate(v) + √(2 * ln(totalSent) / sent(v))
- *
- * UCB favorisce varianti con poca storia (alta incertezza),
- * bilanciando exploration in modo più intelligente del puro random.
- *
- * Tutto persistito in SQLite → `ab_variant_stats` (migration 015).
- * Se il DB fallisce per qualsiasi ragione → fallback a selezione casuale.
+ * abBandit.ts — Multi-Armed Bandit con strategia Epsilon-Greedy + UCB
+ * Supporta statistiche globali e segmentate.
  */
 
 import { getDatabase } from '../db';
 import { logInfo, logWarn } from '../telemetry/logger';
 
-// ─── Costanti ─────────────────────────────────────────────────────────────────
-
-const EPSILON = 0.15; // 15% exploration rate
-const MIN_SENT_FOR_UCB = 3; // Sotto questa soglia usa UCB bonus massimo
-
-// ─── Tipi ────────────────────────────────────────────────────────────────────
+const EPSILON = 0.15;
+const MIN_SENT_FOR_UCB = 3;
 
 export type ABOutcome = 'accepted' | 'replied' | 'ignored';
+
+export interface BanditContext {
+    segmentKey?: string;
+}
 
 export interface VariantStats {
     variantId: string;
@@ -37,8 +25,6 @@ export interface VariantStats {
     ucbScore: number;
 }
 
-// ─── Helpers DB ───────────────────────────────────────────────────────────────
-
 interface ABStatRow {
     variant_id: string;
     sent: number;
@@ -46,13 +32,36 @@ interface ABStatRow {
     replied: number;
 }
 
-async function fetchAllStats(db: Awaited<ReturnType<typeof getDatabase>>): Promise<ABStatRow[]> {
-    return db.query<ABStatRow>(
-        `SELECT variant_id, sent, accepted, replied FROM ab_variant_stats ORDER BY sent DESC`
-    );
+async function ensureSegmentTable(db: Awaited<ReturnType<typeof getDatabase>>): Promise<void> {
+    await db.exec(`
+        CREATE TABLE IF NOT EXISTS ab_variant_stats_segment (
+            segment_key TEXT NOT NULL,
+            variant_id  TEXT NOT NULL,
+            sent        INTEGER NOT NULL DEFAULT 0,
+            accepted    INTEGER NOT NULL DEFAULT 0,
+            replied     INTEGER NOT NULL DEFAULT 0,
+            created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY(segment_key, variant_id)
+        );
+    `);
 }
 
-async function ensureVariantExists(
+function normalizeSegmentKey(context?: BanditContext): string {
+    const raw = context?.segmentKey?.trim().toLowerCase();
+    return raw && raw.length > 0 ? raw : 'global';
+}
+
+function computeUCB(sent: number, accepted: number, totalSent: number): number {
+    if (sent < MIN_SENT_FOR_UCB || totalSent <= 0) {
+        return 1.0;
+    }
+    const exploitationTerm = sent > 0 ? accepted / sent : 0;
+    const explorationTerm = Math.sqrt((2 * Math.log(Math.max(totalSent, 1))) / sent);
+    return exploitationTerm + explorationTerm;
+}
+
+async function ensureVariantExistsGlobal(
     db: Awaited<ReturnType<typeof getDatabase>>,
     variantId: string
 ): Promise<void> {
@@ -62,151 +71,230 @@ async function ensureVariantExists(
     );
 }
 
-// ─── UCB Score ────────────────────────────────────────────────────────────────
-
-function computeUCB(sent: number, accepted: number, totalSent: number): number {
-    if (sent < MIN_SENT_FOR_UCB || totalSent <= 0) {
-        return 1.0; // Massima priorità per varianti inesplorate
-    }
-    const exploitationTerm = sent > 0 ? accepted / sent : 0;
-    const explorationTerm = Math.sqrt((2 * Math.log(Math.max(totalSent, 1))) / sent);
-    return exploitationTerm + explorationTerm;
+async function ensureVariantExistsSegment(
+    db: Awaited<ReturnType<typeof getDatabase>>,
+    segmentKey: string,
+    variantId: string
+): Promise<void> {
+    await db.run(
+        `INSERT OR IGNORE INTO ab_variant_stats_segment (segment_key, variant_id) VALUES (?, ?)`,
+        [segmentKey, variantId]
+    );
 }
 
-// ─── API Pubblica ─────────────────────────────────────────────────────────────
+async function fetchGlobalStats(db: Awaited<ReturnType<typeof getDatabase>>): Promise<ABStatRow[]> {
+    return db.query<ABStatRow>(
+        `SELECT variant_id, sent, accepted, replied FROM ab_variant_stats ORDER BY sent DESC`
+    );
+}
 
-/**
- * Seleziona la variante ottimale da un elenco, usando epsilon-greedy + UCB.
- * @param variants Lista di variant ID (es. ['aggressive', 'friendly', 'question'])
- * @returns Il variant ID selezionato
- */
-export async function selectVariant(variants: string[]): Promise<string> {
-    if (variants.length === 0) throw new Error('[abBandit] variants array is empty');
-    if (variants.length === 1) return variants[0];
+async function fetchSegmentStats(
+    db: Awaited<ReturnType<typeof getDatabase>>,
+    segmentKey: string
+): Promise<ABStatRow[]> {
+    return db.query<ABStatRow>(
+        `SELECT variant_id, sent, accepted, replied
+         FROM ab_variant_stats_segment
+         WHERE segment_key = ?
+         ORDER BY sent DESC`,
+        [segmentKey]
+    );
+}
 
-    // ε-greedy: con prob EPSILON esplora casualmente
+function pickRandomVariant(variants: string[]): string {
+    return variants[Math.floor(Math.random() * variants.length)] as string;
+}
+
+function selectByUcb(variants: string[], rows: ABStatRow[]): { variant: string; score: number; totalSent: number } {
+    const totalSent = rows.reduce((sum, row) => sum + row.sent, 0);
+    let bestVariant = variants[0] as string;
+    let bestUcb = -Infinity;
+    for (const variantId of variants) {
+        const row = rows.find((entry) => entry.variant_id === variantId);
+        const sent = row?.sent ?? 0;
+        const accepted = row?.accepted ?? 0;
+        const ucb = computeUCB(sent, accepted, totalSent);
+        if (ucb > bestUcb) {
+            bestUcb = ucb;
+            bestVariant = variantId;
+        }
+    }
+    return { variant: bestVariant, score: bestUcb, totalSent };
+}
+
+export async function selectVariant(variants: string[], context?: BanditContext): Promise<string> {
+    if (variants.length === 0) {
+        throw new Error('[abBandit] variants array is empty');
+    }
+    if (variants.length === 1) {
+        return variants[0] as string;
+    }
+
     if (Math.random() < EPSILON) {
-        const picked = variants[Math.floor(Math.random() * variants.length)];
-        await logInfo('ab_bandit.explore', { picked, epsilon: EPSILON });
+        const picked = pickRandomVariant(variants);
+        await logInfo('ab_bandit.explore', {
+            picked,
+            epsilon: EPSILON,
+            segment: normalizeSegmentKey(context),
+        });
         return picked;
     }
 
+    const segmentKey = normalizeSegmentKey(context);
+
     try {
         const db = await getDatabase();
-
-        // Assicura che tutte le varianti esistano nel DB
-        for (const v of variants) {
-            await ensureVariantExists(db, v);
-        }
-
-        const rows = await fetchAllStats(db);
-        const totalSent = rows.reduce((s, r) => s + r.sent, 0);
-
-        // Calcola UCB per ogni variante richiesta
-        let bestVariant = variants[0];
-        let bestUCB = -Infinity;
-
-        for (const variantId of variants) {
-            const row = rows.find(r => r.variant_id === variantId);
-            const sent = row?.sent ?? 0;
-            const accepted = row?.accepted ?? 0;
-            const ucb = computeUCB(sent, accepted, totalSent);
-
-            if (ucb > bestUCB) {
-                bestUCB = ucb;
-                bestVariant = variantId;
+        await ensureSegmentTable(db);
+        for (const variant of variants) {
+            await ensureVariantExistsGlobal(db, variant);
+            if (segmentKey !== 'global') {
+                await ensureVariantExistsSegment(db, segmentKey, variant);
             }
         }
 
-        await logInfo('ab_bandit.exploit', { selected: bestVariant, ucbScore: bestUCB, totalSent });
-        return bestVariant;
+        const rows = segmentKey === 'global'
+            ? await fetchGlobalStats(db)
+            : await fetchSegmentStats(db, segmentKey);
 
+        // Se il segmento è troppo freddo, fallback su globale.
+        const segmentTotal = rows.reduce((sum, row) => sum + row.sent, 0);
+        const effectiveRows = (segmentKey !== 'global' && segmentTotal < variants.length)
+            ? await fetchGlobalStats(db)
+            : rows;
+        const picked = selectByUcb(variants, effectiveRows);
+
+        await logInfo('ab_bandit.exploit', {
+            selected: picked.variant,
+            ucbScore: picked.score,
+            totalSent: picked.totalSent,
+            segment: segmentKey,
+            fallbackToGlobal: segmentKey !== 'global' && effectiveRows !== rows,
+        });
+        return picked.variant;
     } catch (err: unknown) {
         await logWarn('[abBandit] DB error, falling back to random', {
             error: err instanceof Error ? err.message : String(err),
+            segment: segmentKey,
         });
-        return variants[Math.floor(Math.random() * variants.length)];
+        return pickRandomVariant(variants);
     }
 }
 
-/**
- * Registra l'esito di una variante (dopo accettazione o reply rilevata).
- * @param variantId  ID della variante usata
- * @param outcome    'accepted' | 'replied' | 'ignored'
- */
-export async function recordOutcome(variantId: string, outcome: ABOutcome): Promise<void> {
-    if (!variantId) return;
+async function incrementSentGlobal(db: Awaited<ReturnType<typeof getDatabase>>, variantId: string): Promise<void> {
+    await ensureVariantExistsGlobal(db, variantId);
+    await db.run(
+        `UPDATE ab_variant_stats
+         SET sent = sent + 1, updated_at = datetime('now')
+         WHERE variant_id = ?`,
+        [variantId]
+    );
+}
 
+async function incrementOutcomeGlobal(
+    db: Awaited<ReturnType<typeof getDatabase>>,
+    variantId: string,
+    outcome: ABOutcome
+): Promise<void> {
+    await ensureVariantExistsGlobal(db, variantId);
+    if (outcome === 'ignored') return;
+    const column = outcome === 'accepted' ? 'accepted' : 'replied';
+    await db.run(
+        `UPDATE ab_variant_stats
+         SET ${column} = ${column} + 1, updated_at = datetime('now')
+         WHERE variant_id = ?`,
+        [variantId]
+    );
+}
+
+async function incrementSentSegment(
+    db: Awaited<ReturnType<typeof getDatabase>>,
+    segmentKey: string,
+    variantId: string
+): Promise<void> {
+    await ensureVariantExistsSegment(db, segmentKey, variantId);
+    await db.run(
+        `UPDATE ab_variant_stats_segment
+         SET sent = sent + 1, updated_at = datetime('now')
+         WHERE segment_key = ? AND variant_id = ?`,
+        [segmentKey, variantId]
+    );
+}
+
+async function incrementOutcomeSegment(
+    db: Awaited<ReturnType<typeof getDatabase>>,
+    segmentKey: string,
+    variantId: string,
+    outcome: ABOutcome
+): Promise<void> {
+    await ensureVariantExistsSegment(db, segmentKey, variantId);
+    if (outcome === 'ignored') return;
+    const column = outcome === 'accepted' ? 'accepted' : 'replied';
+    await db.run(
+        `UPDATE ab_variant_stats_segment
+         SET ${column} = ${column} + 1, updated_at = datetime('now')
+         WHERE segment_key = ? AND variant_id = ?`,
+        [segmentKey, variantId]
+    );
+}
+
+export async function recordSent(variantId: string, context?: BanditContext): Promise<void> {
+    if (!variantId) return;
+    const segmentKey = normalizeSegmentKey(context);
     try {
         const db = await getDatabase();
-        await ensureVariantExists(db, variantId);
-
-        if (outcome === 'ignored') {
-            // Solo incrementa sent (già fatto al momento dell'invio)
-            return;
+        await ensureSegmentTable(db);
+        await incrementSentGlobal(db, variantId);
+        if (segmentKey !== 'global') {
+            await incrementSentSegment(db, segmentKey, variantId);
         }
+    } catch (err: unknown) {
+        await logWarn('[abBandit] Failed to record sent', {
+            variantId,
+            segment: segmentKey,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+}
 
-        const column = outcome === 'accepted' ? 'accepted' : 'replied';
-        await db.run(
-            `UPDATE ab_variant_stats
-             SET ${column} = ${column} + 1, updated_at = datetime('now')
-             WHERE variant_id = ?`,
-            [variantId]
-        );
-
-        await logInfo('ab_bandit.outcome_recorded', { variantId, outcome });
+export async function recordOutcome(variantId: string, outcome: ABOutcome, context?: BanditContext): Promise<void> {
+    if (!variantId) return;
+    const segmentKey = normalizeSegmentKey(context);
+    try {
+        const db = await getDatabase();
+        await ensureSegmentTable(db);
+        await incrementOutcomeGlobal(db, variantId, outcome);
+        if (segmentKey !== 'global') {
+            await incrementOutcomeSegment(db, segmentKey, variantId, outcome);
+        }
+        await logInfo('ab_bandit.outcome_recorded', { variantId, outcome, segment: segmentKey });
     } catch (err: unknown) {
         await logWarn('[abBandit] Failed to record outcome', {
             variantId,
             outcome,
+            segment: segmentKey,
             error: err instanceof Error ? err.message : String(err),
         });
     }
 }
 
-/**
- * Incrementa il contatore "sent" per una variante (chiamato al momento dell'invio).
- */
-export async function recordSent(variantId: string): Promise<void> {
-    if (!variantId) return;
-
+export async function getVariantLeaderboard(context?: BanditContext): Promise<VariantStats[]> {
+    const segmentKey = normalizeSegmentKey(context);
     try {
         const db = await getDatabase();
-        await ensureVariantExists(db, variantId);
-        await db.run(
-            `UPDATE ab_variant_stats
-             SET sent = sent + 1, updated_at = datetime('now')
-             WHERE variant_id = ?`,
-            [variantId]
-        );
-    } catch (err: unknown) {
-        await logWarn('[abBandit] Failed to record sent', {
-            variantId,
-            error: err instanceof Error ? err.message : String(err),
-        });
-    }
-}
-
-/**
- * Restituisce tutte le statistiche delle varianti con UCB score.
- * Usato dal daily reporter.
- */
-export async function getVariantLeaderboard(): Promise<VariantStats[]> {
-    try {
-        const db = await getDatabase();
-        const rows = await fetchAllStats(db);
+        await ensureSegmentTable(db);
+        const rows = segmentKey === 'global'
+            ? await fetchGlobalStats(db)
+            : await fetchSegmentStats(db, segmentKey);
         if (!rows || rows.length === 0) return [];
-
-        const totalSent = rows.reduce((s, r) => s + r.sent, 0);
-
-        return rows.map(r => ({
-            variantId: r.variant_id,
-            sent: r.sent,
-            accepted: r.accepted,
-            replied: r.replied,
-            acceptanceRate: r.sent > 0 ? Math.round((r.accepted / r.sent) * 100) / 100 : 0,
-            replyRate: r.sent > 0 ? Math.round((r.replied / r.sent) * 100) / 100 : 0,
-            ucbScore: Math.round(computeUCB(r.sent, r.accepted, totalSent) * 1000) / 1000,
+        const totalSent = rows.reduce((sum, row) => sum + row.sent, 0);
+        return rows.map((row) => ({
+            variantId: row.variant_id,
+            sent: row.sent,
+            accepted: row.accepted,
+            replied: row.replied,
+            acceptanceRate: row.sent > 0 ? Math.round((row.accepted / row.sent) * 100) / 100 : 0,
+            replyRate: row.sent > 0 ? Math.round((row.replied / row.sent) * 100) / 100 : 0,
+            ucbScore: Math.round(computeUCB(row.sent, row.accepted, totalSent) * 1000) / 1000,
         })).sort((a, b) => b.acceptanceRate - a.acceptanceRate);
     } catch {
         return [];

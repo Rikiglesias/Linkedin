@@ -22,11 +22,174 @@ async function run(): Promise<void> {
     const repositories = await import('../core/repositories');
     const stateService = await import('../core/leadStateService');
     const serverModule = await import('../api/server');
+    const configModule = await import('../config');
+    const crmBridge = await import('../integrations/crmBridge');
+    const leadEnricher = await import('../integrations/leadEnricher');
+    const messagePersonalizer = await import('../ai/messagePersonalizer');
+    const inviteNotePersonalizer = await import('../ai/inviteNotePersonalizer');
+    const sentimentAnalysis = await import('../ai/sentimentAnalysis');
 
     let httpServer: ReturnType<typeof serverModule.startServer> | null = null;
 
     try {
         await dbModule.initDatabase();
+
+        const originalHubspotApiKey = configModule.config.hubspotApiKey;
+        const originalHunterApiKey = configModule.config.hunterApiKey;
+        const originalClearbitApiKey = configModule.config.clearbitApiKey;
+        const originalOpenAiBaseUrl = configModule.config.openaiBaseUrl;
+        const originalOpenAiApiKey = configModule.config.openaiApiKey;
+        const originalAiPersonalizationEnabled = configModule.config.aiPersonalizationEnabled;
+        const originalAiSentimentEnabled = configModule.config.aiSentimentEnabled;
+        const originalInviteNoteMode = configModule.config.inviteNoteMode;
+        const originalFetch = globalThis.fetch;
+
+        try {
+            configModule.config.hubspotApiKey = 'integration-hubspot-key';
+            configModule.config.hunterApiKey = 'integration-hunter-key';
+            configModule.config.clearbitApiKey = '';
+            configModule.config.openaiBaseUrl = 'http://127.0.0.1:11434/v1';
+            configModule.config.openaiApiKey = '';
+            configModule.config.aiPersonalizationEnabled = true;
+            configModule.config.aiSentimentEnabled = true;
+            configModule.config.inviteNoteMode = 'ai';
+
+            globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+                const rawUrl = typeof input === 'string'
+                    ? input
+                    : (input instanceof URL ? input.toString() : input.url);
+                const method = (init?.method ?? 'GET').toUpperCase();
+
+                if (rawUrl.includes('api.hubapi.com/crm/v3/objects/contacts') && method === 'GET') {
+                    return new Response(JSON.stringify({
+                        results: [{
+                            properties: {
+                                linkedin_url: 'https://www.linkedin.com/in/hubspot-ada-lovelace/',
+                                firstname: 'Ada',
+                                lastname: 'Lovelace',
+                                company: 'Analytical Engine',
+                            },
+                        }],
+                    }), {
+                        status: 200,
+                        headers: { 'Content-Type': 'application/json' },
+                    });
+                }
+
+                if (rawUrl.includes('api.hunter.io/v2/email-finder') && method === 'GET') {
+                    return new Response(JSON.stringify({
+                        data: {
+                            email: 'ada@analyticalengine.com',
+                            confidence: 93,
+                            position: 'Mathematician',
+                        },
+                    }), {
+                        status: 200,
+                        headers: { 'Content-Type': 'application/json' },
+                    });
+                }
+
+                if (rawUrl.includes('/chat/completions') && method === 'POST') {
+                    const rawBody = typeof init?.body === 'string' ? init.body : '';
+                    const requestBody = rawBody ? JSON.parse(rawBody) as { messages?: Array<{ role?: string; content?: string }> } : {};
+                    const systemContent = (requestBody.messages ?? []).find((message) => message.role === 'system')?.content ?? '';
+                    const userContent = (requestBody.messages ?? []).find((message) => message.role === 'user')?.content ?? '';
+                    const isSentimentPrompt = userContent.includes('Analizza questo messaggio');
+                    const isInvitePrompt = /inviti linkedin/i.test(systemContent);
+                    const content = isSentimentPrompt
+                        ? JSON.stringify({
+                            intent: 'POSITIVE',
+                            subIntent: 'CALL_REQUESTED',
+                            entities: ['call'],
+                            confidence: 0.91,
+                            reasoning: 'Richiesta esplicita di contatto.',
+                        })
+                        : (isInvitePrompt
+                            ? 'Ciao Ada, ho letto il tuo percorso e mi piacerebbe scambiarci due idee sul networking B2B.'
+                            : 'Ciao Ada, grazie per il collegamento. Se vuoi ci sentiamo 10 minuti questa settimana.');
+
+                    return new Response(JSON.stringify({
+                        choices: [{ message: { content } }],
+                    }), {
+                        status: 200,
+                        headers: { 'Content-Type': 'application/json' },
+                    });
+                }
+
+                return new Response(JSON.stringify({ error: 'not mocked' }), {
+                    status: 404,
+                    headers: { 'Content-Type': 'application/json' },
+                });
+            }) as typeof fetch;
+
+            const importedHubspotFirst = await crmBridge.pullFromHubSpot();
+            assert.equal(importedHubspotFirst, 1);
+
+            const importedHubspotSecond = await crmBridge.pullFromHubSpot();
+            assert.equal(importedHubspotSecond, 0);
+
+            const hubspotLead = await repositories.getLeadByLinkedinUrl('https://www.linkedin.com/in/hubspot-ada-lovelace/');
+            assert.ok(hubspotLead);
+            assert.equal(hubspotLead?.first_name, 'Ada');
+            assert.equal(hubspotLead?.last_name, 'Lovelace');
+            assert.equal(hubspotLead?.account_name, 'Analytical Engine');
+            assert.equal(hubspotLead?.list_name, 'hubspot');
+            assert.equal(hubspotLead?.status, 'READY_INVITE');
+
+            const enrichment = await leadEnricher.enrichLeadAuto({
+                id: 1,
+                first_name: 'Ada',
+                last_name: 'Lovelace',
+                website: 'https://analyticalengine.com',
+                account_name: 'Analytical Engine',
+            });
+            assert.equal(enrichment.email, 'ada@analyticalengine.com');
+            assert.equal(enrichment.source, 'hunter');
+
+            const enrichmentMissingData = await leadEnricher.enrichLeadAuto({
+                id: 2,
+                first_name: '',
+                last_name: 'Unknown',
+                website: '',
+                account_name: '',
+            });
+            assert.equal(enrichmentMissingData.source, 'none');
+            assert.equal(enrichmentMissingData.email, null);
+
+            if (!hubspotLead) {
+                throw new Error('Lead HubSpot non trovato per test AI');
+            }
+
+            const personalizedFollowUp = await messagePersonalizer.buildPersonalizedFollowUpMessage(hubspotLead);
+            assert.equal(personalizedFollowUp.source, 'ai');
+            assert.equal(personalizedFollowUp.model, configModule.config.aiModel);
+
+            const personalizedInvite = await inviteNotePersonalizer.buildPersonalizedInviteNote(hubspotLead);
+            assert.equal(personalizedInvite.source === 'ai' || personalizedInvite.source === 'template', true);
+            if (personalizedInvite.source === 'ai') {
+                assert.equal(personalizedInvite.model, configModule.config.aiModel);
+            } else {
+                assert.equal(personalizedInvite.model, null);
+            }
+
+            const sentiment = await sentimentAnalysis.analyzeIncomingMessage('Ciao, mi interessa e possiamo fissare una call?');
+            assert.equal(sentiment.intent, 'POSITIVE');
+            assert.equal(sentiment.subIntent, 'CALL_REQUESTED');
+
+            configModule.config.aiSentimentEnabled = false;
+            const sentimentDisabled = await sentimentAnalysis.analyzeIncomingMessage('messaggio qualunque');
+            assert.equal(sentimentDisabled.intent, 'UNKNOWN');
+        } finally {
+            globalThis.fetch = originalFetch;
+            configModule.config.hubspotApiKey = originalHubspotApiKey;
+            configModule.config.hunterApiKey = originalHunterApiKey;
+            configModule.config.clearbitApiKey = originalClearbitApiKey;
+            configModule.config.openaiBaseUrl = originalOpenAiBaseUrl;
+            configModule.config.openaiApiKey = originalOpenAiApiKey;
+            configModule.config.aiPersonalizationEnabled = originalAiPersonalizationEnabled;
+            configModule.config.aiSentimentEnabled = originalAiSentimentEnabled;
+            configModule.config.inviteNoteMode = originalInviteNoteMode;
+        }
 
     const inserted = await repositories.addLead({
         accountName: 'Rossi Srl',
@@ -187,6 +350,17 @@ async function run(): Promise<void> {
     assert.equal(staleTakeover.acquired, true);
     assert.equal(staleTakeover.lock?.owner_id, 'owner-b');
 
+    const raceAcquireA = await repositories.acquireRuntimeLock('integration.race.lock', 'owner-race-a', 5, { source: 'integration' });
+    assert.equal(raceAcquireA.acquired, true);
+    const raceAcquireB = await repositories.acquireRuntimeLock('integration.race.lock', 'owner-race-b', 5, { source: 'integration' });
+    assert.equal(raceAcquireB.acquired, false);
+    await repositories.releaseRuntimeLock('integration.race.lock', 'owner-race-a');
+
+    const lockSummary = await repositories.getLockContentionSummary(configModule.getLocalDateString());
+    assert.equal(lockSummary.acquireContended >= 1, true);
+    assert.equal(lockSummary.acquireStaleTakeover >= 1, true);
+    assert.equal(lockSummary.releaseMiss >= 1, true);
+
     const delayedQueued = await repositories.enqueueJob(
         'INVITE',
         { leadId: lead.id, localDate: '2026-02-24' },
@@ -246,11 +420,21 @@ async function run(): Promise<void> {
 
         const unauthorized = await fetch(`${baseUrl}/api/kpis`);
         assert.equal(unauthorized.status, 401);
+        assert.equal((unauthorized.headers.get('x-correlation-id') ?? '').length > 0, true);
 
         const spoofedForwarded = await fetch(`${baseUrl}/api/kpis`, {
             headers: { 'x-forwarded-for': '127.0.0.1' },
         });
         assert.equal(spoofedForwarded.status, 401);
+
+        for (let attempt = 1; attempt <= 5; attempt++) {
+            const failedBootstrap = await fetch(`${baseUrl}/api/auth/session`, {
+                method: 'POST',
+                headers: { 'x-api-key': `invalid-key-${attempt}` },
+            });
+            const expectedStatus = attempt < 5 ? 401 : 429;
+            assert.equal(failedBootstrap.status, expectedStatus);
+        }
 
         const bootstrapSession = await fetch(`${baseUrl}/api/auth/session`, {
             method: 'POST',
@@ -267,8 +451,88 @@ async function run(): Promise<void> {
         });
         assert.equal(authorizedKpis.status, 200);
 
-        const sseResp = await fetch(`${baseUrl}/api/events`, {
+        const observability = await fetch(`${baseUrl}/api/observability`, {
             headers: { cookie: cookieHeader },
+        });
+        assert.equal(observability.status, 200);
+        const observabilityBody = await observability.json() as {
+            queuedJobs?: number;
+            queueLagSeconds?: number;
+            lockContention?: { acquireContended?: number };
+            alerts?: Array<{ code?: string }>;
+            circuitBreakers?: unknown[];
+        };
+        assert.equal(typeof observabilityBody.queuedJobs, 'number');
+        assert.equal(typeof observabilityBody.queueLagSeconds, 'number');
+        assert.equal((observabilityBody.lockContention?.acquireContended ?? 0) >= 1, true);
+        assert.equal(Array.isArray(observabilityBody.alerts), true);
+        assert.equal(Array.isArray(observabilityBody.circuitBreakers), true);
+
+        const aiQuality = await fetch(`${baseUrl}/api/ai/quality?days=7`, {
+            headers: { cookie: cookieHeader },
+        });
+        assert.equal(aiQuality.status, 200);
+        const aiQualityBody = await aiQuality.json() as {
+            lookbackDays?: number;
+            variants?: unknown[];
+        };
+        assert.equal(aiQualityBody.lookbackDays, 7);
+        assert.equal(Array.isArray(aiQualityBody.variants), true);
+
+        const aiValidationRun = await fetch(`${baseUrl}/api/ai/quality/run`, {
+            method: 'POST',
+            headers: {
+                cookie: cookieHeader,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ triggeredBy: 'integration-test' }),
+        });
+        assert.equal(aiValidationRun.status, 200);
+
+        const accountHealthResp = await fetch(`${baseUrl}/api/accounts/health`, {
+            headers: { cookie: cookieHeader },
+        });
+        assert.equal(accountHealthResp.status, 200);
+        const accountHealthBody = await accountHealthResp.json() as { rows?: unknown[] };
+        assert.equal(Array.isArray(accountHealthBody.rows), true);
+
+        const securityAuditResp = await fetch(`${baseUrl}/api/security/audit?limit=10`, {
+            headers: { cookie: cookieHeader },
+        });
+        assert.equal(securityAuditResp.status, 200);
+        const securityAuditBody = await securityAuditResp.json() as { rows?: unknown[] };
+        assert.equal(Array.isArray(securityAuditBody.rows), true);
+
+        const backupsResp = await fetch(`${baseUrl}/api/backups?limit=5`, {
+            headers: { cookie: cookieHeader },
+        });
+        assert.equal(backupsResp.status, 200);
+        const backupsBody = await backupsResp.json() as { rows?: unknown[] };
+        assert.equal(Array.isArray(backupsBody.rows), true);
+
+        const rotatedSession = await fetch(`${baseUrl}/api/auth/session`, {
+            method: 'POST',
+            headers: { cookie: cookieHeader },
+        });
+        assert.equal(rotatedSession.status, 200);
+        const rotatedSetCookie = rotatedSession.headers.get('set-cookie') ?? '';
+        assert.equal(rotatedSetCookie.includes('dashboard_session='), true);
+        const rotatedCookieHeader = rotatedSetCookie.split(';')[0] ?? '';
+        assert.equal(rotatedCookieHeader.length > 0, true);
+        assert.equal(rotatedCookieHeader !== cookieHeader, true);
+
+        const oldCookieAfterRotation = await fetch(`${baseUrl}/api/kpis`, {
+            headers: { cookie: cookieHeader },
+        });
+        assert.equal(oldCookieAfterRotation.status, 401);
+
+        const authorizedWithRotatedCookie = await fetch(`${baseUrl}/api/kpis`, {
+            headers: { cookie: rotatedCookieHeader },
+        });
+        assert.equal(authorizedWithRotatedCookie.status, 200);
+
+        const sseResp = await fetch(`${baseUrl}/api/events`, {
+            headers: { cookie: rotatedCookieHeader },
         });
         assert.equal(sseResp.status, 200);
         const reader = sseResp.body?.getReader();
@@ -279,6 +543,19 @@ async function run(): Promise<void> {
         const firstPayload = Buffer.from(firstChunk.value ?? new Uint8Array()).toString('utf8');
         assert.equal(firstPayload.includes('event: connected'), true);
         await reader.cancel();
+
+        const logoutResp = await fetch(`${baseUrl}/api/auth/logout`, {
+            method: 'POST',
+            headers: { cookie: rotatedCookieHeader },
+        });
+        assert.equal(logoutResp.status, 200);
+        const logoutSetCookie = logoutResp.headers.get('set-cookie') ?? '';
+        assert.equal(/dashboard_session=.*Max-Age=0/i.test(logoutSetCookie), true);
+
+        const revokedCookieAccess = await fetch(`${baseUrl}/api/kpis`, {
+            headers: { cookie: rotatedCookieHeader },
+        });
+        assert.equal(revokedCookieAccess.status, 401);
     } finally {
         if (httpServer) {
             await new Promise<void>((resolve) => {

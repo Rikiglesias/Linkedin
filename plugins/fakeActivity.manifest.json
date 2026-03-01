@@ -1,0 +1,8 @@
+{
+  "name": "fake-activity",
+  "version": "1.0.0",
+  "entry": "fakeActivity.ts",
+  "enabled": true,
+  "integritySha256": "ce09f062d546ab94e8ae4fe7fe7d5e3eac9c1e088a6e55a19e897eeab0b7c607",
+  "allowedHooks": ["onIdle"]
+}

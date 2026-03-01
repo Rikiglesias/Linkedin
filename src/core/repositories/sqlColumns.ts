@@ -1,0 +1,63 @@
+export const LEAD_SELECT_COLUMNS = [
+    'id',
+    'account_name',
+    'first_name',
+    'last_name',
+    'job_title',
+    'website',
+    'linkedin_url',
+    'status',
+    'list_name',
+    'invited_at',
+    'accepted_at',
+    'messaged_at',
+    'last_site_check_at',
+    'last_error',
+    'blocked_reason',
+    'about',
+    'experience',
+    'invite_prompt_variant',
+    'lead_score',
+    'confidence_score',
+    'created_at',
+    'updated_at',
+].join(', ');
+
+export const JOB_SELECT_COLUMNS = [
+    'id',
+    'type',
+    'status',
+    'account_id',
+    'payload_json',
+    'idempotency_key',
+    'priority',
+    'attempts',
+    'max_attempts',
+    'next_run_at',
+    'locked_at',
+    'last_error',
+    'created_at',
+    'updated_at',
+].join(', ');
+
+export const OUTBOX_SELECT_COLUMNS = [
+    'id',
+    'topic',
+    'payload_json',
+    'idempotency_key',
+    'attempts',
+    'next_retry_at',
+    'delivered_at',
+    'last_error',
+    'created_at',
+].join(', ');
+
+export const RUNTIME_LOCK_SELECT_COLUMNS = [
+    'lock_key',
+    'owner_id',
+    'acquired_at',
+    'heartbeat_at',
+    'expires_at',
+    'metadata_json',
+    'updated_at',
+].join(', ');

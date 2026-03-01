@@ -11,6 +11,8 @@ export type { BrowserSession, CloudFingerprint, LaunchBrowserOptions } from './b
 export {
     humanDelay,
     humanMouseMove,
+    humanTap,
+    humanSwipe,
     randomMouseMove,
     humanType,
     simulateHumanReading,

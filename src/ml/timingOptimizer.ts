@@ -1,145 +1,139 @@
 /**
- * timingOptimizer.ts — Heuristic Timing Optimizer
- *
- * Analizza i dati storici nel DB locale per trovare gli (hour, dayOfWeek)
- * slot con il più alto engagement score, ed espone due primitive:
- *
- *   - getBestTimeSlot() → slot ideale per schedulare inviti/messaggi
- *   - isGoodTimeNow()  → true se l'ora corrente è "buona" per agire
- *
- * Algoritmo:
- *   engagement_score(h, dow) =
- *       0.5 * (accepted / invited)  [se invited > 0]
- *     + 0.5 * (replied  / messaged) [se messaged > 0]
- *
- * Fallback conservativo (< MIN_DATAPOINTS): 9–18, lun-ven.
- *
- * Non fa ML cloud, tutto in SQLite locale. CPU trascurabile.
+ * timingOptimizer.ts — Heuristic Timing Optimizer (segment-aware)
  */
 
 import { getDatabase } from '../db';
+import { config, getHourInTimezone } from '../config';
 import { logInfo } from '../telemetry/logger';
+import { LeadSegment, inferLeadSegment } from './segments';
 
-// ─── Tipi ────────────────────────────────────────────────────────────────────
+export type TimingAction = 'invite' | 'message';
 
 export interface TimeSlot {
-    hour: number;           // 0-23
-    dayOfWeek: number;      // 0=Sun … 6=Sat
-    score: number;          // 0.0 – 1.0
-    sampleSize: number;     // number of data points used
+    hour: number;
+    dayOfWeek: number;
+    score: number;
+    sampleSize: number;
 }
 
-// ─── Costanti ─────────────────────────────────────────────────────────────────
-
-const MIN_DATAPOINTS = 30;   // sotto questa soglia → fallback statico
+const MIN_DATAPOINTS = 30;
 const DEFAULT_HOUR_START = 9;
 const DEFAULT_HOUR_END = 18;
-const DEFAULT_GOOD_DAYS = new Set([1, 2, 3, 4, 5]); // lun-ven (0=dom)
-const GOOD_SCORE_THRESHOLD = 0.3; // sopra questa soglia → isGoodTimeNow = true
+const DEFAULT_GOOD_DAYS = new Set([1, 2, 3, 4, 5]);
+const GOOD_SCORE_THRESHOLD = 0.3;
 
-// ─── Logica Core ─────────────────────────────────────────────────────────────
+interface RawSlotRow {
+    hour: number;
+    dow: number;
+    job_title: string | null;
+    total_count: number;
+    total_success: number;
+}
 
-/**
- * Calcola l'engagement score per tutti gli slot storici.
- * Restituisce una lista ordinata per score decrescente.
- */
-async function computeSlotScores(): Promise<TimeSlot[]> {
-    const db = await getDatabase();
-
-    interface SlotRow {
-        hour: number;
-        dow: number;
-        total_invited: number;
-        total_accepted: number;
-        total_messaged: number;
-        total_replied: number;
+function buildSlotQuery(action: TimingAction): string {
+    if (action === 'invite') {
+        return `
+            SELECT
+                CAST(STRFTIME('%H', invited_at) AS INTEGER) AS hour,
+                CAST(STRFTIME('%w', invited_at) AS INTEGER) AS dow,
+                job_title,
+                COUNT(*) AS total_count,
+                SUM(CASE WHEN accepted_at IS NOT NULL THEN 1 ELSE 0 END) AS total_success
+            FROM leads
+            WHERE invited_at IS NOT NULL
+              AND CAST(STRFTIME('%H', invited_at) AS INTEGER) BETWEEN 0 AND 23
+            GROUP BY hour, dow, job_title
+        `;
     }
 
-    // Aggregazione per (hour, dayOfWeek) usando STRFTIME su SQLite
-    const rows = await db.query<SlotRow>(`
+    return `
         SELECT
-            CAST(STRFTIME('%H', invited_at) AS INTEGER)          AS hour,
-            CAST(STRFTIME('%w', invited_at) AS INTEGER)          AS dow,
-            COUNT(*)                                              AS total_invited,
-            SUM(CASE WHEN accepted_at IS NOT NULL THEN 1 ELSE 0 END) AS total_accepted,
-            SUM(CASE WHEN messaged_at IS NOT NULL THEN 1 ELSE 0 END) AS total_messaged,
-            SUM(CASE WHEN status = 'REPLIED' THEN 1 ELSE 0 END)  AS total_replied
+            CAST(STRFTIME('%H', messaged_at) AS INTEGER) AS hour,
+            CAST(STRFTIME('%w', messaged_at) AS INTEGER) AS dow,
+            job_title,
+            COUNT(*) AS total_count,
+            SUM(CASE WHEN status IN ('REPLIED', 'CONNECTED') THEN 1 ELSE 0 END) AS total_success
         FROM leads
-        WHERE invited_at IS NOT NULL
-          AND CAST(STRFTIME('%H', invited_at) AS INTEGER) BETWEEN 0 AND 23
-        GROUP BY hour, dow
-        HAVING COUNT(*) >= 3
-        ORDER BY hour ASC, dow ASC
-    `);
+        WHERE messaged_at IS NOT NULL
+          AND CAST(STRFTIME('%H', messaged_at) AS INTEGER) BETWEEN 0 AND 23
+        GROUP BY hour, dow, job_title
+    `;
+}
 
+async function computeSlotScores(action: TimingAction, segment?: LeadSegment): Promise<TimeSlot[]> {
+    const db = await getDatabase();
+    const rows = await db.query<RawSlotRow>(buildSlotQuery(action));
     if (!rows || rows.length === 0) return [];
 
-    const slots: TimeSlot[] = rows.map(r => {
-        const acceptRate = r.total_invited > 0 ? r.total_accepted / r.total_invited : 0;
-        const replyRate = r.total_messaged > 0 ? r.total_replied / r.total_messaged : 0;
-        const score = 0.5 * acceptRate + 0.5 * replyRate;
-        return {
-            hour: r.hour,
-            dayOfWeek: r.dow,
-            score: Math.round(score * 100) / 100,
-            sampleSize: r.total_invited,
-        };
-    });
+    const aggregate = new Map<string, { success: number; total: number }>();
+    for (const row of rows) {
+        const rowSegment = inferLeadSegment(row.job_title);
+        if (segment && segment !== 'unknown' && rowSegment !== segment) continue;
+        const key = `${row.hour}|${row.dow}`;
+        const item = aggregate.get(key) ?? { success: 0, total: 0 };
+        item.success += row.total_success ?? 0;
+        item.total += row.total_count ?? 0;
+        aggregate.set(key, item);
+    }
+
+    const slots: TimeSlot[] = [];
+    for (const [key, value] of aggregate) {
+        if (value.total < 3) continue;
+        const [hourRaw, dowRaw] = key.split('|');
+        const hour = Number.parseInt(hourRaw ?? '0', 10);
+        const dayOfWeek = Number.parseInt(dowRaw ?? '0', 10);
+        const rate = value.total > 0 ? value.success / value.total : 0;
+        slots.push({
+            hour,
+            dayOfWeek,
+            score: Math.round(rate * 100) / 100,
+            sampleSize: value.total,
+        });
+    }
 
     return slots.sort((a, b) => b.score - a.score);
 }
 
-/**
- * Restituisce il miglior slot temporale basato sui dati storici.
- * Se i dati sono insufficienti, ritorna il fallback standard.
- */
-export async function getBestTimeSlot(): Promise<TimeSlot> {
-    try {
-        const slots = await computeSlotScores();
-        const totalSamples = slots.reduce((s, x) => s + x.sampleSize, 0);
+export async function getBestTimeSlot(action: TimingAction = 'invite'): Promise<TimeSlot> {
+    return getBestTimeSlotForSegment(action, 'unknown');
+}
 
-        if (totalSamples < MIN_DATAPOINTS || slots.length === 0) {
-            // Fallback statico: mercoledì ore 10
+export async function getBestTimeSlotForSegment(
+    action: TimingAction,
+    segment: LeadSegment
+): Promise<TimeSlot> {
+    try {
+        const slots = await computeSlotScores(action, segment === 'unknown' ? undefined : segment);
+        const totalSamples = slots.reduce((sum, slot) => sum + slot.sampleSize, 0);
+        if (slots.length === 0 || totalSamples < MIN_DATAPOINTS) {
             return { hour: 10, dayOfWeek: 3, score: 0, sampleSize: 0 };
         }
-
-        return slots[0];
+        return slots[0] as TimeSlot;
     } catch {
         return { hour: 10, dayOfWeek: 3, score: 0, sampleSize: 0 };
     }
 }
 
-/**
- * Valuta se il momento corrente è statisticamente buono per agire.
- * Non è bloccante — è solo advisory (il chiamante decide).
- */
-export async function isGoodTimeNow(): Promise<boolean> {
+export async function isGoodTimeNow(action: TimingAction = 'invite', segment?: LeadSegment): Promise<boolean> {
     const now = new Date();
-    const currentHour = now.getHours();
-    const currentDow = now.getDay(); // 0=dom
-
+    const currentHour = getHourInTimezone(now, config.timezone);
+    const currentDow = now.getDay();
     try {
         const db = await getDatabase();
-
-        interface CountRow { total: number }
-        const countRow = await db.get<CountRow>(
-            `SELECT COUNT(*) as total FROM leads WHERE invited_at IS NOT NULL`
-        );
+        const countRow = action === 'invite'
+            ? await db.get<{ total: number }>(`SELECT COUNT(*) as total FROM leads WHERE invited_at IS NOT NULL`)
+            : await db.get<{ total: number }>(`SELECT COUNT(*) as total FROM leads WHERE messaged_at IS NOT NULL`);
         const totalSamples = countRow?.total ?? 0;
 
-        // Dati insufficienti → fallback statico conservativo
         if (totalSamples < MIN_DATAPOINTS) {
             const inWorkHours = currentHour >= DEFAULT_HOUR_START && currentHour < DEFAULT_HOUR_END;
             const inWorkDays = DEFAULT_GOOD_DAYS.has(currentDow);
             return inWorkHours && inWorkDays;
         }
 
-        // Cerca lo score per lo slot corrente
-        const slots = await computeSlotScores();
-        const currentSlot = slots.find(s => s.hour === currentHour && s.dayOfWeek === currentDow);
-
+        const slots = await computeSlotScores(action, segment);
+        const currentSlot = slots.find((slot) => slot.hour === currentHour && slot.dayOfWeek === currentDow);
         if (!currentSlot) {
-            // Slot senza dati → conservativo: solo orario lavorativo
             const inWorkHours = currentHour >= DEFAULT_HOUR_START && currentHour < DEFAULT_HOUR_END;
             const inWorkDays = DEFAULT_GOOD_DAYS.has(currentDow);
             return inWorkHours && inWorkDays;
@@ -148,28 +142,41 @@ export async function isGoodTimeNow(): Promise<boolean> {
         const result = currentSlot.score >= GOOD_SCORE_THRESHOLD;
         if (!result) {
             await logInfo('timing_optimizer.suboptimal_window', {
+                action,
+                segment: segment ?? 'all',
                 hour: currentHour,
                 dow: currentDow,
                 score: currentSlot.score,
                 threshold: GOOD_SCORE_THRESHOLD,
             });
         }
-
         return result;
     } catch {
-        // In caso di errore DB — non bloccare mai
         return currentHour >= DEFAULT_HOUR_START && currentHour < DEFAULT_HOUR_END;
     }
 }
 
-/**
- * Restituisce i top-N slot per uso nel report giornaliero.
- */
-export async function getTopTimeSlots(n: number = 3): Promise<TimeSlot[]> {
+export async function getTopTimeSlots(
+    n: number = 3,
+    action: TimingAction = 'invite',
+    segment?: LeadSegment
+): Promise<TimeSlot[]> {
     try {
-        const slots = await computeSlotScores();
+        const slots = await computeSlotScores(action, segment);
         return slots.slice(0, n);
     } catch {
         return [];
     }
 }
+
+export function computeDelayUntilSlot(slot: TimeSlot, now: Date = new Date()): number {
+    const target = new Date(now.getTime());
+    const daysAhead = (slot.dayOfWeek - target.getDay() + 7) % 7;
+    target.setDate(target.getDate() + daysAhead);
+    target.setHours(slot.hour, 0, 0, 0);
+    if (target.getTime() <= now.getTime()) {
+        target.setDate(target.getDate() + 7);
+    }
+    return Math.max(0, Math.floor((target.getTime() - now.getTime()) / 1000));
+}
+

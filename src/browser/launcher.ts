@@ -18,7 +18,9 @@ import {
     releaseStickyProxy
 } from '../proxyManager';
 import { ensureCycleTlsProxy, stopCycleTlsProxy } from '../proxy/cycleTlsProxy';
-import { CloudFingerprint, pickBrowserFingerprint } from './stealth';
+import { CloudFingerprint, BrowserFingerprint, pickDesktopFingerprint, pickFingerprintMode, pickMobileFingerprint } from './stealth';
+import { DeviceProfile, registerPageDeviceProfile } from './deviceProfile';
+import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 
 const activeBrowsers = new Set<BrowserContext>();
 
@@ -55,9 +57,14 @@ async function fetchCloudFingerprints(): Promise<CloudFingerprint[]> {
     }
 
     try {
-        const response = await fetch(config.fingerprintApiEndpoint, {
+        const response = await fetchWithRetryPolicy(config.fingerprintApiEndpoint, {
             headers: { 'Accept': 'application/json' },
-            signal: AbortSignal.timeout(5000)
+            method: 'GET',
+        }, {
+            integration: 'fingerprint.cloud_fetch',
+            circuitKey: 'fingerprint.api',
+            timeoutMs: 5_000,
+            maxAttempts: 2,
         });
 
         if (response.ok) {
@@ -78,6 +85,8 @@ async function fetchCloudFingerprints(): Promise<CloudFingerprint[]> {
 export interface BrowserSession {
     browser: BrowserContext;
     page: Page;
+    deviceProfile: DeviceProfile;
+    fingerprint: BrowserFingerprint;
 }
 
 export interface LaunchBrowserOptions {
@@ -101,19 +110,22 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
     ensureDirectoryPrivate(sessionDir);
 
     const headless = options.headless ?? config.headless;
-    const autoScaleProxy = config.multiAccountEnabled;
+    const managedProxyEnabled = !options.proxy
+        && (config.proxyUrl.trim().length > 0
+            || config.proxyListPath.trim().length > 0
+            || !!config.proxyProviderApiEndpoint);
     const explicitProxy = options.proxy;
     const proxySelection = {
         preferredType: options.preferredProxyType,
         forceMobile: options.forceMobileProxy,
     };
-    const stickyProxy = !explicitProxy && autoScaleProxy ? await getStickyProxy(sessionDir, proxySelection) : undefined;
+    const stickyProxy = !explicitProxy && managedProxyEnabled ? await getStickyProxy(sessionDir, proxySelection) : undefined;
 
     let launchPlan: Array<ProxyConfig | undefined> = [];
     let mobileEscalationAppended = false;
     if (explicitProxy) {
         launchPlan = [explicitProxy];
-    } else if (autoScaleProxy) {
+    } else if (managedProxyEnabled) {
         const failoverChain = await getProxyFailoverChainAsync({
             ...proxySelection,
             preferredType: proxySelection.preferredType ?? (config.proxyMobilePriorityEnabled ? 'mobile' : undefined),
@@ -137,18 +149,34 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
     for (let attempt = 0; attempt < launchPlan.length; attempt++) {
         const currentProxy = launchPlan[attempt];
         const cloudFingerprints = await fetchCloudFingerprints();
-        const fingerprint = pickBrowserFingerprint(cloudFingerprints);
+        const isMobileSession = pickFingerprintMode();
+        const fingerprint = isMobileSession
+            ? pickMobileFingerprint(cloudFingerprints)
+            : pickDesktopFingerprint(cloudFingerprints);
+        const deviceProfile: DeviceProfile = {
+            fingerprintId: fingerprint.id,
+            isMobile: fingerprint.isMobile === true,
+            hasTouch: fingerprint.hasTouch === true || fingerprint.isMobile === true,
+        };
 
         const contextOptions: Parameters<typeof chromium.launchPersistentContext>[1] = {
             headless,
             viewport: fingerprint.viewport,
-            locale: 'it-IT',
-            timezoneId: config.timezone,
+            locale: fingerprint.locale ?? 'it-IT',
+            timezoneId: fingerprint.timezone ?? config.timezone,
+            userAgent: fingerprint.userAgent,
         };
+        if (deviceProfile.isMobile) {
+            contextOptions.isMobile = true;
+            contextOptions.hasTouch = true;
+            contextOptions.deviceScaleFactor = fingerprint.deviceScaleFactor ?? 2.5;
+        }
 
         if (config.useJa3Proxy) {
             const cycleProxyEndpoint = await ensureCycleTlsProxy({
                 upstreamProxy: currentProxy,
+                ja3Fingerprint: fingerprint.ja3,
+                userAgent: fingerprint.userAgent,
             });
             if (!cycleProxyEndpoint) {
                 throw new Error('CycleTLS proxy endpoint non disponibile.');
@@ -169,6 +197,12 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
 
             const existingPage = browser.pages()[0];
             const page = existingPage ?? await browser.newPage();
+            for (const contextPage of browser.pages()) {
+                registerPageDeviceProfile(contextPage, deviceProfile);
+            }
+            browser.on('page', (newPage) => {
+                registerPageDeviceProfile(newPage, deviceProfile);
+            });
 
             page.on('response', async (response) => {
                 if (response.status() === 429) {
@@ -189,7 +223,7 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                 markProxyHealthy(currentProxy);
             }
             activeBrowsers.add(browser);
-            return { browser, page };
+            return { browser, page, deviceProfile, fingerprint };
         } catch (error) {
             lastError = error;
             if (currentProxy) {
@@ -201,7 +235,7 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
 
             const failedAttempts = attempt + 1;
             const shouldEscalateMobile = !explicitProxy
-                && autoScaleProxy
+                && managedProxyEnabled
                 && !mobileEscalationAppended
                 && config.proxyMobilePriorityEnabled
                 && failedAttempts >= config.proxyMobileEscalationFailures;

@@ -1,7 +1,9 @@
-import { config, getLocalDateString, getWeekStartDate, getWorkingHourIntensity } from '../config';
+import { config, getLocalDateString, getWeekStartDate, getWorkingHourIntensity, isGreenModeWindow } from '../config';
 import { pickAccountIdForLead, getRuntimeAccountProfiles } from '../accountManager';
 import { evaluateRisk, calculateDynamicBudget, calculateAccountWarmupMultiplier } from '../risk/riskEngine';
 import { JobType, RiskSnapshot } from '../types/domain';
+import { computeDelayUntilSlot, getBestTimeSlotForSegment, TimingAction } from '../ml/timingOptimizer';
+import { inferLeadSegment } from '../ml/segments';
 import {
     countWeeklyInvites,
     ensureLeadList,
@@ -76,6 +78,63 @@ function computeListBudget(globalRemaining: number, listCap: number | null, alre
         ? globalRemaining
         : Math.max(0, listCap - alreadyConsumed);
     return Math.max(0, Math.min(globalRemaining, listRemaining));
+}
+
+function computeAccountBudgetShares(
+    accounts: ReturnType<typeof getRuntimeAccountProfiles>,
+    totalBudget: number,
+    channel: 'invite' | 'message'
+): Map<string, number> {
+    const safeTotal = Math.max(0, Math.floor(totalBudget));
+    const shares = new Map<string, number>();
+    if (safeTotal <= 0) {
+        for (const account of accounts) {
+            shares.set(account.id, 0);
+        }
+        return shares;
+    }
+    if (accounts.length === 0) {
+        shares.set('default', safeTotal);
+        return shares;
+    }
+
+    const weighted = accounts.map((account) => {
+        const rawWeight = channel === 'invite' ? account.inviteWeight : account.messageWeight;
+        const weight = Number.isFinite(rawWeight) && rawWeight > 0 ? rawWeight : 1;
+        return { accountId: account.id, weight };
+    });
+
+    const weightTotal = weighted.reduce((sum, item) => sum + item.weight, 0);
+    const base = weighted.map((item) => {
+        const rawShare = safeTotal * (item.weight / Math.max(0.0001, weightTotal));
+        const floorShare = Math.floor(rawShare);
+        shares.set(item.accountId, floorShare);
+        return {
+            accountId: item.accountId,
+            fractional: rawShare - floorShare,
+        };
+    });
+
+    let distributed = Array.from(shares.values()).reduce((sum, value) => sum + value, 0);
+    const leftovers = safeTotal - distributed;
+    if (leftovers > 0) {
+        const sorted = [...base].sort((a, b) => b.fractional - a.fractional);
+        for (let index = 0; index < leftovers; index++) {
+            const target = sorted[index % sorted.length];
+            if (!target) break;
+            shares.set(target.accountId, (shares.get(target.accountId) ?? 0) + 1);
+        }
+    }
+
+    distributed = Array.from(shares.values()).reduce((sum, value) => sum + value, 0);
+    if (distributed < safeTotal) {
+        const first = accounts[0];
+        if (first) {
+            shares.set(first.id, (shares.get(first.id) ?? 0) + (safeTotal - distributed));
+        }
+    }
+
+    return shares;
 }
 
 interface AdaptiveBudgetContext {
@@ -342,10 +401,16 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
     inviteBudget = Math.min(inviteBudget, weeklyRemaining);
     inviteBudget = applyHourIntensityToBudget(inviteBudget, hourIntensity);
     messageBudget = applyHourIntensityToBudget(messageBudget, hourIntensity);
+    if (isGreenModeWindow()) {
+        inviteBudget = applyHourIntensityToBudget(inviteBudget, config.greenModeBudgetFactor);
+        messageBudget = applyHourIntensityToBudget(messageBudget, config.greenModeBudgetFactor);
+    }
 
     // WARMUP BYPASS: nessun invio email/connessioni
     const effectiveInviteBudget = workflow === 'warmup' ? 0 : inviteBudget;
     const effectiveMessageBudget = workflow === 'warmup' ? 0 : messageBudget;
+    const accountInviteRemaining = computeAccountBudgetShares(accounts, effectiveInviteBudget, 'invite');
+    const accountMessageRemaining = computeAccountBudgetShares(accounts, effectiveMessageBudget, 'message');
 
     let queuedInviteJobs = 0;
     let queuedCheckJobs = 0;
@@ -386,6 +451,25 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
         }
     }
     const noBurstPlanner = !dryRun && config.noBurstEnabled ? createNoBurstPlanner() : null;
+    const timingSlotCache = new Map<string, Awaited<ReturnType<typeof getBestTimeSlotForSegment>>>();
+
+    async function resolveTimingDelaySec(action: TimingAction, jobTitle: string | null | undefined): Promise<number> {
+        if (dryRun) return 0;
+        if (Math.random() < config.timingExplorationProbability) {
+            return 0;
+        }
+        const segment = inferLeadSegment(jobTitle);
+        const cacheKey = `${action}:${segment}`;
+        let slot = timingSlotCache.get(cacheKey);
+        if (!slot) {
+            slot = await getBestTimeSlotForSegment(action, segment);
+            timingSlotCache.set(cacheKey, slot);
+        }
+        if (slot.sampleSize <= 0 || slot.score <= 0) {
+            return 0;
+        }
+        return computeDelayUntilSlot(slot);
+    }
 
     if (!dryRun && riskSnapshot.action !== 'STOP') {
         await promoteNewLeadsToReadyInvite(config.hardInviteCap * 4);
@@ -409,10 +493,19 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
             if (dryRun) {
                 const readyCandidates = await getLeadsByStatusForList('READY_INVITE', listName, listBudget);
                 const newCandidates = await getLeadsByStatusForList('NEW', listName, listBudget);
-                const candidateIds = new Set<number>();
-                for (const lead of readyCandidates) candidateIds.add(lead.id);
-                for (const lead of newCandidates) candidateIds.add(lead.id);
-                const planned = Math.min(listBudget, candidateIds.size);
+                const orderedCandidates = [...readyCandidates, ...newCandidates];
+                const seenLeadIds = new Set<number>();
+                let planned = 0;
+                for (const lead of orderedCandidates) {
+                    if (seenLeadIds.has(lead.id)) continue;
+                    seenLeadIds.add(lead.id);
+                    const accountId = pickAccountIdForLead(lead.id);
+                    const remainingForAccount = accountInviteRemaining.get(accountId) ?? 0;
+                    if (remainingForAccount <= 0) continue;
+                    accountInviteRemaining.set(accountId, remainingForAccount - 1);
+                    planned += 1;
+                    if (planned >= listBudget) break;
+                }
                 breakdown.queuedInviteJobs += planned;
                 queuedInviteJobs += planned;
                 remainingInviteBudget -= planned;
@@ -423,8 +516,14 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
 
             let insertedForList = 0;
             for (const lead of inviteCandidates) {
-                const initialDelaySec = noBurstPlanner ? noBurstPlanner.nextDelaySec() : 0;
                 const accountId = pickAccountIdForLead(lead.id);
+                const remainingForAccount = accountInviteRemaining.get(accountId) ?? 0;
+                if (remainingForAccount <= 0) {
+                    continue;
+                }
+                const noBurstDelaySec = noBurstPlanner ? noBurstPlanner.nextDelaySec() : 0;
+                const timingDelaySec = await resolveTimingDelaySec('invite', lead.job_title);
+                const initialDelaySec = noBurstDelaySec + timingDelaySec;
                 const inserted = await enqueueJob(
                     'INVITE',
                     { leadId: lead.id, localDate },
@@ -437,6 +536,7 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
                 if (inserted) {
                     insertedForList += 1;
                     queuedInviteJobs += 1;
+                    accountInviteRemaining.set(accountId, remainingForAccount - 1);
                     breakdown.maxScheduledDelaySec = Math.max(breakdown.maxScheduledDelaySec, initialDelaySec);
                 }
             }
@@ -498,10 +598,19 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
             if (dryRun) {
                 const accepted = await getLeadsByStatusForList('ACCEPTED', listName, listBudget);
                 const readyToMessage = await getLeadsByStatusForList('READY_MESSAGE', listName, listBudget);
+                const orderedCandidates = [...accepted, ...readyToMessage];
                 const uniqueLeadIds = new Set<number>();
-                for (const lead of accepted) uniqueLeadIds.add(lead.id);
-                for (const lead of readyToMessage) uniqueLeadIds.add(lead.id);
-                const planned = Math.min(listBudget, uniqueLeadIds.size);
+                let planned = 0;
+                for (const lead of orderedCandidates) {
+                    if (uniqueLeadIds.has(lead.id)) continue;
+                    uniqueLeadIds.add(lead.id);
+                    const accountId = pickAccountIdForLead(lead.id);
+                    const remainingForAccount = accountMessageRemaining.get(accountId) ?? 0;
+                    if (remainingForAccount <= 0) continue;
+                    accountMessageRemaining.set(accountId, remainingForAccount - 1);
+                    planned += 1;
+                    if (planned >= listBudget) break;
+                }
                 breakdown.queuedMessageJobs += planned;
                 queuedMessageJobs += planned;
                 remainingMessageBudget -= planned;
@@ -516,6 +625,11 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
 
             let insertedForList = 0;
             for (const lead of readyToMessage) {
+                const accountId = pickAccountIdForLead(lead.id);
+                const remainingForAccount = accountMessageRemaining.get(accountId) ?? 0;
+                if (remainingForAccount <= 0) {
+                    continue;
+                }
                 const acceptedAtDate = lead.accepted_at ? lead.accepted_at.slice(0, 10) : localDate;
                 const minDelayHours = Math.max(0, config.messageScheduleMinDelayHours);
                 const maxDelayHours = Math.max(minDelayHours, config.messageScheduleMaxDelayHours);
@@ -530,8 +644,8 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
                 }
 
                 const noBurstDelaySec = noBurstPlanner ? noBurstPlanner.nextDelaySec() : 0;
-                const initialDelaySec = acceptanceDelaySec + noBurstDelaySec;
-                const accountId = pickAccountIdForLead(lead.id);
+                const timingDelaySec = await resolveTimingDelaySec('message', lead.job_title);
+                const initialDelaySec = acceptanceDelaySec + noBurstDelaySec + timingDelaySec;
                 const inserted = await enqueueJob(
                     'MESSAGE',
                     { leadId: lead.id, acceptedAtDate },
@@ -544,6 +658,7 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
                 if (inserted) {
                     insertedForList += 1;
                     queuedMessageJobs += 1;
+                    accountMessageRemaining.set(accountId, remainingForAccount - 1);
                     breakdown.maxScheduledDelaySec = Math.max(breakdown.maxScheduledDelaySec, initialDelaySec);
                 }
             }

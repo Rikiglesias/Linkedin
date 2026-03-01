@@ -1,8 +1,10 @@
 import { config } from '../config';
 import { LeadRecord } from '../types/domain';
 import { logWarn } from '../telemetry/logger';
-import { requestOpenAIText } from './openaiClient';
+import { isOpenAIConfigured, requestOpenAIText } from './openaiClient';
 import { SemanticChecker } from './semanticChecker';
+import { selectVariant } from '../ml/abBandit';
+import { inferLeadSegment } from '../ml/segments';
 
 // ─── Tipi ────────────────────────────────────────────────────────────────────
 
@@ -43,6 +45,15 @@ export function generateInviteNote(firstName: string): TemplateNoteResult {
     return { note: selected.render(name), variant: selected.variant };
 }
 
+function generateInviteNoteByVariant(firstName: string, variant: string): TemplateNoteResult {
+    const name = firstName.trim() || 'collega';
+    const selected = NOTE_TEMPLATES.find((item) => item.variant === variant) ?? NOTE_TEMPLATES[0];
+    if (!selected) {
+        return { note: `Ciao ${name}`, variant: 'TPL_FALLBACK' };
+    }
+    return { note: selected.render(name), variant: selected.variant };
+}
+
 const INVITE_NOTE_MAX_CHARS = 300;
 
 function trimToMaxChars(input: string, maxChars: number = INVITE_NOTE_MAX_CHARS): string {
@@ -59,10 +70,15 @@ function safeFirstName(lead: LeadRecord): string {
 }
 
 export async function buildPersonalizedInviteNote(lead: LeadRecord): Promise<PersonalizedInviteNoteResult> {
-    const tplResult = generateInviteNote(lead.first_name ?? '');
+    const segmentKey = inferLeadSegment(lead.job_title);
+    const templateVariants = NOTE_TEMPLATES.map((template) => template.variant);
+    const selectedTemplateVariant = await selectVariant(templateVariants, { segmentKey }).catch(() => null);
+    const tplResult = selectedTemplateVariant
+        ? generateInviteNoteByVariant(lead.first_name ?? '', selectedTemplateVariant)
+        : generateInviteNote(lead.first_name ?? '');
     const templateText = trimToMaxChars(tplResult.note, INVITE_NOTE_MAX_CHARS);
 
-    if (config.inviteNoteMode !== 'ai' || !config.openaiApiKey) {
+    if (config.inviteNoteMode !== 'ai' || !config.aiPersonalizationEnabled || !isOpenAIConfigured()) {
         return {
             note: templateText,
             source: 'template',
@@ -72,8 +88,9 @@ export async function buildPersonalizedInviteNote(lead: LeadRecord): Promise<Per
     }
 
     // Varianti Prompt A/B Testing
-    const isVariantB = Math.random() > 0.5;
-    const variantId = isVariantB ? 'AI_VAR_B_VALUE' : 'AI_VAR_A_DIRECT';
+    const variantId = await selectVariant(['AI_VAR_A_DIRECT', 'AI_VAR_B_VALUE'], { segmentKey })
+        .catch(() => (Math.random() > 0.5 ? 'AI_VAR_B_VALUE' : 'AI_VAR_A_DIRECT'));
+    const isVariantB = variantId === 'AI_VAR_B_VALUE';
 
     let systemPrompt = '';
 

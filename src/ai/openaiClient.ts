@@ -1,4 +1,5 @@
-import { config } from '../config';
+import { config, isGreenModeWindow } from '../config';
+import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 
 interface OpenAITextRequest {
     system: string;
@@ -42,6 +43,13 @@ function extractOutputText(payload: unknown): string {
     return '';
 }
 
+function resolveAiModel(): string {
+    if (isGreenModeWindow() && config.aiGreenModel.trim().length > 0) {
+        return config.aiGreenModel.trim();
+    }
+    return config.aiModel;
+}
+
 export function isOpenAIConfigured(): boolean {
     return isLocalAiEndpoint(config.openaiBaseUrl) || !!config.openaiApiKey;
 }
@@ -64,11 +72,11 @@ export async function requestOpenAIText(input: OpenAITextRequest): Promise<strin
         headers.authorization = `Bearer ${config.openaiApiKey}`;
     }
 
-    const response = await fetch(safeJoinUrl(config.openaiBaseUrl, '/chat/completions'), {
+    const response = await fetchWithRetryPolicy(safeJoinUrl(config.openaiBaseUrl, '/chat/completions'), {
         method: 'POST',
         headers,
         body: JSON.stringify({
-            model: config.aiModel,
+            model: resolveAiModel(),
             messages: [
                 { role: 'system', content: input.system },
                 { role: 'user', content: input.user },
@@ -77,7 +85,10 @@ export async function requestOpenAIText(input: OpenAITextRequest): Promise<strin
             max_tokens: input.maxOutputTokens, // OpenAI uses max_tokens natively, non max_output_tokens
             ...(input.responseFormat ? { response_format: { type: input.responseFormat } } : {})
         }),
-        signal: AbortSignal.timeout(config.aiRequestTimeoutMs),
+    }, {
+        integration: 'openai.chat_completion',
+        circuitKey: 'openai.chat',
+        timeoutMs: config.aiRequestTimeoutMs,
     });
 
     if (!response.ok) {
@@ -109,14 +120,17 @@ export async function requestOpenAIEmbeddings(input: string): Promise<number[]> 
         headers.authorization = `Bearer ${config.openaiApiKey}`;
     }
 
-    const response = await fetch(safeJoinUrl(config.openaiBaseUrl, '/embeddings'), {
+    const response = await fetchWithRetryPolicy(safeJoinUrl(config.openaiBaseUrl, '/embeddings'), {
         method: 'POST',
         headers,
         body: JSON.stringify({
-            model: config.aiModel,
+            model: resolveAiModel(),
             input: input,
         }),
-        signal: AbortSignal.timeout(config.aiRequestTimeoutMs),
+    }, {
+        integration: 'openai.embeddings',
+        circuitKey: 'openai.embeddings',
+        timeoutMs: config.aiRequestTimeoutMs,
     });
 
     if (!response.ok) {

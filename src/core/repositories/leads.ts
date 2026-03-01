@@ -1,49 +1,7 @@
 /**
  * repositories/leads.ts
- * Domain exports: lead lifecycle, list config, sales nav, company targets.
+ * Domain exports: lead lifecycle, list config, sales nav, company targets, selectors and ramp-up state.
  */
 
-export {
-    ensureLeadList,
-    syncLeadListsFromLeads,
-    listLeadCampaignConfigs,
-    updateLeadCampaignConfig,
-    applyControlPlaneCampaignConfigs,
-    upsertSalesNavList,
-    markSalesNavListSynced,
-    linkLeadToSalesNavList,
-    listSalesNavLists,
-    getSalesNavListByName,
-    addLead,
-    getLeadByLinkedinUrl,
-    upsertSalesNavigatorLead,
-    getExpiredInvitedLeads,
-    addCompanyTarget,
-    countCompanyTargets,
-    listCompanyTargets,
-    getCompanyTargetsForEnrichment,
-    setCompanyTargetStatus,
-    countCompanyTargetsByStatuses,
-    promoteNewLeadsToReadyInvite,
-    getLeadById,
-    updateLeadScrapedContext,
-    updateLeadPromptVariant,
-    updateLeadScores,
-    getLeadsWithSalesNavigatorUrls,
-    updateLeadLinkedinUrl,
-    getLeadsByStatus,
-    getLeadsForFollowUp,
-    recordFollowUpSent,
-    getLeadsByStatusForSiteCheck,
-    getLeadsByStatusForList,
-    touchLeadSiteCheckAt,
-    countLeadsByStatuses,
-    getLeadStatusCountsForLists,
-    setLeadStatus,
-    appendLeadEvent,
-    storeMessageHash,
-    countRecentMessageHash,
-    storeLeadIntent,
-    getLeadIntent,
-    listABVariantStats,
-} from './legacy';
+export * from './leadsCore';
+export * from './leadsLearning';

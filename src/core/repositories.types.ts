@@ -144,6 +144,46 @@ export interface DailyStatsSnapshot {
     runErrors: number;
 }
 
+export interface LockMetricSnapshot {
+    date: string;
+    lockKey: string;
+    metric: string;
+    value: number;
+}
+
+export interface LockContentionSummary {
+    acquireContended: number;
+    acquireStaleTakeover: number;
+    heartbeatMiss: number;
+    releaseMiss: number;
+    queueRaceLost: number;
+}
+
+export interface ObservabilityAlert {
+    code: string;
+    severity: 'INFO' | 'WARN' | 'CRITICAL';
+    message: string;
+    current: number;
+    threshold: number;
+}
+
+export interface OperationalObservabilitySnapshot {
+    localDate: string;
+    queuedJobs: number;
+    runningJobs: number;
+    queueLagSeconds: number;
+    oldestRunningJobSeconds: number;
+    pendingOutbox: number;
+    invitesSent: number;
+    messagesSent: number;
+    runErrors: number;
+    selectorFailures: number;
+    challengesCount: number;
+    errorRate: number;
+    lockContention: LockContentionSummary;
+    alerts: ObservabilityAlert[];
+}
+
 export interface JobStatusCounts {
     QUEUED: number;
     RUNNING: number;
@@ -170,6 +210,137 @@ export interface PrivacyCleanupStats {
     staleLeadEvents: number;
     staleMessageHistory: number;
     staleLeads: number;
+}
+
+export interface BackupRunRecord {
+    id: number;
+    backup_type: string;
+    target: string;
+    status: string;
+    backup_path: string | null;
+    checksum_sha256: string | null;
+    duration_ms: number | null;
+    details_json: string;
+    started_at: string;
+    finished_at: string | null;
+}
+
+export interface SecurityAuditEventInput {
+    category: string;
+    action: string;
+    actor?: string | null;
+    accountId?: string | null;
+    entityType?: string | null;
+    entityId?: string | null;
+    result: string;
+    metadata?: Record<string, unknown>;
+}
+
+export interface SecurityAuditEventRecord {
+    id: number;
+    category: string;
+    action: string;
+    actor: string | null;
+    account_id: string | null;
+    entity_type: string | null;
+    entity_id: string | null;
+    result: string;
+    correlation_id: string | null;
+    metadata_json: string;
+    created_at: string;
+}
+
+export interface AccountHealthSnapshotInput {
+    accountId: string;
+    queueProcessed: number;
+    queueFailed: number;
+    challenges: number;
+    deadLetters: number;
+    health: 'GREEN' | 'YELLOW' | 'RED';
+    reason?: string | null;
+    metadata?: Record<string, unknown>;
+}
+
+export interface AccountHealthSnapshotRecord {
+    id: number;
+    account_id: string;
+    queue_processed: number;
+    queue_failed: number;
+    challenges: number;
+    dead_letters: number;
+    health: string;
+    reason: string | null;
+    metadata_json: string;
+    observed_at: string;
+}
+
+export interface SecretRotationStatus {
+    secretName: string;
+    owner: string | null;
+    rotatedAt: string;
+    expiresAt: string | null;
+    daysSinceRotation: number;
+    daysToExpiry: number | null;
+    status: 'OK' | 'WARN' | 'EXPIRED' | 'UNKNOWN';
+    notes: string | null;
+}
+
+export type AiValidationTaskType = 'invite' | 'message' | 'sentiment';
+
+export interface AiValidationSampleRecord {
+    id: number;
+    task_type: AiValidationTaskType;
+    label: string;
+    input_json: string;
+    expected_json: string;
+    tags_csv: string;
+    active: number;
+    created_at: string;
+}
+
+export interface AiValidationRunRecord {
+    id: number;
+    status: string;
+    triggered_by: string | null;
+    summary_json: string;
+    started_at: string;
+    finished_at: string | null;
+}
+
+export interface AiVariantMetric {
+    variantId: string;
+    sent: number;
+    accepted: number;
+    replied: number;
+    acceptanceRate: number;
+    replyRate: number;
+}
+
+export interface AiVariantComparison {
+    metric: 'acceptance' | 'reply';
+    baselineVariant: string;
+    candidateVariant: string;
+    baselineRate: number;
+    candidateRate: number;
+    absoluteLift: number;
+    relativeLift: number;
+    pValue: number | null;
+    significant: boolean;
+    alpha: number;
+    minSampleSize: number;
+}
+
+export interface AiQualitySnapshot {
+    localDate: string;
+    lookbackDays: number;
+    minSampleSize: number;
+    alpha: number;
+    intentFalsePositiveRate: number;
+    intentFalsePositiveTotal: number;
+    intentFalsePositiveCount: number;
+    variants: AiVariantMetric[];
+    comparisons: AiVariantComparison[];
+    latestValidationRun: AiValidationRunRecord | null;
 }
 
 // ─── Automation / Runtime ─────────────────────────────────────────────────────

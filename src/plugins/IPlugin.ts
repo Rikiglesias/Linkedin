@@ -46,6 +46,12 @@ export interface PluginMessageEvent {
     subIntent?: string;
 }
 
+export interface PluginIdleEvent {
+    cycle: number;
+    workflow: string;
+    localDate: string;
+}
+
 // ─── Interfaccia Plugin ───────────────────────────────────────────────────────
 
 export interface IPlugin {
@@ -80,6 +86,11 @@ export interface IPlugin {
      * Chiamato quando viene ricevuta una risposta da un lead.
      */
     onReplyReceived?(lead: PluginLeadSnapshot, message: string, intent?: string): Promise<void>;
+
+    /**
+     * Chiamato quando il bot termina un ciclo e ha finestra di inattività.
+     */
+    onIdle?(event: PluginIdleEvent): Promise<void>;
 
     /**
      * Chiamato alla generazione del report giornaliero.

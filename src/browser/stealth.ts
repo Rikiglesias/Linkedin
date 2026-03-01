@@ -4,48 +4,86 @@
  * Fingerprint selection + anti-bot init script iniettato nelle pagine.
  */
 
+import { config } from '../config';
+import {
+    Fingerprint,
+    desktopFingerprintPool,
+    mobileFingerprintPool,
+    pickRandomFingerprint,
+} from '../fingerprint/pool';
+
 export interface CloudFingerprint {
     userAgent: string;
+    ja3?: string;
     viewport?: { width: number; height: number };
+    timezone?: string;
+    locale?: string;
+    isMobile?: boolean;
+    hasTouch?: boolean;
+    deviceScaleFactor?: number;
 }
 
-export interface BrowserFingerprint {
-    userAgent: string;
-    viewport: { width: number; height: number };
-}
-
-const USER_AGENTS = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 11.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-];
-
-const VIEWPORTS = [
-    { width: 1366, height: 768 },
-    { width: 1920, height: 1080 },
-    { width: 1440, height: 900 },
-    { width: 1536, height: 864 },
-    { width: 1280, height: 720 },
-];
+export interface BrowserFingerprint extends Fingerprint { }
 
 function randomElement<T>(arr: ReadonlyArray<T>): T {
     return arr[Math.floor(Math.random() * arr.length)] as T;
 }
 
-export function pickBrowserFingerprint(cloudFingerprints: ReadonlyArray<CloudFingerprint>): BrowserFingerprint {
-    if (cloudFingerprints.length > 0) {
-        const fp = randomElement(cloudFingerprints);
-        return {
-            userAgent: fp.userAgent,
-            viewport: fp.viewport ?? randomElement(VIEWPORTS),
-        };
+function normalizeCloudFingerprint(input: CloudFingerprint, isMobile: boolean): BrowserFingerprint {
+    const defaultPool = isMobile ? mobileFingerprintPool : desktopFingerprintPool;
+    const base = pickRandomFingerprint(defaultPool);
+    return {
+        id: `cloud_${Date.now()}_${Math.random().toString(16).slice(2, 7)}`,
+        ja3: input.ja3 ?? config.ja3Fingerprint,
+        userAgent: input.userAgent,
+        viewport: input.viewport ?? base.viewport,
+        timezone: input.timezone ?? config.timezone,
+        locale: input.locale ?? 'it-IT',
+        isMobile: input.isMobile ?? isMobile,
+        hasTouch: input.hasTouch ?? (input.isMobile ?? isMobile),
+        deviceScaleFactor: input.deviceScaleFactor ?? (input.isMobile ?? isMobile ? 2.5 : 1),
+    };
+}
+
+export function pickBrowserFingerprint(
+    cloudFingerprints: ReadonlyArray<CloudFingerprint>,
+    isMobile: boolean
+): BrowserFingerprint {
+    const mobileFiltered = cloudFingerprints.filter((item) => item.isMobile === true);
+    const desktopFiltered = cloudFingerprints.filter((item) => item.isMobile !== true);
+    const cloudPool = isMobile
+        ? (mobileFiltered.length > 0 ? mobileFiltered : cloudFingerprints)
+        : (desktopFiltered.length > 0 ? desktopFiltered : cloudFingerprints);
+
+    if (cloudPool.length > 0) {
+        const fp = randomElement(cloudPool);
+        return normalizeCloudFingerprint(fp, isMobile);
     }
 
+    const localPool = isMobile ? mobileFingerprintPool : desktopFingerprintPool;
+    const selected = pickRandomFingerprint(localPool);
     return {
-        userAgent: randomElement(USER_AGENTS),
-        viewport: randomElement(VIEWPORTS),
+        ...selected,
+        timezone: selected.timezone ?? config.timezone,
+        locale: selected.locale ?? 'it-IT',
+        isMobile: selected.isMobile ?? isMobile,
+        hasTouch: selected.hasTouch ?? isMobile,
+        deviceScaleFactor: selected.deviceScaleFactor ?? (isMobile ? 2.5 : 1),
     };
+}
+
+export function pickFingerprintMode(): boolean {
+    return Math.random() < config.mobileProbability;
+}
+
+export function pickMobileFingerprint(cloudFingerprints: ReadonlyArray<CloudFingerprint>): BrowserFingerprint {
+    if (cloudFingerprints.length > 0) {
+        const fp = randomElement(cloudFingerprints);
+        return normalizeCloudFingerprint(fp, true);
+    }
+    return pickBrowserFingerprint([], true);
+}
+
+export function pickDesktopFingerprint(cloudFingerprints: ReadonlyArray<CloudFingerprint>): BrowserFingerprint {
+    return pickBrowserFingerprint(cloudFingerprints, false);
 }

@@ -1,6 +1,7 @@
 import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
+import { createHash } from 'crypto';
 import { AccountProfileConfig, config } from '../config';
 import { isValidLeadTransition } from '../core/leadStateService';
 import { calculateDynamicBudget, evaluateCooldownDecision, evaluateRisk } from '../risk/riskEngine';
@@ -16,6 +17,7 @@ import { getSchedulingAccountIds, pickAccountIdForLead } from '../accountManager
 import { generateInviteNote } from '../ai/inviteNotePersonalizer';
 import { classifySiteMismatch, isMismatchAmbiguous } from '../core/audit';
 import { SELECTORS } from '../selectors';
+import { computeTwoProportionSignificance } from '../core/repositories/aiQuality';
 
 async function run(): Promise<void> {
     assert.equal(isValidLeadTransition('NEW', 'READY_INVITE'), true);
@@ -164,6 +166,8 @@ async function run(): Promise<void> {
             proxyUsername: '',
             proxyPassword: '',
             proxyType: 'unknown',
+            inviteWeight: 1,
+            messageWeight: 1,
             warmupEnabled: false,
             warmupMaxDays: 30,
             warmupMinActions: 5,
@@ -175,6 +179,8 @@ async function run(): Promise<void> {
             proxyUsername: '',
             proxyPassword: '',
             proxyType: 'unknown',
+            inviteWeight: 1,
+            messageWeight: 1,
             warmupEnabled: false,
             warmupMaxDays: 30,
             warmupMinActions: 5,
@@ -268,6 +274,81 @@ async function run(): Promise<void> {
 
     const note2 = generateInviteNote('');
     assert.equal(note2.note.length > 0, true); // fallback su 'collega'
+
+    const significantLift = computeTwoProportionSignificance(80, 400, 120, 400, 0.05);
+    assert.equal(significantLift.significant, true);
+    assert.equal(significantLift.pValue !== null && significantLift.pValue < 0.05, true);
+
+    const nonSignificantLift = computeTwoProportionSignificance(20, 200, 22, 200, 0.05);
+    assert.equal(nonSignificantLift.significant, false);
+
+    // ── plugin loader security policy ───────────────────────────────────────
+    const { PluginRegistry } = await import('../plugins/pluginLoader');
+    const pluginDir = path.resolve(process.cwd(), 'data', 'test_plugins_secure');
+    const pluginEntry = 'securePlugin.js';
+    const pluginPath = path.join(pluginDir, pluginEntry);
+    const pluginManifestPath = path.join(pluginDir, 'securePlugin.manifest.json');
+    const pluginCode = [
+        'module.exports = {',
+        '  default: {',
+        "    name: 'secure-test-plugin',",
+        "    version: '1.0.0',",
+        '    async onIdle() { return; }',
+        '  }',
+        '};',
+    ].join('\n');
+    const pluginHash = createHash('sha256').update(pluginCode).digest('hex');
+
+    const originalPluginDir = process.env.PLUGIN_DIR;
+    const originalPluginDirAllowlist = process.env.PLUGIN_DIR_ALLOWLIST;
+    const originalPluginAllowlist = process.env.PLUGIN_ALLOWLIST;
+    const originalPluginAllowTs = process.env.PLUGIN_ALLOW_TS;
+    fs.mkdirSync(pluginDir, { recursive: true });
+    fs.writeFileSync(pluginPath, pluginCode, 'utf8');
+
+    try {
+        process.env.PLUGIN_DIR = pluginDir;
+        process.env.PLUGIN_DIR_ALLOWLIST = pluginDir;
+        process.env.PLUGIN_ALLOWLIST = 'secure-test-plugin';
+        process.env.PLUGIN_ALLOW_TS = 'false';
+
+        fs.writeFileSync(pluginManifestPath, JSON.stringify({
+            name: 'secure-test-plugin',
+            version: '1.0.0',
+            entry: pluginEntry,
+            enabled: true,
+            integritySha256: pluginHash,
+            allowedHooks: ['onIdle'],
+        }), 'utf8');
+        const validRegistry = new PluginRegistry();
+        await validRegistry.load();
+        assert.equal(validRegistry.count, 1);
+
+        fs.writeFileSync(pluginManifestPath, JSON.stringify({
+            name: 'secure-test-plugin',
+            version: '1.0.0',
+            entry: pluginEntry,
+            enabled: true,
+            integritySha256: 'deadbeef',
+            allowedHooks: ['onIdle'],
+        }), 'utf8');
+        const invalidRegistry = new PluginRegistry();
+        await invalidRegistry.load();
+        assert.equal(invalidRegistry.count, 0);
+    } finally {
+        if (originalPluginDir === undefined) delete process.env.PLUGIN_DIR;
+        else process.env.PLUGIN_DIR = originalPluginDir;
+        if (originalPluginDirAllowlist === undefined) delete process.env.PLUGIN_DIR_ALLOWLIST;
+        else process.env.PLUGIN_DIR_ALLOWLIST = originalPluginDirAllowlist;
+        if (originalPluginAllowlist === undefined) delete process.env.PLUGIN_ALLOWLIST;
+        else process.env.PLUGIN_ALLOWLIST = originalPluginAllowlist;
+        if (originalPluginAllowTs === undefined) delete process.env.PLUGIN_ALLOW_TS;
+        else process.env.PLUGIN_ALLOW_TS = originalPluginAllowTs;
+
+        if (fs.existsSync(pluginDir)) {
+            fs.rmSync(pluginDir, { recursive: true, force: true });
+        }
+    }
 
     // ── selectors ────────────────────────────────────────────────────────────
     // SELECTORS è ora un array di priorità (readonly string[]).

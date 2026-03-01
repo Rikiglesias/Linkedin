@@ -23,6 +23,8 @@ interface CycleTlsClient {
 export interface CycleTlsStartOptions {
     upstreamProxy?: ProxyConfig;
     explicitUpstreamUrl?: string;
+    ja3Fingerprint?: string;
+    userAgent?: string;
 }
 
 let cycleTlsClient: CycleTlsClient | null = null;
@@ -70,10 +72,12 @@ function resolveUpstreamProxyUrl(options: CycleTlsStartOptions): string {
 
 function buildSignature(options: CycleTlsStartOptions): string {
     const upstream = resolveUpstreamProxyUrl(options);
+    const ja3 = options.ja3Fingerprint?.trim() || config.ja3Fingerprint;
+    const userAgent = options.userAgent?.trim() || config.ja3UserAgent;
     return [
         config.ja3ProxyPort,
-        config.ja3Fingerprint,
-        config.ja3UserAgent,
+        ja3,
+        userAgent,
         upstream,
     ].join('|');
 }
@@ -154,10 +158,12 @@ export async function startCycleTlsProxy(options: CycleTlsStartOptions = {}): Pr
 
         const client = await loadCycleTlsClient();
         const upstream = resolveUpstreamProxyUrl(options);
+        const ja3 = options.ja3Fingerprint?.trim() || config.ja3Fingerprint;
+        const userAgent = options.userAgent?.trim() || config.ja3UserAgent;
         const serverOptions: CycleTlsServerOptions = {
             port: config.ja3ProxyPort,
-            ja3: config.ja3Fingerprint,
-            userAgent: config.ja3UserAgent,
+            ja3,
+            userAgent,
         };
         if (upstream) {
             serverOptions.proxy = upstream;

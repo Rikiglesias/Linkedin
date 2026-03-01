@@ -11,8 +11,9 @@ import { config } from '../config';
 import { buildPersonalizedInviteNote } from '../ai/inviteNotePersonalizer';
 import { pauseAutomation } from '../risk/incidentManager';
 import { bridgeDailyStat, bridgeLeadStatus } from '../cloud/cloudBridge';
-import { selectVariant, recordSent } from '../ml/abBandit';
+import { recordSent } from '../ml/abBandit';
 import { WorkerExecutionResult, workerResult } from './result';
+import { inferLeadSegment } from '../ml/segments';
 
 async function clickConnectOnProfile(page: Page): Promise<boolean> {
     const primaryBtn = page.locator(joinSelectors('connectButtonPrimary')).first();
@@ -100,16 +101,9 @@ async function handleInviteModal(
 
         // Scrivi la nota nella textarea del modale
         const generatedNote = await buildPersonalizedInviteNote(lead);
-
-        // A/B Bandit: se ci sono variants disponibili, sovrascrivi la variante col bandit
         if (generatedNote.variant) {
-            const candidateVariants = [generatedNote.variant]; // estendibile con altre varianti in config
-            const banditVariant = await selectVariant(candidateVariants).catch(() => generatedNote.variant);
-            const resolvedVariant = banditVariant ?? generatedNote.variant;
-            generatedNote.variant = resolvedVariant;
-            await updateLeadPromptVariant(lead.id, resolvedVariant);
-            lead.invite_prompt_variant = resolvedVariant;
-            await recordSent(resolvedVariant).catch(() => { });
+            await updateLeadPromptVariant(lead.id, generatedNote.variant);
+            lead.invite_prompt_variant = generatedNote.variant;
         }
 
         try {
@@ -263,6 +257,10 @@ export async function processInviteJob(payload: InviteJobPayload, context: Worke
         withNoteSource: inviteResult.noteSource,
         variant: inviteResult.variant || null
     });
+    if (!context.dryRun && inviteResult.variant) {
+        const segmentKey = inferLeadSegment(lead.job_title);
+        await recordSent(inviteResult.variant, { segmentKey }).catch(() => { });
+    }
     await incrementDailyStat(context.localDate, 'invites_sent');
     await incrementListDailyStat(context.localDate, lead.list_name, 'invites_sent');
     // Cloud sync non-bloccante

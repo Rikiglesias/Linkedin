@@ -3,6 +3,7 @@ import path from 'path';
 import * as net from 'net';
 import { config, ProxyType } from './config';
 import { logInfo, logWarn } from './telemetry/logger';
+import { fetchWithRetryPolicy } from './core/integrationPolicy';
 
 export interface ProxyConfig {
     server: string;
@@ -275,7 +276,12 @@ export async function fetchFallbackProxyFromProvider(): Promise<boolean> {
             headers['Authorization'] = `Bearer ${config.proxyProviderApiKey}`;
         }
 
-        const response = await fetch(config.proxyProviderApiEndpoint, { headers, method: 'GET' });
+        const response = await fetchWithRetryPolicy(config.proxyProviderApiEndpoint, { headers, method: 'GET' }, {
+            integration: 'proxy.provider_fallback',
+            circuitKey: 'proxy.provider',
+            timeoutMs: 8_000,
+            maxAttempts: 2,
+        });
         if (!response.ok) {
             throw new Error(`Proxy Provider HTTP ${response.status}`);
         }

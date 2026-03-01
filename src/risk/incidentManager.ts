@@ -1,4 +1,4 @@
-import { clearAutomationPause, createIncident, countRecentIncidents, pushOutboxEvent, setAutomationPause, setRuntimeFlag } from '../core/repositories';
+import { clearAutomationPause, createIncident, countRecentIncidents, pushOutboxEvent, recordSecurityAuditEvent, setAutomationPause, setRuntimeFlag } from '../core/repositories';
 import { sendTelegramAlert } from '../telemetry/alerts';
 import { broadcastCritical, broadcastWarning } from '../telemetry/broadcaster';
 import { bridgeAccountHealth } from '../cloud/cloudBridge';
@@ -14,9 +14,27 @@ function resolveAccountId(details: Record<string, unknown>): string {
     return 'default';
 }
 
+async function recordAuditSafe(payload: Parameters<typeof recordSecurityAuditEvent>[0]): Promise<void> {
+    try {
+        await recordSecurityAuditEvent(payload);
+    } catch {
+        // audit is best-effort and must not block incident handling
+    }
+}
+
 export async function quarantineAccount(type: string, details: Record<string, unknown>): Promise<number> {
     const incidentId = await createIncident(type, 'CRITICAL', details);
     await setRuntimeFlag('account_quarantine', 'true');
+    await recordAuditSafe({
+        category: 'incident',
+        action: 'quarantine_account',
+        actor: 'system',
+        accountId: resolveAccountId(details),
+        entityType: 'account_incident',
+        entityId: String(incidentId),
+        result: 'ALLOW',
+        metadata: { type, details },
+    });
     await pushOutboxEvent(
         'incident.opened',
         {
@@ -47,6 +65,13 @@ export async function setQuarantine(enabled: boolean): Promise<void> {
     if (!enabled) {
         await setRuntimeFlag('challenge_review_pending', 'false');
     }
+    await recordAuditSafe({
+        category: 'runtime_control',
+        action: enabled ? 'quarantine_enable' : 'quarantine_disable',
+        actor: 'system',
+        result: 'ALLOW',
+        metadata: { enabled },
+    });
     publishLiveEvent('system.quarantine', { enabled });
 }
 
@@ -69,6 +94,16 @@ export async function pauseAutomation(type: string, details: Record<string, unkn
 
     const incidentId = await createIncident(type, 'WARN', details);
     const pausedUntil = await setAutomationPause(finalMinutes, type);
+    await recordAuditSafe({
+        category: 'runtime_control',
+        action: 'pause_automation',
+        actor: 'system',
+        accountId: resolveAccountId(details),
+        entityType: 'account_incident',
+        entityId: String(incidentId),
+        result: 'ALLOW',
+        metadata: { type, finalMinutes, pausedUntil, details },
+    });
     await pushOutboxEvent(
         'automation.paused',
         {
@@ -98,6 +133,12 @@ export async function pauseAutomation(type: string, details: Record<string, unkn
 export async function resumeAutomation(): Promise<void> {
     await clearAutomationPause();
     await setRuntimeFlag('challenge_review_pending', 'false');
+    await recordAuditSafe({
+        category: 'runtime_control',
+        action: 'resume_automation',
+        actor: 'system',
+        result: 'ALLOW',
+    });
     publishLiveEvent('automation.resumed', {});
 }
 

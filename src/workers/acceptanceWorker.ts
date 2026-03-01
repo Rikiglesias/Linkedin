@@ -93,7 +93,8 @@ export async function processAcceptanceJob(payload: AcceptanceJobPayload, contex
     await incrementDailyStat(context.localDate, 'acceptances');
     // A/B Bandit: registra accettazione per la variante usata nell'invito
     if (lead.invite_prompt_variant) {
-        recordOutcome(lead.invite_prompt_variant, 'accepted').catch(() => { });
+        const segmentKey = (lead.job_title || 'unknown').toLowerCase().trim() || 'unknown';
+        recordOutcome(lead.invite_prompt_variant, 'accepted', { segmentKey }).catch(() => { });
     }
     // Cloud sync non-bloccante
     bridgeLeadStatus(lead.linkedin_url, 'ACCEPTED', { accepted_at: new Date().toISOString() });

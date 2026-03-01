@@ -7,8 +7,8 @@ on:
     branches: [main, master]
 
 jobs:
-  quality:
-    name: Typecheck + Lint + Audit + Tests
+  quality-fast:
+    name: Fast Gate (typecheck/lint/audit/unit)
     runs-on: ubuntu-latest
 
     strategy:
@@ -42,9 +42,68 @@ jobs:
         env:
           NODE_ENV: test
 
-      - name: Verifica build Docker
+  quality-extended:
+    name: Extended Gate (integration/e2e-dry/docker)
+    runs-on: ubuntu-latest
+    needs: quality-fast
+
+    strategy:
+      matrix:
+        node-version: [22.x]
+
+    steps:
+      - name: Checkout codice
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Installa dipendenze
+        run: npm ci
+
+      - name: Integration tests
+        run: npm run test:integration
+        env:
+          NODE_ENV: test
+
+      - name: E2E dry-run test
+        run: npm run test:e2e:dry
+        env:
+          NODE_ENV: test
+
+      - name: Build immagine Docker
         uses: docker/build-push-action@v5
         with:
           context: .
           push: false
+          load: true
           tags: linkedin-bot:ci
+
+      - name: Smoke test container (/api/health)
+        run: |
+          set -euo pipefail
+          docker run -d --name linkedin-bot-smoke -p 3000:3000 \
+            -e NODE_ENV=test \
+            -e SUPABASE_SYNC_ENABLED=false \
+            -e DASHBOARD_AUTH_ENABLED=false \
+            linkedin-bot:ci
+
+          ready=0
+          for _ in {1..30}; do
+            if curl -fsS http://127.0.0.1:3000/api/health >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+
+          if [ "$ready" -ne 1 ]; then
+            echo "Container health endpoint did not become ready"
+            docker logs linkedin-bot-smoke || true
+            exit 1
+          fi
+
+          docker rm -f linkedin-bot-smoke

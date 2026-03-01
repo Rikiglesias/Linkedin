@@ -2,6 +2,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { config } from '../config';
 import { sendTelegramAlert } from '../telemetry/alerts';
 import { logInfo, logWarn } from '../telemetry/logger';
+import { executeWithRetryPolicy, isLikelyTransientError } from '../core/integrationPolicy';
 import {
     countPendingOutboxEvents,
     getPendingOutboxEvents,
@@ -11,6 +12,13 @@ import {
 } from '../core/repositories';
 
 let client: SupabaseClient | null = null;
+
+class TerminalSupabaseSyncError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'TerminalSupabaseSyncError';
+    }
+}
 
 function getClient(): SupabaseClient | null {
     if (!config.supabaseSyncEnabled) return null;
@@ -81,31 +89,46 @@ export async function runSupabaseSyncOnce(): Promise<void> {
             created_at: event.created_at,
         };
 
-        const { error } = await supabase.from('cp_events').upsert(payload, {
-            onConflict: 'idempotency_key',
-            ignoreDuplicates: false,
-        });
-
-        if (error) {
+        try {
+            await executeWithRetryPolicy(
+                async () => {
+                    const { error } = await supabase.from('cp_events').upsert(payload, {
+                        onConflict: 'idempotency_key',
+                        ignoreDuplicates: false,
+                    });
+                    if (!error) return;
+                    if (isLikelyTransientError(error.message)) {
+                        throw new Error(error.message);
+                    }
+                    throw new TerminalSupabaseSyncError(error.message);
+                },
+                {
+                    integration: 'supabase.cp_events_upsert',
+                    circuitKey: 'supabase.cp_events',
+                    maxAttempts: 2,
+                    classifyError: (error) => (error instanceof TerminalSupabaseSyncError ? 'terminal' : 'transient'),
+                }
+            );
+            sent += 1;
+            await markOutboxDelivered(event.id);
+        } catch (error) {
             failed += 1;
             const attempts = event.attempts + 1;
+            const message = error instanceof Error ? error.message : String(error);
             if (attempts >= config.supabaseSyncMaxRetries) {
                 permanentFailures += 1;
-                await markOutboxPermanentFailure(event.id, attempts, error.message);
+                await markOutboxPermanentFailure(event.id, attempts, message);
                 await logWarn('supabase.sync.event.permanent_failure', {
                     eventId: event.id,
                     idempotencyKey: event.idempotency_key,
                     attempts,
                     maxRetries: config.supabaseSyncMaxRetries,
-                    error: error.message,
+                    error: message,
                 });
             } else {
                 const delay = retryDelayMs(attempts);
-                await markOutboxRetry(event.id, attempts, delay, error.message);
+                await markOutboxRetry(event.id, attempts, delay, message);
             }
-        } else {
-            sent += 1;
-            await markOutboxDelivered(event.id);
         }
     }
 

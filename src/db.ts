@@ -245,7 +245,7 @@ async function applyMigrations(database: DatabaseManager): Promise<void> {
             // Eseguiamo il file SQL intero: evita parser naive su ';'
             // che rompe blocchi complessi (es. funzioni/DO blocks in Postgres).
             await database.exec(sql);
-            await database.run(`INSERT INTO _migrations (name) VALUES (?)`, [fileName]);
+            await database.run(`INSERT OR IGNORE INTO _migrations (name) VALUES (?)`, [fileName]);
             await database.exec('COMMIT');
         } catch (error) {
             await database.exec('ROLLBACK');
@@ -270,6 +270,7 @@ async function applyMigrations(database: DatabaseManager): Promise<void> {
         await ensureColumnPg(database, 'daily_stats', 'selector_failures', 'INTEGER NOT NULL DEFAULT 0');
         await ensureColumnPg(database, 'daily_stats', 'run_errors', 'INTEGER NOT NULL DEFAULT 0');
         await ensureColumnPg(database, 'jobs', 'account_id', `TEXT NOT NULL DEFAULT 'default'`);
+        await ensureColumnPg(database, 'lead_intents', 'entities_json', 'TEXT');
 
         await database.exec(`
             CREATE TABLE IF NOT EXISTS list_daily_stats (
@@ -323,6 +324,71 @@ async function applyMigrations(database: DatabaseManager): Promise<void> {
             );
         `);
         await database.exec(`CREATE INDEX IF NOT EXISTS idx_runtime_locks_expires_at ON runtime_locks(expires_at);`);
+        await database.exec(`
+            CREATE TABLE IF NOT EXISTS ab_variant_stats_segment (
+                segment_key TEXT NOT NULL,
+                variant_id TEXT NOT NULL,
+                sent INTEGER NOT NULL DEFAULT 0,
+                accepted INTEGER NOT NULL DEFAULT 0,
+                replied INTEGER NOT NULL DEFAULT 0,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (segment_key, variant_id)
+            );
+        `);
+        await database.exec(`
+            CREATE TABLE IF NOT EXISTS dynamic_selectors (
+                id SERIAL PRIMARY KEY,
+                action_label TEXT NOT NULL,
+                selector TEXT NOT NULL,
+                confidence DOUBLE PRECISION NOT NULL DEFAULT 0.5,
+                source TEXT NOT NULL DEFAULT 'learner',
+                active INTEGER NOT NULL DEFAULT 1,
+                success_count INTEGER NOT NULL DEFAULT 0,
+                last_validated_at TIMESTAMP,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(action_label, selector)
+            );
+        `);
+        await database.exec(`
+            CREATE TABLE IF NOT EXISTS selector_failures (
+                id SERIAL PRIMARY KEY,
+                action_label TEXT NOT NULL,
+                url TEXT NOT NULL,
+                selectors_json TEXT NOT NULL,
+                error_message TEXT,
+                occurrences INTEGER NOT NULL DEFAULT 1,
+                first_seen_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                last_seen_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                resolved_at TIMESTAMP,
+                status TEXT NOT NULL DEFAULT 'OPEN',
+                UNIQUE(action_label, url)
+            );
+        `);
+        await database.exec(`
+            CREATE TABLE IF NOT EXISTS selector_fallbacks (
+                id SERIAL PRIMARY KEY,
+                action_label TEXT NOT NULL,
+                selector TEXT NOT NULL,
+                url TEXT,
+                success_count INTEGER NOT NULL DEFAULT 1,
+                last_success_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(action_label, selector)
+            );
+        `);
+        await database.exec(`
+            CREATE TABLE IF NOT EXISTS list_rampup_state (
+                list_name TEXT PRIMARY KEY,
+                last_run_date TEXT,
+                current_invite_cap INTEGER NOT NULL DEFAULT 0,
+                current_message_cap INTEGER NOT NULL DEFAULT 0,
+                daily_increase DOUBLE PRECISION NOT NULL DEFAULT 0.05,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
     } else {
         await ensureColumnSqlite(database, 'leads', 'list_name', `TEXT NOT NULL DEFAULT 'default'`);
         await ensureColumnSqlite(database, 'leads', 'last_site_check_at', 'DATETIME');
@@ -338,6 +404,7 @@ async function applyMigrations(database: DatabaseManager): Promise<void> {
         await ensureColumnSqlite(database, 'daily_stats', 'selector_failures', 'INTEGER NOT NULL DEFAULT 0');
         await ensureColumnSqlite(database, 'daily_stats', 'run_errors', 'INTEGER NOT NULL DEFAULT 0');
         await ensureColumnSqlite(database, 'jobs', 'account_id', `TEXT NOT NULL DEFAULT 'default'`);
+        await ensureColumnSqlite(database, 'lead_intents', 'entities_json', 'TEXT');
         await database.exec(`
             CREATE TABLE IF NOT EXISTS list_daily_stats (
                 date TEXT NOT NULL,
@@ -387,6 +454,71 @@ async function applyMigrations(database: DatabaseManager): Promise<void> {
             );
         `);
         await database.exec(`CREATE INDEX IF NOT EXISTS idx_runtime_locks_expires_at ON runtime_locks(expires_at);`);
+        await database.exec(`
+            CREATE TABLE IF NOT EXISTS ab_variant_stats_segment (
+                segment_key TEXT NOT NULL,
+                variant_id TEXT NOT NULL,
+                sent INTEGER NOT NULL DEFAULT 0,
+                accepted INTEGER NOT NULL DEFAULT 0,
+                replied INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                PRIMARY KEY (segment_key, variant_id)
+            );
+        `);
+        await database.exec(`
+            CREATE TABLE IF NOT EXISTS dynamic_selectors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                action_label TEXT NOT NULL,
+                selector TEXT NOT NULL,
+                confidence REAL NOT NULL DEFAULT 0.5,
+                source TEXT NOT NULL DEFAULT 'learner',
+                active INTEGER NOT NULL DEFAULT 1,
+                success_count INTEGER NOT NULL DEFAULT 0,
+                last_validated_at TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(action_label, selector)
+            );
+        `);
+        await database.exec(`
+            CREATE TABLE IF NOT EXISTS selector_failures (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                action_label TEXT NOT NULL,
+                url TEXT NOT NULL,
+                selectors_json TEXT NOT NULL,
+                error_message TEXT,
+                occurrences INTEGER NOT NULL DEFAULT 1,
+                first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+                last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+                resolved_at TEXT,
+                status TEXT NOT NULL DEFAULT 'OPEN',
+                UNIQUE(action_label, url)
+            );
+        `);
+        await database.exec(`
+            CREATE TABLE IF NOT EXISTS selector_fallbacks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                action_label TEXT NOT NULL,
+                selector TEXT NOT NULL,
+                url TEXT,
+                success_count INTEGER NOT NULL DEFAULT 1,
+                last_success_at TEXT NOT NULL DEFAULT (datetime('now')),
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(action_label, selector)
+            );
+        `);
+        await database.exec(`
+            CREATE TABLE IF NOT EXISTS list_rampup_state (
+                list_name TEXT PRIMARY KEY,
+                last_run_date TEXT,
+                current_invite_cap INTEGER NOT NULL DEFAULT 0,
+                current_message_cap INTEGER NOT NULL DEFAULT 0,
+                daily_increase REAL NOT NULL DEFAULT 0.05,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+        `);
     }
 }
 

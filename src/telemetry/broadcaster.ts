@@ -16,6 +16,7 @@
 
 import { config } from '../config';
 import { logError, logWarn } from './logger';
+import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -59,11 +60,15 @@ async function sendToDiscord(payload: BroadcastPayload): Promise<void> {
         ],
     };
 
-    const response = await fetch(url, {
+    const response = await fetchWithRetryPolicy(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(discordBody),
-        signal: AbortSignal.timeout(8000),
+    }, {
+        integration: 'discord.webhook',
+        circuitKey: 'notifications.discord',
+        timeoutMs: 8_000,
+        maxAttempts: 2,
     });
 
     if (!response.ok) {
@@ -86,11 +91,15 @@ async function sendToSlack(payload: BroadcastPayload): Promise<void> {
         text: `${emoji} *[${payload.level}] ${payload.title}*\n${payload.body}${metaText}`,
     };
 
-    const response = await fetch(url, {
+    const response = await fetchWithRetryPolicy(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(slackBody),
-        signal: AbortSignal.timeout(8000),
+    }, {
+        integration: 'slack.webhook',
+        circuitKey: 'notifications.slack',
+        timeoutMs: 8_000,
+        maxAttempts: 2,
     });
 
     if (!response.ok) {
@@ -113,7 +122,7 @@ async function sendToTelegram(payload: BroadcastPayload): Promise<void> {
     const text = `${emoji} <b>[${payload.level}] ${payload.title}</b>\n${payload.body}${metaText}`;
 
     const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
-    const response = await fetch(url, {
+    const response = await fetchWithRetryPolicy(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -122,7 +131,11 @@ async function sendToTelegram(payload: BroadcastPayload): Promise<void> {
             parse_mode: 'HTML',
             disable_notification: payload.level === 'INFO',
         }),
-        signal: AbortSignal.timeout(8000),
+    }, {
+        integration: 'telegram.send_message',
+        circuitKey: 'notifications.telegram',
+        timeoutMs: 8_000,
+        maxAttempts: 2,
     });
 
     if (!response.ok) {
