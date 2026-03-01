@@ -1,7 +1,7 @@
 import { closeDatabase, initDatabase } from './db';
 import { config, validateCriticalConfig } from './config';
 import { runDoctor } from './core/doctor';
-import { listOpenIncidents, recoverStuckJobs } from './core/repositories';
+import { getGlobalKPIData, listOpenIncidents, recoverStuckJobs } from './core/repositories';
 import { getEventSyncStatus, runEventSyncOnce } from './sync/eventSync';
 import { generateAndSendDailyReport } from './telemetry/dailyReporter';
 import { startServer } from './api/server';
@@ -191,6 +191,11 @@ async function main(): Promise<void> {
         case 'status':
             await runStatusCommand();
             break;
+        case 'kpi': {
+            const kpi = await getGlobalKPIData();
+            console.log(JSON.stringify(kpi, null, 2));
+            break;
+        }
         case 'proxy-status':
             await runProxyStatusCommand();
             break;

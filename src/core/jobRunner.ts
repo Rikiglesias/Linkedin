@@ -9,7 +9,7 @@ import { processAcceptanceJob } from '../workers/acceptanceWorker';
 import { processInviteJob } from '../workers/inviteWorker';
 import { processMessageJob } from '../workers/messageWorker';
 import { processHygieneJob } from '../workers/hygieneWorker';
-import { ChallengeDetectedError } from '../workers/errors';
+import { ChallengeDetectedError, RetryableWorkerError } from '../workers/errors';
 import { runFollowUpWorker } from '../workers/followUpWorker';
 import { WorkerExecutionResult, workerResult } from '../workers/result';
 import { transitionLead } from './leadStateService';
@@ -159,12 +159,28 @@ async function runQueuedJobsForAccount(
                     });
                 }
 
+                const hasWorkerWarnings = !executionResult.success && executionResult.errors.length > 0;
+                if (!executionResult.success && executionResult.processedCount === 0) {
+                    const firstError = executionResult.errors[0]?.message ?? 'worker_reported_failure';
+                    throw new RetryableWorkerError(
+                        `Worker result non-success (processedCount=0): ${firstError}`,
+                        'WORKER_REPORTED_FAILURE'
+                    );
+                }
+
                 await markJobSucceeded(job.id);
                 await createJobAttempt(job.id, true, null, null, null);
                 await pushOutboxEvent(
-                    'job.succeeded',
-                    { jobId: job.id, type: job.type, dryRun: options.dryRun, accountId: account.id },
-                    `job.succeeded:${job.id}:${job.type}`
+                    hasWorkerWarnings ? 'job.succeeded_with_errors' : 'job.succeeded',
+                    {
+                        jobId: job.id,
+                        type: job.type,
+                        dryRun: options.dryRun,
+                        accountId: account.id,
+                        processedCount: executionResult.processedCount,
+                        errorsCount: executionResult.errors.length,
+                    },
+                    `${hasWorkerWarnings ? 'job.succeeded_with_errors' : 'job.succeeded'}:${job.id}:${job.type}`
                 );
                 consecutiveFailures = 0;
 

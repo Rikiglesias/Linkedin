@@ -14,6 +14,7 @@ import { CampaignRunRecord } from '../types/domain';
 import { publishLiveEvent, subscribeLiveEvents, getLiveEventSubscribersCount, type LiveEventMessage } from '../telemetry/liveEvents';
 
 const app = express();
+app.set('trust proxy', false);
 
 // ── CORS ristretto ──────────────────────────────────────────────────────────
 // Accetta solo richieste da localhost o se non c'è origin (es. curl / stesso server)
@@ -97,13 +98,11 @@ function normalizeIp(rawIp: string): string {
 }
 
 function resolveRequestIp(req: Request): string {
-    const forwardedFor = req.header('x-forwarded-for');
-    if (forwardedFor) {
-        const first = forwardedFor.split(',')[0] ?? '';
-        const normalized = normalizeIp(first);
-        if (normalized) return normalized;
-    }
-    const fallback = req.ip ?? (req.socket?.remoteAddress ?? '');
+    // Non usare manualmente x-forwarded-for: è header spoofabile lato client.
+    // req.ip usa la trust-proxy policy di Express (default: false).
+    const fromExpress = normalizeIp(req.ip ?? '');
+    if (fromExpress) return fromExpress;
+    const fallback = req.socket?.remoteAddress ?? '';
     return normalizeIp(fallback);
 }
 
@@ -116,6 +115,10 @@ function isApiKeyAuthValid(req: Request): boolean {
     if (!config.dashboardApiKey) return false;
     const fromHeader = req.header('x-api-key');
     if (fromHeader && secureEquals(fromHeader.trim(), config.dashboardApiKey)) return true;
+    const queryApiKey = req.query.api_key;
+    if (typeof queryApiKey === 'string' && queryApiKey.trim().length > 0) {
+        return secureEquals(queryApiKey.trim(), config.dashboardApiKey);
+    }
     const authorization = req.header('authorization') ?? '';
     if (!authorization.toLowerCase().startsWith('bearer ')) return false;
     const token = authorization.slice('bearer '.length).trim();
@@ -143,7 +146,7 @@ function isBasicAuthValid(req: Request): boolean {
 
 function dashboardAuthMiddleware(req: Request, res: Response, next: NextFunction): void {
     if (!config.dashboardAuthEnabled) { next(); return; }
-    if (req.path === '/api/health') { next(); return; }
+    if (req.path === '/health') { next(); return; }
     const requestIp = resolveRequestIp(req);
     if (isTrustedIp(requestIp)) { next(); return; }
     const authConfigured = !!config.dashboardApiKey || (!!config.dashboardBasicUser && !!config.dashboardBasicPassword);
@@ -169,7 +172,7 @@ function writeSseEvent(res: Response, eventType: string, data: unknown): void {
     res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
-app.use(dashboardAuthMiddleware);
+app.use('/api', dashboardAuthMiddleware);
 
 // ── Static (Dashboard UI) ────────────────────────────────────────────────────
 const publicDir = path.resolve(__dirname, '../../public');
@@ -323,7 +326,7 @@ app.get('/api/stats/trend', async (_req, res) => {
         for (let i = 6; i >= 0; i--) {
             const d = new Date(today);
             d.setDate(d.getDate() - i);
-            const dateStr = d.toISOString().slice(0, 10);
+            const dateStr = getLocalDateString(d);
             const [invites, messages, acceptances] = await Promise.all([
                 getDailyStat(dateStr, 'invites_sent'),
                 getDailyStat(dateStr, 'messages_sent'),

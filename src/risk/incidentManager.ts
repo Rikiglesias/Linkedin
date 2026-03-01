@@ -4,6 +4,14 @@ import { broadcastCritical, broadcastWarning } from '../telemetry/broadcaster';
 import { bridgeAccountHealth } from '../cloud/cloudBridge';
 import { publishLiveEvent } from '../telemetry/liveEvents';
 
+function resolveAccountId(details: Record<string, unknown>): string {
+    const accountId = details.accountId;
+    if (typeof accountId === 'string' && accountId.trim().length > 0) {
+        return accountId.trim();
+    }
+    return 'default';
+}
+
 export async function quarantineAccount(type: string, details: Record<string, unknown>): Promise<number> {
     const incidentId = await createIncident(type, 'CRITICAL', details);
     await setRuntimeFlag('account_quarantine', 'true');
@@ -21,7 +29,7 @@ export async function quarantineAccount(type: string, details: Record<string, un
     // Multi-channel broadcast
     broadcastCritical(`CRITICAL incident #${incidentId}: ${type}`, `Account messo in quarantena.`, details).catch(() => { });
     // Replica cloud: aggiorna health account a RED (non-bloccante)
-    bridgeAccountHealth('default', 'RED', type);
+    bridgeAccountHealth(resolveAccountId(details), 'RED', type);
     publishLiveEvent('incident.opened', {
         incidentId,
         type,
@@ -71,7 +79,7 @@ export async function pauseAutomation(type: string, details: Record<string, unkn
     // Multi-channel broadcast
     broadcastWarning(`WARN incident #${incidentId}: ${type}`, `Automazione in pausa fino a ${pausedUntil ?? 'manual resume'}.`, details).catch(() => { });
     // Replica cloud: aggiorna health account a YELLOW (non-bloccante)
-    bridgeAccountHealth('default', 'YELLOW', type, pausedUntil ?? null);
+    bridgeAccountHealth(resolveAccountId(details), 'YELLOW', type, pausedUntil ?? null);
     publishLiveEvent('automation.paused', {
         incidentId,
         type,

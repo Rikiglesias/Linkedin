@@ -10,6 +10,7 @@ import { ensureDirectoryPrivate } from '../security/filesystem';
 import { pauseAutomation } from '../risk/incidentManager';
 import {
     ProxyConfig,
+    getProxyFailoverChainAsync,
     getStickyProxy,
     markProxyFailed,
     markProxyHealthy,
@@ -82,18 +83,41 @@ export interface LaunchBrowserOptions {
     sessionDir?: string;
 }
 
+function isSameProxy(a: ProxyConfig | undefined, b: ProxyConfig | undefined): boolean {
+    if (!a || !b) return false;
+    return a.server === b.server
+        && (a.username ?? '') === (b.username ?? '')
+        && (a.password ?? '') === (b.password ?? '');
+}
+
 export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise<BrowserSession> {
     const sessionDir = options.sessionDir ?? config.sessionDir;
     ensureDirectoryPrivate(sessionDir);
 
     const headless = options.headless ?? config.headless;
     const autoScaleProxy = config.multiAccountEnabled;
+    const explicitProxy = options.proxy;
+    const stickyProxy = !explicitProxy && autoScaleProxy ? await getStickyProxy(sessionDir) : undefined;
 
-    const selectedProxy: ProxyConfig | undefined = autoScaleProxy
-        ? await getStickyProxy(sessionDir)
-        : options.proxy;
-
-    const launchPlan: Array<ProxyConfig | undefined> = [selectedProxy];
+    let launchPlan: Array<ProxyConfig | undefined> = [];
+    if (explicitProxy) {
+        launchPlan = [explicitProxy];
+    } else if (autoScaleProxy) {
+        const failoverChain = await getProxyFailoverChainAsync();
+        if (stickyProxy) {
+            launchPlan.push(stickyProxy);
+        }
+        for (const candidate of failoverChain) {
+            if (!isSameProxy(candidate, stickyProxy)) {
+                launchPlan.push(candidate);
+            }
+        }
+        if (launchPlan.length === 0) {
+            launchPlan = [undefined];
+        }
+    } else {
+        launchPlan = [undefined];
+    }
     let lastError: unknown = null;
 
     for (let attempt = 0; attempt < launchPlan.length; attempt++) {

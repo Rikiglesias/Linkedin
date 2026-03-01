@@ -78,25 +78,73 @@ class PostgresManager implements DatabaseManager {
         return sql.replace(/\?/g, () => `$${count++}`);
     }
 
+    private normalizeSql(sql: string): string {
+        let normalized = this.adaptParams(sql);
+
+        normalized = normalized.replace(
+            /strftime\('%Y-%m-%dT%H:%M:%f',\s*'now'\)/gi,
+            `TO_CHAR(CURRENT_TIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS.MS')`
+        );
+        normalized = normalized.replace(/\bDATETIME\('now'\)/gi, 'CURRENT_TIMESTAMP');
+        normalized = normalized.replace(/\bDATE\('now'\)/gi, 'CURRENT_DATE');
+
+        normalized = normalized.replace(
+            /\bDATETIME\('now',\s*'([+-])\s*(\d+)\s*(seconds?|minutes?|hours?|days?)'\s*\)/gi,
+            (_match, sign: string, amount: string, unit: string) => {
+                const op = sign === '+' ? '+' : '-';
+                return `CURRENT_TIMESTAMP ${op} INTERVAL '${amount} ${unit.toLowerCase()}'`;
+            }
+        );
+        normalized = normalized.replace(
+            /\bDATE\('now',\s*'([+-])\s*(\d+)\s*(days?)'\s*\)/gi,
+            (_match, sign: string, amount: string, unit: string) => {
+                const op = sign === '+' ? '+' : '-';
+                return `CURRENT_DATE ${op} INTERVAL '${amount} ${unit.toLowerCase()}'`;
+            }
+        );
+        normalized = normalized.replace(
+            /\bDATETIME\('now',\s*'([+-])'\s*\|\|\s*(\$\d+)\s*\|\|\s*'\s*(seconds?|minutes?|hours?|days?)'\s*\)/gi,
+            (_match, sign: string, paramRef: string, unit: string) => {
+                const op = sign === '+' ? '+' : '-';
+                return `CURRENT_TIMESTAMP ${op} ((${paramRef} || ' ${unit.toLowerCase()}')::interval)`;
+            }
+        );
+
+        const hadInsertOrIgnore = /\bINSERT\s+OR\s+IGNORE\s+INTO\b/i.test(normalized);
+        normalized = normalized.replace(/\bINSERT\s+OR\s+IGNORE\s+INTO\b/gi, 'INSERT INTO');
+        if (hadInsertOrIgnore && !/\bON\s+CONFLICT\b/i.test(normalized)) {
+            normalized = normalized.replace(/;\s*$/, '');
+            normalized = `${normalized} ON CONFLICT DO NOTHING`;
+        }
+
+        return normalized;
+    }
+
     async query<T = unknown>(sql: string, params?: unknown[]): Promise<T[]> {
-        const result = await this.pool.query(this.adaptParams(sql), params);
+        const result = await this.pool.query(this.normalizeSql(sql), params);
         return result.rows;
     }
 
     async get<T = unknown>(sql: string, params?: unknown[]): Promise<T | undefined> {
-        const result = await this.pool.query(this.adaptParams(sql), params);
+        const result = await this.pool.query(this.normalizeSql(sql), params);
         return result.rows[0];
     }
 
     async exec(sql: string, params?: unknown[]): Promise<void> {
-        await this.pool.query(this.adaptParams(sql), params);
+        await this.pool.query(this.normalizeSql(sql), params);
     }
 
     async run(sql: string, params?: unknown[]): Promise<DBRunResult> {
         // Se vogliamo fare insert e avere un lastID con postgres dovremmo usare `RETURNING id`
         // Per semplicità logica, mappiamo `rowCount` su changes
-        const result = await this.pool.query(this.adaptParams(sql), params);
+        const result = await this.pool.query(this.normalizeSql(sql), params);
+        const row = (result.rows[0] ?? {}) as Record<string, unknown>;
+        const rowId = row.id;
+        const parsedLastId = typeof rowId === 'number'
+            ? rowId
+            : (typeof rowId === 'string' && /^[0-9]+$/.test(rowId) ? Number.parseInt(rowId, 10) : undefined);
         return {
+            lastID: parsedLastId,
             changes: result.rowCount ?? undefined
         };
     }
@@ -186,9 +234,10 @@ async function applyMigrations(database: DatabaseManager): Promise<void> {
 
         if (isPostgres) {
             // Semplice traduzione dialetto per file originariamente nati per sqlite
-            sql = sql.replace(/DATETIME/ig, 'TIMESTAMP');
+            sql = sql.replace(/\bDATETIME\b(?!\s*\()/ig, 'TIMESTAMP');
+            sql = sql.replace(/datetime\('now'\)/ig, 'CURRENT_TIMESTAMP');
+            sql = sql.replace(/strftime\('%Y-%m-%dT%H:%M:%f',\s*'now'\)/ig, 'CURRENT_TIMESTAMP');
             sql = sql.replace(/INTEGER PRIMARY KEY AUTOINCREMENT/ig, 'SERIAL PRIMARY KEY');
-            sql = sql.replace(/IF NOT EXISTS/ig, 'IF NOT EXISTS'); // Valido
         }
 
         await database.exec('BEGIN');

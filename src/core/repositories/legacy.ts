@@ -1801,11 +1801,17 @@ export async function getGlobalKPIData(): Promise<GlobalKPIData> {
     `) as { count: number } | undefined;
 
     // Acceptances in last 7 days from daily_stats
-    const weeklyAcceptancesRow = await db.get(`
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    const weekAgoDate = weekAgo.toISOString().slice(0, 10);
+    const weeklyAcceptancesRow = await db.get(
+        `
         SELECT SUM(acceptances) as count 
         FROM daily_stats 
-        WHERE date >= date('now', '-7 days')
-    `) as { count: number } | undefined;
+        WHERE date >= ?
+    `,
+        [weekAgoDate]
+    ) as { count: number } | undefined;
 
     return {
         totalLeads,
@@ -1817,14 +1823,40 @@ export async function getGlobalKPIData(): Promise<GlobalKPIData> {
 
 export async function startCampaignRun(): Promise<number> {
     const db = await getDatabase();
-    const result = await db.run(`
+    const startedAt = new Date().toISOString();
+
+    try {
+        const inserted = await db.get<{ id?: number | string }>(
+            `
+            INSERT INTO campaign_runs (start_time, status)
+            VALUES (?, 'RUNNING')
+            RETURNING id
+        `,
+            [startedAt]
+        );
+
+        const returnedId = inserted?.id;
+        if (typeof returnedId === 'number' && Number.isFinite(returnedId)) {
+            return returnedId;
+        }
+        if (typeof returnedId === 'string' && /^[0-9]+$/.test(returnedId)) {
+            return Number.parseInt(returnedId, 10);
+        }
+    } catch {
+        // SQLite più vecchie non supportano RETURNING; fallback sotto.
+    }
+
+    const fallbackResult = await db.run(
+        `
         INSERT INTO campaign_runs (start_time, status)
-        VALUES (strftime('%Y-%m-%dT%H:%M:%f', 'now'), 'RUNNING')
-    `);
-    if (!result.lastID) {
+        VALUES (?, 'RUNNING')
+    `,
+        [startedAt]
+    );
+    if (!fallbackResult.lastID) {
         throw new Error('Failed to create campaign run record');
     }
-    return result.lastID;
+    return fallbackResult.lastID;
 }
 
 export interface CampaignRunMetrics {
@@ -1836,11 +1868,12 @@ export interface CampaignRunMetrics {
 
 export async function finishCampaignRun(runId: number, status: RunStatus, metrics: CampaignRunMetrics): Promise<void> {
     const db = await getDatabase();
+    const finishedAt = new Date().toISOString();
     await db.run(
         `
         UPDATE campaign_runs
         SET 
-            end_time = strftime('%Y-%m-%dT%H:%M:%f', 'now'),
+            end_time = ?,
             status = ?,
             profiles_discovered = ?,
             invites_sent = ?,
@@ -1848,7 +1881,7 @@ export async function finishCampaignRun(runId: number, status: RunStatus, metric
             errors_count = ?
         WHERE id = ?
     `,
-        [status, metrics.discovered, metrics.invites, metrics.messages, metrics.errors, runId]
+        [finishedAt, status, metrics.discovered, metrics.invites, metrics.messages, metrics.errors, runId]
     );
 }
 

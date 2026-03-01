@@ -8,6 +8,8 @@
 
 const POLL_INTERVAL_MS = 30_000;
 const SSE_RECONNECT_BASE_MS = 2_000;
+const DASHBOARD_API_KEY_PARAM = 'api_key';
+const DASHBOARD_API_KEY_STORAGE = 'dashboard_api_key';
 let pollInterval = null;
 let funnelChart = null;
 let trendChart = null;
@@ -15,6 +17,60 @@ let eventSource = null;
 let sseReconnectTimer = null;
 let sseReconnectAttempts = 0;
 let refreshTimer = null;
+let cachedDashboardApiKey = null;
+
+function getDashboardApiKey() {
+    if (cachedDashboardApiKey !== null) return cachedDashboardApiKey;
+
+    let fromQuery = '';
+    try {
+        const url = new URL(window.location.href);
+        fromQuery = (url.searchParams.get(DASHBOARD_API_KEY_PARAM) || '').trim();
+    } catch {
+        fromQuery = '';
+    }
+
+    if (fromQuery) {
+        try {
+            localStorage.setItem(DASHBOARD_API_KEY_STORAGE, fromQuery);
+        } catch {
+            // ignore storage failures (private mode / blocked storage)
+        }
+        cachedDashboardApiKey = fromQuery;
+        return cachedDashboardApiKey;
+    }
+
+    try {
+        cachedDashboardApiKey = (localStorage.getItem(DASHBOARD_API_KEY_STORAGE) || '').trim();
+    } catch {
+        cachedDashboardApiKey = '';
+    }
+    return cachedDashboardApiKey;
+}
+
+function withApiKey(urlPath) {
+    const apiKey = getDashboardApiKey();
+    if (!apiKey) return urlPath;
+
+    try {
+        const url = new URL(urlPath, window.location.origin);
+        if (!url.searchParams.has(DASHBOARD_API_KEY_PARAM)) {
+            url.searchParams.set(DASHBOARD_API_KEY_PARAM, apiKey);
+        }
+        return url.pathname + url.search;
+    } catch {
+        return urlPath;
+    }
+}
+
+function apiFetch(urlPath, init = {}) {
+    const headers = new Headers(init.headers || {});
+    const apiKey = getDashboardApiKey();
+    if (apiKey && !headers.has('x-api-key')) {
+        headers.set('x-api-key', apiKey);
+    }
+    return fetch(withApiKey(urlPath), { ...init, headers });
+}
 
 // ── Sicurezza: escapeHtml per prevenire XSS in innerHTML ─────────────────────
 function escapeHtml(str) {
@@ -70,7 +126,7 @@ function disconnectEventStream() {
 
 function connectEventStream() {
     disconnectEventStream();
-    eventSource = new EventSource('/api/events');
+    eventSource = new EventSource(withApiKey('/api/events'));
 
     const refreshOnEvent = () => scheduleLoadData(250);
     const events = [
@@ -158,7 +214,7 @@ async function confirmPause() {
     btn.disabled = true;
     btn.textContent = '⏳ In corso...';
     try {
-        const resp = await fetch('/api/controls/pause', {
+        const resp = await apiFetch('/api/controls/pause', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ minutes }),
@@ -179,7 +235,7 @@ async function controlResume() {
     const btn = document.getElementById('btn-resume');
     btn.disabled = true;
     try {
-        await fetch('/api/controls/resume', { method: 'POST' });
+        await apiFetch('/api/controls/resume', { method: 'POST' });
         await loadData();
     } catch (err) {
         console.error('Errore resume:', err);
@@ -192,7 +248,7 @@ async function controlResume() {
 async function resolveIncident(id) {
     if (!confirm(`Risolvere incidente #${id}?`)) return;
     try {
-        const resp = await fetch(`/api/incidents/${id}/resolve`, { method: 'POST' });
+        const resp = await apiFetch(`/api/incidents/${id}/resolve`, { method: 'POST' });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         await loadIncidents();
     } catch (err) {
@@ -327,7 +383,7 @@ function updateTrendChart(trend) {
 // ── Incidents Table ───────────────────────────────────────────────────────────
 async function loadIncidents() {
     try {
-        const resp = await fetch('/api/incidents');
+        const resp = await apiFetch('/api/incidents');
         if (!resp.ok) return;
         const incidents = await resp.json();
         const tbody = document.getElementById('incidents-tbody');
@@ -425,11 +481,11 @@ function updateTimingList(slots) {
 // ── Load principale (KPI + Funnel + Trend + Incidents + A/B + Timing + Runs) ──
 async function loadData() {
     const [kpiRes, runsRes, abRes, slotsRes, trendRes] = await Promise.allSettled([
-        fetch('/api/kpis'),
-        fetch('/api/runs'),
-        fetch('/api/ml/ab-leaderboard'),
-        fetch('/api/ml/timing-slots'),
-        fetch('/api/stats/trend'),
+        apiFetch('/api/kpis'),
+        apiFetch('/api/runs'),
+        apiFetch('/api/ml/ab-leaderboard'),
+        apiFetch('/api/ml/timing-slots'),
+        apiFetch('/api/stats/trend'),
     ]);
 
     // ── KPI ──

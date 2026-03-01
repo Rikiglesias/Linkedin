@@ -3,6 +3,7 @@ dist/
 
 # Runtime data and browser session
 data/*.sqlite
+data/*.sqlite-*
 data/session/
 data/session*/
 
