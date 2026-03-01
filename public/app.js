@@ -9,7 +9,6 @@
 const POLL_INTERVAL_MS = 30_000;
 const SSE_RECONNECT_BASE_MS = 2_000;
 const DASHBOARD_API_KEY_PARAM = 'api_key';
-const DASHBOARD_API_KEY_STORAGE = 'dashboard_api_key';
 let pollInterval = null;
 let funnelChart = null;
 let trendChart = null;
@@ -17,59 +16,54 @@ let eventSource = null;
 let sseReconnectTimer = null;
 let sseReconnectAttempts = 0;
 let refreshTimer = null;
-let cachedDashboardApiKey = null;
+let bootstrapApiKey = '';
 
-function getDashboardApiKey() {
-    if (cachedDashboardApiKey !== null) return cachedDashboardApiKey;
-
-    let fromQuery = '';
+function getBootstrapApiKeyFromUrl() {
     try {
         const url = new URL(window.location.href);
-        fromQuery = (url.searchParams.get(DASHBOARD_API_KEY_PARAM) || '').trim();
+        return (url.searchParams.get(DASHBOARD_API_KEY_PARAM) || '').trim();
     } catch {
-        fromQuery = '';
-    }
-
-    if (fromQuery) {
-        try {
-            localStorage.setItem(DASHBOARD_API_KEY_STORAGE, fromQuery);
-        } catch {
-            // ignore storage failures (private mode / blocked storage)
-        }
-        cachedDashboardApiKey = fromQuery;
-        return cachedDashboardApiKey;
-    }
-
-    try {
-        cachedDashboardApiKey = (localStorage.getItem(DASHBOARD_API_KEY_STORAGE) || '').trim();
-    } catch {
-        cachedDashboardApiKey = '';
-    }
-    return cachedDashboardApiKey;
-}
-
-function withApiKey(urlPath) {
-    const apiKey = getDashboardApiKey();
-    if (!apiKey) return urlPath;
-
-    try {
-        const url = new URL(urlPath, window.location.origin);
-        if (!url.searchParams.has(DASHBOARD_API_KEY_PARAM)) {
-            url.searchParams.set(DASHBOARD_API_KEY_PARAM, apiKey);
-        }
-        return url.pathname + url.search;
-    } catch {
-        return urlPath;
+        return '';
     }
 }
 
-function apiFetch(urlPath, init = {}) {
+function stripApiKeyFromBrowserUrl() {
+    try {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has(DASHBOARD_API_KEY_PARAM)) {
+            url.searchParams.delete(DASHBOARD_API_KEY_PARAM);
+            const next = `${url.pathname}${url.search}${url.hash}`;
+            window.history.replaceState({}, document.title, next);
+        }
+    } catch {
+        // ignore malformed url edge-cases
+    }
+}
+
+function apiFetch(urlPath, init = {}, apiKeyOverride = '') {
     const headers = new Headers(init.headers || {});
-    const apiKey = getDashboardApiKey();
+    const apiKey = (apiKeyOverride || bootstrapApiKey || '').trim();
     if (apiKey && !headers.has('x-api-key')) {
         headers.set('x-api-key', apiKey);
     }
-    return fetch(withApiKey(urlPath), { ...init, headers });
+    return fetch(urlPath, { ...init, headers });
+}
+
+async function bootstrapDashboardSession() {
+    const fromUrl = getBootstrapApiKeyFromUrl();
+    if (!fromUrl) return;
+
+    bootstrapApiKey = fromUrl;
+    try {
+        const resp = await apiFetch('/api/auth/session', { method: 'POST' }, fromUrl);
+        if (resp.ok) {
+            stripApiKeyFromBrowserUrl();
+        }
+    } catch {
+        // ignore bootstrap failures; normal auth challenge can still occur
+    } finally {
+        bootstrapApiKey = '';
+    }
 }
 
 // ── Sicurezza: escapeHtml per prevenire XSS in innerHTML ─────────────────────
@@ -126,7 +120,7 @@ function disconnectEventStream() {
 
 function connectEventStream() {
     disconnectEventStream();
-    eventSource = new EventSource(withApiKey('/api/events'));
+    eventSource = new EventSource('/api/events');
 
     const refreshOnEvent = () => scheduleLoadData(250);
     const events = [
@@ -547,6 +541,9 @@ async function loadData() {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-loadData();
-startPolling();
-connectEventStream();
+bootstrapDashboardSession()
+    .finally(() => {
+        loadData();
+        startPolling();
+        connectEventStream();
+    });

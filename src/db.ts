@@ -242,15 +242,9 @@ async function applyMigrations(database: DatabaseManager): Promise<void> {
 
         await database.exec('BEGIN');
         try {
-            // Per postgres separare gli statement multipli
-            if (isPostgres) {
-                const statements = sql.split(';').map(s => s.trim()).filter(s => s.length > 0);
-                for (const stmt of statements) {
-                    await database.exec(stmt);
-                }
-            } else {
-                await database.exec(sql);
-            }
+            // Eseguiamo il file SQL intero: evita parser naive su ';'
+            // che rompe blocchi complessi (es. funzioni/DO blocks in Postgres).
+            await database.exec(sql);
             await database.run(`INSERT INTO _migrations (name) VALUES (?)`, [fileName]);
             await database.exec('COMMIT');
         } catch (error) {

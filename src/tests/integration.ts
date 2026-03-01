@@ -1,6 +1,7 @@
 import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
+import { AddressInfo } from 'net';
 
 async function run(): Promise<void> {
     const testDbPath = path.resolve(process.cwd(), 'data', 'test_integration.sqlite');
@@ -11,12 +12,21 @@ async function run(): Promise<void> {
     process.env.DB_PATH = testDbPath;
     process.env.SUPABASE_SYNC_ENABLED = 'false';
     process.env.SELECTOR_CANARY_ENABLED = 'false';
+    process.env.DASHBOARD_AUTH_ENABLED = 'true';
+    process.env.DASHBOARD_API_KEY = 'integration-dashboard-key';
+    process.env.DASHBOARD_BASIC_USER = '';
+    process.env.DASHBOARD_BASIC_PASSWORD = '';
+    process.env.DASHBOARD_TRUSTED_IPS = '';
 
     const dbModule = await import('../db');
     const repositories = await import('../core/repositories');
     const stateService = await import('../core/leadStateService');
+    const serverModule = await import('../api/server');
 
-    await dbModule.initDatabase();
+    let httpServer: ReturnType<typeof serverModule.startServer> | null = null;
+
+    try {
+        await dbModule.initDatabase();
 
     const inserted = await repositories.addLead({
         accountName: 'Rossi Srl',
@@ -227,9 +237,58 @@ async function run(): Promise<void> {
     assert.equal(lockedAccB.account_id, 'acc-b');
     await repositories.markJobSucceeded(lockedAccB.id);
 
-    await dbModule.closeDatabase();
-    if (fs.existsSync(testDbPath)) {
-        fs.unlinkSync(testDbPath);
+        httpServer = serverModule.startServer(0);
+        const address = httpServer.address() as AddressInfo | null;
+        if (!address || !address.port) {
+            throw new Error('Impossibile ottenere la porta del server test');
+        }
+        const baseUrl = `http://127.0.0.1:${address.port}`;
+
+        const unauthorized = await fetch(`${baseUrl}/api/kpis`);
+        assert.equal(unauthorized.status, 401);
+
+        const spoofedForwarded = await fetch(`${baseUrl}/api/kpis`, {
+            headers: { 'x-forwarded-for': '127.0.0.1' },
+        });
+        assert.equal(spoofedForwarded.status, 401);
+
+        const bootstrapSession = await fetch(`${baseUrl}/api/auth/session`, {
+            method: 'POST',
+            headers: { 'x-api-key': 'integration-dashboard-key' },
+        });
+        assert.equal(bootstrapSession.status, 200);
+        const setCookie = bootstrapSession.headers.get('set-cookie') ?? '';
+        assert.equal(setCookie.includes('dashboard_session='), true);
+        const cookieHeader = setCookie.split(';')[0] ?? '';
+        assert.equal(cookieHeader.length > 0, true);
+
+        const authorizedKpis = await fetch(`${baseUrl}/api/kpis`, {
+            headers: { cookie: cookieHeader },
+        });
+        assert.equal(authorizedKpis.status, 200);
+
+        const sseResp = await fetch(`${baseUrl}/api/events`, {
+            headers: { cookie: cookieHeader },
+        });
+        assert.equal(sseResp.status, 200);
+        const reader = sseResp.body?.getReader();
+        if (!reader) {
+            throw new Error('SSE stream non disponibile');
+        }
+        const firstChunk = await reader.read();
+        const firstPayload = Buffer.from(firstChunk.value ?? new Uint8Array()).toString('utf8');
+        assert.equal(firstPayload.includes('event: connected'), true);
+        await reader.cancel();
+    } finally {
+        if (httpServer) {
+            await new Promise<void>((resolve) => {
+                httpServer?.close(() => resolve());
+            });
+        }
+        await dbModule.closeDatabase();
+        if (fs.existsSync(testDbPath)) {
+            fs.unlinkSync(testDbPath);
+        }
     }
 }
 

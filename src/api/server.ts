@@ -1,10 +1,10 @@
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
-import { timingSafeEqual } from 'crypto';
+import { randomBytes, timingSafeEqual } from 'crypto';
 import rateLimit from 'express-rate-limit';
 import type { NextFunction, Request, Response } from 'express';
-import { getGlobalKPIData, getRiskInputs, getABTestingStats, listOpenIncidents, resolveIncident, getDailyStat } from '../core/repositories';
+import { getGlobalKPIData, getRiskInputs, getABTestingStats, listOpenIncidents, resolveIncident, getDailyStat, getRuntimeFlag } from '../core/repositories';
 import { getDatabase } from '../db';
 import { evaluateRisk } from '../risk/riskEngine';
 import { getLocalDateString, config } from '../config';
@@ -15,6 +15,9 @@ import { publishLiveEvent, subscribeLiveEvents, getLiveEventSubscribersCount, ty
 
 const app = express();
 app.set('trust proxy', false);
+const DASHBOARD_SESSION_COOKIE = 'dashboard_session';
+const DASHBOARD_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const dashboardSessions = new Map<string, number>();
 
 // ── CORS ristretto ──────────────────────────────────────────────────────────
 // Accetta solo richieste da localhost o se non c'è origin (es. curl / stesso server)
@@ -107,7 +110,7 @@ function resolveRequestIp(req: Request): string {
 }
 
 function isTrustedIp(ip: string): boolean {
-    const trusted = new Set<string>(['127.0.0.1', ...config.dashboardTrustedIps.map(normalizeIp)]);
+    const trusted = new Set<string>(config.dashboardTrustedIps.map(normalizeIp));
     return trusted.has(ip);
 }
 
@@ -115,10 +118,6 @@ function isApiKeyAuthValid(req: Request): boolean {
     if (!config.dashboardApiKey) return false;
     const fromHeader = req.header('x-api-key');
     if (fromHeader && secureEquals(fromHeader.trim(), config.dashboardApiKey)) return true;
-    const queryApiKey = req.query.api_key;
-    if (typeof queryApiKey === 'string' && queryApiKey.trim().length > 0) {
-        return secureEquals(queryApiKey.trim(), config.dashboardApiKey);
-    }
     const authorization = req.header('authorization') ?? '';
     if (!authorization.toLowerCase().startsWith('bearer ')) return false;
     const token = authorization.slice('bearer '.length).trim();
@@ -144,11 +143,64 @@ function isBasicAuthValid(req: Request): boolean {
     return secureEquals(user, config.dashboardBasicUser) && secureEquals(password, config.dashboardBasicPassword);
 }
 
+function parseCookieHeader(req: Request): Record<string, string> {
+    const raw = req.header('cookie') ?? '';
+    if (!raw) return {};
+    const cookies: Record<string, string> = {};
+    for (const pair of raw.split(';')) {
+        const trimmed = pair.trim();
+        if (!trimmed) continue;
+        const idx = trimmed.indexOf('=');
+        if (idx <= 0) continue;
+        const key = trimmed.slice(0, idx).trim();
+        const value = trimmed.slice(idx + 1).trim();
+        if (!key) continue;
+        try {
+            cookies[key] = decodeURIComponent(value);
+        } catch {
+            cookies[key] = value;
+        }
+    }
+    return cookies;
+}
+
+function hasValidDashboardSession(req: Request): boolean {
+    const token = parseCookieHeader(req)[DASHBOARD_SESSION_COOKIE];
+    if (!token) return false;
+    const expiresAt = dashboardSessions.get(token);
+    if (!expiresAt) return false;
+    if (expiresAt <= Date.now()) {
+        dashboardSessions.delete(token);
+        return false;
+    }
+    return true;
+}
+
+function createDashboardSessionCookie(res: Response): void {
+    const token = randomBytes(32).toString('hex');
+    const expiresAt = Date.now() + DASHBOARD_SESSION_TTL_MS;
+    dashboardSessions.set(token, expiresAt);
+    const maxAgeSec = Math.floor(DASHBOARD_SESSION_TTL_MS / 1000);
+    const secureFlag = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+    const cookie = `${DASHBOARD_SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/api; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSec}${secureFlag}`;
+    res.setHeader('Set-Cookie', cookie);
+}
+
+function cleanupExpiredDashboardSessions(): void {
+    const now = Date.now();
+    for (const [token, expiresAt] of dashboardSessions.entries()) {
+        if (expiresAt <= now) {
+            dashboardSessions.delete(token);
+        }
+    }
+}
+
 function dashboardAuthMiddleware(req: Request, res: Response, next: NextFunction): void {
     if (!config.dashboardAuthEnabled) { next(); return; }
     if (req.path === '/health') { next(); return; }
     const requestIp = resolveRequestIp(req);
     if (isTrustedIp(requestIp)) { next(); return; }
+    if (hasValidDashboardSession(req)) { next(); return; }
     const authConfigured = !!config.dashboardApiKey || (!!config.dashboardBasicUser && !!config.dashboardBasicPassword);
     if (!authConfigured) {
         res.status(503).json({ error: 'Dashboard auth enabled but no credentials configured.' });
@@ -181,6 +233,13 @@ app.use(express.static(publicDir));
 // ── Health ───────────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// ── Session bootstrap (cookie-based auth for browser SSE/fetch) ─────────────
+app.post('/api/auth/session', (_req, res) => {
+    createDashboardSessionCookie(res);
+    cleanupExpiredDashboardSessions();
+    res.json({ success: true, ttlSeconds: Math.floor(DASHBOARD_SESSION_TTL_MS / 1000) });
 });
 
 // ── SSE stream (real-time push notifications) ────────────────────────────────
@@ -220,10 +279,8 @@ app.get('/api/kpis', async (_req, res) => {
         const localDate = getLocalDateString();
         const riskInputs = await getRiskInputs(localDate, config.hardInviteCap);
         const risk = await evaluateRisk(riskInputs);
-        const db = await getDatabase();
-
-        const runtimePause = await db.get<{ value: string }>(`SELECT value FROM runtime_flags WHERE key = 'automation_paused_until'`);
-        const isQuarantined = await db.get<{ value: string }>(`SELECT value FROM runtime_flags WHERE key = 'account_quarantine'`);
+        const runtimePause = await getRuntimeFlag('automation_paused_until');
+        const isQuarantined = await getRuntimeFlag('account_quarantine');
 
         res.json({
             funnel: {
@@ -238,8 +295,8 @@ app.get('/api/kpis', async (_req, res) => {
             risk,
             activeCampaigns: kpi.activeCampaigns,
             system: {
-                pausedUntil: runtimePause?.value ?? null,
-                quarantined: isQuarantined?.value === 'true',
+                pausedUntil: runtimePause ?? null,
+                quarantined: isQuarantined === 'true',
             },
         });
     } catch (err: unknown) {

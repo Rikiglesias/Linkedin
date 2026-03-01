@@ -20,6 +20,13 @@ import { logInfo, logWarn } from '../telemetry/logger';
 class PluginRegistry {
     private plugins: IPlugin[] = [];
 
+    private canLoadTypeScriptPlugins(): boolean {
+        const argv = process.execArgv.join(' ');
+        return argv.includes('ts-node/register')
+            || argv.includes('tsx')
+            || !!process.env.TS_NODE_DEV;
+    }
+
     /** Carica tutti i plugin dalla directory configurata. */
     async load(): Promise<void> {
         const pluginDir = path.resolve(process.cwd(), process.env.PLUGIN_DIR || 'plugins');
@@ -29,8 +36,14 @@ class PluginRegistry {
             return;
         }
 
+        const allowTsPlugins = this.canLoadTypeScriptPlugins();
         const files = fs.readdirSync(pluginDir)
-            .filter(f => f.endsWith('.js') || f.endsWith('.ts'))
+            .filter((f) => {
+                const ext = path.extname(f).toLowerCase();
+                if (ext === '.js' || ext === '.cjs' || ext === '.mjs') return true;
+                if (ext === '.ts') return allowTsPlugins;
+                return false;
+            })
             .filter(f => !f.startsWith('.')); // ignora hidden
 
         for (const file of files) {
