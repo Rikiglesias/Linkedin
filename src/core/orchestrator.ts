@@ -243,6 +243,24 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
         });
     }
 
+    if (options.workflow === 'warmup') {
+        if (!options.dryRun) {
+            await logInfo('workflow.warmup.start', { localDate: schedule.localDate });
+            const accounts = getRuntimeAccountProfiles();
+            if (accounts.length > 0) {
+                for (const acc of accounts) {
+                    await runRandomLinkedinActivity({
+                        accountId: acc.id,
+                        maxActions: Math.floor(Math.random() * 4) + 3,
+                        dryRun: false
+                    });
+                }
+            }
+            await logInfo('workflow.warmup.end', { localDate: schedule.localDate });
+        }
+        return;
+    }
+
     await runQueuedJobs({
         localDate: schedule.localDate,
         allowedTypes: workflowToJobTypes(options.workflow),
@@ -272,24 +290,6 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
             },
             `state.sync.post_run:${schedule.localDate}:${options.workflow}:${Date.now()}`
         );
-    }
-
-    // Modalità Farming WARM_UP: Esegui generazione history organica
-    if (!options.dryRun && options.workflow === 'warmup') {
-        await logInfo('workflow.warmup.start', { localDate: schedule.localDate });
-        // Utilizziamo account attivi o fallback al primo per lanciare la sessione
-        const accounts = getRuntimeAccountProfiles();
-        if (accounts.length > 0) {
-            // Scegliamo casualmente uno o più accounts
-            for (const acc of accounts) {
-                await runRandomLinkedinActivity({
-                    accountId: acc.id,
-                    maxActions: Math.floor(Math.random() * 4) + 3, // 3 to 6 actions
-                    dryRun: false
-                });
-            }
-        }
-        await logInfo('workflow.warmup.end', { localDate: schedule.localDate });
     }
 
     await runEventSyncOnce();

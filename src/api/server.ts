@@ -18,6 +18,8 @@ app.set('trust proxy', false);
 const DASHBOARD_SESSION_COOKIE = 'dashboard_session';
 const DASHBOARD_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const dashboardSessions = new Map<string, number>();
+const sessionCleanupTimer = setInterval(cleanupExpiredDashboardSessions, 15 * 60 * 1000);
+sessionCleanupTimer.unref();
 
 // ── CORS ristretto ──────────────────────────────────────────────────────────
 // Accetta solo richieste da localhost o se non c'è origin (es. curl / stesso server)
@@ -340,7 +342,8 @@ app.get('/api/ml/ab-leaderboard', async (_req, res) => {
 app.get('/api/ml/timing-slots', async (req, res) => {
     try {
         const { getTopTimeSlots } = await import('../ml/timingOptimizer');
-        const n = Math.min(10, parseInt(String(req.query.n ?? '5'), 10));
+        const rawN = Number.parseInt(String(req.query.n ?? '5'), 10);
+        const n = Number.isFinite(rawN) && rawN > 0 ? Math.min(10, rawN) : 5;
         const slots = await getTopTimeSlots(n);
         res.json(slots);
     } catch (err: unknown) {
@@ -435,7 +438,10 @@ app.use('/api/', (_req, res) => {
 });
 
 export function startServer(port: number = 3000) {
-    return app.listen(port, () => {
-        console.log(`\n🚀 Dashboard & Web API is running on http://localhost:${port}\n`);
+    const server = app.listen(port, () => {
+        const address = server.address();
+        const effectivePort = typeof address === 'object' && address ? address.port : port;
+        console.log(`\n🚀 Dashboard & Web API is running on http://localhost:${effectivePort}\n`);
     });
+    return server;
 }

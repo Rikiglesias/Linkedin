@@ -71,7 +71,7 @@ function sleep(ms: number): Promise<void> {
 
 function createLockOwnerId(command: string): string {
     const suffix = randomUUID().split('-')[0];
-    return `${command}:${process.pid}:${suffix} `;
+    return `${command}:${process.pid}:${suffix}`;
 }
 
 function computeWorkflowLockTtlSeconds(intervalMs: number): number {

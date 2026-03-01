@@ -21,9 +21,13 @@ class PluginRegistry {
     private plugins: IPlugin[] = [];
 
     private canLoadTypeScriptPlugins(): boolean {
+        const tsNodeInstance = (process as unknown as { [key: symbol]: unknown })[Symbol.for('ts-node.register.instance')];
         const argv = process.execArgv.join(' ');
+        const processArgs = process.argv.join(' ');
         return argv.includes('ts-node/register')
             || argv.includes('tsx')
+            || processArgs.includes('ts-node')
+            || !!tsNodeInstance
             || !!process.env.TS_NODE_DEV;
     }
 
@@ -40,7 +44,7 @@ class PluginRegistry {
         const files = fs.readdirSync(pluginDir)
             .filter((f) => {
                 const ext = path.extname(f).toLowerCase();
-                if (ext === '.js' || ext === '.cjs' || ext === '.mjs') return true;
+                if (ext === '.js' || ext === '.cjs') return true;
                 if (ext === '.ts') return allowTsPlugins;
                 return false;
             })

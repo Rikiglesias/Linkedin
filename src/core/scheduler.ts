@@ -53,7 +53,8 @@ export interface ListScheduleBreakdown {
 export function workflowToJobTypes(workflow: WorkflowSelection): JobType[] {
     if (workflow === 'all') return ['INVITE', 'ACCEPTANCE_CHECK', 'MESSAGE', 'HYGIENE'];
     if (workflow === 'invite') return ['INVITE'];
-    if (workflow === 'check' || workflow === 'warmup') return ['ACCEPTANCE_CHECK', 'HYGIENE'];
+    if (workflow === 'check') return ['ACCEPTANCE_CHECK', 'HYGIENE'];
+    if (workflow === 'warmup') return [];
     return ['MESSAGE', 'HYGIENE'];
 }
 
@@ -483,7 +484,7 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
         }
     }
 
-    if (!dryRun && config.withdrawInvitesEnabled) {
+    if (!dryRun && config.withdrawInvitesEnabled && workflow !== 'warmup') {
         const accounts = await getRuntimeAccountProfiles();
         for (const acc of accounts) {
             await enqueueJob(

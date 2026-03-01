@@ -9,7 +9,7 @@ import { isProfileUrl, isSalesNavigatorUrl, normalizeLinkedInUrl } from '../link
 import { buildPersonalizedFollowUpMessage } from '../ai/messagePersonalizer';
 import { buildPersonalizedInviteNote } from '../ai/inviteNotePersonalizer';
 import { evaluateAiGuardian } from '../ai/guardian';
-import { ScheduleResult } from '../core/scheduler';
+import { ScheduleResult, workflowToJobTypes } from '../core/scheduler';
 import { LeadRecord } from '../types/domain';
 import { getProxy, getProxyFailoverChain, getProxyPoolStatus, markProxyFailed, markProxyHealthy } from '../proxyManager';
 import { getSchedulingAccountIds, pickAccountIdForLead } from '../accountManager';
@@ -40,6 +40,9 @@ async function run(): Promise<void> {
     });
     assert.equal(reconcilableMismatch, 'invited_but_connect_available');
     assert.equal(reconcilableMismatch ? isMismatchAmbiguous(reconcilableMismatch) : true, false);
+    assert.deepEqual(workflowToJobTypes('warmup'), []);
+    assert.deepEqual(workflowToJobTypes('check'), ['ACCEPTANCE_CHECK', 'HYGIENE']);
+    assert.deepEqual(workflowToJobTypes('invite'), ['INVITE']);
 
     const risk = evaluateRisk({
         pendingRatio: 0.4,

@@ -432,20 +432,24 @@ function updateRunsTable(runs) {
         return;
     }
     tbody.innerHTML = runs.map((r) => {
-        const statusPill = r.status === 'COMPLETED'
+        const normalizedStatus = String(r.status || '').toUpperCase();
+        const statusPill = normalizedStatus === 'SUCCESS' || normalizedStatus === 'COMPLETED'
             ? `<span class="pill pill-success">OK</span>`
-            : r.status === 'RUNNING'
+            : normalizedStatus === 'RUNNING'
                 ? `<span class="pill pill-info">In corso...</span>`
-                : `<span class="pill pill-danger">${escapeHtml(r.status)}</span>`;
+                : normalizedStatus === 'PAUSED'
+                    ? `<span class="pill pill-warning">Pausa</span>`
+                    : `<span class="pill pill-danger">${escapeHtml(normalizedStatus || 'UNKNOWN')}</span>`;
 
-        const errorSnippet = r.error_message
-            ? `<span class="pill pill-danger" title="${escapeHtml(r.error_message)}">⚠ ${escapeHtml(r.error_message.substring(0, 30))}...</span>`
+        const errorsCount = Number(r.errors_count ?? 0);
+        const errorSnippet = errorsCount > 0
+            ? `<span class="pill pill-danger" title="Errori run: ${escapeHtml(String(errorsCount))}">⚠ ${escapeHtml(String(errorsCount))}</span>`
             : '—';
 
         return `<tr>
             <td>${escapeHtml(String(r.id))}</td>
-            <td>${formatDate(r.started_at)}</td>
-            <td>${formatDate(r.finished_at)}</td>
+            <td>${formatDate(r.start_time ?? r.started_at)}</td>
+            <td>${formatDate(r.end_time ?? r.finished_at)}</td>
             <td>${statusPill}</td>
             <td>${escapeHtml(String(r.profiles_discovered ?? 0))}</td>
             <td>${errorSnippet}</td>
