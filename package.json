@@ -17,6 +17,7 @@
     "daemon:logs": "pm2 logs linkedin-bot-daemon",
     "daemon:status": "pm2 status",
     "dashboard": "ts-node src/index.ts dashboard",
+    "create-profile": "ts-node src/index.ts create-profile",
     "kpi": "ts-node src/index.ts kpi",
     "ramp-up": "ts-node src/scripts/rampUp.ts",
     "db:backup": "ts-node src/scripts/backupDb.ts",
@@ -33,6 +34,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@ikechan8370/cycletls": "^1.0.261",
     "@supabase/supabase-js": "^2.97.0",
     "cors": "^2.8.6",
     "csv-parser": "^3.2.0",

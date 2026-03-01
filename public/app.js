@@ -316,6 +316,8 @@ function updateTrendChart(trend) {
     const invites = trend.map((d) => d.invitesSent);
     const messages = trend.map((d) => d.messagesSent);
     const acceptances = trend.map((d) => d.acceptances);
+    const riskScores = trend.map((d) => d.estimatedRiskScore ?? 0);
+    const challenges = trend.map((d) => d.challenges ?? 0);
 
     if (!trendChart) {
         const ctx = document.getElementById('trendChart').getContext('2d');
@@ -348,6 +350,24 @@ function updateTrendChart(trend) {
                         tension: 0.3,
                         fill: false,
                     },
+                    {
+                        label: 'Risk Score',
+                        data: riskScores,
+                        borderColor: 'rgba(239, 68, 68, 0.95)',
+                        backgroundColor: 'rgba(239, 68, 68, 0.06)',
+                        tension: 0.25,
+                        fill: false,
+                        yAxisID: 'yRisk',
+                    },
+                    {
+                        label: 'Challenge',
+                        data: challenges,
+                        type: 'bar',
+                        backgroundColor: 'rgba(245, 158, 11, 0.4)',
+                        borderColor: 'rgba(245, 158, 11, 0.9)',
+                        borderWidth: 1,
+                        yAxisID: 'yChallenges',
+                    },
                 ],
             },
             options: {
@@ -362,6 +382,19 @@ function updateTrendChart(trend) {
                 scales: {
                     x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#8896b0' } },
                     y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#8896b0' } },
+                    yRisk: {
+                        position: 'right',
+                        min: 0,
+                        max: 100,
+                        grid: { drawOnChartArea: false },
+                        ticks: { color: '#f97316' },
+                    },
+                    yChallenges: {
+                        position: 'right',
+                        grid: { drawOnChartArea: false },
+                        ticks: { color: '#f59e0b' },
+                        suggestedMin: 0,
+                    },
                 },
             },
         });
@@ -370,6 +403,8 @@ function updateTrendChart(trend) {
         trendChart.data.datasets[0].data = invites;
         trendChart.data.datasets[1].data = messages;
         trendChart.data.datasets[2].data = acceptances;
+        trendChart.data.datasets[3].data = riskScores;
+        trendChart.data.datasets[4].data = challenges;
         trendChart.update('none');
     }
 }
@@ -478,12 +513,14 @@ function updateTimingList(slots) {
 
 // ── Load principale (KPI + Funnel + Trend + Incidents + A/B + Timing + Runs) ──
 async function loadData() {
-    const [kpiRes, runsRes, abRes, slotsRes, trendRes] = await Promise.allSettled([
+    const [kpiRes, runsRes, abRes, slotsRes, trendRes, predictiveRiskRes, reviewQueueRes] = await Promise.allSettled([
         apiFetch('/api/kpis'),
         apiFetch('/api/runs'),
         apiFetch('/api/ml/ab-leaderboard'),
         apiFetch('/api/ml/timing-slots'),
         apiFetch('/api/stats/trend'),
+        apiFetch('/api/risk/predictive'),
+        apiFetch('/api/review-queue?limit=10'),
     ]);
 
     // ── KPI ──
@@ -511,6 +548,40 @@ async function loadData() {
 
         updateStatusBadge(data.system);
         updateFunnelChart(f);
+    }
+
+    // ── Risk Predittivo ──
+    if (predictiveRiskRes.status === 'fulfilled' && predictiveRiskRes.value.ok) {
+        const data = await predictiveRiskRes.value.json();
+        const statusEl = document.getElementById('risk-predictive-status');
+        const detailEl = document.getElementById('risk-predictive-detail');
+        if (!data.enabled) {
+            statusEl.textContent = 'Disabilitato';
+            statusEl.className = 'conv-value';
+            detailEl.textContent = '—';
+        } else if (!data.alerts || data.alerts.length === 0) {
+            statusEl.textContent = 'Normale';
+            statusEl.className = 'conv-value system-ok';
+            detailEl.textContent = `Baseline ${data.lookbackDays}g`;
+        } else {
+            const top = data.alerts[0];
+            statusEl.textContent = 'Anomalia';
+            statusEl.className = 'conv-value system-danger';
+            detailEl.textContent = `${top.metric} z=${Number(top.zScore || 0).toFixed(2)}`;
+        }
+    }
+
+    // ── Review Queue ──
+    if (reviewQueueRes.status === 'fulfilled' && reviewQueueRes.value.ok) {
+        const data = await reviewQueueRes.value.json();
+        const queueCount = document.getElementById('review-queue-count');
+        const incidentsCount = document.getElementById('review-queue-incidents');
+
+        queueCount.textContent = String(data.reviewLeadCount ?? 0);
+        incidentsCount.textContent = String(data.challengeIncidentCount ?? 0);
+
+        queueCount.className = 'conv-value ' + ((data.reviewLeadCount ?? 0) > 0 ? 'system-warn' : 'system-ok');
+        incidentsCount.className = 'conv-value ' + ((data.challengeIncidentCount ?? 0) > 0 ? 'system-danger' : 'system-ok');
     }
 
     // ── Trend 7gg ──

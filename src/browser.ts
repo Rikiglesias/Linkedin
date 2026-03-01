@@ -14,8 +14,10 @@ export {
     randomMouseMove,
     humanType,
     simulateHumanReading,
+    contextualReadingPause,
     interJobDelay,
     performDecoyAction,
+    performDecoyBurst,
     runSelectorCanary,
 } from './browser/humanBehavior';
 

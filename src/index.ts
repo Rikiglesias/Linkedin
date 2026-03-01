@@ -8,9 +8,10 @@ import { startServer } from './api/server';
 
 import { hasOption, parseWorkflow, getWorkflowValue } from './cli/cliParser';
 import { runLoopCommand, runAutopilotCommand, runWorkflowCommand } from './cli/commands/loopCommand';
-import { runLoginCommand, runImportCommand, runFunnelCommand, runSiteCheckCommand, runStateSyncCommand, runProxyStatusCommand, runRandomActivityCommand, runEnrichTargetsCommand } from './cli/commands/utilCommands';
+import { runLoginCommand, runImportCommand, runFunnelCommand, runSiteCheckCommand, runStateSyncCommand, runProxyStatusCommand, runRandomActivityCommand, runEnrichTargetsCommand, runCreateProfileCommand } from './cli/commands/utilCommands';
 import { runSalesNavSyncCommand, runSalesNavListsCommand, runSalesNavCreateListCommand, runSalesNavAddLeadCommand, runSalesNavResolveCommand } from './cli/commands/salesNavCommands';
 import { runStatusCommand, runPauseCommand, runResumeCommand, runUnquarantineCommand, runResolveIncidentCommand, runPrivacyCleanupCommand, runDbBackupCommand, runCompanyTargetsCommand, runListConfigCommand, runListsCommand } from './cli/commands/adminCommands';
+import { startCycleTlsProxy, stopCycleTlsProxy } from './proxy/cycleTlsProxy';
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 
@@ -20,6 +21,7 @@ function setupGracefulShutdown(): void {
         if (shuttingDown) return;
         shuttingDown = true;
         console.warn(`[SIGNAL] ${signal} ricevuto — chiusura in corso...`);
+        await stopCycleTlsProxy().catch(() => { });
         await closeDatabase();
         process.exit(0);
     };
@@ -41,7 +43,9 @@ function setupPlannedRestart(): void {
             const uptimeHours = (uptimeMs / 3_600_000).toFixed(1);
             console.log(`[PLANNED_RESTART] Uptime = ${uptimeHours}h >= limit ${config.processMaxUptimeHours}h — riavvio pianificato.`);
             clearInterval(interval);
-            closeDatabase()
+            stopCycleTlsProxy()
+                .catch(() => { })
+                .then(() => closeDatabase())
                 .catch(err => console.error('[PLANNED_RESTART] Errore chiusura DB:', err))
                 .finally(() => process.exit(0));
         }
@@ -63,6 +67,7 @@ function printHelp(): void {
     console.log('  run-loop [workflow] [intervalSec] [--cycles <n>] [--dry-run]');
     console.log('  autopilot [intervalSec] [--cycles <n>] [--dry-run]');
     console.log('  login [timeoutSec] [--account <id_account>]');
+    console.log('  create-profile [--dir <path>] [--timeout <sec>] [--url <linkedin_login_url>]');
     console.log('  doctor');
     console.log('  status');
     console.log('  proxy-status');
@@ -107,7 +112,7 @@ async function main(): Promise<void> {
         console.error('');
         // Blocca solo se non stiamo lanciando comandi non-operativi
         const args0 = process.argv[2];
-        const safeCommands = ['doctor', 'help', '--help', undefined];
+        const safeCommands = ['doctor', 'help', '--help', 'login', 'create-profile', undefined];
         if (!safeCommands.includes(args0)) {
             process.exit(1);
         }
@@ -116,8 +121,34 @@ async function main(): Promise<void> {
     const args = process.argv.slice(2);
     const command = args[0];
     const commandArgs = args.slice(1);
+    const isDryRunCommand = command === 'dry-run' || hasOption(commandArgs, '--dry-run');
+    const browserCommands = new Set([
+        'run',
+        'dry-run',
+        'run-loop',
+        'autopilot',
+        'login',
+        'create-profile',
+        'doctor',
+        'site-check',
+        'state-sync',
+        'salesnav-sync',
+        'salesnav-lists',
+        'salesnav-create-list',
+        'salesnav-add-lead',
+        'salesnav-add-to-list',
+        'salesnav-resolve',
+        'random-activity',
+        'connect',
+        'check',
+        'message',
+        'warmup',
+    ]);
 
     await initDatabase();
+    if (!isDryRunCommand && config.useJa3Proxy && browserCommands.has(command ?? '')) {
+        await startCycleTlsProxy();
+    }
     const shouldRecoverStuckJobs = command === 'run'
         || command === 'connect'
         || command === 'check'
@@ -152,6 +183,9 @@ async function main(): Promise<void> {
             break;
         case 'login':
             await runLoginCommand(commandArgs);
+            break;
+        case 'create-profile':
+            await runCreateProfileCommand(commandArgs);
             break;
         case 'doctor': {
             const report = await runDoctor();
@@ -282,5 +316,6 @@ main()
         process.exitCode = 1;
     })
     .finally(async () => {
+        await stopCycleTlsProxy().catch(() => { });
         await closeDatabase();
     });

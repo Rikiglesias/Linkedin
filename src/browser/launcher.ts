@@ -4,8 +4,9 @@
  * Lifecycle browser Playwright: launch, close, GC e gestione proxy.
  */
 
+import path from 'path';
 import { chromium, BrowserContext, Page } from 'playwright';
-import { config } from '../config';
+import { config, ProxyType } from '../config';
 import { ensureDirectoryPrivate } from '../security/filesystem';
 import { pauseAutomation } from '../risk/incidentManager';
 import {
@@ -16,7 +17,8 @@ import {
     markProxyHealthy,
     releaseStickyProxy
 } from '../proxyManager';
-import { CloudFingerprint, pickBrowserFingerprint, STEALTH_INIT_SCRIPT } from './stealth';
+import { ensureCycleTlsProxy, stopCycleTlsProxy } from '../proxy/cycleTlsProxy';
+import { CloudFingerprint, pickBrowserFingerprint } from './stealth';
 
 const activeBrowsers = new Set<BrowserContext>();
 
@@ -29,6 +31,7 @@ const cleanupBrowsers = async () => {
         }
     }
     activeBrowsers.clear();
+    await stopCycleTlsProxy().catch(() => { });
 };
 
 process.on('SIGINT', async () => {
@@ -81,6 +84,8 @@ export interface LaunchBrowserOptions {
     headless?: boolean;
     proxy?: ProxyConfig;
     sessionDir?: string;
+    preferredProxyType?: ProxyType;
+    forceMobileProxy?: boolean;
 }
 
 function isSameProxy(a: ProxyConfig | undefined, b: ProxyConfig | undefined): boolean {
@@ -91,19 +96,28 @@ function isSameProxy(a: ProxyConfig | undefined, b: ProxyConfig | undefined): bo
 }
 
 export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise<BrowserSession> {
-    const sessionDir = options.sessionDir ?? config.sessionDir;
+    const sessionDirRaw = options.sessionDir ?? config.sessionDir;
+    const sessionDir = path.isAbsolute(sessionDirRaw) ? sessionDirRaw : path.resolve(process.cwd(), sessionDirRaw);
     ensureDirectoryPrivate(sessionDir);
 
     const headless = options.headless ?? config.headless;
     const autoScaleProxy = config.multiAccountEnabled;
     const explicitProxy = options.proxy;
-    const stickyProxy = !explicitProxy && autoScaleProxy ? await getStickyProxy(sessionDir) : undefined;
+    const proxySelection = {
+        preferredType: options.preferredProxyType,
+        forceMobile: options.forceMobileProxy,
+    };
+    const stickyProxy = !explicitProxy && autoScaleProxy ? await getStickyProxy(sessionDir, proxySelection) : undefined;
 
     let launchPlan: Array<ProxyConfig | undefined> = [];
+    let mobileEscalationAppended = false;
     if (explicitProxy) {
         launchPlan = [explicitProxy];
     } else if (autoScaleProxy) {
-        const failoverChain = await getProxyFailoverChainAsync();
+        const failoverChain = await getProxyFailoverChainAsync({
+            ...proxySelection,
+            preferredType: proxySelection.preferredType ?? (config.proxyMobilePriorityEnabled ? 'mobile' : undefined),
+        });
         if (stickyProxy) {
             launchPlan.push(stickyProxy);
         }
@@ -128,12 +142,21 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
         const contextOptions: Parameters<typeof chromium.launchPersistentContext>[1] = {
             headless,
             viewport: fingerprint.viewport,
-            userAgent: fingerprint.userAgent,
             locale: 'it-IT',
             timezoneId: config.timezone,
         };
 
-        if (currentProxy) {
+        if (config.useJa3Proxy) {
+            const cycleProxyEndpoint = await ensureCycleTlsProxy({
+                upstreamProxy: currentProxy,
+            });
+            if (!cycleProxyEndpoint) {
+                throw new Error('CycleTLS proxy endpoint non disponibile.');
+            }
+            contextOptions.proxy = {
+                server: cycleProxyEndpoint,
+            };
+        } else if (currentProxy) {
             contextOptions.proxy = {
                 server: currentProxy.server,
                 username: currentProxy.username,
@@ -143,7 +166,6 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
 
         try {
             const browser = await chromium.launchPersistentContext(sessionDir, contextOptions);
-            await browser.addInitScript(STEALTH_INIT_SCRIPT);
 
             const existingPage = browser.pages()[0];
             const page = existingPage ?? await browser.newPage();
@@ -175,6 +197,26 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                 if (attempt < launchPlan.length - 1) {
                     console.warn(`[PROXY] Launch fallito su ${currentProxy.server}, provo il prossimo (${attempt + 2}/${launchPlan.length}).`);
                 }
+            }
+
+            const failedAttempts = attempt + 1;
+            const shouldEscalateMobile = !explicitProxy
+                && autoScaleProxy
+                && !mobileEscalationAppended
+                && config.proxyMobilePriorityEnabled
+                && failedAttempts >= config.proxyMobileEscalationFailures;
+            if (shouldEscalateMobile) {
+                const mobileChain = await getProxyFailoverChainAsync({
+                    preferredType: 'mobile',
+                    forceMobile: true,
+                });
+                for (const proxy of mobileChain) {
+                    if (!launchPlan.some((existing) => isSameProxy(existing, proxy))) {
+                        launchPlan.push(proxy);
+                    }
+                }
+                mobileEscalationAppended = true;
+                console.warn(`[PROXY] Escalation attiva: fallback prioritario su mobile proxy dopo ${failedAttempts} failure.`);
             }
         }
     }

@@ -1,4 +1,4 @@
-import { detectChallenge, humanDelay } from '../browser';
+import { contextualReadingPause, detectChallenge, humanDelay } from '../browser';
 import { transitionLead } from '../core/leadStateService';
 import { getLeadById, incrementDailyStat } from '../core/repositories';
 import { joinSelectors } from '../selectors';
@@ -54,6 +54,7 @@ export async function processAcceptanceJob(payload: AcceptanceJobPayload, contex
 
     await context.session.page.goto(lead.linkedin_url, { waitUntil: 'domcontentloaded' });
     await humanDelay(context.session.page, 2000, 4000);
+    await contextualReadingPause(context.session.page);
 
     if (await detectChallenge(context.session.page)) {
         throw new ChallengeDetectedError();

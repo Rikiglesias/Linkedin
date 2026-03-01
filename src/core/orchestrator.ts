@@ -2,20 +2,37 @@ import { checkLogin, closeBrowser, launchBrowser, runSelectorCanary } from '../b
 import { getRuntimeAccountProfiles } from '../accountManager';
 import { config, getLocalDateString, isWorkingHour } from '../config';
 import { pauseAutomation, quarantineAccount } from '../risk/incidentManager';
-import { evaluateCooldownDecision } from '../risk/riskEngine';
+import { evaluateCooldownDecision, evaluatePredictiveRiskAlerts, PredictiveRiskMetricSample } from '../risk/riskEngine';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { runEventSyncOnce } from '../sync/eventSync';
 import { workflowToJobTypes, scheduleJobs, WorkflowSelection } from './scheduler';
 import { runSiteCheck } from './audit';
 
 import { runQueuedJobs } from './jobRunner';
-import { getAutomationPauseState, getDailyStat, getRuntimeFlag, pushOutboxEvent } from './repositories';
+import { getAutomationPauseState, getDailyStat, getRecentDailyStats, getRuntimeFlag, pushOutboxEvent } from './repositories';
 import { evaluateAiGuardian } from '../ai/guardian';
 import { runRandomLinkedinActivity } from '../workers/randomActivityWorker';
+import { sendTelegramAlert } from '../telemetry/alerts';
 
 export interface RunWorkflowOptions {
     workflow: WorkflowSelection;
     dryRun: boolean;
+}
+
+function mapDailySnapshotToPredictiveSample(snapshot: {
+    invitesSent: number;
+    messagesSent: number;
+    runErrors: number;
+    selectorFailures: number;
+    challengesCount: number;
+}): PredictiveRiskMetricSample {
+    const operations = Math.max(1, snapshot.invitesSent + snapshot.messagesSent);
+    return {
+        errorRate: snapshot.runErrors / operations,
+        selectorFailureRate: snapshot.selectorFailures / operations,
+        challengeCount: snapshot.challengesCount,
+        inviteVelocityRatio: snapshot.invitesSent / Math.max(1, config.hardInviteCap),
+    };
 }
 
 async function runCanaryIfNeeded(workflow: WorkflowSelection): Promise<boolean> {
@@ -118,6 +135,52 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
     }
 
     const schedule = await scheduleJobs(options.workflow, { dryRun: options.dryRun });
+
+    if (!options.dryRun && config.riskPredictiveAlertsEnabled) {
+        const recentStats = await getRecentDailyStats(config.riskPredictiveLookbackDays + 1);
+        const historical = recentStats
+            .filter((row) => row.date !== schedule.localDate)
+            .slice(0, config.riskPredictiveLookbackDays)
+            .map(mapDailySnapshotToPredictiveSample);
+        const currentSample: PredictiveRiskMetricSample = {
+            errorRate: schedule.riskSnapshot.errorRate,
+            selectorFailureRate: schedule.riskSnapshot.selectorFailureRate,
+            challengeCount: schedule.riskSnapshot.challengeCount,
+            inviteVelocityRatio: schedule.riskSnapshot.inviteVelocityRatio,
+        };
+        const predictiveAlerts = evaluatePredictiveRiskAlerts(
+            currentSample,
+            historical,
+            config.riskPredictiveSigma
+        );
+        if (predictiveAlerts.length > 0) {
+            const topAlerts = predictiveAlerts.slice(0, 3);
+            await logWarn('risk.predictive_alert', {
+                workflow: options.workflow,
+                localDate: schedule.localDate,
+                alerts: topAlerts,
+            });
+            await pushOutboxEvent(
+                'risk.predictive_alert',
+                {
+                    workflow: options.workflow,
+                    localDate: schedule.localDate,
+                    alerts: topAlerts,
+                    sigma: config.riskPredictiveSigma,
+                    lookbackDays: config.riskPredictiveLookbackDays,
+                },
+                `risk.predictive_alert:${schedule.localDate}:${options.workflow}`
+            );
+            const summary = topAlerts
+                .map((alert) => `${alert.metric} z=${alert.zScore.toFixed(2)} curr=${alert.current.toFixed(3)} mean=${alert.mean.toFixed(3)}`)
+                .join('\n');
+            await sendTelegramAlert(
+                `Anomalia predittiva rilevata.\nWorkflow: ${options.workflow}\n${summary}`,
+                'Risk Predictive Alert',
+                'warn'
+            );
+        }
+    }
 
     if (options.dryRun) {
         console.log('[DRY_RUN] workflow.preview', {
@@ -241,6 +304,25 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
             score: schedule.riskSnapshot.score,
             pendingRatio: schedule.riskSnapshot.pendingRatio,
         });
+    }
+    if (schedule.riskSnapshot.action === 'LOW_ACTIVITY') {
+        await logWarn('risk.low_activity', {
+            workflow: options.workflow,
+            score: schedule.riskSnapshot.score,
+            pendingRatio: schedule.riskSnapshot.pendingRatio,
+            inviteBudget: schedule.inviteBudget,
+            messageBudget: schedule.messageBudget,
+        });
+        if (options.workflow === 'all' || options.workflow === 'invite' || options.workflow === 'message') {
+            const accounts = getRuntimeAccountProfiles();
+            for (const acc of accounts) {
+                await runRandomLinkedinActivity({
+                    accountId: acc.id,
+                    maxActions: 1 + Math.floor(Math.random() * 2),
+                    dryRun: false,
+                });
+            }
+        }
     }
 
     if (options.workflow === 'warmup') {

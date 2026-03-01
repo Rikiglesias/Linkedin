@@ -3,6 +3,8 @@ import { sendTelegramAlert } from '../telemetry/alerts';
 import { broadcastCritical, broadcastWarning } from '../telemetry/broadcaster';
 import { bridgeAccountHealth } from '../cloud/cloudBridge';
 import { publishLiveEvent } from '../telemetry/liveEvents';
+import { reconcileLeadStatus } from '../core/leadStateService';
+import { config } from '../config';
 
 function resolveAccountId(details: Record<string, unknown>): string {
     const accountId = details.accountId;
@@ -42,6 +44,9 @@ export async function quarantineAccount(type: string, details: Record<string, un
 
 export async function setQuarantine(enabled: boolean): Promise<void> {
     await setRuntimeFlag('account_quarantine', enabled ? 'true' : 'false');
+    if (!enabled) {
+        await setRuntimeFlag('challenge_review_pending', 'false');
+    }
     publishLiveEvent('system.quarantine', { enabled });
 }
 
@@ -92,5 +97,71 @@ export async function pauseAutomation(type: string, details: Record<string, unkn
 
 export async function resumeAutomation(): Promise<void> {
     await clearAutomationPause();
+    await setRuntimeFlag('challenge_review_pending', 'false');
     publishLiveEvent('automation.resumed', {});
+}
+
+export interface ChallengeDetectionInput {
+    source: string;
+    accountId?: string;
+    leadId?: number;
+    linkedinUrl?: string;
+    jobId?: number;
+    jobType?: string;
+    message?: string;
+    extra?: Record<string, unknown>;
+}
+
+export async function handleChallengeDetected(input: ChallengeDetectionInput): Promise<number> {
+    const details: Record<string, unknown> = {
+        source: input.source,
+        accountId: (input.accountId ?? 'default').trim() || 'default',
+        leadId: input.leadId ?? null,
+        linkedinUrl: input.linkedinUrl ?? null,
+        jobId: input.jobId ?? null,
+        jobType: input.jobType ?? null,
+        message: input.message ?? 'Challenge/CAPTCHA rilevato',
+        detectedAt: new Date().toISOString(),
+        ...(input.extra ?? {}),
+    };
+
+    const incidentId = await pauseAutomation(
+        'CHALLENGE_DETECTED',
+        details,
+        config.challengePauseMinutes
+    );
+
+    if (typeof input.leadId === 'number' && Number.isFinite(input.leadId)) {
+        try {
+            await reconcileLeadStatus(
+                input.leadId,
+                'REVIEW_REQUIRED',
+                'challenge_detected_review_queue',
+                {
+                    incidentId,
+                    source: input.source,
+                    accountId: details.accountId,
+                }
+            );
+        } catch {
+            // best effort: challenge handling must continue even if lead transition fails
+        }
+    }
+
+    await pushOutboxEvent(
+        'challenge.review_queued',
+        {
+            incidentId,
+            ...details,
+        },
+        `challenge.review_queued:${incidentId}:${input.leadId ?? 'none'}:${input.source}`
+    );
+    await setRuntimeFlag('challenge_review_pending', 'true');
+    await setRuntimeFlag('challenge_review_last_incident_id', String(incidentId));
+    publishLiveEvent('challenge.review_queued', {
+        incidentId,
+        ...details,
+    });
+
+    return incidentId;
 }

@@ -1,6 +1,6 @@
 import { getAccountProfileById } from '../accountManager';
 import { checkLogin, closeBrowser, detectChallenge, launchBrowser } from '../browser';
-import { quarantineAccount } from '../risk/incidentManager';
+import { handleChallengeDetected } from '../risk/incidentManager';
 import {
     getLeadByLinkedinUrl,
     linkLeadToSalesNavList,
@@ -171,10 +171,15 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
 
             if (await detectChallenge(session.page)) {
                 report.challengeDetected = true;
-                await quarantineAccount('SALESNAV_SYNC_CHALLENGE_DETECTED', {
-                    listName,
-                    listUrl,
+                await handleChallengeDetected({
+                    source: 'salesnav_sync',
                     accountId: account.id,
+                    linkedinUrl: listUrl,
+                    message: 'Challenge rilevato durante sincronizzazione Sales Navigator',
+                    extra: {
+                        listName,
+                        listUrl,
+                    },
                 });
                 report.lists.push(listReport);
                 break;
@@ -240,4 +245,3 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
         await closeBrowser(session);
     }
 }
-

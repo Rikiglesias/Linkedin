@@ -47,6 +47,7 @@ function resolvePathValue(rawPath: string): string {
 }
 
 export type EventSyncSink = 'SUPABASE' | 'WEBHOOK' | 'NONE';
+export type ProxyType = 'mobile' | 'residential' | 'unknown';
 
 export interface AccountProfileConfig {
     id: string;
@@ -54,6 +55,7 @@ export interface AccountProfileConfig {
     proxyUrl: string;
     proxyUsername: string;
     proxyPassword: string;
+    proxyType: ProxyType;
     warmupEnabled: boolean;
     warmupStartDate?: string;
     warmupMaxDays: number;
@@ -76,6 +78,14 @@ function resolvePathFromEnv(name: string, fallbackRelativePath: string): string 
     return path.isAbsolute(raw) ? raw : path.resolve(process.cwd(), raw);
 }
 
+function parseProxyType(rawValue: string | undefined, fallback: ProxyType = 'unknown'): ProxyType {
+    const normalized = (rawValue ?? '').trim().toLowerCase();
+    if (normalized === 'mobile') return 'mobile';
+    if (normalized === 'residential') return 'residential';
+    if (normalized === 'unknown' || normalized === '') return fallback;
+    return fallback;
+}
+
 function parseAccountProfileFromEnv(slot: 1 | 2): AccountProfileConfig | null {
     const sessionDirRaw = parseStringEnv(`ACCOUNT_${slot}_SESSION_DIR`);
     if (!sessionDirRaw) {
@@ -90,6 +100,7 @@ function parseAccountProfileFromEnv(slot: 1 | 2): AccountProfileConfig | null {
         proxyUrl: parseStringEnv(`ACCOUNT_${slot}_PROXY_URL`),
         proxyUsername: parseStringEnv(`ACCOUNT_${slot}_PROXY_USERNAME`),
         proxyPassword: parseStringEnv(`ACCOUNT_${slot}_PROXY_PASSWORD`),
+        proxyType: parseProxyType(process.env[`ACCOUNT_${slot}_PROXY_TYPE`], 'unknown'),
         warmupEnabled: parseBoolEnv(`ACCOUNT_${slot}_WARMUP_ENABLED`, false),
         warmupStartDate: parseStringEnv(`ACCOUNT_${slot}_WARMUP_START_DATE`),
         warmupMaxDays: parseIntEnv(`ACCOUNT_${slot}_WARMUP_MAX_DAYS`, 30),
@@ -119,6 +130,7 @@ export interface AppConfig {
     maxSelectorFailuresPerDay: number;
     maxRunErrorsPerDay: number;
     autoPauseMinutesOnFailureBurst: number;
+    challengePauseMinutes: number;
     retentionDays: number;
     profileContextExtractionEnabled: boolean;
     softInviteCap: number;
@@ -133,6 +145,11 @@ export interface AppConfig {
     messageScheduleMinDelayHours: number;
     messageScheduleMaxDelayHours: number;
     riskWarnThreshold: number;
+    lowActivityEnabled: boolean;
+    lowActivityRiskThreshold: number;
+    lowActivityPendingThreshold: number;
+    lowActivityBudgetFactor: number;
+    lowActivityMinBudget: number;
     riskStopThreshold: number;
     pendingRatioWarn: number;
     pendingRatioStop: number;
@@ -216,14 +233,29 @@ export interface AppConfig {
     proxyUrl: string;
     proxyUsername: string;
     proxyPassword: string;
+    proxyTypeDefault: ProxyType;
     proxyListPath: string;
     proxyFailureCooldownMinutes: number;
     proxyRotateEveryJobs: number;
     proxyRotateEveryMinutes: number;
     proxyHealthCheckTimeoutMs: number;
+    proxyMobilePriorityEnabled: boolean;
+    proxyMobileEscalationFailures: number;
     proxyProviderApiEndpoint?: string;
     proxyProviderApiKey?: string;
     fingerprintApiEndpoint: string;
+    useJa3Proxy: boolean;
+    ja3ProxyPort: number;
+    ja3Fingerprint: string;
+    ja3UserAgent: string;
+    ja3ProxyUpstream: string;
+    ssiDynamicLimitsEnabled: boolean;
+    ssiStateKey: string;
+    ssiDefaultScore: number;
+    ssiInviteMin: number;
+    ssiInviteMax: number;
+    ssiMessageMin: number;
+    ssiMessageMax: number;
 
     // Warm-up policy
     warmupEnabled: boolean;
@@ -246,7 +278,26 @@ export interface AppConfig {
     randomActivityEnabled: boolean;
     randomActivityProbability: number;
     randomActivityMaxActions: number;
+    interJobMinDelaySec: number;
+    interJobMaxDelaySec: number;
+    behaviorDecoyMinIntervalJobs: number;
+    behaviorDecoyMaxIntervalJobs: number;
+    behaviorCoffeeBreakMinIntervalJobs: number;
+    behaviorCoffeeBreakMaxIntervalJobs: number;
+    behaviorCoffeeBreakMinSec: number;
+    behaviorCoffeeBreakMaxSec: number;
+    contextualPauseMinMs: number;
+    contextualPauseMaxMs: number;
+    mondayLowActivityFactor: number;
+    mondayLowActivityStartHour: number;
+    mondayLowActivityEndHour: number;
+    fridayLowActivityFactor: number;
+    fridayLowActivityStartHour: number;
+    fridayLowActivityEndHour: number;
     weekendPolicyEnabled: boolean;
+    riskPredictiveAlertsEnabled: boolean;
+    riskPredictiveLookbackDays: number;
+    riskPredictiveSigma: number;
 }
 
 const configuredAccountProfiles: AccountProfileConfig[] = [parseAccountProfileFromEnv(1), parseAccountProfileFromEnv(2)]
@@ -274,6 +325,7 @@ export const config: AppConfig = {
     maxSelectorFailuresPerDay: Math.max(1, parseIntEnv('MAX_SELECTOR_FAILURES_PER_DAY', 8)),
     maxRunErrorsPerDay: Math.max(1, parseIntEnv('MAX_RUN_ERRORS_PER_DAY', 20)),
     autoPauseMinutesOnFailureBurst: Math.max(1, parseIntEnv('AUTO_PAUSE_MINUTES_ON_FAILURE_BURST', 180)),
+    challengePauseMinutes: Math.max(5, parseIntEnv('CHALLENGE_PAUSE_MINUTES', 180)),
     retentionDays: Math.max(7, parseIntEnv('RETENTION_DAYS', 90)),
     profileContextExtractionEnabled: parseBoolEnv('PROFILE_CONTEXT_EXTRACTION_ENABLED', false),
     softInviteCap: Math.max(1, parseIntEnv('SOFT_INVITE_CAP', 25)),
@@ -288,6 +340,11 @@ export const config: AppConfig = {
     messageScheduleMinDelayHours: Math.max(0, parseIntEnv('MESSAGE_SCHEDULE_MIN_DELAY_HOURS', 0)),
     messageScheduleMaxDelayHours: Math.max(0, parseIntEnv('MESSAGE_SCHEDULE_MAX_DELAY_HOURS', 0)),
     riskWarnThreshold: parseIntEnv('RISK_WARN_THRESHOLD', 60),
+    lowActivityEnabled: parseBoolEnv('LOW_ACTIVITY_ENABLED', true),
+    lowActivityRiskThreshold: Math.max(0, parseIntEnv('LOW_ACTIVITY_RISK_THRESHOLD', 70)),
+    lowActivityPendingThreshold: Math.min(1, Math.max(0, parseFloatEnv('LOW_ACTIVITY_PENDING_THRESHOLD', 0.6))),
+    lowActivityBudgetFactor: Math.min(1, Math.max(0.01, parseFloatEnv('LOW_ACTIVITY_BUDGET_FACTOR', 0.2))),
+    lowActivityMinBudget: Math.max(1, parseIntEnv('LOW_ACTIVITY_MIN_BUDGET', 2)),
     riskStopThreshold: parseIntEnv('RISK_STOP_THRESHOLD', 80),
     pendingRatioWarn: parseFloatEnv('PENDING_RATIO_WARN', 0.65),
     pendingRatioStop: parseFloatEnv('PENDING_RATIO_STOP', 0.8),
@@ -371,14 +428,29 @@ export const config: AppConfig = {
     proxyUrl: parseStringEnv('PROXY_URL'),
     proxyUsername: parseStringEnv('PROXY_USERNAME'),
     proxyPassword: parseStringEnv('PROXY_PASSWORD'),
+    proxyTypeDefault: parseProxyType(process.env.PROXY_TYPE_DEFAULT, 'residential'),
     proxyListPath: parseStringEnv('PROXY_LIST'),
     proxyFailureCooldownMinutes: Math.max(1, parseIntEnv('PROXY_FAILURE_COOLDOWN_MINUTES', 30)),
     proxyRotateEveryJobs: Math.max(0, parseIntEnv('PROXY_ROTATE_EVERY_JOBS', 0)),
     proxyRotateEveryMinutes: Math.max(0, parseIntEnv('PROXY_ROTATE_EVERY_MINUTES', 0)),
     proxyHealthCheckTimeoutMs: Math.max(1000, parseIntEnv('PROXY_HEALTH_CHECK_TIMEOUT_MS', 5000)),
+    proxyMobilePriorityEnabled: parseBoolEnv('PROXY_MOBILE_PRIORITY_ENABLED', true),
+    proxyMobileEscalationFailures: Math.max(1, parseIntEnv('PROXY_MOBILE_ESCALATION_FAILURES', 2)),
     proxyProviderApiEndpoint: parseStringEnv('PROXY_PROVIDER_API_ENDPOINT'),
     proxyProviderApiKey: parseStringEnv('PROXY_PROVIDER_API_KEY'),
     fingerprintApiEndpoint: parseStringEnv('FINGERPRINT_API_ENDPOINT'),
+    useJa3Proxy: parseBoolEnv('USE_JA3_PROXY', false),
+    ja3ProxyPort: Math.max(1, parseIntEnv('JA3_PROXY_PORT', 8080)),
+    ja3Fingerprint: parseStringEnv('JA3_FINGERPRINT', '771,4865-4867-4866-49195-49199-52393-52392-49196-49200-49162-49161-49171-49172-51-57-47-53-10,0-23-65281-10-11-35-16-5-51-43-13-45-28-21,29-23-24-25-256-257,0'),
+    ja3UserAgent: parseStringEnv('JA3_USER_AGENT', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:115.0) Gecko/20100101 Firefox/115.0'),
+    ja3ProxyUpstream: parseStringEnv('JA3_PROXY_UPSTREAM'),
+    ssiDynamicLimitsEnabled: parseBoolEnv('SSI_DYNAMIC_LIMITS_ENABLED', true),
+    ssiStateKey: parseStringEnv('SSI_STATE_KEY', 'linkedin_ssi_score'),
+    ssiDefaultScore: Math.min(100, Math.max(0, parseIntEnv('SSI_DEFAULT_SCORE', 55))),
+    ssiInviteMin: Math.max(1, parseIntEnv('SSI_INVITE_MIN', 30)),
+    ssiInviteMax: Math.max(1, parseIntEnv('SSI_INVITE_MAX', 80)),
+    ssiMessageMin: Math.max(1, parseIntEnv('SSI_MESSAGE_MIN', 20)),
+    ssiMessageMax: Math.max(1, parseIntEnv('SSI_MESSAGE_MAX', 40)),
     warmupEnabled: parseBoolEnv('WARMUP_ENABLED', false),
     warmupStartDate: parseStringEnv('WARMUP_START_DATE') || undefined,
     warmupMaxDays: Math.max(1, parseIntEnv('WARMUP_MAX_DAYS', 30)),
@@ -398,7 +470,26 @@ export const config: AppConfig = {
     randomActivityEnabled: parseBoolEnv('RANDOM_ACTIVITY_ENABLED', false),
     randomActivityProbability: Math.min(1, Math.max(0, parseFloatEnv('RANDOM_ACTIVITY_PROBABILITY', 0.15))),
     randomActivityMaxActions: Math.max(1, parseIntEnv('RANDOM_ACTIVITY_MAX_ACTIONS', 3)),
+    interJobMinDelaySec: Math.max(1, parseIntEnv('INTER_JOB_MIN_DELAY_SEC', 45)),
+    interJobMaxDelaySec: Math.max(1, parseIntEnv('INTER_JOB_MAX_DELAY_SEC', 90)),
+    behaviorDecoyMinIntervalJobs: Math.max(1, parseIntEnv('DECOY_MIN_INTERVAL_JOBS', 3)),
+    behaviorDecoyMaxIntervalJobs: Math.max(1, parseIntEnv('DECOY_MAX_INTERVAL_JOBS', 5)),
+    behaviorCoffeeBreakMinIntervalJobs: Math.max(1, parseIntEnv('COFFEE_BREAK_MIN_INTERVAL_JOBS', 10)),
+    behaviorCoffeeBreakMaxIntervalJobs: Math.max(1, parseIntEnv('COFFEE_BREAK_MAX_INTERVAL_JOBS', 15)),
+    behaviorCoffeeBreakMinSec: Math.max(60, parseIntEnv('COFFEE_BREAK_MIN_SEC', 180)),
+    behaviorCoffeeBreakMaxSec: Math.max(60, parseIntEnv('COFFEE_BREAK_MAX_SEC', 420)),
+    contextualPauseMinMs: Math.max(200, parseIntEnv('CONTEXTUAL_PAUSE_MIN_MS', 900)),
+    contextualPauseMaxMs: Math.max(200, parseIntEnv('CONTEXTUAL_PAUSE_MAX_MS', 4200)),
+    mondayLowActivityFactor: Math.min(1, Math.max(0.1, parseFloatEnv('MONDAY_LOW_ACTIVITY_FACTOR', 0.7))),
+    mondayLowActivityStartHour: Math.max(0, parseIntEnv('MONDAY_LOW_ACTIVITY_START_HOUR', 9)),
+    mondayLowActivityEndHour: Math.max(0, parseIntEnv('MONDAY_LOW_ACTIVITY_END_HOUR', 12)),
+    fridayLowActivityFactor: Math.min(1, Math.max(0.1, parseFloatEnv('FRIDAY_LOW_ACTIVITY_FACTOR', 0.75))),
+    fridayLowActivityStartHour: Math.max(0, parseIntEnv('FRIDAY_LOW_ACTIVITY_START_HOUR', 15)),
+    fridayLowActivityEndHour: Math.max(0, parseIntEnv('FRIDAY_LOW_ACTIVITY_END_HOUR', 18)),
     weekendPolicyEnabled: parseBoolEnv('WEEKEND_POLICY_ENABLED', true),
+    riskPredictiveAlertsEnabled: parseBoolEnv('RISK_PREDICTIVE_ALERTS_ENABLED', true),
+    riskPredictiveLookbackDays: Math.max(3, parseIntEnv('RISK_PREDICTIVE_LOOKBACK_DAYS', 7)),
+    riskPredictiveSigma: Math.max(0.5, parseFloatEnv('RISK_PREDICTIVE_SIGMA', 2)),
 };
 
 // Retrocompatibilità con vecchi moduli ancora presenti nel repository.
@@ -417,6 +508,32 @@ export function isWorkingHour(now: Date = new Date()): boolean {
     }
     const hour = getHourInTimezone(now, config.timezone);
     return hour >= config.workingHoursStart && hour < config.workingHoursEnd;
+}
+
+function isHourInWindow(hour: number, start: number, end: number): boolean {
+    if (start === end) return true;
+    if (start < end) {
+        return hour >= start && hour < end;
+    }
+    return hour >= start || hour < end;
+}
+
+export function getWorkingHourIntensity(now: Date = new Date()): number {
+    if (!isWorkingHour(now)) {
+        return 0;
+    }
+
+    const day = getDayInTimezone(now, config.timezone);
+    const hour = getHourInTimezone(now, config.timezone);
+
+    if (day === 1 && isHourInWindow(hour, config.mondayLowActivityStartHour, config.mondayLowActivityEndHour)) {
+        return config.mondayLowActivityFactor;
+    }
+    if (day === 5 && isHourInWindow(hour, config.fridayLowActivityStartHour, config.fridayLowActivityEndHour)) {
+        return config.fridayLowActivityFactor;
+    }
+
+    return 1;
 }
 
 export function getLocalDateString(now: Date = new Date(), timezone: string = config.timezone): string {
@@ -495,6 +612,35 @@ export function validateCriticalConfig(): string[] {
     // OpenAI: se personalizzazione abilitata, API key obbligatoria
     if (config.aiPersonalizationEnabled && !config.openaiApiKey) {
         errors.push('[CONFIG] OPENAI_API_KEY mancante ma AI_PERSONALIZATION_ENABLED=true');
+    }
+
+    if (config.useJa3Proxy && !config.ja3Fingerprint) {
+        errors.push('[CONFIG] USE_JA3_PROXY=true ma JA3_FINGERPRINT è vuoto');
+    }
+
+    if (config.ssiInviteMax < config.ssiInviteMin) {
+        errors.push('[CONFIG] SSI_INVITE_MAX deve essere >= SSI_INVITE_MIN');
+    }
+    if (config.ssiMessageMax < config.ssiMessageMin) {
+        errors.push('[CONFIG] SSI_MESSAGE_MAX deve essere >= SSI_MESSAGE_MIN');
+    }
+    if (config.interJobMaxDelaySec < config.interJobMinDelaySec) {
+        errors.push('[CONFIG] INTER_JOB_MAX_DELAY_SEC deve essere >= INTER_JOB_MIN_DELAY_SEC');
+    }
+    if (config.lowActivityRiskThreshold > config.riskStopThreshold) {
+        errors.push('[CONFIG] LOW_ACTIVITY_RISK_THRESHOLD deve essere <= RISK_STOP_THRESHOLD');
+    }
+    if (config.riskWarnThreshold > config.lowActivityRiskThreshold) {
+        errors.push('[CONFIG] RISK_WARN_THRESHOLD deve essere <= LOW_ACTIVITY_RISK_THRESHOLD');
+    }
+    if (config.behaviorDecoyMaxIntervalJobs < config.behaviorDecoyMinIntervalJobs) {
+        errors.push('[CONFIG] DECOY_MAX_INTERVAL_JOBS deve essere >= DECOY_MIN_INTERVAL_JOBS');
+    }
+    if (config.behaviorCoffeeBreakMaxIntervalJobs < config.behaviorCoffeeBreakMinIntervalJobs) {
+        errors.push('[CONFIG] COFFEE_BREAK_MAX_INTERVAL_JOBS deve essere >= COFFEE_BREAK_MIN_INTERVAL_JOBS');
+    }
+    if (config.behaviorCoffeeBreakMaxSec < config.behaviorCoffeeBreakMinSec) {
+        errors.push('[CONFIG] COFFEE_BREAK_MAX_SEC deve essere >= COFFEE_BREAK_MIN_SEC');
     }
 
     // Database: avviso se SQLite in produzione

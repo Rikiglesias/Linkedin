@@ -105,7 +105,7 @@ export interface RiskSnapshot {
     selectorFailureRate: number;
     challengeCount: number;
     inviteVelocityRatio: number;
-    action: 'NORMAL' | 'WARN' | 'STOP';
+    action: 'NORMAL' | 'WARN' | 'LOW_ACTIVITY' | 'STOP';
 }
 
 export interface IncidentRecord {
@@ -144,4 +144,3 @@ export interface ABTestStats {
     acceptanceRate: number;
     replyRate: number;
 }
-

@@ -1,7 +1,7 @@
 import { checkLogin, closeBrowser, detectChallenge, humanDelay, launchBrowser } from '../browser';
 import { getAccountProfileById, pickAccountIdForLead } from '../accountManager';
 import { config } from '../config';
-import { quarantineAccount } from '../risk/incidentManager';
+import { handleChallengeDetected, quarantineAccount } from '../risk/incidentManager';
 import { joinSelectors } from '../selectors';
 import { LeadRecord } from '../types/domain';
 import { reconcileLeadStatus, transitionLead } from './leadStateService';
@@ -332,11 +332,15 @@ export async function runSiteCheck(options: SiteCheckOptions): Promise<SiteCheck
                 await touchLeadSiteCheckAt(lead.id);
 
                 if (await detectChallenge(session.page)) {
-                    await quarantineAccount('SITE_CHECK_CHALLENGE_DETECTED', {
-                        leadId: lead.id,
-                        status: lead.status,
-                        linkedinUrl: lead.linkedin_url,
+                    await handleChallengeDetected({
+                        source: 'site_check',
                         accountId,
+                        leadId: lead.id,
+                        linkedinUrl: lead.linkedin_url,
+                        message: 'Challenge rilevato durante site-check',
+                        extra: {
+                            status: lead.status,
+                        },
                     });
                     challengeDetected = true;
                     break;

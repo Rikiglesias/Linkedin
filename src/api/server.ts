@@ -4,9 +4,9 @@ import path from 'path';
 import { randomBytes, timingSafeEqual } from 'crypto';
 import rateLimit from 'express-rate-limit';
 import type { NextFunction, Request, Response } from 'express';
-import { getGlobalKPIData, getRiskInputs, getABTestingStats, listOpenIncidents, resolveIncident, getDailyStat, getRuntimeFlag } from '../core/repositories';
+import { getGlobalKPIData, getRiskInputs, getABTestingStats, listOpenIncidents, resolveIncident, getDailyStat, getRuntimeFlag, getRecentDailyStats, getLeadsByStatus } from '../core/repositories';
 import { getDatabase } from '../db';
-import { evaluateRisk } from '../risk/riskEngine';
+import { evaluatePredictiveRiskAlerts, evaluateRisk } from '../risk/riskEngine';
 import { getLocalDateString, config } from '../config';
 import { pauseAutomation, resumeAutomation, setQuarantine } from '../risk/incidentManager';
 import { logError } from '../telemetry/logger';
@@ -221,9 +221,35 @@ function handleApiError(res: Response, err: unknown, context: string): void {
     res.status(500).json({ error: 'Errore interno del server.' });
 }
 
+interface DailyTrendRow {
+    date: string;
+    invitesSent: number;
+    messagesSent: number;
+    acceptances: number;
+    runErrors: number;
+    challenges: number;
+    estimatedRiskScore: number;
+}
+
 function writeSseEvent(res: Response, eventType: string, data: unknown): void {
     res.write(`event: ${eventType}\n`);
     res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+function mapDailyToPredictiveSample(day: {
+    invitesSent: number;
+    messagesSent: number;
+    runErrors: number;
+    selectorFailures: number;
+    challengesCount: number;
+}) {
+    const operations = Math.max(1, day.invitesSent + day.messagesSent);
+    return {
+        errorRate: day.runErrors / operations,
+        selectorFailureRate: day.selectorFailures / operations,
+        challengeCount: day.challengesCount,
+        inviteVelocityRatio: day.invitesSent / Math.max(1, config.hardInviteCap),
+    };
 }
 
 app.use('/api', dashboardAuthMiddleware);
@@ -381,23 +407,122 @@ app.post('/api/incidents/:id/resolve', async (req, res) => {
 app.get('/api/stats/trend', async (_req, res) => {
     try {
         const today = new Date();
-        const trend: Array<{ date: string; invitesSent: number; messagesSent: number; acceptances: number }> = [];
+        const trend: DailyTrendRow[] = [];
+        const localDate = getLocalDateString();
+        const currentRiskInputs = await getRiskInputs(localDate, config.hardInviteCap);
+        const pendingRatioReference = currentRiskInputs.pendingRatio;
 
         for (let i = 6; i >= 0; i--) {
             const d = new Date(today);
             d.setDate(d.getDate() - i);
             const dateStr = getLocalDateString(d);
-            const [invites, messages, acceptances] = await Promise.all([
+            const [invites, messages, acceptances, runErrors, challenges] = await Promise.all([
                 getDailyStat(dateStr, 'invites_sent'),
                 getDailyStat(dateStr, 'messages_sent'),
                 getDailyStat(dateStr, 'acceptances' as Parameters<typeof getDailyStat>[1]),
+                getDailyStat(dateStr, 'run_errors'),
+                getDailyStat(dateStr, 'challenges_count'),
             ]);
-            trend.push({ date: dateStr, invitesSent: invites, messagesSent: messages, acceptances });
+            const operations = Math.max(1, invites + messages);
+            const estimatedRisk = evaluateRisk({
+                pendingRatio: pendingRatioReference,
+                errorRate: runErrors / operations,
+                selectorFailureRate: 0,
+                challengeCount: challenges,
+                inviteVelocityRatio: invites / Math.max(1, config.hardInviteCap),
+            });
+            trend.push({
+                date: dateStr,
+                invitesSent: invites,
+                messagesSent: messages,
+                acceptances,
+                runErrors,
+                challenges,
+                estimatedRiskScore: estimatedRisk.score,
+            });
         }
 
         res.json(trend);
     } catch (err: unknown) {
         handleApiError(res, err, 'api.stats.trend');
+    }
+});
+
+// ── Predictive risk (baseline media mobile + sigma) ─────────────────────────
+app.get('/api/risk/predictive', async (_req, res) => {
+    try {
+        const localDate = getLocalDateString();
+        const lookbackDays = config.riskPredictiveLookbackDays;
+        const rows = await getRecentDailyStats(lookbackDays + 1);
+        const todayRow = rows.find((row) => row.date === localDate) ?? null;
+
+        const historySamples = rows
+            .filter((row) => row.date !== localDate)
+            .slice(0, lookbackDays)
+            .map(mapDailyToPredictiveSample);
+
+        const currentRiskInputs = await getRiskInputs(localDate, config.hardInviteCap);
+        const currentSample = {
+            errorRate: currentRiskInputs.errorRate,
+            selectorFailureRate: currentRiskInputs.selectorFailureRate,
+            challengeCount: currentRiskInputs.challengeCount,
+            inviteVelocityRatio: currentRiskInputs.inviteVelocityRatio,
+        };
+
+        const alerts = evaluatePredictiveRiskAlerts(
+            currentSample,
+            historySamples,
+            config.riskPredictiveSigma
+        );
+
+        res.json({
+            enabled: config.riskPredictiveAlertsEnabled,
+            lookbackDays,
+            sigma: config.riskPredictiveSigma,
+            currentDate: localDate,
+            currentSample,
+            today: todayRow,
+            historyCount: historySamples.length,
+            alerts,
+        });
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.risk.predictive');
+    }
+});
+
+// ── Review queue (challenge/manual review) ───────────────────────────────────
+app.get('/api/review-queue', async (req, res) => {
+    try {
+        const rawLimit = Number.parseInt(String(req.query.limit ?? '25'), 10);
+        const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(100, rawLimit)) : 25;
+
+        const [reviewLeads, incidents, challengePendingFlag, lastIncidentId] = await Promise.all([
+            getLeadsByStatus('REVIEW_REQUIRED', limit),
+            listOpenIncidents(),
+            getRuntimeFlag('challenge_review_pending'),
+            getRuntimeFlag('challenge_review_last_incident_id'),
+        ]);
+        const challengeIncidents = incidents.filter((incident) => incident.type === 'CHALLENGE_DETECTED');
+
+        res.json({
+            pending: challengePendingFlag === 'true',
+            lastIncidentId: lastIncidentId ? Number.parseInt(lastIncidentId, 10) : null,
+            reviewLeadCount: reviewLeads.length,
+            challengeIncidentCount: challengeIncidents.length,
+            leads: reviewLeads.map((lead) => ({
+                id: lead.id,
+                status: lead.status,
+                listName: lead.list_name,
+                firstName: lead.first_name,
+                lastName: lead.last_name,
+                linkedinUrl: lead.linkedin_url,
+                updatedAt: lead.updated_at,
+                lastError: lead.last_error,
+            })),
+            incidents: challengeIncidents,
+        });
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.review-queue');
     }
 });
 

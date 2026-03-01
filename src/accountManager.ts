@@ -39,6 +39,7 @@ function parseProxyConfig(profile: AccountProfileConfig): ProxyConfig | undefine
         server,
         username,
         password,
+        type: profile.proxyType,
     };
 }
 

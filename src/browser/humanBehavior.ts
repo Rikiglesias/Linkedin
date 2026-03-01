@@ -7,6 +7,7 @@
  */
 
 import { Page } from 'playwright';
+import { config } from '../config';
 import { joinSelectors } from '../selectors';
 
 // ─── Log-normale (Box-Muller) ─────────────────────────────────────────────────
@@ -23,6 +24,12 @@ function randomLogNormal(mean: number, stdDev: number): number {
 
 function randomElement<T>(arr: ReadonlyArray<T>): T {
     return arr[Math.floor(Math.random() * arr.length)] as T;
+}
+
+function randomInt(min: number, max: number): number {
+    const low = Math.min(min, max);
+    const high = Math.max(min, max);
+    return Math.floor(Math.random() * (high - low + 1)) + low;
 }
 
 /**
@@ -158,9 +165,9 @@ export async function simulateHumanReading(page: Page): Promise<void> {
  * Range: 30–90s base + picco casuale (pausa caffè) con 8% di probabilità.
  */
 export async function interJobDelay(page: Page): Promise<void> {
-    const base = Math.floor(Math.random() * 60_000) + 30_000;
-    const longBreak = Math.random() < 0.08 ? Math.floor(Math.random() * 240_000) + 180_000 : 0;
-    const totalDelay = base + longBreak;
+    const minDelay = Math.max(1, config.interJobMinDelaySec) * 1000;
+    const maxDelay = Math.max(config.interJobMinDelaySec, config.interJobMaxDelaySec) * 1000;
+    const totalDelay = randomInt(minDelay, maxDelay);
 
     if (Math.random() < 0.35) {
         await randomMouseMove(page);
@@ -174,6 +181,75 @@ export async function interJobDelay(page: Page): Promise<void> {
     }
 
     await page.waitForTimeout(Math.max(0, totalDelay - split));
+}
+
+export async function contextualReadingPause(page: Page): Promise<void> {
+    try {
+        const textLength = await page.evaluate(() => {
+            const bodyText = document.body?.innerText ?? '';
+            return bodyText.replace(/\s+/g, ' ').trim().length;
+        });
+
+        const minMs = Math.max(200, config.contextualPauseMinMs);
+        const maxMs = Math.max(minMs, config.contextualPauseMaxMs);
+        const normalizedLength = Math.min(8000, Math.max(0, textLength));
+        const ratio = normalizedLength / 8000;
+        const delayMs = Math.round(minMs + (maxMs - minMs) * ratio);
+        await page.waitForTimeout(delayMs);
+    } catch {
+        // Best-effort pause; ignore extraction errors.
+    }
+}
+
+type DecoyStep = 'feed' | 'network' | 'notifications' | 'search' | 'back';
+
+function shuffle<T>(items: T[]): T[] {
+    const clone = items.slice();
+    for (let i = clone.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const tmp = clone[i];
+        clone[i] = clone[j] as T;
+        clone[j] = tmp as T;
+    }
+    return clone;
+}
+
+async function runDecoyStep(page: Page, step: DecoyStep): Promise<void> {
+    if (step === 'feed') {
+        await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
+        await humanDelay(page, 1200, 2600);
+        await simulateHumanReading(page);
+        return;
+    }
+    if (step === 'network') {
+        await page.goto('https://www.linkedin.com/mynetwork/', { waitUntil: 'domcontentloaded' });
+        await humanDelay(page, 1200, 2400);
+        await simulateHumanReading(page);
+        return;
+    }
+    if (step === 'notifications') {
+        await page.goto('https://www.linkedin.com/notifications/', { waitUntil: 'domcontentloaded' });
+        await humanDelay(page, 1200, 2400);
+        return;
+    }
+    if (step === 'search') {
+        const terms = ['sales', 'marketing', 'engineering', 'operations', 'growth', 'ai'];
+        const term = randomElement(terms);
+        await page.goto(`https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(term)}`, { waitUntil: 'domcontentloaded' });
+        await humanDelay(page, 1200, 2600);
+        await simulateHumanReading(page);
+        return;
+    }
+    await page.goBack({ waitUntil: 'domcontentloaded' }).catch(() => null);
+    await humanDelay(page, 800, 1600);
+}
+
+export async function performDecoyBurst(page: Page): Promise<void> {
+    const baseSteps: DecoyStep[] = ['feed', 'notifications', 'network', 'search', 'back'];
+    const steps = shuffle(baseSteps).slice(0, randomInt(2, 4));
+    for (const step of steps) {
+        await runDecoyStep(page, step).catch(() => null);
+    }
 }
 
 /**

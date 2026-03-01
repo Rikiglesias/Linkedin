@@ -11,6 +11,30 @@ export interface InboxJobPayload {
     accountId: string;
 }
 
+function estimateReadingDelayMs(message: string): number {
+    const normalized = message.trim();
+    const words = normalized.length === 0 ? 0 : normalized.split(/\s+/).length;
+    const wpm = 185;
+    const baseMs = (words / wpm) * 60_000;
+    const jitter = Math.floor(Math.random() * 1500);
+    return Math.max(1200, Math.min(20_000, Math.floor(baseMs + 1200 + jitter)));
+}
+
+async function simulateConversationReading(page: WorkerContext['session']['page'], message: string): Promise<void> {
+    const delayMs = estimateReadingDelayMs(message);
+    if (Math.random() < 0.6) {
+        await page.evaluate(() => {
+            const container = document.querySelector('.msg-s-message-list-content, .msg-thread, .scaffold-finite-scroll');
+            if (container instanceof HTMLElement) {
+                container.scrollBy({ top: 180, behavior: 'smooth' });
+            } else {
+                window.scrollBy({ top: 120, behavior: 'smooth' });
+            }
+        }).catch(() => null);
+    }
+    await page.waitForTimeout(delayMs);
+}
+
 async function extractParticipantProfileUrl(page: WorkerContext['session']['page']): Promise<string | null> {
     const links = await page.evaluate(() => {
         const selectors = [
@@ -84,6 +108,8 @@ export async function processInboxJob(payload: InboxJobPayload, context: WorkerC
             const rawText = await lastMessageLocator.innerText();
             if (rawText && rawText.trim().length > 0) {
                 try {
+                    await simulateConversationReading(page, rawText.trim());
+
                     // Analisi Sentiment (NLP)
                     const sentiment = await analyzeIncomingMessage(rawText.trim());
                     const profileUrl = await extractParticipantProfileUrl(page);

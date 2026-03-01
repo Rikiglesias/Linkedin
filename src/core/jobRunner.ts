@@ -1,7 +1,7 @@
-import { BrowserSession, closeBrowser, interJobDelay, launchBrowser, checkLogin, performDecoyAction, performBrowserGC } from '../browser';
+import { BrowserSession, closeBrowser, interJobDelay, launchBrowser, checkLogin, performDecoyBurst, performBrowserGC } from '../browser';
 import { getRuntimeAccountProfiles, isMultiAccountRuntimeEnabled, RuntimeAccountProfile } from '../accountManager';
 import { config } from '../config';
-import { pauseAutomation, quarantineAccount } from '../risk/incidentManager';
+import { handleChallengeDetected, pauseAutomation, quarantineAccount } from '../risk/incidentManager';
 import { logError, logInfo, logWarn } from '../telemetry/logger';
 import { JobType } from '../types/domain';
 import { WorkerContext } from '../workers/context';
@@ -36,6 +36,12 @@ function retryDelayMs(attempt: number): number {
     return config.retryBaseMs * Math.pow(2, Math.max(0, attempt - 1)) + jitter;
 }
 
+function randomInt(min: number, max: number): number {
+    const low = Math.min(min, max);
+    const high = Math.max(min, max);
+    return Math.floor(Math.random() * (high - low + 1)) + low;
+}
+
 async function rotateSessionWithLoginCheck(
     session: BrowserSession,
     workerContext: WorkerContext,
@@ -48,6 +54,7 @@ async function rotateSessionWithLoginCheck(
     const rotated = await launchBrowser({
         sessionDir: account.sessionDir,
         proxy: account.proxy,
+        preferredProxyType: config.proxyMobilePriorityEnabled ? 'mobile' : undefined,
     });
     const loggedIn = await checkLogin(rotated.page);
     if (!loggedIn) {
@@ -73,6 +80,7 @@ async function runQueuedJobsForAccount(
     let session = await launchBrowser({
         sessionDir: account.sessionDir,
         proxy: account.proxy,
+        preferredProxyType: config.proxyMobilePriorityEnabled ? 'mobile' : undefined,
     });
     let sessionClosed = false;
     try {
@@ -93,6 +101,10 @@ async function runQueuedJobsForAccount(
         };
         let consecutiveFailures = 0;
         let processedOnCurrentSession = 0;
+        let jobsSinceDecoy = 0;
+        let jobsSinceCoffeeBreak = 0;
+        let nextDecoyAt = randomInt(config.behaviorDecoyMinIntervalJobs, config.behaviorDecoyMaxIntervalJobs);
+        let nextCoffeeBreakAt = randomInt(config.behaviorCoffeeBreakMinIntervalJobs, config.behaviorCoffeeBreakMaxIntervalJobs);
         const rotateEveryJobs = config.proxyRotateEveryJobs;
         const rotateEveryMinutes = config.proxyRotateEveryMinutes;
         const rotateEveryMs = rotateEveryMinutes > 0 ? rotateEveryMinutes * 60_000 : 0;
@@ -113,6 +125,17 @@ async function runQueuedJobsForAccount(
             const job = await lockNextQueuedJob(options.allowedTypes, account.id, includeLegacyDefaultQueue);
             if (!job) break;
 
+            if (!options.dryRun && jobsSinceDecoy >= nextDecoyAt) {
+                await logInfo('job_runner.decoy_burst.start', {
+                    accountId: account.id,
+                    jobsSinceDecoy,
+                    nextDecoyAt,
+                });
+                await performDecoyBurst(session.page);
+                jobsSinceDecoy = 0;
+                nextDecoyAt = randomInt(config.behaviorDecoyMinIntervalJobs, config.behaviorDecoyMaxIntervalJobs);
+            }
+
             await logInfo('job.started', {
                 jobId: job.id,
                 type: job.type,
@@ -121,11 +144,9 @@ async function runQueuedJobsForAccount(
                 jobAccountId: job.account_id,
             });
 
+            let processedCurrentJob = false;
             try {
-                // Azioni diversive (Decoy) per mascherare pattern del bot (20% probabilità)
-                if (Math.random() < 0.20) {
-                    await performDecoyAction(session.page);
-                }
+                processedCurrentJob = true;
 
                 let executionResult: WorkerExecutionResult = workerResult(0);
                 if (job.type === 'INVITE') {
@@ -186,7 +207,6 @@ async function runQueuedJobsForAccount(
 
                 // Pausa umana tra un job e il successivo (anti-burst)
                 await interJobDelay(session.page);
-                processedOnCurrentSession += 1;
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
                 const attempts = job.attempts + 1;
@@ -196,18 +216,41 @@ async function runQueuedJobsForAccount(
 
                 if (error instanceof ChallengeDetectedError) {
                     await incrementDailyStat(options.localDate, 'challenges_count');
-                    await quarantineAccount('CHALLENGE_DETECTED', {
+                    let challengeLeadId: number | undefined;
+                    if (job.type === 'INVITE' || job.type === 'MESSAGE' || job.type === 'ACCEPTANCE_CHECK') {
+                        try {
+                            const parsed = parseJobPayload<{ leadId?: number }>(job);
+                            if (typeof parsed.payload.leadId === 'number') {
+                                challengeLeadId = parsed.payload.leadId;
+                            }
+                        } catch {
+                            // ignore payload parsing issues during challenge flow
+                        }
+                    }
+                    await handleChallengeDetected({
+                        source: 'job_runner',
+                        accountId: account.id,
+                        leadId: challengeLeadId,
                         jobId: job.id,
                         jobType: job.type,
                         message,
-                        accountId: account.id,
+                        extra: {
+                            statusBeforeFailure: job.status,
+                        },
                     });
                     await markJobRetryOrDeadLetter(job.id, attempts, attempts, 0, message);
                     await logError('job.challenge_detected', { jobId: job.id, type: job.type, message, accountId: account.id });
                     break;
                 }
 
-                processedOnCurrentSession += 1;
+                if (error instanceof RetryableWorkerError && error.code === 'WEEKLY_LIMIT_REACHED') {
+                    await quarantineAccount('WEEKLY_LIMIT_REACHED', {
+                        jobId: job.id,
+                        jobType: job.type,
+                        message,
+                        accountId: account.id,
+                    });
+                }
 
                 const nextDelay = retryDelayMs(attempts);
                 const status = await markJobRetryOrDeadLetter(job.id, attempts, job.max_attempts, nextDelay, message);
@@ -269,6 +312,28 @@ async function runQueuedJobsForAccount(
                 }
             }
 
+            if (processedCurrentJob) {
+                processedOnCurrentSession += 1;
+                jobsSinceDecoy += 1;
+                jobsSinceCoffeeBreak += 1;
+            }
+
+            if (!options.dryRun && jobsSinceCoffeeBreak >= nextCoffeeBreakAt) {
+                const coffeeBreakMs = randomInt(
+                    Math.max(60, config.behaviorCoffeeBreakMinSec),
+                    Math.max(config.behaviorCoffeeBreakMinSec, config.behaviorCoffeeBreakMaxSec)
+                ) * 1000;
+                await logInfo('job_runner.coffee_break.start', {
+                    accountId: account.id,
+                    jobsSinceCoffeeBreak,
+                    nextCoffeeBreakAt,
+                    coffeeBreakMs,
+                });
+                await session.page.waitForTimeout(coffeeBreakMs);
+                jobsSinceCoffeeBreak = 0;
+                nextCoffeeBreakAt = randomInt(config.behaviorCoffeeBreakMinIntervalJobs, config.behaviorCoffeeBreakMaxIntervalJobs);
+            }
+
             const rotateReasons: string[] = [];
             if (rotateEveryJobs > 0 && processedOnCurrentSession >= rotateEveryJobs) {
                 rotateReasons.push(`threshold_${rotateEveryJobs}_jobs`);
@@ -324,6 +389,22 @@ async function runQueuedJobsForAccount(
                     errorsCount: followUpResult.errors.length,
                 });
             } catch (err: unknown) {
+                if (err instanceof ChallengeDetectedError) {
+                    await incrementDailyStat(options.localDate, 'challenges_count');
+                    await handleChallengeDetected({
+                        source: 'follow_up_worker',
+                        accountId: account.id,
+                        message: err.message,
+                        extra: {
+                            phase: 'follow_up',
+                        },
+                    });
+                    await logWarn('job_runner.follow_up_phase_challenge', {
+                        accountId: account.id,
+                        error: err.message,
+                    });
+                    return;
+                }
                 await logWarn('job_runner.follow_up_phase_error', {
                     accountId: account.id,
                     error: err instanceof Error ? err.message : String(err),

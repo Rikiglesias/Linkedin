@@ -51,13 +51,15 @@ async function run(): Promise<void> {
         challengeCount: 0,
         inviteVelocityRatio: 0.3,
     });
-    assert.equal(risk.action === 'NORMAL' || risk.action === 'WARN' || risk.action === 'STOP', true);
+    assert.equal(risk.action === 'NORMAL' || risk.action === 'WARN' || risk.action === 'LOW_ACTIVITY' || risk.action === 'STOP', true);
 
     // test dynamic budget
     const budgetNormal = calculateDynamicBudget(25, 35, 5, 'NORMAL');
     const budgetWarn = calculateDynamicBudget(25, 35, 5, 'WARN');
+    const budgetLowActivity = calculateDynamicBudget(25, 35, 5, 'LOW_ACTIVITY');
     assert.equal(budgetNormal, 20); // 25-5
     assert.equal(budgetWarn, 7);    // floor(25*0.5)-5 = floor(12.5)-5 = 12-5 = 7
+    assert.equal(budgetLowActivity >= 0, true);
 
     const cooldownDecision = evaluateCooldownDecision({
         ...risk,
@@ -161,6 +163,7 @@ async function run(): Promise<void> {
             proxyUrl: '',
             proxyUsername: '',
             proxyPassword: '',
+            proxyType: 'unknown',
             warmupEnabled: false,
             warmupMaxDays: 30,
             warmupMinActions: 5,
@@ -171,6 +174,7 @@ async function run(): Promise<void> {
             proxyUrl: '',
             proxyUsername: '',
             proxyPassword: '',
+            proxyType: 'unknown',
             warmupEnabled: false,
             warmupMaxDays: 30,
             warmupMinActions: 5,

@@ -957,6 +957,36 @@ export async function getDailyStatsSnapshot(dateString: string): Promise<DailySt
     };
 }
 
+export async function getRecentDailyStats(limit: number): Promise<DailyStatsSnapshot[]> {
+    const db = await getDatabase();
+    const safeLimit = Math.max(1, Math.floor(limit));
+    const rows = await db.query<{
+        date: string;
+        invites_sent: number;
+        messages_sent: number;
+        challenges_count: number;
+        selector_failures: number;
+        run_errors: number;
+    }>(
+        `
+        SELECT date, invites_sent, messages_sent, challenges_count, selector_failures, run_errors
+        FROM daily_stats
+        ORDER BY date DESC
+        LIMIT ?
+    `,
+        [safeLimit]
+    );
+
+    return rows.map((row) => ({
+        date: row.date,
+        invitesSent: row.invites_sent ?? 0,
+        messagesSent: row.messages_sent ?? 0,
+        challengesCount: row.challenges_count ?? 0,
+        selectorFailures: row.selector_failures ?? 0,
+        runErrors: row.run_errors ?? 0,
+    }));
+}
+
 export async function getListDailyStat(
     dateString: string,
     listName: string,

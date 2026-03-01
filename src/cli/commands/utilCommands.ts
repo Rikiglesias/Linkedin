@@ -2,7 +2,7 @@
  * utilCommands.ts — Comandi CLI di utilità
  *
  * import, login, funnel, site-check, state-sync, proxy-status,
- * random-activity, enrich-targets, workflow-run
+ * random-activity, enrich-targets, create-profile, workflow-run
  */
 
 import { config } from '../../config';
@@ -11,6 +11,7 @@ import { importLeadsFromCSV } from '../../csvImporter';
 import { buildFunnelReport, runSiteCheck } from '../../core/audit';
 import { runCompanyEnrichmentBatch } from '../../core/companyEnrichment';
 import { runRandomLinkedinActivity } from '../../workers/randomActivityWorker';
+import { createPersistentProfile, resolveProfileDir } from '../../scripts/createProfile';
 import { getAccountProfileById, getRuntimeAccountProfiles } from '../../accountManager';
 import { getProxyFailoverChain, getProxyPoolStatus } from '../../proxyManager';
 import { getOptionValue, hasOption, parseIntStrict, getPositionalArgs } from '../cliParser';
@@ -118,6 +119,7 @@ export async function runProxyStatusCommand(): Promise<void> {
     const failoverChain = getProxyFailoverChain().map((proxy, index) => ({
         order: index + 1,
         server: proxy.server,
+        type: proxy.type ?? 'unknown',
         auth: !!proxy.username || !!proxy.password,
     }));
 
@@ -164,4 +166,20 @@ export async function runEnrichTargetsCommand(args: string[]): Promise<void> {
         dryRun,
     });
     console.log(JSON.stringify(report, null, 2));
+}
+
+export async function runCreateProfileCommand(args: string[]): Promise<void> {
+    const positional = getPositionalArgs(args);
+    const dirRaw = getOptionValue(args, '--dir') ?? positional[0];
+    const timeoutRaw = getOptionValue(args, '--timeout') ?? positional.find((value) => /^\d+$/.test(value));
+    const url = getOptionValue(args, '--url') ?? 'https://www.linkedin.com/login';
+    const timeoutSeconds = timeoutRaw
+        ? Math.max(60, parseIntStrict(timeoutRaw, '--timeout'))
+        : 900;
+
+    await createPersistentProfile({
+        profileDir: resolveProfileDir(dirRaw),
+        timeoutSeconds,
+        loginUrl: url,
+    });
 }

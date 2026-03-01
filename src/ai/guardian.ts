@@ -55,6 +55,7 @@ function heuristics(schedule: ScheduleResult): AiGuardianDecision {
 
     if (
         schedule.riskSnapshot.action === 'WARN'
+        || schedule.riskSnapshot.action === 'LOW_ACTIVITY'
         || schedule.riskSnapshot.pendingRatio >= config.pendingRatioWarn
         || schedule.riskSnapshot.errorRate >= 0.2
     ) {
@@ -214,4 +215,3 @@ export async function evaluateAiGuardian(
         };
     }
 }
-

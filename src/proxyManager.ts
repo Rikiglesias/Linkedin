@@ -1,13 +1,14 @@
 import fs from 'fs';
 import path from 'path';
 import * as net from 'net';
-import { config } from './config';
+import { config, ProxyType } from './config';
 import { logInfo, logWarn } from './telemetry/logger';
 
 export interface ProxyConfig {
     server: string;
     username?: string;
     password?: string;
+    type?: ProxyType;
 }
 
 interface ProxyPoolCache {
@@ -20,13 +21,43 @@ export interface ProxyPoolStatus {
     total: number;
     ready: number;
     cooling: number;
+    mobile: number;
+    residential: number;
+    unknown: number;
     rotationCursor: number;
+}
+
+export interface GetProxyChainOptions {
+    preferredType?: ProxyType;
+    forceMobile?: boolean;
 }
 
 const proxyFailureUntil = new Map<string, number>();
 const stickyProxySessions = new Map<string, ProxyConfig>();
 let rotationCursor = 0;
 let cachedPool: ProxyPoolCache = { proxies: [], signature: '' };
+
+function normalizeProxyType(value: ProxyType | string | undefined, fallback: ProxyType = 'unknown'): ProxyType {
+    const normalized = (value ?? '').toString().trim().toLowerCase();
+    if (normalized === 'mobile') return 'mobile';
+    if (normalized === 'residential') return 'residential';
+    if (normalized === 'unknown' || normalized === '') return fallback;
+    return fallback;
+}
+
+function parseTypedProxyRaw(rawValue: string): { proxyRaw: string; type: ProxyType } {
+    const trimmed = rawValue.trim();
+    const match = trimmed.match(/^(mobile|residential|unknown)\s*[|,]\s*(.+)$/i);
+    if (match) {
+        const type = normalizeProxyType(match[1], 'unknown');
+        const proxyRaw = match[2]?.trim() ?? '';
+        return { proxyRaw, type };
+    }
+    return {
+        proxyRaw: trimmed,
+        type: normalizeProxyType(config.proxyTypeDefault, 'unknown'),
+    };
+}
 
 function normalizeProxyServer(value: string): string {
     const trimmed = value.trim();
@@ -48,16 +79,20 @@ export function parseProxyEntry(rawValue: string): ProxyConfig | null {
     const raw = rawValue.trim();
     if (!raw || raw.startsWith('#')) return null;
 
-    if (isLikelyHostPortUserPass(raw)) {
-        const [host, port, username, password] = raw.split(':');
+    const { proxyRaw, type } = parseTypedProxyRaw(raw);
+    if (!proxyRaw) return null;
+
+    if (isLikelyHostPortUserPass(proxyRaw)) {
+        const [host, port, username, password] = proxyRaw.split(':');
         return {
             server: `http://${host}:${port}`,
             username: username || undefined,
             password: password || undefined,
+            type,
         };
     }
 
-    const normalized = normalizeProxyServer(raw);
+    const normalized = normalizeProxyServer(proxyRaw);
     try {
         const parsed = new URL(normalized);
         const username = parsed.username ? decodeURIComponent(parsed.username) : undefined;
@@ -66,6 +101,7 @@ export function parseProxyEntry(rawValue: string): ProxyConfig | null {
             server: `${parsed.protocol}//${parsed.host}`,
             username,
             password,
+            type,
         };
     } catch {
         return null;
@@ -79,6 +115,7 @@ function applyGlobalCredentials(proxy: ProxyConfig): ProxyConfig {
         server: proxy.server,
         username: username || undefined,
         password: password || undefined,
+        type: normalizeProxyType(proxy.type, 'unknown'),
     };
 }
 
@@ -187,6 +224,42 @@ function splitByCooldown(orderedPool: ProxyConfig[]): { ready: ProxyConfig[]; co
     return { ready, cooling };
 }
 
+function proxyTypeScore(proxy: ProxyConfig, options: GetProxyChainOptions): number {
+    const type = normalizeProxyType(proxy.type, 'unknown');
+    const preferredType = options.preferredType;
+    if (preferredType) {
+        if (type === preferredType) return 0;
+        return type === 'unknown' ? 2 : 1;
+    }
+
+    if (config.proxyMobilePriorityEnabled) {
+        if (type === 'mobile') return 0;
+        if (type === 'residential') return 1;
+        return 2;
+    }
+
+    return 0;
+}
+
+function prioritizeProxyPool(pool: ProxyConfig[], options: GetProxyChainOptions): ProxyConfig[] {
+    if (pool.length <= 1) {
+        return pool.slice();
+    }
+
+    const forceMobile = options.forceMobile === true;
+    const sourcePool = forceMobile
+        ? (() => {
+            const mobile = pool.filter((proxy) => normalizeProxyType(proxy.type, 'unknown') === 'mobile');
+            return mobile.length > 0 ? mobile : pool;
+        })()
+        : pool;
+
+    return sourcePool
+        .map((proxy, index) => ({ proxy, index, score: proxyTypeScore(proxy, options) }))
+        .sort((a, b) => (a.score - b.score) || (a.index - b.index))
+        .map((entry) => entry.proxy);
+}
+
 /**
  * Contatta API Esterna Provider (BrightData, Oxylabs, JSON-Server) per
  * richiedere urgentemente un nuovo indirizzo Proxy IP rotazionale
@@ -250,14 +323,16 @@ export async function fetchFallbackProxyFromProvider(): Promise<boolean> {
  * - prima i proxy non in cooldown
  * - poi eventuali proxy in cooldown (fallback estremo)
  */
-export async function getProxyFailoverChainAsync(): Promise<ProxyConfig[]> {
+export async function getProxyFailoverChainAsync(options: GetProxyChainOptions = {}): Promise<ProxyConfig[]> {
     const pool = loadProxyPool();
     if (pool.length === 0) return [];
 
     const rotated = orderByRotation(pool);
     const { ready, cooling } = splitByCooldown(rotated);
     if (ready.length > 0) {
-        return ready.concat(cooling);
+        const prioritizedReady = prioritizeProxyPool(ready, options);
+        const prioritizedCooling = prioritizeProxyPool(cooling, options);
+        return prioritizedReady.concat(prioritizedCooling);
     }
 
     // Tutti in cooldown? Scalo il provider esterno se configurato.
@@ -267,26 +342,30 @@ export async function getProxyFailoverChainAsync(): Promise<ProxyConfig[]> {
             // Reinvochiamo noi stessi per prendere il top della catena che ora è fresco
             const refreshedPool = loadProxyPool();
             const reSplit = splitByCooldown(refreshedPool);
-            return reSplit.ready.concat(reSplit.cooling);
+            const prioritizedReady = prioritizeProxyPool(reSplit.ready, options);
+            const prioritizedCooling = prioritizeProxyPool(reSplit.cooling, options);
+            return prioritizedReady.concat(prioritizedCooling);
         }
     }
 
-    return rotated;
+    return prioritizeProxyPool(rotated, options);
 }
 
 /**
  * Retrocompatibilità sincrona. Senza API Provider.
  */
-export function getProxyFailoverChain(): ProxyConfig[] {
+export function getProxyFailoverChain(options: GetProxyChainOptions = {}): ProxyConfig[] {
     const pool = loadProxyPool();
     if (pool.length === 0) return [];
 
     const rotated = orderByRotation(pool);
     const { ready, cooling } = splitByCooldown(rotated);
     if (ready.length > 0) {
-        return ready.concat(cooling);
+        const prioritizedReady = prioritizeProxyPool(ready, options);
+        const prioritizedCooling = prioritizeProxyPool(cooling, options);
+        return prioritizedReady.concat(prioritizedCooling);
     }
-    return rotated;
+    return prioritizeProxyPool(rotated, options);
 }
 
 /**
@@ -335,8 +414,8 @@ export async function checkProxyHealth(proxy: ProxyConfig): Promise<boolean> {
  * Restituisce il primo proxy disponibile, interpellando l'API Provider se necessario, 
  * ed eseguendo anche un health check proattivo prima di restituirlo.
  */
-export async function getProxyAsync(): Promise<ProxyConfig | undefined> {
-    const chain = await getProxyFailoverChainAsync();
+export async function getProxyAsync(options: GetProxyChainOptions = {}): Promise<ProxyConfig | undefined> {
+    const chain = await getProxyFailoverChainAsync(options);
 
     for (const proxy of chain) {
         const isHealthy = await checkProxyHealth(proxy);
@@ -351,7 +430,7 @@ export async function getProxyAsync(): Promise<ProxyConfig | undefined> {
 
     // Se tutti i ping falliscono, ritentiamo caricando di nuovo la fallback logic,
     // oppure ritorniamo il primo (se non c'è fallback)
-    const refreshedChain = await getProxyFailoverChainAsync();
+    const refreshedChain = await getProxyFailoverChainAsync(options);
     return refreshedChain[0];
 }
 
@@ -359,23 +438,29 @@ export async function getProxyAsync(): Promise<ProxyConfig | undefined> {
  * Restituisce o alloca un proxy permanente per una specifica sessionId.
  * Assicura che la sessione usi costantemente lo stesso nodo per non allertare Linkedin con cambi IP anomali.
  */
-export async function getStickyProxy(sessionId: string): Promise<ProxyConfig | undefined> {
+export async function getStickyProxy(sessionId: string, options: GetProxyChainOptions = {}): Promise<ProxyConfig | undefined> {
     // 1. Check if we already have a sticky proxy for this session
     const existing = stickyProxySessions.get(sessionId);
     if (existing) {
-        // Verifichiamo proattivamente anche il proxy sticky
-        const isHealthy = await checkProxyHealth(existing);
-        if (isHealthy) {
-            return existing;
-        } else {
-            console.warn(`[PROXY] Sticky proxy ${existing.server} per sessione ${sessionId} fallito health check. Ne cerco uno nuovo.`);
-            markProxyFailed(existing);
+        const existingType = normalizeProxyType(existing.type, 'unknown');
+        const preferred = options.forceMobile ? 'mobile' : options.preferredType;
+        if (preferred && existingType !== preferred && existingType !== 'unknown') {
             stickyProxySessions.delete(sessionId);
+        } else {
+        // Verifichiamo proattivamente anche il proxy sticky
+            const isHealthy = await checkProxyHealth(existing);
+            if (isHealthy) {
+                return existing;
+            } else {
+                console.warn(`[PROXY] Sticky proxy ${existing.server} per sessione ${sessionId} fallito health check. Ne cerco uno nuovo.`);
+                markProxyFailed(existing);
+                stickyProxySessions.delete(sessionId);
+            }
         }
     }
 
     // 2. Otherwise allocate a new proxy from the best available chain
-    const proxy = await getProxyAsync();
+    const proxy = await getProxyAsync(options);
     if (proxy) {
         stickyProxySessions.set(sessionId, proxy);
     }
@@ -403,6 +488,9 @@ export function getProxyPoolStatus(): ProxyPoolStatus {
             total: 0,
             ready: 0,
             cooling: 0,
+            mobile: 0,
+            residential: 0,
+            unknown: 0,
             rotationCursor: 0,
         };
     }
@@ -419,11 +507,18 @@ export function getProxyPoolStatus(): ProxyPoolStatus {
         }
     }
 
+    const mobile = pool.filter((proxy) => normalizeProxyType(proxy.type, 'unknown') === 'mobile').length;
+    const residential = pool.filter((proxy) => normalizeProxyType(proxy.type, 'unknown') === 'residential').length;
+    const unknown = Math.max(0, pool.length - mobile - residential);
+
     return {
         configured: true,
         total: pool.length,
         ready,
         cooling,
+        mobile,
+        residential,
+        unknown,
         rotationCursor,
     };
 }

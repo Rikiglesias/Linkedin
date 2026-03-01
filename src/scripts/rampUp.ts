@@ -24,7 +24,7 @@ async function runRampUp(listName: string, targetDay: number | 'auto') {
 
         console.log(`[Ramp-Up] Valutazione Rischio Attuale: ${evaluation.score}/100 [Azione: ${evaluation.action}]`);
 
-        if (evaluation.action === 'WARN' || evaluation.action === 'STOP') {
+        if (evaluation.action === 'WARN' || evaluation.action === 'LOW_ACTIVITY' || evaluation.action === 'STOP') {
             console.error(`[Ramp-Up] ❌ Rischio troppo elevato (${evaluation.action}) per scalare i limiti. Rimandare ad andamento normalizzato.`);
             process.exit(1);
         }

@@ -6,6 +6,7 @@
 export {
     getDailyStat,
     getDailyStatsSnapshot,
+    getRecentDailyStats,
     getListDailyStat,
     incrementDailyStat,
     incrementListDailyStat,

@@ -1,4 +1,4 @@
-import { detectChallenge, humanDelay, humanMouseMove, humanType, simulateHumanReading } from '../browser';
+import { contextualReadingPause, detectChallenge, humanDelay, humanMouseMove, humanType, simulateHumanReading } from '../browser';
 import { transitionLead } from '../core/leadStateService';
 import { countRecentMessageHash, getLeadById, incrementDailyStat, incrementListDailyStat, storeMessageHash } from '../core/repositories';
 import { joinSelectors } from '../selectors';
@@ -41,6 +41,7 @@ export async function processMessageJob(payload: MessageJobPayload, context: Wor
     await context.session.page.goto(lead.linkedin_url, { waitUntil: 'domcontentloaded' });
     await humanDelay(context.session.page, 2500, 5000);
     await simulateHumanReading(context.session.page);
+    await contextualReadingPause(context.session.page);
 
     if (await detectChallenge(context.session.page)) {
         throw new ChallengeDetectedError();

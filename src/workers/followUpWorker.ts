@@ -12,7 +12,7 @@
  * Dry-run: genera messaggio senza inviarlo.
  */
 
-import { detectChallenge, humanDelay, humanMouseMove, humanType, simulateHumanReading } from '../browser';
+import { contextualReadingPause, detectChallenge, humanDelay, humanMouseMove, humanType, simulateHumanReading } from '../browser';
 import { buildFollowUpReminderMessage } from '../ai/messagePersonalizer';
 import { config } from '../config';
 import { getLeadsForFollowUp, recordFollowUpSent, incrementDailyStat, countRecentMessageHash, storeMessageHash } from '../core/repositories';
@@ -61,6 +61,7 @@ async function processSingleFollowUp(
     await context.session.page.goto(linkedinUrl, { waitUntil: 'domcontentloaded' });
     await humanDelay(context.session.page, 2500, 5000);
     await simulateHumanReading(context.session.page);
+    await contextualReadingPause(context.session.page);
 
     if (await detectChallenge(context.session.page)) {
         throw new ChallengeDetectedError();
@@ -159,6 +160,10 @@ export async function runFollowUpWorker(
             );
             if (ok) sent++;
         } catch (err: unknown) {
+            if (err instanceof ChallengeDetectedError) {
+                await logWarn('follow_up.challenge_detected', { leadId: lead.id });
+                throw err;
+            }
             const message = err instanceof Error ? err.message : String(err);
             errors.push({ leadId: lead.id, message });
             await logWarn('follow_up.error', {

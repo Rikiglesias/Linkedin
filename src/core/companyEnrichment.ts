@@ -1,6 +1,6 @@
 import { checkLogin, closeBrowser, detectChallenge, humanDelay, launchBrowser } from '../browser';
 import { config } from '../config';
-import { quarantineAccount } from '../risk/incidentManager';
+import { handleChallengeDetected, quarantineAccount } from '../risk/incidentManager';
 import { logInfo, logWarn } from '../telemetry/logger';
 import {
     addLead,
@@ -152,10 +152,15 @@ async function processCompanyTarget(
         await humanDelay(page, 1700, 3000);
 
         if (await detectChallenge(page)) {
-            await quarantineAccount('COMPANY_ENRICHMENT_CHALLENGE', {
-                targetId: target.id,
-                listName: target.list_name,
-                accountName: target.account_name,
+            await handleChallengeDetected({
+                source: 'company_enrichment',
+                accountId: 'default',
+                message: 'Challenge rilevato durante enrichment',
+                extra: {
+                    targetId: target.id,
+                    listName: target.list_name,
+                    accountName: target.account_name,
+                },
             });
             throw new Error('Challenge rilevato durante enrichment');
         }

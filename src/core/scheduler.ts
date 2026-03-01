@@ -1,4 +1,4 @@
-import { config, getLocalDateString, getWeekStartDate } from '../config';
+import { config, getLocalDateString, getWeekStartDate, getWorkingHourIntensity } from '../config';
 import { pickAccountIdForLead, getRuntimeAccountProfiles } from '../accountManager';
 import { evaluateRisk, calculateDynamicBudget, calculateAccountWarmupMultiplier } from '../risk/riskEngine';
 import { JobType, RiskSnapshot } from '../types/domain';
@@ -10,6 +10,7 @@ import {
     getLeadStatusCountsForLists,
     getLeadsByStatusForList,
     getListDailyStat,
+    getRuntimeFlag,
     getRiskInputs,
     listLeadCampaignConfigs,
     promoteNewLeadsToReadyInvite,
@@ -114,6 +115,54 @@ function applyAdaptiveFactor(rawBudget: number, factor: number): number {
     return Math.min(rawBudget, computed);
 }
 
+function clampInt(value: number, min: number, max: number): number {
+    return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+function parseSsiScore(rawValue: string | null, fallback: number): number {
+    if (!rawValue) return clampInt(fallback, 0, 100);
+
+    const direct = Number.parseFloat(rawValue);
+    if (Number.isFinite(direct)) {
+        return clampInt(direct, 0, 100);
+    }
+
+    try {
+        const parsed = JSON.parse(rawValue) as { score?: number; ssi?: number };
+        const candidate = parsed?.score ?? parsed?.ssi;
+        if (typeof candidate === 'number' && Number.isFinite(candidate)) {
+            return clampInt(candidate, 0, 100);
+        }
+    } catch {
+        // ignore malformed payload and fallback
+    }
+
+    return clampInt(fallback, 0, 100);
+}
+
+function capFromSsi(score: number, minCap: number, maxCap: number): number {
+    const low = Math.max(1, Math.min(minCap, maxCap));
+    const high = Math.max(1, Math.max(minCap, maxCap));
+    const ratio = Math.max(0, Math.min(1, score / 100));
+    const cap = low + (high - low) * ratio;
+    return clampInt(cap, low, high);
+}
+
+function resolveCapPair(staticSoft: number, staticHard: number, dynamicCap: number): { soft: number; hard: number } {
+    const hard = Math.max(1, Math.min(staticHard, dynamicCap));
+    const soft = Math.max(1, Math.min(staticSoft, hard));
+    return { soft, hard };
+}
+
+function applyHourIntensityToBudget(budget: number, intensity: number): number {
+    if (budget <= 0) return 0;
+    if (intensity >= 0.999) return budget;
+    if (intensity <= 0) return 0;
+    const scaled = Math.floor(budget * intensity);
+    if (scaled <= 0) return 1;
+    return Math.min(budget, scaled);
+}
+
 function evaluateAdaptiveBudgetContext(
     statusCounts: Record<string, number>,
     riskAction: RiskSnapshot['action']
@@ -143,6 +192,9 @@ function evaluateAdaptiveBudgetContext(
     if (riskAction === 'STOP') {
         factor = 0;
         reasons.push('global_risk_stop');
+    } else if (riskAction === 'LOW_ACTIVITY') {
+        factor = Math.min(factor, clamp01(config.lowActivityBudgetFactor));
+        reasons.push('global_risk_low_activity');
     } else if (riskAction === 'WARN') {
         factor = Math.min(factor, clamp01(config.adaptiveCapsWarnFactor));
         reasons.push('global_risk_warn');
@@ -234,6 +286,17 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
     const weekStartDate = getWeekStartDate();
     const weeklyInvitesSent = await countWeeklyInvites(weekStartDate);
     const weeklyRemaining = Math.max(0, config.weeklyInviteLimit - weeklyInvitesSent);
+    const ssiRaw = config.ssiDynamicLimitsEnabled
+        ? await getRuntimeFlag(config.ssiStateKey)
+        : null;
+    const ssiScore = parseSsiScore(ssiRaw, config.ssiDefaultScore);
+    const ssiInviteCap = config.ssiDynamicLimitsEnabled
+        ? capFromSsi(ssiScore, config.ssiInviteMin, config.ssiInviteMax)
+        : config.softInviteCap;
+    const ssiMessageCap = config.ssiDynamicLimitsEnabled
+        ? capFromSsi(ssiScore, config.ssiMessageMin, config.ssiMessageMax)
+        : config.softMsgCap;
+    const hourIntensity = getWorkingHourIntensity();
 
     const dbAccountAgeDays = await getAccountAgeDays();
     const accounts = getRuntimeAccountProfiles();
@@ -258,8 +321,11 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
         const avgDailyInvites = Math.floor(dailyInvitesSent / accounts.length);
         const avgDailyMessages = Math.floor(dailyMessagesSent / accounts.length);
 
-        const limitInvite = calculateDynamicBudget(config.softInviteCap, config.hardInviteCap, avgDailyInvites, riskSnapshot.action);
-        const limitMessage = calculateDynamicBudget(config.softMsgCap, config.hardMsgCap, avgDailyMessages, riskSnapshot.action);
+        const inviteCaps = resolveCapPair(config.softInviteCap, config.hardInviteCap, ssiInviteCap);
+        const messageCaps = resolveCapPair(config.softMsgCap, config.hardMsgCap, ssiMessageCap);
+
+        const limitInvite = calculateDynamicBudget(inviteCaps.soft, inviteCaps.hard, avgDailyInvites, riskSnapshot.action);
+        const limitMessage = calculateDynamicBudget(messageCaps.soft, messageCaps.hard, avgDailyMessages, riskSnapshot.action);
 
         const accountInviteLimit = warmupFactor < 1.0
             ? Math.max(account.warmupMinActions || 5, Math.floor(limitInvite * warmupFactor))
@@ -274,6 +340,8 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
     }
 
     inviteBudget = Math.min(inviteBudget, weeklyRemaining);
+    inviteBudget = applyHourIntensityToBudget(inviteBudget, hourIntensity);
+    messageBudget = applyHourIntensityToBudget(messageBudget, hourIntensity);
 
     // WARMUP BYPASS: nessun invio email/connessioni
     const effectiveInviteBudget = workflow === 'warmup' ? 0 : inviteBudget;

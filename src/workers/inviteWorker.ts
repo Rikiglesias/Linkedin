@@ -1,5 +1,5 @@
 import { Page } from 'playwright';
-import { detectChallenge, humanDelay, humanMouseMove, humanType, simulateHumanReading } from '../browser';
+import { contextualReadingPause, detectChallenge, humanDelay, humanMouseMove, humanType, simulateHumanReading } from '../browser';
 import { transitionLead } from '../core/leadStateService';
 import { getLeadById, incrementDailyStat, incrementListDailyStat, updateLeadScrapedContext, updateLeadPromptVariant } from '../core/repositories';
 import { joinSelectors } from '../selectors';
@@ -182,6 +182,7 @@ export async function processInviteJob(payload: InviteJobPayload, context: Worke
 
     await context.session.page.goto(lead.linkedin_url, { waitUntil: 'domcontentloaded' });
     await simulateHumanReading(context.session.page);
+    await contextualReadingPause(context.session.page);
 
     if (await detectChallenge(context.session.page)) {
         throw new ChallengeDetectedError();
