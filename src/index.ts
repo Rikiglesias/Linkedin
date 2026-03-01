@@ -299,7 +299,6 @@ async function main(): Promise<void> {
             await generateAndSendDailyReport();
             break;
         case 'dashboard':
-            await initDatabase();
             startServer(3000);
             console.log('Premi Ctrl+C per fermare la Dashboard e spegnere il database.');
             await new Promise(() => { });

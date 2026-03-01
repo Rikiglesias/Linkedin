@@ -1,0 +1,199 @@
+{
+  "name": "LinkedIn Bot Events (Webhook Ingest)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "linkedin-events",
+        "responseMode": "onReceived",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "WebhookIn",
+      "name": "Webhook In",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -760,
+        260
+      ],
+      "webhookId": "linkedin-events"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const crypto = require('crypto');\nconst secret = $env.WEBHOOK_SYNC_SECRET || '';\nconst normalized = [];\n\nfor (const item of items) {\n  const body = item.json.body ?? item.json;\n  const headers = item.json.headers ?? {};\n  const rawBody = item.json.rawBody ?? JSON.stringify(body);\n  const signature = headers['x-signature-sha256'] || headers['X-Signature-Sha256'] || '';\n\n  if (secret) {\n    const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(rawBody, 'utf8').digest('hex');\n    if (signature !== expected) {\n      throw new Error('Invalid webhook signature');\n    }\n  }\n\n  normalized.push({\n    json: {\n      topic: body.topic ?? '',\n      payload: body.payload ?? {},\n      idempotencyKey: headers['x-idempotency-key'] ?? body.idempotencyKey ?? null,\n      createdAt: body.createdAt ?? new Date().toISOString(),\n      sourceIp: headers['x-forwarded-for'] ?? headers['x-real-ip'] ?? null\n    }\n  });\n}\n\nreturn normalized;"
+      },
+      "id": "VerifyNormalize",
+      "name": "Verify + Normalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -520,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const state = getWorkflowStaticData('global');\nif (!state.seen) state.seen = {};\nconst now = Date.now();\nconst ttlMs = 7 * 24 * 60 * 60 * 1000;\n\nfor (const [key, ts] of Object.entries(state.seen)) {\n  if (now - Number(ts) > ttlMs) delete state.seen[key];\n}\n\nconst out = [];\nfor (const item of items) {\n  const key = item.json.idempotencyKey || `${item.json.topic}:${JSON.stringify(item.json.payload).slice(0, 220)}`;\n  if (state.seen[key]) continue;\n  state.seen[key] = now;\n  item.json.dedupeKey = key;\n  out.push(item);\n}\n\nreturn out;"
+      },
+      "id": "IdempotencyGuard",
+      "name": "Idempotency Guard",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "for (const item of items) {\n  const topic = String(item.json.topic || '').toLowerCase();\n  let priority = 30;\n\n  if (topic.startsWith('incident.') || topic.includes('challenge')) priority = 95;\n  else if (topic.startsWith('risk.') || topic.includes('predictive_alert')) priority = 85;\n  else if (topic.startsWith('job.failed')) priority = 70;\n  else if (topic.startsWith('lead.')) priority = 45;\n\n  item.json.priority = priority;\n  item.json.message = `[LinkedIn Bot] ${item.json.topic}\\npriority=${priority}\\nkey=${item.json.dedupeKey}\\ncreatedAt=${item.json.createdAt}`;\n}\n\nreturn items;"
+      },
+      "id": "ClassifyPriority",
+      "name": "Classify Priority",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -40,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json[\"priority\"]}}",
+              "operation": "largerEqual",
+              "value2": 80
+            }
+          ]
+        }
+      },
+      "id": "IfHighPriority",
+      "name": "High Priority?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        200,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{'https://api.telegram.org/bot' + $env.TELEGRAM_BOT_TOKEN + '/sendMessage'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { chat_id: $env.TELEGRAM_CHAT_ID, text: $json.message, disable_notification: false } }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "TelegramAlert",
+      "name": "Telegram Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return items;"
+      },
+      "id": "NoAlertLowPriority",
+      "name": "No Alert (Low Priority)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        340
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook In": {
+      "main": [
+        [
+          {
+            "node": "Verify + Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify + Normalize": {
+      "main": [
+        [
+          {
+            "node": "Idempotency Guard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Idempotency Guard": {
+      "main": [
+        [
+          {
+            "node": "Classify Priority",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Priority": {
+      "main": [
+        [
+          {
+            "node": "High Priority?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "High Priority?": {
+      "main": [
+        [
+          {
+            "node": "Telegram Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Alert (Low Priority)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

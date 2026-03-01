@@ -1,0 +1,339 @@
+{
+  "name": "LinkedIn News Intelligence (RSS Watch)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 60
+            }
+          ]
+        }
+      },
+      "id": "Schedule",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -900,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://news.linkedin.com/rss"
+      },
+      "id": "RssLinkedInNews",
+      "name": "RSS LinkedIn Newsroom",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.1,
+      "position": [
+        -660,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://engineering.linkedin.com/blog.rss.html"
+      },
+      "id": "RssLinkedInEng",
+      "name": "RSS LinkedIn Engineering",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.1,
+      "position": [
+        -660,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://github.com/microsoft/playwright/releases.atom"
+      },
+      "id": "RssPlaywright",
+      "name": "RSS Playwright Releases",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.1,
+      "position": [
+        -660,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://blog.cloudflare.com/rss/"
+      },
+      "id": "RssCloudflare",
+      "name": "RSS Cloudflare Blog",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.1,
+      "position": [
+        -660,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "id": "MergeA",
+      "name": "Merge A",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        -420,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "id": "MergeB",
+      "name": "Merge B",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        -420,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "id": "MergeAll",
+      "name": "Merge All",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        -180,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const keywords = [\n  'linkedin policy',\n  'linkedin api',\n  'linkedin automation',\n  'linkedin engineering',\n  'linkedin release',\n  'playwright',\n  'cloudflare',\n  'bot detection',\n  'captcha',\n  'abuse',\n  'anti-bot'\n];\n\nconst state = getWorkflowStaticData('global');\nif (!state.newsSeen) state.newsSeen = {};\nconst now = Date.now();\nconst ttlMs = 14 * 24 * 60 * 60 * 1000;\nfor (const [key, ts] of Object.entries(state.newsSeen)) {\n  if (now - Number(ts) > ttlMs) delete state.newsSeen[key];\n}\n\nconst matched = [];\nfor (const item of items) {\n  const title = String(item.json.title || item.json.name || '').trim();\n  const link = String(item.json.link || item.json.guid || '').trim();\n  const content = String(item.json.content || item.json.contentSnippet || item.json.summary || '');\n  const haystack = `${title}\\n${content}`.toLowerCase();\n  if (!keywords.some((k) => haystack.includes(k))) continue;\n\n  const key = link || title;\n  if (!key || state.newsSeen[key]) continue;\n  state.newsSeen[key] = now;\n\n  matched.push({\n    title,\n    link,\n    date: item.json.isoDate || item.json.pubDate || item.json.published || new Date().toISOString(),\n    source: item.json.creator || item.json.source || item.json.feedTitle || 'feed'\n  });\n}\n\nmatched.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());\nconst top = matched.slice(0, 10);\n\nif (top.length === 0) {\n  return [{ json: { count: 0, message: '' } }];\n}\n\nconst lines = top.map((n, i) => `${i + 1}. ${n.title}\\n${n.link}`);\nconst message = `LinkedIn Intel Update (${top.length} nuove)\\n\\n${lines.join('\\n\\n')}`;\n\nreturn [{\n  json: {\n    count: top.length,\n    message,\n    items: top\n  }\n}];"
+      },
+      "id": "FilterAndSummarize",
+      "name": "Filter + Summarize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        80,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json[\"count\"]}}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "IfAnyNews",
+      "name": "Any News?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{'https://api.telegram.org/bot' + $env.TELEGRAM_BOT_TOKEN + '/sendMessage'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { chat_id: $env.TELEGRAM_CHAT_ID, text: $json.message, disable_notification: true } }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "TelegramNewsAlert",
+      "name": "Telegram News Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return items;"
+      },
+      "id": "NoNews",
+      "name": "No News (Skip)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "RSS LinkedIn Newsroom",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "RSS LinkedIn Engineering",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "RSS Playwright Releases",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "RSS Cloudflare Blog",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RSS LinkedIn Newsroom": {
+      "main": [
+        [
+          {
+            "node": "Merge A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RSS LinkedIn Engineering": {
+      "main": [
+        [
+          {
+            "node": "Merge A",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "RSS Playwright Releases": {
+      "main": [
+        [
+          {
+            "node": "Merge B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RSS Cloudflare Blog": {
+      "main": [
+        [
+          {
+            "node": "Merge B",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge A": {
+      "main": [
+        [
+          {
+            "node": "Merge All",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge B": {
+      "main": [
+        [
+          {
+            "node": "Merge All",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge All": {
+      "main": [
+        [
+          {
+            "node": "Filter + Summarize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter + Summarize": {
+      "main": [
+        [
+          {
+            "node": "Any News?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any News?": {
+      "main": [
+        [
+          {
+            "node": "Telegram News Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No News (Skip)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

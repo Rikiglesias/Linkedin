@@ -118,7 +118,6 @@ export interface AppConfig {
     dashboardTrustedIps: string[];
     workingHoursStart: number;
     workingHoursEnd: number;
-    maxConcurrentJobs: number;
     jobStuckMinutes: number;
     retryMaxAttempts: number;
     retryBaseMs: number;
@@ -313,7 +312,6 @@ export const config: AppConfig = {
     dashboardTrustedIps: parseCsvEnv('DASHBOARD_TRUSTED_IPS'),
     workingHoursStart: parseIntEnv('HOUR_START', 9),
     workingHoursEnd: parseIntEnv('HOUR_END', 18),
-    maxConcurrentJobs: Math.max(1, parseIntEnv('MAX_CONCURRENT_JOBS', 1)),
     jobStuckMinutes: Math.max(1, parseIntEnv('JOB_STUCK_MINUTES', 30)),
     retryMaxAttempts: Math.max(1, parseIntEnv('RETRY_MAX_ATTEMPTS', 3)),
     retryBaseMs: Math.max(100, parseIntEnv('RETRY_BASE_MS', 1200)),
@@ -490,13 +488,6 @@ export const config: AppConfig = {
     riskPredictiveAlertsEnabled: parseBoolEnv('RISK_PREDICTIVE_ALERTS_ENABLED', true),
     riskPredictiveLookbackDays: Math.max(3, parseIntEnv('RISK_PREDICTIVE_LOOKBACK_DAYS', 7)),
     riskPredictiveSigma: Math.max(0.5, parseFloatEnv('RISK_PREDICTIVE_SIGMA', 2)),
-};
-
-// Retrocompatibilità con vecchi moduli ancora presenti nel repository.
-export const legacyLimits = {
-    dailyInviteLimit: config.hardInviteCap,
-    weeklyInviteLimit: config.weeklyInviteLimit,
-    dailyMsgLimit: config.hardMsgCap,
 };
 
 export function isWorkingHour(now: Date = new Date()): boolean {

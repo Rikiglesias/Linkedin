@@ -30,6 +30,7 @@ import { runCompanyEnrichmentBatch } from '../../core/companyEnrichment';
 import { runRandomLinkedinActivity } from '../../workers/randomActivityWorker';
 import { runDeadLetterWorker } from '../../workers/deadLetterWorker';
 import { backupDatabase } from '../../db';
+import { runControlPlaneSync } from '../../cloud/controlPlaneSync';
 import { startTelegramListener } from '../../cloud/telegramListener';
 import { markTelegramCommandProcessed, pollPendingTelegramCommand } from '../../cloud/supabaseDataClient';
 import { getRuntimeAccountProfiles } from '../../accountManager';
@@ -299,6 +300,19 @@ export async function runLoopCommand(args: string[]): Promise<void> {
 
                 if (!dryRun) {
                     await processCloudCommands();
+                }
+
+                if (!dryRun && config.supabaseControlPlaneEnabled) {
+                    const controlPlane = await runControlPlaneSync();
+                    if (controlPlane.executed || controlPlane.reason !== 'interval_not_elapsed') {
+                        console.log('[LOOP] control-plane', {
+                            executed: controlPlane.executed,
+                            reason: controlPlane.reason,
+                            fetched: controlPlane.fetched,
+                            applied: controlPlane.applied,
+                            hashChanged: controlPlane.hashChanged,
+                        });
+                    }
                 }
 
                 const doctorGate = await evaluateLoopDoctorGate(dryRun);

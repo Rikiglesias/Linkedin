@@ -39,6 +39,46 @@ WEBHOOK_SYNC_MAX_RETRIES=8
 SUPABASE_SYNC_ENABLED=false
 ```
 
+## n8n News/Intel Workflow (LinkedIn ecosystem updates)
+
+Goal: ricevere alert automatici su novità utili (policy changes, release notes, enforcement trend, regressioni UI/API).
+
+Recommended n8n flow:
+
+1. `Schedule Trigger` (every 30-60 min)
+2. `RSS Read` or `HTTP Request` nodes for multiple sources
+3. `Merge` + `Item Lists` (remove duplicates by `link`)
+4. `Function` filter by keywords:
+   - `linkedin policy`
+   - `linkedin automation`
+   - `linkedin api`
+   - `linkedin engineering`
+   - `playwright release`
+   - `cloudflare bot detection`
+5. `OpenAI` or `Text Classifier` node (optional) to score relevance/risk
+6. `Telegram` / `Slack` / `Email` node for alert delivery
+7. Optional: `Webhook` node that forwards high-priority alerts to your bot dashboard/backend
+
+Suggested source categories:
+
+- Official LinkedIn newsroom / product updates
+- LinkedIn Engineering posts
+- Playwright release notes / browser automation changelogs
+- Security/bot-protection vendor blogs (Cloudflare, Akamai, DataDome)
+- Legal/policy updates affecting automation/compliance
+
+Practical tip:
+
+- Keep bot events (`/webhook/linkedin-events`) and external news intake in two separate n8n workflows:
+  - Workflow A: operational telemetry from this bot
+  - Workflow B: external intelligence/news
+  This avoids mixing runtime alerts with market/news noise.
+
+Ready-to-import templates are available in:
+- `n8n/workflow_bot_events.json`
+- `n8n/workflow_news_intel.json`
+- setup notes: `n8n/README.md`
+
 ## Supabase Control Plane (campaign configs)
 
 Enable remote campaign management:
