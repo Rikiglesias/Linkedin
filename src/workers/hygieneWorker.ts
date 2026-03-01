@@ -4,26 +4,30 @@ import { transitionLead } from '../core/leadStateService';
 import { logInfo, logError } from '../telemetry/logger';
 import { humanDelay } from '../browser';
 import { config } from '../config';
+import { WorkerExecutionResult, workerResult } from './result';
 
 export interface HygieneJobPayload {
     accountId: string;
 }
 
-export async function processHygieneJob(payload: { accountId: string }, context: WorkerContext): Promise<void> {
-    if (!config.withdrawInvitesEnabled) return;
+export async function processHygieneJob(payload: HygieneJobPayload, context: WorkerContext): Promise<WorkerExecutionResult> {
+    if (!config.withdrawInvitesEnabled) return workerResult(0);
 
     const expired = await getExpiredInvitedLeads(payload.accountId, config.pendingInviteMaxDays);
     if (!expired || expired.length === 0) {
         await logInfo('hygiene.no_expired_invites', { accountId: payload.accountId });
-        return;
+        return workerResult(0);
     }
 
     await logInfo('hygiene.found_expired_invites', { count: expired.length, accountId: payload.accountId });
     const page = context.session.page;
+    const errors: Array<{ leadId: number; message: string }> = [];
+    let processedCount = 0;
 
     for (const lead of expired) {
         if (context.dryRun) {
             console.log(`[DRY RUN] Hygiene ritirerebbe invito per lead ${lead.linkedin_url}`);
+            processedCount += 1;
             continue;
         }
 
@@ -57,10 +61,15 @@ export async function processHygieneJob(payload: { accountId: string }, context:
             }
 
             await humanDelay(page, 1500, 3000);
+            processedCount += 1;
         } catch (e: unknown) {
             const message = e instanceof Error ? e.message : String(e);
             await logError('hygiene.worker.error', { leadId: lead.id, error: message });
             await transitionLead(lead.id, 'REVIEW_REQUIRED', 'hygiene_error_on_dom_execution');
+            errors.push({ leadId: lead.id, message });
+            processedCount += 1;
         }
     }
+
+    return workerResult(processedCount, errors);
 }

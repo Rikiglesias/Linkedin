@@ -12,6 +12,7 @@ import { buildPersonalizedInviteNote } from '../ai/inviteNotePersonalizer';
 import { pauseAutomation } from '../risk/incidentManager';
 import { bridgeDailyStat, bridgeLeadStatus } from '../cloud/cloudBridge';
 import { selectVariant, recordSent } from '../ml/abBandit';
+import { WorkerExecutionResult, workerResult } from './result';
 
 async function clickConnectOnProfile(page: Page): Promise<boolean> {
     const primaryBtn = page.locator(joinSelectors('connectButtonPrimary')).first();
@@ -104,10 +105,11 @@ async function handleInviteModal(
         if (generatedNote.variant) {
             const candidateVariants = [generatedNote.variant]; // estendibile con altre varianti in config
             const banditVariant = await selectVariant(candidateVariants).catch(() => generatedNote.variant);
-            generatedNote.variant = banditVariant ?? generatedNote.variant;
-            await updateLeadPromptVariant(lead.id, generatedNote.variant!);
-            lead.invite_prompt_variant = generatedNote.variant;
-            await recordSent(generatedNote.variant!).catch(() => { });
+            const resolvedVariant = banditVariant ?? generatedNote.variant;
+            generatedNote.variant = resolvedVariant;
+            await updateLeadPromptVariant(lead.id, resolvedVariant);
+            lead.invite_prompt_variant = resolvedVariant;
+            await recordSent(resolvedVariant).catch(() => { });
         }
 
         try {
@@ -159,7 +161,7 @@ async function handleInviteModal(
     throw new RetryableWorkerError('Conferma invito senza nota non trovata', 'SEND_BUTTON_NOT_FOUND');
 }
 
-export async function processInviteJob(payload: InviteJobPayload, context: WorkerContext): Promise<void> {
+export async function processInviteJob(payload: InviteJobPayload, context: WorkerContext): Promise<WorkerExecutionResult> {
     const lead = await getLeadById(payload.leadId);
     if (!lead) {
         throw new RetryableWorkerError(`Lead ${payload.leadId} non trovato`, 'LEAD_NOT_FOUND');
@@ -170,12 +172,12 @@ export async function processInviteJob(payload: InviteJobPayload, context: Worke
     }
 
     if (lead.status !== 'READY_INVITE' && lead.status !== 'NEW' && lead.status !== 'PENDING') {
-        return;
+        return workerResult(0);
     }
 
     if (isSalesNavigatorUrl(lead.linkedin_url)) {
         await transitionLead(lead.id, 'BLOCKED', 'salesnav_url_requires_profile_invite');
-        return;
+        return workerResult(1);
     }
 
     await context.session.page.goto(lead.linkedin_url, { waitUntil: 'domcontentloaded' });
@@ -220,7 +222,7 @@ export async function processInviteJob(payload: InviteJobPayload, context: Worke
     if (!connectClicked) {
         await incrementDailyStat(context.localDate, 'selector_failures');
         await transitionLead(lead.id, 'SKIPPED', 'connect_not_found');
-        return;
+        return workerResult(1);
     }
 
     await humanDelay(context.session.page, 900, 1800);
@@ -269,4 +271,5 @@ export async function processInviteJob(payload: InviteJobPayload, context: Worke
         invite_note_sent: inviteResult.sentWithNote ? 'yes' : 'no'
     });
     bridgeDailyStat(context.localDate, context.accountId, 'invites_sent');
+    return workerResult(1);
 }

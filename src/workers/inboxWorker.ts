@@ -2,13 +2,16 @@ import { humanDelay, humanMouseMove, simulateHumanReading } from '../browser';
 import { WorkerContext } from './context';
 import { analyzeIncomingMessage } from '../ai/sentimentAnalysis';
 import { logInfo, logWarn } from '../telemetry/logger';
+import { WorkerExecutionResult, workerResult } from './result';
 
 export interface InboxJobPayload {
     accountId: string;
 }
 
-export async function processInboxJob(payload: InboxJobPayload, context: WorkerContext): Promise<void> {
+export async function processInboxJob(payload: InboxJobPayload, context: WorkerContext): Promise<WorkerExecutionResult> {
     const page = context.session.page;
+    const errors: Array<{ message: string }> = [];
+    let processedCount = 0;
     await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'domcontentloaded' });
     await simulateHumanReading(page);
 
@@ -16,16 +19,22 @@ export async function processInboxJob(payload: InboxJobPayload, context: WorkerC
     try {
         await page.waitForSelector('.msg-conversation-listitem', { timeout: 10000 });
     } catch {
-        await logWarn('inbox.no_conversations', { message: 'Nessuna conversazione trovata o timeout' });
-        return;
+        await logWarn('inbox.no_conversations', {
+            accountId: payload.accountId,
+            message: 'Nessuna conversazione trovata o timeout',
+        });
+        return workerResult(0);
     }
 
     const unreadConversations = page.locator('.msg-conversation-listitem:has(.msg-conversation-card__unread-count)');
     const count = await unreadConversations.count();
 
     if (count === 0) {
-        await logInfo('inbox.no_unread', { message: 'Nessun messaggio non letto trovato' });
-        return;
+        await logInfo('inbox.no_unread', {
+            accountId: payload.accountId,
+            message: 'Nessun messaggio non letto trovato',
+        });
+        return workerResult(0);
     }
 
     for (let i = 0; i < Math.min(count, 5); i++) {
@@ -42,13 +51,24 @@ export async function processInboxJob(payload: InboxJobPayload, context: WorkerC
         if (await lastMessageLocator.isVisible()) {
             const rawText = await lastMessageLocator.innerText();
             if (rawText && rawText.trim().length > 0) {
-                // Analisi Sentiment (NLP)
-                const sentiment = await analyzeIncomingMessage(rawText.trim());
-                await logInfo('inbox.analyzed_message', {
-                    textExcerpt: rawText.substring(0, 30),
-                    intent: sentiment.intent,
-                    confidence: sentiment.confidence
-                });
+                try {
+                    // Analisi Sentiment (NLP)
+                    const sentiment = await analyzeIncomingMessage(rawText.trim());
+                    await logInfo('inbox.analyzed_message', {
+                        accountId: payload.accountId,
+                        textExcerpt: rawText.substring(0, 30),
+                        intent: sentiment.intent,
+                        confidence: sentiment.confidence
+                    });
+                    processedCount += 1;
+                } catch (error: unknown) {
+                    const message = error instanceof Error ? error.message : String(error);
+                    errors.push({ message });
+                    await logWarn('inbox.analyzed_message_error', {
+                        accountId: payload.accountId,
+                        message,
+                    });
+                }
 
                 //TODO: Aggiorna lo stato del Lead in base all'intent (es. tag 'INTERESTED' o blocca bot)
             }
@@ -56,4 +76,6 @@ export async function processInboxJob(payload: InboxJobPayload, context: WorkerC
 
         await humanDelay(page, 1000, 2000);
     }
+
+    return workerResult(processedCount, errors);
 }

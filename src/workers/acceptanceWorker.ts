@@ -9,6 +9,7 @@ import { isSalesNavigatorUrl, normalizeLinkedInUrl } from '../linkedinUrl';
 import { bridgeDailyStat, bridgeLeadStatus } from '../cloud/cloudBridge';
 import { Page } from 'playwright';
 import { recordOutcome } from '../ml/abBandit';
+import { WorkerExecutionResult, workerResult } from './result';
 
 function isFirstDegreeBadge(text: string | null): boolean {
     if (!text) return true;
@@ -40,15 +41,15 @@ async function checkSentInvitations(page: Page, leadUrl: string): Promise<boolea
     return sentLinks.some(href => normalizeLinkedInUrl(href) === normalizedLeadUrl);
 }
 
-export async function processAcceptanceJob(payload: AcceptanceJobPayload, context: WorkerContext): Promise<void> {
+export async function processAcceptanceJob(payload: AcceptanceJobPayload, context: WorkerContext): Promise<WorkerExecutionResult> {
     const lead = await getLeadById(payload.leadId);
     if (!lead || lead.status !== 'INVITED') {
-        return;
+        return workerResult(0);
     }
 
     if (isSalesNavigatorUrl(lead.linkedin_url)) {
         await transitionLead(lead.id, 'BLOCKED', 'salesnav_url_requires_profile_check');
-        return;
+        return workerResult(1);
     }
 
     await context.session.page.goto(lead.linkedin_url, { waitUntil: 'domcontentloaded' });
@@ -83,7 +84,7 @@ export async function processAcceptanceJob(payload: AcceptanceJobPayload, contex
     }
 
     if (!accepted) {
-        return;
+        return workerResult(0);
     }
 
     await transitionLead(lead.id, 'ACCEPTED', 'acceptance_detected');
@@ -96,4 +97,5 @@ export async function processAcceptanceJob(payload: AcceptanceJobPayload, contex
     // Cloud sync non-bloccante
     bridgeLeadStatus(lead.linkedin_url, 'ACCEPTED', { accepted_at: new Date().toISOString() });
     bridgeDailyStat(context.localDate, context.accountId, 'acceptances');
+    return workerResult(1);
 }

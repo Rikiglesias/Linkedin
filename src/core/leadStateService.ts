@@ -1,5 +1,6 @@
 import { appendLeadEvent, getLeadById, pushOutboxEvent, setLeadStatus } from './repositories';
 import { LeadStatus } from '../types/domain';
+import { publishLiveEvent } from '../telemetry/liveEvents';
 
 const allowedTransitions: Record<Exclude<LeadStatus, 'PENDING'>, LeadStatus[]> = {
     NEW: ['READY_INVITE', 'BLOCKED', 'REVIEW_REQUIRED', 'DEAD'],
@@ -62,6 +63,13 @@ export async function transitionLead(
         },
         `lead.transition:${leadId}:${fromStatus}:${targetStatus}:${reason}`
     );
+    publishLiveEvent('lead.transition', {
+        leadId,
+        fromStatus,
+        toStatus: targetStatus,
+        reason,
+        metadata,
+    });
 }
 
 export async function reconcileLeadStatus(
@@ -97,4 +105,11 @@ export async function reconcileLeadStatus(
         },
         `lead.reconciled:${leadId}:${fromStatus}:${targetStatus}:${reason}`
     );
+    publishLiveEvent('lead.reconciled', {
+        leadId,
+        fromStatus,
+        toStatus: targetStatus,
+        reason,
+        metadata,
+    });
 }

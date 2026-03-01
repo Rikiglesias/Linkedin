@@ -2,6 +2,7 @@ import { clearAutomationPause, createIncident, countRecentIncidents, pushOutboxE
 import { sendTelegramAlert } from '../telemetry/alerts';
 import { broadcastCritical, broadcastWarning } from '../telemetry/broadcaster';
 import { bridgeAccountHealth } from '../cloud/cloudBridge';
+import { publishLiveEvent } from '../telemetry/liveEvents';
 
 export async function quarantineAccount(type: string, details: Record<string, unknown>): Promise<number> {
     const incidentId = await createIncident(type, 'CRITICAL', details);
@@ -21,11 +22,19 @@ export async function quarantineAccount(type: string, details: Record<string, un
     broadcastCritical(`CRITICAL incident #${incidentId}: ${type}`, `Account messo in quarantena.`, details).catch(() => { });
     // Replica cloud: aggiorna health account a RED (non-bloccante)
     bridgeAccountHealth('default', 'RED', type);
+    publishLiveEvent('incident.opened', {
+        incidentId,
+        type,
+        severity: 'CRITICAL',
+        details,
+        quarantined: true,
+    });
     return incidentId;
 }
 
 export async function setQuarantine(enabled: boolean): Promise<void> {
     await setRuntimeFlag('account_quarantine', enabled ? 'true' : 'false');
+    publishLiveEvent('system.quarantine', { enabled });
 }
 
 export async function pauseAutomation(type: string, details: Record<string, unknown>, baseMinutes: number): Promise<number> {
@@ -63,9 +72,17 @@ export async function pauseAutomation(type: string, details: Record<string, unkn
     broadcastWarning(`WARN incident #${incidentId}: ${type}`, `Automazione in pausa fino a ${pausedUntil ?? 'manual resume'}.`, details).catch(() => { });
     // Replica cloud: aggiorna health account a YELLOW (non-bloccante)
     bridgeAccountHealth('default', 'YELLOW', type, pausedUntil ?? null);
+    publishLiveEvent('automation.paused', {
+        incidentId,
+        type,
+        severity: 'WARN',
+        pausedUntil,
+        details,
+    });
     return incidentId;
 }
 
 export async function resumeAutomation(): Promise<void> {
     await clearAutomationPause();
+    publishLiveEvent('automation.resumed', {});
 }

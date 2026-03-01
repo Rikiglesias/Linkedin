@@ -22,6 +22,7 @@ import { logInfo, logWarn } from '../telemetry/logger';
 import { LeadRecord } from '../types/domain';
 import { WorkerContext } from './context';
 import { ChallengeDetectedError, RetryableWorkerError } from './errors';
+import { WorkerExecutionResult, workerResult } from './result';
 
 /**
  * Calcola quanti giorni fa è avvenuto l'evento (dal timestamp ISO).
@@ -115,9 +116,12 @@ async function processSingleFollowUp(
  *
  * @param context - WorkerContext con session Playwright
  * @param dailySentSoFar - follow-up già inviati oggi (per rispettare il daily cap)
- * @returns numero di follow-up inviati in questa run
+ * @returns risultato standardizzato della run corrente
  */
-export async function runFollowUpWorker(context: WorkerContext, dailySentSoFar = 0): Promise<number> {
+export async function runFollowUpWorker(
+    context: WorkerContext,
+    dailySentSoFar = 0
+): Promise<WorkerExecutionResult> {
     const delayDays = config.followUpDelayDays;
     const maxFollowUp = config.followUpMax;
     const dailyCap = config.followUpDailyCap;
@@ -125,7 +129,7 @@ export async function runFollowUpWorker(context: WorkerContext, dailySentSoFar =
 
     if (remaining <= 0) {
         await logInfo('follow_up.daily_cap_reached', { dailyCap, dailySentSoFar });
-        return 0;
+        return workerResult(0);
     }
 
     await logInfo('follow_up.start', { delayDays, maxFollowUp, remaining });
@@ -134,11 +138,11 @@ export async function runFollowUpWorker(context: WorkerContext, dailySentSoFar =
 
     if (leads.length === 0) {
         await logInfo('follow_up.no_eligible_leads', { delayDays, maxFollowUp });
-        return 0;
+        return workerResult(0);
     }
 
     let sent = 0;
-    let errors = 0;
+    const errors: Array<{ leadId: number; message: string }> = [];
 
     for (const lead of leads) {
         if (sent + dailySentSoFar >= dailyCap) break;
@@ -153,10 +157,11 @@ export async function runFollowUpWorker(context: WorkerContext, dailySentSoFar =
             );
             if (ok) sent++;
         } catch (err: unknown) {
-            errors++;
+            const message = err instanceof Error ? err.message : String(err);
+            errors.push({ leadId: lead.id, message });
             await logWarn('follow_up.error', {
                 leadId: lead.id,
-                error: err instanceof Error ? err.message : String(err),
+                error: message,
             });
             // Non throwja — il ciclo continua con il lead successivo
         }
@@ -165,6 +170,6 @@ export async function runFollowUpWorker(context: WorkerContext, dailySentSoFar =
         await humanDelay(context.session.page, 4000, 8000);
     }
 
-    await logInfo('follow_up.done', { sent, errors, total: leads.length });
-    return sent;
+    await logInfo('follow_up.done', { sent, errors: errors.length, total: leads.length });
+    return workerResult(sent, errors);
 }

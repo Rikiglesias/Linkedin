@@ -1,82 +1,227 @@
-/**
- * app.js — LinkedIn Bot Dashboard Frontend
- * Polling ogni 30s su /api/kpis, /api/runs, /api/ml/ab-leaderboard, /api/ml/timing-slots
- * Usa Chart.js (CDN) per il funnel bar chart.
- */
+/* ═══════════════════════════════════════════════════════════════════
+   LinkedIn Bot Dashboard — app.js
+   Miglioramenti: escapeHtml, Visibility API pause, modale pause,
+   grafico trend 7gg, tabella incidents con risoluzione inline.
+   ═══════════════════════════════════════════════════════════════════ */
 
 'use strict';
 
-// ─── Config ───────────────────────────────────────────────────────────────────
 const POLL_INTERVAL_MS = 30_000;
-const DOW_LABELS = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
-
-// ─── State ────────────────────────────────────────────────────────────────────
+const SSE_RECONNECT_BASE_MS = 2_000;
+let pollInterval = null;
 let funnelChart = null;
+let trendChart = null;
+let eventSource = null;
+let sseReconnectTimer = null;
+let sseReconnectAttempts = 0;
+let refreshTimer = null;
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-function fmt(n) { return n == null ? '—' : n.toLocaleString('it-IT'); }
-function pct(num, den) { return den > 0 ? ((num / den) * 100).toFixed(1) + '%' : '—'; }
-
-async function api(path) {
-    const res = await fetch(path);
-    if (!res.ok) throw new Error(`HTTP ${res.status} on ${path}`);
-    return res.json();
+// ── Sicurezza: escapeHtml per prevenire XSS in innerHTML ─────────────────────
+function escapeHtml(str) {
+    if (!str || typeof str !== 'string') return '';
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#x27;');
 }
 
-// ─── Status Badge ─────────────────────────────────────────────────────────────
-function updateStatusBadge(kpiData) {
+function formatDate(iso) {
+    if (!iso || iso === 'null') return '—';
+    try {
+        return new Date(iso).toLocaleString('it-IT', { hour12: false });
+    } catch {
+        return escapeHtml(String(iso));
+    }
+}
+
+function pct(num, den) {
+    if (!den || den === 0) return '0.0%';
+    return ((num / den) * 100).toFixed(1) + '%';
+}
+
+// ── Visibility API: sospende il polling quando la tab è nascosta ─────────────
+function startPolling() {
+    clearInterval(pollInterval);
+    pollInterval = setInterval(loadData, POLL_INTERVAL_MS);
+}
+
+function stopPolling() {
+    clearInterval(pollInterval);
+    pollInterval = null;
+}
+
+function scheduleLoadData(delayMs = 250) {
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => {
+        loadData().catch((err) => console.error('Errore refresh pianificato:', err));
+    }, delayMs);
+}
+
+function disconnectEventStream() {
+    if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+    }
+    clearTimeout(sseReconnectTimer);
+    sseReconnectTimer = null;
+}
+
+function connectEventStream() {
+    disconnectEventStream();
+    eventSource = new EventSource('/api/events');
+
+    const refreshOnEvent = () => scheduleLoadData(250);
+    const events = [
+        'connected',
+        'lead.transition',
+        'lead.reconciled',
+        'incident.opened',
+        'incident.resolved',
+        'automation.paused',
+        'automation.resumed',
+        'system.quarantine',
+    ];
+
+    events.forEach((eventName) => {
+        eventSource.addEventListener(eventName, refreshOnEvent);
+    });
+
+    eventSource.addEventListener('run.log', (evt) => {
+        try {
+            const parsed = JSON.parse(evt.data);
+            const logEvent = parsed?.payload?.event;
+            if (typeof logEvent === 'string') {
+                const interesting = [
+                    'job.started',
+                    'job.failed',
+                    'job.challenge_detected',
+                    'follow_up.done',
+                    'inbox.analyzed_message',
+                ];
+                if (interesting.some((token) => logEvent.includes(token))) {
+                    scheduleLoadData(150);
+                    return;
+                }
+            }
+        } catch {
+            // ignore parse errors and fallback to default refresh
+        }
+        scheduleLoadData(350);
+    });
+
+    eventSource.onerror = () => {
+        disconnectEventStream();
+        sseReconnectAttempts += 1;
+        const delay = Math.min(30_000, SSE_RECONNECT_BASE_MS * Math.pow(2, Math.min(6, sseReconnectAttempts)));
+        sseReconnectTimer = setTimeout(() => {
+            if (!document.hidden) {
+                connectEventStream();
+            }
+        }, delay);
+    };
+
+    eventSource.onopen = () => {
+        sseReconnectAttempts = 0;
+    };
+}
+
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        stopPolling();
+        disconnectEventStream();
+    } else {
+        loadData();   // Aggiorna subito quando torna visibile
+        startPolling();
+        connectEventStream();
+    }
+});
+
+// ── Modale Pausa ─────────────────────────────────────────────────────────────
+function openPauseModal() {
+    const modal = document.getElementById('pause-modal');
+    modal.showModal();
+    document.getElementById('pause-minutes-input').focus();
+}
+
+async function confirmPause() {
+    const input = document.getElementById('pause-minutes-input');
+    const minutes = parseInt(input.value, 10);
+    if (isNaN(minutes) || minutes < 1 || minutes > 10080) {
+        input.setCustomValidity('Inserisci un numero tra 1 e 10080');
+        input.reportValidity();
+        return;
+    }
+    input.setCustomValidity('');
+    const btn = document.getElementById('pause-confirm-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ In corso...';
+    try {
+        const resp = await fetch('/api/controls/pause', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ minutes }),
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        document.getElementById('pause-modal').close();
+        await loadData();
+    } catch (err) {
+        console.error('Errore pausa:', err);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '⏸ Conferma Pausa';
+    }
+}
+
+// ── Controllo Riprendi ────────────────────────────────────────────────────────
+async function controlResume() {
+    const btn = document.getElementById('btn-resume');
+    btn.disabled = true;
+    try {
+        await fetch('/api/controls/resume', { method: 'POST' });
+        await loadData();
+    } catch (err) {
+        console.error('Errore resume:', err);
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+// ── Incident resolve ─────────────────────────────────────────────────────────
+async function resolveIncident(id) {
+    if (!confirm(`Risolvere incidente #${id}?`)) return;
+    try {
+        const resp = await fetch(`/api/incidents/${id}/resolve`, { method: 'POST' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        await loadIncidents();
+    } catch (err) {
+        console.error('Errore resolve incident:', err);
+    }
+}
+
+// ── Aggiornamento Status Badge ────────────────────────────────────────────────
+function updateStatusBadge(system) {
     const badge = document.getElementById('status-badge');
     const text = document.getElementById('status-text');
-    const sys = kpiData.system;
-
     badge.className = 'status-badge';
-    if (sys.quarantined) {
+    if (system.quarantined) {
         badge.classList.add('status-quarantine');
-        text.textContent = '🔒 Quarantena';
-    } else if (sys.pausedUntil) {
+        text.textContent = 'Quarantena';
+    } else if (system.pausedUntil) {
         badge.classList.add('status-paused');
-        const until = new Date(sys.pausedUntil);
-        text.textContent = `⏸ In Pausa fino ${until.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`;
+        const until = new Date(system.pausedUntil).toLocaleTimeString('it-IT', { hour12: false });
+        text.textContent = `Pausato fino alle ${until}`;
     } else {
         badge.classList.add('status-running');
-        text.textContent = '🟢 Operativo';
-    }
-
-    // System state in conversion panel
-    const sysEl = document.getElementById('system-state');
-    if (sysEl) {
-        if (sys.quarantined) { sysEl.textContent = 'QUARANTENA'; sysEl.className = 'conv-value system-danger'; }
-        else if (sys.pausedUntil) { sysEl.textContent = 'IN PAUSA'; sysEl.className = 'conv-value system-warn'; }
-        else { sysEl.textContent = 'OK'; sysEl.className = 'conv-value system-ok'; }
+        text.textContent = 'In esecuzione';
     }
 }
 
-// ─── KPI Cards ────────────────────────────────────────────────────────────────
-function updateKPIs(kpiData) {
-    const f = kpiData.funnel;
-    document.getElementById('val-invited').textContent = fmt(f.invited);
-    document.getElementById('val-accepted').textContent = fmt(f.accepted);
-    document.getElementById('val-messaged').textContent = fmt(f.messaged);
-    document.getElementById('val-replied').textContent = fmt(f.replied);
-    document.getElementById('val-total').textContent = fmt(f.totalLeads);
-
-    const riskScore = kpiData.risk?.score ?? null;
-    const riskEl = document.getElementById('val-risk');
-    riskEl.textContent = riskScore != null ? riskScore : '—';
-    riskEl.style.color = riskScore >= 70 ? 'var(--danger)' : riskScore >= 40 ? 'var(--warning)' : 'var(--success)';
-
-    // Conversion rates
-    document.getElementById('conv-accept').textContent = pct(f.accepted, f.invited);
-    document.getElementById('conv-reply').textContent = pct(f.replied, f.invited);
-    document.getElementById('conv-msg-reply').textContent = pct(f.replied, f.messaged);
-}
-
-// ─── Funnel Chart ─────────────────────────────────────────────────────────────
-function updateFunnelChart(kpiData) {
-    const f = kpiData.funnel;
-    const labels = ['Inviti', 'Accettati', 'Pronti\nMessaggio', 'Messaggiati', 'Risposte'];
-    const values = [f.invited, f.accepted, f.readyMessage, f.messaged, f.replied];
-    const colors = ['#0077B5', '#10b981', '#3b82f6', '#8b5cf6', '#f59e0b'];
+// ── Funnel Chart ─────────────────────────────────────────────────────────────
+function updateFunnelChart(funnel) {
+    const labels = ['Invitati', 'Accettati', 'Ready Msg', 'Messaggiati', 'Risposte'];
+    const data = [funnel.invited, funnel.accepted, funnel.readyMessage, funnel.messaged, funnel.replied];
 
     if (!funnelChart) {
         const ctx = document.getElementById('funnelChart').getContext('2d');
@@ -85,182 +230,267 @@ function updateFunnelChart(kpiData) {
             data: {
                 labels,
                 datasets: [{
-                    data: values,
-                    backgroundColor: colors.map(c => c + '33'),
-                    borderColor: colors,
-                    borderWidth: 2,
-                    borderRadius: 8,
+                    label: 'Lead',
+                    data,
+                    backgroundColor: [
+                        'rgba(0, 119, 181, 0.7)',
+                        'rgba(0, 212, 255, 0.7)',
+                        'rgba(59, 130, 246, 0.7)',
+                        'rgba(16, 185, 129, 0.7)',
+                        'rgba(245, 158, 11, 0.7)',
+                    ],
+                    borderRadius: 6,
                     borderSkipped: false,
-                }]
+                }],
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        callbacks: {
-                            label: ctx => ` ${ctx.parsed.y.toLocaleString('it-IT')} lead`
-                        }
-                    }
-                },
+                plugins: { legend: { display: false } },
                 scales: {
-                    x: {
-                        grid: { color: '#1f2d45' },
-                        ticks: { color: '#8896b0', font: { size: 11 } }
-                    },
-                    y: {
-                        grid: { color: '#1f2d45' },
-                        ticks: { color: '#8896b0', font: { size: 11 } }
-                    }
-                }
-            }
+                    x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#8896b0' } },
+                    y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#8896b0' } },
+                },
+            },
         });
     } else {
-        funnelChart.data.datasets[0].data = values;
-        funnelChart.update('active');
+        funnelChart.data.datasets[0].data = data;
+        funnelChart.update('none');
     }
-
-    const el = document.getElementById('funnel-updated');
-    if (el) el.textContent = new Date().toLocaleTimeString('it-IT');
+    document.getElementById('funnel-updated').textContent = `Tot: ${funnel.totalLeads.toLocaleString()} lead`;
 }
 
-// ─── A/B Leaderboard ──────────────────────────────────────────────────────────
-function updateABTable(abData) {
+// ── Trend 7 giorni Chart ──────────────────────────────────────────────────────
+function updateTrendChart(trend) {
+    const labels = trend.map((d) => d.date.slice(5)); // MM-DD
+    const invites = trend.map((d) => d.invitesSent);
+    const messages = trend.map((d) => d.messagesSent);
+    const acceptances = trend.map((d) => d.acceptances);
+
+    if (!trendChart) {
+        const ctx = document.getElementById('trendChart').getContext('2d');
+        trendChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [
+                    {
+                        label: 'Inviti',
+                        data: invites,
+                        borderColor: 'rgba(0, 119, 181, 0.9)',
+                        backgroundColor: 'rgba(0, 119, 181, 0.1)',
+                        tension: 0.3,
+                        fill: true,
+                    },
+                    {
+                        label: 'Messaggi',
+                        data: messages,
+                        borderColor: 'rgba(16, 185, 129, 0.9)',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        tension: 0.3,
+                        fill: true,
+                    },
+                    {
+                        label: 'Accettazioni',
+                        data: acceptances,
+                        borderColor: 'rgba(0, 212, 255, 0.9)',
+                        backgroundColor: 'rgba(0, 212, 255, 0.1)',
+                        tension: 0.3,
+                        fill: false,
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        labels: { color: '#8896b0', boxWidth: 12, font: { size: 11 } },
+                    },
+                },
+                scales: {
+                    x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#8896b0' } },
+                    y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#8896b0' } },
+                },
+            },
+        });
+    } else {
+        trendChart.data.labels = labels;
+        trendChart.data.datasets[0].data = invites;
+        trendChart.data.datasets[1].data = messages;
+        trendChart.data.datasets[2].data = acceptances;
+        trendChart.update('none');
+    }
+}
+
+// ── Incidents Table ───────────────────────────────────────────────────────────
+async function loadIncidents() {
+    try {
+        const resp = await fetch('/api/incidents');
+        if (!resp.ok) return;
+        const incidents = await resp.json();
+        const tbody = document.getElementById('incidents-tbody');
+        const count = document.getElementById('incidents-count');
+        count.textContent = incidents.length === 0 ? 'Nessun incidente aperto' : `${incidents.length} aperti`;
+
+        if (incidents.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="empty-state">✅ Nessun incidente aperto</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = incidents.map((inc) => `
+            <tr>
+                <td>${escapeHtml(String(inc.id))}</td>
+                <td><code>${escapeHtml(inc.type)}</code></td>
+                <td><span class="pill ${inc.severity === 'CRITICAL' ? 'pill-danger' : inc.severity === 'WARN' ? 'pill-warning' : 'pill-info'}">${escapeHtml(inc.severity)}</span></td>
+                <td>${formatDate(inc.opened_at)}</td>
+                <td><button class="btn btn-sm btn-success" onclick="resolveIncident(${escapeHtml(String(inc.id))})">✓ Risolvi</button></td>
+            </tr>
+        `).join('');
+    } catch (err) {
+        console.error('Errore incidents:', err);
+    }
+}
+
+// ── Tabella A/B Test ──────────────────────────────────────────────────────────
+function updateABTable(data) {
     const tbody = document.getElementById('ab-tbody');
-    if (!abData || abData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Nessuna variante ancora testata</td></tr>';
+    if (!data || data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Nessun dato A/B disponibile</td></tr>';
         return;
     }
+    tbody.innerHTML = data.map((r, i) => `
+        <tr>
+            <td>${i === 0 ? '🥇 ' : i === 1 ? '🥈 ' : ''}<strong>${escapeHtml(r.variantId)}</strong></td>
+            <td>${escapeHtml(String(r.totalSent ?? 0))}</td>
+            <td>${escapeHtml(pct(r.accepted, r.totalSent))}</td>
+            <td>${escapeHtml(pct(r.replied, r.totalSent))}</td>
+            <td><span class="score-bar">
+                <span class="score-bar-track"><span class="score-bar-fill" style="width:${Math.min(100, (r.ucbScore ?? 0) * 100).toFixed(1)}%"></span></span>
+                <span class="score-bar-value">${escapeHtml((r.ucbScore ?? 0).toFixed(3))}</span>
+            </span></td>
+        </tr>
+    `).join('');
+}
 
-    tbody.innerHTML = abData.map((v, i) => {
-        const accPct = (v.acceptanceRate * 100).toFixed(0);
-        const replyPct = (v.replyRate * 100).toFixed(0);
-        const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
-        return `
-            <tr>
-                <td>${medal} <code>${v.variantId}</code></td>
-                <td>${fmt(v.sent)}</td>
-                <td>
-                    <div class="score-bar">
-                        <div class="score-bar-track"><div class="score-bar-fill" style="width:${Math.min(accPct, 100)}%"></div></div>
-                        <span class="score-bar-value">${accPct}%</span>
-                    </div>
-                </td>
-                <td>${replyPct}%</td>
-                <td style="color:var(--accent);font-weight:600">${v.ucbScore}</td>
-            </tr>
-        `;
+// ── Tabella Runs ──────────────────────────────────────────────────────────────
+function updateRunsTable(runs) {
+    const tbody = document.getElementById('runs-tbody');
+    if (!runs || runs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Nessun run recente</td></tr>';
+        return;
+    }
+    tbody.innerHTML = runs.map((r) => {
+        const statusPill = r.status === 'COMPLETED'
+            ? `<span class="pill pill-success">OK</span>`
+            : r.status === 'RUNNING'
+                ? `<span class="pill pill-info">In corso...</span>`
+                : `<span class="pill pill-danger">${escapeHtml(r.status)}</span>`;
+
+        const errorSnippet = r.error_message
+            ? `<span class="pill pill-danger" title="${escapeHtml(r.error_message)}">⚠ ${escapeHtml(r.error_message.substring(0, 30))}...</span>`
+            : '—';
+
+        return `<tr>
+            <td>${escapeHtml(String(r.id))}</td>
+            <td>${formatDate(r.started_at)}</td>
+            <td>${formatDate(r.finished_at)}</td>
+            <td>${statusPill}</td>
+            <td>${escapeHtml(String(r.profiles_discovered ?? 0))}</td>
+            <td>${errorSnippet}</td>
+        </tr>`;
     }).join('');
 }
 
-// ─── Timing Slots ─────────────────────────────────────────────────────────────
-function updateTimingSlots(slots) {
-    const container = document.getElementById('timing-list');
+// ── Timing Slots ──────────────────────────────────────────────────────────────
+function updateTimingList(slots) {
+    const list = document.getElementById('timing-list');
     if (!slots || slots.length === 0) {
-        container.innerHTML = '<div class="empty-state">Dati insufficienti per il calcolo degli slot</div>';
+        list.innerHTML = '<div class="empty-state">Nessun dato timing disponibile</div>';
         return;
     }
-
-    container.innerHTML = slots.map((s, i) => `
+    list.innerHTML = slots.map((s, i) => `
         <div class="timing-slot">
-            <div class="timing-rank">${i + 1}</div>
+            <div class="timing-rank" aria-label="Posizione ${i + 1}">${i + 1}</div>
             <div class="timing-info">
-                <div class="timing-label">${DOW_LABELS[s.dayOfWeek]} ${String(s.hour).padStart(2, '0')}:00</div>
-                <div class="timing-meta">${s.sampleSize} campioni</div>
+                <div class="timing-label">Ora ${escapeHtml(String(s.hour ?? '?'))}:00</div>
+                <div class="timing-meta">${escapeHtml(String(s.samples ?? 0))} campioni</div>
             </div>
-            <div class="timing-score">${(s.score * 100).toFixed(0)}%</div>
+            <div class="timing-score">${escapeHtml((s.score ?? 0).toFixed(2))}</div>
         </div>
     `).join('');
 }
 
-// ─── Recent Runs ──────────────────────────────────────────────────────────────
-function updateRunsTable(runs) {
-    const tbody = document.getElementById('runs-tbody');
-    if (!runs || runs.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Nessun run disponibile</td></tr>';
-        return;
-    }
-
-    tbody.innerHTML = runs.map(r => {
-        const statusPill = {
-            'RUNNING': '<span class="pill pill-info">Running</span>',
-            'COMPLETED': '<span class="pill pill-success">Completato</span>',
-            'FAILED': '<span class="pill pill-danger">Fallito</span>',
-        }[r.status] || `<span class="pill pill-neutral">${r.status}</span>`;
-
-        const start = r.start_time ? new Date(r.start_time).toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' }) : '—';
-        const end = r.end_time ? new Date(r.end_time).toLocaleString('it-IT', { timeStyle: 'short' }) : '—';
-        const errSnippet = r.error_message ? `<span title="${r.error_message}" style="cursor:help;color:var(--danger)">⚠ ${r.error_message.substring(0, 40)}…</span>` : '—';
-
-        return `
-            <tr>
-                <td style="color:var(--text-muted)">#${r.id}</td>
-                <td>${start}</td>
-                <td>${end}</td>
-                <td>${statusPill}</td>
-                <td style="font-weight:600">${r.profiles_discovered ?? 0}</td>
-                <td style="font-size:0.78rem">${errSnippet}</td>
-            </tr>
-        `;
-    }).join('');
-}
-
-// ─── Controls ─────────────────────────────────────────────────────────────────
-async function controlPause() {
-    try {
-        const minutes = prompt('Metti in pausa per quanti minuti? (default: 60)', '60');
-        if (minutes === null) return;
-        await fetch('/api/controls/pause', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ minutes: parseInt(minutes) || 60 })
-        });
-        setTimeout(loadData, 500);
-    } catch (e) { console.error('Pause failed:', e); }
-}
-
-async function controlResume() {
-    try {
-        await fetch('/api/controls/resume', { method: 'POST' });
-        setTimeout(loadData, 500);
-    } catch (e) { console.error('Resume failed:', e); }
-}
-
-// ─── Main Load ────────────────────────────────────────────────────────────────
+// ── Load principale (KPI + Funnel + Trend + Incidents + A/B + Timing + Runs) ──
 async function loadData() {
-    try {
-        const [kpiData, runs, abData, slotsData] = await Promise.allSettled([
-            api('/api/kpis'),
-            api('/api/runs'),
-            api('/api/ml/ab-leaderboard'),
-            api('/api/ml/timing-slots'),
-        ]);
+    const [kpiRes, runsRes, abRes, slotsRes, trendRes] = await Promise.allSettled([
+        fetch('/api/kpis'),
+        fetch('/api/runs'),
+        fetch('/api/ml/ab-leaderboard'),
+        fetch('/api/ml/timing-slots'),
+        fetch('/api/stats/trend'),
+    ]);
 
-        if (kpiData.status === 'fulfilled') {
-            updateStatusBadge(kpiData.value);
-            updateKPIs(kpiData.value);
-            updateFunnelChart(kpiData.value);
-        }
+    // ── KPI ──
+    if (kpiRes.status === 'fulfilled' && kpiRes.value.ok) {
+        const data = await kpiRes.value.json();
+        const f = data.funnel;
+        document.getElementById('val-invited').textContent = (f.invited ?? 0).toLocaleString();
+        document.getElementById('val-accepted').textContent = (f.accepted ?? 0).toLocaleString();
+        document.getElementById('val-messaged').textContent = (f.messaged ?? 0).toLocaleString();
+        document.getElementById('val-replied').textContent = (f.replied ?? 0).toLocaleString();
+        document.getElementById('val-total').textContent = (f.totalLeads ?? 0).toLocaleString();
 
-        if (runs.status === 'fulfilled') updateRunsTable(runs.value);
-        if (abData.status === 'fulfilled') updateABTable(abData.value);
-        if (slotsData.status === 'fulfilled') updateTimingSlots(slotsData.value);
+        const riskScore = data.risk?.score ?? 0;
+        const riskEl = document.getElementById('val-risk');
+        riskEl.textContent = riskScore;
+        riskEl.style.color = riskScore >= 80 ? 'var(--danger)' : riskScore >= 50 ? 'var(--warning)' : 'var(--success)';
 
-        const el = document.getElementById('last-refresh');
-        if (el) el.textContent = `Ultimo aggiornamento: ${new Date().toLocaleTimeString('it-IT')}`;
+        const sysState = document.getElementById('system-state');
+        sysState.textContent = data.system.quarantined ? '🔴 Quarantena' : data.system.pausedUntil ? '⏸ Pausato' : '✅ OK';
+        sysState.className = 'conv-value ' + (data.system.quarantined ? 'system-danger' : data.system.pausedUntil ? 'system-warn' : 'system-ok');
 
-    } catch (err) {
-        console.error('[Dashboard] Errore caricamento dati:', err);
-        const badge = document.getElementById('status-badge');
-        if (badge) { badge.className = 'status-badge status-quarantine'; }
-        const text = document.getElementById('status-text');
-        if (text) text.textContent = 'API non raggiungibile';
+        document.getElementById('conv-accept').textContent = pct(f.accepted, f.invited);
+        document.getElementById('conv-reply').textContent = pct(f.replied, f.invited);
+        document.getElementById('conv-msg-reply').textContent = pct(f.replied, f.messaged);
+
+        updateStatusBadge(data.system);
+        updateFunnelChart(f);
     }
+
+    // ── Trend 7gg ──
+    if (trendRes.status === 'fulfilled' && trendRes.value.ok) {
+        const trend = await trendRes.value.json();
+        updateTrendChart(trend);
+    }
+
+    // ── Incidents ──
+    await loadIncidents();
+
+    // ── A/B ──
+    if (abRes.status === 'fulfilled' && abRes.value.ok) {
+        const ab = await abRes.value.json();
+        updateABTable(ab);
+    }
+
+    // ── Timing Slots ──
+    if (slotsRes.status === 'fulfilled' && slotsRes.value.ok) {
+        const slots = await slotsRes.value.json();
+        updateTimingList(slots);
+    }
+
+    // ── Runs ──
+    if (runsRes.status === 'fulfilled' && runsRes.value.ok) {
+        const runs = await runsRes.value.json();
+        updateRunsTable(runs);
+    }
+
+    document.getElementById('last-refresh').textContent =
+        'Ultimo aggiornamento: ' + new Date().toLocaleTimeString('it-IT', { hour12: false });
 }
 
-// ─── Init ─────────────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
-    loadData();
-    setInterval(loadData, POLL_INTERVAL_MS);
-});
+// ── Init ──────────────────────────────────────────────────────────────────────
+loadData();
+startPolling();
+connectEventStream();

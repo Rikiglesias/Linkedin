@@ -11,6 +11,7 @@ import { processMessageJob } from '../workers/messageWorker';
 import { processHygieneJob } from '../workers/hygieneWorker';
 import { ChallengeDetectedError } from '../workers/errors';
 import { runFollowUpWorker } from '../workers/followUpWorker';
+import { WorkerExecutionResult, workerResult } from '../workers/result';
 import { transitionLead } from './leadStateService';
 import {
     createJobAttempt,
@@ -126,18 +127,36 @@ async function runQueuedJobsForAccount(
                     await performDecoyAction(session.page);
                 }
 
+                let executionResult: WorkerExecutionResult = workerResult(0);
                 if (job.type === 'INVITE') {
                     const parsed = parseJobPayload<{ leadId: number; localDate: string }>(job);
-                    await processInviteJob(parsed.payload, workerContext);
+                    executionResult = await processInviteJob(parsed.payload, workerContext);
                 } else if (job.type === 'ACCEPTANCE_CHECK') {
                     const parsed = parseJobPayload<{ leadId: number }>(job);
-                    await processAcceptanceJob(parsed.payload, workerContext);
+                    executionResult = await processAcceptanceJob(parsed.payload, workerContext);
                 } else if (job.type === 'MESSAGE') {
                     const parsed = parseJobPayload<{ leadId: number; acceptedAtDate: string }>(job);
-                    await processMessageJob(parsed.payload, workerContext);
+                    executionResult = await processMessageJob(parsed.payload, workerContext);
                 } else if (job.type === 'HYGIENE') {
                     const parsed = parseJobPayload<{ accountId: string }>(job);
-                    await processHygieneJob(parsed.payload, workerContext);
+                    executionResult = await processHygieneJob(parsed.payload, workerContext);
+                }
+
+                await logInfo('job.worker_result', {
+                    jobId: job.id,
+                    type: job.type,
+                    accountId: account.id,
+                    success: executionResult.success,
+                    processedCount: executionResult.processedCount,
+                    errorsCount: executionResult.errors.length,
+                });
+                if (executionResult.errors.length > 0) {
+                    await logWarn('job.worker_result.errors', {
+                        jobId: job.id,
+                        type: job.type,
+                        accountId: account.id,
+                        errors: executionResult.errors.slice(0, 5),
+                    });
                 }
 
                 await markJobSucceeded(job.id);
@@ -281,7 +300,13 @@ async function runQueuedJobsForAccount(
                 accountId: account.id,
             };
             try {
-                await runFollowUpWorker(followUpContext);
+                const followUpResult = await runFollowUpWorker(followUpContext);
+                await logInfo('job_runner.follow_up_phase_done', {
+                    accountId: account.id,
+                    success: followUpResult.success,
+                    processedCount: followUpResult.processedCount,
+                    errorsCount: followUpResult.errors.length,
+                });
             } catch (err: unknown) {
                 await logWarn('job_runner.follow_up_phase_error', {
                     accountId: account.id,

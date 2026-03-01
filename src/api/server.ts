@@ -2,24 +2,83 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { timingSafeEqual } from 'crypto';
+import rateLimit from 'express-rate-limit';
 import type { NextFunction, Request, Response } from 'express';
-import { getGlobalKPIData, getRiskInputs, getABTestingStats } from '../core/repositories';
+import { getGlobalKPIData, getRiskInputs, getABTestingStats, listOpenIncidents, resolveIncident, getDailyStat } from '../core/repositories';
 import { getDatabase } from '../db';
 import { evaluateRisk } from '../risk/riskEngine';
 import { getLocalDateString, config } from '../config';
 import { pauseAutomation, resumeAutomation, setQuarantine } from '../risk/incidentManager';
+import { logError } from '../telemetry/logger';
 import { CampaignRunRecord } from '../types/domain';
+import { publishLiveEvent, subscribeLiveEvents, getLiveEventSubscribersCount, type LiveEventMessage } from '../telemetry/liveEvents';
 
 const app = express();
-app.use(cors());
-app.use(express.json());
 
+// ── CORS ristretto ──────────────────────────────────────────────────────────
+// Accetta solo richieste da localhost o se non c'è origin (es. curl / stesso server)
+app.use(cors({
+    origin: (origin, callback) => {
+        // Nessun origin = same-origin o tool come curl → ok
+        if (!origin) return callback(null, true);
+        // Whitelist: localhost e IPs fidati configurati
+        const allowedOrigins = [
+            'http://localhost',
+            'http://localhost:3000',
+            'http://127.0.0.1',
+            'http://127.0.0.1:3000',
+            ...config.dashboardTrustedIps.map((ip) => `http://${ip}`),
+            ...config.dashboardTrustedIps.map((ip) => `http://${ip}:3000`),
+        ];
+        return callback(null, allowedOrigins.includes(origin));
+    },
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key'],
+    credentials: false,
+}));
+
+app.use(express.json({ limit: '64kb' }));
+
+// ── Rate Limiting ────────────────────────────────────────────────────────────
+// Limite globale: 120 req/min per IP su tutti gli endpoint /api/
+const globalLimiter = rateLimit({
+    windowMs: 60_000,
+    max: 120,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => req.path === '/api/events',
+    message: { error: 'Troppe richieste. Attendi prima di riprovare.' },
+});
+app.use('/api/', globalLimiter);
+
+// Limite più stretto per i controlli (pause/resume/quarantine): 10 req/min
+const controlsLimiter = rateLimit({
+    windowMs: 60_000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Troppe operazioni di controllo. Attendi prima di riprovare.' },
+});
+app.use('/api/controls/', controlsLimiter);
+
+// ── Sicurezza Header HTTP ────────────────────────────────────────────────────
+app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader(
+        'Content-Security-Policy',
+        "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'"
+    );
+    next();
+});
+
+// ── Utility Auth ─────────────────────────────────────────────────────────────
 function secureEquals(a: string, b: string): boolean {
     const aBuffer = Buffer.from(a);
     const bBuffer = Buffer.from(b);
-    if (aBuffer.length !== bBuffer.length) {
-        return false;
-    }
+    if (aBuffer.length !== bBuffer.length) return false;
     return timingSafeEqual(aBuffer, bBuffer);
 }
 
@@ -49,17 +108,10 @@ function isTrustedIp(ip: string): boolean {
 
 function isApiKeyAuthValid(req: Request): boolean {
     if (!config.dashboardApiKey) return false;
-
     const fromHeader = req.header('x-api-key');
-    if (fromHeader && secureEquals(fromHeader.trim(), config.dashboardApiKey)) {
-        return true;
-    }
-
+    if (fromHeader && secureEquals(fromHeader.trim(), config.dashboardApiKey)) return true;
     const authorization = req.header('authorization') ?? '';
-    if (!authorization.toLowerCase().startsWith('bearer ')) {
-        return false;
-    }
-
+    if (!authorization.toLowerCase().startsWith('bearer ')) return false;
     const token = authorization.slice('bearer '.length).trim();
     return token.length > 0 && secureEquals(token, config.dashboardApiKey);
 }
@@ -67,77 +119,93 @@ function isApiKeyAuthValid(req: Request): boolean {
 function isBasicAuthValid(req: Request): boolean {
     if (!config.dashboardBasicUser || !config.dashboardBasicPassword) return false;
     const authorization = req.header('authorization') ?? '';
-    if (!authorization.toLowerCase().startsWith('basic ')) {
-        return false;
-    }
-
+    if (!authorization.toLowerCase().startsWith('basic ')) return false;
     const encoded = authorization.slice('basic '.length).trim();
     if (!encoded) return false;
-
     let decoded = '';
     try {
         decoded = Buffer.from(encoded, 'base64').toString('utf8');
     } catch {
         return false;
     }
-
     const separatorIndex = decoded.indexOf(':');
-    if (separatorIndex <= 0) {
-        return false;
-    }
-
+    if (separatorIndex <= 0) return false;
     const user = decoded.slice(0, separatorIndex);
     const password = decoded.slice(separatorIndex + 1);
     return secureEquals(user, config.dashboardBasicUser) && secureEquals(password, config.dashboardBasicPassword);
 }
 
 function dashboardAuthMiddleware(req: Request, res: Response, next: NextFunction): void {
-    if (!config.dashboardAuthEnabled) {
-        next();
-        return;
-    }
-
-    if (req.path === '/api/health') {
-        next();
-        return;
-    }
-
+    if (!config.dashboardAuthEnabled) { next(); return; }
+    if (req.path === '/api/health') { next(); return; }
     const requestIp = resolveRequestIp(req);
-    if (isTrustedIp(requestIp)) {
-        next();
-        return;
-    }
-
+    if (isTrustedIp(requestIp)) { next(); return; }
     const authConfigured = !!config.dashboardApiKey || (!!config.dashboardBasicUser && !!config.dashboardBasicPassword);
     if (!authConfigured) {
-        res.status(503).json({
-            error: 'Dashboard auth enabled but no credentials configured. Set DASHBOARD_API_KEY or DASHBOARD_BASIC_USER/PASSWORD.',
-        });
+        res.status(503).json({ error: 'Dashboard auth enabled but no credentials configured.' });
         return;
     }
-
-    if (isApiKeyAuthValid(req) || isBasicAuthValid(req)) {
-        next();
-        return;
-    }
-
+    if (isApiKeyAuthValid(req) || isBasicAuthValid(req)) { next(); return; }
     res.setHeader('WWW-Authenticate', 'Basic realm="LinkedIn Bot Dashboard"');
     res.status(401).json({ error: 'Unauthorized' });
 }
 
+// ── Helper centralizzato per errori API ──────────────────────────────────────
+function handleApiError(res: Response, err: unknown, context: string): void {
+    const message = err instanceof Error ? err.message : String(err);
+    // Non espone stack trace né dettagli interni in produzione
+    void logError(context, { error: message });
+    res.status(500).json({ error: 'Errore interno del server.' });
+}
+
+function writeSseEvent(res: Response, eventType: string, data: unknown): void {
+    res.write(`event: ${eventType}\n`);
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
 app.use(dashboardAuthMiddleware);
 
-// Serves the public directory (Dashboard UI)
+// ── Static (Dashboard UI) ────────────────────────────────────────────────────
 const publicDir = path.resolve(__dirname, '../../public');
 app.use(express.static(publicDir));
 
-// Health check
-app.get('/api/health', (req, res) => {
+// ── Health ───────────────────────────────────────────────────────────────────
+app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// KPIs endpoint
-app.get('/api/kpis', async (req, res) => {
+// ── SSE stream (real-time push notifications) ────────────────────────────────
+app.get('/api/events', (_req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+
+    const onEvent = (event: LiveEventMessage): void => {
+        writeSseEvent(res, event.type, event);
+    };
+    const unsubscribe = subscribeLiveEvents(onEvent);
+
+    writeSseEvent(res, 'connected', {
+        timestamp: new Date().toISOString(),
+        subscribers: getLiveEventSubscribersCount(),
+    });
+
+    const heartbeat = setInterval(() => {
+        writeSseEvent(res, 'heartbeat', {
+            timestamp: new Date().toISOString(),
+        });
+    }, 20_000);
+
+    res.on('close', () => {
+        clearInterval(heartbeat);
+        unsubscribe();
+    });
+});
+
+// ── KPIs ─────────────────────────────────────────────────────────────────────
+app.get('/api/kpis', async (_req, res) => {
     try {
         const kpi = await getGlobalKPIData();
         const localDate = getLocalDateString();
@@ -151,96 +219,137 @@ app.get('/api/kpis', async (req, res) => {
         res.json({
             funnel: {
                 totalLeads: kpi.totalLeads,
-                invited: kpi.statusCounts['INVITED'] || 0,
-                accepted: kpi.statusCounts['ACCEPTED'] || 0,
-                readyMessage: kpi.statusCounts['READY_MESSAGE'] || 0,
-                messaged: kpi.statusCounts['MESSAGED'] || 0,
-                replied: kpi.statusCounts['REPLIED'] || 0,
-                withdrawn: kpi.statusCounts['WITHDRAWN'] || 0
+                invited: kpi.statusCounts['INVITED'] ?? 0,
+                accepted: kpi.statusCounts['ACCEPTED'] ?? 0,
+                readyMessage: kpi.statusCounts['READY_MESSAGE'] ?? 0,
+                messaged: kpi.statusCounts['MESSAGED'] ?? 0,
+                replied: kpi.statusCounts['REPLIED'] ?? 0,
+                withdrawn: kpi.statusCounts['WITHDRAWN'] ?? 0,
             },
-            risk: risk,
+            risk,
             activeCampaigns: kpi.activeCampaigns,
             system: {
-                pausedUntil: runtimePause?.value || null,
-                quarantined: isQuarantined?.value === 'true'
-            }
+                pausedUntil: runtimePause?.value ?? null,
+                quarantined: isQuarantined?.value === 'true',
+            },
         });
     } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        console.error('API Error', message);
-        res.status(500).json({ error: message });
+        handleApiError(res, err, 'api.kpis');
     }
 });
 
-// Recent runs
-app.get('/api/runs', async (req, res) => {
+// ── Runs recenti ─────────────────────────────────────────────────────────────
+app.get('/api/runs', async (_req, res) => {
     try {
         const db = await getDatabase();
         const runs = await db.query<CampaignRunRecord>(`SELECT * FROM campaign_runs ORDER BY id DESC LIMIT 10`);
         res.json(runs);
     } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        console.error('API Error', message);
-        res.status(500).json({ error: message });
+        handleApiError(res, err, 'api.runs');
     }
 });
 
-// A/B Testing Stats (legacy endpoint)
-app.get('/api/ab-testing/stats', async (req, res) => {
+// ── A/B Testing Stats ─────────────────────────────────────────────────────────
+app.get('/api/ab-testing/stats', async (_req, res) => {
     try {
         const stats = await getABTestingStats();
         res.json(stats);
     } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        console.error('API Error /ab-testing/stats', message);
-        res.status(500).json({ error: message });
+        handleApiError(res, err, 'api.ab-testing.stats');
     }
 });
 
-// A/B Bandit Leaderboard (Phase 7/8)
-app.get('/api/ml/ab-leaderboard', async (req, res) => {
+// ── A/B Bandit Leaderboard ────────────────────────────────────────────────────
+app.get('/api/ml/ab-leaderboard', async (_req, res) => {
     try {
         const { getVariantLeaderboard } = await import('../ml/abBandit');
         const leaderboard = await getVariantLeaderboard();
         res.json(leaderboard);
     } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        res.status(500).json({ error: message });
+        handleApiError(res, err, 'api.ml.ab-leaderboard');
     }
 });
 
-// Timing Optimizer — top slot temporali
+// ── Timing Optimizer ──────────────────────────────────────────────────────────
 app.get('/api/ml/timing-slots', async (req, res) => {
     try {
         const { getTopTimeSlots } = await import('../ml/timingOptimizer');
-        const n = Math.min(10, parseInt(String(req.query.n || '5'), 10));
+        const n = Math.min(10, parseInt(String(req.query.n ?? '5'), 10));
         const slots = await getTopTimeSlots(n);
         res.json(slots);
     } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        res.status(500).json({ error: message });
+        handleApiError(res, err, 'api.ml.timing-slots');
     }
 });
 
-// Controls
+// ── Incidents — lista aperti ──────────────────────────────────────────────────
+app.get('/api/incidents', async (_req, res) => {
+    try {
+        const incidents = await listOpenIncidents();
+        res.json(incidents);
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.incidents.list');
+    }
+});
+
+// ── Incidents — risolvi ───────────────────────────────────────────────────────
+app.post('/api/incidents/:id/resolve', async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (isNaN(id) || id <= 0) {
+            res.status(400).json({ error: 'ID incidente non valido.' });
+            return;
+        }
+        await resolveIncident(id);
+        publishLiveEvent('incident.resolved', { incidentId: id });
+        res.json({ success: true, message: `Incidente ${id} risolto.` });
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.incidents.resolve');
+    }
+});
+
+// ── Trend 7 giorni ────────────────────────────────────────────────────────────
+app.get('/api/stats/trend', async (_req, res) => {
+    try {
+        const today = new Date();
+        const trend: Array<{ date: string; invitesSent: number; messagesSent: number; acceptances: number }> = [];
+
+        for (let i = 6; i >= 0; i--) {
+            const d = new Date(today);
+            d.setDate(d.getDate() - i);
+            const dateStr = d.toISOString().slice(0, 10);
+            const [invites, messages, acceptances] = await Promise.all([
+                getDailyStat(dateStr, 'invites_sent'),
+                getDailyStat(dateStr, 'messages_sent'),
+                getDailyStat(dateStr, 'acceptances' as Parameters<typeof getDailyStat>[1]),
+            ]);
+            trend.push({ date: dateStr, invitesSent: invites, messagesSent: messages, acceptances });
+        }
+
+        res.json(trend);
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.stats.trend');
+    }
+});
+
+// ── Controls ──────────────────────────────────────────────────────────────────
 app.post('/api/controls/pause', async (req, res) => {
     try {
-        const minutes = req.body.minutes || 1440; // Default 24h
+        const rawMinutes = req.body.minutes;
+        const minutes = typeof rawMinutes === 'number' && rawMinutes > 0 ? Math.min(rawMinutes, 10080) : 1440;
         await pauseAutomation('MANUAL_UI_PAUSE', { source: 'dashboard' }, minutes);
-        res.json({ success: true, message: `Paused for ${minutes} minutes` });
+        res.json({ success: true, message: `Pausa attivata per ${minutes} minuti.` });
     } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        res.status(500).json({ error: message });
+        handleApiError(res, err, 'api.controls.pause');
     }
 });
 
-app.post('/api/controls/resume', async (req, res) => {
+app.post('/api/controls/resume', async (_req, res) => {
     try {
         await resumeAutomation();
-        res.json({ success: true, message: 'Resumed' });
+        res.json({ success: true, message: 'Ripresa automazione.' });
     } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        res.status(500).json({ error: message });
+        handleApiError(res, err, 'api.controls.resume');
     }
 });
 
@@ -248,11 +357,15 @@ app.post('/api/controls/quarantine', async (req, res) => {
     try {
         const enabled = req.body.enabled === true;
         await setQuarantine(enabled);
-        res.json({ success: true, message: `Quarantine set to ${enabled}` });
+        res.json({ success: true, message: `Quarantena ${enabled ? 'attivata' : 'disattivata'}.` });
     } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        res.status(500).json({ error: message });
+        handleApiError(res, err, 'api.controls.quarantine');
     }
+});
+
+// ── 404 catch-all ─────────────────────────────────────────────────────────────
+app.use('/api/', (_req, res) => {
+    res.status(404).json({ error: 'Endpoint non trovato.' });
 });
 
 export function startServer(port: number = 3000) {

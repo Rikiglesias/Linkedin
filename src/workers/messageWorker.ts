@@ -10,16 +10,17 @@ import { isSalesNavigatorUrl } from '../linkedinUrl';
 import { buildPersonalizedFollowUpMessage } from '../ai/messagePersonalizer';
 import { logInfo } from '../telemetry/logger';
 import { bridgeDailyStat, bridgeLeadStatus } from '../cloud/cloudBridge';
+import { WorkerExecutionResult, workerResult } from './result';
 
-export async function processMessageJob(payload: MessageJobPayload, context: WorkerContext): Promise<void> {
+export async function processMessageJob(payload: MessageJobPayload, context: WorkerContext): Promise<WorkerExecutionResult> {
     const lead = await getLeadById(payload.leadId);
     if (!lead || lead.status !== 'READY_MESSAGE') {
-        return;
+        return workerResult(0);
     }
 
     if (isSalesNavigatorUrl(lead.linkedin_url)) {
         await transitionLead(lead.id, 'BLOCKED', 'salesnav_url_requires_profile_message');
-        return;
+        return workerResult(1);
     }
 
     const personalized = await buildPersonalizedFollowUpMessage(lead);
@@ -31,7 +32,10 @@ export async function processMessageJob(payload: MessageJobPayload, context: Wor
         await transitionLead(lead.id, 'BLOCKED', 'message_validation_failed', {
             reasons: validation.reasons,
         });
-        return;
+        return workerResult(1, [{
+            leadId: lead.id,
+            message: `message_validation_failed:${validation.reasons.join(',')}`,
+        }]);
     }
 
     await context.session.page.goto(lead.linkedin_url, { waitUntil: 'domcontentloaded' });
@@ -84,4 +88,5 @@ export async function processMessageJob(payload: MessageJobPayload, context: Wor
     // Cloud sync non-bloccante
     bridgeLeadStatus(lead.linkedin_url, 'MESSAGED', { messaged_at: new Date().toISOString() });
     bridgeDailyStat(context.localDate, context.accountId, 'messages_sent');
+    return workerResult(1);
 }
