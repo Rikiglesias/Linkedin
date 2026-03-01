@@ -3,9 +3,41 @@ import { WorkerContext } from './context';
 import { analyzeIncomingMessage } from '../ai/sentimentAnalysis';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { WorkerExecutionResult, workerResult } from './result';
+import { getLeadByLinkedinUrl, storeLeadIntent } from '../core/repositories';
+import { transitionLead } from '../core/leadStateService';
+import { isProfileUrl, normalizeLinkedInUrl } from '../linkedinUrl';
 
 export interface InboxJobPayload {
     accountId: string;
+}
+
+async function extractParticipantProfileUrl(page: WorkerContext['session']['page']): Promise<string | null> {
+    const links = await page.evaluate(() => {
+        const selectors = [
+            '.msg-thread__link-to-profile',
+            '.msg-thread__topcard a[href*="/in/"]',
+            '.msg-convo-wrapper a[href*="/in/"]',
+            '.msg-s-message-group__profile-link[href*="/in/"]',
+            'a[href*="/in/"]',
+        ];
+        const hrefs = new Set<string>();
+        for (const selector of selectors) {
+            for (const node of Array.from(document.querySelectorAll(selector))) {
+                const href = (node as HTMLAnchorElement).href || node.getAttribute('href') || '';
+                if (href) hrefs.add(href);
+            }
+            if (hrefs.size > 0) break;
+        }
+        return Array.from(hrefs);
+    }).catch(() => [] as string[]);
+
+    for (const link of links) {
+        const normalized = normalizeLinkedInUrl(link);
+        if (isProfileUrl(normalized)) {
+            return normalized;
+        }
+    }
+    return null;
 }
 
 export async function processInboxJob(payload: InboxJobPayload, context: WorkerContext): Promise<WorkerExecutionResult> {
@@ -54,11 +86,40 @@ export async function processInboxJob(payload: InboxJobPayload, context: WorkerC
                 try {
                     // Analisi Sentiment (NLP)
                     const sentiment = await analyzeIncomingMessage(rawText.trim());
+                    const profileUrl = await extractParticipantProfileUrl(page);
+                    let leadId: number | null = null;
+                    if (profileUrl) {
+                        const lead = await getLeadByLinkedinUrl(profileUrl);
+                        if (lead) {
+                            leadId = lead.id;
+                            await storeLeadIntent(
+                                lead.id,
+                                sentiment.intent,
+                                sentiment.subIntent,
+                                sentiment.confidence,
+                                rawText.trim()
+                            );
+                            if (lead.status === 'MESSAGED') {
+                                await transitionLead(
+                                    lead.id,
+                                    'REPLIED',
+                                    'inbox_reply_detected',
+                                    {
+                                        intent: sentiment.intent,
+                                        subIntent: sentiment.subIntent,
+                                        confidence: sentiment.confidence,
+                                    }
+                                );
+                            }
+                        }
+                    }
                     await logInfo('inbox.analyzed_message', {
                         accountId: payload.accountId,
                         textExcerpt: rawText.substring(0, 30),
                         intent: sentiment.intent,
-                        confidence: sentiment.confidence
+                        confidence: sentiment.confidence,
+                        leadId,
+                        profileUrl,
                     });
                     processedCount += 1;
                 } catch (error: unknown) {
@@ -69,8 +130,6 @@ export async function processInboxJob(payload: InboxJobPayload, context: WorkerC
                         message,
                     });
                 }
-
-                //TODO: Aggiorna lo stato del Lead in base all'intent (es. tag 'INTERESTED' o blocca bot)
             }
         }
 

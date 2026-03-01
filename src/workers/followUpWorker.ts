@@ -142,12 +142,14 @@ export async function runFollowUpWorker(
     }
 
     let sent = 0;
+    let attempted = 0;
     const errors: Array<{ leadId: number; message: string }> = [];
 
     for (const lead of leads) {
         if (sent + dailySentSoFar >= dailyCap) break;
 
         try {
+            attempted += 1;
             const ok = await processSingleFollowUp(
                 lead.id,
                 lead.linkedin_url,
@@ -170,6 +172,6 @@ export async function runFollowUpWorker(
         await humanDelay(context.session.page, 4000, 8000);
     }
 
-    await logInfo('follow_up.done', { sent, errors: errors.length, total: leads.length });
-    return workerResult(sent, errors);
+    await logInfo('follow_up.done', { sent, attempted, errors: errors.length, total: leads.length });
+    return workerResult(attempted, errors);
 }

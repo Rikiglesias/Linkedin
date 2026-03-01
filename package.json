@@ -38,6 +38,7 @@
     "csv-parser": "^3.2.0",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.2.1",
     "pg": "^8.19.0",
     "playwright": "^1.58.2",
     "sqlite": "^5.1.1",
@@ -54,7 +55,12 @@
     "eslint": "^10.0.2",
     "pm2": "^6.0.14",
     "ts-node": "^10.9.2",
-    "typedoc": "^0.27.9",
+    "typedoc": "^0.28.17",
     "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "node-gyp": "^11.5.0",
+    "tar": "^7.5.8",
+    "minimatch": "^10.2.2"
   }
 }

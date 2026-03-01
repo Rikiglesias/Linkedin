@@ -46,7 +46,13 @@ const globalLimiter = rateLimit({
     max: 120,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: (req) => req.path === '/api/events',
+    skip: (req) => {
+        const path = req.path ?? '';
+        const originalUrl = req.originalUrl ?? '';
+        return path === '/events'
+            || path === '/api/events'
+            || originalUrl.startsWith('/api/events');
+    },
     message: { error: 'Troppe richieste. Attendi prima di riprovare.' },
 });
 app.use('/api/', globalLimiter);
