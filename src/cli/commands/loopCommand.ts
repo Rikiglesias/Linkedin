@@ -23,6 +23,7 @@ import {
 } from '../../core/repositories';
 import { runDoctor } from '../../core/doctor';
 import { runWorkflow } from '../../core/orchestrator';
+import { dispatchReadyCampaignSteps } from '../../core/campaignEngine';
 import { runSalesNavigatorListSync } from '../../core/salesNavigatorSync';
 import { warmupSession } from '../../core/sessionWarmer';
 import { runSiteCheck } from '../../core/audit';
@@ -432,6 +433,18 @@ export async function runLoopCommand(args: string[]): Promise<void> {
                             console.log('[LOOP] selector-learner', learnerReport);
                         }
                     }
+
+                    if (!dryRun) {
+                        try {
+                            const dispatchedCampaignSteps = await dispatchReadyCampaignSteps();
+                            if (dispatchedCampaignSteps > 0) {
+                                console.log(`[LOOP] campagne dispatch: ${dispatchedCampaignSteps} step maturati inseriti in coda.`);
+                            }
+                        } catch (e) {
+                            console.error('[LOOP] Errore modulo Drip Campaigns dispatch', e);
+                        }
+                    }
+
                     const cycleCorrelationId = resolveCorrelationId(`loop-${workflow}-${cycle}-${randomUUID()}`);
                     await runWithCorrelationId(cycleCorrelationId, async () => {
                         await runWorkflow({ workflow, dryRun });

@@ -1,15 +1,29 @@
-import { checkLogin, closeBrowser, launchBrowser, runSelectorCanary } from '../browser';
+import { checkLogin, closeBrowser, launchBrowser, runSelectorCanaryDetailed } from '../browser';
 import { getRuntimeAccountProfiles } from '../accountManager';
-import { config, getLocalDateString, isWorkingHour } from '../config';
+import { config, getLocalDateString, getWeekStartDate, isWorkingHour } from '../config';
 import { pauseAutomation, quarantineAccount } from '../risk/incidentManager';
-import { evaluateCooldownDecision, evaluatePredictiveRiskAlerts, PredictiveRiskMetricSample } from '../risk/riskEngine';
+import {
+    evaluateComplianceHealthScore,
+    evaluateCooldownDecision,
+    evaluatePredictiveRiskAlerts,
+    PredictiveRiskMetricSample,
+} from '../risk/riskEngine';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { runEventSyncOnce } from '../sync/eventSync';
-import { workflowToJobTypes, scheduleJobs, WorkflowSelection } from './scheduler';
+import { ListScheduleBreakdown, scheduleJobs, workflowToJobTypes, WorkflowSelection } from './scheduler';
 import { runSiteCheck } from './audit';
 
 import { runQueuedJobs } from './jobRunner';
-import { getAutomationPauseState, getDailyStat, getRecentDailyStats, getRuntimeFlag, pushOutboxEvent } from './repositories';
+import {
+    countWeeklyInvites,
+    getAutomationPauseState,
+    getComplianceHealthMetrics,
+    getDailyStat,
+    getRecentDailyStats,
+    getRuntimeFlag,
+    pushOutboxEvent,
+    setRuntimeFlag,
+} from './repositories';
 import { evaluateAiGuardian } from '../ai/guardian';
 import { runRandomLinkedinActivity } from '../workers/randomActivityWorker';
 import { sendTelegramAlert } from '../telemetry/alerts';
@@ -35,12 +49,22 @@ function mapDailySnapshotToPredictiveSample(snapshot: {
     };
 }
 
+function toFlagSafeToken(raw: string): string {
+    const normalized = raw.trim().toLowerCase();
+    if (!normalized) return 'default';
+    return normalized.replace(/[^a-z0-9_-]+/g, '_');
+}
+
 async function runCanaryIfNeeded(workflow: WorkflowSelection): Promise<boolean> {
     const touchesUi = workflow === 'all' || workflow === 'invite' || workflow === 'message' || workflow === 'check';
     if (!config.selectorCanaryEnabled || !touchesUi) {
         return true;
     }
 
+    const canaryWorkflow = workflow === 'invite' || workflow === 'message' || workflow === 'check'
+        ? workflow
+        : 'all';
+    const localDate = getLocalDateString();
     const accounts = getRuntimeAccountProfiles();
     for (const account of accounts) {
         const session = await launchBrowser({
@@ -52,15 +76,198 @@ async function runCanaryIfNeeded(workflow: WorkflowSelection): Promise<boolean> 
             if (!loggedIn) {
                 return false;
             }
-            const canaryOk = await runSelectorCanary(session.page);
-            if (!canaryOk) {
+
+            const report = await runSelectorCanaryDetailed(session.page, canaryWorkflow);
+            await pushOutboxEvent(
+                'selector.canary.report',
+                {
+                    localDate,
+                    workflow,
+                    accountId: account.id,
+                    report,
+                },
+                `selector.canary.report:${localDate}:${workflow}:${account.id}:${Date.now()}`
+            );
+
+            if (report.optionalFailed > 0) {
+                await logWarn('selector.canary.optional_failed', {
+                    localDate,
+                    workflow,
+                    accountId: account.id,
+                    optionalFailed: report.optionalFailed,
+                    steps: report.steps.filter((step) => !step.required && !step.ok),
+                });
+            }
+
+            if (!report.ok) {
+                await logWarn('selector.canary.critical_failed', {
+                    localDate,
+                    workflow,
+                    accountId: account.id,
+                    criticalFailed: report.criticalFailed,
+                    steps: report.steps.filter((step) => step.required && !step.ok),
+                });
                 return false;
             }
+
+            await logInfo('selector.canary.ok', {
+                localDate,
+                workflow,
+                accountId: account.id,
+                steps: report.steps.length,
+                optionalFailed: report.optionalFailed,
+            });
         } finally {
             await closeBrowser(session);
         }
     }
 
+    return true;
+}
+
+async function evaluateComplianceHealthGuard(
+    workflow: WorkflowSelection,
+    localDate: string,
+    inviteBudget: number,
+    messageBudget: number,
+    listBreakdown: ListScheduleBreakdown[]
+): Promise<boolean> {
+    if (!config.complianceHealthScoreEnabled) {
+        return true;
+    }
+
+    const [metrics, invitesSentToday, messagesSentToday, weeklyInvitesSent] = await Promise.all([
+        getComplianceHealthMetrics(localDate, config.complianceHealthLookbackDays, config.hardInviteCap),
+        getDailyStat(localDate, 'invites_sent'),
+        getDailyStat(localDate, 'messages_sent'),
+        countWeeklyInvites(getWeekStartDate()),
+    ]);
+
+    const healthSnapshot = evaluateComplianceHealthScore({
+        acceptanceRatePct: metrics.acceptanceRatePct,
+        engagementRatePct: metrics.engagementRatePct,
+        pendingRatio: metrics.pendingRatio,
+        invitesSentToday,
+        messagesSentToday,
+        weeklyInvitesSent,
+        dailyInviteLimit: Math.max(1, inviteBudget > 0 ? inviteBudget : config.softInviteCap),
+        dailyMessageLimit: Math.max(1, messageBudget > 0 ? messageBudget : config.softMsgCap),
+        weeklyInviteLimit: Math.max(1, config.weeklyInviteLimit),
+        pendingWarnThreshold: config.complianceHealthPendingWarnThreshold,
+    });
+
+    await pushOutboxEvent(
+        'compliance.health.snapshot',
+        {
+            workflow,
+            localDate,
+            metrics,
+            health: healthSnapshot,
+            thresholds: {
+                pauseThreshold: config.complianceHealthPauseThreshold,
+                pendingAlertThreshold: config.compliancePendingRatioAlertThreshold,
+                pendingWarnThreshold: config.complianceHealthPendingWarnThreshold,
+                minInviteSample: config.complianceHealthMinInviteSample,
+                minMessageSample: config.complianceHealthMinMessageSample,
+            },
+        },
+        `compliance.health.snapshot:${localDate}:${workflow}`
+    );
+
+    const hasInviteSample = metrics.invitesSentLookback >= config.complianceHealthMinInviteSample;
+    const hasMessageSample = metrics.messagedLookback >= config.complianceHealthMinMessageSample;
+    const hasSufficientSample = hasInviteSample && hasMessageSample;
+
+    if (
+        metrics.pendingRatio >= config.compliancePendingRatioAlertThreshold
+        && metrics.invitesSentLookback >= config.compliancePendingRatioAlertMinInvited
+    ) {
+        const accounts = getRuntimeAccountProfiles().map((entry) => entry.id).filter((id) => !!id.trim());
+        const dueAccountAlerts: string[] = [];
+        for (const accountId of accounts) {
+            const accountKey = `compliance_pending_alert_account:${toFlagSafeToken(accountId)}`;
+            const accountAlertDate = await getRuntimeFlag(accountKey);
+            if (accountAlertDate !== localDate) {
+                dueAccountAlerts.push(accountId);
+                await setRuntimeFlag(accountKey, localDate);
+            }
+        }
+
+        const pendingAlertDate = await getRuntimeFlag('compliance_pending_alert_date');
+        if (pendingAlertDate !== localDate || dueAccountAlerts.length > 0) {
+            await setRuntimeFlag('compliance_pending_alert_date', localDate);
+            const accountSuffix = dueAccountAlerts.length > 0
+                ? `\nAccount: ${dueAccountAlerts.join(', ')}`
+                : '';
+            await sendTelegramAlert(
+                `Pending ratio elevato (${(metrics.pendingRatio * 100).toFixed(1)}%).\nWorkflow: ${workflow}\nDate: ${localDate}${accountSuffix}`,
+                'Compliance Pending Alert',
+                'warn'
+            );
+        }
+    }
+
+    const worstPendingList = [...listBreakdown]
+        .filter((entry) => entry.pendingRatio >= config.compliancePendingRatioAlertThreshold)
+        .sort((a, b) => b.pendingRatio - a.pendingRatio)[0];
+    if (worstPendingList) {
+        const listFlagKey = `compliance_pending_alert_list:${toFlagSafeToken(worstPendingList.listName)}`;
+        const listAlertDate = await getRuntimeFlag(listFlagKey);
+        if (listAlertDate !== localDate) {
+            await setRuntimeFlag(listFlagKey, localDate);
+            await sendTelegramAlert(
+                `Pending ratio elevato nella lista "${worstPendingList.listName}" (${(worstPendingList.pendingRatio * 100).toFixed(1)}%).\nWorkflow: ${workflow}\nDate: ${localDate}`,
+                'Compliance Pending List Alert',
+                'warn'
+            );
+        }
+    }
+
+    if (!hasSufficientSample) {
+        await logInfo('compliance.health.sample_insufficient', {
+            workflow,
+            localDate,
+            invitesSentLookback: metrics.invitesSentLookback,
+            messagedLookback: metrics.messagedLookback,
+            minInviteSample: config.complianceHealthMinInviteSample,
+            minMessageSample: config.complianceHealthMinMessageSample,
+            score: healthSnapshot.score,
+        });
+        return true;
+    }
+
+    if (healthSnapshot.score < config.complianceHealthPauseThreshold) {
+        await pauseAutomation(
+            'COMPLIANCE_HEALTH_LOW',
+            {
+                workflow,
+                localDate,
+                healthSnapshot,
+                metrics,
+                threshold: config.complianceHealthPauseThreshold,
+            },
+            config.autoPauseMinutesOnFailureBurst
+        );
+        await logWarn('compliance.health.pause', {
+            workflow,
+            localDate,
+            score: healthSnapshot.score,
+            threshold: config.complianceHealthPauseThreshold,
+            acceptanceRatePct: metrics.acceptanceRatePct,
+            engagementRatePct: metrics.engagementRatePct,
+            pendingRatio: metrics.pendingRatio,
+        });
+        return false;
+    }
+
+    await logInfo('compliance.health.ok', {
+        workflow,
+        localDate,
+        score: healthSnapshot.score,
+        acceptanceRatePct: metrics.acceptanceRatePct,
+        engagementRatePct: metrics.engagementRatePct,
+        pendingRatio: metrics.pendingRatio,
+    });
     return true;
 }
 
@@ -135,6 +342,22 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
     }
 
     const schedule = await scheduleJobs(options.workflow, { dryRun: options.dryRun });
+
+    if (!options.dryRun) {
+        const touchesOutreach = options.workflow === 'all' || options.workflow === 'invite' || options.workflow === 'message';
+        if (touchesOutreach) {
+            const canProceed = await evaluateComplianceHealthGuard(
+                options.workflow,
+                schedule.localDate,
+                schedule.inviteBudget,
+                schedule.messageBudget,
+                schedule.listBreakdown
+            );
+            if (!canProceed) {
+                return;
+            }
+        }
+    }
 
     if (!options.dryRun && config.riskPredictiveAlertsEnabled) {
         const recentStats = await getRecentDailyStats(config.riskPredictiveLookbackDays + 1);

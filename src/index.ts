@@ -14,13 +14,19 @@ import {
     runAiQualityCommand,
     runCompanyTargetsCommand,
     runDbBackupCommand,
+    runDiagnosticsCommand,
+    runFeatureStoreCommand,
+    runRestoreDrillCommand,
     runListConfigCommand,
     runListsCommand,
     runPauseCommand,
     runPrivacyCleanupCommand,
+    runReviewQueueCommand,
     runResolveIncidentCommand,
     runResumeCommand,
+    runSecurityAdvisorCommand,
     runSecretRotatedCommand,
+    runSecretsRotateCommand,
     runSecretsStatusCommand,
     runStatusCommand,
     runUnquarantineCommand,
@@ -85,6 +91,8 @@ function printHelp(): void {
     console.log('  create-profile [--dir <path>] [--timeout <sec>] [--url <linkedin_login_url>]');
     console.log('  doctor');
     console.log('  status');
+    console.log('  diagnostics [--sections <all|health,locks,queue,sync,selectors>] [--date <YYYY-MM-DD>]');
+    console.log('    alias: diag');
     console.log('  proxy-status');
     console.log('  funnel');
     console.log('  site-check [limit] [--fix]');
@@ -104,16 +112,40 @@ function printHelp(): void {
     console.log('  incident-resolve <id>');
     console.log('  privacy-cleanup [days]');
     console.log('  lists');
+    console.log('  review-queue [--limit <n>]');
     console.log('  company-targets [list] [limit]');
     console.log('  list-config <nome_lista> [priority] [inviteCap|none] [messageCap|none] [active]');
     console.log('    (oppure con opzioni: --list, --priority, --invite-cap, --message-cap, --active)');
     console.log('  sync-status');
     console.log('  sync-run-once');
     console.log('  db-backup');
+    console.log('  restore-drill [--backup <path.sqlite>] [--keep-artifacts] [--report-dir <path>] [--by <source>]');
+    console.log('  security-advisor [--by <source>] [--report-dir <path>] [--no-persist-flags]');
     console.log('  ai-quality [--days <n>] [--run]');
+    console.log('  feature-store <build|versions|export|import> [opzioni]');
+    console.log('    build: --dataset <name> [--version <v>] [--actions invite,message] [--lookback-days <n>] [--force]');
+    console.log('    versions: [--dataset <name>] [--limit <n>]');
+    console.log('    export: --dataset <name> [--version <v>] [--out-dir <path>]');
+    console.log('    import: --manifest <path> [--data-file <path>] [--force]');
     console.log('  secrets-status');
     console.log('  secret-rotated --name <SECRET_NAME> [--owner <owner>] [--expires-days <n>] [--notes <text>]');
+    console.log('  secrets-rotate [--apply] [--interval-days <n>] [--actor <name>] [--include <SECRET_A,SECRET_B>] [--env-file <path>]');
     console.log('Alias retrocompatibili: connect, check, message');
+    console.log('Flag utili: --skip-preflight (salta doctor preflight obbligatorio)');
+}
+
+function shouldRunMandatoryPreflight(command: string | undefined): boolean {
+    if (!command) return false;
+    const guardedCommands = new Set([
+        'run',
+        'run-loop',
+        'autopilot',
+        'connect',
+        'check',
+        'message',
+        'warmup',
+    ]);
+    return guardedCommands.has(command);
 }
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
@@ -139,6 +171,7 @@ async function main(): Promise<void> {
     const args = process.argv.slice(2);
     const command = args[0];
     const commandArgs = args.slice(1);
+    const skipPreflight = hasOption(commandArgs, '--skip-preflight');
     const isDryRunCommand = command === 'dry-run' || hasOption(commandArgs, '--dry-run');
     const browserCommands = new Set([
         'run',
@@ -180,6 +213,32 @@ async function main(): Promise<void> {
         if (recoveredJobs > 0) {
             console.warn(`[BOOT] Ripristinati ${recoveredJobs} job RUNNING bloccati da oltre ${config.jobStuckMinutes} minuti.`);
         }
+    }
+
+    if (
+        config.mandatoryPreflightEnabled
+        && !skipPreflight
+        && !isDryRunCommand
+        && shouldRunMandatoryPreflight(command)
+    ) {
+        const preflight = await runDoctor();
+        const failures: string[] = [];
+        if (!preflight.dbIntegrityOk) failures.push('database_integrity_failed');
+        if (!preflight.sessionLoginOk) failures.push('linkedin_login_missing');
+        if (!preflight.accountIsolation.ok) failures.push('account_isolation_failed');
+        if (preflight.quarantine) failures.push('account_quarantine_enabled');
+        if (preflight.compliance.enforced && !preflight.compliance.ok) failures.push('compliance_guardrail_violated');
+
+        if (failures.length > 0) {
+            console.error('[PREFLIGHT] Bloccato: condizioni critiche rilevate.');
+            console.error(JSON.stringify({
+                command,
+                failures,
+                preflight,
+            }, null, 2));
+            process.exit(1);
+        }
+        console.log('[PREFLIGHT] OK');
     }
 
     switch (command) {
@@ -246,6 +305,10 @@ async function main(): Promise<void> {
         case 'status':
             await runStatusCommand();
             break;
+        case 'diagnostics':
+        case 'diag':
+            await runDiagnosticsCommand(commandArgs);
+            break;
         case 'kpi': {
             const kpi = await getGlobalKPIData();
             console.log(JSON.stringify(kpi, null, 2));
@@ -286,6 +349,9 @@ async function main(): Promise<void> {
         case 'lists':
             await runListsCommand();
             break;
+        case 'review-queue':
+            await runReviewQueueCommand(commandArgs);
+            break;
         case 'company-targets':
             await runCompanyTargetsCommand(commandArgs);
             break;
@@ -304,14 +370,26 @@ async function main(): Promise<void> {
         case 'db-backup':
             await runDbBackupCommand();
             break;
+        case 'restore-drill':
+            await runRestoreDrillCommand(commandArgs);
+            break;
+        case 'security-advisor':
+            await runSecurityAdvisorCommand(commandArgs);
+            break;
         case 'ai-quality':
             await runAiQualityCommand(commandArgs);
+            break;
+        case 'feature-store':
+            await runFeatureStoreCommand(commandArgs);
             break;
         case 'secrets-status':
             await runSecretsStatusCommand();
             break;
         case 'secret-rotated':
             await runSecretRotatedCommand(commandArgs);
+            break;
+        case 'secrets-rotate':
+            await runSecretsRotateCommand(commandArgs);
             break;
         case 'connect':
             await runWorkflowCommand('invite', false);

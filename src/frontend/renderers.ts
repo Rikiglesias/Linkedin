@@ -1,5 +1,18 @@
 import { byId, clearChildren, createCell, formatDate, formatPercent, setText } from './dom';
-import { AbLeaderboardRow, CampaignRunRecord, IncidentRecord, KpiResponse, ReviewQueueResponse, TimelineEntry, TimingSlotRow, TrendRow, PredictiveRiskResponse } from './types';
+import {
+    AbLeaderboardRow,
+    CampaignRunRecord,
+    CommentSuggestionQueueResponse,
+    IncidentRecord,
+    KpiResponse,
+    OperationalSloSnapshot,
+    PredictiveRiskResponse,
+    ReviewQueueResponse,
+    SelectorCacheKpiSnapshot,
+    TimelineEntry,
+    TimingSlotRow,
+    TrendRow,
+} from './types';
 
 function statusPill(text: string, className: string): HTMLSpanElement {
     const pill = document.createElement('span');
@@ -137,6 +150,60 @@ export function renderPredictiveRisk(predictive: PredictiveRiskResponse): void {
     detailEl.textContent = `${top.metric} z=${Number(top.zScore ?? 0).toFixed(2)}`;
 }
 
+function formatSloPercent(value: number | undefined): string {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return '0.0%';
+    return `${(value * 100).toFixed(1)}%`;
+}
+
+export function renderOperationalSlo(slo: OperationalSloSnapshot | undefined): void {
+    if (!slo) {
+        setText('slo-current-status', 'SLO corrente: —');
+        setText('slo-7d-status', 'SLO 7d: —');
+        setText('slo-30d-status', 'SLO 30d: —');
+        return;
+    }
+
+    const current = slo.current ?? { status: 'OK', queueLagSeconds: 0, oldestRunningJobSeconds: 0 };
+    setText(
+        'slo-current-status',
+        `SLO corrente: ${slo.status} (queueLag ${Math.round(current.queueLagSeconds ?? 0)}s, running ${Math.round(current.oldestRunningJobSeconds ?? 0)}s)`
+    );
+
+    const window7d = (slo.windows ?? []).find((row) => row.windowDays === 7);
+    const window30d = (slo.windows ?? []).find((row) => row.windowDays === 30);
+    setText(
+        'slo-7d-status',
+        window7d
+            ? `SLO 7d: ${window7d.status} (err ${formatSloPercent(window7d.errorRate)}, chall ${formatSloPercent(window7d.challengeRate)}, sel ${formatSloPercent(window7d.selectorFailureRate)})`
+            : 'SLO 7d: —'
+    );
+    setText(
+        'slo-30d-status',
+        window30d
+            ? `SLO 30d: ${window30d.status} (err ${formatSloPercent(window30d.errorRate)}, chall ${formatSloPercent(window30d.challengeRate)}, sel ${formatSloPercent(window30d.selectorFailureRate)})`
+            : 'SLO 30d: —'
+    );
+}
+
+export function renderSelectorCacheKpi(kpi: SelectorCacheKpiSnapshot | undefined): void {
+    if (!kpi) {
+        setText('selector-cache-kpi', 'Selector cache KPI: —');
+        return;
+    }
+    const reduction = kpi.reductionPct === null ? 'n/a' : `${kpi.reductionPct.toFixed(1)}%`;
+    const target = `${(kpi.targetReductionRate * 100).toFixed(0)}%`;
+    const status = kpi.validationStatus === 'PASS'
+        ? 'PASS'
+        : (kpi.validationStatus === 'WARN' ? 'WARN' : 'INSUFFICIENT_DATA');
+    const baselineNote = kpi.validationStatus === 'INSUFFICIENT_DATA'
+        ? `, baseline<${kpi.minBaselineFailures}`
+        : '';
+    setText(
+        'selector-cache-kpi',
+        `Selector cache KPI 7d: ${status} (riduzione ${reduction}, target ${target}, fail ${kpi.currentFailures}/${kpi.previousFailures}${baselineNote})`
+    );
+}
+
 export function renderIncidents(incidents: IncidentRecord[], selectedIds: Set<number>): void {
     setText('incidents-count', incidents.length === 0 ? 'Nessun incidente aperto' : `${incidents.length} aperti`);
     const tbody = byId<HTMLTableSectionElement>('incidents-tbody');
@@ -251,6 +318,76 @@ export function renderReviewQueue(reviewQueue: ReviewQueueResponse): void {
     tbody.appendChild(fragment);
 }
 
+export function renderCommentSuggestions(queue: CommentSuggestionQueueResponse): void {
+    const rows = queue.rows ?? [];
+    setText('comment-suggestions-count', rows.length > 0 ? `${rows.length} in review` : 'Nessuna bozza in review');
+    const tbody = byId<HTMLTableSectionElement>('comment-suggestions-tbody');
+    clearChildren(tbody);
+
+    if (rows.length === 0) {
+        const row = document.createElement('tr');
+        const cell = createCell('Nessun suggerimento commento da revisionare', 'empty-state');
+        cell.colSpan = 6;
+        row.appendChild(cell);
+        tbody.appendChild(row);
+        return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    for (const item of rows) {
+        const row = document.createElement('tr');
+
+        const leadCell = document.createElement('td');
+        const leadLink = document.createElement('a');
+        leadLink.href = item.linkedinUrl;
+        leadLink.target = '_blank';
+        leadLink.rel = 'noopener noreferrer';
+        leadLink.textContent = `${item.firstName} ${item.lastName}`.trim() || `Lead #${item.leadId}`;
+        leadCell.appendChild(leadLink);
+
+        const postPreview = item.postSnippet?.trim().length > 0
+            ? item.postSnippet
+            : 'Post non disponibile';
+
+        const commentCell = document.createElement('td');
+        const editor = document.createElement('textarea');
+        editor.className = 'comment-suggestion-editor';
+        editor.value = item.comment ?? '';
+        editor.dataset.leadId = String(item.leadId);
+        editor.dataset.suggestionIndex = String(item.suggestionIndex);
+        editor.maxLength = 280;
+        commentCell.appendChild(editor);
+
+        const actionsCell = document.createElement('td');
+        const actionsWrap = document.createElement('div');
+        actionsWrap.className = 'comment-suggestion-actions';
+        const approveButton = document.createElement('button');
+        approveButton.type = 'button';
+        approveButton.className = 'btn btn-sm btn-success comment-suggestion-approve';
+        approveButton.dataset.leadId = String(item.leadId);
+        approveButton.dataset.suggestionIndex = String(item.suggestionIndex);
+        approveButton.textContent = 'Approva';
+        const rejectButton = document.createElement('button');
+        rejectButton.type = 'button';
+        rejectButton.className = 'btn btn-sm btn-danger comment-suggestion-reject';
+        rejectButton.dataset.leadId = String(item.leadId);
+        rejectButton.dataset.suggestionIndex = String(item.suggestionIndex);
+        rejectButton.textContent = 'Rifiuta';
+        actionsWrap.appendChild(approveButton);
+        actionsWrap.appendChild(rejectButton);
+        actionsCell.appendChild(actionsWrap);
+
+        row.appendChild(leadCell);
+        row.appendChild(createCell(item.listName || 'default'));
+        row.appendChild(createCell(postPreview));
+        row.appendChild(commentCell);
+        row.appendChild(createCell(`${Math.round((item.confidence ?? 0) * 100)}%`));
+        row.appendChild(actionsCell);
+        fragment.appendChild(row);
+    }
+    tbody.appendChild(fragment);
+}
+
 export function renderRuns(runs: CampaignRunRecord[]): void {
     const tbody = byId<HTMLTableSectionElement>('runs-tbody');
     clearChildren(tbody);
@@ -297,11 +434,14 @@ export function renderAbLeaderboard(rows: AbLeaderboardRow[]): void {
     rows.forEach((item, index) => {
         const row = document.createElement('tr');
         const variantPrefix = index === 0 ? '1° ' : index === 1 ? '2° ' : index === 2 ? '3° ' : '';
-        row.appendChild(createCell(`${variantPrefix}${item.variantId}`));
-        row.appendChild(createCell(String(item.totalSent ?? 0)));
-        row.appendChild(createCell(formatPercent(item.accepted ?? 0, item.totalSent ?? 0)));
-        row.appendChild(createCell(formatPercent(item.replied ?? 0, item.totalSent ?? 0)));
-        row.appendChild(createCell((item.ucbScore ?? 0).toFixed(3)));
+        const sent = item.totalSent ?? item.sent ?? 0;
+        const score = item.bayesScore ?? item.ucbScore ?? 0;
+        const winnerSuffix = item.significanceWinner ? ' [WIN]' : '';
+        row.appendChild(createCell(`${variantPrefix}${item.variantId}${winnerSuffix}`));
+        row.appendChild(createCell(String(sent)));
+        row.appendChild(createCell(formatPercent(item.accepted ?? 0, sent)));
+        row.appendChild(createCell(formatPercent(item.replied ?? 0, sent)));
+        row.appendChild(createCell(score.toFixed(3)));
         fragment.appendChild(row);
     });
 

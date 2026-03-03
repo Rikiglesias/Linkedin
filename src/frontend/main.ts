@@ -2,20 +2,67 @@ import { DashboardApi } from './apiClient';
 import { byId, setText } from './dom';
 import {
     renderAbLeaderboard,
+    renderCommentSuggestions,
     renderIncidents,
     renderKpiComparison,
     renderKpis,
+    renderOperationalSlo,
     renderPredictiveRisk,
     renderReviewQueue,
     renderRuns,
+    renderSelectorCacheKpi,
     renderTimeline,
     renderTimingSlots,
 } from './renderers';
 import { TimelineStore } from './timeline';
 import { TimelineFilter } from './types';
+import {
+    type DashboardVoiceAction,
+    describeVoiceAction,
+    isCriticalVoiceAction,
+    parseVoiceCommand,
+} from './voiceCommands';
 
 const POLL_INTERVAL_MS = 20_000;
 const SSE_RECONNECT_BASE_MS = 2_000;
+const SPEECH_RECOGNITION_LANG = 'it-IT';
+
+interface SpeechRecognitionAlternativeLike {
+    transcript: string;
+}
+
+interface SpeechRecognitionResultLike {
+    readonly length: number;
+    readonly isFinal: boolean;
+    [index: number]: SpeechRecognitionAlternativeLike;
+}
+
+interface SpeechRecognitionEventLike extends Event {
+    readonly resultIndex: number;
+    readonly results: ArrayLike<SpeechRecognitionResultLike>;
+}
+
+interface SpeechRecognitionErrorEventLike extends Event {
+    readonly error?: string;
+}
+
+interface SpeechRecognitionLike extends EventTarget {
+    continuous: boolean;
+    interimResults: boolean;
+    lang: string;
+    onstart: ((event: Event) => void) | null;
+    onend: ((event: Event) => void) | null;
+    onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
+    onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+    start(): void;
+    stop(): void;
+}
+
+type SpeechRecognitionConstructorLike = new () => SpeechRecognitionLike;
+type WindowWithSpeechRecognition = Window & {
+    SpeechRecognition?: SpeechRecognitionConstructorLike;
+    webkitSpeechRecognition?: SpeechRecognitionConstructorLike;
+};
 
 const api = new DashboardApi();
 const timeline = new TimelineStore();
@@ -27,6 +74,9 @@ let refreshTimer: number | null = null;
 let reconnectTimer: number | null = null;
 let reconnectAttempts = 0;
 let currentFilter: TimelineFilter = { type: 'all', accountId: 'all', listName: 'all' };
+let voiceRecognition: SpeechRecognitionLike | null = null;
+let isVoiceListening = false;
+let pendingVoiceAction: DashboardVoiceAction | null = null;
 
 function scheduleRefresh(delayMs = 250): void {
     if (refreshTimer) {
@@ -141,7 +191,10 @@ async function refreshDashboard(): Promise<void> {
         renderKpis(snapshot.kpis);
         renderKpiComparison(snapshot.trend);
         renderPredictiveRisk(snapshot.predictive);
+        renderOperationalSlo(snapshot.observability.slo);
+        renderSelectorCacheKpi(snapshot.observability.selectorCacheKpi);
         renderReviewQueue(snapshot.reviewQueue);
+        renderCommentSuggestions(snapshot.commentSuggestions);
         renderRuns(snapshot.runs);
         renderAbLeaderboard(snapshot.ab);
         renderTimingSlots(snapshot.timingSlots);
@@ -160,6 +213,204 @@ async function refreshDashboard(): Promise<void> {
 
 function setStatusMessage(message: string): void {
     setText('action-feedback', message);
+}
+
+function setVoiceMessage(message: string): void {
+    setText('voice-feedback', message);
+}
+
+function setVoiceButtonState(listening: boolean): void {
+    const voiceButton = byId<HTMLButtonElement>('btn-voice');
+    voiceButton.classList.remove('btn-secondary', 'btn-danger');
+    if (listening) {
+        voiceButton.classList.add('btn-danger');
+        voiceButton.textContent = 'Stop Voce';
+        voiceButton.setAttribute('aria-pressed', 'true');
+        return;
+    }
+    voiceButton.classList.add('btn-secondary');
+    voiceButton.textContent = 'Comando Voce';
+    voiceButton.setAttribute('aria-pressed', 'false');
+}
+
+function readTranscriptFromSpeechEvent(event: SpeechRecognitionEventLike): string {
+    const chunks: string[] = [];
+    for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        const result = event.results[i];
+        if (!result || !result[0]) continue;
+        if (result.isFinal) {
+            chunks.push(result[0].transcript);
+        }
+    }
+    return chunks.join(' ').trim();
+}
+
+function showVoiceConfirmDialog(transcript: string, action: DashboardVoiceAction): void {
+    setText('voice-transcript-text', transcript);
+    setText('voice-action-summary', describeVoiceAction(action));
+    byId<HTMLDialogElement>('voice-command-modal').showModal();
+}
+
+function clearVoiceConfirmDialog(): void {
+    pendingVoiceAction = null;
+    byId<HTMLDialogElement>('voice-command-modal').close();
+}
+
+async function resolveSelectedIncidents(): Promise<{ resolved: number; total: number }> {
+    const total = selectedIncidentIds.size;
+    if (total === 0) {
+        return { resolved: 0, total: 0 };
+    }
+
+    let resolved = 0;
+    for (const incidentId of Array.from(selectedIncidentIds)) {
+        const ok = await api.resolveIncident(incidentId);
+        if (!ok) continue;
+        resolved += 1;
+        selectedIncidentIds.delete(incidentId);
+    }
+    return { resolved, total };
+}
+
+async function executeVoiceAction(action: DashboardVoiceAction): Promise<void> {
+    if (action.kind === 'refresh') {
+        await refreshDashboard();
+        setStatusMessage('Dashboard aggiornata (voce)');
+        setVoiceMessage('Comando vocale eseguito: aggiorna');
+        return;
+    }
+
+    if (action.kind === 'pause') {
+        const ok = await api.pause(action.minutes);
+        setStatusMessage(ok ? `Pausa attivata per ${action.minutes} minuti` : 'Errore durante la pausa');
+        setVoiceMessage(ok ? 'Comando vocale eseguito: pausa' : 'Comando vocale fallito: pausa');
+        if (ok) {
+            await refreshDashboard();
+        }
+        return;
+    }
+
+    if (action.kind === 'resume') {
+        const ok = await api.resume();
+        setStatusMessage(ok ? 'Automazione ripresa' : 'Errore durante la ripresa');
+        setVoiceMessage(ok ? 'Comando vocale eseguito: riprendi' : 'Comando vocale fallito: riprendi');
+        if (ok) {
+            await refreshDashboard();
+        }
+        return;
+    }
+
+    const report = await resolveSelectedIncidents();
+    if (report.total === 0) {
+        setStatusMessage('Nessun incidente selezionato');
+        setVoiceMessage('Comando vocale annullato: nessun incidente selezionato');
+        return;
+    }
+    setStatusMessage(`Incidenti risolti: ${report.resolved}/${report.total}`);
+    setVoiceMessage(`Comando vocale eseguito: risolti ${report.resolved}/${report.total}`);
+    await refreshDashboard();
+}
+
+async function handleVoiceTranscript(transcript: string): Promise<void> {
+    if (!transcript.trim()) {
+        setVoiceMessage('Nessun testo riconosciuto');
+        return;
+    }
+
+    const action = parseVoiceCommand(transcript);
+    if (!action) {
+        setVoiceMessage(`Comando non riconosciuto: "${transcript}"`);
+        return;
+    }
+
+    if (isCriticalVoiceAction(action)) {
+        pendingVoiceAction = action;
+        showVoiceConfirmDialog(transcript, action);
+        setVoiceMessage(`Conferma richiesta: ${describeVoiceAction(action)}`);
+        return;
+    }
+
+    await executeVoiceAction(action);
+}
+
+function bindVoiceControls(): void {
+    const voiceButton = byId<HTMLButtonElement>('btn-voice');
+    const modal = byId<HTMLDialogElement>('voice-command-modal');
+    const cancelBtn = byId<HTMLButtonElement>('voice-cancel-btn');
+    const confirmBtn = byId<HTMLButtonElement>('voice-confirm-btn');
+
+    cancelBtn.addEventListener('click', () => {
+        clearVoiceConfirmDialog();
+        setVoiceMessage('Conferma comando vocale annullata');
+    });
+
+    modal.addEventListener('close', () => {
+        pendingVoiceAction = null;
+    });
+
+    confirmBtn.addEventListener('click', () => {
+        const action = pendingVoiceAction;
+        clearVoiceConfirmDialog();
+        if (!action) {
+            setVoiceMessage('Nessun comando vocale da confermare');
+            return;
+        }
+        void executeVoiceAction(action);
+    });
+
+    const speechWindow = window as WindowWithSpeechRecognition;
+    const RecognitionCtor = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
+    if (!RecognitionCtor) {
+        voiceButton.disabled = true;
+        voiceButton.title = 'Web Speech API non disponibile in questo browser';
+        setVoiceMessage('Comandi vocali non disponibili su questo browser');
+        return;
+    }
+
+    const recognition = new RecognitionCtor();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = SPEECH_RECOGNITION_LANG;
+
+    recognition.onstart = () => {
+        isVoiceListening = true;
+        setVoiceButtonState(true);
+        setVoiceMessage('Ascolto in corso...');
+    };
+
+    recognition.onend = () => {
+        isVoiceListening = false;
+        setVoiceButtonState(false);
+    };
+
+    recognition.onerror = (event) => {
+        const errorCode = event.error ?? 'unknown';
+        setVoiceMessage(`Errore riconoscimento vocale: ${errorCode}`);
+    };
+
+    recognition.onresult = (event) => {
+        const transcript = readTranscriptFromSpeechEvent(event);
+        void handleVoiceTranscript(transcript);
+    };
+
+    voiceRecognition = recognition;
+    setVoiceButtonState(false);
+
+    voiceButton.addEventListener('click', () => {
+        if (!voiceRecognition) {
+            setVoiceMessage('Riconoscimento vocale non inizializzato');
+            return;
+        }
+        if (isVoiceListening) {
+            voiceRecognition.stop();
+            return;
+        }
+        try {
+            voiceRecognition.start();
+        } catch {
+            setVoiceMessage('Impossibile avviare il microfono in questo momento');
+        }
+    });
 }
 
 function bindControls(): void {
@@ -203,21 +454,12 @@ function bindControls(): void {
     });
 
     byId<HTMLButtonElement>('btn-resolve-selected').addEventListener('click', async () => {
-        if (selectedIncidentIds.size === 0) {
+        const report = await resolveSelectedIncidents();
+        if (report.total === 0) {
             setStatusMessage('Nessun incidente selezionato');
             return;
         }
-
-        let resolved = 0;
-        for (const incidentId of Array.from(selectedIncidentIds)) {
-            const ok = await api.resolveIncident(incidentId);
-            if (ok) {
-                resolved += 1;
-                selectedIncidentIds.delete(incidentId);
-            }
-        }
-
-        setStatusMessage(`Incidenti risolti: ${resolved}/${resolved + selectedIncidentIds.size}`);
+        setStatusMessage(`Incidenti risolti: ${report.resolved}/${report.total}`);
         await refreshDashboard();
     });
 
@@ -252,6 +494,38 @@ function bindControls(): void {
         }
     });
 
+    byId<HTMLTableSectionElement>('comment-suggestions-tbody').addEventListener('click', async (event) => {
+        const target = event.target as HTMLElement;
+        if (!(target instanceof HTMLButtonElement)) {
+            return;
+        }
+        const leadId = Number.parseInt(target.dataset.leadId ?? '', 10);
+        const suggestionIndex = Number.parseInt(target.dataset.suggestionIndex ?? '', 10);
+        if (!Number.isFinite(leadId) || !Number.isFinite(suggestionIndex)) {
+            return;
+        }
+
+        if (target.classList.contains('comment-suggestion-approve')) {
+            const row = target.closest('tr');
+            const editor = row?.querySelector<HTMLTextAreaElement>('textarea.comment-suggestion-editor');
+            const comment = editor?.value ?? '';
+            const ok = await api.approveCommentSuggestion(leadId, suggestionIndex, comment);
+            setStatusMessage(ok ? `Bozza approvata (lead #${leadId})` : `Errore approvazione bozza (lead #${leadId})`);
+            if (ok) {
+                await refreshDashboard();
+            }
+            return;
+        }
+
+        if (target.classList.contains('comment-suggestion-reject')) {
+            const ok = await api.rejectCommentSuggestion(leadId, suggestionIndex);
+            setStatusMessage(ok ? `Bozza rifiutata (lead #${leadId})` : `Errore rifiuto bozza (lead #${leadId})`);
+            if (ok) {
+                await refreshDashboard();
+            }
+        }
+    });
+
     ['timeline-filter-type', 'timeline-filter-account', 'timeline-filter-list'].forEach((id) => {
         byId<HTMLSelectElement>(id).addEventListener('change', () => {
             currentFilter = readTimelineFilter();
@@ -268,6 +542,8 @@ function bindControls(): void {
         startPolling();
         connectEventStream();
     });
+
+    bindVoiceControls();
 }
 
 async function bootstrap(): Promise<void> {

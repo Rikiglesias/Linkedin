@@ -21,6 +21,7 @@ import { ensureCycleTlsProxy, stopCycleTlsProxy } from '../proxy/cycleTlsProxy';
 import { CloudFingerprint, BrowserFingerprint, pickDesktopFingerprint, pickFingerprintMode, pickMobileFingerprint } from './stealth';
 import { DeviceProfile, registerPageDeviceProfile } from './deviceProfile';
 import { fetchWithRetryPolicy } from '../core/integrationPolicy';
+import { FingerprintPool } from './fingerprint/pool';
 
 const activeBrowsers = new Set<BrowserContext>();
 
@@ -153,10 +154,15 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
         const fingerprint = isMobileSession
             ? pickMobileFingerprint(cloudFingerprints)
             : pickDesktopFingerprint(cloudFingerprints);
+        const consistentNoise = FingerprintPool.generateConsistentProfile(fingerprint);
+
         const deviceProfile: DeviceProfile = {
             fingerprintId: fingerprint.id,
             isMobile: fingerprint.isMobile === true,
             hasTouch: fingerprint.hasTouch === true || fingerprint.isMobile === true,
+            canvasNoise: consistentNoise.canvasNoise,
+            webglNoise: consistentNoise.webglNoise,
+            audioNoise: consistentNoise.audioNoise
         };
 
         const contextOptions: Parameters<typeof chromium.launchPersistentContext>[1] = {
@@ -165,7 +171,26 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             locale: fingerprint.locale ?? 'it-IT',
             timezoneId: fingerprint.timezone ?? config.timezone,
             userAgent: fingerprint.userAgent,
+            args: [
+                '--disable-blink-features=AutomationControlled', // Nasconde flag navigator.webdriver
+                '--disable-features=IsolateOrigins,site-per-process', // Migliora fallback iframe extraction
+                '--disable-webrtc', // Previene TCP/IP WebRTC leaks (fondamentale per proxy/Tor)
+                '--disable-background-networking',
+                '--disable-background-timer-throttling',
+                '--disable-backgrounding-occluded-windows',
+                '--disable-renderer-backgrounding',
+                '--disable-component-extensions-with-background-pages',
+                '--no-sandbox',
+                '--disable-setuid-sandbox'
+            ]
         };
+        const isBrightDataProxy = !!currentProxy && /brd\.superproxy\.io/i.test(currentProxy.server);
+        if (isBrightDataProxy) {
+            // Bright Data Unlocker can present cert chains not trusted by local store.
+            // Ignore HTTPS errors only for this specific upstream to avoid global downgrade.
+            contextOptions.ignoreHTTPSErrors = true;
+            contextOptions.args = [...(contextOptions.args ?? []), '--ignore-certificate-errors'];
+        }
         if (deviceProfile.isMobile) {
             contextOptions.isMobile = true;
             contextOptions.hasTouch = true;
@@ -195,6 +220,42 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
         try {
             const browser = await chromium.launchPersistentContext(sessionDir, contextOptions);
 
+            // Iniezione noise Canvas/WebGL nativa in stack V8
+            const scriptContent = `
+                (() => {
+                    const canvasNoise = ${deviceProfile.canvasNoise ?? 0};
+                    const webglNoise = ${deviceProfile.webglNoise ?? 0};
+                    
+                    const originalGetContext = HTMLCanvasElement.prototype.getContext;
+                    HTMLCanvasElement.prototype.getContext = function(type, contextAttributes) {
+                        const ctx = originalGetContext.call(this, type, contextAttributes);
+                        if (type === '2d' && ctx) {
+                            const originalGetImageData = ctx.getImageData;
+                            ctx.getImageData = function(x, y, w, h) {
+                                const imageData = originalGetImageData.call(this, x, y, w, h);
+                                for (let i = 0; i < imageData.data.length; i += 4) {
+                                    imageData.data[i] = Math.min(255, imageData.data[i] + Math.floor(canvasNoise * 255));
+                                }
+                                return imageData;
+                            };
+                        }
+                        if ((type === 'webgl' || type === 'webgl2') && ctx) {
+                            const originalGetParameter = ctx.getParameter;
+                            ctx.getParameter = function(parameter) {
+                                const res = originalGetParameter.call(this, parameter);
+                                // UNMASKED_VENDOR_WEBGL (37445)
+                                if (parameter === 37445) return 'Google Inc. (Intel' + (webglNoise > 0.5 ? ' ' : '') + ')';
+                                // UNMASKED_RENDERER_WEBGL (37446)
+                                if (parameter === 37446) return 'ANGLE (Intel, Intel(R) Iris(R) Xe Graphics' + (webglNoise > 0.5 ? ' Direct3D11' : '') + ' vs_5_0 ps_5_0)';
+                                return res;
+                            };
+                        }
+                        return ctx;
+                    };
+                })();
+            `;
+            await browser.addInitScript({ content: scriptContent });
+
             const existingPage = browser.pages()[0];
             const page = existingPage ?? await browser.newPage();
             for (const contextPage of browser.pages()) {
@@ -210,7 +271,7 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                     if (url.includes('linkedin.com/voyager')) {
                         console.error('\n[GLOBAL KILL-SWITCH] HTTP 429 (Too Many Requests) da LinkedIn APIs:', url);
                         if (currentProxy) {
-                            console.error(`[PROXY] Proxy bruciato: ${currentProxy.server}`);
+                            console.error(`[PROXY] Proxy bruciato: ${currentProxy.server} `);
                             markProxyFailed(currentProxy);
                             releaseStickyProxy(sessionDir);
                         }
@@ -229,7 +290,7 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             if (currentProxy) {
                 markProxyFailed(currentProxy);
                 if (attempt < launchPlan.length - 1) {
-                    console.warn(`[PROXY] Launch fallito su ${currentProxy.server}, provo il prossimo (${attempt + 2}/${launchPlan.length}).`);
+                    console.warn(`[PROXY] Launch fallito su ${currentProxy.server}, provo il prossimo(${attempt + 2}/${launchPlan.length}).`);
                 }
             }
 

@@ -1,9 +1,11 @@
 import {
     AbLeaderboardRow,
     CampaignRunRecord,
+    CommentSuggestionQueueResponse,
     DashboardSnapshot,
     IncidentRecord,
     KpiResponse,
+    ObservabilitySnapshot,
     PredictiveRiskResponse,
     ReviewQueueResponse,
     TimingSlotRow,
@@ -90,15 +92,34 @@ export class DashboardApi {
         return resp.ok;
     }
 
+    async approveCommentSuggestion(leadId: number, suggestionIndex: number, comment?: string): Promise<boolean> {
+        const payload = typeof comment === 'string' && comment.trim().length > 0
+            ? { comment: comment.trim() }
+            : {};
+        const resp = await this.apiFetch(`/api/ai/comment-suggestions/${leadId}/${suggestionIndex}/approve`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        return resp.ok;
+    }
+
+    async rejectCommentSuggestion(leadId: number, suggestionIndex: number): Promise<boolean> {
+        const resp = await this.apiFetch(`/api/ai/comment-suggestions/${leadId}/${suggestionIndex}/reject`, {
+            method: 'POST',
+        });
+        return resp.ok;
+    }
+
     async loadSnapshot(): Promise<DashboardSnapshot> {
-        const [kpis, runs, incidents, trend, predictive, reviewQueue, ab, timingSlots] = await Promise.all([
+        const [kpis, runs, incidents, trendRaw, predictive, reviewQueue, ab, timingSlots, observability, commentSuggestions] = await Promise.all([
             this.readJson<KpiResponse>('/api/kpis', {
                 funnel: { totalLeads: 0, invited: 0, accepted: 0, readyMessage: 0, messaged: 0, replied: 0 },
                 system: { pausedUntil: null, quarantined: false },
             }),
             this.readJson<CampaignRunRecord[]>('/api/runs', []),
             this.readJson<IncidentRecord[]>('/api/incidents', []),
-            this.readJson<TrendRow[]>('/api/stats/trend', []),
+            this.readJson<unknown>('/api/stats/trend', []),
             this.readJson<PredictiveRiskResponse>('/api/risk/predictive', { enabled: false, lookbackDays: 0, alerts: [] }),
             this.readJson<ReviewQueueResponse>('/api/review-queue?limit=25', {
                 pending: false,
@@ -110,7 +131,16 @@ export class DashboardApi {
             }),
             this.readJson<AbLeaderboardRow[]>('/api/ml/ab-leaderboard', []),
             this.readJson<TimingSlotRow[]>('/api/ml/timing-slots?n=8', []),
+            this.readJson<ObservabilitySnapshot>('/api/observability', {}),
+            this.readJson<CommentSuggestionQueueResponse>('/api/ai/comment-suggestions?limit=20', {
+                status: 'REVIEW_PENDING',
+                count: 0,
+                rows: [],
+            }),
         ]);
+        const trend = Array.isArray(trendRaw)
+            ? trendRaw
+            : ensureArray<TrendRow>(ensureObject(trendRaw).rows);
 
         const safeKpis = ensureObject(kpis) as unknown as KpiResponse;
 
@@ -123,6 +153,8 @@ export class DashboardApi {
             reviewQueue: ensureObject(reviewQueue) as unknown as ReviewQueueResponse,
             ab: ensureArray<AbLeaderboardRow>(ab),
             timingSlots: ensureArray<TimingSlotRow>(timingSlots),
+            observability: ensureObject(observability) as unknown as ObservabilitySnapshot,
+            commentSuggestions: ensureObject(commentSuggestions) as unknown as CommentSuggestionQueueResponse,
         };
     }
 }

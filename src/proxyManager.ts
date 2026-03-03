@@ -3,7 +3,6 @@ import path from 'path';
 import * as net from 'net';
 import { config, ProxyType } from './config';
 import { logInfo, logWarn } from './telemetry/logger';
-import { fetchWithRetryPolicy } from './core/integrationPolicy';
 
 export interface ProxyConfig {
     server: string;
@@ -34,8 +33,10 @@ export interface GetProxyChainOptions {
 }
 
 const proxyFailureUntil = new Map<string, number>();
+const integrationProxyFailureUntil = new Map<string, number>();
 const stickyProxySessions = new Map<string, ProxyConfig>();
 let rotationCursor = 0;
+let integrationRotationCursor = 0;
 let cachedPool: ProxyPoolCache = { proxies: [], signature: '' };
 
 function normalizeProxyType(value: ProxyType | string | undefined, fallback: ProxyType = 'unknown'): ProxyType {
@@ -208,13 +209,31 @@ function orderByRotation(pool: ProxyConfig[]): ProxyConfig[] {
     return ordered;
 }
 
-function splitByCooldown(orderedPool: ProxyConfig[]): { ready: ProxyConfig[]; cooling: ProxyConfig[] } {
+function orderByIntegrationRotation(pool: ProxyConfig[]): ProxyConfig[] {
+    if (pool.length <= 1) {
+        return pool.slice();
+    }
+
+    const start = integrationRotationCursor % pool.length;
+    integrationRotationCursor = (start + 1) % pool.length;
+
+    const ordered: ProxyConfig[] = [];
+    for (let i = 0; i < pool.length; i++) {
+        ordered.push(pool[(start + i) % pool.length]);
+    }
+    return ordered;
+}
+
+function splitByCooldown(
+    orderedPool: ProxyConfig[],
+    cooldownRegistry: Map<string, number> = proxyFailureUntil
+): { ready: ProxyConfig[]; cooling: ProxyConfig[] } {
     const now = Date.now();
     const ready: ProxyConfig[] = [];
     const cooling: ProxyConfig[] = [];
 
     for (const proxy of orderedPool) {
-        const cooldownUntil = proxyFailureUntil.get(proxyKey(proxy)) ?? 0;
+        const cooldownUntil = cooldownRegistry.get(proxyKey(proxy)) ?? 0;
         if (cooldownUntil > now) {
             cooling.push(proxy);
         } else {
@@ -276,14 +295,28 @@ export async function fetchFallbackProxyFromProvider(): Promise<boolean> {
             headers['Authorization'] = `Bearer ${config.proxyProviderApiKey}`;
         }
 
-        const response = await fetchWithRetryPolicy(config.proxyProviderApiEndpoint, { headers, method: 'GET' }, {
-            integration: 'proxy.provider_fallback',
-            circuitKey: 'proxy.provider',
-            timeoutMs: 8_000,
-            maxAttempts: 2,
-        });
-        if (!response.ok) {
-            throw new Error(`Proxy Provider HTTP ${response.status}`);
+        let response: Response | null = null;
+        let lastErr: Error | null = null;
+
+        for (let attempt = 1; attempt <= 2; attempt++) {
+            try {
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 8000);
+                response = await fetch(config.proxyProviderApiEndpoint, { headers, method: 'GET', signal: controller.signal });
+                clearTimeout(timeout);
+
+                if (!response.ok) {
+                    throw new Error(`Proxy Provider HTTP ${response.status}`);
+                }
+                break;
+            } catch (err: unknown) {
+                lastErr = err instanceof Error ? err : new Error(String(err));
+                if (attempt === 1) await new Promise(r => setTimeout(r, 1000));
+            }
+        }
+
+        if (!response || !response.ok) {
+            throw lastErr || new Error('Fetch to proxy provider failed');
         }
 
         // Esempi previsti di output dal provider:
@@ -354,6 +387,50 @@ export async function getProxyFailoverChainAsync(options: GetProxyChainOptions =
         }
     }
 
+    // P4-07: SOCKS5 Tor Fallback (Extreme Last Resort)
+    if (config.proxyTorSocks5Url) {
+        const torParsed = parseProxyEntry(config.proxyTorSocks5Url);
+        if (torParsed) {
+            console.warn(`[PROXY] Pool esaurito e API provider non disp. Fallback su rete Tor: ${config.proxyTorSocks5Url}`);
+            return prioritizeProxyPool(rotated, options).concat([torParsed]);
+        }
+    }
+
+    return prioritizeProxyPool(rotated, options);
+}
+
+export async function getIntegrationProxyFailoverChainAsync(options: GetProxyChainOptions = {}): Promise<ProxyConfig[]> {
+    const pool = loadProxyPool();
+    if (pool.length === 0) return [];
+
+    const rotated = orderByIntegrationRotation(pool);
+    const { ready, cooling } = splitByCooldown(rotated, integrationProxyFailureUntil);
+    if (ready.length > 0) {
+        const prioritizedReady = prioritizeProxyPool(ready, options);
+        const prioritizedCooling = prioritizeProxyPool(cooling, options);
+        return prioritizedReady.concat(prioritizedCooling);
+    }
+
+    if (config.proxyProviderApiEndpoint) {
+        const injected = await fetchFallbackProxyFromProvider();
+        if (injected) {
+            const refreshedPool = loadProxyPool();
+            const reSplit = splitByCooldown(refreshedPool, integrationProxyFailureUntil);
+            const prioritizedReady = prioritizeProxyPool(reSplit.ready, options);
+            const prioritizedCooling = prioritizeProxyPool(reSplit.cooling, options);
+            return prioritizedReady.concat(prioritizedCooling);
+        }
+    }
+
+    // P4-07: SOCKS5 Tor Fallback per integration
+    if (config.proxyTorSocks5Url) {
+        const torParsed = parseProxyEntry(config.proxyTorSocks5Url);
+        if (torParsed) {
+            console.warn(`[PROXY-INT] Pool esaurito e API provider non disp. Fallback su rete Tor: ${config.proxyTorSocks5Url}`);
+            return prioritizeProxyPool(rotated, options).concat([torParsed]);
+        }
+    }
+
     return prioritizeProxyPool(rotated, options);
 }
 
@@ -374,11 +451,31 @@ export function getProxyFailoverChain(options: GetProxyChainOptions = {}): Proxy
     return prioritizeProxyPool(rotated, options);
 }
 
+export function getIntegrationProxyFailoverChain(options: GetProxyChainOptions = {}): ProxyConfig[] {
+    const pool = loadProxyPool();
+    if (pool.length === 0) return [];
+
+    const rotated = orderByIntegrationRotation(pool);
+    const { ready, cooling } = splitByCooldown(rotated, integrationProxyFailureUntil);
+    if (ready.length > 0) {
+        const prioritizedReady = prioritizeProxyPool(ready, options);
+        const prioritizedCooling = prioritizeProxyPool(cooling, options);
+        return prioritizedReady.concat(prioritizedCooling);
+    }
+
+    return prioritizeProxyPool(rotated, options);
+}
+
 /**
  * Retrocompatibilità sincrona: restituisce il primo proxy disponibile (non usa API Provider on-demand).
  */
 export function getProxy(): ProxyConfig | undefined {
     const chain = getProxyFailoverChain();
+    return chain[0];
+}
+
+export function getIntegrationProxy(options: GetProxyChainOptions = {}): ProxyConfig | undefined {
+    const chain = getIntegrationProxyFailoverChain(options);
     return chain[0];
 }
 
@@ -440,6 +537,24 @@ export async function getProxyAsync(options: GetProxyChainOptions = {}): Promise
     return refreshedChain[0];
 }
 
+export async function getIntegrationProxyAsync(options: GetProxyChainOptions = {}): Promise<ProxyConfig | undefined> {
+    const chain = await getIntegrationProxyFailoverChainAsync(options);
+
+    for (const proxy of chain) {
+        const isHealthy = await checkProxyHealth(proxy);
+        if (isHealthy) {
+            markIntegrationProxyHealthy(proxy);
+            return proxy;
+        } else {
+            console.warn(`[PROXY] Health check fallito per integration proxy: ${proxy.server}`);
+            markIntegrationProxyFailed(proxy);
+        }
+    }
+
+    const refreshedChain = await getIntegrationProxyFailoverChainAsync(options);
+    return refreshedChain[0];
+}
+
 /**
  * Restituisce o alloca un proxy permanente per una specifica sessionId.
  * Assicura che la sessione usi costantemente lo stesso nodo per non allertare Linkedin con cambi IP anomali.
@@ -453,7 +568,7 @@ export async function getStickyProxy(sessionId: string, options: GetProxyChainOp
         if (preferred && existingType !== preferred && existingType !== 'unknown') {
             stickyProxySessions.delete(sessionId);
         } else {
-        // Verifichiamo proattivamente anche il proxy sticky
+            // Verifichiamo proattivamente anche il proxy sticky
             const isHealthy = await checkProxyHealth(existing);
             if (isHealthy) {
                 return existing;
@@ -484,6 +599,15 @@ export function markProxyFailed(proxy: ProxyConfig): void {
 
 export function markProxyHealthy(proxy: ProxyConfig): void {
     proxyFailureUntil.delete(proxyKey(proxy));
+}
+
+export function markIntegrationProxyFailed(proxy: ProxyConfig): void {
+    const cooldownMs = config.proxyFailureCooldownMinutes * 60_000;
+    integrationProxyFailureUntil.set(proxyKey(proxy), Date.now() + cooldownMs);
+}
+
+export function markIntegrationProxyHealthy(proxy: ProxyConfig): void {
+    integrationProxyFailureUntil.delete(proxyKey(proxy));
 }
 
 export function getProxyPoolStatus(): ProxyPoolStatus {
@@ -527,4 +651,68 @@ export function getProxyPoolStatus(): ProxyPoolStatus {
         unknown,
         rotationCursor,
     };
+}
+
+export function getIntegrationProxyPoolStatus(): ProxyPoolStatus {
+    const pool = loadProxyPool();
+    if (pool.length === 0) {
+        return {
+            configured: false,
+            total: 0,
+            ready: 0,
+            cooling: 0,
+            mobile: 0,
+            residential: 0,
+            unknown: 0,
+            rotationCursor: 0,
+        };
+    }
+
+    const now = Date.now();
+    let ready = 0;
+    let cooling = 0;
+    for (const proxy of pool) {
+        const cooldownUntil = integrationProxyFailureUntil.get(proxyKey(proxy)) ?? 0;
+        if (cooldownUntil > now) {
+            cooling += 1;
+        } else {
+            ready += 1;
+        }
+    }
+
+    const mobile = pool.filter((proxy) => normalizeProxyType(proxy.type, 'unknown') === 'mobile').length;
+    const residential = pool.filter((proxy) => normalizeProxyType(proxy.type, 'unknown') === 'residential').length;
+    const unknown = Math.max(0, pool.length - mobile - residential);
+
+    return {
+        configured: true,
+        total: pool.length,
+        ready,
+        cooling,
+        mobile,
+        residential,
+        unknown,
+        rotationCursor: integrationRotationCursor,
+    };
+}
+
+export function buildProxyUrl(proxy: ProxyConfig): string {
+    const base = proxy.server.trim();
+    if (!base) return '';
+    if (!proxy.username && !proxy.password) {
+        return base;
+    }
+
+    try {
+        const parsed = new URL(base);
+        if (proxy.username) {
+            parsed.username = encodeURIComponent(proxy.username);
+        }
+        if (proxy.password) {
+            parsed.password = encodeURIComponent(proxy.password);
+        }
+        return parsed.toString();
+    } catch {
+        return base;
+    }
 }

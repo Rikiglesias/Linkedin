@@ -11,6 +11,8 @@ export const LEAD_SELECT_COLUMNS = [
     'invited_at',
     'accepted_at',
     'messaged_at',
+    'follow_up_count',
+    'follow_up_sent_at',
     'last_site_check_at',
     'last_error',
     'blocked_reason',
@@ -19,6 +21,8 @@ export const LEAD_SELECT_COLUMNS = [
     'invite_prompt_variant',
     'lead_score',
     'confidence_score',
+    'email',
+    'phone',
     'created_at',
     'updated_at',
 ].join(', ');

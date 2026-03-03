@@ -1,0 +1,15 @@
+
+> linkedin@1.0.0 lint
+> eslint src/**/*.ts
+
+
+C:\Users\albie\Desktop\Programmi\Linkedin\src\core\repositories\leadsLearning.ts
+  131:9  error  'metadata' is never reassigned. Use 'const' instead  prefer-const
+
+C:\Users\albie\Desktop\Programmi\Linkedin\src\tests\unit.ts
+  623:10  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  653:10  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+Ô£û 3 problems (3 errors, 0 warnings)
+  1 error and 0 warnings potentially fixable with the `--fix` option.
+

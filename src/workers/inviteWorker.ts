@@ -1,7 +1,14 @@
 import { Page } from 'playwright';
 import { contextualReadingPause, detectChallenge, humanDelay, humanMouseMove, humanType, simulateHumanReading } from '../browser';
 import { transitionLead } from '../core/leadStateService';
-import { getLeadById, incrementDailyStat, incrementListDailyStat, updateLeadScrapedContext, updateLeadPromptVariant } from '../core/repositories';
+import {
+    getLeadById,
+    incrementDailyStat,
+    incrementListDailyStat,
+    recordLeadTimingAttribution,
+    updateLeadPromptVariant,
+    updateLeadScrapedContext,
+} from '../core/repositories';
 import { joinSelectors } from '../selectors';
 import { InviteJobPayload, LeadRecord } from '../types/domain';
 import { WorkerContext } from './context';
@@ -100,10 +107,19 @@ async function handleInviteModal(
         await humanDelay(page, 600, 1200);
 
         // Scrivi la nota nella textarea del modale
-        const generatedNote = await buildPersonalizedInviteNote(lead);
-        if (generatedNote.variant) {
-            await updateLeadPromptVariant(lead.id, generatedNote.variant);
-            lead.invite_prompt_variant = generatedNote.variant;
+        let generatedNote = { note: '', source: 'template' as 'template' | 'ai' | null, variant: null as string | null };
+        try {
+            if (lead.invite_prompt_variant === 'campaign_metadata') {
+                generatedNote = { note: lead.about || '', source: 'template', variant: 'campaign_metadata' };
+            } else {
+                generatedNote = await buildPersonalizedInviteNote(lead);
+                if (generatedNote.variant) {
+                    await updateLeadPromptVariant(lead.id, generatedNote.variant);
+                    lead.invite_prompt_variant = generatedNote.variant;
+                }
+            }
+        } catch (e) {
+            console.error('[INVITE] Fallback a nota vuota per errore AI parsing', e);
         }
 
         try {
@@ -163,10 +179,27 @@ export async function processInviteJob(payload: InviteJobPayload, context: Worke
 
     if (lead.status === 'NEW' || lead.status === 'PENDING') {
         await transitionLead(lead.id, 'READY_INVITE', 'new_lead_promoted');
+        lead.status = 'READY_INVITE';
     }
 
-    if (lead.status !== 'READY_INVITE' && lead.status !== 'NEW' && lead.status !== 'PENDING') {
+    const isCampaignDriven = !!payload.campaignStateId;
+    if (!isCampaignDriven && lead.status !== 'READY_INVITE') {
         return workerResult(0);
+    }
+
+    // Inject campaign note locally just for handleInviteModal if present
+    if (isCampaignDriven && payload.metadata_json) {
+        try {
+            const meta = JSON.parse(payload.metadata_json);
+            if (meta.note) {
+                lead.invite_prompt_variant = 'campaign_metadata';
+                // Usiamo "about" come cavallo di troia volatile solo in memoria per la stringa del template 
+                // per non spaccare il database model
+                lead.about = meta.note;
+            }
+        } catch {
+            // ignore JSON parse error in metadata
+        }
     }
 
     if (isSalesNavigatorUrl(lead.linkedin_url)) {
@@ -255,8 +288,22 @@ export async function processInviteJob(payload: InviteJobPayload, context: Worke
         dryRun: context.dryRun,
         withNote: inviteResult.sentWithNote,
         withNoteSource: inviteResult.noteSource,
-        variant: inviteResult.variant || null
+        variant: inviteResult.variant || null,
+        timing: payload.timing ?? null,
     });
+
+    if (!context.dryRun) {
+        await recordLeadTimingAttribution(lead.id, 'invite', {
+            strategy: payload.timing?.strategy === 'optimizer' ? 'optimizer' : 'baseline',
+            segment: payload.timing?.segment ?? inferLeadSegment(lead.job_title),
+            score: payload.timing?.score ?? 0,
+            slotHour: payload.timing?.slotHour ?? null,
+            slotDow: payload.timing?.slotDow ?? null,
+            delaySec: payload.timing?.delaySec ?? 0,
+            model: payload.timing?.model ?? 'timing_optimizer_v2',
+        });
+    }
+
     if (!context.dryRun && inviteResult.variant) {
         const segmentKey = inferLeadSegment(lead.job_title);
         await recordSent(inviteResult.variant, { segmentKey }).catch(() => { });

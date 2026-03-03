@@ -10,12 +10,15 @@ import { processAcceptanceJob } from '../workers/acceptanceWorker';
 import { processInviteJob } from '../workers/inviteWorker';
 import { processMessageJob } from '../workers/messageWorker';
 import { processHygieneJob } from '../workers/hygieneWorker';
-import { ChallengeDetectedError, RetryableWorkerError } from '../workers/errors';
+import { processInteractionJob } from '../workers/interactionWorker';
+import { ChallengeDetectedError, resolveWorkerRetryPolicy, RetryableWorkerError } from '../workers/errors';
 import { runFollowUpWorker } from '../workers/followUpWorker';
 import { WorkerExecutionResult, workerResult } from '../workers/result';
 import { transitionLead } from './leadStateService';
+import { advanceLeadCampaign, failLeadCampaign } from './campaignEngine';
 import {
     createJobAttempt,
+    getDailyStat,
     getAutomationPauseState,
     getRuntimeFlag,
     incrementDailyStat,
@@ -41,9 +44,9 @@ interface AccountRunHealthMetrics {
     startedAtMs: number;
 }
 
-function retryDelayMs(attempt: number): number {
+function retryDelayMs(attempt: number, baseDelayMs: number = config.retryBaseMs): number {
     const jitter = Math.floor(Math.random() * 250);
-    return config.retryBaseMs * Math.pow(2, Math.max(0, attempt - 1)) + jitter;
+    return baseDelayMs * Math.pow(2, Math.max(0, attempt - 1)) + jitter;
 }
 
 function randomInt(min: number, max: number): number {
@@ -255,6 +258,9 @@ async function runQueuedJobsForAccount(
                 } else if (job.type === 'HYGIENE') {
                     const parsed = parseJobPayload<{ accountId: string }>(job);
                     executionResult = await processHygieneJob(parsed.payload, workerContext);
+                } else if (job.type === 'INTERACTION') {
+                    const parsed = parseJobPayload<{ leadId: number; actionType: 'VIEW_PROFILE' | 'LIKE_POST' | 'FOLLOW'; campaignStateId?: number }>(job);
+                    executionResult = await processInteractionJob(parsed.payload, workerContext);
                 }
 
                 await logInfo('job.worker_result', {
@@ -298,6 +304,18 @@ async function runQueuedJobsForAccount(
                     `${hasWorkerWarnings ? 'job.succeeded_with_errors' : 'job.succeeded'}:${job.id}:${job.type}`
                 );
                 consecutiveFailures = 0;
+
+                // ── Campaign state advance ───────────────────────────────
+                // Se il job era parte di una Drip Campaign, avanza lo stato leadcampaign
+                // non-blocking: non blocca la pipeline se fallisce
+                try {
+                    const maybeCampaignPayload = parseJobPayload<{ campaignStateId?: number }>(job);
+                    if (typeof maybeCampaignPayload.payload.campaignStateId === 'number') {
+                        await advanceLeadCampaign(maybeCampaignPayload.payload.campaignStateId);
+                    }
+                } catch {
+                    // Ignora errori nella campaign engine — non impatta la job run principale
+                }
 
                 // Pausa umana tra un job e il successivo (anti-burst)
                 await interJobDelay(session.page);
@@ -348,16 +366,29 @@ async function runQueuedJobsForAccount(
                     });
                 }
 
-                const nextDelay = retryDelayMs(attempts);
-                const status = await markJobRetryOrDeadLetter(job.id, attempts, job.max_attempts, nextDelay, message);
+                const retryPolicy = resolveWorkerRetryPolicy(error, job.max_attempts, config.retryBaseMs);
+                const effectiveMaxAttempts = Math.max(1, Math.min(job.max_attempts, retryPolicy.maxAttempts));
+                const nextDelay = retryPolicy.retryable
+                    ? retryDelayMs(attempts, retryPolicy.baseDelayMs)
+                    : 0;
+
+                const status = await markJobRetryOrDeadLetter(
+                    job.id,
+                    attempts,
+                    effectiveMaxAttempts,
+                    nextDelay,
+                    message
+                );
                 await pushOutboxEvent(
                     'job.failed',
                     {
                         jobId: job.id,
                         type: job.type,
                         attempts,
+                        maxAttempts: effectiveMaxAttempts,
                         status,
                         error: message,
+                        retryPolicy,
                         accountId: account.id,
                     },
                     `job.failed:${job.id}:${attempts}`
@@ -376,12 +407,27 @@ async function runQueuedJobsForAccount(
                     }
                 }
 
+                // ── Campaign state fail ──────────────────────────────────
+                // Dead-letter su qualsiasi job con campaignStateId → marca la campagna come ERROR
+                if (status === 'DEAD_LETTER') {
+                    try {
+                        const maybeCampaignPayload = parseJobPayload<{ campaignStateId?: number }>(job);
+                        if (typeof maybeCampaignPayload.payload.campaignStateId === 'number') {
+                            await failLeadCampaign(maybeCampaignPayload.payload.campaignStateId, message);
+                        }
+                    } catch {
+                        // Non-bloccante
+                    }
+                }
+
                 await logWarn('job.failed', {
                     jobId: job.id,
                     type: job.type,
                     status,
                     attempts,
+                    maxAttempts: effectiveMaxAttempts,
                     message,
+                    retryPolicy,
                     accountId: account.id,
                 });
 
@@ -480,12 +526,14 @@ async function runQueuedJobsForAccount(
                 accountId: account.id,
             };
             try {
-                const followUpResult = await runFollowUpWorker(followUpContext);
+                const followUpsSentSoFar = await getDailyStat(options.localDate, 'follow_ups_sent');
+                const followUpResult = await runFollowUpWorker(followUpContext, followUpsSentSoFar);
                 await logInfo('job_runner.follow_up_phase_done', {
                     accountId: account.id,
                     success: followUpResult.success,
                     processedCount: followUpResult.processedCount,
                     errorsCount: followUpResult.errors.length,
+                    dailySentSoFar: followUpsSentSoFar,
                 });
             } catch (err: unknown) {
                 if (err instanceof ChallengeDetectedError) {

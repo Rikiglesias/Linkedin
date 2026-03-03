@@ -1,6 +1,13 @@
 import { clickWithFallback, contextualReadingPause, detectChallenge, humanDelay, humanMouseMove, simulateHumanReading, typeWithFallback } from '../browser';
 import { transitionLead } from '../core/leadStateService';
-import { countRecentMessageHash, getLeadById, incrementDailyStat, incrementListDailyStat, storeMessageHash } from '../core/repositories';
+import {
+    countRecentMessageHash,
+    getLeadById,
+    incrementDailyStat,
+    incrementListDailyStat,
+    recordLeadTimingAttribution,
+    storeMessageHash,
+} from '../core/repositories';
 import { joinSelectors, SELECTORS } from '../selectors';
 import { MessageJobPayload } from '../types/domain';
 import { hashMessage, validateMessageContent } from '../validation/messageValidator';
@@ -11,10 +18,13 @@ import { buildPersonalizedFollowUpMessage } from '../ai/messagePersonalizer';
 import { logInfo } from '../telemetry/logger';
 import { bridgeDailyStat, bridgeLeadStatus } from '../cloud/cloudBridge';
 import { WorkerExecutionResult, workerResult } from './result';
+import { inferLeadSegment } from '../ml/segments';
 
 export async function processMessageJob(payload: MessageJobPayload, context: WorkerContext): Promise<WorkerExecutionResult> {
     const lead = await getLeadById(payload.leadId);
-    if (!lead || lead.status !== 'READY_MESSAGE') {
+
+    const isCampaignDriven = !!payload.campaignStateId;
+    if (!lead || (!isCampaignDriven && lead.status !== 'READY_MESSAGE')) {
         return workerResult(0);
     }
 
@@ -23,20 +33,45 @@ export async function processMessageJob(payload: MessageJobPayload, context: Wor
         return workerResult(1);
     }
 
-    const personalized = await buildPersonalizedFollowUpMessage(lead);
-    const message = personalized.message;
-    const messageHash = hashMessage(message);
-    const duplicateCount = await countRecentMessageHash(messageHash, 24);
-    const validation = validateMessageContent(message, { duplicateCountLast24h: duplicateCount });
-    if (!validation.valid) {
-        await transitionLead(lead.id, 'BLOCKED', 'message_validation_failed', {
-            reasons: validation.reasons,
-        });
-        return workerResult(1, [{
-            leadId: lead.id,
-            message: `message_validation_failed:${validation.reasons.join(',')}`,
-        }]);
+    let message = '';
+    let messageSource: 'template' | 'ai' = 'ai';
+    let messageModel: string | null = null;
+
+    // Attempt local template override from campaign
+    if (isCampaignDriven && payload.metadata_json) {
+        try {
+            const meta = JSON.parse(payload.metadata_json);
+            if (meta.message) {
+                message = meta.message;
+                messageSource = 'template';
+            }
+        } catch {
+            // ignore JSON parse error in metadata
+        }
     }
+
+    if (!message) {
+        // Fallback to classic AI personalized follow-up
+        const personalized = await buildPersonalizedFollowUpMessage(lead);
+        message = personalized.message;
+        messageSource = personalized.source as 'template' | 'ai';
+        messageModel = personalized.model;
+
+        const messageHash = hashMessage(message);
+        const duplicateCount = await countRecentMessageHash(messageHash, 24);
+        const validation = validateMessageContent(message, { duplicateCountLast24h: duplicateCount });
+        if (!validation.valid) {
+            await transitionLead(lead.id, 'BLOCKED', 'message_validation_failed', {
+                reasons: validation.reasons,
+            });
+            return workerResult(1, [{
+                leadId: lead.id,
+                message: `message_validation_failed:${validation.reasons.join(',')}`,
+            }]);
+        }
+    }
+
+    const messageHash = hashMessage(message);
 
     await context.session.page.goto(lead.linkedin_url, { waitUntil: 'domcontentloaded' });
     await humanDelay(context.session.page, 2500, 5000);
@@ -49,7 +84,14 @@ export async function processMessageJob(payload: MessageJobPayload, context: Wor
 
     await humanMouseMove(context.session.page, joinSelectors('messageButton'));
     await humanDelay(context.session.page, 120, 320);
-    await clickWithFallback(context.session.page, SELECTORS.messageButton, 'messageButton').catch(() => {
+    await clickWithFallback(context.session.page, SELECTORS.messageButton, 'messageButton', {
+        timeoutPerSelector: 5000,
+        postClickDelayMs: 120,
+        verify: async (activePage) => {
+            await activePage.waitForSelector(joinSelectors('messageTextbox'), { timeout: 2500 });
+            return true;
+        },
+    }).catch(() => {
         throw new RetryableWorkerError('Bottone messaggio non trovato', 'MESSAGE_BUTTON_NOT_FOUND');
     });
     await humanDelay(context.session.page, 1200, 2200);
@@ -80,12 +122,26 @@ export async function processMessageJob(payload: MessageJobPayload, context: Wor
         });
     }
 
-    await transitionLead(lead.id, 'MESSAGED', context.dryRun ? 'message_dry_run' : 'message_sent');
+    await transitionLead(lead.id, 'MESSAGED', context.dryRun ? 'message_dry_run' : 'message_sent', {
+        timing: payload.timing ?? null,
+    });
+    if (!context.dryRun) {
+        await recordLeadTimingAttribution(lead.id, 'message', {
+            strategy: payload.timing?.strategy === 'optimizer' ? 'optimizer' : 'baseline',
+            segment: payload.timing?.segment ?? inferLeadSegment(lead.job_title),
+            score: payload.timing?.score ?? 0,
+            slotHour: payload.timing?.slotHour ?? null,
+            slotDow: payload.timing?.slotDow ?? null,
+            delaySec: payload.timing?.delaySec ?? 0,
+            model: payload.timing?.model ?? 'timing_optimizer_v2',
+        });
+    }
     await logInfo('message.generated', {
         leadId: lead.id,
-        source: personalized.source,
-        model: personalized.model,
+        source: messageSource,
+        model: messageModel,
         messageLength: message.length,
+        isCampaignDriven,
     });
     await storeMessageHash(lead.id, messageHash);
     await incrementDailyStat(context.localDate, 'messages_sent');

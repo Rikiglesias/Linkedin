@@ -257,6 +257,7 @@ async function applyMigrations(database: DatabaseManager): Promise<void> {
     // Hardening (Retrocompatibilità)
     if (isPostgres) {
         await ensureColumnPg(database, 'leads', 'list_name', `TEXT NOT NULL DEFAULT 'default'`);
+        await ensureColumnPg(database, 'leads', 'lead_metadata', `TEXT NOT NULL DEFAULT '{}'`);
         await ensureColumnPg(database, 'leads', 'last_site_check_at', 'TIMESTAMP');
         await ensureColumnPg(database, 'leads', 'last_error', 'TEXT');
         await ensureColumnPg(database, 'leads', 'blocked_reason', 'TEXT');
@@ -391,6 +392,7 @@ async function applyMigrations(database: DatabaseManager): Promise<void> {
         `);
     } else {
         await ensureColumnSqlite(database, 'leads', 'list_name', `TEXT NOT NULL DEFAULT 'default'`);
+        await ensureColumnSqlite(database, 'leads', 'lead_metadata', `TEXT NOT NULL DEFAULT '{}'`);
         await ensureColumnSqlite(database, 'leads', 'last_site_check_at', 'DATETIME');
         await ensureColumnSqlite(database, 'leads', 'last_error', 'TEXT');
         await ensureColumnSqlite(database, 'leads', 'blocked_reason', 'TEXT');

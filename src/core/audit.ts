@@ -16,6 +16,8 @@ import {
     touchLeadSiteCheckAt,
 } from './repositories';
 import { Page } from 'playwright';
+import fs from 'fs';
+import path from 'path';
 
 export interface FunnelReport {
     totals: {
@@ -53,6 +55,8 @@ export interface SiteCheckItem {
     mismatch: SiteMismatch;
     fixed: boolean;
     reviewRequired: boolean;
+    evidencePath: string | null;
+    reviewReason: string | null;
 }
 
 export interface SiteCheckReport {
@@ -149,6 +153,23 @@ async function tryAutoFix(lead: LeadRecord, mismatch: SiteMismatch): Promise<boo
     }
 
     return false;
+}
+
+async function captureSiteCheckEvidence(page: Page, leadId: number, mismatch: SiteMismatch): Promise<string | null> {
+    try {
+        const evidenceDir = path.resolve(process.cwd(), 'data', 'review', 'site-check');
+        fs.mkdirSync(evidenceDir, { recursive: true });
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const fileName = `lead-${leadId}-${mismatch}-${timestamp}.png`;
+        const filePath = path.join(evidenceDir, fileName);
+        await page.screenshot({
+            path: filePath,
+            fullPage: true,
+        });
+        return filePath;
+    } catch {
+        return null;
+    }
 }
 
 export function classifySiteMismatch(status: LeadRecord['status'], signals: SiteSignals): SiteMismatch | null {
@@ -355,24 +376,35 @@ export async function runSiteCheck(options: SiteCheckOptions): Promise<SiteCheck
                 report.mismatches += 1;
                 let fixed = false;
                 let reviewRequired = false;
+                let reviewReason: string | null = null;
+                const evidencePath = await captureSiteCheckEvidence(session.page, lead.id, mismatch);
                 if (options.autoFix) {
                     fixed = await tryAutoFix(lead, mismatch);
                     if (fixed) {
                         report.fixed += 1;
-                    } else if (isMismatchAmbiguous(mismatch)) {
-                        await transitionLead(
-                            lead.id,
-                            'REVIEW_REQUIRED',
-                            `site_check_ambiguous_${mismatch}`,
-                            {
-                                mismatch,
-                                previousStatus: lead.status,
-                                siteSignals: signals,
-                            }
-                        );
-                        report.reviewRequired += 1;
-                        reviewRequired = true;
                     }
+                }
+
+                if (!fixed) {
+                    reviewReason = isMismatchAmbiguous(mismatch)
+                        ? `site_check_ambiguous_${mismatch}`
+                        : `site_check_mismatch_${mismatch}`;
+                    await transitionLead(
+                        lead.id,
+                        'REVIEW_REQUIRED',
+                        reviewReason,
+                        {
+                            mismatch,
+                            previousStatus: lead.status,
+                            siteSignals: signals,
+                            evidencePath,
+                            autoFixEnabled: options.autoFix,
+                            autoFixApplied: fixed,
+                            inspectedAt: new Date().toISOString(),
+                        }
+                    );
+                    report.reviewRequired += 1;
+                    reviewRequired = true;
                 }
 
                 report.items.push({
@@ -383,6 +415,8 @@ export async function runSiteCheck(options: SiteCheckOptions): Promise<SiteCheck
                     mismatch,
                     fixed,
                     reviewRequired,
+                    evidencePath,
+                    reviewReason,
                 });
             }
         } finally {

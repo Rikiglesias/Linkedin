@@ -4,6 +4,9 @@ export interface DeviceProfile {
     fingerprintId: string;
     isMobile: boolean;
     hasTouch: boolean;
+    canvasNoise?: number;
+    webglNoise?: number;
+    audioNoise?: number;
 }
 
 const pageProfileMap = new WeakMap<Page, DeviceProfile>();

@@ -4,14 +4,22 @@ import { sendTelegramAlert } from '../telemetry/alerts';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { executeWithRetryPolicy, isLikelyTransientError } from '../core/integrationPolicy';
 import {
+    claimPendingOutboxEvents,
     countPendingOutboxEvents,
-    getPendingOutboxEvents,
-    markOutboxDelivered,
-    markOutboxPermanentFailure,
-    markOutboxRetry,
+    getRuntimeFlag,
+    markOutboxDeliveredClaimed,
+    markOutboxPermanentFailureClaimed,
+    markOutboxRetryClaimed,
+    setRuntimeFlag,
 } from '../core/repositories';
+import {
+    clampBackpressureLevel,
+    computeBackpressureBatchSize,
+    computeNextBackpressureLevel,
+} from './backpressure';
 
 let client: SupabaseClient | null = null;
+const SUPABASE_BACKPRESSURE_LEVEL_KEY = 'sync.backpressure.supabase.level';
 
 class TerminalSupabaseSyncError extends Error {
     constructor(message: string) {
@@ -56,14 +64,29 @@ export interface SyncStatus {
     enabled: boolean;
     configured: boolean;
     pendingOutbox: number;
+    backpressureLevel: number;
+    effectiveBatchSize: number;
+}
+
+async function getSupabaseBackpressureLevel(): Promise<number> {
+    const raw = await getRuntimeFlag(SUPABASE_BACKPRESSURE_LEVEL_KEY);
+    const parsed = raw ? Number.parseInt(raw, 10) : 1;
+    return clampBackpressureLevel(parsed);
+}
+
+async function setSupabaseBackpressureLevel(level: number): Promise<void> {
+    await setRuntimeFlag(SUPABASE_BACKPRESSURE_LEVEL_KEY, String(clampBackpressureLevel(level)));
 }
 
 export async function getSyncStatus(): Promise<SyncStatus> {
     const pendingOutbox = await countPendingOutboxEvents();
+    const backpressureLevel = await getSupabaseBackpressureLevel();
     return {
         enabled: config.supabaseSyncEnabled,
         configured: !!(config.supabaseUrl && config.supabaseServiceRoleKey),
         pendingOutbox,
+        backpressureLevel,
+        effectiveBatchSize: computeBackpressureBatchSize(config.supabaseSyncBatchSize, backpressureLevel),
     };
 }
 
@@ -73,7 +96,11 @@ export async function runSupabaseSyncOnce(): Promise<void> {
         return;
     }
 
-    const events = await getPendingOutboxEvents(config.supabaseSyncBatchSize);
+    const backpressureLevel = await getSupabaseBackpressureLevel();
+    const effectiveBatchSize = computeBackpressureBatchSize(config.supabaseSyncBatchSize, backpressureLevel);
+    const ownerId = `supabase-sync:${process.pid}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
+    const leaseSeconds = Math.max(30, Math.ceil(config.integrationRequestTimeoutMs / 1000) * 3);
+    const events = await claimPendingOutboxEvents(effectiveBatchSize, ownerId, leaseSeconds);
     if (events.length === 0) {
         return;
     }
@@ -110,14 +137,31 @@ export async function runSupabaseSyncOnce(): Promise<void> {
                 }
             );
             sent += 1;
-            await markOutboxDelivered(event.id);
+            const delivered = await markOutboxDeliveredClaimed(event.id, ownerId);
+            if (!delivered) {
+                await logWarn('supabase.sync.event.claim_lost', {
+                    eventId: event.id,
+                    idempotencyKey: event.idempotency_key,
+                    ownerId,
+                    phase: 'delivered',
+                });
+            }
         } catch (error) {
             failed += 1;
             const attempts = event.attempts + 1;
             const message = error instanceof Error ? error.message : String(error);
             if (attempts >= config.supabaseSyncMaxRetries) {
                 permanentFailures += 1;
-                await markOutboxPermanentFailure(event.id, attempts, message);
+                const marked = await markOutboxPermanentFailureClaimed(event.id, ownerId, attempts, message);
+                if (!marked) {
+                    await logWarn('supabase.sync.event.claim_lost', {
+                        eventId: event.id,
+                        idempotencyKey: event.idempotency_key,
+                        ownerId,
+                        phase: 'permanent_failure',
+                    });
+                    continue;
+                }
                 await logWarn('supabase.sync.event.permanent_failure', {
                     eventId: event.id,
                     idempotencyKey: event.idempotency_key,
@@ -127,7 +171,15 @@ export async function runSupabaseSyncOnce(): Promise<void> {
                 });
             } else {
                 const delay = retryDelayMs(attempts);
-                await markOutboxRetry(event.id, attempts, delay, message);
+                const marked = await markOutboxRetryClaimed(event.id, ownerId, attempts, delay, message);
+                if (!marked) {
+                    await logWarn('supabase.sync.event.claim_lost', {
+                        eventId: event.id,
+                        idempotencyKey: event.idempotency_key,
+                        ownerId,
+                        phase: 'retry',
+                    });
+                }
             }
         }
     }
@@ -137,8 +189,28 @@ export async function runSupabaseSyncOnce(): Promise<void> {
         failed,
         permanentFailures,
         batchSize: events.length,
+        baseBatchSize: config.supabaseSyncBatchSize,
+        effectiveBatchSize,
+        backpressureLevel,
         maxRetries: config.supabaseSyncMaxRetries,
     });
+
+    const nextBackpressureLevel = computeNextBackpressureLevel({
+        currentLevel: backpressureLevel,
+        sent,
+        failed,
+        permanentFailures,
+    });
+    if (nextBackpressureLevel !== backpressureLevel) {
+        await setSupabaseBackpressureLevel(nextBackpressureLevel);
+        await logInfo('supabase.sync.backpressure.adjusted', {
+            previousLevel: backpressureLevel,
+            nextLevel: nextBackpressureLevel,
+            sent,
+            failed,
+            permanentFailures,
+        });
+    }
 
     const pending = await countPendingOutboxEvents();
     if (pending > config.outboxAlertBacklog) {

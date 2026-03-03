@@ -1,0 +1,9 @@
+{
+  "name": "example-engagement-booster",
+  "version": "1.0.0",
+  "entry": "exampleEngagementBooster.js",
+  "enabled": true,
+  "integritySha256": "9fb062d791c445272cb783dded4c399fd784b734f39478bf48a49d59081336e7",
+  "allowedHooks": ["onInit", "onIdle", "onDailyReport", "onShutdown"]
+}
+

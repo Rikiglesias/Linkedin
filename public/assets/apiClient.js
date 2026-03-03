@@ -69,8 +69,25 @@ export class DashboardApi {
         const resp = await this.apiFetch(`/api/incidents/${id}/resolve`, { method: 'POST' });
         return resp.ok;
     }
+    async approveCommentSuggestion(leadId, suggestionIndex, comment) {
+        const payload = typeof comment === 'string' && comment.trim().length > 0
+            ? { comment: comment.trim() }
+            : {};
+        const resp = await this.apiFetch(`/api/ai/comment-suggestions/${leadId}/${suggestionIndex}/approve`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        return resp.ok;
+    }
+    async rejectCommentSuggestion(leadId, suggestionIndex) {
+        const resp = await this.apiFetch(`/api/ai/comment-suggestions/${leadId}/${suggestionIndex}/reject`, {
+            method: 'POST',
+        });
+        return resp.ok;
+    }
     async loadSnapshot() {
-        const [kpis, runs, incidents, trend, predictive, reviewQueue, ab, timingSlots] = await Promise.all([
+        const [kpis, runs, incidents, trendRaw, predictive, reviewQueue, ab, timingSlots, observability, commentSuggestions] = await Promise.all([
             this.readJson('/api/kpis', {
                 funnel: { totalLeads: 0, invited: 0, accepted: 0, readyMessage: 0, messaged: 0, replied: 0 },
                 system: { pausedUntil: null, quarantined: false },
@@ -89,7 +106,16 @@ export class DashboardApi {
             }),
             this.readJson('/api/ml/ab-leaderboard', []),
             this.readJson('/api/ml/timing-slots?n=8', []),
+            this.readJson('/api/observability', {}),
+            this.readJson('/api/ai/comment-suggestions?limit=20', {
+                status: 'REVIEW_PENDING',
+                count: 0,
+                rows: [],
+            }),
         ]);
+        const trend = Array.isArray(trendRaw)
+            ? trendRaw
+            : ensureArray(ensureObject(trendRaw).rows);
         const safeKpis = ensureObject(kpis);
         return {
             kpis: safeKpis,
@@ -100,6 +126,8 @@ export class DashboardApi {
             reviewQueue: ensureObject(reviewQueue),
             ab: ensureArray(ab),
             timingSlots: ensureArray(timingSlots),
+            observability: ensureObject(observability),
+            commentSuggestions: ensureObject(commentSuggestions),
         };
     }
 }

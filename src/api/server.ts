@@ -19,15 +19,18 @@ import {
     listOpenIncidents,
     listRecentBackupRuns,
     listSecurityAuditEvents,
+    listCommentSuggestionsForReview,
     recordSecurityAuditEvent,
+    reviewCommentSuggestion,
     resolveIncident,
     runAiValidationPipeline,
 } from '../core/repositories';
 import { getDatabase } from '../db';
+import campaignsRouter from './routes/campaigns';
+import { sendApiV1, handleApiError } from './utils';
 import { evaluatePredictiveRiskAlerts, evaluateRisk } from '../risk/riskEngine';
 import { getLocalDateString, config } from '../config';
 import { pauseAutomation, resumeAutomation, setQuarantine } from '../risk/incidentManager';
-import { logError } from '../telemetry/logger';
 import { CampaignRunRecord } from '../types/domain';
 import { publishLiveEvent, subscribeLiveEvents, getLiveEventSubscribersCount, type LiveEventMessage } from '../telemetry/liveEvents';
 import { resolveCorrelationId, runWithCorrelationId } from '../telemetry/correlation';
@@ -503,12 +506,7 @@ async function dashboardAuthMiddleware(req: Request, res: Response, next: NextFu
 }
 
 // ── Helper centralizzato per errori API ──────────────────────────────────────
-function handleApiError(res: Response, err: unknown, context: string): void {
-    const message = err instanceof Error ? err.message : String(err);
-    // Non espone stack trace né dettagli interni in produzione
-    void logError(context, { error: message });
-    res.status(500).json({ error: 'Errore interno del server.' });
-}
+// (Ora importato da ./utils)
 
 function auditSecurityEvent(payload: {
     category: string;
@@ -533,6 +531,8 @@ interface DailyTrendRow {
     estimatedRiskScore: number;
 }
 
+// ApiV1Envelope importato da ./utils
+
 function writeSseEvent(res: Response, eventType: string, data: unknown): void {
     res.write(`event: ${eventType}\n`);
     res.write(`data: ${JSON.stringify(data)}\n\n`);
@@ -556,6 +556,47 @@ function mapDailyToPredictiveSample(day: {
 
 app.use('/api', dashboardAuthMiddleware);
 
+async function apiV1AuthMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
+    if (!config.dashboardAuthEnabled) { next(); return; }
+    const requestIp = resolveRequestIp(req);
+    const authConfigured = !!config.dashboardApiKey || (!!config.dashboardBasicUser && !!config.dashboardBasicPassword);
+    if (!authConfigured) {
+        res.status(503).json({ error: 'API v1 auth enabled but no credentials configured.' });
+        return;
+    }
+    if (isApiKeyAuthValid(req) || isBasicAuthValid(req)) {
+        auditSecurityEvent({
+            category: 'api_v1_auth',
+            action: 'auth_credentials_valid',
+            actor: requestIp,
+            result: 'ALLOW',
+            metadata: {
+                path: req.path,
+                method: req.method,
+            },
+        });
+        next();
+        return;
+    }
+    auditSecurityEvent({
+        category: 'api_v1_auth',
+        action: 'auth_unauthorized',
+        actor: requestIp,
+        result: 'DENY',
+        metadata: {
+            path: req.path,
+            method: req.method,
+        },
+    });
+    res.setHeader('WWW-Authenticate', 'Bearer realm="LinkedIn Bot API v1"');
+    res.status(401).json({ error: 'Unauthorized' });
+}
+
+app.use('/api/v1', apiV1AuthMiddleware);
+app.use('/api/v1/campaigns', campaignsRouter);
+
+// sendApiV1 importato da ./utils
+
 // ── Static (Dashboard UI) ────────────────────────────────────────────────────
 const publicDir = path.resolve(__dirname, '../../public');
 app.use(express.static(publicDir));
@@ -563,6 +604,178 @@ app.use(express.static(publicDir));
 // ── Health ───────────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// ── API v1 (automazioni esterne) ────────────────────────────────────────────
+app.get('/api/v1/meta', (_req, res) => {
+    sendApiV1(res, {
+        service: 'linkedin-bot',
+        supportedVersions: ['v1'],
+        auth: {
+            required: true,
+            schemes: ['x-api-key', 'authorization: bearer', 'authorization: basic'],
+        },
+        endpoints: [
+            { method: 'GET', path: '/api/v1/meta' },
+            { method: 'GET', path: '/api/v1/automation/snapshot' },
+            { method: 'GET', path: '/api/v1/automation/incidents?limit=25' },
+            { method: 'POST', path: '/api/v1/automation/controls/pause' },
+            { method: 'POST', path: '/api/v1/automation/controls/resume' },
+            { method: 'POST', path: '/api/v1/automation/controls/quarantine' },
+        ],
+    });
+});
+
+app.get('/api/v1/automation/snapshot', async (_req, res) => {
+    try {
+        const localDate = getLocalDateString();
+        const [kpi, riskInputs, runtimePause, isQuarantinedRaw, incidents, observability] = await Promise.all([
+            getGlobalKPIData(),
+            getRiskInputs(localDate, config.hardInviteCap),
+            getRuntimeFlag('automation_paused_until'),
+            getRuntimeFlag('account_quarantine'),
+            listOpenIncidents(),
+            getOperationalObservabilitySnapshot(localDate),
+        ]);
+        const risk = await evaluateRisk(riskInputs);
+        const isQuarantined = isQuarantinedRaw === 'true';
+        const criticalIncidents = incidents.filter((incident) => incident.severity === 'CRITICAL');
+
+        sendApiV1(res, {
+            localDate,
+            system: {
+                pausedUntil: runtimePause ?? null,
+                quarantined: isQuarantined,
+            },
+            funnel: {
+                totalLeads: kpi.totalLeads,
+                invited: kpi.statusCounts['INVITED'] ?? 0,
+                accepted: kpi.statusCounts['ACCEPTED'] ?? 0,
+                readyMessage: kpi.statusCounts['READY_MESSAGE'] ?? 0,
+                messaged: kpi.statusCounts['MESSAGED'] ?? 0,
+                replied: kpi.statusCounts['REPLIED'] ?? 0,
+            },
+            risk: {
+                score: risk.score,
+                action: risk.action,
+                pendingRatio: risk.pendingRatio,
+                errorRate: risk.errorRate,
+                selectorFailureRate: risk.selectorFailureRate,
+                challengeCount: risk.challengeCount,
+                inviteVelocityRatio: risk.inviteVelocityRatio,
+            },
+            incidents: {
+                openCount: incidents.length,
+                criticalCount: criticalIncidents.length,
+            },
+            observability: {
+                queueLagSeconds: observability.queueLagSeconds,
+                oldestRunningJobSeconds: observability.oldestRunningJobSeconds,
+                runErrors: observability.runErrors,
+                selectorFailures: observability.selectorFailures,
+                challengesCount: observability.challengesCount,
+                sloStatus: observability.slo.status,
+                selectorCacheKpi: {
+                    windowDays: observability.selectorCacheKpi.windowDays,
+                    currentFailures: observability.selectorCacheKpi.currentFailures,
+                    previousFailures: observability.selectorCacheKpi.previousFailures,
+                    reductionPct: observability.selectorCacheKpi.reductionPct,
+                    targetReductionPct: Number.parseFloat((observability.selectorCacheKpi.targetReductionRate * 100).toFixed(2)),
+                    minBaselineFailures: observability.selectorCacheKpi.minBaselineFailures,
+                    baselineSufficient: observability.selectorCacheKpi.baselineSufficient,
+                    validationStatus: observability.selectorCacheKpi.validationStatus,
+                    targetMet: observability.selectorCacheKpi.targetMet,
+                },
+            },
+        });
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.v1.automation.snapshot');
+    }
+});
+
+app.get('/api/v1/automation/incidents', async (req, res) => {
+    try {
+        const rawLimit = Number.parseInt(String(req.query.limit ?? '25'), 10);
+        const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(100, rawLimit)) : 25;
+        const incidents = await listOpenIncidents();
+        sendApiV1(res, {
+            count: incidents.length,
+            limit,
+            rows: incidents.slice(0, limit),
+        });
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.v1.automation.incidents');
+    }
+});
+
+app.post('/api/v1/automation/controls/pause', async (req, res) => {
+    try {
+        const rawMinutes = req.body?.minutes;
+        const minutes = typeof rawMinutes === 'number' && rawMinutes > 0 ? Math.min(rawMinutes, 10080) : 1440;
+        await pauseAutomation('MANUAL_API_V1_PAUSE', { source: 'api_v1' }, minutes);
+        auditSecurityEvent({
+            category: 'runtime_control',
+            action: 'pause',
+            actor: resolveRequestIp(req),
+            result: 'ALLOW',
+            metadata: {
+                minutes,
+                source: 'api_v1',
+            },
+        });
+        sendApiV1(res, {
+            success: true,
+            action: 'pause',
+            minutes,
+        });
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.v1.automation.controls.pause');
+    }
+});
+
+app.post('/api/v1/automation/controls/resume', async (req, res) => {
+    try {
+        await resumeAutomation();
+        auditSecurityEvent({
+            category: 'runtime_control',
+            action: 'resume',
+            actor: resolveRequestIp(req),
+            result: 'ALLOW',
+            metadata: {
+                source: 'api_v1',
+            },
+        });
+        sendApiV1(res, {
+            success: true,
+            action: 'resume',
+        });
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.v1.automation.controls.resume');
+    }
+});
+
+app.post('/api/v1/automation/controls/quarantine', async (req, res) => {
+    try {
+        const enabled = req.body?.enabled === true;
+        await setQuarantine(enabled);
+        auditSecurityEvent({
+            category: 'runtime_control',
+            action: enabled ? 'quarantine_enable' : 'quarantine_disable',
+            actor: resolveRequestIp(req),
+            result: 'ALLOW',
+            metadata: {
+                enabled,
+                source: 'api_v1',
+            },
+        });
+        sendApiV1(res, {
+            success: true,
+            action: 'quarantine',
+            enabled,
+        });
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.v1.automation.controls.quarantine');
+    }
 });
 
 // ── Session bootstrap (cookie-based auth for browser SSE/fetch) ─────────────
@@ -706,11 +919,26 @@ app.get('/api/ml/ab-leaderboard', async (_req, res) => {
 // ── Timing Optimizer ──────────────────────────────────────────────────────────
 app.get('/api/ml/timing-slots', async (req, res) => {
     try {
-        const { getTopTimeSlots } = await import('../ml/timingOptimizer');
+        const { getTopTimeSlots, getTimingExperimentReport } = await import('../ml/timingOptimizer');
         const rawN = Number.parseInt(String(req.query.n ?? '5'), 10);
         const n = Number.isFinite(rawN) && rawN > 0 ? Math.min(10, rawN) : 5;
-        const slots = await getTopTimeSlots(n);
-        res.json(slots);
+        const action = String(req.query.action ?? 'invite') === 'message' ? 'message' : 'invite';
+        const includeExperiment = String(req.query.includeExperiment ?? 'false').toLowerCase() === 'true';
+        const lookbackDaysRaw = Number.parseInt(String(req.query.lookbackDays ?? '30'), 10);
+        const lookbackDays = Number.isFinite(lookbackDaysRaw) && lookbackDaysRaw > 0
+            ? Math.min(180, lookbackDaysRaw)
+            : 30;
+        const slots = await getTopTimeSlots(n, action);
+        if (!includeExperiment) {
+            res.json(slots);
+            return;
+        }
+        const experiment = await getTimingExperimentReport(action, lookbackDays);
+        res.json({
+            action,
+            slots,
+            experiment,
+        });
     } catch (err: unknown) {
         handleApiError(res, err, 'api.ml.timing-slots');
     }
@@ -750,23 +978,25 @@ app.post('/api/incidents/:id/resolve', async (req, res) => {
     }
 });
 
-// ── Trend 7 giorni ────────────────────────────────────────────────────────────
-app.get('/api/stats/trend', async (_req, res) => {
+// ── Trend giornaliero (default 7 giorni, max 30) ─────────────────────────────
+app.get('/api/stats/trend', async (req, res) => {
     try {
+        const rawDays = Number.parseInt(String(req.query.days ?? '7'), 10);
+        const days = Number.isFinite(rawDays) ? Math.max(1, Math.min(30, rawDays)) : 7;
         const today = new Date();
         const trend: DailyTrendRow[] = [];
         const localDate = getLocalDateString();
         const currentRiskInputs = await getRiskInputs(localDate, config.hardInviteCap);
         const pendingRatioReference = currentRiskInputs.pendingRatio;
 
-        for (let i = 6; i >= 0; i--) {
+        for (let i = days - 1; i >= 0; i--) {
             const d = new Date(today);
             d.setDate(d.getDate() - i);
             const dateStr = getLocalDateString(d);
             const [invites, messages, acceptances, runErrors, challenges] = await Promise.all([
                 getDailyStat(dateStr, 'invites_sent'),
                 getDailyStat(dateStr, 'messages_sent'),
-                getDailyStat(dateStr, 'acceptances' as Parameters<typeof getDailyStat>[1]),
+                getDailyStat(dateStr, 'acceptances'),
                 getDailyStat(dateStr, 'run_errors'),
                 getDailyStat(dateStr, 'challenges_count'),
             ]);
@@ -789,7 +1019,10 @@ app.get('/api/stats/trend', async (_req, res) => {
             });
         }
 
-        res.json(trend);
+        res.json({
+            days,
+            rows: trend,
+        });
     } catch (err: unknown) {
         handleApiError(res, err, 'api.stats.trend');
     }
@@ -806,11 +1039,22 @@ app.get('/api/observability', async (_req, res) => {
                 maxRunErrorsPerDay: config.maxRunErrorsPerDay,
                 jobStuckMinutes: config.jobStuckMinutes,
                 workflowLoopIntervalMs: config.workflowLoopIntervalMs,
+                slo: snapshot.slo.thresholds,
             },
             circuitBreakers: getCircuitBreakerSnapshot(),
         });
     } catch (err: unknown) {
         handleApiError(res, err, 'api.observability');
+    }
+});
+
+app.get('/api/observability/slo', async (_req, res) => {
+    try {
+        const localDate = getLocalDateString();
+        const snapshot = await getOperationalObservabilitySnapshot(localDate);
+        res.json(snapshot.slo);
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.observability.slo');
     }
 });
 
@@ -886,6 +1130,106 @@ app.post('/api/ai/quality/run', async (req, res) => {
         res.json(run);
     } catch (err: unknown) {
         handleApiError(res, err, 'api.ai.quality.run');
+    }
+});
+
+
+app.get('/api/ai/comment-suggestions', async (req, res) => {
+    try {
+        const rawLimit = Number.parseInt(String(req.query.limit ?? '25'), 10);
+        const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(100, rawLimit)) : 25;
+        const rawStatus = typeof req.query.status === 'string'
+            ? req.query.status.trim().toUpperCase()
+            : 'REVIEW_PENDING';
+        if (rawStatus !== 'REVIEW_PENDING' && rawStatus !== 'APPROVED' && rawStatus !== 'REJECTED') {
+            res.status(400).json({ error: 'Parametro status non valido.' });
+            return;
+        }
+
+        const rows = await listCommentSuggestionsForReview(limit, rawStatus);
+        res.json({
+            status: rawStatus,
+            count: rows.length,
+            rows,
+        });
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.ai.comment-suggestions');
+    }
+});
+
+app.post('/api/ai/comment-suggestions/:leadId/:suggestionIndex/approve', async (req, res) => {
+    const leadId = Number.parseInt(String(req.params.leadId ?? ''), 10);
+    const suggestionIndex = Number.parseInt(String(req.params.suggestionIndex ?? ''), 10);
+    if (!Number.isFinite(leadId) || leadId <= 0 || !Number.isFinite(suggestionIndex) || suggestionIndex < 0) {
+        res.status(400).json({ error: 'Parametri non validi.' });
+        return;
+    }
+
+    try {
+        const comment = typeof req.body?.comment === 'string'
+            ? req.body.comment.trim()
+            : undefined;
+        const result = await reviewCommentSuggestion({
+            leadId,
+            suggestionIndex,
+            action: 'approve',
+            reviewer: resolveRequestIp(req),
+            comment,
+        });
+        auditSecurityEvent({
+            category: 'ai_quality',
+            action: 'comment_suggestion_approve',
+            actor: resolveRequestIp(req),
+            result: 'ALLOW',
+            metadata: {
+                leadId,
+                suggestionIndex,
+            },
+        });
+        res.json(result);
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : '';
+        if (message.startsWith('lead_not_found:') || message.startsWith('comment_suggestion_not_found:')) {
+            res.status(404).json({ error: 'Suggestion non trovata.' });
+            return;
+        }
+        handleApiError(res, err, 'api.ai.comment-suggestions.approve');
+    }
+});
+
+app.post('/api/ai/comment-suggestions/:leadId/:suggestionIndex/reject', async (req, res) => {
+    const leadId = Number.parseInt(String(req.params.leadId ?? ''), 10);
+    const suggestionIndex = Number.parseInt(String(req.params.suggestionIndex ?? ''), 10);
+    if (!Number.isFinite(leadId) || leadId <= 0 || !Number.isFinite(suggestionIndex) || suggestionIndex < 0) {
+        res.status(400).json({ error: 'Parametri non validi.' });
+        return;
+    }
+
+    try {
+        const result = await reviewCommentSuggestion({
+            leadId,
+            suggestionIndex,
+            action: 'reject',
+            reviewer: resolveRequestIp(req),
+        });
+        auditSecurityEvent({
+            category: 'ai_quality',
+            action: 'comment_suggestion_reject',
+            actor: resolveRequestIp(req),
+            result: 'ALLOW',
+            metadata: {
+                leadId,
+                suggestionIndex,
+            },
+        });
+        res.json(result);
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : '';
+        if (message.startsWith('lead_not_found:') || message.startsWith('comment_suggestion_not_found:')) {
+            res.status(404).json({ error: 'Suggestion non trovata.' });
+            return;
+        }
+        handleApiError(res, err, 'api.ai.comment-suggestions.reject');
     }
 });
 
@@ -1016,6 +1360,32 @@ app.post('/api/controls/quarantine', async (req, res) => {
         handleApiError(res, err, 'api.controls.quarantine');
     }
 });
+
+// ── API v1 — Campaigns (Drip Flows) ──────────────────────────────────────────
+
+// GET /api/v1/campaigns — list campaigns with step count
+app.get('/api/v1/campaigns', async (_req, res) => {
+    try {
+        const db = await getDatabase();
+        const rows = await db.query<{ id: number; name: string; active: number; steps_count: number; created_at: string }>(
+            `
+            SELECT c.id, c.name, c.active, COUNT(cs.id) AS steps_count, c.created_at
+            FROM campaigns c
+            LEFT JOIN campaign_steps cs ON cs.campaign_id = c.id
+            GROUP BY c.id
+            ORDER BY c.id DESC
+            `
+        );
+        sendApiV1(res, { count: rows.length, rows });
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.v1.campaigns.list');
+    }
+});
+
+// ==========================================
+// CAMPAIGNS (Router Esterno)
+// ==========================================
+app.use('/api/v1/campaigns', campaignsRouter);
 
 // ── 404 catch-all ─────────────────────────────────────────────────────────────
 app.use('/api/', (_req, res) => {

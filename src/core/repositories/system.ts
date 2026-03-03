@@ -5,7 +5,7 @@
 
 import { getDatabase } from '../../db';
 import { OutboxEventRecord } from '../../types/domain';
-import type { CloudAccount, CloudLeadUpsert } from '../../cloud/supabaseDataClient';
+import type { CloudAccount, CloudLeadUpsert } from '../../cloud/types';
 import { getCorrelationId } from '../../telemetry/correlation';
 import {
     type AcquireRuntimeLockResult,
@@ -100,16 +100,154 @@ export async function pushOutboxEvent(topic: string, payload: Record<string, unk
 
 export async function getPendingOutboxEvents(limit: number): Promise<OutboxEventRecord[]> {
     const db = await getDatabase();
+    const safeLimit = Math.max(1, Math.floor(limit));
     return db.query<OutboxEventRecord>(
         `
         SELECT ${OUTBOX_SELECT_COLUMNS} FROM outbox_events
         WHERE delivered_at IS NULL
           AND next_retry_at <= CURRENT_TIMESTAMP
+          AND (processing_expires_at IS NULL OR processing_expires_at <= CURRENT_TIMESTAMP)
         ORDER BY created_at ASC
         LIMIT ?
     `,
-        [limit]
+        [safeLimit]
     );
+}
+
+export async function claimPendingOutboxEvents(
+    limit: number,
+    ownerId: string,
+    leaseSeconds: number
+): Promise<OutboxEventRecord[]> {
+    const db = await getDatabase();
+    const safeLimit = Math.max(1, Math.floor(limit));
+    const safeLeaseSeconds = Math.max(5, Math.floor(leaseSeconds));
+    const normalizedOwner = ownerId.trim() || 'outbox-worker';
+
+    return withTransaction(db, async () => {
+        const candidateRows = await db.query<{ id: number }>(
+            `
+            SELECT id
+            FROM outbox_events
+            WHERE delivered_at IS NULL
+              AND next_retry_at <= CURRENT_TIMESTAMP
+              AND (processing_expires_at IS NULL OR processing_expires_at <= CURRENT_TIMESTAMP)
+            ORDER BY created_at ASC
+            LIMIT ?
+        `,
+            [Math.max(safeLimit * 4, safeLimit)]
+        );
+
+        const claimedIds: number[] = [];
+        for (const candidate of candidateRows) {
+            if (claimedIds.length >= safeLimit) {
+                break;
+            }
+
+            const claimResult = await db.run(
+                `
+                UPDATE outbox_events
+                SET processing_owner = ?,
+                    processing_started_at = CURRENT_TIMESTAMP,
+                    processing_expires_at = DATETIME('now', '+' || ? || ' seconds')
+                WHERE id = ?
+                  AND delivered_at IS NULL
+                  AND next_retry_at <= CURRENT_TIMESTAMP
+                  AND (processing_expires_at IS NULL OR processing_expires_at <= CURRENT_TIMESTAMP)
+            `,
+                [normalizedOwner, safeLeaseSeconds, candidate.id]
+            );
+            if ((claimResult.changes ?? 0) > 0) {
+                claimedIds.push(candidate.id);
+            }
+        }
+
+        if (claimedIds.length === 0) {
+            return [];
+        }
+
+        const placeholders = claimedIds.map(() => '?').join(', ');
+        return db.query<OutboxEventRecord>(
+            `
+            SELECT ${OUTBOX_SELECT_COLUMNS}
+            FROM outbox_events
+            WHERE id IN (${placeholders})
+            ORDER BY created_at ASC
+        `,
+            claimedIds
+        );
+    });
+}
+
+export async function markOutboxDeliveredClaimed(eventId: number, ownerId: string): Promise<boolean> {
+    const db = await getDatabase();
+    const result = await db.run(
+        `
+        UPDATE outbox_events
+        SET delivered_at = CURRENT_TIMESTAMP,
+            last_error = NULL,
+            processing_owner = NULL,
+            processing_started_at = NULL,
+            processing_expires_at = NULL
+        WHERE id = ?
+          AND delivered_at IS NULL
+          AND processing_owner = ?
+    `,
+        [eventId, ownerId]
+    );
+    return (result.changes ?? 0) > 0;
+}
+
+export async function markOutboxRetryClaimed(
+    eventId: number,
+    ownerId: string,
+    attempts: number,
+    retryDelayMs: number,
+    errorMessage: string
+): Promise<boolean> {
+    const db = await getDatabase();
+    const seconds = Math.max(1, Math.ceil(retryDelayMs / 1000));
+    const result = await db.run(
+        `
+        UPDATE outbox_events
+        SET attempts = ?,
+            next_retry_at = DATETIME('now', '+' || ? || ' seconds'),
+            last_error = ?,
+            processing_owner = NULL,
+            processing_started_at = NULL,
+            processing_expires_at = NULL
+        WHERE id = ?
+          AND delivered_at IS NULL
+          AND processing_owner = ?
+    `,
+        [attempts, seconds, errorMessage, eventId, ownerId]
+    );
+    return (result.changes ?? 0) > 0;
+}
+
+export async function markOutboxPermanentFailureClaimed(
+    eventId: number,
+    ownerId: string,
+    attempts: number,
+    errorMessage: string
+): Promise<boolean> {
+    const db = await getDatabase();
+    const result = await db.run(
+        `
+        UPDATE outbox_events
+        SET attempts = ?,
+            delivered_at = CURRENT_TIMESTAMP,
+            last_error = ?,
+            processing_owner = NULL,
+            processing_started_at = NULL,
+            processing_expires_at = NULL
+        WHERE id = ?
+          AND delivered_at IS NULL
+          AND processing_owner = ?
+    `,
+        [attempts, `PERMANENT_FAILURE: ${errorMessage}`, eventId, ownerId]
+    );
+    return (result.changes ?? 0) > 0;
 }
 
 export async function markOutboxDelivered(eventId: number): Promise<void> {
@@ -118,7 +256,10 @@ export async function markOutboxDelivered(eventId: number): Promise<void> {
         `
         UPDATE outbox_events
         SET delivered_at = CURRENT_TIMESTAMP,
-            last_error = NULL
+            last_error = NULL,
+            processing_owner = NULL,
+            processing_started_at = NULL,
+            processing_expires_at = NULL
         WHERE id = ?
     `,
         [eventId]
@@ -133,7 +274,10 @@ export async function markOutboxRetry(eventId: number, attempts: number, retryDe
         UPDATE outbox_events
         SET attempts = ?,
             next_retry_at = DATETIME('now', '+' || ? || ' seconds'),
-            last_error = ?
+            last_error = ?,
+            processing_owner = NULL,
+            processing_started_at = NULL,
+            processing_expires_at = NULL
         WHERE id = ?
     `,
         [attempts, seconds, errorMessage, eventId]
@@ -147,7 +291,10 @@ export async function markOutboxPermanentFailure(eventId: number, attempts: numb
         UPDATE outbox_events
         SET attempts = ?,
             delivered_at = CURRENT_TIMESTAMP,
-            last_error = ?
+            last_error = ?,
+            processing_owner = NULL,
+            processing_started_at = NULL,
+            processing_expires_at = NULL
         WHERE id = ?
     `,
         [attempts, `PERMANENT_FAILURE: ${errorMessage}`, eventId]
@@ -516,6 +663,33 @@ export async function listSecurityAuditEvents(limit: number = 50, category?: str
     `,
         [Math.max(1, limit)]
     );
+}
+
+export async function countSecurityAuditEventsSince(sinceIso: string, category?: string): Promise<number> {
+    await ensureGovernanceTables();
+    const db = await getDatabase();
+    if (category && category.trim()) {
+        const row = await db.get<{ total: number }>(
+            `
+            SELECT COUNT(*) as total
+            FROM security_audit_events
+            WHERE created_at >= ?
+              AND category = ?
+        `,
+            [sinceIso, category.trim()]
+        );
+        return row?.total ?? 0;
+    }
+
+    const row = await db.get<{ total: number }>(
+        `
+        SELECT COUNT(*) as total
+        FROM security_audit_events
+        WHERE created_at >= ?
+    `,
+        [sinceIso]
+    );
+    return row?.total ?? 0;
 }
 
 export async function recordAccountHealthSnapshot(input: AccountHealthSnapshotInput): Promise<void> {

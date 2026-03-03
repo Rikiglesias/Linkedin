@@ -33,25 +33,45 @@ function daysSince(iso: string | null | undefined): number {
     return Math.floor(diffMs / (1000 * 60 * 60 * 24));
 }
 
-function resolveIntentAwareDelayDays(intent: string | null | undefined): number {
-    const normalized = (intent ?? '').toUpperCase();
-    if (normalized === 'QUESTIONS') {
-        return config.followUpQuestionsDelayDays;
-    }
-    if (normalized === 'NEGATIVE') {
-        return config.followUpNegativeDelayDays;
-    }
-    if (normalized === 'NOT_INTERESTED') {
-        return config.followUpNotInterestedDelayDays;
-    }
-    return config.followUpDelayDays;
-}
-
 interface LeadIntentHint {
     intent: string;
     subIntent: string;
     confidence: number;
     entities: string[];
+}
+
+interface FollowUpCadence {
+    baseDelayDays: number;
+    escalationMultiplier: number;
+    jitterDays: number;
+    requiredDelayDays: number;
+    referenceDaysSince: number;
+    referenceAt: string | null;
+    reason: string;
+}
+
+function seededUnit(seed: number): number {
+    const x = Math.sin(seed) * 10000;
+    return x - Math.floor(x);
+}
+
+function deterministicGaussian(
+    leadId: number,
+    followUpCount: number,
+    intent: string,
+    subIntent: string
+): number {
+    const salt = `${leadId}|${followUpCount}|${intent}|${subIntent}`;
+    let hash = 2166136261;
+    for (let i = 0; i < salt.length; i++) {
+        hash ^= salt.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+    }
+    const seedBase = Math.abs(hash >>> 0) + 1;
+    const u1 = Math.max(0.000001, seededUnit(seedBase + 17));
+    const u2 = Math.max(0.000001, seededUnit(seedBase + 97));
+    const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    return Math.max(-2.5, Math.min(2.5, z));
 }
 
 /**
@@ -96,7 +116,14 @@ async function processSingleFollowUp(
     // Cerca bottone messaggio
     await humanMouseMove(context.session.page, joinSelectors('messageButton'));
     await humanDelay(context.session.page, 120, 320);
-    const openedThread = await clickWithFallback(context.session.page, SELECTORS.messageButton, 'messageButton')
+    const openedThread = await clickWithFallback(context.session.page, SELECTORS.messageButton, 'messageButton', {
+        timeoutPerSelector: 5000,
+        postClickDelayMs: 120,
+        verify: async (activePage) => {
+            await activePage.waitForSelector(joinSelectors('messageTextbox'), { timeout: 2500 });
+            return true;
+        },
+    })
         .then(() => true)
         .catch(() => false);
     if (!openedThread) {
@@ -184,14 +211,20 @@ export async function runFollowUpWorker(
 
         try {
             const intentHint = await getLeadIntent(lead.id);
-            const requiredDelayDays = resolveIntentAwareDelayDays(intentHint?.intent);
-            const leadDaysSinceMessage = daysSince(lead.messaged_at ?? null);
-            if (leadDaysSinceMessage < requiredDelayDays) {
+            const cadence = resolveFollowUpCadence(lead, intentHint);
+            if (cadence.referenceDaysSince < cadence.requiredDelayDays) {
                 await logInfo('follow_up.skipped_not_due', {
                     leadId: lead.id,
                     intent: intentHint?.intent ?? 'UNKNOWN',
-                    daysSinceMessage: leadDaysSinceMessage,
-                    requiredDelayDays,
+                    subIntent: intentHint?.subIntent ?? 'NONE',
+                    daysSinceReference: cadence.referenceDaysSince,
+                    requiredDelayDays: cadence.requiredDelayDays,
+                    baseDelayDays: cadence.baseDelayDays,
+                    escalationMultiplier: cadence.escalationMultiplier,
+                    jitterDays: cadence.jitterDays,
+                    reason: cadence.reason,
+                    referenceAt: cadence.referenceAt,
+                    followUpCount: lead.follow_up_count ?? 0,
                 });
                 continue;
             }
@@ -225,4 +258,68 @@ export async function runFollowUpWorker(
 
     await logInfo('follow_up.done', { sent, attempted, errors: errors.length, total: leads.length });
     return workerResult(attempted, errors);
+}
+
+function resolveIntentBaseDelayDays(intent: string | null | undefined, subIntent: string | null | undefined): { baseDelayDays: number; reason: string } {
+    const normalizedIntent = (intent ?? '').toUpperCase();
+    const normalizedSubIntent = (subIntent ?? '').toUpperCase();
+
+    if (normalizedIntent === 'NOT_INTERESTED') {
+        return { baseDelayDays: config.followUpNotInterestedDelayDays, reason: 'intent_not_interested' };
+    }
+
+    if (normalizedIntent === 'NEGATIVE') {
+        if (normalizedSubIntent === 'OBJECTION_HANDLING') {
+            const objectionDelay = Math.max(
+                config.followUpQuestionsDelayDays,
+                Math.floor((config.followUpNegativeDelayDays + config.followUpQuestionsDelayDays) / 2)
+            );
+            return { baseDelayDays: objectionDelay, reason: 'intent_negative_objection' };
+        }
+        return { baseDelayDays: config.followUpNegativeDelayDays, reason: 'intent_negative' };
+    }
+
+    if (normalizedIntent === 'QUESTIONS') {
+        return { baseDelayDays: config.followUpQuestionsDelayDays, reason: 'intent_questions' };
+    }
+
+    if (normalizedSubIntent === 'CALL_REQUESTED' || normalizedSubIntent === 'REFERRAL' || normalizedSubIntent === 'PRICE_INQUIRY') {
+        return {
+            baseDelayDays: Math.max(1, Math.min(config.followUpQuestionsDelayDays, config.followUpDelayDays)),
+            reason: `sub_intent_${normalizedSubIntent.toLowerCase()}`,
+        };
+    }
+
+    return { baseDelayDays: config.followUpDelayDays, reason: 'intent_default' };
+}
+
+export function resolveFollowUpCadence(
+    lead: Pick<LeadRecord, 'id' | 'messaged_at' | 'follow_up_sent_at' | 'follow_up_count'>,
+    intentHint: LeadIntentHint | null
+): FollowUpCadence {
+    const baseDelay = resolveIntentBaseDelayDays(intentHint?.intent, intentHint?.subIntent);
+    const followUpCount = Math.max(0, lead.follow_up_count ?? 0);
+    const escalationMultiplier = 1 + (followUpCount * config.followUpDelayEscalationFactor);
+    const escalatedDelay = Math.max(1, Math.round(baseDelay.baseDelayDays * escalationMultiplier));
+
+    const gaussian = deterministicGaussian(
+        lead.id,
+        followUpCount,
+        intentHint?.intent ?? 'UNKNOWN',
+        intentHint?.subIntent ?? 'NONE'
+    );
+    const jitterDays = Math.round(gaussian * config.followUpDelayStddevDays);
+    const requiredDelayDays = Math.max(1, escalatedDelay + jitterDays);
+    const referenceAt = lead.follow_up_sent_at ?? lead.messaged_at ?? null;
+    const referenceDaysSince = daysSince(referenceAt);
+
+    return {
+        baseDelayDays: baseDelay.baseDelayDays,
+        escalationMultiplier,
+        jitterDays,
+        requiredDelayDays,
+        referenceDaysSince,
+        referenceAt,
+        reason: baseDelay.reason,
+    };
 }

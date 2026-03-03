@@ -616,6 +616,90 @@ export async function updateLeadScores(leadId: number, leadScore: number | null,
     );
 }
 
+export type LeadTimingStrategy = 'baseline' | 'optimizer';
+export type LeadTimingAction = 'invite' | 'message';
+
+export interface LeadTimingAttributionInput {
+    strategy: LeadTimingStrategy;
+    segment?: string;
+    score?: number;
+    slotHour?: number | null;
+    slotDow?: number | null;
+    delaySec?: number;
+    model?: string;
+}
+
+function clampHour(value: number | null | undefined): number | null {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+    const rounded = Math.floor(value);
+    if (rounded < 0 || rounded > 23) return null;
+    return rounded;
+}
+
+function clampDow(value: number | null | undefined): number | null {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+    const rounded = Math.floor(value);
+    if (rounded < 0 || rounded > 6) return null;
+    return rounded;
+}
+
+function clampScore(value: number | undefined): number | null {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+    return Math.max(0, Math.min(1, value));
+}
+
+export async function recordLeadTimingAttribution(
+    leadId: number,
+    action: LeadTimingAction,
+    input: LeadTimingAttributionInput
+): Promise<void> {
+    const db = await getDatabase();
+    const strategy: LeadTimingStrategy = input.strategy === 'optimizer' ? 'optimizer' : 'baseline';
+    const segment = (input.segment ?? 'unknown').trim().toLowerCase() || 'unknown';
+    const score = clampScore(input.score);
+    const slotHour = clampHour(input.slotHour);
+    const slotDow = clampDow(input.slotDow);
+    const delaySec = typeof input.delaySec === 'number' && Number.isFinite(input.delaySec)
+        ? Math.max(0, Math.floor(input.delaySec))
+        : 0;
+    const model = normalizeTextValue(input.model ?? '') || 'timing_optimizer_v2';
+
+    if (action === 'invite') {
+        await db.run(
+            `
+            UPDATE leads
+            SET invite_timing_strategy = ?,
+                invite_timing_segment = ?,
+                invite_timing_score = ?,
+                invite_timing_slot_hour = ?,
+                invite_timing_slot_dow = ?,
+                invite_timing_delay_sec = ?,
+                invite_timing_model = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        `,
+            [strategy, segment, score, slotHour, slotDow, delaySec, model, leadId]
+        );
+        return;
+    }
+
+    await db.run(
+        `
+        UPDATE leads
+        SET message_timing_strategy = ?,
+            message_timing_segment = ?,
+            message_timing_score = ?,
+            message_timing_slot_hour = ?,
+            message_timing_slot_dow = ?,
+            message_timing_delay_sec = ?,
+            message_timing_model = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+    `,
+        [strategy, segment, score, slotHour, slotDow, delaySec, model, leadId]
+    );
+}
+
 export async function getLeadsWithSalesNavigatorUrls(limit: number): Promise<LeadRecord[]> {
     const db = await getDatabase();
     const safeLimit = Math.max(1, limit);
@@ -675,6 +759,92 @@ export async function getLeadsByStatus(status: LeadStatus, limit: number): Promi
         [normalized, limit]
     );
     return leads.map((lead) => ({ ...lead, status: normalizeLegacyStatus(lead.status) }));
+}
+
+export interface ReviewQueueItem {
+    leadId: number;
+    status: LeadStatus;
+    listName: string;
+    accountName: string;
+    linkedinUrl: string;
+    updatedAt: string;
+    reviewReason: string | null;
+    reviewEventAt: string | null;
+    evidencePath: string | null;
+    metadata: Record<string, unknown> | null;
+}
+
+function parseReviewMetadata(raw: string | null): Record<string, unknown> | null {
+    if (!raw || !raw.trim()) return null;
+    try {
+        const parsed = JSON.parse(raw) as unknown;
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+        return parsed as Record<string, unknown>;
+    } catch {
+        return null;
+    }
+}
+
+export async function listReviewQueue(limit: number = 50): Promise<ReviewQueueItem[]> {
+    const db = await getDatabase();
+    const safeLimit = Math.max(1, Math.floor(limit));
+    const rows = await db.query<{
+        lead_id: number;
+        status: string;
+        list_name: string;
+        account_name: string;
+        linkedin_url: string;
+        updated_at: string;
+        review_reason: string | null;
+        review_event_at: string | null;
+        review_metadata_json: string | null;
+    }>(
+        `
+        SELECT
+            l.id AS lead_id,
+            l.status,
+            l.list_name,
+            l.account_name,
+            l.linkedin_url,
+            l.updated_at,
+            e.reason AS review_reason,
+            e.created_at AS review_event_at,
+            e.metadata_json AS review_metadata_json
+        FROM leads l
+        LEFT JOIN lead_events e
+            ON e.id = (
+                SELECT le.id
+                FROM lead_events le
+                WHERE le.lead_id = l.id
+                  AND le.to_status = 'REVIEW_REQUIRED'
+                ORDER BY le.created_at DESC, le.id DESC
+                LIMIT 1
+            )
+        WHERE l.status = 'REVIEW_REQUIRED'
+        ORDER BY COALESCE(e.created_at, l.updated_at) DESC, l.updated_at DESC
+        LIMIT ?
+    `,
+        [safeLimit]
+    );
+
+    return rows.map((row) => {
+        const metadata = parseReviewMetadata(row.review_metadata_json ?? null);
+        const evidencePath = typeof metadata?.evidencePath === 'string'
+            ? metadata.evidencePath
+            : null;
+        return {
+            leadId: row.lead_id,
+            status: normalizeLegacyStatus((row.status ?? 'REVIEW_REQUIRED') as LeadStatus),
+            listName: row.list_name,
+            accountName: row.account_name,
+            linkedinUrl: row.linkedin_url,
+            updatedAt: row.updated_at,
+            reviewReason: row.review_reason,
+            reviewEventAt: row.review_event_at,
+            evidencePath,
+            metadata,
+        };
+    });
 }
 
 export async function getLeadsForFollowUp(
@@ -745,6 +915,14 @@ export async function getLeadsByStatusForList(status: LeadStatus, listName: stri
         FROM leads
         WHERE status = ?
           AND list_name = ?
+          AND NOT EXISTS (
+              SELECT 1 
+              FROM lead_campaign_state lcs
+              JOIN campaigns c ON lcs.campaign_id = c.id
+              WHERE lcs.lead_id = leads.id
+                AND lcs.status IN ('ENROLLED', 'PENDING')
+                AND c.active = 1
+          )
         ORDER BY
             COALESCE(lead_score, -1) DESC,
             created_at ASC

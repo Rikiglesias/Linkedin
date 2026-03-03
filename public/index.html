@@ -22,6 +22,20 @@
         </div>
     </dialog>
 
+    <dialog id="voice-command-modal" aria-labelledby="voice-command-title">
+        <div class="modal-inner">
+            <h2 id="voice-command-title" class="modal-title">Conferma comando vocale</h2>
+            <p class="modal-label">Trascrizione riconosciuta</p>
+            <p id="voice-transcript-text" class="modal-transcript">—</p>
+            <p class="modal-label">Azione</p>
+            <p id="voice-action-summary" class="modal-action-summary">—</p>
+            <div class="modal-actions">
+                <button class="btn btn-warning" id="voice-confirm-btn" type="button">Conferma azione</button>
+                <button class="btn btn-secondary" id="voice-cancel-btn" type="button">Annulla</button>
+            </div>
+        </div>
+    </dialog>
+
     <header class="header">
         <div class="brand-wrap">
             <div class="brand-mark" aria-hidden="true">LB</div>
@@ -38,6 +52,7 @@
             </div>
             <div class="header-actions">
                 <button id="btn-refresh" type="button" class="btn btn-secondary">Aggiorna</button>
+                <button id="btn-voice" type="button" class="btn btn-secondary" aria-pressed="false">Comando Voce</button>
                 <button id="btn-pause" type="button" class="btn btn-warning">Pausa</button>
                 <button id="btn-resume" type="button" class="btn btn-success">Riprendi</button>
             </div>
@@ -45,6 +60,7 @@
     </header>
 
     <p id="action-feedback" class="feedback" role="status" aria-live="polite"></p>
+    <p id="voice-feedback" class="feedback feedback-secondary" role="status" aria-live="polite"></p>
 
     <main id="main-content" class="main">
         <section class="kpi-grid" aria-label="KPI principali">
@@ -104,6 +120,10 @@
                     <p id="kpi-compare-messages">—</p>
                     <p id="kpi-compare-accept">—</p>
                     <p id="kpi-compare-errors">—</p>
+                    <p id="slo-current-status">SLO corrente: —</p>
+                    <p id="slo-7d-status">SLO 7d: —</p>
+                    <p id="slo-30d-status">SLO 30d: —</p>
+                    <p id="selector-cache-kpi">Selector cache KPI: —</p>
                 </div>
                 <div class="table-wrapper compact-table">
                     <table class="data-table" aria-label="Trend ultimi 7 giorni">
@@ -212,7 +232,7 @@
                                 <th>Inviati</th>
                                 <th>Acc%</th>
                                 <th>Reply%</th>
-                                <th>UCB</th>
+                                <th>Bayes</th>
                             </tr>
                         </thead>
                         <tbody id="ab-tbody">
@@ -222,6 +242,30 @@
                 </div>
                 <div id="timing-list" class="timing-list"></div>
             </article>
+        </section>
+
+        <section class="card">
+            <header class="card-header">
+                <h2>Comment Suggestions Review</h2>
+                <p id="comment-suggestions-count" class="card-subtitle">—</p>
+            </header>
+            <div class="table-wrapper">
+                <table class="data-table" aria-label="Code review commenti AI">
+                    <thead>
+                        <tr>
+                            <th>Lead</th>
+                            <th>Lista</th>
+                            <th>Post</th>
+                            <th>Commento</th>
+                            <th>Conf.</th>
+                            <th>Azione</th>
+                        </tr>
+                    </thead>
+                    <tbody id="comment-suggestions-tbody">
+                        <tr><td colspan="6" class="empty-state">Caricamento...</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </section>
 
         <section class="card">

@@ -14,7 +14,7 @@ export type LeadStatus =
     | 'WITHDRAWN'
     | 'PENDING'; // compat legacy
 
-export type JobType = 'INVITE' | 'ACCEPTANCE_CHECK' | 'MESSAGE' | 'HYGIENE';
+export type JobType = 'INVITE' | 'ACCEPTANCE_CHECK' | 'MESSAGE' | 'HYGIENE' | 'INTERACTION';
 
 export type JobStatus = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'DEAD_LETTER' | 'PAUSED';
 
@@ -31,6 +31,8 @@ export interface LeadRecord {
     invited_at: string | null;
     accepted_at: string | null;
     messaged_at: string | null;
+    follow_up_count?: number;
+    follow_up_sent_at?: string | null;
     last_site_check_at?: string | null;
     last_error: string | null;
     blocked_reason: string | null;
@@ -39,6 +41,8 @@ export interface LeadRecord {
     invite_prompt_variant: string | null;
     lead_score: number | null;
     confidence_score: number | null;
+    email?: string | null;
+    phone?: string | null;
     created_at: string;
     updated_at: string | null;
 }
@@ -74,9 +78,27 @@ export interface CampaignRunRecord {
     created_at: string;
 }
 
+export type TimingStrategy = 'baseline' | 'optimizer';
+
+export interface TimingPayloadMetadata {
+    strategy: TimingStrategy;
+    segment?: string;
+    score?: number;
+    sampleSize?: number;
+    slotHour?: number | null;
+    slotDow?: number | null;
+    delaySec?: number;
+    reason?: string;
+    model?: string;
+    explored?: boolean;
+}
+
 export interface InviteJobPayload {
     leadId: number;
     localDate: string;
+    timing?: TimingPayloadMetadata;
+    campaignStateId?: number;
+    metadata_json?: string;
 }
 
 export interface AcceptanceJobPayload {
@@ -86,9 +108,18 @@ export interface AcceptanceJobPayload {
 export interface MessageJobPayload {
     leadId: number;
     acceptedAtDate: string;
+    timing?: TimingPayloadMetadata;
+    campaignStateId?: number;
+    metadata_json?: string;
 }
 
-export type JobPayload = InviteJobPayload | AcceptanceJobPayload | MessageJobPayload;
+export interface InteractionJobPayload {
+    leadId: number;
+    actionType: 'VIEW_PROFILE' | 'LIKE_POST' | 'FOLLOW';
+    campaignStateId?: number;
+}
+
+export type JobPayload = InviteJobPayload | AcceptanceJobPayload | MessageJobPayload | InteractionJobPayload;
 
 export interface RiskInputs {
     pendingRatio: number;

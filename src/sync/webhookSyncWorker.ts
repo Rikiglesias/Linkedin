@@ -4,12 +4,19 @@ import { sendTelegramAlert } from '../telemetry/alerts';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 import {
+    claimPendingOutboxEvents,
     countPendingOutboxEvents,
-    getPendingOutboxEvents,
-    markOutboxDelivered,
-    markOutboxPermanentFailure,
-    markOutboxRetry,
+    getRuntimeFlag,
+    markOutboxDeliveredClaimed,
+    markOutboxPermanentFailureClaimed,
+    markOutboxRetryClaimed,
+    setRuntimeFlag,
 } from '../core/repositories';
+import {
+    clampBackpressureLevel,
+    computeBackpressureBatchSize,
+    computeNextBackpressureLevel,
+} from './backpressure';
 
 function retryDelayMs(attempt: number): number {
     const base = Math.max(1000, config.webhookSyncTimeoutMs);
@@ -51,16 +58,33 @@ export interface WebhookSyncStatus {
     configured: boolean;
     pendingOutbox: number;
     endpointHost: string | null;
+    backpressureLevel: number;
+    effectiveBatchSize: number;
+}
+
+const WEBHOOK_BACKPRESSURE_LEVEL_KEY = 'sync.backpressure.webhook.level';
+
+async function getWebhookBackpressureLevel(): Promise<number> {
+    const raw = await getRuntimeFlag(WEBHOOK_BACKPRESSURE_LEVEL_KEY);
+    const parsed = raw ? Number.parseInt(raw, 10) : 1;
+    return clampBackpressureLevel(parsed);
+}
+
+async function setWebhookBackpressureLevel(level: number): Promise<void> {
+    await setRuntimeFlag(WEBHOOK_BACKPRESSURE_LEVEL_KEY, String(clampBackpressureLevel(level)));
 }
 
 export async function getWebhookSyncStatus(): Promise<WebhookSyncStatus> {
     const pendingOutbox = await countPendingOutboxEvents();
     const configured = !!config.webhookSyncUrl;
+    const backpressureLevel = await getWebhookBackpressureLevel();
     return {
         enabled: config.webhookSyncEnabled,
         configured,
         pendingOutbox,
         endpointHost: configured ? endpointHost(config.webhookSyncUrl) : null,
+        backpressureLevel,
+        effectiveBatchSize: computeBackpressureBatchSize(config.webhookSyncBatchSize, backpressureLevel),
     };
 }
 
@@ -69,7 +93,11 @@ export async function runWebhookSyncOnce(): Promise<void> {
         return;
     }
 
-    const events = await getPendingOutboxEvents(config.webhookSyncBatchSize);
+    const backpressureLevel = await getWebhookBackpressureLevel();
+    const effectiveBatchSize = computeBackpressureBatchSize(config.webhookSyncBatchSize, backpressureLevel);
+    const ownerId = `webhook-sync:${process.pid}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
+    const leaseSeconds = Math.max(30, Math.ceil(config.webhookSyncTimeoutMs / 1000) * 3);
+    const events = await claimPendingOutboxEvents(effectiveBatchSize, ownerId, leaseSeconds);
     if (events.length === 0) {
         return;
     }
@@ -116,7 +144,16 @@ export async function runWebhookSyncOnce(): Promise<void> {
                 const attempts = event.attempts + 1;
                 if (attempts >= config.webhookSyncMaxRetries) {
                     permanentFailures += 1;
-                    await markOutboxPermanentFailure(event.id, attempts, errorMessage);
+                    const marked = await markOutboxPermanentFailureClaimed(event.id, ownerId, attempts, errorMessage);
+                    if (!marked) {
+                        await logWarn('webhook.sync.event.claim_lost', {
+                            eventId: event.id,
+                            idempotencyKey: event.idempotency_key,
+                            ownerId,
+                            phase: 'permanent_failure',
+                        });
+                        continue;
+                    }
                     await logWarn('webhook.sync.event.permanent_failure', {
                         eventId: event.id,
                         idempotencyKey: event.idempotency_key,
@@ -126,20 +163,45 @@ export async function runWebhookSyncOnce(): Promise<void> {
                     });
                 } else {
                     const delay = retryDelayMs(attempts);
-                    await markOutboxRetry(event.id, attempts, delay, errorMessage);
+                    const marked = await markOutboxRetryClaimed(event.id, ownerId, attempts, delay, errorMessage);
+                    if (!marked) {
+                        await logWarn('webhook.sync.event.claim_lost', {
+                            eventId: event.id,
+                            idempotencyKey: event.idempotency_key,
+                            ownerId,
+                            phase: 'retry',
+                        });
+                    }
                 }
                 continue;
             }
 
             sent += 1;
-            await markOutboxDelivered(event.id);
+            const delivered = await markOutboxDeliveredClaimed(event.id, ownerId);
+            if (!delivered) {
+                await logWarn('webhook.sync.event.claim_lost', {
+                    eventId: event.id,
+                    idempotencyKey: event.idempotency_key,
+                    ownerId,
+                    phase: 'delivered',
+                });
+            }
         } catch (error) {
             failed += 1;
             const attempts = event.attempts + 1;
             const message = error instanceof Error ? error.message : String(error);
             if (attempts >= config.webhookSyncMaxRetries) {
                 permanentFailures += 1;
-                await markOutboxPermanentFailure(event.id, attempts, message);
+                const marked = await markOutboxPermanentFailureClaimed(event.id, ownerId, attempts, message);
+                if (!marked) {
+                    await logWarn('webhook.sync.event.claim_lost', {
+                        eventId: event.id,
+                        idempotencyKey: event.idempotency_key,
+                        ownerId,
+                        phase: 'exception_permanent_failure',
+                    });
+                    continue;
+                }
                 await logWarn('webhook.sync.event.permanent_failure', {
                     eventId: event.id,
                     idempotencyKey: event.idempotency_key,
@@ -149,7 +211,15 @@ export async function runWebhookSyncOnce(): Promise<void> {
                 });
             } else {
                 const delay = retryDelayMs(attempts);
-                await markOutboxRetry(event.id, attempts, delay, message);
+                const marked = await markOutboxRetryClaimed(event.id, ownerId, attempts, delay, message);
+                if (!marked) {
+                    await logWarn('webhook.sync.event.claim_lost', {
+                        eventId: event.id,
+                        idempotencyKey: event.idempotency_key,
+                        ownerId,
+                        phase: 'exception_retry',
+                    });
+                }
             }
         }
     }
@@ -159,9 +229,29 @@ export async function runWebhookSyncOnce(): Promise<void> {
         failed,
         permanentFailures,
         batchSize: events.length,
+        baseBatchSize: config.webhookSyncBatchSize,
+        effectiveBatchSize,
+        backpressureLevel,
         maxRetries: config.webhookSyncMaxRetries,
         endpointHost: endpointHost(config.webhookSyncUrl),
     });
+
+    const nextBackpressureLevel = computeNextBackpressureLevel({
+        currentLevel: backpressureLevel,
+        sent,
+        failed,
+        permanentFailures,
+    });
+    if (nextBackpressureLevel !== backpressureLevel) {
+        await setWebhookBackpressureLevel(nextBackpressureLevel);
+        await logInfo('webhook.sync.backpressure.adjusted', {
+            previousLevel: backpressureLevel,
+            nextLevel: nextBackpressureLevel,
+            sent,
+            failed,
+            permanentFailures,
+        });
+    }
 
     const pending = await countPendingOutboxEvents();
     if (pending > config.outboxAlertBacklog) {

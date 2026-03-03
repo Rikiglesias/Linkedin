@@ -1,4 +1,5 @@
 import { getDatabase } from '../../db';
+import type { SelectorLearningRollbackSnapshotEntry, SelectorLearningRunRecord } from '../repositories.types';
 
 export async function storeMessageHash(leadId: number, contentHash: string): Promise<void> {
     const db = await getDatabase();
@@ -68,6 +69,295 @@ export async function getLeadIntent(
     return { intent: row.intent, subIntent: row.sub_intent, confidence: row.confidence, entities };
 }
 
+export interface LeadReplyDraftInput {
+    draft: string;
+    confidence: number;
+    source: 'ai' | 'fallback';
+    intent: string;
+    subIntent: string;
+    entities: string[];
+    reasoning: string;
+    autoReplySent: boolean;
+}
+
+let cachedLeadMetadataColumn: 'lead_metadata' | 'metadata_json' | null = null;
+
+async function resolveLeadMetadataColumn(db: Awaited<ReturnType<typeof getDatabase>>): Promise<'lead_metadata' | 'metadata_json'> {
+    if (cachedLeadMetadataColumn) {
+        return cachedLeadMetadataColumn;
+    }
+    try {
+        await db.get(`SELECT lead_metadata FROM leads LIMIT 1`);
+        cachedLeadMetadataColumn = 'lead_metadata';
+    } catch {
+        cachedLeadMetadataColumn = 'metadata_json';
+    }
+    return cachedLeadMetadataColumn;
+}
+
+async function readLeadMetadataForLead(
+    db: Awaited<ReturnType<typeof getDatabase>>,
+    leadId: number
+): Promise<{ found: boolean; metadata: Record<string, unknown> }> {
+    const metadataColumn = await resolveLeadMetadataColumn(db);
+    const row = await db.get<{ metadata: string | null }>(
+        `SELECT ${metadataColumn} AS metadata FROM leads WHERE id = ? LIMIT 1`,
+        [leadId]
+    );
+    if (!row) {
+        return { found: false, metadata: {} };
+    }
+    return {
+        found: true,
+        metadata: parseLeadMetadataObject(row.metadata),
+    };
+}
+
+async function writeLeadMetadataForLead(
+    db: Awaited<ReturnType<typeof getDatabase>>,
+    leadId: number,
+    metadata: Record<string, unknown>
+): Promise<void> {
+    const metadataColumn = await resolveLeadMetadataColumn(db);
+    await db.run(
+        `UPDATE leads SET ${metadataColumn} = ?, updated_at = datetime('now') WHERE id = ?`,
+        [JSON.stringify(metadata), leadId]
+    );
+}
+
+export async function appendLeadReplyDraft(leadId: number, input: LeadReplyDraftInput): Promise<void> {
+    const db = await getDatabase();
+    const readResult = await readLeadMetadataForLead(db, leadId);
+    const metadata = readResult.metadata;
+
+    const existingDrafts = Array.isArray(metadata.reply_drafts)
+        ? metadata.reply_drafts.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+        : [];
+    const nextDraft = {
+        draft: input.draft.slice(0, 500),
+        confidence: Math.max(0, Math.min(1, input.confidence)),
+        source: input.source,
+        intent: input.intent,
+        subIntent: input.subIntent,
+        entities: input.entities.slice(0, 20),
+        reasoning: input.reasoning.slice(0, 300),
+        autoReplySent: input.autoReplySent,
+        createdAt: new Date().toISOString(),
+    };
+    metadata.reply_drafts = [nextDraft, ...existingDrafts].slice(0, 20);
+    metadata.reply_draft_last_updated_at = new Date().toISOString();
+
+    await writeLeadMetadataForLead(db, leadId, metadata);
+}
+
+export type CommentSuggestionReviewStatus = 'REVIEW_PENDING' | 'APPROVED' | 'REJECTED';
+
+export interface CommentSuggestionReviewItem {
+    leadId: number;
+    firstName: string;
+    lastName: string;
+    listName: string;
+    linkedinUrl: string;
+    suggestionIndex: number;
+    postIndex: number;
+    postSnippet: string;
+    comment: string;
+    confidence: number;
+    source: string;
+    model: string | null;
+    status: CommentSuggestionReviewStatus;
+    generatedAt: string | null;
+    reviewedAt: string | null;
+    reviewedBy: string | null;
+}
+
+export interface CommentSuggestionReviewDecisionInput {
+    leadId: number;
+    suggestionIndex: number;
+    action: 'approve' | 'reject';
+    reviewer?: string | null;
+    comment?: string | null;
+}
+
+export interface CommentSuggestionReviewDecisionResult {
+    leadId: number;
+    suggestionIndex: number;
+    status: CommentSuggestionReviewStatus;
+    comment: string;
+    reviewedAt: string;
+    reviewedBy: string | null;
+    reviewRequired: boolean;
+}
+
+interface StoredCommentSuggestion {
+    postIndex: number;
+    comment: string;
+    confidence: number;
+    source: string;
+    model: string | null;
+    status: CommentSuggestionReviewStatus;
+    generatedAt: string | null;
+    reviewedAt: string | null;
+    reviewedBy: string | null;
+}
+
+function parseLeadMetadataObject(raw: string | null): Record<string, unknown> {
+    if (!raw || !raw.trim()) return {};
+    try {
+        const parsed = JSON.parse(raw) as unknown;
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            return {};
+        }
+        return parsed as Record<string, unknown>;
+    } catch {
+        return {};
+    }
+}
+
+function normalizeReviewStatus(value: unknown): CommentSuggestionReviewStatus {
+    if (value === 'APPROVED') return 'APPROVED';
+    if (value === 'REJECTED') return 'REJECTED';
+    return 'REVIEW_PENDING';
+}
+
+function parseStoredCommentSuggestions(meta: Record<string, unknown>): StoredCommentSuggestion[] {
+    if (!Array.isArray(meta.comment_suggestions)) return [];
+    return meta.comment_suggestions
+        .filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === 'object')
+        .map((entry) => ({
+            postIndex: Number.isFinite(entry.postIndex) ? Number(entry.postIndex) : 0,
+            comment: typeof entry.comment === 'string' ? entry.comment : '',
+            confidence: Math.max(0, Math.min(1, Number.isFinite(entry.confidence) ? Number(entry.confidence) : 0)),
+            source: typeof entry.source === 'string' ? entry.source : 'template',
+            model: typeof entry.model === 'string' ? entry.model : null,
+            status: normalizeReviewStatus(entry.status),
+            generatedAt: typeof entry.generatedAt === 'string' ? entry.generatedAt : null,
+            reviewedAt: typeof entry.reviewedAt === 'string' ? entry.reviewedAt : null,
+            reviewedBy: typeof entry.reviewedBy === 'string' ? entry.reviewedBy : null,
+        }))
+        .filter((entry) => entry.comment.trim().length > 0);
+}
+
+function buildPostSnippet(meta: Record<string, unknown>, postIndex: number): string {
+    if (!Array.isArray(meta.recent_posts)) return '';
+    const post = meta.recent_posts[postIndex] as Record<string, unknown> | undefined;
+    const text = typeof post?.text === 'string' ? post.text : '';
+    if (!text.trim()) return '';
+    const normalized = text.replace(/\s+/g, ' ').trim();
+    return normalized.slice(0, 180);
+}
+
+export async function listCommentSuggestionsForReview(
+    limit: number = 25,
+    status: CommentSuggestionReviewStatus = 'REVIEW_PENDING'
+): Promise<CommentSuggestionReviewItem[]> {
+    const db = await getDatabase();
+    const safeLimit = Math.max(1, Math.floor(limit));
+    const metadataColumn = await resolveLeadMetadataColumn(db);
+    const rows = await db.query<{
+        id: number;
+        first_name: string;
+        last_name: string;
+        list_name: string;
+        linkedin_url: string;
+        metadata: string | null;
+    }>(
+        `SELECT id, first_name, last_name, list_name, linkedin_url, ${metadataColumn} AS metadata
+         FROM leads
+         WHERE ${metadataColumn} IS NOT NULL
+           AND ${metadataColumn} LIKE '%comment_suggestions%'
+         ORDER BY updated_at DESC
+         LIMIT ?`,
+        [Math.max(100, safeLimit * 6)]
+    );
+
+    const collected: CommentSuggestionReviewItem[] = [];
+    for (const row of rows) {
+        const meta = parseLeadMetadataObject(row.metadata);
+        const suggestions = parseStoredCommentSuggestions(meta);
+        for (let i = 0; i < suggestions.length; i++) {
+            const suggestion = suggestions[i];
+            if (suggestion.status !== status) continue;
+            collected.push({
+                leadId: row.id,
+                firstName: row.first_name,
+                lastName: row.last_name,
+                listName: row.list_name,
+                linkedinUrl: row.linkedin_url,
+                suggestionIndex: i,
+                postIndex: suggestion.postIndex,
+                postSnippet: buildPostSnippet(meta, suggestion.postIndex),
+                comment: suggestion.comment,
+                confidence: suggestion.confidence,
+                source: suggestion.source,
+                model: suggestion.model,
+                status: suggestion.status,
+                generatedAt: suggestion.generatedAt,
+                reviewedAt: suggestion.reviewedAt,
+                reviewedBy: suggestion.reviewedBy,
+            });
+        }
+    }
+
+    collected.sort((a, b) => {
+        const aTs = a.generatedAt ? Date.parse(a.generatedAt) : 0;
+        const bTs = b.generatedAt ? Date.parse(b.generatedAt) : 0;
+        if (bTs !== aTs) return bTs - aTs;
+        return b.confidence - a.confidence;
+    });
+    return collected.slice(0, safeLimit);
+}
+
+export async function reviewCommentSuggestion(
+    input: CommentSuggestionReviewDecisionInput
+): Promise<CommentSuggestionReviewDecisionResult> {
+    const db = await getDatabase();
+    const leadId = Math.max(1, Math.floor(input.leadId));
+    const suggestionIndex = Math.max(0, Math.floor(input.suggestionIndex));
+    const readResult = await readLeadMetadataForLead(db, leadId);
+    if (!readResult.found) {
+        throw new Error(`lead_not_found:${leadId}`);
+    }
+
+    const meta = readResult.metadata;
+    const suggestions = parseStoredCommentSuggestions(meta);
+    const current = suggestions[suggestionIndex];
+    if (!current) {
+        throw new Error(`comment_suggestion_not_found:${leadId}:${suggestionIndex}`);
+    }
+
+    const nowIso = new Date().toISOString();
+    const reviewer = input.reviewer?.trim() || null;
+    const status: CommentSuggestionReviewStatus = input.action === 'approve' ? 'APPROVED' : 'REJECTED';
+    const approvedComment = typeof input.comment === 'string'
+        ? input.comment.replace(/\s+/g, ' ').trim().slice(0, 280)
+        : '';
+
+    current.status = status;
+    current.reviewedAt = nowIso;
+    current.reviewedBy = reviewer;
+    if (status === 'APPROVED' && approvedComment.length >= 12) {
+        current.comment = approvedComment;
+    }
+
+    const reviewRequired = suggestions.some((suggestion) => suggestion.status === 'REVIEW_PENDING');
+    meta.comment_suggestions = suggestions;
+    meta.comment_suggestions_review_required = reviewRequired;
+    meta.comment_suggestions_reviewed_at = nowIso;
+
+    await writeLeadMetadataForLead(db, leadId, meta);
+
+    return {
+        leadId,
+        suggestionIndex,
+        status: current.status,
+        comment: current.comment,
+        reviewedAt: nowIso,
+        reviewedBy: reviewer,
+        reviewRequired,
+    };
+}
+
 export async function listABVariantStats(): Promise<Array<{
     variantId: string;
     sent: number;
@@ -89,17 +379,30 @@ export async function listABVariantStats(): Promise<Array<{
 }
 
 export async function getDynamicSelectors(actionLabel: string, limit: number = 6): Promise<string[]> {
+    const rows = await listDynamicSelectorCandidates(actionLabel, limit);
+    return rows.map((row) => row.selector).filter((selector) => selector.trim().length > 0);
+}
+
+export interface DynamicSelectorCandidate {
+    selector: string;
+    confidence: number;
+    success_count: number;
+    source: string;
+    updated_at: string;
+}
+
+export async function listDynamicSelectorCandidates(actionLabel: string, limit: number = 12): Promise<DynamicSelectorCandidate[]> {
     const db = await getDatabase();
-    const rows = await db.query<{ selector: string }>(
-        `SELECT selector
+    const rows = await db.query<DynamicSelectorCandidate>(
+        `SELECT selector, confidence, success_count, source, updated_at
          FROM dynamic_selectors
          WHERE action_label = ?
            AND active = 1
-         ORDER BY success_count DESC, confidence DESC, updated_at DESC
+         ORDER BY confidence DESC, success_count DESC, updated_at DESC
          LIMIT ?`,
         [actionLabel, Math.max(1, limit)]
     );
-    return rows.map((row) => row.selector).filter((selector) => selector.trim().length > 0);
+    return rows;
 }
 
 export async function recordSelectorFallbackSuccess(actionLabel: string, selector: string, url: string): Promise<void> {
@@ -225,6 +528,306 @@ export async function upsertDynamicSelector(
             updated_at = CURRENT_TIMESTAMP`,
         [actionLabel, selector, Math.max(0, Math.min(1, confidence)), source]
     );
+}
+
+export interface DynamicSelectorStateRecord {
+    action_label: string;
+    selector: string;
+    confidence: number;
+    source: string;
+    active: number;
+    success_count: number;
+    last_validated_at: string | null;
+}
+
+function normalizeActionLabels(actionLabels: readonly string[]): string[] {
+    return Array.from(new Set(
+        actionLabels
+            .map((label) => label.trim())
+            .filter((label) => label.length > 0)
+    ));
+}
+
+function parseSnapshotEntries(raw: string): SelectorLearningRollbackSnapshotEntry[] {
+    try {
+        const parsed = JSON.parse(raw) as unknown;
+        if (!Array.isArray(parsed)) return [];
+        return parsed
+            .filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === 'object')
+            .map((entry) => ({
+                actionLabel: typeof entry.actionLabel === 'string' ? entry.actionLabel : '',
+                selector: typeof entry.selector === 'string' ? entry.selector : '',
+                existedBefore: entry.existedBefore === true,
+                previousConfidence: typeof entry.previousConfidence === 'number' ? entry.previousConfidence : null,
+                previousSource: typeof entry.previousSource === 'string' ? entry.previousSource : null,
+                previousActive: typeof entry.previousActive === 'number' ? entry.previousActive : null,
+                previousSuccessCount: typeof entry.previousSuccessCount === 'number' ? entry.previousSuccessCount : null,
+                previousLastValidatedAt: typeof entry.previousLastValidatedAt === 'string' ? entry.previousLastValidatedAt : null,
+            }))
+            .filter((entry) => entry.actionLabel.length > 0 && entry.selector.length > 0);
+    } catch {
+        return [];
+    }
+}
+
+export async function getDynamicSelectorState(
+    actionLabel: string,
+    selector: string
+): Promise<DynamicSelectorStateRecord | null> {
+    const db = await getDatabase();
+    const row = await db.get<DynamicSelectorStateRecord>(
+        `SELECT action_label, selector, confidence, source, active, success_count, last_validated_at
+         FROM dynamic_selectors
+         WHERE action_label = ?
+           AND selector = ?
+         LIMIT 1`,
+        [actionLabel, selector]
+    );
+    return row ?? null;
+}
+
+export async function countOpenSelectorFailuresByActionLabels(
+    actionLabels: readonly string[],
+    lookbackDays: number = 7
+): Promise<number> {
+    const normalizedLabels = normalizeActionLabels(actionLabels);
+    if (normalizedLabels.length === 0) {
+        return 0;
+    }
+    const db = await getDatabase();
+    const placeholders = normalizedLabels.map(() => '?').join(', ');
+    const row = await db.get<{ total: number }>(
+        `SELECT COUNT(*) as total
+         FROM selector_failures
+         WHERE status = 'OPEN'
+           AND action_label IN (${placeholders})
+           AND last_seen_at >= DATETIME('now', '-' || ? || ' days')`,
+        [...normalizedLabels, Math.max(1, lookbackDays)]
+    );
+    return row?.total ?? 0;
+}
+
+export async function createSelectorLearningRun(input: {
+    triggeredBy?: string | null;
+    sourceTag: string;
+    lookbackDays: number;
+    minSuccess: number;
+}): Promise<number> {
+    const db = await getDatabase();
+    const insert = await db.run(
+        `INSERT INTO selector_learning_runs (
+            status,
+            triggered_by,
+            source_tag,
+            lookback_days,
+            min_success
+         ) VALUES ('RUNNING', ?, ?, ?, ?)`,
+        [
+            input.triggeredBy ?? null,
+            input.sourceTag,
+            Math.max(1, Math.floor(input.lookbackDays)),
+            Math.max(1, Math.floor(input.minSuccess)),
+        ]
+    );
+    return insert.lastID ?? 0;
+}
+
+export async function completeSelectorLearningRun(
+    runId: number,
+    input: {
+        status: string;
+        scannedFailures: number;
+        promotedCount: number;
+        promotedLabelsCount: number;
+        baselineOpenFailures: number;
+        summary: Record<string, unknown>;
+        rollbackSnapshot: SelectorLearningRollbackSnapshotEntry[];
+    }
+): Promise<void> {
+    const db = await getDatabase();
+    await db.run(
+        `UPDATE selector_learning_runs
+         SET status = ?,
+             scanned_failures = ?,
+             promoted_count = ?,
+             promoted_labels_count = ?,
+             baseline_open_failures = ?,
+             summary_json = ?,
+             rollback_snapshot_json = ?,
+             finished_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [
+            input.status,
+            Math.max(0, Math.floor(input.scannedFailures)),
+            Math.max(0, Math.floor(input.promotedCount)),
+            Math.max(0, Math.floor(input.promotedLabelsCount)),
+            Math.max(0, Math.floor(input.baselineOpenFailures)),
+            JSON.stringify(input.summary ?? {}),
+            JSON.stringify(input.rollbackSnapshot ?? []),
+            runId,
+        ]
+    );
+}
+
+export async function listSelectorLearningRuns(limit: number = 20): Promise<SelectorLearningRunRecord[]> {
+    const db = await getDatabase();
+    return db.query<SelectorLearningRunRecord>(
+        `SELECT id, status, triggered_by, source_tag, lookback_days, min_success, scanned_failures,
+                promoted_count, promoted_labels_count, baseline_open_failures, evaluation_open_failures,
+                evaluation_degraded, rollback_applied, rollback_reason, summary_json, rollback_snapshot_json,
+                started_at, finished_at
+         FROM selector_learning_runs
+         ORDER BY id DESC
+         LIMIT ?`,
+        [Math.max(1, limit)]
+    );
+}
+
+export async function getLatestPromotedSelectorLearningRun(): Promise<SelectorLearningRunRecord | null> {
+    const db = await getDatabase();
+    const row = await db.get<SelectorLearningRunRecord>(
+        `SELECT id, status, triggered_by, source_tag, lookback_days, min_success, scanned_failures,
+                promoted_count, promoted_labels_count, baseline_open_failures, evaluation_open_failures,
+                evaluation_degraded, rollback_applied, rollback_reason, summary_json, rollback_snapshot_json,
+                started_at, finished_at
+         FROM selector_learning_runs
+         WHERE status = 'PROMOTED'
+           AND rollback_applied = 0
+         ORDER BY id DESC
+         LIMIT 1`
+    );
+    return row ?? null;
+}
+
+export async function recordSelectorLearningRunEvaluation(
+    runId: number,
+    input: {
+        evaluationOpenFailures: number;
+        degraded: boolean;
+        rollbackApplied: boolean;
+        rollbackReason?: string | null;
+    }
+): Promise<void> {
+    const db = await getDatabase();
+    const status = input.rollbackApplied ? 'ROLLED_BACK' : undefined;
+    if (status) {
+        await db.run(
+            `UPDATE selector_learning_runs
+             SET status = ?,
+                 evaluation_open_failures = ?,
+                 evaluation_degraded = ?,
+                 rollback_applied = ?,
+                 rollback_reason = ?,
+                 finished_at = COALESCE(finished_at, CURRENT_TIMESTAMP)
+             WHERE id = ?`,
+            [
+                status,
+                Math.max(0, Math.floor(input.evaluationOpenFailures)),
+                input.degraded ? 1 : 0,
+                input.rollbackApplied ? 1 : 0,
+                input.rollbackReason ?? null,
+                runId,
+            ]
+        );
+        return;
+    }
+
+    await db.run(
+        `UPDATE selector_learning_runs
+         SET evaluation_open_failures = ?,
+             evaluation_degraded = ?,
+             rollback_applied = ?,
+             rollback_reason = ?
+         WHERE id = ?`,
+        [
+            Math.max(0, Math.floor(input.evaluationOpenFailures)),
+            input.degraded ? 1 : 0,
+            input.rollbackApplied ? 1 : 0,
+            input.rollbackReason ?? null,
+            runId,
+        ]
+    );
+}
+
+export async function restoreDynamicSelectorSnapshots(
+    rawSnapshotEntries: readonly SelectorLearningRollbackSnapshotEntry[]
+): Promise<{ restored: number; deleted: number }> {
+    const db = await getDatabase();
+    let restored = 0;
+    let deleted = 0;
+    const snapshotEntries = parseSnapshotEntries(JSON.stringify(rawSnapshotEntries));
+
+    for (const snapshot of snapshotEntries) {
+        if (!snapshot.existedBefore) {
+            const deletedResult = await db.run(
+                `DELETE FROM dynamic_selectors
+                 WHERE action_label = ?
+                   AND selector = ?`,
+                [snapshot.actionLabel, snapshot.selector]
+            );
+            deleted += deletedResult.changes ?? 0;
+            continue;
+        }
+
+        const restoredConfidence = Math.max(0, Math.min(1, snapshot.previousConfidence ?? 0.35));
+        const restoredSource = snapshot.previousSource ?? 'fallback_learner_rollback';
+        const restoredActive = snapshot.previousActive === 0 ? 0 : 1;
+        const restoredSuccessCount = Math.max(0, Math.floor(snapshot.previousSuccessCount ?? 0));
+
+        const updated = await db.run(
+            `UPDATE dynamic_selectors
+             SET confidence = ?,
+                 source = ?,
+                 active = ?,
+                 success_count = ?,
+                 last_validated_at = ?,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE action_label = ?
+               AND selector = ?`,
+            [
+                restoredConfidence,
+                restoredSource,
+                restoredActive,
+                restoredSuccessCount,
+                snapshot.previousLastValidatedAt ?? null,
+                snapshot.actionLabel,
+                snapshot.selector,
+            ]
+        );
+
+        if ((updated.changes ?? 0) > 0) {
+            restored += 1;
+            continue;
+        }
+
+        const inserted = await db.run(
+            `INSERT INTO dynamic_selectors (
+                action_label,
+                selector,
+                confidence,
+                source,
+                active,
+                success_count,
+                last_validated_at,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+            [
+                snapshot.actionLabel,
+                snapshot.selector,
+                restoredConfidence,
+                restoredSource,
+                restoredActive,
+                restoredSuccessCount,
+                snapshot.previousLastValidatedAt ?? null,
+            ]
+        );
+        if ((inserted.changes ?? 0) > 0) {
+            restored += 1;
+        }
+    }
+
+    return { restored, deleted };
 }
 
 export interface RampUpStateRecord {

@@ -1,4 +1,4 @@
-import { recordRunLog } from '../core/repositories';
+import { recordRunLog } from '../core/repositories/system';
 import { sanitizeForLogs } from '../security/redaction';
 import { publishLiveEvent } from './liveEvents';
 import { getCorrelationId } from './correlation';

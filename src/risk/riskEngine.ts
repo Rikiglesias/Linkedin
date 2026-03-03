@@ -5,6 +5,16 @@ function clampScore(value: number): number {
     return Math.max(0, Math.min(100, Math.round(value)));
 }
 
+function clampRatio(value: number): number {
+    if (!Number.isFinite(value)) return 0;
+    return Math.max(0, value);
+}
+
+function clampPercentage(value: number): number {
+    if (!Number.isFinite(value)) return 0;
+    return Math.max(0, Math.min(100, value));
+}
+
 export function evaluateRisk(inputs: RiskInputs): RiskSnapshot {
     const score = clampScore(
         inputs.errorRate * 40 +
@@ -124,6 +134,80 @@ export interface PredictiveRiskMetricSample {
     selectorFailureRate: number;
     challengeCount: number;
     inviteVelocityRatio: number;
+}
+
+export function calculateDynamicWeeklyInviteLimit(
+    accountAgeDays: number,
+    minWeeklyLimit: number,
+    maxWeeklyLimit: number,
+    warmupMaxAgeDays: number
+): number {
+    const minLimit = Math.max(1, Math.floor(Math.min(minWeeklyLimit, maxWeeklyLimit)));
+    const maxLimit = Math.max(1, Math.floor(Math.max(minWeeklyLimit, maxWeeklyLimit)));
+    const maxAge = Math.max(1, Math.floor(warmupMaxAgeDays));
+    const safeAge = Math.max(0, Math.floor(accountAgeDays));
+    if (safeAge >= maxAge) {
+        return maxLimit;
+    }
+    const progress = safeAge / maxAge;
+    const computed = minLimit + ((maxLimit - minLimit) * progress);
+    return Math.max(minLimit, Math.min(maxLimit, Math.round(computed)));
+}
+
+export interface ComplianceHealthInputs {
+    acceptanceRatePct: number;
+    engagementRatePct: number;
+    pendingRatio: number;
+    invitesSentToday: number;
+    messagesSentToday: number;
+    weeklyInvitesSent: number;
+    dailyInviteLimit: number;
+    dailyMessageLimit: number;
+    weeklyInviteLimit: number;
+    pendingWarnThreshold: number;
+}
+
+export interface ComplianceHealthSnapshot {
+    score: number;
+    baseScore: number;
+    acceptanceRatePct: number;
+    engagementRatePct: number;
+    pendingRatio: number;
+    utilizationRatio: number;
+    penalty: number;
+}
+
+export function evaluateComplianceHealthScore(inputs: ComplianceHealthInputs): ComplianceHealthSnapshot {
+    const acceptanceRatePct = clampPercentage(inputs.acceptanceRatePct);
+    const engagementRatePct = clampPercentage(inputs.engagementRatePct);
+    const pendingRatio = clampRatio(inputs.pendingRatio);
+    const baseScore = (acceptanceRatePct + engagementRatePct) / 2;
+
+    const inviteUsage = clampRatio(inputs.invitesSentToday / Math.max(1, inputs.dailyInviteLimit));
+    const messageUsage = clampRatio(inputs.messagesSentToday / Math.max(1, inputs.dailyMessageLimit));
+    const weeklyUsage = clampRatio(inputs.weeklyInvitesSent / Math.max(1, inputs.weeklyInviteLimit));
+    const utilizationRatio = (inviteUsage + messageUsage + weeklyUsage) / 3;
+
+    const utilizationPenalty = utilizationRatio > 1
+        ? Math.min(30, (utilizationRatio - 1) * 50)
+        : 0;
+    const pendingThreshold = Math.max(0.01, inputs.pendingWarnThreshold);
+    const pendingPenalty = pendingRatio > pendingThreshold
+        ? Math.min(30, ((pendingRatio - pendingThreshold) / pendingThreshold) * 40)
+        : 0;
+
+    const penalty = utilizationPenalty + pendingPenalty;
+    const score = clampScore(baseScore - penalty);
+
+    return {
+        score,
+        baseScore: Number.parseFloat(baseScore.toFixed(2)),
+        acceptanceRatePct: Number.parseFloat(acceptanceRatePct.toFixed(2)),
+        engagementRatePct: Number.parseFloat(engagementRatePct.toFixed(2)),
+        pendingRatio: Number.parseFloat(pendingRatio.toFixed(4)),
+        utilizationRatio: Number.parseFloat(utilizationRatio.toFixed(4)),
+        penalty: Number.parseFloat(penalty.toFixed(2)),
+    };
 }
 
 export interface PredictiveRiskAlert {

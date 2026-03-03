@@ -3,6 +3,7 @@ import { getExpiredInvitedLeads } from '../core/repositories';
 import { transitionLead } from '../core/leadStateService';
 import { logInfo, logError } from '../telemetry/logger';
 import { humanDelay } from '../browser';
+import { clickWithFallback } from '../browser/uiFallback';
 import { config } from '../config';
 import { WorkerExecutionResult, workerResult } from './result';
 
@@ -35,37 +36,67 @@ export async function processHygieneJob(payload: HygieneJobPayload, context: Wor
             await page.goto(lead.linkedin_url, { waitUntil: 'domcontentloaded' });
             await humanDelay(page, 2000, 4000);
 
-            // Cerca bottone "In attesa" / "Pending"
-            const pendingBtn = page.locator('button:has-text("Pending"), button:has-text("In attesa")').first();
-            if (await pendingBtn.count() > 0) {
-                await pendingBtn.click();
-                await humanDelay(page, 700, 1500);
+            // Fase 1: Cerca bottone "In attesa" / "Pending" con Fallback progressivo
+            // Includiamo aria-label e testID (più stabili sui reskin) prima delle label di testo
+            const pendingSelectors = [
+                'button[aria-label*="Pending"]',
+                'button[aria-label*="In attesa"]',
+                'button.pv-s-profile-actions--pending',
+                'button:has-text("Pending")',
+                'button:has-text("In attesa")',
+                '.pvs-profile-actions button:has(svg)'
+            ];
 
-                // Nel modale, cerca "Ritira" / "Withdraw"
-                const withdrawAction = page.locator('div.artdeco-dropdown__content button:has-text("Withdraw"), div.artdeco-dropdown__content button:has-text("Ritira")').first();
-                if (await withdrawAction.isVisible()) {
-                    await withdrawAction.click();
-                    await humanDelay(page, 700, 1200);
+            await clickWithFallback(
+                page,
+                pendingSelectors,
+                `withdraw_pending_button_${lead.id}`,
+                { timeoutPerSelector: 4000, postClickDelayMs: 1000 }
+            );
 
-                    // Conferma finale nel dialog modale
-                    const confirmDialog = page.locator('.artdeco-modal button.artdeco-button--primary:has-text("Withdraw"), .artdeco-modal button.artdeco-button--primary:has-text("Ritira")').first();
-                    if (await confirmDialog.isVisible()) {
-                        await confirmDialog.click();
-                        await transitionLead(lead.id, 'WITHDRAWN', 'auto_hygiene_policy', { days_old: config.pendingInviteMaxDays });
-                        await logInfo('hygiene.invite_withdrawn', { leadId: lead.id, accountId: payload.accountId });
-                    }
-                }
-            } else {
-                // Se non troviamo il pending, lo marchiamo in review
-                await transitionLead(lead.id, 'REVIEW_REQUIRED', 'hygiene_button_pending_not_found');
-            }
+            // Fase 2: Nel modale dropdown aperto, cerca "Ritira" / "Withdraw"
+            const withdrawDropdownSelectors = [
+                'div.artdeco-dropdown__content button[aria-label*="Withdraw"]',
+                'div.artdeco-dropdown__content button[aria-label*="Ritira"]',
+                'div.artdeco-dropdown__content button:has-text("Withdraw")',
+                'div.artdeco-dropdown__content button:has-text("Ritira")',
+                'div.artdeco-dropdown__item:has-text("Withdraw")',
+                'div.artdeco-dropdown__item:has-text("Ritira")'
+            ];
+
+            await clickWithFallback(
+                page,
+                withdrawDropdownSelectors,
+                `withdraw_dropdown_action_${lead.id}`,
+                { timeoutPerSelector: 3000, postClickDelayMs: 1200 }
+            );
+
+            // Fase 3: Conferma finale nel dialog modale
+            const modalConfirmSelectors = [
+                '.artdeco-modal button.artdeco-button--primary:has-text("Withdraw")',
+                '.artdeco-modal button.artdeco-button--primary:has-text("Ritira")',
+                '.artdeco-modal button[data-control-name="withdraw_single"]',
+                '.artdeco-modal button.artdeco-button--primary'
+            ];
+
+            await clickWithFallback(
+                page,
+                modalConfirmSelectors,
+                `withdraw_confirm_modal_${lead.id}`,
+                { timeoutPerSelector: 4000, postClickDelayMs: 1500 }
+            );
+
+            // Se arriviamo qui, il prelievo ha avuto successo
+            await transitionLead(lead.id, 'WITHDRAWN', 'auto_hygiene_policy', { days_old: config.pendingInviteMaxDays });
+            await logInfo('hygiene.invite_withdrawn', { leadId: lead.id, accountId: payload.accountId });
 
             await humanDelay(page, 1500, 3000);
             processedCount += 1;
         } catch (e: unknown) {
             const message = e instanceof Error ? e.message : String(e);
             await logError('hygiene.worker.error', { leadId: lead.id, error: message });
-            await transitionLead(lead.id, 'REVIEW_REQUIRED', 'hygiene_error_on_dom_execution');
+            // Se fallisce, usiamo la custom reason per monitorare decadimento selettori
+            await transitionLead(lead.id, 'REVIEW_REQUIRED', 'hygiene_button_pending_not_found');
             errors.push({ leadId: lead.id, message });
             processedCount += 1;
         }

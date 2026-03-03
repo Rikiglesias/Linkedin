@@ -4,7 +4,13 @@ import path from 'path';
 import { createHash } from 'crypto';
 import { AccountProfileConfig, config } from '../config';
 import { isValidLeadTransition } from '../core/leadStateService';
-import { calculateDynamicBudget, evaluateCooldownDecision, evaluateRisk } from '../risk/riskEngine';
+import {
+    calculateDynamicBudget,
+    calculateDynamicWeeklyInviteLimit,
+    evaluateComplianceHealthScore,
+    evaluateCooldownDecision,
+    evaluateRisk,
+} from '../risk/riskEngine';
 import { hashMessage, validateMessageContent } from '../validation/messageValidator';
 import { isProfileUrl, isSalesNavigatorUrl, normalizeLinkedInUrl } from '../linkedinUrl';
 import { buildPersonalizedFollowUpMessage } from '../ai/messagePersonalizer';
@@ -12,12 +18,49 @@ import { buildPersonalizedInviteNote } from '../ai/inviteNotePersonalizer';
 import { evaluateAiGuardian } from '../ai/guardian';
 import { ScheduleResult, workflowToJobTypes } from '../core/scheduler';
 import { LeadRecord } from '../types/domain';
-import { getProxy, getProxyFailoverChain, getProxyPoolStatus, markProxyFailed, markProxyHealthy } from '../proxyManager';
+import {
+    getIntegrationProxyFailoverChain,
+    getIntegrationProxyPoolStatus,
+    getProxy,
+    getProxyFailoverChain,
+    getProxyPoolStatus,
+    markIntegrationProxyFailed,
+    markIntegrationProxyHealthy,
+    markProxyFailed,
+    markProxyHealthy,
+} from '../proxyManager';
 import { getSchedulingAccountIds, pickAccountIdForLead } from '../accountManager';
 import { generateInviteNote } from '../ai/inviteNotePersonalizer';
 import { classifySiteMismatch, isMismatchAmbiguous } from '../core/audit';
 import { SELECTORS } from '../selectors';
 import { computeTwoProportionSignificance } from '../core/repositories/aiQuality';
+import { resolveWorkerRetryPolicy, RetryableWorkerError } from '../workers/errors';
+import {
+    clickWithFallback,
+    rankSelectorCandidates,
+    resetSelectorContextCacheForTests,
+} from '../browser/uiFallback';
+import { resolveFollowUpCadence } from '../workers/followUpWorker';
+import { assessSelectorModelDegradation } from '../selectors/learner';
+import { computeNonLinearRampCap } from '../ml/rampModel';
+import { computeBayesianBanditScore, evaluateBanditDecision } from '../ml/abBandit';
+import {
+    CircuitOpenError,
+    executeWithRetryPolicy,
+    getCircuitBreakerSnapshot,
+    resetCircuitBreakersForTests,
+} from '../core/integrationPolicy';
+import {
+    clampBackpressureLevel,
+    computeBackpressureBatchSize,
+    computeNextBackpressureLevel,
+} from '../sync/backpressure';
+import {
+    describeVoiceAction,
+    isCriticalVoiceAction,
+    parseVoiceCommand,
+} from '../frontend/voiceCommands';
+import { evaluateAutoDailyReportDecision } from '../core/dailyReportPolicy';
 
 async function run(): Promise<void> {
     assert.equal(isValidLeadTransition('NEW', 'READY_INVITE'), true);
@@ -71,6 +114,80 @@ async function run(): Promise<void> {
     });
     assert.equal(cooldownDecision.activate, true);
     assert.equal(cooldownDecision.minutes > 0, true);
+
+    const healthyComplianceScore = evaluateComplianceHealthScore({
+        acceptanceRatePct: 78,
+        engagementRatePct: 72,
+        pendingRatio: 0.28,
+        invitesSentToday: 9,
+        messagesSentToday: 6,
+        weeklyInvitesSent: 34,
+        dailyInviteLimit: 15,
+        dailyMessageLimit: 20,
+        weeklyInviteLimit: 80,
+        pendingWarnThreshold: 0.65,
+    });
+    assert.equal(healthyComplianceScore.score >= 70, true);
+
+    const unhealthyComplianceScore = evaluateComplianceHealthScore({
+        acceptanceRatePct: 35,
+        engagementRatePct: 18,
+        pendingRatio: 0.82,
+        invitesSentToday: 25,
+        messagesSentToday: 40,
+        weeklyInvitesSent: 120,
+        dailyInviteLimit: 12,
+        dailyMessageLimit: 20,
+        weeklyInviteLimit: 80,
+        pendingWarnThreshold: 0.65,
+    });
+    assert.equal(unhealthyComplianceScore.score < 70, true);
+    assert.equal(unhealthyComplianceScore.penalty > 0, true);
+
+    const weeklyLimitEarly = calculateDynamicWeeklyInviteLimit(10, 20, 80, 180);
+    const weeklyLimitMature = calculateDynamicWeeklyInviteLimit(365, 20, 80, 180);
+    assert.equal(weeklyLimitEarly >= 20 && weeklyLimitEarly <= 80, true);
+    assert.equal(weeklyLimitMature, 80);
+
+    const dailyReportDisabled = evaluateAutoDailyReportDecision({
+        enabled: false,
+        localDate: '2026-03-03',
+        lastSentDate: null,
+        currentHour: 21,
+        reportHour: 20,
+    });
+    assert.equal(dailyReportDisabled.shouldRun, false);
+    assert.equal(dailyReportDisabled.reason, 'disabled');
+
+    const dailyReportBeforeCutoff = evaluateAutoDailyReportDecision({
+        enabled: true,
+        localDate: '2026-03-03',
+        lastSentDate: null,
+        currentHour: 18,
+        reportHour: 20,
+    });
+    assert.equal(dailyReportBeforeCutoff.shouldRun, false);
+    assert.equal(dailyReportBeforeCutoff.reason, 'before_cutoff');
+
+    const dailyReportAlreadySent = evaluateAutoDailyReportDecision({
+        enabled: true,
+        localDate: '2026-03-03',
+        lastSentDate: '2026-03-03',
+        currentHour: 21,
+        reportHour: 20,
+    });
+    assert.equal(dailyReportAlreadySent.shouldRun, false);
+    assert.equal(dailyReportAlreadySent.reason, 'already_sent');
+
+    const dailyReportReady = evaluateAutoDailyReportDecision({
+        enabled: true,
+        localDate: '2026-03-03',
+        lastSentDate: '2026-03-02',
+        currentHour: 21,
+        reportHour: 20,
+    });
+    assert.equal(dailyReportReady.shouldRun, true);
+    assert.equal(dailyReportReady.reason, 'ready');
 
     const goodMessage = 'Ciao Mario, grazie per il collegamento.';
     const hash = hashMessage(goodMessage);
@@ -133,6 +250,9 @@ async function run(): Promise<void> {
         },
         inviteBudget: 10,
         messageBudget: 10,
+        weeklyInvitesSent: 12,
+        weeklyInviteLimitEffective: 80,
+        weeklyInvitesRemaining: 68,
         queuedInviteJobs: 5,
         queuedCheckJobs: 4,
         queuedMessageJobs: 3,
@@ -246,6 +366,29 @@ async function run(): Promise<void> {
         }
         markProxyHealthy(failedProxy);
 
+        // Session pool e integration pool devono avere cooldown indipendenti.
+        const integrationStatusBefore = getIntegrationProxyPoolStatus();
+        assert.equal(integrationStatusBefore.cooling, 0);
+
+        markProxyFailed(failedProxy);
+        const sessionAfterSessionFailure = getProxyPoolStatus();
+        const integrationAfterSessionFailure = getIntegrationProxyPoolStatus();
+        assert.equal(sessionAfterSessionFailure.cooling >= 1, true);
+        assert.equal(integrationAfterSessionFailure.cooling, 0);
+        markProxyHealthy(failedProxy);
+
+        markIntegrationProxyFailed(failedProxy);
+        const sessionAfterIntegrationFailure = getProxyPoolStatus();
+        const integrationAfterIntegrationFailure = getIntegrationProxyPoolStatus();
+        assert.equal(sessionAfterIntegrationFailure.cooling, 0);
+        assert.equal(integrationAfterIntegrationFailure.cooling >= 1, true);
+
+        const integrationChainAfterFailure = getIntegrationProxyFailoverChain();
+        if (integrationChainAfterFailure.length > 1) {
+            assert.equal(integrationChainAfterFailure[0].server !== failedProxy.server, true);
+        }
+        markIntegrationProxyHealthy(failedProxy);
+
         config.proxyListPath = '';
         config.proxyUrl = 'http://singleUser:singlePass@127.0.0.3:8082';
         const poolFromUrl = getProxyPoolStatus();
@@ -266,6 +409,125 @@ async function run(): Promise<void> {
         }
     }
 
+    // ── integrationPolicy: circuit breaker OPEN/HALF_OPEN/CLOSED ───────────
+    const originalCircuitEnabled = config.integrationCircuitBreakerEnabled;
+    const originalCircuitThreshold = config.integrationCircuitFailureThreshold;
+    const originalCircuitOpenMs = config.integrationCircuitOpenMs;
+    const originalIntegrationRetryMaxAttempts = config.integrationRetryMaxAttempts;
+    try {
+        config.integrationCircuitBreakerEnabled = true;
+        config.integrationCircuitFailureThreshold = 1;
+        config.integrationCircuitOpenMs = 60;
+        config.integrationRetryMaxAttempts = 1;
+        resetCircuitBreakersForTests();
+
+        await assert.rejects(
+            () => executeWithRetryPolicy(
+                async () => {
+                    throw new Error('timeout while calling remote');
+                },
+                {
+                    integration: 'unit.circuit.failure',
+                    circuitKey: 'unit.circuit',
+                    maxAttempts: 1,
+                }
+            )
+        );
+
+        const afterOpen = getCircuitBreakerSnapshot().find((row) => row.key === 'unit.circuit');
+        assert.ok(afterOpen);
+        assert.equal(afterOpen?.status, 'OPEN');
+        assert.equal((afterOpen?.openedCount ?? 0) >= 1, true);
+        assert.equal((afterOpen?.totalFailures ?? 0) >= 1, true);
+
+        await assert.rejects(
+            () => executeWithRetryPolicy(
+                async () => 'should-not-run',
+                {
+                    integration: 'unit.circuit.blocked',
+                    circuitKey: 'unit.circuit',
+                    maxAttempts: 1,
+                }
+            ),
+            (error: unknown) => error instanceof CircuitOpenError
+        );
+
+        const afterBlocked = getCircuitBreakerSnapshot().find((row) => row.key === 'unit.circuit');
+        assert.ok(afterBlocked);
+        assert.equal((afterBlocked?.blockedCount ?? 0) >= 1, true);
+
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        const probeResult = await executeWithRetryPolicy(
+            async () => 'ok-half-open-probe',
+            {
+                integration: 'unit.circuit.recovery',
+                circuitKey: 'unit.circuit',
+                maxAttempts: 1,
+            }
+        );
+        assert.equal(probeResult, 'ok-half-open-probe');
+
+        const afterRecovery = getCircuitBreakerSnapshot().find((row) => row.key === 'unit.circuit');
+        assert.ok(afterRecovery);
+        assert.equal(afterRecovery?.status, 'CLOSED');
+        assert.equal((afterRecovery?.halfOpenCount ?? 0) >= 1, true);
+        assert.equal((afterRecovery?.closedCount ?? 0) >= 1, true);
+        assert.equal((afterRecovery?.totalSuccesses ?? 0) >= 1, true);
+    } finally {
+        config.integrationCircuitBreakerEnabled = originalCircuitEnabled;
+        config.integrationCircuitFailureThreshold = originalCircuitThreshold;
+        config.integrationCircuitOpenMs = originalCircuitOpenMs;
+        config.integrationRetryMaxAttempts = originalIntegrationRetryMaxAttempts;
+        resetCircuitBreakersForTests();
+    }
+
+    // ── sync backpressure policy ───────────────────────────────────────────
+    assert.equal(clampBackpressureLevel(0), 1);
+    assert.equal(clampBackpressureLevel(99), 8);
+    assert.equal(computeBackpressureBatchSize(20, 1), 20);
+    assert.equal(computeBackpressureBatchSize(20, 4), 5);
+
+    const increasedBackpressure = computeNextBackpressureLevel({
+        currentLevel: 1,
+        sent: 2,
+        failed: 4,
+        permanentFailures: 1,
+    });
+    assert.equal(increasedBackpressure > 1, true);
+
+    const relaxedBackpressure = computeNextBackpressureLevel({
+        currentLevel: 4,
+        sent: 5,
+        failed: 0,
+        permanentFailures: 0,
+    });
+    assert.equal(relaxedBackpressure < 4, true);
+
+    // ── voice commands parser (dashboard) ──────────────────────────────────
+    const voiceRefresh = parseVoiceCommand('Aggiorna dashboard');
+    assert.deepEqual(voiceRefresh, { kind: 'refresh' });
+    if (!voiceRefresh) throw new Error('voiceRefresh non riconosciuto');
+    assert.equal(isCriticalVoiceAction(voiceRefresh), false);
+    assert.equal(describeVoiceAction(voiceRefresh), 'Aggiorna dashboard');
+
+    const voicePause = parseVoiceCommand('Pausa 30 minuti');
+    assert.deepEqual(voicePause, { kind: 'pause', minutes: 30 });
+    if (!voicePause) throw new Error('voicePause non riconosciuto');
+    assert.equal(isCriticalVoiceAction(voicePause), true);
+
+    const voiceResume = parseVoiceCommand('riprendi automazione');
+    assert.deepEqual(voiceResume, { kind: 'resume' });
+    if (!voiceResume) throw new Error('voiceResume non riconosciuto');
+    assert.equal(isCriticalVoiceAction(voiceResume), true);
+
+    const voiceResolveSelected = parseVoiceCommand('risolvi incidenti selezionati');
+    assert.deepEqual(voiceResolveSelected, { kind: 'resolve_selected' });
+    if (!voiceResolveSelected) throw new Error('voiceResolveSelected non riconosciuto');
+    assert.equal(isCriticalVoiceAction(voiceResolveSelected), true);
+
+    const voiceUnknown = parseVoiceCommand('apri il meteo di domani');
+    assert.equal(voiceUnknown, null);
+
     // ── noteGenerator ────────────────────────────────────────────────────────
     const note1 = generateInviteNote('Mario');
     assert.equal(note1.note.length > 0, true);
@@ -281,6 +543,340 @@ async function run(): Promise<void> {
 
     const nonSignificantLift = computeTwoProportionSignificance(20, 200, 22, 200, 0.05);
     assert.equal(nonSignificantLift.significant, false);
+
+    const bayesLowDataScore = computeBayesianBanditScore(5, 1, 100);
+    const bayesHighDataScore = computeBayesianBanditScore(200, 80, 1000);
+    assert.equal(Number.isFinite(bayesLowDataScore), true);
+    assert.equal(Number.isFinite(bayesHighDataScore), true);
+
+    const significantBanditDecision = evaluateBanditDecision(
+        ['A', 'B'],
+        [
+            { variantId: 'A', sent: 500, accepted: 100, replied: 40 },
+            { variantId: 'B', sent: 500, accepted: 150, replied: 60 },
+        ],
+        {
+            alpha: 0.05,
+            minSampleSize: 50,
+        }
+    );
+    assert.equal(significantBanditDecision.mode, 'significant_winner');
+    assert.equal(significantBanditDecision.selectedVariant, 'B');
+    assert.equal(significantBanditDecision.winner?.baselineVariant, 'A');
+    assert.equal((significantBanditDecision.winner?.pValue ?? 1) < 0.05, true);
+
+    const bayesBanditDecision = evaluateBanditDecision(
+        ['A', 'B'],
+        [
+            { variantId: 'A', sent: 20, accepted: 6, replied: 1 },
+            { variantId: 'B', sent: 18, accepted: 7, replied: 2 },
+        ],
+        {
+            alpha: 0.05,
+            minSampleSize: 50,
+        }
+    );
+    assert.equal(bayesBanditDecision.mode, 'bayes');
+    assert.equal(['A', 'B'].includes(bayesBanditDecision.selectedVariant), true);
+    assert.equal(bayesBanditDecision.winner, null);
+
+    // ── uiFallback ranking + post-action verification ──────────────────────
+    const rankedSelectors = rankSelectorCandidates([
+        {
+            selector: '//button[contains(.,"Send")]',
+            source: 'static',
+            confidence: 0.35,
+            successCount: 0,
+            order: 2,
+        },
+        {
+            selector: 'button[data-control-name="send"]',
+            source: 'dynamic',
+            confidence: 0.9,
+            successCount: 12,
+            order: 0,
+        },
+        {
+            selector: 'button.msg-form__send-button',
+            source: 'static',
+            confidence: 0.35,
+            successCount: 0,
+            order: 0,
+        },
+    ]);
+    assert.equal(rankedSelectors[0]?.selector, 'button[data-control-name="send"]');
+    assert.equal(rankedSelectors[0]?.source, 'dynamic');
+    assert.equal((rankedSelectors[0]?.score ?? 0) > (rankedSelectors[1]?.score ?? 0), true);
+
+    const clickAttempts: string[] = [];
+    const verifyAttempts: string[] = [];
+    const fakePage = {
+        locator: (selector: string) => ({
+            first: () => ({
+                click: async () => {
+                    clickAttempts.push(selector);
+                },
+            }),
+        }),
+        waitForTimeout: async () => undefined,
+        url: () => 'https://example.test/profile',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any;
+
+    await clickWithFallback(
+        fakePage,
+        ['button.bad-target', 'button.good-target'],
+        'unit.click.verify',
+        {
+            timeoutPerSelector: 50,
+            verify: async (_page, selectedSelector) => {
+                verifyAttempts.push(selectedSelector);
+                return selectedSelector === 'button.good-target';
+            },
+        }
+    );
+    assert.deepEqual(verifyAttempts, ['button.bad-target', 'button.good-target']);
+    assert.deepEqual(clickAttempts, ['button.bad-target', 'button.good-target']);
+
+    // Context cache: il selettore che ha funzionato viene privilegiato nello stesso contesto pagina.
+    resetSelectorContextCacheForTests();
+    const cacheAttempts: string[] = [];
+    const fakeCachePage = {
+        locator: (selector: string) => ({
+            first: () => ({
+                click: async () => {
+                    cacheAttempts.push(selector);
+                },
+            }),
+        }),
+        waitForTimeout: async () => undefined,
+        url: () => 'https://www.linkedin.com/in/cache-test-user/',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any;
+
+    await clickWithFallback(fakeCachePage, ['button.cached-target', 'button.other-target'], 'unit.context.cache', 50);
+    await clickWithFallback(fakeCachePage, ['button.other-target', 'button.cached-target'], 'unit.context.cache', 50);
+
+    // 1st click usa l'ordine input, 2nd click riusa il target in cache e lo mette in testa.
+    assert.deepEqual(cacheAttempts, [
+        'button.cached-target',
+        'button.cached-target',
+    ]);
+
+    // Retry policy contestuale per tipo errore worker.
+    const selectorRetryPolicy = resolveWorkerRetryPolicy(
+        new RetryableWorkerError('Textbox non trovata', 'TEXTBOX_NOT_FOUND'),
+        5,
+        1000
+    );
+    assert.equal(selectorRetryPolicy.retryable, true);
+    assert.equal(selectorRetryPolicy.maxAttempts, 2);
+    assert.equal(selectorRetryPolicy.category, 'ui_selector');
+    assert.equal(selectorRetryPolicy.baseDelayMs >= 2000, true);
+
+    const quotaRetryPolicy = resolveWorkerRetryPolicy(
+        new RetryableWorkerError('Limite settimanale raggiunto', 'WEEKLY_LIMIT_REACHED'),
+        5,
+        1000
+    );
+    assert.equal(quotaRetryPolicy.retryable, false);
+    assert.equal(quotaRetryPolicy.maxAttempts, 1);
+    assert.equal(quotaRetryPolicy.baseDelayMs, 0);
+    assert.equal(quotaRetryPolicy.category, 'quota');
+
+    const transientRetryPolicy = resolveWorkerRetryPolicy(
+        new Error('Timeout 30000ms exceeded'),
+        5,
+        1000
+    );
+    assert.equal(transientRetryPolicy.retryable, true);
+    assert.equal(transientRetryPolicy.maxAttempts <= 3, true);
+    assert.equal(transientRetryPolicy.category, 'ui_transient');
+
+    // Follow-up cadence intent-aware con jitter deterministico + escalation.
+    const originalFollowUpDelayDays = config.followUpDelayDays;
+    const originalFollowUpQuestionsDelayDays = config.followUpQuestionsDelayDays;
+    const originalFollowUpNegativeDelayDays = config.followUpNegativeDelayDays;
+    const originalFollowUpNotInterestedDelayDays = config.followUpNotInterestedDelayDays;
+    const originalFollowUpDelayStddevDays = config.followUpDelayStddevDays;
+    const originalFollowUpDelayEscalationFactor = config.followUpDelayEscalationFactor;
+    try {
+        config.followUpDelayDays = 5;
+        config.followUpQuestionsDelayDays = 3;
+        config.followUpNegativeDelayDays = 30;
+        config.followUpNotInterestedDelayDays = 60;
+        config.followUpDelayStddevDays = 0;
+        config.followUpDelayEscalationFactor = 0.5;
+
+        const cadenceQuestions = resolveFollowUpCadence(
+            {
+                id: 101,
+                messaged_at: new Date(Date.now() - (6 * 24 * 60 * 60 * 1000)).toISOString(),
+                follow_up_sent_at: null,
+                follow_up_count: 0,
+            },
+            {
+                intent: 'QUESTIONS',
+                subIntent: 'PRICE_INQUIRY',
+                confidence: 0.9,
+                entities: ['prezzo'],
+            }
+        );
+        assert.equal(cadenceQuestions.baseDelayDays, 3);
+        assert.equal(cadenceQuestions.requiredDelayDays, 3);
+        assert.equal(cadenceQuestions.reason, 'intent_questions');
+
+        const cadenceNotInterested = resolveFollowUpCadence(
+            {
+                id: 102,
+                messaged_at: new Date(Date.now() - (90 * 24 * 60 * 60 * 1000)).toISOString(),
+                follow_up_sent_at: null,
+                follow_up_count: 0,
+            },
+            {
+                intent: 'NOT_INTERESTED',
+                subIntent: 'NONE',
+                confidence: 0.95,
+                entities: [],
+            }
+        );
+        assert.equal(cadenceNotInterested.baseDelayDays, 60);
+        assert.equal(cadenceNotInterested.requiredDelayDays, 60);
+        assert.equal(cadenceNotInterested.reason, 'intent_not_interested');
+
+        const cadenceEscalated = resolveFollowUpCadence(
+            {
+                id: 103,
+                messaged_at: new Date(Date.now() - (40 * 24 * 60 * 60 * 1000)).toISOString(),
+                follow_up_sent_at: new Date(Date.now() - (20 * 24 * 60 * 60 * 1000)).toISOString(),
+                follow_up_count: 2,
+            },
+            {
+                intent: 'NEGATIVE',
+                subIntent: 'OBJECTION_HANDLING',
+                confidence: 0.85,
+                entities: [],
+            }
+        );
+        assert.equal(cadenceEscalated.baseDelayDays >= config.followUpQuestionsDelayDays, true);
+        assert.equal(cadenceEscalated.escalationMultiplier > 1, true);
+        assert.equal(cadenceEscalated.requiredDelayDays > cadenceEscalated.baseDelayDays, true);
+        assert.equal(cadenceEscalated.referenceAt !== null, true);
+
+        // Con stddev=0 la cadenza e' deterministica e ripetibile.
+        const cadenceRepeatA = resolveFollowUpCadence(
+            {
+                id: 104,
+                messaged_at: new Date(Date.now() - (10 * 24 * 60 * 60 * 1000)).toISOString(),
+                follow_up_sent_at: null,
+                follow_up_count: 1,
+            },
+            {
+                intent: 'NEUTRAL',
+                subIntent: 'NONE',
+                confidence: 0.7,
+                entities: [],
+            }
+        );
+        const cadenceRepeatB = resolveFollowUpCadence(
+            {
+                id: 104,
+                messaged_at: cadenceRepeatA.referenceAt,
+                follow_up_sent_at: null,
+                follow_up_count: 1,
+            },
+            {
+                intent: 'NEUTRAL',
+                subIntent: 'NONE',
+                confidence: 0.7,
+                entities: [],
+            }
+        );
+        assert.equal(cadenceRepeatA.requiredDelayDays, cadenceRepeatB.requiredDelayDays);
+        assert.equal(cadenceRepeatA.jitterDays, cadenceRepeatB.jitterDays);
+    } finally {
+        config.followUpDelayDays = originalFollowUpDelayDays;
+        config.followUpQuestionsDelayDays = originalFollowUpQuestionsDelayDays;
+        config.followUpNegativeDelayDays = originalFollowUpNegativeDelayDays;
+        config.followUpNotInterestedDelayDays = originalFollowUpNotInterestedDelayDays;
+        config.followUpDelayStddevDays = originalFollowUpDelayStddevDays;
+        config.followUpDelayEscalationFactor = originalFollowUpDelayEscalationFactor;
+    }
+
+    const selectorModelStable = assessSelectorModelDegradation({
+        baselineOpenFailures: 6,
+        currentOpenFailures: 7,
+        degradeRatio: 0.35,
+        degradeMinDelta: 2,
+    });
+    assert.equal(selectorModelStable.degraded, false);
+    assert.equal(selectorModelStable.requiredIncrease, 3);
+
+    const selectorModelDegraded = assessSelectorModelDegradation({
+        baselineOpenFailures: 6,
+        currentOpenFailures: 9,
+        degradeRatio: 0.35,
+        degradeMinDelta: 2,
+    });
+    assert.equal(selectorModelDegraded.degraded, true);
+    assert.equal(selectorModelDegraded.absoluteIncrease, 3);
+
+    const selectorModelColdStart = assessSelectorModelDegradation({
+        baselineOpenFailures: 0,
+        currentOpenFailures: 2,
+        degradeRatio: 0.35,
+        degradeMinDelta: 2,
+    });
+    assert.equal(selectorModelColdStart.degraded, true);
+
+    const rampHealthy = computeNonLinearRampCap({
+        channel: 'invite',
+        currentCap: 5,
+        hardMaxCap: 20,
+        baseDailyIncrease: 0.05,
+        accountAgeDays: 120,
+        warmupDays: 180,
+        riskAction: 'NORMAL',
+        riskScore: 28,
+        pendingRatio: 0.2,
+        errorRate: 0.05,
+        healthScore: 84,
+    });
+    assert.equal(rampHealthy.nextCap >= 5, true);
+    assert.equal(rampHealthy.nextCap <= 20, true);
+    assert.equal(rampHealthy.safetyFactor > 0.7, true);
+
+    const rampWarn = computeNonLinearRampCap({
+        channel: 'invite',
+        currentCap: 12,
+        hardMaxCap: 20,
+        baseDailyIncrease: 0.05,
+        accountAgeDays: 120,
+        warmupDays: 180,
+        riskAction: 'WARN',
+        riskScore: 65,
+        pendingRatio: 0.7,
+        errorRate: 0.22,
+        healthScore: 55,
+    });
+    assert.equal(rampWarn.nextCap <= 12, true);
+    assert.equal(rampWarn.safetyFactor < rampHealthy.safetyFactor, true);
+
+    const rampStop = computeNonLinearRampCap({
+        channel: 'message',
+        currentCap: 18,
+        hardMaxCap: 30,
+        baseDailyIncrease: 0.05,
+        accountAgeDays: 300,
+        warmupDays: 180,
+        riskAction: 'STOP',
+        riskScore: 95,
+        pendingRatio: 0.85,
+        errorRate: 0.3,
+        healthScore: 45,
+    });
+    assert.equal(rampStop.nextCap <= 9, true);
+    assert.equal(rampStop.nextCap >= 1, true);
 
     // ── plugin loader security policy ───────────────────────────────────────
     const { PluginRegistry } = await import('../plugins/pluginLoader');
@@ -303,6 +899,7 @@ async function run(): Promise<void> {
     const originalPluginDirAllowlist = process.env.PLUGIN_DIR_ALLOWLIST;
     const originalPluginAllowlist = process.env.PLUGIN_ALLOWLIST;
     const originalPluginAllowTs = process.env.PLUGIN_ALLOW_TS;
+    const originalPluginExampleMarkerFile = process.env.PLUGIN_EXAMPLE_MARKER_FILE;
     fs.mkdirSync(pluginDir, { recursive: true });
     fs.writeFileSync(pluginPath, pluginCode, 'utf8');
 
@@ -335,6 +932,56 @@ async function run(): Promise<void> {
         const invalidRegistry = new PluginRegistry();
         await invalidRegistry.load();
         assert.equal(invalidRegistry.count, 0);
+
+        // Smoke test plugin reale in codebase (JS + manifest + hook execution).
+        const markerPath = path.resolve(process.cwd(), 'data', 'test_example_plugin.marker.jsonl');
+        if (fs.existsSync(markerPath)) {
+            fs.unlinkSync(markerPath);
+        }
+
+        process.env.PLUGIN_DIR = path.resolve(process.cwd(), 'plugins');
+        process.env.PLUGIN_DIR_ALLOWLIST = path.resolve(process.cwd(), 'plugins');
+        process.env.PLUGIN_ALLOWLIST = 'example-engagement-booster';
+        process.env.PLUGIN_ALLOW_TS = 'false';
+        process.env.PLUGIN_EXAMPLE_MARKER_FILE = markerPath;
+
+        const exampleRegistry = new PluginRegistry();
+        await exampleRegistry.load();
+        assert.equal(exampleRegistry.count, 1);
+        await exampleRegistry.init();
+        await exampleRegistry.fireIdle({
+            cycle: 1,
+            workflow: 'all',
+            localDate: '2026-03-02',
+        });
+        await exampleRegistry.fireDailyReport({
+            date: '2026-03-02',
+            invited: 3,
+            accepted: 2,
+            messaged: 1,
+            replied: 1,
+            acceptRate: 2 / 3,
+            replyRate: 1 / 3,
+        });
+        // fireIdle/fireDailyReport sono non bloccanti: lasciamo completare hook async.
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        await exampleRegistry.shutdown();
+
+        assert.equal(fs.existsSync(markerPath), true);
+        const markerLines = fs.readFileSync(markerPath, 'utf8')
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter((line) => line.length > 0);
+        assert.equal(markerLines.length >= 4, true);
+        const markerEvents = markerLines
+            .map((line) => JSON.parse(line) as { event?: string })
+            .map((entry) => entry.event ?? '');
+        assert.equal(markerEvents.includes('onInit'), true);
+        assert.equal(markerEvents.includes('onIdle'), true);
+        assert.equal(markerEvents.includes('onDailyReport'), true);
+        assert.equal(markerEvents.includes('onShutdown'), true);
+
+        fs.unlinkSync(markerPath);
     } finally {
         if (originalPluginDir === undefined) delete process.env.PLUGIN_DIR;
         else process.env.PLUGIN_DIR = originalPluginDir;
@@ -344,6 +991,8 @@ async function run(): Promise<void> {
         else process.env.PLUGIN_ALLOWLIST = originalPluginAllowlist;
         if (originalPluginAllowTs === undefined) delete process.env.PLUGIN_ALLOW_TS;
         else process.env.PLUGIN_ALLOW_TS = originalPluginAllowTs;
+        if (originalPluginExampleMarkerFile === undefined) delete process.env.PLUGIN_EXAMPLE_MARKER_FILE;
+        else process.env.PLUGIN_EXAMPLE_MARKER_FILE = originalPluginExampleMarkerFile;
 
         if (fs.existsSync(pluginDir)) {
             fs.rmSync(pluginDir, { recursive: true, force: true });
@@ -362,6 +1011,31 @@ async function run(): Promise<void> {
             );
         }
     }
+
+    // ── Mouse Trajectories & AI Typos & Timing ─────────────────────────────
+    const { MouseGenerator } = await import('../ml/mouseGenerator');
+    const mousePath = MouseGenerator.generatePath({ x: 0, y: 0 }, { x: 100, y: 100 }, 10);
+    assert.equal(mousePath.length, 11);
+    assert.equal(mousePath[0]?.x, 0);
+    assert.equal(mousePath[mousePath.length - 1]?.x, 100);
+    assert.equal(mousePath[mousePath.length - 1]?.y, 100);
+
+    const { determineNextKeystroke } = await import('../ai/typoGenerator');
+    let typoFound = false;
+    for (let i = 0; i < 100; i++) {
+        const { isTypo } = determineNextKeystroke('a', 0.5);
+        if (isTypo) typoFound = true;
+    }
+    assert.equal(typoFound, true);
+
+    const { calculateContextualDelay } = await import('../ml/timingModel');
+    const testDelay = calculateContextualDelay({ actionType: 'read', baseMin: 100, baseMax: 200, contentLength: 500 });
+    assert.equal(testDelay > 0, true);
+
+    // ── Vision Solver (P1-06) ──────────────────────────────────────────────
+    const { VisionSolver } = await import('../captcha/solver');
+    const solver = new VisionSolver({ endpoint: 'http://test-endpoint.local' });
+    assert.equal(solver !== undefined, true);
 }
 
 run()

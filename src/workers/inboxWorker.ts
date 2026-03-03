@@ -1,12 +1,14 @@
-import { humanDelay, humanMouseMove, simulateHumanReading } from '../browser';
+import { clickWithFallback, humanDelay, humanMouseMove, simulateHumanReading, typeWithFallback } from '../browser';
 import { WorkerContext } from './context';
-import { analyzeIncomingMessage } from '../ai/sentimentAnalysis';
+import { resolveIntentAndDraft } from '../ai/intentResolver';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { WorkerExecutionResult, workerResult } from './result';
-import { getLeadByLinkedinUrl, storeLeadIntent } from '../core/repositories';
+import { appendLeadReplyDraft, getLeadByLinkedinUrl, storeLeadIntent } from '../core/repositories';
 import { transitionLead } from '../core/leadStateService';
 import { isProfileUrl, normalizeLinkedInUrl } from '../linkedinUrl';
 import { recordOutcome } from '../ml/abBandit';
+import { config } from '../config';
+import { SELECTORS } from '../selectors';
 
 export interface InboxJobPayload {
     accountId: string;
@@ -69,6 +71,7 @@ export async function processInboxJob(payload: InboxJobPayload, context: WorkerC
     const page = context.session.page;
     const errors: Array<{ message: string }> = [];
     let processedCount = 0;
+    let autoRepliesSent = 0;
     await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'domcontentloaded' });
     await simulateHumanReading(page);
 
@@ -112,20 +115,21 @@ export async function processInboxJob(payload: InboxJobPayload, context: WorkerC
                     await simulateConversationReading(page, rawText.trim());
 
                     // Analisi Sentiment (NLP)
-                    const sentiment = await analyzeIncomingMessage(rawText.trim());
+                    const resolution = await resolveIntentAndDraft(rawText.trim());
                     const profileUrl = await extractParticipantProfileUrl(page);
                     let leadId: number | null = null;
+                    let autoReplySent = false;
                     if (profileUrl) {
                         const lead = await getLeadByLinkedinUrl(profileUrl);
                         if (lead) {
                             leadId = lead.id;
                             await storeLeadIntent(
                                 lead.id,
-                                sentiment.intent,
-                                sentiment.subIntent,
-                                sentiment.confidence,
+                                resolution.intent,
+                                resolution.subIntent,
+                                resolution.confidence,
                                 rawText.trim(),
-                                sentiment.entities
+                                resolution.entities
                             );
                             if (lead.status === 'MESSAGED') {
                                 await transitionLead(
@@ -133,10 +137,10 @@ export async function processInboxJob(payload: InboxJobPayload, context: WorkerC
                                     'REPLIED',
                                     'inbox_reply_detected',
                                     {
-                                        intent: sentiment.intent,
-                                        subIntent: sentiment.subIntent,
-                                        entities: sentiment.entities,
-                                        confidence: sentiment.confidence,
+                                        intent: resolution.intent,
+                                        subIntent: resolution.subIntent,
+                                        entities: resolution.entities,
+                                        confidence: resolution.confidence,
                                     }
                                 );
                                 if (lead.invite_prompt_variant) {
@@ -144,13 +148,60 @@ export async function processInboxJob(payload: InboxJobPayload, context: WorkerC
                                     recordOutcome(lead.invite_prompt_variant, 'replied', { segmentKey }).catch(() => null);
                                 }
                             }
+
+                            const canAutoReply =
+                                config.inboxAutoReplyEnabled
+                                && !context.dryRun
+                                && autoRepliesSent < config.inboxAutoReplyMaxPerRun
+                                && resolution.confidence >= config.inboxAutoReplyMinConfidence
+                                && resolution.responseDraft.trim().length > 0
+                                && resolution.intent !== 'NOT_INTERESTED'
+                                && resolution.intent !== 'NEGATIVE';
+
+                            if (canAutoReply) {
+                                try {
+                                    await page.waitForTimeout(Math.min(24_000, estimateReadingDelayMs(rawText.trim()) + 1500));
+                                    await typeWithFallback(
+                                        page,
+                                        SELECTORS.messageTextbox,
+                                        resolution.responseDraft,
+                                        'messageTextbox',
+                                        5000
+                                    );
+                                    await humanDelay(page, 350, 900);
+                                    await clickWithFallback(page, SELECTORS.messageSendButton, 'messageSendButton', 5000);
+                                    autoReplySent = true;
+                                    autoRepliesSent += 1;
+                                } catch (autoReplyError: unknown) {
+                                    await logWarn('inbox.auto_reply_failed', {
+                                        accountId: payload.accountId,
+                                        leadId: lead.id,
+                                        error: autoReplyError instanceof Error ? autoReplyError.message : String(autoReplyError),
+                                    });
+                                }
+                            }
+
+                            await appendLeadReplyDraft(lead.id, {
+                                draft: resolution.responseDraft,
+                                confidence: resolution.confidence,
+                                source: resolution.source,
+                                intent: resolution.intent,
+                                subIntent: resolution.subIntent,
+                                entities: resolution.entities,
+                                reasoning: resolution.reasoning,
+                                autoReplySent,
+                            });
                         }
                     }
                     await logInfo('inbox.analyzed_message', {
                         accountId: payload.accountId,
                         textExcerpt: rawText.substring(0, 30),
-                        intent: sentiment.intent,
-                        confidence: sentiment.confidence,
+                        intent: resolution.intent,
+                        confidence: resolution.confidence,
+                        draftSource: resolution.source,
+                        draftLength: resolution.responseDraft.length,
+                        autoReplySent,
+                        autoRepliesSent,
                         leadId,
                         profileUrl,
                     });

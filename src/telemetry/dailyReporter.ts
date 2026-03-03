@@ -1,8 +1,8 @@
 import { sendTelegramAlert } from './alerts';
-import { getDailyStatsSnapshot } from '../core/repositories';
+import { getDailyStatsSnapshot, getOperationalObservabilitySnapshot } from '../core/repositories';
 import { getDatabase } from '../db';
 import { getLocalDateString } from '../config';
-import { getTopTimeSlots } from '../ml/timingOptimizer';
+import { getTimingExperimentReport, getTopTimeSlots } from '../ml/timingOptimizer';
 import { getVariantLeaderboard } from '../ml/abBandit';
 
 export async function generateAndSendDailyReport(targetDate?: string): Promise<boolean> {
@@ -10,6 +10,7 @@ export async function generateAndSendDailyReport(targetDate?: string): Promise<b
 
     // Raccogliamo i dati aggregati di tutto il giorno da `daily_stats`
     const stats = await getDailyStatsSnapshot(localDate);
+    const observability = await getOperationalObservabilitySnapshot(localDate);
 
     // Contiamo le conversioni e l'impatto funnel globale attingendo alla tabella leads
     const db = await getDatabase();
@@ -45,7 +46,7 @@ export async function generateAndSendDailyReport(targetDate?: string): Promise<b
         ? [
             `\n*🧪 A/B Varianti Note (Bandit)*`,
             ...abStats.map(v =>
-                `• \`${v.variantId}\`: sent=${v.sent} acc=${(v.acceptanceRate * 100).toFixed(0)}% reply=${(v.replyRate * 100).toFixed(0)}% UCB=${v.ucbScore}`
+                `• \`${v.variantId}${v.significanceWinner ? ' (WIN)' : ''}\`: sent=${v.sent} acc=${(v.acceptanceRate * 100).toFixed(0)}% reply=${(v.replyRate * 100).toFixed(0)}% score=${(v.bayesScore ?? v.ucbScore ?? 0).toFixed(3)}`
             )
         ].join('\n')
         : '';
@@ -61,6 +62,42 @@ export async function generateAndSendDailyReport(targetDate?: string): Promise<b
             )
         ].join('\n')
         : '';
+
+    const timingExperiment = await getTimingExperimentReport('invite').catch(() => null);
+    const timingExperimentSection = timingExperiment
+        ? [
+            `\n*🧪 Timing A/B (invite)*`,
+            `• baseline: sent=${timingExperiment.baseline.sent} rate=${(timingExperiment.baseline.successRate * 100).toFixed(1)}%`,
+            `• optimizer: sent=${timingExperiment.optimizer.sent} rate=${(timingExperiment.optimizer.successRate * 100).toFixed(1)}%`,
+            `• lift: ${timingExperiment.liftAbsolute === null ? 'n/a' : `${(timingExperiment.liftAbsolute * 100).toFixed(1)}%`}`,
+            `• significance: ${timingExperiment.significance?.pValue === null || timingExperiment.significance === null
+                ? 'n/a'
+                : `p=${timingExperiment.significance.pValue.toFixed(4)} (alpha=${timingExperiment.significance.alpha})`}`,
+        ].join('\n')
+        : '';
+
+    const sloSections = observability.slo.windows.map((window) => {
+        return `• ${window.windowDays}d status=${window.status} err=${(window.errorRate * 100).toFixed(1)}% chall=${(window.challengeRate * 100).toFixed(1)}% sel=${(window.selectorFailureRate * 100).toFixed(1)}%`;
+    });
+    const sloSection = [
+        `\n*📈 Operational SLO/SLA*`,
+        `• Status globale: *${observability.slo.status}*`,
+        `• Stato corrente: *${observability.slo.current.status}* (queueLag=${observability.slo.current.queueLagSeconds}s, oldestRunning=${observability.slo.current.oldestRunningJobSeconds}s)`,
+        ...sloSections,
+    ].join('\n');
+    const selectorKpiReduction = observability.selectorCacheKpi.reductionPct === null
+        ? 'n/a'
+        : `${observability.selectorCacheKpi.reductionPct.toFixed(1)}%`;
+    const selectorKpiTarget = `${(observability.selectorCacheKpi.targetReductionRate * 100).toFixed(0)}%`;
+    const selectorKpiStatus = observability.selectorCacheKpi.validationStatus;
+    const selectorKpiBaselineNote = observability.selectorCacheKpi.baselineSufficient
+        ? ''
+        : ` (baseline<${observability.selectorCacheKpi.minBaselineFailures})`;
+    const selectorCacheKpiSection = [
+        `\n*🎯 Selector Cache KPI (7d)*`,
+        `• Validation: *${selectorKpiStatus}* (riduzione=${selectorKpiReduction}, target=${selectorKpiTarget})${selectorKpiBaselineNote}`,
+        `• Failures: corrente=${observability.selectorCacheKpi.currentFailures}, precedente=${observability.selectorCacheKpi.previousFailures}`,
+    ].join('\n');
 
     // Format Report Markdown per Telegram
     const reportText = [
@@ -78,8 +115,11 @@ export async function generateAndSendDailyReport(targetDate?: string): Promise<b
         `• Errori Esecuzione (Job/Orchestrator): *${stats.runErrors}*`,
         `• Problemi Selettori UI: *${stats.selectorFailures}*`,
         `• Challenge LinkedIn Apparse: *${stats.challengesCount}*`,
+        sloSection,
+        selectorCacheKpiSection,
         abSection,
         timingSection,
+        timingExperimentSection,
     ].filter(s => s.length > 0).join('\n');
 
     await sendTelegramAlert(reportText, 'LinkedIn Bot Daily Report', 'info');

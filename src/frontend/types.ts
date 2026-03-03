@@ -80,16 +80,79 @@ export interface ReviewQueueResponse {
 
 export interface AbLeaderboardRow {
     variantId: string;
-    totalSent: number;
+    totalSent?: number;
+    sent?: number;
     accepted: number;
     replied: number;
-    ucbScore: number;
+    ucbScore?: number;
+    bayesScore?: number;
+    significanceWinner?: boolean;
 }
 
 export interface TimingSlotRow {
     hour: number;
     samples: number;
     score: number;
+}
+
+export interface OperationalSloWindow {
+    windowDays: number;
+    status: 'OK' | 'WARN' | 'CRITICAL';
+    errorRate: number;
+    challengeRate: number;
+    selectorFailureRate: number;
+}
+
+export interface OperationalSloSnapshot {
+    status: 'OK' | 'WARN' | 'CRITICAL';
+    current: {
+        status: 'OK' | 'WARN' | 'CRITICAL';
+        queueLagSeconds: number;
+        oldestRunningJobSeconds: number;
+    };
+    windows: OperationalSloWindow[];
+}
+
+export interface SelectorCacheKpiSnapshot {
+    windowDays: number;
+    previousWindowDays: number;
+    currentFailures: number;
+    previousFailures: number;
+    reductionRate: number | null;
+    reductionPct: number | null;
+    targetReductionRate: number;
+    minBaselineFailures: number;
+    baselineSufficient: boolean;
+    validationStatus: 'PASS' | 'WARN' | 'INSUFFICIENT_DATA';
+    targetMet: boolean;
+}
+
+export interface ObservabilitySnapshot {
+    slo?: OperationalSloSnapshot;
+    selectorCacheKpi?: SelectorCacheKpiSnapshot;
+}
+
+export interface CommentSuggestionItem {
+    leadId: number;
+    firstName: string;
+    lastName: string;
+    listName: string;
+    linkedinUrl: string;
+    suggestionIndex: number;
+    postIndex: number;
+    postSnippet: string;
+    comment: string;
+    confidence: number;
+    source: string;
+    model: string | null;
+    status: 'REVIEW_PENDING' | 'APPROVED' | 'REJECTED';
+    generatedAt: string | null;
+}
+
+export interface CommentSuggestionQueueResponse {
+    status: string;
+    count: number;
+    rows: CommentSuggestionItem[];
 }
 
 export interface DashboardSnapshot {
@@ -101,6 +164,8 @@ export interface DashboardSnapshot {
     reviewQueue: ReviewQueueResponse;
     ab: AbLeaderboardRow[];
     timingSlots: TimingSlotRow[];
+    observability: ObservabilitySnapshot;
+    commentSuggestions: CommentSuggestionQueueResponse;
 }
 
 export interface TimelineEntry {

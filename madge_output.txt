@@ -1,0 +1,9 @@
+Processed 140 files (1.2s) 
+
+1) proxyManager.ts > core/integrationPolicy.ts
+2) telemetry/logger.ts > core/repositories.ts > core/repositories/aiQuality.ts > ai/inviteNotePersonalizer.ts > ml/abBandit.ts
+3) telemetry/logger.ts > core/repositories.ts > core/repositories/aiQuality.ts > ai/inviteNotePersonalizer.ts
+4) telemetry/logger.ts > core/repositories.ts > core/repositories/aiQuality.ts > ai/messagePersonalizer.ts
+5) telemetry/logger.ts > core/repositories.ts > core/repositories/aiQuality.ts > ai/sentimentAnalysis.ts
+6) telemetry/logger.ts > core/repositories.ts > core/repositories/stats.ts > core/repositories/system.ts > cloud/supabaseDataClient.ts
+

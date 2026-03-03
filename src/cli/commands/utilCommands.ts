@@ -13,7 +13,12 @@ import { runCompanyEnrichmentBatch } from '../../core/companyEnrichment';
 import { runRandomLinkedinActivity } from '../../workers/randomActivityWorker';
 import { createPersistentProfile, resolveProfileDir } from '../../scripts/createProfile';
 import { getAccountProfileById, getRuntimeAccountProfiles } from '../../accountManager';
-import { getProxyFailoverChain, getProxyPoolStatus } from '../../proxyManager';
+import {
+    getIntegrationProxyFailoverChain,
+    getIntegrationProxyPoolStatus,
+    getProxyFailoverChain,
+    getProxyPoolStatus,
+} from '../../proxyManager';
 import { getOptionValue, hasOption, parseIntStrict, getPositionalArgs } from '../cliParser';
 
 // ─── Command handlers ─────────────────────────────────────────────────────────
@@ -115,8 +120,15 @@ export async function runStateSyncCommand(args: string[]): Promise<void> {
 }
 
 export async function runProxyStatusCommand(): Promise<void> {
-    const status = getProxyPoolStatus();
-    const failoverChain = getProxyFailoverChain().map((proxy, index) => ({
+    const sessionStatus = getProxyPoolStatus();
+    const integrationStatus = getIntegrationProxyPoolStatus();
+    const sessionFailoverChain = getProxyFailoverChain().map((proxy, index) => ({
+        order: index + 1,
+        server: proxy.server,
+        type: proxy.type ?? 'unknown',
+        auth: !!proxy.username || !!proxy.password,
+    }));
+    const integrationFailoverChain = getIntegrationProxyFailoverChain().map((proxy, index) => ({
         order: index + 1,
         server: proxy.server,
         type: proxy.type ?? 'unknown',
@@ -124,8 +136,15 @@ export async function runProxyStatusCommand(): Promise<void> {
     }));
 
     console.log(JSON.stringify({
-        ...status,
-        failoverChain,
+        integrationProxyPoolEnabled: config.integrationProxyPoolEnabled,
+        session: {
+            ...sessionStatus,
+            failoverChain: sessionFailoverChain,
+        },
+        integration: {
+            ...integrationStatus,
+            failoverChain: integrationFailoverChain,
+        },
     }, null, 2));
 }
 

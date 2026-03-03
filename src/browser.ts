@@ -20,7 +20,12 @@ export {
     interJobDelay,
     performDecoyAction,
     performDecoyBurst,
+    runSelectorCanaryDetailed,
     runSelectorCanary,
+} from './browser/humanBehavior';
+export type {
+    SelectorCanaryStepResult,
+    SelectorCanaryReport,
 } from './browser/humanBehavior';
 
 export {

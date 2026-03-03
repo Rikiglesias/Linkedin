@@ -1,9 +1,13 @@
 import { config, getLocalDateString, getWeekStartDate, getWorkingHourIntensity, isGreenModeWindow } from '../config';
 import { pickAccountIdForLead, getRuntimeAccountProfiles } from '../accountManager';
-import { evaluateRisk, calculateDynamicBudget, calculateAccountWarmupMultiplier } from '../risk/riskEngine';
+import {
+    calculateAccountWarmupMultiplier,
+    calculateDynamicBudget,
+    calculateDynamicWeeklyInviteLimit,
+    evaluateRisk,
+} from '../risk/riskEngine';
 import { JobType, RiskSnapshot } from '../types/domain';
-import { computeDelayUntilSlot, getBestTimeSlotForSegment, TimingAction } from '../ml/timingOptimizer';
-import { inferLeadSegment } from '../ml/segments';
+import { getTimingDecisionForLead, TimingAction } from '../ml/timingOptimizer';
 import {
     countWeeklyInvites,
     ensureLeadList,
@@ -28,6 +32,9 @@ export interface ScheduleResult {
     riskSnapshot: RiskSnapshot;
     inviteBudget: number;
     messageBudget: number;
+    weeklyInvitesSent: number;
+    weeklyInviteLimitEffective: number;
+    weeklyInvitesRemaining: number;
     queuedInviteJobs: number;
     queuedCheckJobs: number;
     queuedMessageJobs: number;
@@ -344,7 +351,16 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
     const dailyMessagesSent = await getDailyStat(localDate, 'messages_sent');
     const weekStartDate = getWeekStartDate();
     const weeklyInvitesSent = await countWeeklyInvites(weekStartDate);
-    const weeklyRemaining = Math.max(0, config.weeklyInviteLimit - weeklyInvitesSent);
+    const dbAccountAgeDays = await getAccountAgeDays();
+    const weeklyInviteLimitEffective = config.complianceDynamicWeeklyLimitEnabled
+        ? calculateDynamicWeeklyInviteLimit(
+            dbAccountAgeDays,
+            config.complianceDynamicWeeklyMinInvites,
+            Math.min(config.complianceDynamicWeeklyMaxInvites, config.weeklyInviteLimit),
+            config.complianceDynamicWeeklyWarmupDays
+        )
+        : config.weeklyInviteLimit;
+    const weeklyRemaining = Math.max(0, weeklyInviteLimitEffective - weeklyInvitesSent);
     const ssiRaw = config.ssiDynamicLimitsEnabled
         ? await getRuntimeFlag(config.ssiStateKey)
         : null;
@@ -357,7 +373,6 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
         : config.softMsgCap;
     const hourIntensity = getWorkingHourIntensity();
 
-    const dbAccountAgeDays = await getAccountAgeDays();
     const accounts = getRuntimeAccountProfiles();
 
     let inviteBudget = 0;
@@ -451,24 +466,23 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
         }
     }
     const noBurstPlanner = !dryRun && config.noBurstEnabled ? createNoBurstPlanner() : null;
-    const timingSlotCache = new Map<string, Awaited<ReturnType<typeof getBestTimeSlotForSegment>>>();
 
-    async function resolveTimingDelaySec(action: TimingAction, jobTitle: string | null | undefined): Promise<number> {
-        if (dryRun) return 0;
-        if (Math.random() < config.timingExplorationProbability) {
-            return 0;
+    async function resolveTimingDecision(action: TimingAction, jobTitle: string | null | undefined) {
+        if (dryRun) {
+            return {
+                action,
+                strategy: 'baseline' as const,
+                segment: 'unknown' as const,
+                delaySec: 0,
+                score: 0,
+                sampleSize: 0,
+                slot: null,
+                explored: false,
+                reason: 'insufficient_data' as const,
+                model: 'timing_optimizer_v2',
+            };
         }
-        const segment = inferLeadSegment(jobTitle);
-        const cacheKey = `${action}:${segment}`;
-        let slot = timingSlotCache.get(cacheKey);
-        if (!slot) {
-            slot = await getBestTimeSlotForSegment(action, segment);
-            timingSlotCache.set(cacheKey, slot);
-        }
-        if (slot.sampleSize <= 0 || slot.score <= 0) {
-            return 0;
-        }
-        return computeDelayUntilSlot(slot);
+        return getTimingDecisionForLead(action, jobTitle);
     }
 
     if (!dryRun && riskSnapshot.action !== 'STOP') {
@@ -522,11 +536,26 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
                     continue;
                 }
                 const noBurstDelaySec = noBurstPlanner ? noBurstPlanner.nextDelaySec() : 0;
-                const timingDelaySec = await resolveTimingDelaySec('invite', lead.job_title);
-                const initialDelaySec = noBurstDelaySec + timingDelaySec;
+                const timingDecision = await resolveTimingDecision('invite', lead.job_title);
+                const initialDelaySec = noBurstDelaySec + timingDecision.delaySec;
                 const inserted = await enqueueJob(
                     'INVITE',
-                    { leadId: lead.id, localDate },
+                    {
+                        leadId: lead.id,
+                        localDate,
+                        timing: {
+                            strategy: timingDecision.strategy,
+                            segment: timingDecision.segment,
+                            score: timingDecision.score,
+                            sampleSize: timingDecision.sampleSize,
+                            slotHour: timingDecision.slot?.hour ?? null,
+                            slotDow: timingDecision.slot?.dayOfWeek ?? null,
+                            delaySec: timingDecision.delaySec,
+                            reason: timingDecision.reason,
+                            model: timingDecision.model,
+                            explored: timingDecision.explored,
+                        },
+                    },
                     buildInviteKey(lead.id, localDate),
                     10,
                     config.retryMaxAttempts,
@@ -644,11 +673,26 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
                 }
 
                 const noBurstDelaySec = noBurstPlanner ? noBurstPlanner.nextDelaySec() : 0;
-                const timingDelaySec = await resolveTimingDelaySec('message', lead.job_title);
-                const initialDelaySec = acceptanceDelaySec + noBurstDelaySec + timingDelaySec;
+                const timingDecision = await resolveTimingDecision('message', lead.job_title);
+                const initialDelaySec = acceptanceDelaySec + noBurstDelaySec + timingDecision.delaySec;
                 const inserted = await enqueueJob(
                     'MESSAGE',
-                    { leadId: lead.id, acceptedAtDate },
+                    {
+                        leadId: lead.id,
+                        acceptedAtDate,
+                        timing: {
+                            strategy: timingDecision.strategy,
+                            segment: timingDecision.segment,
+                            score: timingDecision.score,
+                            sampleSize: timingDecision.sampleSize,
+                            slotHour: timingDecision.slot?.hour ?? null,
+                            slotDow: timingDecision.slot?.dayOfWeek ?? null,
+                            delaySec: timingDecision.delaySec,
+                            reason: timingDecision.reason,
+                            model: timingDecision.model,
+                            explored: timingDecision.explored,
+                        },
+                    },
                     buildMessageKey(lead.id, acceptedAtDate),
                     20,
                     config.retryMaxAttempts,
@@ -687,6 +731,9 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
         riskSnapshot,
         inviteBudget: effectiveInviteBudget,
         messageBudget: effectiveMessageBudget,
+        weeklyInvitesSent,
+        weeklyInviteLimitEffective,
+        weeklyInvitesRemaining: weeklyRemaining,
         queuedInviteJobs,
         queuedCheckJobs,
         queuedMessageJobs,

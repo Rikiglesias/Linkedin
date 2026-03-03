@@ -10,6 +10,8 @@ export * from './repositories/incidents';
 export * from './repositories/stats';
 export * from './repositories/system';
 export * from './repositories/aiQuality';
+export * from './repositories/featureStore';
+export * from './repositories/campaigns';
 
 export type {
     AddLeadInput,
@@ -25,19 +27,32 @@ export type {
     AccountHealthSnapshotInput,
     AutomationPauseState,
     BackupRunRecord,
+    BuildFeatureDatasetOptions,
+    BuildFeatureDatasetResult,
     CompanyTargetRecord,
     CompanyTargetStatus,
     ControlPlaneCampaignConfigInput,
     DailyStatsSnapshot,
+    FeatureDatasetRowInput,
+    FeatureDatasetRowRecord,
+    FeatureDatasetSplit,
+    FeatureDatasetVersionRecord,
+    FeatureStoreAction,
+    ImportFeatureDatasetInput,
     JobStatusCounts,
     LockContentionSummary,
     LockMetricSnapshot,
     LeadListCampaignConfig,
     ListLeadStatusCount,
     ObservabilityAlert,
+    OperationalSloSnapshot,
+    OperationalSloThresholds,
+    OperationalSloWindowSnapshot,
     OperationalObservabilitySnapshot,
     PrivacyCleanupStats,
     SecretRotationStatus,
+    SelectorLearningRollbackSnapshotEntry,
+    SelectorLearningRunRecord,
     RuntimeLockRecord,
     SalesNavListRecord,
     SalesNavListSummary,
@@ -46,4 +61,9 @@ export type {
     UpdateLeadListCampaignInput,
     UpsertSalesNavigatorLeadInput,
     UpsertSalesNavigatorLeadResult,
+    CampaignStepActionType,
+    LeadCampaignStatus,
+    CampaignRecord,
+    CampaignStepRecord,
+    LeadCampaignStateRecord,
 } from './repositories.types';

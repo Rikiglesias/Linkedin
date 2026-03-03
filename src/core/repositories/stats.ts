@@ -9,18 +9,101 @@ import { ABTestStats, RiskInputs, RunStatus } from '../../types/domain';
 import {
     type DailyStatsSnapshot,
     type ObservabilityAlert,
+    type OperationalSloSnapshot,
+    type OperationalSloThresholds,
+    type OperationalSloWindowSnapshot,
     type OperationalObservabilitySnapshot,
+    type SelectorCacheKpiSnapshot,
 } from '../repositories.types';
 import { countLeadsByStatuses } from './leadsCore';
 import { countPendingOutboxEvents, getLockContentionSummary } from './system';
 
-export async function getDailyStat(dateString: string, field: 'invites_sent' | 'messages_sent' | 'challenges_count' | 'selector_failures' | 'run_errors'): Promise<number> {
+export async function getDailyStat(
+    dateString: string,
+    field: 'invites_sent' | 'messages_sent' | 'acceptances' | 'challenges_count' | 'selector_failures' | 'run_errors' | 'follow_ups_sent'
+): Promise<number> {
     const db = await getDatabase();
     const row = await db.get<Record<string, number>>(
         `SELECT ${field} FROM daily_stats WHERE date = ?`,
         [dateString]
     );
     return row?.[field] ?? 0;
+}
+
+function formatPercent(numerator: number, denominator: number): number {
+    if (denominator <= 0) return 0;
+    return Number.parseFloat(((numerator / denominator) * 100).toFixed(2));
+}
+
+export interface ComplianceHealthMetrics {
+    localDate: string;
+    lookbackDays: number;
+    invitesSentLookback: number;
+    acceptancesLookback: number;
+    acceptanceRatePct: number;
+    messagedLookback: number;
+    engagedLookback: number;
+    engagementRatePct: number;
+    pendingRatio: number;
+}
+
+export async function getComplianceHealthMetrics(
+    localDate: string,
+    lookbackDays: number,
+    hardInviteCap: number
+): Promise<ComplianceHealthMetrics> {
+    const db = await getDatabase();
+    const safeLookbackDays = Math.max(1, Math.floor(lookbackDays));
+
+    const [dailyStatsRow, messagedRow, engagedRow, riskInputs] = await Promise.all([
+        db.get<{ invites: number; acceptances: number }>(
+            `
+            SELECT
+                COALESCE(SUM(invites_sent), 0) AS invites,
+                COALESCE(SUM(acceptances), 0) AS acceptances
+            FROM daily_stats
+            WHERE date >= DATE('now', '-' || ? || ' days')
+        `,
+            [safeLookbackDays]
+        ),
+        db.get<{ total: number }>(
+            `
+            SELECT COUNT(*) AS total
+            FROM leads
+            WHERE messaged_at IS NOT NULL
+              AND messaged_at >= DATETIME('now', '-' || ? || ' days')
+        `,
+            [safeLookbackDays]
+        ),
+        db.get<{ total: number }>(
+            `
+            SELECT COUNT(*) AS total
+            FROM leads
+            WHERE messaged_at IS NOT NULL
+              AND messaged_at >= DATETIME('now', '-' || ? || ' days')
+              AND status IN ('REPLIED', 'CONNECTED')
+        `,
+            [safeLookbackDays]
+        ),
+        getRiskInputs(localDate, Math.max(1, hardInviteCap)),
+    ]);
+
+    const invitesSentLookback = dailyStatsRow?.invites ?? 0;
+    const acceptancesLookback = dailyStatsRow?.acceptances ?? 0;
+    const messagedLookback = messagedRow?.total ?? 0;
+    const engagedLookback = engagedRow?.total ?? 0;
+
+    return {
+        localDate,
+        lookbackDays: safeLookbackDays,
+        invitesSentLookback,
+        acceptancesLookback,
+        acceptanceRatePct: formatPercent(acceptancesLookback, invitesSentLookback),
+        messagedLookback,
+        engagedLookback,
+        engagementRatePct: formatPercent(engagedLookback, messagedLookback),
+        pendingRatio: Number.parseFloat(riskInputs.pendingRatio.toFixed(4)),
+    };
 }
 
 export async function getDailyStatsSnapshot(dateString: string): Promise<DailyStatsSnapshot> {
@@ -83,10 +166,249 @@ function computeAgeSeconds(rawTimestamp: string | null, nowMs: number): number {
     return Math.max(0, Math.floor((nowMs - parsedMs) / 1000));
 }
 
+type SloSeverity = 'OK' | 'WARN' | 'CRITICAL';
+
+function maxSloSeverity(a: SloSeverity, b: SloSeverity): SloSeverity {
+    if (a === 'CRITICAL' || b === 'CRITICAL') return 'CRITICAL';
+    if (a === 'WARN' || b === 'WARN') return 'WARN';
+    return 'OK';
+}
+
+function evaluateSloValueSeverity(value: number, warnThreshold: number, criticalThreshold: number): SloSeverity {
+    if (value >= criticalThreshold) return 'CRITICAL';
+    if (value >= warnThreshold) return 'WARN';
+    return 'OK';
+}
+
+function computeWindowStartDate(localDate: string, windowDays: number): string {
+    const anchor = new Date(`${localDate}T00:00:00Z`);
+    if (!Number.isFinite(anchor.getTime())) {
+        return localDate;
+    }
+    anchor.setUTCDate(anchor.getUTCDate() - Math.max(0, windowDays - 1));
+    const year = anchor.getUTCFullYear();
+    const month = String(anchor.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(anchor.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function shiftDateByDays(localDate: string, deltaDays: number): string {
+    const anchor = new Date(`${localDate}T00:00:00Z`);
+    if (!Number.isFinite(anchor.getTime())) {
+        return localDate;
+    }
+    anchor.setUTCDate(anchor.getUTCDate() + deltaDays);
+    const year = anchor.getUTCFullYear();
+    const month = String(anchor.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(anchor.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+async function buildSelectorCacheKpiSnapshot(localDate: string): Promise<SelectorCacheKpiSnapshot> {
+    const db = await getDatabase();
+    const windowDays = 7;
+    const targetReductionRate = 0.3;
+    const minBaselineFailures = Math.max(0, config.selectorCacheKpiMinBaselineFailures);
+    const currentFrom = computeWindowStartDate(localDate, windowDays);
+    const previousTo = shiftDateByDays(currentFrom, -1);
+    const previousFrom = computeWindowStartDate(previousTo, windowDays);
+
+    const [currentRow, previousRow] = await Promise.all([
+        db.get<{ total: number }>(
+            `SELECT COALESCE(SUM(selector_failures), 0) AS total
+             FROM daily_stats
+             WHERE date >= ?
+               AND date <= ?`,
+            [currentFrom, localDate]
+        ),
+        db.get<{ total: number }>(
+            `SELECT COALESCE(SUM(selector_failures), 0) AS total
+             FROM daily_stats
+             WHERE date >= ?
+               AND date <= ?`,
+            [previousFrom, previousTo]
+        ),
+    ]);
+
+    const currentFailures = currentRow?.total ?? 0;
+    const previousFailures = previousRow?.total ?? 0;
+    let reductionRate: number | null = null;
+    if (previousFailures > 0) {
+        reductionRate = (previousFailures - currentFailures) / previousFailures;
+    } else if (currentFailures === 0) {
+        reductionRate = 1;
+    }
+    const baselineSufficient = previousFailures >= minBaselineFailures;
+    const validationStatus: SelectorCacheKpiSnapshot['validationStatus'] = !baselineSufficient
+        ? 'INSUFFICIENT_DATA'
+        : (reductionRate !== null && reductionRate >= targetReductionRate ? 'PASS' : 'WARN');
+
+    return {
+        windowDays,
+        previousWindowDays: windowDays,
+        currentFailures,
+        previousFailures,
+        reductionRate,
+        reductionPct: reductionRate === null ? null : Number.parseFloat((reductionRate * 100).toFixed(2)),
+        targetReductionRate,
+        minBaselineFailures,
+        baselineSufficient,
+        validationStatus,
+        targetMet: validationStatus === 'PASS',
+    };
+}
+
+function buildSloThresholds(queueLagWarnSeconds: number, runningJobStaleWarnSeconds: number): OperationalSloThresholds {
+    return {
+        windowShortDays: Math.max(1, config.observabilitySloWindowShortDays),
+        windowLongDays: Math.max(1, config.observabilitySloWindowLongDays),
+        errorRateWarn: config.observabilitySloErrorRateWarn,
+        errorRateCritical: Math.max(config.observabilitySloErrorRateWarn, config.observabilitySloErrorRateCritical),
+        challengeRateWarn: config.observabilitySloChallengeRateWarn,
+        challengeRateCritical: Math.max(config.observabilitySloChallengeRateWarn, config.observabilitySloChallengeRateCritical),
+        selectorFailureRateWarn: config.observabilitySloSelectorFailureRateWarn,
+        selectorFailureRateCritical: Math.max(
+            config.observabilitySloSelectorFailureRateWarn,
+            config.observabilitySloSelectorFailureRateCritical
+        ),
+        queueLagWarnSeconds,
+        queueLagCriticalSeconds: Math.max(queueLagWarnSeconds + 60, Math.floor(queueLagWarnSeconds * 2)),
+        runningJobStaleWarnSeconds,
+        runningJobStaleCriticalSeconds: Math.max(runningJobStaleWarnSeconds + 60, Math.floor(runningJobStaleWarnSeconds * 1.5)),
+    };
+}
+
+async function buildOperationalSloSnapshot(
+    localDate: string,
+    queueLagSeconds: number,
+    oldestRunningJobSeconds: number,
+    queueLagWarnSeconds: number,
+    runningJobStaleWarnSeconds: number
+): Promise<OperationalSloSnapshot> {
+    const db = await getDatabase();
+    const thresholds = buildSloThresholds(queueLagWarnSeconds, runningJobStaleWarnSeconds);
+
+    const queueLagSeverity = evaluateSloValueSeverity(
+        queueLagSeconds,
+        thresholds.queueLagWarnSeconds,
+        thresholds.queueLagCriticalSeconds
+    );
+    const runningStaleSeverity = evaluateSloValueSeverity(
+        oldestRunningJobSeconds,
+        thresholds.runningJobStaleWarnSeconds,
+        thresholds.runningJobStaleCriticalSeconds
+    );
+    const currentStatus = maxSloSeverity(queueLagSeverity, runningStaleSeverity);
+
+    const windowsToCompute = Array.from(new Set([
+        thresholds.windowShortDays,
+        thresholds.windowLongDays,
+    ]))
+        .filter((value) => value >= 1)
+        .sort((a, b) => a - b);
+
+    const windows: OperationalSloWindowSnapshot[] = [];
+    let overallStatus: SloSeverity = currentStatus;
+
+    for (const windowDays of windowsToCompute) {
+        const fromDate = computeWindowStartDate(localDate, windowDays);
+        const row = await db.get<{
+            invites: number;
+            messages: number;
+            run_errors: number;
+            challenges: number;
+            selector_failures: number;
+        }>(
+            `
+            SELECT
+                COALESCE(SUM(invites_sent), 0) AS invites,
+                COALESCE(SUM(messages_sent), 0) AS messages,
+                COALESCE(SUM(run_errors), 0) AS run_errors,
+                COALESCE(SUM(challenges_count), 0) AS challenges,
+                COALESCE(SUM(selector_failures), 0) AS selector_failures
+            FROM daily_stats
+            WHERE date >= ?
+              AND date <= ?
+        `,
+            [fromDate, localDate]
+        );
+
+        const invitesSent = row?.invites ?? 0;
+        const messagesSent = row?.messages ?? 0;
+        const operations = Math.max(1, invitesSent + messagesSent);
+        const runErrors = row?.run_errors ?? 0;
+        const challengesCount = row?.challenges ?? 0;
+        const selectorFailures = row?.selector_failures ?? 0;
+        const errorRate = runErrors / operations;
+        const challengeRate = challengesCount / operations;
+        const selectorFailureRate = selectorFailures / operations;
+
+        const errorRateSeverity = evaluateSloValueSeverity(
+            errorRate,
+            thresholds.errorRateWarn,
+            thresholds.errorRateCritical
+        );
+        const challengeRateSeverity = evaluateSloValueSeverity(
+            challengeRate,
+            thresholds.challengeRateWarn,
+            thresholds.challengeRateCritical
+        );
+        const selectorFailureRateSeverity = evaluateSloValueSeverity(
+            selectorFailureRate,
+            thresholds.selectorFailureRateWarn,
+            thresholds.selectorFailureRateCritical
+        );
+
+        const windowStatus = maxSloSeverity(
+            maxSloSeverity(errorRateSeverity, challengeRateSeverity),
+            selectorFailureRateSeverity
+        );
+        overallStatus = maxSloSeverity(overallStatus, windowStatus);
+
+        windows.push({
+            windowDays,
+            fromDate,
+            toDate: localDate,
+            invitesSent,
+            messagesSent,
+            operations,
+            runErrors,
+            challengesCount,
+            selectorFailures,
+            errorRate,
+            challengeRate,
+            selectorFailureRate,
+            status: windowStatus,
+            breaches: {
+                errorRate: errorRateSeverity,
+                challengeRate: challengeRateSeverity,
+                selectorFailureRate: selectorFailureRateSeverity,
+            },
+        });
+    }
+
+    return {
+        generatedAt: new Date().toISOString(),
+        localDate,
+        status: overallStatus,
+        thresholds,
+        current: {
+            queueLagSeconds,
+            oldestRunningJobSeconds,
+            status: currentStatus,
+            breaches: {
+                queueLag: queueLagSeverity,
+                runningJobStale: runningStaleSeverity,
+            },
+        },
+        windows,
+    };
+}
+
 export async function getOperationalObservabilitySnapshot(localDate: string = getLocalDateString()): Promise<OperationalObservabilitySnapshot> {
     const db = await getDatabase();
     const nowMs = Date.now();
-    const [daily, pendingOutbox, queueRow, runningRow, lockContention] = await Promise.all([
+    const [daily, pendingOutbox, queueRow, runningRow, lockContention, selectorCacheKpi] = await Promise.all([
         getDailyStatsSnapshot(localDate),
         countPendingOutboxEvents(),
         db.get<{ queued_total: number; oldest_next_run_at: string | null }>(
@@ -96,6 +418,7 @@ export async function getOperationalObservabilitySnapshot(localDate: string = ge
             `SELECT COUNT(*) AS running_total, MIN(locked_at) AS oldest_locked_at FROM jobs WHERE status = 'RUNNING'`
         ),
         getLockContentionSummary(localDate),
+        buildSelectorCacheKpiSnapshot(localDate),
     ]);
 
     const queuedJobs = queueRow?.queued_total ?? 0;
@@ -170,6 +493,74 @@ export async function getOperationalObservabilitySnapshot(localDate: string = ge
         });
     }
 
+    if (selectorCacheKpi.validationStatus === 'WARN') {
+        alerts.push({
+            code: 'SELECTOR_CACHE_KPI_BELOW_TARGET',
+            severity: 'WARN',
+            message: 'Riduzione selector failures 7d sotto target 30%.',
+            current: Number.parseFloat(((selectorCacheKpi.reductionRate ?? 0) * 100).toFixed(2)),
+            threshold: selectorCacheKpi.targetReductionRate * 100,
+        });
+    }
+
+    const slo = await buildOperationalSloSnapshot(
+        localDate,
+        queueLagSeconds,
+        oldestRunningJobSeconds,
+        queueLagThreshold,
+        runningStaleThreshold
+    );
+
+    for (const window of slo.windows) {
+        const metricBreaches: Array<{
+            metric: 'error_rate' | 'challenge_rate' | 'selector_failure_rate';
+            severity: SloSeverity;
+            current: number;
+            warnThreshold: number;
+            criticalThreshold: number;
+            label: string;
+        }> = [
+            {
+                metric: 'error_rate',
+                severity: window.breaches.errorRate,
+                current: window.errorRate,
+                warnThreshold: slo.thresholds.errorRateWarn,
+                criticalThreshold: slo.thresholds.errorRateCritical,
+                label: 'Error rate',
+            },
+            {
+                metric: 'challenge_rate',
+                severity: window.breaches.challengeRate,
+                current: window.challengeRate,
+                warnThreshold: slo.thresholds.challengeRateWarn,
+                criticalThreshold: slo.thresholds.challengeRateCritical,
+                label: 'Challenge rate',
+            },
+            {
+                metric: 'selector_failure_rate',
+                severity: window.breaches.selectorFailureRate,
+                current: window.selectorFailureRate,
+                warnThreshold: slo.thresholds.selectorFailureRateWarn,
+                criticalThreshold: slo.thresholds.selectorFailureRateCritical,
+                label: 'Selector failure rate',
+            },
+        ];
+
+        for (const breach of metricBreaches) {
+            if (breach.severity === 'OK') continue;
+            const threshold = breach.severity === 'CRITICAL'
+                ? breach.criticalThreshold
+                : breach.warnThreshold;
+            alerts.push({
+                code: `SLO_${breach.metric.toUpperCase()}_${window.windowDays}D`,
+                severity: breach.severity === 'CRITICAL' ? 'CRITICAL' : 'WARN',
+                message: `${breach.label} ${window.windowDays}d oltre soglia ${breach.severity.toLowerCase()}.`,
+                current: Number.parseFloat((breach.current * 100).toFixed(2)),
+                threshold: Number.parseFloat((threshold * 100).toFixed(2)),
+            });
+        }
+    }
+
     return {
         localDate,
         queuedJobs,
@@ -185,6 +576,8 @@ export async function getOperationalObservabilitySnapshot(localDate: string = ge
         errorRate,
         lockContention,
         alerts,
+        slo,
+        selectorCacheKpi,
     };
 }
 

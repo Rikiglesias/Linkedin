@@ -16,6 +16,21 @@
 - Full model: [THREAT_MODEL.md](/c:/Users/albie/Desktop/Programmi/Linkedin/THREAT_MODEL.md)
 - Review cadence: weekly checks + monthly update + post-incident review.
 
+## Security advisor periodico
+- Esecuzione manuale:
+  - `.\bot.ps1 security-advisor`
+- Opzioni utili:
+  - `.\bot.ps1 security-advisor --by monthly_review --report-dir data/security-advisor`
+  - `.\bot.ps1 security-advisor --no-persist-flags`
+- Scheduling automatico:
+  - `run-loop` esegue il controllo in base a `SECURITY_ADVISOR_INTERVAL_DAYS`.
+- Configurazione:
+  - `SECURITY_ADVISOR_ENABLED`
+  - `SECURITY_ADVISOR_INTERVAL_DAYS`
+  - `SECURITY_ADVISOR_DOC_MAX_AGE_DAYS`
+  - `SECURITY_ADVISOR_AUDIT_LOOKBACK_DAYS`
+  - `SECURITY_ADVISOR_MIN_AUDIT_EVENTS`
+
 ## Daily operator workflow
 1. `.\bot.ps1 doctor`
 2. `.\bot.ps1 status`
@@ -27,6 +42,36 @@
 - Remove quarantine after manual checks: `.\bot.ps1 unquarantine`
 - Inspect incidents: `.\bot.ps1 incidents`
 - Resolve incident: `.\bot.ps1 incident-resolve <id>`
+
+## Incident response playbook (severity-based)
+
+### Severity and SLA
+| Severity | Typical trigger | First response SLA | Throughput policy |
+|---|---|---|---|
+| `SEV-1` | security event, secret leak, unauthorized access suspicion | <= 15 min | Immediate pause + quarantine until closure criteria pass |
+| `SEV-2` | sync disruption, repeated circuit-open, sustained error burst | <= 60 min | Backpressure mode + partial pause on impacted flows |
+| `SEV-3` | localized regression or non-critical degradation | <= 4 h | Continue with guarded throughput and active monitoring |
+
+### Ownership model
+| Area | Primary owner | Backup owner |
+|---|---|---|
+| Runtime/jobs/queue | Platform | Operations |
+| Cloud sync/integrations | Integrations | Platform |
+| Security/compliance | Security | Platform |
+
+### Execution checklist
+1. Detect and classify severity (`doctor`, `status`, `diagnostics`, `/api/observability`).
+2. Contain (`pause`, optional `unquarantine` only after remediation).
+3. Preserve evidence (incident record, correlation IDs, relevant logs/audit rows).
+4. Remediate root cause (config fix, dependency patch, selector/runtime fix, secret rotation if needed).
+5. Recover with controlled ramp (validate SLO/risk/backlog before full speed).
+6. Close incident with postmortem and update of `THREAT_MODEL.md` / `SECURITY.md` / tests.
+
+### Exit criteria before `resume`
+- `.\bot.ps1 doctor` without critical failures.
+- `.\bot.ps1 diagnostics --sections health,queue,sync,selectors` shows no critical alert.
+- Integration path stable (`circuitBreakers` not stuck open, backpressure trending down).
+- If secrets were involved: rotation completed and inventory updated (`.\bot.ps1 secrets-status`).
 
 ## Secret leak response checklist
 1. Stop automation immediately: `.\bot.ps1 pause 180 secret_leak_response`.

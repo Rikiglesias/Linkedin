@@ -11,6 +11,8 @@
 
 import type { Page } from 'playwright';
 import { getDatabase } from '../db';
+import { config } from '../config';
+import { isOpenAIConfigured, requestOpenAIText } from '../ai/openaiClient';
 import { logInfo, logWarn } from '../telemetry/logger';
 
 /** Sleep semplice in ms (non richiede Page). */
@@ -26,24 +28,39 @@ export interface ExtractedPost {
     likesApprox?: number;  // Likes approssimativi se visibili
 }
 
+export interface CommentSuggestionDraft {
+    postIndex: number;
+    comment: string;
+    confidence: number;
+    source: 'ai' | 'template';
+    model: string | null;
+    status: 'REVIEW_PENDING';
+    generatedAt: string;
+}
+
 const SCORE_THRESHOLD = 75;
 const MAX_POSTS = 3;
 const POST_TEXT_MAX_LEN = 500;
+const COMMENT_MAX_LEN = 280;
 
 /**
  * Controlla se il lead ha già i post estratti in metadati.
  */
 async function hasPostsExtracted(leadId: number): Promise<boolean> {
+    const meta = await getLeadMetadata(leadId);
+    return Array.isArray(meta.recent_posts) && (meta.recent_posts as unknown[]).length > 0;
+}
+
+async function getLeadMetadata(leadId: number): Promise<Record<string, unknown>> {
     const db = await getDatabase();
     const row = await db.get<{ lead_metadata: string }>(
         `SELECT lead_metadata FROM leads WHERE id = ?`, [leadId]
     );
-    if (!row?.lead_metadata) return false;
+    if (!row?.lead_metadata) return {};
     try {
-        const meta = JSON.parse(row.lead_metadata) as Record<string, unknown>;
-        return Array.isArray(meta.recent_posts) && (meta.recent_posts as unknown[]).length > 0;
+        return JSON.parse(row.lead_metadata) as Record<string, unknown>;
     } catch {
-        return false;
+        return {};
     }
 }
 
@@ -52,14 +69,7 @@ async function hasPostsExtracted(leadId: number): Promise<boolean> {
  */
 async function savePostsToLead(leadId: number, posts: ExtractedPost[]): Promise<void> {
     const db = await getDatabase();
-    const row = await db.get<{ lead_metadata: string }>(
-        `SELECT lead_metadata FROM leads WHERE id = ?`, [leadId]
-    );
-
-    let meta: Record<string, unknown> = {};
-    if (row?.lead_metadata) {
-        try { meta = JSON.parse(row.lead_metadata) as Record<string, unknown>; } catch { /* reset */ }
-    }
+    const meta = await getLeadMetadata(leadId);
 
     meta.recent_posts = posts;
     meta.posts_extracted_at = new Date().toISOString();
@@ -68,6 +78,103 @@ async function savePostsToLead(leadId: number, posts: ExtractedPost[]): Promise<
         `UPDATE leads SET lead_metadata = ?, updated_at = datetime('now') WHERE id = ?`,
         [JSON.stringify(meta), leadId]
     );
+}
+
+async function saveCommentSuggestionsToLead(leadId: number, suggestions: CommentSuggestionDraft[]): Promise<void> {
+    const db = await getDatabase();
+    const meta = await getLeadMetadata(leadId);
+    meta.comment_suggestions = suggestions;
+    meta.comment_suggestions_generated_at = new Date().toISOString();
+    meta.comment_suggestions_review_required = true;
+    await db.run(
+        `UPDATE leads SET lead_metadata = ?, updated_at = datetime('now') WHERE id = ?`,
+        [JSON.stringify(meta), leadId]
+    );
+}
+
+function clampConfidence(value: unknown, fallback: number): number {
+    const parsed = typeof value === 'number' ? value : Number.parseFloat(String(value ?? ''));
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.max(0, Math.min(1, parsed));
+}
+
+function buildFallbackComment(postText: string): string {
+    const trimmed = postText.replace(/\s+/g, ' ').trim();
+    const snippet = trimmed.slice(0, 120);
+    const base = `Ottimo spunto, soprattutto su "${snippet}". Come misurate l'impatto sul team o sui clienti?`;
+    return base.slice(0, COMMENT_MAX_LEN).trim();
+}
+
+async function generateCommentSuggestion(postText: string): Promise<{
+    comment: string;
+    confidence: number;
+    source: 'ai' | 'template';
+    model: string | null;
+}> {
+    const fallbackComment = buildFallbackComment(postText);
+    if (!isOpenAIConfigured()) {
+        return {
+            comment: fallbackComment,
+            confidence: 0.55,
+            source: 'template',
+            model: null,
+        };
+    }
+
+    try {
+        const response = await requestOpenAIText({
+            system: [
+                'Sei un assistente B2B LinkedIn.',
+                'Genera UNA bozza commento professionale e naturale in italiano.',
+                'Vincoli: max 280 caratteri, tono educato, aggiungi una domanda aperta finale, evita hype e claim inventati.',
+                'Restituisci SOLO JSON: {"comment":"...","confidence":0.0}',
+            ].join(' '),
+            user: `Post:\n${postText}`,
+            temperature: 0.4,
+            maxOutputTokens: 180,
+            responseFormat: 'json_object',
+        });
+
+        const parsed = JSON.parse(response) as { comment?: unknown; confidence?: unknown };
+        const comment = typeof parsed.comment === 'string'
+            ? parsed.comment.replace(/\s+/g, ' ').trim().slice(0, COMMENT_MAX_LEN)
+            : '';
+        if (comment.length < 25) {
+            throw new Error('comment_too_short');
+        }
+
+        return {
+            comment,
+            confidence: clampConfidence(parsed.confidence, 0.72),
+            source: 'ai',
+            model: config.aiModel,
+        };
+    } catch {
+        return {
+            comment: fallbackComment,
+            confidence: 0.55,
+            source: 'template',
+            model: null,
+        };
+    }
+}
+
+async function buildCommentSuggestions(posts: ExtractedPost[]): Promise<CommentSuggestionDraft[]> {
+    const suggestions: CommentSuggestionDraft[] = [];
+    for (let i = 0; i < posts.length; i++) {
+        const post = posts[i];
+        const generated = await generateCommentSuggestion(post.text);
+        suggestions.push({
+            postIndex: i,
+            comment: generated.comment,
+            confidence: generated.confidence,
+            source: generated.source,
+            model: generated.model,
+            status: 'REVIEW_PENDING',
+            generatedAt: new Date().toISOString(),
+        });
+    }
+    return suggestions;
 }
 
 /**
@@ -154,7 +261,14 @@ export async function runPostExtractorWorker(page: Page, limit = 5): Promise<voi
 
         if (posts.length > 0) {
             await savePostsToLead(lead.id, posts);
+            const suggestions = await buildCommentSuggestions(posts);
+            await saveCommentSuggestionsToLead(lead.id, suggestions);
             await logInfo('post_extractor.saved', { leadId: lead.id, postsCount: posts.length });
+            await logInfo('post_extractor.comment_suggestions_ready', {
+                leadId: lead.id,
+                suggestions: suggestions.length,
+                reviewRequired: true,
+            });
             extracted++;
         } else {
             // Segna comunque come tentato (con array vuoto) per non riprovare subito

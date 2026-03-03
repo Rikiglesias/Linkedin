@@ -115,6 +115,44 @@ Headers:
 - `x-event-topic`
 - `x-signature-sha256` (only if `WEBHOOK_SYNC_SECRET` is configured)
 
+## Automation API v1 (versioned + authenticated)
+
+The backend now exposes a stable external API namespace:
+
+- Base path: `/api/v1`
+- Auth required on every request:
+  - `x-api-key: <DASHBOARD_API_KEY>` (recommended)
+  - `Authorization: Bearer <DASHBOARD_API_KEY>`
+  - `Authorization: Basic ...` (if basic auth is configured)
+
+Response envelope (all `v1` endpoints):
+
+```json
+{
+  "apiVersion": "v1",
+  "requestId": "corr-id",
+  "timestamp": "2026-03-02T12:00:00.000Z",
+  "data": {}
+}
+```
+
+Available endpoints:
+
+- `GET /api/v1/meta`
+- `GET /api/v1/automation/snapshot`
+- `GET /api/v1/automation/incidents?limit=25`
+- `POST /api/v1/automation/controls/pause` body: `{ "minutes": 60 }`
+- `POST /api/v1/automation/controls/resume`
+- `POST /api/v1/automation/controls/quarantine` body: `{ "enabled": true }`
+
+Quick example:
+
+```bash
+curl -sS \
+  -H "x-api-key: $DASHBOARD_API_KEY" \
+  http://localhost:3000/api/v1/automation/snapshot
+```
+
 ## Operational commands
 
 - Check sink status: `.\bot.ps1 sync-status`
