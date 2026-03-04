@@ -1,6 +1,7 @@
 import { appendLeadEvent, getLeadById, pushOutboxEvent, setLeadStatus } from './repositories';
 import { LeadStatus } from '../types/domain';
 import { publishLiveEvent } from '../telemetry/liveEvents';
+import { sendTelegramAlert } from '../telemetry/alerts';
 
 const allowedTransitions: Record<Exclude<LeadStatus, 'PENDING'>, LeadStatus[]> = {
     NEW: ['READY_INVITE', 'BLOCKED', 'REVIEW_REQUIRED', 'DEAD'],
@@ -70,6 +71,14 @@ export async function transitionLead(
         reason,
         metadata,
     });
+
+    if (targetStatus === 'ACCEPTED' && fromStatus !== 'ACCEPTED') {
+        const name = `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'Lead Sconosciuto';
+        void sendTelegramAlert(`🤝 **${name}** ha accettato l'invito!\nLinkedIn: ${lead.linkedin_url || 'N/A'}\n_Aggiunto in coda messaggi intro._`, 'Lead Accettato', 'info').catch(() => { });
+    } else if (targetStatus === 'REPLIED' && fromStatus !== 'REPLIED') {
+        const name = `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'Lead Sconosciuto';
+        void sendTelegramAlert(`💬 **${name}** ti ha risposto organicamente!\nControlla i messaggi: ${lead.linkedin_url || 'N/A'}`, 'Nuova Risposta', 'warn').catch(() => { });
+    }
 }
 
 export async function reconcileLeadStatus(

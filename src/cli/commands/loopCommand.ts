@@ -11,6 +11,7 @@ import { launchBrowser, closeBrowser as closeBrowserSession } from '../../browse
 import {
     acquireRuntimeLock,
     getDailyStatsSnapshot,
+    getGlobalKPIData,
     getRuntimeFlag,
     heartbeatRuntimeLock,
     recoverStuckJobs,
@@ -41,6 +42,8 @@ import { RunStatus } from '../../types/domain';
 import { getOptionValue, hasOption, parseIntStrict, parseWorkflow, getWorkflowValue, getPositionalArgs } from '../cliParser';
 import { pluginRegistry } from '../../plugins/pluginLoader';
 import { resolveCorrelationId, runWithCorrelationId } from '../../telemetry/correlation';
+import { processTelegramImportCommand } from '../../cloud/telegramAiImporter';
+import { sendTelegramAlert } from '../../telemetry/alerts';
 
 // ─── Costanti lock ────────────────────────────────────────────────────────────
 
@@ -233,6 +236,21 @@ async function processCloudCommands(): Promise<void> {
             } else if (cmd.command === 'restart') {
                 console.warn('[CLOUD] Restart comandato. Uscita 0...');
                 process.exit(0);
+            } else if (cmd.command === 'importa') {
+                console.log(`[CLOUD] Esecuzione AI Exctractor Worker per URL: ${cmd.args}`);
+                void processTelegramImportCommand(profile.id, cmd.args || '');
+            } else if (cmd.command === 'funnel' || cmd.command === 'status') {
+                const kpi = await getGlobalKPIData();
+                let statusText = `📊 **Stato Automa e Funnel (${profile.id})**\n\n`;
+                statusText += `**Campagne Attive:** ${kpi.activeCampaigns}\n`;
+                statusText += `**Leads Totali:** ${kpi.totalLeads}\n`;
+                statusText += `**Accettazioni (7gg):** ${kpi.totalAcceptances7d}\n\n`;
+                statusText += `*Dettaglio Stato:*\n`;
+                for (const [s, c] of Object.entries(kpi.statusCounts)) {
+                    statusText += `- ${s}: ${c}\n`;
+                }
+                statusText += `\n_Automa in Background in Esecuzione_`;
+                await sendTelegramAlert(statusText, 'Report Direzionale', 'info');
             }
 
             await markTelegramCommandProcessed(cmd.id);
