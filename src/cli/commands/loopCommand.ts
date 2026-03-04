@@ -36,7 +36,7 @@ import { backupDatabase } from '../../db';
 import { runControlPlaneSync } from '../../cloud/controlPlaneSync';
 import { startTelegramListener } from '../../cloud/telegramListener';
 import { markTelegramCommandProcessed, pollPendingTelegramCommand } from '../../cloud/supabaseDataClient';
-import { getRuntimeAccountProfiles } from '../../accountManager';
+import { getRuntimeAccountProfiles, setOverrideAccountId } from '../../accountManager';
 import { RunStatus } from '../../types/domain';
 import { getOptionValue, hasOption, parseIntStrict, parseWorkflow, getWorkflowValue, getPositionalArgs } from '../cliParser';
 import { pluginRegistry } from '../../plugins/pluginLoader';
@@ -44,7 +44,7 @@ import { resolveCorrelationId, runWithCorrelationId } from '../../telemetry/corr
 
 // ─── Costanti lock ────────────────────────────────────────────────────────────
 
-const WORKFLOW_RUNNER_LOCK_KEY = 'workflow.runner';
+let WORKFLOW_RUNNER_LOCK_KEY = 'workflow.runner';
 const WORKFLOW_RUNNER_MIN_TTL_SECONDS = 120;
 const WORKFLOW_RUNNER_HEARTBEAT_MS = 30_000;
 const AUTO_SITE_CHECK_LAST_RUN_KEY = 'site_check.last_run_at';
@@ -254,6 +254,16 @@ export async function runLoopCommand(args: string[]): Promise<void> {
     const cyclesRaw = getOptionValue(args, '--cycles') ?? numericPositionals[1];
     const dryRun = hasOption(args, '--dry-run') || positional.some((value) => value.toLowerCase() === 'dry' || value.toLowerCase() === 'dry-run');
 
+    const accountOverride = getOptionValue(args, '--account') || getOptionValue(args, '-a');
+    let isLeader = true;
+    if (accountOverride) {
+        setOverrideAccountId(accountOverride);
+        WORKFLOW_RUNNER_LOCK_KEY = `workflow.runner:${accountOverride}`;
+        const defaultProfileId = config.accountProfiles[0]?.id || 'default';
+        isLeader = accountOverride === defaultProfileId;
+        console.log(`[LOOP] Account override: ${accountOverride} (Leader: ${isLeader})`);
+    }
+
     let intervalMs = config.workflowLoopIntervalMs;
     if (intervalMsRaw) {
         intervalMs = Math.max(10_000, parseIntStrict(intervalMsRaw, '--interval-ms'));
@@ -381,7 +391,7 @@ export async function runLoopCommand(args: string[]): Promise<void> {
                     }
 
                     // Auto-Backup Giornaliero SQLite
-                    if (!dryRun) {
+                    if (!dryRun && isLeader) {
                         const AUTO_BACKUP_LAST_RUN_KEY = 'db_backup.last_run_at';
                         const backupLastRunRaw = await getRuntimeFlag(AUTO_BACKUP_LAST_RUN_KEY);
                         const shouldRunBackup = !backupLastRunRaw || (Date.now() - Date.parse(backupLastRunRaw)) > 24 * 60 * 60 * 1000;
@@ -397,7 +407,7 @@ export async function runLoopCommand(args: string[]): Promise<void> {
                     }
 
                     // Dead Letter Queue Periodico
-                    if (!dryRun) {
+                    if (!dryRun && isLeader) {
                         const DLQ_LAST_RUN_KEY = 'dlq.last_run_at';
                         const dlqLastRunRaw = await getRuntimeFlag(DLQ_LAST_RUN_KEY);
                         const shouldRunDlq = !dlqLastRunRaw || (Date.now() - Date.parse(dlqLastRunRaw)) > 6 * 60 * 60 * 1000;

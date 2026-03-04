@@ -71,15 +71,33 @@ function dedupeById(profiles: RuntimeAccountProfile[]): RuntimeAccountProfile[] 
     return Array.from(unique.values());
 }
 
+let _cliOverrideAccountId: string | null = null;
+export function setOverrideAccountId(id: string | null) {
+    _cliOverrideAccountId = id;
+}
+
 function getConfiguredRuntimeProfiles(): RuntimeAccountProfile[] {
     const runtime = config.accountProfiles.map(toRuntimeProfile);
     const deduped = dedupeById(runtime);
-    return deduped.slice(0, 2);
+
+    if (_cliOverrideAccountId) {
+        const target = deduped.find(p => p.id === _cliOverrideAccountId);
+        if (target) {
+            return [target];
+        }
+        console.warn(`[ACCOUNT MANAGER] Override account ID '${_cliOverrideAccountId}' non trovato in config. Verrà restituita una lista vuota e niente girerà.`);
+        return [];
+    }
+
+    return deduped;
 }
 
 export function getRuntimeAccountProfiles(): RuntimeAccountProfile[] {
     const configured = getConfiguredRuntimeProfiles();
     if (!config.multiAccountEnabled || configured.length === 0) {
+        if (_cliOverrideAccountId) {
+            return []; // Rispettiamo rigorosamente l'override CLI vuoto
+        }
         return [{
             id: 'default',
             sessionDir: config.sessionDir,
