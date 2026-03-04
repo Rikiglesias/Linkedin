@@ -20,7 +20,9 @@ async function checkSentInvitations(page: Page, leadUrl: string): Promise<boolea
     await page.goto('https://www.linkedin.com/mynetwork/invitation-manager/sent/', { waitUntil: 'domcontentloaded' });
     await humanDelay(page, 2000, 3000);
 
-    // Scroll multi-page to load recent sent invites
+    const normalizedLeadUrl = normalizeLinkedInUrl(leadUrl);
+
+    // Scroll multi-page to load recent sent invites, with early-exit
     for (let i = 0; i < 3; i++) {
         await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
         await humanDelay(page, 1000, 2000);
@@ -30,15 +32,18 @@ async function checkSentInvitations(page: Page, leadUrl: string): Promise<boolea
             await showMoreBtn.click().catch(() => null);
             await humanDelay(page, 1000, 2000);
         }
+
+        // Early-exit: controlla se il lead è già visibile dopo ogni scroll
+        const sentLinks = await page.evaluate(() => {
+            const links = Array.from(document.querySelectorAll('a[href*="/in/"]'));
+            return links.map(a => a.getAttribute('href') || '');
+        });
+        if (sentLinks.some(href => normalizeLinkedInUrl(href) === normalizedLeadUrl)) {
+            return true;
+        }
     }
 
-    const sentLinks = await page.evaluate(() => {
-        const links = Array.from(document.querySelectorAll('a[href*="/in/"]'));
-        return links.map(a => a.getAttribute('href') || '');
-    });
-
-    const normalizedLeadUrl = normalizeLinkedInUrl(leadUrl);
-    return sentLinks.some(href => normalizeLinkedInUrl(href) === normalizedLeadUrl);
+    return false;
 }
 
 export async function processAcceptanceJob(payload: AcceptanceJobPayload, context: WorkerContext): Promise<WorkerExecutionResult> {

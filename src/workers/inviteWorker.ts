@@ -89,6 +89,7 @@ async function handleInviteModal(
     lead: LeadRecord,
     dryRun: boolean,
     localDate: string,
+    campaignOverrideNote?: string | null,
 ): Promise<{ sentWithNote: boolean; noteSource: 'template' | 'ai' | null; variant?: string | null }> {
     if (dryRun) return { sentWithNote: false, noteSource: null, variant: null };
 
@@ -109,8 +110,8 @@ async function handleInviteModal(
         // Scrivi la nota nella textarea del modale
         let generatedNote = { note: '', source: 'template' as 'template' | 'ai' | null, variant: null as string | null };
         try {
-            if (lead.invite_prompt_variant === 'campaign_metadata') {
-                generatedNote = { note: lead.about || '', source: 'template', variant: 'campaign_metadata' };
+            if (campaignOverrideNote) {
+                generatedNote = { note: campaignOverrideNote, source: 'template', variant: 'campaign_metadata' };
             } else {
                 generatedNote = await buildPersonalizedInviteNote(lead);
                 if (generatedNote.variant) {
@@ -187,15 +188,14 @@ export async function processInviteJob(payload: InviteJobPayload, context: Worke
         return workerResult(0);
     }
 
-    // Inject campaign note locally just for handleInviteModal if present
+    // Estrai nota campagna dal metadata JSON senza contaminare l'oggetto lead
+    let campaignOverrideNote: string | null = null;
     if (isCampaignDriven && payload.metadata_json) {
         try {
             const meta = JSON.parse(payload.metadata_json);
             if (meta.note) {
                 lead.invite_prompt_variant = 'campaign_metadata';
-                // Usiamo "about" come cavallo di troia volatile solo in memoria per la stringa del template 
-                // per non spaccare il database model
-                lead.about = meta.note;
+                campaignOverrideNote = meta.note;
             }
         } catch {
             // ignore JSON parse error in metadata
@@ -260,6 +260,7 @@ export async function processInviteJob(payload: InviteJobPayload, context: Worke
         lead,
         context.dryRun,
         context.localDate,
+        campaignOverrideNote,
     );
 
     if (!context.dryRun) {

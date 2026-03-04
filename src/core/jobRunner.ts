@@ -244,8 +244,6 @@ async function runQueuedJobsForAccount(
 
             let processedCurrentJob = false;
             try {
-                processedCurrentJob = true;
-
                 let executionResult: WorkerExecutionResult = workerResult(0);
                 if (job.type === 'INVITE') {
                     const parsed = parseJobPayload<{ leadId: number; localDate: string }>(job);
@@ -266,6 +264,8 @@ async function runQueuedJobsForAccount(
                     const parsed = parseJobPayload<{ leadId: number; campaignStateId?: number }>(job);
                     executionResult = await processEnrichmentJob(parsed.payload, workerContext);
                 }
+
+                processedCurrentJob = true;
 
                 await logInfo('job.worker_result', {
                     jobId: job.id,
