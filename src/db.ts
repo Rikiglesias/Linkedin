@@ -15,6 +15,7 @@ export interface DBRunResult {
 // INTERFACE ASTRAZIONE DB
 // ------------------------------------------------------------------
 export interface DatabaseManager {
+    readonly isPostgres: boolean;
     query<T = unknown>(sql: string, params?: unknown[]): Promise<T[]>;
     get<T = unknown>(sql: string, params?: unknown[]): Promise<T | undefined>;
     exec(sql: string, params?: unknown[]): Promise<void>;
@@ -26,6 +27,7 @@ export interface DatabaseManager {
 // WRAPPER SQLITE
 // ------------------------------------------------------------------
 class SQLiteManager implements DatabaseManager {
+    readonly isPostgres = false;
     private db: SQLiteDatabase;
 
     constructor(db: SQLiteDatabase) {
@@ -66,6 +68,7 @@ class SQLiteManager implements DatabaseManager {
 // WRAPPER POSTGRES
 // ------------------------------------------------------------------
 class PostgresManager implements DatabaseManager {
+    readonly isPostgres = true;
     private pool: Pool;
 
     constructor(connectionString: string) {
