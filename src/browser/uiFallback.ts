@@ -14,7 +14,7 @@ import {
     recordSelectorFailure,
     recordSelectorFallbackSuccess,
 } from '../core/repositories';
-import { humanDelay } from './humanBehavior';
+import { humanDelay, humanMouseMoveToCoords } from './humanBehavior';
 import { VisionSolver } from '../captcha/solver';
 
 export interface ClickFallbackOptions {
@@ -319,6 +319,7 @@ export async function clickWithFallback(
 
         if (coords) {
             console.log(`[FALLBACK-VISION] Coordinate ottenute da LLaVA per "${label}": X:${coords.x}, Y:${coords.y}`);
+            await humanMouseMoveToCoords(page, coords.x, coords.y);
             await page.mouse.click(coords.x, coords.y);
             if (options.postClickDelayMs > 0) {
                 await page.waitForTimeout(options.postClickDelayMs);
@@ -457,6 +458,7 @@ export async function typeWithFallback(
 
         if (coords) {
             console.log(`[FALLBACK-VISION] Coordinate ottenute da LLaVA per digitazione "${label}": X:${coords.x}, Y:${coords.y}`);
+            await humanMouseMoveToCoords(page, coords.x, coords.y);
             await page.mouse.click(coords.x, coords.y);
             await humanDelay(page, 200, 500);
 

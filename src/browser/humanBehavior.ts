@@ -86,6 +86,43 @@ export async function humanMouseMove(page: Page, targetSelector: string): Promis
     }
 }
 
+/**
+ * Simula movimento umano generico verso X, Y generiche senza un elemento.
+ * Fondamentale per il VisionFallback Layer Z, eviterà i "Mouse Teleport" che
+ * innescano flag di bot detection.
+ */
+export async function humanMouseMoveToCoords(page: Page, targetX: number, targetY: number): Promise<void> {
+    if (isMobilePage(page)) {
+        await humanSwipe(page, 'up'); // fallback semantico per mobile
+        return;
+    }
+    try {
+        const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
+        // Si assume che il mouse parta da una posizione pseudo-casuale oppure logica in alto.
+        const startPointX = Math.random() * (viewport.width * 0.4);
+        const startPointY = Math.random() * (viewport.height * 0.4);
+
+        const path = MouseGenerator.generatePath(
+            { x: startPointX, y: startPointY },
+            { x: targetX, y: targetY },
+            Math.floor(15 + Math.random() * 10)
+        );
+
+        for (let i = 0; i < path.length; i++) {
+            const point = path[i];
+            if (!point) continue;
+            await page.mouse.move(point.x, point.y, { steps: 1 });
+
+            // Rallentamenti asincroni tipici
+            if (i % 5 === 0) {
+                await page.waitForTimeout(10 + Math.random() * 20);
+            }
+        }
+    } catch {
+        // Best effort
+    }
+}
+
 export async function humanTap(page: Page, targetSelector: string): Promise<void> {
     try {
         const locator = page.locator(targetSelector).first();

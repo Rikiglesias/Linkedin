@@ -11,6 +11,7 @@ import { processInviteJob } from '../workers/inviteWorker';
 import { processMessageJob } from '../workers/messageWorker';
 import { processHygieneJob } from '../workers/hygieneWorker';
 import { processInteractionJob } from '../workers/interactionWorker';
+import { processEnrichmentJob } from '../workers/enrichmentWorker';
 import { ChallengeDetectedError, resolveWorkerRetryPolicy, RetryableWorkerError } from '../workers/errors';
 import { runFollowUpWorker } from '../workers/followUpWorker';
 import { WorkerExecutionResult, workerResult } from '../workers/result';
@@ -261,6 +262,9 @@ async function runQueuedJobsForAccount(
                 } else if (job.type === 'INTERACTION') {
                     const parsed = parseJobPayload<{ leadId: number; actionType: 'VIEW_PROFILE' | 'LIKE_POST' | 'FOLLOW'; campaignStateId?: number }>(job);
                     executionResult = await processInteractionJob(parsed.payload, workerContext);
+                } else if (job.type === 'ENRICHMENT') {
+                    const parsed = parseJobPayload<{ leadId: number; campaignStateId?: number }>(job);
+                    executionResult = await processEnrichmentJob(parsed.payload, workerContext);
                 }
 
                 await logInfo('job.worker_result', {

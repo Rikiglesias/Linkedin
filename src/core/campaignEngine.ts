@@ -3,7 +3,7 @@ import { enqueueJob } from './repositories/jobs';
 import { getDatabase } from '../db';
 import { CampaignStepRecord, LeadCampaignStateRecord } from './repositories.types';
 import { logInfo, logWarn, logError } from '../telemetry/logger';
-import { getEmailEnricher } from '../services/emailEnricher';
+// Rimosso import diretto di emailEnricher in favore del worker asincrono
 
 /**
  * Trova il prossimo step di una campagna in base a step_order.
@@ -70,7 +70,7 @@ export async function dispatchReadyCampaignSteps(): Promise<number> {
             }
 
             const idempotencyKey = `campaign_${state.campaign_id}_lead_${state.lead_id}_step_${stepToExecute.id}`;
-            let jobType: 'INVITE' | 'MESSAGE' | 'INTERACTION' = 'INTERACTION';
+            let jobType: 'INVITE' | 'MESSAGE' | 'INTERACTION' | 'ENRICHMENT' = 'INTERACTION';
             const payload: Record<string, unknown> = {
                 leadId: state.lead_id,
                 campaignStateId: state.id,
@@ -91,38 +91,8 @@ export async function dispatchReadyCampaignSteps(): Promise<number> {
                     payload.actionType = stepToExecute.action_type;
                     break;
                 case 'EMAIL_ENRICHMENT':
-                    await updateLeadCampaignState(state.id, 'IN_PROGRESS', stepToExecute.id, state.next_execution_at);
-
-                    // Esecuzione isolata e asincrona dell'enrichment senza bloccare il dispatcher
-                    setTimeout(async () => {
-                        try {
-                            const enricher = getEmailEnricher();
-                            const db = await getDatabase();
-                            // Fetch minimum lead core info per api
-                            const lead = await db.get<{ first_name: string; last_name: string; account_name: string; website: string }>(
-                                `SELECT first_name, last_name, account_name, website FROM leads WHERE id = ?`,
-                                [state.lead_id]
-                            );
-
-                            if (lead) {
-                                await enricher.enrichLeadContactData(
-                                    state.lead_id,
-                                    lead.first_name,
-                                    lead.last_name,
-                                    lead.account_name,
-                                    lead.website
-                                );
-                            }
-                            await advanceLeadCampaign(state.id);
-                        } catch (e) {
-                            await logError('campaign.email_enrichment_fatal', { leadId: state.lead_id, error: String(e) });
-                            // Se crasha, avanza comunque la campagna per evitare stallo infinito sul lead
-                            await advanceLeadCampaign(state.id);
-                        }
-                    }, 500);
-
-                    dispatched++;
-                    continue;
+                    jobType = 'ENRICHMENT';
+                    break;
                 default:
                     await updateLeadCampaignState(state.id, 'ERROR', state.current_step_id, null, `Action non supportata: ${stepToExecute.action_type}`);
                     continue;
