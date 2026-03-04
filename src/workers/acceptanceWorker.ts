@@ -4,7 +4,7 @@ import { getLeadById, incrementDailyStat } from '../core/repositories';
 import { joinSelectors } from '../selectors';
 import { AcceptanceJobPayload } from '../types/domain';
 import { WorkerContext } from './context';
-import { ChallengeDetectedError } from './errors';
+import { ChallengeDetectedError, RetryableWorkerError } from './errors';
 import { isSalesNavigatorUrl, normalizeLinkedInUrl } from '../linkedinUrl';
 import { bridgeDailyStat, bridgeLeadStatus } from '../cloud/cloudBridge';
 import { Page } from 'playwright';
@@ -85,7 +85,7 @@ export async function processAcceptanceJob(payload: AcceptanceJobPayload, contex
     }
 
     if (!accepted) {
-        return workerResult(0);
+        throw new RetryableWorkerError('Invito non ancora accettato', 'ACCEPTANCE_PENDING');
     }
 
     await transitionLead(lead.id, 'ACCEPTED', 'acceptance_detected');

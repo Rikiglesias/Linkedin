@@ -326,10 +326,15 @@ async function runQueuedJobsForAccount(
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
                 const attempts = job.attempts + 1;
-                accountHealthMetrics.failed += 1;
+
+                const isAcceptancePending = error instanceof RetryableWorkerError && error.code === 'ACCEPTANCE_PENDING';
+
+                if (!isAcceptancePending) {
+                    accountHealthMetrics.failed += 1;
+                    await incrementDailyStat(options.localDate, 'run_errors');
+                }
 
                 await createJobAttempt(job.id, false, error instanceof Error ? error.name : 'UNKNOWN_ERROR', message, null);
-                await incrementDailyStat(options.localDate, 'run_errors');
 
                 if (error instanceof ChallengeDetectedError) {
                     accountHealthMetrics.challenges += 1;

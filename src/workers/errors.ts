@@ -41,6 +41,7 @@ const RETRY_POLICY_BY_CODE: Record<string, RetryPolicyTemplate> = {
     SEND_BUTTON_NOT_FOUND: { retryable: true, maxAttempts: 2, baseDelayMultiplier: 2, category: 'ui_selector' },
     NO_PROOF_OF_SEND: { retryable: true, maxAttempts: 2, baseDelayMultiplier: 2, category: 'ui_selector' },
     WORKER_REPORTED_FAILURE: { retryable: true, maxAttempts: 2, baseDelayMultiplier: 1.5, category: 'workflow' },
+    ACCEPTANCE_PENDING: { retryable: true, maxAttempts: 40, baseDelayMultiplier: 1, category: 'workflow' },
     WEEKLY_LIMIT_REACHED: { retryable: false, maxAttempts: 1, baseDelayMultiplier: 0, category: 'quota' },
     LEAD_NOT_FOUND: { retryable: false, maxAttempts: 1, baseDelayMultiplier: 0, category: 'data' },
 };
