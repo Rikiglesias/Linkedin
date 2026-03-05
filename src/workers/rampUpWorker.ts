@@ -68,22 +68,23 @@ export async function runRampUpWorker(): Promise<RampUpWorkerReport> {
     }
 
     const weekStartDate = getWeekStartDate();
-    const [riskInputs, accountAgeDays, invitesSentToday, messagesSentToday, weeklyInvitesSent, complianceMetrics] = await Promise.all([
-        getRiskInputs(localDate, config.hardInviteCap),
-        getAccountAgeDays(),
-        getDailyStat(localDate, 'invites_sent'),
-        getDailyStat(localDate, 'messages_sent'),
-        countWeeklyInvites(weekStartDate),
-        getComplianceHealthMetrics(localDate, config.complianceHealthLookbackDays, config.hardInviteCap),
-    ]);
+    const [riskInputs, accountAgeDays, invitesSentToday, messagesSentToday, weeklyInvitesSent, complianceMetrics] =
+        await Promise.all([
+            getRiskInputs(localDate, config.hardInviteCap),
+            getAccountAgeDays(),
+            getDailyStat(localDate, 'invites_sent'),
+            getDailyStat(localDate, 'messages_sent'),
+            countWeeklyInvites(weekStartDate),
+            getComplianceHealthMetrics(localDate, config.complianceHealthLookbackDays, config.hardInviteCap),
+        ]);
     const risk = evaluateRisk(riskInputs);
     const weeklyInviteLimitEffective = config.complianceDynamicWeeklyLimitEnabled
         ? calculateDynamicWeeklyInviteLimit(
-            accountAgeDays,
-            config.complianceDynamicWeeklyMinInvites,
-            config.complianceDynamicWeeklyMaxInvites,
-            config.complianceDynamicWeeklyWarmupDays
-        )
+              accountAgeDays,
+              config.complianceDynamicWeeklyMinInvites,
+              config.complianceDynamicWeeklyMaxInvites,
+              config.complianceDynamicWeeklyWarmupDays,
+          )
         : config.weeklyInviteLimit;
     const complianceHealth = evaluateComplianceHealthScore({
         acceptanceRatePct: complianceMetrics.acceptanceRatePct,

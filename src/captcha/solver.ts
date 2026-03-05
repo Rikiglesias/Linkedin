@@ -1,4 +1,5 @@
 import { fetchWithRetryPolicy } from '../core/integrationPolicy';
+import { logError } from '../telemetry/logger';
 
 export interface VisionSolverOptions {
     model?: string;
@@ -39,31 +40,35 @@ export class VisionSolver {
             images: [base64Image],
             stream: false,
             options: {
-                temperature: this.temperature
-            }
+                temperature: this.temperature,
+            },
         };
 
-        const response = await fetchWithRetryPolicy(`${this.endpoint}/api/generate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        }, {
-            integration: 'vision.ollama',
-            circuitKey: 'vision.api',
-            timeoutMs: 45_000,
-            maxAttempts: 2
-        });
+        const response = await fetchWithRetryPolicy(
+            `${this.endpoint}/api/generate`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            },
+            {
+                integration: 'vision.ollama',
+                circuitKey: 'vision.api',
+                timeoutMs: 45_000,
+                maxAttempts: 2,
+            },
+        );
 
         if (!response.ok) {
             throw new Error(`Vision API error: HTTP ${response.status} ${response.statusText}`);
         }
 
-        const data = await response.json() as { response: string };
+        const data = (await response.json()) as { response: string };
         return data.response;
     }
 
     /**
-     * Usa la visione per dedurre la posizione X,Y di un oggetto semantico, 
+     * Usa la visione per dedurre la posizione X,Y di un oggetto semantico,
      * utilissimo per i grid CAPTCHA o per riconoscere bottoni invisibili ai selettori standard.
      */
     public async findObjectCoordinates(base64Image: string, targetObject: string): Promise<Coordinates | null> {
@@ -82,7 +87,10 @@ Rispondi ESCLUSIVAMENTE compilando questo JSON valido e senza spiegazioni aggiun
                 }
             }
         } catch (error: unknown) {
-            console.error('[VisionSolver] Failed JSON parse from LLaVA response:', rawResponse, error);
+            void logError('vision_solver.json_parse_failed', {
+                rawResponse: rawResponse.substring(0, 200),
+                error: error instanceof Error ? error.message : String(error),
+            });
         }
         return null;
     }

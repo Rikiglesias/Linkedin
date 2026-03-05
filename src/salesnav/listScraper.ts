@@ -76,19 +76,21 @@ function splitName(fullName: string): { firstName: string; lastName: string } {
 function looksLikeNoise(line: string): boolean {
     const normalized = line.toLowerCase();
     if (!normalized) return true;
-    return normalized.includes('save')
-        || normalized.includes('salva')
-        || normalized.includes('message')
-        || normalized.includes('messaggio')
-        || normalized.includes('connect')
-        || normalized.includes('collegati')
-        || normalized.includes('mutual')
-        || normalized.includes('shared')
-        || normalized.includes('lead filter')
-        || normalized.includes('filtro')
-        || normalized.includes('view profile')
-        || normalized.includes('visualizza profilo')
-        || normalized.includes('sales navigator');
+    return (
+        normalized.includes('save') ||
+        normalized.includes('salva') ||
+        normalized.includes('message') ||
+        normalized.includes('messaggio') ||
+        normalized.includes('connect') ||
+        normalized.includes('collegati') ||
+        normalized.includes('mutual') ||
+        normalized.includes('shared') ||
+        normalized.includes('lead filter') ||
+        normalized.includes('filtro') ||
+        normalized.includes('view profile') ||
+        normalized.includes('visualizza profilo') ||
+        normalized.includes('sales navigator')
+    );
 }
 
 function pickJobAndAccount(lines: string[], fullName: string): { jobTitle: string; accountName: string } {
@@ -198,7 +200,9 @@ async function extractRawLeadCandidates(page: Page): Promise<RawLeadCandidate[]>
             if (seen.has(dedupeKey)) continue;
             seen.add(dedupeKey);
 
-            const container = anchor.closest('li, article, .artdeco-entity-lockup, [data-test-search-result]') as HTMLElement | null;
+            const container = anchor.closest(
+                'li, article, .artdeco-entity-lockup, [data-test-search-result]',
+            ) as HTMLElement | null;
             const textSource = container?.innerText ?? anchor.innerText ?? '';
             const lines = textSource
                 .split('\n')
@@ -219,7 +223,7 @@ async function extractRawLeadCandidates(page: Page): Promise<RawLeadCandidate[]>
 
 async function clickShowMoreIfPresent(page: Page): Promise<boolean> {
     const button = page.locator(SHOW_MORE_SELECTOR).first();
-    if (await button.count() === 0) {
+    if ((await button.count()) === 0) {
         return false;
     }
     const disabled = await button.isDisabled().catch(() => false);
@@ -235,12 +239,12 @@ async function clickShowMoreIfPresent(page: Page): Promise<boolean> {
 
 async function goToNextPage(page: Page): Promise<boolean> {
     const nextButton = page.locator(NEXT_PAGE_SELECTOR).first();
-    if (await nextButton.count() === 0) {
+    if ((await nextButton.count()) === 0) {
         return false;
     }
 
     const ariaDisabled = (await nextButton.getAttribute('aria-disabled'))?.toLowerCase() === 'true';
-    const disabled = ariaDisabled || await nextButton.isDisabled().catch(() => false);
+    const disabled = ariaDisabled || (await nextButton.isDisabled().catch(() => false));
     if (disabled) {
         return false;
     }
@@ -259,7 +263,10 @@ export async function navigateToSavedLists(page: Page): Promise<SalesNavSavedLis
     return extractSavedLists(page);
 }
 
-export async function scrapeLeadsFromSalesNavList(page: Page, options: SalesNavListScrapeOptions): Promise<SalesNavListScrapeResult> {
+export async function scrapeLeadsFromSalesNavList(
+    page: Page,
+    options: SalesNavListScrapeOptions,
+): Promise<SalesNavListScrapeResult> {
     const maxPages = Math.max(1, options.maxPages);
     const leadLimit = Math.max(1, options.leadLimit);
 
@@ -312,4 +319,3 @@ export async function scrapeLeadsFromSalesNavList(page: Page, options: SalesNavL
         leads: Array.from(byUrl.values()).slice(0, leadLimit),
     };
 }
-

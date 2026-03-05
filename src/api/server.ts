@@ -1,3 +1,17 @@
+/**
+ * api/server.ts
+ * ─────────────────────────────────────────────────────────────────
+ * Express API server per la dashboard e il controllo del bot.
+ *
+ * API Versioning:
+ *   /api/v1/*  — Route versionizzate (nuove feature)
+ *   /api/*     — Route legacy (backward compatible, deprecate progressivamente)
+ *
+ * Router modulari:
+ *   /api/v1/campaigns  → routes/campaigns.ts
+ *   /api/v1/export     → routes/export.ts
+ */
+
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -27,12 +41,19 @@ import {
 } from '../core/repositories';
 import { getDatabase } from '../db';
 import campaignsRouter from './routes/campaigns';
+import exportRouter from './routes/export';
 import { sendApiV1, handleApiError } from './utils';
+import { PauseSchema, QuarantineSchema } from './schemas';
 import { evaluatePredictiveRiskAlerts, evaluateRisk } from '../risk/riskEngine';
 import { getLocalDateString, config } from '../config';
 import { pauseAutomation, resumeAutomation, setQuarantine } from '../risk/incidentManager';
 import { CampaignRunRecord } from '../types/domain';
-import { publishLiveEvent, subscribeLiveEvents, getLiveEventSubscribersCount, type LiveEventMessage } from '../telemetry/liveEvents';
+import {
+    publishLiveEvent,
+    subscribeLiveEvents,
+    getLiveEventSubscribersCount,
+    type LiveEventMessage,
+} from '../telemetry/liveEvents';
 import { resolveCorrelationId, runWithCorrelationId } from '../telemetry/correlation';
 import { getCircuitBreakerSnapshot } from '../core/integrationPolicy';
 
@@ -43,34 +64,61 @@ const DASHBOARD_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const DASHBOARD_AUTH_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
 const DASHBOARD_AUTH_MAX_FAILURES = 5;
 const DASHBOARD_AUTH_LOCKOUT_MS = 30 * 60 * 1000;
-const sessionCleanupTimer = setInterval(() => {
-    void cleanupExpiredDashboardSessions().catch(() => null);
-}, 15 * 60 * 1000);
+const sessionCleanupTimer = setInterval(
+    () => {
+        void cleanupExpiredDashboardSessions().catch(() => null);
+    },
+    15 * 60 * 1000,
+);
 sessionCleanupTimer.unref();
 
 // ── CORS ristretto ──────────────────────────────────────────────────────────
 // Accetta solo richieste da localhost o se non c'è origin (es. curl / stesso server)
-app.use(cors({
-    origin: (origin, callback) => {
-        // Nessun origin = same-origin o tool come curl → ok
-        if (!origin) return callback(null, true);
-        // Whitelist: localhost e IPs fidati configurati
-        const allowedOrigins = [
-            'http://localhost',
-            'http://localhost:3000',
-            'http://127.0.0.1',
-            'http://127.0.0.1:3000',
-            ...config.dashboardTrustedIps.map((ip) => `http://${ip}`),
-            ...config.dashboardTrustedIps.map((ip) => `http://${ip}:3000`),
-        ];
-        return callback(null, allowedOrigins.includes(origin));
-    },
-    methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key'],
-    credentials: false,
-}));
+app.use(
+    cors({
+        origin: (origin, callback) => {
+            // Nessun origin = same-origin o tool come curl → ok
+            if (!origin) return callback(null, true);
+            // Whitelist: localhost e IPs fidati configurati
+            const allowedOrigins = [
+                'http://localhost',
+                'http://localhost:3000',
+                'http://127.0.0.1',
+                'http://127.0.0.1:3000',
+                ...config.dashboardTrustedIps.map((ip) => `http://${ip}`),
+                ...config.dashboardTrustedIps.map((ip) => `http://${ip}:3000`),
+            ];
+            return callback(null, allowedOrigins.includes(origin));
+        },
+        methods: ['GET', 'POST'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key'],
+        credentials: false,
+    }),
+);
 
 app.use(express.json({ limit: '64kb' }));
+
+app.use((req, res, next) => {
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+        const origin = req.header('origin');
+        const referer = req.header('referer');
+        const source = origin || referer || '';
+        if (source) {
+            const allowedPatterns = [
+                /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i,
+                ...config.dashboardTrustedIps.map(
+                    (ip) => new RegExp(`^https?://${ip.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(:\\d+)?`, 'i'),
+                ),
+            ];
+            const allowed = allowedPatterns.some((pattern) => pattern.test(source));
+            if (!allowed) {
+                res.status(403).json({ error: { code: 'CSRF_ORIGIN_REJECTED', message: 'Origin non consentita' } });
+                return;
+            }
+        }
+    }
+    next();
+});
 
 app.use((req, res, next) => {
     const incomingCorrelation = req.header('x-correlation-id') ?? req.header('x-request-id');
@@ -92,9 +140,7 @@ const globalLimiter = rateLimit({
     skip: (req) => {
         const path = req.path ?? '';
         const originalUrl = req.originalUrl ?? '';
-        return path === '/events'
-            || path === '/api/events'
-            || originalUrl.startsWith('/api/events');
+        return path === '/events' || path === '/api/events' || originalUrl.startsWith('/api/events');
     },
     message: { error: 'Troppe richieste. Attendi prima di riprovare.' },
 });
@@ -127,7 +173,7 @@ app.use((_req, res, next) => {
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader(
         'Content-Security-Policy',
-        "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+        "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
     );
     next();
 });
@@ -247,7 +293,7 @@ async function revokeDashboardSession(token: string): Promise<void> {
         `UPDATE dashboard_sessions
             SET revoked_at = ?, last_seen_at = ?
           WHERE token_hash = ? AND revoked_at IS NULL`,
-        [nowIso, nowIso, tokenHash]
+        [nowIso, nowIso, tokenHash],
     );
 }
 
@@ -262,7 +308,7 @@ async function hasValidDashboardSession(req: Request): Promise<boolean> {
            FROM dashboard_sessions
           WHERE token_hash = ?
           LIMIT 1`,
-        [tokenHash]
+        [tokenHash],
     );
 
     if (!row || row.revoked_at) {
@@ -280,7 +326,7 @@ async function hasValidDashboardSession(req: Request): Promise<boolean> {
         `UPDATE dashboard_sessions
             SET last_seen_at = ?, expires_at = ?
           WHERE token_hash = ?`,
-        [nowIso, refreshedExpiry, tokenHash]
+        [nowIso, refreshedExpiry, tokenHash],
     );
     return true;
 }
@@ -309,7 +355,7 @@ async function createDashboardSessionCookie(req: Request, res: Response): Promis
             created_ip,
             user_agent
         ) VALUES (?, ?, ?, ?, ?, ?)`,
-        [tokenHash, nowIso, expiresAtIso, nowIso, requestIp, userAgent]
+        [tokenHash, nowIso, expiresAtIso, nowIso, requestIp, userAgent],
     );
     res.setHeader('Set-Cookie', buildDashboardSessionCookie(token, maxAgeSec));
 }
@@ -318,7 +364,7 @@ function clearDashboardSessionCookie(res: Response): void {
     const secureFlag = process.env.NODE_ENV === 'production' ? '; Secure' : '';
     res.setHeader(
         'Set-Cookie',
-        `${DASHBOARD_SESSION_COOKIE}=; Path=/api; HttpOnly; SameSite=Lax; Max-Age=0${secureFlag}`
+        `${DASHBOARD_SESSION_COOKIE}=; Path=/api; HttpOnly; SameSite=Lax; Max-Age=0${secureFlag}`,
     );
 }
 
@@ -329,7 +375,7 @@ async function cleanupExpiredDashboardSessions(): Promise<void> {
         `DELETE FROM dashboard_sessions
           WHERE expires_at <= ?
              OR revoked_at IS NOT NULL`,
-        [nowIso]
+        [nowIso],
     );
 }
 
@@ -340,7 +386,7 @@ async function isDashboardAuthLocked(requestIp: string): Promise<boolean> {
            FROM dashboard_auth_attempts
           WHERE ip = ?
           LIMIT 1`,
-        [requestIp]
+        [requestIp],
     );
     if (!row?.locked_until) return false;
     const lockedUntilMs = Date.parse(row.locked_until);
@@ -362,23 +408,21 @@ async function recordDashboardAuthFailure(requestIp: string): Promise<{ locked: 
            FROM dashboard_auth_attempts
           WHERE ip = ?
           LIMIT 1`,
-        [requestIp]
+        [requestIp],
     );
 
     let failedCount = 1;
     let firstFailedAt = nowIso;
     if (existing) {
         const previousFirstMs = existing.first_failed_at ? Date.parse(existing.first_failed_at) : Number.NaN;
-        if (Number.isFinite(previousFirstMs) && (nowMs - previousFirstMs) <= DASHBOARD_AUTH_ATTEMPT_WINDOW_MS) {
+        if (Number.isFinite(previousFirstMs) && nowMs - previousFirstMs <= DASHBOARD_AUTH_ATTEMPT_WINDOW_MS) {
             failedCount = Number(existing.failed_count ?? 0) + 1;
             firstFailedAt = existing.first_failed_at ?? nowIso;
         }
     }
 
     const shouldLock = failedCount >= DASHBOARD_AUTH_MAX_FAILURES;
-    const lockedUntil = shouldLock
-        ? new Date(nowMs + DASHBOARD_AUTH_LOCKOUT_MS).toISOString()
-        : null;
+    const lockedUntil = shouldLock ? new Date(nowMs + DASHBOARD_AUTH_LOCKOUT_MS).toISOString() : null;
 
     if (existing) {
         await db.run(
@@ -389,7 +433,7 @@ async function recordDashboardAuthFailure(requestIp: string): Promise<{ locked: 
                     locked_until = ?,
                     updated_at = ?
               WHERE ip = ?`,
-            [failedCount, firstFailedAt, nowIso, lockedUntil, nowIso, requestIp]
+            [failedCount, firstFailedAt, nowIso, lockedUntil, nowIso, requestIp],
         );
     } else {
         await db.run(
@@ -401,7 +445,7 @@ async function recordDashboardAuthFailure(requestIp: string): Promise<{ locked: 
                 locked_until,
                 updated_at
             ) VALUES (?, ?, ?, ?, ?, ?)`,
-            [requestIp, failedCount, firstFailedAt, nowIso, lockedUntil, nowIso]
+            [requestIp, failedCount, firstFailedAt, nowIso, lockedUntil, nowIso],
         );
     }
 
@@ -409,16 +453,29 @@ async function recordDashboardAuthFailure(requestIp: string): Promise<{ locked: 
 }
 
 async function dashboardAuthMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
-    if (!config.dashboardAuthEnabled) { next(); return; }
-    if (req.path === '/health') { next(); return; }
+    if (!config.dashboardAuthEnabled) {
+        next();
+        return;
+    }
+    if (req.path === '/health') {
+        next();
+        return;
+    }
 
     const requestIp = resolveRequestIp(req);
 
     try {
-        if (isTrustedIp(requestIp)) { next(); return; }
-        if (await hasValidDashboardSession(req)) { next(); return; }
+        if (isTrustedIp(requestIp)) {
+            next();
+            return;
+        }
+        if (await hasValidDashboardSession(req)) {
+            next();
+            return;
+        }
 
-        const authConfigured = !!config.dashboardApiKey || (!!config.dashboardBasicUser && !!config.dashboardBasicPassword);
+        const authConfigured =
+            !!config.dashboardApiKey || (!!config.dashboardBasicUser && !!config.dashboardBasicPassword);
         if (!authConfigured) {
             res.status(503).json({ error: 'Dashboard auth enabled but no credentials configured.' });
             return;
@@ -554,10 +611,24 @@ function mapDailyToPredictiveSample(day: {
     };
 }
 
+function resolveQuarantineEnabled(payload: unknown): boolean {
+    const parsed = QuarantineSchema.safeParse(payload);
+    if (!parsed.success) {
+        throw parsed.error;
+    }
+    if ('enabled' in parsed.data) {
+        return parsed.data.enabled;
+    }
+    return parsed.data.action === 'set';
+}
+
 app.use('/api', dashboardAuthMiddleware);
 
 async function apiV1AuthMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
-    if (!config.dashboardAuthEnabled) { next(); return; }
+    if (!config.dashboardAuthEnabled) {
+        next();
+        return;
+    }
     const requestIp = resolveRequestIp(req);
     const authConfigured = !!config.dashboardApiKey || (!!config.dashboardBasicUser && !!config.dashboardBasicPassword);
     if (!authConfigured) {
@@ -680,7 +751,9 @@ app.get('/api/v1/automation/snapshot', async (_req, res) => {
                     currentFailures: observability.selectorCacheKpi.currentFailures,
                     previousFailures: observability.selectorCacheKpi.previousFailures,
                     reductionPct: observability.selectorCacheKpi.reductionPct,
-                    targetReductionPct: Number.parseFloat((observability.selectorCacheKpi.targetReductionRate * 100).toFixed(2)),
+                    targetReductionPct: Number.parseFloat(
+                        (observability.selectorCacheKpi.targetReductionRate * 100).toFixed(2),
+                    ),
                     minBaselineFailures: observability.selectorCacheKpi.minBaselineFailures,
                     baselineSufficient: observability.selectorCacheKpi.baselineSufficient,
                     validationStatus: observability.selectorCacheKpi.validationStatus,
@@ -710,8 +783,13 @@ app.get('/api/v1/automation/incidents', async (req, res) => {
 
 app.post('/api/v1/automation/controls/pause', async (req, res) => {
     try {
-        const rawMinutes = req.body?.minutes;
-        const minutes = typeof rawMinutes === 'number' && rawMinutes > 0 ? Math.min(rawMinutes, 10080) : 1440;
+        const payload = req.body?.minutes === undefined ? { minutes: 1440 } : req.body;
+        const parsed = PauseSchema.safeParse(payload);
+        if (!parsed.success) {
+            handleApiError(res, parsed.error, 'api.v1.automation.controls.pause.validation');
+            return;
+        }
+        const minutes = parsed.data.minutes;
         await pauseAutomation('MANUAL_API_V1_PAUSE', { source: 'api_v1' }, minutes);
         auditSecurityEvent({
             category: 'runtime_control',
@@ -756,7 +834,7 @@ app.post('/api/v1/automation/controls/resume', async (req, res) => {
 
 app.post('/api/v1/automation/controls/quarantine', async (req, res) => {
     try {
-        const enabled = req.body?.enabled === true;
+        const enabled = resolveQuarantineEnabled(req.body);
         await setQuarantine(enabled);
         auditSecurityEvent({
             category: 'runtime_control',
@@ -887,7 +965,7 @@ app.get('/api/runs', async (_req, res) => {
             `SELECT id, start_time, end_time, status, profiles_discovered, invites_sent, messages_sent, errors_count, created_at
              FROM campaign_runs
              ORDER BY id DESC
-             LIMIT 10`
+             LIMIT 10`,
         );
         res.json(runs);
     } catch (err: unknown) {
@@ -925,9 +1003,8 @@ app.get('/api/ml/timing-slots', async (req, res) => {
         const action = String(req.query.action ?? 'invite') === 'message' ? 'message' : 'invite';
         const includeExperiment = String(req.query.includeExperiment ?? 'false').toLowerCase() === 'true';
         const lookbackDaysRaw = Number.parseInt(String(req.query.lookbackDays ?? '30'), 10);
-        const lookbackDays = Number.isFinite(lookbackDaysRaw) && lookbackDaysRaw > 0
-            ? Math.min(180, lookbackDaysRaw)
-            : 30;
+        const lookbackDays =
+            Number.isFinite(lookbackDaysRaw) && lookbackDaysRaw > 0 ? Math.min(180, lookbackDaysRaw) : 30;
         const slots = await getTopTimeSlots(n, action);
         if (!includeExperiment) {
             res.json(slots);
@@ -1079,11 +1156,7 @@ app.get('/api/risk/predictive', async (_req, res) => {
             inviteVelocityRatio: currentRiskInputs.inviteVelocityRatio,
         };
 
-        const alerts = evaluatePredictiveRiskAlerts(
-            currentSample,
-            historySamples,
-            config.riskPredictiveSigma
-        );
+        const alerts = evaluatePredictiveRiskAlerts(currentSample, historySamples, config.riskPredictiveSigma);
 
         res.json({
             enabled: config.riskPredictiveAlertsEnabled,
@@ -1113,9 +1186,10 @@ app.get('/api/ai/quality', async (req, res) => {
 
 app.post('/api/ai/quality/run', async (req, res) => {
     try {
-        const triggeredBy = typeof req.body?.triggeredBy === 'string' && req.body.triggeredBy.trim()
-            ? req.body.triggeredBy.trim()
-            : 'dashboard';
+        const triggeredBy =
+            typeof req.body?.triggeredBy === 'string' && req.body.triggeredBy.trim()
+                ? req.body.triggeredBy.trim()
+                : 'dashboard';
         const run = await runAiValidationPipeline(triggeredBy);
         auditSecurityEvent({
             category: 'ai_quality',
@@ -1133,14 +1207,12 @@ app.post('/api/ai/quality/run', async (req, res) => {
     }
 });
 
-
 app.get('/api/ai/comment-suggestions', async (req, res) => {
     try {
         const rawLimit = Number.parseInt(String(req.query.limit ?? '25'), 10);
         const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(100, rawLimit)) : 25;
-        const rawStatus = typeof req.query.status === 'string'
-            ? req.query.status.trim().toUpperCase()
-            : 'REVIEW_PENDING';
+        const rawStatus =
+            typeof req.query.status === 'string' ? req.query.status.trim().toUpperCase() : 'REVIEW_PENDING';
         if (rawStatus !== 'REVIEW_PENDING' && rawStatus !== 'APPROVED' && rawStatus !== 'REJECTED') {
             res.status(400).json({ error: 'Parametro status non valido.' });
             return;
@@ -1166,9 +1238,7 @@ app.post('/api/ai/comment-suggestions/:leadId/:suggestionIndex/approve', async (
     }
 
     try {
-        const comment = typeof req.body?.comment === 'string'
-            ? req.body.comment.trim()
-            : undefined;
+        const comment = typeof req.body?.comment === 'string' ? req.body.comment.trim() : undefined;
         const result = await reviewCommentSuggestion({
             leadId,
             suggestionIndex,
@@ -1313,8 +1383,12 @@ app.get('/api/review-queue', async (req, res) => {
 // ── Controls ──────────────────────────────────────────────────────────────────
 app.post('/api/controls/pause', async (req, res) => {
     try {
-        const rawMinutes = req.body.minutes;
-        const minutes = typeof rawMinutes === 'number' && rawMinutes > 0 ? Math.min(rawMinutes, 10080) : 1440;
+        const parsed = PauseSchema.safeParse(req.body);
+        if (!parsed.success) {
+            handleApiError(res, parsed.error, 'api.controls.pause.validation');
+            return;
+        }
+        const minutes = parsed.data.minutes;
         await pauseAutomation('MANUAL_UI_PAUSE', { source: 'dashboard' }, minutes);
         auditSecurityEvent({
             category: 'runtime_control',
@@ -1346,7 +1420,7 @@ app.post('/api/controls/resume', async (req, res) => {
 
 app.post('/api/controls/quarantine', async (req, res) => {
     try {
-        const enabled = req.body.enabled === true;
+        const enabled = resolveQuarantineEnabled(req.body);
         await setQuarantine(enabled);
         auditSecurityEvent({
             category: 'runtime_control',
@@ -1361,31 +1435,11 @@ app.post('/api/controls/quarantine', async (req, res) => {
     }
 });
 
-// ── API v1 — Campaigns (Drip Flows) ──────────────────────────────────────────
-
-// GET /api/v1/campaigns — list campaigns with step count
-app.get('/api/v1/campaigns', async (_req, res) => {
-    try {
-        const db = await getDatabase();
-        const rows = await db.query<{ id: number; name: string; active: number; steps_count: number; created_at: string }>(
-            `
-            SELECT c.id, c.name, c.active, COUNT(cs.id) AS steps_count, c.created_at
-            FROM campaigns c
-            LEFT JOIN campaign_steps cs ON cs.campaign_id = c.id
-            GROUP BY c.id
-            ORDER BY c.id DESC
-            `
-        );
-        sendApiV1(res, { count: rows.length, rows });
-    } catch (err: unknown) {
-        handleApiError(res, err, 'api.v1.campaigns.list');
-    }
-});
-
 // ==========================================
 // CAMPAIGNS (Router Esterno)
 // ==========================================
-app.use('/api/v1/campaigns', campaignsRouter);
+app.use('/api/v1/export', exportRouter);
+app.use('/api/export', exportRouter);
 
 // ── 404 catch-all ─────────────────────────────────────────────────────────────
 app.use('/api/', (_req, res) => {

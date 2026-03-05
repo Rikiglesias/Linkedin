@@ -1,3 +1,5 @@
+import { getRuntimeFlag, setRuntimeFlag } from '../core/repositories';
+
 export interface BackpressureSample {
     currentLevel: number;
     sent: number;
@@ -37,3 +39,65 @@ export function computeNextBackpressureLevel(sample: BackpressureSample): number
     return clampBackpressureLevel(currentLevel + delta);
 }
 
+// ─── Account-Scoped Distributed Backpressure ─────────────────────────────────
+
+function accountBackpressureKey(accountId: string): string {
+    return `backpressure.account.${accountId}.level`;
+}
+
+/**
+ * Legge il livello di backpressure per un account dal DB.
+ * Persistente tra riavvii e condiviso tra processi.
+ */
+export async function getAccountBackpressureLevel(accountId: string): Promise<number> {
+    const raw = await getRuntimeFlag(accountBackpressureKey(accountId));
+    const parsed = raw ? Number.parseInt(raw, 10) : 1;
+    return clampBackpressureLevel(parsed);
+}
+
+/**
+ * Scrive il livello di backpressure aggiornato per un account nel DB.
+ */
+export async function setAccountBackpressureLevel(accountId: string, level: number): Promise<void> {
+    await setRuntimeFlag(accountBackpressureKey(accountId), String(clampBackpressureLevel(level)));
+}
+
+/**
+ * Aggiorna il livello di backpressure per un account in base ai risultati dell'ultimo batch.
+ * Ritorna il nuovo livello.
+ */
+export async function updateAccountBackpressure(
+    accountId: string,
+    sample: Omit<BackpressureSample, 'currentLevel'>,
+): Promise<number> {
+    const currentLevel = await getAccountBackpressureLevel(accountId);
+    const nextLevel = computeNextBackpressureLevel({
+        currentLevel,
+        ...sample,
+    });
+    if (nextLevel !== currentLevel) {
+        await setAccountBackpressureLevel(accountId, nextLevel);
+    }
+    return nextLevel;
+}
+
+export interface AccountBackpressureSnapshot {
+    accountId: string;
+    level: number;
+    effectiveBatchSize: number;
+}
+
+/**
+ * Ritorna lo snapshot di backpressure per un account, utile per diagnostica.
+ */
+export async function getAccountBackpressureSnapshot(
+    accountId: string,
+    baseBatch: number,
+): Promise<AccountBackpressureSnapshot> {
+    const level = await getAccountBackpressureLevel(accountId);
+    return {
+        accountId,
+        level,
+        effectiveBatchSize: computeBackpressureBatchSize(baseBatch, level),
+    };
+}

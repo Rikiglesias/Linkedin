@@ -17,7 +17,7 @@ export class MouseGenerator {
         const curveSize = Math.max(20, Math.min(Math.abs(dx), Math.abs(dy)) * 0.4);
         const cp = {
             x: start.x + dx / 2 + (Math.random() - 0.5) * curveSize,
-            y: start.y + dy / 2 + (Math.random() - 0.5) * curveSize
+            y: start.y + dy / 2 + (Math.random() - 0.5) * curveSize,
         };
 
         const noiseOffset = Math.random() * 100;
@@ -43,7 +43,7 @@ export class MouseGenerator {
 
             path.push({
                 x: bx + noiseX * dampening,
-                y: by + noiseY * dampening
+                y: by + noiseY * dampening,
             });
         }
 

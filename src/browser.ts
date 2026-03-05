@@ -23,19 +23,8 @@ export {
     runSelectorCanaryDetailed,
     runSelectorCanary,
 } from './browser/humanBehavior';
-export type {
-    SelectorCanaryStepResult,
-    SelectorCanaryReport,
-} from './browser/humanBehavior';
+export type { SelectorCanaryStepResult, SelectorCanaryReport } from './browser/humanBehavior';
 
-export {
-    clickWithFallback,
-    waitForSelectorWithFallback,
-    typeWithFallback,
-} from './browser/uiFallback';
+export { clickWithFallback, waitForSelectorWithFallback, typeWithFallback } from './browser/uiFallback';
 
-export {
-    isLoggedIn,
-    checkLogin,
-    detectChallenge,
-} from './browser/auth';
+export { isLoggedIn, checkLogin, detectChallenge } from './browser/auth';

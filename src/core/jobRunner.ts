@@ -1,4 +1,18 @@
-import { BrowserSession, closeBrowser, interJobDelay, launchBrowser, checkLogin, performDecoyBurst, performBrowserGC } from '../browser';
+import {
+    BrowserSession,
+    closeBrowser,
+    interJobDelay,
+    launchBrowser,
+    checkLogin,
+    performDecoyBurst,
+    performBrowserGC,
+} from '../browser';
+import { recordSuccessfulAuth, checkSessionFreshness } from '../browser/sessionCookieMonitor';
+import {
+    updateAccountBackpressure,
+    getAccountBackpressureLevel,
+    computeBackpressureBatchSize,
+} from '../sync/backpressure';
 import { getRuntimeAccountProfiles, isMultiAccountRuntimeEnabled, RuntimeAccountProfile } from '../accountManager';
 import { config } from '../config';
 import { handleChallengeDetected, pauseAutomation, quarantineAccount } from '../risk/incidentManager';
@@ -14,6 +28,7 @@ import { processInteractionJob } from '../workers/interactionWorker';
 import { processEnrichmentJob } from '../workers/enrichmentWorker';
 import { ChallengeDetectedError, resolveWorkerRetryPolicy, RetryableWorkerError } from '../workers/errors';
 import { runFollowUpWorker } from '../workers/followUpWorker';
+import { createAndPublishPost, PostCreatorOptions } from '../workers/postCreatorWorker';
 import { WorkerExecutionResult, workerResult } from '../workers/result';
 import { transitionLead } from './leadStateService';
 import { advanceLeadCampaign, failLeadCampaign } from './campaignEngine';
@@ -61,9 +76,7 @@ function evaluateAccountHealth(metrics: AccountRunHealthMetrics): {
     reason: string | null;
     failureRate: number;
 } {
-    const failureRate = metrics.processed > 0
-        ? metrics.failed / metrics.processed
-        : 0;
+    const failureRate = metrics.processed > 0 ? metrics.failed / metrics.processed : 0;
 
     if (metrics.challenges > 0 || failureRate >= config.accountHealthCriticalFailureRate) {
         return {
@@ -89,7 +102,7 @@ function evaluateAccountHealth(metrics: AccountRunHealthMetrics): {
 async function persistAccountHealth(
     account: RuntimeAccountProfile,
     options: RunJobsOptions,
-    metrics: AccountRunHealthMetrics
+    metrics: AccountRunHealthMetrics,
 ): Promise<void> {
     const health = evaluateAccountHealth(metrics);
     const durationMs = Date.now() - metrics.startedAtMs;
@@ -109,15 +122,11 @@ async function persistAccountHealth(
         },
     });
 
-    if (
-        !options.dryRun
-        && metrics.processed >= config.accountHealthAlertMinProcessed
-        && health.health !== 'GREEN'
-    ) {
+    if (!options.dryRun && metrics.processed >= config.accountHealthAlertMinProcessed && health.health !== 'GREEN') {
         await sendTelegramAlert(
             `Account: ${account.id}\nHealth: ${health.health}\nReason: ${health.reason ?? 'n/a'}\nProcessed: ${metrics.processed}\nFailed: ${metrics.failed}\nChallenges: ${metrics.challenges}\nDeadLetters: ${metrics.deadLetters}`,
             'Account Health Alert',
-            health.health === 'RED' ? 'critical' : 'warn'
+            health.health === 'RED' ? 'critical' : 'warn',
         );
     }
 }
@@ -155,7 +164,7 @@ async function rotateSessionWithLoginCheck(
 async function runQueuedJobsForAccount(
     options: RunJobsOptions,
     account: RuntimeAccountProfile,
-    includeLegacyDefaultQueue: boolean
+    includeLegacyDefaultQueue: boolean,
 ): Promise<void> {
     const accountHealthMetrics: AccountRunHealthMetrics = {
         processed: 0,
@@ -180,6 +189,27 @@ async function runQueuedJobsForAccount(
             return;
         }
 
+        const freshness = checkSessionFreshness(account.sessionDir, config.sessionCookieMaxAgeDays);
+        if (freshness.needsRotation) {
+            await logWarn('session_cookie.stale', {
+                accountId: account.id,
+                sessionAgeDays: freshness.sessionAgeDays,
+                maxAgeDays: freshness.maxAgeDays,
+                lastVerifiedAt: freshness.lastVerifiedAt,
+            });
+            await pauseAutomation(
+                'SESSION_COOKIE_STALE',
+                {
+                    accountId: account.id,
+                    sessionAgeDays: freshness.sessionAgeDays,
+                    recommendation: 'Re-autenticarsi manualmente o eseguire rotazione cookie via API.',
+                },
+                60,
+            );
+        }
+
+        recordSuccessfulAuth(account.sessionDir, account.id);
+
         const workerContext: WorkerContext = {
             session,
             dryRun: options.dryRun,
@@ -191,11 +221,15 @@ async function runQueuedJobsForAccount(
         let jobsSinceDecoy = 0;
         let jobsSinceCoffeeBreak = 0;
         let nextDecoyAt = randomInt(config.behaviorDecoyMinIntervalJobs, config.behaviorDecoyMaxIntervalJobs);
-        let nextCoffeeBreakAt = randomInt(config.behaviorCoffeeBreakMinIntervalJobs, config.behaviorCoffeeBreakMaxIntervalJobs);
+        let nextCoffeeBreakAt = randomInt(
+            config.behaviorCoffeeBreakMinIntervalJobs,
+            config.behaviorCoffeeBreakMaxIntervalJobs,
+        );
         const rotateEveryJobs = config.proxyRotateEveryJobs;
         const rotateEveryMinutes = config.proxyRotateEveryMinutes;
         const rotateEveryMs = rotateEveryMinutes > 0 ? rotateEveryMinutes * 60_000 : 0;
-        const maxJobsPerRun = Math.max(1, config.accountMaxJobsPerRun);
+        const accountBpLevel = await getAccountBackpressureLevel(account.id);
+        const maxJobsPerRun = Math.max(1, computeBackpressureBatchSize(config.accountMaxJobsPerRun, accountBpLevel));
         let sessionStartedAtMs = Date.now();
         let processedThisRun = 0;
 
@@ -218,6 +252,36 @@ async function runQueuedJobsForAccount(
                     remainingSeconds: pauseState.remainingSeconds,
                 });
                 break;
+            }
+
+            const throttleSignal = session.httpThrottler.getThrottleSignal();
+            if (throttleSignal.shouldPause) {
+                await logWarn('job_runner.http_throttle.pause', {
+                    accountId: account.id,
+                    ratio: throttleSignal.ratio,
+                    currentAvgMs: throttleSignal.currentAvgMs,
+                    baselineMs: throttleSignal.baselineMs,
+                });
+                await pauseAutomation(
+                    'HTTP_RESPONSE_TIME_CRITICAL',
+                    {
+                        accountId: account.id,
+                        ratio: throttleSignal.ratio,
+                        currentAvgMs: throttleSignal.currentAvgMs,
+                        baselineMs: throttleSignal.baselineMs,
+                    },
+                    15,
+                );
+                break;
+            }
+            if (throttleSignal.shouldSlow) {
+                const extraDelayMs = 3000 + Math.floor(Math.random() * 5000);
+                await logInfo('job_runner.http_throttle.slow', {
+                    accountId: account.id,
+                    ratio: throttleSignal.ratio,
+                    extraDelayMs,
+                });
+                await new Promise((r) => setTimeout(r, extraDelayMs));
             }
 
             const job = await lockNextQueuedJob(options.allowedTypes, account.id, includeLegacyDefaultQueue);
@@ -258,11 +322,27 @@ async function runQueuedJobsForAccount(
                     const parsed = parseJobPayload<{ accountId: string }>(job);
                     executionResult = await processHygieneJob(parsed.payload, workerContext);
                 } else if (job.type === 'INTERACTION') {
-                    const parsed = parseJobPayload<{ leadId: number; actionType: 'VIEW_PROFILE' | 'LIKE_POST' | 'FOLLOW'; campaignStateId?: number }>(job);
+                    const parsed = parseJobPayload<{
+                        leadId: number;
+                        actionType: 'VIEW_PROFILE' | 'LIKE_POST' | 'FOLLOW';
+                        campaignStateId?: number;
+                    }>(job);
                     executionResult = await processInteractionJob(parsed.payload, workerContext);
                 } else if (job.type === 'ENRICHMENT') {
                     const parsed = parseJobPayload<{ leadId: number; campaignStateId?: number }>(job);
                     executionResult = await processEnrichmentJob(parsed.payload, workerContext);
+                } else if (job.type === 'POST_CREATION') {
+                    const parsed = parseJobPayload<{ accountId: string; topic?: string; tone?: string }>(job);
+                    const postResult = await createAndPublishPost(session.page, {
+                        accountId: parsed.payload.accountId,
+                        topic: parsed.payload.topic,
+                        tone: parsed.payload.tone as PostCreatorOptions['tone'],
+                        dryRun: options.dryRun,
+                    });
+                    executionResult = workerResult(
+                        postResult.published ? 1 : 0,
+                        postResult.error ? [{ message: postResult.error }] : [],
+                    );
                 }
 
                 processedCurrentJob = true;
@@ -289,7 +369,7 @@ async function runQueuedJobsForAccount(
                     const firstError = executionResult.errors[0]?.message ?? 'worker_reported_failure';
                     throw new RetryableWorkerError(
                         `Worker result non-success (processedCount=0): ${firstError}`,
-                        'WORKER_REPORTED_FAILURE'
+                        'WORKER_REPORTED_FAILURE',
                     );
                 }
 
@@ -305,7 +385,7 @@ async function runQueuedJobsForAccount(
                         processedCount: executionResult.processedCount,
                         errorsCount: executionResult.errors.length,
                     },
-                    `${hasWorkerWarnings ? 'job.succeeded_with_errors' : 'job.succeeded'}:${job.id}:${job.type}`
+                    `${hasWorkerWarnings ? 'job.succeeded_with_errors' : 'job.succeeded'}:${job.id}:${job.type}`,
                 );
                 consecutiveFailures = 0;
 
@@ -327,14 +407,21 @@ async function runQueuedJobsForAccount(
                 const message = error instanceof Error ? error.message : String(error);
                 const attempts = job.attempts + 1;
 
-                const isAcceptancePending = error instanceof RetryableWorkerError && error.code === 'ACCEPTANCE_PENDING';
+                const isAcceptancePending =
+                    error instanceof RetryableWorkerError && error.code === 'ACCEPTANCE_PENDING';
 
                 if (!isAcceptancePending) {
                     accountHealthMetrics.failed += 1;
                     await incrementDailyStat(options.localDate, 'run_errors');
                 }
 
-                await createJobAttempt(job.id, false, error instanceof Error ? error.name : 'UNKNOWN_ERROR', message, null);
+                await createJobAttempt(
+                    job.id,
+                    false,
+                    error instanceof Error ? error.name : 'UNKNOWN_ERROR',
+                    message,
+                    null,
+                );
 
                 if (error instanceof ChallengeDetectedError) {
                     accountHealthMetrics.challenges += 1;
@@ -362,7 +449,12 @@ async function runQueuedJobsForAccount(
                         },
                     });
                     await markJobRetryOrDeadLetter(job.id, attempts, attempts, 0, message);
-                    await logError('job.challenge_detected', { jobId: job.id, type: job.type, message, accountId: account.id });
+                    await logError('job.challenge_detected', {
+                        jobId: job.id,
+                        type: job.type,
+                        message,
+                        accountId: account.id,
+                    });
                     break;
                 }
 
@@ -377,16 +469,14 @@ async function runQueuedJobsForAccount(
 
                 const retryPolicy = resolveWorkerRetryPolicy(error, job.max_attempts, config.retryBaseMs);
                 const effectiveMaxAttempts = Math.max(1, Math.min(job.max_attempts, retryPolicy.maxAttempts));
-                const nextDelay = retryPolicy.retryable
-                    ? retryDelayMs(attempts, retryPolicy.baseDelayMs)
-                    : 0;
+                const nextDelay = retryPolicy.retryable ? retryDelayMs(attempts, retryPolicy.baseDelayMs) : 0;
 
                 const status = await markJobRetryOrDeadLetter(
                     job.id,
                     attempts,
                     effectiveMaxAttempts,
                     nextDelay,
-                    message
+                    message,
                 );
                 await pushOutboxEvent(
                     'job.failed',
@@ -400,16 +490,27 @@ async function runQueuedJobsForAccount(
                         retryPolicy,
                         accountId: account.id,
                     },
-                    `job.failed:${job.id}:${attempts}`
+                    `job.failed:${job.id}:${attempts}`,
                 );
 
-                if (status === 'DEAD_LETTER' && (job.type === 'INVITE' || job.type === 'MESSAGE' || job.type === 'ACCEPTANCE_CHECK')) {
+                if (
+                    status === 'DEAD_LETTER' &&
+                    (job.type === 'INVITE' || job.type === 'MESSAGE' || job.type === 'ACCEPTANCE_CHECK')
+                ) {
                     accountHealthMetrics.deadLetters += 1;
                     try {
                         const parsed = parseJobPayload<{ leadId?: number }>(job);
                         if (parsed.payload.leadId) {
-                            await transitionLead(parsed.payload.leadId, 'REVIEW_REQUIRED', `job_dead_letter_${job.type.toLowerCase()}`);
-                            await logWarn('job.dead_letter.lead_review_required', { jobId: job.id, leadId: parsed.payload.leadId, type: job.type });
+                            await transitionLead(
+                                parsed.payload.leadId,
+                                'REVIEW_REQUIRED',
+                                `job_dead_letter_${job.type.toLowerCase()}`,
+                            );
+                            await logWarn('job.dead_letter.lead_review_required', {
+                                jobId: job.id,
+                                leadId: parsed.payload.leadId,
+                                type: job.type,
+                            });
                         }
                     } catch {
                         // ignore if payload cannot be parsed
@@ -452,7 +553,7 @@ async function runQueuedJobsForAccount(
                             lastError: message,
                             accountId: account.id,
                         },
-                        config.autoPauseMinutesOnFailureBurst
+                        config.autoPauseMinutesOnFailureBurst,
                     );
                     await logWarn('job_runner.paused.failure_burst', {
                         threshold: config.maxConsecutiveJobFailures,
@@ -473,10 +574,11 @@ async function runQueuedJobsForAccount(
             }
 
             if (!options.dryRun && jobsSinceCoffeeBreak >= nextCoffeeBreakAt) {
-                const coffeeBreakMs = randomInt(
-                    Math.max(60, config.behaviorCoffeeBreakMinSec),
-                    Math.max(config.behaviorCoffeeBreakMinSec, config.behaviorCoffeeBreakMaxSec)
-                ) * 1000;
+                const coffeeBreakMs =
+                    randomInt(
+                        Math.max(60, config.behaviorCoffeeBreakMinSec),
+                        Math.max(config.behaviorCoffeeBreakMinSec, config.behaviorCoffeeBreakMaxSec),
+                    ) * 1000;
                 await logInfo('job_runner.coffee_break.start', {
                     accountId: account.id,
                     jobsSinceCoffeeBreak,
@@ -485,7 +587,10 @@ async function runQueuedJobsForAccount(
                 });
                 await session.page.waitForTimeout(coffeeBreakMs);
                 jobsSinceCoffeeBreak = 0;
-                nextCoffeeBreakAt = randomInt(config.behaviorCoffeeBreakMinIntervalJobs, config.behaviorCoffeeBreakMaxIntervalJobs);
+                nextCoffeeBreakAt = randomInt(
+                    config.behaviorCoffeeBreakMinIntervalJobs,
+                    config.behaviorCoffeeBreakMaxIntervalJobs,
+                );
             }
 
             const rotateReasons: string[] = [];
@@ -500,7 +605,8 @@ async function runQueuedJobsForAccount(
             if (processedOnCurrentSession >= 500) {
                 rotateReasons.push('memory_protection_500_jobs');
             }
-            if (Date.now() - sessionStartedAtMs >= 60 * 60 * 1000) { // 60 minutes
+            if (Date.now() - sessionStartedAtMs >= 60 * 60 * 1000) {
+                // 60 minutes
                 rotateReasons.push('memory_protection_60_min');
             }
 
@@ -509,7 +615,7 @@ async function runQueuedJobsForAccount(
                     session,
                     workerContext,
                     rotateReasons.join('+'),
-                    account
+                    account,
                 );
                 if (!rotated) {
                     sessionClosed = true;
@@ -568,12 +674,16 @@ async function runQueuedJobsForAccount(
                 });
             }
         }
-
     } finally {
         if (!sessionClosed) {
             await closeBrowser(session);
         }
         await persistAccountHealth(account, options, accountHealthMetrics).catch(() => null);
+        await updateAccountBackpressure(account.id, {
+            sent: accountHealthMetrics.processed,
+            failed: accountHealthMetrics.failed,
+            permanentFailures: accountHealthMetrics.deadLetters,
+        }).catch(() => null);
     }
 }
 
@@ -588,10 +698,10 @@ export async function runQueuedJobs(options: RunJobsOptions): Promise<void> {
     for (let index = 0; index < accounts.length; index++) {
         const account = accounts[index];
         const includeLegacyDefaultQueue =
-            config.accountLegacyDefaultQueueFallback
-            && isMultiAccountRuntimeEnabled()
-            && index === 0
-            && account.id !== 'default';
+            config.accountLegacyDefaultQueueFallback &&
+            isMultiAccountRuntimeEnabled() &&
+            index === 0 &&
+            account.id !== 'default';
         await logInfo('job_runner.account.start', {
             accountId: account.id,
             includeLegacyDefaultQueue,

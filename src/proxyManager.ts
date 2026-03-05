@@ -226,7 +226,7 @@ function orderByIntegrationRotation(pool: ProxyConfig[]): ProxyConfig[] {
 
 function splitByCooldown(
     orderedPool: ProxyConfig[],
-    cooldownRegistry: Map<string, number> = proxyFailureUntil
+    cooldownRegistry: Map<string, number> = proxyFailureUntil,
 ): { ready: ProxyConfig[]; cooling: ProxyConfig[] } {
     const now = Date.now();
     const ready: ProxyConfig[] = [];
@@ -269,14 +269,14 @@ function prioritizeProxyPool(pool: ProxyConfig[], options: GetProxyChainOptions)
     const forceMobile = options.forceMobile === true;
     const sourcePool = forceMobile
         ? (() => {
-            const mobile = pool.filter((proxy) => normalizeProxyType(proxy.type, 'unknown') === 'mobile');
-            return mobile.length > 0 ? mobile : pool;
-        })()
+              const mobile = pool.filter((proxy) => normalizeProxyType(proxy.type, 'unknown') === 'mobile');
+              return mobile.length > 0 ? mobile : pool;
+          })()
         : pool;
 
     return sourcePool
         .map((proxy, index) => ({ proxy, index, score: proxyTypeScore(proxy, options) }))
-        .sort((a, b) => (a.score - b.score) || (a.index - b.index))
+        .sort((a, b) => a.score - b.score || a.index - b.index)
         .map((entry) => entry.proxy);
 }
 
@@ -290,7 +290,7 @@ export async function fetchFallbackProxyFromProvider(): Promise<boolean> {
 
     console.log(`[PROXY] Fetching proxy d'emergenza da: ${config.proxyProviderApiEndpoint}`);
     try {
-        const headers: Record<string, string> = { 'Accept': 'application/json' };
+        const headers: Record<string, string> = { Accept: 'application/json' };
         if (config.proxyProviderApiKey) {
             headers['Authorization'] = `Bearer ${config.proxyProviderApiKey}`;
         }
@@ -302,7 +302,11 @@ export async function fetchFallbackProxyFromProvider(): Promise<boolean> {
             try {
                 const controller = new AbortController();
                 const timeout = setTimeout(() => controller.abort(), 8000);
-                response = await fetch(config.proxyProviderApiEndpoint, { headers, method: 'GET', signal: controller.signal });
+                response = await fetch(config.proxyProviderApiEndpoint, {
+                    headers,
+                    method: 'GET',
+                    signal: controller.signal,
+                });
                 clearTimeout(timeout);
 
                 if (!response.ok) {
@@ -311,7 +315,7 @@ export async function fetchFallbackProxyFromProvider(): Promise<boolean> {
                 break;
             } catch (err: unknown) {
                 lastErr = err instanceof Error ? err : new Error(String(err));
-                if (attempt === 1) await new Promise(r => setTimeout(r, 1000));
+                if (attempt === 1) await new Promise((r) => setTimeout(r, 1000));
             }
         }
 
@@ -320,7 +324,7 @@ export async function fetchFallbackProxyFromProvider(): Promise<boolean> {
         }
 
         // Esempi previsti di output dal provider:
-        // { "proxy": "http://user:pass@host:port" } 
+        // { "proxy": "http://user:pass@host:port" }
         // { "ip": "1.2.3.4", "port": "8080" ... }
         const json = await response.json();
 
@@ -391,7 +395,9 @@ export async function getProxyFailoverChainAsync(options: GetProxyChainOptions =
     if (config.proxyTorSocks5Url) {
         const torParsed = parseProxyEntry(config.proxyTorSocks5Url);
         if (torParsed) {
-            console.warn(`[PROXY] Pool esaurito e API provider non disp. Fallback su rete Tor: ${config.proxyTorSocks5Url}`);
+            console.warn(
+                `[PROXY] Pool esaurito e API provider non disp. Fallback su rete Tor: ${config.proxyTorSocks5Url}`,
+            );
             return prioritizeProxyPool(rotated, options).concat([torParsed]);
         }
     }
@@ -399,7 +405,9 @@ export async function getProxyFailoverChainAsync(options: GetProxyChainOptions =
     return prioritizeProxyPool(rotated, options);
 }
 
-export async function getIntegrationProxyFailoverChainAsync(options: GetProxyChainOptions = {}): Promise<ProxyConfig[]> {
+export async function getIntegrationProxyFailoverChainAsync(
+    options: GetProxyChainOptions = {},
+): Promise<ProxyConfig[]> {
     const pool = loadProxyPool();
     if (pool.length === 0) return [];
 
@@ -426,7 +434,9 @@ export async function getIntegrationProxyFailoverChainAsync(options: GetProxyCha
     if (config.proxyTorSocks5Url) {
         const torParsed = parseProxyEntry(config.proxyTorSocks5Url);
         if (torParsed) {
-            console.warn(`[PROXY-INT] Pool esaurito e API provider non disp. Fallback su rete Tor: ${config.proxyTorSocks5Url}`);
+            console.warn(
+                `[PROXY-INT] Pool esaurito e API provider non disp. Fallback su rete Tor: ${config.proxyTorSocks5Url}`,
+            );
             return prioritizeProxyPool(rotated, options).concat([torParsed]);
         }
     }
@@ -486,7 +496,7 @@ export async function checkProxyHealth(proxy: ProxyConfig): Promise<boolean> {
     return new Promise((resolve) => {
         try {
             const url = new URL(proxy.server);
-            const port = url.port ? parseInt(url.port, 10) : (url.protocol === 'https:' ? 443 : 80);
+            const port = url.port ? parseInt(url.port, 10) : url.protocol === 'https:' ? 443 : 80;
 
             const socket = new net.Socket();
             socket.setTimeout(config.proxyHealthCheckTimeoutMs ?? 5000);
@@ -514,7 +524,7 @@ export async function checkProxyHealth(proxy: ProxyConfig): Promise<boolean> {
 }
 
 /**
- * Restituisce il primo proxy disponibile, interpellando l'API Provider se necessario, 
+ * Restituisce il primo proxy disponibile, interpellando l'API Provider se necessario,
  * ed eseguendo anche un health check proattivo prima di restituirlo.
  */
 export async function getProxyAsync(options: GetProxyChainOptions = {}): Promise<ProxyConfig | undefined> {
@@ -559,7 +569,10 @@ export async function getIntegrationProxyAsync(options: GetProxyChainOptions = {
  * Restituisce o alloca un proxy permanente per una specifica sessionId.
  * Assicura che la sessione usi costantemente lo stesso nodo per non allertare Linkedin con cambi IP anomali.
  */
-export async function getStickyProxy(sessionId: string, options: GetProxyChainOptions = {}): Promise<ProxyConfig | undefined> {
+export async function getStickyProxy(
+    sessionId: string,
+    options: GetProxyChainOptions = {},
+): Promise<ProxyConfig | undefined> {
     // 1. Check if we already have a sticky proxy for this session
     const existing = stickyProxySessions.get(sessionId);
     if (existing) {
@@ -573,7 +586,9 @@ export async function getStickyProxy(sessionId: string, options: GetProxyChainOp
             if (isHealthy) {
                 return existing;
             } else {
-                console.warn(`[PROXY] Sticky proxy ${existing.server} per sessione ${sessionId} fallito health check. Ne cerco uno nuovo.`);
+                console.warn(
+                    `[PROXY] Sticky proxy ${existing.server} per sessione ${sessionId} fallito health check. Ne cerco uno nuovo.`,
+                );
                 markProxyFailed(existing);
                 stickyProxySessions.delete(sessionId);
             }

@@ -26,37 +26,43 @@ function estimateReadingDelayMs(message: string): number {
 async function simulateConversationReading(page: WorkerContext['session']['page'], message: string): Promise<void> {
     const delayMs = estimateReadingDelayMs(message);
     if (Math.random() < 0.6) {
-        await page.evaluate(() => {
-            const container = document.querySelector('.msg-s-message-list-content, .msg-thread, .scaffold-finite-scroll');
-            if (container instanceof HTMLElement) {
-                container.scrollBy({ top: 180, behavior: 'smooth' });
-            } else {
-                window.scrollBy({ top: 120, behavior: 'smooth' });
-            }
-        }).catch(() => null);
+        await page
+            .evaluate(() => {
+                const container = document.querySelector(
+                    '.msg-s-message-list-content, .msg-thread, .scaffold-finite-scroll',
+                );
+                if (container instanceof HTMLElement) {
+                    container.scrollBy({ top: 180, behavior: 'smooth' });
+                } else {
+                    window.scrollBy({ top: 120, behavior: 'smooth' });
+                }
+            })
+            .catch(() => null);
     }
     await page.waitForTimeout(delayMs);
 }
 
 async function extractParticipantProfileUrl(page: WorkerContext['session']['page']): Promise<string | null> {
-    const links = await page.evaluate(() => {
-        const selectors = [
-            '.msg-thread__link-to-profile',
-            '.msg-thread__topcard a[href*="/in/"]',
-            '.msg-convo-wrapper a[href*="/in/"]',
-            '.msg-s-message-group__profile-link[href*="/in/"]',
-            'a[href*="/in/"]',
-        ];
-        const hrefs = new Set<string>();
-        for (const selector of selectors) {
-            for (const node of Array.from(document.querySelectorAll(selector))) {
-                const href = (node as HTMLAnchorElement).href || node.getAttribute('href') || '';
-                if (href) hrefs.add(href);
+    const links = await page
+        .evaluate(() => {
+            const selectors = [
+                '.msg-thread__link-to-profile',
+                '.msg-thread__topcard a[href*="/in/"]',
+                '.msg-convo-wrapper a[href*="/in/"]',
+                '.msg-s-message-group__profile-link[href*="/in/"]',
+                'a[href*="/in/"]',
+            ];
+            const hrefs = new Set<string>();
+            for (const selector of selectors) {
+                for (const node of Array.from(document.querySelectorAll(selector))) {
+                    const href = (node as HTMLAnchorElement).href || node.getAttribute('href') || '';
+                    if (href) hrefs.add(href);
+                }
+                if (hrefs.size > 0) break;
             }
-            if (hrefs.size > 0) break;
-        }
-        return Array.from(hrefs);
-    }).catch(() => [] as string[]);
+            return Array.from(hrefs);
+        })
+        .catch(() => [] as string[]);
 
     for (const link of links) {
         const normalized = normalizeLinkedInUrl(link);
@@ -67,7 +73,10 @@ async function extractParticipantProfileUrl(page: WorkerContext['session']['page
     return null;
 }
 
-export async function processInboxJob(payload: InboxJobPayload, context: WorkerContext): Promise<WorkerExecutionResult> {
+export async function processInboxJob(
+    payload: InboxJobPayload,
+    context: WorkerContext,
+): Promise<WorkerExecutionResult> {
     const page = context.session.page;
     const errors: Array<{ message: string }> = [];
     let processedCount = 0;
@@ -106,7 +115,11 @@ export async function processInboxJob(payload: InboxJobPayload, context: WorkerC
         await humanDelay(page, 1500, 3000); // Wait for chat to load
 
         // Estrai l'ultimo messaggio visibile dell'interlocutore
-        const lastMessageLocator = page.locator('.msg-s-message-list__event:not([data-msg-s-message-event-is-me="true"]) .msg-s-event-listitem__body').last();
+        const lastMessageLocator = page
+            .locator(
+                '.msg-s-message-list__event:not([data-msg-s-message-event-is-me="true"]) .msg-s-event-listitem__body',
+            )
+            .last();
 
         if (await lastMessageLocator.isVisible()) {
             const rawText = await lastMessageLocator.innerText();
@@ -129,54 +142,61 @@ export async function processInboxJob(payload: InboxJobPayload, context: WorkerC
                                 resolution.subIntent,
                                 resolution.confidence,
                                 rawText.trim(),
-                                resolution.entities
+                                resolution.entities,
                             );
                             if (lead.status === 'MESSAGED') {
-                                await transitionLead(
-                                    lead.id,
-                                    'REPLIED',
-                                    'inbox_reply_detected',
-                                    {
-                                        intent: resolution.intent,
-                                        subIntent: resolution.subIntent,
-                                        entities: resolution.entities,
-                                        confidence: resolution.confidence,
-                                    }
-                                );
+                                await transitionLead(lead.id, 'REPLIED', 'inbox_reply_detected', {
+                                    intent: resolution.intent,
+                                    subIntent: resolution.subIntent,
+                                    entities: resolution.entities,
+                                    confidence: resolution.confidence,
+                                });
                                 if (lead.invite_prompt_variant) {
                                     const segmentKey = (lead.job_title || 'unknown').toLowerCase().trim() || 'unknown';
-                                    recordOutcome(lead.invite_prompt_variant, 'replied', { segmentKey }).catch(() => null);
+                                    recordOutcome(lead.invite_prompt_variant, 'replied', { segmentKey }).catch(
+                                        () => null,
+                                    );
                                 }
                             }
 
                             const canAutoReply =
-                                config.inboxAutoReplyEnabled
-                                && !context.dryRun
-                                && autoRepliesSent < config.inboxAutoReplyMaxPerRun
-                                && resolution.confidence >= config.inboxAutoReplyMinConfidence
-                                && resolution.responseDraft.trim().length > 0
-                                && resolution.intent !== 'NOT_INTERESTED'
-                                && resolution.intent !== 'NEGATIVE';
+                                config.inboxAutoReplyEnabled &&
+                                !context.dryRun &&
+                                autoRepliesSent < config.inboxAutoReplyMaxPerRun &&
+                                resolution.confidence >= config.inboxAutoReplyMinConfidence &&
+                                resolution.responseDraft.trim().length > 0 &&
+                                resolution.intent !== 'NOT_INTERESTED' &&
+                                resolution.intent !== 'NEGATIVE';
 
                             if (canAutoReply) {
                                 try {
-                                    await page.waitForTimeout(Math.min(24_000, estimateReadingDelayMs(rawText.trim()) + 1500));
+                                    await page.waitForTimeout(
+                                        Math.min(24_000, estimateReadingDelayMs(rawText.trim()) + 1500),
+                                    );
                                     await typeWithFallback(
                                         page,
                                         SELECTORS.messageTextbox,
                                         resolution.responseDraft,
                                         'messageTextbox',
-                                        5000
+                                        5000,
                                     );
                                     await humanDelay(page, 350, 900);
-                                    await clickWithFallback(page, SELECTORS.messageSendButton, 'messageSendButton', 5000);
+                                    await clickWithFallback(
+                                        page,
+                                        SELECTORS.messageSendButton,
+                                        'messageSendButton',
+                                        5000,
+                                    );
                                     autoReplySent = true;
                                     autoRepliesSent += 1;
                                 } catch (autoReplyError: unknown) {
                                     await logWarn('inbox.auto_reply_failed', {
                                         accountId: payload.accountId,
                                         leadId: lead.id,
-                                        error: autoReplyError instanceof Error ? autoReplyError.message : String(autoReplyError),
+                                        error:
+                                            autoReplyError instanceof Error
+                                                ? autoReplyError.message
+                                                : String(autoReplyError),
                                     });
                                 }
                             }

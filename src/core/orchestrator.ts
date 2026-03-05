@@ -61,9 +61,7 @@ async function runCanaryIfNeeded(workflow: WorkflowSelection): Promise<boolean> 
         return true;
     }
 
-    const canaryWorkflow = workflow === 'invite' || workflow === 'message' || workflow === 'check'
-        ? workflow
-        : 'all';
+    const canaryWorkflow = workflow === 'invite' || workflow === 'message' || workflow === 'check' ? workflow : 'all';
     const localDate = getLocalDateString();
     const accounts = getRuntimeAccountProfiles();
     for (const account of accounts) {
@@ -86,7 +84,7 @@ async function runCanaryIfNeeded(workflow: WorkflowSelection): Promise<boolean> 
                     accountId: account.id,
                     report,
                 },
-                `selector.canary.report:${localDate}:${workflow}:${account.id}:${Date.now()}`
+                `selector.canary.report:${localDate}:${workflow}:${account.id}:${Date.now()}`,
             );
 
             if (report.optionalFailed > 0) {
@@ -130,7 +128,7 @@ async function evaluateComplianceHealthGuard(
     localDate: string,
     inviteBudget: number,
     messageBudget: number,
-    listBreakdown: ListScheduleBreakdown[]
+    listBreakdown: ListScheduleBreakdown[],
 ): Promise<boolean> {
     if (!config.complianceHealthScoreEnabled) {
         return true;
@@ -171,7 +169,7 @@ async function evaluateComplianceHealthGuard(
                 minMessageSample: config.complianceHealthMinMessageSample,
             },
         },
-        `compliance.health.snapshot:${localDate}:${workflow}`
+        `compliance.health.snapshot:${localDate}:${workflow}`,
     );
 
     const hasInviteSample = metrics.invitesSentLookback >= config.complianceHealthMinInviteSample;
@@ -179,10 +177,12 @@ async function evaluateComplianceHealthGuard(
     const hasSufficientSample = hasInviteSample && hasMessageSample;
 
     if (
-        metrics.pendingRatio >= config.compliancePendingRatioAlertThreshold
-        && metrics.invitesSentLookback >= config.compliancePendingRatioAlertMinInvited
+        metrics.pendingRatio >= config.compliancePendingRatioAlertThreshold &&
+        metrics.invitesSentLookback >= config.compliancePendingRatioAlertMinInvited
     ) {
-        const accounts = getRuntimeAccountProfiles().map((entry) => entry.id).filter((id) => !!id.trim());
+        const accounts = getRuntimeAccountProfiles()
+            .map((entry) => entry.id)
+            .filter((id) => !!id.trim());
         const dueAccountAlerts: string[] = [];
         for (const accountId of accounts) {
             const accountKey = `compliance_pending_alert_account:${toFlagSafeToken(accountId)}`;
@@ -196,13 +196,11 @@ async function evaluateComplianceHealthGuard(
         const pendingAlertDate = await getRuntimeFlag('compliance_pending_alert_date');
         if (pendingAlertDate !== localDate || dueAccountAlerts.length > 0) {
             await setRuntimeFlag('compliance_pending_alert_date', localDate);
-            const accountSuffix = dueAccountAlerts.length > 0
-                ? `\nAccount: ${dueAccountAlerts.join(', ')}`
-                : '';
+            const accountSuffix = dueAccountAlerts.length > 0 ? `\nAccount: ${dueAccountAlerts.join(', ')}` : '';
             await sendTelegramAlert(
                 `Pending ratio elevato (${(metrics.pendingRatio * 100).toFixed(1)}%).\nWorkflow: ${workflow}\nDate: ${localDate}${accountSuffix}`,
                 'Compliance Pending Alert',
-                'warn'
+                'warn',
             );
         }
     }
@@ -218,7 +216,7 @@ async function evaluateComplianceHealthGuard(
             await sendTelegramAlert(
                 `Pending ratio elevato nella lista "${worstPendingList.listName}" (${(worstPendingList.pendingRatio * 100).toFixed(1)}%).\nWorkflow: ${workflow}\nDate: ${localDate}`,
                 'Compliance Pending List Alert',
-                'warn'
+                'warn',
             );
         }
     }
@@ -246,7 +244,7 @@ async function evaluateComplianceHealthGuard(
                 metrics,
                 threshold: config.complianceHealthPauseThreshold,
             },
-            config.autoPauseMinutesOnFailureBurst
+            config.autoPauseMinutesOnFailureBurst,
         );
         await logWarn('compliance.health.pause', {
             workflow,
@@ -322,7 +320,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
                     runErrors,
                     threshold: config.maxRunErrorsPerDay,
                 },
-                config.autoPauseMinutesOnFailureBurst
+                config.autoPauseMinutesOnFailureBurst,
             );
             await logWarn('workflow.skipped.run_error_burst', {
                 workflow: options.workflow,
@@ -344,14 +342,15 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
     const schedule = await scheduleJobs(options.workflow, { dryRun: options.dryRun });
 
     if (!options.dryRun) {
-        const touchesOutreach = options.workflow === 'all' || options.workflow === 'invite' || options.workflow === 'message';
+        const touchesOutreach =
+            options.workflow === 'all' || options.workflow === 'invite' || options.workflow === 'message';
         if (touchesOutreach) {
             const canProceed = await evaluateComplianceHealthGuard(
                 options.workflow,
                 schedule.localDate,
                 schedule.inviteBudget,
                 schedule.messageBudget,
-                schedule.listBreakdown
+                schedule.listBreakdown,
             );
             if (!canProceed) {
                 return;
@@ -371,11 +370,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
             challengeCount: schedule.riskSnapshot.challengeCount,
             inviteVelocityRatio: schedule.riskSnapshot.inviteVelocityRatio,
         };
-        const predictiveAlerts = evaluatePredictiveRiskAlerts(
-            currentSample,
-            historical,
-            config.riskPredictiveSigma
-        );
+        const predictiveAlerts = evaluatePredictiveRiskAlerts(currentSample, historical, config.riskPredictiveSigma);
         if (predictiveAlerts.length > 0) {
             const topAlerts = predictiveAlerts.slice(0, 3);
             await logWarn('risk.predictive_alert', {
@@ -392,15 +387,18 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
                     sigma: config.riskPredictiveSigma,
                     lookbackDays: config.riskPredictiveLookbackDays,
                 },
-                `risk.predictive_alert:${schedule.localDate}:${options.workflow}`
+                `risk.predictive_alert:${schedule.localDate}:${options.workflow}`,
             );
             const summary = topAlerts
-                .map((alert) => `${alert.metric} z=${alert.zScore.toFixed(2)} curr=${alert.current.toFixed(3)} mean=${alert.mean.toFixed(3)}`)
+                .map(
+                    (alert) =>
+                        `${alert.metric} z=${alert.zScore.toFixed(2)} curr=${alert.current.toFixed(3)} mean=${alert.mean.toFixed(3)}`,
+                )
                 .join('\n');
             await sendTelegramAlert(
                 `Anomalia predittiva rilevata.\nWorkflow: ${options.workflow}\n${summary}`,
                 'Risk Predictive Alert',
-                'warn'
+                'warn',
             );
         }
     }
@@ -433,7 +431,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
             messageBudget: schedule.messageBudget,
             listBreakdown: schedule.listBreakdown,
         },
-        `scheduler.snapshot:${schedule.localDate}:${options.workflow}`
+        `scheduler.snapshot:${schedule.localDate}:${options.workflow}`,
     );
 
     if (schedule.riskSnapshot.action === 'STOP') {
@@ -455,7 +453,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
                 reason: guardian.reason,
                 decision: guardian.decision,
             },
-            `ai.guardian.decision:${schedule.localDate}:${options.workflow}:${Date.now()}`
+            `ai.guardian.decision:${schedule.localDate}:${options.workflow}:${Date.now()}`,
         );
         if (guardian.decision.severity === 'critical' && guardian.decision.pauseMinutes > 0) {
             await pauseAutomation(
@@ -466,7 +464,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
                     reason: guardian.reason,
                     decision: guardian.decision,
                 },
-                guardian.decision.pauseMinutes
+                guardian.decision.pauseMinutes,
             );
             await logWarn('ai.guardian.preemptive_pause', {
                 workflow: options.workflow,
@@ -507,7 +505,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
                 reason: cooldown.reason,
                 listBreakdown: schedule.listBreakdown,
             },
-            cooldown.minutes
+            cooldown.minutes,
         );
         await logWarn('risk.cooldown.activated', {
             workflow: options.workflow,
@@ -557,7 +555,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
                     await runRandomLinkedinActivity({
                         accountId: acc.id,
                         maxActions: Math.floor(Math.random() * 4) + 3,
-                        dryRun: false
+                        dryRun: false,
                     });
                 }
             }
@@ -593,7 +591,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
                 autoFix: config.postRunStateSyncFix,
                 report: stateSyncReport,
             },
-            `state.sync.post_run:${schedule.localDate}:${options.workflow}:${Date.now()}`
+            `state.sync.post_run:${schedule.localDate}:${options.workflow}:${Date.now()}`,
         );
     }
 

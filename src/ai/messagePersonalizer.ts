@@ -18,7 +18,10 @@ export interface FollowUpContextHint {
 }
 
 function trimToMaxChars(input: string, maxChars: number): string {
-    const normalized = input.replace(/\s+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    const normalized = input
+        .replace(/\s+\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
     if (normalized.length <= maxChars) {
         return normalized;
     }
@@ -68,7 +71,7 @@ export async function buildPersonalizedFollowUpMessage(lead: LeadRecord): Promis
                 system: systemPrompt,
                 user: `Dati lead: ${userPrompt}`,
                 maxOutputTokens: 220,
-                temperature: 0.6 + (attempt * 0.15),
+                temperature: 0.6 + attempt * 0.15,
             });
             const candidate = trimToMaxChars(generated, config.aiMessageMaxChars);
 
@@ -91,7 +94,10 @@ export async function buildPersonalizedFollowUpMessage(lead: LeadRecord): Promis
     }
 
     if (!finalMessage) {
-        await logWarn('ai.personalization.fallback_template', { leadId: lead.id, reason: 'Exhausted attempts or error' });
+        await logWarn('ai.personalization.fallback_template', {
+            leadId: lead.id,
+            reason: 'Exhausted attempts or error',
+        });
         return {
             message: trimToMaxChars(template, config.aiMessageMaxChars),
             source: 'template',
@@ -114,7 +120,7 @@ export async function buildPersonalizedFollowUpMessage(lead: LeadRecord): Promis
 export async function buildFollowUpReminderMessage(
     lead: LeadRecord,
     daysSince: number,
-    hint?: FollowUpContextHint
+    hint?: FollowUpContextHint,
 ): Promise<PersonalizedMessageResult> {
     const FOLLOW_UP_MAX_CHARS = 300;
 

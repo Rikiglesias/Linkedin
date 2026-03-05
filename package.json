@@ -8,6 +8,8 @@
     "build:backend": "tsc -p tsconfig.json",
     "build:frontend": "tsc -p tsconfig.frontend.json",
     "lint": "eslint src/**/*.ts",
+    "format": "prettier --write \"src/**/*.ts\" \"public/**/*.{html,css}\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"public/**/*.{html,css}\"",
     "typecheck": "npm run typecheck:backend && npm run typecheck:frontend",
     "typecheck:backend": "tsc -p tsconfig.json --noEmit",
     "typecheck:frontend": "tsc -p tsconfig.frontend.json --noEmit",
@@ -36,11 +38,13 @@
     "secrets:rotate": "ts-node src/scripts/rotateSecrets.ts --interval-days 7",
     "docs": "typedoc --entryPointStrategy expand src --out docs --exclude '**/*.test.ts' --name 'LinkedIn Bot API'",
     "docs:config": "node scripts/generate-config-docs.mjs",
-    "test:unit": "ts-node src/tests/unit.ts",
+    "test:vitest": "vitest run",
+    "test:vitest:watch": "vitest",
+    "test:vitest:coverage": "vitest run --coverage",
     "test:integration": "ts-node src/tests/integration.ts",
     "test:e2e:dry": "ts-node src/tests/e2eDry.ts",
     "test:a11y:smoke": "ts-node src/tests/accessibilitySmoke.ts",
-    "test": "npm run test:unit && npm run test:integration && npm run test:e2e:dry && npm run test:a11y:smoke"
+    "test": "npm run test:vitest && npm run test:integration && npm run test:e2e:dry && npm run test:a11y:smoke"
   },
   "keywords": [],
   "author": "",
@@ -56,7 +60,8 @@
     "pg": "^8.19.0",
     "playwright": "^1.58.2",
     "sqlite": "^5.1.1",
-    "sqlite3": "^5.1.7"
+    "sqlite3": "^5.1.7",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
@@ -66,11 +71,15 @@
     "@types/sqlite3": "^3.1.11",
     "@typescript-eslint/eslint-plugin": "^8.56.1",
     "@typescript-eslint/parser": "^8.56.1",
+    "@vitest/coverage-v8": "^4.0.18",
     "eslint": "^10.0.2",
+    "eslint-config-prettier": "^10.1.8",
     "pm2": "^6.0.14",
+    "prettier": "^3.8.1",
     "ts-node": "^10.9.2",
     "typedoc": "^0.28.17",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
   },
   "overrides": {
     "node-gyp": "^11.5.0",

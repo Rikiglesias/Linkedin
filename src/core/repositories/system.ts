@@ -83,18 +83,20 @@ async function ensureGovernanceTables(): Promise<void> {
     `);
 }
 
-export async function pushOutboxEvent(topic: string, payload: Record<string, unknown>, idempotencyKey: string): Promise<void> {
+export async function pushOutboxEvent(
+    topic: string,
+    payload: Record<string, unknown>,
+    idempotencyKey: string,
+): Promise<void> {
     const db = await getDatabase();
     const correlationId = getCorrelationId();
-    const enrichedPayload = correlationId
-        ? { ...payload, correlationId }
-        : payload;
+    const enrichedPayload = correlationId ? { ...payload, correlationId } : payload;
     await db.run(
         `
         INSERT OR IGNORE INTO outbox_events (topic, payload_json, idempotency_key)
         VALUES (?, ?, ?)
     `,
-        [topic, JSON.stringify(enrichedPayload), idempotencyKey]
+        [topic, JSON.stringify(enrichedPayload), idempotencyKey],
     );
 }
 
@@ -110,14 +112,14 @@ export async function getPendingOutboxEvents(limit: number): Promise<OutboxEvent
         ORDER BY created_at ASC
         LIMIT ?
     `,
-        [safeLimit]
+        [safeLimit],
     );
 }
 
 export async function claimPendingOutboxEvents(
     limit: number,
     ownerId: string,
-    leaseSeconds: number
+    leaseSeconds: number,
 ): Promise<OutboxEventRecord[]> {
     const db = await getDatabase();
     const safeLimit = Math.max(1, Math.floor(limit));
@@ -135,7 +137,7 @@ export async function claimPendingOutboxEvents(
             ORDER BY created_at ASC
             LIMIT ?
         `,
-            [Math.max(safeLimit * 4, safeLimit)]
+            [Math.max(safeLimit * 4, safeLimit)],
         );
 
         const claimedIds: number[] = [];
@@ -155,7 +157,7 @@ export async function claimPendingOutboxEvents(
                   AND next_retry_at <= CURRENT_TIMESTAMP
                   AND (processing_expires_at IS NULL OR processing_expires_at <= CURRENT_TIMESTAMP)
             `,
-                [normalizedOwner, safeLeaseSeconds, candidate.id]
+                [normalizedOwner, safeLeaseSeconds, candidate.id],
             );
             if ((claimResult.changes ?? 0) > 0) {
                 claimedIds.push(candidate.id);
@@ -174,7 +176,7 @@ export async function claimPendingOutboxEvents(
             WHERE id IN (${placeholders})
             ORDER BY created_at ASC
         `,
-            claimedIds
+            claimedIds,
         );
     });
 }
@@ -193,7 +195,7 @@ export async function markOutboxDeliveredClaimed(eventId: number, ownerId: strin
           AND delivered_at IS NULL
           AND processing_owner = ?
     `,
-        [eventId, ownerId]
+        [eventId, ownerId],
     );
     return (result.changes ?? 0) > 0;
 }
@@ -203,7 +205,7 @@ export async function markOutboxRetryClaimed(
     ownerId: string,
     attempts: number,
     retryDelayMs: number,
-    errorMessage: string
+    errorMessage: string,
 ): Promise<boolean> {
     const db = await getDatabase();
     const seconds = Math.max(1, Math.ceil(retryDelayMs / 1000));
@@ -220,7 +222,7 @@ export async function markOutboxRetryClaimed(
           AND delivered_at IS NULL
           AND processing_owner = ?
     `,
-        [attempts, seconds, errorMessage, eventId, ownerId]
+        [attempts, seconds, errorMessage, eventId, ownerId],
     );
     return (result.changes ?? 0) > 0;
 }
@@ -229,7 +231,7 @@ export async function markOutboxPermanentFailureClaimed(
     eventId: number,
     ownerId: string,
     attempts: number,
-    errorMessage: string
+    errorMessage: string,
 ): Promise<boolean> {
     const db = await getDatabase();
     const result = await db.run(
@@ -245,7 +247,7 @@ export async function markOutboxPermanentFailureClaimed(
           AND delivered_at IS NULL
           AND processing_owner = ?
     `,
-        [attempts, `PERMANENT_FAILURE: ${errorMessage}`, eventId, ownerId]
+        [attempts, `PERMANENT_FAILURE: ${errorMessage}`, eventId, ownerId],
     );
     return (result.changes ?? 0) > 0;
 }
@@ -262,11 +264,16 @@ export async function markOutboxDelivered(eventId: number): Promise<void> {
             processing_expires_at = NULL
         WHERE id = ?
     `,
-        [eventId]
+        [eventId],
     );
 }
 
-export async function markOutboxRetry(eventId: number, attempts: number, retryDelayMs: number, errorMessage: string): Promise<void> {
+export async function markOutboxRetry(
+    eventId: number,
+    attempts: number,
+    retryDelayMs: number,
+    errorMessage: string,
+): Promise<void> {
     const db = await getDatabase();
     const seconds = Math.max(1, Math.ceil(retryDelayMs / 1000));
     await db.run(
@@ -280,11 +287,15 @@ export async function markOutboxRetry(eventId: number, attempts: number, retryDe
             processing_expires_at = NULL
         WHERE id = ?
     `,
-        [attempts, seconds, errorMessage, eventId]
+        [attempts, seconds, errorMessage, eventId],
     );
 }
 
-export async function markOutboxPermanentFailure(eventId: number, attempts: number, errorMessage: string): Promise<void> {
+export async function markOutboxPermanentFailure(
+    eventId: number,
+    attempts: number,
+    errorMessage: string,
+): Promise<void> {
     const db = await getDatabase();
     await db.run(
         `
@@ -297,19 +308,24 @@ export async function markOutboxPermanentFailure(eventId: number, attempts: numb
             processing_expires_at = NULL
         WHERE id = ?
     `,
-        [attempts, `PERMANENT_FAILURE: ${errorMessage}`, eventId]
+        [attempts, `PERMANENT_FAILURE: ${errorMessage}`, eventId],
     );
 }
 
 export async function countPendingOutboxEvents(): Promise<number> {
     const db = await getDatabase();
-    const row = await db.get<{ total: number }>(`SELECT COUNT(*) as total FROM outbox_events WHERE delivered_at IS NULL`);
+    const row = await db.get<{ total: number }>(
+        `SELECT COUNT(*) as total FROM outbox_events WHERE delivered_at IS NULL`,
+    );
     return row?.total ?? 0;
 }
 
 export async function getRuntimeLock(lockKey: string): Promise<RuntimeLockRecord | null> {
     const db = await getDatabase();
-    const row = await db.get<RuntimeLockRecord>(`SELECT ${RUNTIME_LOCK_SELECT_COLUMNS} FROM runtime_locks WHERE lock_key = ?`, [lockKey]);
+    const row = await db.get<RuntimeLockRecord>(
+        `SELECT ${RUNTIME_LOCK_SELECT_COLUMNS} FROM runtime_locks WHERE lock_key = ?`,
+        [lockKey],
+    );
     return row ?? null;
 }
 
@@ -317,7 +333,7 @@ export async function acquireRuntimeLock(
     lockKey: string,
     ownerId: string,
     ttlSeconds: number,
-    metadata: Record<string, unknown> = {}
+    metadata: Record<string, unknown> = {},
 ): Promise<AcquireRuntimeLockResult> {
     const db = await getDatabase();
     const safeTtl = Math.max(1, ttlSeconds);
@@ -326,7 +342,7 @@ export async function acquireRuntimeLock(
     return withTransaction(db, async () => {
         const existing = await db.get<RuntimeLockRecord>(
             `SELECT ${RUNTIME_LOCK_SELECT_COLUMNS} FROM runtime_locks WHERE lock_key = ?`,
-            [lockKey]
+            [lockKey],
         );
 
         if (!existing) {
@@ -335,9 +351,12 @@ export async function acquireRuntimeLock(
                 INSERT INTO runtime_locks (lock_key, owner_id, metadata_json, expires_at)
                 VALUES (?, ?, ?, DATETIME('now', '+' || ? || ' seconds'))
             `,
-                [lockKey, ownerId, metadataJson, safeTtl]
+                [lockKey, ownerId, metadataJson, safeTtl],
             );
-            const inserted = await db.get<RuntimeLockRecord>(`SELECT ${RUNTIME_LOCK_SELECT_COLUMNS} FROM runtime_locks WHERE lock_key = ?`, [lockKey]);
+            const inserted = await db.get<RuntimeLockRecord>(
+                `SELECT ${RUNTIME_LOCK_SELECT_COLUMNS} FROM runtime_locks WHERE lock_key = ?`,
+                [lockKey],
+            );
             return {
                 acquired: true,
                 lock: inserted ?? null,
@@ -354,9 +373,12 @@ export async function acquireRuntimeLock(
                     updated_at = CURRENT_TIMESTAMP
                 WHERE lock_key = ?
             `,
-                [safeTtl, metadataJson, lockKey]
+                [safeTtl, metadataJson, lockKey],
             );
-            const renewed = await db.get<RuntimeLockRecord>(`SELECT ${RUNTIME_LOCK_SELECT_COLUMNS} FROM runtime_locks WHERE lock_key = ?`, [lockKey]);
+            const renewed = await db.get<RuntimeLockRecord>(
+                `SELECT ${RUNTIME_LOCK_SELECT_COLUMNS} FROM runtime_locks WHERE lock_key = ?`,
+                [lockKey],
+            );
             return {
                 acquired: true,
                 lock: renewed ?? null,
@@ -369,7 +391,7 @@ export async function acquireRuntimeLock(
             FROM runtime_locks
             WHERE lock_key = ?
         `,
-            [lockKey]
+            [lockKey],
         );
 
         if ((isStaleRow?.stale ?? 0) === 1) {
@@ -384,10 +406,13 @@ export async function acquireRuntimeLock(
                     updated_at = CURRENT_TIMESTAMP
                 WHERE lock_key = ?
             `,
-                [ownerId, safeTtl, metadataJson, lockKey]
+                [ownerId, safeTtl, metadataJson, lockKey],
             );
             await incrementLockMetric(lockKey, 'acquire_stale_takeover');
-            const takenOver = await db.get<RuntimeLockRecord>(`SELECT ${RUNTIME_LOCK_SELECT_COLUMNS} FROM runtime_locks WHERE lock_key = ?`, [lockKey]);
+            const takenOver = await db.get<RuntimeLockRecord>(
+                `SELECT ${RUNTIME_LOCK_SELECT_COLUMNS} FROM runtime_locks WHERE lock_key = ?`,
+                [lockKey],
+            );
             return {
                 acquired: true,
                 lock: takenOver ?? null,
@@ -415,7 +440,7 @@ export async function heartbeatRuntimeLock(lockKey: string, ownerId: string, ttl
         WHERE lock_key = ?
           AND owner_id = ?
     `,
-        [safeTtl, lockKey, ownerId]
+        [safeTtl, lockKey, ownerId],
     );
     const ok = (result.changes ?? 0) > 0;
     if (!ok) {
@@ -432,7 +457,7 @@ export async function releaseRuntimeLock(lockKey: string, ownerId: string): Prom
         WHERE lock_key = ?
           AND owner_id = ?
     `,
-        [lockKey, ownerId]
+        [lockKey, ownerId],
     );
     const released = (result.changes ?? 0) > 0;
     if (!released) {
@@ -448,7 +473,7 @@ export async function setRuntimeFlag(key: string, value: string): Promise<void> 
         INSERT INTO sync_state (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
     `,
-        [key, value]
+        [key, value],
     );
 }
 
@@ -492,9 +517,7 @@ export async function getAutomationPauseState(now: Date = new Date()): Promise<A
 
     const reasonRaw = await getRuntimeFlag('automation_pause_reason');
     const untilRaw = await getRuntimeFlag('automation_paused_until');
-    const parsedUntil = untilRaw && Number.isFinite(Date.parse(untilRaw))
-        ? new Date(untilRaw).toISOString()
-        : null;
+    const parsedUntil = untilRaw && Number.isFinite(Date.parse(untilRaw)) ? new Date(untilRaw).toISOString() : null;
 
     if (parsedUntil && Date.parse(parsedUntil) <= now.getTime()) {
         await clearAutomationPause();
@@ -518,29 +541,34 @@ export async function getAutomationPauseState(now: Date = new Date()): Promise<A
     };
 }
 
-export async function recordRunLog(level: 'INFO' | 'WARN' | 'ERROR', event: string, payload: Record<string, unknown>): Promise<void> {
+export async function recordRunLog(
+    level: 'INFO' | 'WARN' | 'ERROR',
+    event: string,
+    payload: Record<string, unknown>,
+): Promise<void> {
     const db = await getDatabase();
     await db.run(
         `
         INSERT INTO run_logs (level, event, payload_json)
         VALUES (?, ?, ?)
     `,
-        [level, event, JSON.stringify(payload)]
+        [level, event, JSON.stringify(payload)],
     );
 }
 
-export async function getLastRunLogs(limit: number): Promise<Array<{ level: string; event: string; payload_json: string; created_at: string }>> {
+export async function getLastRunLogs(
+    limit: number,
+): Promise<Array<{ level: string; event: string; payload_json: string; created_at: string }>> {
     const db = await getDatabase();
-    return db.query(
-        `SELECT level, event, payload_json, created_at FROM run_logs ORDER BY created_at DESC LIMIT ?`,
-        [limit]
-    );
+    return db.query(`SELECT level, event, payload_json, created_at FROM run_logs ORDER BY created_at DESC LIMIT ?`, [
+        limit,
+    ]);
 }
 
 export async function recordBackupRunStarted(
     backupType: string,
     target: string,
-    details: Record<string, unknown> = {}
+    details: Record<string, unknown> = {},
 ): Promise<number> {
     await ensureGovernanceTables();
     const db = await getDatabase();
@@ -549,7 +577,7 @@ export async function recordBackupRunStarted(
         INSERT INTO backup_runs (backup_type, target, status, details_json)
         VALUES (?, ?, 'RUNNING', ?)
     `,
-        [backupType, target, JSON.stringify(details)]
+        [backupType, target, JSON.stringify(details)],
     );
     return result.lastID ?? 0;
 }
@@ -562,7 +590,7 @@ export async function finalizeBackupRun(
         checksumSha256?: string | null;
         durationMs?: number | null;
         details?: Record<string, unknown>;
-    } = {}
+    } = {},
 ): Promise<void> {
     await ensureGovernanceTables();
     const db = await getDatabase();
@@ -588,7 +616,7 @@ export async function finalizeBackupRun(
             patch.details ? JSON.stringify(patch.details) : null,
             patch.details ? JSON.stringify(patch.details) : null,
             runId,
-        ]
+        ],
     );
 }
 
@@ -602,7 +630,7 @@ export async function listRecentBackupRuns(limit: number = 20): Promise<BackupRu
         ORDER BY started_at DESC, id DESC
         LIMIT ?
     `,
-        [Math.max(1, limit)]
+        [Math.max(1, limit)],
     );
 }
 
@@ -634,12 +662,15 @@ export async function recordSecurityAuditEvent(input: SecurityAuditEventInput): 
             input.result,
             correlationId ?? null,
             JSON.stringify(input.metadata ?? {}),
-        ]
+        ],
     );
     return result.lastID ?? 0;
 }
 
-export async function listSecurityAuditEvents(limit: number = 50, category?: string): Promise<SecurityAuditEventRecord[]> {
+export async function listSecurityAuditEvents(
+    limit: number = 50,
+    category?: string,
+): Promise<SecurityAuditEventRecord[]> {
     await ensureGovernanceTables();
     const db = await getDatabase();
     if (category && category.trim()) {
@@ -651,7 +682,7 @@ export async function listSecurityAuditEvents(limit: number = 50, category?: str
             ORDER BY created_at DESC, id DESC
             LIMIT ?
         `,
-            [category.trim(), Math.max(1, limit)]
+            [category.trim(), Math.max(1, limit)],
         );
     }
     return db.query<SecurityAuditEventRecord>(
@@ -661,7 +692,7 @@ export async function listSecurityAuditEvents(limit: number = 50, category?: str
         ORDER BY created_at DESC, id DESC
         LIMIT ?
     `,
-        [Math.max(1, limit)]
+        [Math.max(1, limit)],
     );
 }
 
@@ -676,7 +707,7 @@ export async function countSecurityAuditEventsSince(sinceIso: string, category?:
             WHERE created_at >= ?
               AND category = ?
         `,
-            [sinceIso, category.trim()]
+            [sinceIso, category.trim()],
         );
         return row?.total ?? 0;
     }
@@ -687,7 +718,7 @@ export async function countSecurityAuditEventsSince(sinceIso: string, category?:
         FROM security_audit_events
         WHERE created_at >= ?
     `,
-        [sinceIso]
+        [sinceIso],
     );
     return row?.total ?? 0;
 }
@@ -717,7 +748,7 @@ export async function recordAccountHealthSnapshot(input: AccountHealthSnapshotIn
             input.health,
             input.reason ?? null,
             JSON.stringify(input.metadata ?? {}),
-        ]
+        ],
     );
 }
 
@@ -738,11 +769,14 @@ export async function listLatestAccountHealthSnapshots(limit: number = 20): Prom
         ORDER BY h.observed_at DESC, h.id DESC
         LIMIT ?
     `,
-        [Math.max(1, limit)]
+        [Math.max(1, limit)],
     );
 }
 
-export async function listAccountHealthSnapshots(accountId: string, limit: number = 50): Promise<AccountHealthSnapshotRecord[]> {
+export async function listAccountHealthSnapshots(
+    accountId: string,
+    limit: number = 50,
+): Promise<AccountHealthSnapshotRecord[]> {
     await ensureGovernanceTables();
     const db = await getDatabase();
     return db.query<AccountHealthSnapshotRecord>(
@@ -753,7 +787,7 @@ export async function listAccountHealthSnapshots(accountId: string, limit: numbe
         ORDER BY observed_at DESC, id DESC
         LIMIT ?
     `,
-        [accountId.trim() || 'default', Math.max(1, limit)]
+        [accountId.trim() || 'default', Math.max(1, limit)],
     );
 }
 
@@ -762,7 +796,7 @@ export async function upsertSecretRotation(
     rotatedAtIso: string,
     owner: string | null,
     expiresAtIso: string | null,
-    notes: string | null
+    notes: string | null,
 ): Promise<void> {
     await ensureGovernanceTables();
     const db = await getDatabase();
@@ -777,7 +811,7 @@ export async function upsertSecretRotation(
             notes = excluded.notes,
             updated_at = CURRENT_TIMESTAMP
     `,
-        [secretName.trim(), owner, rotatedAtIso, expiresAtIso, notes]
+        [secretName.trim(), owner, rotatedAtIso, expiresAtIso, notes],
     );
 }
 
@@ -785,7 +819,7 @@ function resolveSecretStatus(
     rotatedAt: string,
     expiresAt: string | null,
     maxAgeDays: number,
-    warnDays: number
+    warnDays: number,
 ): { status: SecretRotationStatus['status']; daysSinceRotation: number; daysToExpiry: number | null } {
     const nowMs = Date.now();
     const rotatedAtMs = Date.parse(rotatedAt);
@@ -840,7 +874,7 @@ export async function listSecretRotationStatus(maxAgeDays: number, warnDays: num
         SELECT secret_name, owner, rotated_at, expires_at, notes
         FROM secret_inventory
         ORDER BY secret_name ASC
-    `
+    `,
     );
 
     return rows.map((row) => {
@@ -863,33 +897,31 @@ export async function cleanupPrivacyData(retentionDays: number): Promise<Privacy
     const safeDays = Math.max(7, retentionDays);
     const daysParam = String(safeDays);
 
-    const runLogs = await db.run(
-        `DELETE FROM run_logs WHERE created_at < DATETIME('now', '-' || ? || ' days')`,
-        [daysParam]
-    );
+    const runLogs = await db.run(`DELETE FROM run_logs WHERE created_at < DATETIME('now', '-' || ? || ' days')`, [
+        daysParam,
+    ]);
     const jobAttempts = await db.run(
         `DELETE FROM job_attempts WHERE started_at < DATETIME('now', '-' || ? || ' days')`,
-        [daysParam]
+        [daysParam],
     );
-    const leadEvents = await db.run(
-        `DELETE FROM lead_events WHERE created_at < DATETIME('now', '-' || ? || ' days')`,
-        [daysParam]
-    );
+    const leadEvents = await db.run(`DELETE FROM lead_events WHERE created_at < DATETIME('now', '-' || ? || ' days')`, [
+        daysParam,
+    ]);
     const messageHistory = await db.run(
         `DELETE FROM message_history WHERE sent_at < DATETIME('now', '-' || ? || ' days')`,
-        [daysParam]
+        [daysParam],
     );
     const deliveredOutboxEvents = await db.run(
         `DELETE FROM outbox_events
          WHERE delivered_at IS NOT NULL
            AND created_at < DATETIME('now', '-' || ? || ' days')`,
-        [daysParam]
+        [daysParam],
     );
     const resolvedIncidents = await db.run(
         `DELETE FROM account_incidents
          WHERE status = 'RESOLVED'
            AND resolved_at < DATETIME('now', '-' || ? || ' days')`,
-        [daysParam]
+        [daysParam],
     );
 
     const staleLeadsSubquery = `
@@ -898,22 +930,16 @@ export async function cleanupPrivacyData(retentionDays: number): Promise<Privacy
         WHERE status IN ('SKIPPED', 'BLOCKED', 'DEAD', 'WITHDRAWN', 'REPLIED', 'CONNECTED')
           AND COALESCE(updated_at, created_at) < DATETIME('now', '-' || ? || ' days')
     `;
-    const staleListMemberships = await db.run(
-        `DELETE FROM list_leads WHERE lead_id IN (${staleLeadsSubquery})`,
-        [daysParam]
-    );
-    const staleLeadEvents = await db.run(
-        `DELETE FROM lead_events WHERE lead_id IN (${staleLeadsSubquery})`,
-        [daysParam]
-    );
-    const staleMessageHistory = await db.run(
-        `DELETE FROM message_history WHERE lead_id IN (${staleLeadsSubquery})`,
-        [daysParam]
-    );
-    const staleLeads = await db.run(
-        `DELETE FROM leads WHERE id IN (${staleLeadsSubquery})`,
-        [daysParam]
-    );
+    const staleListMemberships = await db.run(`DELETE FROM list_leads WHERE lead_id IN (${staleLeadsSubquery})`, [
+        daysParam,
+    ]);
+    const staleLeadEvents = await db.run(`DELETE FROM lead_events WHERE lead_id IN (${staleLeadsSubquery})`, [
+        daysParam,
+    ]);
+    const staleMessageHistory = await db.run(`DELETE FROM message_history WHERE lead_id IN (${staleLeadsSubquery})`, [
+        daysParam,
+    ]);
+    const staleLeads = await db.run(`DELETE FROM leads WHERE id IN (${staleLeadsSubquery})`, [daysParam]);
 
     return {
         runLogs: runLogs.changes ?? 0,
@@ -952,7 +978,7 @@ export async function applyCloudAccountUpdates(updates: CloudAccount[]): Promise
                     acc.quarantine_until,
                     acc.updated_at || new Date().toISOString(),
                     acc.id,
-                ]
+                ],
             );
         }
     });
@@ -989,7 +1015,7 @@ export async function applyCloudLeadUpdates(updates: CloudLeadUpsert[]): Promise
                     l.confidence_score,
                     l.updated_at || new Date().toISOString(),
                     l.linkedin_url,
-                ]
+                ],
             );
         }
     });

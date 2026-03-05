@@ -8,7 +8,7 @@ export async function storeMessageHash(leadId: number, contentHash: string): Pro
         INSERT INTO message_history (lead_id, content_hash)
         VALUES (?, ?)
     `,
-        [leadId, contentHash]
+        [leadId, contentHash],
     );
 }
 
@@ -21,7 +21,7 @@ export async function countRecentMessageHash(contentHash: string, hoursWindow: n
         WHERE content_hash = ?
           AND sent_at >= DATETIME('now', '-' || ? || ' hours')
     `,
-        [contentHash, hoursWindow]
+        [contentHash, hoursWindow],
     );
     return row?.total ?? 0;
 }
@@ -32,18 +32,18 @@ export async function storeLeadIntent(
     subIntent: string,
     confidence: number,
     rawMessage: string,
-    entities: string[] = []
+    entities: string[] = [],
 ): Promise<void> {
     const db = await getDatabase();
     await db.run(
         `INSERT INTO lead_intents (lead_id, intent, sub_intent, confidence, raw_message, entities_json)
          VALUES (?, ?, ?, ?, ?, ?)`,
-        [leadId, intent, subIntent, confidence, rawMessage.substring(0, 500), JSON.stringify(entities.slice(0, 20))]
+        [leadId, intent, subIntent, confidence, rawMessage.substring(0, 500), JSON.stringify(entities.slice(0, 20))],
     );
 }
 
 export async function getLeadIntent(
-    leadId: number
+    leadId: number,
 ): Promise<{ intent: string; subIntent: string; confidence: number; entities: string[] } | null> {
     const db = await getDatabase();
     const row = await db.get<{ intent: string; sub_intent: string; confidence: number; entities_json: string | null }>(
@@ -52,7 +52,7 @@ export async function getLeadIntent(
          WHERE lead_id = ?
          ORDER BY analyzed_at DESC
          LIMIT 1`,
-        [leadId]
+        [leadId],
     );
     if (!row) return null;
     let entities: string[] = [];
@@ -82,7 +82,9 @@ export interface LeadReplyDraftInput {
 
 let cachedLeadMetadataColumn: 'lead_metadata' | 'metadata_json' | null = null;
 
-async function resolveLeadMetadataColumn(db: Awaited<ReturnType<typeof getDatabase>>): Promise<'lead_metadata' | 'metadata_json'> {
+async function resolveLeadMetadataColumn(
+    db: Awaited<ReturnType<typeof getDatabase>>,
+): Promise<'lead_metadata' | 'metadata_json'> {
     if (cachedLeadMetadataColumn) {
         return cachedLeadMetadataColumn;
     }
@@ -97,12 +99,12 @@ async function resolveLeadMetadataColumn(db: Awaited<ReturnType<typeof getDataba
 
 async function readLeadMetadataForLead(
     db: Awaited<ReturnType<typeof getDatabase>>,
-    leadId: number
+    leadId: number,
 ): Promise<{ found: boolean; metadata: Record<string, unknown> }> {
     const metadataColumn = await resolveLeadMetadataColumn(db);
     const row = await db.get<{ metadata: string | null }>(
         `SELECT ${metadataColumn} AS metadata FROM leads WHERE id = ? LIMIT 1`,
-        [leadId]
+        [leadId],
     );
     if (!row) {
         return { found: false, metadata: {} };
@@ -116,13 +118,13 @@ async function readLeadMetadataForLead(
 async function writeLeadMetadataForLead(
     db: Awaited<ReturnType<typeof getDatabase>>,
     leadId: number,
-    metadata: Record<string, unknown>
+    metadata: Record<string, unknown>,
 ): Promise<void> {
     const metadataColumn = await resolveLeadMetadataColumn(db);
-    await db.run(
-        `UPDATE leads SET ${metadataColumn} = ?, updated_at = datetime('now') WHERE id = ?`,
-        [JSON.stringify(metadata), leadId]
-    );
+    await db.run(`UPDATE leads SET ${metadataColumn} = ?, updated_at = datetime('now') WHERE id = ?`, [
+        JSON.stringify(metadata),
+        leadId,
+    ]);
 }
 
 export async function appendLeadReplyDraft(leadId: number, input: LeadReplyDraftInput): Promise<void> {
@@ -249,7 +251,7 @@ function buildPostSnippet(meta: Record<string, unknown>, postIndex: number): str
 
 export async function listCommentSuggestionsForReview(
     limit: number = 25,
-    status: CommentSuggestionReviewStatus = 'REVIEW_PENDING'
+    status: CommentSuggestionReviewStatus = 'REVIEW_PENDING',
 ): Promise<CommentSuggestionReviewItem[]> {
     const db = await getDatabase();
     const safeLimit = Math.max(1, Math.floor(limit));
@@ -268,7 +270,7 @@ export async function listCommentSuggestionsForReview(
            AND ${metadataColumn} LIKE '%comment_suggestions%'
          ORDER BY updated_at DESC
          LIMIT ?`,
-        [Math.max(100, safeLimit * 6)]
+        [Math.max(100, safeLimit * 6)],
     );
 
     const collected: CommentSuggestionReviewItem[] = [];
@@ -309,7 +311,7 @@ export async function listCommentSuggestionsForReview(
 }
 
 export async function reviewCommentSuggestion(
-    input: CommentSuggestionReviewDecisionInput
+    input: CommentSuggestionReviewDecisionInput,
 ): Promise<CommentSuggestionReviewDecisionResult> {
     const db = await getDatabase();
     const leadId = Math.max(1, Math.floor(input.leadId));
@@ -329,9 +331,8 @@ export async function reviewCommentSuggestion(
     const nowIso = new Date().toISOString();
     const reviewer = input.reviewer?.trim() || null;
     const status: CommentSuggestionReviewStatus = input.action === 'approve' ? 'APPROVED' : 'REJECTED';
-    const approvedComment = typeof input.comment === 'string'
-        ? input.comment.replace(/\s+/g, ' ').trim().slice(0, 280)
-        : '';
+    const approvedComment =
+        typeof input.comment === 'string' ? input.comment.replace(/\s+/g, ' ').trim().slice(0, 280) : '';
 
     current.status = status;
     current.reviewedAt = nowIso;
@@ -358,17 +359,19 @@ export async function reviewCommentSuggestion(
     };
 }
 
-export async function listABVariantStats(): Promise<Array<{
-    variantId: string;
-    sent: number;
-    accepted: number;
-    replied: number;
-}>> {
+export async function listABVariantStats(): Promise<
+    Array<{
+        variantId: string;
+        sent: number;
+        accepted: number;
+        replied: number;
+    }>
+> {
     const db = await getDatabase();
     const rows = await db.query<{ variant_id: string; sent: number; accepted: number; replied: number }>(
         `SELECT variant_id, sent, accepted, replied
          FROM ab_variant_stats
-         ORDER BY sent DESC`
+         ORDER BY sent DESC`,
     );
     return (rows || []).map((r: { variant_id: string; sent: number; accepted: number; replied: number }) => ({
         variantId: r.variant_id,
@@ -391,7 +394,10 @@ export interface DynamicSelectorCandidate {
     updated_at: string;
 }
 
-export async function listDynamicSelectorCandidates(actionLabel: string, limit: number = 12): Promise<DynamicSelectorCandidate[]> {
+export async function listDynamicSelectorCandidates(
+    actionLabel: string,
+    limit: number = 12,
+): Promise<DynamicSelectorCandidate[]> {
     const db = await getDatabase();
     const rows = await db.query<DynamicSelectorCandidate>(
         `SELECT selector, confidence, success_count, source, updated_at
@@ -400,7 +406,7 @@ export async function listDynamicSelectorCandidates(actionLabel: string, limit: 
            AND active = 1
          ORDER BY confidence DESC, success_count DESC, updated_at DESC
          LIMIT ?`,
-        [actionLabel, Math.max(1, limit)]
+        [actionLabel, Math.max(1, limit)],
     );
     return rows;
 }
@@ -415,7 +421,7 @@ export async function recordSelectorFallbackSuccess(actionLabel: string, selecto
             success_count = selector_fallbacks.success_count + 1,
             last_success_at = CURRENT_TIMESTAMP,
             updated_at = CURRENT_TIMESTAMP`,
-        [actionLabel, selector, url]
+        [actionLabel, selector, url],
     );
 
     await db.run(
@@ -425,7 +431,7 @@ export async function recordSelectorFallbackSuccess(actionLabel: string, selecto
              updated_at = CURRENT_TIMESTAMP
          WHERE action_label = ?
            AND selector = ?`,
-        [actionLabel, selector]
+        [actionLabel, selector],
     );
 }
 
@@ -433,7 +439,7 @@ export async function recordSelectorFailure(
     actionLabel: string,
     url: string,
     selectors: readonly string[],
-    errorMessage: string
+    errorMessage: string,
 ): Promise<void> {
     const db = await getDatabase();
     await db.run(
@@ -447,7 +453,7 @@ export async function recordSelectorFailure(
             last_seen_at = CURRENT_TIMESTAMP,
             resolved_at = NULL,
             status = 'OPEN'`,
-        [actionLabel, url, JSON.stringify(selectors.slice(0, 25)), errorMessage.slice(0, 500)]
+        [actionLabel, url, JSON.stringify(selectors.slice(0, 25)), errorMessage.slice(0, 500)],
     );
 }
 
@@ -472,7 +478,7 @@ export async function listOpenSelectorFailures(limit: number = 50): Promise<Sele
          WHERE status = 'OPEN'
          ORDER BY occurrences DESC, last_seen_at DESC
          LIMIT ?`,
-        [Math.max(1, limit)]
+        [Math.max(1, limit)],
     );
 }
 
@@ -484,7 +490,7 @@ export async function markSelectorFailuresResolved(actionLabel: string): Promise
              resolved_at = CURRENT_TIMESTAMP
          WHERE action_label = ?
            AND status = 'OPEN'`,
-        [actionLabel]
+        [actionLabel],
     );
 }
 
@@ -495,7 +501,10 @@ export interface SelectorFallbackAggregate {
     last_success_at: string;
 }
 
-export async function listSelectorFallbackAggregates(minSuccess: number = 3, limit: number = 50): Promise<SelectorFallbackAggregate[]> {
+export async function listSelectorFallbackAggregates(
+    minSuccess: number = 3,
+    limit: number = 50,
+): Promise<SelectorFallbackAggregate[]> {
     const db = await getDatabase();
     return db.query<SelectorFallbackAggregate>(
         `SELECT action_label, selector, success_count, last_success_at
@@ -503,7 +512,7 @@ export async function listSelectorFallbackAggregates(minSuccess: number = 3, lim
          WHERE success_count >= ?
          ORDER BY success_count DESC, last_success_at DESC
          LIMIT ?`,
-        [Math.max(1, minSuccess), Math.max(1, limit)]
+        [Math.max(1, minSuccess), Math.max(1, limit)],
     );
 }
 
@@ -511,7 +520,7 @@ export async function upsertDynamicSelector(
     actionLabel: string,
     selector: string,
     confidence: number,
-    source: string
+    source: string,
 ): Promise<void> {
     const db = await getDatabase();
     await db.run(
@@ -526,7 +535,7 @@ export async function upsertDynamicSelector(
             source = excluded.source,
             active = 1,
             updated_at = CURRENT_TIMESTAMP`,
-        [actionLabel, selector, Math.max(0, Math.min(1, confidence)), source]
+        [actionLabel, selector, Math.max(0, Math.min(1, confidence)), source],
     );
 }
 
@@ -541,11 +550,7 @@ export interface DynamicSelectorStateRecord {
 }
 
 function normalizeActionLabels(actionLabels: readonly string[]): string[] {
-    return Array.from(new Set(
-        actionLabels
-            .map((label) => label.trim())
-            .filter((label) => label.length > 0)
-    ));
+    return Array.from(new Set(actionLabels.map((label) => label.trim()).filter((label) => label.length > 0)));
 }
 
 function parseSnapshotEntries(raw: string): SelectorLearningRollbackSnapshotEntry[] {
@@ -561,8 +566,10 @@ function parseSnapshotEntries(raw: string): SelectorLearningRollbackSnapshotEntr
                 previousConfidence: typeof entry.previousConfidence === 'number' ? entry.previousConfidence : null,
                 previousSource: typeof entry.previousSource === 'string' ? entry.previousSource : null,
                 previousActive: typeof entry.previousActive === 'number' ? entry.previousActive : null,
-                previousSuccessCount: typeof entry.previousSuccessCount === 'number' ? entry.previousSuccessCount : null,
-                previousLastValidatedAt: typeof entry.previousLastValidatedAt === 'string' ? entry.previousLastValidatedAt : null,
+                previousSuccessCount:
+                    typeof entry.previousSuccessCount === 'number' ? entry.previousSuccessCount : null,
+                previousLastValidatedAt:
+                    typeof entry.previousLastValidatedAt === 'string' ? entry.previousLastValidatedAt : null,
             }))
             .filter((entry) => entry.actionLabel.length > 0 && entry.selector.length > 0);
     } catch {
@@ -572,7 +579,7 @@ function parseSnapshotEntries(raw: string): SelectorLearningRollbackSnapshotEntr
 
 export async function getDynamicSelectorState(
     actionLabel: string,
-    selector: string
+    selector: string,
 ): Promise<DynamicSelectorStateRecord | null> {
     const db = await getDatabase();
     const row = await db.get<DynamicSelectorStateRecord>(
@@ -581,14 +588,14 @@ export async function getDynamicSelectorState(
          WHERE action_label = ?
            AND selector = ?
          LIMIT 1`,
-        [actionLabel, selector]
+        [actionLabel, selector],
     );
     return row ?? null;
 }
 
 export async function countOpenSelectorFailuresByActionLabels(
     actionLabels: readonly string[],
-    lookbackDays: number = 7
+    lookbackDays: number = 7,
 ): Promise<number> {
     const normalizedLabels = normalizeActionLabels(actionLabels);
     if (normalizedLabels.length === 0) {
@@ -602,7 +609,7 @@ export async function countOpenSelectorFailuresByActionLabels(
          WHERE status = 'OPEN'
            AND action_label IN (${placeholders})
            AND last_seen_at >= DATETIME('now', '-' || ? || ' days')`,
-        [...normalizedLabels, Math.max(1, lookbackDays)]
+        [...normalizedLabels, Math.max(1, lookbackDays)],
     );
     return row?.total ?? 0;
 }
@@ -627,7 +634,7 @@ export async function createSelectorLearningRun(input: {
             input.sourceTag,
             Math.max(1, Math.floor(input.lookbackDays)),
             Math.max(1, Math.floor(input.minSuccess)),
-        ]
+        ],
     );
     return insert.lastID ?? 0;
 }
@@ -642,7 +649,7 @@ export async function completeSelectorLearningRun(
         baselineOpenFailures: number;
         summary: Record<string, unknown>;
         rollbackSnapshot: SelectorLearningRollbackSnapshotEntry[];
-    }
+    },
 ): Promise<void> {
     const db = await getDatabase();
     await db.run(
@@ -665,7 +672,7 @@ export async function completeSelectorLearningRun(
             JSON.stringify(input.summary ?? {}),
             JSON.stringify(input.rollbackSnapshot ?? []),
             runId,
-        ]
+        ],
     );
 }
 
@@ -679,7 +686,7 @@ export async function listSelectorLearningRuns(limit: number = 20): Promise<Sele
          FROM selector_learning_runs
          ORDER BY id DESC
          LIMIT ?`,
-        [Math.max(1, limit)]
+        [Math.max(1, limit)],
     );
 }
 
@@ -694,7 +701,7 @@ export async function getLatestPromotedSelectorLearningRun(): Promise<SelectorLe
          WHERE status = 'PROMOTED'
            AND rollback_applied = 0
          ORDER BY id DESC
-         LIMIT 1`
+         LIMIT 1`,
     );
     return row ?? null;
 }
@@ -706,7 +713,7 @@ export async function recordSelectorLearningRunEvaluation(
         degraded: boolean;
         rollbackApplied: boolean;
         rollbackReason?: string | null;
-    }
+    },
 ): Promise<void> {
     const db = await getDatabase();
     const status = input.rollbackApplied ? 'ROLLED_BACK' : undefined;
@@ -727,7 +734,7 @@ export async function recordSelectorLearningRunEvaluation(
                 input.rollbackApplied ? 1 : 0,
                 input.rollbackReason ?? null,
                 runId,
-            ]
+            ],
         );
         return;
     }
@@ -745,12 +752,12 @@ export async function recordSelectorLearningRunEvaluation(
             input.rollbackApplied ? 1 : 0,
             input.rollbackReason ?? null,
             runId,
-        ]
+        ],
     );
 }
 
 export async function restoreDynamicSelectorSnapshots(
-    rawSnapshotEntries: readonly SelectorLearningRollbackSnapshotEntry[]
+    rawSnapshotEntries: readonly SelectorLearningRollbackSnapshotEntry[],
 ): Promise<{ restored: number; deleted: number }> {
     const db = await getDatabase();
     let restored = 0;
@@ -763,7 +770,7 @@ export async function restoreDynamicSelectorSnapshots(
                 `DELETE FROM dynamic_selectors
                  WHERE action_label = ?
                    AND selector = ?`,
-                [snapshot.actionLabel, snapshot.selector]
+                [snapshot.actionLabel, snapshot.selector],
             );
             deleted += deletedResult.changes ?? 0;
             continue;
@@ -792,7 +799,7 @@ export async function restoreDynamicSelectorSnapshots(
                 snapshot.previousLastValidatedAt ?? null,
                 snapshot.actionLabel,
                 snapshot.selector,
-            ]
+            ],
         );
 
         if ((updated.changes ?? 0) > 0) {
@@ -820,7 +827,7 @@ export async function restoreDynamicSelectorSnapshots(
                 restoredActive,
                 restoredSuccessCount,
                 snapshot.previousLastValidatedAt ?? null,
-            ]
+            ],
         );
         if ((inserted.changes ?? 0) > 0) {
             restored += 1;
@@ -846,7 +853,7 @@ export async function getRampUpState(listName: string): Promise<RampUpStateRecor
          FROM list_rampup_state
          WHERE list_name = ?
          LIMIT 1`,
-        [listName]
+        [listName],
     );
     return row ?? null;
 }
@@ -856,7 +863,7 @@ export async function upsertRampUpState(
     inviteCap: number,
     messageCap: number,
     dailyIncrease: number,
-    lastRunDate: string
+    lastRunDate: string,
 ): Promise<void> {
     const db = await getDatabase();
     await db.run(
@@ -869,6 +876,6 @@ export async function upsertRampUpState(
             current_message_cap = excluded.current_message_cap,
             daily_increase = excluded.daily_increase,
             updated_at = CURRENT_TIMESTAMP`,
-        [listName, lastRunDate, Math.max(0, inviteCap), Math.max(0, messageCap), Math.max(0.01, dailyIncrease)]
+        [listName, lastRunDate, Math.max(0, inviteCap), Math.max(0, messageCap), Math.max(0.01, dailyIncrease)],
     );
 }

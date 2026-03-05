@@ -8,7 +8,10 @@ import { logInfo, logWarn, logError } from '../telemetry/logger';
 /**
  * Trova il prossimo step di una campagna in base a step_order.
  */
-async function getNextCampaignStep(campaignId: number, currentStepOrder: number | null): Promise<CampaignStepRecord | null> {
+async function getNextCampaignStep(
+    campaignId: number,
+    currentStepOrder: number | null,
+): Promise<CampaignStepRecord | null> {
     const db = await getDatabase();
     const order = currentStepOrder ?? -1;
     const nextStep = await db.get<CampaignStepRecord>(
@@ -18,7 +21,7 @@ async function getNextCampaignStep(campaignId: number, currentStepOrder: number 
         ORDER BY step_order ASC
         LIMIT 1
         `,
-        [campaignId, order]
+        [campaignId, order],
     );
     return nextStep ?? null;
 }
@@ -38,7 +41,7 @@ async function getCampaignStepById(stepId: number): Promise<CampaignStepRecord |
 function getJitteredDelay(hours: number): number {
     const baseSeconds = hours * 3600;
     const jitter = baseSeconds * 0.1;
-    return Math.floor(baseSeconds + (Math.random() * jitter * 2) - jitter);
+    return Math.floor(baseSeconds + Math.random() * jitter * 2 - jitter);
 }
 
 /**
@@ -58,10 +61,11 @@ export async function dispatchReadyCampaignSteps(): Promise<number> {
             if (!stepToExecute) {
                 const db = await getDatabase();
                 // Primo avvio: fetch step 1
-                stepToExecute = (await db.get<CampaignStepRecord>(
-                    `SELECT * FROM campaign_steps WHERE campaign_id = ? ORDER BY step_order ASC LIMIT 1`,
-                    [state.campaign_id]
-                )) ?? null;
+                stepToExecute =
+                    (await db.get<CampaignStepRecord>(
+                        `SELECT * FROM campaign_steps WHERE campaign_id = ? ORDER BY step_order ASC LIMIT 1`,
+                        [state.campaign_id],
+                    )) ?? null;
 
                 if (!stepToExecute) {
                     await updateLeadCampaignState(state.id, 'COMPLETED', null, null, 'Nessuno step configurato');
@@ -74,7 +78,7 @@ export async function dispatchReadyCampaignSteps(): Promise<number> {
             const payload: Record<string, unknown> = {
                 leadId: state.lead_id,
                 campaignStateId: state.id,
-                ...(stepToExecute.metadata_json && { metadata_json: stepToExecute.metadata_json })
+                ...(stepToExecute.metadata_json && { metadata_json: stepToExecute.metadata_json }),
             };
 
             switch (stepToExecute.action_type) {
@@ -94,17 +98,17 @@ export async function dispatchReadyCampaignSteps(): Promise<number> {
                     jobType = 'ENRICHMENT';
                     break;
                 default:
-                    await updateLeadCampaignState(state.id, 'ERROR', state.current_step_id, null, `Action non supportata: ${stepToExecute.action_type}`);
+                    await updateLeadCampaignState(
+                        state.id,
+                        'ERROR',
+                        state.current_step_id,
+                        null,
+                        `Action non supportata: ${stepToExecute.action_type}`,
+                    );
                     continue;
             }
 
-            const enqueued = await enqueueJob(
-                jobType,
-                payload,
-                idempotencyKey,
-                5,
-                3
-            );
+            const enqueued = await enqueueJob(jobType, payload, idempotencyKey, 5, 3);
 
             if (enqueued) {
                 await updateLeadCampaignState(state.id, 'IN_PROGRESS', stepToExecute.id, state.next_execution_at);
@@ -113,7 +117,7 @@ export async function dispatchReadyCampaignSteps(): Promise<number> {
                     leadId: state.lead_id,
                     campaignId: state.campaign_id,
                     stepOrder: stepToExecute.step_order,
-                    action: stepToExecute.action_type
+                    action: stepToExecute.action_type,
                 });
             }
         } catch (error) {
@@ -130,17 +134,16 @@ export async function dispatchReadyCampaignSteps(): Promise<number> {
  */
 export async function advanceLeadCampaign(campaignStateId: number): Promise<void> {
     const db = await getDatabase();
-    const state = await db.get<LeadCampaignStateRecord>(
-        `SELECT * FROM lead_campaign_state WHERE id = ?`,
-        [campaignStateId]
-    );
+    const state = await db.get<LeadCampaignStateRecord>(`SELECT * FROM lead_campaign_state WHERE id = ?`, [
+        campaignStateId,
+    ]);
     if (!state) return;
 
     if (state.status !== 'IN_PROGRESS') {
         await logWarn('campaign.advance_warning', {
             stateId: campaignStateId,
             status: state.status,
-            msg: 'Tentativo di avanzare uno stato non IN_PROGRESS'
+            msg: 'Tentativo di avanzare uno stato non IN_PROGRESS',
         });
         // Può succedere in caso di retry. Procediamo comunque per idempotenza.
     }
@@ -166,14 +169,14 @@ export async function advanceLeadCampaign(campaignStateId: number): Promise<void
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
         `,
-        [nextStep.id, delaySeconds, campaignStateId]
+        [nextStep.id, delaySeconds, campaignStateId],
     );
 
     await logInfo('campaign.advanced', {
         stateId: campaignStateId,
         leadId: state.lead_id,
         nextStep: nextStep.action_type,
-        delayHours: nextStep.delay_hours
+        delayHours: nextStep.delay_hours,
     });
 }
 
@@ -184,7 +187,7 @@ export async function failLeadCampaign(campaignStateId: number, errorMessage: st
     const db = await getDatabase();
     await db.run(
         `UPDATE lead_campaign_state SET status = 'ERROR', last_error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-        [errorMessage, campaignStateId]
+        [errorMessage, campaignStateId],
     );
     await logWarn('campaign.failed', { stateId: campaignStateId, error: errorMessage });
 }

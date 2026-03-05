@@ -3,10 +3,7 @@ import { CampaignRecord, CampaignStepRecord, LeadCampaignStateRecord } from '../
 
 export async function createCampaign(name: string): Promise<CampaignRecord> {
     const db = await getDatabase();
-    const result = await db.run(
-        `INSERT INTO campaigns (name) VALUES (?)`,
-        [name]
-    );
+    const result = await db.run(`INSERT INTO campaigns (name) VALUES (?)`, [name]);
     if (!result.lastID) {
         throw new Error('Impossibile creare la campagna.');
     }
@@ -30,7 +27,10 @@ export async function getCampaignById(id: number): Promise<CampaignRecord | unde
 
 export async function updateCampaignStatus(id: number, active: boolean): Promise<boolean> {
     const db = await getDatabase();
-    const result = await db.run(`UPDATE campaigns SET active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [active ? 1 : 0, id]);
+    const result = await db.run(`UPDATE campaigns SET active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [
+        active ? 1 : 0,
+        id,
+    ]);
     return (result.changes ?? 0) > 0;
 }
 
@@ -39,7 +39,7 @@ export async function addCampaignStep(
     stepOrder: number,
     actionType: string,
     delayHours: number,
-    metadataJson: string = '{}'
+    metadataJson: string = '{}',
 ): Promise<CampaignStepRecord> {
     const db = await getDatabase();
     const result = await db.run(
@@ -47,7 +47,7 @@ export async function addCampaignStep(
         INSERT INTO campaign_steps (campaign_id, step_order, action_type, delay_hours, metadata_json)
         VALUES (?, ?, ?, ?, ?)
         `,
-        [campaignId, stepOrder, actionType, delayHours, metadataJson]
+        [campaignId, stepOrder, actionType, delayHours, metadataJson],
     );
     if (!result.lastID) {
         throw new Error('Impossibile creare lo step della campagna.');
@@ -59,20 +59,24 @@ export async function addCampaignStep(
 
 export async function getCampaignSteps(campaignId: number): Promise<CampaignStepRecord[]> {
     const db = await getDatabase();
-    return db.query<CampaignStepRecord>(
-        `SELECT * FROM campaign_steps WHERE campaign_id = ? ORDER BY step_order ASC`,
-        [campaignId]
-    );
+    return db.query<CampaignStepRecord>(`SELECT * FROM campaign_steps WHERE campaign_id = ? ORDER BY step_order ASC`, [
+        campaignId,
+    ]);
 }
 
-export async function enrollLeadInCampaign(leadId: number, campaignId: number, currentStepId: number, nextExecutionAt: string): Promise<void> {
+export async function enrollLeadInCampaign(
+    leadId: number,
+    campaignId: number,
+    currentStepId: number,
+    nextExecutionAt: string,
+): Promise<void> {
     const db = await getDatabase();
     await db.run(
         `
         INSERT OR IGNORE INTO lead_campaign_state (lead_id, campaign_id, current_step_id, status, next_execution_at)
         VALUES (?, ?, ?, 'ENROLLED', ?)
         `,
-        [leadId, campaignId, currentStepId, nextExecutionAt]
+        [leadId, campaignId, currentStepId, nextExecutionAt],
     );
 }
 
@@ -86,7 +90,7 @@ export async function getPendingCampaignExecutions(limit: number = 50): Promise<
         ORDER BY next_execution_at ASC
         LIMIT ?
         `,
-        [limit]
+        [limit],
     );
 }
 
@@ -95,7 +99,7 @@ export async function updateLeadCampaignState(
     status: string,
     nextStepId: number | null,
     nextExecutionAt: string | null,
-    lastError: string | null = null
+    lastError: string | null = null,
 ): Promise<void> {
     const db = await getDatabase();
     await db.run(
@@ -108,6 +112,6 @@ export async function updateLeadCampaignState(
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
         `,
-        [status, nextStepId, nextExecutionAt, lastError, id]
+        [status, nextStepId, nextExecutionAt, lastError, id],
     );
 }

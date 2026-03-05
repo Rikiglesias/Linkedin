@@ -15,65 +15,83 @@ export async function generateAndSendDailyReport(targetDate?: string): Promise<b
     // Contiamo le conversioni e l'impatto funnel globale attingendo alla tabella leads
     const db = await getDatabase();
 
-    const leadsAccepted = await db.get<{ count: number }>(`
+    const leadsAccepted = await db.get<{ count: number }>(
+        `
         SELECT COUNT(*) as count FROM leads WHERE accepted_at LIKE ? || '%'
-    `, [localDate]);
+    `,
+        [localDate],
+    );
 
-    const leadsMessaged = await db.get<{ count: number }>(`
+    const leadsMessaged = await db.get<{ count: number }>(
+        `
         SELECT COUNT(*) as count FROM leads WHERE messaged_at LIKE ? || '%'
-    `, [localDate]);
+    `,
+        [localDate],
+    );
 
-    const leadsReplied = await db.get<{ count: number }>(`
+    const leadsReplied = await db.get<{ count: number }>(
+        `
         SELECT COUNT(*) as count FROM leads WHERE status = 'REPLIED' AND updated_at LIKE ? || '%'
-    `, [localDate]);
+    `,
+        [localDate],
+    );
 
     const campaignRunsStats = await db.get<{
-        total_runs: number,
-        total_discovered: number,
-        failed_runs: number
-    }>(`
+        total_runs: number;
+        total_discovered: number;
+        failed_runs: number;
+    }>(
+        `
         SELECT 
             COUNT(id) as total_runs, 
             COALESCE(SUM(profiles_discovered), 0) as total_discovered,
             SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failed_runs
         FROM campaign_runs 
         WHERE start_time LIKE ? || '%'
-    `, [localDate]);
+    `,
+        [localDate],
+    );
 
     // AB Testing section
     const abStats = await getVariantLeaderboard().catch(() => []);
-    const abSection = abStats.length > 0
-        ? [
-            `\n*🧪 A/B Varianti Note (Bandit)*`,
-            ...abStats.map(v =>
-                `• \`${v.variantId}${v.significanceWinner ? ' (WIN)' : ''}\`: sent=${v.sent} acc=${(v.acceptanceRate * 100).toFixed(0)}% reply=${(v.replyRate * 100).toFixed(0)}% score=${(v.bayesScore ?? v.ucbScore ?? 0).toFixed(3)}`
-            )
-        ].join('\n')
-        : '';
+    const abSection =
+        abStats.length > 0
+            ? [
+                  `\n*🧪 A/B Varianti Note (Bandit)*`,
+                  ...abStats.map(
+                      (v) =>
+                          `• \`${v.variantId}${v.significanceWinner ? ' (WIN)' : ''}\`: sent=${v.sent} acc=${(v.acceptanceRate * 100).toFixed(0)}% reply=${(v.replyRate * 100).toFixed(0)}% score=${(v.bayesScore ?? v.ucbScore ?? 0).toFixed(3)}`,
+                  ),
+              ].join('\n')
+            : '';
 
     // Best timing slots
     const topSlots = await getTopTimeSlots(3).catch(() => []);
     const DOW_LABELS = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
-    const timingSection = topSlots.length > 0
-        ? [
-            `\n*⏰ Best Time Slots (storico)*`,
-            ...topSlots.map(s =>
-                `• ${DOW_LABELS[s.dayOfWeek]} ${String(s.hour).padStart(2, '0')}:00 → score=${s.score} (n=${s.sampleSize})`
-            )
-        ].join('\n')
-        : '';
+    const timingSection =
+        topSlots.length > 0
+            ? [
+                  `\n*⏰ Best Time Slots (storico)*`,
+                  ...topSlots.map(
+                      (s) =>
+                          `• ${DOW_LABELS[s.dayOfWeek]} ${String(s.hour).padStart(2, '0')}:00 → score=${s.score} (n=${s.sampleSize})`,
+                  ),
+              ].join('\n')
+            : '';
 
     const timingExperiment = await getTimingExperimentReport('invite').catch(() => null);
     const timingExperimentSection = timingExperiment
         ? [
-            `\n*🧪 Timing A/B (invite)*`,
-            `• baseline: sent=${timingExperiment.baseline.sent} rate=${(timingExperiment.baseline.successRate * 100).toFixed(1)}%`,
-            `• optimizer: sent=${timingExperiment.optimizer.sent} rate=${(timingExperiment.optimizer.successRate * 100).toFixed(1)}%`,
-            `• lift: ${timingExperiment.liftAbsolute === null ? 'n/a' : `${(timingExperiment.liftAbsolute * 100).toFixed(1)}%`}`,
-            `• significance: ${timingExperiment.significance?.pValue === null || timingExperiment.significance === null
-                ? 'n/a'
-                : `p=${timingExperiment.significance.pValue.toFixed(4)} (alpha=${timingExperiment.significance.alpha})`}`,
-        ].join('\n')
+              `\n*🧪 Timing A/B (invite)*`,
+              `• baseline: sent=${timingExperiment.baseline.sent} rate=${(timingExperiment.baseline.successRate * 100).toFixed(1)}%`,
+              `• optimizer: sent=${timingExperiment.optimizer.sent} rate=${(timingExperiment.optimizer.successRate * 100).toFixed(1)}%`,
+              `• lift: ${timingExperiment.liftAbsolute === null ? 'n/a' : `${(timingExperiment.liftAbsolute * 100).toFixed(1)}%`}`,
+              `• significance: ${
+                  timingExperiment.significance?.pValue === null || timingExperiment.significance === null
+                      ? 'n/a'
+                      : `p=${timingExperiment.significance.pValue.toFixed(4)} (alpha=${timingExperiment.significance.alpha})`
+              }`,
+          ].join('\n')
         : '';
 
     const sloSections = observability.slo.windows.map((window) => {
@@ -85,9 +103,10 @@ export async function generateAndSendDailyReport(targetDate?: string): Promise<b
         `• Stato corrente: *${observability.slo.current.status}* (queueLag=${observability.slo.current.queueLagSeconds}s, oldestRunning=${observability.slo.current.oldestRunningJobSeconds}s)`,
         ...sloSections,
     ].join('\n');
-    const selectorKpiReduction = observability.selectorCacheKpi.reductionPct === null
-        ? 'n/a'
-        : `${observability.selectorCacheKpi.reductionPct.toFixed(1)}%`;
+    const selectorKpiReduction =
+        observability.selectorCacheKpi.reductionPct === null
+            ? 'n/a'
+            : `${observability.selectorCacheKpi.reductionPct.toFixed(1)}%`;
     const selectorKpiTarget = `${(observability.selectorCacheKpi.targetReductionRate * 100).toFixed(0)}%`;
     const selectorKpiStatus = observability.selectorCacheKpi.validationStatus;
     const selectorKpiBaselineNote = observability.selectorCacheKpi.baselineSufficient
@@ -120,7 +139,9 @@ export async function generateAndSendDailyReport(targetDate?: string): Promise<b
         abSection,
         timingSection,
         timingExperimentSection,
-    ].filter(s => s.length > 0).join('\n');
+    ]
+        .filter((s) => s.length > 0)
+        .join('\n');
 
     await sendTelegramAlert(reportText, 'LinkedIn Bot Daily Report', 'info');
 

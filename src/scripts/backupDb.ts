@@ -26,8 +26,11 @@ function applyRetentionPolicy(): number {
     const cutoffMs = retentionDays * 24 * 60 * 60 * 1000;
     const now = Date.now();
 
-    const files = fs.readdirSync(BACKUP_DIR)
-        .filter((fileName) => fileName.startsWith('backup-') && (fileName.endsWith('.sqlite') || fileName.endsWith('.sql')))
+    const files = fs
+        .readdirSync(BACKUP_DIR)
+        .filter(
+            (fileName) => fileName.startsWith('backup-') && (fileName.endsWith('.sqlite') || fileName.endsWith('.sql')),
+        )
         .map((fileName) => ({ name: fileName, mtime: fs.statSync(path.join(BACKUP_DIR, fileName)).mtimeMs }))
         .sort((a, b) => b.mtime - a.mtime);
 
@@ -85,9 +88,7 @@ export async function runBackup() {
     });
 
     try {
-        const backupPath = isPostgres
-            ? runPostgresBackup(timestamp)
-            : runSqliteBackup(timestamp);
+        const backupPath = isPostgres ? runPostgresBackup(timestamp) : runSqliteBackup(timestamp);
         const checksum = checksumSha256(backupPath);
         const removedCount = applyRetentionPolicy();
         const durationMs = Date.now() - startedAtMs;
@@ -110,7 +111,7 @@ export async function runBackup() {
         await sendTelegramAlert(
             `Backup fallito.\nTipo: ${backupType}\nErrore: ${message}`,
             'Backup Failure',
-            'critical'
+            'critical',
         );
         throw error;
     }
@@ -120,4 +121,3 @@ runBackup().catch((error) => {
     console.error('❌ Errore durante il backup DB', error);
     process.exit(1);
 });
-

@@ -40,7 +40,8 @@ export function renderKpis(kpis) {
     const riskValue = Math.round(Number(kpis.risk?.score ?? 0));
     const riskNode = byId('val-risk');
     riskNode.textContent = String(riskValue);
-    riskNode.className = riskValue >= 80 ? 'kpi-value risk-high' : riskValue >= 50 ? 'kpi-value risk-medium' : 'kpi-value risk-low';
+    riskNode.className =
+        riskValue >= 80 ? 'kpi-value risk-high' : riskValue >= 50 ? 'kpi-value risk-medium' : 'kpi-value risk-low';
     setText('conv-accept', formatPercent(funnel.accepted ?? 0, funnel.invited ?? 0));
     setText('conv-reply', formatPercent(funnel.replied ?? 0, funnel.invited ?? 0));
     setText('conv-msg-reply', formatPercent(funnel.replied ?? 0, funnel.messaged ?? 0));
@@ -148,12 +149,8 @@ export function renderSelectorCacheKpi(kpi) {
     }
     const reduction = kpi.reductionPct === null ? 'n/a' : `${kpi.reductionPct.toFixed(1)}%`;
     const target = `${(kpi.targetReductionRate * 100).toFixed(0)}%`;
-    const status = kpi.validationStatus === 'PASS'
-        ? 'PASS'
-        : (kpi.validationStatus === 'WARN' ? 'WARN' : 'INSUFFICIENT_DATA');
-    const baselineNote = kpi.validationStatus === 'INSUFFICIENT_DATA'
-        ? `, baseline<${kpi.minBaselineFailures}`
-        : '';
+    const status = kpi.validationStatus === 'PASS' ? 'PASS' : kpi.validationStatus === 'WARN' ? 'WARN' : 'INSUFFICIENT_DATA';
+    const baselineNote = kpi.validationStatus === 'INSUFFICIENT_DATA' ? `, baseline<${kpi.minBaselineFailures}` : '';
     setText('selector-cache-kpi', `Selector cache KPI 7d: ${status} (riduzione ${reduction}, target ${target}, fail ${kpi.currentFailures}/${kpi.previousFailures}${baselineNote})`);
 }
 export function renderIncidents(incidents, selectedIds) {
@@ -180,7 +177,11 @@ export function renderIncidents(incidents, selectedIds) {
         selection.appendChild(checkbox);
         const typeCell = createCell(incident.type);
         const severityCell = document.createElement('td');
-        const severityClass = incident.severity === 'CRITICAL' ? 'pill-danger' : incident.severity === 'WARN' ? 'pill-warning' : 'pill-info';
+        const severityClass = incident.severity === 'CRITICAL'
+            ? 'pill-danger'
+            : incident.severity === 'WARN'
+                ? 'pill-warning'
+                : 'pill-info';
         severityCell.appendChild(statusPill(incident.severity, severityClass));
         const detailsCell = document.createElement('td');
         const details = document.createElement('details');
@@ -188,7 +189,10 @@ export function renderIncidents(incidents, selectedIds) {
         summary.textContent = 'Dettagli';
         const pre = document.createElement('pre');
         pre.className = 'incident-details';
-        pre.textContent = incident.details_json && incident.details_json.trim().length > 0 ? incident.details_json : 'Nessun dettaglio disponibile';
+        pre.textContent =
+            incident.details_json && incident.details_json.trim().length > 0
+                ? incident.details_json
+                : 'Nessun dettaglio disponibile';
         details.appendChild(summary);
         details.appendChild(pre);
         detailsCell.appendChild(details);
@@ -214,9 +218,11 @@ export function renderReviewQueue(reviewQueue) {
     setText('review-queue-count', String(reviewQueue.reviewLeadCount ?? 0));
     setText('review-queue-incidents', String(reviewQueue.challengeIncidentCount ?? 0));
     const queueCountNode = byId('review-queue-count');
-    queueCountNode.className = (reviewQueue.reviewLeadCount ?? 0) > 0 ? 'conv-value system-warn' : 'conv-value system-ok';
+    queueCountNode.className =
+        (reviewQueue.reviewLeadCount ?? 0) > 0 ? 'conv-value system-warn' : 'conv-value system-ok';
     const incidentsNode = byId('review-queue-incidents');
-    incidentsNode.className = (reviewQueue.challengeIncidentCount ?? 0) > 0 ? 'conv-value system-danger' : 'conv-value system-ok';
+    incidentsNode.className =
+        (reviewQueue.challengeIncidentCount ?? 0) > 0 ? 'conv-value system-danger' : 'conv-value system-ok';
     const tbody = byId('review-tbody');
     clearChildren(tbody);
     if (!reviewQueue.leads || reviewQueue.leads.length === 0) {
@@ -274,9 +280,7 @@ export function renderCommentSuggestions(queue) {
         leadLink.rel = 'noopener noreferrer';
         leadLink.textContent = `${item.firstName} ${item.lastName}`.trim() || `Lead #${item.leadId}`;
         leadCell.appendChild(leadLink);
-        const postPreview = item.postSnippet?.trim().length > 0
-            ? item.postSnippet
-            : 'Post non disponibile';
+        const postPreview = item.postSnippet?.trim().length > 0 ? item.postSnippet : 'Post non disponibile';
         const commentCell = document.createElement('td');
         const editor = document.createElement('textarea');
         editor.className = 'comment-suggestion-editor';

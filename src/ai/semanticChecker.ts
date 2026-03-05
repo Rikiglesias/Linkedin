@@ -15,7 +15,11 @@ export class SemanticChecker {
      */
     private static jaccardSimilarity(str1: string, str2: string): number {
         const getBigrams = (s: string) => {
-            const words = s.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(w => w.length > 0);
+            const words = s
+                .toLowerCase()
+                .replace(/[^\w\s]/g, '')
+                .split(/\s+/)
+                .filter((w) => w.length > 0);
             const bigrams = new Set<string>();
             for (let i = 0; i < words.length - 1; i++) {
                 bigrams.add(`${words[i]} ${words[i + 1]}`);

@@ -37,13 +37,20 @@ function clampConfidence(value: unknown, fallback: number): number {
 function normalizeIntent(value: unknown): MessageIntent {
     const normalized = String(value ?? 'UNKNOWN').toUpperCase();
     const allowed: MessageIntent[] = ['POSITIVE', 'NEGATIVE', 'NEUTRAL', 'QUESTIONS', 'NOT_INTERESTED', 'UNKNOWN'];
-    return allowed.includes(normalized as MessageIntent) ? normalized as MessageIntent : 'UNKNOWN';
+    return allowed.includes(normalized as MessageIntent) ? (normalized as MessageIntent) : 'UNKNOWN';
 }
 
 function normalizeSubIntent(value: unknown): MessageSubIntent {
     const normalized = String(value ?? 'NONE').toUpperCase();
-    const allowed: MessageSubIntent[] = ['CALL_REQUESTED', 'PRICE_INQUIRY', 'OBJECTION_HANDLING', 'COMPETITOR_MENTION', 'REFERRAL', 'NONE'];
-    return allowed.includes(normalized as MessageSubIntent) ? normalized as MessageSubIntent : 'NONE';
+    const allowed: MessageSubIntent[] = [
+        'CALL_REQUESTED',
+        'PRICE_INQUIRY',
+        'OBJECTION_HANDLING',
+        'COMPETITOR_MENTION',
+        'REFERRAL',
+        'NONE',
+    ];
+    return allowed.includes(normalized as MessageSubIntent) ? (normalized as MessageSubIntent) : 'NONE';
 }
 
 function buildFallbackDraft(intent: MessageIntent, text: string): string {
@@ -108,14 +115,15 @@ export async function resolveIntentAndDraft(messageText: string): Promise<Intent
         const subIntent = normalizeSubIntent(parsed.subIntent);
         const entities = Array.isArray(parsed.entities)
             ? parsed.entities
-                .filter((item): item is string => typeof item === 'string')
-                .map((item) => item.toLowerCase().trim())
-                .filter((item) => item.length > 0)
-                .slice(0, 20)
+                  .filter((item): item is string => typeof item === 'string')
+                  .map((item) => item.toLowerCase().trim())
+                  .filter((item) => item.length > 0)
+                  .slice(0, 20)
             : [];
-        const responseDraft = typeof parsed.responseDraft === 'string'
-            ? parsed.responseDraft.replace(/\s+/g, ' ').trim().slice(0, 420)
-            : '';
+        const responseDraft =
+            typeof parsed.responseDraft === 'string'
+                ? parsed.responseDraft.replace(/\s+/g, ' ').trim().slice(0, 420)
+                : '';
         if (responseDraft.length < 12) {
             throw new Error('response_draft_too_short');
         }

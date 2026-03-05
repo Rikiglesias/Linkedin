@@ -4,7 +4,13 @@
 
 import { Page } from 'playwright';
 import { config } from '../../config';
-import { launchBrowser, closeBrowser as closeBrowserSession, checkLogin, humanDelay, detectChallenge } from '../../browser';
+import {
+    launchBrowser,
+    closeBrowser as closeBrowserSession,
+    checkLogin,
+    humanDelay,
+    detectChallenge,
+} from '../../browser';
 import {
     getLeadById,
     getLeadsWithSalesNavigatorUrls,
@@ -17,6 +23,7 @@ import {
 import { reconcileLeadStatus } from '../../core/leadStateService';
 import { runSalesNavigatorListSync } from '../../core/salesNavigatorSync';
 import { addLeadToSalesNavList, createSalesNavList } from '../../salesnav/listActions';
+import { scrapeSavedSearchAndSaveToList, scrapeAllSavedSearchesAndSaveToList } from '../../salesnav/searchExtractor';
 import { isProfileUrl, isSalesNavigatorUrl, normalizeLinkedInUrl } from '../../linkedinUrl';
 import { getOptionValue, hasOption, parseIntStrict, getPositionalArgs } from '../cliParser';
 
@@ -52,17 +59,27 @@ async function collectProfileUrlCandidates(page: Page): Promise<string[]> {
     const currentUrl = page.url();
     if (currentUrl) candidates.add(currentUrl);
 
-    const canonicalHref = await page.locator('link[rel="canonical"]').first().getAttribute('href').catch(() => null);
+    const canonicalHref = await page
+        .locator('link[rel="canonical"]')
+        .first()
+        .getAttribute('href')
+        .catch(() => null);
     if (canonicalHref) candidates.add(canonicalHref);
 
-    const ogUrl = await page.locator('meta[property="og:url"]').first().getAttribute('content').catch(() => null);
+    const ogUrl = await page
+        .locator('meta[property="og:url"]')
+        .first()
+        .getAttribute('content')
+        .catch(() => null);
     if (ogUrl) candidates.add(ogUrl);
 
-    const anchors = await page.evaluate(() => {
-        return Array.from(document.querySelectorAll('a[href]'))
-            .map((node) => (node as HTMLAnchorElement).href)
-            .filter((href) => typeof href === 'string' && href.length > 0);
-    }).catch(() => [] as string[]);
+    const anchors = await page
+        .evaluate(() => {
+            return Array.from(document.querySelectorAll('a[href]'))
+                .map((node) => (node as HTMLAnchorElement).href)
+                .filter((href) => typeof href === 'string' && href.length > 0);
+        })
+        .catch(() => [] as string[]);
 
     for (const href of anchors) {
         candidates.add(href);
@@ -81,7 +98,9 @@ function pickResolvedProfileUrl(candidates: string[]): string | null {
     return null;
 }
 
-function getRecoveryStatusFromBlockedReason(reason: string | null): 'READY_INVITE' | 'INVITED' | 'READY_MESSAGE' | null {
+function getRecoveryStatusFromBlockedReason(
+    reason: string | null,
+): 'READY_INVITE' | 'INVITED' | 'READY_MESSAGE' | null {
     const normalized = (reason ?? '').toLowerCase();
     if (normalized.includes('salesnav_url_requires_profile_invite')) {
         return 'READY_INVITE';
@@ -103,7 +122,9 @@ export async function runSalesNavSyncCommand(args: string[]): Promise<void> {
     const listName = getOptionValue(args, '--list') ?? positional[0] ?? config.salesNavSyncListName;
     const listUrl = getOptionValue(args, '--url') ?? positional[1] ?? config.salesNavSyncListUrl;
     const maxPagesRaw = getOptionValue(args, '--max-pages');
-    const maxPages = maxPagesRaw ? Math.max(1, parseIntStrict(maxPagesRaw, '--max-pages')) : config.salesNavSyncMaxPages;
+    const maxPages = maxPagesRaw
+        ? Math.max(1, parseIntStrict(maxPagesRaw, '--max-pages'))
+        : config.salesNavSyncMaxPages;
     const limitRaw = getOptionValue(args, '--limit');
     const maxLeadsPerList = limitRaw ? Math.max(1, parseIntStrict(limitRaw, '--limit')) : config.salesNavSyncLimit;
     const accountId = getOptionValue(args, '--account') ?? config.salesNavSyncAccountId;
@@ -153,14 +174,20 @@ export async function runSalesNavCreateListCommand(args: string[]): Promise<void
         }
     }
 
-    console.log(JSON.stringify({
-        ...result,
-        dbSync: {
-            listId: dbListId,
-            synced: dbListId !== null,
-            error: dbSyncError,
-        },
-    }, null, 2));
+    console.log(
+        JSON.stringify(
+            {
+                ...result,
+                dbSync: {
+                    listId: dbListId,
+                    synced: dbListId !== null,
+                    error: dbSyncError,
+                },
+            },
+            null,
+            2,
+        ),
+    );
 }
 
 export async function runSalesNavAddLeadCommand(args: string[]): Promise<void> {
@@ -204,17 +231,23 @@ export async function runSalesNavAddLeadCommand(args: string[]): Promise<void> {
         }
     }
 
-    console.log(JSON.stringify({
-        leadId,
-        listName,
-        leadUrl: lead.linkedin_url,
-        dbSync: {
-            listId: dbListId,
-            linked: dbLinked,
-            error: dbSyncError,
-        },
-        ...result,
-    }, null, 2));
+    console.log(
+        JSON.stringify(
+            {
+                leadId,
+                listName,
+                leadUrl: lead.linkedin_url,
+                dbSync: {
+                    listId: dbListId,
+                    linked: dbLinked,
+                    error: dbSyncError,
+                },
+                ...result,
+            },
+            null,
+            2,
+        ),
+    );
 }
 
 export async function runSalesNavResolveCommand(args: string[]): Promise<void> {
@@ -295,9 +328,8 @@ export async function runSalesNavResolveCommand(args: string[]): Promise<void> {
 
                 const updated = await updateLeadLinkedinUrl(lead.id, resolvedProfileUrl);
                 if (updated.updated) {
-                    const recoveryStatus = lead.status === 'BLOCKED'
-                        ? getRecoveryStatusFromBlockedReason(lead.blocked_reason)
-                        : null;
+                    const recoveryStatus =
+                        lead.status === 'BLOCKED' ? getRecoveryStatusFromBlockedReason(lead.blocked_reason) : null;
                     if (recoveryStatus) {
                         await reconcileLeadStatus(lead.id, recoveryStatus, 'salesnav_profile_url_resolved', {
                             previousStatus: lead.status,
@@ -340,3 +372,85 @@ export async function runSalesNavResolveCommand(args: string[]): Promise<void> {
 
     console.log(JSON.stringify(report, null, 2));
 }
+
+export async function runSalesNavExtractSearchCommand(args: string[]): Promise<void> {
+    const positional = getPositionalArgs(args);
+    const searchUrl = getOptionValue(args, '--url') ?? positional[0];
+    const targetListName = getOptionValue(args, '--list') ?? positional[1];
+    const maxPagesRaw = getOptionValue(args, '--max-pages');
+    const maxPages = maxPagesRaw ? Math.max(1, parseIntStrict(maxPagesRaw, '--max-pages')) : 5;
+
+    if (!searchUrl) {
+        throw new Error('Specificare l\'URL della ricerca salvata. Esempio: salesnav-extract-search <searchUrl> <listName>');
+    }
+    if (!targetListName) {
+        throw new Error('Specificare il nome della lista di destinazione. Esempio: salesnav-extract-search <searchUrl> <listName>');
+    }
+
+    const session = await launchBrowser({ headless: config.headless });
+    try {
+        const loggedIn = await checkLogin(session.page);
+        if (!loggedIn) {
+            throw new Error('Sessione LinkedIn non autenticata. Esegui prima: .\\bot.ps1 login');
+        }
+
+        const report = await scrapeSavedSearchAndSaveToList(session.page, searchUrl, targetListName, maxPages);
+        console.log(JSON.stringify({ ok: true, report }, null, 2));
+    } catch (error) {
+        console.error('Errore durante l\'estrazione dalla ricerca salvata:', error);
+        throw error;
+    } finally {
+        await closeBrowserSession(session);
+    }
+}
+
+/**
+ * salesnav-extract-first-search
+ *
+ * Apre il browser (visibile), aspetta il login dell'utente, naviga alle
+ * ricerche salvate, clicca "Visualizza" sulla prima ricerca trovata e
+ * poi per ogni pagina: Seleziona tutto → Salva nell'elenco (lista recente
+ * o quella indicata con --list).
+ *
+ * Opzioni:
+ *   --list <nome>       Nome elenco di destinazione (default: primo elenco recente nel dropdown)
+ *   --max-pages <n>     Numero massimo di pagine (default: 10)
+ *   --account <id>      Account da usare
+ */
+export async function runSalesNavExtractFirstSearchCommand(args: string[]): Promise<void> {
+    const targetListName = getOptionValue(args, '--list') ?? undefined;
+    const maxPagesRaw = getOptionValue(args, '--max-pages');
+    const maxPages = maxPagesRaw ? Math.max(1, parseIntStrict(maxPagesRaw, '--max-pages')) : 10;
+
+    // Forza headless=false e bypassProxy=true: login manuale senza proxy intermedi
+    const session = await launchBrowser({ headless: false, bypassProxy: true });
+    try {
+        // Naviga alla pagina di login così l'utente non deve digitare l'URL
+        await session.page.goto('https://www.linkedin.com', { waitUntil: 'domcontentloaded' });
+
+        console.log('\n──────────────────────────────────────────────────────────────');
+        console.log('  Bot pronto. Effettua il LOGIN su LinkedIn nel browser aperto.');
+        console.log('  Quando sei loggato, premi INVIO qui per continuare.');
+        console.log('──────────────────────────────────────────────────────────────\n');
+
+        await new Promise<void>((resolve) => {
+            process.stdin.setEncoding('utf8');
+            process.stdin.once('data', () => resolve());
+        });
+
+        const loggedIn = await checkLogin(session.page);
+        if (!loggedIn) {
+            throw new Error('Sessione LinkedIn non autenticata. Assicurati di aver fatto login nel browser.');
+        }
+
+        console.log('[OK] Login rilevato. Avvio elaborazione di tutte le ricerche salvate...');
+        const report = await scrapeAllSavedSearchesAndSaveToList(session.page, maxPages, targetListName);
+        console.log(JSON.stringify({ ok: true, report }, null, 2));
+    } catch (error) {
+        console.error('Errore durante l\'estrazione dalla prima ricerca salvata:', error);
+        throw error;
+    } finally {
+        await closeBrowserSession(session);
+    }
+}
+

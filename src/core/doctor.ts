@@ -98,11 +98,11 @@ async function evaluateCompliance(): Promise<DoctorReport['compliance']> {
     ]);
     const weeklyInviteLimitEffective = config.complianceDynamicWeeklyLimitEnabled
         ? calculateDynamicWeeklyInviteLimit(
-            accountAgeDays,
-            config.complianceDynamicWeeklyMinInvites,
-            Math.min(config.complianceDynamicWeeklyMaxInvites, config.weeklyInviteLimit),
-            config.complianceDynamicWeeklyWarmupDays
-        )
+              accountAgeDays,
+              config.complianceDynamicWeeklyMinInvites,
+              Math.min(config.complianceDynamicWeeklyMaxInvites, config.weeklyInviteLimit),
+              config.complianceDynamicWeeklyWarmupDays,
+          )
         : config.weeklyInviteLimit;
 
     if (config.softInviteCap > config.hardInviteCap) {
@@ -112,22 +112,34 @@ async function evaluateCompliance(): Promise<DoctorReport['compliance']> {
         violations.push(`SOFT_MSG_CAP (${config.softMsgCap}) > HARD_MSG_CAP (${config.hardMsgCap})`);
     }
     if (config.hardInviteCap > config.complianceMaxHardInviteCap) {
-        violations.push(`HARD_INVITE_CAP (${config.hardInviteCap}) supera il massimo compliance (${config.complianceMaxHardInviteCap})`);
+        violations.push(
+            `HARD_INVITE_CAP (${config.hardInviteCap}) supera il massimo compliance (${config.complianceMaxHardInviteCap})`,
+        );
     }
     if (config.weeklyInviteLimit > config.complianceMaxWeeklyInviteLimit) {
-        violations.push(`WEEKLY_INVITE_LIMIT (${config.weeklyInviteLimit}) supera il massimo compliance (${config.complianceMaxWeeklyInviteLimit})`);
+        violations.push(
+            `WEEKLY_INVITE_LIMIT (${config.weeklyInviteLimit}) supera il massimo compliance (${config.complianceMaxWeeklyInviteLimit})`,
+        );
     }
     if (config.weeklyInviteLimit > weeklyInviteLimitEffective) {
-        violations.push(`WEEKLY_INVITE_LIMIT (${config.weeklyInviteLimit}) supera il limite dinamico (${weeklyInviteLimitEffective})`);
+        violations.push(
+            `WEEKLY_INVITE_LIMIT (${config.weeklyInviteLimit}) supera il limite dinamico (${weeklyInviteLimitEffective})`,
+        );
     }
     if (config.hardMsgCap > config.complianceMaxHardMsgCap) {
-        violations.push(`HARD_MSG_CAP (${config.hardMsgCap}) supera il massimo compliance (${config.complianceMaxHardMsgCap})`);
+        violations.push(
+            `HARD_MSG_CAP (${config.hardMsgCap}) supera il massimo compliance (${config.complianceMaxHardMsgCap})`,
+        );
     }
     if (weeklyInvitesSent > weeklyInviteLimitEffective) {
-        violations.push(`INVITI_SETTIMANA (${weeklyInvitesSent}) oltre limite dinamico (${weeklyInviteLimitEffective})`);
+        violations.push(
+            `INVITI_SETTIMANA (${weeklyInvitesSent}) oltre limite dinamico (${weeklyInviteLimitEffective})`,
+        );
     }
     if (riskInputs.pendingRatio > config.complianceHealthPendingWarnThreshold) {
-        violations.push(`PENDING_RATIO (${riskInputs.pendingRatio.toFixed(3)}) oltre soglia (${config.complianceHealthPendingWarnThreshold})`);
+        violations.push(
+            `PENDING_RATIO (${riskInputs.pendingRatio.toFixed(3)}) oltre soglia (${config.complianceHealthPendingWarnThreshold})`,
+        );
     }
 
     let healthScore: number | null = null;
@@ -150,10 +162,13 @@ async function evaluateCompliance(): Promise<DoctorReport['compliance']> {
             pendingWarnThreshold: config.complianceHealthPendingWarnThreshold,
         });
         healthScore = healthSnapshot.score;
-        const hasSufficientSample = healthMetrics.invitesSentLookback >= config.complianceHealthMinInviteSample
-            && healthMetrics.messagedLookback >= config.complianceHealthMinMessageSample;
+        const hasSufficientSample =
+            healthMetrics.invitesSentLookback >= config.complianceHealthMinInviteSample &&
+            healthMetrics.messagedLookback >= config.complianceHealthMinMessageSample;
         if (hasSufficientSample && healthSnapshot.score < config.complianceHealthPauseThreshold) {
-            violations.push(`HEALTH_SCORE (${healthSnapshot.score}) sotto soglia (${config.complianceHealthPauseThreshold})`);
+            violations.push(
+                `HEALTH_SCORE (${healthSnapshot.score}) sotto soglia (${config.complianceHealthPauseThreshold})`,
+            );
         }
     }
 
@@ -187,7 +202,8 @@ function resolveBackupCandidates(): string[] {
     const files: string[] = [];
     for (const dir of dirs) {
         if (!fs.existsSync(dir)) continue;
-        const currentFiles = fs.readdirSync(dir)
+        const currentFiles = fs
+            .readdirSync(dir)
             .filter((file) => file.endsWith('.sqlite'))
             .map((file) => path.join(dir, file));
         files.push(...currentFiles);
@@ -253,9 +269,8 @@ export async function runDoctor(): Promise<DoctorReport> {
         getSecurityAdvisorPosture(),
     ]);
     const quarantine = quarantineFlag === 'true';
-    const drLastRunAt = drLastRunAtRaw && Number.isFinite(Date.parse(drLastRunAtRaw))
-        ? new Date(drLastRunAtRaw).toISOString()
-        : null;
+    const drLastRunAt =
+        drLastRunAtRaw && Number.isFinite(Date.parse(drLastRunAtRaw)) ? new Date(drLastRunAtRaw).toISOString() : null;
     const drStale = (() => {
         if (!config.disasterRecoveryRestoreTestEnabled) return false;
         if (!drLastRunAt) return true;

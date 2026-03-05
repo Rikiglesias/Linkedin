@@ -8,8 +8,26 @@ import { startServer } from './api/server';
 
 import { hasOption, parseWorkflow, getWorkflowValue } from './cli/cliParser';
 import { runLoopCommand, runAutopilotCommand, runWorkflowCommand } from './cli/commands/loopCommand';
-import { runLoginCommand, runImportCommand, runFunnelCommand, runSiteCheckCommand, runStateSyncCommand, runProxyStatusCommand, runRandomActivityCommand, runEnrichTargetsCommand, runCreateProfileCommand } from './cli/commands/utilCommands';
-import { runSalesNavSyncCommand, runSalesNavListsCommand, runSalesNavCreateListCommand, runSalesNavAddLeadCommand, runSalesNavResolveCommand } from './cli/commands/salesNavCommands';
+import {
+    runLoginCommand,
+    runImportCommand,
+    runFunnelCommand,
+    runSiteCheckCommand,
+    runStateSyncCommand,
+    runProxyStatusCommand,
+    runRandomActivityCommand,
+    runEnrichTargetsCommand,
+    runCreateProfileCommand,
+} from './cli/commands/utilCommands';
+import {
+    runSalesNavSyncCommand,
+    runSalesNavListsCommand,
+    runSalesNavCreateListCommand,
+    runSalesNavAddLeadCommand,
+    runSalesNavResolveCommand,
+    runSalesNavExtractSearchCommand,
+    runSalesNavExtractFirstSearchCommand,
+} from './cli/commands/salesNavCommands';
 import {
     runAiQualityCommand,
     runCompanyTargetsCommand,
@@ -46,8 +64,12 @@ function setupGracefulShutdown(): void {
         await closeDatabase();
         process.exit(0);
     };
-    process.on('SIGINT', () => { void handler('SIGINT'); });
-    process.on('SIGTERM', () => { void handler('SIGTERM'); });
+    process.on('SIGINT', () => {
+        void handler('SIGINT');
+    });
+    process.on('SIGTERM', () => {
+        void handler('SIGTERM');
+    });
 }
 
 /**
@@ -62,12 +84,14 @@ function setupPlannedRestart(): void {
         const uptimeMs = process.uptime() * 1000;
         if (uptimeMs >= maxUptimeMs) {
             const uptimeHours = (uptimeMs / 3_600_000).toFixed(1);
-            console.log(`[PLANNED_RESTART] Uptime = ${uptimeHours}h >= limit ${config.processMaxUptimeHours}h — riavvio pianificato.`);
+            console.log(
+                `[PLANNED_RESTART] Uptime = ${uptimeHours}h >= limit ${config.processMaxUptimeHours}h — riavvio pianificato.`,
+            );
             clearInterval(interval);
             stopCycleTlsProxy()
                 .catch(() => { })
                 .then(() => closeDatabase())
-                .catch(err => console.error('[PLANNED_RESTART] Errore chiusura DB:', err))
+                .catch((err) => console.error('[PLANNED_RESTART] Errore chiusura DB:', err))
                 .finally(() => process.exit(0));
         }
     }, CHECK_INTERVAL_MS);
@@ -98,11 +122,15 @@ function printHelp(): void {
     console.log('  site-check [limit] [--fix]');
     console.log('  state-sync [limit] [--fix]');
     console.log('  salesnav-resolve [limit] [--fix] [--dry-run]');
-    console.log('  salesnav-sync [listName] [--url <salesnav_list_url>] [--max-pages <n>] [--limit <n>] [--account <id>] [--dry-run]');
+    console.log(
+        '  salesnav-sync [listName] [--url <salesnav_list_url>] [--max-pages <n>] [--limit <n>] [--account <id>] [--dry-run]',
+    );
     console.log('  salesnav-lists [--limit <n>]');
     console.log('  salesnav-create-list <nome> [--account <id>]');
     console.log('  salesnav-add-lead <leadId> <listName> [--account <id>]');
     console.log('  salesnav-add-to-list <leadId> <listName> [--account <id>]  # alias');
+    console.log('  salesnav-extract-search <searchUrl> <listName> [--max-pages <n>]');
+    console.log('  salesnav-extract-first-search [--list <nome>] [--max-pages <n>] [--account <id>]');
     console.log('  random-activity [--account <id>] [--max-actions <n>] [--dry-run]');
     console.log('  enrich-targets [limit] [--dry-run]');
     console.log('  pause [minutes|indefinite] [reason]');
@@ -123,28 +151,24 @@ function printHelp(): void {
     console.log('  security-advisor [--by <source>] [--report-dir <path>] [--no-persist-flags]');
     console.log('  ai-quality [--days <n>] [--run]');
     console.log('  feature-store <build|versions|export|import> [opzioni]');
-    console.log('    build: --dataset <name> [--version <v>] [--actions invite,message] [--lookback-days <n>] [--force]');
+    console.log(
+        '    build: --dataset <name> [--version <v>] [--actions invite,message] [--lookback-days <n>] [--force]',
+    );
     console.log('    versions: [--dataset <name>] [--limit <n>]');
     console.log('    export: --dataset <name> [--version <v>] [--out-dir <path>]');
     console.log('    import: --manifest <path> [--data-file <path>] [--force]');
     console.log('  secrets-status');
     console.log('  secret-rotated --name <SECRET_NAME> [--owner <owner>] [--expires-days <n>] [--notes <text>]');
-    console.log('  secrets-rotate [--apply] [--interval-days <n>] [--actor <name>] [--include <SECRET_A,SECRET_B>] [--env-file <path>]');
+    console.log(
+        '  secrets-rotate [--apply] [--interval-days <n>] [--actor <name>] [--include <SECRET_A,SECRET_B>] [--env-file <path>]',
+    );
     console.log('Alias retrocompatibili: connect, check, message');
     console.log('Flag utili: --skip-preflight (salta doctor preflight obbligatorio)');
 }
 
 function shouldRunMandatoryPreflight(command: string | undefined): boolean {
     if (!command) return false;
-    const guardedCommands = new Set([
-        'run',
-        'run-loop',
-        'autopilot',
-        'connect',
-        'check',
-        'message',
-        'warmup',
-    ]);
+    const guardedCommands = new Set(['run', 'run-loop', 'autopilot', 'connect', 'check', 'message', 'warmup']);
     return guardedCommands.has(command);
 }
 
@@ -189,6 +213,7 @@ async function main(): Promise<void> {
         'salesnav-add-lead',
         'salesnav-add-to-list',
         'salesnav-resolve',
+        'salesnav-extract-search',
         'random-activity',
         'connect',
         'check',
@@ -203,23 +228,26 @@ async function main(): Promise<void> {
     if (!isDryRunCommand && config.useJa3Proxy && browserCommands.has(command ?? '')) {
         await startCycleTlsProxy();
     }
-    const shouldRecoverStuckJobs = command === 'run'
-        || command === 'connect'
-        || command === 'check'
-        || command === 'message'
-        || (command === 'run-loop' && !hasOption(commandArgs, '--dry-run'));
+    const shouldRecoverStuckJobs =
+        command === 'run' ||
+        command === 'connect' ||
+        command === 'check' ||
+        command === 'message' ||
+        (command === 'run-loop' && !hasOption(commandArgs, '--dry-run'));
     if (shouldRecoverStuckJobs) {
         const recoveredJobs = await recoverStuckJobs(config.jobStuckMinutes);
         if (recoveredJobs > 0) {
-            console.warn(`[BOOT] Ripristinati ${recoveredJobs} job RUNNING bloccati da oltre ${config.jobStuckMinutes} minuti.`);
+            console.warn(
+                `[BOOT] Ripristinati ${recoveredJobs} job RUNNING bloccati da oltre ${config.jobStuckMinutes} minuti.`,
+            );
         }
     }
 
     if (
-        config.mandatoryPreflightEnabled
-        && !skipPreflight
-        && !isDryRunCommand
-        && shouldRunMandatoryPreflight(command)
+        config.mandatoryPreflightEnabled &&
+        !skipPreflight &&
+        !isDryRunCommand &&
+        shouldRunMandatoryPreflight(command)
     ) {
         const preflight = await runDoctor();
         const failures: string[] = [];
@@ -231,11 +259,17 @@ async function main(): Promise<void> {
 
         if (failures.length > 0) {
             console.error('[PREFLIGHT] Bloccato: condizioni critiche rilevate.');
-            console.error(JSON.stringify({
-                command,
-                failures,
-                preflight,
-            }, null, 2));
+            console.error(
+                JSON.stringify(
+                    {
+                        command,
+                        failures,
+                        preflight,
+                    },
+                    null,
+                    2,
+                ),
+            );
             process.exit(1);
         }
         console.log('[PREFLIGHT] OK');
@@ -296,6 +330,12 @@ async function main(): Promise<void> {
         case 'salesnav-add-to-list':
             await runSalesNavAddLeadCommand(commandArgs);
             break;
+        case 'salesnav-extract-search':
+            await runSalesNavExtractSearchCommand(commandArgs);
+            break;
+        case 'salesnav-extract-first-search':
+            await runSalesNavExtractFirstSearchCommand(commandArgs);
+            break;
         case 'salesnav-resolve':
             await runSalesNavResolveCommand(commandArgs);
             break;
@@ -330,7 +370,7 @@ async function main(): Promise<void> {
             await runUnquarantineCommand();
             break;
         case 'incidents': {
-            const positional = commandArgs.filter(v => !v.startsWith('--'));
+            const positional = commandArgs.filter((v) => !v.startsWith('--'));
             const openOnly = commandArgs.includes('--open') || positional.includes('open') || positional.length === 0;
             if (!openOnly) {
                 console.log('Usa: npm start -- incidents open');

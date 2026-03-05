@@ -13,8 +13,10 @@ import { validateConfigSchema } from './validation';
 
 loadDotEnv();
 
-const configuredAccountProfiles: AccountProfileConfig[] = [parseAccountProfileFromEnv(1), parseAccountProfileFromEnv(2)]
-    .filter((profile): profile is AccountProfileConfig => profile !== null);
+const configuredAccountProfiles: AccountProfileConfig[] = [
+    parseAccountProfileFromEnv(1),
+    parseAccountProfileFromEnv(2),
+].filter((profile): profile is AccountProfileConfig => profile !== null);
 
 export const config: AppConfig = {
     ...buildRuntimeDomainConfig(configuredAccountProfiles),

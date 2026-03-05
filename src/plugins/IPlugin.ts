@@ -33,8 +33,8 @@ export interface PluginDailyStats {
     accepted: number;
     messaged: number;
     replied: number;
-    acceptRate: number;  // 0–1
-    replyRate: number;   // 0–1
+    acceptRate: number; // 0–1
+    replyRate: number; // 0–1
 }
 
 export interface PluginMessageEvent {

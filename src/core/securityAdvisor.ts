@@ -116,20 +116,23 @@ function normalizeStatus(raw: string | null): SecurityAdvisorStatus | null {
 }
 
 function summarizeChecks(checks: SecurityAdvisorCheck[]): SecurityAdvisorSummary {
-    return checks.reduce<SecurityAdvisorSummary>((acc, check) => {
-        acc.totalChecks += 1;
-        if (check.status === 'OK') acc.ok += 1;
-        else if (check.status === 'WARN') acc.warn += 1;
-        else if (check.status === 'FAILED') acc.failed += 1;
-        else acc.skipped += 1;
-        return acc;
-    }, {
-        totalChecks: 0,
-        ok: 0,
-        warn: 0,
-        failed: 0,
-        skipped: 0,
-    });
+    return checks.reduce<SecurityAdvisorSummary>(
+        (acc, check) => {
+            acc.totalChecks += 1;
+            if (check.status === 'OK') acc.ok += 1;
+            else if (check.status === 'WARN') acc.warn += 1;
+            else if (check.status === 'FAILED') acc.failed += 1;
+            else acc.skipped += 1;
+            return acc;
+        },
+        {
+            totalChecks: 0,
+            ok: 0,
+            warn: 0,
+            failed: 0,
+            skipped: 0,
+        },
+    );
 }
 
 async function persistSecurityAdvisorFlags(report: SecurityAdvisorReport): Promise<void> {
@@ -158,21 +161,15 @@ function buildBacklogFromChecks(checks: SecurityAdvisorCheck[]): { findings: str
 }
 
 export async function getSecurityAdvisorPosture(now: Date = new Date()): Promise<SecurityAdvisorPosture> {
-    const [
-        lastRunRaw,
-        lastStatusRaw,
-        lastReasonRaw,
-        lastReportPathRaw,
-        lastFindingsRaw,
-        lastBacklogRaw,
-    ] = await Promise.all([
-        getRuntimeFlag(SECURITY_ADVISOR_LAST_RUN_KEY),
-        getRuntimeFlag(SECURITY_ADVISOR_LAST_STATUS_KEY),
-        getRuntimeFlag(SECURITY_ADVISOR_LAST_REASON_KEY),
-        getRuntimeFlag(SECURITY_ADVISOR_LAST_REPORT_KEY),
-        getRuntimeFlag(SECURITY_ADVISOR_LAST_FINDINGS_COUNT_KEY),
-        getRuntimeFlag(SECURITY_ADVISOR_LAST_BACKLOG_COUNT_KEY),
-    ]);
+    const [lastRunRaw, lastStatusRaw, lastReasonRaw, lastReportPathRaw, lastFindingsRaw, lastBacklogRaw] =
+        await Promise.all([
+            getRuntimeFlag(SECURITY_ADVISOR_LAST_RUN_KEY),
+            getRuntimeFlag(SECURITY_ADVISOR_LAST_STATUS_KEY),
+            getRuntimeFlag(SECURITY_ADVISOR_LAST_REASON_KEY),
+            getRuntimeFlag(SECURITY_ADVISOR_LAST_REPORT_KEY),
+            getRuntimeFlag(SECURITY_ADVISOR_LAST_FINDINGS_COUNT_KEY),
+            getRuntimeFlag(SECURITY_ADVISOR_LAST_BACKLOG_COUNT_KEY),
+        ]);
 
     const lastRunAt = toIsoOrNull(lastRunRaw);
     const lastStatus = normalizeStatus(lastStatusRaw);
@@ -302,7 +299,7 @@ export async function runSecurityAdvisor(options: SecurityAdvisorRunOptions = {}
                 triggeredBy,
                 finishedAt: report.finishedAt,
             },
-            `security.advisor.report:${report.finishedAt}`
+            `security.advisor.report:${report.finishedAt}`,
         );
 
         return report;
@@ -323,13 +320,7 @@ export async function runSecurityAdvisor(options: SecurityAdvisorRunOptions = {}
         const nowMs = now.getTime();
         const auditSince = new Date(nowMs - config.securityAdvisorAuditLookbackDays * 86_400_000).toISOString();
 
-        const [
-            secretRotationRows,
-            openIncidents,
-            drLastRunRaw,
-            drLastStatus,
-            auditEventsCount,
-        ] = await Promise.all([
+        const [secretRotationRows, openIncidents, drLastRunRaw, drLastStatus, auditEventsCount] = await Promise.all([
             listSecretRotationStatus(config.securitySecretMaxAgeDays, config.securitySecretWarnDays),
             listOpenIncidents(),
             getRuntimeFlag('dr_restore_test_last_run_at'),
@@ -478,7 +469,9 @@ export async function runSecurityAdvisor(options: SecurityAdvisorRunOptions = {}
             const drElapsedDays = drLastRunAt
                 ? Number.parseFloat(((nowMs - Date.parse(drLastRunAt)) / 86_400_000).toFixed(2))
                 : null;
-            const drStale = !drLastRunAt || (drElapsedDays ?? Number.POSITIVE_INFINITY) > config.disasterRecoveryRestoreTestIntervalDays;
+            const drStale =
+                !drLastRunAt ||
+                (drElapsedDays ?? Number.POSITIVE_INFINITY) > config.disasterRecoveryRestoreTestIntervalDays;
             if ((drLastStatus ?? '') === 'FAILED') {
                 checks.push({
                     key: 'dr_restore_drill',
@@ -544,12 +537,9 @@ export async function runSecurityAdvisor(options: SecurityAdvisorRunOptions = {}
         }
 
         const summary = summarizeChecks(checks);
-        const status: SecurityAdvisorStatus = summary.failed > 0
-            ? 'FAILED'
-            : (summary.warn > 0 ? 'WARN' : 'OK');
-        const reason = status === 'FAILED'
-            ? 'failed_checks_detected'
-            : (status === 'WARN' ? 'warnings_detected' : 'all_checks_ok');
+        const status: SecurityAdvisorStatus = summary.failed > 0 ? 'FAILED' : summary.warn > 0 ? 'WARN' : 'OK';
+        const reason =
+            status === 'FAILED' ? 'failed_checks_detected' : status === 'WARN' ? 'warnings_detected' : 'all_checks_ok';
         const { findings, backlog } = buildBacklogFromChecks(checks);
 
         return finalize({

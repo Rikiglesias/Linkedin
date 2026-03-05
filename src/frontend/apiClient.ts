@@ -93,9 +93,7 @@ export class DashboardApi {
     }
 
     async approveCommentSuggestion(leadId: number, suggestionIndex: number, comment?: string): Promise<boolean> {
-        const payload = typeof comment === 'string' && comment.trim().length > 0
-            ? { comment: comment.trim() }
-            : {};
+        const payload = typeof comment === 'string' && comment.trim().length > 0 ? { comment: comment.trim() } : {};
         const resp = await this.apiFetch(`/api/ai/comment-suggestions/${leadId}/${suggestionIndex}/approve`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -112,7 +110,18 @@ export class DashboardApi {
     }
 
     async loadSnapshot(): Promise<DashboardSnapshot> {
-        const [kpis, runs, incidents, trendRaw, predictive, reviewQueue, ab, timingSlots, observability, commentSuggestions] = await Promise.all([
+        const [
+            kpis,
+            runs,
+            incidents,
+            trendRaw,
+            predictive,
+            reviewQueue,
+            ab,
+            timingSlots,
+            observability,
+            commentSuggestions,
+        ] = await Promise.all([
             this.readJson<KpiResponse>('/api/kpis', {
                 funnel: { totalLeads: 0, invited: 0, accepted: 0, readyMessage: 0, messaged: 0, replied: 0 },
                 system: { pausedUntil: null, quarantined: false },
@@ -120,7 +129,11 @@ export class DashboardApi {
             this.readJson<CampaignRunRecord[]>('/api/runs', []),
             this.readJson<IncidentRecord[]>('/api/incidents', []),
             this.readJson<unknown>('/api/stats/trend', []),
-            this.readJson<PredictiveRiskResponse>('/api/risk/predictive', { enabled: false, lookbackDays: 0, alerts: [] }),
+            this.readJson<PredictiveRiskResponse>('/api/risk/predictive', {
+                enabled: false,
+                lookbackDays: 0,
+                alerts: [],
+            }),
             this.readJson<ReviewQueueResponse>('/api/review-queue?limit=25', {
                 pending: false,
                 lastIncidentId: null,
@@ -138,9 +151,7 @@ export class DashboardApi {
                 rows: [],
             }),
         ]);
-        const trend = Array.isArray(trendRaw)
-            ? trendRaw
-            : ensureArray<TrendRow>(ensureObject(trendRaw).rows);
+        const trend = Array.isArray(trendRaw) ? trendRaw : ensureArray<TrendRow>(ensureObject(trendRaw).rows);
 
         const safeKpis = ensureObject(kpis) as unknown as KpiResponse;
 

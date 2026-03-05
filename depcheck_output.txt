@@ -1,3 +1,0 @@
-Unused dependencies
-* @ikechan8370/cycletls
-* undici

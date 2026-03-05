@@ -1,4 +1,4 @@
-node_modules/
+# node_modules/
 dist/
 
 # Runtime data and browser session
@@ -6,6 +6,7 @@ data/*.sqlite
 data/*.sqlite-*
 data/session/
 data/session*/
+data/security-advisor/
 
 # Secrets
 .env
@@ -16,7 +17,11 @@ data/session*/
 *.env.bak
 *.env.backup
 
+# Test coverage
+coverage/
+
 # Logs e file temporanei
+logs/
 *.log
 npm-debug.log*
 errors.txt
@@ -24,3 +29,16 @@ ts_analysis.txt
 eslint-report.json
 repomix-output.txt
 tsc_out.log
+
+# Output analisi temporanei
+lint.txt
+depcheck_output.txt
+madge_output.txt
+*.resolved
+
+# Test artifacts
+data/test_*.sqlite
+data/test_*.sqlite-*
+
+# Script di test temporanei
+test-*.js

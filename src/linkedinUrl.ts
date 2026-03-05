@@ -53,4 +53,3 @@ export function normalizeLinkedInUrl(raw: string): string {
     normalized.pathname = normalized.pathname.replace(/\/+$/, '');
     return normalized.toString();
 }
-

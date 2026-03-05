@@ -6,14 +6,10 @@ import {
     getRuntimeFlag,
     setRuntimeFlag,
     applyCloudAccountUpdates,
-    applyCloudLeadUpdates
+    applyCloudLeadUpdates,
 } from '../core/repositories';
 import { logInfo, logWarn } from '../telemetry/logger';
-import {
-    fetchCloudCampaignConfigs,
-    fetchCloudAccountsUpdates,
-    fetchCloudLeadsUpdates
-} from './supabaseDataClient';
+import { fetchCloudCampaignConfigs, fetchCloudAccountsUpdates, fetchCloudLeadsUpdates } from './supabaseDataClient';
 
 const CONTROL_PLANE_LAST_RUN_KEY = 'control_plane.campaigns.last_run_at';
 const CONTROL_PLANE_LAST_HASH_KEY = 'control_plane.campaigns.last_hash';
@@ -31,7 +27,7 @@ function normalizeControlPlaneCampaigns(
         priority: number;
         daily_invite_cap: number | null;
         daily_message_cap: number | null;
-    }>
+    }>,
 ): ControlPlaneCampaignConfigInput[] {
     const byName = new Map<string, ControlPlaneCampaignConfigInput>();
     for (const campaign of campaigns) {
@@ -41,12 +37,13 @@ function normalizeControlPlaneCampaigns(
             name,
             isActive: campaign.is_active,
             priority: Math.max(1, Math.floor(campaign.priority)),
-            dailyInviteCap: campaign.daily_invite_cap === null ? null : Math.max(0, Math.floor(campaign.daily_invite_cap)),
-            dailyMessageCap: campaign.daily_message_cap === null ? null : Math.max(0, Math.floor(campaign.daily_message_cap)),
+            dailyInviteCap:
+                campaign.daily_invite_cap === null ? null : Math.max(0, Math.floor(campaign.daily_invite_cap)),
+            dailyMessageCap:
+                campaign.daily_message_cap === null ? null : Math.max(0, Math.floor(campaign.daily_message_cap)),
         });
     }
-    return Array.from(byName.values())
-        .sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name));
+    return Array.from(byName.values()).sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name));
 }
 
 function computeControlPlaneHash(configs: ControlPlaneCampaignConfigInput[]): string {

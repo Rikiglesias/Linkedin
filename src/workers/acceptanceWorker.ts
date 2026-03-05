@@ -36,9 +36,9 @@ async function checkSentInvitations(page: Page, leadUrl: string): Promise<boolea
         // Early-exit: controlla se il lead è già visibile dopo ogni scroll
         const sentLinks = await page.evaluate(() => {
             const links = Array.from(document.querySelectorAll('a[href*="/in/"]'));
-            return links.map(a => a.getAttribute('href') || '');
+            return links.map((a) => a.getAttribute('href') || '');
         });
-        if (sentLinks.some(href => normalizeLinkedInUrl(href) === normalizedLeadUrl)) {
+        if (sentLinks.some((href) => normalizeLinkedInUrl(href) === normalizedLeadUrl)) {
             return true;
         }
     }
@@ -46,7 +46,10 @@ async function checkSentInvitations(page: Page, leadUrl: string): Promise<boolea
     return false;
 }
 
-export async function processAcceptanceJob(payload: AcceptanceJobPayload, context: WorkerContext): Promise<WorkerExecutionResult> {
+export async function processAcceptanceJob(
+    payload: AcceptanceJobPayload,
+    context: WorkerContext,
+): Promise<WorkerExecutionResult> {
     const lead = await getLeadById(payload.leadId);
     if (!lead || lead.status !== 'INVITED') {
         return workerResult(0);
@@ -67,7 +70,11 @@ export async function processAcceptanceJob(payload: AcceptanceJobPayload, contex
 
     const pendingInvite = (await context.session.page.locator(joinSelectors('invitePendingIndicators')).count()) > 0;
     const canConnect = (await context.session.page.locator(joinSelectors('connectButtonPrimary')).count()) > 0;
-    const badgeText = await context.session.page.locator(joinSelectors('distanceBadge')).first().textContent().catch(() => '');
+    const badgeText = await context.session.page
+        .locator(joinSelectors('distanceBadge'))
+        .first()
+        .textContent()
+        .catch(() => '');
     const hasMessageButton = (await context.session.page.locator(joinSelectors('messageButton')).count()) > 0;
     const connectedWithoutBadge = !pendingInvite && !canConnect && hasMessageButton;
 
@@ -99,7 +106,7 @@ export async function processAcceptanceJob(payload: AcceptanceJobPayload, contex
     // A/B Bandit: registra accettazione per la variante usata nell'invito
     if (lead.invite_prompt_variant) {
         const segmentKey = (lead.job_title || 'unknown').toLowerCase().trim() || 'unknown';
-        recordOutcome(lead.invite_prompt_variant, 'accepted', { segmentKey }).catch(() => { });
+        recordOutcome(lead.invite_prompt_variant, 'accepted', { segmentKey }).catch(() => {});
     }
     // Cloud sync non-bloccante
     bridgeLeadStatus(lead.linkedin_url, 'ACCEPTED', { accepted_at: new Date().toISOString() });

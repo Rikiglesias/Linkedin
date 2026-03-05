@@ -92,7 +92,7 @@ function normalizeExistingDatasetVersion(value: string): string {
 function normalizeActions(rawActions: FeatureStoreAction[] | undefined): FeatureStoreAction[] {
     const defaults: FeatureStoreAction[] = ['invite', 'message'];
     const source = rawActions && rawActions.length > 0 ? rawActions : defaults;
-    const normalized = Array.from(new Set(source.map((item) => item === 'message' ? 'message' : 'invite')));
+    const normalized = Array.from(new Set(source.map((item) => (item === 'message' ? 'message' : 'invite'))));
     return normalized.sort();
 }
 
@@ -116,7 +116,7 @@ function deterministicBucket(seed: string, sampleKey: string): number {
 
 function resolveSplit(bucket: number, trainPct: number, validationPct: number): FeatureDatasetSplit {
     if (bucket < trainPct) return 'train';
-    if (bucket < (trainPct + validationPct)) return 'validation';
+    if (bucket < trainPct + validationPct) return 'validation';
     return 'test';
 }
 
@@ -171,10 +171,13 @@ function normalizeTimingStrategy(raw: string | null | undefined): string {
 
 function sanitizeSplitConfig(
     splitTrainPctRaw: number | undefined,
-    splitValidationPctRaw: number | undefined
+    splitValidationPctRaw: number | undefined,
 ): { trainPct: number; validationPct: number } {
     const trainPct = Math.max(1, Math.min(98, Math.floor(splitTrainPctRaw ?? FEATURE_SPLIT_TRAIN_DEFAULT)));
-    const validationPct = Math.max(1, Math.min(98, Math.floor(splitValidationPctRaw ?? FEATURE_SPLIT_VALIDATION_DEFAULT)));
+    const validationPct = Math.max(
+        1,
+        Math.min(98, Math.floor(splitValidationPctRaw ?? FEATURE_SPLIT_VALIDATION_DEFAULT)),
+    );
     if (trainPct + validationPct >= 100) {
         throw new Error('split train+validation deve essere < 100');
     }
@@ -202,10 +205,7 @@ function buildSourceStats(rows: FeatureDatasetRowInput[]): Record<string, unknow
     };
 }
 
-function toBuildResult(
-    row: FeatureDatasetVersionRecord,
-    reusedExisting: boolean
-): BuildFeatureDatasetResult {
+function toBuildResult(row: FeatureDatasetVersionRecord, reusedExisting: boolean): BuildFeatureDatasetResult {
     return {
         datasetName: row.dataset_name,
         datasetVersion: row.dataset_version,
@@ -224,7 +224,7 @@ function toBuildResult(
 
 async function getExistingDatasetVersion(
     datasetName: string,
-    datasetVersion: string
+    datasetVersion: string,
 ): Promise<FeatureDatasetVersionRecord | null> {
     const db = await getDatabase();
     const row = await db.get<FeatureDatasetVersionRecord>(
@@ -236,7 +236,7 @@ async function getExistingDatasetVersion(
           AND dataset_version = ?
         LIMIT 1
     `,
-        [datasetName, datasetVersion]
+        [datasetName, datasetVersion],
     );
     return row ?? null;
 }
@@ -284,7 +284,7 @@ async function queryInviteRows(lookbackDays: number): Promise<RawFeatureSourceRo
         ${latestIntentJoinSql()}
         WHERE l.invited_at IS NOT NULL
           AND l.invited_at >= DATETIME('now', '-${safeLookback} days')
-    `
+    `,
     );
 }
 
@@ -314,7 +314,7 @@ async function queryMessageRows(lookbackDays: number): Promise<RawFeatureSourceR
         ${latestIntentJoinSql()}
         WHERE l.messaged_at IS NOT NULL
           AND l.messaged_at >= DATETIME('now', '-${safeLookback} days')
-    `
+    `,
     );
 }
 
@@ -323,12 +323,17 @@ function buildRowInput(
     sourceRow: RawFeatureSourceRow,
     splitTrainPct: number,
     splitValidationPct: number,
-    seed: string
+    seed: string,
 ): FeatureDatasetRowInput {
     const eventAt = sourceRow.event_at;
-    const label = action === 'invite'
-        ? (sourceRow.accepted_at ? 1 : 0)
-        : ((sourceRow.status === 'REPLIED' || sourceRow.status === 'CONNECTED') ? 1 : 0);
+    const label =
+        action === 'invite'
+            ? sourceRow.accepted_at
+                ? 1
+                : 0
+            : sourceRow.status === 'REPLIED' || sourceRow.status === 'CONNECTED'
+              ? 1
+              : 0;
     const sampleKey = `${action}:${sourceRow.lead_id}:${eventAt}`;
     const bucket = deterministicBucket(seed, sampleKey);
     const split = resolveSplit(bucket, splitTrainPct, splitValidationPct);
@@ -372,7 +377,7 @@ function buildRowInput(
 }
 
 export async function buildFeatureDatasetVersion(
-    options: BuildFeatureDatasetOptions
+    options: BuildFeatureDatasetOptions,
 ): Promise<BuildFeatureDatasetResult> {
     const datasetName = normalizeDatasetName(options.datasetName);
     const datasetVersion = normalizeDatasetVersion(options.datasetVersion);
@@ -410,14 +415,14 @@ export async function buildFeatureDatasetVersion(
 
     await withTransaction(db, async () => {
         if (existing) {
-            await db.run(
-                `DELETE FROM ml_feature_store WHERE dataset_name = ? AND dataset_version = ?`,
-                [datasetName, datasetVersion]
-            );
-            await db.run(
-                `DELETE FROM ml_feature_dataset_versions WHERE dataset_name = ? AND dataset_version = ?`,
-                [datasetName, datasetVersion]
-            );
+            await db.run(`DELETE FROM ml_feature_store WHERE dataset_name = ? AND dataset_version = ?`, [
+                datasetName,
+                datasetVersion,
+            ]);
+            await db.run(`DELETE FROM ml_feature_dataset_versions WHERE dataset_name = ? AND dataset_version = ?`, [
+                datasetName,
+                datasetVersion,
+            ]);
         }
 
         for (const row of sourceRows) {
@@ -438,7 +443,7 @@ export async function buildFeatureDatasetVersion(
                     row.split,
                     JSON.stringify(row.features),
                     JSON.stringify(row.metadata ?? {}),
-                ]
+                ],
             );
         }
 
@@ -461,7 +466,7 @@ export async function buildFeatureDatasetVersion(
                 signatureSha256,
                 JSON.stringify(sourceStats),
                 JSON.stringify(metadata),
-            ]
+            ],
         );
     });
 
@@ -473,7 +478,7 @@ export async function buildFeatureDatasetVersion(
 }
 
 export async function importFeatureDatasetVersion(
-    input: ImportFeatureDatasetInput
+    input: ImportFeatureDatasetInput,
 ): Promise<BuildFeatureDatasetResult> {
     const datasetName = normalizeDatasetName(input.datasetName);
     const datasetVersion = normalizeDatasetVersion(input.datasetVersion);
@@ -499,14 +504,14 @@ export async function importFeatureDatasetVersion(
 
     await withTransaction(db, async () => {
         if (existing) {
-            await db.run(
-                `DELETE FROM ml_feature_store WHERE dataset_name = ? AND dataset_version = ?`,
-                [datasetName, datasetVersion]
-            );
-            await db.run(
-                `DELETE FROM ml_feature_dataset_versions WHERE dataset_name = ? AND dataset_version = ?`,
-                [datasetName, datasetVersion]
-            );
+            await db.run(`DELETE FROM ml_feature_store WHERE dataset_name = ? AND dataset_version = ?`, [
+                datasetName,
+                datasetVersion,
+            ]);
+            await db.run(`DELETE FROM ml_feature_dataset_versions WHERE dataset_name = ? AND dataset_version = ?`, [
+                datasetName,
+                datasetVersion,
+            ]);
         }
 
         for (const row of rows) {
@@ -527,7 +532,7 @@ export async function importFeatureDatasetVersion(
                     row.split,
                     JSON.stringify(row.features ?? {}),
                     JSON.stringify(row.metadata ?? {}),
-                ]
+                ],
             );
         }
 
@@ -550,7 +555,7 @@ export async function importFeatureDatasetVersion(
                 expectedSignature,
                 JSON.stringify(sourceStats),
                 JSON.stringify(metadata),
-            ]
+            ],
         );
     });
 
@@ -563,7 +568,7 @@ export async function importFeatureDatasetVersion(
 
 export async function getFeatureDatasetVersion(
     datasetName: string,
-    datasetVersion: string
+    datasetVersion: string,
 ): Promise<FeatureDatasetVersionRecord | null> {
     const normalizedName = normalizeDatasetName(datasetName);
     const normalizedVersion = normalizeExistingDatasetVersion(datasetVersion);
@@ -572,7 +577,7 @@ export async function getFeatureDatasetVersion(
 
 export async function listFeatureDatasetVersions(
     limit: number = 20,
-    datasetName?: string
+    datasetName?: string,
 ): Promise<FeatureDatasetVersionRecord[]> {
     const db = await getDatabase();
     const safeLimit = Math.max(1, Math.floor(limit));
@@ -587,7 +592,7 @@ export async function listFeatureDatasetVersions(
             ORDER BY generated_at DESC, dataset_version DESC
             LIMIT ?
         `,
-            [normalizedName, safeLimit]
+            [normalizedName, safeLimit],
         );
     }
 
@@ -599,14 +604,14 @@ export async function listFeatureDatasetVersions(
         ORDER BY generated_at DESC, dataset_name ASC, dataset_version DESC
         LIMIT ?
     `,
-        [safeLimit]
+        [safeLimit],
     );
 }
 
 export async function getFeatureDatasetRows(
     datasetName: string,
     datasetVersion: string,
-    limit?: number
+    limit?: number,
 ): Promise<FeatureDatasetRowRecord[]> {
     const db = await getDatabase();
     const normalizedName = normalizeDatasetName(datasetName);
@@ -621,7 +626,7 @@ export async function getFeatureDatasetRows(
             ORDER BY sample_key ASC
             LIMIT ?
         `,
-            [normalizedName, normalizedVersion, Math.floor(limit)]
+            [normalizedName, normalizedVersion, Math.floor(limit)],
         );
     }
 
@@ -633,6 +638,6 @@ export async function getFeatureDatasetRows(
           AND dataset_version = ?
         ORDER BY sample_key ASC
     `,
-        [normalizedName, normalizedVersion]
+        [normalizedName, normalizedVersion],
     );
 }

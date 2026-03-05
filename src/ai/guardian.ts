@@ -35,9 +35,7 @@ function clampPauseMinutes(value: number): number {
 }
 
 function heuristics(schedule: ScheduleResult): AiGuardianDecision {
-    const criticalList = schedule.listBreakdown.find(
-        (list) => list.pendingRatio >= 0.78 || list.blockedRatio >= 0.35
-    );
+    const criticalList = schedule.listBreakdown.find((list) => list.pendingRatio >= 0.78 || list.blockedRatio >= 0.35);
 
     if (schedule.riskSnapshot.action === 'STOP' || criticalList) {
         return {
@@ -54,10 +52,10 @@ function heuristics(schedule: ScheduleResult): AiGuardianDecision {
     }
 
     if (
-        schedule.riskSnapshot.action === 'WARN'
-        || schedule.riskSnapshot.action === 'LOW_ACTIVITY'
-        || schedule.riskSnapshot.pendingRatio >= config.pendingRatioWarn
-        || schedule.riskSnapshot.errorRate >= 0.2
+        schedule.riskSnapshot.action === 'WARN' ||
+        schedule.riskSnapshot.action === 'LOW_ACTIVITY' ||
+        schedule.riskSnapshot.pendingRatio >= config.pendingRatioWarn ||
+        schedule.riskSnapshot.errorRate >= 0.2
     ) {
         return {
             source: 'heuristic',
@@ -81,12 +79,23 @@ function heuristics(schedule: ScheduleResult): AiGuardianDecision {
 }
 
 function tryExtractJsonBlock(raw: string): string | null {
-    const start = raw.indexOf('{');
-    const end = raw.lastIndexOf('}');
-    if (start === -1 || end === -1 || end <= start) {
-        return null;
+    // Strip markdown code fences if present (```json ... ``` or ``` ... ```)
+    const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const source = fenceMatch ? fenceMatch[1]! : raw;
+
+    // Find the outermost balanced JSON object
+    const start = source.indexOf('{');
+    if (start === -1) return null;
+
+    let depth = 0;
+    for (let i = start; i < source.length; i++) {
+        if (source[i] === '{') depth++;
+        else if (source[i] === '}') {
+            depth--;
+            if (depth === 0) return source.slice(start, i + 1);
+        }
     }
-    return raw.slice(start, end + 1);
+    return null;
 }
 
 function parseAiDecision(raw: string): ParsedAiGuardianPayload | null {
@@ -96,9 +105,8 @@ function parseAiDecision(raw: string): ParsedAiGuardianPayload | null {
     try {
         const parsed = JSON.parse(jsonBlock) as Record<string, unknown>;
         const severityRaw = typeof parsed.severity === 'string' ? parsed.severity.toLowerCase() : '';
-        const severity: AiGuardianSeverity = severityRaw === 'critical' || severityRaw === 'watch' || severityRaw === 'normal'
-            ? severityRaw
-            : 'watch';
+        const severity: AiGuardianSeverity =
+            severityRaw === 'critical' || severityRaw === 'watch' || severityRaw === 'normal' ? severityRaw : 'watch';
         const summary = typeof parsed.summary === 'string' ? parsed.summary.trim() : '';
         const recommendationsRaw = Array.isArray(parsed.recommendations) ? parsed.recommendations : [];
         const recommendations = recommendationsRaw
@@ -106,9 +114,10 @@ function parseAiDecision(raw: string): ParsedAiGuardianPayload | null {
             .map((item) => item.trim())
             .filter(Boolean)
             .slice(0, 5);
-        const pauseMinutesRaw = typeof parsed.pauseMinutes === 'number'
-            ? parsed.pauseMinutes
-            : Number.parseInt(String(parsed.pauseMinutes ?? '0'), 10);
+        const pauseMinutesRaw =
+            typeof parsed.pauseMinutes === 'number'
+                ? parsed.pauseMinutes
+                : Number.parseInt(String(parsed.pauseMinutes ?? '0'), 10);
 
         return {
             severity,
@@ -139,7 +148,7 @@ async function shouldRunAiGuardianNow(now: Date): Promise<{ allowed: boolean; re
 
 export async function evaluateAiGuardian(
     workflow: WorkflowSelection,
-    schedule: ScheduleResult
+    schedule: ScheduleResult,
 ): Promise<AiGuardianResult> {
     const heuristicDecision = heuristics(schedule);
     if (!config.aiGuardianEnabled || !isOpenAIConfigured()) {
@@ -161,10 +170,12 @@ export async function evaluateAiGuardian(
     }
 
     const systemPrompt = [
-        'Sei un risk controller per automazione LinkedIn.',
-        'Valuta il rischio in anticipo e rispondi SOLO JSON valido.',
-        'Schema JSON: {"severity":"normal|watch|critical","summary":"...","recommendations":["..."],"pauseMinutes":number}',
-        'Usa approccio conservativo, no ottimismo.',
+        'You are a risk controller for a LinkedIn automation system.',
+        'Assess the operational context and respond with ONLY a valid JSON object — no prose, no markdown fences.',
+        'JSON schema: {"severity":"normal|watch|critical","summary":"<1 sentence>","recommendations":["<action>",...],"pauseMinutes":<number>}',
+        'Use a conservative approach. When in doubt, escalate severity.',
+        'pauseMinutes must be 0 for normal/watch severity, and between 30-480 for critical.',
+        'Provide 2-4 concise, actionable recommendations.',
     ].join(' ');
     const userPrompt = JSON.stringify({
         workflow,
@@ -181,9 +192,9 @@ export async function evaluateAiGuardian(
     try {
         const text = await requestOpenAIText({
             system: systemPrompt,
-            user: `Valuta questo contesto operativo e decidi: ${userPrompt}`,
-            maxOutputTokens: 260,
-            temperature: 0.2,
+            user: `Evaluate this operational context and make a risk decision: ${userPrompt}`,
+            maxOutputTokens: 400,
+            temperature: 0.1,
         });
         const parsed = parseAiDecision(text);
         await setRuntimeFlag(AI_GUARDIAN_LAST_RUN_AT_KEY, now.toISOString());

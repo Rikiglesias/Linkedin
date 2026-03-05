@@ -23,14 +23,42 @@ export interface PersonalizedInviteNoteResult {
 // ─── Template base (ex noteGenerator.ts) ─────────────────────────────────────
 
 const NOTE_TEMPLATES: ReadonlyArray<{ variant: string; render: (firstName: string) => string }> = [
-    { variant: 'TPL_CASUAL_INTEREST', render: (n) => `Ciao ${n}, ho trovato il tuo profilo interessante e mi piacerebbe aggiungerti alla mia rete. A presto!` },
-    { variant: 'TPL_PROFESSIONAL_FOLLOW', render: (n) => `Ciao ${n}, seguo il tuo lavoro con interesse. Sarebbe un piacere connetterci!` },
-    { variant: 'TPL_COMMON_INTERESTS', render: (n) => `Salve ${n}, ho visto il tuo profilo e penso potremmo avere interessi in comune. Ti aggiungo volentieri!` },
-    { variant: 'TPL_NETWORK_EXPANSION', render: (n) => `Ciao ${n}, mi piacerebbe connettermi con te per ampliare la mia rete professionale. Buona giornata!` },
-    { variant: 'TPL_BACKGROUND_APPRECIATION', render: (n) => `Ciao ${n}, ho apprezzato il tuo background professionale. Sarebbe bello entrare in contatto!` },
-    { variant: 'TPL_ATTENTION_GRABBER', render: (n) => `Salve ${n}, il tuo profilo ha attirato la mia attenzione. Ti propongo di connetterci!` },
-    { variant: 'TPL_MUTUAL_BENEFIT', render: (n) => `Ciao ${n}, credo che possiamo trarre reciproco beneficio da questa connessione. A presto!` },
-    { variant: 'TPL_LIKE_MINDED', render: (n) => `Ciao ${n}, mi farebbe piacere allargare la mia rete con professionisti come te. Collegati con me!` },
+    {
+        variant: 'TPL_CASUAL_INTEREST',
+        render: (n) =>
+            `Ciao ${n}, ho trovato il tuo profilo interessante e mi piacerebbe aggiungerti alla mia rete. A presto!`,
+    },
+    {
+        variant: 'TPL_PROFESSIONAL_FOLLOW',
+        render: (n) => `Ciao ${n}, seguo il tuo lavoro con interesse. Sarebbe un piacere connetterci!`,
+    },
+    {
+        variant: 'TPL_COMMON_INTERESTS',
+        render: (n) =>
+            `Salve ${n}, ho visto il tuo profilo e penso potremmo avere interessi in comune. Ti aggiungo volentieri!`,
+    },
+    {
+        variant: 'TPL_NETWORK_EXPANSION',
+        render: (n) =>
+            `Ciao ${n}, mi piacerebbe connettermi con te per ampliare la mia rete professionale. Buona giornata!`,
+    },
+    {
+        variant: 'TPL_BACKGROUND_APPRECIATION',
+        render: (n) => `Ciao ${n}, ho apprezzato il tuo background professionale. Sarebbe bello entrare in contatto!`,
+    },
+    {
+        variant: 'TPL_ATTENTION_GRABBER',
+        render: (n) => `Salve ${n}, il tuo profilo ha attirato la mia attenzione. Ti propongo di connetterci!`,
+    },
+    {
+        variant: 'TPL_MUTUAL_BENEFIT',
+        render: (n) => `Ciao ${n}, credo che possiamo trarre reciproco beneficio da questa connessione. A presto!`,
+    },
+    {
+        variant: 'TPL_LIKE_MINDED',
+        render: (n) =>
+            `Ciao ${n}, mi farebbe piacere allargare la mia rete con professionisti come te. Collegati con me!`,
+    },
 ];
 
 /**
@@ -88,8 +116,9 @@ export async function buildPersonalizedInviteNote(lead: LeadRecord): Promise<Per
     }
 
     // Varianti Prompt A/B Testing
-    const variantId = await selectVariant(['AI_VAR_A_DIRECT', 'AI_VAR_B_VALUE'], { segmentKey })
-        .catch(() => (Math.random() > 0.5 ? 'AI_VAR_B_VALUE' : 'AI_VAR_A_DIRECT'));
+    const variantId = await selectVariant(['AI_VAR_A_DIRECT', 'AI_VAR_B_VALUE'], { segmentKey }).catch(() =>
+        Math.random() > 0.5 ? 'AI_VAR_B_VALUE' : 'AI_VAR_A_DIRECT',
+    );
     const isVariantB = variantId === 'AI_VAR_B_VALUE';
 
     let systemPrompt = '';
@@ -97,11 +126,11 @@ export async function buildPersonalizedInviteNote(lead: LeadRecord): Promise<Per
     if (isVariantB) {
         systemPrompt = [
             'Sei un top performer del social selling B2B su LinkedIn.',
-            'Crea una brevissima nota di connessione (max 2 frasi) estraendo valore dal profilo dell\'utente.',
+            "Crea una brevissima nota di connessione (max 2 frasi) estraendo valore dal profilo dell'utente.",
             'Fai una leva specifica su qualcosa del suo About o Experience per dimostrare che hai letto il profilo.',
             `Massimo ${INVITE_NOTE_MAX_CHARS} caratteri.`,
             'Non vendere nulla, cerca solo di avviare una conversazione interessante.',
-            'Niente emoji, niente ciao generici.'
+            'Niente emoji, niente ciao generici.',
         ].join(' ');
     } else {
         systemPrompt = [
@@ -134,7 +163,7 @@ export async function buildPersonalizedInviteNote(lead: LeadRecord): Promise<Per
                 system: systemPrompt,
                 user: `Dati lead: ${userPrompt}`,
                 maxOutputTokens: 120,
-                temperature: baseTemp + (attempt * 0.15),
+                temperature: baseTemp + attempt * 0.15,
             });
             const candidate = trimToMaxChars(generated, INVITE_NOTE_MAX_CHARS);
 
@@ -157,7 +186,10 @@ export async function buildPersonalizedInviteNote(lead: LeadRecord): Promise<Per
     }
 
     if (!finalNote) {
-        await logWarn('ai.invite_note.fallback_template', { leadId: lead.id, reason: 'Exhausted attempts or API error' });
+        await logWarn('ai.invite_note.fallback_template', {
+            leadId: lead.id,
+            reason: 'Exhausted attempts or API error',
+        });
         return {
             note: templateText,
             source: 'template',

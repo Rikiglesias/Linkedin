@@ -52,7 +52,7 @@ export function bridgeLeadStatus(
         experience?: string | null;
         invite_prompt_variant?: string | null;
         invite_note_sent?: string | null;
-    }
+    },
 ): void {
     void updateCloudLeadStatus(linkedinUrl, status, timestamps).catch(() => {
         // Silenzioso
@@ -70,8 +70,15 @@ export function bridgeLeadStatus(
 export function bridgeDailyStat(
     localDate: string,
     accountId: string,
-    field: 'invites_sent' | 'messages_sent' | 'acceptances' | 'replies' | 'challenges_count' | 'selector_failures' | 'run_errors',
-    amount: number = 1
+    field:
+        | 'invites_sent'
+        | 'messages_sent'
+        | 'acceptances'
+        | 'replies'
+        | 'challenges_count'
+        | 'selector_failures'
+        | 'run_errors',
+    amount: number = 1,
 ): void {
     void incrementCloudDailyStat({ local_date: localDate, account_id: accountId, field, amount }).catch(() => {
         // Silenzioso
@@ -90,7 +97,7 @@ export function bridgeAccountHealth(
     accountId: string,
     health: 'GREEN' | 'YELLOW' | 'RED',
     quarantineReason?: string | null,
-    quarantineUntil?: string | null
+    quarantineUntil?: string | null,
 ): void {
     void updateCloudAccountHealth(accountId, health, quarantineReason, quarantineUntil).catch(() => {
         // Silenzioso

@@ -12,12 +12,7 @@
  *   [2] = Tertiary / XPath text-based (last resort)
  */
 export const SELECTORS = {
-
-    globalNav: [
-        '.global-nav__me',
-        '[data-test-global-nav-me] button',
-        'button[aria-label*="Me"]',
-    ],
+    globalNav: ['.global-nav__me', '[data-test-global-nav-me] button', 'button[aria-label*="Me"]'],
 
     connectButtonPrimary: [
         'button.artdeco-button--primary:has-text("Connect")',
@@ -157,7 +152,5 @@ export const SELECTORS = {
  * Useful for places that use `page.locator()` directly with any-match.
  */
 export function joinSelectors(key: keyof typeof SELECTORS): string {
-    return SELECTORS[key]
-        .filter((s) => !s.startsWith('//'))
-        .join(', ');
+    return SELECTORS[key].filter((s) => !s.startsWith('//')).join(', ');
 }

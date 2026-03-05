@@ -58,7 +58,7 @@ export async function requestOpenAIText(input: OpenAITextRequest): Promise<strin
     const localEndpoint = isLocalAiEndpoint(config.openaiBaseUrl);
     if (!config.aiAllowRemoteEndpoint && !localEndpoint) {
         throw new Error(
-            'Endpoint AI remoto bloccato: imposta OPENAI_BASE_URL su localhost oppure AI_ALLOW_REMOTE_ENDPOINT=true.'
+            'Endpoint AI remoto bloccato: imposta OPENAI_BASE_URL su localhost oppure AI_ALLOW_REMOTE_ENDPOINT=true.',
         );
     }
     if (!config.openaiApiKey && !localEndpoint) {
@@ -72,24 +72,28 @@ export async function requestOpenAIText(input: OpenAITextRequest): Promise<strin
         headers.authorization = `Bearer ${config.openaiApiKey}`;
     }
 
-    const response = await fetchWithRetryPolicy(safeJoinUrl(config.openaiBaseUrl, '/chat/completions'), {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-            model: resolveAiModel(),
-            messages: [
-                { role: 'system', content: input.system },
-                { role: 'user', content: input.user },
-            ],
-            temperature: input.temperature,
-            max_tokens: input.maxOutputTokens, // OpenAI uses max_tokens natively, non max_output_tokens
-            ...(input.responseFormat ? { response_format: { type: input.responseFormat } } : {})
-        }),
-    }, {
-        integration: 'openai.chat_completion',
-        circuitKey: 'openai.chat',
-        timeoutMs: config.aiRequestTimeoutMs,
-    });
+    const response = await fetchWithRetryPolicy(
+        safeJoinUrl(config.openaiBaseUrl, '/chat/completions'),
+        {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+                model: resolveAiModel(),
+                messages: [
+                    { role: 'system', content: input.system },
+                    { role: 'user', content: input.user },
+                ],
+                temperature: input.temperature,
+                max_tokens: input.maxOutputTokens, // OpenAI uses max_tokens natively, non max_output_tokens
+                ...(input.responseFormat ? { response_format: { type: input.responseFormat } } : {}),
+            }),
+        },
+        {
+            integration: 'openai.chat_completion',
+            circuitKey: 'openai.chat',
+            timeoutMs: config.aiRequestTimeoutMs,
+        },
+    );
 
     if (!response.ok) {
         const text = (await response.text().catch(() => '')).slice(0, 500);
@@ -120,18 +124,22 @@ export async function requestOpenAIEmbeddings(input: string): Promise<number[]> 
         headers.authorization = `Bearer ${config.openaiApiKey}`;
     }
 
-    const response = await fetchWithRetryPolicy(safeJoinUrl(config.openaiBaseUrl, '/embeddings'), {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-            model: resolveAiModel(),
-            input: input,
-        }),
-    }, {
-        integration: 'openai.embeddings',
-        circuitKey: 'openai.embeddings',
-        timeoutMs: config.aiRequestTimeoutMs,
-    });
+    const response = await fetchWithRetryPolicy(
+        safeJoinUrl(config.openaiBaseUrl, '/embeddings'),
+        {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+                model: resolveAiModel(),
+                input: input,
+            }),
+        },
+        {
+            integration: 'openai.embeddings',
+            circuitKey: 'openai.embeddings',
+            timeoutMs: config.aiRequestTimeoutMs,
+        },
+    );
 
     if (!response.ok) {
         const text = (await response.text().catch(() => '')).slice(0, 500);

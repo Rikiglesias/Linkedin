@@ -20,7 +20,7 @@ import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 
 export interface EnrichmentResult {
     email: string | null;
-    emailConfidence: number;    // 0–100
+    emailConfidence: number; // 0–100
     phone: string | null;
     jobTitle: string | null;
     companyDomain: string | null;
@@ -28,8 +28,12 @@ export interface EnrichmentResult {
 }
 
 const EMPTY_RESULT: EnrichmentResult = {
-    email: null, emailConfidence: 0, phone: null,
-    jobTitle: null, companyDomain: null, source: 'none'
+    email: null,
+    emailConfidence: 0,
+    phone: null,
+    jobTitle: null,
+    companyDomain: null,
+    source: 'none',
 };
 
 // ─── Hunter.io ────────────────────────────────────────────────────────────────
@@ -39,18 +43,22 @@ async function enrichViaHunter(firstName: string, lastName: string, domain: stri
 
     try {
         const url = `https://api.hunter.io/v2/email-finder?domain=${encodeURIComponent(domain)}&first_name=${encodeURIComponent(firstName)}&last_name=${encodeURIComponent(lastName)}&api_key=${config.hunterApiKey}`;
-        const res = await fetchWithRetryPolicy(url, {
-            method: 'GET',
-        }, {
-            integration: 'hunter.email_finder',
-            circuitKey: 'hunter.api',
-            timeoutMs: 8_000,
-        });
+        const res = await fetchWithRetryPolicy(
+            url,
+            {
+                method: 'GET',
+            },
+            {
+                integration: 'hunter.email_finder',
+                circuitKey: 'hunter.api',
+                timeoutMs: 8_000,
+            },
+        );
 
         if (!res.ok) return null;
 
-        const data = await res.json() as {
-            data?: { email?: string; confidence?: number; position?: string }
+        const data = (await res.json()) as {
+            data?: { email?: string; confidence?: number; position?: string };
         };
 
         const email = data.data?.email || null;
@@ -71,24 +79,32 @@ async function enrichViaHunter(firstName: string, lastName: string, domain: stri
 
 // ─── Clearbit ─────────────────────────────────────────────────────────────────
 
-async function enrichViaClearbit(firstName: string, lastName: string, domain: string): Promise<EnrichmentResult | null> {
+async function enrichViaClearbit(
+    firstName: string,
+    lastName: string,
+    domain: string,
+): Promise<EnrichmentResult | null> {
     if (!config.clearbitApiKey || !domain) return null;
 
     try {
         const url = `https://prospector.clearbit.com/v2/people/find?domain=${encodeURIComponent(domain)}&name=${encodeURIComponent(`${firstName} ${lastName}`)}`;
         const auth = Buffer.from(`${config.clearbitApiKey}:`).toString('base64');
-        const res = await fetchWithRetryPolicy(url, {
-            headers: { 'Authorization': `Basic ${auth}` },
-            method: 'GET',
-        }, {
-            integration: 'clearbit.person_lookup',
-            circuitKey: 'clearbit.api',
-            timeoutMs: 8_000,
-        });
+        const res = await fetchWithRetryPolicy(
+            url,
+            {
+                headers: { Authorization: `Basic ${auth}` },
+                method: 'GET',
+            },
+            {
+                integration: 'clearbit.person_lookup',
+                circuitKey: 'clearbit.api',
+                timeoutMs: 8_000,
+            },
+        );
 
         if (!res.ok) return null;
 
-        const data = await res.json() as {
+        const data = (await res.json()) as {
             email?: string;
             phone?: string;
             title?: string;
@@ -117,9 +133,10 @@ function inferDomain(website?: string | null, companyName?: string | null): stri
     const rawWebsite = (website ?? '').trim();
     if (rawWebsite) {
         try {
-            const parsed = rawWebsite.startsWith('http://') || rawWebsite.startsWith('https://')
-                ? new URL(rawWebsite)
-                : new URL(`https://${rawWebsite}`);
+            const parsed =
+                rawWebsite.startsWith('http://') || rawWebsite.startsWith('https://')
+                    ? new URL(rawWebsite)
+                    : new URL(`https://${rawWebsite}`);
             return parsed.hostname.replace(/^www\./i, '').toLowerCase();
         } catch {
             const fallbackWebsite = rawWebsite
@@ -136,7 +153,8 @@ function inferDomain(website?: string | null, companyName?: string | null): stri
 
     if (companyName) {
         // Euristica: "Acme Corp" → "acme.com"
-        const slug = companyName.toLowerCase()
+        const slug = companyName
+            .toLowerCase()
             .replace(/\b(srl|spa|inc|ltd|corp|group|italia|italy)\b/g, '')
             .replace(/[^a-z0-9]/g, '')
             .trim();
@@ -155,7 +173,7 @@ export async function enrichLead(
     leadId: number,
     firstName: string,
     lastName: string,
-    domain: string
+    domain: string,
 ): Promise<EnrichmentResult> {
     if (!firstName || !lastName) return EMPTY_RESULT;
 

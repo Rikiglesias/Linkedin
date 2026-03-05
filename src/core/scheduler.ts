@@ -1,4 +1,5 @@
 import { config, getLocalDateString, getWeekStartDate, getWorkingHourIntensity, isGreenModeWindow } from '../config';
+import { countTodayPosts } from '../workers/postCreatorWorker';
 import { pickAccountIdForLead, getRuntimeAccountProfiles } from '../accountManager';
 import {
     calculateAccountWarmupMultiplier,
@@ -21,7 +22,7 @@ import {
     listLeadCampaignConfigs,
     promoteNewLeadsToReadyInvite,
     syncLeadListsFromLeads,
-    getAccountAgeDays
+    getAccountAgeDays,
 } from './repositories';
 import { transitionLead } from './leadStateService';
 
@@ -61,7 +62,7 @@ export interface ListScheduleBreakdown {
 }
 
 export function workflowToJobTypes(workflow: WorkflowSelection): JobType[] {
-    if (workflow === 'all') return ['INVITE', 'ACCEPTANCE_CHECK', 'MESSAGE', 'HYGIENE'];
+    if (workflow === 'all') return ['INVITE', 'ACCEPTANCE_CHECK', 'MESSAGE', 'HYGIENE', 'POST_CREATION'];
     if (workflow === 'invite') return ['INVITE'];
     if (workflow === 'check') return ['ACCEPTANCE_CHECK', 'HYGIENE'];
     if (workflow === 'warmup') return [];
@@ -81,16 +82,14 @@ function buildCheckKey(leadId: number, localDate: string): string {
 }
 
 function computeListBudget(globalRemaining: number, listCap: number | null, alreadyConsumed: number): number {
-    const listRemaining = listCap === null
-        ? globalRemaining
-        : Math.max(0, listCap - alreadyConsumed);
+    const listRemaining = listCap === null ? globalRemaining : Math.max(0, listCap - alreadyConsumed);
     return Math.max(0, Math.min(globalRemaining, listRemaining));
 }
 
 function computeAccountBudgetShares(
     accounts: ReturnType<typeof getRuntimeAccountProfiles>,
     totalBudget: number,
-    channel: 'invite' | 'message'
+    channel: 'invite' | 'message',
 ): Map<string, number> {
     const safeTotal = Math.max(0, Math.floor(totalBudget));
     const shares = new Map<string, number>();
@@ -231,7 +230,7 @@ function applyHourIntensityToBudget(budget: number, intensity: number): number {
 
 function evaluateAdaptiveBudgetContext(
     statusCounts: Record<string, number>,
-    riskAction: RiskSnapshot['action']
+    riskAction: RiskSnapshot['action'],
 ): AdaptiveBudgetContext {
     if (!config.adaptiveCapsEnabled) {
         return {
@@ -243,7 +242,8 @@ function evaluateAdaptiveBudgetContext(
     }
 
     const invited = statusCounts.INVITED ?? 0;
-    const acceptedLike = (statusCounts.ACCEPTED ?? 0) + (statusCounts.READY_MESSAGE ?? 0) + (statusCounts.MESSAGED ?? 0);
+    const acceptedLike =
+        (statusCounts.ACCEPTED ?? 0) + (statusCounts.READY_MESSAGE ?? 0) + (statusCounts.MESSAGED ?? 0);
     const blockedSkipped = (statusCounts.BLOCKED ?? 0) + (statusCounts.SKIPPED ?? 0);
 
     const pendingRatioDenominator = Math.max(1, invited + acceptedLike);
@@ -341,7 +341,10 @@ function initListBreakdown(listNames: string[]): Map<string, ListScheduleBreakdo
     return map;
 }
 
-export async function scheduleJobs(workflow: WorkflowSelection, options: ScheduleOptions = {}): Promise<ScheduleResult> {
+export async function scheduleJobs(
+    workflow: WorkflowSelection,
+    options: ScheduleOptions = {},
+): Promise<ScheduleResult> {
     const dryRun = options.dryRun ?? false;
     const localDate = getLocalDateString();
     const riskInputs = await getRiskInputs(localDate, config.hardInviteCap);
@@ -354,16 +357,14 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
     const dbAccountAgeDays = await getAccountAgeDays();
     const weeklyInviteLimitEffective = config.complianceDynamicWeeklyLimitEnabled
         ? calculateDynamicWeeklyInviteLimit(
-            dbAccountAgeDays,
-            config.complianceDynamicWeeklyMinInvites,
-            Math.min(config.complianceDynamicWeeklyMaxInvites, config.weeklyInviteLimit),
-            config.complianceDynamicWeeklyWarmupDays
-        )
+              dbAccountAgeDays,
+              config.complianceDynamicWeeklyMinInvites,
+              Math.min(config.complianceDynamicWeeklyMaxInvites, config.weeklyInviteLimit),
+              config.complianceDynamicWeeklyWarmupDays,
+          )
         : config.weeklyInviteLimit;
     const weeklyRemaining = Math.max(0, weeklyInviteLimitEffective - weeklyInvitesSent);
-    const ssiRaw = config.ssiDynamicLimitsEnabled
-        ? await getRuntimeFlag(config.ssiStateKey)
-        : null;
+    const ssiRaw = config.ssiDynamicLimitsEnabled ? await getRuntimeFlag(config.ssiStateKey) : null;
     const ssiScore = parseSsiScore(ssiRaw, config.ssiDefaultScore);
     const ssiInviteCap = config.ssiDynamicLimitsEnabled
         ? capFromSsi(ssiScore, config.ssiInviteMin, config.ssiInviteMax)
@@ -398,16 +399,28 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
         const inviteCaps = resolveCapPair(config.softInviteCap, config.hardInviteCap, ssiInviteCap);
         const messageCaps = resolveCapPair(config.softMsgCap, config.hardMsgCap, ssiMessageCap);
 
-        const limitInvite = calculateDynamicBudget(inviteCaps.soft, inviteCaps.hard, avgDailyInvites, riskSnapshot.action);
-        const limitMessage = calculateDynamicBudget(messageCaps.soft, messageCaps.hard, avgDailyMessages, riskSnapshot.action);
+        const limitInvite = calculateDynamicBudget(
+            inviteCaps.soft,
+            inviteCaps.hard,
+            avgDailyInvites,
+            riskSnapshot.action,
+        );
+        const limitMessage = calculateDynamicBudget(
+            messageCaps.soft,
+            messageCaps.hard,
+            avgDailyMessages,
+            riskSnapshot.action,
+        );
 
-        const accountInviteLimit = warmupFactor < 1.0
-            ? Math.max(account.warmupMinActions || 5, Math.floor(limitInvite * warmupFactor))
-            : limitInvite;
+        const accountInviteLimit =
+            warmupFactor < 1.0
+                ? Math.max(account.warmupMinActions || 5, Math.floor(limitInvite * warmupFactor))
+                : limitInvite;
 
-        const accountMessageLimit = warmupFactor < 1.0
-            ? Math.max(account.warmupMinActions || 5, Math.floor(limitMessage * warmupFactor))
-            : limitMessage;
+        const accountMessageLimit =
+            warmupFactor < 1.0
+                ? Math.max(account.warmupMinActions || 5, Math.floor(limitMessage * warmupFactor))
+                : limitMessage;
 
         inviteBudget += accountInviteLimit;
         messageBudget += accountMessageLimit;
@@ -436,9 +449,7 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
         await ensureLeadList('default');
         listConfigs = await listLeadCampaignConfigs(true);
     }
-    const activeListNames = listConfigs.length > 0
-        ? listConfigs.map((list) => list.name)
-        : await resolveActiveLists();
+    const activeListNames = listConfigs.length > 0 ? listConfigs.map((list) => list.name) : await resolveActiveLists();
     const listBreakdown = initListBreakdown(activeListNames);
     const listConfigMap = new Map(listConfigs.map((list) => [list.name, list]));
     const statusRows = await getLeadStatusCountsForLists(activeListNames);
@@ -498,7 +509,11 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
 
             const listConfig = listConfigMap.get(listName);
             const listInvitesSent = await getListDailyStat(localDate, listName, 'invites_sent');
-            const rawListBudget = computeListBudget(remainingInviteBudget, listConfig?.dailyInviteCap ?? null, listInvitesSent);
+            const rawListBudget = computeListBudget(
+                remainingInviteBudget,
+                listConfig?.dailyInviteCap ?? null,
+                listInvitesSent,
+            );
             const adaptive = adaptiveContextMap.get(listName);
             const listBudget = applyAdaptiveFactor(rawListBudget, adaptive?.factor ?? 1);
             breakdown.inviteBudget = listBudget;
@@ -560,7 +575,7 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
                     10,
                     config.retryMaxAttempts,
                     initialDelaySec,
-                    accountId
+                    accountId,
                 );
                 if (inserted) {
                     insertedForList += 1;
@@ -597,7 +612,7 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
                     30,
                     config.retryMaxAttempts,
                     initialDelaySec,
-                    accountId
+                    accountId,
                 );
                 if (inserted) {
                     insertedForList += 1;
@@ -618,7 +633,11 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
 
             const listConfig = listConfigMap.get(listName);
             const listMessagesSent = await getListDailyStat(localDate, listName, 'messages_sent');
-            const rawListBudget = computeListBudget(remainingMessageBudget, listConfig?.dailyMessageCap ?? null, listMessagesSent);
+            const rawListBudget = computeListBudget(
+                remainingMessageBudget,
+                listConfig?.dailyMessageCap ?? null,
+                listMessagesSent,
+            );
             const adaptive = adaptiveContextMap.get(listName);
             const listBudget = applyAdaptiveFactor(rawListBudget, adaptive?.factor ?? 1);
             breakdown.messageBudget = listBudget;
@@ -697,7 +716,7 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
                     20,
                     config.retryMaxAttempts,
                     initialDelaySec,
-                    accountId
+                    accountId,
                 );
                 if (inserted) {
                     insertedForList += 1;
@@ -721,8 +740,30 @@ export async function scheduleJobs(workflow: WorkflowSelection, options: Schedul
                 5,
                 1,
                 pickRandomInt(1800, 14400),
-                acc.id
+                acc.id,
             );
+        }
+    }
+
+    // ─── Post Creation Scheduling ────────────────────────────────────────
+    if (!dryRun && config.postCreationEnabled && workflow === 'all' && riskSnapshot.action !== 'STOP') {
+        const postAccounts = getRuntimeAccountProfiles();
+        for (const acc of postAccounts) {
+            const todayPosts = await countTodayPosts(acc.id);
+            if (todayPosts < config.postCreationMaxPerDay) {
+                await enqueueJob(
+                    'POST_CREATION',
+                    {
+                        accountId: acc.id,
+                        tone: config.postCreationDefaultTone,
+                    },
+                    `post_creation:${acc.id}:${localDate}`,
+                    1,
+                    2,
+                    pickRandomInt(3600, 10800),
+                    acc.id,
+                );
+            }
         }
     }
 

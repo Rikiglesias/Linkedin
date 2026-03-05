@@ -20,13 +20,17 @@ import { countPendingOutboxEvents, getLockContentionSummary } from './system';
 
 export async function getDailyStat(
     dateString: string,
-    field: 'invites_sent' | 'messages_sent' | 'acceptances' | 'challenges_count' | 'selector_failures' | 'run_errors' | 'follow_ups_sent'
+    field:
+        | 'invites_sent'
+        | 'messages_sent'
+        | 'acceptances'
+        | 'challenges_count'
+        | 'selector_failures'
+        | 'run_errors'
+        | 'follow_ups_sent',
 ): Promise<number> {
     const db = await getDatabase();
-    const row = await db.get<Record<string, number>>(
-        `SELECT ${field} FROM daily_stats WHERE date = ?`,
-        [dateString]
-    );
+    const row = await db.get<Record<string, number>>(`SELECT ${field} FROM daily_stats WHERE date = ?`, [dateString]);
     return row?.[field] ?? 0;
 }
 
@@ -50,7 +54,7 @@ export interface ComplianceHealthMetrics {
 export async function getComplianceHealthMetrics(
     localDate: string,
     lookbackDays: number,
-    hardInviteCap: number
+    hardInviteCap: number,
 ): Promise<ComplianceHealthMetrics> {
     const db = await getDatabase();
     const safeLookbackDays = Math.max(1, Math.floor(lookbackDays));
@@ -64,7 +68,7 @@ export async function getComplianceHealthMetrics(
             FROM daily_stats
             WHERE date >= DATE('now', '-' || ? || ' days')
         `,
-            [safeLookbackDays]
+            [safeLookbackDays],
         ),
         db.get<{ total: number }>(
             `
@@ -73,7 +77,7 @@ export async function getComplianceHealthMetrics(
             WHERE messaged_at IS NOT NULL
               AND messaged_at >= DATETIME('now', '-' || ? || ' days')
         `,
-            [safeLookbackDays]
+            [safeLookbackDays],
         ),
         db.get<{ total: number }>(
             `
@@ -83,7 +87,7 @@ export async function getComplianceHealthMetrics(
               AND messaged_at >= DATETIME('now', '-' || ? || ' days')
               AND status IN ('REPLIED', 'CONNECTED')
         `,
-            [safeLookbackDays]
+            [safeLookbackDays],
         ),
         getRiskInputs(localDate, Math.max(1, hardInviteCap)),
     ]);
@@ -116,7 +120,7 @@ export async function getDailyStatsSnapshot(dateString: string): Promise<DailySt
         run_errors: number;
     }>(
         `SELECT invites_sent, messages_sent, challenges_count, selector_failures, run_errors FROM daily_stats WHERE date = ?`,
-        [dateString]
+        [dateString],
     );
 
     return {
@@ -146,7 +150,7 @@ export async function getRecentDailyStats(limit: number): Promise<DailyStatsSnap
         ORDER BY date DESC
         LIMIT ?
     `,
-        [safeLimit]
+        [safeLimit],
     );
 
     return rows.map((row) => ({
@@ -219,14 +223,14 @@ async function buildSelectorCacheKpiSnapshot(localDate: string): Promise<Selecto
              FROM daily_stats
              WHERE date >= ?
                AND date <= ?`,
-            [currentFrom, localDate]
+            [currentFrom, localDate],
         ),
         db.get<{ total: number }>(
             `SELECT COALESCE(SUM(selector_failures), 0) AS total
              FROM daily_stats
              WHERE date >= ?
                AND date <= ?`,
-            [previousFrom, previousTo]
+            [previousFrom, previousTo],
         ),
     ]);
 
@@ -241,7 +245,9 @@ async function buildSelectorCacheKpiSnapshot(localDate: string): Promise<Selecto
     const baselineSufficient = previousFailures >= minBaselineFailures;
     const validationStatus: SelectorCacheKpiSnapshot['validationStatus'] = !baselineSufficient
         ? 'INSUFFICIENT_DATA'
-        : (reductionRate !== null && reductionRate >= targetReductionRate ? 'PASS' : 'WARN');
+        : reductionRate !== null && reductionRate >= targetReductionRate
+          ? 'PASS'
+          : 'WARN';
 
     return {
         windowDays,
@@ -265,16 +271,22 @@ function buildSloThresholds(queueLagWarnSeconds: number, runningJobStaleWarnSeco
         errorRateWarn: config.observabilitySloErrorRateWarn,
         errorRateCritical: Math.max(config.observabilitySloErrorRateWarn, config.observabilitySloErrorRateCritical),
         challengeRateWarn: config.observabilitySloChallengeRateWarn,
-        challengeRateCritical: Math.max(config.observabilitySloChallengeRateWarn, config.observabilitySloChallengeRateCritical),
+        challengeRateCritical: Math.max(
+            config.observabilitySloChallengeRateWarn,
+            config.observabilitySloChallengeRateCritical,
+        ),
         selectorFailureRateWarn: config.observabilitySloSelectorFailureRateWarn,
         selectorFailureRateCritical: Math.max(
             config.observabilitySloSelectorFailureRateWarn,
-            config.observabilitySloSelectorFailureRateCritical
+            config.observabilitySloSelectorFailureRateCritical,
         ),
         queueLagWarnSeconds,
         queueLagCriticalSeconds: Math.max(queueLagWarnSeconds + 60, Math.floor(queueLagWarnSeconds * 2)),
         runningJobStaleWarnSeconds,
-        runningJobStaleCriticalSeconds: Math.max(runningJobStaleWarnSeconds + 60, Math.floor(runningJobStaleWarnSeconds * 1.5)),
+        runningJobStaleCriticalSeconds: Math.max(
+            runningJobStaleWarnSeconds + 60,
+            Math.floor(runningJobStaleWarnSeconds * 1.5),
+        ),
     };
 }
 
@@ -283,7 +295,7 @@ async function buildOperationalSloSnapshot(
     queueLagSeconds: number,
     oldestRunningJobSeconds: number,
     queueLagWarnSeconds: number,
-    runningJobStaleWarnSeconds: number
+    runningJobStaleWarnSeconds: number,
 ): Promise<OperationalSloSnapshot> {
     const db = await getDatabase();
     const thresholds = buildSloThresholds(queueLagWarnSeconds, runningJobStaleWarnSeconds);
@@ -291,19 +303,16 @@ async function buildOperationalSloSnapshot(
     const queueLagSeverity = evaluateSloValueSeverity(
         queueLagSeconds,
         thresholds.queueLagWarnSeconds,
-        thresholds.queueLagCriticalSeconds
+        thresholds.queueLagCriticalSeconds,
     );
     const runningStaleSeverity = evaluateSloValueSeverity(
         oldestRunningJobSeconds,
         thresholds.runningJobStaleWarnSeconds,
-        thresholds.runningJobStaleCriticalSeconds
+        thresholds.runningJobStaleCriticalSeconds,
     );
     const currentStatus = maxSloSeverity(queueLagSeverity, runningStaleSeverity);
 
-    const windowsToCompute = Array.from(new Set([
-        thresholds.windowShortDays,
-        thresholds.windowLongDays,
-    ]))
+    const windowsToCompute = Array.from(new Set([thresholds.windowShortDays, thresholds.windowLongDays]))
         .filter((value) => value >= 1)
         .sort((a, b) => a - b);
 
@@ -330,7 +339,7 @@ async function buildOperationalSloSnapshot(
             WHERE date >= ?
               AND date <= ?
         `,
-            [fromDate, localDate]
+            [fromDate, localDate],
         );
 
         const invitesSent = row?.invites ?? 0;
@@ -346,22 +355,22 @@ async function buildOperationalSloSnapshot(
         const errorRateSeverity = evaluateSloValueSeverity(
             errorRate,
             thresholds.errorRateWarn,
-            thresholds.errorRateCritical
+            thresholds.errorRateCritical,
         );
         const challengeRateSeverity = evaluateSloValueSeverity(
             challengeRate,
             thresholds.challengeRateWarn,
-            thresholds.challengeRateCritical
+            thresholds.challengeRateCritical,
         );
         const selectorFailureRateSeverity = evaluateSloValueSeverity(
             selectorFailureRate,
             thresholds.selectorFailureRateWarn,
-            thresholds.selectorFailureRateCritical
+            thresholds.selectorFailureRateCritical,
         );
 
         const windowStatus = maxSloSeverity(
             maxSloSeverity(errorRateSeverity, challengeRateSeverity),
-            selectorFailureRateSeverity
+            selectorFailureRateSeverity,
         );
         overallStatus = maxSloSeverity(overallStatus, windowStatus);
 
@@ -405,17 +414,19 @@ async function buildOperationalSloSnapshot(
     };
 }
 
-export async function getOperationalObservabilitySnapshot(localDate: string = getLocalDateString()): Promise<OperationalObservabilitySnapshot> {
+export async function getOperationalObservabilitySnapshot(
+    localDate: string = getLocalDateString(),
+): Promise<OperationalObservabilitySnapshot> {
     const db = await getDatabase();
     const nowMs = Date.now();
     const [daily, pendingOutbox, queueRow, runningRow, lockContention, selectorCacheKpi] = await Promise.all([
         getDailyStatsSnapshot(localDate),
         countPendingOutboxEvents(),
         db.get<{ queued_total: number; oldest_next_run_at: string | null }>(
-            `SELECT COUNT(*) AS queued_total, MIN(next_run_at) AS oldest_next_run_at FROM jobs WHERE status = 'QUEUED'`
+            `SELECT COUNT(*) AS queued_total, MIN(next_run_at) AS oldest_next_run_at FROM jobs WHERE status = 'QUEUED'`,
         ),
         db.get<{ running_total: number; oldest_locked_at: string | null }>(
-            `SELECT COUNT(*) AS running_total, MIN(locked_at) AS oldest_locked_at FROM jobs WHERE status = 'RUNNING'`
+            `SELECT COUNT(*) AS running_total, MIN(locked_at) AS oldest_locked_at FROM jobs WHERE status = 'RUNNING'`,
         ),
         getLockContentionSummary(localDate),
         buildSelectorCacheKpiSnapshot(localDate),
@@ -478,11 +489,12 @@ export async function getOperationalObservabilitySnapshot(localDate: string = ge
         });
     }
 
-    const contentionTotal = lockContention.acquireContended
-        + lockContention.acquireStaleTakeover
-        + lockContention.heartbeatMiss
-        + lockContention.releaseMiss
-        + lockContention.queueRaceLost;
+    const contentionTotal =
+        lockContention.acquireContended +
+        lockContention.acquireStaleTakeover +
+        lockContention.heartbeatMiss +
+        lockContention.releaseMiss +
+        lockContention.queueRaceLost;
     if (contentionTotal > 0) {
         alerts.push({
             code: 'LOCK_CONTENTION',
@@ -508,7 +520,7 @@ export async function getOperationalObservabilitySnapshot(localDate: string = ge
         queueLagSeconds,
         oldestRunningJobSeconds,
         queueLagThreshold,
-        runningStaleThreshold
+        runningStaleThreshold,
     );
 
     for (const window of slo.windows) {
@@ -548,9 +560,7 @@ export async function getOperationalObservabilitySnapshot(localDate: string = ge
 
         for (const breach of metricBreaches) {
             if (breach.severity === 'OK') continue;
-            const threshold = breach.severity === 'CRITICAL'
-                ? breach.criticalThreshold
-                : breach.warnThreshold;
+            const threshold = breach.severity === 'CRITICAL' ? breach.criticalThreshold : breach.warnThreshold;
             alerts.push({
                 code: `SLO_${breach.metric.toUpperCase()}_${window.windowDays}D`,
                 severity: breach.severity === 'CRITICAL' ? 'CRITICAL' : 'WARN',
@@ -584,20 +594,27 @@ export async function getOperationalObservabilitySnapshot(localDate: string = ge
 export async function getListDailyStat(
     dateString: string,
     listName: string,
-    field: 'invites_sent' | 'messages_sent'
+    field: 'invites_sent' | 'messages_sent',
 ): Promise<number> {
     const db = await getDatabase();
     const row = await db.get<Record<string, number>>(
         `SELECT ${field} FROM list_daily_stats WHERE date = ? AND list_name = ?`,
-        [dateString, listName]
+        [dateString, listName],
     );
     return row?.[field] ?? 0;
 }
 
 export async function incrementDailyStat(
     dateString: string,
-    field: 'invites_sent' | 'messages_sent' | 'acceptances' | 'challenges_count' | 'selector_failures' | 'run_errors' | 'follow_ups_sent',
-    amount: number = 1
+    field:
+        | 'invites_sent'
+        | 'messages_sent'
+        | 'acceptances'
+        | 'challenges_count'
+        | 'selector_failures'
+        | 'run_errors'
+        | 'follow_ups_sent',
+    amount: number = 1,
 ): Promise<void> {
     const db = await getDatabase();
     await db.run(
@@ -605,7 +622,7 @@ export async function incrementDailyStat(
         INSERT INTO daily_stats (date, ${field}) VALUES (?, ?)
         ON CONFLICT(date) DO UPDATE SET ${field} = ${field} + ?
     `,
-        [dateString, amount, amount]
+        [dateString, amount, amount],
     );
 }
 
@@ -613,7 +630,7 @@ export async function incrementListDailyStat(
     dateString: string,
     listName: string,
     field: 'invites_sent' | 'messages_sent',
-    amount: number = 1
+    amount: number = 1,
 ): Promise<void> {
     const db = await getDatabase();
     await db.run(
@@ -621,7 +638,7 @@ export async function incrementListDailyStat(
         INSERT INTO list_daily_stats (date, list_name, ${field}) VALUES (?, ?, ?)
         ON CONFLICT(date, list_name) DO UPDATE SET ${field} = ${field} + ?
     `,
-        [dateString, listName, amount, amount]
+        [dateString, listName, amount, amount],
     );
 }
 
@@ -629,7 +646,7 @@ export async function countWeeklyInvites(weekStartDate: string): Promise<number>
     const db = await getDatabase();
     const row = await db.get<{ total: number }>(
         `SELECT COALESCE(SUM(invites_sent), 0) as total FROM daily_stats WHERE date >= ?`,
-        [weekStartDate]
+        [weekStartDate],
     );
     return row?.total ?? 0;
 }
@@ -638,7 +655,7 @@ export async function getRiskInputs(localDate: string, hardInviteCap: number): P
     const db = await getDatabase();
     const pendingInvites = await countLeadsByStatuses(['INVITED']);
     const invitedTotalRow = await db.get<{ total: number }>(
-        `SELECT COUNT(*) as total FROM leads WHERE invited_at IS NOT NULL`
+        `SELECT COUNT(*) as total FROM leads WHERE invited_at IS NOT NULL`,
     );
     const invitedTotal = invitedTotalRow?.total ?? 0;
     const pendingRatio = invitedTotal > 0 ? pendingInvites / invitedTotal : 0;
@@ -648,7 +665,7 @@ export async function getRiskInputs(localDate: string, hardInviteCap: number): P
         SELECT COUNT(*) as total
         FROM job_attempts
         WHERE started_at >= DATETIME('now', '-24 hours')
-    `
+    `,
     );
     const failedRow = await db.get<{ total: number }>(
         `
@@ -656,7 +673,7 @@ export async function getRiskInputs(localDate: string, hardInviteCap: number): P
         FROM job_attempts
         WHERE started_at >= DATETIME('now', '-24 hours')
           AND success = 0
-    `
+    `,
     );
     const totalAttempts = attemptsRow?.total ?? 0;
     const failedAttempts = failedRow?.total ?? 0;
@@ -712,7 +729,7 @@ export async function getGlobalKPIData(): Promise<GlobalKPIData> {
         FROM daily_stats
         WHERE date >= ?
     `,
-        [weekAgoDate]
+        [weekAgoDate],
     );
 
     return {
@@ -734,7 +751,7 @@ export async function startCampaignRun(): Promise<number> {
             VALUES (?, 'RUNNING')
             RETURNING id
         `,
-            [startedAt]
+            [startedAt],
         );
 
         const returnedId = inserted?.id;
@@ -753,7 +770,7 @@ export async function startCampaignRun(): Promise<number> {
         INSERT INTO campaign_runs (start_time, status)
         VALUES (?, 'RUNNING')
     `,
-        [startedAt]
+        [startedAt],
     );
     if (!fallbackResult.lastID) {
         throw new Error('Failed to create campaign run record');
@@ -783,7 +800,7 @@ export async function finishCampaignRun(runId: number, status: RunStatus, metric
             errors_count = ?
         WHERE id = ?
     `,
-        [finishedAt, status, metrics.discovered, metrics.invites, metrics.messages, metrics.errors, runId]
+        [finishedAt, status, metrics.discovered, metrics.invites, metrics.messages, metrics.errors, runId],
     );
 }
 

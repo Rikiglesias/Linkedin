@@ -34,7 +34,7 @@ export async function runImportCommand(args: string[]): Promise<void> {
 
     const result = await importLeadsFromCSV(filePath, listName);
     console.log(
-        `Import completato.Lead inseriti = ${result.inserted}, Company target inseriti = ${result.companyTargetsInserted}, Skippati = ${result.skipped}, Lista = ${listName} `
+        `Import completato.Lead inseriti = ${result.inserted}, Company target inseriti = ${result.companyTargetsInserted}, Skippati = ${result.skipped}, Lista = ${listName} `,
     );
 }
 
@@ -49,7 +49,9 @@ export async function runLoginCommand(args: string[]): Promise<void> {
     const selectedAccount = getAccountProfileById(accountRaw);
     const availableAccounts = getRuntimeAccountProfiles().map((account) => account.id);
     if (accountRaw && accountRaw !== selectedAccount.id) {
-        console.warn(`[LOGIN] account = ${accountRaw} non trovato.Uso account = ${selectedAccount.id}.Disponibili: ${availableAccounts.join(', ')} `);
+        console.warn(
+            `[LOGIN] account = ${accountRaw} non trovato.Uso account = ${selectedAccount.id}.Disponibili: ${availableAccounts.join(', ')} `,
+        );
     }
 
     const session = await launchBrowser({
@@ -59,7 +61,9 @@ export async function runLoginCommand(args: string[]): Promise<void> {
     });
     try {
         await session.page.goto('https://www.linkedin.com/login', { waitUntil: 'load' });
-        console.log(`Completa il login LinkedIn nella finestra aperta(account = ${selectedAccount.id}, timeout ${timeoutSeconds}s)...`);
+        console.log(
+            `Completa il login LinkedIn nella finestra aperta(account = ${selectedAccount.id}, timeout ${timeoutSeconds}s)...`,
+        );
         console.log('Il browser resta aperto finché il login non viene verificato o finché scade il timeout.');
 
         const startedAt = Date.now();
@@ -111,12 +115,18 @@ export async function runStateSyncCommand(args: string[]): Promise<void> {
     const limit = limitRaw ? Math.max(1, parseIntStrict(limitRaw, '--limit')) : config.postRunStateSyncLimit;
     const autoFix = hasOption(args, '--fix') || positional.includes('fix') || config.postRunStateSyncFix;
     const report = await runSiteCheck({ limitPerStatus: limit, autoFix });
-    console.log(JSON.stringify({
-        mode: 'state_sync',
-        limitPerStatus: limit,
-        autoFix,
-        report,
-    }, null, 2));
+    console.log(
+        JSON.stringify(
+            {
+                mode: 'state_sync',
+                limitPerStatus: limit,
+                autoFix,
+                report,
+            },
+            null,
+            2,
+        ),
+    );
 }
 
 export async function runProxyStatusCommand(): Promise<void> {
@@ -135,32 +145,40 @@ export async function runProxyStatusCommand(): Promise<void> {
         auth: !!proxy.username || !!proxy.password,
     }));
 
-    console.log(JSON.stringify({
-        integrationProxyPoolEnabled: config.integrationProxyPoolEnabled,
-        session: {
-            ...sessionStatus,
-            failoverChain: sessionFailoverChain,
-        },
-        integration: {
-            ...integrationStatus,
-            failoverChain: integrationFailoverChain,
-        },
-    }, null, 2));
+    console.log(
+        JSON.stringify(
+            {
+                integrationProxyPoolEnabled: config.integrationProxyPoolEnabled,
+                session: {
+                    ...sessionStatus,
+                    failoverChain: sessionFailoverChain,
+                },
+                integration: {
+                    ...integrationStatus,
+                    failoverChain: integrationFailoverChain,
+                },
+            },
+            null,
+            2,
+        ),
+    );
 }
 
 export async function runRandomActivityCommand(args: string[]): Promise<void> {
     const positional = getPositionalArgs(args);
-    const maxActionsRaw = getOptionValue(args, '--max-actions')
-        ?? getOptionValue(args, '--actions')
-        ?? positional.find((value) => /^\d+$/.test(value));
-    const accountId = getOptionValue(args, '--account')
-        ?? positional.find((value) => {
+    const maxActionsRaw =
+        getOptionValue(args, '--max-actions') ??
+        getOptionValue(args, '--actions') ??
+        positional.find((value) => /^\d+$/.test(value));
+    const accountId =
+        getOptionValue(args, '--account') ??
+        positional.find((value) => {
             const normalized = value.toLowerCase();
             if (normalized === 'dry' || normalized === 'dry-run') return false;
             return !value.startsWith('--') && !/^\d+$/.test(value);
-        })
-        ?? config.salesNavSyncAccountId
-        ?? undefined;
+        }) ??
+        config.salesNavSyncAccountId ??
+        undefined;
     const dryRun = hasOption(args, '--dry-run') || positional.includes('dry') || positional.includes('dry-run');
     const maxActions = maxActionsRaw
         ? Math.max(1, parseIntStrict(maxActionsRaw, '--max-actions'))
@@ -192,9 +210,7 @@ export async function runCreateProfileCommand(args: string[]): Promise<void> {
     const dirRaw = getOptionValue(args, '--dir') ?? positional[0];
     const timeoutRaw = getOptionValue(args, '--timeout') ?? positional.find((value) => /^\d+$/.test(value));
     const url = getOptionValue(args, '--url') ?? 'https://www.linkedin.com/login';
-    const timeoutSeconds = timeoutRaw
-        ? Math.max(60, parseIntStrict(timeoutRaw, '--timeout'))
-        : 900;
+    const timeoutSeconds = timeoutRaw ? Math.max(60, parseIntStrict(timeoutRaw, '--timeout')) : 900;
 
     await createPersistentProfile({
         profileDir: resolveProfileDir(dirRaw),

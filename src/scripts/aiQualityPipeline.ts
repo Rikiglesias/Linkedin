@@ -40,32 +40,44 @@ async function run(): Promise<void> {
         const selectorLearning = skipSelectorLearning
             ? null
             : await runSelectorLearner({
-                dryRun: selectorDryRun,
-                triggeredBy,
-                minSuccess: parsePositiveInt(getOptionValue(args, '--selector-min-success'), config.selectorLearningMinSuccess),
-                limit: parsePositiveInt(getOptionValue(args, '--selector-limit'), config.selectorLearningLimit),
-                lookbackDays: parsePositiveInt(getOptionValue(args, '--selector-lookback-days'), config.selectorLearningEvaluationWindowDays),
-                failureDegradeRatio: parseNonNegativeFloat(getOptionValue(args, '--selector-failure-degrade-ratio'), config.selectorLearningFailureDegradeRatio),
-                failureDegradeMinDelta: parsePositiveInt(getOptionValue(args, '--selector-failure-degrade-min-delta'), config.selectorLearningFailureDegradeMinDelta),
-                autoRollback: config.selectorLearningAutoRollbackEnabled,
-            });
+                  dryRun: selectorDryRun,
+                  triggeredBy,
+                  minSuccess: parsePositiveInt(
+                      getOptionValue(args, '--selector-min-success'),
+                      config.selectorLearningMinSuccess,
+                  ),
+                  limit: parsePositiveInt(getOptionValue(args, '--selector-limit'), config.selectorLearningLimit),
+                  lookbackDays: parsePositiveInt(
+                      getOptionValue(args, '--selector-lookback-days'),
+                      config.selectorLearningEvaluationWindowDays,
+                  ),
+                  failureDegradeRatio: parseNonNegativeFloat(
+                      getOptionValue(args, '--selector-failure-degrade-ratio'),
+                      config.selectorLearningFailureDegradeRatio,
+                  ),
+                  failureDegradeMinDelta: parsePositiveInt(
+                      getOptionValue(args, '--selector-failure-degrade-min-delta'),
+                      config.selectorLearningFailureDegradeMinDelta,
+                  ),
+                  autoRollback: config.selectorLearningAutoRollbackEnabled,
+              });
         const quality = await getAiQualitySnapshot(lookbackDays);
 
         const payload = {
             validationRun: validationRun
                 ? {
-                    id: validationRun.id,
-                    status: validationRun.status,
-                    startedAt: validationRun.started_at,
-                    finishedAt: validationRun.finished_at,
-                    summary: (() => {
-                        try {
-                            return JSON.parse(validationRun.summary_json);
-                        } catch {
-                            return {};
-                        }
-                    })(),
-                }
+                      id: validationRun.id,
+                      status: validationRun.status,
+                      startedAt: validationRun.started_at,
+                      finishedAt: validationRun.finished_at,
+                      summary: (() => {
+                          try {
+                              return JSON.parse(validationRun.summary_json);
+                          } catch {
+                              return {};
+                          }
+                      })(),
+                  }
                 : null,
             selectorLearning,
             quality,

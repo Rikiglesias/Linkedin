@@ -17,7 +17,7 @@ export async function enqueueJob(
     priority: number,
     maxAttempts: number,
     initialDelaySeconds: number = 0,
-    accountId: string = 'default'
+    accountId: string = 'default',
 ): Promise<boolean> {
     const db = await getDatabase();
     const safeDelay = Math.max(0, Math.floor(initialDelaySeconds));
@@ -27,7 +27,7 @@ export async function enqueueJob(
         INSERT OR IGNORE INTO jobs (type, status, account_id, payload_json, idempotency_key, priority, max_attempts, next_run_at)
         VALUES (?, 'QUEUED', ?, ?, ?, ?, ?, DATETIME('now', '+' || ? || ' seconds'))
     `,
-        [type, normalizedAccountId, JSON.stringify(payload), idempotencyKey, priority, maxAttempts, safeDelay]
+        [type, normalizedAccountId, JSON.stringify(payload), idempotencyKey, priority, maxAttempts, safeDelay],
     );
     return (result.changes ?? 0) > 0;
 }
@@ -35,7 +35,7 @@ export async function enqueueJob(
 export async function lockNextQueuedJob(
     allowedTypes: JobType[],
     accountId?: string,
-    includeLegacyDefaultQueue: boolean = false
+    includeLegacyDefaultQueue: boolean = false,
 ): Promise<JobRecord | null> {
     if (allowedTypes.length === 0) {
         return null;
@@ -43,11 +43,7 @@ export async function lockNextQueuedJob(
     const db = await getDatabase();
     return withTransaction(db, async () => {
         const placeholders = allowedTypes.map(() => '?').join(', ');
-        const whereClauses = [
-            `status = 'QUEUED'`,
-            `next_run_at <= CURRENT_TIMESTAMP`,
-            `type IN (${placeholders})`,
-        ];
+        const whereClauses = [`status = 'QUEUED'`, `next_run_at <= CURRENT_TIMESTAMP`, `type IN (${placeholders})`];
         const params: unknown[] = [...allowedTypes];
 
         const normalizedAccountId = accountId?.trim();
@@ -68,7 +64,7 @@ export async function lockNextQueuedJob(
             ORDER BY priority ASC, created_at ASC
             LIMIT 1${db.isPostgres ? ' FOR UPDATE SKIP LOCKED' : ''}
         `,
-            params
+            params,
         );
 
         if (!job) return null;
@@ -79,7 +75,7 @@ export async function lockNextQueuedJob(
             SET status = 'RUNNING', locked_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND status = 'QUEUED'
         `,
-            [job.id]
+            [job.id],
         );
         if ((updateResult.changes ?? 0) === 0) {
             await incrementLockMetric('jobs.queue', 'queue_race_lost');
@@ -102,7 +98,7 @@ export async function markJobSucceeded(jobId: number): Promise<void> {
         SET status = 'SUCCEEDED', locked_at = NULL, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
     `,
-        [jobId]
+        [jobId],
     );
 }
 
@@ -111,7 +107,7 @@ export async function markJobRetryOrDeadLetter(
     attempts: number,
     maxAttempts: number,
     nextRetryDelayMs: number,
-    errorMessage: string
+    errorMessage: string,
 ): Promise<JobStatus> {
     const db = await getDatabase();
     if (attempts >= maxAttempts) {
@@ -125,7 +121,7 @@ export async function markJobRetryOrDeadLetter(
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         `,
-            [attempts, errorMessage, jobId]
+            [attempts, errorMessage, jobId],
         );
         return 'DEAD_LETTER';
     }
@@ -142,7 +138,7 @@ export async function markJobRetryOrDeadLetter(
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
     `,
-        [attempts, errorMessage, seconds, jobId]
+        [attempts, errorMessage, seconds, jobId],
     );
     return 'QUEUED';
 }
@@ -152,7 +148,7 @@ export async function createJobAttempt(
     success: boolean,
     errorCode: string | null,
     errorMessage: string | null,
-    evidencePath: string | null
+    evidencePath: string | null,
 ): Promise<void> {
     const db = await getDatabase();
     await db.run(
@@ -160,14 +156,14 @@ export async function createJobAttempt(
         INSERT INTO job_attempts (job_id, finished_at, success, error_code, error_message, evidence_path)
         VALUES (?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
     `,
-        [jobId, success ? 1 : 0, errorCode, errorMessage, evidencePath]
+        [jobId, success ? 1 : 0, errorCode, errorMessage, evidencePath],
     );
 }
 
 export async function getJobStatusCounts(): Promise<JobStatusCounts> {
     const db = await getDatabase();
     const rows = await db.query<{ status: JobStatus; total: number }>(
-        `SELECT status, COUNT(*) as total FROM jobs GROUP BY status`
+        `SELECT status, COUNT(*) as total FROM jobs GROUP BY status`,
     );
 
     const counts: JobStatusCounts = {
@@ -212,7 +208,7 @@ export async function recoverStuckJobs(staleAfterMinutes: number = 30): Promise<
              locked_at IS NULL
              OR locked_at <= DATETIME('now', '-' || ? || ' minutes')
            )`,
-        [Math.max(1, staleAfterMinutes)]
+        [Math.max(1, staleAfterMinutes)],
     );
     return result.changes ?? 0;
 }
@@ -229,7 +225,7 @@ export async function markJobAsDeadLetter(jobId: number, explanation: string): P
         `UPDATE jobs
          SET status = 'DEAD_LETTER', last_error = ?, updated_at = ?
          WHERE id = ?`,
-        [explanation, now, jobId]
+        [explanation, now, jobId],
     );
 }
 
@@ -242,6 +238,6 @@ export async function recycleJob(jobId: number, newDelaySec: number, newPriority
         `UPDATE jobs
          SET status = 'QUEUED', attempts = 0, next_run_at = ?, priority = ?, updated_at = ?
          WHERE id = ?`,
-        [nextRun, newPriority, now.toISOString(), jobId]
+        [nextRun, newPriority, now.toISOString(), jobId],
     );
 }

@@ -37,7 +37,7 @@ export async function transitionLead(
     leadId: number,
     toStatus: LeadStatus,
     reason: string,
-    metadata: Record<string, unknown> = {}
+    metadata: Record<string, unknown> = {},
 ): Promise<void> {
     const lead = await getLeadById(leadId);
     if (!lead) {
@@ -62,7 +62,7 @@ export async function transitionLead(
             reason,
             metadata,
         },
-        `lead.transition:${leadId}:${fromStatus}:${targetStatus}:${reason}`
+        `lead.transition:${leadId}:${fromStatus}:${targetStatus}:${reason}`,
     );
     publishLiveEvent('lead.transition', {
         leadId,
@@ -74,10 +74,18 @@ export async function transitionLead(
 
     if (targetStatus === 'ACCEPTED' && fromStatus !== 'ACCEPTED') {
         const name = `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'Lead Sconosciuto';
-        void sendTelegramAlert(`🤝 **${name}** ha accettato l'invito!\nLinkedIn: ${lead.linkedin_url || 'N/A'}\n_Aggiunto in coda messaggi intro._`, 'Lead Accettato', 'info').catch(() => { });
+        void sendTelegramAlert(
+            `🤝 **${name}** ha accettato l'invito!\nLinkedIn: ${lead.linkedin_url || 'N/A'}\n_Aggiunto in coda messaggi intro._`,
+            'Lead Accettato',
+            'info',
+        ).catch(() => {});
     } else if (targetStatus === 'REPLIED' && fromStatus !== 'REPLIED') {
         const name = `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'Lead Sconosciuto';
-        void sendTelegramAlert(`💬 **${name}** ti ha risposto organicamente!\nControlla i messaggi: ${lead.linkedin_url || 'N/A'}`, 'Nuova Risposta', 'warn').catch(() => { });
+        void sendTelegramAlert(
+            `💬 **${name}** ti ha risposto organicamente!\nControlla i messaggi: ${lead.linkedin_url || 'N/A'}`,
+            'Nuova Risposta',
+            'warn',
+        ).catch(() => {});
     }
 }
 
@@ -85,7 +93,7 @@ export async function reconcileLeadStatus(
     leadId: number,
     toStatus: LeadStatus,
     reason: string,
-    metadata: Record<string, unknown> = {}
+    metadata: Record<string, unknown> = {},
 ): Promise<void> {
     const lead = await getLeadById(leadId);
     if (!lead) {
@@ -112,7 +120,7 @@ export async function reconcileLeadStatus(
             reason,
             metadata,
         },
-        `lead.reconciled:${leadId}:${fromStatus}:${targetStatus}:${reason}`
+        `lead.reconciled:${leadId}:${fromStatus}:${targetStatus}:${reason}`,
     );
     publishLiveEvent('lead.reconciled', {
         leadId,

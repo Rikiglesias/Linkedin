@@ -59,20 +59,24 @@ export async function pushToHubSpot(lead: CRMLead): Promise<boolean> {
                 company: lead.company || '',
                 bot_status: lead.status,
                 hs_lead_status: mapStatusToHubSpot(lead.status),
-            }
+            },
         };
 
-        const res = await fetchWithRetryPolicy('https://api.hubapi.com/crm/v3/objects/contacts', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${config.hubspotApiKey}`,
-                'Content-Type': 'application/json',
+        const res = await fetchWithRetryPolicy(
+            'https://api.hubapi.com/crm/v3/objects/contacts',
+            {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${config.hubspotApiKey}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(body),
             },
-            body: JSON.stringify(body),
-        }, {
-            integration: 'hubspot.push_contact',
-            circuitKey: 'hubspot.contacts',
-        });
+            {
+                integration: 'hubspot.push_contact',
+                circuitKey: 'hubspot.contacts',
+            },
+        );
 
         if (!res.ok && res.status !== 409) {
             // 409 = contact già esistente, ignorabile
@@ -91,12 +95,12 @@ export async function pushToHubSpot(lead: CRMLead): Promise<boolean> {
 
 function mapStatusToHubSpot(status: string): string {
     const map: Record<string, string> = {
-        'READY_INVITE': 'NEW',
-        'INVITED': 'IN_PROGRESS',
-        'ACCEPTED': 'OPEN',
-        'MESSAGED': 'IN_PROGRESS',
-        'REPLIED': 'CONNECTED',
-        'WITHDRAWN': 'UNQUALIFIED',
+        READY_INVITE: 'NEW',
+        INVITED: 'IN_PROGRESS',
+        ACCEPTED: 'OPEN',
+        MESSAGED: 'IN_PROGRESS',
+        REPLIED: 'CONNECTED',
+        WITHDRAWN: 'UNQUALIFIED',
     };
     return map[status] || 'NEW';
 }
@@ -109,15 +113,19 @@ export async function pullFromHubSpot(): Promise<number> {
         const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
         const url = `https://api.hubapi.com/crm/v3/objects/contacts?limit=100&properties=linkedin_url,firstname,lastname,company&filterGroups=[{"filters":[{"propertyName":"lastmodifieddate","operator":"GTE","value":"${since}"}]}]`;
 
-        const res = await fetchWithRetryPolicy(url, {
-            headers: { 'Authorization': `Bearer ${config.hubspotApiKey}` }
-        }, {
-            integration: 'hubspot.pull_contacts',
-            circuitKey: 'hubspot.contacts',
-        });
+        const res = await fetchWithRetryPolicy(
+            url,
+            {
+                headers: { Authorization: `Bearer ${config.hubspotApiKey}` },
+            },
+            {
+                integration: 'hubspot.pull_contacts',
+                circuitKey: 'hubspot.contacts',
+            },
+        );
 
         if (!res.ok) return 0;
-        const data = await res.json() as { results?: Array<{ properties: Record<string, string> }> };
+        const data = (await res.json()) as { results?: Array<{ properties: Record<string, string> }> };
 
         const db = await getDatabase();
         let imported = 0;
@@ -143,14 +151,7 @@ export async function pullFromHubSpot(): Promise<number> {
                 )
                  VALUES (?, ?, ?, ?, ?, ?, 'READY_INVITE', 'hubspot', datetime('now'), datetime('now'))
                  ON CONFLICT(linkedin_url) DO NOTHING`,
-                [
-                    props.company || '',
-                    names.firstName,
-                    names.lastName,
-                    '',
-                    '',
-                    linkedinUrl,
-                ]
+                [props.company || '', names.firstName, names.lastName, '', '', linkedinUrl],
             );
             if ((insertResult.changes ?? 0) > 0) {
                 imported++;
@@ -183,17 +184,21 @@ async function getSalesforceToken(): Promise<string | null> {
             client_secret: config.salesforceClientSecret,
         });
 
-        const res = await fetchWithRetryPolicy(`${config.salesforceInstanceUrl}/services/oauth2/token`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: params.toString(),
-        }, {
-            integration: 'salesforce.oauth_token',
-            circuitKey: 'salesforce.oauth',
-        });
+        const res = await fetchWithRetryPolicy(
+            `${config.salesforceInstanceUrl}/services/oauth2/token`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: params.toString(),
+            },
+            {
+                integration: 'salesforce.oauth_token',
+                circuitKey: 'salesforce.oauth',
+            },
+        );
 
         if (!res.ok) return null;
-        const data = await res.json() as { access_token: string; expires_in?: number };
+        const data = (await res.json()) as { access_token: string; expires_in?: number };
         _salesforceToken = {
             access_token: data.access_token,
             expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000 - 60_000,
@@ -219,17 +224,21 @@ export async function pushToSalesforce(lead: CRMLead): Promise<boolean> {
             Bot_Status__c: lead.status,
         };
 
-        const res = await fetchWithRetryPolicy(`${config.salesforceInstanceUrl}/services/data/v58.0/sobjects/Contact`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
+        const res = await fetchWithRetryPolicy(
+            `${config.salesforceInstanceUrl}/services/data/v58.0/sobjects/Contact`,
+            {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(body),
             },
-            body: JSON.stringify(body),
-        }, {
-            integration: 'salesforce.push_contact',
-            circuitKey: 'salesforce.contacts',
-        });
+            {
+                integration: 'salesforce.push_contact',
+                circuitKey: 'salesforce.contacts',
+            },
+        );
 
         if (!res.ok && res.status !== 400) {
             await logWarn('crm.salesforce.push_failed', { status: res.status });
@@ -247,8 +256,8 @@ export async function pushToSalesforce(lead: CRMLead): Promise<boolean> {
 
 /** Invia l'evento a tutti i CRM configurati (fire-and-forget). */
 export function pushLeadToCRM(lead: CRMLead): void {
-    if (config.hubspotApiKey) pushToHubSpot(lead).catch(() => { });
-    if (config.salesforceClientId) pushToSalesforce(lead).catch(() => { });
+    if (config.hubspotApiKey) pushToHubSpot(lead).catch(() => {});
+    if (config.salesforceClientId) pushToSalesforce(lead).catch(() => {});
 }
 
 /** Pull da tutti i CRM configurati (fire-and-forget). */

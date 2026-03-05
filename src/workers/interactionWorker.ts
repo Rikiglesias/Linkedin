@@ -73,7 +73,7 @@ async function performLikePost(page: Page, linkedinUrl: string): Promise<void> {
     for (const selector of likeSelectors) {
         const likeBtn = page.locator(selector).first();
         const count = await likeBtn.count();
-        if (count > 0 && await likeBtn.isVisible()) {
+        if (count > 0 && (await likeBtn.isVisible())) {
             await humanMouseMove(page, selector);
             await humanDelay(page, 500, 1200);
             await likeBtn.click();
@@ -101,9 +101,9 @@ async function performFollow(page: Page, linkedinUrl: string): Promise<void> {
 
     for (const selector of followSelectors) {
         const btn = page.locator(selector).first();
-        if (await btn.count() > 0 && await btn.isVisible()) {
+        if ((await btn.count()) > 0 && (await btn.isVisible())) {
             // Assicuriamoci che non sia già "Following"
-            const ariaLabel = await btn.getAttribute('aria-label') ?? '';
+            const ariaLabel = (await btn.getAttribute('aria-label')) ?? '';
             if (ariaLabel.toLowerCase().includes('following') || ariaLabel.toLowerCase().includes('seguendo')) {
                 await logInfo('interaction.follow.already_following', { linkedinUrl });
                 return;
@@ -123,7 +123,7 @@ async function performFollow(page: Page, linkedinUrl: string): Promise<void> {
 
 export async function processInteractionJob(
     payload: InteractionJobPayload,
-    context: WorkerContext
+    context: WorkerContext,
 ): Promise<WorkerExecutionResult> {
     const { leadId, actionType } = payload;
 
@@ -164,7 +164,6 @@ export async function processInteractionJob(
 
         await logInfo('interaction.success', { leadId, actionType, linkedinUrl });
         return workerResult(1);
-
     } catch (error) {
         if (error instanceof ChallengeDetectedError) {
             throw error; // Propagato al jobRunner che gestirà il quarantine

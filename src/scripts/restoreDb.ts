@@ -75,7 +75,9 @@ function resolveBackupPath(backupFile?: string): string | null {
     return latest ?? null;
 }
 
-async function inspectSqliteDatabase(databasePath: string): Promise<{ integrity: string; tables: RestoreDrillTableCheck[] }> {
+async function inspectSqliteDatabase(
+    databasePath: string,
+): Promise<{ integrity: string; tables: RestoreDrillTableCheck[] }> {
     const db = await open({
         filename: databasePath,
         driver: sqlite3.Database,
@@ -92,7 +94,7 @@ async function inspectSqliteDatabase(databasePath: string): Promise<{ integrity:
                  FROM sqlite_master
                  WHERE type = 'table'
                    AND name = ?`,
-                [tableName]
+                [tableName],
             );
             const exists = (existsRow?.total ?? 0) > 0;
             let rowCount: number | null = null;
@@ -142,7 +144,8 @@ export async function runRestoreCommand(options: RestoreCommandOptions): Promise
         throw new Error(`Il file di backup non esiste: ${backupPath}`);
     }
 
-    const isSqlite = !config.databaseUrl || config.databaseUrl.startsWith('file:') || config.databaseUrl.includes('.sqlite');
+    const isSqlite =
+        !config.databaseUrl || config.databaseUrl.startsWith('file:') || config.databaseUrl.includes('.sqlite');
     if (isSqlite) {
         if (!backupPath.endsWith('.sqlite')) {
             throw new Error('Restore SQLite richiede un file .sqlite.');
@@ -170,7 +173,9 @@ export async function runRestoreDrill(options: RestoreDrillOptions = {}): Promis
     const keepArtifacts = options.keepArtifacts === true;
     const persistRuntimeFlags = options.persistRuntimeFlags !== false;
 
-    const finalize = async (partial: Omit<RestoreDrillReport, 'startedAt' | 'finishedAt' | 'durationMs' | 'triggeredBy'>): Promise<RestoreDrillReport> => {
+    const finalize = async (
+        partial: Omit<RestoreDrillReport, 'startedAt' | 'finishedAt' | 'durationMs' | 'triggeredBy'>,
+    ): Promise<RestoreDrillReport> => {
         const finishedAtDate = new Date();
         const report: RestoreDrillReport = {
             ...partial,
@@ -192,7 +197,8 @@ export async function runRestoreDrill(options: RestoreDrillOptions = {}): Promis
         return report;
     };
 
-    const isSqlite = !config.databaseUrl || config.databaseUrl.startsWith('file:') || config.databaseUrl.includes('.sqlite');
+    const isSqlite =
+        !config.databaseUrl || config.databaseUrl.startsWith('file:') || config.databaseUrl.includes('.sqlite');
     if (!isSqlite) {
         return finalize({
             status: 'SKIPPED',
@@ -236,7 +242,9 @@ export async function runRestoreDrill(options: RestoreDrillOptions = {}): Promis
             integrityCheck: inspection.integrity,
             tableChecks: inspection.tables,
             reportPath: null,
-            errorMessage: success ? null : `integrity=${inspection.integrity}, requiredTablesPresent=${requiredTablesPresent}`,
+            errorMessage: success
+                ? null
+                : `integrity=${inspection.integrity}, requiredTablesPresent=${requiredTablesPresent}`,
         });
         if (!keepArtifacts && fs.existsSync(tempDbPath)) {
             fs.unlinkSync(tempDbPath);
@@ -294,7 +302,9 @@ async function main(): Promise<void> {
     try {
         const backupFile = args[0];
         if (!backupFile) {
-            throw new Error('Devi specificare il file di backup. Esempio: npm run db:restore data/backups/backup-123.sqlite');
+            throw new Error(
+                'Devi specificare il file di backup. Esempio: npm run db:restore data/backups/backup-123.sqlite',
+            );
         }
         await runRestoreCommand({ backupFile });
         console.log(`Restore completato da: ${path.resolve(backupFile)}`);

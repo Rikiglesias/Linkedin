@@ -54,22 +54,26 @@ async function sendToDiscord(payload: BroadcastPayload): Promise<void> {
             {
                 title: `${emoji} [${payload.level}] ${payload.title}`,
                 description: payload.body + metaBlock,
-                color: payload.level === 'CRITICAL' ? 0xFF0000 : payload.level === 'WARNING' ? 0xFFA500 : 0x00BFFF,
+                color: payload.level === 'CRITICAL' ? 0xff0000 : payload.level === 'WARNING' ? 0xffa500 : 0x00bfff,
                 timestamp: new Date().toISOString(),
             },
         ],
     };
 
-    const response = await fetchWithRetryPolicy(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(discordBody),
-    }, {
-        integration: 'discord.webhook',
-        circuitKey: 'notifications.discord',
-        timeoutMs: 8_000,
-        maxAttempts: 2,
-    });
+    const response = await fetchWithRetryPolicy(
+        url,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(discordBody),
+        },
+        {
+            integration: 'discord.webhook',
+            circuitKey: 'notifications.discord',
+            timeoutMs: 8_000,
+            maxAttempts: 2,
+        },
+    );
 
     if (!response.ok) {
         logWarn(`[broadcaster] Discord webhook returned HTTP ${response.status}`);
@@ -91,16 +95,20 @@ async function sendToSlack(payload: BroadcastPayload): Promise<void> {
         text: `${emoji} *[${payload.level}] ${payload.title}*\n${payload.body}${metaText}`,
     };
 
-    const response = await fetchWithRetryPolicy(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(slackBody),
-    }, {
-        integration: 'slack.webhook',
-        circuitKey: 'notifications.slack',
-        timeoutMs: 8_000,
-        maxAttempts: 2,
-    });
+    const response = await fetchWithRetryPolicy(
+        url,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(slackBody),
+        },
+        {
+            integration: 'slack.webhook',
+            circuitKey: 'notifications.slack',
+            timeoutMs: 8_000,
+            maxAttempts: 2,
+        },
+    );
 
     if (!response.ok) {
         logWarn(`[broadcaster] Slack webhook returned HTTP ${response.status}`);
@@ -116,27 +124,33 @@ async function sendToTelegram(payload: BroadcastPayload): Promise<void> {
 
     const emoji = LEVEL_EMOJI[payload.level];
     const metaText = payload.metadata
-        ? '\n<pre>' + JSON.stringify(payload.metadata, null, 2).substring(0, 600).replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>'
+        ? '\n<pre>' +
+          JSON.stringify(payload.metadata, null, 2).substring(0, 600).replace(/</g, '&lt;').replace(/>/g, '&gt;') +
+          '</pre>'
         : '';
 
     const text = `${emoji} <b>[${payload.level}] ${payload.title}</b>\n${payload.body}${metaText}`;
 
     const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
-    const response = await fetchWithRetryPolicy(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            chat_id: chatId,
-            text,
-            parse_mode: 'HTML',
-            disable_notification: payload.level === 'INFO',
-        }),
-    }, {
-        integration: 'telegram.send_message',
-        circuitKey: 'notifications.telegram',
-        timeoutMs: 8_000,
-        maxAttempts: 2,
-    });
+    const response = await fetchWithRetryPolicy(
+        url,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                chat_id: chatId,
+                text,
+                parse_mode: 'HTML',
+                disable_notification: payload.level === 'INFO',
+            }),
+        },
+        {
+            integration: 'telegram.send_message',
+            circuitKey: 'notifications.telegram',
+            timeoutMs: 8_000,
+            maxAttempts: 2,
+        },
+    );
 
     if (!response.ok) {
         logWarn(`[broadcaster] Telegram API returned HTTP ${response.status}`);
@@ -153,13 +167,13 @@ async function sendToTelegram(payload: BroadcastPayload): Promise<void> {
 export async function broadcast(payload: BroadcastPayload): Promise<void> {
     const promises = [
         sendToDiscord(payload).catch((err: unknown) =>
-            logError('[broadcaster] Discord send failed', { error: err instanceof Error ? err.message : String(err) })
+            logError('[broadcaster] Discord send failed', { error: err instanceof Error ? err.message : String(err) }),
         ),
         sendToSlack(payload).catch((err: unknown) =>
-            logError('[broadcaster] Slack send failed', { error: err instanceof Error ? err.message : String(err) })
+            logError('[broadcaster] Slack send failed', { error: err instanceof Error ? err.message : String(err) }),
         ),
         sendToTelegram(payload).catch((err: unknown) =>
-            logError('[broadcaster] Telegram send failed', { error: err instanceof Error ? err.message : String(err) })
+            logError('[broadcaster] Telegram send failed', { error: err instanceof Error ? err.message : String(err) }),
         ),
     ];
 

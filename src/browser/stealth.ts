@@ -5,12 +5,7 @@
  */
 
 import { config } from '../config';
-import {
-    Fingerprint,
-    desktopFingerprintPool,
-    mobileFingerprintPool,
-    pickRandomFingerprint,
-} from '../fingerprint/pool';
+import { Fingerprint, desktopFingerprintPool, mobileFingerprintPool, pickRandomFingerprint } from '../fingerprint/pool';
 
 export interface CloudFingerprint {
     userAgent: string;
@@ -23,7 +18,7 @@ export interface CloudFingerprint {
     deviceScaleFactor?: number;
 }
 
-export interface BrowserFingerprint extends Fingerprint { }
+export interface BrowserFingerprint extends Fingerprint {}
 
 function randomElement<T>(arr: ReadonlyArray<T>): T {
     return arr[Math.floor(Math.random() * arr.length)] as T;
@@ -40,20 +35,24 @@ function normalizeCloudFingerprint(input: CloudFingerprint, isMobile: boolean): 
         timezone: input.timezone ?? config.timezone,
         locale: input.locale ?? 'it-IT',
         isMobile: input.isMobile ?? isMobile,
-        hasTouch: input.hasTouch ?? (input.isMobile ?? isMobile),
-        deviceScaleFactor: input.deviceScaleFactor ?? (input.isMobile ?? isMobile ? 2.5 : 1),
+        hasTouch: input.hasTouch ?? input.isMobile ?? isMobile,
+        deviceScaleFactor: input.deviceScaleFactor ?? ((input.isMobile ?? isMobile) ? 2.5 : 1),
     };
 }
 
 export function pickBrowserFingerprint(
     cloudFingerprints: ReadonlyArray<CloudFingerprint>,
-    isMobile: boolean
+    isMobile: boolean,
 ): BrowserFingerprint {
     const mobileFiltered = cloudFingerprints.filter((item) => item.isMobile === true);
     const desktopFiltered = cloudFingerprints.filter((item) => item.isMobile !== true);
     const cloudPool = isMobile
-        ? (mobileFiltered.length > 0 ? mobileFiltered : cloudFingerprints)
-        : (desktopFiltered.length > 0 ? desktopFiltered : cloudFingerprints);
+        ? mobileFiltered.length > 0
+            ? mobileFiltered
+            : cloudFingerprints
+        : desktopFiltered.length > 0
+          ? desktopFiltered
+          : cloudFingerprints;
 
     if (cloudPool.length > 0) {
         const fp = randomElement(cloudPool);

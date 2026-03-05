@@ -22,7 +22,7 @@ export class FingerprintPool {
         let hash = 0;
         for (let i = 0; i < seedString.length; i++) {
             const char = seedString.charCodeAt(i);
-            hash = ((hash << 5) - hash) + char;
+            hash = (hash << 5) - hash + char;
             hash = hash & hash; // Convert to 32bit integer
         }
 
@@ -34,7 +34,7 @@ export class FingerprintPool {
             viewport: base.viewport ?? { width: 1280, height: 800 },
             canvasNoise: (positiveHash % 1000) / 100000,
             webglNoise: ((positiveHash * 7) % 1000) / 100000,
-            audioNoise: ((positiveHash * 13) % 1000) / 100000
+            audioNoise: ((positiveHash * 13) % 1000) / 100000,
         };
     }
 }

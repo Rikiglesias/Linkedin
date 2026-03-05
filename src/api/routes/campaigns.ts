@@ -7,7 +7,7 @@ import {
     updateCampaignStatus,
     addCampaignStep,
     getCampaignSteps,
-    enrollLeadInCampaign
+    enrollLeadInCampaign,
 } from '../../core/repositories/campaigns';
 
 const router = Router();
@@ -115,7 +115,7 @@ router.post('/:id/steps', async (req: Request, res: Response): Promise<void> => 
             Number(stepOrder ?? 1),
             String(actionType),
             Number(delayHours ?? 24),
-            metadata ? JSON.stringify(metadata) : '{}'
+            metadata ? JSON.stringify(metadata) : '{}',
         );
         sendApiV1(res, { step }, 201);
     } catch (err: unknown) {

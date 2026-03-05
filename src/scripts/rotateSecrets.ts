@@ -21,7 +21,10 @@ async function main(): Promise<void> {
     const actor = (getOptionValue(args, '--actor') ?? 'secret_rotation_worker').trim() || 'secret_rotation_worker';
     const includeRaw = getOptionValue(args, '--include');
     const includeSecrets = includeRaw
-        ? includeRaw.split(',').map((value) => value.trim()).filter((value) => value.length > 0)
+        ? includeRaw
+              .split(',')
+              .map((value) => value.trim())
+              .filter((value) => value.length > 0)
         : undefined;
     const envFilePath = getOptionValue(args, '--env-file');
 

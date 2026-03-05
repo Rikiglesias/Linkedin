@@ -55,7 +55,7 @@ class SQLiteManager implements DatabaseManager {
         const result = await this.db.run(sql, params);
         return {
             lastID: result.lastID,
-            changes: result.changes
+            changes: result.changes,
         };
     }
 
@@ -72,7 +72,12 @@ class PostgresManager implements DatabaseManager {
     private pool: Pool;
 
     constructor(connectionString: string) {
-        this.pool = new Pool({ connectionString });
+        this.pool = new Pool({
+            connectionString,
+            max: 10,
+            idleTimeoutMillis: 30_000,
+            connectionTimeoutMillis: 5_000,
+        });
     }
 
     // Adattatore sintassi: converte i `?` di SQLite in `$1`, `$2` di Postgres
@@ -86,7 +91,7 @@ class PostgresManager implements DatabaseManager {
 
         normalized = normalized.replace(
             /strftime\('%Y-%m-%dT%H:%M:%f',\s*'now'\)/gi,
-            `TO_CHAR(CURRENT_TIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS.MS')`
+            `TO_CHAR(CURRENT_TIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS.MS')`,
         );
         normalized = normalized.replace(/\bDATETIME\('now'\)/gi, 'CURRENT_TIMESTAMP');
         normalized = normalized.replace(/\bDATE\('now'\)/gi, 'CURRENT_DATE');
@@ -96,21 +101,21 @@ class PostgresManager implements DatabaseManager {
             (_match, sign: string, amount: string, unit: string) => {
                 const op = sign === '+' ? '+' : '-';
                 return `CURRENT_TIMESTAMP ${op} INTERVAL '${amount} ${unit.toLowerCase()}'`;
-            }
+            },
         );
         normalized = normalized.replace(
             /\bDATE\('now',\s*'([+-])\s*(\d+)\s*(days?)'\s*\)/gi,
             (_match, sign: string, amount: string, unit: string) => {
                 const op = sign === '+' ? '+' : '-';
                 return `CURRENT_DATE ${op} INTERVAL '${amount} ${unit.toLowerCase()}'`;
-            }
+            },
         );
         normalized = normalized.replace(
             /\bDATETIME\('now',\s*'([+-])'\s*\|\|\s*(\$\d+)\s*\|\|\s*'\s*(seconds?|minutes?|hours?|days?)'\s*\)/gi,
             (_match, sign: string, paramRef: string, unit: string) => {
                 const op = sign === '+' ? '+' : '-';
                 return `CURRENT_TIMESTAMP ${op} ((${paramRef} || ' ${unit.toLowerCase()}')::interval)`;
-            }
+            },
         );
 
         const hadInsertOrIgnore = /\bINSERT\s+OR\s+IGNORE\s+INTO\b/i.test(normalized);
@@ -138,17 +143,30 @@ class PostgresManager implements DatabaseManager {
     }
 
     async run(sql: string, params?: unknown[]): Promise<DBRunResult> {
-        // Se vogliamo fare insert e avere un lastID con postgres dovremmo usare `RETURNING id`
-        // Per semplicità logica, mappiamo `rowCount` su changes
-        const result = await this.pool.query(this.normalizeSql(sql), params);
+        let normalizedSql = this.normalizeSql(sql);
+
+        // Auto-append RETURNING id for all INSERT statements so that
+        // lastID is available in PostgreSQL without touching every call site.
+        // - ON CONFLICT DO NOTHING: returns row only when insert succeeds (no conflict)
+        // - ON CONFLICT DO UPDATE: returns row always — both cases correct.
+        const isInsert = /^\s*INSERT\b/i.test(normalizedSql);
+        const hasReturning = /\bRETURNING\b/i.test(normalizedSql);
+        if (isInsert && !hasReturning) {
+            normalizedSql = normalizedSql.replace(/;\s*$/, '') + ' RETURNING id';
+        }
+
+        const result = await this.pool.query(normalizedSql, params);
         const row = (result.rows[0] ?? {}) as Record<string, unknown>;
         const rowId = row.id;
-        const parsedLastId = typeof rowId === 'number'
-            ? rowId
-            : (typeof rowId === 'string' && /^[0-9]+$/.test(rowId) ? Number.parseInt(rowId, 10) : undefined);
+        const parsedLastId =
+            typeof rowId === 'number'
+                ? rowId
+                : typeof rowId === 'string' && /^[0-9]+$/.test(rowId)
+                  ? Number.parseInt(rowId, 10)
+                  : undefined;
         return {
             lastID: parsedLastId,
-            changes: result.rowCount ?? undefined
+            changes: result.rowCount ?? undefined,
         };
     }
 
@@ -175,19 +193,29 @@ function resolveMigrationDirectory(): string {
     throw new Error('Cartella migrazioni non trovata.');
 }
 
-async function ensureColumnPg(database: DatabaseManager, tableName: string, columnName: string, definition: string): Promise<void> {
+async function ensureColumnPg(
+    database: DatabaseManager,
+    tableName: string,
+    columnName: string,
+    definition: string,
+): Promise<void> {
     const exists = await database.get(
         `SELECT column_name FROM information_schema.columns WHERE table_name=$1 AND column_name=$2`,
-        [tableName, columnName]
+        [tableName, columnName],
     );
     if (!exists) {
         // Strip out SQLite specific stuff
-        const safeDef = definition.replace(/AUTOINCREMENT/ig, '').trim();
+        const safeDef = definition.replace(/AUTOINCREMENT/gi, '').trim();
         await database.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${safeDef}`);
     }
 }
 
-async function ensureColumnSqlite(database: DatabaseManager, tableName: string, columnName: string, definition: string): Promise<void> {
+async function ensureColumnSqlite(
+    database: DatabaseManager,
+    tableName: string,
+    columnName: string,
+    definition: string,
+): Promise<void> {
     const columns = await database.query<{ name: string }>(`PRAGMA table_info(${tableName})`);
     const exists = columns.some((column) => column.name === columnName);
     if (!exists) {
@@ -196,7 +224,6 @@ async function ensureColumnSqlite(database: DatabaseManager, tableName: string, 
 }
 
 async function applyMigrations(database: DatabaseManager): Promise<void> {
-
     if (isPostgres) {
         await database.exec(`
             CREATE TABLE IF NOT EXISTS _migrations (
@@ -221,15 +248,12 @@ async function applyMigrations(database: DatabaseManager): Promise<void> {
         .filter((file) => file.endsWith('.sql'))
         .sort((a, b) => a.localeCompare(b));
 
-    for (const fileName of files) {
-        const alreadyApplied = await database.get<{ count: string | number }>(
-            `SELECT COUNT(*) as count FROM _migrations WHERE name = ?`,
-            [fileName]
-        );
+    // Load all already-applied migrations in a single query instead of one per file.
+    const appliedRows = await database.query<{ name: string }>(`SELECT name FROM _migrations`);
+    const applied = new Set(appliedRows.map((row) => row.name));
 
-        // Postgres returns count as string (int8)
-        const count = Number(alreadyApplied?.count ?? 0);
-        if (count > 0) {
+    for (const fileName of files) {
+        if (applied.has(fileName)) {
             continue;
         }
 
@@ -237,10 +261,10 @@ async function applyMigrations(database: DatabaseManager): Promise<void> {
 
         if (isPostgres) {
             // Semplice traduzione dialetto per file originariamente nati per sqlite
-            sql = sql.replace(/\bDATETIME\b(?!\s*\()/ig, 'TIMESTAMP');
-            sql = sql.replace(/datetime\('now'\)/ig, 'CURRENT_TIMESTAMP');
-            sql = sql.replace(/strftime\('%Y-%m-%dT%H:%M:%f',\s*'now'\)/ig, 'CURRENT_TIMESTAMP');
-            sql = sql.replace(/INTEGER PRIMARY KEY AUTOINCREMENT/ig, 'SERIAL PRIMARY KEY');
+            sql = sql.replace(/\bDATETIME\b(?!\s*\()/gi, 'TIMESTAMP');
+            sql = sql.replace(/datetime\('now'\)/gi, 'CURRENT_TIMESTAMP');
+            sql = sql.replace(/strftime\('%Y-%m-%dT%H:%M:%f',\s*'now'\)/gi, 'CURRENT_TIMESTAMP');
+            sql = sql.replace(/INTEGER PRIMARY KEY AUTOINCREMENT/gi, 'SERIAL PRIMARY KEY');
         }
 
         await database.exec('BEGIN');
@@ -269,6 +293,10 @@ async function applyMigrations(database: DatabaseManager): Promise<void> {
         await ensureColumnPg(database, 'lead_lists', 'priority', 'INTEGER NOT NULL DEFAULT 100');
         await ensureColumnPg(database, 'lead_lists', 'daily_invite_cap', 'INTEGER');
         await ensureColumnPg(database, 'lead_lists', 'daily_message_cap', 'INTEGER');
+        await ensureColumnPg(database, 'lead_lists', 'scoring_criteria', 'TEXT');
+        await ensureColumnPg(database, 'leads', 'consent_basis', `TEXT DEFAULT 'legitimate_interest'`);
+        await ensureColumnPg(database, 'leads', 'consent_recorded_at', 'TIMESTAMP');
+        await ensureColumnPg(database, 'leads', 'gdpr_opt_out', 'INTEGER DEFAULT 0');
         await ensureColumnPg(database, 'daily_stats', 'messages_sent', 'INTEGER NOT NULL DEFAULT 0');
         await ensureColumnPg(database, 'daily_stats', 'challenges_count', 'INTEGER NOT NULL DEFAULT 0');
         await ensureColumnPg(database, 'daily_stats', 'selector_failures', 'INTEGER NOT NULL DEFAULT 0');
@@ -286,11 +314,21 @@ async function applyMigrations(database: DatabaseManager): Promise<void> {
             );
         `);
 
-        await database.exec(`CREATE INDEX IF NOT EXISTS idx_list_daily_stats_list_date ON list_daily_stats(list_name, date);`);
-        await database.exec(`CREATE INDEX IF NOT EXISTS idx_leads_status_list_created ON leads(status, list_name, created_at);`);
-        await database.exec(`CREATE INDEX IF NOT EXISTS idx_leads_status_last_site_check ON leads(status, last_site_check_at, created_at);`);
-        await database.exec(`CREATE INDEX IF NOT EXISTS idx_jobs_type_status_next_run ON jobs(type, status, next_run_at, priority, created_at);`);
-        await database.exec(`CREATE INDEX IF NOT EXISTS idx_jobs_account_status_next_run ON jobs(account_id, status, next_run_at, priority, created_at);`);
+        await database.exec(
+            `CREATE INDEX IF NOT EXISTS idx_list_daily_stats_list_date ON list_daily_stats(list_name, date);`,
+        );
+        await database.exec(
+            `CREATE INDEX IF NOT EXISTS idx_leads_status_list_created ON leads(status, list_name, created_at);`,
+        );
+        await database.exec(
+            `CREATE INDEX IF NOT EXISTS idx_leads_status_last_site_check ON leads(status, last_site_check_at, created_at);`,
+        );
+        await database.exec(
+            `CREATE INDEX IF NOT EXISTS idx_jobs_type_status_next_run ON jobs(type, status, next_run_at, priority, created_at);`,
+        );
+        await database.exec(
+            `CREATE INDEX IF NOT EXISTS idx_jobs_account_status_next_run ON jobs(account_id, status, next_run_at, priority, created_at);`,
+        );
 
         await database.exec(`
             CREATE TABLE IF NOT EXISTS company_targets (
@@ -404,6 +442,10 @@ async function applyMigrations(database: DatabaseManager): Promise<void> {
         await ensureColumnSqlite(database, 'lead_lists', 'priority', 'INTEGER NOT NULL DEFAULT 100');
         await ensureColumnSqlite(database, 'lead_lists', 'daily_invite_cap', 'INTEGER');
         await ensureColumnSqlite(database, 'lead_lists', 'daily_message_cap', 'INTEGER');
+        await ensureColumnSqlite(database, 'lead_lists', 'scoring_criteria', 'TEXT');
+        await ensureColumnSqlite(database, 'leads', 'consent_basis', `TEXT DEFAULT 'legitimate_interest'`);
+        await ensureColumnSqlite(database, 'leads', 'consent_recorded_at', 'DATETIME');
+        await ensureColumnSqlite(database, 'leads', 'gdpr_opt_out', 'INTEGER DEFAULT 0');
         await ensureColumnSqlite(database, 'daily_stats', 'messages_sent', 'INTEGER NOT NULL DEFAULT 0');
         await ensureColumnSqlite(database, 'daily_stats', 'challenges_count', 'INTEGER NOT NULL DEFAULT 0');
         await ensureColumnSqlite(database, 'daily_stats', 'selector_failures', 'INTEGER NOT NULL DEFAULT 0');
@@ -419,11 +461,21 @@ async function applyMigrations(database: DatabaseManager): Promise<void> {
                 PRIMARY KEY (date, list_name)
             );
         `);
-        await database.exec(`CREATE INDEX IF NOT EXISTS idx_list_daily_stats_list_date ON list_daily_stats(list_name, date);`);
-        await database.exec(`CREATE INDEX IF NOT EXISTS idx_leads_status_list_created ON leads(status, list_name, created_at);`);
-        await database.exec(`CREATE INDEX IF NOT EXISTS idx_leads_status_last_site_check ON leads(status, last_site_check_at, created_at);`);
-        await database.exec(`CREATE INDEX IF NOT EXISTS idx_jobs_type_status_next_run ON jobs(type, status, next_run_at, priority, created_at);`);
-        await database.exec(`CREATE INDEX IF NOT EXISTS idx_jobs_account_status_next_run ON jobs(account_id, status, next_run_at, priority, created_at);`);
+        await database.exec(
+            `CREATE INDEX IF NOT EXISTS idx_list_daily_stats_list_date ON list_daily_stats(list_name, date);`,
+        );
+        await database.exec(
+            `CREATE INDEX IF NOT EXISTS idx_leads_status_list_created ON leads(status, list_name, created_at);`,
+        );
+        await database.exec(
+            `CREATE INDEX IF NOT EXISTS idx_leads_status_last_site_check ON leads(status, last_site_check_at, created_at);`,
+        );
+        await database.exec(
+            `CREATE INDEX IF NOT EXISTS idx_jobs_type_status_next_run ON jobs(type, status, next_run_at, priority, created_at);`,
+        );
+        await database.exec(
+            `CREATE INDEX IF NOT EXISTS idx_jobs_account_status_next_run ON jobs(account_id, status, next_run_at, priority, created_at);`,
+        );
         await database.exec(`
             CREATE TABLE IF NOT EXISTS company_targets (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -551,7 +603,7 @@ export async function getDatabase(): Promise<DatabaseManager> {
     // Default to SQLite
     if (process.env.NODE_ENV === 'production' && !config.allowSqliteInProduction) {
         throw new Error(
-            'SQLite in produzione bloccato. Fornisci un DATABASE_URL (PostgreSQL) oppure imposta ALLOW_SQLITE_IN_PRODUCTION=true esplicitamente.'
+            'SQLite in produzione bloccato. Fornisci un DATABASE_URL (PostgreSQL) oppure imposta ALLOW_SQLITE_IN_PRODUCTION=true esplicitamente.',
         );
     }
 
@@ -601,6 +653,11 @@ export async function backupDatabase(): Promise<string> {
     }
 
     ensureParentDirectoryPrivate(backupPath);
+
+    // Validate backup path to prevent SQL injection via path characters.
+    if (!/^[a-zA-Z0-9_\-. \\/:()\u00C0-\u024F]+$/.test(backupPath)) {
+        throw new Error(`Backup path contains invalid characters: ${backupPath}`);
+    }
     const safePath = backupPath.replace(/'/g, "''");
 
     await database.exec(`VACUUM INTO '${safePath}';`);

@@ -10,7 +10,7 @@ const RAMP_UP_SCHEDULE = [
     { day: 4, inviteCap: 20, messageCap: 20 },
     { day: 5, inviteCap: 25, messageCap: 30 },
     { day: 6, inviteCap: 30, messageCap: 40 },
-    { day: 7, inviteCap: 40, messageCap: 50 } // Obiettivo finale a regime moderato
+    { day: 7, inviteCap: 40, messageCap: 50 }, // Obiettivo finale a regime moderato
 ];
 
 async function runRampUp(listName: string, targetDay: number | 'auto') {
@@ -25,15 +25,16 @@ async function runRampUp(listName: string, targetDay: number | 'auto') {
         console.log(`[Ramp-Up] Valutazione Rischio Attuale: ${evaluation.score}/100 [Azione: ${evaluation.action}]`);
 
         if (evaluation.action === 'WARN' || evaluation.action === 'LOW_ACTIVITY' || evaluation.action === 'STOP') {
-            console.error(`[Ramp-Up] ❌ Rischio troppo elevato (${evaluation.action}) per scalare i limiti. Rimandare ad andamento normalizzato.`);
+            console.error(
+                `[Ramp-Up] ❌ Rischio troppo elevato (${evaluation.action}) per scalare i limiti. Rimandare ad andamento normalizzato.`,
+            );
             process.exit(1);
         }
 
         // 2. Resolve the target lists
         const configs = await listLeadCampaignConfigs();
-        const targetConfigs = listName === 'all'
-            ? configs
-            : configs.filter(c => c.name.toLowerCase() === listName.toLowerCase());
+        const targetConfigs =
+            listName === 'all' ? configs : configs.filter((c) => c.name.toLowerCase() === listName.toLowerCase());
 
         if (targetConfigs.length === 0) {
             console.error(`[Ramp-Up] ❌ Nessuna configurazione trovata per la lista: ${listName}`);
@@ -44,12 +45,17 @@ async function runRampUp(listName: string, targetDay: number | 'auto') {
         let schedule;
         if (targetDay === 'auto') {
             // Find the lowest current invite cap to determine the starting point safely
-            const minCurrentCap = Math.min(...targetConfigs.map(c => c.dailyInviteCap ?? 0));
+            const minCurrentCap = Math.min(...targetConfigs.map((c) => c.dailyInviteCap ?? 0));
             // Find the first schedule step that is higher than the current min cap
-            schedule = RAMP_UP_SCHEDULE.find(s => s.inviteCap > minCurrentCap) || RAMP_UP_SCHEDULE[RAMP_UP_SCHEDULE.length - 1];
-            console.log(`[Ramp-Up] Auto-resolve: limite attuale minimo = ${minCurrentCap}. Passiamo al Giorno ${schedule.day}.`);
+            schedule =
+                RAMP_UP_SCHEDULE.find((s) => s.inviteCap > minCurrentCap) ||
+                RAMP_UP_SCHEDULE[RAMP_UP_SCHEDULE.length - 1];
+            console.log(
+                `[Ramp-Up] Auto-resolve: limite attuale minimo = ${minCurrentCap}. Passiamo al Giorno ${schedule.day}.`,
+            );
         } else {
-            schedule = RAMP_UP_SCHEDULE.find(s => s.day === targetDay) || RAMP_UP_SCHEDULE[RAMP_UP_SCHEDULE.length - 1];
+            schedule =
+                RAMP_UP_SCHEDULE.find((s) => s.day === targetDay) || RAMP_UP_SCHEDULE[RAMP_UP_SCHEDULE.length - 1];
         }
 
         console.log(`[Ramp-Up] Applicazione parametri del Giorno ${schedule.day}`);
@@ -60,12 +66,11 @@ async function runRampUp(listName: string, targetDay: number | 'auto') {
             await updateLeadCampaignConfig(cfg.name, {
                 dailyInviteCap: schedule.inviteCap,
                 dailyMessageCap: schedule.messageCap,
-                isActive: true
+                isActive: true,
             });
         }
 
         console.log(`[Ramp-Up] ✅ Limiti aggiornati con successo.`);
-
     } catch (err) {
         console.error('[Ramp-Up] Errore:', err);
         process.exitCode = 1;

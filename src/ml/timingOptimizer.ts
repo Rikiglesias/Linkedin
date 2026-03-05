@@ -155,9 +155,7 @@ async function computeSlotScores(action: TimingAction, segment?: LeadSegment): P
         globalTotal += total;
     }
 
-    const priorMean = globalTotal > 0
-        ? globalSuccess / globalTotal
-        : config.timingScoreThreshold;
+    const priorMean = globalTotal > 0 ? globalSuccess / globalTotal : config.timingScoreThreshold;
     const priorWeight = Math.max(0, config.timingBayesPriorWeight);
     const recentWeight = clamp01(config.timingRecentWeight);
 
@@ -169,10 +167,11 @@ async function computeSlotScores(action: TimingAction, segment?: LeadSegment): P
         const dayOfWeek = Number.parseInt(dowRaw ?? '0', 10);
         const lifetimeRate = value.total > 0 ? value.success / value.total : 0;
         const recentRate = value.recentTotal > 0 ? value.recentSuccess / value.recentTotal : lifetimeRate;
-        const blendedRate = (lifetimeRate * (1 - recentWeight)) + (recentRate * recentWeight);
-        const bayesScore = priorWeight > 0
-            ? ((blendedRate * value.total) + (priorMean * priorWeight)) / (value.total + priorWeight)
-            : blendedRate;
+        const blendedRate = lifetimeRate * (1 - recentWeight) + recentRate * recentWeight;
+        const bayesScore =
+            priorWeight > 0
+                ? (blendedRate * value.total + priorMean * priorWeight) / (value.total + priorWeight)
+                : blendedRate;
 
         slots.push({
             hour,
@@ -228,7 +227,7 @@ export async function getBestTimeSlotForSegment(action: TimingAction, segment: L
 export async function getTimingDecision(
     action: TimingAction,
     segment: LeadSegment,
-    now: Date = new Date()
+    now: Date = new Date(),
 ): Promise<TimingDecision> {
     const fallbackDecision = (reason: TimingDecision['reason'], explored: boolean): TimingDecision => ({
         action,
@@ -278,7 +277,7 @@ export async function getTimingDecision(
 export async function getTimingDecisionForLead(
     action: TimingAction,
     jobTitle: string | null | undefined,
-    now: Date = new Date()
+    now: Date = new Date(),
 ): Promise<TimingDecision> {
     const segment = inferLeadSegment(jobTitle);
     return getTimingDecision(action, segment, now);
@@ -290,9 +289,10 @@ export async function isGoodTimeNow(action: TimingAction = 'invite', segment?: L
     const currentDow = now.getDay();
     try {
         const db = await getDatabase();
-        const countRow = action === 'invite'
-            ? await db.get<{ total: number }>(`SELECT COUNT(*) as total FROM leads WHERE invited_at IS NOT NULL`)
-            : await db.get<{ total: number }>(`SELECT COUNT(*) as total FROM leads WHERE messaged_at IS NOT NULL`);
+        const countRow =
+            action === 'invite'
+                ? await db.get<{ total: number }>(`SELECT COUNT(*) as total FROM leads WHERE invited_at IS NOT NULL`)
+                : await db.get<{ total: number }>(`SELECT COUNT(*) as total FROM leads WHERE messaged_at IS NOT NULL`);
         const totalSamples = countRow?.total ?? 0;
 
         if (totalSamples < MIN_DATAPOINTS_FALLBACK) {
@@ -329,7 +329,7 @@ export async function isGoodTimeNow(action: TimingAction = 'invite', segment?: L
 export async function getTopTimeSlots(
     n: number = 3,
     action: TimingAction = 'invite',
-    segment?: LeadSegment
+    segment?: LeadSegment,
 ): Promise<TimeSlot[]> {
     try {
         const slots = await computeSlotScores(action, segment === 'unknown' ? undefined : segment);
@@ -377,10 +377,7 @@ function buildExperimentQuery(action: TimingAction, lookbackDays: number): strin
     `;
 }
 
-function findStrategyStats(
-    rows: StrategyAggregateRow[],
-    strategy: TimingStrategy
-): TimingExperimentStrategyStats {
+function findStrategyStats(rows: StrategyAggregateRow[], strategy: TimingStrategy): TimingExperimentStrategyStats {
     const row = rows.find((item) => normalizeStrategy(item.strategy) === strategy);
     const sent = row?.sent ?? 0;
     const success = row?.success ?? 0;
@@ -395,7 +392,7 @@ function findStrategyStats(
 
 export async function getTimingExperimentReport(
     action: TimingAction = 'invite',
-    lookbackDays: number = config.timingAbLookbackDays
+    lookbackDays: number = config.timingAbLookbackDays,
 ): Promise<TimingExperimentReport> {
     const db = await getDatabase();
     const safeLookback = Math.max(1, Math.floor(lookbackDays));
@@ -403,26 +400,26 @@ export async function getTimingExperimentReport(
     const baseline = findStrategyStats(rows, 'baseline');
     const optimizer = findStrategyStats(rows, 'optimizer');
     const totalSent = baseline.sent + optimizer.sent;
-    const liftAbsolute = baseline.sent > 0 && optimizer.sent > 0
-        ? round4(optimizer.successRate - baseline.successRate)
-        : null;
+    const liftAbsolute =
+        baseline.sent > 0 && optimizer.sent > 0 ? round4(optimizer.successRate - baseline.successRate) : null;
 
-    const significance = baseline.sent > 0 && optimizer.sent > 0
-        ? (() => {
-            const result = computeTwoProportionSignificance(
-                baseline.success,
-                baseline.sent,
-                optimizer.success,
-                optimizer.sent,
-                config.timingAbSignificanceAlpha
-            );
-            return {
-                alpha: config.timingAbSignificanceAlpha,
-                pValue: result.pValue,
-                significant: result.significant,
-            };
-        })()
-        : null;
+    const significance =
+        baseline.sent > 0 && optimizer.sent > 0
+            ? (() => {
+                  const result = computeTwoProportionSignificance(
+                      baseline.success,
+                      baseline.sent,
+                      optimizer.success,
+                      optimizer.sent,
+                      config.timingAbSignificanceAlpha,
+                  );
+                  return {
+                      alpha: config.timingAbSignificanceAlpha,
+                      pValue: result.pValue,
+                      significant: result.significant,
+                  };
+              })()
+            : null;
 
     let winner: TimingExperimentReport['winner'] = null;
     if (significance?.significant) {

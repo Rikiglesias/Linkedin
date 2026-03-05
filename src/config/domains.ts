@@ -25,7 +25,10 @@ export function buildRuntimeDomainConfig(accountProfiles: AccountProfileConfig[]
         jobStuckMinutes: Math.max(1, parseIntEnv('JOB_STUCK_MINUTES', 30)),
         retryMaxAttempts: Math.max(1, parseIntEnv('RETRY_MAX_ATTEMPTS', 3)),
         retryBaseMs: Math.max(100, parseIntEnv('RETRY_BASE_MS', 1200)),
-        integrationRetryMaxAttempts: Math.max(1, parseIntEnv('INTEGRATION_RETRY_MAX_ATTEMPTS', parseIntEnv('RETRY_MAX_ATTEMPTS', 3))),
+        integrationRetryMaxAttempts: Math.max(
+            1,
+            parseIntEnv('INTEGRATION_RETRY_MAX_ATTEMPTS', parseIntEnv('RETRY_MAX_ATTEMPTS', 3)),
+        ),
         integrationRetryMaxDelayMs: Math.max(500, parseIntEnv('INTEGRATION_RETRY_MAX_DELAY_MS', 30_000)),
         integrationRequestTimeoutMs: Math.max(250, parseIntEnv('INTEGRATION_REQUEST_TIMEOUT_MS', 10_000)),
         integrationCircuitBreakerEnabled: parseBoolEnv('INTEGRATION_CIRCUIT_BREAKER_ENABLED', true),
@@ -36,14 +39,20 @@ export function buildRuntimeDomainConfig(accountProfiles: AccountProfileConfig[]
         mandatoryPreflightEnabled: parseBoolEnv('MANDATORY_PREFLIGHT_ENABLED', true),
         companyEnrichmentEnabled: parseBoolEnv('COMPANY_ENRICHMENT_ENABLED', true),
         companyEnrichmentBatch: Math.max(1, parseIntEnv('COMPANY_ENRICHMENT_BATCH', 5)),
-        companyEnrichmentMaxProfilesPerCompany: Math.max(1, parseIntEnv('COMPANY_ENRICHMENT_MAX_PROFILES_PER_COMPANY', 3)),
+        companyEnrichmentMaxProfilesPerCompany: Math.max(
+            1,
+            parseIntEnv('COMPANY_ENRICHMENT_MAX_PROFILES_PER_COMPANY', 3),
+        ),
         maxConsecutiveJobFailures: Math.max(1, parseIntEnv('MAX_CONSECUTIVE_JOB_FAILURES', 4)),
         maxSelectorFailuresPerDay: Math.max(1, parseIntEnv('MAX_SELECTOR_FAILURES_PER_DAY', 8)),
         maxRunErrorsPerDay: Math.max(1, parseIntEnv('MAX_RUN_ERRORS_PER_DAY', 20)),
         accountMaxJobsPerRun: Math.max(1, parseIntEnv('ACCOUNT_MAX_JOBS_PER_RUN', 120)),
         accountLegacyDefaultQueueFallback: parseBoolEnv('ACCOUNT_LEGACY_DEFAULT_QUEUE_FALLBACK', false),
         accountHealthWarnFailureRate: Math.min(1, Math.max(0, parseFloatEnv('ACCOUNT_HEALTH_WARN_FAILURE_RATE', 0.2))),
-        accountHealthCriticalFailureRate: Math.min(1, Math.max(0, parseFloatEnv('ACCOUNT_HEALTH_CRITICAL_FAILURE_RATE', 0.35))),
+        accountHealthCriticalFailureRate: Math.min(
+            1,
+            Math.max(0, parseFloatEnv('ACCOUNT_HEALTH_CRITICAL_FAILURE_RATE', 0.35)),
+        ),
         accountHealthAlertMinProcessed: Math.max(1, parseIntEnv('ACCOUNT_HEALTH_ALERT_MIN_PROCESSED', 5)),
         autoPauseMinutesOnFailureBurst: Math.max(1, parseIntEnv('AUTO_PAUSE_MINUTES_ON_FAILURE_BURST', 180)),
         challengePauseMinutes: Math.max(5, parseIntEnv('CHALLENGE_PAUSE_MINUTES', 180)),
@@ -72,12 +81,24 @@ export function buildLimitsAndRiskDomainConfig(): Partial<AppConfig> {
         complianceMaxHardMsgCap: Math.max(1, parseIntEnv('COMPLIANCE_MAX_HARD_MSG_CAP', 40)),
         complianceHealthScoreEnabled: parseBoolEnv('COMPLIANCE_HEALTH_SCORE_ENABLED', true),
         complianceHealthLookbackDays: Math.max(1, parseIntEnv('COMPLIANCE_HEALTH_LOOKBACK_DAYS', 14)),
-        complianceHealthPauseThreshold: Math.max(0, Math.min(100, parseIntEnv('COMPLIANCE_HEALTH_PAUSE_THRESHOLD', 70))),
+        complianceHealthPauseThreshold: Math.max(
+            0,
+            Math.min(100, parseIntEnv('COMPLIANCE_HEALTH_PAUSE_THRESHOLD', 70)),
+        ),
         complianceHealthMinInviteSample: Math.max(1, parseIntEnv('COMPLIANCE_HEALTH_MIN_INVITE_SAMPLE', 20)),
         complianceHealthMinMessageSample: Math.max(1, parseIntEnv('COMPLIANCE_HEALTH_MIN_MESSAGE_SAMPLE', 10)),
-        complianceHealthPendingWarnThreshold: Math.min(1, Math.max(0, parseFloatEnv('COMPLIANCE_HEALTH_PENDING_WARN_THRESHOLD', 0.65))),
-        compliancePendingRatioAlertThreshold: Math.min(1, Math.max(0, parseFloatEnv('COMPLIANCE_PENDING_RATIO_ALERT_THRESHOLD', 0.65))),
-        compliancePendingRatioAlertMinInvited: Math.max(1, parseIntEnv('COMPLIANCE_PENDING_RATIO_ALERT_MIN_INVITED', 20)),
+        complianceHealthPendingWarnThreshold: Math.min(
+            1,
+            Math.max(0, parseFloatEnv('COMPLIANCE_HEALTH_PENDING_WARN_THRESHOLD', 0.65)),
+        ),
+        compliancePendingRatioAlertThreshold: Math.min(
+            1,
+            Math.max(0, parseFloatEnv('COMPLIANCE_PENDING_RATIO_ALERT_THRESHOLD', 0.65)),
+        ),
+        compliancePendingRatioAlertMinInvited: Math.max(
+            1,
+            parseIntEnv('COMPLIANCE_PENDING_RATIO_ALERT_MIN_INVITED', 20),
+        ),
         complianceDynamicWeeklyLimitEnabled: parseBoolEnv('COMPLIANCE_DYNAMIC_WEEKLY_LIMIT_ENABLED', true),
         complianceDynamicWeeklyMinInvites: Math.max(1, parseIntEnv('COMPLIANCE_DYNAMIC_WEEKLY_MIN_INVITES', 20)),
         complianceDynamicWeeklyMaxInvites: Math.max(1, parseIntEnv('COMPLIANCE_DYNAMIC_WEEKLY_MAX_INVITES', 80)),
@@ -125,22 +146,53 @@ export function buildLimitsAndRiskDomainConfig(): Partial<AppConfig> {
         selectorLearningMinSuccess: Math.max(1, parseIntEnv('SELECTOR_LEARNING_MIN_SUCCESS', 3)),
         selectorLearningLimit: Math.max(1, parseIntEnv('SELECTOR_LEARNING_LIMIT', 120)),
         selectorLearningEvaluationWindowDays: Math.max(1, parseIntEnv('SELECTOR_LEARNING_EVALUATION_WINDOW_DAYS', 7)),
-        selectorLearningFailureDegradeRatio: Math.max(0, parseFloatEnv('SELECTOR_LEARNING_FAILURE_DEGRADE_RATIO', 0.35)),
-        selectorLearningFailureDegradeMinDelta: Math.max(1, parseIntEnv('SELECTOR_LEARNING_FAILURE_DEGRADE_MIN_DELTA', 2)),
+        selectorLearningFailureDegradeRatio: Math.max(
+            0,
+            parseFloatEnv('SELECTOR_LEARNING_FAILURE_DEGRADE_RATIO', 0.35),
+        ),
+        selectorLearningFailureDegradeMinDelta: Math.max(
+            1,
+            parseIntEnv('SELECTOR_LEARNING_FAILURE_DEGRADE_MIN_DELTA', 2),
+        ),
         selectorLearningAutoRollbackEnabled: parseBoolEnv('SELECTOR_LEARNING_AUTO_ROLLBACK_ENABLED', true),
         selectorCacheKpiMinBaselineFailures: Math.max(0, parseIntEnv('SELECTOR_CACHE_KPI_MIN_BASELINE_FAILURES', 5)),
         outboxAlertBacklog: Math.max(1, parseIntEnv('OUTBOX_ALERT_BACKLOG', 1000)),
         observabilitySloWindowShortDays: Math.max(1, parseIntEnv('OBSERVABILITY_SLO_WINDOW_SHORT_DAYS', 7)),
         observabilitySloWindowLongDays: Math.max(1, parseIntEnv('OBSERVABILITY_SLO_WINDOW_LONG_DAYS', 30)),
-        observabilitySloErrorRateWarn: Math.min(1, Math.max(0, parseFloatEnv('OBSERVABILITY_SLO_ERROR_RATE_WARN', 0.08))),
-        observabilitySloErrorRateCritical: Math.min(1, Math.max(0, parseFloatEnv('OBSERVABILITY_SLO_ERROR_RATE_CRITICAL', 0.15))),
-        observabilitySloChallengeRateWarn: Math.min(1, Math.max(0, parseFloatEnv('OBSERVABILITY_SLO_CHALLENGE_RATE_WARN', 0.02))),
-        observabilitySloChallengeRateCritical: Math.min(1, Math.max(0, parseFloatEnv('OBSERVABILITY_SLO_CHALLENGE_RATE_CRITICAL', 0.05))),
-        observabilitySloSelectorFailureRateWarn: Math.min(1, Math.max(0, parseFloatEnv('OBSERVABILITY_SLO_SELECTOR_FAILURE_RATE_WARN', 0.05))),
-        observabilitySloSelectorFailureRateCritical: Math.min(1, Math.max(0, parseFloatEnv('OBSERVABILITY_SLO_SELECTOR_FAILURE_RATE_CRITICAL', 0.1))),
+        observabilitySloErrorRateWarn: Math.min(
+            1,
+            Math.max(0, parseFloatEnv('OBSERVABILITY_SLO_ERROR_RATE_WARN', 0.08)),
+        ),
+        observabilitySloErrorRateCritical: Math.min(
+            1,
+            Math.max(0, parseFloatEnv('OBSERVABILITY_SLO_ERROR_RATE_CRITICAL', 0.15)),
+        ),
+        observabilitySloChallengeRateWarn: Math.min(
+            1,
+            Math.max(0, parseFloatEnv('OBSERVABILITY_SLO_CHALLENGE_RATE_WARN', 0.02)),
+        ),
+        observabilitySloChallengeRateCritical: Math.min(
+            1,
+            Math.max(0, parseFloatEnv('OBSERVABILITY_SLO_CHALLENGE_RATE_CRITICAL', 0.05)),
+        ),
+        observabilitySloSelectorFailureRateWarn: Math.min(
+            1,
+            Math.max(0, parseFloatEnv('OBSERVABILITY_SLO_SELECTOR_FAILURE_RATE_WARN', 0.05)),
+        ),
+        observabilitySloSelectorFailureRateCritical: Math.min(
+            1,
+            Math.max(0, parseFloatEnv('OBSERVABILITY_SLO_SELECTOR_FAILURE_RATE_CRITICAL', 0.1)),
+        ),
         riskPredictiveAlertsEnabled: parseBoolEnv('RISK_PREDICTIVE_ALERTS_ENABLED', true),
         riskPredictiveLookbackDays: Math.max(3, parseIntEnv('RISK_PREDICTIVE_LOOKBACK_DAYS', 7)),
         riskPredictiveSigma: Math.max(0.5, parseFloatEnv('RISK_PREDICTIVE_SIGMA', 2)),
+        postCreationEnabled: parseBoolEnv('POST_CREATION_ENABLED', false),
+        postCreationMaxPerDay: Math.max(0, parseIntEnv('POST_CREATION_MAX_PER_DAY', 1)),
+        postCreationDefaultTone: (parseStringEnv('POST_CREATION_DEFAULT_TONE') || 'thought_leadership') as
+            | 'professional'
+            | 'casual'
+            | 'thought_leadership'
+            | 'storytelling',
     };
 }
 
@@ -153,7 +205,10 @@ export function buildSyncDomainConfig(): Partial<AppConfig> {
         supabaseSyncIntervalMs: Math.max(1000, parseIntEnv('SUPABASE_SYNC_INTERVAL_MS', 15000)),
         supabaseSyncMaxRetries: Math.max(1, parseIntEnv('SUPABASE_SYNC_MAX_RETRIES', 8)),
         supabaseControlPlaneEnabled: parseBoolEnv('SUPABASE_CONTROL_PLANE_ENABLED', false),
-        supabaseControlPlaneSyncIntervalMs: Math.max(1000, parseIntEnv('SUPABASE_CONTROL_PLANE_SYNC_INTERVAL_MS', 300000)),
+        supabaseControlPlaneSyncIntervalMs: Math.max(
+            1000,
+            parseIntEnv('SUPABASE_CONTROL_PLANE_SYNC_INTERVAL_MS', 300000),
+        ),
         supabaseControlPlaneMaxCampaigns: Math.max(1, parseIntEnv('SUPABASE_CONTROL_PLANE_MAX_CAMPAIGNS', 500)),
         webhookSyncEnabled: parseBoolEnv('WEBHOOK_SYNC_ENABLED', false),
         webhookSyncUrl: parseStringEnv('WEBHOOK_SYNC_URL'),
@@ -178,7 +233,10 @@ export function buildAiDomainConfig(): Partial<AppConfig> {
         inboxAutoReplyMaxPerRun: Math.max(1, parseIntEnv('INBOX_AUTO_REPLY_MAX_PER_RUN', 2)),
         aiMessageMaxChars: Math.max(120, parseIntEnv('AI_MESSAGE_MAX_CHARS', 450)),
         aiQualityMinSampleSize: Math.max(5, parseIntEnv('AI_QUALITY_MIN_SAMPLE_SIZE', 30)),
-        aiQualitySignificanceAlpha: Math.min(0.25, Math.max(0.001, parseFloatEnv('AI_QUALITY_SIGNIFICANCE_ALPHA', 0.05))),
+        aiQualitySignificanceAlpha: Math.min(
+            0.25,
+            Math.max(0.001, parseFloatEnv('AI_QUALITY_SIGNIFICANCE_ALPHA', 0.05)),
+        ),
         aiValidationAutoSeedEnabled: parseBoolEnv('AI_VALIDATION_AUTO_SEED_ENABLED', true),
         aiGuardianEnabled: parseBoolEnv('AI_GUARDIAN_ENABLED', false),
         aiGuardianMinIntervalMinutes: Math.max(1, parseIntEnv('AI_GUARDIAN_MIN_INTERVAL_MINUTES', 60)),
@@ -206,6 +264,7 @@ export function buildCommsAndBusinessDomainConfig(): Partial<AppConfig> {
         securityAdvisorMinAuditEvents: Math.max(0, parseIntEnv('SECURITY_ADVISOR_MIN_AUDIT_EVENTS', 1)),
         securitySecretMaxAgeDays: Math.max(1, parseIntEnv('SECURITY_SECRET_MAX_AGE_DAYS', 90)),
         securitySecretWarnDays: Math.max(1, parseIntEnv('SECURITY_SECRET_WARN_DAYS', 14)),
+        sessionCookieMaxAgeDays: Math.max(1, parseIntEnv('SESSION_COOKIE_MAX_AGE_DAYS', 7)),
         processMaxUptimeHours: Math.max(1, parseIntEnv('PROCESS_MAX_UPTIME_HOURS', 24)),
         hubspotApiKey: parseStringEnv('HUBSPOT_API_KEY'),
         salesforceInstanceUrl: parseStringEnv('SALESFORCE_INSTANCE_URL'),
@@ -244,8 +303,14 @@ export function buildProxyDomainConfig(): Partial<AppConfig> {
         mobileProbability: Math.min(1, Math.max(0, parseFloatEnv('MOBILE_PROBABILITY', 0.3))),
         useJa3Proxy: parseBoolEnv('USE_JA3_PROXY', false),
         ja3ProxyPort: Math.max(1, parseIntEnv('JA3_PROXY_PORT', 8080)),
-        ja3Fingerprint: parseStringEnv('JA3_FINGERPRINT', '771,4865-4867-4866-49195-49199-52393-52392-49196-49200-49162-49161-49171-49172-51-57-47-53-10,0-23-65281-10-11-35-16-5-51-43-13-45-28-21,29-23-24-25-256-257,0'),
-        ja3UserAgent: parseStringEnv('JA3_USER_AGENT', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:115.0) Gecko/20100101 Firefox/115.0'),
+        ja3Fingerprint: parseStringEnv(
+            'JA3_FINGERPRINT',
+            '771,4865-4867-4866-49195-49199-52393-52392-49196-49200-49162-49161-49171-49172-51-57-47-53-10,0-23-65281-10-11-35-16-5-51-43-13-45-28-21,29-23-24-25-256-257,0',
+        ),
+        ja3UserAgent: parseStringEnv(
+            'JA3_USER_AGENT',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:115.0) Gecko/20100101 Firefox/115.0',
+        ),
         ja3ProxyUpstream: parseStringEnv('JA3_PROXY_UPSTREAM'),
         ssiDynamicLimitsEnabled: parseBoolEnv('SSI_DYNAMIC_LIMITS_ENABLED', true),
         ssiStateKey: parseStringEnv('SSI_STATE_KEY', 'linkedin_ssi_score'),
@@ -266,7 +331,9 @@ export function buildBehaviorDomainConfig(): Partial<AppConfig> {
         withdrawInvitesEnabled: parseBoolEnv('WITHDRAW_INVITES_ENABLED', true),
         pendingInviteMaxDays: parseIntEnv('PENDING_INVITE_MAX_DAYS', 30),
         inviteWithNote: parseBoolEnv('INVITE_WITH_NOTE', false),
-        inviteNoteMode: (parseStringEnv('INVITE_NOTE_MODE', 'template') === 'ai' ? 'ai' : 'template') as 'template' | 'ai',
+        inviteNoteMode: (parseStringEnv('INVITE_NOTE_MODE', 'template') === 'ai' ? 'ai' : 'template') as
+            | 'template'
+            | 'ai',
         salesNavSyncEnabled: parseBoolEnv('SALESNAV_SYNC_ENABLED', false),
         salesNavSyncListName: parseStringEnv('SALESNAV_SYNC_LIST_NAME', 'default'),
         salesNavSyncListUrl: parseStringEnv('SALESNAV_SYNC_LIST_URL'),

@@ -14,7 +14,14 @@ export type LeadStatus =
     | 'WITHDRAWN'
     | 'PENDING'; // compat legacy
 
-export type JobType = 'INVITE' | 'ACCEPTANCE_CHECK' | 'MESSAGE' | 'HYGIENE' | 'INTERACTION' | 'ENRICHMENT';
+export type JobType =
+    | 'INVITE'
+    | 'ACCEPTANCE_CHECK'
+    | 'MESSAGE'
+    | 'HYGIENE'
+    | 'INTERACTION'
+    | 'ENRICHMENT'
+    | 'POST_CREATION';
 
 export type JobStatus = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'DEAD_LETTER' | 'PAUSED';
 
@@ -124,7 +131,19 @@ export interface EnrichmentJobPayload {
     campaignStateId?: number;
 }
 
-export type JobPayload = InviteJobPayload | AcceptanceJobPayload | MessageJobPayload | InteractionJobPayload | EnrichmentJobPayload;
+export interface PostCreationJobPayload {
+    accountId: string;
+    topic?: string;
+    tone?: string;
+}
+
+export type JobPayload =
+    | InviteJobPayload
+    | AcceptanceJobPayload
+    | MessageJobPayload
+    | InteractionJobPayload
+    | EnrichmentJobPayload
+    | PostCreationJobPayload;
 
 export interface RiskInputs {
     pendingRatio: number;

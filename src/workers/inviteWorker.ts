@@ -1,5 +1,12 @@
 import { Page } from 'playwright';
-import { contextualReadingPause, detectChallenge, humanDelay, humanMouseMove, humanType, simulateHumanReading } from '../browser';
+import {
+    contextualReadingPause,
+    detectChallenge,
+    humanDelay,
+    humanMouseMove,
+    humanType,
+    simulateHumanReading,
+} from '../browser';
 import { transitionLead } from '../core/leadStateService';
 import {
     getLeadById,
@@ -13,6 +20,7 @@ import { joinSelectors } from '../selectors';
 import { InviteJobPayload, LeadRecord } from '../types/domain';
 import { WorkerContext } from './context';
 import { ChallengeDetectedError, RetryableWorkerError } from './errors';
+import { attemptChallengeResolution } from './challengeHandler';
 import { isSalesNavigatorUrl } from '../linkedinUrl';
 import { config } from '../config';
 import { buildPersonalizedInviteNote } from '../ai/inviteNotePersonalizer';
@@ -24,7 +32,7 @@ import { inferLeadSegment } from '../ml/segments';
 
 async function clickConnectOnProfile(page: Page): Promise<boolean> {
     const primaryBtn = page.locator(joinSelectors('connectButtonPrimary')).first();
-    if (await primaryBtn.count() > 0) {
+    if ((await primaryBtn.count()) > 0) {
         await humanMouseMove(page, joinSelectors('connectButtonPrimary'));
         await humanDelay(page, 120, 320);
         await primaryBtn.click();
@@ -32,13 +40,13 @@ async function clickConnectOnProfile(page: Page): Promise<boolean> {
     }
 
     const moreBtn = page.locator(joinSelectors('moreActionsButton')).first();
-    if (await moreBtn.count() > 0) {
+    if ((await moreBtn.count()) > 0) {
         await humanMouseMove(page, joinSelectors('moreActionsButton'));
         await humanDelay(page, 120, 300);
         await moreBtn.click();
         await humanDelay(page, 700, 1300);
         const connectInMenu = page.locator(joinSelectors('connectInMoreMenu')).first();
-        if (await connectInMenu.count() > 0) {
+        if ((await connectInMenu.count()) > 0) {
             await humanMouseMove(page, joinSelectors('connectInMoreMenu'));
             await humanDelay(page, 120, 300);
             await connectInMenu.click();
@@ -72,7 +80,9 @@ async function detectWeeklyInviteLimit(page: Page): Promise<boolean> {
     if (!pageText) {
         return false;
     }
-    return /weekly invitation limit|limite settimanale(?: degli)? inviti|hai raggiunto il limite settimanale/i.test(pageText);
+    return /weekly invitation limit|limite settimanale(?: degli)? inviti|hai raggiunto il limite settimanale/i.test(
+        pageText,
+    );
 }
 
 /**
@@ -95,10 +105,10 @@ async function handleInviteModal(
 
     // Controlla se c'è il bottone "Add a note" (con retry breve se il modale sta caricando)
     const addNoteBtn = page.locator(joinSelectors('addNoteButton')).first();
-    let canAddNote = await addNoteBtn.count() > 0;
+    let canAddNote = (await addNoteBtn.count()) > 0;
     if (config.inviteWithNote && !canAddNote) {
         await page.waitForSelector(joinSelectors('addNoteButton'), { timeout: 2000 }).catch(() => null);
-        canAddNote = await addNoteBtn.count() > 0;
+        canAddNote = (await addNoteBtn.count()) > 0;
     }
 
     if (config.inviteWithNote && canAddNote) {
@@ -108,7 +118,11 @@ async function handleInviteModal(
         await humanDelay(page, 600, 1200);
 
         // Scrivi la nota nella textarea del modale
-        let generatedNote = { note: '', source: 'template' as 'template' | 'ai' | null, variant: null as string | null };
+        let generatedNote = {
+            note: '',
+            source: 'template' as 'template' | 'ai' | null,
+            variant: null as string | null,
+        };
         try {
             if (campaignOverrideNote) {
                 generatedNote = { note: campaignOverrideNote, source: 'template', variant: 'campaign_metadata' };
@@ -133,14 +147,17 @@ async function handleInviteModal(
         await humanDelay(page, 400, 800); // Changed from context.session.page to page
 
         const sendWithNote = page.locator(joinSelectors('sendWithNote')).first();
-        if (await sendWithNote.count() > 0) {
+        if ((await sendWithNote.count()) > 0) {
             await humanMouseMove(page, joinSelectors('sendWithNote'));
             await humanDelay(page, 150, 400); // Changed from context.session.page to page
 
-            if (!dryRun) { // Changed from context.dryRun to dryRun
+            if (!dryRun) {
+                // Changed from context.dryRun to dryRun
                 await sendWithNote.click();
             } else {
-                console.log(`[DRY RUN] Inviato invito a ${lead.linkedin_url} (nota: ${generatedNote.source} - var: ${generatedNote.variant || 'none'})`);
+                console.log(
+                    `[DRY RUN] Inviato invito a ${lead.linkedin_url} (nota: ${generatedNote.source} - var: ${generatedNote.variant || 'none'})`,
+                );
             }
 
             return { sentWithNote: true, noteSource: generatedNote.source, variant: generatedNote.variant };
@@ -153,7 +170,7 @@ async function handleInviteModal(
 
     // Fallback: invia senza nota
     const sendWithoutNote = page.locator(joinSelectors('sendWithoutNote')).first();
-    if (await sendWithoutNote.count() > 0) {
+    if ((await sendWithoutNote.count()) > 0) {
         await humanMouseMove(page, joinSelectors('sendWithoutNote'));
         await humanDelay(page, 120, 300);
         await sendWithoutNote.click();
@@ -161,7 +178,7 @@ async function handleInviteModal(
     }
 
     const fallback = page.locator(joinSelectors('sendFallback')).first();
-    if (await fallback.count() > 0) {
+    if ((await fallback.count()) > 0) {
         await humanMouseMove(page, joinSelectors('sendFallback'));
         await humanDelay(page, 120, 300);
         await fallback.click();
@@ -172,7 +189,10 @@ async function handleInviteModal(
     throw new RetryableWorkerError('Conferma invito senza nota non trovata', 'SEND_BUTTON_NOT_FOUND');
 }
 
-export async function processInviteJob(payload: InviteJobPayload, context: WorkerContext): Promise<WorkerExecutionResult> {
+export async function processInviteJob(
+    payload: InviteJobPayload,
+    context: WorkerContext,
+): Promise<WorkerExecutionResult> {
     const lead = await getLeadById(payload.leadId);
     if (!lead) {
         throw new RetryableWorkerError(`Lead ${payload.leadId} non trovato`, 'LEAD_NOT_FOUND');
@@ -212,7 +232,10 @@ export async function processInviteJob(payload: InviteJobPayload, context: Worke
     await contextualReadingPause(context.session.page);
 
     if (await detectChallenge(context.session.page)) {
-        throw new ChallengeDetectedError();
+        const resolved = await attemptChallengeResolution(context.session.page);
+        if (!resolved) {
+            throw new ChallengeDetectedError();
+        }
     }
 
     if (config.profileContextExtractionEnabled) {
@@ -237,7 +260,7 @@ export async function processInviteJob(payload: InviteJobPayload, context: Worke
 
                 bridgeLeadStatus(lead.linkedin_url, lead.status, {
                     about: extractedAbout || null,
-                    experience: extractedExperience || null
+                    experience: extractedExperience || null,
                 });
             }
         } catch (e) {
@@ -273,7 +296,7 @@ export async function processInviteJob(payload: InviteJobPayload, context: Worke
                     linkedinUrl: lead.linkedin_url,
                     accountId: context.accountId,
                 },
-                7 * 24 * 60
+                7 * 24 * 60,
             );
             throw new RetryableWorkerError('Limite settimanale inviti raggiunto', 'WEEKLY_LIMIT_REACHED');
         }
@@ -307,7 +330,7 @@ export async function processInviteJob(payload: InviteJobPayload, context: Worke
 
     if (!context.dryRun && inviteResult.variant) {
         const segmentKey = inferLeadSegment(lead.job_title);
-        await recordSent(inviteResult.variant, { segmentKey }).catch(() => { });
+        await recordSent(inviteResult.variant, { segmentKey }).catch(() => {});
     }
     await incrementDailyStat(context.localDate, 'invites_sent');
     await incrementListDailyStat(context.localDate, lead.list_name, 'invites_sent');
@@ -315,7 +338,7 @@ export async function processInviteJob(payload: InviteJobPayload, context: Worke
     bridgeLeadStatus(lead.linkedin_url, 'INVITED', {
         invited_at: new Date().toISOString(),
         invite_prompt_variant: inviteResult.variant || null,
-        invite_note_sent: inviteResult.sentWithNote ? 'yes' : 'no'
+        invite_note_sent: inviteResult.sentWithNote ? 'yes' : 'no',
     });
     bridgeDailyStat(context.localDate, context.accountId, 'invites_sent');
     return workerResult(1);

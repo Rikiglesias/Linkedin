@@ -12,11 +12,7 @@ import {
     markOutboxRetryClaimed,
     setRuntimeFlag,
 } from '../core/repositories';
-import {
-    clampBackpressureLevel,
-    computeBackpressureBatchSize,
-    computeNextBackpressureLevel,
-} from './backpressure';
+import { clampBackpressureLevel, computeBackpressureBatchSize, computeNextBackpressureLevel } from './backpressure';
 
 let client: SupabaseClient | null = null;
 const SUPABASE_BACKPRESSURE_LEVEL_KEY = 'sync.backpressure.supabase.level';
@@ -134,7 +130,7 @@ export async function runSupabaseSyncOnce(): Promise<void> {
                     circuitKey: 'supabase.cp_events',
                     maxAttempts: 2,
                     classifyError: (error) => (error instanceof TerminalSupabaseSyncError ? 'terminal' : 'transient'),
-                }
+                },
             );
             sent += 1;
             const delivered = await markOutboxDeliveredClaimed(event.id, ownerId);
@@ -215,6 +211,10 @@ export async function runSupabaseSyncOnce(): Promise<void> {
     const pending = await countPendingOutboxEvents();
     if (pending > config.outboxAlertBacklog) {
         await logWarn('supabase.sync.backlog_high', { pending, threshold: config.outboxAlertBacklog });
-        await sendTelegramAlert(`${pending} eventi pendenti non sincronizzati col cloud Supabase.`, 'Outbox Backlog Alto', 'warn');
+        await sendTelegramAlert(
+            `${pending} eventi pendenti non sincronizzati col cloud Supabase.`,
+            'Outbox Backlog Alto',
+            'warn',
+        );
     }
 }

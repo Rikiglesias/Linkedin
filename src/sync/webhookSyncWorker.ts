@@ -12,11 +12,7 @@ import {
     markOutboxRetryClaimed,
     setRuntimeFlag,
 } from '../core/repositories';
-import {
-    clampBackpressureLevel,
-    computeBackpressureBatchSize,
-    computeNextBackpressureLevel,
-} from './backpressure';
+import { clampBackpressureLevel, computeBackpressureBatchSize, computeNextBackpressureLevel } from './backpressure';
 
 function retryDelayMs(attempt: number): number {
     const base = Math.max(1000, config.webhookSyncTimeoutMs);
@@ -126,16 +122,20 @@ export async function runWebhookSyncOnce(): Promise<void> {
         }
 
         try {
-            const response = await fetchWithRetryPolicy(config.webhookSyncUrl, {
-                method: 'POST',
-                headers,
-                body,
-            }, {
-                integration: 'webhook.outbox_sync',
-                circuitKey: 'webhook.sync',
-                timeoutMs: config.webhookSyncTimeoutMs,
-                maxAttempts: 2,
-            });
+            const response = await fetchWithRetryPolicy(
+                config.webhookSyncUrl,
+                {
+                    method: 'POST',
+                    headers,
+                    body,
+                },
+                {
+                    integration: 'webhook.outbox_sync',
+                    circuitKey: 'webhook.sync',
+                    timeoutMs: config.webhookSyncTimeoutMs,
+                    maxAttempts: 2,
+                },
+            );
 
             if (!response.ok) {
                 failed += 1;

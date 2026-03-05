@@ -32,11 +32,13 @@ export async function createPersistentProfile(options: Partial<CreateProfileOpti
     });
 
     try {
-        const page = context.pages()[0] ?? await context.newPage();
+        const page = context.pages()[0] ?? (await context.newPage());
         await page.goto(loginUrl, { waitUntil: 'domcontentloaded' });
 
         console.log(`[PROFILE] Directory: ${profileDir}`);
-        console.log(`[PROFILE] Completa il login manualmente entro ${timeoutSeconds}s. I cookie verranno salvati nel profilo.`);
+        console.log(
+            `[PROFILE] Completa il login manualmente entro ${timeoutSeconds}s. I cookie verranno salvati nel profilo.`,
+        );
 
         const timeoutAt = Date.now() + timeoutSeconds * 1000;
         let loginDetected = false;
@@ -55,6 +57,6 @@ export async function createPersistentProfile(options: Partial<CreateProfileOpti
             console.log('[PROFILE] Timeout raggiunto. Il profilo è stato comunque salvato con lo stato corrente.');
         }
     } finally {
-        await context.close().catch(() => { });
+        await context.close().catch(() => {});
     }
 }

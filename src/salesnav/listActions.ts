@@ -98,7 +98,7 @@ export async function createSalesNavList(listName: string, accountId?: string): 
         await humanDelay(session.page, 1400, 2600);
 
         const createButton = session.page.locator(CREATE_LIST_BUTTON_SELECTOR).first();
-        if (await createButton.count() === 0) {
+        if ((await createButton.count()) === 0) {
             return { ok: false, accountId: account.id, message: 'Bottone Create list non trovato' };
         }
         await humanMouseMove(session.page, CREATE_LIST_BUTTON_SELECTOR);
@@ -107,14 +107,14 @@ export async function createSalesNavList(listName: string, accountId?: string): 
         await humanDelay(session.page, 800, 1600);
 
         const nameInput = session.page.locator(LIST_NAME_INPUT_SELECTOR).first();
-        if (await nameInput.count() === 0) {
+        if ((await nameInput.count()) === 0) {
             return { ok: false, accountId: account.id, message: 'Input nome lista non trovato' };
         }
         await nameInput.fill(normalizedListName);
         await humanDelay(session.page, 450, 900);
 
         const confirmButton = session.page.locator(CREATE_LIST_CONFIRM_SELECTOR).first();
-        if (await confirmButton.count() === 0) {
+        if ((await confirmButton.count()) === 0) {
             return { ok: false, accountId: account.id, message: 'Bottone conferma creazione non trovato' };
         }
         await humanMouseMove(session.page, CREATE_LIST_CONFIRM_SELECTOR);
@@ -135,7 +135,11 @@ export async function createSalesNavList(listName: string, accountId?: string): 
     }
 }
 
-export async function addLeadToSalesNavList(leadLinkedinUrl: string, listName: string, accountId?: string): Promise<SalesNavActionResult> {
+export async function addLeadToSalesNavList(
+    leadLinkedinUrl: string,
+    listName: string,
+    accountId?: string,
+): Promise<SalesNavActionResult> {
     const account = getAccountProfileById(accountId);
     const normalizedListName = cleanText(listName);
     const normalizedLeadUrl = normalizeLinkedInUrl(leadLinkedinUrl);
@@ -160,7 +164,7 @@ export async function addLeadToSalesNavList(leadLinkedinUrl: string, listName: s
         await humanDelay(session.page, 1400, 2600);
 
         const saveButton = session.page.locator(SAVE_TO_LIST_BUTTON_SELECTOR).first();
-        if (await saveButton.count() === 0) {
+        if ((await saveButton.count()) === 0) {
             return { ok: false, accountId: account.id, message: 'Bottone Save in list non trovato' };
         }
         await humanMouseMove(session.page, SAVE_TO_LIST_BUTTON_SELECTOR);
@@ -169,7 +173,7 @@ export async function addLeadToSalesNavList(leadLinkedinUrl: string, listName: s
         await humanDelay(session.page, 900, 1800);
 
         const listOption = session.page.locator(`text="${normalizedListName}"`).first();
-        if (await listOption.count() === 0) {
+        if ((await listOption.count()) === 0) {
             return {
                 ok: false,
                 accountId: account.id,
@@ -180,7 +184,7 @@ export async function addLeadToSalesNavList(leadLinkedinUrl: string, listName: s
         await humanDelay(session.page, 400, 900);
 
         const confirmButton = session.page.locator(ADD_TO_LIST_CONFIRM_SELECTOR).first();
-        if (await confirmButton.count() > 0) {
+        if ((await confirmButton.count()) > 0) {
             await humanMouseMove(session.page, ADD_TO_LIST_CONFIRM_SELECTOR);
             await humanDelay(session.page, 120, 300);
             await confirmButton.click();

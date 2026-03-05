@@ -81,11 +81,13 @@ function getConfiguredRuntimeProfiles(): RuntimeAccountProfile[] {
     const deduped = dedupeById(runtime);
 
     if (_cliOverrideAccountId) {
-        const target = deduped.find(p => p.id === _cliOverrideAccountId);
+        const target = deduped.find((p) => p.id === _cliOverrideAccountId);
         if (target) {
             return [target];
         }
-        console.warn(`[ACCOUNT MANAGER] Override account ID '${_cliOverrideAccountId}' non trovato in config. Verrà restituita una lista vuota e niente girerà.`);
+        console.warn(
+            `[ACCOUNT MANAGER] Override account ID '${_cliOverrideAccountId}' non trovato in config. Verrà restituita una lista vuota e niente girerà.`,
+        );
         return [];
     }
 
@@ -98,16 +100,18 @@ export function getRuntimeAccountProfiles(): RuntimeAccountProfile[] {
         if (_cliOverrideAccountId) {
             return []; // Rispettiamo rigorosamente l'override CLI vuoto
         }
-        return [{
-            id: 'default',
-            sessionDir: config.sessionDir,
-            inviteWeight: 1,
-            messageWeight: 1,
-            warmupEnabled: config.warmupEnabled,
-            warmupStartDate: config.warmupStartDate,
-            warmupMaxDays: config.warmupMaxDays,
-            warmupMinActions: config.warmupMinActions,
-        }];
+        return [
+            {
+                id: 'default',
+                sessionDir: config.sessionDir,
+                inviteWeight: 1,
+                messageWeight: 1,
+                warmupEnabled: config.warmupEnabled,
+                warmupStartDate: config.warmupStartDate,
+                warmupMaxDays: config.warmupMaxDays,
+                warmupMinActions: config.warmupMinActions,
+            },
+        ];
     }
     return configured;
 }

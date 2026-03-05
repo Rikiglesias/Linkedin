@@ -22,6 +22,8 @@ export interface AddLeadInput {
     leadScore?: number | null;
     confidenceScore?: number | null;
     status?: LeadStatus;
+    consentBasis?: string | null;
+    consentRecordedAt?: string | null;
 }
 
 export interface UpdateLeadLinkedinUrlResult {
@@ -71,6 +73,7 @@ export interface LeadListRow {
     priority: number;
     daily_invite_cap: number | null;
     daily_message_cap: number | null;
+    scoring_criteria: string | null;
     created_at: string;
 }
 
@@ -81,6 +84,7 @@ export interface LeadListCampaignConfig {
     priority: number;
     dailyInviteCap: number | null;
     dailyMessageCap: number | null;
+    scoringCriteria: string | null;
     createdAt: string;
 }
 
@@ -89,6 +93,7 @@ export interface UpdateLeadListCampaignInput {
     priority?: number;
     dailyInviteCap?: number | null;
     dailyMessageCap?: number | null;
+    scoringCriteria?: string | null;
 }
 
 export interface ControlPlaneCampaignConfigInput {
@@ -559,7 +564,13 @@ export interface ImportFeatureDatasetInput {
 
 // ─── Campaigns (Drip / Flow Builder) ──────────────────────────────────────────
 
-export type CampaignStepActionType = 'VIEW_PROFILE' | 'LIKE_POST' | 'FOLLOW' | 'INVITE' | 'MESSAGE' | 'EMAIL_ENRICHMENT';
+export type CampaignStepActionType =
+    | 'VIEW_PROFILE'
+    | 'LIKE_POST'
+    | 'FOLLOW'
+    | 'INVITE'
+    | 'MESSAGE'
+    | 'EMAIL_ENRICHMENT';
 
 export type LeadCampaignStatus = 'ENROLLED' | 'IN_PROGRESS' | 'COMPLETED' | 'PAUSED' | 'ERROR';
 

@@ -6,6 +6,7 @@ import {
     addLead,
     CompanyTargetRecord,
     getCompanyTargetsForEnrichment,
+    getListScoringCriteria,
     setCompanyTargetStatus,
 } from './repositories';
 import { scoreLeadProfile } from '../ai/leadScorer';
@@ -67,12 +68,14 @@ function extractDomain(website: string): string {
     const raw = (website ?? '').trim();
     if (!raw) return '';
     try {
-        const parsed = raw.startsWith('http://') || raw.startsWith('https://')
-            ? new URL(raw)
-            : new URL(`https://${raw}`);
+        const parsed =
+            raw.startsWith('http://') || raw.startsWith('https://') ? new URL(raw) : new URL(`https://${raw}`);
         return parsed.hostname.replace(/^www\./i, '');
     } catch {
-        return raw.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0];
+        return raw
+            .replace(/^https?:\/\//i, '')
+            .replace(/^www\./i, '')
+            .split('/')[0];
     }
 }
 
@@ -86,11 +89,7 @@ function buildSearchQuery(target: CompanyTargetRecord): string {
 function buildSearchQueries(target: CompanyTargetRecord): string[] {
     const company = (target.account_name ?? '').trim();
     const domain = extractDomain(target.website);
-    const candidates = [
-        buildSearchQuery(target),
-        company,
-        domain,
-    ].filter((value) => value.length > 0);
+    const candidates = [buildSearchQuery(target), company, domain].filter((value) => value.length > 0);
 
     const unique = new Set<string>();
     for (const value of candidates) {
@@ -104,23 +103,30 @@ export interface ExtractedProfile {
     headline: string | null;
 }
 
-async function extractProfiles(page: Parameters<typeof detectChallenge>[0], maxProfiles: number): Promise<ExtractedProfile[]> {
+async function extractProfiles(
+    page: Parameters<typeof detectChallenge>[0],
+    maxProfiles: number,
+): Promise<ExtractedProfile[]> {
     const rawData = await page.$$eval('li.reusable-search__result-container', (elements) => {
-        return elements.map(el => {
-            const anchor = el.querySelector('span.entity-result__title-text a.app-aware-link[href*="/in/"]') as HTMLAnchorElement
-                || el.querySelector('a[href*="/in/"]') as HTMLAnchorElement;
-            const url = anchor ? anchor.href : null;
-            const headlineEl = el.querySelector('.entity-result__primary-subtitle');
-            const headline = headlineEl ? (headlineEl.textContent || '').trim() : null;
-            return { url, headline };
-        }).filter(r => !!r.url) as { url: string; headline: string | null }[];
+        return elements
+            .map((el) => {
+                const anchor =
+                    (el.querySelector(
+                        'span.entity-result__title-text a.app-aware-link[href*="/in/"]',
+                    ) as HTMLAnchorElement) || (el.querySelector('a[href*="/in/"]') as HTMLAnchorElement);
+                const url = anchor ? anchor.href : null;
+                const headlineEl = el.querySelector('.entity-result__primary-subtitle');
+                const headline = headlineEl ? (headlineEl.textContent || '').trim() : null;
+                return { url, headline };
+            })
+            .filter((r) => !!r.url) as { url: string; headline: string | null }[];
     });
 
     if (rawData.length === 0) {
         const rawUrls = await page.$$eval('a[href*="/in/"]', (anchors) =>
-            anchors.map((anchor) => (anchor as HTMLAnchorElement).href).filter((href) => !!href)
+            anchors.map((anchor) => (anchor as HTMLAnchorElement).href).filter((href) => !!href),
         );
-        rawUrls.forEach(u => rawData.push({ url: u, headline: null }));
+        rawUrls.forEach((u) => rawData.push({ url: u, headline: null }));
     }
 
     const unique = new Map<string, ExtractedProfile>();
@@ -139,7 +145,7 @@ async function extractProfiles(page: Parameters<typeof detectChallenge>[0], maxP
 async function processCompanyTarget(
     target: CompanyTargetRecord,
     options: Required<CompanyEnrichmentOptions>,
-    page: Parameters<typeof checkLogin>[0]
+    page: Parameters<typeof checkLogin>[0],
 ): Promise<{ matched: boolean; createdLeads: number; noMatch: boolean; error: string | null }> {
     const queries = buildSearchQueries(target);
     if (queries.length === 0) {
@@ -177,6 +183,8 @@ async function processCompanyTarget(
 
     let createdLeads = 0;
     if (!options.dryRun) {
+        const listScoringCriteria = await getListScoringCriteria(target.list_name);
+
         for (const profile of profiles) {
             const names = parseNamesFromProfileUrl(profile.url);
 
@@ -186,13 +194,23 @@ async function processCompanyTarget(
 
             if (isOpenAIConfigured()) {
                 try {
-                    const scoreResult = await scoreLeadProfile(target.account_name, `${names.firstName} ${names.lastName}`, profile.headline);
+                    const scoreResult = await scoreLeadProfile(
+                        target.account_name,
+                        `${names.firstName} ${names.lastName}`,
+                        profile.headline,
+                        { scoringCriteria: listScoringCriteria },
+                    );
                     confidenceScore = scoreResult.confidenceScore;
                     leadScore = scoreResult.leadScore;
 
                     if (confidenceScore < 70 || leadScore < 40) {
                         leadStatus = 'REVIEW_REQUIRED';
-                        await logInfo('company_enrichment.low_score', { url: profile.url, confidenceScore, leadScore, reason: scoreResult.reason });
+                        await logInfo('company_enrichment.low_score', {
+                            url: profile.url,
+                            confidenceScore,
+                            leadScore,
+                            reason: scoreResult.reason,
+                        });
                     }
                 } catch (err) {
                     await logWarn('company_enrichment.scoring_error', { url: profile.url, error: String(err) });
@@ -209,7 +227,7 @@ async function processCompanyTarget(
                 listName: target.list_name,
                 leadScore,
                 confidenceScore,
-                status: leadStatus
+                status: leadStatus,
             });
             if (inserted) {
                 createdLeads += 1;
@@ -222,10 +240,15 @@ async function processCompanyTarget(
     return { matched: true, createdLeads, noMatch: false, error: null };
 }
 
-export async function runCompanyEnrichmentBatch(options: CompanyEnrichmentOptions = {}): Promise<CompanyEnrichmentReport> {
+export async function runCompanyEnrichmentBatch(
+    options: CompanyEnrichmentOptions = {},
+): Promise<CompanyEnrichmentReport> {
     const resolved: Required<CompanyEnrichmentOptions> = {
         limit: Math.max(1, options.limit ?? config.companyEnrichmentBatch),
-        maxProfilesPerCompany: Math.max(1, options.maxProfilesPerCompany ?? config.companyEnrichmentMaxProfilesPerCompany),
+        maxProfilesPerCompany: Math.max(
+            1,
+            options.maxProfilesPerCompany ?? config.companyEnrichmentMaxProfilesPerCompany,
+        ),
         dryRun: options.dryRun ?? false,
     };
 

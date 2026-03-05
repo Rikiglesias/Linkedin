@@ -70,9 +70,7 @@ export class DashboardApi {
         return resp.ok;
     }
     async approveCommentSuggestion(leadId, suggestionIndex, comment) {
-        const payload = typeof comment === 'string' && comment.trim().length > 0
-            ? { comment: comment.trim() }
-            : {};
+        const payload = typeof comment === 'string' && comment.trim().length > 0 ? { comment: comment.trim() } : {};
         const resp = await this.apiFetch(`/api/ai/comment-suggestions/${leadId}/${suggestionIndex}/approve`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -87,7 +85,7 @@ export class DashboardApi {
         return resp.ok;
     }
     async loadSnapshot() {
-        const [kpis, runs, incidents, trendRaw, predictive, reviewQueue, ab, timingSlots, observability, commentSuggestions] = await Promise.all([
+        const [kpis, runs, incidents, trendRaw, predictive, reviewQueue, ab, timingSlots, observability, commentSuggestions,] = await Promise.all([
             this.readJson('/api/kpis', {
                 funnel: { totalLeads: 0, invited: 0, accepted: 0, readyMessage: 0, messaged: 0, replied: 0 },
                 system: { pausedUntil: null, quarantined: false },
@@ -95,7 +93,11 @@ export class DashboardApi {
             this.readJson('/api/runs', []),
             this.readJson('/api/incidents', []),
             this.readJson('/api/stats/trend', []),
-            this.readJson('/api/risk/predictive', { enabled: false, lookbackDays: 0, alerts: [] }),
+            this.readJson('/api/risk/predictive', {
+                enabled: false,
+                lookbackDays: 0,
+                alerts: [],
+            }),
             this.readJson('/api/review-queue?limit=25', {
                 pending: false,
                 lastIncidentId: null,
@@ -113,9 +115,7 @@ export class DashboardApi {
                 rows: [],
             }),
         ]);
-        const trend = Array.isArray(trendRaw)
-            ? trendRaw
-            : ensureArray(ensureObject(trendRaw).rows);
+        const trend = Array.isArray(trendRaw) ? trendRaw : ensureArray(ensureObject(trendRaw).rows);
         const safeKpis = ensureObject(kpis);
         return {
             kpis: safeKpis,

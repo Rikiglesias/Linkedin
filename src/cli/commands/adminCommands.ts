@@ -106,7 +106,7 @@ function parseDiagnosticSections(raw: string | undefined): DiagnosticSection[] {
     for (const value of requested) {
         if (!DIAGNOSTIC_SECTION_SET.has(value as DiagnosticSection)) {
             throw new Error(
-                `Sezione diagnostica non supportata: ${value}. Valori ammessi: ${DIAGNOSTIC_SECTIONS.join(', ')}, all.`
+                `Sezione diagnostica non supportata: ${value}. Valori ammessi: ${DIAGNOSTIC_SECTIONS.join(', ')}, all.`,
             );
         }
         const typed = value as DiagnosticSection;
@@ -270,7 +270,7 @@ export async function runStatusCommand(): Promise<void> {
 
 export async function runDiagnosticsCommand(args: string[]): Promise<void> {
     const explicitDate = getOptionValue(args, '--date');
-    const positionalDate = (!explicitDate && args[0] && !args[0].startsWith('--')) ? args[0] : undefined;
+    const positionalDate = !explicitDate && args[0] && !args[0].startsWith('--') ? args[0] : undefined;
     const localDate = parseDiagnosticDate(explicitDate ?? positionalDate);
     const sections = parseDiagnosticSections(getOptionValue(args, '--sections'));
     const lockMetricsLimitRaw = getOptionValue(args, '--lock-metrics-limit');
@@ -280,21 +280,15 @@ export async function runDiagnosticsCommand(args: string[]): Promise<void> {
     const lockMetricsLimit = lockMetricsLimitRaw
         ? Math.max(1, parseIntStrict(lockMetricsLimitRaw, '--lock-metrics-limit'))
         : 50;
-    const selectorLimit = selectorLimitRaw
-        ? Math.max(1, parseIntStrict(selectorLimitRaw, '--selector-limit'))
-        : 20;
+    const selectorLimit = selectorLimitRaw ? Math.max(1, parseIntStrict(selectorLimitRaw, '--selector-limit')) : 20;
     const selectorMinSuccess = selectorMinSuccessRaw
         ? Math.max(1, parseIntStrict(selectorMinSuccessRaw, '--selector-min-success'))
         : 3;
 
     const includeSection = (section: DiagnosticSection): boolean => sections.includes(section);
-    const needsObservability = includeSection('health')
-        || includeSection('locks')
-        || includeSection('queue')
-        || includeSection('selectors');
-    const observability = needsObservability
-        ? await getOperationalObservabilitySnapshot(localDate)
-        : null;
+    const needsObservability =
+        includeSection('health') || includeSection('locks') || includeSection('queue') || includeSection('selectors');
+    const observability = needsObservability ? await getOperationalObservabilitySnapshot(localDate) : null;
 
     const payload: Record<string, unknown> = {
         generatedAt: new Date().toISOString(),
@@ -303,21 +297,22 @@ export async function runDiagnosticsCommand(args: string[]): Promise<void> {
     };
 
     if (includeSection('health')) {
-        const [pauseState, complianceMetrics, accountAgeDays, weeklyInvitesSent, latestAccountHealth] = await Promise.all([
-            getAutomationPauseState(),
-            getComplianceHealthMetrics(localDate, config.complianceHealthLookbackDays, config.hardInviteCap),
-            getAccountAgeDays(),
-            countWeeklyInvites(getWeekStartDate(new Date(`${localDate}T00:00:00Z`))),
-            listLatestAccountHealthSnapshots(10),
-        ]);
+        const [pauseState, complianceMetrics, accountAgeDays, weeklyInvitesSent, latestAccountHealth] =
+            await Promise.all([
+                getAutomationPauseState(),
+                getComplianceHealthMetrics(localDate, config.complianceHealthLookbackDays, config.hardInviteCap),
+                getAccountAgeDays(),
+                countWeeklyInvites(getWeekStartDate(new Date(`${localDate}T00:00:00Z`))),
+                listLatestAccountHealthSnapshots(10),
+            ]);
 
         const weeklyInviteLimitEffective = config.complianceDynamicWeeklyLimitEnabled
             ? calculateDynamicWeeklyInviteLimit(
-                accountAgeDays,
-                config.complianceDynamicWeeklyMinInvites,
-                config.complianceDynamicWeeklyMaxInvites,
-                config.complianceDynamicWeeklyWarmupDays
-            )
+                  accountAgeDays,
+                  config.complianceDynamicWeeklyMinInvites,
+                  config.complianceDynamicWeeklyMaxInvites,
+                  config.complianceDynamicWeeklyWarmupDays,
+              )
             : config.weeklyInviteLimit;
         const complianceScore = evaluateComplianceHealthScore({
             acceptanceRatePct: complianceMetrics.acceptanceRatePct,
@@ -331,8 +326,9 @@ export async function runDiagnosticsCommand(args: string[]): Promise<void> {
             weeklyInviteLimit: weeklyInviteLimitEffective,
             pendingWarnThreshold: config.complianceHealthPendingWarnThreshold,
         });
-        const hasSufficientSample = complianceMetrics.invitesSentLookback >= config.complianceHealthMinInviteSample
-            && complianceMetrics.messagedLookback >= config.complianceHealthMinMessageSample;
+        const hasSufficientSample =
+            complianceMetrics.invitesSentLookback >= config.complianceHealthMinInviteSample &&
+            complianceMetrics.messagedLookback >= config.complianceHealthMinMessageSample;
 
         payload.health = {
             pauseState,
@@ -432,11 +428,10 @@ export async function runDiagnosticsCommand(args: string[]): Promise<void> {
 export async function runPauseCommand(args: string[]): Promise<void> {
     const positional = getPositionalArgs(args);
     const minutesRaw = getOptionValue(args, '--minutes') ?? positional[0];
-    const reasonRaw = getOptionValue(args, '--reason') ?? (positional.length > 1 ? positional.slice(1).join(' ') : 'manual_pause');
+    const reasonRaw =
+        getOptionValue(args, '--reason') ?? (positional.length > 1 ? positional.slice(1).join(' ') : 'manual_pause');
 
-    const minutes = minutesRaw
-        ? parsePauseMinutes(minutesRaw, '--minutes')
-        : config.autoPauseMinutesOnFailureBurst;
+    const minutes = minutesRaw ? parsePauseMinutes(minutesRaw, '--minutes') : config.autoPauseMinutesOnFailureBurst;
     const pausedUntil = await setAutomationPause(minutes, reasonRaw);
     const renderedUntil = pausedUntil ?? 'manual resume';
     console.log(`Automazione in pausa.pausedUntil=${renderedUntil} reason = ${reasonRaw} `);
@@ -581,10 +576,16 @@ export async function runReviewQueueCommand(args: string[]): Promise<void> {
     const limitRaw = getOptionValue(args, '--limit') ?? positional[0];
     const limit = limitRaw ? Math.max(1, parseIntStrict(limitRaw, '--limit')) : 50;
     const rows = await listReviewQueue(limit);
-    console.log(JSON.stringify({
-        total: rows.length,
-        rows,
-    }, null, 2));
+    console.log(
+        JSON.stringify(
+            {
+                total: rows.length,
+                rows,
+            },
+            null,
+            2,
+        ),
+    );
 }
 
 export async function runListsCommand(): Promise<void> {
@@ -598,12 +599,18 @@ export async function runSecretsStatusCommand(): Promise<void> {
         acc[row.status] = (acc[row.status] ?? 0) + 1;
         return acc;
     }, {});
-    console.log(JSON.stringify({
-        maxAgeDays: config.securitySecretMaxAgeDays,
-        warnDays: config.securitySecretWarnDays,
-        summary,
-        rows,
-    }, null, 2));
+    console.log(
+        JSON.stringify(
+            {
+                maxAgeDays: config.securitySecretMaxAgeDays,
+                warnDays: config.securitySecretWarnDays,
+                summary,
+                rows,
+            },
+            null,
+            2,
+        ),
+    );
 }
 
 export async function runSecretRotatedCommand(args: string[]): Promise<void> {
@@ -616,39 +623,47 @@ export async function runSecretRotatedCommand(args: string[]): Promise<void> {
     const owner = getOptionValue(args, '--owner') ?? null;
     const notes = getOptionValue(args, '--notes') ?? null;
     const rotatedAtRaw = getOptionValue(args, '--rotated-at');
-    const rotatedAt = rotatedAtRaw && Number.isFinite(Date.parse(rotatedAtRaw))
-        ? new Date(rotatedAtRaw).toISOString()
-        : new Date().toISOString();
+    const rotatedAt =
+        rotatedAtRaw && Number.isFinite(Date.parse(rotatedAtRaw))
+            ? new Date(rotatedAtRaw).toISOString()
+            : new Date().toISOString();
 
     const expiresDaysRaw = getOptionValue(args, '--expires-days');
     let expiresAt: string | null = null;
     if (expiresDaysRaw) {
         const expiresDays = Math.max(1, parseIntStrict(expiresDaysRaw, '--expires-days'));
-        expiresAt = new Date(Date.now() + (expiresDays * 86_400_000)).toISOString();
+        expiresAt = new Date(Date.now() + expiresDays * 86_400_000).toISOString();
     }
 
     await upsertSecretRotation(secretName.trim(), rotatedAt, owner, expiresAt, notes);
-    console.log(JSON.stringify({
-        secret: secretName.trim(),
-        owner,
-        rotatedAt,
-        expiresAt,
-        notes,
-        status: 'updated',
-    }, null, 2));
+    console.log(
+        JSON.stringify(
+            {
+                secret: secretName.trim(),
+                owner,
+                rotatedAt,
+                expiresAt,
+                notes,
+                status: 'updated',
+            },
+            null,
+            2,
+        ),
+    );
 }
 
 export async function runSecretsRotateCommand(args: string[]): Promise<void> {
     const apply = hasOption(args, '--apply');
     const intervalDaysRaw = getOptionValue(args, '--interval-days');
-    const intervalDays = intervalDaysRaw
-        ? Math.max(1, parseIntStrict(intervalDaysRaw, '--interval-days'))
-        : 7;
+    const intervalDays = intervalDaysRaw ? Math.max(1, parseIntStrict(intervalDaysRaw, '--interval-days')) : 7;
     const actor = (getOptionValue(args, '--actor') ?? 'secret_rotation_worker').trim() || 'secret_rotation_worker';
     const envFilePath = getOptionValue(args, '--env-file') ?? undefined;
     const includeRaw = getOptionValue(args, '--include');
     const includeSecrets = includeRaw
-        ? includeRaw.split(',').map((value) => value.trim()).filter((value) => value.length > 0)
+        ? includeRaw
+              .split(',')
+              .map((value) => value.trim())
+              .filter((value) => value.length > 0)
         : undefined;
 
     const result = await runSecretRotationWorker({
@@ -759,7 +774,9 @@ export async function runFeatureStoreCommand(args: string[]): Promise<void> {
             actions,
             lookbackDays: lookbackRaw ? Math.max(1, parseIntStrict(lookbackRaw, '--lookback-days')) : undefined,
             splitTrainPct: splitTrainRaw ? Math.max(1, parseIntStrict(splitTrainRaw, '--split-train-pct')) : undefined,
-            splitValidationPct: splitValidationRaw ? Math.max(1, parseIntStrict(splitValidationRaw, '--split-validation-pct')) : undefined,
+            splitValidationPct: splitValidationRaw
+                ? Math.max(1, parseIntStrict(splitValidationRaw, '--split-validation-pct'))
+                : undefined,
             seed,
             forceRebuild,
             metadata: {
@@ -811,7 +828,7 @@ export async function runFeatureStoreCommand(args: string[]): Promise<void> {
         fs.writeFileSync(
             jsonlPath,
             jsonlRows.map((row) => JSON.stringify(row)).join('\n') + (jsonlRows.length > 0 ? '\n' : ''),
-            'utf8'
+            'utf8',
         );
 
         const manifest: FeatureStoreDatasetManifest = {
@@ -832,14 +849,20 @@ export async function runFeatureStoreCommand(args: string[]): Promise<void> {
         };
         fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
 
-        console.log(JSON.stringify({
-            datasetName: version.dataset_name,
-            datasetVersion: version.dataset_version,
-            rowCount: version.row_count,
-            signatureSha256: version.signature_sha256,
-            manifestPath,
-            dataPath: jsonlPath,
-        }, null, 2));
+        console.log(
+            JSON.stringify(
+                {
+                    datasetName: version.dataset_name,
+                    datasetVersion: version.dataset_version,
+                    rowCount: version.row_count,
+                    signatureSha256: version.signature_sha256,
+                    manifestPath,
+                    dataPath: jsonlPath,
+                },
+                null,
+                2,
+            ),
+        );
         return;
     }
 
@@ -855,9 +878,7 @@ export async function runFeatureStoreCommand(args: string[]): Promise<void> {
         const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as FeatureStoreDatasetManifest;
         const dataPathRaw = getOptionValue(args, '--data-file');
         const dataPath = path.resolve(
-            dataPathRaw
-                ? dataPathRaw
-                : path.join(path.dirname(manifestPath), manifest.dataFile)
+            dataPathRaw ? dataPathRaw : path.join(path.dirname(manifestPath), manifest.dataFile),
         );
         if (!fs.existsSync(dataPath)) {
             throw new Error(`File dataset non trovato: ${dataPath}`);
@@ -906,11 +927,17 @@ export async function runFeatureStoreCommand(args: string[]): Promise<void> {
             },
             forceRebuild,
         });
-        console.log(JSON.stringify({
-            ...result,
-            manifestPath,
-            dataPath,
-        }, null, 2));
+        console.log(
+            JSON.stringify(
+                {
+                    ...result,
+                    manifestPath,
+                    dataPath,
+                },
+                null,
+                2,
+            ),
+        );
         return;
     }
 
@@ -923,8 +950,14 @@ export async function runAiQualityCommand(args: string[]): Promise<void> {
     const shouldRunValidation = hasOption(args, '--run');
     const validationRun = shouldRunValidation ? await runAiValidationPipeline('cli') : null;
     const snapshot = await getAiQualitySnapshot(days);
-    console.log(JSON.stringify({
-        validationRun,
-        snapshot,
-    }, null, 2));
+    console.log(
+        JSON.stringify(
+            {
+                validationRun,
+                snapshot,
+            },
+            null,
+            2,
+        ),
+    );
 }

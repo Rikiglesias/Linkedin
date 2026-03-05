@@ -29,8 +29,18 @@ function normalizeLeadListRow(row: LeadListRow): LeadListCampaignConfig {
         priority: row.priority,
         dailyInviteCap: row.daily_invite_cap,
         dailyMessageCap: row.daily_message_cap,
+        scoringCriteria: row.scoring_criteria ?? null,
         createdAt: row.created_at,
     };
+}
+
+export async function getListScoringCriteria(listName: string): Promise<string | null> {
+    const db = await getDatabase();
+    const row = await db.get<{ scoring_criteria: string | null }>(
+        `SELECT scoring_criteria FROM lead_lists WHERE name = ? LIMIT 1`,
+        [listName],
+    );
+    return row?.scoring_criteria ?? null;
 }
 
 export async function ensureLeadList(listName: string): Promise<void> {
@@ -46,7 +56,7 @@ export async function syncLeadListsFromLeads(): Promise<void> {
         SELECT DISTINCT list_name, 'legacy'
         FROM leads
         WHERE TRIM(COALESCE(list_name, '')) <> ''
-    `
+    `,
     );
 }
 
@@ -54,25 +64,28 @@ export async function listLeadCampaignConfigs(onlyActive: boolean = false): Prom
     const db = await getDatabase();
     const rows = onlyActive
         ? await db.query<LeadListRow>(
-            `
-            SELECT name, source, is_active, priority, daily_invite_cap, daily_message_cap, created_at
+              `
+            SELECT name, source, is_active, priority, daily_invite_cap, daily_message_cap, scoring_criteria, created_at
             FROM lead_lists
             WHERE is_active = 1
             ORDER BY priority ASC, created_at ASC, name ASC
-        `
-        )
+        `,
+          )
         : await db.query<LeadListRow>(
-            `
-            SELECT name, source, is_active, priority, daily_invite_cap, daily_message_cap, created_at
+              `
+            SELECT name, source, is_active, priority, daily_invite_cap, daily_message_cap, scoring_criteria, created_at
             FROM lead_lists
             ORDER BY is_active DESC, priority ASC, created_at ASC, name ASC
-        `
-        );
+        `,
+          );
 
     return rows.map(normalizeLeadListRow);
 }
 
-export async function updateLeadCampaignConfig(listName: string, patch: UpdateLeadListCampaignInput): Promise<LeadListCampaignConfig> {
+export async function updateLeadCampaignConfig(
+    listName: string,
+    patch: UpdateLeadListCampaignInput,
+): Promise<LeadListCampaignConfig> {
     await ensureLeadList(listName);
 
     const setParts: string[] = [];
@@ -94,6 +107,10 @@ export async function updateLeadCampaignConfig(listName: string, patch: UpdateLe
         setParts.push('daily_message_cap = ?');
         params.push(patch.dailyMessageCap === null ? null : Math.max(0, patch.dailyMessageCap ?? 0));
     }
+    if (Object.prototype.hasOwnProperty.call(patch, 'scoringCriteria')) {
+        setParts.push('scoring_criteria = ?');
+        params.push(patch.scoringCriteria ?? null);
+    }
 
     if (setParts.length > 0) {
         const db = await getDatabase();
@@ -103,7 +120,7 @@ export async function updateLeadCampaignConfig(listName: string, patch: UpdateLe
             SET ${setParts.join(', ')}
             WHERE name = ?
         `,
-            [...params, listName]
+            [...params, listName],
         );
     }
 
@@ -116,7 +133,7 @@ export async function updateLeadCampaignConfig(listName: string, patch: UpdateLe
 }
 
 export async function applyControlPlaneCampaignConfigs(
-    configs: ControlPlaneCampaignConfigInput[]
+    configs: ControlPlaneCampaignConfigInput[],
 ): Promise<ApplyControlPlaneCampaignResult> {
     const result: ApplyControlPlaneCampaignResult = {
         fetched: configs.length,
@@ -142,17 +159,19 @@ export async function applyControlPlaneCampaignConfigs(
 
             const nextIsActive = configItem.isActive ? 1 : 0;
             const nextPriority = Math.max(1, Math.floor(configItem.priority));
-            const nextInviteCap = configItem.dailyInviteCap === null ? null : Math.max(0, Math.floor(configItem.dailyInviteCap));
-            const nextMessageCap = configItem.dailyMessageCap === null ? null : Math.max(0, Math.floor(configItem.dailyMessageCap));
+            const nextInviteCap =
+                configItem.dailyInviteCap === null ? null : Math.max(0, Math.floor(configItem.dailyInviteCap));
+            const nextMessageCap =
+                configItem.dailyMessageCap === null ? null : Math.max(0, Math.floor(configItem.dailyMessageCap));
 
             const existing = await db.get<LeadListRow>(
                 `
-                SELECT name, source, is_active, priority, daily_invite_cap, daily_message_cap, created_at
+                SELECT name, source, is_active, priority, daily_invite_cap, daily_message_cap, scoring_criteria, created_at
                 FROM lead_lists
                 WHERE name = ?
                 LIMIT 1
             `,
-                [listName]
+                [listName],
             );
 
             if (!existing) {
@@ -161,18 +180,19 @@ export async function applyControlPlaneCampaignConfigs(
                     INSERT INTO lead_lists (name, source, is_active, priority, daily_invite_cap, daily_message_cap)
                     VALUES (?, 'control_plane', ?, ?, ?, ?)
                 `,
-                    [listName, nextIsActive, nextPriority, nextInviteCap, nextMessageCap]
+                    [listName, nextIsActive, nextPriority, nextInviteCap, nextMessageCap],
                 );
                 result.created += 1;
                 result.applied += 1;
                 continue;
             }
 
-            const changed = existing.source !== 'control_plane'
-                || existing.is_active !== nextIsActive
-                || existing.priority !== nextPriority
-                || existing.daily_invite_cap !== nextInviteCap
-                || existing.daily_message_cap !== nextMessageCap;
+            const changed =
+                existing.source !== 'control_plane' ||
+                existing.is_active !== nextIsActive ||
+                existing.priority !== nextPriority ||
+                existing.daily_invite_cap !== nextInviteCap ||
+                existing.daily_message_cap !== nextMessageCap;
 
             if (!changed) {
                 result.unchanged += 1;
@@ -189,7 +209,7 @@ export async function applyControlPlaneCampaignConfigs(
                     daily_message_cap = ?
                 WHERE name = ?
             `,
-                [nextIsActive, nextPriority, nextInviteCap, nextMessageCap, listName]
+                [nextIsActive, nextPriority, nextInviteCap, nextMessageCap, listName],
             );
             result.updated += 1;
             result.applied += 1;
@@ -215,12 +235,12 @@ export async function upsertSalesNavList(name: string, url: string): Promise<Sal
             url = excluded.url,
             updated_at = CURRENT_TIMESTAMP
     `,
-        [normalizedName, normalizedUrl]
+        [normalizedName, normalizedUrl],
     );
 
     const row = await db.get<SalesNavListRecord>(
         `SELECT id, name, url, last_synced_at, created_at, updated_at FROM salesnav_lists WHERE name = ?`,
-        [normalizedName]
+        [normalizedName],
     );
     if (!row) {
         throw new Error(`Lista SalesNav non trovata dopo upsert: ${normalizedName}`);
@@ -237,7 +257,7 @@ export async function markSalesNavListSynced(listId: number): Promise<void> {
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
     `,
-        [listId]
+        [listId],
     );
 }
 
@@ -248,7 +268,7 @@ export async function linkLeadToSalesNavList(listId: number, leadId: number): Pr
         INSERT OR IGNORE INTO salesnav_list_items (list_id, lead_id)
         VALUES (?, ?)
     `,
-        [listId, leadId]
+        [listId, leadId],
     );
 }
 
@@ -274,7 +294,7 @@ export async function listSalesNavLists(limit: number = 200): Promise<SalesNavLi
             l.name ASC
         LIMIT ?
     `,
-        [safeLimit]
+        [safeLimit],
     );
 }
 
@@ -284,7 +304,7 @@ export async function getSalesNavListByName(name: string): Promise<SalesNavListR
     if (!normalizedName) return null;
     const row = await db.get<SalesNavListRecord>(
         `SELECT id, name, url, last_synced_at, created_at, updated_at FROM salesnav_lists WHERE name = ? LIMIT 1`,
-        [normalizedName]
+        [normalizedName],
     );
     return row ?? null;
 }
@@ -297,8 +317,8 @@ export async function addLead(input: AddLeadInput): Promise<boolean> {
     const result = await db.run(
         `
         INSERT OR IGNORE INTO leads
-            (account_name, first_name, last_name, job_title, website, linkedin_url, status, list_name, lead_score, confidence_score)
-        VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, 'NEW'), ?, ?, ?)
+            (account_name, first_name, last_name, job_title, website, linkedin_url, status, list_name, lead_score, confidence_score, consent_basis, consent_recorded_at)
+        VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, 'NEW'), ?, ?, ?, COALESCE(?, 'legitimate_interest'), ?)
     `,
         [
             input.accountName,
@@ -311,10 +331,14 @@ export async function addLead(input: AddLeadInput): Promise<boolean> {
             input.listName,
             input.leadScore ?? null,
             input.confidenceScore ?? null,
-        ]
+            input.consentBasis ?? null,
+            input.consentRecordedAt ?? null,
+        ],
     );
 
-    const leadRow = await db.get<{ id: number }>(`SELECT id FROM leads WHERE linkedin_url = ?`, [normalizedLinkedinUrl]);
+    const leadRow = await db.get<{ id: number }>(`SELECT id FROM leads WHERE linkedin_url = ?`, [
+        normalizedLinkedinUrl,
+    ]);
     const listRow = await db.get<{ id: number }>(`SELECT id FROM lead_lists WHERE name = ?`, [input.listName]);
     if (leadRow?.id && listRow?.id) {
         await db.run(`INSERT OR IGNORE INTO list_leads (list_id, lead_id) VALUES (?, ?)`, [listRow.id, leadRow.id]);
@@ -326,20 +350,26 @@ export async function addLead(input: AddLeadInput): Promise<boolean> {
 export async function getLeadByLinkedinUrl(linkedinUrl: string): Promise<LeadRecord | null> {
     const db = await getDatabase();
     const normalizedUrl = normalizeLinkedInUrl(linkedinUrl);
-    const lead = await db.get<LeadRecord>(`SELECT ${LEAD_SELECT_COLUMNS} FROM leads WHERE linkedin_url = ?`, [normalizedUrl]);
+    const lead = await db.get<LeadRecord>(`SELECT ${LEAD_SELECT_COLUMNS} FROM leads WHERE linkedin_url = ?`, [
+        normalizedUrl,
+    ]);
     if (!lead) return null;
     lead.status = normalizeLegacyStatus(lead.status);
     return lead;
 }
 
-export async function upsertSalesNavigatorLead(input: UpsertSalesNavigatorLeadInput): Promise<UpsertSalesNavigatorLeadResult> {
+export async function upsertSalesNavigatorLead(
+    input: UpsertSalesNavigatorLeadInput,
+): Promise<UpsertSalesNavigatorLeadResult> {
     const db = await getDatabase();
     const listName = normalizeTextValue(input.listName) || 'default';
     const linkedinUrl = normalizeLinkedInUrl(input.linkedinUrl);
 
     return withTransaction(db, async () => {
         await ensureLeadList(listName);
-        const existing = await db.get<LeadRecord>(`SELECT ${LEAD_SELECT_COLUMNS} FROM leads WHERE linkedin_url = ?`, [linkedinUrl]);
+        const existing = await db.get<LeadRecord>(`SELECT ${LEAD_SELECT_COLUMNS} FROM leads WHERE linkedin_url = ?`, [
+            linkedinUrl,
+        ]);
 
         const normalizedAccountName = normalizeTextValue(input.accountName);
         const normalizedFirstName = normalizeTextValue(input.firstName);
@@ -367,7 +397,7 @@ export async function upsertSalesNavigatorLead(input: UpsertSalesNavigatorLeadIn
                     listName,
                     input.leadScore ?? null,
                     input.confidenceScore ?? null,
-                ]
+                ],
             );
             leadId = insertResult.lastID ?? 0;
             action = 'inserted';
@@ -382,12 +412,13 @@ export async function upsertSalesNavigatorLead(input: UpsertSalesNavigatorLeadIn
                 : mergedLeadValue(existing.website, normalizedWebsite);
             const nextListName = listName;
 
-            const changed = nextAccountName !== existing.account_name
-                || nextFirstName !== existing.first_name
-                || nextLastName !== existing.last_name
-                || nextJobTitle !== existing.job_title
-                || nextWebsite !== existing.website
-                || nextListName !== existing.list_name;
+            const changed =
+                nextAccountName !== existing.account_name ||
+                nextFirstName !== existing.first_name ||
+                nextLastName !== existing.last_name ||
+                nextJobTitle !== existing.job_title ||
+                nextWebsite !== existing.website ||
+                nextListName !== existing.list_name;
 
             if (changed) {
                 await db.run(
@@ -402,26 +433,22 @@ export async function upsertSalesNavigatorLead(input: UpsertSalesNavigatorLeadIn
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
                 `,
-                    [
-                        nextAccountName,
-                        nextFirstName,
-                        nextLastName,
-                        nextJobTitle,
-                        nextWebsite,
-                        nextListName,
-                        leadId,
-                    ]
+                    [nextAccountName, nextFirstName, nextLastName, nextJobTitle, nextWebsite, nextListName, leadId],
                 );
                 action = 'updated';
             }
         }
 
-        const linkedLead = leadId > 0
-            ? { id: leadId }
-            : await db.get<{ id: number }>(`SELECT id FROM leads WHERE linkedin_url = ?`, [linkedinUrl]);
+        const linkedLead =
+            leadId > 0
+                ? { id: leadId }
+                : await db.get<{ id: number }>(`SELECT id FROM leads WHERE linkedin_url = ?`, [linkedinUrl]);
         const listRow = await db.get<{ id: number }>(`SELECT id FROM lead_lists WHERE name = ?`, [listName]);
         if (linkedLead?.id && listRow?.id) {
-            await db.run(`INSERT OR IGNORE INTO list_leads (list_id, lead_id) VALUES (?, ?)`, [listRow.id, linkedLead.id]);
+            await db.run(`INSERT OR IGNORE INTO list_leads (list_id, lead_id) VALUES (?, ?)`, [
+                listRow.id,
+                linkedLead.id,
+            ]);
         }
 
         return {
@@ -440,7 +467,7 @@ export async function getExpiredInvitedLeads(_accountId: string, olderThanDays: 
            AND invited_at < datetime('now', '-' || ? || ' days')
          ORDER BY invited_at ASC
          LIMIT 50`,
-        [olderThanDays]
+        [olderThanDays],
     );
 }
 
@@ -459,7 +486,7 @@ export async function addCompanyTarget(input: AddCompanyTargetInput): Promise<bo
         INSERT OR IGNORE INTO company_targets (list_name, account_name, website, source_file, status)
         VALUES (?, ?, ?, ?, 'NEW')
     `,
-        [input.listName, normalizedAccountName, normalizedWebsite, input.sourceFile ?? null]
+        [input.listName, normalizedAccountName, normalizedWebsite, input.sourceFile ?? null],
     );
     return (result.changes ?? 0) > 0;
 }
@@ -467,13 +494,10 @@ export async function addCompanyTarget(input: AddCompanyTargetInput): Promise<bo
 export async function countCompanyTargets(listName?: string): Promise<number> {
     const db = await getDatabase();
     const row = listName
-        ? await db.get<{ total: number }>(
-            `SELECT COUNT(*) as total FROM company_targets WHERE list_name = ?`,
-            [listName]
-        )
-        : await db.get<{ total: number }>(
-            `SELECT COUNT(*) as total FROM company_targets`
-        );
+        ? await db.get<{ total: number }>(`SELECT COUNT(*) as total FROM company_targets WHERE list_name = ?`, [
+              listName,
+          ])
+        : await db.get<{ total: number }>(`SELECT COUNT(*) as total FROM company_targets`);
     return row?.total ?? 0;
 }
 
@@ -489,7 +513,7 @@ export async function listCompanyTargets(listName: string | null, limit: number)
             ORDER BY updated_at DESC, created_at DESC
             LIMIT ?
         `,
-            [listName, safeLimit]
+            [listName, safeLimit],
         );
     }
 
@@ -500,7 +524,7 @@ export async function listCompanyTargets(listName: string | null, limit: number)
         ORDER BY updated_at DESC, created_at DESC
         LIMIT ?
     `,
-        [safeLimit]
+        [safeLimit],
     );
 }
 
@@ -515,14 +539,14 @@ export async function getCompanyTargetsForEnrichment(limit: number): Promise<Com
         ORDER BY status DESC, created_at ASC
         LIMIT ?
     `,
-        [safeLimit]
+        [safeLimit],
     );
 }
 
 export async function setCompanyTargetStatus(
     targetId: number,
     status: CompanyTargetStatus,
-    lastError: string | null = null
+    lastError: string | null = null,
 ): Promise<void> {
     const db = await getDatabase();
     await db.run(
@@ -535,7 +559,7 @@ export async function setCompanyTargetStatus(
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
     `,
-        [status, lastError, targetId]
+        [status, lastError, targetId],
     );
 }
 
@@ -545,7 +569,7 @@ export async function countCompanyTargetsByStatuses(statuses: CompanyTargetStatu
     const placeholders = statuses.map(() => '?').join(', ');
     const row = await db.get<{ total: number }>(
         `SELECT COUNT(*) as total FROM company_targets WHERE status IN (${placeholders})`,
-        statuses
+        statuses,
     );
     return row?.total ?? 0;
 }
@@ -554,7 +578,7 @@ export async function promoteNewLeadsToReadyInvite(limit: number): Promise<numbe
     const db = await getDatabase();
     const leads = await db.query<{ id: number }>(
         `SELECT id FROM leads WHERE status = 'NEW' ORDER BY created_at ASC LIMIT ?`,
-        [limit]
+        [limit],
     );
     if (leads.length === 0) return 0;
 
@@ -562,7 +586,7 @@ export async function promoteNewLeadsToReadyInvite(limit: number): Promise<numbe
     const placeholders = ids.map(() => '?').join(', ');
     const result = await db.run(
         `UPDATE leads SET status = 'READY_INVITE', updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`,
-        ids
+        ids,
     );
     return result.changes ?? 0;
 }
@@ -575,7 +599,11 @@ export async function getLeadById(leadId: number): Promise<LeadRecord | null> {
     return lead;
 }
 
-export async function updateLeadScrapedContext(leadId: number, about: string | null, experience: string | null): Promise<void> {
+export async function updateLeadScrapedContext(
+    leadId: number,
+    about: string | null,
+    experience: string | null,
+): Promise<void> {
     const db = await getDatabase();
     await db.run(
         `
@@ -585,7 +613,7 @@ export async function updateLeadScrapedContext(leadId: number, about: string | n
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
     `,
-        [about, experience, leadId]
+        [about, experience, leadId],
     );
 }
 
@@ -598,11 +626,15 @@ export async function updateLeadPromptVariant(leadId: number, variant: string | 
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
     `,
-        [variant, leadId]
+        [variant, leadId],
     );
 }
 
-export async function updateLeadScores(leadId: number, leadScore: number | null, confidenceScore: number | null): Promise<void> {
+export async function updateLeadScores(
+    leadId: number,
+    leadScore: number | null,
+    confidenceScore: number | null,
+): Promise<void> {
     const db = await getDatabase();
     await db.run(
         `
@@ -612,7 +644,7 @@ export async function updateLeadScores(leadId: number, leadScore: number | null,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
     `,
-        [leadScore, confidenceScore, leadId]
+        [leadScore, confidenceScore, leadId],
     );
 }
 
@@ -651,7 +683,7 @@ function clampScore(value: number | undefined): number | null {
 export async function recordLeadTimingAttribution(
     leadId: number,
     action: LeadTimingAction,
-    input: LeadTimingAttributionInput
+    input: LeadTimingAttributionInput,
 ): Promise<void> {
     const db = await getDatabase();
     const strategy: LeadTimingStrategy = input.strategy === 'optimizer' ? 'optimizer' : 'baseline';
@@ -659,9 +691,10 @@ export async function recordLeadTimingAttribution(
     const score = clampScore(input.score);
     const slotHour = clampHour(input.slotHour);
     const slotDow = clampDow(input.slotDow);
-    const delaySec = typeof input.delaySec === 'number' && Number.isFinite(input.delaySec)
-        ? Math.max(0, Math.floor(input.delaySec))
-        : 0;
+    const delaySec =
+        typeof input.delaySec === 'number' && Number.isFinite(input.delaySec)
+            ? Math.max(0, Math.floor(input.delaySec))
+            : 0;
     const model = normalizeTextValue(input.model ?? '') || 'timing_optimizer_v2';
 
     if (action === 'invite') {
@@ -678,7 +711,7 @@ export async function recordLeadTimingAttribution(
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         `,
-            [strategy, segment, score, slotHour, slotDow, delaySec, model, leadId]
+            [strategy, segment, score, slotHour, slotDow, delaySec, model, leadId],
         );
         return;
     }
@@ -696,7 +729,7 @@ export async function recordLeadTimingAttribution(
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
     `,
-        [strategy, segment, score, slotHour, slotDow, delaySec, model, leadId]
+        [strategy, segment, score, slotHour, slotDow, delaySec, model, leadId],
     );
 }
 
@@ -712,12 +745,15 @@ export async function getLeadsWithSalesNavigatorUrls(limit: number): Promise<Lea
         ORDER BY updated_at DESC, created_at ASC
         LIMIT ?
     `,
-        [safeLimit]
+        [safeLimit],
     );
     return leads.map((lead) => ({ ...lead, status: normalizeLegacyStatus(lead.status) }));
 }
 
-export async function updateLeadLinkedinUrl(leadId: number, nextLinkedinUrl: string): Promise<UpdateLeadLinkedinUrlResult> {
+export async function updateLeadLinkedinUrl(
+    leadId: number,
+    nextLinkedinUrl: string,
+): Promise<UpdateLeadLinkedinUrlResult> {
     const db = await getDatabase();
     const normalizedUrl = normalizeLinkedInUrl(nextLinkedinUrl);
 
@@ -729,7 +765,7 @@ export async function updateLeadLinkedinUrl(leadId: number, nextLinkedinUrl: str
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         `,
-            [normalizedUrl, leadId]
+            [normalizedUrl, leadId],
         );
         return {
             updated: (result.changes ?? 0) > 0,
@@ -740,10 +776,9 @@ export async function updateLeadLinkedinUrl(leadId: number, nextLinkedinUrl: str
         if (!/UNIQUE constraint failed:\s*leads\.linkedin_url/i.test(message)) {
             throw error;
         }
-        const conflict = await db.get<{ id: number }>(
-            `SELECT id FROM leads WHERE linkedin_url = ? LIMIT 1`,
-            [normalizedUrl]
-        );
+        const conflict = await db.get<{ id: number }>(`SELECT id FROM leads WHERE linkedin_url = ? LIMIT 1`, [
+            normalizedUrl,
+        ]);
         return {
             updated: false,
             conflictLeadId: conflict?.id ?? null,
@@ -756,7 +791,7 @@ export async function getLeadsByStatus(status: LeadStatus, limit: number): Promi
     const normalized = normalizeLegacyStatus(status);
     const leads = await db.query<LeadRecord>(
         `SELECT ${LEAD_SELECT_COLUMNS} FROM leads WHERE status = ? ORDER BY created_at ASC LIMIT ?`,
-        [normalized, limit]
+        [normalized, limit],
     );
     return leads.map((lead) => ({ ...lead, status: normalizeLegacyStatus(lead.status) }));
 }
@@ -824,14 +859,12 @@ export async function listReviewQueue(limit: number = 50): Promise<ReviewQueueIt
         ORDER BY COALESCE(e.created_at, l.updated_at) DESC, l.updated_at DESC
         LIMIT ?
     `,
-        [safeLimit]
+        [safeLimit],
     );
 
     return rows.map((row) => {
         const metadata = parseReviewMetadata(row.review_metadata_json ?? null);
-        const evidencePath = typeof metadata?.evidencePath === 'string'
-            ? metadata.evidencePath
-            : null;
+        const evidencePath = typeof metadata?.evidencePath === 'string' ? metadata.evidencePath : null;
         return {
             leadId: row.lead_id,
             status: normalizeLegacyStatus((row.status ?? 'REVIEW_REQUIRED') as LeadStatus),
@@ -850,7 +883,7 @@ export async function listReviewQueue(limit: number = 50): Promise<ReviewQueueIt
 export async function getLeadsForFollowUp(
     delayDays: number,
     maxFollowUp: number,
-    limit: number
+    limit: number,
 ): Promise<LeadRecord[]> {
     const db = await getDatabase();
     const leads = await db.query<LeadRecord>(
@@ -864,7 +897,7 @@ export async function getLeadsForFollowUp(
                 OR follow_up_sent_at <= DATETIME('now', '-' || ? || ' days'))
          ORDER BY messaged_at ASC
          LIMIT ?`,
-        [maxFollowUp, delayDays, delayDays, limit]
+        [maxFollowUp, delayDays, delayDays, limit],
     );
     return leads.map((lead) => ({ ...lead, status: normalizeLegacyStatus(lead.status) }));
 }
@@ -877,11 +910,15 @@ export async function recordFollowUpSent(leadId: number): Promise<void> {
              follow_up_sent_at = DATETIME('now'),
              updated_at        = DATETIME('now')
          WHERE id = ?`,
-        [leadId]
+        [leadId],
     );
 }
 
-export async function getLeadsByStatusForSiteCheck(status: LeadStatus, limit: number, staleDays: number): Promise<LeadRecord[]> {
+export async function getLeadsByStatusForSiteCheck(
+    status: LeadStatus,
+    limit: number,
+    staleDays: number,
+): Promise<LeadRecord[]> {
     const db = await getDatabase();
     const normalized = normalizeLegacyStatus(status);
     const safeLimit = Math.max(1, limit);
@@ -901,12 +938,16 @@ export async function getLeadsByStatusForSiteCheck(status: LeadStatus, limit: nu
             created_at ASC
         LIMIT ?
     `,
-        [normalized, safeStaleDays, safeLimit]
+        [normalized, safeStaleDays, safeLimit],
     );
     return leads.map((lead) => ({ ...lead, status: normalizeLegacyStatus(lead.status) }));
 }
 
-export async function getLeadsByStatusForList(status: LeadStatus, listName: string, limit: number): Promise<LeadRecord[]> {
+export async function getLeadsByStatusForList(
+    status: LeadStatus,
+    listName: string,
+    limit: number,
+): Promise<LeadRecord[]> {
     const db = await getDatabase();
     const normalized = normalizeLegacyStatus(status);
     const leads = await db.query<LeadRecord>(
@@ -928,7 +969,7 @@ export async function getLeadsByStatusForList(status: LeadStatus, listName: stri
             created_at ASC
         LIMIT ?
     `,
-        [normalized, listName, limit]
+        [normalized, listName, limit],
     );
     return leads.map((lead) => ({ ...lead, status: normalizeLegacyStatus(lead.status) }));
 }
@@ -942,7 +983,7 @@ export async function touchLeadSiteCheckAt(leadId: number): Promise<void> {
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
     `,
-        [leadId]
+        [leadId],
     );
 }
 
@@ -953,7 +994,7 @@ export async function countLeadsByStatuses(statuses: LeadStatus[]): Promise<numb
     const placeholders = normalized.map(() => '?').join(', ');
     const row = await db.get<{ total: number }>(
         `SELECT COUNT(*) as total FROM leads WHERE status IN (${placeholders})`,
-        normalized
+        normalized,
     );
     return row?.total ?? 0;
 }
@@ -972,14 +1013,26 @@ export async function getLeadStatusCountsForLists(listNames: string[]): Promise<
         WHERE list_name IN (${placeholders})
         GROUP BY list_name, status
     `,
-        listNames
+        listNames,
     );
 }
 
-export async function setLeadStatus(leadId: number, status: LeadStatus, errorMessage?: string, blockedReason?: string): Promise<void> {
+export async function setLeadStatus(
+    leadId: number,
+    status: LeadStatus,
+    errorMessage?: string,
+    blockedReason?: string,
+): Promise<void> {
     const db = await getDatabase();
     const normalized = normalizeLegacyStatus(status);
-    const timestampColumn = normalized === 'INVITED' ? 'invited_at' : normalized === 'ACCEPTED' ? 'accepted_at' : normalized === 'MESSAGED' ? 'messaged_at' : null;
+    const timestampColumn =
+        normalized === 'INVITED'
+            ? 'invited_at'
+            : normalized === 'ACCEPTED'
+              ? 'accepted_at'
+              : normalized === 'MESSAGED'
+                ? 'messaged_at'
+                : null;
 
     if (timestampColumn) {
         await db.run(
@@ -988,7 +1041,7 @@ export async function setLeadStatus(leadId: number, status: LeadStatus, errorMes
             SET status = ?, ${timestampColumn} = CURRENT_TIMESTAMP, last_error = ?, blocked_reason = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         `,
-            [normalized, errorMessage ?? null, blockedReason ?? null, leadId]
+            [normalized, errorMessage ?? null, blockedReason ?? null, leadId],
         );
         return;
     }
@@ -999,7 +1052,7 @@ export async function setLeadStatus(leadId: number, status: LeadStatus, errorMes
         SET status = ?, last_error = ?, blocked_reason = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
     `,
-        [normalized, errorMessage ?? null, blockedReason ?? null, leadId]
+        [normalized, errorMessage ?? null, blockedReason ?? null, leadId],
     );
 }
 
@@ -1008,7 +1061,7 @@ export async function appendLeadEvent(
     fromStatus: LeadStatus,
     toStatus: LeadStatus,
     reason: string,
-    metadata: Record<string, unknown>
+    metadata: Record<string, unknown>,
 ): Promise<void> {
     const db = await getDatabase();
     await db.run(
@@ -1016,6 +1069,6 @@ export async function appendLeadEvent(
         INSERT INTO lead_events (lead_id, from_status, to_status, reason, metadata_json)
         VALUES (?, ?, ?, ?, ?)
     `,
-        [leadId, normalizeLegacyStatus(fromStatus), normalizeLegacyStatus(toStatus), reason, JSON.stringify(metadata)]
+        [leadId, normalizeLegacyStatus(fromStatus), normalizeLegacyStatus(toStatus), reason, JSON.stringify(metadata)],
     );
 }

@@ -74,12 +74,7 @@ function buildSignature(options: CycleTlsStartOptions): string {
     const upstream = resolveUpstreamProxyUrl(options);
     const ja3 = options.ja3Fingerprint?.trim() || config.ja3Fingerprint;
     const userAgent = options.userAgent?.trim() || config.ja3UserAgent;
-    return [
-        config.ja3ProxyPort,
-        ja3,
-        userAgent,
-        upstream,
-    ].join('|');
+    return [config.ja3ProxyPort, ja3, userAgent, upstream].join('|');
 }
 
 async function closeServerHandle(server: CycleTlsServerHandle | null): Promise<void> {
@@ -99,8 +94,10 @@ async function closeServerHandle(server: CycleTlsServerHandle | null): Promise<v
 
 async function loadCycleTlsClient(): Promise<CycleTlsClient> {
     try {
-        const dynamicImport = new Function('modulePath', 'return import(modulePath)') as (modulePath: string) => Promise<unknown>;
-        const module = await dynamicImport('@ikechan8370/cycletls') as Record<string, unknown>;
+        const dynamicImport = new Function('modulePath', 'return import(modulePath)') as (
+            modulePath: string,
+        ) => Promise<unknown>;
+        const module = (await dynamicImport('@ikechan8370/cycletls')) as Record<string, unknown>;
         const init = (module.default ?? module) as unknown as () => Promise<CycleTlsClient>;
         return init();
     } catch (error) {
@@ -128,9 +125,9 @@ export async function stopCycleTlsProxy(): Promise<void> {
     cycleTlsSignature = '';
     cycleTlsBootPromise = null;
 
-    await closeServerHandle(currentServer).catch(() => { });
+    await closeServerHandle(currentServer).catch(() => {});
     if (currentClient?.exit) {
-        await Promise.resolve(currentClient.exit()).catch(() => { });
+        await Promise.resolve(currentClient.exit()).catch(() => {});
     }
 }
 

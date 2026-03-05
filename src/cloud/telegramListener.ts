@@ -23,20 +23,27 @@ async function pollLoop(): Promise<void> {
     while (isPolling) {
         try {
             const url = `https://api.telegram.org/bot${config.telegramBotToken}/getUpdates?offset=${lastUpdateId + 1}&timeout=30`;
-            const response = await fetchWithRetryPolicy(url, { method: 'GET' }, {
-                integration: 'telegram.long_polling',
-                circuitKey: 'telegram.polling',
-                timeoutMs: 35_000,
-                maxAttempts: 2,
-            });
+            const response = await fetchWithRetryPolicy(
+                url,
+                { method: 'GET' },
+                {
+                    integration: 'telegram.long_polling',
+                    circuitKey: 'telegram.polling',
+                    timeoutMs: 35_000,
+                    maxAttempts: 2,
+                },
+            );
             if (!response.ok) {
-                await new Promise(res => setTimeout(res, 5000));
+                await new Promise((res) => setTimeout(res, 5000));
                 continue;
             }
 
-            const data = await response.json() as { ok: boolean; result?: Array<{ update_id: number; message?: TelegramMessage }> };
+            const data = (await response.json()) as {
+                ok: boolean;
+                result?: Array<{ update_id: number; message?: TelegramMessage }>;
+            };
             if (!data.ok || !data.result) {
-                await new Promise(res => setTimeout(res, 2000));
+                await new Promise((res) => setTimeout(res, 2000));
                 continue;
             }
 
@@ -48,7 +55,7 @@ async function pollLoop(): Promise<void> {
             }
         } catch (error) {
             console.error('[TELEGRAM] Errore nel polling:', error);
-            await new Promise(res => setTimeout(res, 5000));
+            await new Promise((res) => setTimeout(res, 5000));
         }
     }
 }
@@ -112,19 +119,23 @@ async function processTelegramMessage(message: TelegramMessage): Promise<void> {
 
 async function replyToTelegram(chatId: string | number, text: string): Promise<void> {
     try {
-        await fetchWithRetryPolicy(`https://api.telegram.org/bot${config.telegramBotToken}/sendMessage`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                chat_id: chatId,
-                text,
-            })
-        }, {
-            integration: 'telegram.reply',
-            circuitKey: 'telegram.reply',
-            timeoutMs: 8_000,
-            maxAttempts: 2,
-        });
+        await fetchWithRetryPolicy(
+            `https://api.telegram.org/bot${config.telegramBotToken}/sendMessage`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    chat_id: chatId,
+                    text,
+                }),
+            },
+            {
+                integration: 'telegram.reply',
+                circuitKey: 'telegram.reply',
+                timeoutMs: 8_000,
+                maxAttempts: 2,
+            },
+        );
     } catch (e) {
         console.error('[TELEGRAM] Errore risposta', e);
     }

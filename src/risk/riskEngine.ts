@@ -2,6 +2,7 @@ import { config } from '../config';
 import { RiskInputs, RiskSnapshot } from '../types/domain';
 
 function clampScore(value: number): number {
+    if (!Number.isFinite(value)) return 0;
     return Math.max(0, Math.min(100, Math.round(value)));
 }
 
@@ -15,24 +16,32 @@ function clampPercentage(value: number): number {
     return Math.max(0, Math.min(100, value));
 }
 
+
 export function evaluateRisk(inputs: RiskInputs): RiskSnapshot {
+    const errorRate = clampRatio(inputs.errorRate);
+    const selectorFailureRate = clampRatio(inputs.selectorFailureRate);
+    const pendingRatio = clampRatio(inputs.pendingRatio);
+    const inviteVelocityRatio = clampRatio(inputs.inviteVelocityRatio);
+    const challengeCount = Math.max(0, Math.floor(Number.isFinite(inputs.challengeCount) ? inputs.challengeCount : 0));
+
     const score = clampScore(
-        inputs.errorRate * 40 +
-        inputs.selectorFailureRate * 20 +
-        inputs.pendingRatio * 25 +
-        Math.min(30, inputs.challengeCount * 20) +
-        inputs.inviteVelocityRatio * 15
+        errorRate * 40 +
+            selectorFailureRate * 20 +
+            pendingRatio * 25 +
+            Math.min(30, challengeCount * 10) +
+            inviteVelocityRatio * 15,
     );
 
     let action: RiskSnapshot['action'] = 'NORMAL';
-    if (score >= config.riskStopThreshold || inputs.pendingRatio >= config.pendingRatioStop || inputs.challengeCount > 0) {
+    if (
+        score >= config.riskStopThreshold ||
+        inputs.pendingRatio >= config.pendingRatioStop ||
+        inputs.challengeCount > 0
+    ) {
         action = 'STOP';
     } else if (
         config.lowActivityEnabled &&
-        (
-            score >= config.lowActivityRiskThreshold ||
-            inputs.pendingRatio >= config.lowActivityPendingThreshold
-        )
+        (score >= config.lowActivityRiskThreshold || inputs.pendingRatio >= config.lowActivityPendingThreshold)
     ) {
         action = 'LOW_ACTIVITY';
     } else if (score >= config.riskWarnThreshold || inputs.pendingRatio >= config.pendingRatioWarn) {
@@ -41,11 +50,11 @@ export function evaluateRisk(inputs: RiskInputs): RiskSnapshot {
 
     return {
         score,
-        pendingRatio: inputs.pendingRatio,
-        errorRate: inputs.errorRate,
-        selectorFailureRate: inputs.selectorFailureRate,
-        challengeCount: inputs.challengeCount,
-        inviteVelocityRatio: inputs.inviteVelocityRatio,
+        pendingRatio,
+        errorRate,
+        selectorFailureRate,
+        challengeCount,
+        inviteVelocityRatio,
         action,
     };
 }
@@ -62,7 +71,7 @@ export function calculateDynamicBudget(
     softCap: number,
     hardCap: number,
     alreadyConsumed: number,
-    riskAction: RiskSnapshot['action']
+    riskAction: RiskSnapshot['action'],
 ): number {
     if (alreadyConsumed >= hardCap) {
         return 0;
@@ -77,10 +86,7 @@ export function calculateDynamicBudget(
         effectiveCap = Math.floor(effectiveCap * 0.5);
     }
     if (riskAction === 'LOW_ACTIVITY') {
-        effectiveCap = Math.max(
-            config.lowActivityMinBudget,
-            Math.floor(effectiveCap * config.lowActivityBudgetFactor)
-        );
+        effectiveCap = Math.max(config.lowActivityMinBudget, Math.floor(effectiveCap * config.lowActivityBudgetFactor));
     }
     if (riskAction === 'STOP') {
         effectiveCap = 0;
@@ -106,7 +112,8 @@ export function evaluateCooldownDecision(snapshot: RiskSnapshot): CooldownDecisi
         return { activate: false, tier: 'none', minutes: 0, reason: null };
     }
 
-    const high = snapshot.score >= config.cooldownHighScore || snapshot.pendingRatio >= config.cooldownPendingHighThreshold;
+    const high =
+        snapshot.score >= config.cooldownHighScore || snapshot.pendingRatio >= config.cooldownPendingHighThreshold;
     if (high) {
         return {
             activate: true,
@@ -140,7 +147,7 @@ export function calculateDynamicWeeklyInviteLimit(
     accountAgeDays: number,
     minWeeklyLimit: number,
     maxWeeklyLimit: number,
-    warmupMaxAgeDays: number
+    warmupMaxAgeDays: number,
 ): number {
     const minLimit = Math.max(1, Math.floor(Math.min(minWeeklyLimit, maxWeeklyLimit)));
     const maxLimit = Math.max(1, Math.floor(Math.max(minWeeklyLimit, maxWeeklyLimit)));
@@ -150,7 +157,7 @@ export function calculateDynamicWeeklyInviteLimit(
         return maxLimit;
     }
     const progress = safeAge / maxAge;
-    const computed = minLimit + ((maxLimit - minLimit) * progress);
+    const computed = minLimit + (maxLimit - minLimit) * progress;
     return Math.max(minLimit, Math.min(maxLimit, Math.round(computed)));
 }
 
@@ -188,13 +195,10 @@ export function evaluateComplianceHealthScore(inputs: ComplianceHealthInputs): C
     const weeklyUsage = clampRatio(inputs.weeklyInvitesSent / Math.max(1, inputs.weeklyInviteLimit));
     const utilizationRatio = (inviteUsage + messageUsage + weeklyUsage) / 3;
 
-    const utilizationPenalty = utilizationRatio > 1
-        ? Math.min(30, (utilizationRatio - 1) * 50)
-        : 0;
+    const utilizationPenalty = utilizationRatio > 1 ? Math.min(30, (utilizationRatio - 1) * 50) : 0;
     const pendingThreshold = Math.max(0.01, inputs.pendingWarnThreshold);
-    const pendingPenalty = pendingRatio > pendingThreshold
-        ? Math.min(30, ((pendingRatio - pendingThreshold) / pendingThreshold) * 40)
-        : 0;
+    const pendingPenalty =
+        pendingRatio > pendingThreshold ? Math.min(30, ((pendingRatio - pendingThreshold) / pendingThreshold) * 40) : 0;
 
     const penalty = utilizationPenalty + pendingPenalty;
     const score = clampScore(baseScore - penalty);
@@ -226,16 +230,14 @@ function getMean(values: number[]): number {
 
 function getStdDev(values: number[], mean: number): number {
     if (values.length < 2) return 0;
-    const variance = values
-        .map((value) => (value - mean) ** 2)
-        .reduce((sum, value) => sum + value, 0) / values.length;
+    const variance = values.map((value) => (value - mean) ** 2).reduce((sum, value) => sum + value, 0) / values.length;
     return Math.sqrt(variance);
 }
 
 export function evaluatePredictiveRiskAlerts(
     current: PredictiveRiskMetricSample,
     history: PredictiveRiskMetricSample[],
-    sigma: number = config.riskPredictiveSigma
+    sigma: number = config.riskPredictiveSigma,
 ): PredictiveRiskAlert[] {
     if (history.length < 3) {
         return [];
@@ -251,9 +253,7 @@ export function evaluatePredictiveRiskAlerts(
     const alerts: PredictiveRiskAlert[] = [];
 
     for (const metric of metrics) {
-        const historicalValues = history
-            .map((sample) => sample[metric])
-            .filter((value) => Number.isFinite(value));
+        const historicalValues = history.map((sample) => sample[metric]).filter((value) => Number.isFinite(value));
         if (historicalValues.length < 3) continue;
 
         const mean = getMean(historicalValues);

@@ -96,14 +96,15 @@ function computePosteriorStats(sent: number, accepted: number, totalSent: number
     const normalizedSent = normalizeCounter(sent);
     const boundedAccepted = Math.max(0, Math.min(normalizedSent, normalizeCounter(accepted)));
     const alpha = boundedAccepted + BAYES_ALPHA_PRIOR;
-    const beta = (normalizedSent - boundedAccepted) + BAYES_BETA_PRIOR;
+    const beta = normalizedSent - boundedAccepted + BAYES_BETA_PRIOR;
     const denominator = alpha + beta;
     const posteriorMean = denominator > 0 ? alpha / denominator : 0;
-    const varianceDen = (denominator * denominator) * (denominator + 1);
+    const varianceDen = denominator * denominator * (denominator + 1);
     const posteriorVariance = varianceDen > 0 ? (alpha * beta) / varianceDen : 0;
     const posteriorStd = Math.sqrt(Math.max(0, posteriorVariance));
-    const explorationBonus = Math.sqrt(Math.log(Math.max(totalSent, 2) + 1) / Math.max(1, normalizedSent + 1)) * BAYES_EXPLORATION_WEIGHT;
-    const bayesScore = posteriorMean + (posteriorStd * BAYES_STD_WEIGHT) + explorationBonus;
+    const explorationBonus =
+        Math.sqrt(Math.log(Math.max(totalSent, 2) + 1) / Math.max(1, normalizedSent + 1)) * BAYES_EXPLORATION_WEIGHT;
+    const bayesScore = posteriorMean + posteriorStd * BAYES_STD_WEIGHT + explorationBonus;
     return {
         posteriorMean,
         posteriorStd,
@@ -132,7 +133,7 @@ function findSignificantWinner(
     variants: string[],
     rows: BanditDecisionInputRow[],
     alpha: number,
-    minSampleSize: number
+    minSampleSize: number,
 ): SignificantWinnerDecision | null {
     const statsMap = buildStatsMap(rows);
     const eligible = variants
@@ -169,7 +170,7 @@ function findSignificantWinner(
             baseline.sent,
             candidate.accepted,
             candidate.sent,
-            alpha
+            alpha,
         );
         if (!significance.significant) {
             continue;
@@ -193,7 +194,7 @@ export function evaluateBanditDecision(
     options?: {
         alpha?: number;
         minSampleSize?: number;
-    }
+    },
 ): BanditDecisionSummary {
     if (variants.length === 0) {
         throw new Error('[abBandit] variants array is empty');
@@ -256,41 +257,36 @@ async function ensureSegmentTable(db: Awaited<ReturnType<typeof getDatabase>>): 
 
 async function ensureVariantExistsGlobal(
     db: Awaited<ReturnType<typeof getDatabase>>,
-    variantId: string
+    variantId: string,
 ): Promise<void> {
-    await db.run(
-        `INSERT OR IGNORE INTO ab_variant_stats (variant_id) VALUES (?)`,
-        [variantId]
-    );
+    await db.run(`INSERT OR IGNORE INTO ab_variant_stats (variant_id) VALUES (?)`, [variantId]);
 }
 
 async function ensureVariantExistsSegment(
     db: Awaited<ReturnType<typeof getDatabase>>,
     segmentKey: string,
-    variantId: string
+    variantId: string,
 ): Promise<void> {
-    await db.run(
-        `INSERT OR IGNORE INTO ab_variant_stats_segment (segment_key, variant_id) VALUES (?, ?)`,
-        [segmentKey, variantId]
-    );
+    await db.run(`INSERT OR IGNORE INTO ab_variant_stats_segment (segment_key, variant_id) VALUES (?, ?)`, [
+        segmentKey,
+        variantId,
+    ]);
 }
 
 async function fetchGlobalStats(db: Awaited<ReturnType<typeof getDatabase>>): Promise<ABStatRow[]> {
-    return db.query<ABStatRow>(
-        `SELECT variant_id, sent, accepted, replied FROM ab_variant_stats ORDER BY sent DESC`
-    );
+    return db.query<ABStatRow>(`SELECT variant_id, sent, accepted, replied FROM ab_variant_stats ORDER BY sent DESC`);
 }
 
 async function fetchSegmentStats(
     db: Awaited<ReturnType<typeof getDatabase>>,
-    segmentKey: string
+    segmentKey: string,
 ): Promise<ABStatRow[]> {
     return db.query<ABStatRow>(
         `SELECT variant_id, sent, accepted, replied
          FROM ab_variant_stats_segment
          WHERE segment_key = ?
          ORDER BY sent DESC`,
-        [segmentKey]
+        [segmentKey],
     );
 }
 
@@ -324,15 +320,12 @@ export async function selectVariant(variants: string[], context?: BanditContext)
             }
         }
 
-        const rows = segmentKey === 'global'
-            ? await fetchGlobalStats(db)
-            : await fetchSegmentStats(db, segmentKey);
+        const rows = segmentKey === 'global' ? await fetchGlobalStats(db) : await fetchSegmentStats(db, segmentKey);
 
         // Se il segmento e' troppo freddo, fallback su globale.
         const segmentTotal = rows.reduce((sum, row) => sum + normalizeCounter(row.sent), 0);
-        const effectiveRows = (segmentKey !== 'global' && segmentTotal < variants.length)
-            ? await fetchGlobalStats(db)
-            : rows;
+        const effectiveRows =
+            segmentKey !== 'global' && segmentTotal < variants.length ? await fetchGlobalStats(db) : rows;
         const decision = evaluateBanditDecision(variants, toInputRows(effectiveRows), {
             alpha: config.aiQualitySignificanceAlpha,
             minSampleSize: config.aiQualityMinSampleSize,
@@ -366,14 +359,14 @@ async function incrementSentGlobal(db: Awaited<ReturnType<typeof getDatabase>>, 
         `UPDATE ab_variant_stats
          SET sent = sent + 1, updated_at = datetime('now')
          WHERE variant_id = ?`,
-        [variantId]
+        [variantId],
     );
 }
 
 async function incrementOutcomeGlobal(
     db: Awaited<ReturnType<typeof getDatabase>>,
     variantId: string,
-    outcome: ABOutcome
+    outcome: ABOutcome,
 ): Promise<void> {
     await ensureVariantExistsGlobal(db, variantId);
     if (outcome === 'ignored') return;
@@ -382,21 +375,21 @@ async function incrementOutcomeGlobal(
         `UPDATE ab_variant_stats
          SET ${column} = ${column} + 1, updated_at = datetime('now')
          WHERE variant_id = ?`,
-        [variantId]
+        [variantId],
     );
 }
 
 async function incrementSentSegment(
     db: Awaited<ReturnType<typeof getDatabase>>,
     segmentKey: string,
-    variantId: string
+    variantId: string,
 ): Promise<void> {
     await ensureVariantExistsSegment(db, segmentKey, variantId);
     await db.run(
         `UPDATE ab_variant_stats_segment
          SET sent = sent + 1, updated_at = datetime('now')
          WHERE segment_key = ? AND variant_id = ?`,
-        [segmentKey, variantId]
+        [segmentKey, variantId],
     );
 }
 
@@ -404,7 +397,7 @@ async function incrementOutcomeSegment(
     db: Awaited<ReturnType<typeof getDatabase>>,
     segmentKey: string,
     variantId: string,
-    outcome: ABOutcome
+    outcome: ABOutcome,
 ): Promise<void> {
     await ensureVariantExistsSegment(db, segmentKey, variantId);
     if (outcome === 'ignored') return;
@@ -413,7 +406,7 @@ async function incrementOutcomeSegment(
         `UPDATE ab_variant_stats_segment
          SET ${column} = ${column} + 1, updated_at = datetime('now')
          WHERE segment_key = ? AND variant_id = ?`,
-        [segmentKey, variantId]
+        [segmentKey, variantId],
     );
 }
 
@@ -462,9 +455,7 @@ export async function getVariantLeaderboard(context?: BanditContext): Promise<Va
     try {
         const db = await getDatabase();
         await ensureSegmentTable(db);
-        const rows = segmentKey === 'global'
-            ? await fetchGlobalStats(db)
-            : await fetchSegmentStats(db, segmentKey);
+        const rows = segmentKey === 'global' ? await fetchGlobalStats(db) : await fetchSegmentStats(db, segmentKey);
         if (!rows || rows.length === 0) return [];
 
         const variants = rows.map((row) => row.variant_id);
@@ -475,27 +466,29 @@ export async function getVariantLeaderboard(context?: BanditContext): Promise<Va
         const winnerVariant = decision.winner?.winnerVariant ?? null;
         const totalSent = rows.reduce((sum, row) => sum + normalizeCounter(row.sent), 0);
 
-        return rows.map((row) => {
-            const sent = normalizeCounter(row.sent);
-            const accepted = Math.max(0, Math.min(sent, normalizeCounter(row.accepted)));
-            const replied = Math.max(0, Math.min(sent, normalizeCounter(row.replied)));
-            const posterior = computePosteriorStats(sent, accepted, totalSent);
-            const acceptanceRate = sent > 0 ? Math.round((accepted / sent) * 1000) / 1000 : 0;
-            const replyRate = sent > 0 ? Math.round((replied / sent) * 1000) / 1000 : 0;
-            return {
-                variantId: row.variant_id,
-                sent,
-                accepted,
-                replied,
-                acceptanceRate,
-                replyRate,
-                ucbScore: Math.round(posterior.bayesScore * 1000) / 1000,
-                bayesScore: Math.round(posterior.bayesScore * 1000) / 1000,
-                posteriorMean: Math.round(posterior.posteriorMean * 1000) / 1000,
-                posteriorStd: Math.round(posterior.posteriorStd * 1000) / 1000,
-                significanceWinner: winnerVariant === row.variant_id,
-            };
-        }).sort((a, b) => b.bayesScore - a.bayesScore);
+        return rows
+            .map((row) => {
+                const sent = normalizeCounter(row.sent);
+                const accepted = Math.max(0, Math.min(sent, normalizeCounter(row.accepted)));
+                const replied = Math.max(0, Math.min(sent, normalizeCounter(row.replied)));
+                const posterior = computePosteriorStats(sent, accepted, totalSent);
+                const acceptanceRate = sent > 0 ? Math.round((accepted / sent) * 1000) / 1000 : 0;
+                const replyRate = sent > 0 ? Math.round((replied / sent) * 1000) / 1000 : 0;
+                return {
+                    variantId: row.variant_id,
+                    sent,
+                    accepted,
+                    replied,
+                    acceptanceRate,
+                    replyRate,
+                    ucbScore: Math.round(posterior.bayesScore * 1000) / 1000,
+                    bayesScore: Math.round(posterior.bayesScore * 1000) / 1000,
+                    posteriorMean: Math.round(posterior.posteriorMean * 1000) / 1000,
+                    posteriorStd: Math.round(posterior.posteriorStd * 1000) / 1000,
+                    significanceWinner: winnerVariant === row.variant_id,
+                };
+            })
+            .sort((a, b) => b.bayesScore - a.bayesScore);
     } catch {
         return [];
     }

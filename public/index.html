@@ -1,303 +1,335 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="it">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Control room professionale per LinkedIn Bot: KPI, incidenti, review queue e timeline realtime.">
-    <title>LinkedIn Bot Control Room</title>
-    <link rel="stylesheet" href="/style.css">
-</head>
-<body>
-    <a class="skip-link" href="#main-content">Vai al contenuto principale</a>
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta
+            name="description"
+            content="Control room professionale per LinkedIn Bot: KPI, incidenti, review queue e timeline realtime."
+        />
+        <title>LinkedIn Bot Control Room</title>
+        <link rel="stylesheet" href="/style.css" />
+    </head>
+    <body>
+        <a class="skip-link" href="#main-content">Vai al contenuto principale</a>
 
-    <dialog id="pause-modal" aria-labelledby="pause-modal-title">
-        <div class="modal-inner">
-            <h2 id="pause-modal-title" class="modal-title">Pausa automazione</h2>
-            <label for="pause-minutes-input" class="modal-label">Durata pausa (minuti)</label>
-            <input id="pause-minutes-input" class="modal-input" type="number" min="1" max="10080" value="60">
-            <div class="modal-actions">
-                <button class="btn btn-warning" id="pause-confirm-btn" type="button">Conferma pausa</button>
-                <button class="btn btn-secondary" id="pause-cancel-btn" type="button">Annulla</button>
+        <dialog id="pause-modal" aria-labelledby="pause-modal-title">
+            <div class="modal-inner">
+                <h2 id="pause-modal-title" class="modal-title">Pausa automazione</h2>
+                <label for="pause-minutes-input" class="modal-label">Durata pausa (minuti)</label>
+                <input id="pause-minutes-input" class="modal-input" type="number" min="1" max="10080" value="60" />
+                <div class="modal-actions">
+                    <button class="btn btn-warning" id="pause-confirm-btn" type="button">Conferma pausa</button>
+                    <button class="btn btn-secondary" id="pause-cancel-btn" type="button">Annulla</button>
+                </div>
             </div>
-        </div>
-    </dialog>
+        </dialog>
 
-    <dialog id="voice-command-modal" aria-labelledby="voice-command-title">
-        <div class="modal-inner">
-            <h2 id="voice-command-title" class="modal-title">Conferma comando vocale</h2>
-            <p class="modal-label">Trascrizione riconosciuta</p>
-            <p id="voice-transcript-text" class="modal-transcript">—</p>
-            <p class="modal-label">Azione</p>
-            <p id="voice-action-summary" class="modal-action-summary">—</p>
-            <div class="modal-actions">
-                <button class="btn btn-warning" id="voice-confirm-btn" type="button">Conferma azione</button>
-                <button class="btn btn-secondary" id="voice-cancel-btn" type="button">Annulla</button>
+        <dialog id="voice-command-modal" aria-labelledby="voice-command-title">
+            <div class="modal-inner">
+                <h2 id="voice-command-title" class="modal-title">Conferma comando vocale</h2>
+                <p class="modal-label">Trascrizione riconosciuta</p>
+                <p id="voice-transcript-text" class="modal-transcript">—</p>
+                <p class="modal-label">Azione</p>
+                <p id="voice-action-summary" class="modal-action-summary">—</p>
+                <div class="modal-actions">
+                    <button class="btn btn-warning" id="voice-confirm-btn" type="button">Conferma azione</button>
+                    <button class="btn btn-secondary" id="voice-cancel-btn" type="button">Annulla</button>
+                </div>
             </div>
-        </div>
-    </dialog>
+        </dialog>
 
-    <header class="header">
-        <div class="brand-wrap">
-            <div class="brand-mark" aria-hidden="true">LB</div>
-            <div>
-                <h1 class="brand-title">LinkedIn Bot Control Room</h1>
-                <p class="brand-subtitle">Realtime Operations Dashboard</p>
+        <header class="header">
+            <div class="brand-wrap">
+                <div class="brand-mark" aria-hidden="true">LB</div>
+                <div>
+                    <h1 class="brand-title">LinkedIn Bot Control Room</h1>
+                    <p class="brand-subtitle">Realtime Operations Dashboard</p>
+                </div>
             </div>
-        </div>
 
-        <div class="header-right">
-            <div id="status-badge" class="status-badge status-running" aria-live="polite">
-                <span class="status-dot" aria-hidden="true"></span>
-                <span id="status-text">Operativo</span>
+            <div class="header-right">
+                <div id="status-badge" class="status-badge status-running" aria-live="polite">
+                    <span class="status-dot" aria-hidden="true"></span>
+                    <span id="status-text">Operativo</span>
+                </div>
+                <div class="header-actions">
+                    <button id="btn-refresh" type="button" class="btn btn-secondary">Aggiorna</button>
+                    <button id="btn-voice" type="button" class="btn btn-secondary" aria-pressed="false">
+                        Comando Voce
+                    </button>
+                    <button id="btn-pause" type="button" class="btn btn-warning">Pausa</button>
+                    <button id="btn-resume" type="button" class="btn btn-success">Riprendi</button>
+                </div>
             </div>
-            <div class="header-actions">
-                <button id="btn-refresh" type="button" class="btn btn-secondary">Aggiorna</button>
-                <button id="btn-voice" type="button" class="btn btn-secondary" aria-pressed="false">Comando Voce</button>
-                <button id="btn-pause" type="button" class="btn btn-warning">Pausa</button>
-                <button id="btn-resume" type="button" class="btn btn-success">Riprendi</button>
-            </div>
-        </div>
-    </header>
+        </header>
 
-    <p id="action-feedback" class="feedback" role="status" aria-live="polite"></p>
-    <p id="voice-feedback" class="feedback feedback-secondary" role="status" aria-live="polite"></p>
+        <p id="action-feedback" class="feedback" role="status" aria-live="polite"></p>
+        <p id="voice-feedback" class="feedback feedback-secondary" role="status" aria-live="polite"></p>
 
-    <main id="main-content" class="main">
-        <section class="kpi-grid" aria-label="KPI principali">
-            <article class="kpi-card">
-                <p class="kpi-label">Inviti</p>
-                <p id="val-invited" class="kpi-value">0</p>
-            </article>
-            <article class="kpi-card">
-                <p class="kpi-label">Accettati</p>
-                <p id="val-accepted" class="kpi-value">0</p>
-            </article>
-            <article class="kpi-card">
-                <p class="kpi-label">Ready Message</p>
-                <p id="val-ready-message" class="kpi-value">0</p>
-            </article>
-            <article class="kpi-card">
-                <p class="kpi-label">Messaggiati</p>
-                <p id="val-messaged" class="kpi-value">0</p>
-            </article>
-            <article class="kpi-card">
-                <p class="kpi-label">Risposte</p>
-                <p id="val-replied" class="kpi-value">0</p>
-            </article>
-            <article class="kpi-card">
-                <p class="kpi-label">Risk Score</p>
-                <p id="val-risk" class="kpi-value">0</p>
-            </article>
-            <article class="kpi-card">
-                <p class="kpi-label">Lead totali</p>
-                <p id="val-total" class="kpi-value">0</p>
-            </article>
-        </section>
+        <main id="main-content" class="main">
+            <section class="kpi-grid" aria-label="KPI principali">
+                <article class="kpi-card">
+                    <p class="kpi-label">Inviti</p>
+                    <p id="val-invited" class="kpi-value">0</p>
+                </article>
+                <article class="kpi-card">
+                    <p class="kpi-label">Accettati</p>
+                    <p id="val-accepted" class="kpi-value">0</p>
+                </article>
+                <article class="kpi-card">
+                    <p class="kpi-label">Ready Message</p>
+                    <p id="val-ready-message" class="kpi-value">0</p>
+                </article>
+                <article class="kpi-card">
+                    <p class="kpi-label">Messaggiati</p>
+                    <p id="val-messaged" class="kpi-value">0</p>
+                </article>
+                <article class="kpi-card">
+                    <p class="kpi-label">Risposte</p>
+                    <p id="val-replied" class="kpi-value">0</p>
+                </article>
+                <article class="kpi-card">
+                    <p class="kpi-label">Risk Score</p>
+                    <p id="val-risk" class="kpi-value">0</p>
+                </article>
+                <article class="kpi-card">
+                    <p class="kpi-label">Lead totali</p>
+                    <p id="val-total" class="kpi-value">0</p>
+                </article>
+            </section>
 
-        <section class="two-col">
-            <article class="card">
+            <section class="two-col">
+                <article class="card">
+                    <header class="card-header">
+                        <h2>Conversion Snapshot</h2>
+                    </header>
+                    <div class="metric-list">
+                        <div class="metric-row"><span>Accept Rate</span><strong id="conv-accept">0.0%</strong></div>
+                        <div class="metric-row"><span>Reply Rate</span><strong id="conv-reply">0.0%</strong></div>
+                        <div class="metric-row"><span>Msg → Reply</span><strong id="conv-msg-reply">0.0%</strong></div>
+                        <div class="metric-row">
+                            <span>Stato sistema</span><strong id="system-state" class="system-ok">Stabile</strong>
+                        </div>
+                        <div class="metric-row">
+                            <span>Risk predittivo</span><strong id="risk-predictive-status">—</strong>
+                        </div>
+                        <div class="metric-row">
+                            <span>Dettaglio</span><strong id="risk-predictive-detail">—</strong>
+                        </div>
+                        <div class="metric-row">
+                            <span>Review queue</span><strong id="review-queue-count">0</strong>
+                        </div>
+                        <div class="metric-row">
+                            <span>Challenge incidenti</span><strong id="review-queue-incidents">0</strong>
+                        </div>
+                    </div>
+                </article>
+
+                <article class="card">
+                    <header class="card-header">
+                        <h2>KPI Giorno vs Settimana</h2>
+                    </header>
+                    <div class="compare-list">
+                        <p id="kpi-compare-invites">—</p>
+                        <p id="kpi-compare-messages">—</p>
+                        <p id="kpi-compare-accept">—</p>
+                        <p id="kpi-compare-errors">—</p>
+                        <p id="slo-current-status">SLO corrente: —</p>
+                        <p id="slo-7d-status">SLO 7d: —</p>
+                        <p id="slo-30d-status">SLO 30d: —</p>
+                        <p id="selector-cache-kpi">Selector cache KPI: —</p>
+                    </div>
+                    <div class="table-wrapper compact-table">
+                        <table class="data-table" aria-label="Trend ultimi 7 giorni">
+                            <thead>
+                                <tr>
+                                    <th>Data</th>
+                                    <th>Inviti</th>
+                                    <th>Msg</th>
+                                    <th>Acc</th>
+                                    <th>Errori</th>
+                                    <th>Challenge</th>
+                                    <th>Risk</th>
+                                </tr>
+                            </thead>
+                            <tbody id="trend-tbody">
+                                <tr>
+                                    <td colspan="7" class="empty-state">Caricamento...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </article>
+            </section>
+
+            <section class="two-col">
+                <article class="card">
+                    <header class="card-header">
+                        <h2>Timeline Realtime</h2>
+                        <p class="card-subtitle">Filtri per tipo evento, account e lista</p>
+                    </header>
+                    <div class="filters" role="group" aria-label="Filtri timeline">
+                        <label
+                            >Tipo
+                            <select id="timeline-filter-type"></select>
+                        </label>
+                        <label
+                            >Account
+                            <select id="timeline-filter-account"></select>
+                        </label>
+                        <label
+                            >Lista
+                            <select id="timeline-filter-list"></select>
+                        </label>
+                    </div>
+                    <div id="timeline-list" class="timeline-list" aria-live="polite"></div>
+                </article>
+
+                <article class="card">
+                    <header class="card-header">
+                        <h2>Incident Center</h2>
+                        <p id="incidents-count" class="card-subtitle">—</p>
+                    </header>
+                    <div class="incident-actions">
+                        <button id="btn-resolve-selected" class="btn btn-danger" type="button">
+                            Risolvi selezionati
+                        </button>
+                    </div>
+                    <div class="table-wrapper">
+                        <table class="data-table" aria-label="Incidenti aperti">
+                            <thead>
+                                <tr>
+                                    <th>Sel</th>
+                                    <th>ID</th>
+                                    <th>Tipo</th>
+                                    <th>Severity</th>
+                                    <th>Aperto</th>
+                                    <th>Drill-down</th>
+                                    <th>Azione</th>
+                                </tr>
+                            </thead>
+                            <tbody id="incidents-tbody">
+                                <tr>
+                                    <td colspan="7" class="empty-state">Caricamento...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </article>
+            </section>
+
+            <section class="two-col">
+                <article class="card">
+                    <header class="card-header">
+                        <h2>Review Queue</h2>
+                        <p id="ops-priority-summary" class="card-subtitle">—</p>
+                    </header>
+                    <div class="table-wrapper">
+                        <table class="data-table" aria-label="Lead in review queue">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Lead</th>
+                                    <th>Lista</th>
+                                    <th>Priorità</th>
+                                    <th>Guida risoluzione</th>
+                                    <th>Azione</th>
+                                </tr>
+                            </thead>
+                            <tbody id="review-tbody">
+                                <tr>
+                                    <td colspan="6" class="empty-state">Caricamento...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </article>
+
+                <article class="card">
+                    <header class="card-header">
+                        <h2>A/B + Timing</h2>
+                    </header>
+                    <div class="table-wrapper compact-table">
+                        <table class="data-table" aria-label="Classifica varianti A/B">
+                            <thead>
+                                <tr>
+                                    <th>Variante</th>
+                                    <th>Inviati</th>
+                                    <th>Acc%</th>
+                                    <th>Reply%</th>
+                                    <th>Bayes</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ab-tbody">
+                                <tr>
+                                    <td colspan="5" class="empty-state">Caricamento...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="timing-list" class="timing-list"></div>
+                </article>
+            </section>
+
+            <section class="card">
                 <header class="card-header">
-                    <h2>Conversion Snapshot</h2>
+                    <h2>Comment Suggestions Review</h2>
+                    <p id="comment-suggestions-count" class="card-subtitle">—</p>
                 </header>
-                <div class="metric-list">
-                    <div class="metric-row"><span>Accept Rate</span><strong id="conv-accept">0.0%</strong></div>
-                    <div class="metric-row"><span>Reply Rate</span><strong id="conv-reply">0.0%</strong></div>
-                    <div class="metric-row"><span>Msg → Reply</span><strong id="conv-msg-reply">0.0%</strong></div>
-                    <div class="metric-row"><span>Stato sistema</span><strong id="system-state" class="system-ok">Stabile</strong></div>
-                    <div class="metric-row"><span>Risk predittivo</span><strong id="risk-predictive-status">—</strong></div>
-                    <div class="metric-row"><span>Dettaglio</span><strong id="risk-predictive-detail">—</strong></div>
-                    <div class="metric-row"><span>Review queue</span><strong id="review-queue-count">0</strong></div>
-                    <div class="metric-row"><span>Challenge incidenti</span><strong id="review-queue-incidents">0</strong></div>
-                </div>
-            </article>
-
-            <article class="card">
-                <header class="card-header">
-                    <h2>KPI Giorno vs Settimana</h2>
-                </header>
-                <div class="compare-list">
-                    <p id="kpi-compare-invites">—</p>
-                    <p id="kpi-compare-messages">—</p>
-                    <p id="kpi-compare-accept">—</p>
-                    <p id="kpi-compare-errors">—</p>
-                    <p id="slo-current-status">SLO corrente: —</p>
-                    <p id="slo-7d-status">SLO 7d: —</p>
-                    <p id="slo-30d-status">SLO 30d: —</p>
-                    <p id="selector-cache-kpi">Selector cache KPI: —</p>
-                </div>
-                <div class="table-wrapper compact-table">
-                    <table class="data-table" aria-label="Trend ultimi 7 giorni">
-                        <thead>
-                            <tr>
-                                <th>Data</th>
-                                <th>Inviti</th>
-                                <th>Msg</th>
-                                <th>Acc</th>
-                                <th>Errori</th>
-                                <th>Challenge</th>
-                                <th>Risk</th>
-                            </tr>
-                        </thead>
-                        <tbody id="trend-tbody">
-                            <tr><td colspan="7" class="empty-state">Caricamento...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </article>
-        </section>
-
-        <section class="two-col">
-            <article class="card">
-                <header class="card-header">
-                    <h2>Timeline Realtime</h2>
-                    <p class="card-subtitle">Filtri per tipo evento, account e lista</p>
-                </header>
-                <div class="filters" role="group" aria-label="Filtri timeline">
-                    <label>Tipo
-                        <select id="timeline-filter-type"></select>
-                    </label>
-                    <label>Account
-                        <select id="timeline-filter-account"></select>
-                    </label>
-                    <label>Lista
-                        <select id="timeline-filter-list"></select>
-                    </label>
-                </div>
-                <div id="timeline-list" class="timeline-list" aria-live="polite"></div>
-            </article>
-
-            <article class="card">
-                <header class="card-header">
-                    <h2>Incident Center</h2>
-                    <p id="incidents-count" class="card-subtitle">—</p>
-                </header>
-                <div class="incident-actions">
-                    <button id="btn-resolve-selected" class="btn btn-danger" type="button">Risolvi selezionati</button>
-                </div>
                 <div class="table-wrapper">
-                    <table class="data-table" aria-label="Incidenti aperti">
+                    <table class="data-table" aria-label="Code review commenti AI">
                         <thead>
                             <tr>
-                                <th>Sel</th>
-                                <th>ID</th>
-                                <th>Tipo</th>
-                                <th>Severity</th>
-                                <th>Aperto</th>
-                                <th>Drill-down</th>
-                                <th>Azione</th>
-                            </tr>
-                        </thead>
-                        <tbody id="incidents-tbody">
-                            <tr><td colspan="7" class="empty-state">Caricamento...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </article>
-        </section>
-
-        <section class="two-col">
-            <article class="card">
-                <header class="card-header">
-                    <h2>Review Queue</h2>
-                    <p id="ops-priority-summary" class="card-subtitle">—</p>
-                </header>
-                <div class="table-wrapper">
-                    <table class="data-table" aria-label="Lead in review queue">
-                        <thead>
-                            <tr>
-                                <th>ID</th>
                                 <th>Lead</th>
                                 <th>Lista</th>
-                                <th>Priorità</th>
-                                <th>Guida risoluzione</th>
+                                <th>Post</th>
+                                <th>Commento</th>
+                                <th>Conf.</th>
                                 <th>Azione</th>
                             </tr>
                         </thead>
-                        <tbody id="review-tbody">
-                            <tr><td colspan="6" class="empty-state">Caricamento...</td></tr>
+                        <tbody id="comment-suggestions-tbody">
+                            <tr>
+                                <td colspan="6" class="empty-state">Caricamento...</td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
-            </article>
+            </section>
 
-            <article class="card">
+            <section class="card">
                 <header class="card-header">
-                    <h2>A/B + Timing</h2>
+                    <h2>Campaign Runs Recenti</h2>
                 </header>
-                <div class="table-wrapper compact-table">
-                    <table class="data-table" aria-label="Classifica varianti A/B">
+                <div class="table-wrapper">
+                    <table class="data-table" aria-label="Run recenti">
                         <thead>
                             <tr>
-                                <th>Variante</th>
-                                <th>Inviati</th>
-                                <th>Acc%</th>
-                                <th>Reply%</th>
-                                <th>Bayes</th>
+                                <th>ID</th>
+                                <th>Inizio</th>
+                                <th>Fine</th>
+                                <th>Status</th>
+                                <th>Profili</th>
+                                <th>Inviti</th>
+                                <th>Messaggi</th>
                             </tr>
                         </thead>
-                        <tbody id="ab-tbody">
-                            <tr><td colspan="5" class="empty-state">Caricamento...</td></tr>
+                        <tbody id="runs-tbody">
+                            <tr>
+                                <td colspan="7" class="empty-state">Caricamento...</td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
-                <div id="timing-list" class="timing-list"></div>
-            </article>
-        </section>
+            </section>
+        </main>
 
-        <section class="card">
-            <header class="card-header">
-                <h2>Comment Suggestions Review</h2>
-                <p id="comment-suggestions-count" class="card-subtitle">—</p>
-            </header>
-            <div class="table-wrapper">
-                <table class="data-table" aria-label="Code review commenti AI">
-                    <thead>
-                        <tr>
-                            <th>Lead</th>
-                            <th>Lista</th>
-                            <th>Post</th>
-                            <th>Commento</th>
-                            <th>Conf.</th>
-                            <th>Azione</th>
-                        </tr>
-                    </thead>
-                    <tbody id="comment-suggestions-tbody">
-                        <tr><td colspan="6" class="empty-state">Caricamento...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </section>
+        <footer class="footer">
+            <span id="last-refresh">Ultimo aggiornamento: —</span>
+            <span>Control Room v2</span>
+        </footer>
 
-        <section class="card">
-            <header class="card-header">
-                <h2>Campaign Runs Recenti</h2>
-            </header>
-            <div class="table-wrapper">
-                <table class="data-table" aria-label="Run recenti">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Inizio</th>
-                            <th>Fine</th>
-                            <th>Status</th>
-                            <th>Profili</th>
-                            <th>Inviti</th>
-                            <th>Messaggi</th>
-                        </tr>
-                    </thead>
-                    <tbody id="runs-tbody">
-                        <tr><td colspan="7" class="empty-state">Caricamento...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </section>
-    </main>
-
-    <footer class="footer">
-        <span id="last-refresh">Ultimo aggiornamento: —</span>
-        <span>Control Room v2</span>
-    </footer>
-
-    <script type="module" src="/assets/main.js"></script>
-</body>
+        <script type="module" src="/assets/main.js"></script>
+    </body>
 </html>

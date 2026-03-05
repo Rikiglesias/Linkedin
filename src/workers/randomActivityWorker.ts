@@ -31,21 +31,23 @@ function pickRandom<T>(items: T[]): T {
 }
 
 async function extractProfileUrlsFromCurrentPage(page: import('playwright').Page): Promise<string[]> {
-    const urls = await page.evaluate(() => {
-        const anchors = Array.from(document.querySelectorAll('a[href]')) as HTMLAnchorElement[];
-        return anchors
-            .map((anchor) => anchor.href || '')
-            .filter((href) => /linkedin\.com\/in\//i.test(href))
-            .map((href) => href.split('?')[0])
-            .slice(0, 20);
-    }).catch(() => [] as string[]);
+    const urls = await page
+        .evaluate(() => {
+            const anchors = Array.from(document.querySelectorAll('a[href]')) as HTMLAnchorElement[];
+            return anchors
+                .map((anchor) => anchor.href || '')
+                .filter((href) => /linkedin\.com\/in\//i.test(href))
+                .map((href) => href.split('?')[0])
+                .slice(0, 20);
+        })
+        .catch(() => [] as string[]);
     return Array.from(new Set(urls));
 }
 
 async function runSingleActivity(
     page: import('playwright').Page,
     activity: Activity,
-    report: RandomActivityReport
+    report: RandomActivityReport,
 ): Promise<void> {
     if (activity === 'profile_from_page') {
         const profiles = await extractProfileUrlsFromCurrentPage(page);
@@ -100,13 +102,7 @@ export async function runRandomLinkedinActivity(options: RandomActivityOptions):
             return report;
         }
 
-        const activityPool: Activity[] = [
-            'home',
-            'notifications',
-            'network',
-            'settings',
-            'profile_from_page',
-        ];
+        const activityPool: Activity[] = ['home', 'notifications', 'network', 'settings', 'profile_from_page'];
 
         for (let i = 0; i < actionsRequested; i++) {
             const activity = pickRandom(activityPool);

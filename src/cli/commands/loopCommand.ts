@@ -39,7 +39,14 @@ import { startTelegramListener } from '../../cloud/telegramListener';
 import { markTelegramCommandProcessed, pollPendingTelegramCommand } from '../../cloud/supabaseDataClient';
 import { getRuntimeAccountProfiles, setOverrideAccountId } from '../../accountManager';
 import { RunStatus } from '../../types/domain';
-import { getOptionValue, hasOption, parseIntStrict, parseWorkflow, getWorkflowValue, getPositionalArgs } from '../cliParser';
+import {
+    getOptionValue,
+    hasOption,
+    parseIntStrict,
+    parseWorkflow,
+    getWorkflowValue,
+    getPositionalArgs,
+} from '../cliParser';
 import { pluginRegistry } from '../../plugins/pluginLoader';
 import { resolveCorrelationId, runWithCorrelationId } from '../../telemetry/correlation';
 import { processTelegramImportCommand } from '../../cloud/telegramAiImporter';
@@ -88,13 +95,17 @@ function computeWorkflowLockTtlSeconds(intervalMs: number): number {
     return Math.max(WORKFLOW_RUNNER_MIN_TTL_SECONDS, Math.ceil(intervalMs / 1000) + 120);
 }
 
-async function acquireWorkflowRunnerLock(command: string, ttlSeconds: number, metadata: Record<string, unknown>): Promise<string> {
+async function acquireWorkflowRunnerLock(
+    command: string,
+    ttlSeconds: number,
+    metadata: Record<string, unknown>,
+): Promise<string> {
     const ownerId = createLockOwnerId(command);
     const result = await acquireRuntimeLock(WORKFLOW_RUNNER_LOCK_KEY, ownerId, ttlSeconds, metadata);
     if (!result.acquired) {
         const holder = result.lock;
         throw new Error(
-            `[LOCK] Runner già attivo.owner = ${holder?.owner_id ?? 'unknown'} heartbeat = ${holder?.heartbeat_at ?? 'n/a'} expires = ${holder?.expires_at ?? 'n/a'} `
+            `[LOCK] Runner già attivo.owner = ${holder?.owner_id ?? 'unknown'} heartbeat = ${holder?.heartbeat_at ?? 'n/a'} expires = ${holder?.expires_at ?? 'n/a'} `,
         );
     }
     console.log(`[LOCK] acquired key = ${WORKFLOW_RUNNER_LOCK_KEY} owner = ${ownerId} ttl = ${ttlSeconds} s`);
@@ -104,7 +115,7 @@ async function acquireWorkflowRunnerLock(command: string, ttlSeconds: number, me
 async function heartbeatWorkflowRunnerLock(ownerId: string, ttlSeconds: number): Promise<void> {
     const ok = await heartbeatRuntimeLock(WORKFLOW_RUNNER_LOCK_KEY, ownerId, ttlSeconds);
     if (!ok) {
-        throw new Error('[LOCK] Runtime lock perso durante l\'esecuzione.');
+        throw new Error("[LOCK] Runtime lock perso durante l'esecuzione.");
     }
 }
 
@@ -224,12 +235,16 @@ async function processCloudCommands(): Promise<void> {
             const cmd = await pollPendingTelegramCommand(profile.id);
             if (!cmd) continue;
 
-            console.log(`[CLOUD] Comando ricevuto: ${cmd.command} args: ${cmd.args || 'nessuno'} (account: ${profile.id})`);
+            console.log(
+                `[CLOUD] Comando ricevuto: ${cmd.command} args: ${cmd.args || 'nessuno'} (account: ${profile.id})`,
+            );
 
             if (cmd.command === 'pausa' || cmd.command === 'pause') {
                 const minutes = cmd.args && /^[0-9]+$/.test(cmd.args) ? parseInt(cmd.args, 10) : null;
                 await setAutomationPause(minutes || null, 'TELEGRAM_COMMAND');
-                console.log(`[CLOUD] Automazione globale in pausa ${minutes ? 'per ' + minutes + ' min' : 'indefinitamente'}.`);
+                console.log(
+                    `[CLOUD] Automazione globale in pausa ${minutes ? 'per ' + minutes + ' min' : 'indefinitamente'}.`,
+                );
             } else if (cmd.command === 'riprendi' || cmd.command === 'resume') {
                 await clearPauseState();
                 console.log(`[CLOUD] Automazione globale ripresa.`);
@@ -270,7 +285,9 @@ export async function runLoopCommand(args: string[]): Promise<void> {
     const intervalMsRaw = getOptionValue(args, '--interval-ms');
     const intervalSecRaw = getOptionValue(args, '--interval-sec');
     const cyclesRaw = getOptionValue(args, '--cycles') ?? numericPositionals[1];
-    const dryRun = hasOption(args, '--dry-run') || positional.some((value) => value.toLowerCase() === 'dry' || value.toLowerCase() === 'dry-run');
+    const dryRun =
+        hasOption(args, '--dry-run') ||
+        positional.some((value) => value.toLowerCase() === 'dry' || value.toLowerCase() === 'dry-run');
 
     const accountOverride = getOptionValue(args, '--account') || getOptionValue(args, '-a');
     let isLeader = true;
@@ -295,21 +312,23 @@ export async function runLoopCommand(args: string[]): Promise<void> {
     }
 
     const maxCycles = cyclesRaw ? Math.max(1, parseIntStrict(cyclesRaw, '--cycles')) : null;
-    console.log(`[LOOP] start workflow = ${workflow} dryRun = ${dryRun} intervalMs = ${intervalMs} cycles = ${maxCycles ?? 'infinite'} `);
+    console.log(
+        `[LOOP] start workflow = ${workflow} dryRun = ${dryRun} intervalMs = ${intervalMs} cycles = ${maxCycles ?? 'infinite'} `,
+    );
 
     if (!dryRun) {
-        await startTelegramListener().catch(e => console.error('[TELEGRAM] Errore listener background', e));
+        await startTelegramListener().catch((e) => console.error('[TELEGRAM] Errore listener background', e));
     }
 
     const lockTtlSeconds = computeWorkflowLockTtlSeconds(getEffectiveLoopIntervalMs(intervalMs));
     const lockOwnerId = dryRun
         ? null
         : await acquireWorkflowRunnerLock('run-loop', lockTtlSeconds, {
-            workflow,
-            dryRun,
-            intervalMs,
-            startedAt: new Date().toISOString(),
-        });
+              workflow,
+              dryRun,
+              intervalMs,
+              startedAt: new Date().toISOString(),
+          });
 
     try {
         let cycle = 0;
@@ -412,7 +431,8 @@ export async function runLoopCommand(args: string[]): Promise<void> {
                     if (!dryRun && isLeader) {
                         const AUTO_BACKUP_LAST_RUN_KEY = 'db_backup.last_run_at';
                         const backupLastRunRaw = await getRuntimeFlag(AUTO_BACKUP_LAST_RUN_KEY);
-                        const shouldRunBackup = !backupLastRunRaw || (Date.now() - Date.parse(backupLastRunRaw)) > 24 * 60 * 60 * 1000;
+                        const shouldRunBackup =
+                            !backupLastRunRaw || Date.now() - Date.parse(backupLastRunRaw) > 24 * 60 * 60 * 1000;
                         if (shouldRunBackup) {
                             try {
                                 const backupPath = await backupDatabase();
@@ -428,12 +448,15 @@ export async function runLoopCommand(args: string[]): Promise<void> {
                     if (!dryRun && isLeader) {
                         const DLQ_LAST_RUN_KEY = 'dlq.last_run_at';
                         const dlqLastRunRaw = await getRuntimeFlag(DLQ_LAST_RUN_KEY);
-                        const shouldRunDlq = !dlqLastRunRaw || (Date.now() - Date.parse(dlqLastRunRaw)) > 6 * 60 * 60 * 1000;
+                        const shouldRunDlq =
+                            !dlqLastRunRaw || Date.now() - Date.parse(dlqLastRunRaw) > 6 * 60 * 60 * 1000;
                         if (shouldRunDlq) {
                             try {
                                 const dlqResult = await runDeadLetterWorker({ batchSize: 200, recycleDelaySec: 43200 });
                                 await setRuntimeFlag(DLQ_LAST_RUN_KEY, new Date().toISOString());
-                                console.log(`[LOOP] Dead Letter Worker completato. Processati: ${dlqResult.processed}, Riciclati: ${dlqResult.recycled}, Archiviati: ${dlqResult.deadLettered}`);
+                                console.log(
+                                    `[LOOP] Dead Letter Worker completato. Processati: ${dlqResult.processed}, Riciclati: ${dlqResult.recycled}, Archiviati: ${dlqResult.deadLettered}`,
+                                );
                             } catch (e) {
                                 console.error('[LOOP] Dead Letter Worker fallito', e);
                             }
@@ -466,7 +489,9 @@ export async function runLoopCommand(args: string[]): Promise<void> {
                         try {
                             const dispatchedCampaignSteps = await dispatchReadyCampaignSteps();
                             if (dispatchedCampaignSteps > 0) {
-                                console.log(`[LOOP] campagne dispatch: ${dispatchedCampaignSteps} step maturati inseriti in coda.`);
+                                console.log(
+                                    `[LOOP] campagne dispatch: ${dispatchedCampaignSteps} step maturati inseriti in coda.`,
+                                );
                             }
                         } catch (e) {
                             console.error('[LOOP] Errore modulo Drip Campaigns dispatch', e);
@@ -478,7 +503,12 @@ export async function runLoopCommand(args: string[]): Promise<void> {
                         await runWorkflow({ workflow, dryRun });
                     });
 
-                    if (!dryRun && pluginRegistry.count === 0 && config.randomActivityEnabled && Math.random() <= config.randomActivityProbability) {
+                    if (
+                        !dryRun &&
+                        pluginRegistry.count === 0 &&
+                        config.randomActivityEnabled &&
+                        Math.random() <= config.randomActivityProbability
+                    ) {
                         const randomActivityReport = await runRandomLinkedinActivity({
                             accountId: config.salesNavSyncAccountId || undefined,
                             maxActions: config.randomActivityMaxActions,
@@ -511,7 +541,7 @@ export async function runLoopCommand(args: string[]): Promise<void> {
                         discovered: profilesDiscoveredThisRun,
                         invites: invitesDiff,
                         messages: messagesDiff,
-                        errors: errorsDiff
+                        errors: errorsDiff,
                     });
                     console.log(`[LOOP] Campaign run ${runId} completed with status ${runStatus}`);
                 }
@@ -552,7 +582,10 @@ export async function runAutopilotCommand(args: string[]): Promise<void> {
     await runLoopCommand(forwarded);
 }
 
-export async function runWorkflowCommand(workflow: import('../../core/scheduler').WorkflowSelection, dryRun: boolean): Promise<void> {
+export async function runWorkflowCommand(
+    workflow: import('../../core/scheduler').WorkflowSelection,
+    dryRun: boolean,
+): Promise<void> {
     const runCorrelationId = resolveCorrelationId(`run-${workflow}-${Date.now()}-${randomUUID()}`);
     if (dryRun) {
         await runWithCorrelationId(runCorrelationId, async () => {

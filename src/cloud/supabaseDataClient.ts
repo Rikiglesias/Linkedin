@@ -41,7 +41,7 @@ import {
     CloudJobUpsert,
     CloudDailyStatIncrement,
     PendingTelegramCommand,
-    CloudCampaignConfig
+    CloudCampaignConfig,
 } from './types';
 
 export * from './types';
@@ -58,10 +58,9 @@ export async function upsertCloudAccount(account: CloudAccount): Promise<void> {
     const sb = getClient();
     if (!sb) return;
 
-    const { error } = await sb.from('accounts').upsert(
-        { ...account, updated_at: new Date().toISOString() },
-        { onConflict: 'id' }
-    );
+    const { error } = await sb
+        .from('accounts')
+        .upsert({ ...account, updated_at: new Date().toISOString() }, { onConflict: 'id' });
     if (error) {
         await logWarn('cloud.accounts.upsert.error', { accountId: account.id, error: error.message });
     }
@@ -75,7 +74,7 @@ export async function updateCloudAccountHealth(
     accountId: string,
     health: CloudAccount['health'],
     quarantineReason?: string | null,
-    quarantineUntil?: string | null
+    quarantineUntil?: string | null,
 ): Promise<void> {
     const sb = getClient();
     if (!sb) return;
@@ -96,7 +95,7 @@ export async function updateCloudAccountHealth(
 export async function incrementCloudAccountCounter(
     accountId: string,
     field: 'daily_invites_sent' | 'daily_messages_sent',
-    amount: number = 1
+    amount: number = 1,
 ): Promise<void> {
     const sb = getClient();
     if (!sb) return;
@@ -111,10 +110,13 @@ export async function incrementCloudAccountCounter(
         // Fallback: leggi il valore corrente e fai update manuale
         const { data } = await sb.from('accounts').select(field).eq('id', accountId).single();
         const current = (data as Record<string, number> | null)?.[field] ?? 0;
-        await sb.from('accounts').update({
-            [field]: current + amount,
-            updated_at: new Date().toISOString(),
-        }).eq('id', accountId);
+        await sb
+            .from('accounts')
+            .update({
+                [field]: current + amount,
+                updated_at: new Date().toISOString(),
+            })
+            .eq('id', accountId);
     }
 }
 
@@ -130,10 +132,9 @@ export async function upsertCloudLead(lead: CloudLeadUpsert): Promise<void> {
     const sb = getClient();
     if (!sb) return;
 
-    const { error } = await sb.from('leads').upsert(
-        { ...lead, updated_at: new Date().toISOString() },
-        { onConflict: 'linkedin_url' }
-    );
+    const { error } = await sb
+        .from('leads')
+        .upsert({ ...lead, updated_at: new Date().toISOString() }, { onConflict: 'linkedin_url' });
     if (error) {
         await logWarn('cloud.leads.upsert.error', { linkedinUrl: lead.linkedin_url, error: error.message });
     }
@@ -146,7 +147,7 @@ export async function upsertCloudLead(lead: CloudLeadUpsert): Promise<void> {
 export async function updateCloudLeadStatus(
     linkedinUrl: string,
     status: string,
-    patch?: Partial<CloudLeadUpsert>
+    patch?: Partial<CloudLeadUpsert>,
 ): Promise<void> {
     const sb = getClient();
     if (!sb) return;
@@ -200,10 +201,9 @@ export async function upsertCloudJob(job: CloudJobUpsert): Promise<void> {
     const sb = getClient();
     if (!sb) return;
 
-    const { error } = await sb.from('jobs_cloud').upsert(
-        { ...job, updated_at: new Date().toISOString() },
-        { onConflict: 'idempotency_key' }
-    );
+    const { error } = await sb
+        .from('jobs_cloud')
+        .upsert({ ...job, updated_at: new Date().toISOString() }, { onConflict: 'idempotency_key' });
     if (error) {
         await logWarn('cloud.jobs.upsert.error', { idempotencyKey: job.idempotency_key, error: error.message });
     }
@@ -244,7 +244,7 @@ export async function incrementCloudDailyStat(opts: CloudDailyStatIncrement): Pr
                 [opts.field]: current + amount,
                 updated_at: new Date().toISOString(),
             },
-            { onConflict: 'local_date,account_id' }
+            { onConflict: 'local_date,account_id' },
         );
     }
 }
@@ -281,10 +281,13 @@ export async function markTelegramCommandProcessed(commandId: number): Promise<v
     const sb = getClient();
     if (!sb) return;
 
-    await sb.from('telegram_commands').update({
-        status: 'PROCESSED',
-        processed_at: new Date().toISOString(),
-    }).eq('id', commandId);
+    await sb
+        .from('telegram_commands')
+        .update({
+            status: 'PROCESSED',
+            processed_at: new Date().toISOString(),
+        })
+        .eq('id', commandId);
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -338,12 +341,14 @@ export async function fetchCloudCampaignConfigs(limit: number): Promise<CloudCam
             const rawPriority = typeof row.priority === 'number' ? row.priority : Number(row.priority ?? 100);
             const priority = Number.isFinite(rawPriority) ? Math.max(1, Math.floor(rawPriority)) : 100;
 
-            const inviteCap = row.daily_invite_cap === null || row.daily_invite_cap === undefined
-                ? null
-                : Math.max(0, Number(row.daily_invite_cap));
-            const messageCap = row.daily_message_cap === null || row.daily_message_cap === undefined
-                ? null
-                : Math.max(0, Number(row.daily_message_cap));
+            const inviteCap =
+                row.daily_invite_cap === null || row.daily_invite_cap === undefined
+                    ? null
+                    : Math.max(0, Number(row.daily_invite_cap));
+            const messageCap =
+                row.daily_message_cap === null || row.daily_message_cap === undefined
+                    ? null
+                    : Math.max(0, Number(row.daily_message_cap));
 
             normalized.push({
                 name: rawName,
@@ -369,7 +374,10 @@ export async function fetchCloudCampaignConfigs(limit: number): Promise<CloudCam
 /**
  * Legge gli accounts modificati sul cloud dopo lastSyncAt.
  */
-export async function fetchCloudAccountsUpdates(lastSyncAt: string | null, limit: number = 100): Promise<CloudAccount[]> {
+export async function fetchCloudAccountsUpdates(
+    lastSyncAt: string | null,
+    limit: number = 100,
+): Promise<CloudAccount[]> {
     const sb = getClient();
     if (!sb) return [];
 
@@ -400,7 +408,10 @@ export async function fetchCloudAccountsUpdates(lastSyncAt: string | null, limit
 /**
  * Legge i leads modificati sul cloud dopo lastSyncAt.
  */
-export async function fetchCloudLeadsUpdates(lastSyncAt: string | null, limit: number = 500): Promise<CloudLeadUpsert[]> {
+export async function fetchCloudLeadsUpdates(
+    lastSyncAt: string | null,
+    limit: number = 500,
+): Promise<CloudLeadUpsert[]> {
     const sb = getClient();
     if (!sb) return [];
 

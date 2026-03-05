@@ -10,4 +10,3 @@ export function inferLeadSegment(jobTitle: string | null | undefined): LeadSegme
     if (/\b(manager|lead|responsabile)\b/.test(normalized)) return 'manager';
     return 'individual';
 }
-

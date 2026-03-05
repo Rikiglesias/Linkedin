@@ -9,19 +9,24 @@ export interface EnrichmentJobPayload {
     campaignStateId?: number;
 }
 
-export async function processEnrichmentJob(payload: EnrichmentJobPayload, context: WorkerContext): Promise<WorkerExecutionResult> {
+export async function processEnrichmentJob(
+    payload: EnrichmentJobPayload,
+    context: WorkerContext,
+): Promise<WorkerExecutionResult> {
     const enricher = getEmailEnricher();
     const db = await getDatabase();
 
     // Recupera informazioni principali richieste dal context proxy
     const lead = await db.get<{ first_name: string; last_name: string; account_name: string; website: string }>(
         `SELECT first_name, last_name, account_name, website FROM leads WHERE id = ?`,
-        [payload.leadId]
+        [payload.leadId],
     );
 
     if (!lead) {
         await logError('enrichment.worker.missing_lead', { leadId: payload.leadId });
-        return workerResult(0, [{ leadId: payload.leadId, message: 'Dati anagrafici del Lead non trovati a Database' }]);
+        return workerResult(0, [
+            { leadId: payload.leadId, message: 'Dati anagrafici del Lead non trovati a Database' },
+        ]);
     }
 
     if (context.dryRun) {
@@ -35,7 +40,7 @@ export async function processEnrichmentJob(payload: EnrichmentJobPayload, contex
             lead.first_name,
             lead.last_name,
             lead.account_name,
-            lead.website
+            lead.website,
         );
 
         await logInfo('enrichment.worker.success', { leadId: payload.leadId, accountId: context.accountId });

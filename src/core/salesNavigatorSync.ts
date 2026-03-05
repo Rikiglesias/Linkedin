@@ -8,7 +8,12 @@ import {
     upsertSalesNavList,
     upsertSalesNavigatorLead,
 } from './repositories';
-import { navigateToSavedLists, scrapeLeadsFromSalesNavList, SalesNavLeadCandidate, SalesNavSavedList } from '../salesnav/listScraper';
+import {
+    navigateToSavedLists,
+    scrapeLeadsFromSalesNavList,
+    SalesNavLeadCandidate,
+    SalesNavSavedList,
+} from '../salesnav/listScraper';
 
 export interface SalesNavigatorSyncOptions {
     listName?: string | null;
@@ -120,10 +125,12 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
 
         let targetLists: SalesNavSavedList[] = [];
         if (explicitListUrl) {
-            targetLists = [{
-                name: listFilter || 'default',
-                url: explicitListUrl,
-            }];
+            targetLists = [
+                {
+                    name: listFilter || 'default',
+                    url: explicitListUrl,
+                },
+            ];
         } else {
             const discovered = await navigateToSavedLists(session.page);
             report.listDiscoveryCount = discovered.length;

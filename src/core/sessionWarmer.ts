@@ -1,14 +1,13 @@
 /**
  * sessionWarmer.ts
- * 
+ *
  * Implementa il modulo "Behavioral Engine" della roadmap Fase 3.
- * Il suo scopo è iniettare traffico inerte "umano" subito dopo il routing e 
+ * Il suo scopo è iniettare traffico inerte "umano" subito dopo il routing e
  * prima di operazioni massive come mass-enrichment o auto-connect.
  */
 
 import { Page } from 'playwright';
 import { simulateHumanReading, humanType, humanDelay } from '../browser';
-
 
 export async function warmupSession(page: Page): Promise<void> {
     console.log(`[WARM-UP] Avvio Session Warming (Behavioral Engine)...`);
@@ -54,7 +53,6 @@ export async function warmupSession(page: Page): Promise<void> {
                 await page.keyboard.press('Escape'); // Chiudi il dropdown
             }
         }
-
     } catch (e) {
         console.log(`[WARM-UP] Warming interrotto, ignoro (non fatale):`, e instanceof Error ? e.message : e);
     } finally {

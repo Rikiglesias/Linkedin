@@ -1,6 +1,6 @@
 :root {
-    --font-ui: "Avenir Next", "Segoe UI", "Noto Sans", "Helvetica Neue", sans-serif;
-    --font-mono: "SF Mono", "JetBrains Mono", "Consolas", monospace;
+    --font-ui: 'Avenir Next', 'Segoe UI', 'Noto Sans', 'Helvetica Neue', sans-serif;
+    --font-mono: 'SF Mono', 'JetBrains Mono', 'Consolas', monospace;
 
     --bg-page: #f3f6f8;
     --bg-panel: #ffffff;
@@ -55,8 +55,7 @@ body {
     color: var(--ink-strong);
     background:
         radial-gradient(circle at 20% 0%, rgba(217, 236, 239, 0.9), transparent 35%),
-        radial-gradient(circle at 90% 10%, rgba(246, 223, 196, 0.55), transparent 28%),
-        var(--bg-page);
+        radial-gradient(circle at 90% 10%, rgba(246, 223, 196, 0.55), transparent 28%), var(--bg-page);
     line-height: 1.45;
 }
 

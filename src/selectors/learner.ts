@@ -83,12 +83,14 @@ function parsePromotedLabels(summaryJson: string): string[] {
         if (!parsed || typeof parsed !== 'object') return [];
         const candidate = (parsed as { promotedLabels?: unknown }).promotedLabels;
         if (!Array.isArray(candidate)) return [];
-        return Array.from(new Set(
-            candidate
-                .filter((entry): entry is string => typeof entry === 'string')
-                .map((entry) => entry.trim())
-                .filter((entry) => entry.length > 0)
-        ));
+        return Array.from(
+            new Set(
+                candidate
+                    .filter((entry): entry is string => typeof entry === 'string')
+                    .map((entry) => entry.trim())
+                    .filter((entry) => entry.length > 0),
+            ),
+        );
     } catch {
         return [];
     }
@@ -107,8 +109,10 @@ function parseRollbackSnapshot(raw: string): SelectorLearningRollbackSnapshotEnt
                 previousConfidence: typeof entry.previousConfidence === 'number' ? entry.previousConfidence : null,
                 previousSource: typeof entry.previousSource === 'string' ? entry.previousSource : null,
                 previousActive: typeof entry.previousActive === 'number' ? entry.previousActive : null,
-                previousSuccessCount: typeof entry.previousSuccessCount === 'number' ? entry.previousSuccessCount : null,
-                previousLastValidatedAt: typeof entry.previousLastValidatedAt === 'string' ? entry.previousLastValidatedAt : null,
+                previousSuccessCount:
+                    typeof entry.previousSuccessCount === 'number' ? entry.previousSuccessCount : null,
+                previousLastValidatedAt:
+                    typeof entry.previousLastValidatedAt === 'string' ? entry.previousLastValidatedAt : null,
             }))
             .filter((entry) => entry.actionLabel.length > 0 && entry.selector.length > 0);
     } catch {
@@ -127,9 +131,10 @@ export function assessSelectorModelDegradation(input: SelectorModelDegradationIn
     const degradeRatio = Math.max(0, input.degradeRatio);
     const degradeMinDelta = Math.max(1, Math.floor(input.degradeMinDelta));
     const absoluteIncrease = Math.max(0, currentOpenFailures - baselineOpenFailures);
-    const requiredIncrease = baselineOpenFailures <= 0
-        ? degradeMinDelta
-        : Math.max(degradeMinDelta, Math.ceil(baselineOpenFailures * degradeRatio));
+    const requiredIncrease =
+        baselineOpenFailures <= 0
+            ? degradeMinDelta
+            : Math.max(degradeMinDelta, Math.ceil(baselineOpenFailures * degradeRatio));
     return {
         degraded: absoluteIncrease >= requiredIncrease,
         absoluteIncrease,
@@ -144,7 +149,10 @@ export async function runSelectorLearner(options: SelectorLearnerOptions = {}): 
     const limit = Math.max(1, options.limit ?? 100);
     const lookbackDays = Math.max(1, options.lookbackDays ?? DEFAULT_LOOKBACK_DAYS);
     const failureDegradeRatio = Math.max(0, options.failureDegradeRatio ?? DEFAULT_FAILURE_DEGRADE_RATIO);
-    const failureDegradeMinDelta = Math.max(1, Math.floor(options.failureDegradeMinDelta ?? DEFAULT_FAILURE_DEGRADE_MIN_DELTA));
+    const failureDegradeMinDelta = Math.max(
+        1,
+        Math.floor(options.failureDegradeMinDelta ?? DEFAULT_FAILURE_DEGRADE_MIN_DELTA),
+    );
     const autoRollback = options.autoRollback !== false;
     const skipPromotionOnRollback = options.skipPromotionOnRollback !== false;
     const triggeredBy = (options.triggeredBy ?? 'selector_learner').trim() || 'selector_learner';
@@ -196,7 +204,7 @@ export async function runSelectorLearner(options: SelectorLearnerOptions = {}): 
             if (promotedLabelsFromRun.length > 0) {
                 rollback.currentOpenFailures = await countOpenSelectorFailuresByActionLabels(
                     promotedLabelsFromRun,
-                    lookbackDays
+                    lookbackDays,
                 );
                 const degradation = assessSelectorModelDegradation({
                     baselineOpenFailures: rollback.baselineOpenFailures,
@@ -212,7 +220,7 @@ export async function runSelectorLearner(options: SelectorLearnerOptions = {}): 
                 if (degradation.degraded) {
                     const snapshotEntries = parseRollbackSnapshot(latestPromotedRun.rollback_snapshot_json);
                     const restored = await restoreDynamicSelectorSnapshots(snapshotEntries);
-                    rollback.rolledBack = (restored.restored + restored.deleted) > 0;
+                    rollback.rolledBack = restored.restored + restored.deleted > 0;
                     rollback.restoredSelectors = restored.restored;
                     rollback.deletedSelectors = restored.deleted;
                     await recordSelectorLearningRunEvaluation(latestPromotedRun.id, {
@@ -278,7 +286,11 @@ export async function runSelectorLearner(options: SelectorLearnerOptions = {}): 
 
     const status: SelectorLearnerReport['status'] = dryRun
         ? 'DRY_RUN'
-        : (stopPromotionBecauseRollback ? 'ROLLBACK_ONLY' : (promotedSelectors > 0 ? 'PROMOTED' : 'NO_OP'));
+        : stopPromotionBecauseRollback
+          ? 'ROLLBACK_ONLY'
+          : promotedSelectors > 0
+            ? 'PROMOTED'
+            : 'NO_OP';
 
     if (!dryRun && runId) {
         await completeSelectorLearningRun(runId, {

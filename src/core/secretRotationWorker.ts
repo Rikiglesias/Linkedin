@@ -28,7 +28,7 @@ const SECRET_ROTATION_SPECS: SecretRotationSpec[] = [
 ];
 
 function toIsoAfterDays(days: number): string {
-    return new Date(Date.now() + (days * 86_400_000)).toISOString();
+    return new Date(Date.now() + days * 86_400_000).toISOString();
 }
 
 function generateRotatedSecret(): string {
@@ -60,7 +60,7 @@ function parseEnvFile(content: string): Array<{ key: string; value: string; raw:
 
 function serializeEnvFile(
     parsed: Array<{ key: string; value: string; raw: string }>,
-    updates: Map<string, string>
+    updates: Map<string, string>,
 ): string {
     const touched = new Set<string>();
     const nextLines = parsed.map((row) => {
@@ -82,16 +82,12 @@ function resolveEnvFilePath(explicitPath?: string): string {
     if (!explicitPath || !explicitPath.trim()) {
         return path.resolve(process.cwd(), '.env');
     }
-    return path.isAbsolute(explicitPath)
-        ? explicitPath
-        : path.resolve(process.cwd(), explicitPath);
+    return path.isAbsolute(explicitPath) ? explicitPath : path.resolve(process.cwd(), explicitPath);
 }
 
 function normalizeSecretList(includeSecrets?: string[]): Set<string> | null {
     if (!includeSecrets || includeSecrets.length === 0) return null;
-    const entries = includeSecrets
-        .map((value) => value.trim().toUpperCase())
-        .filter((value) => value.length > 0);
+    const entries = includeSecrets.map((value) => value.trim().toUpperCase()).filter((value) => value.length > 0);
     if (entries.length === 0) return null;
     return new Set(entries);
 }
@@ -127,7 +123,9 @@ export interface SecretRotationWorkerResult {
     rows: SecretRotationWorkerRow[];
 }
 
-export async function runSecretRotationWorker(options: SecretRotationWorkerOptions): Promise<SecretRotationWorkerResult> {
+export async function runSecretRotationWorker(
+    options: SecretRotationWorkerOptions,
+): Promise<SecretRotationWorkerResult> {
     const intervalDays = Math.max(1, Math.floor(options.intervalDays));
     const nowIso = new Date().toISOString();
     const expiresAt = toIsoAfterDays(config.securitySecretMaxAgeDays);
@@ -171,7 +169,7 @@ export async function runSecretRotationWorker(options: SecretRotationWorkerOptio
                 nowIso,
                 spec.owner,
                 expiresAt,
-                'seeded_by_rotation_worker_unknown_history'
+                'seeded_by_rotation_worker_unknown_history',
             );
             await recordSecurityAuditEvent({
                 category: 'secret_rotation',
@@ -249,7 +247,7 @@ export async function runSecretRotationWorker(options: SecretRotationWorkerOptio
                     intervalDays,
                     autoRotatable: false,
                 },
-                `security.secret_rotation_due:${spec.name}:${nowIso.slice(0, 10)}`
+                `security.secret_rotation_due:${spec.name}:${nowIso.slice(0, 10)}`,
             );
             rows.push({
                 secretName: spec.name,
@@ -271,7 +269,7 @@ export async function runSecretRotationWorker(options: SecretRotationWorkerOptio
             nowIso,
             spec.owner,
             expiresAt,
-            `rotated_automatically_by_worker_interval_${intervalDays}d`
+            `rotated_automatically_by_worker_interval_${intervalDays}d`,
         );
         await recordSecurityAuditEvent({
             category: 'secret_rotation',
@@ -294,7 +292,7 @@ export async function runSecretRotationWorker(options: SecretRotationWorkerOptio
                 intervalDays,
                 autoRotatable: true,
             },
-            `security.secret_rotated:${spec.name}:${nowIso.slice(0, 10)}`
+            `security.secret_rotated:${spec.name}:${nowIso.slice(0, 10)}`,
         );
         rotated += 1;
         rows.push({

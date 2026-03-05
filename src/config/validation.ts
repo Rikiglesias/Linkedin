@@ -20,8 +20,10 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
         when: (cfg) => cfg.webhookSyncEnabled && !cfg.webhookSyncUrl,
     },
     {
-        message: '[CONFIG] DASHBOARD_AUTH_ENABLED=true ma nessuna credenziale configurata (DASHBOARD_API_KEY o DASHBOARD_BASIC_USER/PASSWORD)',
-        when: (cfg) => cfg.dashboardAuthEnabled && !cfg.dashboardApiKey && !(cfg.dashboardBasicUser && cfg.dashboardBasicPassword),
+        message:
+            '[CONFIG] DASHBOARD_AUTH_ENABLED=true ma nessuna credenziale configurata (DASHBOARD_API_KEY o DASHBOARD_BASIC_USER/PASSWORD)',
+        when: (cfg) =>
+            cfg.dashboardAuthEnabled && !cfg.dashboardApiKey && !(cfg.dashboardBasicUser && cfg.dashboardBasicPassword),
     },
     {
         message: '[CONFIG] DAILY_REPORT_HOUR deve essere compreso tra 0 e 23',
@@ -188,15 +190,18 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
         when: (cfg) => cfg.observabilitySloChallengeRateWarn < 0 || cfg.observabilitySloChallengeRateWarn > 1,
     },
     {
-        message: '[CONFIG] OBSERVABILITY_SLO_CHALLENGE_RATE_CRITICAL deve essere >= OBSERVABILITY_SLO_CHALLENGE_RATE_WARN',
+        message:
+            '[CONFIG] OBSERVABILITY_SLO_CHALLENGE_RATE_CRITICAL deve essere >= OBSERVABILITY_SLO_CHALLENGE_RATE_WARN',
         when: (cfg) => cfg.observabilitySloChallengeRateCritical < cfg.observabilitySloChallengeRateWarn,
     },
     {
         message: '[CONFIG] OBSERVABILITY_SLO_SELECTOR_FAILURE_RATE_WARN deve essere compreso tra 0 e 1',
-        when: (cfg) => cfg.observabilitySloSelectorFailureRateWarn < 0 || cfg.observabilitySloSelectorFailureRateWarn > 1,
+        when: (cfg) =>
+            cfg.observabilitySloSelectorFailureRateWarn < 0 || cfg.observabilitySloSelectorFailureRateWarn > 1,
     },
     {
-        message: '[CONFIG] OBSERVABILITY_SLO_SELECTOR_FAILURE_RATE_CRITICAL deve essere >= OBSERVABILITY_SLO_SELECTOR_FAILURE_RATE_WARN',
+        message:
+            '[CONFIG] OBSERVABILITY_SLO_SELECTOR_FAILURE_RATE_CRITICAL deve essere >= OBSERVABILITY_SLO_SELECTOR_FAILURE_RATE_WARN',
         when: (cfg) => cfg.observabilitySloSelectorFailureRateCritical < cfg.observabilitySloSelectorFailureRateWarn,
     },
     {
@@ -288,7 +293,8 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
         when: (cfg) => cfg.inboxAutoReplyMaxPerRun < 1,
     },
     {
-        message: '[CONFIG] NODE_ENV=production ma DATABASE_URL non configurata — il bot userà SQLite (non raccomandato in produzione)',
+        message:
+            '[CONFIG] NODE_ENV=production ma DATABASE_URL non configurata — il bot userà SQLite (non raccomandato in produzione)',
         when: (cfg, nodeEnv) => nodeEnv === 'production' && !cfg.databaseUrl,
     },
     {

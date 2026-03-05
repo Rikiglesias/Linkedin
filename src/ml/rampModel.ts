@@ -56,18 +56,18 @@ function riskPenalty(action: RiskSnapshot['action']): number {
 
 function healthFactor(score: number): number {
     const normalized = clamp((score - 40) / 50, 0, 1);
-    return 0.55 + (normalized * 0.45);
+    return 0.55 + normalized * 0.45;
 }
 
 function pendingPenalty(pendingRatio: number): number {
     const safePending = clamp01(pendingRatio);
     const excess = Math.max(0, safePending - 0.4);
-    return clamp(1 - (excess * 1.2), 0.5, 1);
+    return clamp(1 - excess * 1.2, 0.5, 1);
 }
 
 function errorPenalty(errorRate: number): number {
     const safeError = clamp01(errorRate);
-    return clamp(1 - (safeError * 2), 0.6, 1);
+    return clamp(1 - safeError * 2, 0.6, 1);
 }
 
 function resolveCurveSteepness(channel: RampChannel): number {
@@ -84,7 +84,7 @@ function computeStepRate(baseDailyIncrease: number, curveProgress: number, safet
 function computeTargetCap(hardMaxCap: number, curveProgress: number): number {
     const safeMax = Math.max(1, Math.floor(hardMaxCap));
     const minCap = 1;
-    const raw = minCap + ((safeMax - minCap) * curveProgress);
+    const raw = minCap + (safeMax - minCap) * curveProgress;
     return clamp(Math.round(raw), minCap, safeMax);
 }
 
@@ -94,7 +94,7 @@ export function computeNonLinearRampCap(input: RampModelInput): RampModelOutput 
     const curveProgress = logisticProgress(
         Math.max(0, input.accountAgeDays),
         Math.max(1, input.warmupDays),
-        resolveCurveSteepness(input.channel)
+        resolveCurveSteepness(input.channel),
     );
     const targetCap = computeTargetCap(safeHardMax, curveProgress);
     const riskPenaltyFactor = riskPenalty(input.riskAction);
@@ -104,7 +104,7 @@ export function computeNonLinearRampCap(input: RampModelInput): RampModelOutput 
     const safetyFactor = clamp(
         riskPenaltyFactor * pendingPenaltyFactor * errorPenaltyFactor * healthFactorValue,
         0.2,
-        1
+        1,
     );
     const safetyTargetCap = clamp(Math.floor(targetCap * safetyFactor), 1, safeHardMax);
     const stepRate = computeStepRate(input.baseDailyIncrease, curveProgress, safetyFactor);

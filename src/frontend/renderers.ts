@@ -62,7 +62,8 @@ export function renderKpis(kpis: KpiResponse): void {
     const riskValue = Math.round(Number(kpis.risk?.score ?? 0));
     const riskNode = byId<HTMLElement>('val-risk');
     riskNode.textContent = String(riskValue);
-    riskNode.className = riskValue >= 80 ? 'kpi-value risk-high' : riskValue >= 50 ? 'kpi-value risk-medium' : 'kpi-value risk-low';
+    riskNode.className =
+        riskValue >= 80 ? 'kpi-value risk-high' : riskValue >= 50 ? 'kpi-value risk-medium' : 'kpi-value risk-low';
 
     setText('conv-accept', formatPercent(funnel.accepted ?? 0, funnel.invited ?? 0));
     setText('conv-reply', formatPercent(funnel.replied ?? 0, funnel.invited ?? 0));
@@ -166,7 +167,7 @@ export function renderOperationalSlo(slo: OperationalSloSnapshot | undefined): v
     const current = slo.current ?? { status: 'OK', queueLagSeconds: 0, oldestRunningJobSeconds: 0 };
     setText(
         'slo-current-status',
-        `SLO corrente: ${slo.status} (queueLag ${Math.round(current.queueLagSeconds ?? 0)}s, running ${Math.round(current.oldestRunningJobSeconds ?? 0)}s)`
+        `SLO corrente: ${slo.status} (queueLag ${Math.round(current.queueLagSeconds ?? 0)}s, running ${Math.round(current.oldestRunningJobSeconds ?? 0)}s)`,
     );
 
     const window7d = (slo.windows ?? []).find((row) => row.windowDays === 7);
@@ -175,13 +176,13 @@ export function renderOperationalSlo(slo: OperationalSloSnapshot | undefined): v
         'slo-7d-status',
         window7d
             ? `SLO 7d: ${window7d.status} (err ${formatSloPercent(window7d.errorRate)}, chall ${formatSloPercent(window7d.challengeRate)}, sel ${formatSloPercent(window7d.selectorFailureRate)})`
-            : 'SLO 7d: —'
+            : 'SLO 7d: —',
     );
     setText(
         'slo-30d-status',
         window30d
             ? `SLO 30d: ${window30d.status} (err ${formatSloPercent(window30d.errorRate)}, chall ${formatSloPercent(window30d.challengeRate)}, sel ${formatSloPercent(window30d.selectorFailureRate)})`
-            : 'SLO 30d: —'
+            : 'SLO 30d: —',
     );
 }
 
@@ -192,15 +193,12 @@ export function renderSelectorCacheKpi(kpi: SelectorCacheKpiSnapshot | undefined
     }
     const reduction = kpi.reductionPct === null ? 'n/a' : `${kpi.reductionPct.toFixed(1)}%`;
     const target = `${(kpi.targetReductionRate * 100).toFixed(0)}%`;
-    const status = kpi.validationStatus === 'PASS'
-        ? 'PASS'
-        : (kpi.validationStatus === 'WARN' ? 'WARN' : 'INSUFFICIENT_DATA');
-    const baselineNote = kpi.validationStatus === 'INSUFFICIENT_DATA'
-        ? `, baseline<${kpi.minBaselineFailures}`
-        : '';
+    const status =
+        kpi.validationStatus === 'PASS' ? 'PASS' : kpi.validationStatus === 'WARN' ? 'WARN' : 'INSUFFICIENT_DATA';
+    const baselineNote = kpi.validationStatus === 'INSUFFICIENT_DATA' ? `, baseline<${kpi.minBaselineFailures}` : '';
     setText(
         'selector-cache-kpi',
-        `Selector cache KPI 7d: ${status} (riduzione ${reduction}, target ${target}, fail ${kpi.currentFailures}/${kpi.previousFailures}${baselineNote})`
+        `Selector cache KPI 7d: ${status} (riduzione ${reduction}, target ${target}, fail ${kpi.currentFailures}/${kpi.previousFailures}${baselineNote})`,
     );
 }
 
@@ -232,7 +230,12 @@ export function renderIncidents(incidents: IncidentRecord[], selectedIds: Set<nu
 
         const typeCell = createCell(incident.type);
         const severityCell = document.createElement('td');
-        const severityClass = incident.severity === 'CRITICAL' ? 'pill-danger' : incident.severity === 'WARN' ? 'pill-warning' : 'pill-info';
+        const severityClass =
+            incident.severity === 'CRITICAL'
+                ? 'pill-danger'
+                : incident.severity === 'WARN'
+                  ? 'pill-warning'
+                  : 'pill-info';
         severityCell.appendChild(statusPill(incident.severity, severityClass));
 
         const detailsCell = document.createElement('td');
@@ -241,7 +244,10 @@ export function renderIncidents(incidents: IncidentRecord[], selectedIds: Set<nu
         summary.textContent = 'Dettagli';
         const pre = document.createElement('pre');
         pre.className = 'incident-details';
-        pre.textContent = incident.details_json && incident.details_json.trim().length > 0 ? incident.details_json : 'Nessun dettaglio disponibile';
+        pre.textContent =
+            incident.details_json && incident.details_json.trim().length > 0
+                ? incident.details_json
+                : 'Nessun dettaglio disponibile';
         details.appendChild(summary);
         details.appendChild(pre);
         detailsCell.appendChild(details);
@@ -272,10 +278,12 @@ export function renderReviewQueue(reviewQueue: ReviewQueueResponse): void {
     setText('review-queue-incidents', String(reviewQueue.challengeIncidentCount ?? 0));
 
     const queueCountNode = byId<HTMLElement>('review-queue-count');
-    queueCountNode.className = (reviewQueue.reviewLeadCount ?? 0) > 0 ? 'conv-value system-warn' : 'conv-value system-ok';
+    queueCountNode.className =
+        (reviewQueue.reviewLeadCount ?? 0) > 0 ? 'conv-value system-warn' : 'conv-value system-ok';
 
     const incidentsNode = byId<HTMLElement>('review-queue-incidents');
-    incidentsNode.className = (reviewQueue.challengeIncidentCount ?? 0) > 0 ? 'conv-value system-danger' : 'conv-value system-ok';
+    incidentsNode.className =
+        (reviewQueue.challengeIncidentCount ?? 0) > 0 ? 'conv-value system-danger' : 'conv-value system-ok';
 
     const tbody = byId<HTMLTableSectionElement>('review-tbody');
     clearChildren(tbody);
@@ -345,9 +353,7 @@ export function renderCommentSuggestions(queue: CommentSuggestionQueueResponse):
         leadLink.textContent = `${item.firstName} ${item.lastName}`.trim() || `Lead #${item.leadId}`;
         leadCell.appendChild(leadLink);
 
-        const postPreview = item.postSnippet?.trim().length > 0
-            ? item.postSnippet
-            : 'Post non disponibile';
+        const postPreview = item.postSnippet?.trim().length > 0 ? item.postSnippet : 'Post non disponibile';
 
         const commentCell = document.createElement('td');
         const editor = document.createElement('textarea');
@@ -483,7 +489,7 @@ export function renderTimingSlots(slots: TimingSlotRow[]): void {
 
 export function renderTimeline(
     entries: TimelineEntry[],
-    optionSets: { types: string[]; accountIds: string[]; listNames: string[] }
+    optionSets: { types: string[]; accountIds: string[]; listNames: string[] },
 ): void {
     const timelineList = byId<HTMLDivElement>('timeline-list');
     clearChildren(timelineList);

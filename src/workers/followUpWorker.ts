@@ -12,10 +12,25 @@
  * Dry-run: genera messaggio senza inviarlo.
  */
 
-import { clickWithFallback, contextualReadingPause, detectChallenge, humanDelay, humanMouseMove, simulateHumanReading, typeWithFallback } from '../browser';
+import {
+    clickWithFallback,
+    contextualReadingPause,
+    detectChallenge,
+    humanDelay,
+    humanMouseMove,
+    simulateHumanReading,
+    typeWithFallback,
+} from '../browser';
 import { buildFollowUpReminderMessage } from '../ai/messagePersonalizer';
 import { config } from '../config';
-import { getLeadIntent, getLeadsForFollowUp, recordFollowUpSent, incrementDailyStat, countRecentMessageHash, storeMessageHash } from '../core/repositories';
+import {
+    getLeadIntent,
+    getLeadsForFollowUp,
+    recordFollowUpSent,
+    incrementDailyStat,
+    countRecentMessageHash,
+    storeMessageHash,
+} from '../core/repositories';
 import { joinSelectors, SELECTORS } from '../selectors';
 import { hashMessage, validateMessageContent } from '../validation/messageValidator';
 import { logInfo, logWarn } from '../telemetry/logger';
@@ -55,12 +70,7 @@ function seededUnit(seed: number): number {
     return x - Math.floor(x);
 }
 
-function deterministicGaussian(
-    leadId: number,
-    followUpCount: number,
-    intent: string,
-    subIntent: string
-): number {
+function deterministicGaussian(leadId: number, followUpCount: number, intent: string, subIntent: string): number {
     const salt = `${leadId}|${followUpCount}|${intent}|${subIntent}`;
     let hash = 2166136261;
     for (let i = 0; i < salt.length; i++) {
@@ -84,9 +94,8 @@ async function processSingleFollowUp(
     lead: LeadRecord,
     messagedAt: string | null,
     intentHint: LeadIntentHint | null,
-    context: WorkerContext
+    context: WorkerContext,
 ): Promise<boolean> {
-
     const days = daysSince(messagedAt);
     const { message, source } = await buildFollowUpReminderMessage(lead, days, {
         intent: intentHint?.intent ?? null,
@@ -132,24 +141,28 @@ async function processSingleFollowUp(
     }
     await humanDelay(context.session.page, 1200, 2200);
 
-    await typeWithFallback(context.session.page, SELECTORS.messageTextbox, message, 'messageTextbox').catch(async () => {
-        await incrementDailyStat(context.localDate, 'selector_failures');
-        throw new RetryableWorkerError('Textbox follow-up non trovata', 'TEXTBOX_NOT_FOUND');
-    });
+    await typeWithFallback(context.session.page, SELECTORS.messageTextbox, message, 'messageTextbox').catch(
+        async () => {
+            await incrementDailyStat(context.localDate, 'selector_failures');
+            throw new RetryableWorkerError('Textbox follow-up non trovata', 'TEXTBOX_NOT_FOUND');
+        },
+    );
     await humanDelay(context.session.page, 800, 1600);
 
     if (!context.dryRun) {
         const sendBtn = context.session.page.locator(joinSelectors('messageSendButton')).first();
-        if (await sendBtn.count() === 0 || (await sendBtn.isDisabled())) {
+        if ((await sendBtn.count()) === 0 || (await sendBtn.isDisabled())) {
             await incrementDailyStat(context.localDate, 'selector_failures');
             throw new RetryableWorkerError('Bottone invio follow-up non disponibile', 'SEND_NOT_AVAILABLE');
         }
         await humanMouseMove(context.session.page, joinSelectors('messageSendButton'));
         await humanDelay(context.session.page, 100, 300);
-        await clickWithFallback(context.session.page, SELECTORS.messageSendButton, 'messageSendButton').catch(async () => {
-            await incrementDailyStat(context.localDate, 'selector_failures');
-            throw new RetryableWorkerError('Bottone invio follow-up non disponibile', 'SEND_NOT_AVAILABLE');
-        });
+        await clickWithFallback(context.session.page, SELECTORS.messageSendButton, 'messageSendButton').catch(
+            async () => {
+                await incrementDailyStat(context.localDate, 'selector_failures');
+                throw new RetryableWorkerError('Bottone invio follow-up non disponibile', 'SEND_NOT_AVAILABLE');
+            },
+        );
 
         // Persisti l'invio nel DB
         await recordFollowUpSent(leadId);
@@ -171,18 +184,15 @@ async function processSingleFollowUp(
  * @param dailySentSoFar - follow-up già inviati oggi (per rispettare il daily cap)
  * @returns risultato standardizzato della run corrente
  */
-export async function runFollowUpWorker(
-    context: WorkerContext,
-    dailySentSoFar = 0
-): Promise<WorkerExecutionResult> {
+export async function runFollowUpWorker(context: WorkerContext, dailySentSoFar = 0): Promise<WorkerExecutionResult> {
     const delayDays = Math.max(
         1,
         Math.min(
             config.followUpDelayDays,
             config.followUpQuestionsDelayDays,
             config.followUpNegativeDelayDays,
-            config.followUpNotInterestedDelayDays
-        )
+            config.followUpNotInterestedDelayDays,
+        ),
     );
     const maxFollowUp = config.followUpMax;
     const dailyCap = config.followUpDailyCap;
@@ -235,7 +245,7 @@ export async function runFollowUpWorker(
                 lead,
                 lead.messaged_at ?? null,
                 intentHint,
-                context
+                context,
             );
             if (ok) sent++;
         } catch (err: unknown) {
@@ -260,7 +270,10 @@ export async function runFollowUpWorker(
     return workerResult(attempted, errors);
 }
 
-function resolveIntentBaseDelayDays(intent: string | null | undefined, subIntent: string | null | undefined): { baseDelayDays: number; reason: string } {
+function resolveIntentBaseDelayDays(
+    intent: string | null | undefined,
+    subIntent: string | null | undefined,
+): { baseDelayDays: number; reason: string } {
     const normalizedIntent = (intent ?? '').toUpperCase();
     const normalizedSubIntent = (subIntent ?? '').toUpperCase();
 
@@ -272,7 +285,7 @@ function resolveIntentBaseDelayDays(intent: string | null | undefined, subIntent
         if (normalizedSubIntent === 'OBJECTION_HANDLING') {
             const objectionDelay = Math.max(
                 config.followUpQuestionsDelayDays,
-                Math.floor((config.followUpNegativeDelayDays + config.followUpQuestionsDelayDays) / 2)
+                Math.floor((config.followUpNegativeDelayDays + config.followUpQuestionsDelayDays) / 2),
             );
             return { baseDelayDays: objectionDelay, reason: 'intent_negative_objection' };
         }
@@ -283,7 +296,11 @@ function resolveIntentBaseDelayDays(intent: string | null | undefined, subIntent
         return { baseDelayDays: config.followUpQuestionsDelayDays, reason: 'intent_questions' };
     }
 
-    if (normalizedSubIntent === 'CALL_REQUESTED' || normalizedSubIntent === 'REFERRAL' || normalizedSubIntent === 'PRICE_INQUIRY') {
+    if (
+        normalizedSubIntent === 'CALL_REQUESTED' ||
+        normalizedSubIntent === 'REFERRAL' ||
+        normalizedSubIntent === 'PRICE_INQUIRY'
+    ) {
         return {
             baseDelayDays: Math.max(1, Math.min(config.followUpQuestionsDelayDays, config.followUpDelayDays)),
             reason: `sub_intent_${normalizedSubIntent.toLowerCase()}`,
@@ -295,18 +312,18 @@ function resolveIntentBaseDelayDays(intent: string | null | undefined, subIntent
 
 export function resolveFollowUpCadence(
     lead: Pick<LeadRecord, 'id' | 'messaged_at' | 'follow_up_sent_at' | 'follow_up_count'>,
-    intentHint: LeadIntentHint | null
+    intentHint: LeadIntentHint | null,
 ): FollowUpCadence {
     const baseDelay = resolveIntentBaseDelayDays(intentHint?.intent, intentHint?.subIntent);
     const followUpCount = Math.max(0, lead.follow_up_count ?? 0);
-    const escalationMultiplier = 1 + (followUpCount * config.followUpDelayEscalationFactor);
+    const escalationMultiplier = 1 + followUpCount * config.followUpDelayEscalationFactor;
     const escalatedDelay = Math.max(1, Math.round(baseDelay.baseDelayDays * escalationMultiplier));
 
     const gaussian = deterministicGaussian(
         lead.id,
         followUpCount,
         intentHint?.intent ?? 'UNKNOWN',
-        intentHint?.subIntent ?? 'NONE'
+        intentHint?.subIntent ?? 'NONE',
     );
     const jitterDays = Math.round(gaussian * config.followUpDelayStddevDays);
     const requiredDelayDays = Math.max(1, escalatedDelay + jitterDays);

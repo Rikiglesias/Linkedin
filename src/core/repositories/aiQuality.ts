@@ -59,7 +59,11 @@ const DEFAULT_AI_VALIDATION_SAMPLES: SeedSample[] = [
         taskType: 'message',
         label: 'message-no-link-no-emoji',
         input: { firstName: 'Laura', company: 'Nova', role: 'Founder' },
-        expected: { requiredKeywords: ['laura'], maxChars: 450, forbiddenKeywords: ['http://', 'https://', '😀', '🚀'] },
+        expected: {
+            requiredKeywords: ['laura'],
+            maxChars: 450,
+            forbiddenKeywords: ['http://', 'https://', '😀', '🚀'],
+        },
         tags: ['message', 'style'],
     },
 ];
@@ -104,7 +108,7 @@ function countKeywordHits(text: string, keywords: string[]): number {
 function scoreTextQuality(
     text: string,
     expected: Record<string, unknown>,
-    defaultMaxChars: number
+    defaultMaxChars: number,
 ): { similarity: number; isMatch: boolean } {
     const requiredKeywords = Array.isArray(expected.requiredKeywords)
         ? expected.requiredKeywords.filter((value): value is string => typeof value === 'string')
@@ -113,22 +117,19 @@ function scoreTextQuality(
         ? expected.forbiddenKeywords.filter((value): value is string => typeof value === 'string')
         : [];
     const maxCharsRaw = expected.maxChars;
-    const maxChars = typeof maxCharsRaw === 'number' && Number.isFinite(maxCharsRaw)
-        ? Math.max(40, Math.floor(maxCharsRaw))
-        : defaultMaxChars;
+    const maxChars =
+        typeof maxCharsRaw === 'number' && Number.isFinite(maxCharsRaw)
+            ? Math.max(40, Math.floor(maxCharsRaw))
+            : defaultMaxChars;
 
     const requiredHits = countKeywordHits(text, requiredKeywords);
-    const requiredCoverage = requiredKeywords.length === 0
-        ? 1
-        : requiredHits / requiredKeywords.length;
+    const requiredCoverage = requiredKeywords.length === 0 ? 1 : requiredHits / requiredKeywords.length;
     const forbiddenHits = countKeywordHits(text, forbiddenKeywords);
     const noForbidden = forbiddenHits === 0;
     const withinLimit = text.length <= maxChars;
-    const lengthScore = withinLimit
-        ? 1
-        : clamp01(1 - ((text.length - maxChars) / Math.max(1, maxChars)));
+    const lengthScore = withinLimit ? 1 : clamp01(1 - (text.length - maxChars) / Math.max(1, maxChars));
 
-    const similarity = clamp01((requiredCoverage * 0.7) + (lengthScore * 0.3) - (noForbidden ? 0 : 0.5));
+    const similarity = clamp01(requiredCoverage * 0.7 + lengthScore * 0.3 - (noForbidden ? 0 : 0.5));
     const isMatch = requiredCoverage >= 0.6 && noForbidden && withinLimit;
 
     return { similarity, isMatch };
@@ -171,26 +172,31 @@ function makeSyntheticLead(input: Record<string, unknown>, leadId: number): Lead
 
 function calculateSentimentSimilarity(
     prediction: { intent: string; subIntent: string; entities: string[]; confidence: number },
-    expected: Record<string, unknown>
+    expected: Record<string, unknown>,
 ): { similarity: number; isMatch: boolean } {
     const expectedIntent = normalizeText(expected.intent).toUpperCase();
     const expectedSubIntent = normalizeText(expected.subIntent).toUpperCase();
-    const minConfidence = typeof expected.minConfidence === 'number'
-        ? clamp01(expected.minConfidence)
-        : 0;
+    const minConfidence = typeof expected.minConfidence === 'number' ? clamp01(expected.minConfidence) : 0;
     const expectedEntities = Array.isArray(expected.entities)
-        ? expected.entities.filter((value): value is string => typeof value === 'string').map((value) => value.toLowerCase())
+        ? expected.entities
+              .filter((value): value is string => typeof value === 'string')
+              .map((value) => value.toLowerCase())
         : [];
     const predictedEntities = prediction.entities.map((value) => value.toLowerCase());
-    const entityHits = expectedEntities.length === 0
-        ? 1
-        : expectedEntities.filter((entity) => predictedEntities.includes(entity)).length / expectedEntities.length;
+    const entityHits =
+        expectedEntities.length === 0
+            ? 1
+            : expectedEntities.filter((entity) => predictedEntities.includes(entity)).length / expectedEntities.length;
 
     const intentScore = expectedIntent && prediction.intent.toUpperCase() === expectedIntent ? 1 : 0;
     const subIntentScore = expectedSubIntent && prediction.subIntent.toUpperCase() === expectedSubIntent ? 1 : 0;
-    const confidenceScore = prediction.confidence >= minConfidence ? 1 : clamp01(prediction.confidence / Math.max(0.01, minConfidence));
-    const similarity = clamp01((intentScore * 0.5) + (subIntentScore * 0.3) + (entityHits * 0.1) + (confidenceScore * 0.1));
-    const isMatch = intentScore === 1 && (expectedSubIntent ? subIntentScore === 1 : true) && prediction.confidence >= minConfidence;
+    const confidenceScore =
+        prediction.confidence >= minConfidence ? 1 : clamp01(prediction.confidence / Math.max(0.01, minConfidence));
+    const similarity = clamp01(intentScore * 0.5 + subIntentScore * 0.3 + entityHits * 0.1 + confidenceScore * 0.1);
+    const isMatch =
+        intentScore === 1 &&
+        (expectedSubIntent ? subIntentScore === 1 : true) &&
+        prediction.confidence >= minConfidence;
     return { similarity, isMatch };
 }
 
@@ -204,14 +210,14 @@ export function computeTwoProportionSignificance(
     baselineTotal: number,
     candidateSuccess: number,
     candidateTotal: number,
-    alpha: number
+    alpha: number,
 ): TwoProportionResult {
     return computeTwoProportionSignificanceCore(
         baselineSuccess,
         baselineTotal,
         candidateSuccess,
         candidateTotal,
-        alpha
+        alpha,
     );
 }
 
@@ -278,7 +284,7 @@ export async function seedDefaultAiValidationSamples(force: boolean = false): Pr
                 JSON.stringify(sample.input),
                 JSON.stringify(sample.expected),
                 sample.tags.join(','),
-            ]
+            ],
         );
         inserted += result.changes ?? 0;
     }
@@ -295,7 +301,7 @@ export async function listAiValidationSamples(activeOnly: boolean = true): Promi
             FROM ai_validation_samples
             WHERE active = 1
             ORDER BY task_type ASC, created_at ASC, id ASC
-        `
+        `,
         );
     }
     return db.query<AiValidationSampleRecord>(
@@ -303,7 +309,7 @@ export async function listAiValidationSamples(activeOnly: boolean = true): Promi
         SELECT id, task_type, label, input_json, expected_json, tags_csv, active, created_at
         FROM ai_validation_samples
         ORDER BY task_type ASC, created_at ASC, id ASC
-    `
+    `,
     );
 }
 
@@ -316,12 +322,14 @@ export async function getLatestAiValidationRun(): Promise<AiValidationRunRecord 
         FROM ai_validation_runs
         ORDER BY started_at DESC, id DESC
         LIMIT 1
-    `
+    `,
     );
     return row ?? null;
 }
 
-function summarizeValidationRows(rows: Array<{ task_type: string; similarity: number; is_match: number }>): ValidationRunSummary {
+function summarizeValidationRows(
+    rows: Array<{ task_type: string; similarity: number; is_match: number }>,
+): ValidationRunSummary {
     const byTask: ValidationRunSummary['byTask'] = {};
     let total = 0;
     let matched = 0;
@@ -363,7 +371,7 @@ export async function runAiValidationPipeline(triggeredBy: string = 'manual'): P
     const db = await getDatabase();
     const runInsert = await db.run(
         `INSERT INTO ai_validation_runs (status, triggered_by, summary_json) VALUES ('RUNNING', ?, '{}')`,
-        [triggeredBy]
+        [triggeredBy],
     );
     const runId = runInsert.lastID ?? 0;
     if (!runId) {
@@ -396,7 +404,7 @@ export async function runAiValidationPipeline(triggeredBy: string = 'manual'): P
                         entities: predicted.entities,
                         confidence: predicted.confidence,
                     },
-                    expected
+                    expected,
                 );
                 similarity = sentimentScore.similarity;
                 isMatch = sentimentScore.isMatch;
@@ -444,7 +452,7 @@ export async function runAiValidationPipeline(triggeredBy: string = 'manual'): P
                 error_message = excluded.error_message,
                 created_at = datetime('now')
         `,
-            [runId, sample.id, JSON.stringify(predictedPayload), similarity, isMatch ? 1 : 0, errorMessage]
+            [runId, sample.id, JSON.stringify(predictedPayload), similarity, isMatch ? 1 : 0, errorMessage],
         );
     }
 
@@ -455,7 +463,7 @@ export async function runAiValidationPipeline(triggeredBy: string = 'manual'): P
         JOIN ai_validation_samples s ON s.id = r.sample_id
         WHERE r.run_id = ?
     `,
-        [runId]
+        [runId],
     );
     const summary = summarizeValidationRows(summaryRows);
     await db.run(
@@ -466,7 +474,7 @@ export async function runAiValidationPipeline(triggeredBy: string = 'manual'): P
             finished_at = datetime('now')
         WHERE id = ?
     `,
-        [JSON.stringify(summary), runId]
+        [JSON.stringify(summary), runId],
     );
 
     const completed = await db.get<AiValidationRunRecord>(
@@ -475,7 +483,7 @@ export async function runAiValidationPipeline(triggeredBy: string = 'manual'): P
         FROM ai_validation_runs
         WHERE id = ?
     `,
-        [runId]
+        [runId],
     );
     if (!completed) {
         throw new Error('Impossibile leggere ai_validation_run completata');
@@ -483,7 +491,9 @@ export async function runAiValidationPipeline(triggeredBy: string = 'manual'): P
     return completed;
 }
 
-async function getIntentFalsePositiveMetrics(lookbackDays: number): Promise<{ total: number; count: number; rate: number }> {
+async function getIntentFalsePositiveMetrics(
+    lookbackDays: number,
+): Promise<{ total: number; count: number; rate: number }> {
     const db = await getDatabase();
     const rows = await db.query<{ intent: string; lead_status: string }>(
         `
@@ -499,7 +509,7 @@ async function getIntentFalsePositiveMetrics(lookbackDays: number): Promise<{ to
            AND latest.max_analyzed_at = li.analyzed_at
         JOIN leads l ON l.id = li.lead_id
     `,
-        [Math.max(1, lookbackDays)]
+        [Math.max(1, lookbackDays)],
     );
 
     const positiveLike = new Set(['POSITIVE', 'QUESTIONS']);
@@ -528,7 +538,7 @@ async function getVariantMetrics(): Promise<AiVariantMetric[]> {
         SELECT variant_id, sent, accepted, replied
         FROM ab_variant_stats
         ORDER BY sent DESC, accepted DESC
-    `
+    `,
     );
     return rows.map((row) => ({
         variantId: row.variant_id,
@@ -543,7 +553,7 @@ async function getVariantMetrics(): Promise<AiVariantMetric[]> {
 function buildVariantComparisons(
     variants: AiVariantMetric[],
     alpha: number,
-    minSampleSize: number
+    minSampleSize: number,
 ): AiVariantComparison[] {
     const eligible = variants.filter((variant) => variant.sent >= minSampleSize);
     if (eligible.length < 2) {
@@ -564,7 +574,7 @@ function buildVariantComparisons(
             baseline.sent,
             bestAcceptance.accepted,
             bestAcceptance.sent,
-            alpha
+            alpha,
         );
         comparisons.push({
             metric: 'acceptance',
@@ -573,9 +583,15 @@ function buildVariantComparisons(
             baselineRate: baseline.acceptanceRate,
             candidateRate: bestAcceptance.acceptanceRate,
             absoluteLift: Number.parseFloat((bestAcceptance.acceptanceRate - baseline.acceptanceRate).toFixed(6)),
-            relativeLift: baseline.acceptanceRate > 0
-                ? Number.parseFloat((((bestAcceptance.acceptanceRate - baseline.acceptanceRate) / baseline.acceptanceRate) * 100).toFixed(2))
-                : 0,
+            relativeLift:
+                baseline.acceptanceRate > 0
+                    ? Number.parseFloat(
+                          (
+                              ((bestAcceptance.acceptanceRate - baseline.acceptanceRate) / baseline.acceptanceRate) *
+                              100
+                          ).toFixed(2),
+                      )
+                    : 0,
             pValue: test.pValue,
             significant: test.significant,
             alpha,
@@ -589,7 +605,7 @@ function buildVariantComparisons(
             baseline.sent,
             bestReply.replied,
             bestReply.sent,
-            alpha
+            alpha,
         );
         comparisons.push({
             metric: 'reply',
@@ -598,9 +614,12 @@ function buildVariantComparisons(
             baselineRate: baseline.replyRate,
             candidateRate: bestReply.replyRate,
             absoluteLift: Number.parseFloat((bestReply.replyRate - baseline.replyRate).toFixed(6)),
-            relativeLift: baseline.replyRate > 0
-                ? Number.parseFloat((((bestReply.replyRate - baseline.replyRate) / baseline.replyRate) * 100).toFixed(2))
-                : 0,
+            relativeLift:
+                baseline.replyRate > 0
+                    ? Number.parseFloat(
+                          (((bestReply.replyRate - baseline.replyRate) / baseline.replyRate) * 100).toFixed(2),
+                      )
+                    : 0,
             pValue: test.pValue,
             significant: test.significant,
             alpha,

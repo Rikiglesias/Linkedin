@@ -20,7 +20,7 @@ export async function incrementLockMetric(lockKey: string, metric: LockMetricNam
          DO UPDATE SET
             value = lock_metrics.value + excluded.value,
             updated_at = CURRENT_TIMESTAMP`,
-        [localDate, lockKey, metric, safeAmount]
+        [localDate, lockKey, metric, safeAmount],
     );
 }
 
@@ -31,7 +31,7 @@ export async function listLockMetricsByDate(dateString: string): Promise<LockMet
          FROM lock_metrics
          WHERE date = ?
          ORDER BY lock_key ASC, metric ASC`,
-        [dateString]
+        [dateString],
     );
 
     return rows.map((row) => ({
@@ -42,7 +42,9 @@ export async function listLockMetricsByDate(dateString: string): Promise<LockMet
     }));
 }
 
-export async function getLockContentionSummary(dateString: string = getLocalDateString()): Promise<LockContentionSummary> {
+export async function getLockContentionSummary(
+    dateString: string = getLocalDateString(),
+): Promise<LockContentionSummary> {
     const metrics = await listLockMetricsByDate(dateString);
     const summary: LockContentionSummary = {
         acquireContended: 0,

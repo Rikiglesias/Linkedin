@@ -1,4 +1,12 @@
-import { clearAutomationPause, createIncident, countRecentIncidents, pushOutboxEvent, recordSecurityAuditEvent, setAutomationPause, setRuntimeFlag } from '../core/repositories';
+import {
+    clearAutomationPause,
+    createIncident,
+    countRecentIncidents,
+    pushOutboxEvent,
+    recordSecurityAuditEvent,
+    setAutomationPause,
+    setRuntimeFlag,
+} from '../core/repositories';
 import { sendTelegramAlert } from '../telemetry/alerts';
 import { broadcastCritical, broadcastWarning } from '../telemetry/broadcaster';
 import { bridgeAccountHealth } from '../cloud/cloudBridge';
@@ -43,11 +51,17 @@ export async function quarantineAccount(type: string, details: Record<string, un
             severity: 'CRITICAL',
             details,
         },
-        `incident.opened:${incidentId}`
+        `incident.opened:${incidentId}`,
     );
-    await sendTelegramAlert(`Dettagli:\n\`\`\`json\n${JSON.stringify(details, null, 2)}\n\`\`\``, `CRITICAL incident #${incidentId}: ${type}`, 'critical');
+    await sendTelegramAlert(
+        `Dettagli:\n\`\`\`json\n${JSON.stringify(details, null, 2)}\n\`\`\``,
+        `CRITICAL incident #${incidentId}: ${type}`,
+        'critical',
+    );
     // Multi-channel broadcast
-    broadcastCritical(`CRITICAL incident #${incidentId}: ${type}`, `Account messo in quarantena.`, details).catch(() => { });
+    broadcastCritical(`CRITICAL incident #${incidentId}: ${type}`, `Account messo in quarantena.`, details).catch(
+        () => {},
+    );
     // Replica cloud: aggiorna health account a RED (non-bloccante)
     bridgeAccountHealth(resolveAccountId(details), 'RED', type);
     publishLiveEvent('incident.opened', {
@@ -75,7 +89,11 @@ export async function setQuarantine(enabled: boolean): Promise<void> {
     publishLiveEvent('system.quarantine', { enabled });
 }
 
-export async function pauseAutomation(type: string, details: Record<string, unknown>, baseMinutes: number): Promise<number> {
+export async function pauseAutomation(
+    type: string,
+    details: Record<string, unknown>,
+    baseMinutes: number,
+): Promise<number> {
     let finalMinutes = baseMinutes;
 
     // Exponential Backoff implementation
@@ -88,7 +106,7 @@ export async function pauseAutomation(type: string, details: Record<string, unkn
             recentIncidents,
             backoffMultiplier,
             baseMinutes,
-            finalMinutes
+            finalMinutes,
         };
     }
 
@@ -113,11 +131,19 @@ export async function pauseAutomation(type: string, details: Record<string, unkn
             pausedUntil,
             details,
         },
-        `automation.paused:${incidentId}`
+        `automation.paused:${incidentId}`,
     );
-    await sendTelegramAlert(`Automazione in pausa fino a ${pausedUntil ?? 'manual resume'}\n\nDettagli:\n\`\`\`json\n${JSON.stringify(details, null, 2)}\n\`\`\``, `WARN incident #${incidentId}: ${type}`, 'warn');
+    await sendTelegramAlert(
+        `Automazione in pausa fino a ${pausedUntil ?? 'manual resume'}\n\nDettagli:\n\`\`\`json\n${JSON.stringify(details, null, 2)}\n\`\`\``,
+        `WARN incident #${incidentId}: ${type}`,
+        'warn',
+    );
     // Multi-channel broadcast
-    broadcastWarning(`WARN incident #${incidentId}: ${type}`, `Automazione in pausa fino a ${pausedUntil ?? 'manual resume'}.`, details).catch(() => { });
+    broadcastWarning(
+        `WARN incident #${incidentId}: ${type}`,
+        `Automazione in pausa fino a ${pausedUntil ?? 'manual resume'}.`,
+        details,
+    ).catch(() => {});
     // Replica cloud: aggiorna health account a YELLOW (non-bloccante)
     bridgeAccountHealth(resolveAccountId(details), 'YELLOW', type, pausedUntil ?? null);
     publishLiveEvent('automation.paused', {
@@ -166,24 +192,15 @@ export async function handleChallengeDetected(input: ChallengeDetectionInput): P
         ...(input.extra ?? {}),
     };
 
-    const incidentId = await pauseAutomation(
-        'CHALLENGE_DETECTED',
-        details,
-        config.challengePauseMinutes
-    );
+    const incidentId = await pauseAutomation('CHALLENGE_DETECTED', details, config.challengePauseMinutes);
 
     if (typeof input.leadId === 'number' && Number.isFinite(input.leadId)) {
         try {
-            await reconcileLeadStatus(
-                input.leadId,
-                'REVIEW_REQUIRED',
-                'challenge_detected_review_queue',
-                {
-                    incidentId,
-                    source: input.source,
-                    accountId: details.accountId,
-                }
-            );
+            await reconcileLeadStatus(input.leadId, 'REVIEW_REQUIRED', 'challenge_detected_review_queue', {
+                incidentId,
+                source: input.source,
+                accountId: details.accountId,
+            });
         } catch {
             // best effort: challenge handling must continue even if lead transition fails
         }
@@ -195,7 +212,7 @@ export async function handleChallengeDetected(input: ChallengeDetectionInput): P
             incidentId,
             ...details,
         },
-        `challenge.review_queued:${incidentId}:${input.leadId ?? 'none'}:${input.source}`
+        `challenge.review_queued:${incidentId}:${input.leadId ?? 'none'}:${input.source}`,
     );
     await setRuntimeFlag('challenge_review_pending', 'true');
     await setRuntimeFlag('challenge_review_last_incident_id', String(incidentId));

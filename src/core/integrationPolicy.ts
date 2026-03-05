@@ -92,7 +92,10 @@ function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function createTimedAbortController(parent: AbortSignal | null | undefined, timeoutMs: number): {
+function createTimedAbortController(
+    parent: AbortSignal | null | undefined,
+    timeoutMs: number,
+): {
     signal: AbortSignal;
     cleanup: () => void;
 } {
@@ -127,20 +130,20 @@ async function createProxyDispatcher(proxy: ProxyConfig): Promise<{
     if (!proxyUrl) {
         return {
             dispatcher: null,
-            close: async () => { },
+            close: async () => {},
         };
     }
 
     try {
         const dynamicImporter = new Function('specifier', 'return import(specifier)') as (
-            specifier: string
+            specifier: string,
         ) => Promise<unknown>;
         const undiciModule = await dynamicImporter('undici');
         const ProxyAgentCtor = (undiciModule as unknown as { ProxyAgent?: new (proxy: string) => unknown }).ProxyAgent;
         if (typeof ProxyAgentCtor !== 'function') {
             return {
                 dispatcher: null,
-                close: async () => { },
+                close: async () => {},
             };
         }
         const dispatcher = new ProxyAgentCtor(proxyUrl) as {
@@ -162,7 +165,7 @@ async function createProxyDispatcher(proxy: ProxyConfig): Promise<{
     } catch {
         return {
             dispatcher: null,
-            close: async () => { },
+            close: async () => {},
         };
     }
 }
@@ -336,21 +339,23 @@ export function isLikelyTransientError(error: unknown): boolean {
     if (normalized.includes('http transient')) {
         return true;
     }
-    return normalized.includes('timeout')
-        || normalized.includes('timed out')
-        || normalized.includes('network')
-        || normalized.includes('fetch failed')
-        || normalized.includes('econnreset')
-        || normalized.includes('econnrefused')
-        || normalized.includes('enotfound')
-        || normalized.includes('eai_again')
-        || normalized.includes('socket hang up')
-        || normalized.includes('temporarily unavailable');
+    return (
+        normalized.includes('timeout') ||
+        normalized.includes('timed out') ||
+        normalized.includes('network') ||
+        normalized.includes('fetch failed') ||
+        normalized.includes('econnreset') ||
+        normalized.includes('econnrefused') ||
+        normalized.includes('enotfound') ||
+        normalized.includes('eai_again') ||
+        normalized.includes('socket hang up') ||
+        normalized.includes('temporarily unavailable')
+    );
 }
 
 export async function executeWithRetryPolicy<T>(
     operation: (attempt: number) => Promise<T>,
-    options: RetryPolicyOptions
+    options: RetryPolicyOptions,
 ): Promise<T> {
     const maxAttempts = Math.max(1, options.maxAttempts ?? config.integrationRetryMaxAttempts);
     const baseDelayMs = Math.max(50, options.baseDelayMs ?? config.retryBaseMs);
@@ -371,7 +376,9 @@ export async function executeWithRetryPolicy<T>(
             lastError = error;
             const classification = options.classifyError
                 ? options.classifyError(error)
-                : (isLikelyTransientError(error) ? 'transient' : 'terminal');
+                : isLikelyTransientError(error)
+                  ? 'transient'
+                  : 'terminal';
             if (classification === 'terminal') {
                 releaseHalfOpenProbeOnTerminal(circuitKey, circuitAccess);
                 throw error;
@@ -384,19 +391,20 @@ export async function executeWithRetryPolicy<T>(
         }
     }
 
-    throw (lastError instanceof Error ? lastError : new Error(`${options.integration}: retry exhausted`));
+    throw lastError instanceof Error ? lastError : new Error(`${options.integration}: retry exhausted`);
 }
 
 export async function fetchWithRetryPolicy(
     url: string,
     init: RequestInit,
-    options: RetryPolicyOptions
+    options: RetryPolicyOptions,
 ): Promise<Response> {
     const timeoutMs = Math.max(250, options.timeoutMs ?? config.integrationRequestTimeoutMs);
-    const classifyResponse = options.classifyResponse
-        ?? ((response: Response) => (isTransientHttpStatus(response.status) ? 'transient' : 'terminal'));
-    const proxyMode: 'none' | 'integration_pool' = options.proxyMode
-        ?? (config.integrationProxyPoolEnabled ? 'integration_pool' : 'none');
+    const classifyResponse =
+        options.classifyResponse ??
+        ((response: Response) => (isTransientHttpStatus(response.status) ? 'transient' : 'terminal'));
+    const proxyMode: 'none' | 'integration_pool' =
+        options.proxyMode ?? (config.integrationProxyPoolEnabled ? 'integration_pool' : 'none');
 
     return executeWithRetryPolicy<Response>(
         async () => {
@@ -451,7 +459,7 @@ export async function fetchWithRetryPolicy(
         {
             ...options,
             classifyError: (error) => (isLikelyTransientError(error) ? 'transient' : 'terminal'),
-        }
+        },
     );
 }
 

@@ -18,14 +18,14 @@ import { logInfo, logWarn } from '../telemetry/logger';
 /** Sleep semplice in ms (non richiede Page). */
 function sleep(minMs: number, maxMs: number): Promise<void> {
     const delay = Math.round(minMs + Math.random() * (maxMs - minMs));
-    return new Promise(resolve => setTimeout(resolve, delay));
+    return new Promise((resolve) => setTimeout(resolve, delay));
 }
 
 /** Struttura di un post estratto. */
 export interface ExtractedPost {
-    text: string;          // Testo del post (troncato a 500 char)
-    publishedAt?: string;  // Es. "3 giorni fa"
-    likesApprox?: number;  // Likes approssimativi se visibili
+    text: string; // Testo del post (troncato a 500 char)
+    publishedAt?: string; // Es. "3 giorni fa"
+    likesApprox?: number; // Likes approssimativi se visibili
 }
 
 export interface CommentSuggestionDraft {
@@ -53,9 +53,7 @@ async function hasPostsExtracted(leadId: number): Promise<boolean> {
 
 async function getLeadMetadata(leadId: number): Promise<Record<string, unknown>> {
     const db = await getDatabase();
-    const row = await db.get<{ lead_metadata: string }>(
-        `SELECT lead_metadata FROM leads WHERE id = ?`, [leadId]
-    );
+    const row = await db.get<{ lead_metadata: string }>(`SELECT lead_metadata FROM leads WHERE id = ?`, [leadId]);
     if (!row?.lead_metadata) return {};
     try {
         return JSON.parse(row.lead_metadata) as Record<string, unknown>;
@@ -74,10 +72,10 @@ async function savePostsToLead(leadId: number, posts: ExtractedPost[]): Promise<
     meta.recent_posts = posts;
     meta.posts_extracted_at = new Date().toISOString();
 
-    await db.run(
-        `UPDATE leads SET lead_metadata = ?, updated_at = datetime('now') WHERE id = ?`,
-        [JSON.stringify(meta), leadId]
-    );
+    await db.run(`UPDATE leads SET lead_metadata = ?, updated_at = datetime('now') WHERE id = ?`, [
+        JSON.stringify(meta),
+        leadId,
+    ]);
 }
 
 async function saveCommentSuggestionsToLead(leadId: number, suggestions: CommentSuggestionDraft[]): Promise<void> {
@@ -86,10 +84,10 @@ async function saveCommentSuggestionsToLead(leadId: number, suggestions: Comment
     meta.comment_suggestions = suggestions;
     meta.comment_suggestions_generated_at = new Date().toISOString();
     meta.comment_suggestions_review_required = true;
-    await db.run(
-        `UPDATE leads SET lead_metadata = ?, updated_at = datetime('now') WHERE id = ?`,
-        [JSON.stringify(meta), leadId]
-    );
+    await db.run(`UPDATE leads SET lead_metadata = ?, updated_at = datetime('now') WHERE id = ?`, [
+        JSON.stringify(meta),
+        leadId,
+    ]);
 }
 
 function clampConfidence(value: unknown, fallback: number): number {
@@ -136,9 +134,10 @@ async function generateCommentSuggestion(postText: string): Promise<{
         });
 
         const parsed = JSON.parse(response) as { comment?: unknown; confidence?: unknown };
-        const comment = typeof parsed.comment === 'string'
-            ? parsed.comment.replace(/\s+/g, ' ').trim().slice(0, COMMENT_MAX_LEN)
-            : '';
+        const comment =
+            typeof parsed.comment === 'string'
+                ? parsed.comment.replace(/\s+/g, ' ').trim().slice(0, COMMENT_MAX_LEN)
+                : '';
         if (comment.length < 25) {
             throw new Error('comment_too_short');
         }
@@ -181,10 +180,7 @@ async function buildCommentSuggestions(posts: ExtractedPost[]): Promise<CommentS
  * Estrae gli ultimi post dalla sezione Activity del profilo LinkedIn.
  * Deve essere chiamato con una Page già autenticata e navigata sul profilo.
  */
-export async function extractLeadPosts(
-    page: Page,
-    profileUrl: string
-): Promise<ExtractedPost[]> {
+export async function extractLeadPosts(page: Page, profileUrl: string): Promise<ExtractedPost[]> {
     const activityUrl = profileUrl.replace(/\/$/, '') + '/recent-activity/all/';
 
     try {
@@ -242,7 +238,7 @@ export async function runPostExtractorWorker(page: Page, limit = 5): Promise<voi
            AND status IN ('READY_INVITE', 'INVITED', 'ACCEPTED')
          ORDER BY lead_score DESC
          LIMIT ?`,
-        [SCORE_THRESHOLD, limit]
+        [SCORE_THRESHOLD, limit],
     );
 
     let extracted = 0;
@@ -288,9 +284,7 @@ export async function runPostExtractorWorker(page: Page, limit = 5): Promise<voi
  */
 export async function getLeadPostsContext(leadId: number): Promise<string> {
     const db = await getDatabase();
-    const row = await db.get<{ lead_metadata: string }>(
-        `SELECT lead_metadata FROM leads WHERE id = ?`, [leadId]
-    );
+    const row = await db.get<{ lead_metadata: string }>(`SELECT lead_metadata FROM leads WHERE id = ?`, [leadId]);
     if (!row?.lead_metadata) return '';
 
     try {
@@ -298,9 +292,7 @@ export async function getLeadPostsContext(leadId: number): Promise<string> {
         const posts = meta.recent_posts as ExtractedPost[] | undefined;
         if (!Array.isArray(posts) || posts.length === 0) return '';
 
-        return posts
-            .map((p, i) => `Post ${i + 1}: "${p.text}"`)
-            .join('\n');
+        return posts.map((p, i) => `Post ${i + 1}: "${p.text}"`).join('\n');
     } catch {
         return '';
     }

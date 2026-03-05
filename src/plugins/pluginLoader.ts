@@ -119,14 +119,18 @@ export class PluginRegistry {
             return false;
         }
 
-        const tsNodeInstance = (process as unknown as { [key: symbol]: unknown })[Symbol.for('ts-node.register.instance')];
+        const tsNodeInstance = (process as unknown as { [key: symbol]: unknown })[
+            Symbol.for('ts-node.register.instance')
+        ];
         const argv = process.execArgv.join(' ');
         const processArgs = process.argv.join(' ');
-        return argv.includes('ts-node/register')
-            || argv.includes('tsx')
-            || processArgs.includes('ts-node')
-            || !!tsNodeInstance
-            || !!process.env.TS_NODE_DEV;
+        return (
+            argv.includes('ts-node/register') ||
+            argv.includes('tsx') ||
+            processArgs.includes('ts-node') ||
+            !!tsNodeInstance ||
+            !!process.env.TS_NODE_DEV
+        );
     }
 
     private hasUnsafePermissions(targetPath: string): boolean {
@@ -151,7 +155,7 @@ export class PluginRegistry {
     private getAllowedPluginRoots(): string[] {
         const defaults = [path.resolve(process.cwd(), 'plugins')];
         const configuredRoots = parseCsvEnv(process.env.PLUGIN_DIR_ALLOWLIST).map((rawPath) =>
-            path.resolve(process.cwd(), rawPath)
+            path.resolve(process.cwd(), rawPath),
         );
         return configuredRoots.length > 0 ? configuredRoots : defaults;
     }
@@ -172,7 +176,10 @@ export class PluginRegistry {
         return true;
     }
 
-    private validateHooksAgainstManifest(plugin: IPlugin, manifest: PluginManifest): { ok: boolean; deniedHook?: string } {
+    private validateHooksAgainstManifest(
+        plugin: IPlugin,
+        manifest: PluginManifest,
+    ): { ok: boolean; deniedHook?: string } {
         if (!manifest.allowedHooks || manifest.allowedHooks.length === 0) {
             return { ok: true };
         }
@@ -209,7 +216,8 @@ export class PluginRegistry {
 
         const realPluginDir = fs.realpathSync(pluginDir);
         const allowTsPlugins = this.canLoadTypeScriptPlugins();
-        const files = fs.readdirSync(pluginDir)
+        const files = fs
+            .readdirSync(pluginDir)
             .filter((f) => {
                 const ext = path.extname(f).toLowerCase();
                 if (ext === '.js' || ext === '.cjs') return true;
@@ -380,7 +388,9 @@ export class PluginRegistry {
         }
     }
 
-    get count(): number { return this.plugins.length; }
+    get count(): number {
+        return this.plugins.length;
+    }
 
     resetForTests(): void {
         this.plugins = [];

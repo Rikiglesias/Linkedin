@@ -58,7 +58,7 @@ export async function importLeadsFromCSV(filePath: string, listName: string): Pr
             'Profile URL',
             'Linkedin',
             'Person Linkedin Url',
-            'Contact LinkedIn URL'
+            'Contact LinkedIn URL',
         );
 
         const linkedinUrl = normalizeLinkedInUrl(lnUrlRaw.trim());
@@ -70,8 +70,13 @@ export async function importLeadsFromCSV(filePath: string, listName: string): Pr
         // Nome account / azienda
         const accountName = pickField(
             row,
-            'Account Name', 'account_name', 'Company', 'Company Name', 'company_name',
-            'companyName', 'Organization'
+            'Account Name',
+            'account_name',
+            'Company',
+            'Company Name',
+            'company_name',
+            'companyName',
+            'Organization',
         );
 
         // Se non abbiamo accountName esplicito, lo costruiamo da first+last
@@ -79,14 +84,7 @@ export async function importLeadsFromCSV(filePath: string, listName: string): Pr
 
         const jobTitle = pickField(row, 'Title', 'Job Title', 'job_title', 'Position');
         const website = normalizeWebsite(
-            pickField(
-                row,
-                'Website',
-                'website',
-                'Company Website',
-                'Company Domain',
-                'domain'
-            )
+            pickField(row, 'Website', 'website', 'Company Website', 'Company Domain', 'domain'),
         );
 
         if (!linkedinUrl || !isLinkedInUrl(linkedinUrl)) {
@@ -104,6 +102,9 @@ export async function importLeadsFromCSV(filePath: string, listName: string): Pr
             continue;
         }
 
+        const consentField = pickField(row, 'consent', 'opt_in', 'Consent', 'Opt-In', 'consent_basis');
+        const consentBasis = consentField || 'legitimate_interest';
+
         const isNew = await addLead({
             accountName: resolvedAccountName,
             firstName,
@@ -112,6 +113,8 @@ export async function importLeadsFromCSV(filePath: string, listName: string): Pr
             website,
             linkedinUrl,
             listName,
+            consentBasis,
+            consentRecordedAt: new Date().toISOString(),
         });
 
         if (isNew) {

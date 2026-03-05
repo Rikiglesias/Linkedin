@@ -16,14 +16,15 @@ export function registerPageDeviceProfile(page: Page, profile: DeviceProfile): v
 }
 
 export function getPageDeviceProfile(page: Page): DeviceProfile {
-    return pageProfileMap.get(page) ?? {
-        fingerprintId: 'unknown',
-        isMobile: false,
-        hasTouch: false,
-    };
+    return (
+        pageProfileMap.get(page) ?? {
+            fingerprintId: 'unknown',
+            isMobile: false,
+            hasTouch: false,
+        }
+    );
 }
 
 export function isMobilePage(page: Page): boolean {
     return getPageDeviceProfile(page).isMobile;
 }
-

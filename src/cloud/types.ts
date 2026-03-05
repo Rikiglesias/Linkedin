@@ -57,7 +57,14 @@ export interface CloudJobUpsert {
 export interface CloudDailyStatIncrement {
     local_date: string;
     account_id: string;
-    field: 'invites_sent' | 'messages_sent' | 'acceptances' | 'replies' | 'challenges_count' | 'selector_failures' | 'run_errors';
+    field:
+        | 'invites_sent'
+        | 'messages_sent'
+        | 'acceptances'
+        | 'replies'
+        | 'challenges_count'
+        | 'selector_failures'
+        | 'run_errors';
     amount?: number;
 }
 

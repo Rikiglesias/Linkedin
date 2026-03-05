@@ -56,7 +56,7 @@ export async function checkLogin(page: Page): Promise<boolean> {
 export async function detectChallenge(page: Page): Promise<boolean> {
     const currentUrl = page.url().toLowerCase();
     const challengeInUrl = ['checkpoint', 'challenge', 'captcha', 'security-verification'].some((token) =>
-        currentUrl.includes(token)
+        currentUrl.includes(token),
     );
     if (challengeInUrl) {
         return true;

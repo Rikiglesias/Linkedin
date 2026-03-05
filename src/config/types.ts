@@ -186,6 +186,7 @@ export interface AppConfig {
     securityAdvisorMinAuditEvents: number;
     securitySecretMaxAgeDays: number;
     securitySecretWarnDays: number;
+    sessionCookieMaxAgeDays: number;
     processMaxUptimeHours: number;
     hubspotApiKey: string;
     salesforceInstanceUrl: string;
@@ -287,4 +288,7 @@ export interface AppConfig {
     riskPredictiveAlertsEnabled: boolean;
     riskPredictiveLookbackDays: number;
     riskPredictiveSigma: number;
+    postCreationEnabled: boolean;
+    postCreationMaxPerDay: number;
+    postCreationDefaultTone: 'professional' | 'casual' | 'thought_leadership' | 'storytelling';
 }

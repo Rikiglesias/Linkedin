@@ -3,7 +3,13 @@ import { isOpenAIConfigured, requestOpenAIText } from './openaiClient';
 import { logWarn } from '../telemetry/logger';
 
 export type MessageIntent = 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL' | 'QUESTIONS' | 'NOT_INTERESTED' | 'UNKNOWN';
-export type MessageSubIntent = 'CALL_REQUESTED' | 'PRICE_INQUIRY' | 'OBJECTION_HANDLING' | 'COMPETITOR_MENTION' | 'REFERRAL' | 'NONE';
+export type MessageSubIntent =
+    | 'CALL_REQUESTED'
+    | 'PRICE_INQUIRY'
+    | 'OBJECTION_HANDLING'
+    | 'COMPETITOR_MENTION'
+    | 'REFERRAL'
+    | 'NONE';
 
 export interface SentimentAnalysisResult {
     intent: MessageIntent;
@@ -70,21 +76,28 @@ export async function analyzeIncomingMessage(messageText: string): Promise<Senti
             responseFormat: 'json_object',
         });
 
-        const cleanedJsonString = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        const cleanedJsonString = responseText
+            .replace(/```json\n?/g, '')
+            .replace(/```\n?/g, '')
+            .trim();
         const parsed = JSON.parse(cleanedJsonString);
 
         const validSubIntents: MessageSubIntent[] = [
-            'CALL_REQUESTED', 'PRICE_INQUIRY', 'OBJECTION_HANDLING',
-            'COMPETITOR_MENTION', 'REFERRAL', 'NONE'
+            'CALL_REQUESTED',
+            'PRICE_INQUIRY',
+            'OBJECTION_HANDLING',
+            'COMPETITOR_MENTION',
+            'REFERRAL',
+            'NONE',
         ];
         const rawSubIntent = String(parsed.subIntent || 'NONE').toUpperCase() as MessageSubIntent;
         const subIntent: MessageSubIntent = validSubIntents.includes(rawSubIntent) ? rawSubIntent : 'NONE';
         const entities = Array.isArray(parsed.entities)
             ? parsed.entities
-                .filter((item: unknown): item is string => typeof item === 'string')
-                .map((item: string) => item.toLowerCase().trim())
-                .filter((item: string) => item.length > 0)
-                .slice(0, 12)
+                  .filter((item: unknown): item is string => typeof item === 'string')
+                  .map((item: string) => item.toLowerCase().trim())
+                  .filter((item: string) => item.length > 0)
+                  .slice(0, 12)
             : [];
 
         return {
@@ -97,7 +110,7 @@ export async function analyzeIncomingMessage(messageText: string): Promise<Senti
     } catch (error) {
         await logWarn('ai.sentiment_analysis.failed', {
             error: error instanceof Error ? error.message : String(error),
-            messageSnippet: messageText.substring(0, 50)
+            messageSnippet: messageText.substring(0, 50),
         });
 
         return {

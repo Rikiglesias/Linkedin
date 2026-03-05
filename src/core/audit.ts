@@ -90,10 +90,7 @@ export type SiteMismatch =
     | 'messaged_but_pending_invite'
     | 'messaged_but_not_connected';
 
-const ambiguousMismatchSet = new Set<SiteMismatch>([
-    'ready_message_but_not_connected',
-    'messaged_but_not_connected',
-]);
+const ambiguousMismatchSet = new Set<SiteMismatch>(['ready_message_but_not_connected', 'messaged_but_not_connected']);
 
 function isFirstDegreeBadge(text: string | null): boolean {
     if (!text) return true;
@@ -105,7 +102,11 @@ async function inspectLeadOnSite(lead: LeadRecord, sessionPage: Page): Promise<S
     await humanDelay(sessionPage, 1200, 2200);
 
     const messageButton = (await sessionPage.locator(joinSelectors('messageButton')).count()) > 0;
-    const badgeText = await sessionPage.locator(joinSelectors('distanceBadge')).first().textContent().catch(() => '');
+    const badgeText = await sessionPage
+        .locator(joinSelectors('distanceBadge'))
+        .first()
+        .textContent()
+        .catch(() => '');
     const connected = messageButton && isFirstDegreeBadge(badgeText);
     const pendingInvite = (await sessionPage.locator(joinSelectors('invitePendingIndicators')).count()) > 0;
     const canConnect = (await sessionPage.locator(joinSelectors('connectButtonPrimary')).count()) > 0;
@@ -148,7 +149,11 @@ async function tryAutoFix(lead: LeadRecord, mismatch: SiteMismatch): Promise<boo
     }
 
     if (mismatch === 'invited_but_connect_available') {
-        await reconcileLeadStatus(lead.id, 'READY_INVITE', 'site_check_reconcile_invited_to_ready_invite_connect_available');
+        await reconcileLeadStatus(
+            lead.id,
+            'READY_INVITE',
+            'site_check_reconcile_invited_to_ready_invite_connect_available',
+        );
         return true;
     }
 
@@ -242,15 +247,15 @@ export async function buildFunnelReport(): Promise<FunnelReport> {
     ]);
 
     const totalLeads =
-        newCount
-        + readyInviteCount
-        + invitedCount
-        + acceptedCount
-        + readyMessageCount
-        + messagedCount
-        + blockedCount
-        + skippedCount
-        + reviewRequiredCount;
+        newCount +
+        readyInviteCount +
+        invitedCount +
+        acceptedCount +
+        readyMessageCount +
+        messagedCount +
+        blockedCount +
+        skippedCount +
+        reviewRequiredCount;
     const queuedJobs = Object.values(jobs).reduce((acc, value) => acc + value, 0);
 
     return {
@@ -389,20 +394,15 @@ export async function runSiteCheck(options: SiteCheckOptions): Promise<SiteCheck
                     reviewReason = isMismatchAmbiguous(mismatch)
                         ? `site_check_ambiguous_${mismatch}`
                         : `site_check_mismatch_${mismatch}`;
-                    await transitionLead(
-                        lead.id,
-                        'REVIEW_REQUIRED',
-                        reviewReason,
-                        {
-                            mismatch,
-                            previousStatus: lead.status,
-                            siteSignals: signals,
-                            evidencePath,
-                            autoFixEnabled: options.autoFix,
-                            autoFixApplied: fixed,
-                            inspectedAt: new Date().toISOString(),
-                        }
-                    );
+                    await transitionLead(lead.id, 'REVIEW_REQUIRED', reviewReason, {
+                        mismatch,
+                        previousStatus: lead.status,
+                        siteSignals: signals,
+                        evidencePath,
+                        autoFixEnabled: options.autoFix,
+                        autoFixApplied: fixed,
+                        inspectedAt: new Date().toISOString(),
+                    });
                     report.reviewRequired += 1;
                     reviewRequired = true;
                 }

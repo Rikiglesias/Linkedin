@@ -46,18 +46,12 @@ const RETRY_POLICY_BY_CODE: Record<string, RetryPolicyTemplate> = {
     LEAD_NOT_FOUND: { retryable: false, maxAttempts: 1, baseDelayMultiplier: 0, category: 'data' },
 };
 
-const TRANSIENT_ERROR_PATTERNS = [
-    /timeout/i,
-    /target closed/i,
-    /navigation/i,
-    /net::/i,
-    /context closed/i,
-];
+const TRANSIENT_ERROR_PATTERNS = [/timeout/i, /target closed/i, /navigation/i, /net::/i, /context closed/i];
 
 export function resolveWorkerRetryPolicy(
     error: unknown,
     defaultMaxAttempts: number,
-    defaultBaseDelayMs: number
+    defaultBaseDelayMs: number,
 ): WorkerRetryPolicyDecision {
     const safeDefaultMaxAttempts = Math.max(1, defaultMaxAttempts);
     const safeDefaultBaseDelay = Math.max(50, defaultBaseDelayMs);

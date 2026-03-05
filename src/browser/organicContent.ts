@@ -1,0 +1,161 @@
+import { Page } from 'playwright';
+import { humanDelay, humanMouseMoveToCoords, simulateHumanReading } from './humanBehavior';
+
+/**
+ * Ritorna un intero casuale tra min e max (inclusi).
+ */
+function randomInt(min: number, max: number): number {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+/**
+ * Seleziona un elemento casuale da un array.
+ */
+function randomElement<T>(arr: ReadonlyArray<T>): T {
+    return arr[Math.floor(Math.random() * arr.length)];
+}
+
+/**
+ * Modulo per l'Interazione Organica sui contenuti del Feed LinkedIn.
+ * Viene richiamato durante le azioni decoy per simulare un reale interesse
+ * (es. mettendo un Like casuale o espandendo il testo di un post tramite "See more").
+ *
+ * @param page Oggetto Page di Playwright
+ * @param probability Probabilità di eseguire un'interazione (es. 0.20 per 20%)
+ */
+export async function interactWithFeed(page: Page, probability: number = 0.20): Promise<void> {
+    try {
+        // Valuta la threshold di esecuzione
+        if (Math.random() > probability) {
+            return; // Nessuna interazione stavolta, comportamento passivo (organico)
+        }
+
+        console.log('[organicContent] Iniziata interazione organica sul feed');
+
+        // Scroll iniziale per popolare potenziali post
+        await simulateHumanReading(page);
+
+        // Seleziona un post a caso o un bottone di reazione / "See more"
+        const actions = [
+            async () => reactToPost(page),
+            async () => expandPostText(page)
+        ];
+
+        const action = randomElement(actions);
+        await action();
+
+        console.log('[organicContent] Interazione organica feed completata');
+    } catch (error) {
+        console.warn(`[organicContent] Errore non critico durante interazione feed decoy: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+
+/**
+ * Tenta di espandere il testo lungo di un post cliccando su "See more" / "Vedi altro".
+ */
+async function expandPostText(page: Page): Promise<void> {
+    // Selettori noti per LinkedIn "See more"
+    const seeMoreSelectors = [
+        'button.feed-shared-inline-show-more-text__see-more-less-toggle',
+        'button:has-text("See more")',
+        'button:has-text("Vedi altro")'
+    ];
+
+    for (const selector of seeMoreSelectors) {
+        const buttons = await page.$$(selector);
+
+        // Filtriamo bottoni visibili nel viewport
+        const visibleButtons = [];
+        for (const btn of buttons) {
+            const isVisible = await btn.isVisible();
+            if (isVisible) visibleButtons.push(btn);
+        }
+
+        if (visibleButtons.length > 0) {
+            const targetBtn = randomElement(visibleButtons);
+            const box = await targetBtn.boundingBox();
+
+            if (box) {
+                // Muove human-like sul bottone
+                const targetX = box.x + box.width / 2;
+                const targetY = box.y + box.height / 2;
+                await humanMouseMoveToCoords(page, targetX, targetY);
+
+                // Pausa pre-click (Hover ratio decoy - AD-03 partial overlap)
+                await humanDelay(page, 300, 800);
+
+                await targetBtn.click({ delay: randomInt(30, 80) });
+                console.log('[organicContent] Post text espanso con successo');
+
+                // Legge il post espanso
+                await humanDelay(page, 1500, 4000);
+                return; // Fatto
+            }
+        }
+    }
+}
+
+/**
+ * Tenta di lasciare una Reazione (Like, Celebrate, Insightful) su un post visibile.
+ */
+async function reactToPost(page: Page): Promise<void> {
+    // Selettori robusti LinkedIn Feed Reactions
+    const reactionSelectors = [
+        'button.react-button__trigger',
+        'button[aria-label^="React"]',
+        'button[aria-label^="Reagisci"]',
+        'button[data-control-name="like_toggle"]'
+    ];
+
+    for (const selector of reactionSelectors) {
+        const buttons = await page.$$(selector);
+
+        const visibleButtons = [];
+        for (const btn of buttons) {
+            const isVisible = await btn.isVisible();
+            if (isVisible) visibleButtons.push(btn);
+        }
+
+        if (visibleButtons.length > 0) {
+            const targetBtn = randomElement(visibleButtons);
+            const box = await targetBtn.boundingBox();
+
+            if (box) {
+                const targetX = box.x + box.width / 2;
+                const targetY = box.y + box.height / 2;
+                await humanMouseMoveToCoords(page, targetX, targetY);
+
+                // Pausa pre-click
+                await humanDelay(page, 300, 600);
+
+                // Scelta: Simple click (Like) o Hovering (React Selector)
+                if (Math.random() > 0.6) {
+                    // Hover lungo per aprire il pallet delle reactions
+                    await humanDelay(page, 1000, 1500); // Triggera l'apparizione del popover CSS
+
+                    // Cerca il menu reactions
+                    const reactionsMenu = await page.$('.reactions-menu__reaction');
+                    if (reactionsMenu && await reactionsMenu.isVisible()) {
+                        const allReactions = await page.$$('.reactions-menu__reaction');
+                        if (allReactions.length > 0) {
+                            const specificReaction = randomElement(allReactions);
+                            const rBox = await specificReaction.boundingBox();
+                            if (rBox) {
+                                await humanMouseMoveToCoords(page, rBox.x + rBox.width / 2, rBox.y + rBox.height / 2);
+                                await humanDelay(page, 200, 500);
+                                await specificReaction.click({ delay: randomInt(40, 90) });
+                                console.log('[organicContent] Lasciata reazione specifica su post');
+                                return;
+                            }
+                        }
+                    }
+                }
+
+                // Fallback a un semplice Like / React Toggle
+                await targetBtn.click({ delay: randomInt(40, 100) });
+                console.log('[organicContent] Lasciato Like generico su post');
+                return;
+            }
+        }
+    }
+}

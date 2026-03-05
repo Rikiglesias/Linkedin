@@ -1,5 +1,6 @@
 const typescriptEslintEslintPlugin = require("@typescript-eslint/eslint-plugin");
 const typescriptEslintParser = require("@typescript-eslint/parser");
+const eslintConfigPrettier = require("eslint-config-prettier");
 
 module.exports = [
     {
@@ -34,8 +35,8 @@ module.exports = [
             "@typescript-eslint/no-non-null-assertion": "warn",  // Evita ! dove possibile
         },
     },
+    eslintConfigPrettier,
     {
-        // Ignora i file generati e le directory di build
         ignores: ["dist/**", "node_modules/**", "coverage/**", "*.cjs"],
     },
 ];

@@ -32,7 +32,7 @@ export function isErrorRecoverable(errorMsg: string): boolean {
         '429',
         '502',
         '503',
-        '504'
+        '504',
     ];
 
     const terminalPatterns = [
@@ -42,7 +42,7 @@ export function isErrorRecoverable(errorMsg: string): boolean {
         'banned',
         'restricted',
         '404',
-        'not a valid linkedin url'
+        'not a valid linkedin url',
     ];
 
     // Tratta le regex come superabili per default, a meno che non ci sia una keyword terminale.
@@ -61,7 +61,7 @@ export function isErrorRecoverable(errorMsg: string): boolean {
         }
     }
 
-    // Se l'errore è completamente sconosciuto (es. un selettore rotto "failed to find element .pv-text-details"), 
+    // Se l'errore è completamente sconosciuto (es. un selettore rotto "failed to find element .pv-text-details"),
     // lo consideriamo riciclabile perché vogliamo che il job giri nuovamente quando faremo git pull del fix.
     return true;
 }
@@ -105,11 +105,15 @@ export async function runDeadLetterWorker(options: DeadLetterOptions = {}): Prom
                     // Priority 50 is lower than regular jobs (usually 10 for invites, 30 for checks)
                     await recycleJob(job.id, delaySec, 50);
                     recycled++;
-                    logInfo(`Recycled Job ${job.id} (${job.type}) due to recoverable error: ${errorMsg.substring(0, 50)}`);
+                    logInfo(
+                        `Recycled Job ${job.id} (${job.type}) due to recoverable error: ${errorMsg.substring(0, 50)}`,
+                    );
                 } else {
                     await markJobAsDeadLetter(job.id, `Terminated. Original error: ${errorMsg}`);
                     deadLettered++;
-                    logWarn(`Dead-Lettered Job ${job.id} (${job.type}) due to terminal error: ${errorMsg.substring(0, 50)}`);
+                    logWarn(
+                        `Dead-Lettered Job ${job.id} (${job.type}) due to terminal error: ${errorMsg.substring(0, 50)}`,
+                    );
                 }
             }
 
@@ -119,7 +123,9 @@ export async function runDeadLetterWorker(options: DeadLetterOptions = {}): Prom
             }
         }
 
-        logInfo(`Dead Letter Worker completed. Processed: ${processed}, Recycled: ${recycled}, Dead-Lettered: ${deadLettered}`);
+        logInfo(
+            `Dead Letter Worker completed. Processed: ${processed}, Recycled: ${recycled}, Dead-Lettered: ${deadLettered}`,
+        );
 
         return { processed, recycled, deadLettered };
     } catch (e) {

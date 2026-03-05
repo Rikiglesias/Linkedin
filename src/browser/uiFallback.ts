@@ -69,7 +69,7 @@ function scoreSelectorCandidate(candidate: InternalSelectorCandidate): number {
     score += candidate.source === 'dynamic' ? 2 : 1;
     score += Math.max(0, Math.min(1, candidate.confidence)) * 2.2;
     score += Math.min(1.8, Math.max(0, candidate.successCount) / 10);
-    score += Math.max(0, 0.35 - (candidate.order * 0.03));
+    score += Math.max(0, 0.35 - candidate.order * 0.03);
 
     if (STABLE_SELECTOR_RE.test(selector)) score += 0.45;
     if (isXPath) score -= 0.2;
@@ -121,7 +121,7 @@ export function resetSelectorContextCacheForTests(): void {
 function getCachedSelectorsForContext(contextKey: string): string[] {
     const entry = selectorContextCache.get(contextKey);
     if (!entry) return [];
-    if ((Date.now() - entry.updatedAt) > CONTEXT_CACHE_TTL_MS) {
+    if (Date.now() - entry.updatedAt > CONTEXT_CACHE_TTL_MS) {
         selectorContextCache.delete(contextKey);
         return [];
     }
@@ -237,12 +237,14 @@ async function trackSelectorFailure(
     page: Page,
     label: string,
     selectors: readonly string[],
-    message: string
+    message: string,
 ): Promise<void> {
     await recordSelectorFailure(label, page.url(), selectors, message).catch(() => null);
 }
 
-function normalizeClickOptions(input: number | ClickFallbackOptions | undefined): Required<Omit<ClickFallbackOptions, 'verify'>> & Pick<ClickFallbackOptions, 'verify'> {
+function normalizeClickOptions(
+    input: number | ClickFallbackOptions | undefined,
+): Required<Omit<ClickFallbackOptions, 'verify'>> & Pick<ClickFallbackOptions, 'verify'> {
     if (typeof input === 'number') {
         return {
             timeoutPerSelector: input,
@@ -274,7 +276,9 @@ export async function clickWithFallback(
     const errors: string[] = [];
 
     if (resolution.cacheHit) {
-        console.info(`[FALLBACK] clickWithFallback("${label}"): context cache hit (${selectorChain.length} candidati).`);
+        console.info(
+            `[FALLBACK] clickWithFallback("${label}"): context cache hit (${selectorChain.length} candidati).`,
+        );
     }
 
     for (let i = 0; i < rankedChain.length; i++) {
@@ -296,7 +300,7 @@ export async function clickWithFallback(
             rememberSelectorForContext(resolution.contextKey, sel);
             if (i > 0) {
                 console.warn(
-                    `[FALLBACK] clickWithFallback("${label}"): usato selettore livello ${i} (score=${candidate.score.toFixed(2)}) -> "${sel.substring(0, 80)}"`
+                    `[FALLBACK] clickWithFallback("${label}"): usato selettore livello ${i} (score=${candidate.score.toFixed(2)}) -> "${sel.substring(0, 80)}"`,
                 );
             }
             return;
@@ -304,7 +308,9 @@ export async function clickWithFallback(
             const message = error instanceof Error ? error.message : 'selector_click_failed';
             errors.push(`${sel.substring(0, 80)} => ${message}`);
             if (i < rankedChain.length - 1) {
-                console.warn(`[FALLBACK] clickWithFallback("${label}"): livello ${i} "${sel.substring(0, 60)}" fallito (${message}), tento il prossimo...`);
+                console.warn(
+                    `[FALLBACK] clickWithFallback("${label}"): livello ${i} "${sel.substring(0, 60)}" fallito (${message}), tento il prossimo...`,
+                );
             }
         }
     }
@@ -350,7 +356,7 @@ export async function waitForSelectorWithFallback(
     page: Page,
     selectors: readonly string[],
     label: string,
-    timeoutPerSelector: number = 7000
+    timeoutPerSelector: number = 7000,
 ): Promise<string> {
     const resolution = await resolveSelectorChain(page, selectors, label);
     const rankedChain = resolution.ranked;
@@ -365,7 +371,7 @@ export async function waitForSelectorWithFallback(
             rememberSelectorForContext(resolution.contextKey, sel);
             if (i > 0) {
                 console.warn(
-                    `[FALLBACK] waitForSelectorWithFallback("${label}"): comparso su livello ${i} (score=${candidate.score.toFixed(2)}) -> "${sel.substring(0, 80)}"`
+                    `[FALLBACK] waitForSelectorWithFallback("${label}"): comparso su livello ${i} (score=${candidate.score.toFixed(2)}) -> "${sel.substring(0, 80)}"`,
                 );
             }
             return sel;
@@ -385,12 +391,17 @@ export async function waitForSelectorWithFallback(
         const coords = await solver.findObjectCoordinates(base64Image, label);
 
         if (coords) {
-            console.log(`[FALLBACK-VISION] Elemento trovato visivamente per "${label}" a (X:${coords.x}, Y:${coords.y})`);
+            console.log(
+                `[FALLBACK-VISION] Elemento trovato visivamente per "${label}" a (X:${coords.x}, Y:${coords.y})`,
+            );
             await trackSelectorSuccess(page, label, 'vision-layer-z');
             return 'vision-layer-z';
         }
     } catch (visionError) {
-        console.error(`[FALLBACK-VISION] Errore critico durante inferenza visiva per waitForSelector "${label}":`, visionError);
+        console.error(
+            `[FALLBACK-VISION] Errore critico durante inferenza visiva per waitForSelector "${label}":`,
+            visionError,
+        );
     }
 
     const errorMessage = `waitForSelectorWithFallback("${label}"): nessun selettore trovato dopo ${selectorChain.length} tentativi.`;
@@ -407,7 +418,7 @@ export async function typeWithFallback(
     selectors: readonly string[],
     text: string,
     label: string,
-    timeoutPerSelector: number = 5000
+    timeoutPerSelector: number = 5000,
 ): Promise<void> {
     const resolution = await resolveSelectorChain(page, selectors, label);
     const rankedChain = resolution.ranked;
@@ -437,7 +448,7 @@ export async function typeWithFallback(
             rememberSelectorForContext(resolution.contextKey, sel);
             if (i > 0) {
                 console.warn(
-                    `[FALLBACK] typeWithFallback("${label}"): livello ${i} (score=${candidate.score.toFixed(2)}) -> "${sel.substring(0, 80)}"`
+                    `[FALLBACK] typeWithFallback("${label}"): livello ${i} (score=${candidate.score.toFixed(2)}) -> "${sel.substring(0, 80)}"`,
                 );
             }
             return;
@@ -457,7 +468,9 @@ export async function typeWithFallback(
         const coords = await solver.findObjectCoordinates(base64Image, label);
 
         if (coords) {
-            console.log(`[FALLBACK-VISION] Coordinate ottenute da LLaVA per digitazione "${label}": X:${coords.x}, Y:${coords.y}`);
+            console.log(
+                `[FALLBACK-VISION] Coordinate ottenute da LLaVA per digitazione "${label}": X:${coords.x}, Y:${coords.y}`,
+            );
             await humanMouseMoveToCoords(page, coords.x, coords.y);
             await page.mouse.click(coords.x, coords.y);
             await humanDelay(page, 200, 500);

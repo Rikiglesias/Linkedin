@@ -26,35 +26,27 @@ export function parseVoiceCommand(transcript: string): DashboardVoiceAction | nu
     const normalized = normalizeTranscript(transcript);
     if (!normalized) return null;
 
-    if (
-        normalized.includes('aggiorna')
-        || normalized.includes('refresh')
-        || normalized.includes('ricarica')
-    ) {
+    if (normalized.includes('aggiorna') || normalized.includes('refresh') || normalized.includes('ricarica')) {
         return { kind: 'refresh' };
     }
 
-    if (
-        normalized.includes('pausa')
-        || normalized.includes('ferma')
-        || normalized.includes('stop automazione')
-    ) {
+    if (normalized.includes('pausa') || normalized.includes('ferma') || normalized.includes('stop automazione')) {
         return { kind: 'pause', minutes: parsePauseMinutes(normalized) };
     }
 
     if (
-        normalized.includes('riprendi')
-        || normalized.includes('resume')
-        || normalized.includes('riattiva')
-        || normalized.includes('riparti')
+        normalized.includes('riprendi') ||
+        normalized.includes('resume') ||
+        normalized.includes('riattiva') ||
+        normalized.includes('riparti')
     ) {
         return { kind: 'resume' };
     }
 
     if (
-        normalized.includes('risolvi selezionati')
-        || normalized.includes('risolvi incidenti selezionati')
-        || normalized.includes('chiudi selezionati')
+        normalized.includes('risolvi selezionati') ||
+        normalized.includes('risolvi incidenti selezionati') ||
+        normalized.includes('chiudi selezionati')
     ) {
         return { kind: 'resolve_selected' };
     }
@@ -72,4 +64,3 @@ export function describeVoiceAction(action: DashboardVoiceAction): string {
     if (action.kind === 'resume') return 'Riprendi automazione';
     return 'Risolvi incidenti selezionati';
 }
-

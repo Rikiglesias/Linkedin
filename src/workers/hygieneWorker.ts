@@ -11,7 +11,10 @@ export interface HygieneJobPayload {
     accountId: string;
 }
 
-export async function processHygieneJob(payload: HygieneJobPayload, context: WorkerContext): Promise<WorkerExecutionResult> {
+export async function processHygieneJob(
+    payload: HygieneJobPayload,
+    context: WorkerContext,
+): Promise<WorkerExecutionResult> {
     if (!config.withdrawInvitesEnabled) return workerResult(0);
 
     const expired = await getExpiredInvitedLeads(payload.accountId, config.pendingInviteMaxDays);
@@ -44,15 +47,13 @@ export async function processHygieneJob(payload: HygieneJobPayload, context: Wor
                 'button.pv-s-profile-actions--pending',
                 'button:has-text("Pending")',
                 'button:has-text("In attesa")',
-                '.pvs-profile-actions button:has(svg)'
+                '.pvs-profile-actions button:has(svg)',
             ];
 
-            await clickWithFallback(
-                page,
-                pendingSelectors,
-                `withdraw_pending_button_${lead.id}`,
-                { timeoutPerSelector: 4000, postClickDelayMs: 1000 }
-            );
+            await clickWithFallback(page, pendingSelectors, `withdraw_pending_button_${lead.id}`, {
+                timeoutPerSelector: 4000,
+                postClickDelayMs: 1000,
+            });
 
             // Fase 2: Nel modale dropdown aperto, cerca "Ritira" / "Withdraw"
             const withdrawDropdownSelectors = [
@@ -61,33 +62,31 @@ export async function processHygieneJob(payload: HygieneJobPayload, context: Wor
                 'div.artdeco-dropdown__content button:has-text("Withdraw")',
                 'div.artdeco-dropdown__content button:has-text("Ritira")',
                 'div.artdeco-dropdown__item:has-text("Withdraw")',
-                'div.artdeco-dropdown__item:has-text("Ritira")'
+                'div.artdeco-dropdown__item:has-text("Ritira")',
             ];
 
-            await clickWithFallback(
-                page,
-                withdrawDropdownSelectors,
-                `withdraw_dropdown_action_${lead.id}`,
-                { timeoutPerSelector: 3000, postClickDelayMs: 1200 }
-            );
+            await clickWithFallback(page, withdrawDropdownSelectors, `withdraw_dropdown_action_${lead.id}`, {
+                timeoutPerSelector: 3000,
+                postClickDelayMs: 1200,
+            });
 
             // Fase 3: Conferma finale nel dialog modale
             const modalConfirmSelectors = [
                 '.artdeco-modal button.artdeco-button--primary:has-text("Withdraw")',
                 '.artdeco-modal button.artdeco-button--primary:has-text("Ritira")',
                 '.artdeco-modal button[data-control-name="withdraw_single"]',
-                '.artdeco-modal button.artdeco-button--primary'
+                '.artdeco-modal button.artdeco-button--primary',
             ];
 
-            await clickWithFallback(
-                page,
-                modalConfirmSelectors,
-                `withdraw_confirm_modal_${lead.id}`,
-                { timeoutPerSelector: 4000, postClickDelayMs: 1500 }
-            );
+            await clickWithFallback(page, modalConfirmSelectors, `withdraw_confirm_modal_${lead.id}`, {
+                timeoutPerSelector: 4000,
+                postClickDelayMs: 1500,
+            });
 
             // Se arriviamo qui, il prelievo ha avuto successo
-            await transitionLead(lead.id, 'WITHDRAWN', 'auto_hygiene_policy', { days_old: config.pendingInviteMaxDays });
+            await transitionLead(lead.id, 'WITHDRAWN', 'auto_hygiene_policy', {
+                days_old: config.pendingInviteMaxDays,
+            });
             await logInfo('hygiene.invite_withdrawn', { leadId: lead.id, accountId: payload.accountId });
 
             await humanDelay(page, 1500, 3000);

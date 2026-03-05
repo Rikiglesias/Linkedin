@@ -30,15 +30,27 @@ export class EmailEnricherService {
         firstName: string,
         lastName: string,
         companyName: string,
-        website?: string
+        website?: string,
     ): Promise<EnrichmentResult> {
         try {
             await logInfo('enrichment.job_started', { leadId, provider: this.config.provider });
 
+            const db = await getDatabase();
+            const gdprRow = await db.get<{ gdpr_opt_out: number }>(`SELECT gdpr_opt_out FROM leads WHERE id = ?`, [
+                leadId,
+            ]);
+            if (gdprRow?.gdpr_opt_out === 1) {
+                await logWarn('enrichment.gdpr_opt_out', {
+                    leadId,
+                    reason: 'Lead ha gdpr_opt_out=1, enrichment skippato per compliance GDPR.',
+                });
+                return { success: false, statusDetail: 'gdpr_opt_out' };
+            }
+
             if (this.config.provider === 'mock' || !this.config.apiKey) {
                 await logWarn('enrichment.api_missing_or_mock', {
                     leadId,
-                    reason: 'API key mancante o forzato MOCK mode. Lo step verrà bypassato.'
+                    reason: 'API key mancante o forzato MOCK mode. Lo step verrà bypassato.',
                 });
                 return { success: false, statusDetail: 'skipped_no_api_key' };
             }
@@ -51,7 +63,6 @@ export class EmailEnricherService {
             // Implementazione DropContact, eccetera...
 
             return { success: false, statusDetail: 'unsupported_provider' };
-
         } catch (error) {
             const msg = error instanceof Error ? error.message : String(error);
             await logError('enrichment.fatal_error', { leadId, error: msg });
@@ -64,7 +75,7 @@ export class EmailEnricherService {
         firstName: string,
         lastName: string,
         companyName: string,
-        website?: string
+        website?: string,
     ): Promise<EnrichmentResult> {
         // Il dominio o il workspace URL è cruciale per usare Email Finder di Hunter
         const targetDomain = website ? this.extractDomain(website) : this.extractDomain(companyName);
@@ -83,7 +94,7 @@ export class EmailEnricherService {
 
         const response = await fetch(url.toString(), {
             method: 'GET',
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 'Content-Type': 'application/json' },
         });
 
         if (!response.ok) {
@@ -111,7 +122,7 @@ export class EmailEnricherService {
             success: true,
             email: foundEmail,
             phone: foundPhone,
-            statusDetail: foundEmail ? 'enriched' : 'no_data'
+            statusDetail: foundEmail ? 'enriched' : 'no_data',
         };
     }
 
@@ -135,7 +146,7 @@ export class EmailEnricherService {
         const db = await getDatabase();
         await db.run(
             `UPDATE leads SET email = COALESCE(email, ?), phone = COALESCE(phone, ?), updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-            [email, phone, leadId]
+            [email, phone, leadId],
         );
         await logInfo('enrichment.db_updated', { leadId, emailSet: !!email, phoneSet: !!phone });
     }
@@ -147,8 +158,8 @@ export function getEmailEnricher(): EmailEnricherService {
     if (!defaultEnricher) {
         // Si aspetta la config. Da .env
         defaultEnricher = new EmailEnricherService({
-            provider: process.env.ENRICHMENT_PROVIDER as 'hunter' | 'dropcontact' ?? 'mock',
-            apiKey: process.env.ENRICHMENT_API_KEY
+            provider: (process.env.ENRICHMENT_PROVIDER as 'hunter' | 'dropcontact') ?? 'mock',
+            apiKey: process.env.ENRICHMENT_API_KEY,
         });
     }
     return defaultEnricher;
