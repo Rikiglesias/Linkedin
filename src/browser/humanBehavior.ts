@@ -4,21 +4,47 @@
  * Simula comportamento umano nel browser: delay log-normale,
  * movimenti mouse con curva Bézier, digitazione con typo,
  * reading scroll, decoy actions, inter-job delay.
-/**
- * browser/humanBehavior.ts
- * ─────────────────────────────────────────────────────────────────
- * Simula comportamento umano nel browser: delay log-normale,
- * movimenti mouse con curva Bézier, digitazione con typo,
- * reading scroll, decoy actions, inter-job delay.
  */
 
 import { Page } from 'playwright';
 import { config } from '../config';
 import { joinSelectors } from '../selectors';
 import { isMobilePage } from './deviceProfile';
-import { MouseGenerator } from '../ml/mouseGenerator';
+import { MouseGenerator, Point } from '../ml/mouseGenerator';
 import { calculateContextualDelay } from '../ml/timingModel';
 import { determineNextKeystroke } from '../ai/typoGenerator';
+import { interactWithFeed } from './organicContent';
+
+// ─── Stato Memoria Mouse ─────────────────────────────────────────────────────
+
+// Mantiene l'ultima posizione nota del mouse per ogni pagina attiva.
+// L'uso di WeakMap assicura l'assenza di memory leak quando la Page viene chiusa.
+const pageMouseState = new WeakMap<Page, Point>();
+
+/**
+ * Ottiene l'attuale o genera un nuovo punto di partenza organico (dai bordi o angoli)
+ * per il primissimo movimento nella vista.
+ */
+function getStartingPoint(page: Page): Point {
+    const lastPoint = pageMouseState.get(page);
+    if (lastPoint) {
+        return { ...lastPoint };
+    }
+
+    const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
+    // Ingresso predefinito fluido: parte da uno dei margini
+    const entryPoints: Point[] = [
+        { x: Math.random() * viewport.width, y: 0 }, // top
+        { x: 0, y: Math.random() * viewport.height }, // left
+        { x: viewport.width, y: Math.random() * viewport.height }, // right
+        { x: Math.random() * (viewport.width * 0.4), y: Math.random() * (viewport.height * 0.4) }, // top-left area
+    ];
+    return randomElement(entryPoints);
+}
+
+function updateMouseState(page: Page, point: Point): void {
+    pageMouseState.set(page, { x: point.x, y: point.y });
+}
 
 // ─── Utility Generali ────────────────────────────────────────────────────────
 
@@ -40,7 +66,7 @@ export async function humanDelay(page: Page, min: number = 1500, max: number = 3
     const rawDelay = calculateContextualDelay({
         actionType: 'read',
         baseMin: min,
-        baseMax: max
+        baseMax: max,
     });
 
     // Smooth asymmetric application
@@ -62,13 +88,16 @@ export async function humanMouseMove(page: Page, targetSelector: string): Promis
         const box = await page.locator(targetSelector).first().boundingBox();
         if (!box) return;
 
-        const startX = 100 + Math.random() * 300;
-        const startY = 100 + Math.random() * 200;
+        const startPoint = getStartingPoint(page);
 
         const finalX = box.x + box.width / 2 + (Math.random() * 8 - 4);
         const finalY = box.y + box.height / 2 + (Math.random() * 8 - 4);
 
-        const path = MouseGenerator.generatePath({ x: startX, y: startY }, { x: finalX, y: finalY }, Math.floor(15 + Math.random() * 10));
+        const path = MouseGenerator.generatePath(
+            startPoint,
+            { x: finalX, y: finalY },
+            Math.floor(15 + Math.random() * 10),
+        );
 
         for (let i = 0; i < path.length; i++) {
             const point = path[i];
@@ -80,7 +109,7 @@ export async function humanMouseMove(page: Page, targetSelector: string): Promis
                 await page.waitForTimeout(10 + Math.random() * 20);
             }
         }
-
+        updateMouseState(page, { x: finalX, y: finalY });
     } catch {
         // Ignora silenziosamente
     }
@@ -97,15 +126,12 @@ export async function humanMouseMoveToCoords(page: Page, targetX: number, target
         return;
     }
     try {
-        const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
-        // Si assume che il mouse parta da una posizione pseudo-casuale oppure logica in alto.
-        const startPointX = Math.random() * (viewport.width * 0.4);
-        const startPointY = Math.random() * (viewport.height * 0.4);
+        const startPoint = getStartingPoint(page);
 
         const path = MouseGenerator.generatePath(
-            { x: startPointX, y: startPointY },
+            startPoint,
             { x: targetX, y: targetY },
-            Math.floor(15 + Math.random() * 10)
+            Math.floor(15 + Math.random() * 10),
         );
 
         for (let i = 0; i < path.length; i++) {
@@ -118,6 +144,7 @@ export async function humanMouseMoveToCoords(page: Page, targetX: number, target
                 await page.waitForTimeout(10 + Math.random() * 20);
             }
         }
+        updateMouseState(page, { x: targetX, y: targetY });
     } catch {
         // Best effort
     }
@@ -134,26 +161,90 @@ export async function humanTap(page: Page, targetSelector: string): Promise<void
         const tapX = box.x + box.width / 2 + (Math.random() * 10 - 5);
         const tapY = box.y + box.height / 2 + (Math.random() * 10 - 5);
         await page.mouse.move(tapX, tapY, { steps: 5 });
+        updateMouseState(page, { x: tapX, y: tapY });
         await page.waitForTimeout(30 + Math.random() * 80);
     } catch {
         // Best effort.
     }
 }
 
+/**
+ * AD-03: Hover Pre-Click simulation.
+ * Simula il comportamento organico di "assestamento" del mouse prima
+ * di effettuare il click (Dwell Time). Eseguito con 80% di ratio.
+ */
+export async function hoverPreClick(page: Page, targetSelector: string): Promise<void> {
+    if (isMobilePage(page)) {
+        // Su mobile il fall-through non applicherà logiche cursore
+        return;
+    }
+
+    try {
+        // 80% ratio chance di esecuzione
+        if (Math.random() > 0.8) {
+            return;
+        }
+
+        const box = await page.locator(targetSelector).first().boundingBox();
+        if (!box) return;
+
+        // Assicuriamoci che il mouse arrivi / stia sul box organicamente
+        await humanMouseMove(page, targetSelector);
+
+        // Hover Time asimmetrico tra i 300 e gli 800ms
+        const dwellTime = 300 + Math.random() * 500;
+
+        // Al 50% delle volte, compi una micro-correzione interna al button
+        const doMicroCorrection = Math.random() < 0.5;
+
+        if (doMicroCorrection) {
+            const splitTime = dwellTime * 0.4;
+            // Prima pausa
+            await page.waitForTimeout(splitTime);
+
+            // Micro correzione di pochi px
+            const currentMouse = getStartingPoint(page);
+            const nudgeX = currentMouse.x + (Math.random() * 6 - 3);
+            const nudgeY = currentMouse.y + (Math.random() * 4 - 2);
+
+            // Costringe i bounds a stare dentro il target
+            const boundedX = Math.max(box.x, Math.min(box.x + box.width, nudgeX));
+            const boundedY = Math.max(box.y, Math.min(box.y + box.height, nudgeY));
+
+            await page.mouse.move(boundedX, boundedY, { steps: randomInt(2, 4) });
+            updateMouseState(page, { x: boundedX, y: boundedY });
+
+            // Rimanente pausa
+            await page.waitForTimeout(dwellTime - splitTime);
+        } else {
+            // Sosta passiva di puro dwell time
+            await page.waitForTimeout(dwellTime);
+        }
+    } catch {
+        // Fall-soft. Se fallisce, il click reale successivo andrà comunque forward.
+    }
+}
+
 export async function humanSwipe(page: Page, direction: 'up' | 'down' = 'up'): Promise<void> {
     try {
         const viewport = page.viewportSize() ?? { width: 390, height: 844 };
-        const startX = Math.round(viewport.width * (0.35 + Math.random() * 0.3));
-        const startY = direction === 'up'
-            ? Math.round(viewport.height * (0.75 + Math.random() * 0.1))
-            : Math.round(viewport.height * (0.3 + Math.random() * 0.1));
+        const startPoint = getStartingPoint(page);
+
+        // Su mobile manteniamo la coordinata X organica se possibile, variamo la Y basata sulla gesture
+        const startX = startPoint.x;
+        const startY =
+            direction === 'up'
+                ? Math.round(viewport.height * (0.75 + Math.random() * 0.1))
+                : Math.round(viewport.height * (0.3 + Math.random() * 0.1));
         const delta = Math.round(viewport.height * (0.2 + Math.random() * 0.2));
         const endY = direction === 'up' ? startY - delta : startY + delta;
+        const endX = startX + randomInt(-20, 20);
 
         await page.mouse.move(startX, startY, { steps: 4 });
         await page.mouse.down();
-        await page.mouse.move(startX + randomInt(-20, 20), endY, { steps: 10 });
+        await page.mouse.move(endX, endY, { steps: 10 });
         await page.mouse.up();
+        updateMouseState(page, { x: endX, y: endY });
         await page.waitForTimeout(120 + Math.random() * 220);
     } catch {
         // Non-bloccante.
@@ -171,8 +262,10 @@ export async function randomMouseMove(page: Page): Promise<void> {
     }
     try {
         const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
-        const startX = Math.random() * viewport.width;
-        const startY = Math.random() * viewport.height;
+        const startPoint = getStartingPoint(page);
+        const startX = startPoint.x;
+        const startY = startPoint.y;
+
         const endX = Math.random() * viewport.width;
         const endY = Math.random() * viewport.height;
 
@@ -191,8 +284,48 @@ export async function randomMouseMove(page: Page): Promise<void> {
             await page.waitForTimeout(20 + Math.random() * 60);
         }
         await page.mouse.move(endX, endY, { steps: 8 });
+        updateMouseState(page, { x: endX, y: endY });
     } catch {
         // Non bloccante
+    }
+}
+
+/**
+ * AD-04: Simulazione sfocamento tab (cambio scheda utente).
+ * Mockerà attivamente la *Page Visibility API* per dimostrare ai tracker
+ * che siamo veri umani che hanno cambiato tab.
+ */
+export async function simulateTabSwitch(page: Page, maxAwayTimeMs: number): Promise<void> {
+    if (isMobilePage(page)) {
+        // Su mobile il comportamento multi-tab è meno lineare da tracciare, saltiamo.
+        return;
+    }
+
+    try {
+        // Faza 1: Esci dal focus e vai in hidden
+        await page.evaluate(() => {
+            Object.defineProperty(document, 'visibilityState', { get: () => 'hidden', configurable: true });
+            Object.defineProperty(document, 'hidden', { get: () => true, configurable: true });
+            window.dispatchEvent(new Event('blur'));
+            document.dispatchEvent(new Event('visibilitychange'));
+        });
+
+        // Faza 2: Aspetta organicamente per il lasso di tempo in "background"
+        const awayTime = Math.max(3000, Math.min(maxAwayTimeMs, 3000 + Math.random() * maxAwayTimeMs));
+        await page.waitForTimeout(awayTime);
+
+        // Faza 3: Torna in focus
+        await page.evaluate(() => {
+            Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true });
+            Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
+            window.dispatchEvent(new Event('focus'));
+            document.dispatchEvent(new Event('visibilitychange'));
+        });
+
+        // Risveglio ritardato post-focus (fase di ri-lettura umana)
+        await page.waitForTimeout(500 + Math.random() * 800);
+    } catch {
+        // Best effort
     }
 }
 
@@ -238,6 +371,11 @@ export async function simulateHumanReading(page: Page): Promise<void> {
             await humanSwipe(page, 'up');
         }
         await humanDelay(page, 700, 2200);
+
+        // AD-04: 15% di probabilità di cambiare tab temporaneamente mentre legge
+        if (Math.random() < 0.15) {
+            await simulateTabSwitch(page, 5000 + Math.random() * 15000);
+        }
     }
     if (Math.random() < 0.3) {
         await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
@@ -256,15 +394,22 @@ export async function interJobDelay(page: Page): Promise<void> {
     const totalDelay = calculateContextualDelay({
         actionType: 'interJob',
         baseMin: minDelay,
-        baseMax: maxDelay
+        baseMax: maxDelay,
     });
 
     if (Math.random() < (isMobilePage(page) ? 0.2 : 0.35)) {
         await randomMouseMove(page);
     }
 
+    // AD-04: 40% di chance di "cambiare tab" per distrarsi durante job delay lunghi.
+    const willSwitchTab = Math.random() < 0.40;
+
     const split = Math.floor(totalDelay * (0.4 + Math.random() * 0.2));
     await page.waitForTimeout(Math.max(0, split));
+
+    if (willSwitchTab) {
+        await simulateTabSwitch(page, totalDelay * 0.3); // Away per il 30% del delay totale
+    }
 
     if (Math.random() < (isMobilePage(page) ? 0.15 : 0.25)) {
         await randomMouseMove(page);
@@ -325,7 +470,9 @@ async function runDecoyStep(page: Page, step: DecoyStep): Promise<void> {
     if (step === 'search') {
         const terms = ['sales', 'marketing', 'engineering', 'operations', 'growth', 'ai'];
         const term = randomElement(terms);
-        await page.goto(`https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(term)}`, { waitUntil: 'domcontentloaded' });
+        await page.goto(`https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(term)}`, {
+            waitUntil: 'domcontentloaded',
+        });
         await humanDelay(page, 1200, 2600);
         await simulateHumanReading(page);
         return;
@@ -353,6 +500,8 @@ export async function performDecoyAction(page: Page): Promise<void> {
         async () => {
             await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
             await simulateHumanReading(page);
+            // AD-02: Interviene sul Feed con una probabilità del 20%
+            await interactWithFeed(page, 0.20);
         },
         async () => {
             await page.goto('https://www.linkedin.com/mynetwork/', { waitUntil: 'domcontentloaded' });
@@ -361,10 +510,12 @@ export async function performDecoyAction(page: Page): Promise<void> {
         },
         async () => {
             const search = randomElement(terms);
-            await page.goto(`https://www.linkedin.com/search/results/people/?keywords=${search}`, { waitUntil: 'domcontentloaded' });
+            await page.goto(`https://www.linkedin.com/search/results/people/?keywords=${search}`, {
+                waitUntil: 'domcontentloaded',
+            });
             await humanDelay(page, 1500, 4000);
             await simulateHumanReading(page);
-        }
+        },
     ];
 
     try {
@@ -417,10 +568,7 @@ function buildSelectorCanaryPlan(workflow: CanaryWorkflow): SelectorCanaryStepDe
         plan.push({
             id: 'invite.search_surface',
             url: 'https://www.linkedin.com/search/results/people/?keywords=manager',
-            selectors: [
-                joinSelectors('connectButtonPrimary'),
-                'a[href*="/in/"]',
-            ],
+            selectors: [joinSelectors('connectButtonPrimary'), 'a[href*="/in/"]'],
             required: false,
             timeoutMs: 3000,
         });
@@ -501,7 +649,10 @@ async function evaluateCanaryStep(page: Page, step: SelectorCanaryStepDefinition
     }
 }
 
-export async function runSelectorCanaryDetailed(page: Page, workflow: CanaryWorkflow = 'all'): Promise<SelectorCanaryReport> {
+export async function runSelectorCanaryDetailed(
+    page: Page,
+    workflow: CanaryWorkflow = 'all',
+): Promise<SelectorCanaryReport> {
     const plan = buildSelectorCanaryPlan(workflow);
     const steps: SelectorCanaryStepResult[] = [];
 

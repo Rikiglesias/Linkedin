@@ -15,10 +15,18 @@ import {
     getStickyProxy,
     markProxyFailed,
     markProxyHealthy,
-    releaseStickyProxy
+    releaseStickyProxy,
 } from '../proxyManager';
 import { ensureCycleTlsProxy, stopCycleTlsProxy } from '../proxy/cycleTlsProxy';
-import { CloudFingerprint, BrowserFingerprint, pickDesktopFingerprint, pickFingerprintMode, pickMobileFingerprint } from './stealth';
+import {
+    CloudFingerprint,
+    BrowserFingerprint,
+    pickDesktopFingerprint,
+    pickFingerprintMode,
+    pickMobileFingerprint,
+} from './stealth';
+import { buildStealthInitScript } from './stealthScripts';
+import { HttpResponseThrottler } from '../risk/httpThrottler';
 import { DeviceProfile, registerPageDeviceProfile } from './deviceProfile';
 import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 import { FingerprintPool } from './fingerprint/pool';
@@ -58,18 +66,22 @@ async function fetchCloudFingerprints(): Promise<CloudFingerprint[]> {
     }
 
     try {
-        const response = await fetchWithRetryPolicy(config.fingerprintApiEndpoint, {
-            headers: { 'Accept': 'application/json' },
-            method: 'GET',
-        }, {
-            integration: 'fingerprint.cloud_fetch',
-            circuitKey: 'fingerprint.api',
-            timeoutMs: 5_000,
-            maxAttempts: 2,
-        });
+        const response = await fetchWithRetryPolicy(
+            config.fingerprintApiEndpoint,
+            {
+                headers: { Accept: 'application/json' },
+                method: 'GET',
+            },
+            {
+                integration: 'fingerprint.cloud_fetch',
+                circuitKey: 'fingerprint.api',
+                timeoutMs: 5_000,
+                maxAttempts: 2,
+            },
+        );
 
         if (response.ok) {
-            const data = await response.json() as CloudFingerprint[];
+            const data = (await response.json()) as CloudFingerprint[];
             if (Array.isArray(data) && data.length > 0 && data[0]?.userAgent) {
                 cachedCloudFingerprints = data;
                 lastFingerprintFetchTime = Date.now();
@@ -88,6 +100,7 @@ export interface BrowserSession {
     page: Page;
     deviceProfile: DeviceProfile;
     fingerprint: BrowserFingerprint;
+    httpThrottler: HttpResponseThrottler;
 }
 
 export interface LaunchBrowserOptions {
@@ -96,13 +109,15 @@ export interface LaunchBrowserOptions {
     sessionDir?: string;
     preferredProxyType?: ProxyType;
     forceMobileProxy?: boolean;
+    /** Se true, ignora qualsiasi proxy configurato e usa connessione diretta. */
+    bypassProxy?: boolean;
 }
 
 function isSameProxy(a: ProxyConfig | undefined, b: ProxyConfig | undefined): boolean {
     if (!a || !b) return false;
-    return a.server === b.server
-        && (a.username ?? '') === (b.username ?? '')
-        && (a.password ?? '') === (b.password ?? '');
+    return (
+        a.server === b.server && (a.username ?? '') === (b.username ?? '') && (a.password ?? '') === (b.password ?? '')
+    );
 }
 
 export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise<BrowserSession> {
@@ -111,16 +126,19 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
     ensureDirectoryPrivate(sessionDir);
 
     const headless = options.headless ?? config.headless;
-    const managedProxyEnabled = !options.proxy
-        && (config.proxyUrl.trim().length > 0
-            || config.proxyListPath.trim().length > 0
-            || !!config.proxyProviderApiEndpoint);
+    const managedProxyEnabled =
+        !options.bypassProxy &&
+        !options.proxy &&
+        (config.proxyUrl.trim().length > 0 ||
+            config.proxyListPath.trim().length > 0 ||
+            !!config.proxyProviderApiEndpoint);
     const explicitProxy = options.proxy;
     const proxySelection = {
         preferredType: options.preferredProxyType,
         forceMobile: options.forceMobileProxy,
     };
-    const stickyProxy = !explicitProxy && managedProxyEnabled ? await getStickyProxy(sessionDir, proxySelection) : undefined;
+    const stickyProxy =
+        !explicitProxy && managedProxyEnabled ? await getStickyProxy(sessionDir, proxySelection) : undefined;
 
     let launchPlan: Array<ProxyConfig | undefined> = [];
     let mobileEscalationAppended = false;
@@ -162,7 +180,7 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             hasTouch: fingerprint.hasTouch === true || fingerprint.isMobile === true,
             canvasNoise: consistentNoise.canvasNoise,
             webglNoise: consistentNoise.webglNoise,
-            audioNoise: consistentNoise.audioNoise
+            audioNoise: consistentNoise.audioNoise,
         };
 
         const contextOptions: Parameters<typeof chromium.launchPersistentContext>[1] = {
@@ -181,8 +199,8 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                 '--disable-renderer-backgrounding',
                 '--disable-component-extensions-with-background-pages',
                 '--no-sandbox',
-                '--disable-setuid-sandbox'
-            ]
+                '--disable-setuid-sandbox',
+            ],
         };
         const isBrightDataProxy = !!currentProxy && /brd\.superproxy\.io/i.test(currentProxy.server);
         if (isBrightDataProxy) {
@@ -233,8 +251,20 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                             const originalGetImageData = ctx.getImageData;
                             ctx.getImageData = function(x, y, w, h) {
                                 const imageData = originalGetImageData.call(this, x, y, w, h);
+                                // Noise bidirezionale (+ e -) per evitare alterazioni unicamente incrementali.
+                                // Alpha (i+3) intatto — alterarlo è un marker di bot.
+                                const noiseR = Math.floor(canvasNoise * 255);
+                                const noiseG = Math.floor(canvasNoise * 230);
+                                const noiseB = Math.floor(canvasNoise * 245);
                                 for (let i = 0; i < imageData.data.length; i += 4) {
-                                    imageData.data[i] = Math.min(255, imageData.data[i] + Math.floor(canvasNoise * 255));
+                                    const pixelIndex = i / 4;
+                                    const signR = (pixelIndex % 2 === 0) ? 1 : -1;
+                                    const signG = (pixelIndex % 3 === 0) ? 1 : -1;
+                                    const signB = (pixelIndex % 5 === 0) ? 1 : -1;
+                                    
+                                    imageData.data[i]     = Math.max(0, Math.min(255, imageData.data[i]     + (noiseR * signR)));
+                                    imageData.data[i + 1] = Math.max(0, Math.min(255, imageData.data[i + 1] + (noiseG * signG)));
+                                    imageData.data[i + 2] = Math.max(0, Math.min(255, imageData.data[i + 2] + (noiseB * signB)));
                                 }
                                 return imageData;
                             };
@@ -256,8 +286,24 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             `;
             await browser.addInitScript({ content: scriptContent });
 
+            // Stealth init script: WebRTC kill, navigator normalization, chrome mock, permissions override
+            const stealthScript = buildStealthInitScript({
+                locale: fingerprint.locale ?? 'it-IT',
+                languages: [
+                    fingerprint.locale ?? 'it-IT',
+                    (fingerprint.locale ?? 'it-IT').split('-')[0] ?? 'it',
+                    'en-US',
+                    'en',
+                ],
+                isHeadless: headless,
+                viewportWidth: fingerprint.viewport?.width ?? 1280,
+                viewportHeight: fingerprint.viewport?.height ?? 800,
+                audioNoise: deviceProfile.audioNoise,
+            });
+            await browser.addInitScript({ content: stealthScript });
+
             const existingPage = browser.pages()[0];
-            const page = existingPage ?? await browser.newPage();
+            const page = existingPage ?? (await browser.newPage());
             for (const contextPage of browser.pages()) {
                 registerPageDeviceProfile(contextPage, deviceProfile);
             }
@@ -265,9 +311,19 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                 registerPageDeviceProfile(newPage, deviceProfile);
             });
 
+            const httpThrottler = new HttpResponseThrottler();
+
             page.on('response', async (response) => {
+                const url = response.url();
+                // Traccia i response time delle API LinkedIn per adaptive throttling
+                if (url.includes('linkedin.com')) {
+                    const timing = response.request().timing();
+                    if (timing && typeof timing.responseEnd === 'number' && timing.responseEnd > 0) {
+                        httpThrottler.recordResponseTime(url, timing.responseEnd);
+                    }
+                }
+
                 if (response.status() === 429) {
-                    const url = response.url();
                     if (url.includes('linkedin.com/voyager')) {
                         console.error('\n[GLOBAL KILL-SWITCH] HTTP 429 (Too Many Requests) da LinkedIn APIs:', url);
                         if (currentProxy) {
@@ -275,7 +331,11 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                             markProxyFailed(currentProxy);
                             releaseStickyProxy(sessionDir);
                         }
-                        await pauseAutomation('HTTP_429_RATE_LIMIT', { url }, config.autoPauseMinutesOnFailureBurst ?? 60).catch(() => { });
+                        await pauseAutomation(
+                            'HTTP_429_RATE_LIMIT',
+                            { url },
+                            config.autoPauseMinutesOnFailureBurst ?? 60,
+                        ).catch(() => { });
                     }
                 }
             });
@@ -284,22 +344,25 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                 markProxyHealthy(currentProxy);
             }
             activeBrowsers.add(browser);
-            return { browser, page, deviceProfile, fingerprint };
+            return { browser, page, deviceProfile, fingerprint, httpThrottler };
         } catch (error) {
             lastError = error;
             if (currentProxy) {
                 markProxyFailed(currentProxy);
                 if (attempt < launchPlan.length - 1) {
-                    console.warn(`[PROXY] Launch fallito su ${currentProxy.server}, provo il prossimo(${attempt + 2}/${launchPlan.length}).`);
+                    console.warn(
+                        `[PROXY] Launch fallito su ${currentProxy.server}, provo il prossimo(${attempt + 2}/${launchPlan.length}).`,
+                    );
                 }
             }
 
             const failedAttempts = attempt + 1;
-            const shouldEscalateMobile = !explicitProxy
-                && managedProxyEnabled
-                && !mobileEscalationAppended
-                && config.proxyMobilePriorityEnabled
-                && failedAttempts >= config.proxyMobileEscalationFailures;
+            const shouldEscalateMobile =
+                !explicitProxy &&
+                managedProxyEnabled &&
+                !mobileEscalationAppended &&
+                config.proxyMobilePriorityEnabled &&
+                failedAttempts >= config.proxyMobileEscalationFailures;
             if (shouldEscalateMobile) {
                 const mobileChain = await getProxyFailoverChainAsync({
                     preferredType: 'mobile',
@@ -311,7 +374,9 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                     }
                 }
                 mobileEscalationAppended = true;
-                console.warn(`[PROXY] Escalation attiva: fallback prioritario su mobile proxy dopo ${failedAttempts} failure.`);
+                console.warn(
+                    `[PROXY] Escalation attiva: fallback prioritario su mobile proxy dopo ${failedAttempts} failure.`,
+                );
             }
         }
     }
