@@ -342,13 +342,19 @@ export async function humanType(page: Page, selector: string, text: string): Pro
         const originalChar = text[i] ?? '';
         const { char: typedChar, isTypo } = determineNextKeystroke(originalChar, 0.035);
 
-        await element.pressSequentially(typedChar, { delay: Math.floor(Math.random() * 150) + 40 });
+        // AD-11: Implementazione Delay Bimodale
+        const isSpaceOrPunctuation = /[\\s.,!?-]/.test(typedChar);
+        const delayBase = isSpaceOrPunctuation ? Math.floor(Math.random() * 150) + 150 : Math.floor(Math.random() * 50) + 40;
+
+        await element.pressSequentially(typedChar, { delay: delayBase });
 
         if (isTypo) {
             await page.waitForTimeout(280 + Math.random() * 420);
             await element.press('Backspace');
             await page.waitForTimeout(180 + Math.random() * 250);
-            await element.pressSequentially(originalChar, { delay: Math.floor(Math.random() * 150) + 40 });
+
+            // Per la correzione usiamo un delay di entità intermedia
+            await element.pressSequentially(originalChar, { delay: Math.floor(Math.random() * 80) + 60 });
         }
 
         if (Math.random() < 0.04) {
@@ -515,6 +521,19 @@ export async function performDecoyAction(page: Page): Promise<void> {
             });
             await humanDelay(page, 1500, 4000);
             await simulateHumanReading(page);
+        },
+        async () => {
+            // AD-10: Ondivagous navigation (history.back)
+            const historyState = await page.evaluate(() => window.history.length).catch(() => 0);
+            if (historyState > 2) {
+                await page.goBack({ waitUntil: 'domcontentloaded' }).catch(() => null);
+                await humanDelay(page, 1000, 3000);
+                await simulateHumanReading(page);
+            } else {
+                // Fallback action
+                await page.goto('https://www.linkedin.com/notifications/', { waitUntil: 'domcontentloaded' });
+                await humanDelay(page, 1200, 2400);
+            }
         },
     ];
 

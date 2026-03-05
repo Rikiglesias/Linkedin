@@ -200,6 +200,9 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                 '--disable-component-extensions-with-background-pages',
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
+                '--enable-features=DnsOverHttps<DoHTrial', // AD-12: Enforce DoH via Cloudflare resolver
+                '--force-fieldtrials=DoHTrial/Group1',
+                '--force-fieldtrial-params=DoHTrial.Group1:server/https%3A%2F%2Fcloudflare-dns.com%2Fdns-query/method/POST',
             ],
         };
         const isBrightDataProxy = !!currentProxy && /brd\.superproxy\.io/i.test(currentProxy.server);
@@ -243,6 +246,7 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                 (() => {
                     const canvasNoise = ${deviceProfile.canvasNoise ?? 0};
                     const webglNoise = ${deviceProfile.webglNoise ?? 0};
+                    const isApple = /Mac OS X|Macintosh|iPhone|iPad/i.test('${fingerprint.userAgent.replace(/'/g, "\\'")}');
                     
                     const originalGetContext = HTMLCanvasElement.prototype.getContext;
                     HTMLCanvasElement.prototype.getContext = function(type, contextAttributes) {
@@ -274,9 +278,9 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                             ctx.getParameter = function(parameter) {
                                 const res = originalGetParameter.call(this, parameter);
                                 // UNMASKED_VENDOR_WEBGL (37445)
-                                if (parameter === 37445) return 'Google Inc. (Intel' + (webglNoise > 0.5 ? ' ' : '') + ')';
+                                if (parameter === 37445) return isApple ? 'Apple Inc.' : 'Google Inc. (Intel' + (webglNoise > 0.5 ? ' ' : '') + ')';
                                 // UNMASKED_RENDERER_WEBGL (37446)
-                                if (parameter === 37446) return 'ANGLE (Intel, Intel(R) Iris(R) Xe Graphics' + (webglNoise > 0.5 ? ' Direct3D11' : '') + ' vs_5_0 ps_5_0)';
+                                if (parameter === 37446) return isApple ? 'Apple GPU' : 'ANGLE (Intel, Intel(R) Iris(R) Xe Graphics' + (webglNoise > 0.5 ? ' Direct3D11' : '') + ' vs_5_0 ps_5_0)';
                                 return res;
                             };
                         }

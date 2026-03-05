@@ -5,7 +5,7 @@ Questo documento contiene la lista dei task implementativi per l'anti-detection 
 ## 🔴 PRIORITÀ ALTA (Interventi Critici)
 
 | ID | Task | Componente | Criteri di Accettazione | Stato |
-|---|---|---|---|---:|
+| :--- | :--- | :--- | :--- | :--- |
 | AD-01 | **Mouse State Memory** | `humanBehavior.ts` | Il cursore del mouse deve ripartire dall'ultima coordinata conosciuta (no teleporting). Implementare un tracking globale dello stato del mouse per la sessione Page attiva. | `✅ COMPLETO` |
 | AD-02 | **Interazioni Organiche Feedback** | `decoyActions` | 15-25% di probabilità di interagire organicamente nel feed (Like, 'Celebrate', 'Insightful', apertura thread commenti). | `✅ COMPLETO` |
 | AD-03 | **Hover pre-click (80% ratio)** | `humanBehavior.ts` | Prima di eseguire un click, simulare una pausa di hover (300-800ms) sull'elemento target, con micro-correzioni e una curva di decelerazione realistica. | `✅ COMPLETO` |
@@ -27,11 +27,11 @@ Questo documento contiene la lista dei task implementativi per l'anti-detection 
 ## 🟡 PRIORITÀ BASSA (Miglioramenti Marginali)
 
 | ID | Task | Componente | Criteri di Accettazione | Stato |
-|---|---|---|---|---:|
-| AD-09 | **Correlazione Device ↔ WebGL** | `deviceProfile.ts` | Il renderer WebGL deve matchare il device. Se profilo iPhone -> Apple GPU, se PC generico -> Intel/NVIDIA coerente. Togliere "Intel Iris Xe" hardcoded. | `NON PRESENTE` |
-| AD-10 | **Variazione Pattern Decoy** | `humanBehavior.ts` | Search terms decoy personalizzati (basati sul ruolo del lead, non generici). Introdotta la possibilità di fare `history.back()` organico (navigazione ondivaga). | `NON PRESENTE` |
-| AD-11 | **Keystroke Timing Bimodale** | `humanBehavior.ts` | Distribuzione bimodale del keystroke: veloce su caratteri continui, pausa più lunga (150ms-300ms) tra parole o cambi semantici. Evitare intervallo puro 40-190ms uniforme. | `NON PRESENTE` |
-| AD-12 | **DNS-over-HTTPS (DoH)** | `proxyManager.ts` | Forzare Chromium a usare server DoH specifici (es. Cloudflare 1.1.1.1 o Google) per bypassare leak DNS a livello ISP. | `NON PRESENTE` |
+| :--- | :--- | :--- | :--- | :--- |
+| AD-09 | **Correlazione Device ↔ WebGL** | `deviceProfile.ts` | Il renderer WebGL deve matchare il device. Se profilo iPhone -> Apple GPU, se PC generico -> Intel/NVIDIA coerente. Togliere "Intel Iris Xe" hardcoded. | `✅ COMPLETO` |
+| AD-10 | **Variazione Pattern Decoy** | `humanBehavior.ts` | Search terms decoy personalizzati (basati sul ruolo del lead, non generici). Introdotta la possibilità di fare `history.back()` organico (navigazione ondivaga). | `✅ COMPLETO` |
+| AD-11 | **Keystroke Timing Bimodale** | `humanBehavior.ts` | Distribuzione bimodale del keystroke: veloce su caratteri continui, pausa più lunga (150ms-300ms) tra parole o cambi semantici. Evitare intervallo puro 40-190ms uniforme. | `✅ COMPLETO` |
+| AD-12 | **DNS-over-HTTPS (DoH)** | `proxyManager.ts` | Forzare Chromium a usare server DoH specifici (es. Cloudflare 1.1.1.1 o Google) per bypassare leak DNS a livello ISP. | `✅ COMPLETO` |
 
 ---
 
