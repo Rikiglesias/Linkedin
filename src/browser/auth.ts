@@ -24,8 +24,14 @@ async function hasLinkedinAuthCookie(page: Page): Promise<boolean> {
  * Controlla: cookie `li_at`, presenza navbar globale, assenza pagina login.
  */
 export async function isLoggedIn(page: Page): Promise<boolean> {
-    if (await hasLinkedinAuthCookie(page)) {
-        return true;
+    const currentUrl = page.url().toLowerCase();
+    if (currentUrl.includes('/login') || currentUrl.includes('/checkpoint') || currentUrl.includes('/challenge')) {
+        return false;
+    }
+
+    const loginForm = await page.locator('form[action*="login"], input[name="session_key"]').count();
+    if (loginForm > 0) {
+        return false;
     }
 
     const count = await page.locator(joinSelectors('globalNav')).count();
@@ -33,13 +39,9 @@ export async function isLoggedIn(page: Page): Promise<boolean> {
         return true;
     }
 
-    const currentUrl = page.url().toLowerCase();
-    if (currentUrl.includes('/login') || currentUrl.includes('/checkpoint') || currentUrl.includes('/challenge')) {
-        return false;
-    }
-
-    const loginForm = await page.locator('form[action*="login"], input[name="session_key"]').count();
-    return loginForm === 0;
+    // Fallback: se non siamo su /login e non c'e' form login, il cookie li_at
+    // resta un indicatore utile ma non deve sovrascrivere segnali espliciti.
+    return hasLinkedinAuthCookie(page);
 }
 
 /** Naviga alla home e verifica il login. */

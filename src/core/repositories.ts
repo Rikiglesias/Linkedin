@@ -12,6 +12,7 @@ export * from './repositories/system';
 export * from './repositories/aiQuality';
 export * from './repositories/featureStore';
 export * from './repositories/campaigns';
+export * from './repositories/salesnavSync';
 
 export type {
     AddLeadInput,
@@ -56,6 +57,14 @@ export type {
     RuntimeLockRecord,
     SalesNavListRecord,
     SalesNavListSummary,
+    SalesNavSyncItemRecord,
+    SalesNavSyncItemStatus,
+    SalesNavSyncRunRecord,
+    SalesNavSyncRunStatus,
+    SalesNavSyncRunSummary,
+    CreateSalesNavSyncRunInput,
+    UpdateSalesNavSyncRunProgressInput,
+    AddSalesNavSyncItemInput,
     SecurityAuditEventInput,
     UpdateLeadLinkedinUrlResult,
     UpdateLeadListCampaignInput,

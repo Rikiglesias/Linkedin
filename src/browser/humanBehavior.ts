@@ -20,6 +20,117 @@ import { interactWithFeed } from './organicContent';
 // Mantiene l'ultima posizione nota del mouse per ogni pagina attiva.
 // L'uso di WeakMap assicura l'assenza di memory leak quando la Page viene chiusa.
 const pageMouseState = new WeakMap<Page, Point>();
+const VISUAL_CURSOR_STYLE_ID = '__linkedin_bot_visual_cursor_style__';
+const VISUAL_CURSOR_ELEMENT_ID = '__linkedin_bot_visual_cursor__';
+const VISUAL_CURSOR_ROOT_CLASS = '__linkedin_bot_visual_cursor_enabled__';
+
+async function ensureVisualCursorOverlay(page: Page): Promise<void> {
+    if (page.isClosed() || isMobilePage(page)) {
+        return;
+    }
+
+    try {
+        await page.evaluate(
+            ({ styleId, cursorId, rootClass }) => {
+                if (!document.getElementById(styleId)) {
+                    const style = document.createElement('style');
+                    style.id = styleId;
+                    style.textContent = `
+html.${rootClass}, html.${rootClass} * {
+    cursor: none !important;
+}
+#${cursorId} {
+    position: fixed;
+    left: -9999px;
+    top: -9999px;
+    width: 14px;
+    height: 14px;
+    border-radius: 999px;
+    border: 2px solid rgba(255, 255, 255, 0.95);
+    background: rgba(16, 185, 129, 0.95);
+    box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.22), 0 4px 18px rgba(0, 0, 0, 0.28);
+    transform: translate(-50%, -50%);
+    transition: left 22ms linear, top 22ms linear, width 80ms ease, height 80ms ease, box-shadow 80ms ease;
+    pointer-events: none;
+    z-index: 2147483647;
+    opacity: 0.96;
+}
+#${cursorId}[data-clicking="true"] {
+    width: 11px;
+    height: 11px;
+    box-shadow: 0 0 0 10px rgba(16, 185, 129, 0.18), 0 0 0 2px rgba(255, 255, 255, 0.8);
+}`;
+                    document.documentElement.appendChild(style);
+                }
+
+                document.documentElement.classList.add(rootClass);
+
+                if (!document.getElementById(cursorId)) {
+                    const cursor = document.createElement('div');
+                    cursor.id = cursorId;
+                    cursor.setAttribute('aria-hidden', 'true');
+                    document.documentElement.appendChild(cursor);
+                }
+            },
+            {
+                styleId: VISUAL_CURSOR_STYLE_ID,
+                cursorId: VISUAL_CURSOR_ELEMENT_ID,
+                rootClass: VISUAL_CURSOR_ROOT_CLASS,
+            },
+        );
+    } catch {
+        // Overlay best effort.
+    }
+}
+
+async function syncVisualCursorOverlay(page: Page, point: Point, clicking: boolean = false): Promise<void> {
+    if (page.isClosed() || isMobilePage(page)) {
+        return;
+    }
+
+    await ensureVisualCursorOverlay(page);
+
+    try {
+        await page.evaluate(
+            ({ cursorId, x, y, clickingNow }) => {
+                const cursor = document.getElementById(cursorId);
+                if (!cursor) {
+                    return;
+                }
+                cursor.style.left = `${Math.round(x)}px`;
+                cursor.style.top = `${Math.round(y)}px`;
+                if (clickingNow) {
+                    cursor.setAttribute('data-clicking', 'true');
+                } else {
+                    cursor.removeAttribute('data-clicking');
+                }
+            },
+            {
+                cursorId: VISUAL_CURSOR_ELEMENT_ID,
+                x: point.x,
+                y: point.y,
+                clickingNow: clicking,
+            },
+        );
+    } catch {
+        // Overlay best effort.
+    }
+}
+
+export async function enableVisualCursorOverlay(page: Page): Promise<void> {
+    await ensureVisualCursorOverlay(page);
+}
+
+export async function pulseVisualCursorOverlay(page: Page): Promise<void> {
+    const point = pageMouseState.get(page);
+    if (!point || page.isClosed() || isMobilePage(page)) {
+        return;
+    }
+
+    await syncVisualCursorOverlay(page, point, true);
+    await page.waitForTimeout(90).catch(() => null);
+    await syncVisualCursorOverlay(page, point, false);
+}
 
 /**
  * Ottiene l'attuale o genera un nuovo punto di partenza organico (dai bordi o angoli)
@@ -103,6 +214,7 @@ export async function humanMouseMove(page: Page, targetSelector: string): Promis
             const point = path[i];
             if (!point) continue;
             await page.mouse.move(point.x, point.y, { steps: 1 });
+            await syncVisualCursorOverlay(page, point);
 
             // Pausa randomica intra-movimento
             if (i % 5 === 0) {
@@ -138,6 +250,7 @@ export async function humanMouseMoveToCoords(page: Page, targetX: number, target
             const point = path[i];
             if (!point) continue;
             await page.mouse.move(point.x, point.y, { steps: 1 });
+            await syncVisualCursorOverlay(page, point);
 
             // Rallentamenti asincroni tipici
             if (i % 5 === 0) {
@@ -161,6 +274,7 @@ export async function humanTap(page: Page, targetSelector: string): Promise<void
         const tapX = box.x + box.width / 2 + (Math.random() * 10 - 5);
         const tapY = box.y + box.height / 2 + (Math.random() * 10 - 5);
         await page.mouse.move(tapX, tapY, { steps: 5 });
+        await syncVisualCursorOverlay(page, { x: tapX, y: tapY });
         updateMouseState(page, { x: tapX, y: tapY });
         await page.waitForTimeout(30 + Math.random() * 80);
     } catch {
@@ -212,6 +326,7 @@ export async function hoverPreClick(page: Page, targetSelector: string): Promise
             const boundedY = Math.max(box.y, Math.min(box.y + box.height, nudgeY));
 
             await page.mouse.move(boundedX, boundedY, { steps: randomInt(2, 4) });
+            await syncVisualCursorOverlay(page, { x: boundedX, y: boundedY });
             updateMouseState(page, { x: boundedX, y: boundedY });
 
             // Rimanente pausa
@@ -241,8 +356,10 @@ export async function humanSwipe(page: Page, direction: 'up' | 'down' = 'up'): P
         const endX = startX + randomInt(-20, 20);
 
         await page.mouse.move(startX, startY, { steps: 4 });
+        await syncVisualCursorOverlay(page, { x: startX, y: startY });
         await page.mouse.down();
         await page.mouse.move(endX, endY, { steps: 10 });
+        await syncVisualCursorOverlay(page, { x: endX, y: endY });
         await page.mouse.up();
         updateMouseState(page, { x: endX, y: endY });
         await page.waitForTimeout(120 + Math.random() * 220);
@@ -270,20 +387,24 @@ export async function randomMouseMove(page: Page): Promise<void> {
         const endY = Math.random() * viewport.height;
 
         await page.mouse.move(startX, startY, { steps: 6 });
+        await syncVisualCursorOverlay(page, { x: startX, y: startY });
         await page.waitForTimeout(30 + Math.random() * 80);
 
         const midX = startX + (endX - startX) * 0.5 + (Math.random() * 20 - 10);
         const midY = startY + (endY - startY) * 0.5 + (Math.random() * 20 - 10);
         await page.mouse.move(midX, midY, { steps: 5 });
+        await syncVisualCursorOverlay(page, { x: midX, y: midY });
         await page.waitForTimeout(20 + Math.random() * 60);
 
         if (Math.random() < 0.14) {
             const overshootX = endX + (Math.random() * 24 - 12);
             const overshootY = endY + (Math.random() * 18 - 9);
             await page.mouse.move(overshootX, overshootY, { steps: 6 });
+            await syncVisualCursorOverlay(page, { x: overshootX, y: overshootY });
             await page.waitForTimeout(20 + Math.random() * 60);
         }
         await page.mouse.move(endX, endY, { steps: 8 });
+        await syncVisualCursorOverlay(page, { x: endX, y: endY });
         updateMouseState(page, { x: endX, y: endY });
     } catch {
         // Non bloccante

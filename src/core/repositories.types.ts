@@ -63,6 +63,93 @@ export interface SalesNavListSummary extends SalesNavListRecord {
     leads_count: number;
 }
 
+export type SalesNavSyncRunStatus = 'RUNNING' | 'SUCCESS' | 'FAILED' | 'PAUSED';
+export type SalesNavSyncItemStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'SKIPPED';
+
+export interface SalesNavSyncRunRecord {
+    id: number;
+    account_id: string;
+    target_list_name: string;
+    search_name: string | null;
+    status: SalesNavSyncRunStatus;
+    total_searches: number;
+    processed_searches: number;
+    total_pages: number;
+    processed_pages: number;
+    total_leads_saved: number;
+    current_search_index: number;
+    current_page_number: number;
+    last_error: string | null;
+    started_at: string;
+    completed_at: string | null;
+    updated_at: string;
+}
+
+export interface SalesNavSyncItemRecord {
+    id: number;
+    run_id: number;
+    search_index: number;
+    page_number: number;
+    leads_on_page: number;
+    status: SalesNavSyncItemStatus;
+    error_message: string | null;
+    saved_at: string | null;
+    created_at: string;
+}
+
+export interface CreateSalesNavSyncRunInput {
+    accountId: string;
+    targetListName: string;
+    searchName?: string | null;
+    totalSearches?: number;
+    totalPages?: number;
+    currentSearchIndex?: number;
+    currentPageNumber?: number;
+}
+
+export interface UpdateSalesNavSyncRunProgressInput {
+    runId: number;
+    searchName?: string | null;
+    totalSearches?: number;
+    processedSearches?: number;
+    totalPages?: number;
+    processedPages?: number;
+    totalLeadsSaved?: number;
+    currentSearchIndex?: number;
+    currentPageNumber?: number;
+    lastError?: string | null;
+}
+
+export interface AddSalesNavSyncItemInput {
+    runId: number;
+    searchIndex: number;
+    pageNumber: number;
+    leadsOnPage?: number;
+    status?: SalesNavSyncItemStatus;
+    errorMessage?: string | null;
+    savedAt?: string | null;
+}
+
+export interface SalesNavSyncRunSummary {
+    run: SalesNavSyncRunRecord;
+    items: SalesNavSyncItemRecord[];
+    counts: {
+        total: number;
+        success: number;
+        failed: number;
+        pending: number;
+        skipped: number;
+    };
+    bySearch: Array<{
+        searchIndex: number;
+        processedPages: number;
+        successfulPages: number;
+        failedPages: number;
+        leadsSaved: number;
+        lastPageNumber: number;
+    }>;
+}
+
 // ─── Lead Lists / Campaign Config ─────────────────────────────────────────────
 
 /** Tipo interno usato solo per normalizzare righe DB — non esportato. */

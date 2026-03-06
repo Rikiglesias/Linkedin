@@ -27,6 +27,7 @@ import {
     runSalesNavResolveCommand,
     runSalesNavExtractSearchCommand,
     runSalesNavExtractFirstSearchCommand,
+    runSalesNavBulkSaveCommand,
 } from './cli/commands/salesNavCommands';
 import {
     runAiQualityCommand,
@@ -103,8 +104,8 @@ function setupPlannedRestart(): void {
 
 function printHelp(): void {
     console.log('Utilizzo consigliato (Windows): .\\bot.ps1 <comando> [opzioni]');
-    console.log('Produzione: npm run build && npm start -- <comando> [opzioni]');
-    console.log('Sviluppo: npm run start:dev -- <comando> [opzioni]');
+    console.log('Produzione: npm run build && npm start -- <comando> -- [opzioni]');
+    console.log('Sviluppo: npm run start:dev -- <comando> -- [opzioni]');
     console.log('Comandi principali:');
     console.log('  import --file <file.csv> --list <nome_lista>');
     console.log('  run invite|check|message|all (oppure --workflow <valore>)');
@@ -130,7 +131,10 @@ function printHelp(): void {
     console.log('  salesnav-add-lead <leadId> <listName> [--account <id>]');
     console.log('  salesnav-add-to-list <leadId> <listName> [--account <id>]  # alias');
     console.log('  salesnav-extract-search <searchUrl> <listName> [--max-pages <n>]');
-    console.log('  salesnav-extract-first-search [--list <nome>] [--max-pages <n>] [--account <id>]');
+    console.log('  salesnav-extract-first-search [--list <nome>] [--max-pages <n>] [--account <id>] [--visual-cursor]');
+    console.log(
+        '  salesnav-bulk-save --list <nome> [--search-name <nome_ricerca>] [--max-pages <n>] [--max-searches <n>] [--resume] [--dry-run] [--session-limit <n>] [--account <id>] [--visual-cursor]',
+    );
     console.log('  random-activity [--account <id>] [--max-actions <n>] [--dry-run]');
     console.log('  enrich-targets [limit] [--dry-run]');
     console.log('  pause [minutes|indefinite] [reason]');
@@ -214,6 +218,7 @@ async function main(): Promise<void> {
         'salesnav-add-to-list',
         'salesnav-resolve',
         'salesnav-extract-search',
+        'salesnav-bulk-save',
         'random-activity',
         'connect',
         'check',
@@ -335,6 +340,9 @@ async function main(): Promise<void> {
             break;
         case 'salesnav-extract-first-search':
             await runSalesNavExtractFirstSearchCommand(commandArgs);
+            break;
+        case 'salesnav-bulk-save':
+            await runSalesNavBulkSaveCommand(commandArgs);
             break;
         case 'salesnav-resolve':
             await runSalesNavResolveCommand(commandArgs);

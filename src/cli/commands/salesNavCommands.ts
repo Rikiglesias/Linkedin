@@ -3,11 +3,14 @@
  */
 
 import { Page } from 'playwright';
+import { getAccountProfileById } from '../../accountManager';
 import { config } from '../../config';
 import {
     launchBrowser,
     closeBrowser as closeBrowserSession,
     checkLogin,
+    isLoggedIn,
+    enableVisualCursorOverlay,
     humanDelay,
     detectChallenge,
 } from '../../browser';
@@ -22,6 +25,7 @@ import {
 } from '../../core/repositories';
 import { reconcileLeadStatus } from '../../core/leadStateService';
 import { runSalesNavigatorListSync } from '../../core/salesNavigatorSync';
+import { runSalesNavBulkSave } from '../../salesnav/bulkSaveOrchestrator';
 import { addLeadToSalesNavList, createSalesNavList } from '../../salesnav/listActions';
 import { scrapeSavedSearchAndSaveToList, scrapeAllSavedSearchesAndSaveToList } from '../../salesnav/searchExtractor';
 import { isProfileUrl, isSalesNavigatorUrl, normalizeLinkedInUrl } from '../../linkedinUrl';
@@ -112,6 +116,78 @@ function getRecoveryStatusFromBlockedReason(
         return 'READY_MESSAGE';
     }
     return null;
+}
+
+function getNpmConfigOptionValue(name: string): string | undefined {
+    const envKey = `npm_config_${name.replace(/-/g, '_')}`;
+    const raw = process.env[envKey];
+    if (!raw) {
+        return undefined;
+    }
+    const normalized = raw.trim();
+    if (!normalized || normalized === 'true' || normalized === 'false') {
+        return undefined;
+    }
+    return normalized;
+}
+
+function hasNpmConfigFlag(name: string): boolean {
+    const envKey = `npm_config_${name.replace(/-/g, '_')}`;
+    const raw = (process.env[envKey] ?? '').trim().toLowerCase();
+    return raw === 'true' || raw === '1';
+}
+
+async function waitForEnter(): Promise<void> {
+    await new Promise<void>((resolve) => {
+        process.stdin.resume();
+        process.stdin.setEncoding('utf8');
+        process.stdin.once('data', () => resolve());
+    });
+}
+
+async function waitForManualLinkedInLogin(page: Page, timeoutSeconds: number = 300): Promise<void> {
+    const timeoutMs = Math.max(30, timeoutSeconds) * 1000;
+
+    if (process.stdin.isTTY) {
+        await waitForEnter();
+    } else {
+        console.log(
+            `[INFO] stdin non interattivo rilevato: il browser restera' aperto e il login verra' atteso fino a ${Math.floor(timeoutMs / 1000)}s.`,
+        );
+    }
+
+    const startedAt = Date.now();
+    let lastLogAt = 0;
+
+    while (Date.now() - startedAt <= timeoutMs) {
+        const currentUrl = page.url().toLowerCase();
+        const isStandardLoginPage = currentUrl.includes('/login') && !currentUrl.includes('/checkpoint');
+
+        if (await isLoggedIn(page)) {
+            const confirmed = await checkLogin(page);
+            if (confirmed) {
+                return;
+            }
+        }
+
+        // During the standard login screen LinkedIn can render captcha-related
+        // iframes/scripts that are not a hard block yet. Detect challenge only
+        // once we leave /login or when checkpoint/challenge URLs appear.
+        if (!isStandardLoginPage && (await detectChallenge(page))) {
+            throw new Error('Challenge LinkedIn rilevato durante il login manuale.');
+        }
+
+        const now = Date.now();
+        if (now - lastLogAt >= 15_000) {
+            const remaining = Math.max(0, Math.ceil((timeoutMs - (now - startedAt)) / 1000));
+            console.log(`In attesa completamento login LinkedIn... (${remaining}s rimanenti)`);
+            lastLogAt = now;
+        }
+
+        await page.waitForTimeout(2500);
+    }
+
+    throw new Error(`Sessione LinkedIn non autenticata entro ${Math.floor(timeoutMs / 1000)} secondi.`);
 }
 
 // ─── Command handlers ─────────────────────────────────────────────────────────
@@ -420,27 +496,24 @@ export async function runSalesNavExtractSearchCommand(args: string[]): Promise<v
 export async function runSalesNavExtractFirstSearchCommand(args: string[]): Promise<void> {
     const targetListName = getOptionValue(args, '--list') ?? undefined;
     const maxPagesRaw = getOptionValue(args, '--max-pages');
+    const visualCursor = hasOption(args, '--visual-cursor') || hasNpmConfigFlag('visual-cursor');
     const maxPages = maxPagesRaw ? Math.max(1, parseIntStrict(maxPagesRaw, '--max-pages')) : 10;
 
     // Forza headless=false e bypassProxy=true: login manuale senza proxy intermedi
     const session = await launchBrowser({ headless: false, bypassProxy: true });
     try {
-        // Naviga alla pagina di login così l'utente non deve digitare l'URL
-        await session.page.goto('https://www.linkedin.com', { waitUntil: 'domcontentloaded' });
+        // Naviga direttamente al login così il flusso manuale non dipende da redirect.
+        await session.page.goto('https://www.linkedin.com/login', { waitUntil: 'domcontentloaded' });
 
         console.log('\n──────────────────────────────────────────────────────────────');
         console.log('  Bot pronto. Effettua il LOGIN su LinkedIn nel browser aperto.');
         console.log('  Quando sei loggato, premi INVIO qui per continuare.');
+        console.log('  Se il terminale non e\' interattivo, il bot attendera\' il login automaticamente.');
         console.log('──────────────────────────────────────────────────────────────\n');
 
-        await new Promise<void>((resolve) => {
-            process.stdin.setEncoding('utf8');
-            process.stdin.once('data', () => resolve());
-        });
-
-        const loggedIn = await checkLogin(session.page);
-        if (!loggedIn) {
-            throw new Error('Sessione LinkedIn non autenticata. Assicurati di aver fatto login nel browser.');
+        await waitForManualLinkedInLogin(session.page);
+        if (visualCursor) {
+            await enableVisualCursorOverlay(session.page);
         }
 
         console.log('[OK] Login rilevato. Avvio elaborazione di tutte le ricerche salvate...');
@@ -449,6 +522,73 @@ export async function runSalesNavExtractFirstSearchCommand(args: string[]): Prom
     } catch (error) {
         console.error('Errore durante l\'estrazione dalla prima ricerca salvata:', error);
         throw error;
+    } finally {
+        await closeBrowserSession(session);
+    }
+}
+
+export async function runSalesNavBulkSaveCommand(args: string[]): Promise<void> {
+    const positional = getPositionalArgs(args);
+    const targetListName = getOptionValue(args, '--list') ?? getNpmConfigOptionValue('list') ?? positional[0];
+    if (!targetListName || !targetListName.trim()) {
+        throw new Error('Specifica la lista target: salesnav-bulk-save --list "NOME LISTA"');
+    }
+
+    const maxPagesRaw = getOptionValue(args, '--max-pages') ?? getNpmConfigOptionValue('max-pages');
+    const maxSearchesRaw = getOptionValue(args, '--max-searches') ?? getNpmConfigOptionValue('max-searches');
+    const searchName = getOptionValue(args, '--search-name') ?? getNpmConfigOptionValue('search-name') ?? null;
+    const sessionLimitRaw = getOptionValue(args, '--session-limit') ?? getNpmConfigOptionValue('session-limit');
+    const visualCursor = hasOption(args, '--visual-cursor') || hasNpmConfigFlag('visual-cursor');
+    const resume = hasOption(args, '--resume') || hasNpmConfigFlag('resume');
+    const dryRun = hasOption(args, '--dry-run') || hasNpmConfigFlag('dry-run');
+    const accountId =
+        getOptionValue(args, '--account') ?? getNpmConfigOptionValue('account') ?? config.salesNavSyncAccountId;
+
+    const maxPages = maxPagesRaw ? Math.max(1, parseIntStrict(maxPagesRaw, '--max-pages')) : 10;
+    const maxSearches = maxSearchesRaw ? Math.max(1, parseIntStrict(maxSearchesRaw, '--max-searches')) : null;
+    const sessionLimit = sessionLimitRaw ? Math.max(1, parseIntStrict(sessionLimitRaw, '--session-limit')) : null;
+
+    const account = getAccountProfileById(accountId || undefined);
+    // Login/manual flow: evita proxy intermedi che possono restituire 502 o
+    // finire sul fallback Tor locale quando l'endpoint non e' disponibile.
+    const session = await launchBrowser({
+        headless: false,
+        sessionDir: account.sessionDir,
+        bypassProxy: true,
+    });
+
+    try {
+        await session.page.goto('https://www.linkedin.com/login', { waitUntil: 'domcontentloaded' });
+
+        console.log('\n──────────────────────────────────────────────────────────────');
+        console.log('  SalesNav bulk save pronto.');
+        console.log('  Effettua il LOGIN nel browser aperto o verifica che la sessione sia attiva.');
+        console.log('  Quando sei pronto, premi INVIO qui per continuare.');
+        console.log('  Se il terminale non e\' interattivo, il bot attendera\' il login automaticamente.');
+        console.log('──────────────────────────────────────────────────────────────\n');
+
+        await waitForManualLinkedInLogin(session.page);
+        if (visualCursor) {
+            await enableVisualCursorOverlay(session.page);
+        }
+
+        const report = await runSalesNavBulkSave(session.page, {
+            accountId: account.id,
+            targetListName: targetListName.trim(),
+            maxPages,
+            maxSearches,
+            searchName: searchName?.trim() || null,
+            resume,
+            dryRun,
+            sessionLimit,
+        });
+
+        console.log(JSON.stringify(report, null, 2));
+
+        if (process.stdin.isTTY) {
+            console.log('\nRun terminato. Premi INVIO per chiudere il browser.');
+            await waitForEnter();
+        }
     } finally {
         await closeBrowserSession(session);
     }

@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(npm run build)",
-      "Bash(npm run typecheck)"
+      "Bash(npm run typecheck)",
+      "Bash(grep -n \"invited_at\\\\|accepted_at\\\\|messaged_at\" /c/Users/albie/Desktop/Programmi/Linkedin/src/db/migrations/*.sql)",
+      "Bash(npx tsc -p tsconfig.json --noEmit)",
+      "Bash(ollama --version)"
     ]
   }
 }

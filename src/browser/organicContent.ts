@@ -1,5 +1,6 @@
 import { Page } from 'playwright';
 import { humanDelay, humanMouseMoveToCoords, simulateHumanReading } from './humanBehavior';
+import { logInfo, logWarn } from '../telemetry/logger';
 
 /**
  * Ritorna un intero casuale tra min e max (inclusi).
@@ -30,7 +31,7 @@ export async function interactWithFeed(page: Page, probability: number = 0.20): 
             return; // Nessuna interazione stavolta, comportamento passivo (organico)
         }
 
-        console.log('[organicContent] Iniziata interazione organica sul feed');
+        await logInfo('organicContent.start', {});
 
         // Scroll iniziale per popolare potenziali post
         await simulateHumanReading(page);
@@ -44,9 +45,9 @@ export async function interactWithFeed(page: Page, probability: number = 0.20): 
         const action = randomElement(actions);
         await action();
 
-        console.log('[organicContent] Interazione organica feed completata');
+        await logInfo('organicContent.done', {});
     } catch (error) {
-        console.warn(`[organicContent] Errore non critico durante interazione feed decoy: ${error instanceof Error ? error.message : String(error)}`);
+        await logWarn('organicContent.error', { error: error instanceof Error ? error.message : String(error) });
     }
 }
 
@@ -85,7 +86,7 @@ async function expandPostText(page: Page): Promise<void> {
                 await humanDelay(page, 300, 800);
 
                 await targetBtn.click({ delay: randomInt(30, 80) });
-                console.log('[organicContent] Post text espanso con successo');
+                await logInfo('organicContent.expandPost', {});
 
                 // Legge il post espanso
                 await humanDelay(page, 1500, 4000);
@@ -144,7 +145,7 @@ async function reactToPost(page: Page): Promise<void> {
                                 await humanMouseMoveToCoords(page, rBox.x + rBox.width / 2, rBox.y + rBox.height / 2);
                                 await humanDelay(page, 200, 500);
                                 await specificReaction.click({ delay: randomInt(40, 90) });
-                                console.log('[organicContent] Lasciata reazione specifica su post');
+                                await logInfo('organicContent.specificReaction', {});
                                 return;
                             }
                         }
@@ -153,7 +154,7 @@ async function reactToPost(page: Page): Promise<void> {
 
                 // Fallback a un semplice Like / React Toggle
                 await targetBtn.click({ delay: randomInt(40, 100) });
-                console.log('[organicContent] Lasciato Like generico su post');
+                await logInfo('organicContent.genericLike', {});
                 return;
             }
         }

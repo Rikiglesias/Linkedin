@@ -72,8 +72,10 @@ export class VisionSolver {
      * utilissimo per i grid CAPTCHA o per riconoscere bottoni invisibili ai selettori standard.
      */
     public async findObjectCoordinates(base64Image: string, targetObject: string): Promise<Coordinates | null> {
-        const prompt = `Analizza accuratamente questa immagine. Trova l'oggetto "${targetObject}". 
-Rispondi ESCLUSIVAMENTE compilando questo JSON valido e senza spiegazioni aggiuntive: {"x": coordinate_x, "y": coordinate_y} rappresentante il centro pixel approssimativo dell'oggetto richiesto.`;
+        const prompt = `Analyze this UI screenshot carefully. Find the visible target: "${targetObject}".
+Respond with valid JSON only and no extra text.
+If the target is visible, return {"x": number, "y": number} using the approximate center pixel.
+If the target is not visible, return {"x": null, "y": null}.`;
 
         const rawResponse = await this.analyzeImage(base64Image, prompt);
 
@@ -82,6 +84,9 @@ Rispondi ESCLUSIVAMENTE compilando questo JSON valido e senza spiegazioni aggiun
             const jsonMatch = rawResponse.match(/\{[\s\S]*?\}/);
             if (jsonMatch) {
                 const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+                if (parsed.x === null || parsed.y === null) {
+                    return null;
+                }
                 if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
                     return { x: parsed.x, y: parsed.y };
                 }
