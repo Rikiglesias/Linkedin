@@ -77,8 +77,7 @@ Esempio:
   ts-node src/scripts/rampUp.ts "My List" 3
   ts-node src/scripts/rampUp.ts all 1
     `);
-    process.exitCode = 0;
-    return;
+    process.exit(0);
 }
 
 const listTarget = args[0];

@@ -1,19 +1,63 @@
 import { config } from '../config';
-import { logInfo, logWarn } from '../telemetry/logger';
+import { logInfo, logWarn, logError } from '../telemetry/logger';
 import { fetchWithRetryPolicy } from '../core/integrationPolicy';
+import { getDatabase } from '../db';
 
 let isPolling = false;
 let lastUpdateId = 0;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _supabaseClient: any = null;
+let _updatesSinceLastPersist = 0;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getSupabaseSingleton(): Promise<any> {
+    if (_supabaseClient) return _supabaseClient;
+    if (!config.supabaseSyncEnabled || !config.supabaseUrl || !config.supabaseServiceRoleKey) return null;
+    const { createClient } = await import('@supabase/supabase-js');
+    _supabaseClient = createClient(config.supabaseUrl, config.supabaseServiceRoleKey, {
+        auth: { persistSession: false, autoRefreshToken: false },
+    });
+    return _supabaseClient;
+}
+
+async function loadLastUpdateId(): Promise<void> {
+    try {
+        const db = await getDatabase();
+        const row = await db.get<{ value: string }>(`SELECT value FROM telegram_state WHERE key = 'lastUpdateId'`);
+        if (row?.value) {
+            const parsed = Number.parseInt(row.value, 10);
+            if (Number.isFinite(parsed) && parsed > 0) {
+                lastUpdateId = parsed;
+            }
+        }
+    } catch {
+        // telegram_state table may not exist yet — use in-memory default
+    }
+}
+
+async function persistLastUpdateId(): Promise<void> {
+    try {
+        const db = await getDatabase();
+        await db.run(
+            `INSERT INTO telegram_state (key, value, updated_at) VALUES ('lastUpdateId', ?, datetime('now'))
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+            [String(lastUpdateId)],
+        );
+    } catch {
+        // Best effort — DB may not have the table yet
+    }
+}
 
 export async function startTelegramListener(): Promise<void> {
     if (!config.telegramBotToken) {
-        console.warn('[TELEGRAM] Listener non avviato: telegramBotToken mancante.');
+        await logWarn('telegram.listener_not_started', { reason: 'missing_bot_token' });
         return;
     }
     if (isPolling) return;
     isPolling = true;
 
-    console.log('[TELEGRAM] Long-polling listener avviato per ricezione comandi nel DB.');
+    await loadLastUpdateId();
+    await logInfo('telegram.listener_started', { lastUpdateId });
 
     // Esegue in background infinito
     void pollLoop();
@@ -52,9 +96,14 @@ async function pollLoop(): Promise<void> {
                 if (update.message && update.message.text) {
                     await processTelegramMessage(update.message);
                 }
+                _updatesSinceLastPersist++;
+            }
+            if (_updatesSinceLastPersist >= 10) {
+                await persistLastUpdateId();
+                _updatesSinceLastPersist = 0;
             }
         } catch (error) {
-            console.error('[TELEGRAM] Errore nel polling:', error);
+            await logError('telegram.polling_error', { error: error instanceof Error ? error.message : String(error) });
             await new Promise((res) => setTimeout(res, 5000));
         }
     }
@@ -90,13 +139,8 @@ async function processTelegramMessage(message: TelegramMessage): Promise<void> {
         actualArgs = argsRaw.slice(1).join(' ');
     }
 
-    // Inserire usando Supabase supabase-js (lo ricarichiamo globalmente per evitare dipendenze circolari strane in init)
-    const { createClient } = await import('@supabase/supabase-js');
-    if (config.supabaseSyncEnabled && config.supabaseUrl && config.supabaseServiceRoleKey) {
-        const sb = createClient(config.supabaseUrl, config.supabaseServiceRoleKey, {
-            auth: { persistSession: false, autoRefreshToken: false },
-        });
-
+    const sb = await getSupabaseSingleton();
+    if (sb) {
         const { error } = await sb.from('telegram_commands').insert({
             account_id: accountId === 'all' ? null : accountId || null,
             command,
@@ -137,6 +181,6 @@ async function replyToTelegram(chatId: string | number, text: string): Promise<v
             },
         );
     } catch (e) {
-        console.error('[TELEGRAM] Errore risposta', e);
+        await logError('telegram.reply_failed', { error: e instanceof Error ? e.message : String(e) });
     }
 }
