@@ -20,9 +20,12 @@ import { interactWithFeed } from './organicContent';
 // Mantiene l'ultima posizione nota del mouse per ogni pagina attiva.
 // L'uso di WeakMap assicura l'assenza di memory leak quando la Page viene chiusa.
 const pageMouseState = new WeakMap<Page, Point>();
-const VISUAL_CURSOR_STYLE_ID = '__linkedin_bot_visual_cursor_style__';
-const VISUAL_CURSOR_ELEMENT_ID = '__linkedin_bot_visual_cursor__';
-const VISUAL_CURSOR_ROOT_CLASS = '__linkedin_bot_visual_cursor_enabled__';
+import crypto from 'crypto';
+
+const _cursorHex = crypto.randomBytes(8).toString('hex');
+const VISUAL_CURSOR_STYLE_ID = `__lk_style_${_cursorHex}__`;
+const VISUAL_CURSOR_ELEMENT_ID = `__lk_cursor_${_cursorHex}__`;
+const VISUAL_CURSOR_ROOT_CLASS = `__lk_root_${_cursorHex}__`;
 
 async function ensureVisualCursorOverlay(page: Page): Promise<void> {
     if (page.isClosed() || isMobilePage(page)) {
@@ -204,21 +207,27 @@ export async function humanMouseMove(page: Page, targetSelector: string): Promis
         const finalX = box.x + box.width / 2 + (Math.random() * 8 - 4);
         const finalY = box.y + box.height / 2 + (Math.random() * 8 - 4);
 
+        const distancePixels = Math.hypot(finalX - startPoint.x, finalY - startPoint.y);
+        const steps = Math.max(15, Math.round(distancePixels / 20));
+        const isSmallTarget = box.width < 20 || box.height < 20;
+
         const path = MouseGenerator.generatePath(
             startPoint,
             { x: finalX, y: finalY },
-            Math.floor(15 + Math.random() * 10),
+            steps,
         );
 
+        const approachStart = isSmallTarget ? Math.floor(path.length * 0.8) : path.length;
         for (let i = 0; i < path.length; i++) {
             const point = path[i];
             if (!point) continue;
             await page.mouse.move(point.x, point.y, { steps: 1 });
             await syncVisualCursorOverlay(page, point);
 
-            // Pausa randomica intra-movimento
             if (i % 5 === 0) {
-                await page.waitForTimeout(10 + Math.random() * 20);
+                const inApproachPhase = i >= approachStart;
+                const delay = inApproachPhase ? 15 + Math.random() * 35 : 10 + Math.random() * 20;
+                await page.waitForTimeout(delay);
             }
         }
         updateMouseState(page, { x: finalX, y: finalY });
@@ -240,10 +249,13 @@ export async function humanMouseMoveToCoords(page: Page, targetX: number, target
     try {
         const startPoint = getStartingPoint(page);
 
+        const distancePixels = Math.hypot(targetX - startPoint.x, targetY - startPoint.y);
+        const steps = Math.max(15, Math.round(distancePixels / 20));
+
         const path = MouseGenerator.generatePath(
             startPoint,
             { x: targetX, y: targetY },
-            Math.floor(15 + Math.random() * 10),
+            steps,
         );
 
         for (let i = 0; i < path.length; i++) {
@@ -423,25 +435,32 @@ export async function simulateTabSwitch(page: Page, maxAwayTimeMs: number): Prom
     }
 
     try {
-        // Faza 1: Esci dal focus e vai in hidden
-        await page.evaluate(() => {
+        // Faza 1: Esci dal focus e vai in hidden (micro-delays tra eventi)
+        const jitter = () => Math.round((Math.random() - 0.5) * 20); // ±10ms
+        await page.evaluate((ts) => {
             Object.defineProperty(document, 'visibilityState', { get: () => 'hidden', configurable: true });
             Object.defineProperty(document, 'hidden', { get: () => true, configurable: true });
-            window.dispatchEvent(new Event('blur'));
-            document.dispatchEvent(new Event('visibilitychange'));
-        });
+            window.dispatchEvent(new Event('blur', { timeStamp: ts } as EventInit));
+        }, Date.now() + jitter());
+        await page.waitForTimeout(5 + Math.random() * 25); // 5-30ms micro-delay
+        await page.evaluate((ts) => {
+            document.dispatchEvent(new Event('visibilitychange', { timeStamp: ts } as EventInit));
+        }, Date.now() + jitter());
 
         // Faza 2: Aspetta organicamente per il lasso di tempo in "background"
         const awayTime = Math.max(3000, Math.min(maxAwayTimeMs, 3000 + Math.random() * maxAwayTimeMs));
         await page.waitForTimeout(awayTime);
 
-        // Faza 3: Torna in focus
-        await page.evaluate(() => {
+        // Faza 3: Torna in focus (micro-delays tra eventi)
+        await page.evaluate((ts) => {
             Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true });
             Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
-            window.dispatchEvent(new Event('focus'));
-            document.dispatchEvent(new Event('visibilitychange'));
-        });
+            window.dispatchEvent(new Event('focus', { timeStamp: ts } as EventInit));
+        }, Date.now() + jitter());
+        await page.waitForTimeout(5 + Math.random() * 25); // 5-30ms micro-delay
+        await page.evaluate((ts) => {
+            document.dispatchEvent(new Event('visibilitychange', { timeStamp: ts } as EventInit));
+        }, Date.now() + jitter());
 
         // Risveglio ritardato post-focus (fase di ri-lettura umana)
         await page.waitForTimeout(500 + Math.random() * 800);
@@ -464,7 +483,7 @@ export async function humanType(page: Page, selector: string, text: string): Pro
         const { char: typedChar, isTypo } = determineNextKeystroke(originalChar, 0.035);
 
         // AD-11: Implementazione Delay Bimodale
-        const isSpaceOrPunctuation = /[\\s.,!?-]/.test(typedChar);
+        const isSpaceOrPunctuation = /[\s.,!?-]/.test(typedChar);
         const delayBase = isSpaceOrPunctuation ? Math.floor(Math.random() * 150) + 150 : Math.floor(Math.random() * 50) + 40;
 
         await element.pressSequentially(typedChar, { delay: delayBase });
@@ -595,8 +614,7 @@ async function runDecoyStep(page: Page, step: DecoyStep): Promise<void> {
         return;
     }
     if (step === 'search') {
-        const terms = ['sales', 'marketing', 'engineering', 'operations', 'growth', 'ai'];
-        const term = randomElement(terms);
+        const term = randomElement(DECOY_SEARCH_TERMS);
         await page.goto(`https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(term)}`, {
             waitUntil: 'domcontentloaded',
         });
@@ -621,8 +639,35 @@ export async function performDecoyBurst(page: Page): Promise<void> {
  * naviga in sezioni casuali di LinkedIn prima dei veri task
  * per mascherare pattern lineari da bot.
  */
+const DECOY_SEARCH_TERMS: readonly string[] = [
+    // Business roles
+    'ceo', 'cto', 'cfo', 'coo', 'cmo', 'vp sales', 'vp engineering',
+    'head of marketing', 'head of product', 'head of operations',
+    'director of sales', 'director of engineering', 'director of hr',
+    'product manager', 'program manager', 'account executive',
+    'business development', 'chief of staff', 'general manager',
+    // Industries
+    'fintech', 'saas', 'edtech', 'healthtech', 'biotech', 'cleantech',
+    'proptech', 'insurtech', 'agritech', 'legaltech', 'martech',
+    'e-commerce', 'cybersecurity', 'artificial intelligence', 'blockchain',
+    'renewable energy', 'logistics', 'telecommunications', 'media',
+    // Skills
+    'project management', 'data analysis', 'cloud computing',
+    'machine learning', 'digital marketing', 'ux design', 'ui design',
+    'full stack developer', 'devops engineer', 'data scientist',
+    'product design', 'agile methodology', 'business intelligence',
+    'supply chain management', 'financial analysis', 'content strategy',
+    'software architecture', 'sales operations', 'customer success',
+    // General professional terms
+    'marketing', 'developer', 'sales', 'hr', 'tech', 'design',
+    'consultant', 'entrepreneur', 'startup', 'venture capital',
+    'growth hacking', 'talent acquisition', 'brand strategy',
+    'operations manager', 'frontend developer', 'backend engineer',
+    'cloud architect', 'scrum master', 'ux researcher',
+] as const;
+
 export async function performDecoyAction(page: Page): Promise<void> {
-    const terms = ['marketing', 'developer', 'ceo', 'sales', 'hr', 'tech', 'design'];
+    const terms = DECOY_SEARCH_TERMS;
     const actions = [
         async () => {
             await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
