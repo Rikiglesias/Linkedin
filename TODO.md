@@ -153,7 +153,7 @@
 
 - [x] 🟠 **`workers/inboxWorker.ts`** — `clickWithFallback(page, sel, name, 5000)`: 4° argomento è `options: object`, non un numero. Fix: `clickWithFallback(page, sel, name, { timeout: 5000 })`. **Audit**: cercare tutti gli altri call di `clickWithFallback` nel codebase per verificare che nessuno passi il timeout come numero diretto.
 
-- [ ] 🟠 **`workers/inboxWorker.ts`** — Selettori CSS hardcoded inline. Fix: centralizzare in `SELECTORS.inbox.*` con il sistema canary. **Perché è critico**: `inboxWorker` è uno dei worker più esposti a cambiamenti UI di LinkedIn — il sistema canary permette di rilevare automaticamente quando un selettore smette di funzionare.
+- [x] 🟠 **`workers/inboxWorker.ts`** — Selettori CSS hardcoded inline. Fix: centralizzare in `SELECTORS.inbox.*` con il sistema canary. **Perché è critico**: `inboxWorker` è uno dei worker più esposti a cambiamenti UI di LinkedIn — il sistema canary permette di rilevare automaticamente quando un selettore smette di funzionare.
 
 - [ ] 🟠 **`workers/postCreatorWorker.ts`** — Post bloccato in `PUBLISHING` permanentemente se crash tra insert e updateStatus. Fix: aggiungere recovery job (nuovo item sotto). **Schema**: aggiungere `publishing_started_at DATETIME` al record post — il recovery job trova post in PUBLISHING da `> publishing_timeout_minutes` e li riporta a `FAILED` con causa `orphaned_publishing_state`.
 
@@ -165,9 +165,9 @@
 
 - [ ] 🟠 🛡️ **`workers/hygieneWorker.ts`** — Selettore fallback `.pvs-profile-actions button:has(svg)` troppo generico. **Impatto anti-ban**: cliccare "Follow" o "Connect" invece di "Withdraw" è un'azione involontaria su LinkedIn. Fix: vision AI come fallback invece del selettore generico — chiedere "trova il bottone Withdraw/Rimuovi invito in sospeso" e verificare visivamente prima del click.
 
-- [ ] 🟠 **NUOVO — Job recovery per lead bloccati in ACCEPTED** — Worker periodico (ogni 30min) che trova lead in stato `ACCEPTED` da più di `config.acceptedMaxMinutes` (default: 20). Per ognuno: tenta transizione a `READY_MESSAGE`, logga l'anomalia in audit log, invia alert Telegram se il conteggio supera soglia. Previene accumulo silenzioso di lead bloccati.
+- [x] 🟠 **NUOVO — Job recovery per lead bloccati in ACCEPTED** — Worker periodico (ogni 30min) che trova lead in stato `ACCEPTED` da più di `config.acceptedMaxMinutes` (default: 20). Per ognuno: tenta transizione a `READY_MESSAGE`, logga l'anomalia in audit log, invia alert Telegram se il conteggio supera soglia. Previene accumulo silenzioso di lead bloccati.
 
-- [ ] 🟠 **NUOVO — Job recovery per post bloccati in PUBLISHING** — Worker periodico che trova post in `PUBLISHING` da più di `config.publishingTimeoutMinutes` (default: 10). Li riporta a `FAILED` con causa `timeout_publishing`. Senza questo, la dashboard mostra post perennemente "in corso" che non vengono mai puliti.
+- [x] 🟠 **NUOVO — Job recovery per post bloccati in PUBLISHING** — Worker periodico che trova post in `PUBLISHING` da più di `config.publishingTimeoutMinutes` (default: 10). Li riporta a `FAILED` con causa `timeout_publishing`. Senza questo, la dashboard mostra post perennemente "in corso" che non vengono mai puliti.
 
 - [x] 🟡 **`workers/inviteWorker.ts`** — Dead code `else { console.log('[DRY RUN] ...') }` irraggiungibile. Rimuovere.
 
@@ -183,7 +183,7 @@
 
 ## 5. ARCHITETTURA — Separation of concerns, duplicazioni, pattern
 
-- [ ] 🟠 **`services/emailEnricher.ts`** — Duplicato inferiore di `integrations/leadEnricher.ts`: nessun retry, circuit breaker, timeout. Fix: eliminare il file, aggiornare `enrichmentWorker.ts` per usare `leadEnricher.ts`. **Prima di eliminare**: verificare con `grep -r emailEnricher src/` che non ci siano altri import nascosti.
+- [x] 🟠 **`services/emailEnricher.ts`** — Duplicato inferiore di `integrations/leadEnricher.ts`: nessun retry, circuit breaker, timeout. Fix: eliminare il file, aggiornare `enrichmentWorker.ts` per usare `leadEnricher.ts`. **Prima di eliminare**: verificare con `grep -r emailEnricher src/` che non ci siano altri import nascosti.
 
 - [x] 🟠 **`core/leadStateService.ts`** — Race condition transizione lead. Fix con **optimistic locking**: (1) aggiungere colonna `version INTEGER DEFAULT 0` alla tabella `leads` (migration necessaria), (2) `UPDATE leads SET status=?, version=version+1 WHERE id=? AND version=?`, (3) se `changes === 0` → altro processo ha già modificato → retry o errore esplicito. **Alternativa per SQLite**: `acquireRuntimeLock('lead_{id}')` serializza le transizioni — più semplice, leggermente meno scalabile.
 
@@ -293,7 +293,7 @@
 
 - [ ] 🟡 **`core/repositories/system.ts`** — `applyCloudAccountUpdates` con `COALESCE` su null. Documentare la semantica o usare `CASE WHEN ? IS NOT NULL THEN ? ELSE field END`.
 
-- [ ] 🟡 **`db/migrations/035_salesnav_sync_runs.sql`** — Manca indice su `target_list_name`. Aggiungere `CREATE INDEX IF NOT EXISTS idx_sync_runs_list ON salesnav_sync_runs(account_id, target_list_name, status)`.
+- [x] 🟡 **`db/migrations/035_salesnav_sync_runs.sql`** — Manca indice su `target_list_name`. Aggiungere `CREATE INDEX IF NOT EXISTS idx_sync_runs_list ON salesnav_sync_runs(account_id, target_list_name, status)`.
 
 - [ ] 🟡 **`core/scheduler.ts`** — N+1 query su `getListDailyStat()`. Fix: query batch su tutte le liste in una sola chiamata.
 
@@ -388,7 +388,7 @@
 
 - [ ] 🟢 **`README.md`** — "34 migrazioni" ma ne esistono 35 (e con questo piano saranno 39). Aggiornare con ogni migration aggiunta.
 
-- [ ] 🟠 🛡️ **`.env.example` — Configurazioni GPT-5.4 mancanti** — Aggiungere: `VISION_PROVIDER=auto|openai|ollama` (default `auto`), `VISION_MODEL_OPENAI=gpt-5.4`, `VISION_BUDGET_MAX_USD=5.0`, `VISION_REDACT_SCREENSHOTS=false`. Senza queste variabili la sezione 11 (GPT-5.4) non è configurabile. **Collegamento**: `OPENAI_API_KEY` esiste già ma va documentato come necessario anche per vision (attualmente il commento dice solo "AI opzionale").
+- [x] 🟠 🛡️ **`.env.example` — Configurazioni GPT-5.4 mancanti** — Aggiungere: `VISION_PROVIDER=auto|openai|ollama` (default `auto`), `VISION_MODEL_OPENAI=gpt-5.4`, `VISION_BUDGET_MAX_USD=5.0`, `VISION_REDACT_SCREENSHOTS=false`. Senza queste variabili la sezione 11 (GPT-5.4) non è configurabile. **Collegamento**: `OPENAI_API_KEY` esiste già ma va documentato come necessario anche per vision (attualmente il commento dice solo "AI opzionale").
 
 - [x] 🟠 **`.env.example` — `EMBEDDING_MODEL` mancante** — Attualmente `AI_MODEL=llama3.1:8b` è usato sia per chat che per embeddings. OpenAI richiede modelli diversi (`text-embedding-3-small` per embeddings). Aggiungere: `EMBEDDING_MODEL=text-embedding-3-small` con commento "Usato solo per /embeddings. Con Ollama: nomic-embed-text. Con endpoint locale: lasciare vuoto per usare AI_MODEL." **Collegamento**: fix critico `ai/openaiClient.ts` in sezione 1.
 
@@ -445,7 +445,7 @@
 
 - [ ] 🟢 **Proxy providers alternativi — nota README** — Documentare nel README: (1) IPRoyal ($3/GB pay-as-you-go, nessun abbonamento — buono per volumi bassi e test), (2) Oxylabs (100M IP, pool più grande di Bright Data — meno chance di IP già flaggati da LinkedIn), (3) SOAX (geo-targeting preciso città/ISP — utile per target regionali italiani). Il sistema supporta già qualsiasi proxy HTTP/SOCKS5 via `PROXY_URL` — non serve codice, solo documentazione.
 
-- [ ] 🟢 🛡️ **Verifica limiti correnti vs dati 2026** — I nostri limiti default sono conservativi (bene): `HARD_INVITE_CAP=25` vs safe range 30-80, `WEEKLY_INVITE_LIMIT=80` vs safe 80-100, `HARD_MSG_CAP=35` vs safe 80-150. **Unico gap**: manca `PROFILE_VIEW_DAILY_CAP` (vedi sezione Configurazione). Aggiungere nota nel `.env.example` che documenta i safe range 2026 come commento accanto a ogni limite per aiutare l'utente a calibrare.
+- [x] 🟢 🛡️ **Verifica limiti correnti vs dati 2026** — I nostri limiti default sono conservativi (bene): `HARD_INVITE_CAP=25` vs safe range 30-80, `WEEKLY_INVITE_LIMIT=80` vs safe 80-100, `HARD_MSG_CAP=35` vs safe 80-150. **Unico gap**: manca `PROFILE_VIEW_DAILY_CAP` (vedi sezione Configurazione). Aggiungere nota nel `.env.example` che documenta i safe range 2026 come commento accanto a ogni limite per aiutare l'utente a calibrare.
 
 ---
 
