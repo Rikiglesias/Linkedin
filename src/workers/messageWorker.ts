@@ -49,7 +49,6 @@ export async function processMessageJob(
     let messageSource: 'template' | 'ai' = 'ai';
     let messageModel: string | null = null;
 
-    // Attempt local template override from campaign
     if (isCampaignDriven && payload.metadata_json) {
         try {
             const meta = JSON.parse(payload.metadata_json);
@@ -63,29 +62,27 @@ export async function processMessageJob(
     }
 
     if (!message) {
-        // Fallback to classic AI personalized follow-up
         const personalized = await buildPersonalizedFollowUpMessage(lead);
         message = personalized.message;
         messageSource = personalized.source as 'template' | 'ai';
         messageModel = personalized.model;
-
-        const messageHash = hashMessage(message);
-        const duplicateCount = await countRecentMessageHash(messageHash, 24);
-        const validation = validateMessageContent(message, { duplicateCountLast24h: duplicateCount });
-        if (!validation.valid) {
-            await transitionLead(lead.id, 'BLOCKED', 'message_validation_failed', {
-                reasons: validation.reasons,
-            });
-            return workerResult(1, [
-                {
-                    leadId: lead.id,
-                    message: `message_validation_failed:${validation.reasons.join(',')}`,
-                },
-            ]);
-        }
     }
 
     const messageHash = hashMessage(message);
+    const duplicateCount = await countRecentMessageHash(messageHash, 24);
+    const validation = validateMessageContent(message, { duplicateCountLast24h: duplicateCount });
+    if (!validation.valid) {
+        await transitionLead(lead.id, 'BLOCKED', 'message_validation_failed', {
+            reasons: validation.reasons,
+            source: messageSource,
+        });
+        return workerResult(1, [
+            {
+                leadId: lead.id,
+                message: `message_validation_failed:${validation.reasons.join(',')}`,
+            },
+        ]);
+    }
 
     await context.session.page.goto(lead.linkedin_url, { waitUntil: 'domcontentloaded' });
     await humanDelay(context.session.page, 2500, 5000);
