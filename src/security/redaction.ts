@@ -1,7 +1,18 @@
 const MAX_RECURSION_DEPTH = 6;
 const REDACTED = '[REDACTED]';
 
-const SENSITIVE_KEY_PATTERN = /(token|secret|password|pass|key|cookie|authorization|session|bearer)/i;
+const SENSITIVE_KEY_PARTS = new Set([
+    'token', 'secret', 'password', 'passwd', 'key', 'cookie',
+    'authorization', 'session', 'bearer', 'credential',
+]);
+
+function isSensitiveKey(key: string): boolean {
+    const parts = key
+        .replace(/([a-z])([A-Z])/g, '$1_$2')
+        .toLowerCase()
+        .split(/[_\-.\s]+/);
+    return parts.some(part => SENSITIVE_KEY_PARTS.has(part));
+}
 
 const JWT_PATTERN = /\b[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\b/g;
 const SUPABASE_KEY_PATTERN = /\bsb_(publishable|secret)_[A-Za-z0-9_-]{20,}\b/gi;
@@ -10,18 +21,26 @@ const TELEGRAM_BOT_TOKEN_PATTERN = /\b\d{8,}:[A-Za-z0-9_-]{20,}\b/g;
 
 const EMAIL_PATTERN = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/gi;
 const LINKEDIN_URL_PATTERN = /https?:\/\/(www\.)?linkedin\.com\/(in|profile)\/[A-Za-z0-9_-]+/gi;
-const PHONE_PATTERN = /\+?\d{1,4}[-.\s]?\(?\d{1,3}\)?[-.\s]?\d{1,4}[-.\s]?\d{1,4}[-.\s]?\d{1,9}/g;
+const PHONE_PATTERNS: RegExp[] = [
+    /\+\d{1,3}[\s.-]?\(?\d{1,5}\)?[\s.-]?\d{1,5}[\s.-]?\d{1,5}(?:[\s.-]?\d{1,5})?/g,
+    /\(\d{3}\)[\s.-]?\d{3}[\s.-]?\d{4}/g,
+    /\b\d{3}[-.\s]\d{3}[-.\s]\d{4}\b/g,
+    /\b3[0-9]{2}[\s.-]?\d{3}[\s.-]?\d{3,4}\b/g,
+];
 const PII_REDACTED = '[PII_REDACTED]';
 
 function sanitizeString(input: string): string {
-    return input
+    let result = input
         .replace(JWT_PATTERN, REDACTED)
         .replace(SUPABASE_KEY_PATTERN, REDACTED)
         .replace(API_KEY_PATTERN, REDACTED)
         .replace(TELEGRAM_BOT_TOKEN_PATTERN, REDACTED)
         .replace(EMAIL_PATTERN, PII_REDACTED)
-        .replace(LINKEDIN_URL_PATTERN, PII_REDACTED)
-        .replace(PHONE_PATTERN, PII_REDACTED);
+        .replace(LINKEDIN_URL_PATTERN, PII_REDACTED);
+    for (const pattern of PHONE_PATTERNS) {
+        result = result.replace(pattern, PII_REDACTED);
+    }
+    return result;
 }
 
 function sanitizeArray(input: unknown[], depth: number): unknown[] {
@@ -38,7 +57,7 @@ function sanitizeObject(input: Record<string, unknown>, depth: number): Record<s
 
     const output: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(input)) {
-        if (SENSITIVE_KEY_PATTERN.test(key)) {
+        if (isSensitiveKey(key)) {
             output[key] = REDACTED;
             continue;
         }
