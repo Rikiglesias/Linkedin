@@ -3,7 +3,8 @@ import { WorkerContext } from './context';
 import { resolveIntentAndDraft } from '../ai/intentResolver';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { WorkerExecutionResult, workerResult } from './result';
-import { appendLeadReplyDraft, getLeadByLinkedinUrl, storeLeadIntent } from '../core/repositories';
+import { appendLeadReplyDraft, countRecentMessageHash, getLeadByLinkedinUrl, storeLeadIntent, storeMessageHash } from '../core/repositories';
+import { hashMessage } from '../validation/messageValidator';
 import { transitionLead } from '../core/leadStateService';
 import { isProfileUrl, normalizeLinkedInUrl } from '../linkedinUrl';
 import { recordOutcome } from '../ml/abBandit';
@@ -159,6 +160,10 @@ export async function processInboxJob(
                                 }
                             }
 
+                            // Anti-duplicate: check if this reply draft was already sent
+                            const replyHash = hashMessage(resolution.responseDraft);
+                            const replyDuplicateCount = await countRecentMessageHash(replyHash, 24);
+
                             const canAutoReply =
                                 config.inboxAutoReplyEnabled &&
                                 !context.dryRun &&
@@ -166,7 +171,8 @@ export async function processInboxJob(
                                 resolution.confidence >= config.inboxAutoReplyMinConfidence &&
                                 resolution.responseDraft.trim().length > 0 &&
                                 resolution.intent !== 'NOT_INTERESTED' &&
-                                resolution.intent !== 'NEGATIVE';
+                                resolution.intent !== 'NEGATIVE' &&
+                                replyDuplicateCount === 0;
 
                             if (canAutoReply) {
                                 try {
@@ -185,10 +191,11 @@ export async function processInboxJob(
                                         page,
                                         SELECTORS.messageSendButton,
                                         'messageSendButton',
-                                        5000,
+                                        { timeoutPerSelector: 5000 },
                                     );
                                     autoReplySent = true;
                                     autoRepliesSent += 1;
+                                    await storeMessageHash(lead.id, replyHash);
                                 } catch (autoReplyError: unknown) {
                                     await logWarn('inbox.auto_reply_failed', {
                                         accountId: payload.accountId,

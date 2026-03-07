@@ -1,10 +1,11 @@
 import { contextualReadingPause, detectChallenge, humanDelay } from '../browser';
-import { transitionLead } from '../core/leadStateService';
+import { transitionLead, transitionLeadAtomic } from '../core/leadStateService';
 import { getLeadById, incrementDailyStat } from '../core/repositories';
 import { joinSelectors } from '../selectors';
 import { AcceptanceJobPayload } from '../types/domain';
 import { WorkerContext } from './context';
 import { ChallengeDetectedError, RetryableWorkerError } from './errors';
+import { attemptChallengeResolution } from './challengeHandler';
 import { isSalesNavigatorUrl, normalizeLinkedInUrl } from '../linkedinUrl';
 import { bridgeDailyStat, bridgeLeadStatus } from '../cloud/cloudBridge';
 import { Page } from 'playwright';
@@ -12,7 +13,7 @@ import { recordOutcome } from '../ml/abBandit';
 import { WorkerExecutionResult, workerResult } from './result';
 
 function isFirstDegreeBadge(text: string | null): boolean {
-    if (!text) return true;
+    if (!text || text.trim().length === 0) return false;
     return /1st|1°|1\b/i.test(text);
 }
 
@@ -65,7 +66,10 @@ export async function processAcceptanceJob(
     await contextualReadingPause(context.session.page);
 
     if (await detectChallenge(context.session.page)) {
-        throw new ChallengeDetectedError();
+        const resolved = await attemptChallengeResolution(context.session.page);
+        if (!resolved) {
+            throw new ChallengeDetectedError();
+        }
     }
 
     const pendingInvite = (await context.session.page.locator(joinSelectors('invitePendingIndicators')).count()) > 0;
@@ -100,8 +104,10 @@ export async function processAcceptanceJob(
         throw new RetryableWorkerError('Invito non ancora accettato', 'ACCEPTANCE_PENDING');
     }
 
-    await transitionLead(lead.id, 'ACCEPTED', 'acceptance_detected');
-    await transitionLead(lead.id, 'READY_MESSAGE', 'message_queue_ready');
+    await transitionLeadAtomic(lead.id, [
+        { toStatus: 'ACCEPTED', reason: 'acceptance_detected' },
+        { toStatus: 'READY_MESSAGE', reason: 'message_queue_ready' },
+    ]);
     await incrementDailyStat(context.localDate, 'acceptances');
     // A/B Bandit: registra accettazione per la variante usata nell'invito
     if (lead.invite_prompt_variant) {

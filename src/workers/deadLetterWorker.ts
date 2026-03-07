@@ -78,7 +78,7 @@ export async function runDeadLetterWorker(options: DeadLetterOptions = {}): Prom
     let recycled = 0;
     let deadLettered = 0;
 
-    logInfo(`Starting Dead Letter Worker (batchSize: ${batchSize})`);
+    await logInfo(`Starting Dead Letter Worker (batchSize: ${batchSize})`);
 
     try {
         let hasMore = true;
@@ -105,13 +105,13 @@ export async function runDeadLetterWorker(options: DeadLetterOptions = {}): Prom
                     // Priority 50 is lower than regular jobs (usually 10 for invites, 30 for checks)
                     await recycleJob(job.id, delaySec, 50);
                     recycled++;
-                    logInfo(
+                    await logInfo(
                         `Recycled Job ${job.id} (${job.type}) due to recoverable error: ${errorMsg.substring(0, 50)}`,
                     );
                 } else {
                     await markJobAsDeadLetter(job.id, `Terminated. Original error: ${errorMsg}`);
                     deadLettered++;
-                    logWarn(
+                    await logWarn(
                         `Dead-Lettered Job ${job.id} (${job.type}) due to terminal error: ${errorMsg.substring(0, 50)}`,
                     );
                 }
@@ -123,13 +123,13 @@ export async function runDeadLetterWorker(options: DeadLetterOptions = {}): Prom
             }
         }
 
-        logInfo(
+        await logInfo(
             `Dead Letter Worker completed. Processed: ${processed}, Recycled: ${recycled}, Dead-Lettered: ${deadLettered}`,
         );
 
         return { processed, recycled, deadLettered };
     } catch (e) {
-        logError('Error in Dead Letter Worker loop:', { error: e instanceof Error ? e.message : String(e) });
+        await logError('Error in Dead Letter Worker loop:', { error: e instanceof Error ? e.message : String(e) });
         throw e;
     }
 }
