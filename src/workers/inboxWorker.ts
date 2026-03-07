@@ -9,7 +9,7 @@ import { transitionLead } from '../core/leadStateService';
 import { isProfileUrl, normalizeLinkedInUrl } from '../linkedinUrl';
 import { recordOutcome } from '../ml/abBandit';
 import { config } from '../config';
-import { SELECTORS } from '../selectors';
+import { SELECTORS, joinSelectors } from '../selectors';
 
 export interface InboxJobPayload {
     accountId: string;
@@ -87,7 +87,7 @@ export async function processInboxJob(
 
     // Aspetta che i messaggi vengano caricati
     try {
-        await page.waitForSelector('.msg-conversation-listitem', { timeout: 10000 });
+        await page.waitForSelector(joinSelectors('inboxConversationItem'), { timeout: 10000 });
     } catch {
         await logWarn('inbox.no_conversations', {
             accountId: payload.accountId,
@@ -96,7 +96,7 @@ export async function processInboxJob(
         return workerResult(0);
     }
 
-    const unreadConversations = page.locator('.msg-conversation-listitem:has(.msg-conversation-card__unread-count)');
+    const unreadConversations = page.locator(`${joinSelectors('inboxConversationItem')}:has(${joinSelectors('inboxUnreadBadge')})`);
     const count = await unreadConversations.count();
 
     if (count === 0) {
@@ -109,7 +109,7 @@ export async function processInboxJob(
 
     for (let i = 0; i < Math.min(count, 5); i++) {
         const convo = unreadConversations.nth(i);
-        await humanMouseMove(page, '.msg-conversation-listitem:has(.msg-conversation-card__unread-count)');
+        await humanMouseMove(page, `${joinSelectors('inboxConversationItem')}:has(${joinSelectors('inboxUnreadBadge')})`);
         await humanDelay(page, 200, 600);
         await convo.click();
 

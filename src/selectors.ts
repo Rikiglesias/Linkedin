@@ -144,6 +144,34 @@ export const SELECTORS = {
         'button.scaffold-finite-scroll__load-button',
         '//button[contains(.,"Show more") or contains(.,"Mostra altro")]',
     ],
+
+    inboxConversationItem: [
+        '.msg-conversation-listitem',
+        '.msg-conversations-container__convo-item',
+    ],
+
+    inboxUnreadBadge: [
+        '.msg-conversation-card__unread-count',
+        '.msg-conversation-card__content--unread',
+    ],
+
+    inboxMessageContainer: [
+        '.msg-s-message-list-content',
+        '.msg-thread',
+        '.scaffold-finite-scroll',
+    ],
+
+    inboxProfileLink: [
+        '.msg-thread__link-to-profile',
+        '.msg-thread__topcard a[href*="/in/"]',
+        '.msg-convo-wrapper a[href*="/in/"]',
+        '.msg-s-message-group__profile-link[href*="/in/"]',
+    ],
+
+    inboxLastMessage: [
+        '.msg-s-message-list__event:not([data-msg-s-message-event-is-me="true"]) .msg-s-event-listitem__body',
+        '.msg-s-event-listitem__body',
+    ],
 } as const;
 
 /**
