@@ -159,7 +159,7 @@
 
 - [x] 🟠 **`workers/inboxWorker.ts`** — Selettori CSS hardcoded inline. Fix: centralizzare in `SELECTORS.inbox.*` con il sistema canary. **Perché è critico**: `inboxWorker` è uno dei worker più esposti a cambiamenti UI di LinkedIn — il sistema canary permette di rilevare automaticamente quando un selettore smette di funzionare.
 
-- [ ] 🟠 **`workers/postCreatorWorker.ts`** — Post bloccato in `PUBLISHING` permanentemente se crash tra insert e updateStatus. Fix: aggiungere recovery job (nuovo item sotto). **Schema**: aggiungere `publishing_started_at DATETIME` al record post — il recovery job trova post in PUBLISHING da `> publishing_timeout_minutes` e li riporta a `FAILED` con causa `orphaned_publishing_state`.
+- [x] 🟠 **`workers/postCreatorWorker.ts`** — Post bloccato in `PUBLISHING` permanentemente se crash tra insert e updateStatus. Fix: aggiungere recovery job (nuovo item sotto). **Schema**: aggiungere `publishing_started_at DATETIME` al record post — il recovery job trova post in PUBLISHING da `> publishing_timeout_minutes` e li riporta a `FAILED` con causa `orphaned_publishing_state`.
 
 - [ ] 🟠 🛡️ **`workers/randomActivityWorker.ts`** — Apre browser proprio invece di riusare `WorkerContext`. **Impatto anti-ban**: due sessioni browser dallo stesso IP con lo stesso account su LinkedIn contemporaneamente → segnale di comportamento anomalo. Fix: passare `WorkerContext` esistente o usare un browser condiviso con tab separati. Aggiungere: cap giornaliero sulle azioni "random" (max 5-10 sessioni/giorno), logging su telemetry.
 
@@ -223,11 +223,11 @@
 
 - [x] 🟡 **`scripts/rampUp.ts`** — **3 problemi nello stesso file → deprecare**: (1) `process.exit(1)` bypassa `finally { closeDatabase() }` (fix: `process.exitCode = 1` + `return`), (2) `RAMP_UP_SCHEDULE` fissa diverge da `rampUpWorker.ts`, (3) branch `if (targetDay === 'auto')` irraggiungibile. **Soluzione unica**: deprecare il file come script standalone, farlo diventare thin wrapper di `rampUpWorker.ts`. Audit: stesso `process.exit` check su tutti gli script in `src/scripts/`.
 
-- [ ] 🟡 **`api/routes/export.ts`** — Non usa `sendApiV1` envelope. Fix: migrare a `/api/v1/export/*` con formato standard.
+- [x] 🟡 **`api/routes/export.ts`** — Non usa `sendApiV1` envelope. Fix: migrare a `/api/v1/export/*` con formato standard.
 
 - [x] 🟢 **`scripts/securityAdvisor.ts` + `rotateSecrets.ts` + `aiQualityPipeline.ts`** — `getOptionValue`/`hasFlag` duplicati. Importare da `src/cli/cliParser.ts`.
 
-- [ ] 🟢 **`core/repositories/leadsLearning.ts`** — `parseRollbackSnapshot` duplicata in `selectors/learner.ts`. Estrarre in `core/repositories/shared.ts`.
+- [x] 🟢 **`core/repositories/leadsLearning.ts`** — `parseRollbackSnapshot` duplicata in `selectors/learner.ts`. Estrarre in `core/repositories/shared.ts`.
 
 - [x] 🟢 **`telemetry/logger.ts`** — 3 funzioni quasi identiche. Estrarre `log(level, event, payload)` interno.
 
@@ -251,7 +251,7 @@
 
 - [x] 🟡 **`ml/abBandit.ts`** — `EPSILON = 0.15` fisso. Fix: decaying epsilon — `epsilon = max(MIN_EPSILON, INITIAL_EPSILON * decay^totalTrials)`. Configurabile via `config.abBanditEpsilonDecay`. Caso limite: se `totalTrials` viene resettato (nuovo segmento), epsilon deve tornare al valore iniziale.
 
-- [ ] 🟡 **`ml/significance.ts`** — Test two-tailed invece di one-tailed. Fix: usare one-tailed per "è meglio del baseline?" — stessa potenza statistica con la metà dei dati.
+- [x] 🟡 **`ml/significance.ts`** — Test two-tailed invece di one-tailed. Fix: usare one-tailed per "è meglio del baseline?" — stessa potenza statistica con la metà dei dati.
 
 - [x] 🟡 **`captcha/solver.ts`** — Coordinate LLaVA non validate. Fix: clampare a viewport bounds prima del click. Se le coordinate sono fuori bounds → retry con prompt più specifico prima di usare coordinate di fallback.
 
@@ -263,7 +263,7 @@
 
 - [x] 🟡 **`ai/messagePersonalizer.ts`** — Fallback `'there'` in inglese. Fix: `'collega'` come in `inviteNotePersonalizer.ts`.
 
-- [ ] 🟢 **`core/repositories/leadsLearning.ts`** — Cache `resolveLeadMetadataColumn` non differenzia errori DB temporanei da "colonna non esiste". Fix: cache solo su successo o su `SQLITE_ERROR: no such column` — non su qualsiasi errore.
+- [x] 🟢 **`core/repositories/leadsLearning.ts`** — Cache `resolveLeadMetadataColumn` non differenzia errori DB temporanei da "colonna non esiste". Fix: cache solo su successo o su `SQLITE_ERROR: no such column` — non su qualsiasi errore.
 
 ---
 
@@ -295,7 +295,7 @@
 
 - [x] 🟡 **`core/repositories/featureStore.ts`** — Insert row-by-row. Fix: bulk INSERT con `VALUES(...),(...),...` dentro la transazione esistente.
 
-- [ ] 🟡 **`core/repositories/system.ts`** — `applyCloudAccountUpdates` con `COALESCE` su null. Documentare la semantica o usare `CASE WHEN ? IS NOT NULL THEN ? ELSE field END`.
+- [x] 🟡 **`core/repositories/system.ts`** — `applyCloudAccountUpdates` con `COALESCE` su null. Documentare la semantica o usare `CASE WHEN ? IS NOT NULL THEN ? ELSE field END`.
 
 - [x] 🟡 **`db/migrations/035_salesnav_sync_runs.sql`** — Manca indice su `target_list_name`. Aggiungere `CREATE INDEX IF NOT EXISTS idx_sync_runs_list ON salesnav_sync_runs(account_id, target_list_name, status)`.
 
@@ -305,7 +305,7 @@
 
 - [x] 🟢 **`scripts/rotateSecrets.ts` + `aiQualityPipeline.ts`** — Exit code 0 su failure. Fix: `process.exitCode = 1` se `status === 'FAILED'`.
 
-- [ ] 🟢 **`package.json`** — Scripts `pre-modifiche`/`conta-problemi` non includono vitest. Fix: aggiungere `&& npm run test:vitest`. Aggiungere anche `--max-warnings 0` a `npm run lint`.
+- [x] 🟢 **`package.json`** — Scripts `pre-modifiche`/`conta-problemi` non includono vitest. Fix: aggiungere `&& npm run test:vitest`. Aggiungere anche `--max-warnings 0` a `npm run lint`.
 
 - [ ] 🟢 **`eslint.config.js`** — `project: "./tsconfig.json"` commentato. Decommentare per abilitare regole type-aware. **Priorità**: farlo solo dopo aver risolto tutti i warning esistenti, altrimenti introduce decine di nuovi errori che bloccano il workflow.
 
@@ -325,7 +325,7 @@
 
 - [x] 🟡 **`telemetry/alerts.ts`** — `parse_mode: 'Markdown'` vs `parse_mode: 'HTML'` in `broadcaster.ts`. Fix: unificare su `HTML` — più prevedibile con caratteri speciali. Aggiungere `escapeHtml()` helper per i valori dinamici inseriti nei messaggi.
 
-- [ ] 🟡 **`telemetry/broadcaster.ts`** — `logWarn`/`logError` non awaited. Fix: aggiungere `await`.
+- [x] 🟡 **`telemetry/broadcaster.ts`** — `logWarn`/`logError` non awaited. Fix: aggiungere `await`.
 
 - [x] 🟢 **`cloud/cloudBridge.ts`** — Campo `timestamps?` contiene campi non-timestamp. Rinominare in `updates`.
 
@@ -494,12 +494,12 @@
 
 | Stato | Count |
 |---|---|
-| ✅ Completati | 127 |
-| ⬜ Aperti | 48 |
+| ✅ Completati | 135 |
+| ⬜ Aperti | 40 |
 | **Totale** | **175** |
 
 > Item originali: 143. Aggiunti: +2 (missclick, audit fix), +30 (item scoperti e completati durante le sessioni).
-> 72.6% del TODO completato. I 48 item restanti sono feature nuove (GPT-5.4, CloakBrowser),
+> 77.1% del TODO completato. ESLint: ZERO errori, ZERO warning. I 40 item restanti sono feature nuove (GPT-5.4, CloakBrowser),
 > refactor architetturali, e miglioramenti UX frontend — nessun bug critico o rischio anti-ban.
 
 **File eliminati:** ~~`src/services/emailEnricher.ts`~~ ELIMINATO (sostituito da `integrations/leadEnricher.ts`)
