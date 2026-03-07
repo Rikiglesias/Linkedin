@@ -234,6 +234,12 @@ async function runDbIntegrityCheckAndRestoreIfNeeded(): Promise<{
     }
 
     await closeDatabase();
+    const corruptedBackupPath = `${config.dbPath}.corrupted.${Date.now()}`;
+    try {
+        fs.copyFileSync(config.dbPath, corruptedBackupPath);
+    } catch {
+        // Best effort: if the DB file is locked or missing, proceed with restore anyway
+    }
     fs.copyFileSync(latestBackup, config.dbPath);
     await initDatabase();
 

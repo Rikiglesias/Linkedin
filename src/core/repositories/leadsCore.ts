@@ -582,13 +582,20 @@ export async function promoteNewLeadsToReadyInvite(limit: number): Promise<numbe
     );
     if (leads.length === 0) return 0;
 
+    const BATCH_SIZE = 900;
     const ids = leads.map((lead) => lead.id);
-    const placeholders = ids.map(() => '?').join(', ');
-    const result = await db.run(
-        `UPDATE leads SET status = 'READY_INVITE', updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`,
-        ids,
-    );
-    return result.changes ?? 0;
+    let totalChanged = 0;
+
+    for (let offset = 0; offset < ids.length; offset += BATCH_SIZE) {
+        const batch = ids.slice(offset, offset + BATCH_SIZE);
+        const placeholders = batch.map(() => '?').join(', ');
+        const result = await db.run(
+            `UPDATE leads SET status = 'READY_INVITE', updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`,
+            batch,
+        );
+        totalChanged += result.changes ?? 0;
+    }
+    return totalChanged;
 }
 
 export async function getLeadById(leadId: number): Promise<LeadRecord | null> {
@@ -1038,7 +1045,7 @@ export async function setLeadStatus(
         await db.run(
             `
             UPDATE leads
-            SET status = ?, ${timestampColumn} = CURRENT_TIMESTAMP, last_error = ?, blocked_reason = ?, updated_at = CURRENT_TIMESTAMP
+            SET status = ?, ${timestampColumn} = CURRENT_TIMESTAMP, last_error = ?, blocked_reason = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         `,
             [normalized, errorMessage ?? null, blockedReason ?? null, leadId],
@@ -1049,7 +1056,7 @@ export async function setLeadStatus(
     await db.run(
         `
         UPDATE leads
-        SET status = ?, last_error = ?, blocked_reason = ?, updated_at = CURRENT_TIMESTAMP
+        SET status = ?, last_error = ?, blocked_reason = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
     `,
         [normalized, errorMessage ?? null, blockedReason ?? null, leadId],

@@ -20,6 +20,7 @@ import {
     updateCloudAccountHealth,
     CloudLeadUpsert,
 } from './supabaseDataClient';
+import { logWarn } from '../telemetry/logger';
 
 // ──────────────────────────────────────────────────────────────
 // Lead Bridge
@@ -30,8 +31,8 @@ import {
  * Chiamare dopo addLead() o upsertSalesNavigatorLead() locale.
  */
 export function bridgeLeadUpsert(lead: CloudLeadUpsert): void {
-    void upsertCloudLead(lead).catch(() => {
-        // Silenzioso: l'outbox locale gestirà il retry se necessario
+    void upsertCloudLead(lead).catch((err: unknown) => {
+        void logWarn('cloud_bridge.lead_upsert_failed', { error: err instanceof Error ? err.message : String(err) });
     });
 }
 
@@ -54,8 +55,8 @@ export function bridgeLeadStatus(
         invite_note_sent?: string | null;
     },
 ): void {
-    void updateCloudLeadStatus(linkedinUrl, status, timestamps).catch(() => {
-        // Silenzioso
+    void updateCloudLeadStatus(linkedinUrl, status, timestamps).catch((err: unknown) => {
+        void logWarn('cloud_bridge.lead_status_failed', { status, error: err instanceof Error ? err.message : String(err) });
     });
 }
 
@@ -80,8 +81,8 @@ export function bridgeDailyStat(
         | 'run_errors',
     amount: number = 1,
 ): void {
-    void incrementCloudDailyStat({ local_date: localDate, account_id: accountId, field, amount }).catch(() => {
-        // Silenzioso
+    void incrementCloudDailyStat({ local_date: localDate, account_id: accountId, field, amount }).catch((err: unknown) => {
+        void logWarn('cloud_bridge.daily_stat_failed', { field, error: err instanceof Error ? err.message : String(err) });
     });
 }
 
@@ -99,7 +100,7 @@ export function bridgeAccountHealth(
     quarantineReason?: string | null,
     quarantineUntil?: string | null,
 ): void {
-    void updateCloudAccountHealth(accountId, health, quarantineReason, quarantineUntil).catch(() => {
-        // Silenzioso
+    void updateCloudAccountHealth(accountId, health, quarantineReason, quarantineUntil).catch((err: unknown) => {
+        void logWarn('cloud_bridge.account_health_failed', { accountId, error: err instanceof Error ? err.message : String(err) });
     });
 }
