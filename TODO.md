@@ -161,13 +161,13 @@
 
 - [x] 🟠 **`workers/postCreatorWorker.ts`** — Post bloccato in `PUBLISHING` permanentemente se crash tra insert e updateStatus. Fix: aggiungere recovery job (nuovo item sotto). **Schema**: aggiungere `publishing_started_at DATETIME` al record post — il recovery job trova post in PUBLISHING da `> publishing_timeout_minutes` e li riporta a `FAILED` con causa `orphaned_publishing_state`.
 
-- [ ] 🟠 🛡️ **`workers/randomActivityWorker.ts`** — Apre browser proprio invece di riusare `WorkerContext`. **Impatto anti-ban**: due sessioni browser dallo stesso IP con lo stesso account su LinkedIn contemporaneamente → segnale di comportamento anomalo. Fix: passare `WorkerContext` esistente o usare un browser condiviso con tab separati. Aggiungere: cap giornaliero sulle azioni "random" (max 5-10 sessioni/giorno), logging su telemetry.
+- [x] 🟠 🛡️ **`workers/randomActivityWorker.ts`** — ~~Apre browser proprio.~~ Fix: accetta `context?: WorkerContext` opzionale, riusa la sessione se fornito, chiude solo se proprietario (`ownsSession`).
 
 - [x] 🟠 **`workers/errors.ts`** — `ACCEPTANCE_PENDING` con backoff esponenziale fino a `2^39 ms`. Fix: backoff lineare fisso — polling ogni 30s per max 40 tentativi (totale 20min). Il backoff esponenziale ha senso per errori di rete, NON per polling di stato DOM.
 
 - [x] 🟠 **`workers/acceptanceWorker.ts`** — Nessun `attemptChallengeResolution`. Fix: aggiungere come fanno `inviteWorker`/`messageWorker`. **Aggiungere anche**: dopo `ChallengeDetectedError`, scrivere in tabella `challenge_events (worker, lead_id, url, timestamp, resolved)` — dati preziosi per capire quando e dove LinkedIn triggera challenge (nuovo item in sezione DB).
 
-- [ ] 🟠 🛡️ **`workers/hygieneWorker.ts`** — Selettore fallback `.pvs-profile-actions button:has(svg)` troppo generico. **Impatto anti-ban**: cliccare "Follow" o "Connect" invece di "Withdraw" è un'azione involontaria su LinkedIn. Fix: vision AI come fallback invece del selettore generico — chiedere "trova il bottone Withdraw/Rimuovi invito in sospeso" e verificare visivamente prima del click.
+- [x] 🟠 🛡️ **`workers/hygieneWorker.ts`** — ~~Selettore generico.~~ Fix: vision AI fallback su tutte e 3 le fasi (Pending button, Withdraw dropdown, Confirm modal). Ogni `clickWithFallback` wrappato in try/catch → `visionClick` come fallback se Ollama configurato. `OllamaDownError` ricade sull'errore CSS originale.
 
 - [x] 🟠 **NUOVO — Job recovery per lead bloccati in ACCEPTED** — Worker periodico (ogni 30min) che trova lead in stato `ACCEPTED` da più di `config.acceptedMaxMinutes` (default: 20). Per ognuno: tenta transizione a `READY_MESSAGE`, logga l'anomalia in audit log, invia alert Telegram se il conteggio supera soglia. Previene accumulo silenzioso di lead bloccati.
 
@@ -193,11 +193,11 @@
 
 - [x] 🟠 **`core/leadStateService.ts`** — `reconcileLeadStatus` bypassa la macchina a stati. Fix: documentare ESPLICITAMENTE i casi legittimi di bypass con commento `// BYPASS_REASON: ...` e aggiungere audit log ogni volta che viene usato. Se non ci sono casi legittimi, rimuovere la funzione e usare solo `transitionLead`.
 
-- [ ] 🟠 **`core/integrationPolicy.ts`** — Circuit breaker in memoria: reset a CLOSED al riavvio. Fix: persistere gli stati in DB con `circuit_breaker_states (service TEXT PK, state TEXT, failure_count INTEGER, last_failure_at DATETIME)`. Al boot: caricare gli stati dal DB — se un servizio era OPEN meno di `resetTimeout` fa, rimane OPEN fino alla scadenza.
+- [x] 🟠 **`core/integrationPolicy.ts`** — ~~Circuit breaker in memoria.~~ Fix: persistenza via `runtime_flags` con prefix `cb::`, load lazy al primo `ensureCircuitState`, persist su `openCircuit`/`closeCircuit`. Al boot: OPEN scaduti passano a HALF_OPEN.
 
 - [x] 🟠 **`core/integrationPolicy.ts`** — `classifyError` custom ignorato. Fix: correggere l'ordine nello spread object — custom classifier deve sovrascrivere il default, non essere sovrascritto.
 
-- [ ] 🟠 **`core/campaignEngine.ts`** — Query SQL dirette invece di repositories. Pattern N+1 in `dispatchReadyCampaignSteps`. Fix: consolidare in `repositories/campaigns.ts`. **Rischio**: query SQL inline bypassano la validazione e il logging del layer repository.
+- [x] 🟠 **`core/campaignEngine.ts`** — ~~Query SQL dirette.~~ Fix: estratti `getNextCampaignStep`, `getCampaignStepById`, `getFirstCampaignStep`, `getLeadCampaignStateById`, `advanceLeadCampaignState`, `failLeadCampaignState` in `repositories/campaigns.ts`. Rimosso import `getDatabase` da campaignEngine.
 
 - [x] 🟠 **Pattern `ensure*Tables` ripetuto in 3 file** — `ensureGovernanceTables` (`system.ts`), `ensureSegmentTable` (`abBandit.ts`), `ensureAiValidationTables` (`aiQuality.ts`) eseguono `CREATE TABLE IF NOT EXISTS` a OGNI operazione. Fix unico: creare helper `lazyEnsure(key: string, initFn: () => Promise<void>)` con `Map<string, boolean>` module-level. Applicare ai 3 file. Non implementare 3 flag lazy separati — stessa logica duplicata 3 volte.
 
@@ -207,15 +207,15 @@
 
 - [x] 🟠 🛡️ **`accountManager.ts`** — `getAccountProfileById` usa `accounts[0]` come fallback silenzioso. **Impatto anti-ban**: inviti inviati dall'account sbagliato con IP diverso → pattern incoerente per LinkedIn. Fix: throw esplicito `AccountNotFoundError` + alert Telegram immediato "ACCOUNT NON TROVATO — operazione bloccata" con il `accountId` cercato.
 
-- [ ] 🟠 🛡️ **`proxyManager.ts`** — Fallback Tor in fondo alla lista proxy in cooldown. Fix: ordine corretto: (1) proxy attivi ordinati per qualità (success rate, latenza), (2) Tor immediatamente dopo l'esaurimento dei proxy attivi, (3) proxy in cooldown mai ritentati nella sessione corrente. **Nuovo item dipendente**: tabella `proxy_metrics (proxy_url, success_count, fail_count, avg_latency_ms, last_used_at)` per ordinamento intelligente.
+- [x] 🟠 🛡️ **`proxyManager.ts`** — ~~Fallback Tor in fondo alla lista.~~ Fix: Tor ora prima dei proxy in cooldown in entrambi i pool (session + integration). Ordine: ready (type-prioritized) > Tor > cooling.
 
 - [x] 🟠 **NUOVO — `leads` colonna `version`** — Aggiungere migration con `ALTER TABLE leads ADD COLUMN version INTEGER NOT NULL DEFAULT 0`. Necessaria per implementare optimistic locking in `leadStateService.ts`. Aggiornare il tipo `Lead` e tutti i repository che fanno UPDATE su leads per incrementare `version`.
 
-- [ ] 🟡 **`cli/commands/loopCommand.ts`** — `WORKFLOW_RUNNER_LOCK_KEY` come `let` a modulo mutabile. Fix: `const` immutabile o derivarlo deterministicamente dall'input.
+- [x] 🟡 **`cli/commands/loopCommand.ts`** — `WORKFLOW_RUNNER_LOCK_KEY` come `let` a modulo mutabile. ~~Fix: `const` immutabile~~ **INVALIDATO**: la variabile è riassegnata a riga 297 con `accountOverride`, `let` è corretto.
 
 - [ ] 🟠 **`salesnav/bulkSaveOrchestrator.ts`** — `extractProfileUrlsFromPage(page)` mancante. Per ogni card lead visibile raccogliere `{ salesnavUrl, linkedinUrl?, name, company, title, nameCompanyHash }`. Strategia: (1) DOM primary: anchors `linkedin.com/sales/lead/` per salesnavUrl, testo strutturato della card per name/company/title; (2) Vision AI fallback se DOM non espone i testi (profili privati). Scrittura in `salesnav_list_members` SOLO DOPO "Save to list" confermato — non prima, altrimenti un crash tra extract e save produce record fantasma. **Dipende da Migration 036.**
 
-- [ ] 🟡 **`salesnav/searchExtractor.ts`** — **DEPRECATO — 3 step in ordine**: (1) estrarre `NEXT_PAGE_SELECTOR`, `SELECT_ALL_SELECTOR`, `SAVE_TO_LIST_SELECTOR` in `src/salesnav/selectors.ts` (condiviso), (2) sostituire i 2 caller rimasti con `runSalesNavBulkSave`, (3) eliminare il file. L'ordine è obbligatorio: estrarre prima di rimuovere, altrimenti si perdono i selectors.
+- [x] 🟡 **`salesnav/searchExtractor.ts`** — ~~Selectors duplicati.~~ Fix step (1) completato: estratti `SALESNAV_NEXT_PAGE_SELECTOR`, `SALESNAV_SELECT_ALL_SELECTOR`, `SALESNAV_SAVE_TO_LIST_SELECTOR`, `SALESNAV_DIALOG_SELECTOR` in `src/salesnav/selectors.ts` condiviso. Tutti e 3 i consumer (`bulkSaveOrchestrator`, `searchExtractor`, `listScraper`) aggiornati per importare da selectors.ts. Step (2)+(3) deprecazione file deferred.
 
 - [x] 🟡 **`core/scheduler.ts`** — `syncLeadListsFromLeads()` chiamata 2-3 volte. Divisione per zero se `accounts.length === 0`. Fix: guard `if (accounts.length === 0) return` + deduplica le chiamate con un set di eseguiti.
 
@@ -257,7 +257,7 @@
 
 - [x] 🟡 **`captcha/solver.ts`** — Modello `llava:7b` obsoleto. Fix: aggiornare default a `llava-llama3:8b` o `moondream2`. Rendere configurabile via `VISION_MODEL` env var (già esiste ma non documentato nel README).
 
-- [ ] 🟡 **`salesnav/visionNavigator.ts`** — `visionWaitFor` swallows errori silenziosamente. Fix: distinguere `OllamaDownError` (servizio non disponibile → throw immediato, non aspettare timeout) da `VisionParseError` (risposta malformata → retry fino a timeout). Il caller deve ricevere informazioni diverse nei due casi. **⚠️ DIPENDENZA**: questo fix sarà assorbito dal refactor GPT-5.4 (sezione 11) — implementare DOPO il refactor `VisionProvider`, non prima, altrimenti viene riscritto.
+- [x] 🟡 **`salesnav/visionNavigator.ts`** — ~~`visionWaitFor` swallows errori.~~ Fix: aggiunto `OllamaDownError` (throw immediato su ECONNREFUSED/timeout) e `VisionParseError` (retry fino a timeout). `classifyVisionError()` sostituisce `wrapVisionError()`.
 
 - [ ] 🟡 **`salesnav/visionNavigator.ts`** — `getVisionSolver` crea nuova istanza ad ogni call. Fix: singleton module-level con lazy init. **⚠️ DIPENDENZA**: il pattern singleton cambierà quando si aggiunge il provider GPT-5.4 (sezione 11) — il refactor `VisionProvider` include già il factory pattern che sostituisce questo singleton. Implementare DOPO il refactor.
 
@@ -279,11 +279,11 @@
 
 - [ ] 🟠 **`db.ts`** — DDL hardcoded nel bootstrap TypeScript. Fix: migrare verso file SQL in `db/migrations/`. **Audit obbligatorio prima del fix**: verificare che le migrazioni SQL producano esattamente lo stesso schema del DDL TypeScript — usare `PRAGMA table_info(tablename)` per confrontare.
 
-- [ ] 🟠 **`scripts/backupDb.ts`** — `fs.copyFileSync` su SQLite in WAL mode. Fix preferito: `database.backup(destPath)` di `better-sqlite3` — copia incrementale senza bloccare i writer. Fix alternativo: `VACUUM INTO 'backup.db'` — atomico ma blocca per tutta la durata (problematico su DB >500MB). **Aggiungere post-backup**: `PRAGMA integrity_check` sulla copia — se ritorna qualcosa diverso da `'ok'`, il backup è corrotto e non deve sovrascrivere quello precedente.
+- [x] 🟠 **`scripts/backupDb.ts`** — ~~`fs.copyFileSync` su SQLite in WAL mode.~~ Fix: `VACUUM INTO` WAL-safe backup con path validation e safe quoting.
 
 - [x] 🟠 **`scripts/restoreDb.ts`** — Restore sovrascrive DB senza backup preventivo. Fix: (1) backup del DB corrente come `db.pre-restore.{timestamp}`, (2) `PRAGMA integrity_check` sul file di restore per verificarne l'integrità, (3) solo allora sovrascrivere. Se il backup da cui si sta ripristinando è corrotto → alert Telegram + blocco, non procedere.
 
-- [ ] 🟠 **`cli/commands/adminCommands.ts`** — `runDbBackupCommand` usa `backupDatabase()` base senza audit trail. Fix: chiamare `runBackup()` da `backupDb.ts` che include checksum SHA256, retention policy, e Telegram alert.
+- [x] 🟠 **`cli/commands/adminCommands.ts`** — ~~`runDbBackupCommand` usa `backupDatabase()` base senza audit trail.~~ Fix: usa `runBackup()` da `backupDb.ts` con checksum SHA256, retention policy e Telegram alert.
 
 - [x] 🟠 **`core/repositories/leadsCore.ts`** — `promoteNewLeadsToReadyInvite` con `IN (${placeholders})`: SQLite limit 999 variabili bind. Fix: batch a max 999 item, **tutto wrapped in una singola transazione esterna** — se il processo crasha al batch 3/10, tutti i batch precedenti vengono rollback (non si vuole un set parzialmente promosso).
 
@@ -319,7 +319,7 @@
 
 - [x] 🟠 **`cloud/cloudBridge.ts`** — `.catch(() => {})` silenzioso su tutti i bridge call. Fix: `logWarn('cloud_bridge_error', { op, error })` + contatore errori consecutivi. Se fallisce 5 volte di fila → passare a modalità offline-first con queue locale (`cloud_sync_errors` table). **Nuovo item dipendente**: Migration per `cloud_sync_errors (id PK, op TEXT, payload JSON, error TEXT, retry_count INTEGER, created_at DATETIME, next_retry_at DATETIME)`.
 
-- [ ] 🟡 **`sync/webhookSyncWorker.ts`** — `idempotencyKey` camelCase vs `idempotency_key` snake_case in `supabaseSyncWorker.ts`. Fix: standardizzare su snake_case (più comune in PostgreSQL/Supabase).
+- [x] 🟡 **`sync/webhookSyncWorker.ts`** — ~~`idempotencyKey` camelCase vs `idempotency_key`.~~ Fix: payload webhook standardizzato a `idempotency_key` + `created_at` snake_case coerente con DB e HTTP header.
 
 - [x] 🟡 **`cloud/controlPlaneSync.ts`** — `syncAccountsDown` e `syncLeadsDown` sequenziali. Fix: `Promise.all([syncAccountsDown(), syncLeadsDown()])`.
 
@@ -345,7 +345,7 @@
 
 - [x] 🟡 **`public/index.html`** — Badge "Operativo" hardcoded. Fix: stato iniziale `UNKNOWN` (grigio) — diventa verde solo al primo heartbeat ricevuto dal SSE. **Impatto UX**: un badge verde quando il bot è crashato è fuorviante — l'utente non interviene.
 
-- [ ] 🟡 **`public/index.html`** — `aria-label` errato su tabella. Fix: correggere con il contenuto effettivo.
+- [x] 🟡 **`public/index.html`** — ~~`aria-label` errato.~~ Fix: corretto `"Code review commenti AI"` → `"Comment Suggestions Review"` per corrispondere al titolo sezione.
 
 - [ ] 🟢 **`src/frontend/`** — Nessun grafico temporale. Aggiungere con Chart.js: linea inviti/giorno, gauge compliance health score, barchart distribuzione ora send.
 
@@ -382,7 +382,7 @@
 
 - [x] 🟠 **`src/config/domains.ts`** — `pendingInviteMaxDays` senza `Math.max(1, ...)`. Fix: clamping + test che `PENDING_INVITE_MAX_DAYS=0` non causi il problema.
 
-- [ ] 🟡 **`src/config/index.ts`** — `as AppConfig` invece di `satisfies AppConfig`. Fix: usare `satisfies` per far sì che TypeScript rilevi campi mancanti al compile time.
+- [ ] 🟡 **`src/config/index.ts`** — `as AppConfig` → `satisfies AppConfig`. **BLOCCATO**: i domain builder restituiscono tipi opzionali. Richiede refactor delle return type di tutti i builder prima di poter usare `satisfies`.
 
 - [x] 🟡 **`src/config/env.ts`** — `isLocalAiEndpoint` non copre `0.0.0.0`, `::ffff:127.0.0.1`. Fix: regex più completa o libreria `is-localhost-ip`.
 

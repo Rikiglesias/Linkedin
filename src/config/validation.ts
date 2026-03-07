@@ -301,6 +301,33 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
         message: '[CONFIG] SESSION_DIR mancante — directory sessione Playwright obbligatoria',
         when: (cfg) => !cfg.sessionDir,
     },
+    {
+        message: '[CONFIG] SOFT_INVITE_CAP deve essere <= HARD_INVITE_CAP',
+        when: (cfg) => cfg.softInviteCap > cfg.hardInviteCap,
+    },
+    {
+        message: '[CONFIG] SOFT_MSG_CAP deve essere <= HARD_MSG_CAP',
+        when: (cfg) => cfg.softMsgCap > cfg.hardMsgCap,
+    },
+    {
+        message: '[CONFIG] HOUR_START deve essere < HOUR_END',
+        when: (cfg) => cfg.workingHoursStart >= cfg.workingHoursEnd,
+    },
+    {
+        message: '[CONFIG] PENDING_INVITE_MAX_DAYS deve essere >= 1',
+        when: (cfg) => cfg.pendingInviteMaxDays < 1,
+    },
+    {
+        message: '[CONFIG] TIMEZONE deve essere un fuso orario IANA valido',
+        when: (cfg) => {
+            try {
+                Intl.DateTimeFormat(undefined, { timeZone: cfg.timezone });
+                return false;
+            } catch {
+                return true;
+            }
+        },
+    },
 ];
 
 export function validateConfigSchema(config: AppConfig, nodeEnv: string = process.env.NODE_ENV ?? ''): string[] {

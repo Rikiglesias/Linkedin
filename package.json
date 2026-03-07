@@ -13,7 +13,7 @@
     "typecheck": "npm run typecheck:backend && npm run typecheck:frontend",
     "typecheck:backend": "tsc -p tsconfig.json --noEmit",
     "typecheck:frontend": "tsc -p tsconfig.frontend.json --noEmit",
-    "conta-problemi": "npm run typecheck && npm run lint",
+    "conta-problemi": "npm run typecheck && npm run lint && npm run test:vitest",
     "pre-modifiche": "npm run conta-problemi",
     "post-modifiche": "npm run conta-problemi",
     "helper-manuali": "echo 'Esegui le correzioni manuali come da policy'",

@@ -1,8 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 import { createHash } from 'crypto';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { config } from '../config';
+import { getDatabase } from '../db';
 import { finalizeBackupRun, recordBackupRunStarted } from '../core/repositories';
 import { sendTelegramAlert } from '../telemetry/alerts';
 
@@ -50,13 +51,18 @@ function applyRetentionPolicy(): number {
     return removed;
 }
 
-function runSqliteBackup(timestamp: string): string {
-    const dbPath = config.databaseUrl
-        ? config.databaseUrl.replace('file:', '')
-        : path.join(process.cwd(), 'data', 'db.sqlite');
+async function runSqliteBackup(timestamp: string): Promise<string> {
     const backupPath = path.join(BACKUP_DIR, `backup-${timestamp}.sqlite`);
-    fs.copyFileSync(dbPath, backupPath);
-    console.log(`✅ [SQLite] Backup completato: ${backupPath}`);
+    if (fs.existsSync(backupPath)) {
+        fs.unlinkSync(backupPath);
+    }
+    if (!/^[a-zA-Z0-9_\-. \\/:()\u00C0-\u024F]+$/.test(backupPath)) {
+        throw new Error(`Backup path contains invalid characters: ${backupPath}`);
+    }
+    const safePath = backupPath.replace(/'/g, "''");
+    const db = await getDatabase();
+    await db.exec(`VACUUM INTO '${safePath}';`);
+    console.log(`✅ [SQLite] Backup WAL-safe completato: ${backupPath}`);
     return backupPath;
 }
 
@@ -65,12 +71,12 @@ function runPostgresBackup(timestamp: string): string {
     console.log(`⏳ Avvio backup PostgreSQL in ${backupPath}...`);
 
     if (config.databaseUrl.includes('@db:')) {
-        const command = `docker exec linkedin-pg pg_dump -U bot_user -d linkedin_bot --clean > "${backupPath}"`;
-        execSync(command, { stdio: 'inherit' });
+        const output = execFileSync('docker', ['exec', 'linkedin-pg', 'pg_dump', '-U', 'bot_user', '-d', 'linkedin_bot', '--clean']);
+        fs.writeFileSync(backupPath, output);
         console.log(`✅ [PostgreSQL - Docker] Backup completato: ${backupPath}`);
     } else {
-        const command = `pg_dump "${config.databaseUrl}" --clean > "${backupPath}"`;
-        execSync(command, { stdio: 'inherit' });
+        const output = execFileSync('pg_dump', ['--dbname', config.databaseUrl, '--clean']);
+        fs.writeFileSync(backupPath, output);
         console.log(`✅ [PostgreSQL - Cloud/Local] Backup completato: ${backupPath}`);
     }
 
@@ -88,7 +94,7 @@ export async function runBackup() {
     });
 
     try {
-        const backupPath = isPostgres ? runPostgresBackup(timestamp) : runSqliteBackup(timestamp);
+        const backupPath = isPostgres ? runPostgresBackup(timestamp) : await runSqliteBackup(timestamp);
         const checksum = checksumSha256(backupPath);
         const removedCount = applyRetentionPolicy();
         const durationMs = Date.now() - startedAtMs;

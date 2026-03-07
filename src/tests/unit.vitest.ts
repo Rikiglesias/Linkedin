@@ -62,7 +62,6 @@ import { evaluateAutoDailyReportDecision } from '../core/dailyReportPolicy';
 import { describe, test, expect } from 'vitest';
 import { buildStealthInitScript } from '../browser/stealthScripts';
 import { HttpResponseThrottler } from '../risk/httpThrottler';
-import { getThrottleSignal } from '../workers/context';
 import { generatePostContent } from '../ai/postContentGenerator';
 import { checkSessionFreshness } from '../browser/sessionCookieMonitor';
 
@@ -208,16 +207,10 @@ describe('HTTP Response Throttler', () => {
     });
 });
 
-describe('Worker Context throttle signal', () => {
-    test('restituisce segnale dal throttler della sessione', () => {
-        const mockThrottler = new HttpResponseThrottler();
-        const mockContext = {
-            session: { httpThrottler: mockThrottler } as never,
-            dryRun: false,
-            localDate: '2026-03-04',
-            accountId: 'test',
-        };
-        const signal = getThrottleSignal(mockContext);
+describe('HttpResponseThrottler signal', () => {
+    test('restituisce segnale dal throttler', () => {
+        const throttler = new HttpResponseThrottler();
+        const signal = throttler.getThrottleSignal();
         expect(signal.shouldSlow).toBe(false);
         expect(signal.shouldPause).toBe(false);
     });

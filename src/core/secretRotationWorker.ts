@@ -310,7 +310,30 @@ export async function runSecretRotationWorker(
         const envContent = fs.existsSync(envFilePath) ? fs.readFileSync(envFilePath, 'utf8') : '';
         const parsedEnv = parseEnvFile(envContent);
         const nextContent = serializeEnvFile(parsedEnv, envUpdates);
-        fs.writeFileSync(envFilePath, nextContent, 'utf8');
+        // Atomic write: backup → write tmp → rename
+        const backupPath = `${envFilePath}.backup.${Date.now()}`;
+        const tmpPath = `${envFilePath}.tmp`;
+        if (fs.existsSync(envFilePath)) {
+            fs.copyFileSync(envFilePath, backupPath);
+        }
+        fs.writeFileSync(tmpPath, nextContent, 'utf8');
+        if (process.platform === 'win32') {
+            // Windows: renameSync fails if target exists
+            fs.copyFileSync(tmpPath, envFilePath);
+            fs.unlinkSync(tmpPath);
+        } else {
+            fs.renameSync(tmpPath, envFilePath);
+        }
+        // Retention: keep max 5 backup files
+        const dir = path.dirname(envFilePath);
+        const base = path.basename(envFilePath);
+        const backups = fs.readdirSync(dir)
+            .filter((f) => f.startsWith(`${base}.backup.`))
+            .sort()
+            .reverse();
+        for (const old of backups.slice(5)) {
+            fs.unlinkSync(path.join(dir, old));
+        }
     }
 
     return {

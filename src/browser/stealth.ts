@@ -4,8 +4,11 @@
  * Fingerprint selection + anti-bot init script iniettato nelle pagine.
  */
 
+import crypto from 'node:crypto';
 import { config } from '../config';
 import { Fingerprint, desktopFingerprintPool, mobileFingerprintPool, pickRandomFingerprint } from '../fingerprint/pool';
+
+const FINGERPRINT_VERSION = '1';
 
 export interface CloudFingerprint {
     userAgent: string;
@@ -24,11 +27,12 @@ function randomElement<T>(arr: ReadonlyArray<T>): T {
     return arr[Math.floor(Math.random() * arr.length)] as T;
 }
 
-function normalizeCloudFingerprint(input: CloudFingerprint, isMobile: boolean): BrowserFingerprint {
+function normalizeCloudFingerprint(input: CloudFingerprint, isMobile: boolean, accountId: string): BrowserFingerprint {
     const defaultPool = isMobile ? mobileFingerprintPool : desktopFingerprintPool;
     const base = pickRandomFingerprint(defaultPool);
+    const id = crypto.createHash('sha256').update(accountId + FINGERPRINT_VERSION).digest('hex').slice(0, 16);
     return {
-        id: `cloud_${Date.now()}_${Math.random().toString(16).slice(2, 7)}`,
+        id,
         ja3: input.ja3 ?? config.ja3Fingerprint,
         userAgent: input.userAgent,
         viewport: input.viewport ?? base.viewport,
@@ -43,6 +47,7 @@ function normalizeCloudFingerprint(input: CloudFingerprint, isMobile: boolean): 
 export function pickBrowserFingerprint(
     cloudFingerprints: ReadonlyArray<CloudFingerprint>,
     isMobile: boolean,
+    accountId: string,
 ): BrowserFingerprint {
     const mobileFiltered = cloudFingerprints.filter((item) => item.isMobile === true);
     const desktopFiltered = cloudFingerprints.filter((item) => item.isMobile !== true);
@@ -56,7 +61,7 @@ export function pickBrowserFingerprint(
 
     if (cloudPool.length > 0) {
         const fp = randomElement(cloudPool);
-        return normalizeCloudFingerprint(fp, isMobile);
+        return normalizeCloudFingerprint(fp, isMobile, accountId);
     }
 
     const localPool = isMobile ? mobileFingerprintPool : desktopFingerprintPool;
@@ -75,14 +80,15 @@ export function pickFingerprintMode(): boolean {
     return Math.random() < config.mobileProbability;
 }
 
-export function pickMobileFingerprint(cloudFingerprints: ReadonlyArray<CloudFingerprint>): BrowserFingerprint {
-    if (cloudFingerprints.length > 0) {
-        const fp = randomElement(cloudFingerprints);
-        return normalizeCloudFingerprint(fp, true);
+export function pickMobileFingerprint(cloudFingerprints: ReadonlyArray<CloudFingerprint>, accountId: string): BrowserFingerprint {
+    const mobileOnly = cloudFingerprints.filter((fp) => fp.isMobile === true);
+    if (mobileOnly.length > 0) {
+        const fp = randomElement(mobileOnly);
+        return normalizeCloudFingerprint(fp, true, accountId);
     }
-    return pickBrowserFingerprint([], true);
+    return pickBrowserFingerprint([], true, accountId);
 }
 
-export function pickDesktopFingerprint(cloudFingerprints: ReadonlyArray<CloudFingerprint>): BrowserFingerprint {
-    return pickBrowserFingerprint(cloudFingerprints, false);
+export function pickDesktopFingerprint(cloudFingerprints: ReadonlyArray<CloudFingerprint>, accountId: string): BrowserFingerprint {
+    return pickBrowserFingerprint(cloudFingerprints, false, accountId);
 }

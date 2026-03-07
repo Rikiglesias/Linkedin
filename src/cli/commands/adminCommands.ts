@@ -8,7 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import { createHash } from 'crypto';
 import { config, getLocalDateString, getWeekStartDate, isGreenModeWindow } from '../../config';
-import { backupDatabase } from '../../db';
+import { runBackup } from '../../scripts/backupDb';
 import {
     buildFeatureDatasetVersion,
     cleanupPrivacyData,
@@ -471,13 +471,8 @@ export async function runPrivacyCleanupCommand(args: string[]): Promise<void> {
 }
 
 export async function runDbBackupCommand(): Promise<void> {
-    console.log('Avvio backup database manuale...');
-    try {
-        const backupPath = await backupDatabase();
-        console.log(`Backup completato con successo.File salvato in: ${backupPath} `);
-    } catch (e) {
-        console.error('Errore durante il backup del database:', e);
-    }
+    console.log('Avvio backup database manuale (con checksum + retention)...');
+    await runBackup();
 }
 
 export async function runCompanyTargetsCommand(args: string[]): Promise<void> {

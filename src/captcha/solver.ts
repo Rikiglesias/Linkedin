@@ -24,7 +24,7 @@ export class VisionSolver {
 
     constructor(options?: VisionSolverOptions) {
         this.endpoint = options?.endpoint ?? process.env.OLLAMA_ENDPOINT ?? 'http://127.0.0.1:11434';
-        this.model = options?.model ?? process.env.VISION_MODEL ?? 'llava';
+        this.model = options?.model ?? process.env.VISION_MODEL ?? 'llava-llama3:8b';
         this.temperature = options?.temperature ?? 0.1; // Bassa "creatività" = maggiore fedeltà ai pixel
     }
 
@@ -71,7 +71,11 @@ export class VisionSolver {
      * Usa la visione per dedurre la posizione X,Y di un oggetto semantico,
      * utilissimo per i grid CAPTCHA o per riconoscere bottoni invisibili ai selettori standard.
      */
-    public async findObjectCoordinates(base64Image: string, targetObject: string): Promise<Coordinates | null> {
+    public async findObjectCoordinates(
+        base64Image: string,
+        targetObject: string,
+        viewportBounds?: { width: number; height: number },
+    ): Promise<Coordinates | null> {
         const prompt = `Analyze this UI screenshot carefully. Find the visible target: "${targetObject}".
 Respond with valid JSON only and no extra text.
 If the target is visible, return {"x": number, "y": number} using the approximate center pixel.
@@ -88,7 +92,12 @@ If the target is not visible, return {"x": null, "y": null}.`;
                     return null;
                 }
                 if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
-                    return { x: parsed.x, y: parsed.y };
+                    // Clamp coordinates to viewport bounds
+                    const maxW = viewportBounds?.width ?? 1920;
+                    const maxH = viewportBounds?.height ?? 1080;
+                    const x = Math.max(0, Math.min(parsed.x, maxW));
+                    const y = Math.max(0, Math.min(parsed.y, maxH));
+                    return { x, y };
                 }
             }
         } catch (error: unknown) {

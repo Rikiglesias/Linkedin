@@ -155,6 +155,7 @@ export interface AppConfig {
     openaiApiKey: string;
     openaiBaseUrl: string;
     aiModel: string;
+    aiEmbeddingModel: string;
     aiAllowRemoteEndpoint: boolean;
     aiRequestTimeoutMs: number;
     aiPersonalizationEnabled: boolean;
@@ -290,5 +291,5 @@ export interface AppConfig {
     riskPredictiveSigma: number;
     postCreationEnabled: boolean;
     postCreationMaxPerDay: number;
-    postCreationDefaultTone: 'professional' | 'casual' | 'thought_leadership' | 'storytelling';
+    postCreationDefaultTone: 'professional' | 'casual' | 'inspirational' | 'educational' | 'storytelling';
 }

@@ -28,6 +28,28 @@ interface ParsedAiGuardianPayload {
     pauseMinutes: number;
 }
 
+const SEVERITY_RANK: Record<AiGuardianSeverity, number> = {
+    normal: 0,
+    watch: 1,
+    critical: 2,
+};
+
+/**
+ * Enforce heuristic severity floor on AI decisions.
+ * - heuristic critical  → never reached (AI is not consulted)
+ * - heuristic watch     → AI cannot lower below watch
+ * - heuristic normal    → AI can raise freely
+ */
+function enforceHeuristicFloor(
+    aiDecision: ParsedAiGuardianPayload,
+    heuristicSeverity: AiGuardianSeverity,
+): ParsedAiGuardianPayload {
+    if (SEVERITY_RANK[aiDecision.severity] < SEVERITY_RANK[heuristicSeverity]) {
+        return { ...aiDecision, severity: heuristicSeverity };
+    }
+    return aiDecision;
+}
+
 function clampPauseMinutes(value: number): number {
     const parsed = Number.isFinite(value) ? Math.floor(value) : 0;
     if (parsed <= 0) return 0;
@@ -81,7 +103,7 @@ function heuristics(schedule: ScheduleResult): AiGuardianDecision {
 function tryExtractJsonBlock(raw: string): string | null {
     // Strip markdown code fences if present (```json ... ``` or ``` ... ```)
     const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-    const source = fenceMatch ? fenceMatch[1]! : raw;
+    const source = fenceMatch ? (fenceMatch[1] ?? raw) : raw;
 
     // Find the outermost balanced JSON object
     const start = source.indexOf('{');
@@ -151,6 +173,16 @@ export async function evaluateAiGuardian(
     schedule: ScheduleResult,
 ): Promise<AiGuardianResult> {
     const heuristicDecision = heuristics(schedule);
+
+    // CRITICAL heuristic decisions are authoritative — AI cannot override them.
+    if (heuristicDecision.severity === 'critical') {
+        return {
+            executed: true,
+            reason: 'heuristic_critical_block',
+            decision: heuristicDecision,
+        };
+    }
+
     if (!config.aiGuardianEnabled || !isOpenAIConfigured()) {
         return {
             executed: true,
@@ -207,15 +239,17 @@ export async function evaluateAiGuardian(
             };
         }
 
+        const enforced = enforceHeuristicFloor(parsed, heuristicDecision.severity);
+
         return {
             executed: true,
             reason: runCheck.reason,
             decision: {
                 source: 'ai',
-                severity: parsed.severity,
-                summary: parsed.summary,
-                recommendations: parsed.recommendations,
-                pauseMinutes: parsed.pauseMinutes,
+                severity: enforced.severity,
+                summary: enforced.summary,
+                recommendations: enforced.recommendations,
+                pauseMinutes: enforced.pauseMinutes,
             },
         };
     } catch {

@@ -1,11 +1,17 @@
 import { WorkerContext } from './context';
 import { getExpiredInvitedLeads } from '../core/repositories';
 import { transitionLead } from '../core/leadStateService';
-import { logInfo, logError } from '../telemetry/logger';
+import { logInfo, logError, logWarn } from '../telemetry/logger';
 import { humanDelay } from '../browser';
 import { clickWithFallback } from '../browser/uiFallback';
+import { visionClick, OllamaDownError } from '../salesnav/visionNavigator';
 import { config } from '../config';
 import { WorkerExecutionResult, workerResult } from './result';
+
+/** Vision fallback is available when an Ollama endpoint is configured. */
+function isVisionAvailable(): boolean {
+    return Boolean(process.env.OLLAMA_ENDPOINT);
+}
 
 export interface HygieneJobPayload {
     accountId: string;
@@ -50,10 +56,24 @@ export async function processHygieneJob(
                 '.pvs-profile-actions button:has(svg)',
             ];
 
-            await clickWithFallback(page, pendingSelectors, `withdraw_pending_button_${lead.id}`, {
-                timeoutPerSelector: 4000,
-                postClickDelayMs: 1000,
-            });
+            try {
+                await clickWithFallback(page, pendingSelectors, `withdraw_pending_button_${lead.id}`, {
+                    timeoutPerSelector: 4000,
+                    postClickDelayMs: 1000,
+                });
+            } catch (cssError) {
+                if (!isVisionAvailable()) throw cssError;
+                await logWarn('hygiene.vision_fallback.pending', { leadId: lead.id });
+                try {
+                    await visionClick(page, 'Find and click the "Pending" or "In attesa" button on this LinkedIn profile page', {
+                        retries: 2,
+                        postClickDelayMs: 1000,
+                    });
+                } catch (visionError) {
+                    if (visionError instanceof OllamaDownError) throw cssError;
+                    throw cssError;
+                }
+            }
 
             // Fase 2: Nel modale dropdown aperto, cerca "Ritira" / "Withdraw"
             const withdrawDropdownSelectors = [
@@ -65,10 +85,24 @@ export async function processHygieneJob(
                 'div.artdeco-dropdown__item:has-text("Ritira")',
             ];
 
-            await clickWithFallback(page, withdrawDropdownSelectors, `withdraw_dropdown_action_${lead.id}`, {
-                timeoutPerSelector: 3000,
-                postClickDelayMs: 1200,
-            });
+            try {
+                await clickWithFallback(page, withdrawDropdownSelectors, `withdraw_dropdown_action_${lead.id}`, {
+                    timeoutPerSelector: 3000,
+                    postClickDelayMs: 1200,
+                });
+            } catch (cssError) {
+                if (!isVisionAvailable()) throw cssError;
+                await logWarn('hygiene.vision_fallback.withdraw_dropdown', { leadId: lead.id });
+                try {
+                    await visionClick(page, 'Find and click the "Withdraw" or "Ritira" option in the open dropdown menu', {
+                        retries: 2,
+                        postClickDelayMs: 1200,
+                    });
+                } catch (visionError) {
+                    if (visionError instanceof OllamaDownError) throw cssError;
+                    throw cssError;
+                }
+            }
 
             // Fase 3: Conferma finale nel dialog modale
             const modalConfirmSelectors = [
@@ -78,10 +112,24 @@ export async function processHygieneJob(
                 '.artdeco-modal button.artdeco-button--primary',
             ];
 
-            await clickWithFallback(page, modalConfirmSelectors, `withdraw_confirm_modal_${lead.id}`, {
-                timeoutPerSelector: 4000,
-                postClickDelayMs: 1500,
-            });
+            try {
+                await clickWithFallback(page, modalConfirmSelectors, `withdraw_confirm_modal_${lead.id}`, {
+                    timeoutPerSelector: 4000,
+                    postClickDelayMs: 1500,
+                });
+            } catch (cssError) {
+                if (!isVisionAvailable()) throw cssError;
+                await logWarn('hygiene.vision_fallback.confirm_modal', { leadId: lead.id });
+                try {
+                    await visionClick(page, 'Find and click the primary "Withdraw" or "Ritira" confirmation button in the modal dialog', {
+                        retries: 2,
+                        postClickDelayMs: 1500,
+                    });
+                } catch (visionError) {
+                    if (visionError instanceof OllamaDownError) throw cssError;
+                    throw cssError;
+                }
+            }
 
             // Se arriviamo qui, il prelievo ha avuto successo
             await transitionLead(lead.id, 'WITHDRAWN', 'auto_hygiene_policy', {

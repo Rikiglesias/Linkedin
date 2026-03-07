@@ -49,7 +49,7 @@ export function isLocalAiEndpoint(baseUrl: string): boolean {
     try {
         const url = new URL(baseUrl);
         const host = url.hostname.toLowerCase();
-        if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
+        if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '0.0.0.0' || host === '::ffff:127.0.0.1') {
             return true;
         }
         return host.endsWith('.local');

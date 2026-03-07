@@ -188,11 +188,11 @@ export function buildLimitsAndRiskDomainConfig(): Partial<AppConfig> {
         riskPredictiveSigma: Math.max(0.5, parseFloatEnv('RISK_PREDICTIVE_SIGMA', 2)),
         postCreationEnabled: parseBoolEnv('POST_CREATION_ENABLED', false),
         postCreationMaxPerDay: Math.max(0, parseIntEnv('POST_CREATION_MAX_PER_DAY', 1)),
-        postCreationDefaultTone: (parseStringEnv('POST_CREATION_DEFAULT_TONE') || 'thought_leadership') as
-            | 'professional'
-            | 'casual'
-            | 'thought_leadership'
-            | 'storytelling',
+        postCreationDefaultTone: (() => {
+            const VALID_TONES = ['professional', 'casual', 'inspirational', 'educational', 'storytelling'] as const;
+            const raw = parseStringEnv('POST_CREATION_DEFAULT_TONE');
+            return (VALID_TONES as readonly string[]).includes(raw) ? raw as typeof VALID_TONES[number] : 'professional';
+        })(),
     };
 }
 
@@ -224,6 +224,7 @@ export function buildAiDomainConfig(): Partial<AppConfig> {
         openaiApiKey: parseStringEnv('OPENAI_API_KEY'),
         openaiBaseUrl: parseStringEnv('OPENAI_BASE_URL', 'http://127.0.0.1:11434/v1'),
         aiModel: parseStringEnv('AI_MODEL', 'llama3.1:8b'),
+        aiEmbeddingModel: parseStringEnv('AI_EMBEDDING_MODEL', 'nomic-embed-text'),
         aiAllowRemoteEndpoint: parseBoolEnv('AI_ALLOW_REMOTE_ENDPOINT', false),
         aiRequestTimeoutMs: Math.max(1000, parseIntEnv('AI_REQUEST_TIMEOUT_MS', 12000)),
         aiPersonalizationEnabled: parseBoolEnv('AI_PERSONALIZATION_ENABLED', false),
@@ -329,7 +330,7 @@ export function buildProxyDomainConfig(): Partial<AppConfig> {
 export function buildBehaviorDomainConfig(): Partial<AppConfig> {
     return {
         withdrawInvitesEnabled: parseBoolEnv('WITHDRAW_INVITES_ENABLED', true),
-        pendingInviteMaxDays: parseIntEnv('PENDING_INVITE_MAX_DAYS', 30),
+        pendingInviteMaxDays: Math.max(1, parseIntEnv('PENDING_INVITE_MAX_DAYS', 30)),
         inviteWithNote: parseBoolEnv('INVITE_WITH_NOTE', false),
         inviteNoteMode: (parseStringEnv('INVITE_NOTE_MODE', 'template') === 'ai' ? 'ai' : 'template') as
             | 'template'

@@ -2,6 +2,11 @@ import fs from 'fs';
 import path from 'path';
 import { Page } from 'playwright';
 import { humanDelay, humanMouseMove, simulateHumanReading, contextualReadingPause, randomMouseMove } from '../browser';
+import {
+    SALESNAV_NEXT_PAGE_SELECTOR,
+    SALESNAV_SELECT_ALL_SELECTOR,
+    SALESNAV_SAVE_TO_LIST_SELECTOR,
+} from './selectors';
 
 // ─── Resume state ─────────────────────────────────────────────────────────────
 
@@ -68,28 +73,11 @@ const FIRST_LIST_OPTION_SELECTOR = [
     'ul[role="list"] li:first-child button',
 ].join(', ');
 
-const SELECT_ALL_CHECKBOX_SELECTOR = [
-    'input[aria-label="Select all current page results"]',
-    'input[aria-label="Seleziona tutti i risultati nella pagina corrente"]',
-    'button:has-text("Select all")',
-    'button:has-text("Seleziona tutto")',
-    '.artdeco-checkbox__input[aria-label*="Select all"]',
-].join(', ');
+const SELECT_ALL_CHECKBOX_SELECTOR = SALESNAV_SELECT_ALL_SELECTOR;
 
-const SAVE_TO_LIST_HEADER_BUTTON_SELECTOR = [
-    'button:has-text("Save to list")',
-    'button:has-text("Salva nell\'elenco")',
-    'button[title="Save to list"]',
-    'button[title="Salva nell\'elenco"]',
-].join(', ');
+const SAVE_TO_LIST_HEADER_BUTTON_SELECTOR = SALESNAV_SAVE_TO_LIST_SELECTOR;
 
-const NEXT_PAGE_SELECTOR = [
-    'button[aria-label="Next"]',
-    'button[aria-label*="Avanti"]',
-    'button.artdeco-pagination__button--next',
-    'button:has-text("Next")',
-    'button:has-text("Avanti")',
-].join(', ');
+const NEXT_PAGE_SELECTOR = SALESNAV_NEXT_PAGE_SELECTOR;
 
 function cleanText(value: string): string {
     return value.replace(/\s+/g, ' ').trim();

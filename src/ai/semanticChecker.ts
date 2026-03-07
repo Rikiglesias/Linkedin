@@ -5,9 +5,10 @@ interface MemoryItem {
     embedding?: number[];
 }
 
+const MAX_MEMORY_PER_LEAD = 10;
+
 export class SemanticChecker {
-    private static memory: MemoryItem[] = [];
-    private static MAX_MEMORY = 50;
+    private static memory: Map<number, MemoryItem[]> = new Map();
 
     /**
      * Calcola la Jaccard similarity (0-1) tra due stringhe,
@@ -62,7 +63,9 @@ export class SemanticChecker {
      * @param threshold Soglia (es. 0.8 per 80% di similarità).
      * @returns True se è troppo simile a qualcosa in memoria.
      */
-    public static async isTooSimilar(text: string, threshold: number = 0.8): Promise<boolean> {
+    public static async isTooSimilar(text: string, threshold: number = 0.8, leadId?: number): Promise<boolean> {
+        const entries = leadId !== undefined ? this.memory.get(leadId) ?? [] : [];
+
         let queryEmbedding: number[] | undefined;
 
         if (isOpenAIConfigured()) {
@@ -73,7 +76,7 @@ export class SemanticChecker {
             }
         }
 
-        for (const pastMsg of this.memory) {
+        for (const pastMsg of entries) {
             if (queryEmbedding && pastMsg.embedding) {
                 const sim = this.cosineSimilarity(queryEmbedding, pastMsg.embedding);
                 if (sim > threshold) return true;
@@ -89,9 +92,9 @@ export class SemanticChecker {
     /**
      * Aggiunge un nuovo messaggio alla memoria (se non è vuoto).
      */
-    public static async remember(text: string): Promise<void> {
+    public static async remember(text: string, leadId?: number): Promise<void> {
         const t = text.trim();
-        if (!t) return;
+        if (!t || leadId === undefined) return;
 
         let embedding: number[] | undefined;
         if (isOpenAIConfigured()) {
@@ -102,9 +105,17 @@ export class SemanticChecker {
             }
         }
 
-        this.memory.push({ text: t, embedding });
-        if (this.memory.length > this.MAX_MEMORY) {
-            this.memory.shift();
+        let entries = this.memory.get(leadId);
+        if (!entries) {
+            entries = [];
+            this.memory.set(leadId, entries);
+        }
+
+        entries.push({ text: t, embedding });
+
+        // LRU eviction: drop oldest entries when limit exceeded
+        while (entries.length > MAX_MEMORY_PER_LEAD) {
+            entries.shift();
         }
     }
 }

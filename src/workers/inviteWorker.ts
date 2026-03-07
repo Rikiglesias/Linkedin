@@ -151,14 +151,7 @@ async function handleInviteModal(
             await humanMouseMove(page, joinSelectors('sendWithNote'));
             await humanDelay(page, 150, 400); // Changed from context.session.page to page
 
-            if (!dryRun) {
-                // Changed from context.dryRun to dryRun
-                await sendWithNote.click();
-            } else {
-                console.log(
-                    `[DRY RUN] Inviato invito a ${lead.linkedin_url} (nota: ${generatedNote.source} - var: ${generatedNote.variant || 'none'})`,
-                );
-            }
+            await sendWithNote.click();
 
             return { sentWithNote: true, noteSource: generatedNote.source, variant: generatedNote.variant };
         }
@@ -269,6 +262,24 @@ export async function processInviteJob(
         }
     }
 
+    // Pre-click: check weekly invite limit before sending (prevents wasted invites)
+    if (!context.dryRun) {
+        const preClickLimitReached = await detectWeeklyInviteLimit(context.session.page);
+        if (preClickLimitReached) {
+            await pauseAutomation(
+                'WEEKLY_INVITE_LIMIT_REACHED',
+                {
+                    leadId: lead.id,
+                    linkedinUrl: lead.linkedin_url,
+                    accountId: context.accountId,
+                    phase: 'pre_click',
+                },
+                7 * 24 * 60,
+            );
+            throw new RetryableWorkerError('Limite settimanale inviti raggiunto (pre-click)', 'WEEKLY_LIMIT_REACHED');
+        }
+    }
+
     const connectClicked = await clickConnectOnProfile(context.session.page);
     if (!connectClicked) {
         await incrementDailyStat(context.localDate, 'selector_failures');
@@ -286,6 +297,7 @@ export async function processInviteJob(
         campaignOverrideNote,
     );
 
+    // Post-click: verify no weekly limit error was triggered by our action
     if (!context.dryRun) {
         const weeklyLimitReached = await detectWeeklyInviteLimit(context.session.page);
         if (weeklyLimitReached) {
@@ -295,6 +307,7 @@ export async function processInviteJob(
                     leadId: lead.id,
                     linkedinUrl: lead.linkedin_url,
                     accountId: context.accountId,
+                    phase: 'post_click',
                 },
                 7 * 24 * 60,
             );

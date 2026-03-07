@@ -8,6 +8,7 @@ module.exports = {
         watch: false,
         autorestart: true,
         max_memory_restart: "1G",
+        kill_timeout: 10000,
         restart_delay: 5000,          // Attende 5s prima di riavviare
         max_restarts: 10,             // Max 10 riavvii in 15 minuti
         min_uptime: "30s",            // Deve stare su almeno 30s per essere "stable"

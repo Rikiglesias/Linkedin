@@ -12,7 +12,7 @@ import { config } from '../config';
 export interface PostContentRequest {
     topic?: string;
     industry?: string;
-    tone?: 'professional' | 'casual' | 'thought_leadership' | 'storytelling';
+    tone?: 'professional' | 'casual' | 'inspirational' | 'educational' | 'storytelling';
     maxLength?: number;
     language?: string;
     accountContext?: string;
@@ -60,7 +60,7 @@ function pickTemplatePost(): PostContentResult {
 
 export async function generatePostContent(request: PostContentRequest = {}): Promise<PostContentResult> {
     const topic = request.topic || pickRandomTopic();
-    const tone = request.tone || 'thought_leadership';
+    const tone = request.tone || 'professional';
     const maxLength = request.maxLength || 1300;
     const language = request.language || 'italiano';
 
@@ -71,7 +71,8 @@ export async function generatePostContent(request: PostContentRequest = {}): Pro
     const toneDescriptions: Record<string, string> = {
         professional: 'tono professionale e formale, dati e insight concreti',
         casual: 'tono conversazionale e personale, storie ed esperienze',
-        thought_leadership: 'tono da thought leader, visione strategica e insight unici',
+        inspirational: 'tono ispirazionale e motivante, visione strategica e insight unici',
+        educational: 'tono educativo e informativo, spiegazioni chiare e valore pratico',
         storytelling: 'tono narrativo, partendo da un aneddoto personale verso una lezione professionale',
     };
 
@@ -80,7 +81,7 @@ export async function generatePostContent(request: PostContentRequest = {}): Pro
 Regole:
 - Lunghezza: 600-${maxLength} caratteri
 - Struttura: hook forte nella prima riga, corpo con insight/storia, chiusura con domanda aperta
-- Tono: ${toneDescriptions[tone] || toneDescriptions.thought_leadership}
+- Tono: ${toneDescriptions[tone] || toneDescriptions.professional}
 - Includi 2-4 hashtag rilevanti alla fine
 - Usa line break per la leggibilità (righe corte)
 - NON usare emoji eccessivi (max 1-2)

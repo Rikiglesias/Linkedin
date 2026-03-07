@@ -20,9 +20,22 @@ import {
     updateSyncRunProgress,
 } from '../core/repositories';
 import type { SalesNavSyncRunRecord, SalesNavSyncRunSummary } from '../core/repositories.types';
-import { visionClick, visionVerify, visionWaitFor, type VisionRegionClip } from './visionNavigator';
+import {
+    visionClick,
+    visionPageAllAlreadySaved,
+    visionReadTotalResults,
+    visionVerify,
+    visionWaitFor,
+    type VisionRegionClip,
+} from './visionNavigator';
+import {
+    SALESNAV_NEXT_PAGE_SELECTOR as NEXT_PAGE_SELECTOR,
+    SALESNAV_SELECT_ALL_SELECTOR as SELECT_ALL_SELECTOR,
+    SALESNAV_SAVE_TO_LIST_SELECTOR as SAVE_TO_LIST_SELECTOR,
+    SALESNAV_DIALOG_SELECTOR as DIALOG_SELECTOR,
+} from './selectors';
 
-const SEARCHES_URL = 'https://www.linkedin.com/sales/search/saved-searches';
+export const SEARCHES_URL = 'https://www.linkedin.com/sales/search/saved-searches';
 
 const VIEW_SAVED_SEARCH_SELECTOR = [
     'button:has-text("Visualizza")',
@@ -31,31 +44,6 @@ const VIEW_SAVED_SEARCH_SELECTOR = [
     'a:has-text("Visualizza")',
     'a:has-text("View results")',
 ].join(', ');
-
-const SELECT_ALL_SELECTOR = [
-    'input[aria-label="Select all current page results"]',
-    'input[aria-label="Seleziona tutti i risultati nella pagina corrente"]',
-    'button:has-text("Select all")',
-    'button:has-text("Seleziona tutto")',
-    '.artdeco-checkbox__input[aria-label*="Select all"]',
-].join(', ');
-
-const SAVE_TO_LIST_SELECTOR = [
-    'button:has-text("Save to list")',
-    'button:has-text("Salva nell\'elenco")',
-    'button[title="Save to list"]',
-    'button[title="Salva nell\'elenco"]',
-].join(', ');
-
-const NEXT_PAGE_SELECTOR = [
-    'button[aria-label="Next"]',
-    'button[aria-label*="Avanti"]',
-    'button.artdeco-pagination__button--next',
-    'button:has-text("Next")',
-    'button:has-text("Avanti")',
-].join(', ');
-
-const DIALOG_SELECTOR = ['[role="dialog"]', '.artdeco-modal', '.artdeco-modal__content'].join(', ');
 
 const SEARCH_RESULTS_READY_QUESTION =
     'the page shows Sales Navigator lead results and a control labeled "Select all" or "Seleziona tutto" or "Save to list" or "Salva nell\'elenco"';
@@ -74,8 +62,9 @@ export interface SalesNavBulkSaveOptions {
 export interface SalesNavBulkSavePageReport {
     pageNumber: number;
     leadsOnPage: number;
-    status: 'SUCCESS' | 'FAILED' | 'SKIPPED';
+    status: 'SUCCESS' | 'FAILED' | 'SKIPPED' | 'SKIPPED_ALL_SAVED';
     errorMessage: string | null;
+    allAlreadySaved?: boolean;
 }
 
 export interface SalesNavBulkSaveSearchReport {
@@ -84,7 +73,9 @@ export interface SalesNavBulkSaveSearchReport {
     startedPage: number;
     finalPage: number;
     processedPages: number;
+    pagesSkippedAllSaved: number;
     leadsSaved: number;
+    totalResultsDetected: number | null;
     status: 'SUCCESS' | 'SKIPPED_AFTER_FAILURES' | 'FAILED_TO_OPEN' | 'DRY_RUN';
     errors: string[];
     pages: SalesNavBulkSavePageReport[];
@@ -104,6 +95,7 @@ export interface SalesNavBulkSaveReport {
     searchesPlanned: number;
     searchesProcessed: number;
     pagesProcessed: number;
+    pagesSkippedAllSaved: number;
     totalLeadsSaved: number;
     lastError: string | null;
     startedAt: string;
@@ -112,7 +104,7 @@ export interface SalesNavBulkSaveReport {
     dbSummary: SalesNavSyncRunSummary | null;
 }
 
-interface SavedSearchDescriptor {
+export interface SavedSearchDescriptor {
     index: number;
     name: string;
     buttonText: string;
@@ -213,7 +205,7 @@ async function navigateToSavedSearches(page: Page): Promise<void> {
     await simulateHumanReading(page);
 }
 
-async function extractSavedSearches(page: Page): Promise<SavedSearchDescriptor[]> {
+export async function extractSavedSearches(page: Page): Promise<SavedSearchDescriptor[]> {
     const rows = await page.evaluate(() => {
         const isViewControl = (raw: string) => /^(view|view results|visualizza)$/i.test(raw.trim());
         const controls = Array.from(document.querySelectorAll('button, a')) as Array<HTMLButtonElement | HTMLAnchorElement>;
@@ -555,6 +547,7 @@ function buildInitialReport(options: SalesNavBulkSaveOptions): SalesNavBulkSaveR
         searchesPlanned: 0,
         searchesProcessed: 0,
         pagesProcessed: 0,
+        pagesSkippedAllSaved: 0,
         totalLeadsSaved: 0,
         lastError: null,
         startedAt: new Date().toISOString(),
@@ -671,7 +664,9 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                 startedPage: initialPageNumber,
                 finalPage: initialPageNumber,
                 processedPages: 0,
+                pagesSkippedAllSaved: 0,
                 leadsSaved: 0,
+                totalResultsDetected: null,
                 status: dryRun ? 'DRY_RUN' : 'SUCCESS',
                 errors: [],
                 pages: [],
@@ -694,6 +689,16 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
             try {
                 await clickSavedSearchView(page, search, dryRun);
                 await ensureNoChallenge(page);
+
+                // Read total results count once per search to cap maxPages accurately.
+                // Avoids navigating to empty pages beyond the real last page (bot pattern).
+                if (!dryRun) {
+                    const totalResults = await visionReadTotalResults(page);
+                    if (totalResults !== null) {
+                        searchReport.totalResultsDetected = totalResults;
+                    }
+                }
+
                 if (!dryRun && initialPageNumber > 1) {
                     await restoreSearchPagePosition(page, initialPageNumber);
                 }
@@ -747,8 +752,15 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                 continue;
             }
 
+            // Cap the loop at the real number of pages detected by vision (if available).
+            // This prevents navigating past the last page, which looks bot-like.
+            const searchMaxPages =
+                searchReport.totalResultsDetected !== null
+                    ? Math.min(safeMaxPages, Math.ceil(searchReport.totalResultsDetected / 25))
+                    : safeMaxPages;
+
             let consecutiveFailedPages = 0;
-            for (let pageNumber = initialPageNumber; pageNumber <= safeMaxPages; pageNumber++) {
+            for (let pageNumber = initialPageNumber; pageNumber <= searchMaxPages; pageNumber++) {
                 currentPageNumber = pageNumber;
                 searchReport.finalPage = pageNumber;
 
@@ -770,6 +782,41 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                 }
 
                 const leadsOnPage = await estimateCurrentPageLeadCount(page);
+
+                // Anti-detection: check if ALL leads on this page are already saved.
+                // If yes, skip the "Select All + Save to list" bulk actions entirely.
+                // This is the biggest reduction in LinkedIn-visible bot activity on subsequent runs.
+                const allSaved = await visionPageAllAlreadySaved(page);
+                if (allSaved) {
+                    if (run) {
+                        await addSyncItem({
+                            runId: run.id,
+                            searchIndex: absoluteIndex,
+                            pageNumber,
+                            leadsOnPage,
+                            status: 'SKIPPED',
+                        });
+                    }
+                    report.pagesSkippedAllSaved += 1;
+                    searchReport.pagesSkippedAllSaved += 1;
+                    searchReport.pages.push({
+                        pageNumber,
+                        leadsOnPage,
+                        status: 'SKIPPED_ALL_SAVED',
+                        errorMessage: null,
+                        allAlreadySaved: true,
+                    });
+
+                    if (pageNumber >= searchMaxPages) {
+                        break;
+                    }
+                    const movedSkip = await clickNextPage(page, false);
+                    if (!movedSkip) {
+                        break;
+                    }
+                    continue;
+                }
+
                 try {
                     await processSearchPage(page, options.targetListName, false);
 
@@ -802,7 +849,7 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                             processedPages: report.pagesProcessed,
                             totalLeadsSaved: report.totalLeadsSaved,
                             currentSearchIndex: absoluteIndex,
-                            currentPageNumber: Math.min(pageNumber + 1, safeMaxPages + 1),
+                            currentPageNumber: Math.min(pageNumber + 1, searchMaxPages + 1),
                             lastError: null,
                         });
                     }
@@ -810,7 +857,7 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                     await ensureNoChallenge(page);
                     await runAntiDetectionNoise(page, report.pagesProcessed);
 
-                    if (pageNumber >= safeMaxPages) {
+                    if (pageNumber >= searchMaxPages) {
                         break;
                     }
                     const moved = await clickNextPage(page, false);
@@ -874,7 +921,7 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                         break;
                     }
 
-                    if (pageNumber >= safeMaxPages) {
+                    if (pageNumber >= searchMaxPages) {
                         break;
                     }
 

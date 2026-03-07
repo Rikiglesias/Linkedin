@@ -391,14 +391,14 @@ export async function getProxyFailoverChainAsync(options: GetProxyChainOptions =
         }
     }
 
-    // P4-07: SOCKS5 Tor Fallback (Extreme Last Resort)
+    // Tor before cooling proxies: fresh circuit is better than hammering a cooling proxy
     if (config.proxyTorSocks5Url) {
         const torParsed = parseProxyEntry(config.proxyTorSocks5Url);
         if (torParsed) {
             console.warn(
                 `[PROXY] Pool esaurito e API provider non disp. Fallback su rete Tor: ${config.proxyTorSocks5Url}`,
             );
-            return prioritizeProxyPool(rotated, options).concat([torParsed]);
+            return [torParsed].concat(prioritizeProxyPool(rotated, options));
         }
     }
 
@@ -430,14 +430,14 @@ export async function getIntegrationProxyFailoverChainAsync(
         }
     }
 
-    // P4-07: SOCKS5 Tor Fallback per integration
+    // Tor before cooling proxies: fresh circuit is better than hammering a cooling proxy
     if (config.proxyTorSocks5Url) {
         const torParsed = parseProxyEntry(config.proxyTorSocks5Url);
         if (torParsed) {
             console.warn(
                 `[PROXY-INT] Pool esaurito e API provider non disp. Fallback su rete Tor: ${config.proxyTorSocks5Url}`,
             );
-            return prioritizeProxyPool(rotated, options).concat([torParsed]);
+            return [torParsed].concat(prioritizeProxyPool(rotated, options));
         }
     }
 

@@ -54,7 +54,8 @@ import { sendTelegramAlert } from '../../telemetry/alerts';
 
 // ─── Costanti lock ────────────────────────────────────────────────────────────
 
-let WORKFLOW_RUNNER_LOCK_KEY = 'workflow.runner';
+let _workflowRunnerLockKey = 'workflow.runner';
+function getWorkflowRunnerLockKey(): string { return _workflowRunnerLockKey; }
 const WORKFLOW_RUNNER_MIN_TTL_SECONDS = 120;
 const WORKFLOW_RUNNER_HEARTBEAT_MS = 30_000;
 const AUTO_SITE_CHECK_LAST_RUN_KEY = 'site_check.last_run_at';
@@ -101,27 +102,27 @@ async function acquireWorkflowRunnerLock(
     metadata: Record<string, unknown>,
 ): Promise<string> {
     const ownerId = createLockOwnerId(command);
-    const result = await acquireRuntimeLock(WORKFLOW_RUNNER_LOCK_KEY, ownerId, ttlSeconds, metadata);
+    const result = await acquireRuntimeLock(getWorkflowRunnerLockKey(), ownerId, ttlSeconds, metadata);
     if (!result.acquired) {
         const holder = result.lock;
         throw new Error(
             `[LOCK] Runner già attivo.owner = ${holder?.owner_id ?? 'unknown'} heartbeat = ${holder?.heartbeat_at ?? 'n/a'} expires = ${holder?.expires_at ?? 'n/a'} `,
         );
     }
-    console.log(`[LOCK] acquired key = ${WORKFLOW_RUNNER_LOCK_KEY} owner = ${ownerId} ttl = ${ttlSeconds} s`);
+    console.log(`[LOCK] acquired key = ${getWorkflowRunnerLockKey()} owner = ${ownerId} ttl = ${ttlSeconds} s`);
     return ownerId;
 }
 
 async function heartbeatWorkflowRunnerLock(ownerId: string, ttlSeconds: number): Promise<void> {
-    const ok = await heartbeatRuntimeLock(WORKFLOW_RUNNER_LOCK_KEY, ownerId, ttlSeconds);
+    const ok = await heartbeatRuntimeLock(getWorkflowRunnerLockKey(), ownerId, ttlSeconds);
     if (!ok) {
         throw new Error("[LOCK] Runtime lock perso durante l'esecuzione.");
     }
 }
 
 async function releaseWorkflowRunnerLock(ownerId: string): Promise<void> {
-    const released = await releaseRuntimeLock(WORKFLOW_RUNNER_LOCK_KEY, ownerId);
-    console.log(`[LOCK] released key = ${WORKFLOW_RUNNER_LOCK_KEY} owner = ${ownerId} released = ${released} `);
+    const released = await releaseRuntimeLock(getWorkflowRunnerLockKey(), ownerId);
+    console.log(`[LOCK] released key = ${getWorkflowRunnerLockKey()} owner = ${ownerId} released = ${released} `);
 }
 
 async function sleepWithLockHeartbeat(totalMs: number, ownerId: string, ttlSeconds: number): Promise<void> {
@@ -293,7 +294,7 @@ export async function runLoopCommand(args: string[]): Promise<void> {
     let isLeader = true;
     if (accountOverride) {
         setOverrideAccountId(accountOverride);
-        WORKFLOW_RUNNER_LOCK_KEY = `workflow.runner:${accountOverride}`;
+        _workflowRunnerLockKey = `workflow.runner:${accountOverride}`;
         const defaultProfileId = config.accountProfiles[0]?.id || 'default';
         isLeader = accountOverride === defaultProfileId;
         console.log(`[LOOP] Account override: ${accountOverride} (Leader: ${isLeader})`);

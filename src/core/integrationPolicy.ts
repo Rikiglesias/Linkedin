@@ -6,6 +6,7 @@ import {
     markIntegrationProxyHealthy,
     type ProxyConfig,
 } from '../proxyManager';
+import { getRuntimeFlag, setRuntimeFlag } from './repositories';
 
 export type RetryClassification = 'transient' | 'terminal';
 export type CircuitBreakerStatus = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
@@ -40,6 +41,63 @@ interface CircuitState {
 }
 
 const circuitStates = new Map<string, CircuitState>();
+const circuitLoadedFromDb = new Set<string>();
+
+const CB_FLAG_PREFIX = 'cb::';
+
+interface PersistedCircuitState {
+    status: CircuitBreakerStatus;
+    openUntilMs: number;
+    totalFailures: number;
+    totalSuccesses: number;
+    lastError: string | null;
+    lastTransitionAtMs: number;
+}
+
+function persistCircuitStateAsync(circuitKey: string, state: CircuitState): void {
+    const payload: PersistedCircuitState = {
+        status: state.status,
+        openUntilMs: state.openUntilMs,
+        totalFailures: state.totalFailures,
+        totalSuccesses: state.totalSuccesses,
+        lastError: state.lastError,
+        lastTransitionAtMs: state.lastTransitionAtMs,
+    };
+    setRuntimeFlag(`${CB_FLAG_PREFIX}${circuitKey}`, JSON.stringify(payload)).catch(() => {});
+}
+
+async function loadCircuitStateFromDb(circuitKey: string): Promise<CircuitState | null> {
+    try {
+        const raw = await getRuntimeFlag(`${CB_FLAG_PREFIX}${circuitKey}`);
+        if (!raw) return null;
+        const persisted = JSON.parse(raw) as PersistedCircuitState;
+        const now = Date.now();
+        let status = persisted.status;
+        let openUntilMs = persisted.openUntilMs;
+        if (status === 'OPEN' && openUntilMs <= now) {
+            status = 'HALF_OPEN';
+            openUntilMs = 0;
+        }
+        return {
+            status,
+            consecutiveFailures: 0,
+            openUntilMs,
+            halfOpenProbeInFlight: false,
+            openedCount: 0,
+            halfOpenCount: 0,
+            closedCount: 0,
+            blockedCount: 0,
+            totalFailures: persisted.totalFailures,
+            totalSuccesses: persisted.totalSuccesses,
+            lastFailureAtMs: 0,
+            lastSuccessAtMs: 0,
+            lastTransitionAtMs: persisted.lastTransitionAtMs,
+            lastError: persisted.lastError,
+        };
+    } catch {
+        return null;
+    }
+}
 
 interface CircuitAttemptAccess {
     allowed: boolean;
@@ -192,6 +250,15 @@ function ensureCircuitState(circuitKey: string): CircuitState {
         lastError: null,
     };
     circuitStates.set(circuitKey, created);
+    if (!circuitLoadedFromDb.has(circuitKey)) {
+        circuitLoadedFromDb.add(circuitKey);
+        loadCircuitStateFromDb(circuitKey).then((persisted) => {
+            if (!persisted) return;
+            const current = circuitStates.get(circuitKey);
+            if (!current || current.lastTransitionAtMs > 0) return;
+            Object.assign(current, persisted);
+        }).catch(() => {});
+    }
     return created;
 }
 
@@ -202,20 +269,22 @@ function transitionCircuitState(state: CircuitState, status: CircuitBreakerStatu
     }
 }
 
-function openCircuit(state: CircuitState, now: number): void {
+function openCircuit(state: CircuitState, now: number, circuitKey?: string): void {
     transitionCircuitState(state, 'OPEN');
     state.openedCount += 1;
     state.openUntilMs = now + config.integrationCircuitOpenMs;
     state.consecutiveFailures = 0;
     state.halfOpenProbeInFlight = false;
+    if (circuitKey) persistCircuitStateAsync(circuitKey, state);
 }
 
-function closeCircuit(state: CircuitState): void {
+function closeCircuit(state: CircuitState, circuitKey?: string): void {
     transitionCircuitState(state, 'CLOSED');
     state.closedCount += 1;
     state.consecutiveFailures = 0;
     state.openUntilMs = 0;
     state.halfOpenProbeInFlight = false;
+    if (circuitKey) persistCircuitStateAsync(circuitKey, state);
 }
 
 function moveToHalfOpen(state: CircuitState): void {
@@ -285,13 +354,13 @@ function registerCircuitFailure(circuitKey: string, error: unknown, access: Circ
     state.lastError = error instanceof Error ? error.message : String(error);
 
     if (access.halfOpenProbe || state.status === 'HALF_OPEN') {
-        openCircuit(state, now);
+        openCircuit(state, now, circuitKey);
         return;
     }
 
     state.consecutiveFailures += 1;
     if (state.consecutiveFailures >= config.integrationCircuitFailureThreshold) {
-        openCircuit(state, now);
+        openCircuit(state, now, circuitKey);
     }
 }
 
@@ -307,7 +376,7 @@ function registerCircuitSuccess(circuitKey: string, access: CircuitAttemptAccess
     state.lastError = null;
 
     if (access.halfOpenProbe || state.status === 'HALF_OPEN') {
-        closeCircuit(state);
+        closeCircuit(state, circuitKey);
         return;
     }
 
@@ -323,7 +392,7 @@ function releaseHalfOpenProbeOnTerminal(circuitKey: string, access: CircuitAttem
     if (!state || state.status !== 'HALF_OPEN') {
         return;
     }
-    closeCircuit(state);
+    closeCircuit(state, circuitKey);
 }
 
 export function isTransientHttpStatus(status: number): boolean {
@@ -489,4 +558,5 @@ export function getCircuitBreakerSnapshot(): CircuitBreakerSnapshotRow[] {
 
 export function resetCircuitBreakersForTests(): void {
     circuitStates.clear();
+    circuitLoadedFromDb.clear();
 }

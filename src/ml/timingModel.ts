@@ -1,3 +1,5 @@
+import { config, getHourInTimezone } from '../config';
+
 export interface TimingContext {
     actionType: 'read' | 'click' | 'type' | 'scroll' | 'interJob';
     contentLength?: number;
@@ -9,7 +11,7 @@ export function calculateContextualDelay(context: TimingContext): number {
     const rawDelay = context.baseMin + Math.random() * (context.baseMax - context.baseMin);
 
     // Fatigue factor: simula lentezza fuori orario lavorativo o post-pranzo
-    const hour = new Date().getHours();
+    const hour = getHourInTimezone(new Date(), config.timezone);
     let fatigueMultiplier = 1.0;
 
     if (hour >= 18 || hour <= 8) {

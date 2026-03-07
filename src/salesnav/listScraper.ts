@@ -1,6 +1,7 @@
 import { Page } from 'playwright';
 import { humanDelay, humanMouseMove, simulateHumanReading } from '../browser';
 import { isLinkedInUrl, normalizeLinkedInUrl } from '../linkedinUrl';
+import { SALESNAV_NEXT_PAGE_SELECTOR } from './selectors';
 
 export interface SalesNavSavedList {
     name: string;
@@ -37,13 +38,7 @@ interface RawLeadCandidate {
 
 const SALESNAV_LISTS_URL = 'https://www.linkedin.com/sales/lists/people/';
 
-const NEXT_PAGE_SELECTOR = [
-    'button[aria-label="Next"]',
-    'button[aria-label*="Avanti"]',
-    'button.artdeco-pagination__button--next',
-    'button:has-text("Next")',
-    'button:has-text("Avanti")',
-].join(', ');
+const NEXT_PAGE_SELECTOR = SALESNAV_NEXT_PAGE_SELECTOR;
 
 const SHOW_MORE_SELECTOR = [
     'button:has-text("Show more")',

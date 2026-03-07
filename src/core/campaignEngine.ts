@@ -1,39 +1,17 @@
-import { getPendingCampaignExecutions, updateLeadCampaignState } from './repositories/campaigns';
+import {
+    getPendingCampaignExecutions,
+    updateLeadCampaignState,
+    getNextCampaignStep,
+    getCampaignStepById,
+    getFirstCampaignStep,
+    getLeadCampaignStateById,
+    advanceLeadCampaignState,
+    failLeadCampaignState,
+} from './repositories/campaigns';
 import { enqueueJob } from './repositories/jobs';
-import { getDatabase } from '../db';
-import { CampaignStepRecord, LeadCampaignStateRecord } from './repositories.types';
+import { CampaignStepRecord } from './repositories.types';
 import { logInfo, logWarn, logError } from '../telemetry/logger';
 // Rimosso import diretto di emailEnricher in favore del worker asincrono
-
-/**
- * Trova il prossimo step di una campagna in base a step_order.
- */
-async function getNextCampaignStep(
-    campaignId: number,
-    currentStepOrder: number | null,
-): Promise<CampaignStepRecord | null> {
-    const db = await getDatabase();
-    const order = currentStepOrder ?? -1;
-    const nextStep = await db.get<CampaignStepRecord>(
-        `
-        SELECT * FROM campaign_steps
-        WHERE campaign_id = ? AND step_order > ?
-        ORDER BY step_order ASC
-        LIMIT 1
-        `,
-        [campaignId, order],
-    );
-    return nextStep ?? null;
-}
-
-/**
- * Ottiene uno step campagna per id.
- */
-async function getCampaignStepById(stepId: number): Promise<CampaignStepRecord | null> {
-    const db = await getDatabase();
-    const step = await db.get<CampaignStepRecord>(`SELECT * FROM campaign_steps WHERE id = ?`, [stepId]);
-    return step ?? null;
-}
 
 /**
  * Genera un delay in secondi aggiungendo jitter (+/- 10%) per randomizzare l'avvio umano.
@@ -59,13 +37,8 @@ export async function dispatchReadyCampaignSteps(): Promise<number> {
             }
 
             if (!stepToExecute) {
-                const db = await getDatabase();
                 // Primo avvio: fetch step 1
-                stepToExecute =
-                    (await db.get<CampaignStepRecord>(
-                        `SELECT * FROM campaign_steps WHERE campaign_id = ? ORDER BY step_order ASC LIMIT 1`,
-                        [state.campaign_id],
-                    )) ?? null;
+                stepToExecute = await getFirstCampaignStep(state.campaign_id);
 
                 if (!stepToExecute) {
                     await updateLeadCampaignState(state.id, 'COMPLETED', null, null, 'Nessuno step configurato');
@@ -133,10 +106,7 @@ export async function dispatchReadyCampaignSteps(): Promise<number> {
  * Calcola il delay per il prossimo step e reinserisce il lead in ENROLLED.
  */
 export async function advanceLeadCampaign(campaignStateId: number): Promise<void> {
-    const db = await getDatabase();
-    const state = await db.get<LeadCampaignStateRecord>(`SELECT * FROM lead_campaign_state WHERE id = ?`, [
-        campaignStateId,
-    ]);
+    const state = await getLeadCampaignStateById(campaignStateId);
     if (!state) return;
 
     if (state.status !== 'IN_PROGRESS') {
@@ -159,18 +129,7 @@ export async function advanceLeadCampaign(campaignStateId: number): Promise<void
 
     const delaySeconds = getJitteredDelay(nextStep.delay_hours);
 
-    await db.run(
-        `
-        UPDATE lead_campaign_state
-        SET status = 'ENROLLED',
-            current_step_id = ?,
-            next_execution_at = DATETIME('now', '+' || ? || ' seconds'),
-            last_error = NULL,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-        `,
-        [nextStep.id, delaySeconds, campaignStateId],
-    );
+    await advanceLeadCampaignState(campaignStateId, nextStep.id, delaySeconds);
 
     await logInfo('campaign.advanced', {
         stateId: campaignStateId,
@@ -184,10 +143,6 @@ export async function advanceLeadCampaign(campaignStateId: number): Promise<void
  * Marca lo stato campagna come ERROR quando un job va in DEAD_LETTER.
  */
 export async function failLeadCampaign(campaignStateId: number, errorMessage: string): Promise<void> {
-    const db = await getDatabase();
-    await db.run(
-        `UPDATE lead_campaign_state SET status = 'ERROR', last_error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-        [errorMessage, campaignStateId],
-    );
+    await failLeadCampaignState(campaignStateId, errorMessage);
     await logWarn('campaign.failed', { stateId: campaignStateId, error: errorMessage });
 }

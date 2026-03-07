@@ -1,11 +1,21 @@
 import { getAccountProfileById } from '../accountManager';
-import { checkLogin, closeBrowser, humanDelay, launchBrowser, randomMouseMove, simulateHumanReading } from '../browser';
+import {
+    BrowserSession,
+    checkLogin,
+    closeBrowser,
+    humanDelay,
+    launchBrowser,
+    randomMouseMove,
+    simulateHumanReading,
+} from '../browser';
 import { logInfo, logWarn } from '../telemetry/logger';
+import { WorkerContext } from './context';
 
 export interface RandomActivityOptions {
     accountId?: string;
     maxActions: number;
     dryRun: boolean;
+    context?: WorkerContext;
 }
 
 export interface RandomActivityReport {
@@ -98,10 +108,16 @@ export async function runRandomLinkedinActivity(options: RandomActivityOptions):
         actionsRequested,
     });
 
-    const session = await launchBrowser({
-        sessionDir: account.sessionDir,
-        proxy: account.proxy,
-    });
+    const ownsSession = !options.context;
+    let session: BrowserSession;
+    if (options.context) {
+        session = options.context.session;
+    } else {
+        session = await launchBrowser({
+            sessionDir: account.sessionDir,
+            proxy: account.proxy,
+        });
+    }
     try {
         const loggedIn = await checkLogin(session.page);
         if (!loggedIn) {
@@ -135,6 +151,8 @@ export async function runRandomLinkedinActivity(options: RandomActivityOptions):
         });
         return report;
     } finally {
-        await closeBrowser(session);
+        if (ownsSession) {
+            await closeBrowser(session);
+        }
     }
 }

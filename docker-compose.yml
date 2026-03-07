@@ -17,7 +17,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-bot_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-linkedin_bot}
     volumes:
       - pg_data:/var/lib/postgresql/data
@@ -41,7 +41,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-bot_user}:${POSTGRES_PASSWORD:-changeme}@db:5432/${POSTGRES_DB:-linkedin_bot}
+      DATABASE_URL: postgres://${POSTGRES_USER:-bot_user}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-linkedin_bot}
       NODE_ENV: production
       TZ: Europe/Rome
     depends_on:

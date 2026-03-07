@@ -25,7 +25,18 @@ async function hasLinkedinAuthCookie(page: Page): Promise<boolean> {
  */
 export async function isLoggedIn(page: Page): Promise<boolean> {
     const currentUrl = page.url().toLowerCase();
-    if (currentUrl.includes('/login') || currentUrl.includes('/checkpoint') || currentUrl.includes('/challenge')) {
+    const authPatterns = [
+        '/login',
+        '/uas/login',
+        '/checkpoint',
+        '/checkpoint/challenge',
+        '/challenge',
+        '/authwall',
+        '/signup',
+        '/reauthentication',
+        '/sessionPasswordChallenge',
+    ];
+    if (authPatterns.some((p) => currentUrl.includes(p))) {
         return false;
     }
 
@@ -57,9 +68,14 @@ export async function checkLogin(page: Page): Promise<boolean> {
  */
 export async function detectChallenge(page: Page): Promise<boolean> {
     const currentUrl = page.url().toLowerCase();
-    const challengeInUrl = ['checkpoint', 'challenge', 'captcha', 'security-verification'].some((token) =>
-        currentUrl.includes(token),
-    );
+    const challengeInUrl = [
+        'checkpoint',
+        'challenge',
+        'captcha',
+        'security-verification',
+        'reauthentication',
+        'sessionPasswordChallenge',
+    ].some((token) => currentUrl.includes(token));
     if (challengeInUrl) {
         return true;
     }

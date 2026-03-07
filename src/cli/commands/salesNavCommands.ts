@@ -25,7 +25,12 @@ import {
 } from '../../core/repositories';
 import { reconcileLeadStatus } from '../../core/leadStateService';
 import { runSalesNavigatorListSync } from '../../core/salesNavigatorSync';
-import { runSalesNavBulkSave } from '../../salesnav/bulkSaveOrchestrator';
+import {
+    extractSavedSearches,
+    runSalesNavBulkSave,
+    SEARCHES_URL,
+    type SavedSearchDescriptor,
+} from '../../salesnav/bulkSaveOrchestrator';
 import { addLeadToSalesNavList, createSalesNavList } from '../../salesnav/listActions';
 import { scrapeSavedSearchAndSaveToList, scrapeAllSavedSearchesAndSaveToList } from '../../salesnav/searchExtractor';
 import { isProfileUrl, isSalesNavigatorUrl, normalizeLinkedInUrl } from '../../linkedinUrl';
@@ -143,6 +148,80 @@ async function waitForEnter(): Promise<void> {
         process.stdin.setEncoding('utf8');
         process.stdin.once('data', () => resolve());
     });
+}
+
+async function readLineFromStdin(prompt: string): Promise<string> {
+    return new Promise<string>((resolve) => {
+        process.stdout.write(prompt);
+        process.stdin.resume();
+        process.stdin.setEncoding('utf8');
+        let buffer = '';
+        const onData = (chunk: string) => {
+            buffer += chunk;
+            const newlineIndex = buffer.indexOf('\n');
+            if (newlineIndex !== -1) {
+                process.stdin.removeListener('data', onData);
+                resolve(buffer.slice(0, newlineIndex).replace(/\r/g, '').trim());
+            }
+        };
+        process.stdin.on('data', onData);
+    });
+}
+
+async function askUserToChooseSearch(searches: SavedSearchDescriptor[]): Promise<SavedSearchDescriptor> {
+    console.log('\n────────────────────────────────────────────────────────────');
+    console.log('  RICERCHE SALVATE RILEVATE');
+    console.log('────────────────────────────────────────────────────────────');
+    searches.forEach((s, i) => {
+        console.log(`  ${i + 1}. ${s.name}`);
+    });
+    console.log('────────────────────────────────────────────────────────────\n');
+
+    while (true) {
+        const input = await readLineFromStdin(`Scegli ricerca (1-${searches.length}): `);
+        const num = parseInt(input, 10);
+        if (Number.isFinite(num) && num >= 1 && num <= searches.length) {
+            return searches[num - 1];
+        }
+        // Accept search by name
+        const byName = searches.find((s) => s.name.toLowerCase().includes(input.toLowerCase()));
+        if (byName) {
+            return byName;
+        }
+        console.log(`  Scelta non valida. Inserisci un numero tra 1 e ${searches.length} oppure parte del nome.`);
+    }
+}
+
+async function askUserToChooseList(): Promise<string> {
+    const lists = await listSalesNavLists(50);
+
+    console.log('\n────────────────────────────────────────────────────────────');
+    console.log('  ELENCHI SALESNAV DISPONIBILI NEL DATABASE');
+    console.log('────────────────────────────────────────────────────────────');
+    if (lists.length === 0) {
+        console.log('  (nessun elenco trovato nel DB)');
+    } else {
+        lists.forEach((l, i) => {
+            console.log(`  ${i + 1}. ${l.name}`);
+        });
+    }
+    console.log('────────────────────────────────────────────────────────────\n');
+
+    while (true) {
+        const input = await readLineFromStdin(
+            lists.length > 0 ? `Scegli elenco (1-${lists.length}) o digita nome nuovo: ` : 'Digita il nome dell\'elenco: ',
+        );
+        if (!input) {
+            console.log('  Il nome dell\'elenco non può essere vuoto.');
+            continue;
+        }
+        const num = parseInt(input, 10);
+        if (Number.isFinite(num) && num >= 1 && num <= lists.length) {
+            return lists[num - 1].name;
+        }
+        // Accept any text as list name (new or existing)
+        return input;
+    }
 }
 
 async function waitForManualLinkedInLogin(page: Page, timeoutSeconds: number = 300): Promise<void> {
@@ -529,14 +608,14 @@ export async function runSalesNavExtractFirstSearchCommand(args: string[]): Prom
 
 export async function runSalesNavBulkSaveCommand(args: string[]): Promise<void> {
     const positional = getPositionalArgs(args);
-    const targetListName = getOptionValue(args, '--list') ?? getNpmConfigOptionValue('list') ?? positional[0];
-    if (!targetListName || !targetListName.trim()) {
-        throw new Error('Specifica la lista target: salesnav-bulk-save --list "NOME LISTA"');
-    }
+
+    // --list and --search-name are optional: if missing, the user picks interactively
+    // after login when the browser is open and searches are visible.
+    let targetListName = getOptionValue(args, '--list') ?? getNpmConfigOptionValue('list') ?? positional[0] ?? null;
+    let searchName = getOptionValue(args, '--search-name') ?? getNpmConfigOptionValue('search-name') ?? null;
 
     const maxPagesRaw = getOptionValue(args, '--max-pages') ?? getNpmConfigOptionValue('max-pages');
     const maxSearchesRaw = getOptionValue(args, '--max-searches') ?? getNpmConfigOptionValue('max-searches');
-    const searchName = getOptionValue(args, '--search-name') ?? getNpmConfigOptionValue('search-name') ?? null;
     const sessionLimitRaw = getOptionValue(args, '--session-limit') ?? getNpmConfigOptionValue('session-limit');
     const visualCursor = hasOption(args, '--visual-cursor') || hasNpmConfigFlag('visual-cursor');
     const resume = hasOption(args, '--resume') || hasNpmConfigFlag('resume');
@@ -549,8 +628,6 @@ export async function runSalesNavBulkSaveCommand(args: string[]): Promise<void> 
     const sessionLimit = sessionLimitRaw ? Math.max(1, parseIntStrict(sessionLimitRaw, '--session-limit')) : null;
 
     const account = getAccountProfileById(accountId || undefined);
-    // Login/manual flow: evita proxy intermedi che possono restituire 502 o
-    // finire sul fallback Tor locale quando l'endpoint non e' disponibile.
     const session = await launchBrowser({
         headless: false,
         sessionDir: account.sessionDir,
@@ -572,12 +649,43 @@ export async function runSalesNavBulkSaveCommand(args: string[]): Promise<void> 
             await enableVisualCursorOverlay(session.page);
         }
 
+        // Interactive search selection: navigate to saved searches, show the list,
+        // ask the user to pick. Runs only when --search-name was not passed.
+        if (!searchName || !searchName.trim()) {
+            await session.page.goto(SEARCHES_URL, { waitUntil: 'domcontentloaded' });
+            await humanDelay(session.page, 1500, 2800);
+            const discovered = await extractSavedSearches(session.page);
+            if (discovered.length === 0) {
+                throw new Error('Nessuna ricerca salvata trovata in Sales Navigator. Verifica di essere nella sezione corretta.');
+            }
+            if (process.stdin.isTTY) {
+                const chosen = await askUserToChooseSearch(discovered);
+                searchName = chosen.name;
+                console.log(`\n[OK] Ricerca selezionata: "${searchName}"\n`);
+            } else {
+                // Non-interactive: use the first search.
+                searchName = discovered[0].name;
+                console.log(`[INFO] Terminale non interattivo: uso prima ricerca trovata: "${searchName}"`);
+            }
+        }
+
+        // Interactive list selection: show DB lists + ask the user.
+        // Runs only when --list was not passed.
+        if (!targetListName || !targetListName.trim()) {
+            if (process.stdin.isTTY) {
+                targetListName = await askUserToChooseList();
+                console.log(`\n[OK] Elenco selezionato: "${targetListName}"\n`);
+            } else {
+                throw new Error('Lista non specificata. Usa --list "NOME LISTA" oppure esegui in modalità interattiva.');
+            }
+        }
+
         const report = await runSalesNavBulkSave(session.page, {
             accountId: account.id,
             targetListName: targetListName.trim(),
             maxPages,
             maxSearches,
-            searchName: searchName?.trim() || null,
+            searchName: searchName.trim() || null,
             resume,
             dryRun,
             sessionLimit,

@@ -540,7 +540,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
                 await runRandomLinkedinActivity({
                     accountId: acc.id,
                     maxActions: 1 + Math.floor(Math.random() * 2),
-                    dryRun: false,
+                    dryRun: options.dryRun,
                 });
             }
         }
@@ -555,7 +555,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
                     await runRandomLinkedinActivity({
                         accountId: acc.id,
                         maxActions: Math.floor(Math.random() * 4) + 3,
-                        dryRun: false,
+                        dryRun: options.dryRun,
                     });
                 }
             }

@@ -96,8 +96,8 @@ export async function runWebhookSyncOnce(): Promise<void> {
         const payload = {
             topic: event.topic,
             payload: parseOutboxPayload(event.payload_json),
-            idempotencyKey: event.idempotency_key,
-            createdAt: event.created_at,
+            idempotency_key: event.idempotency_key,
+            created_at: event.created_at,
         };
 
         const body = JSON.stringify(payload);

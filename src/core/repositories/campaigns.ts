@@ -105,13 +105,98 @@ export async function updateLeadCampaignState(
     await db.run(
         `
         UPDATE lead_campaign_state
-        SET status = ?, 
-            current_step_id = ?, 
-            next_execution_at = ?, 
+        SET status = ?,
+            current_step_id = ?,
+            next_execution_at = ?,
             last_error = ?,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
         `,
         [status, nextStepId, nextExecutionAt, lastError, id],
+    );
+}
+
+/**
+ * Trova il prossimo step di una campagna in base a step_order.
+ */
+export async function getNextCampaignStep(
+    campaignId: number,
+    currentStepOrder: number | null,
+): Promise<CampaignStepRecord | null> {
+    const db = await getDatabase();
+    const order = currentStepOrder ?? -1;
+    const nextStep = await db.get<CampaignStepRecord>(
+        `
+        SELECT * FROM campaign_steps
+        WHERE campaign_id = ? AND step_order > ?
+        ORDER BY step_order ASC
+        LIMIT 1
+        `,
+        [campaignId, order],
+    );
+    return nextStep ?? null;
+}
+
+/**
+ * Ottiene uno step campagna per id.
+ */
+export async function getCampaignStepById(stepId: number): Promise<CampaignStepRecord | null> {
+    const db = await getDatabase();
+    const step = await db.get<CampaignStepRecord>(`SELECT * FROM campaign_steps WHERE id = ?`, [stepId]);
+    return step ?? null;
+}
+
+/**
+ * Ottiene il primo step di una campagna (step_order ASC).
+ */
+export async function getFirstCampaignStep(campaignId: number): Promise<CampaignStepRecord | null> {
+    const db = await getDatabase();
+    const step = await db.get<CampaignStepRecord>(
+        `SELECT * FROM campaign_steps WHERE campaign_id = ? ORDER BY step_order ASC LIMIT 1`,
+        [campaignId],
+    );
+    return step ?? null;
+}
+
+/**
+ * Ottiene lo stato lead-campagna per id.
+ */
+export async function getLeadCampaignStateById(id: number): Promise<LeadCampaignStateRecord | null> {
+    const db = await getDatabase();
+    const state = await db.get<LeadCampaignStateRecord>(`SELECT * FROM lead_campaign_state WHERE id = ?`, [id]);
+    return state ?? null;
+}
+
+/**
+ * Avanza lo stato lead-campagna al prossimo step con delay calcolato.
+ */
+export async function advanceLeadCampaignState(
+    id: number,
+    nextStepId: number,
+    delaySeconds: number,
+): Promise<void> {
+    const db = await getDatabase();
+    await db.run(
+        `
+        UPDATE lead_campaign_state
+        SET status = 'ENROLLED',
+            current_step_id = ?,
+            next_execution_at = DATETIME('now', '+' || ? || ' seconds'),
+            last_error = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        `,
+        [nextStepId, delaySeconds, id],
+    );
+}
+
+/**
+ * Marca lo stato lead-campagna come ERROR.
+ */
+export async function failLeadCampaignState(id: number, errorMessage: string): Promise<void> {
+    const db = await getDatabase();
+    await db.run(
+        `UPDATE lead_campaign_state SET status = 'ERROR', last_error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [errorMessage, id],
     );
 }

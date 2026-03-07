@@ -8,7 +8,8 @@ import { getDatabase } from '../db';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { computeTwoProportionSignificance } from './significance';
 
-const EPSILON = 0.15;
+const INITIAL_EPSILON = 0.15;
+const MIN_EPSILON = 0.02;
 const BAYES_ALPHA_PRIOR = 1;
 const BAYES_BETA_PRIOR = 1;
 const BAYES_STD_WEIGHT = 0.75;
@@ -240,7 +241,10 @@ export function evaluateBanditDecision(
     };
 }
 
+let _segmentTableCreated = false;
+
 async function ensureSegmentTable(db: Awaited<ReturnType<typeof getDatabase>>): Promise<void> {
+    if (_segmentTableCreated) return;
     await db.exec(`
         CREATE TABLE IF NOT EXISTS ab_variant_stats_segment (
             segment_key TEXT NOT NULL,
@@ -253,6 +257,7 @@ async function ensureSegmentTable(db: Awaited<ReturnType<typeof getDatabase>>): 
             PRIMARY KEY(segment_key, variant_id)
         );
     `);
+    _segmentTableCreated = true;
 }
 
 async function ensureVariantExistsGlobal(
@@ -300,16 +305,6 @@ export async function selectVariant(variants: string[], context?: BanditContext)
 
     const segmentKey = normalizeSegmentKey(context);
 
-    if (Math.random() < EPSILON) {
-        const picked = pickRandomVariant(variants);
-        await logInfo('ab_bandit.explore', {
-            picked,
-            epsilon: EPSILON,
-            segment: segmentKey,
-        });
-        return picked;
-    }
-
     try {
         const db = await getDatabase();
         await ensureSegmentTable(db);
@@ -321,6 +316,19 @@ export async function selectVariant(variants: string[], context?: BanditContext)
         }
 
         const rows = segmentKey === 'global' ? await fetchGlobalStats(db) : await fetchSegmentStats(db, segmentKey);
+        const totalTrials = rows.reduce((sum, row) => sum + normalizeCounter(row.sent), 0);
+        const epsilon = Math.max(MIN_EPSILON, INITIAL_EPSILON * Math.pow(0.999, totalTrials));
+
+        if (Math.random() < epsilon) {
+            const picked = pickRandomVariant(variants);
+            await logInfo('ab_bandit.explore', {
+                picked,
+                epsilon,
+                totalTrials,
+                segment: segmentKey,
+            });
+            return picked;
+        }
 
         // Se il segmento e' troppo freddo, fallback su globale.
         const segmentTotal = rows.reduce((sum, row) => sum + normalizeCounter(row.sent), 0);

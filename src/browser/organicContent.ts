@@ -109,54 +109,46 @@ async function reactToPost(page: Page): Promise<void> {
     ];
 
     for (const selector of reactionSelectors) {
-        const buttons = await page.$$(selector);
+        const locator = page.locator(selector).first();
+        if (await locator.count() === 0) continue;
+        if (!await locator.isVisible().catch(() => false)) continue;
 
-        const visibleButtons = [];
-        for (const btn of buttons) {
-            const isVisible = await btn.isVisible();
-            if (isVisible) visibleButtons.push(btn);
-        }
+        const box = await locator.boundingBox();
+        if (!box) continue;
 
-        if (visibleButtons.length > 0) {
-            const targetBtn = randomElement(visibleButtons);
-            const box = await targetBtn.boundingBox();
+        const targetX = box.x + box.width / 2;
+        const targetY = box.y + box.height / 2;
+        await humanMouseMoveToCoords(page, targetX, targetY);
 
-            if (box) {
-                const targetX = box.x + box.width / 2;
-                const targetY = box.y + box.height / 2;
-                await humanMouseMoveToCoords(page, targetX, targetY);
+        // Pausa pre-click
+        await humanDelay(page, 300, 600);
 
-                // Pausa pre-click
-                await humanDelay(page, 300, 600);
+        // Scelta: Simple click (Like) o Hovering (React Selector)
+        if (Math.random() > 0.6) {
+            // Hover via locator per aprire il popover CSS delle reactions
+            await locator.hover();
+            await humanDelay(page, 800, 1200);
 
-                // Scelta: Simple click (Like) o Hovering (React Selector)
-                if (Math.random() > 0.6) {
-                    // Hover lungo per aprire il pallet delle reactions
-                    await humanDelay(page, 1000, 1500); // Triggera l'apparizione del popover CSS
-
-                    // Cerca il menu reactions
-                    const reactionsMenu = await page.$('.reactions-menu__reaction');
-                    if (reactionsMenu && await reactionsMenu.isVisible()) {
-                        const allReactions = await page.$$('.reactions-menu__reaction');
-                        if (allReactions.length > 0) {
-                            const specificReaction = randomElement(allReactions);
-                            const rBox = await specificReaction.boundingBox();
-                            if (rBox) {
-                                await humanMouseMoveToCoords(page, rBox.x + rBox.width / 2, rBox.y + rBox.height / 2);
-                                await humanDelay(page, 200, 500);
-                                await specificReaction.click({ delay: randomInt(40, 90) });
-                                await logInfo('organicContent.specificReaction', {});
-                                return;
-                            }
-                        }
-                    }
+            // Cerca il menu reactions
+            const reactionLocator = page.locator('.reactions-menu__reaction');
+            const reactionCount = await reactionLocator.count();
+            if (reactionCount > 0) {
+                const reactionIndex = randomInt(0, reactionCount - 1);
+                const specificReaction = reactionLocator.nth(reactionIndex);
+                const rBox = await specificReaction.boundingBox();
+                if (rBox) {
+                    await humanMouseMoveToCoords(page, rBox.x + rBox.width / 2, rBox.y + rBox.height / 2);
+                    await humanDelay(page, 200, 500);
+                    await specificReaction.click({ delay: randomInt(40, 90) });
+                    await logInfo('organicContent.specificReaction', {});
+                    return;
                 }
-
-                // Fallback a un semplice Like / React Toggle
-                await targetBtn.click({ delay: randomInt(40, 100) });
-                await logInfo('organicContent.genericLike', {});
-                return;
             }
         }
+
+        // Fallback a un semplice Like / React Toggle
+        await locator.click({ delay: randomInt(40, 100) });
+        await logInfo('organicContent.genericLike', {});
+        return;
     }
 }

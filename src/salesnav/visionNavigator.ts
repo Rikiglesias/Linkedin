@@ -85,15 +85,45 @@ function parseYesNo(raw: string): boolean {
     throw new Error(`Vision verify response non valida: ${normalized || '<empty>'}`);
 }
 
+let _singletonSolver: VisionSolver | null = null;
+
 function getVisionSolver(options?: VisionInteractionOptions): VisionSolver {
-    return options?.solver ?? new VisionSolver();
+    if (options?.solver) return options.solver;
+    if (!_singletonSolver) {
+        _singletonSolver = new VisionSolver();
+    }
+    return _singletonSolver;
 }
 
-function wrapVisionError(error: unknown): Error {
+export function resetVisionSolver(): void {
+    _singletonSolver = null;
+}
+
+export class OllamaDownError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'OllamaDownError';
+    }
+}
+
+export class VisionParseError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'VisionParseError';
+    }
+}
+
+function classifyVisionError(error: unknown): Error {
     const message = error instanceof Error ? error.message : String(error);
-    return new Error(
-        `${message}. Verifica che Ollama sia attivo su ${process.env.OLLAMA_ENDPOINT ?? 'http://127.0.0.1:11434'} e che il modello ${process.env.VISION_MODEL ?? 'llava'} sia disponibile.`,
-    );
+    const hint = `Verifica che Ollama sia attivo su ${process.env.OLLAMA_ENDPOINT ?? 'http://127.0.0.1:11434'} e che il modello ${process.env.VISION_MODEL ?? 'llava'} sia disponibile.`;
+
+    if (/ECONNREFUSED|ENOTFOUND|ETIMEDOUT|circuit.?open|fetch failed|socket hang up/i.test(message)) {
+        return new OllamaDownError(`${message}. ${hint}`);
+    }
+    if (/Vision API error: HTTP [45]/i.test(message)) {
+        return new OllamaDownError(`${message}. ${hint}`);
+    }
+    return new VisionParseError(`${message}. ${hint}`);
 }
 
 async function captureVisionRegion(page: Page, options?: VisionInteractionOptions): Promise<VisionCapture> {
@@ -181,7 +211,7 @@ export async function visionRead(
         const response = await solver.analyzeImage(capture.imageBase64, prompt);
         return normalizeVisionText(response);
     } catch (error) {
-        throw wrapVisionError(error);
+        throw classifyVisionError(error);
     }
 }
 
@@ -212,13 +242,61 @@ export async function visionWaitFor(
             if (await visionVerify(page, condition, options)) {
                 return true;
             }
-        } catch {
-            // Ignore parse/transient vision failures and retry until timeout.
+        } catch (error) {
+            if (error instanceof OllamaDownError) {
+                throw error;
+            }
+            // VisionParseError or transient failures: retry until timeout.
         }
         await page.waitForTimeout(pollIntervalMs);
     }
 
     return false;
+}
+
+/**
+ * Reads the total results count shown on a Sales Navigator search results page.
+ * E.g. "847 results" or "1-25 di 320 risultati" → returns 847 or 320.
+ * Returns null if the count is not readable or vision fails.
+ */
+export async function visionReadTotalResults(
+    page: Page,
+    options?: VisionInteractionOptions,
+): Promise<number | null> {
+    try {
+        const response = await visionRead(
+            page,
+            'Look for text showing the total number of search results on this page, such as "847 results", "320 risultati", or "1-25 of 450". Answer with ONLY the total integer number (e.g. "847"). If not visible, answer "0".',
+            options,
+        );
+        const digits = response.replace(/[^0-9]/g, '');
+        if (!digits) return null;
+        const num = parseInt(digits, 10);
+        return Number.isFinite(num) && num > 0 ? num : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Checks if ALL visible lead cards on the current page are already saved to a list.
+ * When true the caller can safely skip "Select All + Save to list" — no LinkedIn actions needed.
+ * Uses a simple YES/NO prompt for reliability with smaller vision models.
+ */
+export async function visionPageAllAlreadySaved(
+    page: Page,
+    options?: VisionInteractionOptions,
+): Promise<boolean> {
+    try {
+        const result = await visionVerify(
+            page,
+            'Are ALL visible lead cards on this page already marked as saved to a list? Look for checkmarks, "Saved", "Salvato" badges, or any saved-indicator on every single card. Answer YES only if EVERY card shows a saved indicator.',
+            options,
+        );
+        return result;
+    } catch {
+        return false;
+    }
 }
 
 export async function visionClick(
@@ -263,11 +341,11 @@ export async function visionClick(
             };
         } catch (error) {
             if (attempt >= retries) {
-                throw wrapVisionError(error);
+                throw classifyVisionError(error);
             }
             await page.waitForTimeout(400 + attempt * 250);
         }
     }
 
-    throw wrapVisionError(new Error(`Vision click fallito per: ${description}`));
+    throw classifyVisionError(new Error(`Vision click fallito per: ${description}`));
 }

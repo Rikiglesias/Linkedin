@@ -31,7 +31,7 @@ function trimToMaxChars(input: string, maxChars: number): string {
 function safeFirstName(lead: LeadRecord): string {
     const value = (lead.first_name ?? '').trim();
     if (value) return value;
-    return 'there';
+    return 'collega';
 }
 
 export async function buildPersonalizedFollowUpMessage(lead: LeadRecord): Promise<PersonalizedMessageResult> {
@@ -77,7 +77,7 @@ export async function buildPersonalizedFollowUpMessage(lead: LeadRecord): Promis
 
             if (!candidate) continue;
 
-            if (await SemanticChecker.isTooSimilar(candidate, 0.85)) {
+            if (await SemanticChecker.isTooSimilar(candidate, 0.85, lead.id)) {
                 await logWarn('ai.personalization.too_similar_retry', { leadId: lead.id, attempt });
                 continue;
             }
@@ -105,7 +105,7 @@ export async function buildPersonalizedFollowUpMessage(lead: LeadRecord): Promis
         };
     }
 
-    await SemanticChecker.remember(finalMessage);
+    await SemanticChecker.remember(finalMessage, lead.id);
     return {
         message: finalMessage,
         source: 'ai',

@@ -130,7 +130,7 @@ export async function requestOpenAIEmbeddings(input: string): Promise<number[]> 
             method: 'POST',
             headers,
             body: JSON.stringify({
-                model: resolveAiModel(),
+                model: config.aiEmbeddingModel || 'nomic-embed-text',
                 input: input,
             }),
         },

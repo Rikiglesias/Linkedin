@@ -169,7 +169,7 @@ export async function buildPersonalizedInviteNote(lead: LeadRecord): Promise<Per
 
             if (!candidate) continue;
 
-            if (await SemanticChecker.isTooSimilar(candidate, 0.85)) {
+            if (await SemanticChecker.isTooSimilar(candidate, 0.85, lead.id)) {
                 await logWarn('ai.invite_note.too_similar_retry', { leadId: lead.id, attempt });
                 continue;
             }
@@ -198,7 +198,7 @@ export async function buildPersonalizedInviteNote(lead: LeadRecord): Promise<Per
         };
     }
 
-    await SemanticChecker.remember(finalNote);
+    await SemanticChecker.remember(finalNote, lead.id);
     return {
         note: finalNote,
         source: 'ai',

@@ -17,24 +17,38 @@ export class FingerprintPool {
      * restituisca sempre lo stesso set combinatorio (evitando rotazioni
      * instabili intra-sessione che allertano l'anti-bot).
      */
-    public static generateConsistentProfile(base: BrowserFingerprint): FingerprintSet {
-        const seedString = `${base.userAgent}|${base.id}`;
-        let hash = 0;
-        for (let i = 0; i < seedString.length; i++) {
-            const char = seedString.charCodeAt(i);
-            hash = (hash << 5) - hash + char;
-            hash = hash & hash; // Convert to 32bit integer
+    /**
+     * FNV-1a 32-bit hash — much better distribution than djb2
+     * for generating unique noise values from seeds.
+     */
+    private static fnv1a(input: string): number {
+        let hash = 0x811c9dc5;
+        for (let i = 0; i < input.length; i++) {
+            hash ^= input.charCodeAt(i);
+            hash = Math.imul(hash, 0x01000193);
         }
+        return hash >>> 0;
+    }
 
-        const positiveHash = Math.abs(hash);
+    /**
+     * Generate a noise value in [0.000001, 0.01] from a seed string.
+     * Uses FNV-1a with modulo 10000 for 10k unique values (vs previous 12).
+     */
+    private static noiseFromSeed(seed: string): number {
+        const hash = FingerprintPool.fnv1a(seed);
+        return Math.max(0.000001, (hash % 10000) / 1000000);
+    }
+
+    public static generateConsistentProfile(base: BrowserFingerprint): FingerprintSet {
+        const seedBase = `${base.userAgent}|${base.id}`;
 
         return {
             id: base.id,
             userAgent: base.userAgent,
             viewport: base.viewport ?? { width: 1280, height: 800 },
-            canvasNoise: (positiveHash % 1000) / 100000,
-            webglNoise: ((positiveHash * 7) % 1000) / 100000,
-            audioNoise: ((positiveHash * 13) % 1000) / 100000,
+            canvasNoise: FingerprintPool.noiseFromSeed(`canvas:${seedBase}`),
+            webglNoise: FingerprintPool.noiseFromSeed(`webgl:${seedBase}`),
+            audioNoise: FingerprintPool.noiseFromSeed(`audio:${seedBase}`),
         };
     }
 }

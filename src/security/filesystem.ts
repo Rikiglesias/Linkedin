@@ -1,8 +1,17 @@
 import fs from 'fs';
 import path from 'path';
+import { execFileSync } from 'child_process';
 
 function chmodSafe(targetPath: string, mode: number): void {
     if (process.platform === 'win32') {
+        try {
+            const username = process.env.USERNAME ?? process.env.USER ?? '';
+            if (username) {
+                execFileSync('icacls', [targetPath, '/inheritance:r', '/grant:r', `${username}:F`], { stdio: 'ignore' });
+            }
+        } catch {
+            // Best effort on Windows
+        }
         return;
     }
     try {
