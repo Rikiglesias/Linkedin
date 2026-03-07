@@ -343,6 +343,12 @@ async function runQueuedJobsForAccount(
                         postResult.published ? 1 : 0,
                         postResult.error ? [{ message: postResult.error }] : [],
                     );
+                } else {
+                    const _exhaustive: never = job.type;
+                    throw new RetryableWorkerError(
+                        `Tipo job non riconosciuto: ${_exhaustive as string}`,
+                        'UNKNOWN_JOB_TYPE',
+                    );
                 }
 
                 processedCurrentJob = true;
@@ -469,7 +475,11 @@ async function runQueuedJobsForAccount(
 
                 const retryPolicy = resolveWorkerRetryPolicy(error, job.max_attempts, config.retryBaseMs);
                 const effectiveMaxAttempts = Math.max(1, Math.min(job.max_attempts, retryPolicy.maxAttempts));
-                const nextDelay = retryPolicy.retryable ? retryDelayMs(attempts, retryPolicy.baseDelayMs) : 0;
+                const nextDelay = retryPolicy.retryable
+                    ? retryPolicy.fixedDelay
+                        ? retryPolicy.baseDelayMs + Math.floor(Math.random() * 250)
+                        : retryDelayMs(attempts, retryPolicy.baseDelayMs)
+                    : 0;
 
                 const status = await markJobRetryOrDeadLetter(
                     job.id,
