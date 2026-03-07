@@ -3,10 +3,30 @@
  */
 
 import { getDatabase } from '../db';
-import { config, getHourInTimezone } from '../config';
+import { config, getHourInTimezone, getDayInTimezone } from '../config';
 import { logInfo } from '../telemetry/logger';
 import { LeadSegment, inferLeadSegment } from './segments';
 import { computeTwoProportionSignificance } from './significance';
+
+/**
+ * Compute the UTC-to-local hour offset for the configured timezone.
+ * Returns the number of hours to add to a UTC hour to get the local hour.
+ */
+function getTimezoneHourOffset(now: Date = new Date()): number {
+    const localHour = getHourInTimezone(now, config.timezone);
+    const utcHour = now.getUTCHours();
+    let offset = localHour - utcHour;
+    if (offset > 12) offset -= 24;
+    if (offset < -12) offset += 24;
+    return offset;
+}
+
+/**
+ * Convert a UTC hour (0-23) to the configured local timezone hour.
+ */
+function utcHourToLocal(utcHour: number): number {
+    return ((utcHour + getTimezoneHourOffset()) % 24 + 24) % 24;
+}
 
 export type TimingAction = 'invite' | 'message';
 export type TimingStrategy = 'baseline' | 'optimizer';
@@ -163,7 +183,8 @@ async function computeSlotScores(action: TimingAction, segment?: LeadSegment): P
     for (const [key, value] of aggregate) {
         if (value.total < 2) continue;
         const [hourRaw, dowRaw] = key.split('|');
-        const hour = Number.parseInt(hourRaw ?? '0', 10);
+        const utcHour = Number.parseInt(hourRaw ?? '0', 10);
+        const hour = utcHourToLocal(utcHour);
         const dayOfWeek = Number.parseInt(dowRaw ?? '0', 10);
         const lifetimeRate = value.total > 0 ? value.success / value.total : 0;
         const recentRate = value.recentTotal > 0 ? value.recentSuccess / value.recentTotal : lifetimeRate;
@@ -246,17 +267,40 @@ export async function getTimingDecision(
         return fallbackDecision('exploration', true);
     }
 
-    const slot = await getBestTimeSlotForSegment(action, segment);
-    if (slot.sampleSize < config.timingMinSlotSample) {
+    // Try multiple top slots to find the nearest one within the allowed delay window,
+    // instead of always waiting for the single best slot (which could be days away).
+    const slots = await computeSlotScores(action, segment === 'unknown' ? undefined : segment);
+    const totalSamples = slots.reduce((sum, s) => sum + s.sampleSize, 0);
+    if (slots.length === 0 || totalSamples < MIN_DATAPOINTS_FALLBACK) {
         return fallbackDecision('insufficient_data', false);
     }
-    if (slot.score < config.timingScoreThreshold) {
+
+    const maxDelaySec = Math.max(1, config.timingMaxDelayHours) * 3600;
+    const qualifiedSlots = slots.filter(
+        (s) => s.sampleSize >= config.timingMinSlotSample && s.score >= config.timingScoreThreshold,
+    );
+
+    if (qualifiedSlots.length === 0) {
+        const topSlot = slots[0];
+        if (!topSlot) return fallbackDecision('insufficient_data', false);
+        if (topSlot.sampleSize < config.timingMinSlotSample) {
+            return fallbackDecision('insufficient_data', false);
+        }
         return fallbackDecision('insufficient_confidence', false);
     }
 
-    const delaySec = computeDelayUntilSlot(slot, now);
-    const maxDelaySec = Math.max(1, config.timingMaxDelayHours) * 3600;
-    if (delaySec > maxDelaySec) {
+    // Pick the qualified slot with the shortest delay
+    let bestSlot: TimeSlot | null = null;
+    let bestDelay = Infinity;
+    for (const candidate of qualifiedSlots) {
+        const delay = computeDelayUntilSlot(candidate, now);
+        if (delay < bestDelay) {
+            bestDelay = delay;
+            bestSlot = candidate;
+        }
+    }
+
+    if (!bestSlot || bestDelay > maxDelaySec) {
         return fallbackDecision('delay_too_long', false);
     }
 
@@ -264,10 +308,10 @@ export async function getTimingDecision(
         action,
         strategy: 'optimizer',
         segment,
-        delaySec,
-        score: slot.score,
-        sampleSize: slot.sampleSize,
-        slot,
+        delaySec: bestDelay,
+        score: bestSlot.score,
+        sampleSize: bestSlot.sampleSize,
+        slot: bestSlot,
         explored: false,
         reason: 'optimized_slot',
         model: TIMING_MODEL_VERSION,
@@ -286,7 +330,7 @@ export async function getTimingDecisionForLead(
 export async function isGoodTimeNow(action: TimingAction = 'invite', segment?: LeadSegment): Promise<boolean> {
     const now = new Date();
     const currentHour = getHourInTimezone(now, config.timezone);
-    const currentDow = now.getDay();
+    const currentDow = getDayInTimezone(now, config.timezone);
     try {
         const db = await getDatabase();
         const countRow =
@@ -340,14 +384,26 @@ export async function getTopTimeSlots(
 }
 
 export function computeDelayUntilSlot(slot: TimeSlot, now: Date = new Date()): number {
-    const target = new Date(now.getTime());
-    const daysAhead = (slot.dayOfWeek - target.getDay() + 7) % 7;
-    target.setDate(target.getDate() + daysAhead);
-    target.setHours(slot.hour, 0, 0, 0);
-    if (target.getTime() <= now.getTime()) {
-        target.setDate(target.getDate() + 7);
+    const currentHour = getHourInTimezone(now, config.timezone);
+    const currentDow = getDayInTimezone(now, config.timezone);
+
+    // Calculate days ahead to the target day of week
+    let daysAhead = (slot.dayOfWeek - currentDow + 7) % 7;
+
+    // If same day but the target hour already passed, move to the next occurrence
+    // (next day with same dow = +7, but we search closer days first via the caller)
+    if (daysAhead === 0 && currentHour >= slot.hour) {
+        daysAhead = 1;
+        // Find the next day matching slot.dayOfWeek
+        // Instead of jumping a full week, advance to the very next day
+        // The caller will evaluate whether the delay is acceptable
+        const nextDaysAhead = (slot.dayOfWeek - ((currentDow + 1) % 7) + 7) % 7;
+        daysAhead = 1 + nextDaysAhead;
     }
-    return Math.max(0, Math.floor((target.getTime() - now.getTime()) / 1000));
+
+    const hourDiff = slot.hour - currentHour;
+    const totalDelaySec = daysAhead * 86400 + hourDiff * 3600;
+    return Math.max(0, totalDelaySec);
 }
 
 function buildExperimentQuery(action: TimingAction, lookbackDays: number): string {
