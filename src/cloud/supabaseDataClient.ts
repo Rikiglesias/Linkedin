@@ -107,16 +107,22 @@ export async function incrementCloudAccountCounter(
         p_amount: amount,
     });
     if (error) {
-        // Fallback: leggi il valore corrente e fai update manuale
-        const { data } = await sb.from('accounts').select(field).eq('id', accountId).single();
-        const current = (data as Record<string, number> | null)?.[field] ?? 0;
-        await sb
-            .from('accounts')
-            .update({
-                [field]: current + amount,
-                updated_at: new Date().toISOString(),
-            })
-            .eq('id', accountId);
+        const MAX_RETRIES = 2;
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            const { data } = await sb.from('accounts').select(field).eq('id', accountId).single();
+            const current = (data as Record<string, number> | null)?.[field] ?? 0;
+            const { error: updateErr } = await sb
+                .from('accounts')
+                .update({
+                    [field]: current + amount,
+                    updated_at: new Date().toISOString(),
+                })
+                .eq('id', accountId);
+            if (!updateErr) break;
+            if (attempt < MAX_RETRIES) {
+                await new Promise(r => setTimeout(r, 50 + Math.random() * 150));
+            }
+        }
     }
 }
 
@@ -229,23 +235,29 @@ export async function incrementCloudDailyStat(opts: CloudDailyStatIncrement): Pr
         p_amount: amount,
     });
     if (error) {
-        // Fallback: upsert manuale
-        const { data } = await sb
-            .from('daily_stats_cloud')
-            .select(opts.field)
-            .eq('local_date', opts.local_date)
-            .eq('account_id', opts.account_id)
-            .single();
-        const current = (data as Record<string, number> | null)?.[opts.field] ?? 0;
-        await sb.from('daily_stats_cloud').upsert(
-            {
-                local_date: opts.local_date,
-                account_id: opts.account_id,
-                [opts.field]: current + amount,
-                updated_at: new Date().toISOString(),
-            },
-            { onConflict: 'local_date,account_id' },
-        );
+        const MAX_RETRIES = 2;
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            const { data } = await sb
+                .from('daily_stats_cloud')
+                .select(opts.field)
+                .eq('local_date', opts.local_date)
+                .eq('account_id', opts.account_id)
+                .single();
+            const current = (data as Record<string, number> | null)?.[opts.field] ?? 0;
+            const { error: upsertErr } = await sb.from('daily_stats_cloud').upsert(
+                {
+                    local_date: opts.local_date,
+                    account_id: opts.account_id,
+                    [opts.field]: current + amount,
+                    updated_at: new Date().toISOString(),
+                },
+                { onConflict: 'local_date,account_id' },
+            );
+            if (!upsertErr) break;
+            if (attempt < MAX_RETRIES) {
+                await new Promise(r => setTimeout(r, 50 + Math.random() * 150));
+            }
+        }
     }
 }
 
