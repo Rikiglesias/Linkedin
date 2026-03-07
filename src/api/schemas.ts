@@ -33,14 +33,6 @@ export const CommentApproveBodySchema = z.object({
     comment: z.string().min(1).max(500).optional(),
 });
 
-export const ListConfigUpdateSchema = z.object({
-    isActive: z.boolean().optional(),
-    priority: z.number().int().min(1).max(1000).optional(),
-    dailyInviteCap: z.number().int().min(0).nullable().optional(),
-    dailyMessageCap: z.number().int().min(0).nullable().optional(),
-    scoringCriteria: z.string().max(1000).nullable().optional(),
-});
-
 export const CsvImportSchema = z.object({
     filePath: z.string().min(1),
     listName: z.string().min(1).max(200).default('default'),
