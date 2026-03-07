@@ -8,9 +8,10 @@
 
 import { Page } from 'playwright';
 import { simulateHumanReading, humanType, humanDelay } from '../browser';
+import { logInfo, logWarn } from '../telemetry/logger';
 
 export async function warmupSession(page: Page): Promise<void> {
-    console.log(`[WARM-UP] Avvio Session Warming (Behavioral Engine)...`);
+    await logInfo('session_warmer.start');
 
     try {
         // 1. Vai alla Home Page
@@ -18,7 +19,7 @@ export async function warmupSession(page: Page): Promise<void> {
         await humanDelay(page, 2000, 5000);
 
         // 2. Scrolling organico sul feed (leggere articoli passivamente)
-        console.log(`[WARM-UP] Simulazione lettura disinteressata del feed...`);
+        await logInfo('session_warmer.feed_reading');
         const maxScrollAttempts = Math.floor(Math.random() * 3) + 2; // Da 2 a 4 scroll
         for (let i = 0; i < maxScrollAttempts; i++) {
             await simulateHumanReading(page);
@@ -27,7 +28,7 @@ export async function warmupSession(page: Page): Promise<void> {
 
         // 3. Check Notifiche incrociato (Blink passivo)
         if (Math.random() > 0.5) {
-            console.log(`[WARM-UP] Ispezione sporadica della barra notifiche...`);
+            await logInfo('session_warmer.notifications_check');
             const notificationsTab = await page.$('a[href*="/notifications/"]');
             if (notificationsTab) {
                 // Non ci serve per forza cliccare, a volte basta il mouse over lungo o clic passivo
@@ -38,7 +39,7 @@ export async function warmupSession(page: Page): Promise<void> {
 
         // 4. Interazione col motore di ricerca (digita qualcosa, cancella) [Raro: 30%]
         if (Math.random() > 0.7) {
-            console.log(`[WARM-UP] Simulazione interesse ricerca globale disattesa...`);
+            await logInfo('session_warmer.search_simulation');
             const searchInput = await page.$('input.search-global-typeahead__input');
             if (searchInput) {
                 await searchInput.focus();
@@ -54,9 +55,9 @@ export async function warmupSession(page: Page): Promise<void> {
             }
         }
     } catch (e) {
-        console.log(`[WARM-UP] Warming interrotto, ignoro (non fatale):`, e instanceof Error ? e.message : e);
+        await logWarn('session_warmer.interrupted', { error: e instanceof Error ? e.message : String(e) });
     } finally {
-        console.log(`[WARM-UP] Session Warming completato, token stabilizzato.`);
+        await logInfo('session_warmer.done');
         await humanDelay(page, 1000, 2000);
     }
 }
