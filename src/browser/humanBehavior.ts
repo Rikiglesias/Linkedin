@@ -14,6 +14,7 @@ import { MouseGenerator, Point } from '../ml/mouseGenerator';
 import { calculateContextualDelay } from '../ml/timingModel';
 import { determineNextKeystroke } from '../ai/typoGenerator';
 import { interactWithFeed } from './organicContent';
+import { shouldMissclick, shouldAccidentalNav, performMissclick, performAccidentalNavigation } from './missclick';
 
 // ─── Stato Memoria Mouse ─────────────────────────────────────────────────────
 
@@ -230,6 +231,10 @@ export async function humanMouseMove(page: Page, targetSelector: string): Promis
                 await page.waitForTimeout(delay);
             }
         }
+        if (shouldMissclick('navigation')) {
+            await performMissclick(page, finalX, finalY);
+        }
+
         updateMouseState(page, { x: finalX, y: finalY });
     } catch {
         // Ignora silenziosamente
@@ -571,6 +576,10 @@ export async function interJobDelay(page: Page): Promise<void> {
 
     if (willSwitchTab) {
         await simulateTabSwitch(page, totalDelay * 0.3); // Away per il 30% del delay totale
+    }
+
+    if (shouldAccidentalNav('feed')) {
+        await performAccidentalNavigation(page);
     }
 
     if (Math.random() < (isMobilePage(page) ? 0.15 : 0.25)) {
