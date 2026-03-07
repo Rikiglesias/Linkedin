@@ -370,7 +370,7 @@ DATABASE_URL=postgres://... →  PostgreSQL — produzione, multi-processo
 
 ### Migrazioni automatiche
 
-All'avvio vengono applicate automaticamente tutte le 34 migrazioni in ordine:
+All'avvio vengono applicate automaticamente tutte le 41 migrazioni in ordine:
 
 | Range | Contenuto |
 |-------|-----------|

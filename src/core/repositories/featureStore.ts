@@ -425,25 +425,29 @@ export async function buildFeatureDatasetVersion(
             ]);
         }
 
-        for (const row of sourceRows) {
+        const COLS_PER_ROW = 10;
+        const MAX_PARAMS = 900;
+        const BATCH_SIZE = Math.floor(MAX_PARAMS / COLS_PER_ROW);
+        for (let offset = 0; offset < sourceRows.length; offset += BATCH_SIZE) {
+            const batch = sourceRows.slice(offset, offset + BATCH_SIZE);
+            const placeholders = batch.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+            const params = batch.flatMap(row => [
+                datasetName,
+                datasetVersion,
+                row.sampleKey,
+                row.leadId,
+                row.action,
+                row.eventAt,
+                row.label,
+                row.split,
+                JSON.stringify(row.features),
+                JSON.stringify(row.metadata ?? {}),
+            ]);
             await db.run(
-                `
-                INSERT INTO ml_feature_store (
+                `INSERT INTO ml_feature_store (
                     dataset_name, dataset_version, sample_key, lead_id, action, event_at, label, split, features_json, metadata_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `,
-                [
-                    datasetName,
-                    datasetVersion,
-                    row.sampleKey,
-                    row.leadId,
-                    row.action,
-                    row.eventAt,
-                    row.label,
-                    row.split,
-                    JSON.stringify(row.features),
-                    JSON.stringify(row.metadata ?? {}),
-                ],
+                ) VALUES ${placeholders}`,
+                params,
             );
         }
 
