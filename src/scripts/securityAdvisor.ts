@@ -1,17 +1,6 @@
 import { closeDatabase, initDatabase } from '../db';
 import { runSecurityAdvisor } from '../core/securityAdvisor';
-
-function getOptionValue(args: string[], key: string): string | undefined {
-    const index = args.indexOf(key);
-    if (index < 0) return undefined;
-    const value = args[index + 1];
-    if (!value || value.startsWith('--')) return undefined;
-    return value;
-}
-
-function hasFlag(args: string[], flag: string): boolean {
-    return args.includes(flag);
-}
+import { getOptionValue, hasOption as hasFlag } from '../cli/cliParser';
 
 async function main(): Promise<void> {
     const args = process.argv.slice(2);

@@ -20,17 +20,7 @@ function retryDelayMs(attempt: number): number {
     return base * Math.pow(2, Math.max(0, attempt - 1)) + jitter;
 }
 
-function parseOutboxPayload(raw: string): Record<string, unknown> {
-    try {
-        const parsed = JSON.parse(raw) as unknown;
-        if (parsed && typeof parsed === 'object') {
-            return parsed as Record<string, unknown>;
-        }
-    } catch {
-        // fallback sotto
-    }
-    return { raw };
-}
+import { parseOutboxPayload } from './outboxUtils';
 
 function buildWebhookSignature(payload: string): string | null {
     const secret = config.webhookSyncSecret;

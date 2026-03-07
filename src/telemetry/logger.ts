@@ -17,23 +17,28 @@ function enrichWithCorrelation(payload: Record<string, unknown>): Record<string,
     };
 }
 
-export async function logInfo(event: string, payload: Record<string, unknown> = {}): Promise<void> {
+type LogLevel = 'INFO' | 'WARN' | 'ERROR';
+const consoleMethods: Record<LogLevel, (...args: unknown[]) => void> = {
+    INFO: console.log,
+    WARN: console.warn,
+    ERROR: console.error,
+};
+
+async function log(level: LogLevel, event: string, payload: Record<string, unknown>): Promise<void> {
     const safePayload = sanitizeForLogs(enrichWithCorrelation(payload));
-    console.log(`[INFO] ${event}`, safePayload);
-    await recordRunLog('INFO', event, safePayload);
-    publishLiveEvent('run.log', { level: 'INFO', event, payload: safePayload });
+    consoleMethods[level](`[${level}] ${event}`, safePayload);
+    await recordRunLog(level, event, safePayload);
+    publishLiveEvent('run.log', { level, event, payload: safePayload });
+}
+
+export async function logInfo(event: string, payload: Record<string, unknown> = {}): Promise<void> {
+    return log('INFO', event, payload);
 }
 
 export async function logWarn(event: string, payload: Record<string, unknown> = {}): Promise<void> {
-    const safePayload = sanitizeForLogs(enrichWithCorrelation(payload));
-    console.warn(`[WARN] ${event}`, safePayload);
-    await recordRunLog('WARN', event, safePayload);
-    publishLiveEvent('run.log', { level: 'WARN', event, payload: safePayload });
+    return log('WARN', event, payload);
 }
 
 export async function logError(event: string, payload: Record<string, unknown> = {}): Promise<void> {
-    const safePayload = sanitizeForLogs(enrichWithCorrelation(payload));
-    console.error(`[ERROR] ${event}`, safePayload);
-    await recordRunLog('ERROR', event, safePayload);
-    publishLiveEvent('run.log', { level: 'ERROR', event, payload: safePayload });
+    return log('ERROR', event, payload);
 }

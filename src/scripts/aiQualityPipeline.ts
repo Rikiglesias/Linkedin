@@ -2,21 +2,15 @@ import { config } from '../config';
 import { closeDatabase, initDatabase } from '../db';
 import { getAiQualitySnapshot, runAiValidationPipeline } from '../core/repositories';
 import { runSelectorLearner } from '../selectors/learner';
+import { getOptionValue } from '../cli/cliParser';
 
-function getOptionValue(args: string[], option: string): string | null {
-    const index = args.indexOf(option);
-    if (index < 0) return null;
-    const value = args[index + 1];
-    return value ?? null;
-}
-
-function parsePositiveInt(raw: string | null, fallback: number): number {
+function parsePositiveInt(raw: string | null | undefined, fallback: number): number {
     if (!raw) return fallback;
     const parsed = Number.parseInt(raw, 10);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function parseNonNegativeFloat(raw: string | null, fallback: number): number {
+function parseNonNegativeFloat(raw: string | null | undefined, fallback: number): number {
     if (!raw) return fallback;
     const parsed = Number.parseFloat(raw);
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
@@ -90,5 +84,5 @@ async function run(): Promise<void> {
 
 run().catch((error) => {
     console.error('[ai-quality-pipeline] failed', error);
-    process.exit(1);
+    process.exitCode = 1;
 });
