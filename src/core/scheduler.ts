@@ -312,7 +312,6 @@ function createNoBurstPlanner(): NoBurstPlanner {
 }
 
 async function resolveActiveLists(): Promise<string[]> {
-    await syncLeadListsFromLeads();
     let lists = await listLeadCampaignConfigs(true);
     if (lists.length === 0) {
         await ensureLeadList('default');

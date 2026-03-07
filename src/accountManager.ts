@@ -1,5 +1,6 @@
 import { AccountProfileConfig, config } from './config';
 import { ProxyConfig } from './proxyManager';
+import { logWarn } from './telemetry/logger';
 
 export interface RuntimeAccountProfile {
     id: string;
@@ -156,5 +157,11 @@ export function getAccountProfileById(accountId: string | null | undefined): Run
         return accounts[0];
     }
     const found = accounts.find((profile) => profile.id === accountId);
+    if (!found) {
+        void logWarn('account_manager.fallback_to_first', {
+            requestedId: accountId,
+            fallbackId: accounts[0].id,
+        });
+    }
     return found ?? accounts[0];
 }
