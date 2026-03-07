@@ -269,9 +269,10 @@ function hashDashboardSessionToken(token: string): string {
     return createHash('sha256').update(token).digest('hex');
 }
 
-function buildDashboardSessionCookie(token: string, maxAgeSec: number): string {
-    const secureFlag = process.env.NODE_ENV === 'production' ? '; Secure' : '';
-    return `${DASHBOARD_SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/api; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSec}${secureFlag}`;
+function buildDashboardSessionCookie(token: string, maxAgeSec: number, req?: Request): string {
+    const isSecure = req ? (req.secure || req.headers['x-forwarded-proto'] === 'https') : process.env.NODE_ENV === 'production';
+    const secureFlag = isSecure ? '; Secure' : '';
+    return `${DASHBOARD_SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/api; HttpOnly; SameSite=Strict; Max-Age=${maxAgeSec}${secureFlag}`;
 }
 
 interface DashboardSessionRow {
@@ -357,14 +358,15 @@ async function createDashboardSessionCookie(req: Request, res: Response): Promis
         ) VALUES (?, ?, ?, ?, ?, ?)`,
         [tokenHash, nowIso, expiresAtIso, nowIso, requestIp, userAgent],
     );
-    res.setHeader('Set-Cookie', buildDashboardSessionCookie(token, maxAgeSec));
+    res.setHeader('Set-Cookie', buildDashboardSessionCookie(token, maxAgeSec, req));
 }
 
-function clearDashboardSessionCookie(res: Response): void {
-    const secureFlag = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+function clearDashboardSessionCookie(req: Request, res: Response): void {
+    const isSecure = req.secure || req.headers['x-forwarded-proto'] === 'https';
+    const secureFlag = isSecure ? '; Secure' : '';
     res.setHeader(
         'Set-Cookie',
-        `${DASHBOARD_SESSION_COOKIE}=; Path=/api; HttpOnly; SameSite=Lax; Max-Age=0${secureFlag}`,
+        `${DASHBOARD_SESSION_COOKIE}=; Path=/api; HttpOnly; SameSite=Strict; Max-Age=0${secureFlag}`,
     );
 }
 
@@ -466,6 +468,13 @@ async function dashboardAuthMiddleware(req: Request, res: Response, next: NextFu
 
     try {
         if (isTrustedIp(requestIp)) {
+            auditSecurityEvent({
+                category: 'dashboard_auth',
+                action: 'trusted_ip_access',
+                actor: requestIp,
+                result: 'ALLOW',
+                metadata: { path: req.path, method: req.method },
+            });
             next();
             return;
         }
@@ -635,7 +644,7 @@ async function apiV1AuthMiddleware(req: Request, res: Response, next: NextFuncti
         res.status(503).json({ error: 'API v1 auth enabled but no credentials configured.' });
         return;
     }
-    if (isApiKeyAuthValid(req) || isBasicAuthValid(req)) {
+    if (isApiKeyAuthValid(req) || isBasicAuthValid(req) || await hasValidDashboardSession(req)) {
         auditSecurityEvent({
             category: 'api_v1_auth',
             action: 'auth_credentials_valid',
@@ -882,7 +891,7 @@ app.post('/api/auth/logout', async (req, res) => {
         if (token) {
             await revokeDashboardSession(token);
         }
-        clearDashboardSessionCookie(res);
+        clearDashboardSessionCookie(req, res);
         auditSecurityEvent({
             category: 'dashboard_auth',
             action: 'session_logout',
@@ -1438,8 +1447,16 @@ app.post('/api/controls/quarantine', async (req, res) => {
 // ==========================================
 // CAMPAIGNS (Router Esterno)
 // ==========================================
-app.use('/api/v1/export', exportRouter);
-app.use('/api/export', exportRouter);
+// Rate limit export: max 5 requests per hour
+const exportLimiter = rateLimit({
+    windowMs: 60 * 60_000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Troppe richieste export. Riprova tra un\'ora.' },
+});
+app.use('/api/v1/export', apiV1AuthMiddleware, exportLimiter, exportRouter);
+app.use('/api/export', apiV1AuthMiddleware, exportLimiter, exportRouter);
 
 // ── 404 catch-all ─────────────────────────────────────────────────────────────
 app.use('/api/', (_req, res) => {
