@@ -38,10 +38,6 @@ function splitFullName(fullName?: string): { firstName: string; lastName: string
     return { firstName, lastName };
 }
 
-function cleanLinkedinUrl(raw: string | undefined): string {
-    return (raw ?? '').trim();
-}
-
 // ─── HubSpot ─────────────────────────────────────────────────────────────────
 
 /** Invia/aggiorna un contatto in HubSpot tramite REST API v3. */
@@ -109,53 +105,85 @@ function mapStatusToHubSpot(status: string): string {
 export async function pullFromHubSpot(): Promise<number> {
     if (!config.hubspotApiKey) return 0;
 
+    const MAX_PAGES = 10;
+
     try {
-        const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-        const url = `https://api.hubapi.com/crm/v3/objects/contacts?limit=100&properties=linkedin_url,firstname,lastname,company&filterGroups=[{"filters":[{"propertyName":"lastmodifieddate","operator":"GTE","value":"${since}"}]}]`;
-
-        const res = await fetchWithRetryPolicy(
-            url,
-            {
-                headers: { Authorization: `Bearer ${config.hubspotApiKey}` },
-            },
-            {
-                integration: 'hubspot.pull_contacts',
-                circuitKey: 'hubspot.contacts',
-            },
-        );
-
-        if (!res.ok) return 0;
-        const data = (await res.json()) as { results?: Array<{ properties: Record<string, string> }> };
-
+        const since = new Date(Date.now() - 24 * 60 * 60 * 1000).getTime();
         const db = await getDatabase();
         let imported = 0;
+        let after: string | undefined;
 
-        for (const contact of data.results || []) {
-            const props = contact.properties;
-            const linkedinUrl = cleanLinkedinUrl(props.linkedin_url);
-            if (!linkedinUrl || !linkedinUrl.includes('linkedin.com')) continue;
-            const names = splitFullName(`${props.firstname || ''} ${props.lastname || ''}`.trim());
-
-            const insertResult = await db.run(
-                `INSERT INTO leads (
-                    account_name,
-                    first_name,
-                    last_name,
-                    job_title,
-                    website,
-                    linkedin_url,
-                    status,
-                    list_name,
-                    created_at,
-                    updated_at
-                )
-                 VALUES (?, ?, ?, ?, ?, ?, 'READY_INVITE', 'hubspot', datetime('now'), datetime('now'))
-                 ON CONFLICT(linkedin_url) DO NOTHING`,
-                [props.company || '', names.firstName, names.lastName, '', '', linkedinUrl],
-            );
-            if ((insertResult.changes ?? 0) > 0) {
-                imported++;
+        for (let page = 0; page < MAX_PAGES; page++) {
+            const searchBody: Record<string, unknown> = {
+                filterGroups: [{
+                    filters: [{
+                        propertyName: 'lastmodifieddate',
+                        operator: 'GTE',
+                        value: String(since),
+                    }],
+                }],
+                properties: ['linkedin_url', 'firstname', 'lastname', 'company'],
+                limit: 100,
+            };
+            if (after) {
+                searchBody.after = after;
             }
+
+            const res = await fetchWithRetryPolicy(
+                'https://api.hubapi.com/crm/v3/objects/contacts/search',
+                {
+                    method: 'POST',
+                    headers: {
+                        Authorization: `Bearer ${config.hubspotApiKey}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(searchBody),
+                },
+                {
+                    integration: 'hubspot.pull_contacts',
+                    circuitKey: 'hubspot.contacts',
+                },
+            );
+
+            if (!res.ok) {
+                await logWarn('crm.hubspot.pull_failed', { status: res.status, page });
+                break;
+            }
+            const data = (await res.json()) as {
+                results?: Array<{ properties: Record<string, string> }>;
+                paging?: { next?: { after: string } };
+            };
+
+            for (const contact of data.results || []) {
+                const props = contact.properties;
+                const linkedinUrl = (props.linkedin_url ?? '').trim();
+                if (!linkedinUrl || !linkedinUrl.includes('linkedin.com')) continue;
+                const names = splitFullName(`${props.firstname || ''} ${props.lastname || ''}`.trim());
+
+                const insertResult = await db.run(
+                    `INSERT INTO leads (
+                        account_name,
+                        first_name,
+                        last_name,
+                        job_title,
+                        website,
+                        linkedin_url,
+                        status,
+                        list_name,
+                        created_at,
+                        updated_at
+                    )
+                     VALUES (?, ?, ?, ?, ?, ?, 'READY_INVITE', 'hubspot', datetime('now'), datetime('now'))
+                     ON CONFLICT(linkedin_url) DO NOTHING`,
+                    [props.company || '', names.firstName, names.lastName, '', '', linkedinUrl],
+                );
+                if ((insertResult.changes ?? 0) > 0) {
+                    imported++;
+                }
+            }
+
+            after = data.paging?.next?.after;
+            if (!after) break;
         }
 
         if (imported > 0) await logInfo('crm.hubspot.pulled', { count: imported });
@@ -240,8 +268,41 @@ export async function pushToSalesforce(lead: CRMLead): Promise<boolean> {
             },
         );
 
-        if (!res.ok && res.status !== 400) {
-            await logWarn('crm.salesforce.push_failed', { status: res.status });
+        if (res.status === 401) {
+            _salesforceToken = null;
+            const refreshedToken = await getSalesforceToken();
+            if (refreshedToken) {
+                const retryRes = await fetchWithRetryPolicy(
+                    `${config.salesforceInstanceUrl}/services/data/v58.0/sobjects/Contact`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            Authorization: `Bearer ${refreshedToken}`,
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(body),
+                    },
+                    {
+                        integration: 'salesforce.push_contact_retry',
+                        circuitKey: 'salesforce.contacts',
+                    },
+                );
+                if (!retryRes.ok) {
+                    await logWarn('crm.salesforce.push_failed_after_refresh', { status: retryRes.status });
+                    return false;
+                }
+                return true;
+            }
+            await logWarn('crm.salesforce.push_failed', { status: 401, detail: 'token_refresh_failed' });
+            return false;
+        }
+
+        if (!res.ok) {
+            const errText = await res.text().catch(() => '');
+            await logWarn('crm.salesforce.push_failed', {
+                status: res.status,
+                body: errText.substring(0, 200),
+            });
             return false;
         }
 
