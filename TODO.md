@@ -221,13 +221,13 @@
 
 - [ ] 🟡 **`api/routes/export.ts`** — Non usa `sendApiV1` envelope. Fix: migrare a `/api/v1/export/*` con formato standard.
 
-- [ ] 🟢 **`scripts/securityAdvisor.ts` + `rotateSecrets.ts` + `aiQualityPipeline.ts`** — `getOptionValue`/`hasFlag` duplicati. Importare da `src/cli/cliParser.ts`.
+- [x] 🟢 **`scripts/securityAdvisor.ts` + `rotateSecrets.ts` + `aiQualityPipeline.ts`** — `getOptionValue`/`hasFlag` duplicati. Importare da `src/cli/cliParser.ts`.
 
 - [ ] 🟢 **`core/repositories/leadsLearning.ts`** — `parseRollbackSnapshot` duplicata in `selectors/learner.ts`. Estrarre in `core/repositories/shared.ts`.
 
-- [ ] 🟢 **`telemetry/logger.ts`** — 3 funzioni quasi identiche. Estrarre `log(level, event, payload)` interno.
+- [x] 🟢 **`telemetry/logger.ts`** — 3 funzioni quasi identiche. Estrarre `log(level, event, payload)` interno.
 
-- [ ] 🟢 **`sync/webhookSyncWorker.ts`** — `parseOutboxPayload` duplicata in `supabaseSyncWorker.ts`. Estrarre in `sync/outboxUtils.ts`.
+- [x] 🟢 **`sync/webhookSyncWorker.ts`** — `parseOutboxPayload` duplicata in `supabaseSyncWorker.ts`. Estrarre in `sync/outboxUtils.ts`.
 
 - [x] 🟢 **`integrations/crmBridge.ts`** — `cleanLinkedinUrl(raw)` fa solo `.trim()`. Inline diretto.
 
@@ -245,7 +245,7 @@
 
 - [x] 🟠 **`ml/timingModel.ts`** — `new Date().getHours()` in UTC. Fix: stesso approccio — usare `config.targetTimezone` per calcolare l'ora locale.
 
-- [ ] 🟡 **`ml/abBandit.ts`** — `EPSILON = 0.15` fisso. Fix: decaying epsilon — `epsilon = max(MIN_EPSILON, INITIAL_EPSILON * decay^totalTrials)`. Configurabile via `config.abBanditEpsilonDecay`. Caso limite: se `totalTrials` viene resettato (nuovo segmento), epsilon deve tornare al valore iniziale.
+- [x] 🟡 **`ml/abBandit.ts`** — `EPSILON = 0.15` fisso. Fix: decaying epsilon — `epsilon = max(MIN_EPSILON, INITIAL_EPSILON * decay^totalTrials)`. Configurabile via `config.abBanditEpsilonDecay`. Caso limite: se `totalTrials` viene resettato (nuovo segmento), epsilon deve tornare al valore iniziale.
 
 - [ ] 🟡 **`ml/significance.ts`** — Test two-tailed invece di one-tailed. Fix: usare one-tailed per "è meglio del baseline?" — stessa potenza statistica con la metà dei dati.
 
@@ -289,15 +289,15 @@
 
 - [x] 🟡 **Migration 039 — `proxy_metrics`** — Tabella: `(proxy_url TEXT PK, success_count INTEGER DEFAULT 0, fail_count INTEGER DEFAULT 0, avg_latency_ms INTEGER DEFAULT 0, last_success_at DATETIME, last_fail_at DATETIME)`. Necessaria per ordinamento intelligente proxy in `proxyManager.ts`.
 
-- [ ] 🟡 **`core/repositories/featureStore.ts`** — Insert row-by-row. Fix: bulk INSERT con `VALUES(...),(...),...` dentro la transazione esistente.
+- [x] 🟡 **`core/repositories/featureStore.ts`** — Insert row-by-row. Fix: bulk INSERT con `VALUES(...),(...),...` dentro la transazione esistente.
 
 - [ ] 🟡 **`core/repositories/system.ts`** — `applyCloudAccountUpdates` con `COALESCE` su null. Documentare la semantica o usare `CASE WHEN ? IS NOT NULL THEN ? ELSE field END`.
 
 - [x] 🟡 **`db/migrations/035_salesnav_sync_runs.sql`** — Manca indice su `target_list_name`. Aggiungere `CREATE INDEX IF NOT EXISTS idx_sync_runs_list ON salesnav_sync_runs(account_id, target_list_name, status)`.
 
-- [ ] 🟡 **`core/scheduler.ts`** — N+1 query su `getListDailyStat()`. Fix: query batch su tutte le liste in una sola chiamata.
+- [x] 🟡 **`core/scheduler.ts`** — N+1 query su `getListDailyStat()`. Fix: query batch su tutte le liste in una sola chiamata.
 
-- [ ] 🟡 **`scripts/aiQualityPipeline.ts`** — `sha256File` carica tutto in RAM. Fix: streaming con `fs.createReadStream` + `crypto.createHash('sha256').update(chunk)`.
+- [x] 🟡 **`scripts/aiQualityPipeline.ts`** — `sha256File` carica tutto in RAM. Fix: streaming con `fs.createReadStream` + `crypto.createHash('sha256').update(chunk)`.
 
 - [x] 🟢 **`scripts/rotateSecrets.ts` + `aiQualityPipeline.ts`** — Exit code 0 su failure. Fix: `process.exitCode = 1` se `status === 'FAILED'`.
 
@@ -319,7 +319,7 @@
 
 - [x] 🟡 **`cloud/controlPlaneSync.ts`** — `syncAccountsDown` e `syncLeadsDown` sequenziali. Fix: `Promise.all([syncAccountsDown(), syncLeadsDown()])`.
 
-- [ ] 🟡 **`telemetry/alerts.ts`** — `parse_mode: 'Markdown'` vs `parse_mode: 'HTML'` in `broadcaster.ts`. Fix: unificare su `HTML` — più prevedibile con caratteri speciali. Aggiungere `escapeHtml()` helper per i valori dinamici inseriti nei messaggi.
+- [x] 🟡 **`telemetry/alerts.ts`** — `parse_mode: 'Markdown'` vs `parse_mode: 'HTML'` in `broadcaster.ts`. Fix: unificare su `HTML` — più prevedibile con caratteri speciali. Aggiungere `escapeHtml()` helper per i valori dinamici inseriti nei messaggi.
 
 - [ ] 🟡 **`telemetry/broadcaster.ts`** — `logWarn`/`logError` non awaited. Fix: aggiungere `await`.
 
@@ -358,7 +358,7 @@
 > Item che avevano duplicati in altre sezioni sono stati unificati lì.
 > `emailEnricher.ts` → sezione 5. `getThrottleSignal` → sezione 4. `cleanLinkedinUrl` → sezione 5. `rampUp.ts` → sezione 5.
 
-- [ ] 🟡 **`plugins/exampleEngagementBooster.js`** — Rimuovere o spostare in `examples/`.
+- [x] 🟡 **`plugins/exampleEngagementBooster.js`** — Rimuovere o spostare in `examples/`.
 
 - [x] 🟢 **`src/api/schemas.ts`** — `ListConfigUpdateSchema` mai usato. Creare la route o rimuovere.
 
@@ -386,7 +386,7 @@
 
 - [x] 🟢 **`docker-compose.yml`** — `POSTGRES_PASSWORD: changeme` hardcoded. Referenziare da `.env`.
 
-- [ ] 🟢 **`README.md`** — "34 migrazioni" ma ne esistono 35 (e con questo piano saranno 39). Aggiornare con ogni migration aggiunta.
+- [x] 🟢 **`README.md`** — "34 migrazioni" ma ne esistono 35 (e con questo piano saranno 39). Aggiornare con ogni migration aggiunta.
 
 - [x] 🟠 🛡️ **`.env.example` — Configurazioni GPT-5.4 mancanti** — Aggiungere: `VISION_PROVIDER=auto|openai|ollama` (default `auto`), `VISION_MODEL_OPENAI=gpt-5.4`, `VISION_BUDGET_MAX_USD=5.0`, `VISION_REDACT_SCREENSHOTS=false`. Senza queste variabili la sezione 11 (GPT-5.4) non è configurabile. **Collegamento**: `OPENAI_API_KEY` esiste già ma va documentato come necessario anche per vision (attualmente il commento dice solo "AI opzionale").
 
