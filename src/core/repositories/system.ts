@@ -25,7 +25,9 @@ import { withTransaction } from './shared';
 
 export { getLockContentionSummary, listLockMetricsByDate };
 
+let _governanceTablesCreated = false;
 async function ensureGovernanceTables(): Promise<void> {
+    if (_governanceTablesCreated) return;
     const db = await getDatabase();
     await db.exec(`
         CREATE TABLE IF NOT EXISTS backup_runs (
@@ -81,6 +83,7 @@ async function ensureGovernanceTables(): Promise<void> {
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
     `);
+    _governanceTablesCreated = true;
 }
 
 export async function pushOutboxEvent(

@@ -317,8 +317,16 @@ export async function pushToSalesforce(lead: CRMLead): Promise<boolean> {
 
 /** Invia l'evento a tutti i CRM configurati (fire-and-forget). */
 export function pushLeadToCRM(lead: CRMLead): void {
-    if (config.hubspotApiKey) pushToHubSpot(lead).catch(() => {});
-    if (config.salesforceClientId) pushToSalesforce(lead).catch(() => {});
+    if (config.hubspotApiKey) {
+        pushToHubSpot(lead).catch((err: unknown) => {
+            void logWarn('crm.push_lead.hubspot_error', { error: err instanceof Error ? err.message : String(err) });
+        });
+    }
+    if (config.salesforceClientId) {
+        pushToSalesforce(lead).catch((err: unknown) => {
+            void logWarn('crm.push_lead.salesforce_error', { error: err instanceof Error ? err.message : String(err) });
+        });
+    }
 }
 
 /** Pull da tutti i CRM configurati (fire-and-forget). */
