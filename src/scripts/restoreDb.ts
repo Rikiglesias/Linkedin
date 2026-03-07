@@ -125,6 +125,14 @@ async function persistDrillRuntimeFlags(report: RestoreDrillReport): Promise<voi
 
 function runSqliteRestore(backupPath: string): void {
     const dbPath = config.dbPath;
+    const preRestoreBackup = `${dbPath}.pre-restore.${Date.now()}`;
+    try {
+        if (fs.existsSync(dbPath)) {
+            fs.copyFileSync(dbPath, preRestoreBackup);
+        }
+    } catch {
+        // Best effort: if current DB is locked/missing, proceed with restore
+    }
     fs.copyFileSync(backupPath, dbPath);
 }
 
