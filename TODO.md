@@ -191,13 +191,13 @@
 
 - [ ] 🟠 **`core/integrationPolicy.ts`** — Circuit breaker in memoria: reset a CLOSED al riavvio. Fix: persistere gli stati in DB con `circuit_breaker_states (service TEXT PK, state TEXT, failure_count INTEGER, last_failure_at DATETIME)`. Al boot: caricare gli stati dal DB — se un servizio era OPEN meno di `resetTimeout` fa, rimane OPEN fino alla scadenza.
 
-- [ ] 🟠 **`core/integrationPolicy.ts`** — `classifyError` custom ignorato. Fix: correggere l'ordine nello spread object — custom classifier deve sovrascrivere il default, non essere sovrascritto.
+- [x] 🟠 **`core/integrationPolicy.ts`** — `classifyError` custom ignorato. Fix: correggere l'ordine nello spread object — custom classifier deve sovrascrivere il default, non essere sovrascritto.
 
 - [ ] 🟠 **`core/campaignEngine.ts`** — Query SQL dirette invece di repositories. Pattern N+1 in `dispatchReadyCampaignSteps`. Fix: consolidare in `repositories/campaigns.ts`. **Rischio**: query SQL inline bypassano la validazione e il logging del layer repository.
 
-- [ ] 🟠 **Pattern `ensure*Tables` ripetuto in 3 file** — `ensureGovernanceTables` (`system.ts`), `ensureSegmentTable` (`abBandit.ts`), `ensureAiValidationTables` (`aiQuality.ts`) eseguono `CREATE TABLE IF NOT EXISTS` a OGNI operazione. Fix unico: creare helper `lazyEnsure(key: string, initFn: () => Promise<void>)` con `Map<string, boolean>` module-level. Applicare ai 3 file. Non implementare 3 flag lazy separati — stessa logica duplicata 3 volte.
+- [x] 🟠 **Pattern `ensure*Tables` ripetuto in 3 file** — `ensureGovernanceTables` (`system.ts`), `ensureSegmentTable` (`abBandit.ts`), `ensureAiValidationTables` (`aiQuality.ts`) eseguono `CREATE TABLE IF NOT EXISTS` a OGNI operazione. Fix unico: creare helper `lazyEnsure(key: string, initFn: () => Promise<void>)` con `Map<string, boolean>` module-level. Applicare ai 3 file. Non implementare 3 flag lazy separati — stessa logica duplicata 3 volte.
 
-- [ ] 🟠 **`core/repositories/system.ts`** — `cleanupPrivacyData` con 4 DELETE separate senza transazione. Fix: wrappare in `withTransaction`. **Caso limite**: se un lead cambia stato tra una DELETE e l'altra, i dati sono eliminati parzialmente — violazione GDPR peggiore del non eliminarli.
+- [x] 🟠 **`core/repositories/system.ts`** — `cleanupPrivacyData` con 4 DELETE separate senza transazione. Fix: wrappare in `withTransaction`. **Caso limite**: se un lead cambia stato tra una DELETE e l'altra, i dati sono eliminati parzialmente — violazione GDPR peggiore del non eliminarli.
 
 - [x] 🟠 **`core/doctor.ts`** — Restore sovrascrive DB corrotto senza backup preventivo. Fix: (1) copiare il DB corrotto come `db.corrupted.{timestamp}` prima del restore, (2) verificare integrità del backup con `PRAGMA integrity_check` prima di usarlo, (3) se il backup è corrotto → non procedere + alert Telegram + istruzioni manuali.
 
@@ -215,7 +215,7 @@
 
 - [ ] 🟡 **`core/scheduler.ts`** — `syncLeadListsFromLeads()` chiamata 2-3 volte. Divisione per zero se `accounts.length === 0`. Fix: guard `if (accounts.length === 0) return` + deduplica le chiamate con un set di eseguiti.
 
-- [ ] 🟡 **`core/sessionWarmer.ts`** — `console.log` invece di `logInfo`. Fix: sostituire tutti i `console.log/warn/error` con il sistema di telemetria. Selettori CSS hardcoded: usare `SELECTORS` con canary.
+- [x] 🟡 **`core/sessionWarmer.ts`** — `console.log` invece di `logInfo`. Fix: sostituire tutti i `console.log/warn/error` con il sistema di telemetria. Selettori CSS hardcoded: usare `SELECTORS` con canary.
 
 - [ ] 🟡 **`scripts/rampUp.ts`** — **3 problemi nello stesso file → deprecare**: (1) `process.exit(1)` bypassa `finally { closeDatabase() }` (fix: `process.exitCode = 1` + `return`), (2) `RAMP_UP_SCHEDULE` fissa diverge da `rampUpWorker.ts`, (3) branch `if (targetDay === 'auto')` irraggiungibile. **Soluzione unica**: deprecare il file come script standalone, farlo diventare thin wrapper di `rampUpWorker.ts`. Audit: stesso `process.exit` check su tutti gli script in `src/scripts/`.
 
@@ -277,7 +277,7 @@
 
 - [ ] 🟠 **`scripts/backupDb.ts`** — `fs.copyFileSync` su SQLite in WAL mode. Fix preferito: `database.backup(destPath)` di `better-sqlite3` — copia incrementale senza bloccare i writer. Fix alternativo: `VACUUM INTO 'backup.db'` — atomico ma blocca per tutta la durata (problematico su DB >500MB). **Aggiungere post-backup**: `PRAGMA integrity_check` sulla copia — se ritorna qualcosa diverso da `'ok'`, il backup è corrotto e non deve sovrascrivere quello precedente.
 
-- [ ] 🟠 **`scripts/restoreDb.ts`** — Restore sovrascrive DB senza backup preventivo. Fix: (1) backup del DB corrente come `db.pre-restore.{timestamp}`, (2) `PRAGMA integrity_check` sul file di restore per verificarne l'integrità, (3) solo allora sovrascrivere. Se il backup da cui si sta ripristinando è corrotto → alert Telegram + blocco, non procedere.
+- [x] 🟠 **`scripts/restoreDb.ts`** — Restore sovrascrive DB senza backup preventivo. Fix: (1) backup del DB corrente come `db.pre-restore.{timestamp}`, (2) `PRAGMA integrity_check` sul file di restore per verificarne l'integrità, (3) solo allora sovrascrivere. Se il backup da cui si sta ripristinando è corrotto → alert Telegram + blocco, non procedere.
 
 - [ ] 🟠 **`cli/commands/adminCommands.ts`** — `runDbBackupCommand` usa `backupDatabase()` base senza audit trail. Fix: chiamare `runBackup()` da `backupDb.ts` che include checksum SHA256, retention policy, e Telegram alert.
 
@@ -299,7 +299,7 @@
 
 - [ ] 🟡 **`scripts/aiQualityPipeline.ts`** — `sha256File` carica tutto in RAM. Fix: streaming con `fs.createReadStream` + `crypto.createHash('sha256').update(chunk)`.
 
-- [ ] 🟢 **`scripts/rotateSecrets.ts` + `aiQualityPipeline.ts`** — Exit code 0 su failure. Fix: `process.exitCode = 1` se `status === 'FAILED'`.
+- [x] 🟢 **`scripts/rotateSecrets.ts` + `aiQualityPipeline.ts`** — Exit code 0 su failure. Fix: `process.exitCode = 1` se `status === 'FAILED'`.
 
 - [ ] 🟢 **`package.json`** — Scripts `pre-modifiche`/`conta-problemi` non includono vitest. Fix: aggiungere `&& npm run test:vitest`. Aggiungere anche `--max-warnings 0` a `npm run lint`.
 
@@ -317,7 +317,7 @@
 
 - [ ] 🟡 **`sync/webhookSyncWorker.ts`** — `idempotencyKey` camelCase vs `idempotency_key` snake_case in `supabaseSyncWorker.ts`. Fix: standardizzare su snake_case (più comune in PostgreSQL/Supabase).
 
-- [ ] 🟡 **`cloud/controlPlaneSync.ts`** — `syncAccountsDown` e `syncLeadsDown` sequenziali. Fix: `Promise.all([syncAccountsDown(), syncLeadsDown()])`.
+- [x] 🟡 **`cloud/controlPlaneSync.ts`** — `syncAccountsDown` e `syncLeadsDown` sequenziali. Fix: `Promise.all([syncAccountsDown(), syncLeadsDown()])`.
 
 - [ ] 🟡 **`telemetry/alerts.ts`** — `parse_mode: 'Markdown'` vs `parse_mode: 'HTML'` in `broadcaster.ts`. Fix: unificare su `HTML` — più prevedibile con caratteri speciali. Aggiungere `escapeHtml()` helper per i valori dinamici inseriti nei messaggi.
 
@@ -325,7 +325,7 @@
 
 - [x] 🟢 **`cloud/cloudBridge.ts`** — Campo `timestamps?` contiene campi non-timestamp. Rinominare in `updates`.
 
-- [ ] 🟢 **`integrations/crmBridge.ts`** — `pushLeadToCRM` con `.catch(() => {})` silenzioso. Fix: `logWarn` minimo con il messaggio di errore.
+- [x] 🟢 **`integrations/crmBridge.ts`** — `pushLeadToCRM` con `.catch(() => {})` silenzioso. Fix: `logWarn` minimo con il messaggio di errore.
 
 - [ ] 🟢 **`scripts/restoreDb.ts`** — Drill Disaster Recovery skippato per PostgreSQL. Fix: implementare `runPostgresRestoreDrill` che fa restore su DB di test, verifica integrità, poi elimina il DB di test.
 
@@ -372,29 +372,29 @@
 
 ## CONFIGURAZIONE — Validazioni e config mancanti
 
-- [ ] 🟠 **`src/config/validation.ts`** — Mancano validazioni: `softInviteCap <= hardInviteCap`, `softMsgCap <= hardMsgCap`, `workingHoursStart < workingHoursEnd`, `pendingInviteMaxDays >= 1`. **Aggiungere anche**: `targetTimezone` deve essere un timezone IANA valido — validare con `Intl.DateTimeFormat` che non lanci eccezione.
+- [x] 🟠 **`src/config/validation.ts`** — Mancano validazioni: `softInviteCap <= hardInviteCap`, `softMsgCap <= hardMsgCap`, `workingHoursStart < workingHoursEnd`, `pendingInviteMaxDays >= 1`. **Aggiungere anche**: `targetTimezone` deve essere un timezone IANA valido — validare con `Intl.DateTimeFormat` che non lanci eccezione.
 
-- [ ] 🟠 **`src/config/domains.ts`** — `postCreationDefaultTone` con cast `as` senza whitelist. Fix: whitelist esplicita con array `const VALID_TONES = ['professional', 'casual', 'inspirational', ...]` e controllo.
+- [x] 🟠 **`src/config/domains.ts`** — `postCreationDefaultTone` con cast `as` senza whitelist. Fix: whitelist esplicita con array `const VALID_TONES = ['professional', 'casual', 'inspirational', ...]` e controllo.
 
-- [ ] 🟠 **`src/config/domains.ts`** — `pendingInviteMaxDays` senza `Math.max(1, ...)`. Fix: clamping + test che `PENDING_INVITE_MAX_DAYS=0` non causi il problema.
+- [x] 🟠 **`src/config/domains.ts`** — `pendingInviteMaxDays` senza `Math.max(1, ...)`. Fix: clamping + test che `PENDING_INVITE_MAX_DAYS=0` non causi il problema.
 
 - [ ] 🟡 **`src/config/index.ts`** — `as AppConfig` invece di `satisfies AppConfig`. Fix: usare `satisfies` per far sì che TypeScript rilevi campi mancanti al compile time.
 
 - [ ] 🟡 **`src/config/env.ts`** — `isLocalAiEndpoint` non copre `0.0.0.0`, `::ffff:127.0.0.1`. Fix: regex più completa o libreria `is-localhost-ip`.
 
-- [ ] 🟢 **`ecosystem.config.cjs`** — `kill_timeout` mancante. Aggiungere `kill_timeout: 10000` (10s per chiusura graceful SQLite).
+- [x] 🟢 **`ecosystem.config.cjs`** — `kill_timeout` mancante. Aggiungere `kill_timeout: 10000` (10s per chiusura graceful SQLite).
 
-- [ ] 🟢 **`docker-compose.yml`** — `POSTGRES_PASSWORD: changeme` hardcoded. Referenziare da `.env`.
+- [x] 🟢 **`docker-compose.yml`** — `POSTGRES_PASSWORD: changeme` hardcoded. Referenziare da `.env`.
 
 - [ ] 🟢 **`README.md`** — "34 migrazioni" ma ne esistono 35 (e con questo piano saranno 39). Aggiornare con ogni migration aggiunta.
 
 - [ ] 🟠 🛡️ **`.env.example` — Configurazioni GPT-5.4 mancanti** — Aggiungere: `VISION_PROVIDER=auto|openai|ollama` (default `auto`), `VISION_MODEL_OPENAI=gpt-5.4`, `VISION_BUDGET_MAX_USD=5.0`, `VISION_REDACT_SCREENSHOTS=false`. Senza queste variabili la sezione 11 (GPT-5.4) non è configurabile. **Collegamento**: `OPENAI_API_KEY` esiste già ma va documentato come necessario anche per vision (attualmente il commento dice solo "AI opzionale").
 
-- [ ] 🟠 **`.env.example` — `EMBEDDING_MODEL` mancante** — Attualmente `AI_MODEL=llama3.1:8b` è usato sia per chat che per embeddings. OpenAI richiede modelli diversi (`text-embedding-3-small` per embeddings). Aggiungere: `EMBEDDING_MODEL=text-embedding-3-small` con commento "Usato solo per /embeddings. Con Ollama: nomic-embed-text. Con endpoint locale: lasciare vuoto per usare AI_MODEL." **Collegamento**: fix critico `ai/openaiClient.ts` in sezione 1.
+- [x] 🟠 **`.env.example` — `EMBEDDING_MODEL` mancante** — Attualmente `AI_MODEL=llama3.1:8b` è usato sia per chat che per embeddings. OpenAI richiede modelli diversi (`text-embedding-3-small` per embeddings). Aggiungere: `EMBEDDING_MODEL=text-embedding-3-small` con commento "Usato solo per /embeddings. Con Ollama: nomic-embed-text. Con endpoint locale: lasciare vuoto per usare AI_MODEL." **Collegamento**: fix critico `ai/openaiClient.ts` in sezione 1.
 
-- [ ] 🟠 **`.env.example` — `TARGET_TIMEZONE` mancante** — `TIMEZONE=Europe/Rome` è usato per gli orari di esecuzione del bot, ma il layer ML (`timingOptimizer`, `timingModel`) ha bisogno di sapere il timezone dei TARGET (i lead), non del server. Aggiungere: `TARGET_TIMEZONE=Europe/Rome` con commento "Timezone dei lead target per ottimizzazione orari invio. Se diverso da TIMEZONE, il modello ML usa questo valore." **Collegamento**: fix `STRFTIME` UTC in sezione 6.
+- [x] 🟠 **`.env.example` — `TARGET_TIMEZONE` mancante** — `TIMEZONE=Europe/Rome` è usato per gli orari di esecuzione del bot, ma il layer ML (`timingOptimizer`, `timingModel`) ha bisogno di sapere il timezone dei TARGET (i lead), non del server. Aggiungere: `TARGET_TIMEZONE=Europe/Rome` con commento "Timezone dei lead target per ottimizzazione orari invio. Se diverso da TIMEZONE, il modello ML usa questo valore." **Collegamento**: fix `STRFTIME` UTC in sezione 6.
 
-- [ ] 🟠 🛡️ **`.env.example` — `PROFILE_VIEW_DAILY_CAP` mancante** — Il sistema ha cap su inviti (`HARD_INVITE_CAP=25`) e messaggi (`HARD_MSG_CAP=35`), ma nessun limite esplicito su profile views. LinkedIn limita a 80-100 views/giorno (dati 2026); superare questo range è un segnale di automazione diretto. Aggiungere: `PROFILE_VIEW_DAILY_CAP=80`. Il contatore va implementato in `jobRunner.ts` o nel worker che naviga i profili. **Anti-ban**: è l'unico limite giornaliero completamente assente nella nostra configurazione.
+- [x] 🟠 🛡️ **`.env.example` — `PROFILE_VIEW_DAILY_CAP` mancante** — Il sistema ha cap su inviti (`HARD_INVITE_CAP=25`) e messaggi (`HARD_MSG_CAP=35`), ma nessun limite esplicito su profile views. LinkedIn limita a 80-100 views/giorno (dati 2026); superare questo range è un segnale di automazione diretto. Aggiungere: `PROFILE_VIEW_DAILY_CAP=80`. Il contatore va implementato in `jobRunner.ts` o nel worker che naviga i profili. **Anti-ban**: è l'unico limite giornaliero completamente assente nella nostra configurazione.
 
 ---
 
