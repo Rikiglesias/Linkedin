@@ -16,7 +16,7 @@ import {
     getDailyStat,
     getLeadStatusCountsForLists,
     getLeadsByStatusForList,
-    getListDailyStat,
+    getListDailyStatsBatch,
     getRuntimeFlag,
     getRiskInputs,
     listLeadCampaignConfigs,
@@ -500,6 +500,7 @@ export async function scheduleJobs(
     }
 
     if (workflow === 'all' || workflow === 'invite') {
+        const inviteStatsMap = await getListDailyStatsBatch(localDate, 'invites_sent');
         let remainingInviteBudget = effectiveInviteBudget;
         for (const listName of activeListNames) {
             if (remainingInviteBudget <= 0) break;
@@ -507,7 +508,7 @@ export async function scheduleJobs(
             if (!breakdown) continue;
 
             const listConfig = listConfigMap.get(listName);
-            const listInvitesSent = await getListDailyStat(localDate, listName, 'invites_sent');
+            const listInvitesSent = inviteStatsMap.get(listName) ?? 0;
             const rawListBudget = computeListBudget(
                 remainingInviteBudget,
                 listConfig?.dailyInviteCap ?? null,
@@ -624,6 +625,7 @@ export async function scheduleJobs(
     }
 
     if (workflow === 'all' || workflow === 'message') {
+        const messageStatsMap = await getListDailyStatsBatch(localDate, 'messages_sent');
         let remainingMessageBudget = effectiveMessageBudget;
         for (const listName of activeListNames) {
             if (remainingMessageBudget <= 0) break;
@@ -631,7 +633,7 @@ export async function scheduleJobs(
             if (!breakdown) continue;
 
             const listConfig = listConfigMap.get(listName);
-            const listMessagesSent = await getListDailyStat(localDate, listName, 'messages_sent');
+            const listMessagesSent = messageStatsMap.get(listName) ?? 0;
             const rawListBudget = computeListBudget(
                 remainingMessageBudget,
                 listConfig?.dailyMessageCap ?? null,

@@ -604,6 +604,22 @@ export async function getListDailyStat(
     return row?.[field] ?? 0;
 }
 
+export async function getListDailyStatsBatch(
+    dateString: string,
+    field: 'invites_sent' | 'messages_sent',
+): Promise<Map<string, number>> {
+    const db = await getDatabase();
+    const rows = await db.query<{ list_name: string } & Record<string, number>>(
+        `SELECT list_name, ${field} FROM list_daily_stats WHERE date = ?`,
+        [dateString],
+    );
+    const map = new Map<string, number>();
+    for (const row of rows) {
+        map.set(row.list_name, row[field] ?? 0);
+    }
+    return map;
+}
+
 export async function incrementDailyStat(
     dateString: string,
     field:
