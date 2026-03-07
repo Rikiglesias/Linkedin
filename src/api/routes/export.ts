@@ -7,7 +7,7 @@
 
 import { Router, type Request, type Response } from 'express';
 import { getDatabase } from '../../db';
-import { handleApiError } from '../utils';
+import { handleApiError, sendApiV1 } from '../utils';
 import { ExportLeadsQuerySchema } from '../schemas';
 import { recordSecurityAuditEvent } from '../../core/repositories';
 
@@ -133,7 +133,7 @@ router.get('/leads', async (req: Request, res: Response) => {
             return;
         }
 
-        res.json({ count: rows.length, leads: rows });
+        sendApiV1(res, { count: rows.length, leads: rows });
     } catch (err) {
         handleApiError(res, err, 'api.export.leads');
     }
@@ -152,7 +152,7 @@ router.get('/posts', async (_req: Request, res: Response) => {
              LIMIT 1000`,
             )
             .catch(() => []);
-        res.json({ count: rows.length, posts: rows });
+        sendApiV1(res, { count: rows.length, posts: rows });
     } catch (err) {
         handleApiError(res, err, 'api.export.posts');
     }
