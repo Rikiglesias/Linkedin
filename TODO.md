@@ -145,6 +145,10 @@
 
 - [x] 🟢 🛡️ **`ai/typoGenerator.ts`** — Solo QWERTY US. Fix: aggiungere layout italiano con caratteri accentati. Aggiungere anche: typo per doppia lettera accidentale (`nn` invece di `n`), lettera mancante, trasposizione di due lettere adiacenti — questi sono i pattern di typo umano più comuni secondo gli studi di HCI.
 
+- [x] 🟠 🛡️ **NUOVO — `browser/missclick.ts` — Sistema missclick intelligente** — Simulazione errori click umani: (1) missclick su zona vuota vicina al target (8-25px offset) con verifica DOM 40px radius su 14 selettori pericolosi (Report, Block, Withdraw, Delete, Unfollow, Settings), recovery con esitazione naturale 250-700ms, (2) navigazione accidentale su pagine LinkedIn innocue (Jobs, Learning, Premium) durante fasi idle con ritorno automatico via `goBack()`. Rate: 2% missclick su navigazione, 0.5% nav accidentale su interJobDelay. **Mai durante operazioni critiche** (send, connect, challenge). Integrato in `humanMouseMove` e `interJobDelay`.
+
+- [x] 🟠 🛡️ **AUDIT CODEBASE COMPLETO — 7 bug trovati e corretti** — Audit sistematico su 15 file (anti-detection, security, worker pipeline). Bug corretti: (1) `stealthScripts.ts`: rimossi caratteri Hindi corrotti nel Battery API mock + AudioContext noise reso più denso (1/7 campioni vs 1/100) e variabile (sinusoidale vs costante), (2) `humanBehavior.ts`: `simulateTabSwitch` ora salva/ripristina i descriptor nativi di `visibilityState` via `getOwnPropertyDescriptor` invece di sovrascriverli permanentemente, (3) `launcher.ts`: `hardwareConcurrency`/`deviceMemory` ora deterministici derivati da `fingerprint.id` hash (stesso account = stessi valori tra sessioni), (4) `redaction.ts`: aggiunto `'credentials'` a `SENSITIVE_KEY_PARTS`, (5) `leadStateService.ts`: aggiunto `recordSecurityAuditEvent` a `reconcileLeadStatus` bypass, (6) `stealthScripts.ts`: `AnalyserNode` check corretto con `typeof` invece di `window.AnalyserNode`, (7) `stealthScripts.ts`: riga dead code con caratteri non-ASCII rimossa.
+
 ---
 
 ## 4. WORKER PIPELINE — Bug nei worker
@@ -449,21 +453,59 @@
 
 ---
 
+## AUDIT BEST PRACTICES — Verifica completata
+
+> Audit sistematico eseguito su 15 file core della codebase.
+> Per ogni area: file verificati, problemi trovati, azioni correttive applicate.
+
+### Anti-Detection (7 file verificati)
+
+| File | Risultato | Dettaglio |
+|------|-----------|-----------|
+| `stealthScripts.ts` | 5 problemi corretti | Battery API chars corrotti, AudioContext noise troppo rado/costante, AnalyserNode check errato |
+| `stealth.ts` | 2 problemi documentati | Cloud fingerprint non deterministico — sarà assorbito dal refactor VisionProvider (sezione 11) |
+| `humanBehavior.ts` | 3 problemi corretti | visibilityState override permanente → ora reversibile con descriptor save/restore |
+| `launcher.ts` | 2 problemi corretti | hardwareConcurrency/deviceMemory randomici → ora deterministici da fingerprint.id hash |
+| `mouseGenerator.ts` | OK (2 note minori) | Commento "Perlin" fuorviante (è sinusoidale multi-ottava), nessun overshoot nel generatore |
+| `organicContent.ts` | OK (2 note minori) | hover() logico vs fisico per reactions, selettore `.reactions-menu__reaction` fragile |
+| `fingerprint/pool.ts` | NESSUN PROBLEMA | JA3 per browser family, FNV-1a hash, viewport desktop/mobile tutti corretti |
+
+### Security (3 file verificati)
+
+| File | Risultato | Dettaglio |
+|------|-----------|-----------|
+| `redaction.ts` | 1 problema corretto | `credentials` mancante da SENSITIVE_KEY_PARTS. PHONE_PATTERNS possibili false positive su date documentate |
+| `server.ts` | OK | Health check path funziona correttamente (Express stripa mount prefix). CSRF, session cookie, auth chain tutti corretti |
+| `export.ts` | OK | CSV formula injection, limit 500, audit logging tutti funzionanti |
+
+### Worker Pipeline (5 file verificati)
+
+| File | Risultato | Dettaglio |
+|------|-----------|-----------|
+| `acceptanceWorker.ts` | OK | isFirstDegreeBadge, transitionLeadAtomic, attemptChallengeResolution tutti corretti |
+| `messageWorker.ts` | OK | Validazione template campagna, hash duplicati, flow typing/invio tutti corretti |
+| `inviteWorker.ts` | OK (1 nota) | Pre-click weekly limit può dare falsi negativi — post-click check compensa. Quarantine su WEEKLY_LIMIT_REACHED corretto |
+| `jobRunner.ts` | OK | Exhaustive check senza as-never, throttle HTTP, rotazione sessione tutti corretti |
+| `leadStateService.ts` | 1 problema corretto | reconcileLeadStatus senza audit trail → aggiunto recordSecurityAuditEvent |
+
+---
+
 ## RIEPILOGO STATISTICO
 
-| Priorità | Count |
+| Stato | Count |
 |---|---|
-| 🔴 Critico | 23 |
-| 🟠 Alto | 59 |
-| 🟡 Medio | 36 |
-| 🟢 Basso | 25 |
-| **Totale** | **143** |
+| ✅ Completati | 127 |
+| ⬜ Aperti | 48 |
+| **Totale** | **175** |
 
-> +6 regressioni Opus Cloud (sezione 0) rispetto alla versione precedente (137).
+> Item originali: 143. Aggiunti: +2 (missclick, audit fix), +30 (item scoperti e completati durante le sessioni).
+> 72.6% del TODO completato. I 48 item restanti sono feature nuove (GPT-5.4, CloakBrowser),
+> refactor architetturali, e miglioramenti UX frontend — nessun bug critico o rischio anti-ban.
 
-**File da eliminare:** `src/services/emailEnricher.ts`
-**File da deprecare:** `src/salesnav/searchExtractor.ts`, `plugins/exampleEngagementBooster.js`
-**Tutto il resto del codice è necessario e attivo.**
+**File eliminati:** ~~`src/services/emailEnricher.ts`~~ ELIMINATO (sostituito da `integrations/leadEnricher.ts`)
+**File spostati:** ~~`plugins/exampleEngagementBooster.js`~~ → `plugins/examples/exampleEngagementBooster.js`
+**File da deprecare:** `src/salesnav/searchExtractor.ts` (in attesa del refactor SalesNav selectors)
+**Migration create:** 035b–040 (6 nuove migration: salesnav index, list members, challenge events, telegram state, proxy metrics, leads version)
 
 ---
 
@@ -482,7 +524,7 @@
 | Skip pagine dove tutti i lead sono già salvati | ✅ Implementato | `visionPageAllAlreadySaved` → skip con `SKIPPED_ALL_SAVED` status |
 | Lista elenchi disponibili | ✅ Implementato | `listSalesNavLists()` + `askUserToChooseList` integrato in `runSalesNavBulkSaveCommand` |
 | Scelta interattiva dell'elenco target | ✅ Implementato | `if (!targetListName)` chiama `askUserToChooseList()` dopo login |
-| Controlla DB quali persone già aggiunte | ❌ Mancante | Migration 036 `salesnav_list_members` non ancora creata |
+| Controlla DB quali persone già aggiunte | 🟡 Parziale | Migration 036 `salesnav_list_members` creata, query di dedup da integrare in `bulkSaveOrchestrator` |
 | Deduplicazione per-persona | ❌ Mancante | 3 livelli: URL profilo, URL SalesNav, hash nome+azienda (omonimi = warning non blocco) |
 | Tutte le pagine della ricerca | ✅ Implementato | Loop paginazione con `clickNextPage` |
 | Clicca "Seleziona tutto" ogni pagina | ✅ Implementato | `clickSelectAll` con AI fallback |
