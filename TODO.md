@@ -187,7 +187,7 @@
 
 - [x] 🟠 **`core/leadStateService.ts`** — Race condition transizione lead. Fix con **optimistic locking**: (1) aggiungere colonna `version INTEGER DEFAULT 0` alla tabella `leads` (migration necessaria), (2) `UPDATE leads SET status=?, version=version+1 WHERE id=? AND version=?`, (3) se `changes === 0` → altro processo ha già modificato → retry o errore esplicito. **Alternativa per SQLite**: `acquireRuntimeLock('lead_{id}')` serializza le transizioni — più semplice, leggermente meno scalabile.
 
-- [ ] 🟠 **`core/leadStateService.ts`** — `reconcileLeadStatus` bypassa la macchina a stati. Fix: documentare ESPLICITAMENTE i casi legittimi di bypass con commento `// BYPASS_REASON: ...` e aggiungere audit log ogni volta che viene usato. Se non ci sono casi legittimi, rimuovere la funzione e usare solo `transitionLead`.
+- [x] 🟠 **`core/leadStateService.ts`** — `reconcileLeadStatus` bypassa la macchina a stati. Fix: documentare ESPLICITAMENTE i casi legittimi di bypass con commento `// BYPASS_REASON: ...` e aggiungere audit log ogni volta che viene usato. Se non ci sono casi legittimi, rimuovere la funzione e usare solo `transitionLead`.
 
 - [ ] 🟠 **`core/integrationPolicy.ts`** — Circuit breaker in memoria: reset a CLOSED al riavvio. Fix: persistere gli stati in DB con `circuit_breaker_states (service TEXT PK, state TEXT, failure_count INTEGER, last_failure_at DATETIME)`. Al boot: caricare gli stati dal DB — se un servizio era OPEN meno di `resetTimeout` fa, rimane OPEN fino alla scadenza.
 
@@ -201,7 +201,7 @@
 
 - [x] 🟠 **`core/doctor.ts`** — Restore sovrascrive DB corrotto senza backup preventivo. Fix: (1) copiare il DB corrotto come `db.corrupted.{timestamp}` prima del restore, (2) verificare integrità del backup con `PRAGMA integrity_check` prima di usarlo, (3) se il backup è corrotto → non procedere + alert Telegram + istruzioni manuali.
 
-- [ ] 🟠 🛡️ **`accountManager.ts`** — `getAccountProfileById` usa `accounts[0]` come fallback silenzioso. **Impatto anti-ban**: inviti inviati dall'account sbagliato con IP diverso → pattern incoerente per LinkedIn. Fix: throw esplicito `AccountNotFoundError` + alert Telegram immediato "ACCOUNT NON TROVATO — operazione bloccata" con il `accountId` cercato.
+- [x] 🟠 🛡️ **`accountManager.ts`** — `getAccountProfileById` usa `accounts[0]` come fallback silenzioso. **Impatto anti-ban**: inviti inviati dall'account sbagliato con IP diverso → pattern incoerente per LinkedIn. Fix: throw esplicito `AccountNotFoundError` + alert Telegram immediato "ACCOUNT NON TROVATO — operazione bloccata" con il `accountId` cercato.
 
 - [ ] 🟠 🛡️ **`proxyManager.ts`** — Fallback Tor in fondo alla lista proxy in cooldown. Fix: ordine corretto: (1) proxy attivi ordinati per qualità (success rate, latenza), (2) Tor immediatamente dopo l'esaurimento dei proxy attivi, (3) proxy in cooldown mai ritentati nella sessione corrente. **Nuovo item dipendente**: tabella `proxy_metrics (proxy_url, success_count, fail_count, avg_latency_ms, last_used_at)` per ordinamento intelligente.
 
@@ -213,11 +213,11 @@
 
 - [ ] 🟡 **`salesnav/searchExtractor.ts`** — **DEPRECATO — 3 step in ordine**: (1) estrarre `NEXT_PAGE_SELECTOR`, `SELECT_ALL_SELECTOR`, `SAVE_TO_LIST_SELECTOR` in `src/salesnav/selectors.ts` (condiviso), (2) sostituire i 2 caller rimasti con `runSalesNavBulkSave`, (3) eliminare il file. L'ordine è obbligatorio: estrarre prima di rimuovere, altrimenti si perdono i selectors.
 
-- [ ] 🟡 **`core/scheduler.ts`** — `syncLeadListsFromLeads()` chiamata 2-3 volte. Divisione per zero se `accounts.length === 0`. Fix: guard `if (accounts.length === 0) return` + deduplica le chiamate con un set di eseguiti.
+- [x] 🟡 **`core/scheduler.ts`** — `syncLeadListsFromLeads()` chiamata 2-3 volte. Divisione per zero se `accounts.length === 0`. Fix: guard `if (accounts.length === 0) return` + deduplica le chiamate con un set di eseguiti.
 
 - [x] 🟡 **`core/sessionWarmer.ts`** — `console.log` invece di `logInfo`. Fix: sostituire tutti i `console.log/warn/error` con il sistema di telemetria. Selettori CSS hardcoded: usare `SELECTORS` con canary.
 
-- [ ] 🟡 **`scripts/rampUp.ts`** — **3 problemi nello stesso file → deprecare**: (1) `process.exit(1)` bypassa `finally { closeDatabase() }` (fix: `process.exitCode = 1` + `return`), (2) `RAMP_UP_SCHEDULE` fissa diverge da `rampUpWorker.ts`, (3) branch `if (targetDay === 'auto')` irraggiungibile. **Soluzione unica**: deprecare il file come script standalone, farlo diventare thin wrapper di `rampUpWorker.ts`. Audit: stesso `process.exit` check su tutti gli script in `src/scripts/`.
+- [x] 🟡 **`scripts/rampUp.ts`** — **3 problemi nello stesso file → deprecare**: (1) `process.exit(1)` bypassa `finally { closeDatabase() }` (fix: `process.exitCode = 1` + `return`), (2) `RAMP_UP_SCHEDULE` fissa diverge da `rampUpWorker.ts`, (3) branch `if (targetDay === 'auto')` irraggiungibile. **Soluzione unica**: deprecare il file come script standalone, farlo diventare thin wrapper di `rampUpWorker.ts`. Audit: stesso `process.exit` check su tutti gli script in `src/scripts/`.
 
 - [ ] 🟡 **`api/routes/export.ts`** — Non usa `sendApiV1` envelope. Fix: migrare a `/api/v1/export/*` con formato standard.
 
@@ -229,9 +229,9 @@
 
 - [ ] 🟢 **`sync/webhookSyncWorker.ts`** — `parseOutboxPayload` duplicata in `supabaseSyncWorker.ts`. Estrarre in `sync/outboxUtils.ts`.
 
-- [ ] 🟢 **`integrations/crmBridge.ts`** — `cleanLinkedinUrl(raw)` fa solo `.trim()`. Inline diretto.
+- [x] 🟢 **`integrations/crmBridge.ts`** — `cleanLinkedinUrl(raw)` fa solo `.trim()`. Inline diretto.
 
-- [ ] 🟢 **`.gitignore`** — `node_modules/` commentato con `#`. Fix: rimuovere `#`, eseguire `git rm -r --cached node_modules/`, poi commit. **Farlo in un commit dedicato** — il diff sarà enorme e deve essere separato da modifiche al codice.
+- [x] 🟢 **`.gitignore`** — `node_modules/` commentato con `#`. Fix: rimuovere `#`, eseguire `git rm -r --cached node_modules/`, poi commit. **Farlo in un commit dedicato** — il diff sarà enorme e deve essere separato da modifiche al codice.
 
 ---
 
@@ -241,7 +241,7 @@
 
 - [x] 🟠 **`ml/timingOptimizer.ts`** — `STRFTIME('%H', invited_at)` in UTC. Fix sistemico: aggiungere colonna `invited_at_local_hour INTEGER` calcolata all'insert usando `config.targetTimezone` (es. `Europe/Rome`). L'ottimizzatore usa questa colonna. **Questo risolve il problema alla radice** invece di fare conversioni post-hoc che possono avere edge case su DST.
 
-- [ ] 🟠 **`ml/timingOptimizer.ts`** — Attende 7 giorni se lo slot ottimale è già passato di 1 minuto. Fix: cercare il prossimo slot disponibile nella settimana (slot dello stesso tipo nei giorni successivi), non aspettare 7 giorni.
+- [x] 🟠 **`ml/timingOptimizer.ts`** — Attende 7 giorni se lo slot ottimale è già passato di 1 minuto. Fix: cercare il prossimo slot disponibile nella settimana (slot dello stesso tipo nei giorni successivi), non aspettare 7 giorni.
 
 - [x] 🟠 **`ml/timingModel.ts`** — `new Date().getHours()` in UTC. Fix: stesso approccio — usare `config.targetTimezone` per calcolare l'ora locale.
 
@@ -249,9 +249,9 @@
 
 - [ ] 🟡 **`ml/significance.ts`** — Test two-tailed invece di one-tailed. Fix: usare one-tailed per "è meglio del baseline?" — stessa potenza statistica con la metà dei dati.
 
-- [ ] 🟡 **`captcha/solver.ts`** — Coordinate LLaVA non validate. Fix: clampare a viewport bounds prima del click. Se le coordinate sono fuori bounds → retry con prompt più specifico prima di usare coordinate di fallback.
+- [x] 🟡 **`captcha/solver.ts`** — Coordinate LLaVA non validate. Fix: clampare a viewport bounds prima del click. Se le coordinate sono fuori bounds → retry con prompt più specifico prima di usare coordinate di fallback.
 
-- [ ] 🟡 **`captcha/solver.ts`** — Modello `llava:7b` obsoleto. Fix: aggiornare default a `llava-llama3:8b` o `moondream2`. Rendere configurabile via `VISION_MODEL` env var (già esiste ma non documentato nel README).
+- [x] 🟡 **`captcha/solver.ts`** — Modello `llava:7b` obsoleto. Fix: aggiornare default a `llava-llama3:8b` o `moondream2`. Rendere configurabile via `VISION_MODEL` env var (già esiste ma non documentato nel README).
 
 - [ ] 🟡 **`salesnav/visionNavigator.ts`** — `visionWaitFor` swallows errori silenziosamente. Fix: distinguere `OllamaDownError` (servizio non disponibile → throw immediato, non aspettare timeout) da `VisionParseError` (risposta malformata → retry fino a timeout). Il caller deve ricevere informazioni diverse nei due casi. **⚠️ DIPENDENZA**: questo fix sarà assorbito dal refactor GPT-5.4 (sezione 11) — implementare DOPO il refactor `VisionProvider`, non prima, altrimenti viene riscritto.
 
@@ -309,9 +309,9 @@
 
 ## 8. CLOUD / SYNC — Telegram, Supabase, CRM
 
-- [ ] 🟠 **`cloud/telegramListener.ts`** — `await import('@supabase/supabase-js')` nel loop messaggi: crea nuova connessione per ogni comando. Fix: singleton client con lazy init al primo uso. **Caso limite WebSocket**: la connessione Supabase può cadere — aggiungere `client.channel('...').on('error', reconnect)` con backoff esponenziale.
+- [x] 🟠 **`cloud/telegramListener.ts`** — `await import('@supabase/supabase-js')` nel loop messaggi: crea nuova connessione per ogni comando. Fix: singleton client con lazy init al primo uso. **Caso limite WebSocket**: la connessione Supabase può cadere — aggiungere `client.channel('...').on('error', reconnect)` con backoff esponenziale.
 
-- [ ] 🟠 **`cloud/telegramListener.ts`** — `lastUpdateId` non persistito. Fix a 3 livelli: (1) in-memory durante la sessione, (2) scritto in `telegram_state` (Migration 038) ogni 10 update, (3) al boot: caricare da DB e aggiungere offset +50 per saltare update potenzialmente già processati ma non confermati. **Edge case**: se il bot è down per ore, Telegram accumula centinaia di update — processarli tutti in sequenza al riavvio. Aggiungere: `MAX_CATCH_UP_UPDATES = 100` — oltre questo, logga "skipped N updates" e parti dall'ultimo.
+- [x] 🟠 **`cloud/telegramListener.ts`** — `lastUpdateId` non persistito. Fix a 3 livelli: (1) in-memory durante la sessione, (2) scritto in `telegram_state` (Migration 038) ogni 10 update, (3) al boot: caricare da DB e aggiungere offset +50 per saltare update potenzialmente già processati ma non confermati. **Edge case**: se il bot è down per ore, Telegram accumula centinaia di update — processarli tutti in sequenza al riavvio. Aggiungere: `MAX_CATCH_UP_UPDATES = 100` — oltre questo, logga "skipped N updates" e parti dall'ultimo.
 
 - [x] 🟠 **`cloud/cloudBridge.ts`** — `.catch(() => {})` silenzioso su tutti i bridge call. Fix: `logWarn('cloud_bridge_error', { op, error })` + contatore errori consecutivi. Se fallisce 5 volte di fila → passare a modalità offline-first con queue locale (`cloud_sync_errors` table). **Nuovo item dipendente**: Migration per `cloud_sync_errors (id PK, op TEXT, payload JSON, error TEXT, retry_count INTEGER, created_at DATETIME, next_retry_at DATETIME)`.
 
@@ -339,7 +339,7 @@
 
 - [ ] 🟡 **`src/frontend/`** — Nessun indicatore stato connessione SSE. Fix: 3 stati visuali — `UNKNOWN` (grigio, prima del primo heartbeat), `CONNECTED` (verde), `DISCONNECTED` (rosso con pulsante "Riconnetti"). Il colore rosso deve essere visibile anche in tab non attivi (favicon colorata).
 
-- [ ] 🟡 **`public/index.html`** — Badge "Operativo" hardcoded. Fix: stato iniziale `UNKNOWN` (grigio) — diventa verde solo al primo heartbeat ricevuto dal SSE. **Impatto UX**: un badge verde quando il bot è crashato è fuorviante — l'utente non interviene.
+- [x] 🟡 **`public/index.html`** — Badge "Operativo" hardcoded. Fix: stato iniziale `UNKNOWN` (grigio) — diventa verde solo al primo heartbeat ricevuto dal SSE. **Impatto UX**: un badge verde quando il bot è crashato è fuorviante — l'utente non interviene.
 
 - [ ] 🟡 **`public/index.html`** — `aria-label` errato su tabella. Fix: correggere con il contenuto effettivo.
 
@@ -360,7 +360,7 @@
 
 - [ ] 🟡 **`plugins/exampleEngagementBooster.js`** — Rimuovere o spostare in `examples/`.
 
-- [ ] 🟢 **`src/api/schemas.ts`** — `ListConfigUpdateSchema` mai usato. Creare la route o rimuovere.
+- [x] 🟢 **`src/api/schemas.ts`** — `ListConfigUpdateSchema` mai usato. Creare la route o rimuovere.
 
 - [ ] 🟢 **`src/types/domain.ts`** — `JobPayload` union: non fornisce type safety al dispatch runtime. Valutare se serve per documentazione o rimuovere.
 
@@ -380,7 +380,7 @@
 
 - [ ] 🟡 **`src/config/index.ts`** — `as AppConfig` invece di `satisfies AppConfig`. Fix: usare `satisfies` per far sì che TypeScript rilevi campi mancanti al compile time.
 
-- [ ] 🟡 **`src/config/env.ts`** — `isLocalAiEndpoint` non copre `0.0.0.0`, `::ffff:127.0.0.1`. Fix: regex più completa o libreria `is-localhost-ip`.
+- [x] 🟡 **`src/config/env.ts`** — `isLocalAiEndpoint` non copre `0.0.0.0`, `::ffff:127.0.0.1`. Fix: regex più completa o libreria `is-localhost-ip`.
 
 - [x] 🟢 **`ecosystem.config.cjs`** — `kill_timeout` mancante. Aggiungere `kill_timeout: 10000` (10s per chiusura graceful SQLite).
 
