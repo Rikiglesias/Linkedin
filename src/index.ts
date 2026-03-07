@@ -1,7 +1,7 @@
 import { closeDatabase, initDatabase } from './db';
 import { config, validateCriticalConfig } from './config';
 import { runDoctor } from './core/doctor';
-import { getGlobalKPIData, listOpenIncidents, recoverStuckJobs } from './core/repositories';
+import { getGlobalKPIData, listOpenIncidents, recoverStuckJobs, recoverStuckAcceptedLeads, recoverStuckPublishingPosts } from './core/repositories';
 import { getEventSyncStatus, runEventSyncOnce } from './sync/eventSync';
 import { generateAndSendDailyReport } from './telemetry/dailyReporter';
 import { startServer } from './api/server';
@@ -245,6 +245,14 @@ async function main(): Promise<void> {
             console.warn(
                 `[BOOT] Ripristinati ${recoveredJobs} job RUNNING bloccati da oltre ${config.jobStuckMinutes} minuti.`,
             );
+        }
+        const recoveredLeads = await recoverStuckAcceptedLeads(20);
+        if (recoveredLeads > 0) {
+            console.warn(`[BOOT] Promossi ${recoveredLeads} lead bloccati in ACCEPTED → READY_MESSAGE.`);
+        }
+        const recoveredPosts = await recoverStuckPublishingPosts(10);
+        if (recoveredPosts > 0) {
+            console.warn(`[BOOT] Recuperati ${recoveredPosts} post bloccati in PUBLISHING → FAILED.`);
         }
     }
 

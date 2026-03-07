@@ -241,3 +241,29 @@ export async function recycleJob(jobId: number, newDelaySec: number, newPriority
         [nextRun, newPriority, now.toISOString(), jobId],
     );
 }
+
+export async function recoverStuckAcceptedLeads(maxMinutes: number = 20): Promise<number> {
+    const db = await getDatabase();
+    const result = await db.run(
+        `UPDATE leads
+         SET status = 'READY_MESSAGE',
+             updated_at = CURRENT_TIMESTAMP
+         WHERE status = 'ACCEPTED'
+           AND updated_at <= DATETIME('now', '-' || ? || ' minutes')`,
+        [Math.max(1, maxMinutes)],
+    );
+    return result.changes ?? 0;
+}
+
+export async function recoverStuckPublishingPosts(maxMinutes: number = 10): Promise<number> {
+    const db = await getDatabase();
+    const result = await db.run(
+        `UPDATE published_posts
+         SET status = 'FAILED',
+             updated_at = CURRENT_TIMESTAMP
+         WHERE status = 'PUBLISHING'
+           AND updated_at <= DATETIME('now', '-' || ? || ' minutes')`,
+        [Math.max(1, maxMinutes)],
+    );
+    return result.changes ?? 0;
+}
