@@ -177,9 +177,7 @@ export async function runControlPlaneSync(options: { force?: boolean } = {}): Pr
             reason = force ? 'forced_sync' : 'synced';
         }
 
-        // Downsync entità addizionali
-        await syncAccountsDown();
-        await syncLeadsDown();
+        await Promise.all([syncAccountsDown(), syncLeadsDown()]);
 
         await setRuntimeFlag(CONTROL_PLANE_LAST_RUN_KEY, nowIso);
         await setRuntimeFlag(CONTROL_PLANE_LAST_HASH_KEY, nextHash);

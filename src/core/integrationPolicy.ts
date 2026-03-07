@@ -458,7 +458,7 @@ export async function fetchWithRetryPolicy(
         },
         {
             ...options,
-            classifyError: (error) => (isLikelyTransientError(error) ? 'transient' : 'terminal'),
+            classifyError: options.classifyError ?? ((error) => (isLikelyTransientError(error) ? 'transient' : 'terminal')),
         },
     );
 }

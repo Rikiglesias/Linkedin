@@ -897,62 +897,64 @@ export async function cleanupPrivacyData(retentionDays: number): Promise<Privacy
     const safeDays = Math.max(7, retentionDays);
     const daysParam = String(safeDays);
 
-    const runLogs = await db.run(`DELETE FROM run_logs WHERE created_at < DATETIME('now', '-' || ? || ' days')`, [
-        daysParam,
-    ]);
-    const jobAttempts = await db.run(
-        `DELETE FROM job_attempts WHERE started_at < DATETIME('now', '-' || ? || ' days')`,
-        [daysParam],
-    );
-    const leadEvents = await db.run(`DELETE FROM lead_events WHERE created_at < DATETIME('now', '-' || ? || ' days')`, [
-        daysParam,
-    ]);
-    const messageHistory = await db.run(
-        `DELETE FROM message_history WHERE sent_at < DATETIME('now', '-' || ? || ' days')`,
-        [daysParam],
-    );
-    const deliveredOutboxEvents = await db.run(
-        `DELETE FROM outbox_events
-         WHERE delivered_at IS NOT NULL
-           AND created_at < DATETIME('now', '-' || ? || ' days')`,
-        [daysParam],
-    );
-    const resolvedIncidents = await db.run(
-        `DELETE FROM account_incidents
-         WHERE status = 'RESOLVED'
-           AND resolved_at < DATETIME('now', '-' || ? || ' days')`,
-        [daysParam],
-    );
+    return withTransaction(db, async () => {
+        const runLogs = await db.run(`DELETE FROM run_logs WHERE created_at < DATETIME('now', '-' || ? || ' days')`, [
+            daysParam,
+        ]);
+        const jobAttempts = await db.run(
+            `DELETE FROM job_attempts WHERE started_at < DATETIME('now', '-' || ? || ' days')`,
+            [daysParam],
+        );
+        const leadEvents = await db.run(`DELETE FROM lead_events WHERE created_at < DATETIME('now', '-' || ? || ' days')`, [
+            daysParam,
+        ]);
+        const messageHistory = await db.run(
+            `DELETE FROM message_history WHERE sent_at < DATETIME('now', '-' || ? || ' days')`,
+            [daysParam],
+        );
+        const deliveredOutboxEvents = await db.run(
+            `DELETE FROM outbox_events
+             WHERE delivered_at IS NOT NULL
+               AND created_at < DATETIME('now', '-' || ? || ' days')`,
+            [daysParam],
+        );
+        const resolvedIncidents = await db.run(
+            `DELETE FROM account_incidents
+             WHERE status = 'RESOLVED'
+               AND resolved_at < DATETIME('now', '-' || ? || ' days')`,
+            [daysParam],
+        );
 
-    const staleLeadsSubquery = `
-        SELECT id
-        FROM leads
-        WHERE status IN ('SKIPPED', 'BLOCKED', 'DEAD', 'WITHDRAWN', 'REPLIED', 'CONNECTED')
-          AND COALESCE(updated_at, created_at) < DATETIME('now', '-' || ? || ' days')
-    `;
-    const staleListMemberships = await db.run(`DELETE FROM list_leads WHERE lead_id IN (${staleLeadsSubquery})`, [
-        daysParam,
-    ]);
-    const staleLeadEvents = await db.run(`DELETE FROM lead_events WHERE lead_id IN (${staleLeadsSubquery})`, [
-        daysParam,
-    ]);
-    const staleMessageHistory = await db.run(`DELETE FROM message_history WHERE lead_id IN (${staleLeadsSubquery})`, [
-        daysParam,
-    ]);
-    const staleLeads = await db.run(`DELETE FROM leads WHERE id IN (${staleLeadsSubquery})`, [daysParam]);
+        const staleLeadsSubquery = `
+            SELECT id
+            FROM leads
+            WHERE status IN ('SKIPPED', 'BLOCKED', 'DEAD', 'WITHDRAWN', 'REPLIED', 'CONNECTED')
+              AND COALESCE(updated_at, created_at) < DATETIME('now', '-' || ? || ' days')
+        `;
+        const staleListMemberships = await db.run(`DELETE FROM list_leads WHERE lead_id IN (${staleLeadsSubquery})`, [
+            daysParam,
+        ]);
+        const staleLeadEvents = await db.run(`DELETE FROM lead_events WHERE lead_id IN (${staleLeadsSubquery})`, [
+            daysParam,
+        ]);
+        const staleMessageHistory = await db.run(`DELETE FROM message_history WHERE lead_id IN (${staleLeadsSubquery})`, [
+            daysParam,
+        ]);
+        const staleLeads = await db.run(`DELETE FROM leads WHERE id IN (${staleLeadsSubquery})`, [daysParam]);
 
-    return {
-        runLogs: runLogs.changes ?? 0,
-        jobAttempts: jobAttempts.changes ?? 0,
-        leadEvents: leadEvents.changes ?? 0,
-        messageHistory: messageHistory.changes ?? 0,
-        deliveredOutboxEvents: deliveredOutboxEvents.changes ?? 0,
-        resolvedIncidents: resolvedIncidents.changes ?? 0,
-        staleListMemberships: staleListMemberships.changes ?? 0,
-        staleLeadEvents: staleLeadEvents.changes ?? 0,
-        staleMessageHistory: staleMessageHistory.changes ?? 0,
-        staleLeads: staleLeads.changes ?? 0,
-    };
+        return {
+            runLogs: runLogs.changes ?? 0,
+            jobAttempts: jobAttempts.changes ?? 0,
+            leadEvents: leadEvents.changes ?? 0,
+            messageHistory: messageHistory.changes ?? 0,
+            deliveredOutboxEvents: deliveredOutboxEvents.changes ?? 0,
+            resolvedIncidents: resolvedIncidents.changes ?? 0,
+            staleListMemberships: staleListMemberships.changes ?? 0,
+            staleLeadEvents: staleLeadEvents.changes ?? 0,
+            staleMessageHistory: staleMessageHistory.changes ?? 0,
+            staleLeads: staleLeads.changes ?? 0,
+        };
+    });
 }
 
 export async function applyCloudAccountUpdates(updates: CloudAccount[]): Promise<void> {
