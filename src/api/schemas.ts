@@ -50,7 +50,7 @@ export const ExportLeadsQuerySchema = z.object({
     format: z.enum(['csv', 'json']).default('json'),
     status: z.string().optional(),
     listName: z.string().optional(),
-    limit: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(1).max(50000)).optional(),
+    limit: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(1).max(500)).optional(),
 });
 
 export const PaginationSchema = z.object({

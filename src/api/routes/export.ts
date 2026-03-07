@@ -9,11 +9,16 @@ import { Router, type Request, type Response } from 'express';
 import { getDatabase } from '../../db';
 import { handleApiError } from '../utils';
 import { ExportLeadsQuerySchema } from '../schemas';
+import { recordSecurityAuditEvent } from '../../core/repositories';
 
 const router = Router();
 
 function escapeCsvField(value: unknown): string {
-    const str = value === null || value === undefined ? '' : String(value);
+    let str = value === null || value === undefined ? '' : String(value);
+    // Prevent CSV formula injection: prefix dangerous first characters with apostrophe
+    if (str.length > 0 && /^[=+\-@\t]/.test(str)) {
+        str = `'${str}`;
+    }
     if (str.includes(',') || str.includes('"') || str.includes('\n')) {
         return `"${str.replace(/"/g, '""')}"`;
     }
@@ -74,7 +79,7 @@ router.get('/leads', async (req: Request, res: Response) => {
             return;
         }
         const { format, status, listName } = parsed.data;
-        const limit = parsed.data.limit ?? 10000;
+        const limit = Math.min(parsed.data.limit ?? 500, 500);
 
         const db = await getDatabase();
 
@@ -104,6 +109,15 @@ router.get('/leads', async (req: Request, res: Response) => {
              LIMIT ?`,
             params,
         );
+
+        const requestIp = req.ip ?? req.socket?.remoteAddress ?? '';
+        void recordSecurityAuditEvent({
+            category: 'data_export',
+            action: 'export_leads',
+            actor: requestIp,
+            result: 'ALLOW',
+            metadata: { format, status: status ?? null, listName: listName ?? null, count: rows.length, limit },
+        }).catch(() => null);
 
         if (format === 'csv') {
             const header = CSV_COLUMNS.join(',');
