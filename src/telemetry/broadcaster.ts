@@ -76,7 +76,7 @@ async function sendToDiscord(payload: BroadcastPayload): Promise<void> {
     );
 
     if (!response.ok) {
-        logWarn(`[broadcaster] Discord webhook returned HTTP ${response.status}`);
+        await logWarn(`[broadcaster] Discord webhook returned HTTP ${response.status}`);
     }
 }
 
@@ -111,7 +111,7 @@ async function sendToSlack(payload: BroadcastPayload): Promise<void> {
     );
 
     if (!response.ok) {
-        logWarn(`[broadcaster] Slack webhook returned HTTP ${response.status}`);
+        await logWarn(`[broadcaster] Slack webhook returned HTTP ${response.status}`);
     }
 }
 
@@ -153,7 +153,7 @@ async function sendToTelegram(payload: BroadcastPayload): Promise<void> {
     );
 
     if (!response.ok) {
-        logWarn(`[broadcaster] Telegram API returned HTTP ${response.status}`);
+        await logWarn(`[broadcaster] Telegram API returned HTTP ${response.status}`);
     }
 }
 

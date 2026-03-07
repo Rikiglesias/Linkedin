@@ -91,8 +91,12 @@ async function resolveLeadMetadataColumn(
     try {
         await db.get(`SELECT lead_metadata FROM leads LIMIT 1`);
         cachedLeadMetadataColumn = 'lead_metadata';
-    } catch {
-        cachedLeadMetadataColumn = 'metadata_json';
+    } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (/no such column|SQLITE_ERROR/i.test(msg)) {
+            cachedLeadMetadataColumn = 'metadata_json';
+        }
+        return 'metadata_json';
     }
     return cachedLeadMetadataColumn;
 }

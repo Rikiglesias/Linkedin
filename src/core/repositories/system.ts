@@ -960,6 +960,11 @@ export async function cleanupPrivacyData(retentionDays: number): Promise<Privacy
     });
 }
 
+/**
+ * Applies partial updates from cloud sync. COALESCE(?, field) semantics:
+ * if the cloud value is NULL (not provided), keep the current local value.
+ * This prevents cloud sync from erasing locally-set fields.
+ */
 export async function applyCloudAccountUpdates(updates: CloudAccount[]): Promise<void> {
     if (updates.length === 0) return;
     const db = await getDatabase();

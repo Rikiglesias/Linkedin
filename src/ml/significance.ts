@@ -39,7 +39,7 @@ export function computeTwoProportionSignificance(
     const baselineRate = baselineSuccess / baselineTotal;
     const candidateRate = candidateSuccess / candidateTotal;
     const zScore = (candidateRate - baselineRate) / standardError;
-    const pValue = 2 * (1 - normalCdf(Math.abs(zScore)));
+    const pValue = 1 - normalCdf(zScore);
     return {
         pValue,
         significant: Number.isFinite(pValue) ? pValue < alpha : false,

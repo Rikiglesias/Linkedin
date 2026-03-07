@@ -54,7 +54,7 @@ async function insertPostRecord(
 async function updatePostStatus(
     postId: number,
     status: PostStatus,
-    extra?: { publishedAt?: string; linkedinPostUrl?: string; error?: string },
+    extra?: { publishedAt?: string; linkedinPostUrl?: string; error?: string; publishingStartedAt?: string },
 ): Promise<void> {
     const db = await getDatabase();
     const parts = ['status = ?', 'updated_at = CURRENT_TIMESTAMP'];
@@ -67,6 +67,10 @@ async function updatePostStatus(
     if (extra?.linkedinPostUrl) {
         parts.push('linkedin_post_url = ?');
         params.push(extra.linkedinPostUrl);
+    }
+    if (extra?.publishingStartedAt) {
+        parts.push("metadata_json = json_set(COALESCE(metadata_json, '{}'), '$.publishing_started_at', ?)");
+        params.push(extra.publishingStartedAt);
     }
     if (extra?.error) {
         parts.push("metadata_json = json_set(COALESCE(metadata_json, '{}'), '$.last_error', ?)");
@@ -170,7 +174,7 @@ export async function createAndPublishPost(page: Page, options: PostCreatorOptio
             return { postId, status: 'DRAFT', content, topic, source, published: false, error: null };
         }
 
-        await updatePostStatus(postId, 'PUBLISHING');
+        await updatePostStatus(postId, 'PUBLISHING', { publishingStartedAt: new Date().toISOString() });
 
         await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
         await humanDelay(page, 2000, 4000);
