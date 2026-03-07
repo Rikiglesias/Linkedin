@@ -171,7 +171,7 @@
 
 - [x] 🟡 **`workers/inviteWorker.ts`** — Dead code `else { console.log('[DRY RUN] ...') }` irraggiungibile. Rimuovere.
 
-- [ ] 🟡 🛡️ **`workers/challengeHandler.ts`** — `isStillOnChallengePage` controlla solo URL. LinkedIn mostra challenge in overlay modale senza cambiare URL. Fix: aggiungere vision AI check come seconda verifica — `visionVerify(page, 'is there a security challenge or captcha visible on screen?')`. Il check URL rimane come fast-path, vision come fallback.
+- [x] 🟡 🛡️ **`workers/challengeHandler.ts`** — `isStillOnChallengePage` controlla solo URL. LinkedIn mostra challenge in overlay modale senza cambiare URL. Fix: aggiungere vision AI check come seconda verifica — `visionVerify(page, 'is there a security challenge or captcha visible on screen?')`. Il check URL rimane come fast-path, vision come fallback.
 
 - [x] 🟡 **`workers/context.ts`** — `getThrottleSignal` esportata ma mai usata. Rimuovere o usare. Non lasciare export fantasma che confonde chi legge il codice.
 
@@ -185,7 +185,7 @@
 
 - [ ] 🟠 **`services/emailEnricher.ts`** — Duplicato inferiore di `integrations/leadEnricher.ts`: nessun retry, circuit breaker, timeout. Fix: eliminare il file, aggiornare `enrichmentWorker.ts` per usare `leadEnricher.ts`. **Prima di eliminare**: verificare con `grep -r emailEnricher src/` che non ci siano altri import nascosti.
 
-- [ ] 🟠 **`core/leadStateService.ts`** — Race condition transizione lead. Fix con **optimistic locking**: (1) aggiungere colonna `version INTEGER DEFAULT 0` alla tabella `leads` (migration necessaria), (2) `UPDATE leads SET status=?, version=version+1 WHERE id=? AND version=?`, (3) se `changes === 0` → altro processo ha già modificato → retry o errore esplicito. **Alternativa per SQLite**: `acquireRuntimeLock('lead_{id}')` serializza le transizioni — più semplice, leggermente meno scalabile.
+- [x] 🟠 **`core/leadStateService.ts`** — Race condition transizione lead. Fix con **optimistic locking**: (1) aggiungere colonna `version INTEGER DEFAULT 0` alla tabella `leads` (migration necessaria), (2) `UPDATE leads SET status=?, version=version+1 WHERE id=? AND version=?`, (3) se `changes === 0` → altro processo ha già modificato → retry o errore esplicito. **Alternativa per SQLite**: `acquireRuntimeLock('lead_{id}')` serializza le transizioni — più semplice, leggermente meno scalabile.
 
 - [ ] 🟠 **`core/leadStateService.ts`** — `reconcileLeadStatus` bypassa la macchina a stati. Fix: documentare ESPLICITAMENTE i casi legittimi di bypass con commento `// BYPASS_REASON: ...` e aggiungere audit log ogni volta che viene usato. Se non ci sono casi legittimi, rimuovere la funzione e usare solo `transitionLead`.
 
@@ -199,13 +199,13 @@
 
 - [ ] 🟠 **`core/repositories/system.ts`** — `cleanupPrivacyData` con 4 DELETE separate senza transazione. Fix: wrappare in `withTransaction`. **Caso limite**: se un lead cambia stato tra una DELETE e l'altra, i dati sono eliminati parzialmente — violazione GDPR peggiore del non eliminarli.
 
-- [ ] 🟠 **`core/doctor.ts`** — Restore sovrascrive DB corrotto senza backup preventivo. Fix: (1) copiare il DB corrotto come `db.corrupted.{timestamp}` prima del restore, (2) verificare integrità del backup con `PRAGMA integrity_check` prima di usarlo, (3) se il backup è corrotto → non procedere + alert Telegram + istruzioni manuali.
+- [x] 🟠 **`core/doctor.ts`** — Restore sovrascrive DB corrotto senza backup preventivo. Fix: (1) copiare il DB corrotto come `db.corrupted.{timestamp}` prima del restore, (2) verificare integrità del backup con `PRAGMA integrity_check` prima di usarlo, (3) se il backup è corrotto → non procedere + alert Telegram + istruzioni manuali.
 
 - [ ] 🟠 🛡️ **`accountManager.ts`** — `getAccountProfileById` usa `accounts[0]` come fallback silenzioso. **Impatto anti-ban**: inviti inviati dall'account sbagliato con IP diverso → pattern incoerente per LinkedIn. Fix: throw esplicito `AccountNotFoundError` + alert Telegram immediato "ACCOUNT NON TROVATO — operazione bloccata" con il `accountId` cercato.
 
 - [ ] 🟠 🛡️ **`proxyManager.ts`** — Fallback Tor in fondo alla lista proxy in cooldown. Fix: ordine corretto: (1) proxy attivi ordinati per qualità (success rate, latenza), (2) Tor immediatamente dopo l'esaurimento dei proxy attivi, (3) proxy in cooldown mai ritentati nella sessione corrente. **Nuovo item dipendente**: tabella `proxy_metrics (proxy_url, success_count, fail_count, avg_latency_ms, last_used_at)` per ordinamento intelligente.
 
-- [ ] 🟠 **NUOVO — `leads` colonna `version`** — Aggiungere migration con `ALTER TABLE leads ADD COLUMN version INTEGER NOT NULL DEFAULT 0`. Necessaria per implementare optimistic locking in `leadStateService.ts`. Aggiornare il tipo `Lead` e tutti i repository che fanno UPDATE su leads per incrementare `version`.
+- [x] 🟠 **NUOVO — `leads` colonna `version`** — Aggiungere migration con `ALTER TABLE leads ADD COLUMN version INTEGER NOT NULL DEFAULT 0`. Necessaria per implementare optimistic locking in `leadStateService.ts`. Aggiornare il tipo `Lead` e tutti i repository che fanno UPDATE su leads per incrementare `version`.
 
 - [ ] 🟡 **`cli/commands/loopCommand.ts`** — `WORKFLOW_RUNNER_LOCK_KEY` come `let` a modulo mutabile. Fix: `const` immutabile o derivarlo deterministicamente dall'input.
 
@@ -237,13 +237,13 @@
 
 ## 6. AI / ML — Modelli, timing, bandit
 
-- [ ] 🟠 🛡️ **`ai/guardian.ts`** — AI Guardian può bypassare euristiche CRITICAL. Fix con architettura a priorità: (1) CRITICAL da euristica → blocco immediato, AI non viene consultata, (2) HIGH da euristica → AI può abbassare max a MEDIUM, non a LOW/NORMAL, (3) NORMAL da euristica → AI può alzare. L'AI è un segnale integrativo, non un arbitro finale. **Aggiungere**: test unitari per ogni combinazione heuristica × AI response.
+- [x] 🟠 🛡️ **`ai/guardian.ts`** — AI Guardian può bypassare euristiche CRITICAL. Fix con architettura a priorità: (1) CRITICAL da euristica → blocco immediato, AI non viene consultata, (2) HIGH da euristica → AI può abbassare max a MEDIUM, non a LOW/NORMAL, (3) NORMAL da euristica → AI può alzare. L'AI è un segnale integrativo, non un arbitro finale. **Aggiungere**: test unitari per ogni combinazione heuristica × AI response.
 
-- [ ] 🟠 **`ml/timingOptimizer.ts`** — `STRFTIME('%H', invited_at)` in UTC. Fix sistemico: aggiungere colonna `invited_at_local_hour INTEGER` calcolata all'insert usando `config.targetTimezone` (es. `Europe/Rome`). L'ottimizzatore usa questa colonna. **Questo risolve il problema alla radice** invece di fare conversioni post-hoc che possono avere edge case su DST.
+- [x] 🟠 **`ml/timingOptimizer.ts`** — `STRFTIME('%H', invited_at)` in UTC. Fix sistemico: aggiungere colonna `invited_at_local_hour INTEGER` calcolata all'insert usando `config.targetTimezone` (es. `Europe/Rome`). L'ottimizzatore usa questa colonna. **Questo risolve il problema alla radice** invece di fare conversioni post-hoc che possono avere edge case su DST.
 
 - [ ] 🟠 **`ml/timingOptimizer.ts`** — Attende 7 giorni se lo slot ottimale è già passato di 1 minuto. Fix: cercare il prossimo slot disponibile nella settimana (slot dello stesso tipo nei giorni successivi), non aspettare 7 giorni.
 
-- [ ] 🟠 **`ml/timingModel.ts`** — `new Date().getHours()` in UTC. Fix: stesso approccio — usare `config.targetTimezone` per calcolare l'ora locale.
+- [x] 🟠 **`ml/timingModel.ts`** — `new Date().getHours()` in UTC. Fix: stesso approccio — usare `config.targetTimezone` per calcolare l'ora locale.
 
 - [ ] 🟡 **`ml/abBandit.ts`** — `EPSILON = 0.15` fisso. Fix: decaying epsilon — `epsilon = max(MIN_EPSILON, INITIAL_EPSILON * decay^totalTrials)`. Configurabile via `config.abBanditEpsilonDecay`. Caso limite: se `totalTrials` viene resettato (nuovo segmento), epsilon deve tornare al valore iniziale.
 
@@ -257,7 +257,7 @@
 
 - [ ] 🟡 **`salesnav/visionNavigator.ts`** — `getVisionSolver` crea nuova istanza ad ogni call. Fix: singleton module-level con lazy init. **⚠️ DIPENDENZA**: il pattern singleton cambierà quando si aggiunge il provider GPT-5.4 (sezione 11) — il refactor `VisionProvider` include già il factory pattern che sostituisce questo singleton. Implementare DOPO il refactor.
 
-- [ ] 🟡 **`ai/messagePersonalizer.ts`** — Fallback `'there'` in inglese. Fix: `'collega'` come in `inviteNotePersonalizer.ts`.
+- [x] 🟡 **`ai/messagePersonalizer.ts`** — Fallback `'there'` in inglese. Fix: `'collega'` come in `inviteNotePersonalizer.ts`.
 
 - [ ] 🟢 **`core/repositories/leadsLearning.ts`** — Cache `resolveLeadMetadataColumn` non differenzia errori DB temporanei da "colonna non esiste". Fix: cache solo su successo o su `SQLITE_ERROR: no such column` — non su qualsiasi errore.
 
@@ -281,7 +281,7 @@
 
 - [ ] 🟠 **`cli/commands/adminCommands.ts`** — `runDbBackupCommand` usa `backupDatabase()` base senza audit trail. Fix: chiamare `runBackup()` da `backupDb.ts` che include checksum SHA256, retention policy, e Telegram alert.
 
-- [ ] 🟠 **`core/repositories/leadsCore.ts`** — `promoteNewLeadsToReadyInvite` con `IN (${placeholders})`: SQLite limit 999 variabili bind. Fix: batch a max 999 item, **tutto wrapped in una singola transazione esterna** — se il processo crasha al batch 3/10, tutti i batch precedenti vengono rollback (non si vuole un set parzialmente promosso).
+- [x] 🟠 **`core/repositories/leadsCore.ts`** — `promoteNewLeadsToReadyInvite` con `IN (${placeholders})`: SQLite limit 999 variabili bind. Fix: batch a max 999 item, **tutto wrapped in una singola transazione esterna** — se il processo crasha al batch 3/10, tutti i batch precedenti vengono rollback (non si vuole un set parzialmente promosso).
 
 - [x] 🟡 **Migration 037 — `challenge_events`** — Tabella: `(id PK, worker TEXT, lead_id INTEGER FK, url TEXT, timestamp DATETIME, resolved BOOLEAN DEFAULT 0, resolution_method TEXT)`. Necessaria per il fix `acceptanceWorker` + dati analitici su dove/quando LinkedIn triggera challenge.
 
@@ -313,7 +313,7 @@
 
 - [ ] 🟠 **`cloud/telegramListener.ts`** — `lastUpdateId` non persistito. Fix a 3 livelli: (1) in-memory durante la sessione, (2) scritto in `telegram_state` (Migration 038) ogni 10 update, (3) al boot: caricare da DB e aggiungere offset +50 per saltare update potenzialmente già processati ma non confermati. **Edge case**: se il bot è down per ore, Telegram accumula centinaia di update — processarli tutti in sequenza al riavvio. Aggiungere: `MAX_CATCH_UP_UPDATES = 100` — oltre questo, logga "skipped N updates" e parti dall'ultimo.
 
-- [ ] 🟠 **`cloud/cloudBridge.ts`** — `.catch(() => {})` silenzioso su tutti i bridge call. Fix: `logWarn('cloud_bridge_error', { op, error })` + contatore errori consecutivi. Se fallisce 5 volte di fila → passare a modalità offline-first con queue locale (`cloud_sync_errors` table). **Nuovo item dipendente**: Migration per `cloud_sync_errors (id PK, op TEXT, payload JSON, error TEXT, retry_count INTEGER, created_at DATETIME, next_retry_at DATETIME)`.
+- [x] 🟠 **`cloud/cloudBridge.ts`** — `.catch(() => {})` silenzioso su tutti i bridge call. Fix: `logWarn('cloud_bridge_error', { op, error })` + contatore errori consecutivi. Se fallisce 5 volte di fila → passare a modalità offline-first con queue locale (`cloud_sync_errors` table). **Nuovo item dipendente**: Migration per `cloud_sync_errors (id PK, op TEXT, payload JSON, error TEXT, retry_count INTEGER, created_at DATETIME, next_retry_at DATETIME)`.
 
 - [ ] 🟡 **`sync/webhookSyncWorker.ts`** — `idempotencyKey` camelCase vs `idempotency_key` snake_case in `supabaseSyncWorker.ts`. Fix: standardizzare su snake_case (più comune in PostgreSQL/Supabase).
 
@@ -323,7 +323,7 @@
 
 - [ ] 🟡 **`telemetry/broadcaster.ts`** — `logWarn`/`logError` non awaited. Fix: aggiungere `await`.
 
-- [ ] 🟢 **`cloud/cloudBridge.ts`** — Campo `timestamps?` contiene campi non-timestamp. Rinominare in `updates`.
+- [x] 🟢 **`cloud/cloudBridge.ts`** — Campo `timestamps?` contiene campi non-timestamp. Rinominare in `updates`.
 
 - [ ] 🟢 **`integrations/crmBridge.ts`** — `pushLeadToCRM` con `.catch(() => {})` silenzioso. Fix: `logWarn` minimo con il messaggio di errore.
 
@@ -333,9 +333,9 @@
 
 ## 9. FRONTEND — Dashboard, UX, performance
 
-- [ ] 🟡 **`src/frontend/`** — Rendering DOM imperativo: ogni poll di 20s ricostruisce tutto. Fix preferito: usare l'infrastruttura SSE già presente — il server invia eventi solo quando lo stato cambia, zero polling dal frontend. **Caso limite del dirty-check**: se un campo cambia e torna al valore originale in <20s, il dirty-check non rileva il cambio intermedio — SSE push risolve questo.
+- [x] 🟡 **`src/frontend/`** — Rendering DOM imperativo: ogni poll di 20s ricostruisce tutto. Fix preferito: usare l'infrastruttura SSE già presente — il server invia eventi solo quando lo stato cambia, zero polling dal frontend. **Caso limite del dirty-check**: se un campo cambia e torna al valore originale in <20s, il dirty-check non rileva il cambio intermedio — SSE push risolve questo.
 
-- [ ] 🟡 **`src/frontend/apiClient.ts`** — Token in query param URL: visibile nei log server e nella history browser. Fix: POST con token nel body, o header `Authorization: Bearer ...`.
+- [x] 🟡 **`src/frontend/apiClient.ts`** — Token in query param URL: visibile nei log server e nella history browser. Fix: POST con token nel body, o header `Authorization: Bearer ...`.
 
 - [ ] 🟡 **`src/frontend/`** — Nessun indicatore stato connessione SSE. Fix: 3 stati visuali — `UNKNOWN` (grigio, prima del primo heartbeat), `CONNECTED` (verde), `DISCONNECTED` (rosso con pulsante "Riconnetti"). Il colore rosso deve essere visibile anche in tab non attivi (favicon colorata).
 
@@ -366,7 +366,7 @@
 
 - [ ] 🟢 **`src/types/domain.ts`** — Status `PENDING` legacy. Migrare lead legacy e rimuovere il tipo.
 
-- [ ] 🟢 **`src/core/repositories/legacy.ts`** — Re-export manuale non sincronizzato. Automatizzare o eliminare.
+- [x] 🟢 **`src/core/repositories/legacy.ts`** — Re-export manuale non sincronizzato. Automatizzare o eliminare.
 
 ---
 
