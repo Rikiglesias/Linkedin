@@ -13,7 +13,7 @@ const RAMP_UP_SCHEDULE = [
     { day: 7, inviteCap: 40, messageCap: 50 }, // Obiettivo finale a regime moderato
 ];
 
-async function runRampUp(listName: string, targetDay: number | 'auto') {
+async function runRampUp(listName: string, targetDay: number) {
     try {
         await initDatabase();
 
@@ -28,7 +28,8 @@ async function runRampUp(listName: string, targetDay: number | 'auto') {
             console.error(
                 `[Ramp-Up] ❌ Rischio troppo elevato (${evaluation.action}) per scalare i limiti. Rimandare ad andamento normalizzato.`,
             );
-            process.exit(1);
+            process.exitCode = 1;
+            return;
         }
 
         // 2. Resolve the target lists
@@ -38,25 +39,13 @@ async function runRampUp(listName: string, targetDay: number | 'auto') {
 
         if (targetConfigs.length === 0) {
             console.error(`[Ramp-Up] ❌ Nessuna configurazione trovata per la lista: ${listName}`);
-            process.exit(1);
+            process.exitCode = 1;
+            return;
         }
 
         // 3. Apply the ramp up based on day
-        let schedule;
-        if (targetDay === 'auto') {
-            // Find the lowest current invite cap to determine the starting point safely
-            const minCurrentCap = Math.min(...targetConfigs.map((c) => c.dailyInviteCap ?? 0));
-            // Find the first schedule step that is higher than the current min cap
-            schedule =
-                RAMP_UP_SCHEDULE.find((s) => s.inviteCap > minCurrentCap) ||
-                RAMP_UP_SCHEDULE[RAMP_UP_SCHEDULE.length - 1];
-            console.log(
-                `[Ramp-Up] Auto-resolve: limite attuale minimo = ${minCurrentCap}. Passiamo al Giorno ${schedule.day}.`,
-            );
-        } else {
-            schedule =
-                RAMP_UP_SCHEDULE.find((s) => s.day === targetDay) || RAMP_UP_SCHEDULE[RAMP_UP_SCHEDULE.length - 1];
-        }
+        const schedule =
+            RAMP_UP_SCHEDULE.find((s) => s.day === targetDay) || RAMP_UP_SCHEDULE[RAMP_UP_SCHEDULE.length - 1];
 
         console.log(`[Ramp-Up] Applicazione parametri del Giorno ${schedule.day}`);
         console.log(` -> Nuovi Limiti: ${schedule.inviteCap} Inviti / ${schedule.messageCap} Messaggi`);
@@ -88,7 +77,8 @@ Esempio:
   ts-node src/scripts/rampUp.ts "My List" 3
   ts-node src/scripts/rampUp.ts all 1
     `);
-    process.exit(0);
+    process.exitCode = 0;
+    return;
 }
 
 const listTarget = args[0];
