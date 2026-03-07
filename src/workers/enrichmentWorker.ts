@@ -1,6 +1,6 @@
 import { WorkerContext } from './context';
 import { WorkerExecutionResult, workerResult } from './result';
-import { getEmailEnricher } from '../services/emailEnricher';
+import { enrichLeadAuto } from '../integrations/leadEnricher';
 import { getDatabase } from '../db';
 import { logError, logInfo } from '../telemetry/logger';
 
@@ -13,37 +13,46 @@ export async function processEnrichmentJob(
     payload: EnrichmentJobPayload,
     context: WorkerContext,
 ): Promise<WorkerExecutionResult> {
-    const enricher = getEmailEnricher();
     const db = await getDatabase();
 
-    // Recupera informazioni principali richieste dal context proxy
-    const lead = await db.get<{ first_name: string; last_name: string; account_name: string; website: string }>(
-        `SELECT first_name, last_name, account_name, website FROM leads WHERE id = ?`,
+    const lead = await db.get<{
+        id: number;
+        first_name: string | null;
+        last_name: string | null;
+        account_name: string | null;
+        website: string | null;
+    }>(
+        `SELECT id, first_name, last_name, account_name, website FROM leads WHERE id = ?`,
         [payload.leadId],
     );
 
     if (!lead) {
         await logError('enrichment.worker.missing_lead', { leadId: payload.leadId });
         return workerResult(0, [
-            { leadId: payload.leadId, message: 'Dati anagrafici del Lead non trovati a Database' },
+            { leadId: payload.leadId, message: 'Lead non trovato in database' },
         ]);
     }
 
     if (context.dryRun) {
-        console.log(`[DRY RUN] Simulo recupero Email e Telefono per lead ID ${payload.leadId}`);
         return workerResult(1);
     }
 
     try {
-        await enricher.enrichLeadContactData(
-            payload.leadId,
-            lead.first_name,
-            lead.last_name,
-            lead.account_name,
-            lead.website,
-        );
+        const result = await enrichLeadAuto(lead);
 
-        await logInfo('enrichment.worker.success', { leadId: payload.leadId, accountId: context.accountId });
+        if (result.email) {
+            await db.run(
+                `UPDATE leads SET email = COALESCE(email, ?), phone = COALESCE(phone, ?), updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+                [result.email, result.phone, payload.leadId],
+            );
+        }
+
+        await logInfo('enrichment.worker.done', {
+            leadId: payload.leadId,
+            accountId: context.accountId,
+            source: result.source,
+            emailFound: !!result.email,
+        });
         return workerResult(1);
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
