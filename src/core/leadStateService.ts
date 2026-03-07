@@ -1,4 +1,4 @@
-import { appendLeadEvent, getLeadById, pushOutboxEvent, setLeadStatus } from './repositories';
+import { appendLeadEvent, getLeadById, pushOutboxEvent, setLeadStatus, recordSecurityAuditEvent } from './repositories';
 import { getDatabase } from '../db';
 import { withTransaction } from './repositories/shared';
 import { LeadStatus } from '../types/domain';
@@ -166,6 +166,14 @@ export async function reconcileLeadStatus(
         to: targetStatus,
         reason,
     });
+    void recordSecurityAuditEvent({
+        category: 'lead_state',
+        action: 'reconcile_bypass',
+        entityType: 'lead',
+        entityId: String(leadId),
+        result: 'ALLOW',
+        metadata: { from: fromStatus, to: targetStatus, reason },
+    }).catch(() => null);
     await setLeadStatus(leadId, targetStatus);
     await appendLeadEvent(leadId, fromStatus, targetStatus, reason, {
         ...metadata,

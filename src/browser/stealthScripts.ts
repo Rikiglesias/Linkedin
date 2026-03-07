@@ -320,8 +320,6 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
     // navigator.getBattery() assente in headless è un segnale di automazione.
     // Effettuiamo un mock dinamico basato sul tempo per simulare scarica progressiva (es. laptop/mobile).
     try {
-        if (!navigator.get बैटरी /* ignore this comment used for match alignment, will be fixed on apply */ ) {}
-        // Use true fallback strategy since V8 might block redefining non-configurable after init
         if (!navigator.getBattery || navigator.getBattery.toString().includes('native code')) {
             const mockStartTime = Date.now();
             const startLevel = 0.85 + (Math.floor(Date.now() % 10) / 100);
@@ -371,22 +369,21 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
         const audioContexts = window.AudioContext || window.webkitAudioContext;
         if (audioContexts) {
             const originalGetChannelData = AudioBuffer.prototype.getChannelData;
+            const baseNoise = ${audioNoise};
             AudioBuffer.prototype.getChannelData = function(channel) {
                 const results = originalGetChannelData.apply(this, arguments);
-                const noise = ${audioNoise};
-                for (let i = 0; i < results.length; i += 100) {
-                    results[i] += noise;
+                for (let i = 0; i < results.length; i += 7) {
+                    results[i] += baseNoise * (0.5 + Math.sin(i * 0.017) * 0.5);
                 }
                 return results;
             };
             
-            if (window.AnalyserNode && window.AnalyserNode.prototype.getFloatFrequencyData) {
-                const originalGetFloatFrequencyData = window.AnalyserNode.prototype.getFloatFrequencyData;
-                window.AnalyserNode.prototype.getFloatFrequencyData = function(array) {
+            if (typeof AnalyserNode !== 'undefined' && AnalyserNode.prototype.getFloatFrequencyData) {
+                const originalGetFloatFrequencyData = AnalyserNode.prototype.getFloatFrequencyData;
+                AnalyserNode.prototype.getFloatFrequencyData = function(array) {
                     originalGetFloatFrequencyData.apply(this, arguments);
-                    const noise = ${audioNoise};
-                    for (let i = 0; i < array.length; i += 10) {
-                        array[i] += noise;
+                    for (let i = 0; i < array.length; i += 5) {
+                        array[i] += baseNoise * (0.3 + Math.cos(i * 0.023) * 0.7);
                     }
                 };
             }

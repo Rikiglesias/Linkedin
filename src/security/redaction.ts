@@ -3,7 +3,7 @@ const REDACTED = '[REDACTED]';
 
 const SENSITIVE_KEY_PARTS = new Set([
     'token', 'secret', 'password', 'passwd', 'key', 'cookie',
-    'authorization', 'session', 'bearer', 'credential',
+    'authorization', 'session', 'bearer', 'credential', 'credentials',
 ]);
 
 function isSensitiveKey(key: string): boolean {

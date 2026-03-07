@@ -435,34 +435,50 @@ export async function simulateTabSwitch(page: Page, maxAwayTimeMs: number): Prom
     }
 
     try {
-        // Faza 1: Esci dal focus e vai in hidden (micro-delays tra eventi)
-        const jitter = () => Math.round((Math.random() - 0.5) * 20); // ±10ms
+        const jitter = () => Math.round((Math.random() - 0.5) * 20);
+
         await page.evaluate((ts) => {
+            const origVis = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState')
+                ?? Object.getOwnPropertyDescriptor(document, 'visibilityState');
+            const origHid = Object.getOwnPropertyDescriptor(Document.prototype, 'hidden')
+                ?? Object.getOwnPropertyDescriptor(document, 'hidden');
+            (window as unknown as Record<string, unknown>).__origVisDesc = origVis;
+            (window as unknown as Record<string, unknown>).__origHidDesc = origHid;
             Object.defineProperty(document, 'visibilityState', { get: () => 'hidden', configurable: true });
             Object.defineProperty(document, 'hidden', { get: () => true, configurable: true });
             window.dispatchEvent(new Event('blur', { timeStamp: ts } as EventInit));
         }, Date.now() + jitter());
-        await page.waitForTimeout(5 + Math.random() * 25); // 5-30ms micro-delay
+        await page.waitForTimeout(5 + Math.random() * 25);
         await page.evaluate((ts) => {
             document.dispatchEvent(new Event('visibilitychange', { timeStamp: ts } as EventInit));
         }, Date.now() + jitter());
 
-        // Faza 2: Aspetta organicamente per il lasso di tempo in "background"
         const awayTime = Math.max(3000, Math.min(maxAwayTimeMs, 3000 + Math.random() * maxAwayTimeMs));
         await page.waitForTimeout(awayTime);
 
-        // Faza 3: Torna in focus (micro-delays tra eventi)
         await page.evaluate((ts) => {
-            Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true });
-            Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
+            const w = window as unknown as Record<string, unknown>;
+            const origVis = w.__origVisDesc as PropertyDescriptor | undefined;
+            const origHid = w.__origHidDesc as PropertyDescriptor | undefined;
+            if (origVis) {
+                Object.defineProperty(document, 'visibilityState', origVis);
+            } else {
+                Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true });
+            }
+            if (origHid) {
+                Object.defineProperty(document, 'hidden', origHid);
+            } else {
+                Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
+            }
+            delete w.__origVisDesc;
+            delete w.__origHidDesc;
             window.dispatchEvent(new Event('focus', { timeStamp: ts } as EventInit));
         }, Date.now() + jitter());
-        await page.waitForTimeout(5 + Math.random() * 25); // 5-30ms micro-delay
+        await page.waitForTimeout(5 + Math.random() * 25);
         await page.evaluate((ts) => {
             document.dispatchEvent(new Event('visibilitychange', { timeStamp: ts } as EventInit));
         }, Date.now() + jitter());
 
-        // Risveglio ritardato post-focus (fase di ri-lettura umana)
         await page.waitForTimeout(500 + Math.random() * 800);
     } catch {
         // Best effort

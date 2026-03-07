@@ -55,6 +55,29 @@ process.on('SIGTERM', async () => {
     process.exit(0);
 });
 
+function validateFingerprintConsistency(fp: BrowserFingerprint): void {
+    const isMobile = fp.isMobile === true;
+    const vp = fp.viewport;
+
+    // Mobile should have touch capability
+    if (isMobile && fp.hasTouch === false) {
+        console.warn(`[FINGERPRINT] Inconsistency: isMobile=true but hasTouch=false (id=${fp.id})`);
+    }
+
+    // Viewport plausibility: mobile should be < 1024px width, desktop >= 800px
+    if (isMobile && vp && vp.width > 1024) {
+        console.warn(`[FINGERPRINT] Inconsistency: isMobile=true but viewport.width=${vp.width} (id=${fp.id})`);
+    }
+    if (!isMobile && vp && vp.width < 800) {
+        console.warn(`[FINGERPRINT] Inconsistency: isMobile=false but viewport.width=${vp.width} (id=${fp.id})`);
+    }
+
+    // Device scale factor: mobile typically 2-3, desktop typically 1
+    if (isMobile && fp.deviceScaleFactor !== undefined && fp.deviceScaleFactor < 1.5) {
+        console.warn(`[FINGERPRINT] Inconsistency: isMobile=true but deviceScaleFactor=${fp.deviceScaleFactor} (id=${fp.id})`);
+    }
+}
+
 let cachedCloudFingerprints: CloudFingerprint[] | null = null;
 let lastFingerprintFetchTime = 0;
 
@@ -111,6 +134,8 @@ export interface LaunchBrowserOptions {
     forceMobileProxy?: boolean;
     /** Se true, ignora qualsiasi proxy configurato e usa connessione diretta. */
     bypassProxy?: boolean;
+    /** Account identifier used for deterministic fingerprint IDs. */
+    accountId?: string;
 }
 
 function isSameProxy(a: ProxyConfig | undefined, b: ProxyConfig | undefined): boolean {
@@ -168,11 +193,13 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
     for (let attempt = 0; attempt < launchPlan.length; attempt++) {
         const currentProxy = launchPlan[attempt];
         const cloudFingerprints = await fetchCloudFingerprints();
+        const accountId = options.accountId ?? sessionDir;
         const isMobileSession = pickFingerprintMode();
         const fingerprint = isMobileSession
-            ? pickMobileFingerprint(cloudFingerprints)
-            : pickDesktopFingerprint(cloudFingerprints);
+            ? pickMobileFingerprint(cloudFingerprints, accountId)
+            : pickDesktopFingerprint(cloudFingerprints, accountId);
         const consistentNoise = FingerprintPool.generateConsistentProfile(fingerprint);
+        validateFingerprintConsistency(fingerprint);
 
         const deviceProfile: DeviceProfile = {
             fingerprintId: fingerprint.id,
@@ -246,7 +273,7 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                 (() => {
                     const canvasNoise = ${deviceProfile.canvasNoise ?? 0};
                     const webglNoise = ${deviceProfile.webglNoise ?? 0};
-                    const isApple = /Mac OS X|Macintosh|iPhone|iPad/i.test('${fingerprint.userAgent.replace(/'/g, "\\'")}');
+                    const isApple = /Mac OS X|Macintosh|iPhone|iPad/i.test(${JSON.stringify(fingerprint.userAgent)});
                     
                     const originalGetContext = HTMLCanvasElement.prototype.getContext;
                     HTMLCanvasElement.prototype.getContext = function(type, contextAttributes) {
@@ -278,7 +305,7 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                             ctx.getParameter = function(parameter) {
                                 const res = originalGetParameter.call(this, parameter);
                                 // UNMASKED_VENDOR_WEBGL (37445)
-                                if (parameter === 37445) return isApple ? 'Apple Inc.' : 'Google Inc. (Intel' + (webglNoise > 0.5 ? ' ' : '') + ')';
+                                if (parameter === 37445) return isApple ? 'Apple Inc.' : 'Google Inc. (Intel)';
                                 // UNMASKED_RENDERER_WEBGL (37446)
                                 if (parameter === 37446) return isApple ? 'Apple GPU' : 'ANGLE (Intel, Intel(R) Iris(R) Xe Graphics' + (webglNoise > 0.5 ? ' Direct3D11' : '') + ' vs_5_0 ps_5_0)';
                                 return res;
@@ -291,6 +318,21 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             await browser.addInitScript({ content: scriptContent });
 
             // Stealth init script: WebRTC kill, navigator normalization, chrome mock, permissions override
+            // Derive hardware specs coherent with the fingerprint's device class
+            const isMobileDevice = fingerprint.isMobile ?? false;
+            const fpHash = fingerprint.id.split('').reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0) >>> 0;
+            const mobileHwOptions = [4, 6, 8];
+            const desktopHwOptions = [4, 8, 12, 16];
+            const coherentHwConcurrency = isMobileDevice
+                ? mobileHwOptions[fpHash % mobileHwOptions.length]
+                : desktopHwOptions[fpHash % desktopHwOptions.length];
+            const mobileMemOptions = [2, 3, 4, 6];
+            const desktopMemOptions = [4, 8, 16];
+            const coherentDeviceMemory = isMobileDevice
+                ? mobileMemOptions[(fpHash >> 4) % mobileMemOptions.length]
+                : desktopMemOptions[(fpHash >> 4) % desktopMemOptions.length];
+            const coherentColorDepth = isMobileDevice ? 32 : 24;
+
             const stealthScript = buildStealthInitScript({
                 locale: fingerprint.locale ?? 'it-IT',
                 languages: [
@@ -303,6 +345,9 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                 viewportWidth: fingerprint.viewport?.width ?? 1280,
                 viewportHeight: fingerprint.viewport?.height ?? 800,
                 audioNoise: deviceProfile.audioNoise,
+                hardwareConcurrency: coherentHwConcurrency,
+                deviceMemory: coherentDeviceMemory,
+                colorDepth: coherentColorDepth,
             });
             await browser.addInitScript({ content: stealthScript });
 
