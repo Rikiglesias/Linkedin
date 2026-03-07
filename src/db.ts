@@ -14,12 +14,16 @@ export interface DBRunResult {
 // ------------------------------------------------------------------
 // INTERFACE ASTRAZIONE DB
 // ------------------------------------------------------------------
+export interface RunOptions {
+    returning?: boolean;
+}
+
 export interface DatabaseManager {
     readonly isPostgres: boolean;
     query<T = unknown>(sql: string, params?: unknown[]): Promise<T[]>;
     get<T = unknown>(sql: string, params?: unknown[]): Promise<T | undefined>;
     exec(sql: string, params?: unknown[]): Promise<void>;
-    run(sql: string, params?: unknown[]): Promise<DBRunResult>;
+    run(sql: string, params?: unknown[], options?: RunOptions): Promise<DBRunResult>;
     close(): Promise<void>;
 }
 
@@ -51,7 +55,7 @@ class SQLiteManager implements DatabaseManager {
         }
     }
 
-    async run(sql: string, params?: unknown[]): Promise<DBRunResult> {
+    async run(sql: string, params?: unknown[], _options?: RunOptions): Promise<DBRunResult> {
         const result = await this.db.run(sql, params);
         return {
             lastID: result.lastID,
@@ -142,16 +146,13 @@ class PostgresManager implements DatabaseManager {
         await this.pool.query(this.normalizeSql(sql), params);
     }
 
-    async run(sql: string, params?: unknown[]): Promise<DBRunResult> {
+    async run(sql: string, params?: unknown[], options?: RunOptions): Promise<DBRunResult> {
         let normalizedSql = this.normalizeSql(sql);
 
-        // Auto-append RETURNING id for all INSERT statements so that
-        // lastID is available in PostgreSQL without touching every call site.
-        // - ON CONFLICT DO NOTHING: returns row only when insert succeeds (no conflict)
-        // - ON CONFLICT DO UPDATE: returns row always — both cases correct.
+        const shouldReturn = options?.returning !== false;
         const isInsert = /^\s*INSERT\b/i.test(normalizedSql);
         const hasReturning = /\bRETURNING\b/i.test(normalizedSql);
-        if (isInsert && !hasReturning) {
+        if (shouldReturn && isInsert && !hasReturning) {
             normalizedSql = normalizedSql.replace(/;\s*$/, '') + ' RETURNING id';
         }
 
