@@ -1,5 +1,6 @@
 import { getAccountProfileById } from '../accountManager';
 import { checkLogin, closeBrowser, humanDelay, launchBrowser, randomMouseMove, simulateHumanReading } from '../browser';
+import { logInfo, logWarn } from '../telemetry/logger';
 
 export interface RandomActivityOptions {
     accountId?: string;
@@ -92,6 +93,11 @@ export async function runRandomLinkedinActivity(options: RandomActivityOptions):
         return report;
     }
 
+    await logInfo('random_activity.session_start', {
+        accountId: account.id,
+        actionsRequested,
+    });
+
     const session = await launchBrowser({
         sessionDir: account.sessionDir,
         proxy: account.proxy,
@@ -99,6 +105,7 @@ export async function runRandomLinkedinActivity(options: RandomActivityOptions):
     try {
         const loggedIn = await checkLogin(session.page);
         if (!loggedIn) {
+            await logWarn('random_activity.not_logged_in', { accountId: account.id });
             return report;
         }
 
@@ -109,12 +116,23 @@ export async function runRandomLinkedinActivity(options: RandomActivityOptions):
             try {
                 await runSingleActivity(session.page, activity, report);
                 report.actionsExecuted += 1;
-            } catch {
+            } catch (err: unknown) {
                 report.errors += 1;
+                await logWarn('random_activity.action_failed', {
+                    accountId: account.id,
+                    activity,
+                    error: err instanceof Error ? err.message : String(err),
+                });
             }
             await humanDelay(session.page, 1200, 2800);
         }
 
+        await logInfo('random_activity.session_done', {
+            accountId: account.id,
+            actionsExecuted: report.actionsExecuted,
+            profileVisits: report.profileVisits,
+            errors: report.errors,
+        });
         return report;
     } finally {
         await closeBrowser(session);
