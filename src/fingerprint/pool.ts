@@ -10,13 +10,25 @@ export interface Fingerprint {
     deviceScaleFactor?: number;
 }
 
-const DEFAULT_JA3 =
-    '771,4865-4867-4866-49195-49199-52393-52392-49196-49200-49162-49161-49171-49172-51-57-47-53-10,0-23-65281-10-11-35-16-5-51-43-13-45-28-21,29-23-24-25-256-257,0';
+/**
+ * JA3 fingerprints per browser family.
+ * NOTE: These are metadata only — Playwright always uses Chromium's TLS stack
+ * regardless of the spoofed UA. Real JA3 spoofing requires CycleTLS proxy or
+ * a TLS-patched binary. When CycleTLS is active, these values are forwarded
+ * to the proxy for accurate TLS fingerprinting.
+ */
+const JA3_CHROME =
+    '771,4865-4866-4867-49195-49199-49196-49200-52393-52392-49171-49172-156-157-47-53,0-23-65281-10-11-35-16-5-13-18-51-45-43-27-17513,29-23-24,0';
+const JA3_FIREFOX =
+    '771,4865-4867-4866-49195-49199-52393-52392-49196-49200-49162-49161-49171-49172-156-157-47-53,0-23-65281-10-11-35-16-5-34-51-43-13-45-28-21,29-23-24-25-256-257,0';
+const JA3_SAFARI =
+    '771,4865-4866-4867-49196-49195-52393-49200-49199-52392-49162-49161-49172-49171-157-156-53-47,0-23-65281-10-11-16-5-13-18-51-45-43-27-17513-21,29-23-24-25,0';
+const JA3_EDGE = JA3_CHROME;
 
 export const desktopFingerprintPool: Fingerprint[] = [
     {
         id: 'desktop_chrome_win_1',
-        ja3: DEFAULT_JA3,
+        ja3: JA3_CHROME,
         userAgent:
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
         viewport: { width: 1920, height: 1080 },
@@ -25,7 +37,7 @@ export const desktopFingerprintPool: Fingerprint[] = [
     },
     {
         id: 'desktop_chrome_win_2',
-        ja3: DEFAULT_JA3,
+        ja3: JA3_CHROME,
         userAgent:
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
         viewport: { width: 1536, height: 864 },
@@ -34,7 +46,7 @@ export const desktopFingerprintPool: Fingerprint[] = [
     },
     {
         id: 'desktop_chrome_mac_1',
-        ja3: DEFAULT_JA3,
+        ja3: JA3_CHROME,
         userAgent:
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
         viewport: { width: 1440, height: 900 },
@@ -43,7 +55,7 @@ export const desktopFingerprintPool: Fingerprint[] = [
     },
     {
         id: 'desktop_chrome_linux_1',
-        ja3: DEFAULT_JA3,
+        ja3: JA3_CHROME,
         userAgent:
             'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
         viewport: { width: 1366, height: 768 },
@@ -52,7 +64,7 @@ export const desktopFingerprintPool: Fingerprint[] = [
     },
     {
         id: 'desktop_edge_win_1',
-        ja3: DEFAULT_JA3,
+        ja3: JA3_EDGE,
         userAgent:
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 Edg/132.0.0.0',
         viewport: { width: 1600, height: 900 },
@@ -61,7 +73,7 @@ export const desktopFingerprintPool: Fingerprint[] = [
     },
     {
         id: 'desktop_firefox_win_1',
-        ja3: DEFAULT_JA3,
+        ja3: JA3_FIREFOX,
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:134.0) Gecko/20100101 Firefox/134.0',
         viewport: { width: 1280, height: 720 },
         timezone: 'Europe/Rome',
@@ -72,7 +84,7 @@ export const desktopFingerprintPool: Fingerprint[] = [
 export const mobileFingerprintPool: Fingerprint[] = [
     {
         id: 'mobile_ios_safari_1',
-        ja3: DEFAULT_JA3,
+        ja3: JA3_SAFARI,
         userAgent:
             'Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Mobile/15E148 Safari/604.1',
         viewport: { width: 390, height: 844 },
@@ -84,7 +96,7 @@ export const mobileFingerprintPool: Fingerprint[] = [
     },
     {
         id: 'mobile_ios_chrome_1',
-        ja3: DEFAULT_JA3,
+        ja3: JA3_CHROME,
         userAgent:
             'Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/132.0.0.0 Mobile/15E148 Safari/604.1',
         viewport: { width: 393, height: 852 },
@@ -96,7 +108,7 @@ export const mobileFingerprintPool: Fingerprint[] = [
     },
     {
         id: 'mobile_android_chrome_1',
-        ja3: DEFAULT_JA3,
+        ja3: JA3_CHROME,
         userAgent:
             'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Mobile Safari/537.36',
         viewport: { width: 412, height: 915 },
@@ -108,7 +120,7 @@ export const mobileFingerprintPool: Fingerprint[] = [
     },
     {
         id: 'mobile_android_chrome_2',
-        ja3: DEFAULT_JA3,
+        ja3: JA3_CHROME,
         userAgent:
             'Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36',
         viewport: { width: 360, height: 800 },
@@ -120,7 +132,7 @@ export const mobileFingerprintPool: Fingerprint[] = [
     },
     {
         id: 'mobile_android_firefox_1',
-        ja3: DEFAULT_JA3,
+        ja3: JA3_FIREFOX,
         userAgent: 'Mozilla/5.0 (Android 15; Mobile; rv:134.0) Gecko/134.0 Firefox/134.0',
         viewport: { width: 360, height: 780 },
         timezone: 'Europe/Rome',
@@ -131,7 +143,7 @@ export const mobileFingerprintPool: Fingerprint[] = [
     },
     {
         id: 'mobile_android_chrome_3',
-        ja3: DEFAULT_JA3,
+        ja3: JA3_CHROME,
         userAgent:
             'Mozilla/5.0 (Linux; Android 14; 2306EPN60G) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Mobile Safari/537.36',
         viewport: { width: 393, height: 873 },

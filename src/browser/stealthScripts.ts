@@ -352,8 +352,9 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
     } catch {}
 
     // ─── 10. Notification.permission mock ─────────────────────────────────────
-    // Deve essere coerente con permissions.query({name:'notifications'}) → 'prompt'.
-    // In Playwright è spesso 'denied' o non definito.
+    // Notification.permission uses 'default'/'granted'/'denied' (NOT 'prompt').
+    // permissions.query({name:'notifications'}) uses 'prompt'/'granted'/'denied'.
+    // Both APIs represent the same "never asked" state with different values.
     try {
         if (typeof Notification !== 'undefined') {
             Object.defineProperty(Notification, 'permission', {
@@ -428,9 +429,7 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
                     const fbTail = Math.floor(Math.random() * 10000000000);
                     window.localStorage.setItem('_fbp', 'fb.1.' + Date.now() + '.' + fbTail);
                 }
-                if (!window.localStorage.getItem('li_sp')) {
-                    window.localStorage.setItem('li_sp', 'random_state_' + Math.floor(Math.random() * 99999));
-                }
+                // li_sp rimossa: chiave proprietaria LinkedIn, iniettarla è più rischioso di non averla
             } catch {}
         }
 
