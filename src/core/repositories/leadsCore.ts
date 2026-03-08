@@ -748,7 +748,7 @@ export async function getLeadsWithSalesNavigatorUrls(limit: number): Promise<Lea
         SELECT ${LEAD_SELECT_COLUMNS}
         FROM leads
         WHERE linkedin_url LIKE '%linkedin.com/sales/%'
-          AND status IN ('NEW', 'READY_INVITE', 'INVITED', 'ACCEPTED', 'READY_MESSAGE', 'BLOCKED', 'PENDING')
+          AND status IN ('NEW', 'READY_INVITE', 'INVITED', 'ACCEPTED', 'READY_MESSAGE', 'BLOCKED')
         ORDER BY updated_at DESC, created_at ASC
         LIMIT ?
     `,

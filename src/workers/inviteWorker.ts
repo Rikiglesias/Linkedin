@@ -191,7 +191,7 @@ export async function processInviteJob(
         throw new RetryableWorkerError(`Lead ${payload.leadId} non trovato`, 'LEAD_NOT_FOUND');
     }
 
-    if (lead.status === 'NEW' || lead.status === 'PENDING') {
+    if (lead.status === 'NEW') {
         await transitionLead(lead.id, 'READY_INVITE', 'new_lead_promoted');
         lead.status = 'READY_INVITE';
     }

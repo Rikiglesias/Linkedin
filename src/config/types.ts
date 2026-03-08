@@ -292,4 +292,13 @@ export interface AppConfig {
     postCreationEnabled: boolean;
     postCreationMaxPerDay: number;
     postCreationDefaultTone: 'professional' | 'casual' | 'inspirational' | 'educational' | 'storytelling';
+    visionProvider: 'auto' | 'openai' | 'ollama';
+    visionModelOpenai: string;
+    visionModelOllama: string;
+    visionBudgetMaxUsd: number;
+    visionRedactScreenshots: boolean;
+    visionTemperature: number;
+    cloakBrowserEnabled: boolean;
+    stealthScriptsSkipIfCloak: string[];
+    warmupTwoSessionsPerDay: boolean;
 }

@@ -2,32 +2,28 @@
  * workers/challengeHandler.ts
  * ─────────────────────────────────────────────────────────────────
  * Tenta di risolvere automaticamente CAPTCHA/challenge usando
- * il VisionSolver (Ollama/LLaVA). Integrato nei worker come
- * step intermedio prima di lanciare ChallengeDetectedError.
+ * il VisionProvider (GPT-5.4 primary → Ollama fallback).
+ *
+ * GPT-5.4 è enormemente superiore a LLaVA per risolvere captcha
+ * visivi e challenge interattivi. Più challenge risolti al primo
+ * tentativo = meno sessioni interrotte = meno pattern di
+ * "login multipli ripetuti" visibili a LinkedIn.
  */
 
 import { Page } from 'playwright';
-import { VisionSolver } from '../captcha/solver';
+import { createVisionProvider } from '../captcha/visionProviderFactory';
+import type { VisionProvider } from '../captcha/visionProvider';
 import { humanDelay } from '../browser/humanBehavior';
 import { logInfo, logWarn, logError } from '../telemetry/logger';
 
 const MAX_ATTEMPTS = 2;
-
-let cachedSolver: VisionSolver | null = null;
-
-function getSolver(): VisionSolver {
-    if (!cachedSolver) {
-        cachedSolver = new VisionSolver();
-    }
-    return cachedSolver;
-}
 
 /**
  * Tenta di risolvere un challenge/CAPTCHA sulla pagina corrente.
  *
  * Flusso:
  *   1. Screenshot della pagina
- *   2. VisionSolver analizza il tipo di challenge
+ *   2. VisionProvider analizza il tipo di challenge (GPT-5.4 se disponibile)
  *   3. Se è un CAPTCHA grid/image → trova coordinate e clicca
  *   4. Se non è risolvibile (testo, telefono, email verification) → false
  *   5. Verifica post-risoluzione: se la challenge è sparita → true
@@ -36,24 +32,28 @@ function getSolver(): VisionSolver {
  * @returns true se il challenge è stato risolto, false altrimenti
  */
 export async function attemptChallengeResolution(page: Page): Promise<boolean> {
-    const solver = getSolver();
+    const provider: VisionProvider = createVisionProvider();
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         try {
-            await logInfo('challenge.resolution_attempt', { attempt, maxAttempts: MAX_ATTEMPTS });
+            await logInfo('challenge.resolution_attempt', {
+                attempt,
+                maxAttempts: MAX_ATTEMPTS,
+                provider: provider.name,
+            });
 
             const screenshotBuffer = await page.screenshot({ type: 'png' });
             const base64Image = screenshotBuffer.toString('base64');
 
-            const analysis = await solver.analyzeImage(
+            const analysis = await provider.analyzeImage(
                 base64Image,
                 'Analizza questa immagine. È una pagina web con un challenge di sicurezza. ' +
                     'Che tipo di challenge è? Rispondi con una sola parola tra: ' +
                     'CAPTCHA_IMAGE, CAPTCHA_GRID, TEXT_VERIFY, PHONE_VERIFY, EMAIL_VERIFY, BLOCKED, UNKNOWN',
             );
 
-            const challengeType = analysis.trim().toUpperCase();
-            await logInfo('challenge.type_detected', { attempt, challengeType });
+            const challengeType = analysis.text.trim().toUpperCase();
+            await logInfo('challenge.type_detected', { attempt, challengeType, provider: analysis.provider });
 
             if (['TEXT_VERIFY', 'PHONE_VERIFY', 'EMAIL_VERIFY', 'BLOCKED'].some((t) => challengeType.includes(t))) {
                 await logWarn('challenge.not_auto_resolvable', {
@@ -65,7 +65,7 @@ export async function attemptChallengeResolution(page: Page): Promise<boolean> {
             }
 
             if (challengeType.includes('CAPTCHA_IMAGE') || challengeType.includes('CAPTCHA_GRID')) {
-                const coords = await solver.findObjectCoordinates(
+                const coords = await provider.findCoordinates(
                     base64Image,
                     'il riquadro o immagine corretta da selezionare per risolvere il CAPTCHA',
                 );
@@ -90,7 +90,7 @@ export async function attemptChallengeResolution(page: Page): Promise<boolean> {
 
                 const stillChallenge = await isStillOnChallengePage(page);
                 if (!stillChallenge) {
-                    await logInfo('challenge.resolved', { attempt });
+                    await logInfo('challenge.resolved', { attempt, provider: provider.name });
                     return true;
                 }
 

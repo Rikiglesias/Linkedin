@@ -542,7 +542,7 @@ export async function runSecurityAdvisor(options: SecurityAdvisorRunOptions = {}
             status === 'FAILED' ? 'failed_checks_detected' : status === 'WARN' ? 'warnings_detected' : 'all_checks_ok';
         const { findings, backlog } = buildBacklogFromChecks(checks);
 
-        return finalize({
+        return await finalize({
             status,
             reason,
             checks,

@@ -1,5 +1,6 @@
 import type { Locator, Page } from 'playwright';
-import { VisionSolver } from '../captcha/solver';
+import type { VisionProvider } from '../captcha/visionProvider';
+import { createVisionProvider, resetVisionProvider, getOpenAIProviderFromCurrent } from '../captcha/visionProviderFactory';
 import { humanMouseMoveToCoords, pulseVisualCursorOverlay } from '../browser/humanBehavior';
 
 export interface VisionRegionClip {
@@ -10,7 +11,8 @@ export interface VisionRegionClip {
 }
 
 export interface VisionInteractionOptions {
-    solver?: VisionSolver;
+    /** Custom provider override (per test o uso diretto). */
+    provider?: VisionProvider;
     locator?: Locator;
     clip?: VisionRegionClip;
     retries?: number;
@@ -85,18 +87,22 @@ function parseYesNo(raw: string): boolean {
     throw new Error(`Vision verify response non valida: ${normalized || '<empty>'}`);
 }
 
-let _singletonSolver: VisionSolver | null = null;
-
-function getVisionSolver(options?: VisionInteractionOptions): VisionSolver {
-    if (options?.solver) return options.solver;
-    if (!_singletonSolver) {
-        _singletonSolver = new VisionSolver();
-    }
-    return _singletonSolver;
+/**
+ * Ottiene il VisionProvider corrente.
+ * Usa il factory con caching: la prima chiamata crea il provider, le successive riusano il singleton.
+ * Supporta override esplicito via options.provider per test e uso diretto.
+ */
+function getProvider(options?: VisionInteractionOptions): VisionProvider {
+    if (options?.provider) return options.provider;
+    return createVisionProvider();
 }
 
+/**
+ * Resetta il provider cached. Richiama resetVisionProvider del factory.
+ * Mantiene retrocompatibilità con i test esistenti.
+ */
 export function resetVisionSolver(): void {
-    _singletonSolver = null;
+    resetVisionProvider();
 }
 
 export class OllamaDownError extends Error {
@@ -115,12 +121,15 @@ export class VisionParseError extends Error {
 
 function classifyVisionError(error: unknown): Error {
     const message = error instanceof Error ? error.message : String(error);
-    const hint = `Verifica che Ollama sia attivo su ${process.env.OLLAMA_ENDPOINT ?? 'http://127.0.0.1:11434'} e che il modello ${process.env.VISION_MODEL ?? 'llava'} sia disponibile.`;
+    const provider = process.env.VISION_PROVIDER ?? 'auto';
+    const hint = provider === 'openai'
+        ? 'Verifica che OPENAI_API_KEY sia valida e che il servizio sia raggiungibile.'
+        : `Verifica che Ollama sia attivo su ${process.env.OLLAMA_ENDPOINT ?? 'http://127.0.0.1:11434'} e che il modello ${process.env.VISION_MODEL ?? 'llava'} sia disponibile.`;
 
     if (/ECONNREFUSED|ENOTFOUND|ETIMEDOUT|circuit.?open|fetch failed|socket hang up/i.test(message)) {
         return new OllamaDownError(`${message}. ${hint}`);
     }
-    if (/Vision API error: HTTP [45]/i.test(message)) {
+    if (/Vision API error: HTTP [45]|OpenAI Vision API error/i.test(message)) {
         return new OllamaDownError(`${message}. ${hint}`);
     }
     return new VisionParseError(`${message}. ${hint}`);
@@ -205,11 +214,11 @@ export async function visionRead(
     prompt: string,
     options?: VisionInteractionOptions,
 ): Promise<string> {
-    const solver = getVisionSolver(options);
+    const provider = getProvider(options);
     try {
         const capture = await captureVisionRegion(page, options);
-        const response = await solver.analyzeImage(capture.imageBase64, prompt);
-        return normalizeVisionText(response);
+        const result = await provider.analyzeImage(capture.imageBase64, prompt);
+        return normalizeVisionText(result.text);
     } catch (error) {
         throw classifyVisionError(error);
     }
@@ -254,11 +263,6 @@ export async function visionWaitFor(
     return false;
 }
 
-/**
- * Reads the total results count shown on a Sales Navigator search results page.
- * E.g. "847 results" or "1-25 di 320 risultati" → returns 847 or 320.
- * Returns null if the count is not readable or vision fails.
- */
 export async function visionReadTotalResults(
     page: Page,
     options?: VisionInteractionOptions,
@@ -278,11 +282,6 @@ export async function visionReadTotalResults(
     }
 }
 
-/**
- * Checks if ALL visible lead cards on the current page are already saved to a list.
- * When true the caller can safely skip "Select All + Save to list" — no LinkedIn actions needed.
- * Uses a simple YES/NO prompt for reliability with smaller vision models.
- */
 export async function visionPageAllAlreadySaved(
     page: Page,
     options?: VisionInteractionOptions,
@@ -304,13 +303,13 @@ export async function visionClick(
     description: string,
     options?: VisionInteractionOptions,
 ): Promise<VisionClickResult> {
-    const solver = getVisionSolver(options);
+    const provider = getProvider(options);
     const retries = Math.max(1, options?.retries ?? 2);
 
     for (let attempt = 1; attempt <= retries; attempt++) {
         try {
             const capture = await captureVisionRegion(page, options);
-            const localCoordinates = await solver.findObjectCoordinates(capture.imageBase64, description);
+            const localCoordinates = await provider.findCoordinates(capture.imageBase64, description);
             if (!localCoordinates) {
                 throw new Error(`Vision non ha trovato coordinate per: ${description}`);
             }
@@ -348,4 +347,21 @@ export async function visionClick(
     }
 
     throw classifyVisionError(new Error(`Vision click fallito per: ${description}`));
+}
+
+/**
+ * Se il provider corrente supporta GPT-5.4, suggerisce un delay contestuale
+ * basato sull'analisi della pagina. Altrimenti usa delay randomico classico.
+ */
+export async function visionContextualDelay(page: Page): Promise<number> {
+    const openaiProvider = getOpenAIProviderFromCurrent();
+    if (!openaiProvider) {
+        return 3000 + Math.floor(Math.random() * 5000);
+    }
+    try {
+        const capture = await captureVisionRegion(page);
+        return await openaiProvider.suggestContextualDelay(capture.imageBase64);
+    } catch {
+        return 3000 + Math.floor(Math.random() * 5000);
+    }
 }

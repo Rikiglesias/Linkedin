@@ -22,9 +22,9 @@ export async function withTransaction<T>(database: DatabaseManager, callback: ()
 }
 
 export function normalizeLegacyStatus(status: LeadStatus): LeadStatus {
-    if (status === 'PENDING') {
-        return 'READY_INVITE';
-    }
+    // Runtime guard: migration 002 backfilled all PENDING → READY_INVITE,
+    // but keep this for safety if old data somehow surfaces from DB.
+    if ((status as string) === 'PENDING') return 'READY_INVITE';
     return status;
 }
 

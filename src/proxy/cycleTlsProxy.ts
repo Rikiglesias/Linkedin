@@ -99,7 +99,7 @@ async function loadCycleTlsClient(): Promise<CycleTlsClient> {
         ) => Promise<unknown>;
         const module = (await dynamicImport('@ikechan8370/cycletls')) as Record<string, unknown>;
         const init = (module.default ?? module) as unknown as () => Promise<CycleTlsClient>;
-        return init();
+        return await init();
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (message.includes('@ikechan8370/cycletls') || message.includes('Cannot find module')) {

@@ -10,7 +10,7 @@ module.exports = [
             parserOptions: {
                 ecmaVersion: "latest",
                 sourceType: "module",
-                // project: "./tsconfig.json", // Decommentare per abilitare le regole type-aware
+                project: "./tsconfig.json",
             },
         },
         plugins: {
@@ -33,6 +33,13 @@ module.exports = [
             }],
             "@typescript-eslint/no-explicit-any": "error",
             "@typescript-eslint/no-non-null-assertion": "warn",  // Evita ! dove possibile
+
+            // ── Type-aware rules ──────────────────────────────────────
+            "@typescript-eslint/no-floating-promises": "error",   // Promises non gestite
+            "@typescript-eslint/no-misused-promises": "error",    // Promises usate dove non previsto
+            "@typescript-eslint/await-thenable": "error",         // await su non-Promise
+            "no-return-await": "off",
+            "@typescript-eslint/return-await": ["error", "in-try-catch"],  // return await solo in try/catch
         },
     },
     eslintConfigPrettier,

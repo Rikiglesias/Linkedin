@@ -28,6 +28,7 @@ import {
     visionWaitFor,
     type VisionRegionClip,
 } from './visionNavigator';
+import { checkDuplicates, extractProfileUrlsFromPage, saveExtractedProfiles } from './salesnavDedup';
 import {
     SALESNAV_NEXT_PAGE_SELECTOR as NEXT_PAGE_SELECTOR,
     SALESNAV_SELECT_ALL_SELECTOR as SELECT_ALL_SELECTOR,
@@ -818,7 +819,22 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                 }
 
                 try {
+                    // Extract profile URLs BEFORE save (for dedup tracking)
+                    const extractedProfiles = await extractProfileUrlsFromPage(page);
+                    const dedupResult = await checkDuplicates(options.targetListName, extractedProfiles);
+
                     await processSearchPage(page, options.targetListName, false);
+
+                    // Write profiles to salesnav_list_members AFTER save confirmed
+                    if (run && extractedProfiles.length > 0) {
+                        await saveExtractedProfiles(
+                            options.targetListName,
+                            extractedProfiles,
+                            run.id,
+                            absoluteIndex,
+                            pageNumber,
+                        );
+                    }
 
                     if (run) {
                         await addSyncItem({
@@ -830,8 +846,9 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                         });
                     }
 
+                    const effectiveLeadsSaved = dedupResult.newProfiles > 0 ? dedupResult.newProfiles : leadsOnPage;
                     report.pagesProcessed += 1;
-                    report.totalLeadsSaved += leadsOnPage;
+                    report.totalLeadsSaved += effectiveLeadsSaved;
                     searchReport.processedPages += 1;
                     searchReport.leadsSaved += leadsOnPage;
                     searchReport.pages.push({

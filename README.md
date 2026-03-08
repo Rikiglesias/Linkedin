@@ -542,6 +542,38 @@ PROXY_USERNAME=user_nomeutente_session-nomeutente
 
 Il bot avvia un proxy locale CycleTLS che intercetta le connessioni Playwright e le ri-fa con un fingerprint TLS che corrisponde a un browser reale (Chrome 120 su Windows 11). Configurabile via `CYCLETLS_PORT` (default: 8888).
 
+### Provider proxy alternativi
+
+Il sistema supporta qualsiasi proxy HTTP/SOCKS5 via `PROXY_URL`. Oltre a Bright Data (usato di default nella documentazione), sono stati valutati e testati i seguenti provider:
+
+| Provider | Modello pricing | Pool IP | Punto di forza | Ideale per |
+|----------|----------------|---------|----------------|------------|
+| **Bright Data** | Da $5.04/GB (residenziale) | 72M+ | Sticky sessions avanzate, dashboard completa | Account con sessione lunga, produzione |
+| **IPRoyal** | $3/GB pay-as-you-go | 2M+ | Nessun abbonamento minimo, economico | Volumi bassi, test, sviluppo |
+| **Oxylabs** | Da $8/GB (residenziale) | 100M+ | Pool più grande, meno IP già flaggati | Account nuovi, mercati saturi |
+| **SOAX** | Da $3.90/GB | 3.5M+ | Geo-targeting città/ISP preciso | Target regionali italiani, account geo-specifici |
+
+**Configurazione** — tutti i provider si configurano allo stesso modo:
+
+```bash
+# IPRoyal
+PROXY_URL=http://user:pass@geo.iproyal.com:12321
+
+# Oxylabs
+PROXY_URL=http://user:pass@pr.oxylabs.io:7777
+
+# SOAX
+PROXY_URL=http://user:pass@proxy.soax.com:5000
+
+# Sticky session (format dipende dal provider — vedi sezione sopra)
+```
+
+**Raccomandazioni anti-ban**:
+- **Mobile 4G/5G** (tutti i provider): rischio ban minimo, ideale per account importanti
+- **Residenziale statico**: buon compromesso costo/sicurezza per account con storia
+- Evitare **datacenter** per qualsiasi attività su LinkedIn — tasso ban >60%
+- Cambiare provider se si notano spike di challenge dopo >30 giorni sullo stesso pool
+
 ---
 
 ## Cloud sync (Supabase)

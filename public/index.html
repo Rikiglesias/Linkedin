@@ -9,6 +9,7 @@
         />
         <title>LinkedIn Bot Control Room</title>
         <link rel="stylesheet" href="/style.css" />
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js" defer></script>
     </head>
     <body>
         <a class="skip-link" href="#main-content">Vai al contenuto principale</a>
@@ -49,6 +50,11 @@
             </div>
 
             <div class="header-right">
+                <div id="sse-indicator" class="sse-indicator sse-unknown" aria-live="polite" title="SSE Connection">
+                    <span class="sse-dot" aria-hidden="true"></span>
+                    <span id="sse-text">Connessione...</span>
+                    <button id="sse-reconnect" type="button" class="sse-reconnect-btn" hidden>Riconnetti</button>
+                </div>
                 <div id="status-badge" class="status-badge status-unknown" aria-live="polite">
                     <span class="status-dot" aria-hidden="true"></span>
                     <span id="status-text">In attesa...</span>
@@ -65,7 +71,13 @@
         </header>
 
         <p id="action-feedback" class="feedback" role="status" aria-live="polite"></p>
-        <p id="voice-feedback" class="feedback feedback-secondary" role="status" aria-live="polite"></p>
+        <div id="voice-feedback-wrap" class="voice-feedback-wrap" hidden>
+            <div id="voice-mic-indicator" class="voice-mic-indicator" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+            </div>
+            <p id="voice-feedback" class="feedback feedback-secondary" role="status" aria-live="polite"></p>
+            <p id="voice-partial-transcript" class="voice-partial-transcript"></p>
+        </div>
 
         <main id="main-content" class="main">
             <section class="kpi-grid" aria-label="KPI principali">
@@ -96,6 +108,25 @@
                 <article class="kpi-card">
                     <p class="kpi-label">Lead totali</p>
                     <p id="val-total" class="kpi-value">0</p>
+                </article>
+            </section>
+
+            <section class="two-col chart-section">
+                <article class="card">
+                    <header class="card-header">
+                        <h2>Inviti / Giorno</h2>
+                    </header>
+                    <div class="chart-container">
+                        <canvas id="chart-invites-daily" aria-label="Grafico inviti giornalieri"></canvas>
+                    </div>
+                </article>
+                <article class="card">
+                    <header class="card-header">
+                        <h2>Health Score &amp; Risk</h2>
+                    </header>
+                    <div class="chart-container">
+                        <canvas id="chart-risk-gauge" aria-label="Gauge compliance health score"></canvas>
+                    </div>
                 </article>
             </section>
 

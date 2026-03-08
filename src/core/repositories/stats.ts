@@ -830,7 +830,7 @@ export async function getABTestingStats(): Promise<ABTestStats[]> {
             SUM(CASE WHEN status IN ('ACCEPTED', 'READY_MESSAGE', 'MESSAGED', 'REPLIED', 'CONNECTED') THEN 1 ELSE 0 END) as totalAccepted,
             SUM(CASE WHEN status IN ('REPLIED', 'CONNECTED') THEN 1 ELSE 0 END) as totalReplied
         FROM leads
-        WHERE status NOT IN ('NEW', 'READY_INVITE', 'REVIEW_REQUIRED', 'SKIPPED', 'BLOCKED', 'DEAD', 'WITHDRAWN', 'PENDING')
+        WHERE status NOT IN ('NEW', 'READY_INVITE', 'REVIEW_REQUIRED', 'SKIPPED', 'BLOCKED', 'DEAD', 'WITHDRAWN')
           AND invite_prompt_variant IS NOT NULL
         GROUP BY COALESCE(invite_prompt_variant, 'default')
         ORDER BY totalSent DESC

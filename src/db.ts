@@ -282,302 +282,37 @@ async function applyMigrations(database: DatabaseManager): Promise<void> {
         }
     }
 
-    // Hardening (Retrocompatibilità)
-    if (isPostgres) {
-        await ensureColumnPg(database, 'leads', 'list_name', `TEXT NOT NULL DEFAULT 'default'`);
-        await ensureColumnPg(database, 'leads', 'lead_metadata', `TEXT NOT NULL DEFAULT '{}'`);
-        await ensureColumnPg(database, 'leads', 'last_site_check_at', 'TIMESTAMP');
-        await ensureColumnPg(database, 'leads', 'last_error', 'TEXT');
-        await ensureColumnPg(database, 'leads', 'blocked_reason', 'TEXT');
-        await ensureColumnPg(database, 'leads', 'updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP');
-        await ensureColumnPg(database, 'lead_lists', 'is_active', 'INTEGER NOT NULL DEFAULT 1');
-        await ensureColumnPg(database, 'lead_lists', 'priority', 'INTEGER NOT NULL DEFAULT 100');
-        await ensureColumnPg(database, 'lead_lists', 'daily_invite_cap', 'INTEGER');
-        await ensureColumnPg(database, 'lead_lists', 'daily_message_cap', 'INTEGER');
-        await ensureColumnPg(database, 'lead_lists', 'scoring_criteria', 'TEXT');
-        await ensureColumnPg(database, 'leads', 'consent_basis', `TEXT DEFAULT 'legitimate_interest'`);
-        await ensureColumnPg(database, 'leads', 'consent_recorded_at', 'TIMESTAMP');
-        await ensureColumnPg(database, 'leads', 'gdpr_opt_out', 'INTEGER DEFAULT 0');
-        await ensureColumnPg(database, 'daily_stats', 'messages_sent', 'INTEGER NOT NULL DEFAULT 0');
-        await ensureColumnPg(database, 'daily_stats', 'challenges_count', 'INTEGER NOT NULL DEFAULT 0');
-        await ensureColumnPg(database, 'daily_stats', 'selector_failures', 'INTEGER NOT NULL DEFAULT 0');
-        await ensureColumnPg(database, 'daily_stats', 'run_errors', 'INTEGER NOT NULL DEFAULT 0');
-        await ensureColumnPg(database, 'jobs', 'account_id', `TEXT NOT NULL DEFAULT 'default'`);
-        await ensureColumnPg(database, 'lead_intents', 'entities_json', 'TEXT');
+    // Hardening (Retrocompatibilità) — colonne aggiunte su tabelle esistenti.
+    // Le tabelle (list_daily_stats, company_targets, runtime_locks, etc.) sono
+    // ora create dalla migration 041_hardening_tables.sql.
+    // Le colonne di hardening restano qui perché ensureColumn* è idempotente
+    // e gestisce il dialetto SQLite/Postgres in modo diverso.
+    const ensureColumn = isPostgres ? ensureColumnPg : ensureColumnSqlite;
+    const ts = isPostgres ? 'TIMESTAMP' : 'DATETIME';
 
-        await database.exec(`
-            CREATE TABLE IF NOT EXISTS list_daily_stats (
-                date TEXT NOT NULL,
-                list_name TEXT NOT NULL,
-                invites_sent INTEGER NOT NULL DEFAULT 0,
-                messages_sent INTEGER NOT NULL DEFAULT 0,
-                PRIMARY KEY (date, list_name)
-            );
-        `);
-
-        await database.exec(
-            `CREATE INDEX IF NOT EXISTS idx_list_daily_stats_list_date ON list_daily_stats(list_name, date);`,
-        );
-        await database.exec(
-            `CREATE INDEX IF NOT EXISTS idx_leads_status_list_created ON leads(status, list_name, created_at);`,
-        );
-        await database.exec(
-            `CREATE INDEX IF NOT EXISTS idx_leads_status_last_site_check ON leads(status, last_site_check_at, created_at);`,
-        );
-        await database.exec(
-            `CREATE INDEX IF NOT EXISTS idx_jobs_type_status_next_run ON jobs(type, status, next_run_at, priority, created_at);`,
-        );
-        await database.exec(
-            `CREATE INDEX IF NOT EXISTS idx_jobs_account_status_next_run ON jobs(account_id, status, next_run_at, priority, created_at);`,
-        );
-
-        await database.exec(`
-            CREATE TABLE IF NOT EXISTS company_targets (
-                id SERIAL PRIMARY KEY,
-                list_name TEXT NOT NULL,
-                account_name TEXT NOT NULL DEFAULT '',
-                website TEXT NOT NULL DEFAULT '',
-                source_file TEXT,
-                status TEXT NOT NULL DEFAULT 'NEW',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
-        await ensureColumnPg(database, 'company_targets', 'attempts', 'INTEGER NOT NULL DEFAULT 0');
-        await ensureColumnPg(database, 'company_targets', 'last_error', 'TEXT');
-        await ensureColumnPg(database, 'company_targets', 'processed_at', 'TIMESTAMP');
-        await database.exec(`
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_company_targets_list_account_website
-                ON company_targets(list_name, account_name, website);
-        `);
-        await database.exec(`
-            CREATE INDEX IF NOT EXISTS idx_company_targets_list_status
-                ON company_targets(list_name, status, created_at);
-        `);
-
-        await database.exec(`
-            CREATE TABLE IF NOT EXISTS runtime_locks (
-                lock_key TEXT PRIMARY KEY,
-                owner_id TEXT NOT NULL,
-                acquired_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                heartbeat_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                expires_at TIMESTAMP NOT NULL,
-                metadata_json TEXT NOT NULL DEFAULT '{}',
-                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
-        await database.exec(`CREATE INDEX IF NOT EXISTS idx_runtime_locks_expires_at ON runtime_locks(expires_at);`);
-        await database.exec(`
-            CREATE TABLE IF NOT EXISTS ab_variant_stats_segment (
-                segment_key TEXT NOT NULL,
-                variant_id TEXT NOT NULL,
-                sent INTEGER NOT NULL DEFAULT 0,
-                accepted INTEGER NOT NULL DEFAULT 0,
-                replied INTEGER NOT NULL DEFAULT 0,
-                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (segment_key, variant_id)
-            );
-        `);
-        await database.exec(`
-            CREATE TABLE IF NOT EXISTS dynamic_selectors (
-                id SERIAL PRIMARY KEY,
-                action_label TEXT NOT NULL,
-                selector TEXT NOT NULL,
-                confidence DOUBLE PRECISION NOT NULL DEFAULT 0.5,
-                source TEXT NOT NULL DEFAULT 'learner',
-                active INTEGER NOT NULL DEFAULT 1,
-                success_count INTEGER NOT NULL DEFAULT 0,
-                last_validated_at TIMESTAMP,
-                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(action_label, selector)
-            );
-        `);
-        await database.exec(`
-            CREATE TABLE IF NOT EXISTS selector_failures (
-                id SERIAL PRIMARY KEY,
-                action_label TEXT NOT NULL,
-                url TEXT NOT NULL,
-                selectors_json TEXT NOT NULL,
-                error_message TEXT,
-                occurrences INTEGER NOT NULL DEFAULT 1,
-                first_seen_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                last_seen_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                resolved_at TIMESTAMP,
-                status TEXT NOT NULL DEFAULT 'OPEN',
-                UNIQUE(action_label, url)
-            );
-        `);
-        await database.exec(`
-            CREATE TABLE IF NOT EXISTS selector_fallbacks (
-                id SERIAL PRIMARY KEY,
-                action_label TEXT NOT NULL,
-                selector TEXT NOT NULL,
-                url TEXT,
-                success_count INTEGER NOT NULL DEFAULT 1,
-                last_success_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(action_label, selector)
-            );
-        `);
-        await database.exec(`
-            CREATE TABLE IF NOT EXISTS list_rampup_state (
-                list_name TEXT PRIMARY KEY,
-                last_run_date TEXT,
-                current_invite_cap INTEGER NOT NULL DEFAULT 0,
-                current_message_cap INTEGER NOT NULL DEFAULT 0,
-                daily_increase DOUBLE PRECISION NOT NULL DEFAULT 0.05,
-                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
-    } else {
-        await ensureColumnSqlite(database, 'leads', 'list_name', `TEXT NOT NULL DEFAULT 'default'`);
-        await ensureColumnSqlite(database, 'leads', 'lead_metadata', `TEXT NOT NULL DEFAULT '{}'`);
-        await ensureColumnSqlite(database, 'leads', 'last_site_check_at', 'DATETIME');
-        await ensureColumnSqlite(database, 'leads', 'last_error', 'TEXT');
-        await ensureColumnSqlite(database, 'leads', 'blocked_reason', 'TEXT');
-        await ensureColumnSqlite(database, 'leads', 'updated_at', 'DATETIME DEFAULT CURRENT_TIMESTAMP');
-        await ensureColumnSqlite(database, 'lead_lists', 'is_active', 'INTEGER NOT NULL DEFAULT 1');
-        await ensureColumnSqlite(database, 'lead_lists', 'priority', 'INTEGER NOT NULL DEFAULT 100');
-        await ensureColumnSqlite(database, 'lead_lists', 'daily_invite_cap', 'INTEGER');
-        await ensureColumnSqlite(database, 'lead_lists', 'daily_message_cap', 'INTEGER');
-        await ensureColumnSqlite(database, 'lead_lists', 'scoring_criteria', 'TEXT');
-        await ensureColumnSqlite(database, 'leads', 'consent_basis', `TEXT DEFAULT 'legitimate_interest'`);
-        await ensureColumnSqlite(database, 'leads', 'consent_recorded_at', 'DATETIME');
-        await ensureColumnSqlite(database, 'leads', 'gdpr_opt_out', 'INTEGER DEFAULT 0');
-        await ensureColumnSqlite(database, 'daily_stats', 'messages_sent', 'INTEGER NOT NULL DEFAULT 0');
-        await ensureColumnSqlite(database, 'daily_stats', 'challenges_count', 'INTEGER NOT NULL DEFAULT 0');
-        await ensureColumnSqlite(database, 'daily_stats', 'selector_failures', 'INTEGER NOT NULL DEFAULT 0');
-        await ensureColumnSqlite(database, 'daily_stats', 'run_errors', 'INTEGER NOT NULL DEFAULT 0');
-        await ensureColumnSqlite(database, 'jobs', 'account_id', `TEXT NOT NULL DEFAULT 'default'`);
-        await ensureColumnSqlite(database, 'lead_intents', 'entities_json', 'TEXT');
-        await database.exec(`
-            CREATE TABLE IF NOT EXISTS list_daily_stats (
-                date TEXT NOT NULL,
-                list_name TEXT NOT NULL,
-                invites_sent INTEGER NOT NULL DEFAULT 0,
-                messages_sent INTEGER NOT NULL DEFAULT 0,
-                PRIMARY KEY (date, list_name)
-            );
-        `);
-        await database.exec(
-            `CREATE INDEX IF NOT EXISTS idx_list_daily_stats_list_date ON list_daily_stats(list_name, date);`,
-        );
-        await database.exec(
-            `CREATE INDEX IF NOT EXISTS idx_leads_status_list_created ON leads(status, list_name, created_at);`,
-        );
-        await database.exec(
-            `CREATE INDEX IF NOT EXISTS idx_leads_status_last_site_check ON leads(status, last_site_check_at, created_at);`,
-        );
-        await database.exec(
-            `CREATE INDEX IF NOT EXISTS idx_jobs_type_status_next_run ON jobs(type, status, next_run_at, priority, created_at);`,
-        );
-        await database.exec(
-            `CREATE INDEX IF NOT EXISTS idx_jobs_account_status_next_run ON jobs(account_id, status, next_run_at, priority, created_at);`,
-        );
-        await database.exec(`
-            CREATE TABLE IF NOT EXISTS company_targets (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                list_name TEXT NOT NULL,
-                account_name TEXT NOT NULL DEFAULT '',
-                website TEXT NOT NULL DEFAULT '',
-                source_file TEXT,
-                status TEXT NOT NULL DEFAULT 'NEW',
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
-        await ensureColumnSqlite(database, 'company_targets', 'attempts', 'INTEGER NOT NULL DEFAULT 0');
-        await ensureColumnSqlite(database, 'company_targets', 'last_error', 'TEXT');
-        await ensureColumnSqlite(database, 'company_targets', 'processed_at', 'DATETIME');
-        await database.exec(`
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_company_targets_list_account_website
-                ON company_targets(list_name, account_name, website);
-        `);
-        await database.exec(`
-            CREATE INDEX IF NOT EXISTS idx_company_targets_list_status
-                ON company_targets(list_name, status, created_at);
-        `);
-        await database.exec(`
-            CREATE TABLE IF NOT EXISTS runtime_locks (
-                lock_key TEXT PRIMARY KEY,
-                owner_id TEXT NOT NULL,
-                acquired_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                heartbeat_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                expires_at DATETIME NOT NULL,
-                metadata_json TEXT NOT NULL DEFAULT '{}',
-                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
-        await database.exec(`CREATE INDEX IF NOT EXISTS idx_runtime_locks_expires_at ON runtime_locks(expires_at);`);
-        await database.exec(`
-            CREATE TABLE IF NOT EXISTS ab_variant_stats_segment (
-                segment_key TEXT NOT NULL,
-                variant_id TEXT NOT NULL,
-                sent INTEGER NOT NULL DEFAULT 0,
-                accepted INTEGER NOT NULL DEFAULT 0,
-                replied INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-                PRIMARY KEY (segment_key, variant_id)
-            );
-        `);
-        await database.exec(`
-            CREATE TABLE IF NOT EXISTS dynamic_selectors (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                action_label TEXT NOT NULL,
-                selector TEXT NOT NULL,
-                confidence REAL NOT NULL DEFAULT 0.5,
-                source TEXT NOT NULL DEFAULT 'learner',
-                active INTEGER NOT NULL DEFAULT 1,
-                success_count INTEGER NOT NULL DEFAULT 0,
-                last_validated_at TEXT,
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-                UNIQUE(action_label, selector)
-            );
-        `);
-        await database.exec(`
-            CREATE TABLE IF NOT EXISTS selector_failures (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                action_label TEXT NOT NULL,
-                url TEXT NOT NULL,
-                selectors_json TEXT NOT NULL,
-                error_message TEXT,
-                occurrences INTEGER NOT NULL DEFAULT 1,
-                first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
-                last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
-                resolved_at TEXT,
-                status TEXT NOT NULL DEFAULT 'OPEN',
-                UNIQUE(action_label, url)
-            );
-        `);
-        await database.exec(`
-            CREATE TABLE IF NOT EXISTS selector_fallbacks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                action_label TEXT NOT NULL,
-                selector TEXT NOT NULL,
-                url TEXT,
-                success_count INTEGER NOT NULL DEFAULT 1,
-                last_success_at TEXT NOT NULL DEFAULT (datetime('now')),
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-                UNIQUE(action_label, selector)
-            );
-        `);
-        await database.exec(`
-            CREATE TABLE IF NOT EXISTS list_rampup_state (
-                list_name TEXT PRIMARY KEY,
-                last_run_date TEXT,
-                current_invite_cap INTEGER NOT NULL DEFAULT 0,
-                current_message_cap INTEGER NOT NULL DEFAULT 0,
-                daily_increase REAL NOT NULL DEFAULT 0.05,
-                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-        `);
-    }
+    await ensureColumn(database, 'leads', 'list_name', `TEXT NOT NULL DEFAULT 'default'`);
+    await ensureColumn(database, 'leads', 'lead_metadata', `TEXT NOT NULL DEFAULT '{}'`);
+    await ensureColumn(database, 'leads', 'last_site_check_at', ts);
+    await ensureColumn(database, 'leads', 'last_error', 'TEXT');
+    await ensureColumn(database, 'leads', 'blocked_reason', 'TEXT');
+    await ensureColumn(database, 'leads', 'updated_at', `${ts} DEFAULT CURRENT_TIMESTAMP`);
+    await ensureColumn(database, 'lead_lists', 'is_active', 'INTEGER NOT NULL DEFAULT 1');
+    await ensureColumn(database, 'lead_lists', 'priority', 'INTEGER NOT NULL DEFAULT 100');
+    await ensureColumn(database, 'lead_lists', 'daily_invite_cap', 'INTEGER');
+    await ensureColumn(database, 'lead_lists', 'daily_message_cap', 'INTEGER');
+    await ensureColumn(database, 'lead_lists', 'scoring_criteria', 'TEXT');
+    await ensureColumn(database, 'leads', 'consent_basis', `TEXT DEFAULT 'legitimate_interest'`);
+    await ensureColumn(database, 'leads', 'consent_recorded_at', ts);
+    await ensureColumn(database, 'leads', 'gdpr_opt_out', 'INTEGER DEFAULT 0');
+    await ensureColumn(database, 'daily_stats', 'messages_sent', 'INTEGER NOT NULL DEFAULT 0');
+    await ensureColumn(database, 'daily_stats', 'challenges_count', 'INTEGER NOT NULL DEFAULT 0');
+    await ensureColumn(database, 'daily_stats', 'selector_failures', 'INTEGER NOT NULL DEFAULT 0');
+    await ensureColumn(database, 'daily_stats', 'run_errors', 'INTEGER NOT NULL DEFAULT 0');
+    await ensureColumn(database, 'jobs', 'account_id', `TEXT NOT NULL DEFAULT 'default'`);
+    await ensureColumn(database, 'lead_intents', 'entities_json', 'TEXT');
+    await ensureColumn(database, 'company_targets', 'attempts', 'INTEGER NOT NULL DEFAULT 0');
+    await ensureColumn(database, 'company_targets', 'last_error', 'TEXT');
+    await ensureColumn(database, 'company_targets', 'processed_at', ts);
 }
 
 export async function getDatabase(): Promise<DatabaseManager> {

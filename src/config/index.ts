@@ -6,6 +6,7 @@ import {
     buildProxyDomainConfig,
     buildRuntimeDomainConfig,
     buildSyncDomainConfig,
+    buildVisionDomainConfig,
 } from './domains';
 import { loadDotEnv, parseAccountProfileFromEnv } from './env';
 import { AppConfig, AccountProfileConfig, EventSyncSink, ProxyType } from './types';
@@ -26,7 +27,8 @@ export const config: AppConfig = {
     ...buildCommsAndBusinessDomainConfig(),
     ...buildProxyDomainConfig(),
     ...buildBehaviorDomainConfig(),
-} as AppConfig;
+    ...buildVisionDomainConfig(),
+} satisfies AppConfig;
 
 function isHourInWindow(hour: number, start: number, end: number): boolean {
     if (start === end) return true;

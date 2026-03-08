@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 import { config } from '../config';
@@ -207,10 +207,15 @@ export async function runRestoreDrill(options: RestoreDrillOptions = {}): Promis
 
     const isSqlite =
         !config.databaseUrl || config.databaseUrl.startsWith('file:') || config.databaseUrl.includes('.sqlite');
+    const isPostgres = config.databaseUrl?.startsWith('postgres') ?? false;
+
+    if (!isSqlite && isPostgres) {
+        return runPostgresRestoreDrill(options, finalize);
+    }
     if (!isSqlite) {
         return finalize({
             status: 'SKIPPED',
-            reason: 'non_sqlite_environment',
+            reason: 'unsupported_database_type',
             backupPath: null,
             tempDbPath: null,
             integrityCheck: null,
@@ -274,6 +279,159 @@ export async function runRestoreDrill(options: RestoreDrillOptions = {}): Promis
             fs.unlinkSync(tempDbPath);
         }
         return report;
+    }
+}
+
+function resolvePostgresBackupCandidates(): string[] {
+    const backupDir = path.resolve(process.cwd(), 'data', 'backups');
+    if (!fs.existsSync(backupDir)) return [];
+    const files: string[] = [];
+    for (const fileName of fs.readdirSync(backupDir)) {
+        if (!fileName.endsWith('.sql')) continue;
+        files.push(path.resolve(backupDir, fileName));
+    }
+    return files.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+}
+
+function resolvePostgresBackupPath(backupFile?: string): string | null {
+    if (backupFile && backupFile.trim()) {
+        const resolved = path.resolve(backupFile);
+        return fs.existsSync(resolved) ? resolved : null;
+    }
+    const candidates = resolvePostgresBackupCandidates();
+    return candidates[0] ?? null;
+}
+
+function pgExec(sql: string, databaseUrl?: string): string {
+    const connStr = databaseUrl ?? config.databaseUrl;
+    if (connStr.includes('@db:')) {
+        return execFileSync('docker', [
+            'exec', '-i', 'linkedin-pg', 'psql', '-U', 'bot_user', '-d', 'linkedin_bot',
+            '-c', sql,
+        ], { encoding: 'utf8', timeout: 30_000 });
+    }
+    return execFileSync('psql', [
+        '--dbname', connStr, '-c', sql,
+    ], { encoding: 'utf8', timeout: 30_000 });
+}
+
+function pgExecOnDb(sql: string, dbName: string): string {
+    if (config.databaseUrl.includes('@db:')) {
+        return execFileSync('docker', [
+            'exec', '-i', 'linkedin-pg', 'psql', '-U', 'bot_user', '-d', dbName,
+            '-c', sql,
+        ], { encoding: 'utf8', timeout: 30_000 });
+    }
+    const url = new URL(config.databaseUrl);
+    url.pathname = `/${dbName}`;
+    return execFileSync('psql', [
+        '--dbname', url.toString(), '-c', sql,
+    ], { encoding: 'utf8', timeout: 30_000 });
+}
+
+function pgRestoreToDb(backupPath: string, dbName: string): void {
+    const content = fs.readFileSync(backupPath, 'utf8');
+    if (config.databaseUrl.includes('@db:')) {
+        execSync(`docker exec -i linkedin-pg psql -U bot_user -d ${dbName}`, {
+            input: content,
+            timeout: 120_000,
+        });
+    } else {
+        const url = new URL(config.databaseUrl);
+        url.pathname = `/${dbName}`;
+        execSync(`psql "${url.toString()}"`, {
+            input: content,
+            timeout: 120_000,
+        });
+    }
+}
+
+async function runPostgresRestoreDrill(
+    options: RestoreDrillOptions,
+    finalize: (partial: Omit<RestoreDrillReport, 'startedAt' | 'finishedAt' | 'durationMs' | 'triggeredBy'>) => Promise<RestoreDrillReport>,
+): Promise<RestoreDrillReport> {
+    const backupPath = resolvePostgresBackupPath(options.backupFile);
+    if (!backupPath) {
+        return finalize({
+            status: 'SKIPPED',
+            reason: 'postgres_backup_not_found',
+            backupPath: null,
+            tempDbPath: null,
+            integrityCheck: null,
+            tableChecks: [],
+            reportPath: null,
+            errorMessage: null,
+        });
+    }
+
+    const drillDbName = `linkedin_bot_drill_${Date.now()}`;
+
+    try {
+        // 1. Create temp database
+        pgExec(`CREATE DATABASE ${drillDbName}`);
+
+        // 2. Restore backup into temp database
+        pgRestoreToDb(backupPath, drillDbName);
+
+        // 3. Verify required tables and row counts
+        const candidateTables = ['leads', 'jobs', 'daily_stats', 'outbox_events'];
+        const tableChecks: RestoreDrillTableCheck[] = [];
+
+        for (const tableName of candidateTables) {
+            try {
+                const output = pgExecOnDb(
+                    `SELECT COUNT(*) as total FROM ${tableName}`,
+                    drillDbName,
+                );
+                const match = output.match(/(\d+)/);
+                const rowCount = match ? parseInt(match[1], 10) : 0;
+                tableChecks.push({ table: tableName, exists: true, rowCount });
+            } catch {
+                tableChecks.push({ table: tableName, exists: false, rowCount: null });
+            }
+        }
+
+        const requiredTablesPresent = tableChecks.every((t) => t.exists);
+        const success = requiredTablesPresent;
+
+        // 4. Drop temp database
+        try {
+            pgExec(`DROP DATABASE IF EXISTS ${drillDbName}`);
+        } catch {
+            // Best effort cleanup
+        }
+
+        return await finalize({
+            status: success ? 'SUCCEEDED' : 'FAILED',
+            reason: success ? 'ok' : 'schema_check_failed',
+            backupPath,
+            tempDbPath: drillDbName,
+            integrityCheck: 'n/a_postgres',
+            tableChecks,
+            reportPath: null,
+            errorMessage: success
+                ? null
+                : `requiredTablesPresent=${requiredTablesPresent}`,
+        });
+    } catch (error) {
+        // Cleanup on failure
+        try {
+            pgExec(`DROP DATABASE IF EXISTS ${drillDbName}`);
+        } catch {
+            // Best effort
+        }
+
+        const message = error instanceof Error ? error.message : String(error);
+        return finalize({
+            status: 'FAILED',
+            reason: 'postgres_drill_execution_failed',
+            backupPath,
+            tempDbPath: drillDbName,
+            integrityCheck: null,
+            tableChecks: [],
+            reportPath: null,
+            errorMessage: message,
+        });
     }
 }
 

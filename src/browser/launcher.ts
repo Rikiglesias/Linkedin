@@ -7,6 +7,7 @@
 import path from 'path';
 import { chromium, BrowserContext, Page } from 'playwright';
 import { config, ProxyType } from '../config';
+import { logInfo } from '../telemetry/logger';
 import { ensureDirectoryPrivate } from '../security/filesystem';
 import { pauseAutomation } from '../risk/incidentManager';
 import {
@@ -45,14 +46,12 @@ const cleanupBrowsers = async () => {
     await stopCycleTlsProxy().catch(() => { });
 };
 
-process.on('SIGINT', async () => {
-    await cleanupBrowsers();
-    process.exit(0);
+process.on('SIGINT', () => {
+    void cleanupBrowsers().then(() => process.exit(0));
 });
 
-process.on('SIGTERM', async () => {
-    await cleanupBrowsers();
-    process.exit(0);
+process.on('SIGTERM', () => {
+    void cleanupBrowsers().then(() => process.exit(0));
 });
 
 function validateFingerprintConsistency(fp: BrowserFingerprint): void {
@@ -266,9 +265,27 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
         }
 
         try {
-            const browser = await chromium.launchPersistentContext(sessionDir, contextOptions);
+            // CloakBrowser integration: se attivo, usa il binario stealth Chromium
+            // che patcha canvas, WebGL, audio, fonts, GPU, CDP leaks a livello C++.
+            // Passa 30/30 test detection (reCAPTCHA v3, Cloudflare Turnstile, FingerprintJS).
+            let browser: BrowserContext;
+            if (config.cloakBrowserEnabled) {
+                try {
+                    // eslint-disable-next-line @typescript-eslint/no-require-imports
+                    const cloakbrowser = require('cloakbrowser') as { launch: typeof chromium.launchPersistentContext };
+                    browser = await cloakbrowser.launch(sessionDir, contextOptions);
+                    void logInfo('browser.cloakbrowser_launched', { sessionDir });
+                } catch (cloakErr) {
+                    console.warn('[BROWSER] CloakBrowser non disponibile, fallback a Playwright standard:', cloakErr instanceof Error ? cloakErr.message : String(cloakErr));
+                    browser = await chromium.launchPersistentContext(sessionDir, contextOptions);
+                }
+            } else {
+                browser = await chromium.launchPersistentContext(sessionDir, contextOptions);
+            }
 
             // Iniezione noise Canvas/WebGL nativa in stack V8
+            // Se CloakBrowser è attivo, salta le manipolazioni già gestite a livello binario
+            const skipIfCloak = config.cloakBrowserEnabled ? new Set(config.stealthScriptsSkipIfCloak) : new Set<string>();
             const scriptContent = `
                 (() => {
                     const canvasNoise = ${deviceProfile.canvasNoise ?? 0};
@@ -315,7 +332,10 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                     };
                 })();
             `;
-            await browser.addInitScript({ content: scriptContent });
+            // Skip canvas/webgl noise injection if CloakBrowser handles it at binary level
+            if (!skipIfCloak.has('canvas') && !skipIfCloak.has('webgl')) {
+                await browser.addInitScript({ content: scriptContent });
+            }
 
             // Stealth init script: WebRTC kill, navigator normalization, chrome mock, permissions override
             // Derive hardware specs coherent with the fingerprint's device class
@@ -348,6 +368,7 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                 hardwareConcurrency: coherentHwConcurrency,
                 deviceMemory: coherentDeviceMemory,
                 colorDepth: coherentColorDepth,
+                skipSections: skipIfCloak,
             });
             await browser.addInitScript({ content: stealthScript });
 

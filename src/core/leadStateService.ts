@@ -6,7 +6,7 @@ import { publishLiveEvent } from '../telemetry/liveEvents';
 import { sendTelegramAlert } from '../telemetry/alerts';
 import { logWarn } from '../telemetry/logger';
 
-const allowedTransitions: Record<Exclude<LeadStatus, 'PENDING'>, LeadStatus[]> = {
+const allowedTransitions: Record<LeadStatus, LeadStatus[]> = {
     NEW: ['READY_INVITE', 'BLOCKED', 'REVIEW_REQUIRED', 'DEAD'],
     READY_INVITE: ['INVITED', 'SKIPPED', 'BLOCKED', 'REVIEW_REQUIRED', 'DEAD'],
     INVITED: ['ACCEPTED', 'CONNECTED', 'BLOCKED', 'REVIEW_REQUIRED', 'WITHDRAWN', 'DEAD'],
@@ -22,18 +22,9 @@ const allowedTransitions: Record<Exclude<LeadStatus, 'PENDING'>, LeadStatus[]> =
     WITHDRAWN: ['READY_INVITE', 'DEAD'],
 };
 
-function normalize(status: LeadStatus): Exclude<LeadStatus, 'PENDING'> {
-    if (status === 'PENDING') {
-        return 'READY_INVITE';
-    }
-    return status;
-}
-
 export function isValidLeadTransition(fromStatus: LeadStatus, toStatus: LeadStatus): boolean {
-    const normalizedFrom = normalize(fromStatus);
-    const normalizedTo = normalize(toStatus);
-    const nextAllowed = allowedTransitions[normalizedFrom];
-    return nextAllowed.includes(normalizedTo);
+    const nextAllowed = allowedTransitions[fromStatus];
+    return nextAllowed.includes(toStatus);
 }
 
 export async function transitionLead(
@@ -47,8 +38,8 @@ export async function transitionLead(
         throw new Error(`Lead ${leadId} non trovato.`);
     }
 
-    const fromStatus = normalize(lead.status);
-    const targetStatus = normalize(toStatus);
+    const fromStatus = lead.status;
+    const targetStatus = toStatus;
     if (!isValidLeadTransition(fromStatus, targetStatus)) {
         throw new Error(`Transizione non consentita: ${fromStatus} -> ${targetStatus}.`);
     }
@@ -103,8 +94,8 @@ export async function transitionLeadAtomic(
             if (!lead) {
                 throw new Error(`Lead ${leadId} non trovato.`);
             }
-            const fromStatus = normalize(lead.status);
-            const targetStatus = normalize(step.toStatus);
+            const fromStatus = lead.status;
+            const targetStatus = step.toStatus;
             if (!isValidLeadTransition(fromStatus, targetStatus)) {
                 throw new Error(`Transizione non consentita: ${fromStatus} -> ${targetStatus}.`);
             }
@@ -129,7 +120,7 @@ export async function transitionLeadAtomic(
     // Post-transaction notifications (non-blocking)
     const lead = await getLeadById(leadId);
     if (lead) {
-        const finalStatus = normalize(lead.status);
+        const finalStatus = lead.status;
         if (finalStatus === 'ACCEPTED') {
             const name = `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'Lead Sconosciuto';
             void sendTelegramAlert(
@@ -152,8 +143,8 @@ export async function reconcileLeadStatus(
         throw new Error(`Lead ${leadId} non trovato.`);
     }
 
-    const fromStatus = normalize(lead.status);
-    const targetStatus = normalize(toStatus);
+    const fromStatus = lead.status;
+    const targetStatus = toStatus;
     if (fromStatus === targetStatus) {
         return;
     }

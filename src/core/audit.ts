@@ -229,7 +229,7 @@ export async function buildFunnelReport(): Promise<FunnelReport> {
         jobs,
     ] = await Promise.all([
         countLeadsByStatuses(['NEW']),
-        countLeadsByStatuses(['READY_INVITE', 'PENDING']),
+        countLeadsByStatuses(['READY_INVITE']),
         countLeadsByStatuses(['INVITED']),
         countLeadsByStatuses(['ACCEPTED']),
         countLeadsByStatuses(['READY_MESSAGE']),

@@ -11,8 +11,7 @@ export type LeadStatus =
     | 'REPLIED'
     | 'CONNECTED'
     | 'REVIEW_REQUIRED'
-    | 'WITHDRAWN'
-    | 'PENDING'; // compat legacy
+    | 'WITHDRAWN';
 
 export type JobType =
     | 'INVITE'
@@ -136,14 +135,6 @@ export interface PostCreationJobPayload {
     topic?: string;
     tone?: string;
 }
-
-export type JobPayload =
-    | InviteJobPayload
-    | AcceptanceJobPayload
-    | MessageJobPayload
-    | InteractionJobPayload
-    | EnrichmentJobPayload
-    | PostCreationJobPayload;
 
 export interface RiskInputs {
     pendingRatio: number;

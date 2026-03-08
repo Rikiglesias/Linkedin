@@ -454,7 +454,7 @@ export async function scheduleJobs(
     const statusRows = await getLeadStatusCountsForLists(activeListNames);
     const listStatusCounts = new Map<string, Record<string, number>>();
     for (const row of statusRows) {
-        const statusName = row.status === 'PENDING' ? 'READY_INVITE' : row.status;
+        const statusName = row.status;
         if (!listStatusCounts.has(row.list_name)) {
             listStatusCounts.set(row.list_name, {});
         }
@@ -732,7 +732,7 @@ export async function scheduleJobs(
     }
 
     if (!dryRun && config.withdrawInvitesEnabled && workflow !== 'warmup') {
-        const accounts = await getRuntimeAccountProfiles();
+        const accounts = getRuntimeAccountProfiles();
         for (const acc of accounts) {
             await enqueueJob(
                 'HYGIENE',

@@ -28,6 +28,9 @@ export interface StealthScriptOptions {
     deviceMemory?: number;
     colorDepth?: number;
     audioNoise?: number;
+    /** Sezioni da saltare se CloakBrowser gestisce già queste API a livello binario.
+     * Valori: 'canvas', 'webgl', 'hwconcurrency', 'plugins', 'audio', 'battery', 'webrtc' */
+    skipSections?: Set<string>;
 }
 
 const DEFAULT_OPTIONS: StealthScriptOptions = {
@@ -55,11 +58,16 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
     const deviceMemory = opts.deviceMemory ?? 8;
     const colorDepth = opts.colorDepth ?? 24;
     const audioNoise = opts.audioNoise ?? 0.000001;
+    const skip = opts.skipSections ?? new Set<string>();
+    // Serialize skip set so the browser IIFE can check at runtime
+    const skipJson = JSON.stringify([...skip]);
 
     return `(() => {
+    const _skip = new Set(${skipJson});
     // ─── 1. WebRTC Leak Prevention ───────────────────────────────────────────
     // Impedisce che RTCPeerConnection riveli l'IP reale bypassando il proxy.
     // Il flag Chrome --disable-webrtc copre il rendering, ma non il JS diretto.
+    if (!_skip.has('webrtc')) {
     const rtcKeys = [
         'RTCPeerConnection',
         'webkitRTCPeerConnection',
@@ -80,6 +88,7 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
             }
         }
     }
+    } // end webrtc skip
 
     // ─── 2. navigator.webdriver force-delete ─────────────────────────────────
     // Doppia protezione: il flag --disable-blink-features=AutomationControlled
@@ -104,7 +113,7 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
     // ─── 3. navigator.plugins normalization (PluginArray-compliant) ──────────
     // Playwright/headless ha plugins vuoti. Chrome reale ne ha almeno 3.
     // CRITICO: ritornare un oggetto che superi instanceof PluginArray check.
-    try {
+    if (!_skip.has('plugins')) try {
         const fakePluginData = [
             {
                 name: 'Chrome PDF Plugin',
@@ -309,7 +318,7 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
     // ─── 8. navigator.hardwareConcurrency normalization ──────────────────────
     // Headless/Playwright può avere valori anomali (1 o 2).
     // Chrome reale su desktop moderno: 4-16.
-    try {
+    if (!_skip.has('hwconcurrency')) try {
         Object.defineProperty(navigator, 'hardwareConcurrency', {
             get: () => ${hwConcurrency},
             configurable: true
@@ -319,7 +328,7 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
     // ─── 9. Battery API mock ─────────────────────────────────────────────────
     // navigator.getBattery() assente in headless è un segnale di automazione.
     // Effettuiamo un mock dinamico basato sul tempo per simulare scarica progressiva (es. laptop/mobile).
-    try {
+    if (!_skip.has('battery')) try {
         if (!navigator.getBattery || navigator.getBattery.toString().includes('native code')) {
             const mockStartTime = Date.now();
             const startLevel = 0.85 + (Math.floor(Date.now() % 10) / 100);
@@ -365,7 +374,7 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
     // ─── 11. AudioContext Fingerprint Spoofing ──────────────────────────────
     // getChannelData() e getFloatFrequencyData() sono usati per generare l'audio fingerprint.
     // Iniettiamo un rumore deterministico per mascherare l'impronta reale.
-    try {
+    if (!_skip.has('audio')) try {
         const audioContexts = window.AudioContext || window.webkitAudioContext;
         if (audioContexts) {
             const originalGetChannelData = AudioBuffer.prototype.getChannelData;

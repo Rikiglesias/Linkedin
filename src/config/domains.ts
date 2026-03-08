@@ -1,5 +1,5 @@
 import path from 'path';
-import { AccountProfileConfig, AppConfig } from './types';
+import { AccountProfileConfig } from './types';
 import {
     parseBoolEnv,
     parseCsvEnv,
@@ -11,7 +11,7 @@ import {
     resolvePathFromEnv,
 } from './env';
 
-export function buildRuntimeDomainConfig(accountProfiles: AccountProfileConfig[]): Partial<AppConfig> {
+export function buildRuntimeDomainConfig(accountProfiles: AccountProfileConfig[]) {
     return {
         timezone: process.env.TIMEZONE ?? 'Europe/Rome',
         headless: parseBoolEnv('HEADLESS', false),
@@ -68,7 +68,7 @@ export function buildRuntimeDomainConfig(accountProfiles: AccountProfileConfig[]
     };
 }
 
-export function buildLimitsAndRiskDomainConfig(): Partial<AppConfig> {
+export function buildLimitsAndRiskDomainConfig() {
     return {
         softInviteCap: Math.max(1, parseIntEnv('SOFT_INVITE_CAP', 25)),
         hardInviteCap: Math.max(1, parseIntEnv('HARD_INVITE_CAP', 35)),
@@ -196,7 +196,7 @@ export function buildLimitsAndRiskDomainConfig(): Partial<AppConfig> {
     };
 }
 
-export function buildSyncDomainConfig(): Partial<AppConfig> {
+export function buildSyncDomainConfig() {
     return {
         supabaseSyncEnabled: parseBoolEnv('SUPABASE_SYNC_ENABLED', true),
         supabaseUrl: parseStringEnv('SUPABASE_URL'),
@@ -219,7 +219,7 @@ export function buildSyncDomainConfig(): Partial<AppConfig> {
     };
 }
 
-export function buildAiDomainConfig(): Partial<AppConfig> {
+export function buildAiDomainConfig() {
     return {
         openaiApiKey: parseStringEnv('OPENAI_API_KEY'),
         openaiBaseUrl: parseStringEnv('OPENAI_BASE_URL', 'http://127.0.0.1:11434/v1'),
@@ -246,7 +246,7 @@ export function buildAiDomainConfig(): Partial<AppConfig> {
     };
 }
 
-export function buildCommsAndBusinessDomainConfig(): Partial<AppConfig> {
+export function buildCommsAndBusinessDomainConfig() {
     return {
         telegramBotToken: parseStringEnv('TELEGRAM_BOT_TOKEN'),
         telegramChatId: parseStringEnv('TELEGRAM_CHAT_ID'),
@@ -284,7 +284,7 @@ export function buildCommsAndBusinessDomainConfig(): Partial<AppConfig> {
     };
 }
 
-export function buildProxyDomainConfig(): Partial<AppConfig> {
+export function buildProxyDomainConfig() {
     return {
         proxyUrl: parseStringEnv('PROXY_URL'),
         proxyUsername: parseStringEnv('PROXY_USERNAME'),
@@ -327,7 +327,28 @@ export function buildProxyDomainConfig(): Partial<AppConfig> {
     };
 }
 
-export function buildBehaviorDomainConfig(): Partial<AppConfig> {
+export function buildVisionDomainConfig() {
+    return {
+        visionProvider: (() => {
+            const raw = parseStringEnv('VISION_PROVIDER', 'auto');
+            if (raw === 'openai' || raw === 'ollama') return raw;
+            return 'auto' as const;
+        })(),
+        visionModelOpenai: parseStringEnv('VISION_MODEL_OPENAI', 'gpt-4o'),
+        visionModelOllama: parseStringEnv('VISION_MODEL_OLLAMA', parseStringEnv('VISION_MODEL', 'llava-llama3:8b')),
+        visionBudgetMaxUsd: Math.max(0, parseFloatEnv('VISION_BUDGET_MAX_USD', 0)),
+        visionRedactScreenshots: parseBoolEnv('VISION_REDACT_SCREENSHOTS', false),
+        visionTemperature: Math.min(1, Math.max(0, parseFloatEnv('VISION_TEMPERATURE', 0.1))),
+        cloakBrowserEnabled: parseBoolEnv('CLOAKBROWSER_ENABLED', false),
+        stealthScriptsSkipIfCloak: (() => {
+            const list = parseCsvEnv('STEALTH_SCRIPTS_SKIP_IF_CLOAK');
+            return list.length > 0 ? list : ['canvas', 'webgl', 'hwconcurrency', 'plugins'];
+        })(),
+        warmupTwoSessionsPerDay: parseBoolEnv('WARMUP_TWO_SESSIONS_PER_DAY', false),
+    };
+}
+
+export function buildBehaviorDomainConfig() {
     return {
         withdrawInvitesEnabled: parseBoolEnv('WITHDRAW_INVITES_ENABLED', true),
         pendingInviteMaxDays: Math.max(1, parseIntEnv('PENDING_INVITE_MAX_DAYS', 30)),

@@ -717,7 +717,7 @@ app.get('/api/v1/automation/snapshot', async (_req, res) => {
             listOpenIncidents(),
             getOperationalObservabilitySnapshot(localDate),
         ]);
-        const risk = await evaluateRisk(riskInputs);
+        const risk = evaluateRisk(riskInputs);
         const isQuarantined = isQuarantinedRaw === 'true';
         const criticalIncidents = incidents.filter((incident) => incident.severity === 'CRITICAL');
 
@@ -940,7 +940,7 @@ app.get('/api/kpis', async (_req, res) => {
         const kpi = await getGlobalKPIData();
         const localDate = getLocalDateString();
         const riskInputs = await getRiskInputs(localDate, config.hardInviteCap);
-        const risk = await evaluateRisk(riskInputs);
+        const risk = evaluateRisk(riskInputs);
         const runtimePause = await getRuntimeFlag('automation_paused_until');
         const isQuarantined = await getRuntimeFlag('account_quarantine');
 
