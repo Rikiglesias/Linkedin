@@ -301,4 +301,5 @@ export interface AppConfig {
     cloakBrowserEnabled: boolean;
     stealthScriptsSkipIfCloak: string[];
     warmupTwoSessionsPerDay: boolean;
+    ollamaEndpoint: string;
 }

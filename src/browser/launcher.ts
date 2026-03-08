@@ -271,7 +271,6 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             let browser: BrowserContext;
             if (config.cloakBrowserEnabled) {
                 try {
-                    // eslint-disable-next-line @typescript-eslint/no-require-imports
                     const cloakbrowser = require('cloakbrowser') as { launch: typeof chromium.launchPersistentContext };
                     browser = await cloakbrowser.launch(sessionDir, contextOptions);
                     void logInfo('browser.cloakbrowser_launched', { sessionDir });

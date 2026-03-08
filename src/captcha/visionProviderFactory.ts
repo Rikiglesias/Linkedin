@@ -108,15 +108,17 @@ function configHash(cfg: VisionProviderConfig): string {
  * Valori di default conservativi: Ollama locale, nessun budget.
  */
 export function getVisionConfig(): VisionProviderConfig {
+    // Lazy-import to avoid circular dependency at module init
+    const { config } = require('../config') as typeof import('../config');
     return {
-        provider: (process.env.VISION_PROVIDER ?? 'auto') as 'auto' | 'openai' | 'ollama',
-        ollamaEndpoint: process.env.OLLAMA_ENDPOINT ?? 'http://127.0.0.1:11434',
-        ollamaModel: process.env.VISION_MODEL_OLLAMA ?? process.env.VISION_MODEL ?? 'llava-llama3:8b',
-        openaiApiKey: process.env.OPENAI_API_KEY ?? '',
-        openaiModel: process.env.VISION_MODEL_OPENAI ?? 'gpt-4o',
-        temperature: parseFloat(process.env.VISION_TEMPERATURE ?? '0.1') || 0.1,
-        budgetMaxUsd: parseFloat(process.env.VISION_BUDGET_MAX_USD ?? '0') || 0,
-        redactScreenshots: process.env.VISION_REDACT_SCREENSHOTS === 'true',
+        provider: config.visionProvider,
+        ollamaEndpoint: config.ollamaEndpoint,
+        ollamaModel: config.visionModelOllama,
+        openaiApiKey: config.openaiApiKey,
+        openaiModel: config.visionModelOpenai,
+        temperature: config.visionTemperature,
+        budgetMaxUsd: config.visionBudgetMaxUsd,
+        redactScreenshots: config.visionRedactScreenshots,
     };
 }
 

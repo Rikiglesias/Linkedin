@@ -8,9 +8,9 @@ import { visionClick, OllamaDownError } from '../salesnav/visionNavigator';
 import { config } from '../config';
 import { WorkerExecutionResult, workerResult } from './result';
 
-/** Vision fallback is available when an Ollama endpoint is configured. */
+/** Vision fallback is available when a non-default Ollama endpoint is configured. */
 function isVisionAvailable(): boolean {
-    return Boolean(process.env.OLLAMA_ENDPOINT);
+    return config.ollamaEndpoint !== '';
 }
 
 export interface HygieneJobPayload {

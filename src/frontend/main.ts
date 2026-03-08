@@ -288,10 +288,8 @@ async function refreshDashboard(): Promise<void> {
         renderKpis(snapshot.kpis);
         renderKpiComparison(snapshot.trend);
         renderInvitesChart(snapshot.trend);
-        renderRiskGauge(
-            snapshot.kpis.estimatedRiskScore ?? 0,
-            100 - (snapshot.kpis.estimatedRiskScore ?? 0),
-        );
+        const riskScore = snapshot.kpis.risk?.score ?? 0;
+        renderRiskGauge(riskScore, 100 - riskScore);
         renderPredictiveRisk(snapshot.predictive);
         renderOperationalSlo(snapshot.observability.slo);
         renderSelectorCacheKpi(snapshot.observability.selectorCacheKpi);

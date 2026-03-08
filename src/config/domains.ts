@@ -128,18 +128,18 @@ export function buildLimitsAndRiskDomainConfig() {
         cooldownWarnMinutes: Math.max(10, parseIntEnv('COOLDOWN_WARN_MINUTES', 2880)),
         cooldownHighMinutes: Math.max(10, parseIntEnv('COOLDOWN_HIGH_MINUTES', 4320)),
         noBurstEnabled: parseBoolEnv('NO_BURST_ENABLED', true),
-        noBurstMinDelaySec: Math.max(0, parseIntEnv('NO_BURST_MIN_DELAY_SEC', 8)),
-        noBurstMaxDelaySec: Math.max(0, parseIntEnv('NO_BURST_MAX_DELAY_SEC', 25)),
+        noBurstMinDelaySec: Math.max(0, parseIntEnv('NO_BURST_MIN_DELAY_SEC', 12)),
+        noBurstMaxDelaySec: Math.max(0, parseIntEnv('NO_BURST_MAX_DELAY_SEC', 45)),
         noBurstLongBreakEvery: Math.max(0, parseIntEnv('NO_BURST_LONG_BREAK_EVERY', 7)),
-        noBurstLongBreakMinSec: Math.max(0, parseIntEnv('NO_BURST_LONG_BREAK_MIN_SEC', 120)),
-        noBurstLongBreakMaxSec: Math.max(0, parseIntEnv('NO_BURST_LONG_BREAK_MAX_SEC', 360)),
+        noBurstLongBreakMinSec: Math.max(0, parseIntEnv('NO_BURST_LONG_BREAK_MIN_SEC', 180)),
+        noBurstLongBreakMaxSec: Math.max(0, parseIntEnv('NO_BURST_LONG_BREAK_MAX_SEC', 600)),
         autoSiteCheckEnabled: parseBoolEnv('AUTO_SITE_CHECK_ENABLED', true),
-        autoSiteCheckLimit: Math.max(1, parseIntEnv('AUTO_SITE_CHECK_LIMIT', 20)),
+        autoSiteCheckLimit: Math.max(1, parseIntEnv('AUTO_SITE_CHECK_LIMIT', 5)),
         autoSiteCheckFix: parseBoolEnv('AUTO_SITE_CHECK_FIX', true),
         autoSiteCheckIntervalHours: Math.max(1, parseIntEnv('AUTO_SITE_CHECK_INTERVAL_HOURS', 24)),
         siteCheckStaleDays: Math.max(0, parseIntEnv('SITE_CHECK_STALE_DAYS', 2)),
         postRunStateSyncEnabled: parseBoolEnv('POST_RUN_STATE_SYNC_ENABLED', true),
-        postRunStateSyncLimit: Math.max(1, parseIntEnv('POST_RUN_STATE_SYNC_LIMIT', 8)),
+        postRunStateSyncLimit: Math.max(1, parseIntEnv('POST_RUN_STATE_SYNC_LIMIT', 3)),
         postRunStateSyncFix: parseBoolEnv('POST_RUN_STATE_SYNC_FIX', true),
         selectorCanaryEnabled: parseBoolEnv('SELECTOR_CANARY_ENABLED', true),
         selectorLearningEnabled: parseBoolEnv('SELECTOR_LEARNING_ENABLED', true),
@@ -329,12 +329,12 @@ export function buildProxyDomainConfig() {
 
 export function buildVisionDomainConfig() {
     return {
-        visionProvider: (() => {
+        visionProvider: ((): 'auto' | 'openai' | 'ollama' => {
             const raw = parseStringEnv('VISION_PROVIDER', 'auto');
             if (raw === 'openai' || raw === 'ollama') return raw;
-            return 'auto' as const;
+            return 'auto';
         })(),
-        visionModelOpenai: parseStringEnv('VISION_MODEL_OPENAI', 'gpt-4o'),
+        visionModelOpenai: parseStringEnv('VISION_MODEL_OPENAI', 'gpt-5.4'),
         visionModelOllama: parseStringEnv('VISION_MODEL_OLLAMA', parseStringEnv('VISION_MODEL', 'llava-llama3:8b')),
         visionBudgetMaxUsd: Math.max(0, parseFloatEnv('VISION_BUDGET_MAX_USD', 0)),
         visionRedactScreenshots: parseBoolEnv('VISION_REDACT_SCREENSHOTS', false),
@@ -345,6 +345,7 @@ export function buildVisionDomainConfig() {
             return list.length > 0 ? list : ['canvas', 'webgl', 'hwconcurrency', 'plugins'];
         })(),
         warmupTwoSessionsPerDay: parseBoolEnv('WARMUP_TWO_SESSIONS_PER_DAY', false),
+        ollamaEndpoint: parseStringEnv('OLLAMA_ENDPOINT', 'http://127.0.0.1:11434'),
     };
 }
 

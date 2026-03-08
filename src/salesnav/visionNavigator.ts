@@ -121,10 +121,11 @@ export class VisionParseError extends Error {
 
 function classifyVisionError(error: unknown): Error {
     const message = error instanceof Error ? error.message : String(error);
-    const provider = process.env.VISION_PROVIDER ?? 'auto';
-    const hint = provider === 'openai'
+    // Lazy-import to avoid circular dependency
+    const { config: appConfig } = require('../config') as typeof import('../config');
+    const hint = appConfig.visionProvider === 'openai'
         ? 'Verifica che OPENAI_API_KEY sia valida e che il servizio sia raggiungibile.'
-        : `Verifica che Ollama sia attivo su ${process.env.OLLAMA_ENDPOINT ?? 'http://127.0.0.1:11434'} e che il modello ${process.env.VISION_MODEL ?? 'llava'} sia disponibile.`;
+        : `Verifica che Ollama sia attivo su ${appConfig.ollamaEndpoint} e che il modello ${appConfig.visionModelOllama} sia disponibile.`;
 
     if (/ECONNREFUSED|ENOTFOUND|ETIMEDOUT|circuit.?open|fetch failed|socket hang up/i.test(message)) {
         return new OllamaDownError(`${message}. ${hint}`);
