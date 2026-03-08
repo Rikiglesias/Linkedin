@@ -27,7 +27,8 @@ export async function getDailyStat(
         | 'challenges_count'
         | 'selector_failures'
         | 'run_errors'
-        | 'follow_ups_sent',
+        | 'follow_ups_sent'
+        | 'profile_views',
 ): Promise<number> {
     const db = await getDatabase();
     const row = await db.get<Record<string, number>>(`SELECT ${field} FROM daily_stats WHERE date = ?`, [dateString]);
@@ -629,7 +630,8 @@ export async function incrementDailyStat(
         | 'challenges_count'
         | 'selector_failures'
         | 'run_errors'
-        | 'follow_ups_sent',
+        | 'follow_ups_sent'
+        | 'profile_views',
     amount: number = 1,
 ): Promise<void> {
     const db = await getDatabase();

@@ -1,4 +1,5 @@
 import { config, getLocalDateString, getWeekStartDate, getWorkingHourIntensity, isGreenModeWindow } from '../config';
+import { getSessionBudgetFactor } from './sessionWarmer';
 import { countTodayPosts } from '../workers/postCreatorWorker';
 import { pickAccountIdForLead, getRuntimeAccountProfiles } from '../accountManager';
 import {
@@ -431,6 +432,13 @@ export async function scheduleJobs(
     if (isGreenModeWindow()) {
         inviteBudget = applyHourIntensityToBudget(inviteBudget, config.greenModeBudgetFactor);
         messageBudget = applyHourIntensityToBudget(messageBudget, config.greenModeBudgetFactor);
+    }
+
+    // Two-session mode: halve budget per session, zero during gap
+    const sessionFactor = getSessionBudgetFactor();
+    if (sessionFactor < 1.0) {
+        inviteBudget = applyHourIntensityToBudget(inviteBudget, sessionFactor);
+        messageBudget = applyHourIntensityToBudget(messageBudget, sessionFactor);
     }
 
     // WARMUP BYPASS: nessun invio email/connessioni

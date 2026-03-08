@@ -13,6 +13,8 @@ import { logError, logInfo, logWarn } from '../telemetry/logger';
 import { humanDelay, simulateHumanReading, humanMouseMove } from '../browser/humanBehavior';
 import { getDatabase } from '../db';
 import { ChallengeDetectedError } from './errors';
+import { config, getLocalDateString } from '../config';
+import { getDailyStat, incrementDailyStat } from '../core/repositories/stats';
 
 export interface InteractionJobPayload {
     leadId: number;
@@ -133,6 +135,16 @@ export async function processInteractionJob(
         return workerResult(0, [{ leadId, message: 'Lead URL non trovato' }]);
     }
 
+    // Enforce profile view daily cap
+    if (actionType === 'VIEW_PROFILE') {
+        const localDate = getLocalDateString();
+        const dailyViews = await getDailyStat(localDate, 'profile_views');
+        if (dailyViews >= config.profileViewDailyCap) {
+            await logWarn('interaction.profile_view_cap_reached', { dailyViews, cap: config.profileViewDailyCap });
+            return workerResult(0, [{ leadId, message: `Profile view daily cap raggiunto (${dailyViews}/${config.profileViewDailyCap})` }]);
+        }
+    }
+
     if (context.dryRun) {
         await logInfo('interaction.dry_run', { leadId, actionType, linkedinUrl });
         return workerResult(1);
@@ -144,6 +156,7 @@ export async function processInteractionJob(
         switch (actionType) {
             case 'VIEW_PROFILE':
                 await performViewProfile(page, linkedinUrl);
+                await incrementDailyStat(getLocalDateString(), 'profile_views');
                 break;
             case 'LIKE_POST':
                 await performLikePost(page, linkedinUrl);

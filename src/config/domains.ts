@@ -281,6 +281,7 @@ export function buildCommsAndBusinessDomainConfig() {
         followUpDelayEscalationFactor: Math.max(0, parseFloatEnv('FOLLOW_UP_DELAY_ESCALATION_FACTOR', 0.35)),
         followUpMax: Math.max(1, parseIntEnv('FOLLOW_UP_MAX', 1)),
         followUpDailyCap: Math.max(1, parseIntEnv('FOLLOW_UP_DAILY_CAP', 10)),
+        profileViewDailyCap: Math.max(1, parseIntEnv('PROFILE_VIEW_DAILY_CAP', 80)),
     };
 }
 

@@ -203,6 +203,7 @@ export interface AppConfig {
     followUpDelayEscalationFactor: number;
     followUpMax: number;
     followUpDailyCap: number;
+    profileViewDailyCap: number;
     proxyUrl: string;
     proxyUsername: string;
     proxyPassword: string;

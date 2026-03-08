@@ -1,0 +1,1 @@
+ALTER TABLE daily_stats ADD COLUMN profile_views INTEGER NOT NULL DEFAULT 0;
