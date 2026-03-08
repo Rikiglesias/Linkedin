@@ -1,5 +1,6 @@
 import { getAccountProfileById } from '../accountManager';
-import { checkLogin, closeBrowser, detectChallenge, launchBrowser } from '../browser';
+import { checkLogin, closeBrowser, detectChallenge, isLoggedIn, launchBrowser } from '../browser';
+import { blockUserInput } from '../browser/humanBehavior';
 import { handleChallengeDetected } from '../risk/incidentManager';
 import {
     getLeadByLinkedinUrl,
@@ -22,6 +23,8 @@ export interface SalesNavigatorSyncOptions {
     maxLeadsPerList: number;
     dryRun: boolean;
     accountId?: string;
+    interactive?: boolean;
+    noProxy?: boolean;
 }
 
 export interface SalesNavigatorSyncListReport {
@@ -112,15 +115,47 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
         lists: [],
     };
 
-    const session = await launchBrowser({
-        sessionDir: account.sessionDir,
-        proxy: account.proxy,
-    });
+    const interactive = options.interactive === true;
+    const noProxy = options.noProxy === true;
+    const session = await launchBrowser(
+        interactive
+            ? {
+                  headless: false,
+                  sessionDir: account.sessionDir,
+                  proxy: noProxy ? undefined : account.proxy,
+                  bypassProxy: noProxy,
+                  forceDesktop: true,
+              }
+            : { sessionDir: account.sessionDir, proxy: account.proxy },
+    );
 
     try {
-        const loggedIn = await checkLogin(session.page);
+        let loggedIn = await checkLogin(session.page);
+        if (!loggedIn && interactive) {
+            const currentUrl = session.page.url().toLowerCase();
+            if (!currentUrl.includes('/login')) {
+                await session.page.goto('https://www.linkedin.com/login', { waitUntil: 'domcontentloaded' }).catch(() => null);
+            }
+            console.log('\n──────────────────────────────────────────────────────────────');
+            console.log('  SalesNav sync pronto. Effettua il LOGIN nel browser aperto.');
+            console.log('  Quando sei loggato, premi INVIO qui per continuare.');
+            console.log('──────────────────────────────────────────────────────────────\n');
+            // Attendi login interattivo (max 5 min)
+            const deadline = Date.now() + 300_000;
+            while (Date.now() < deadline) {
+                if (await isLoggedIn(session.page)) {
+                    loggedIn = await checkLogin(session.page);
+                    if (loggedIn) break;
+                }
+                await session.page.waitForTimeout(2500);
+            }
+        }
         if (!loggedIn) {
             throw new Error(`Sales Navigator sync: sessione non autenticata (account=${account.id}).`);
+        }
+        if (interactive) {
+            await blockUserInput(session.page);
+            console.log('[OK] Login rilevato. Input bloccato. Avvio sync lista...');
         }
 
         let targetLists: SalesNavSavedList[] = [];

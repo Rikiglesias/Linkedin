@@ -1,17 +1,11 @@
 import fs from 'fs';
 import path from 'path';
-import { execFileSync } from 'child_process';
 
 function chmodSafe(targetPath: string, mode: number): void {
     if (process.platform === 'win32') {
-        try {
-            const username = process.env.USERNAME ?? process.env.USER ?? '';
-            if (username) {
-                execFileSync('icacls', [targetPath, '/inheritance:r', '/grant:r', `${username}:F`], { stdio: 'ignore' });
-            }
-        } catch {
-            // Best effort on Windows
-        }
+        // On Windows, only grant permissions — never strip inheritance.
+        // Stripping inheritance (/inheritance:r) combined with a wrong username
+        // leaves files with ZERO ACLs, making them unreadable.
         return;
     }
     try {

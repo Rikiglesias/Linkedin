@@ -8,8 +8,9 @@ import {
     applyCloudAccountUpdates,
     applyCloudLeadUpdates,
 } from '../core/repositories';
+import { getDatabase } from '../db';
 import { logInfo, logWarn } from '../telemetry/logger';
-import { fetchCloudCampaignConfigs, fetchCloudAccountsUpdates, fetchCloudLeadsUpdates } from './supabaseDataClient';
+import { fetchCloudCampaignConfigs, fetchCloudAccountsUpdates, fetchCloudLeadsUpdates, syncSalesNavMembersToCloud } from './supabaseDataClient';
 
 const CONTROL_PLANE_LAST_RUN_KEY = 'control_plane.campaigns.last_run_at';
 const CONTROL_PLANE_LAST_HASH_KEY = 'control_plane.campaigns.last_hash';
@@ -119,6 +120,19 @@ async function syncLeadsDown() {
     }
 }
 
+async function syncSalesNavUp() {
+    try {
+        const db = await getDatabase();
+        const synced = await syncSalesNavMembersToCloud(db);
+        if (synced > 0) {
+            await logInfo('control_plane.salesnav.upsync', { count: synced });
+        }
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        await logWarn('control_plane.salesnav.upsync.error', { error: message });
+    }
+}
+
 export async function runControlPlaneSync(options: { force?: boolean } = {}): Promise<ControlPlaneSyncReport> {
     const enabled = config.supabaseControlPlaneEnabled;
     const configured = isControlPlaneConfigured();
@@ -177,7 +191,7 @@ export async function runControlPlaneSync(options: { force?: boolean } = {}): Pr
             reason = force ? 'forced_sync' : 'synced';
         }
 
-        await Promise.all([syncAccountsDown(), syncLeadsDown()]);
+        await Promise.allSettled([syncAccountsDown(), syncLeadsDown(), syncSalesNavUp()]);
 
         await setRuntimeFlag(CONTROL_PLANE_LAST_RUN_KEY, nowIso);
         await setRuntimeFlag(CONTROL_PLANE_LAST_HASH_KEY, nextHash);

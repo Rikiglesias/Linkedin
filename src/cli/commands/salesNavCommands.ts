@@ -10,10 +10,10 @@ import {
     closeBrowser as closeBrowserSession,
     checkLogin,
     isLoggedIn,
-    enableVisualCursorOverlay,
     humanDelay,
     detectChallenge,
 } from '../../browser';
+import { blockUserInput } from '../../browser/humanBehavior';
 import {
     getLeadById,
     getLeadsWithSalesNavigatorUrls,
@@ -26,15 +26,13 @@ import {
 import { reconcileLeadStatus } from '../../core/leadStateService';
 import { runSalesNavigatorListSync } from '../../core/salesNavigatorSync';
 import {
-    extractSavedSearches,
     runSalesNavBulkSave,
-    SEARCHES_URL,
-    type SavedSearchDescriptor,
 } from '../../salesnav/bulkSaveOrchestrator';
 import { addLeadToSalesNavList, createSalesNavList } from '../../salesnav/listActions';
-import { scrapeSavedSearchAndSaveToList, scrapeAllSavedSearchesAndSaveToList } from '../../salesnav/searchExtractor';
+// searchExtractor.ts rimosso — logica legacy sostituita da bulkSaveOrchestrator
 import { isProfileUrl, isSalesNavigatorUrl, normalizeLinkedInUrl } from '../../linkedinUrl';
 import { getOptionValue, hasOption, parseIntStrict, getPositionalArgs } from '../cliParser';
+import { sendTelegramAlert } from '../../telemetry/alerts';
 
 // ─── Tipi locali ──────────────────────────────────────────────────────────────
 
@@ -168,30 +166,6 @@ async function readLineFromStdin(prompt: string): Promise<string> {
     });
 }
 
-async function askUserToChooseSearch(searches: SavedSearchDescriptor[]): Promise<SavedSearchDescriptor> {
-    console.log('\n────────────────────────────────────────────────────────────');
-    console.log('  RICERCHE SALVATE RILEVATE');
-    console.log('────────────────────────────────────────────────────────────');
-    searches.forEach((s, i) => {
-        console.log(`  ${i + 1}. ${s.name}`);
-    });
-    console.log('────────────────────────────────────────────────────────────\n');
-
-    while (true) {
-        const input = await readLineFromStdin(`Scegli ricerca (1-${searches.length}): `);
-        const num = parseInt(input, 10);
-        if (Number.isFinite(num) && num >= 1 && num <= searches.length) {
-            return searches[num - 1];
-        }
-        // Accept search by name
-        const byName = searches.find((s) => s.name.toLowerCase().includes(input.toLowerCase()));
-        if (byName) {
-            return byName;
-        }
-        console.log(`  Scelta non valida. Inserisci un numero tra 1 e ${searches.length} oppure parte del nome.`);
-    }
-}
-
 async function askUserToChooseList(): Promise<string> {
     const lists = await listSalesNavLists(50);
 
@@ -269,13 +243,59 @@ async function waitForManualLinkedInLogin(page: Page, timeoutSeconds: number = 3
     throw new Error(`Sessione LinkedIn non autenticata entro ${Math.floor(timeoutMs / 1000)} secondi.`);
 }
 
+// ─── Sessione condivisa anti-detection ────────────────────────────────────────
+
+/**
+ * Helper condiviso: lancia browser con stack anti-detection completo,
+ * gestisce login manuale, blocca input utente.
+ * Usato da tutti i comandi SalesNav che aprono il browser.
+ */
+async function ensureSalesNavSession(args: string[]) {
+    const accountId =
+        getOptionValue(args, '--account') ?? getNpmConfigOptionValue('account') ?? config.salesNavSyncAccountId;
+    const noProxy = hasOption(args, '--no-proxy');
+    const account = getAccountProfileById(accountId || undefined);
+
+    const session = await launchBrowser({
+        headless: false,
+        sessionDir: account.sessionDir,
+        proxy: noProxy ? undefined : account.proxy,
+        bypassProxy: noProxy,
+        forceDesktop: true,
+    });
+
+    // Auto-detect login
+    const alreadyLoggedIn = await checkLogin(session.page);
+    if (alreadyLoggedIn) {
+        console.log('[OK] Sessione LinkedIn gia\' attiva.');
+    } else {
+        const currentUrl = session.page.url().toLowerCase();
+        if (!currentUrl.includes('/login')) {
+            await session.page.goto('https://www.linkedin.com/login', { waitUntil: 'domcontentloaded' }).catch(() => null);
+        }
+        console.log('\n──────────────────────────────────────────────────────────────');
+        console.log('  SalesNav pronto. Completa il LOGIN nel browser.');
+        console.log('  Premi INVIO qui quando sei loggato.');
+        console.log('──────────────────────────────────────────────────────────────\n');
+        await waitForManualLinkedInLogin(session.page);
+    }
+
+    // Blocca SEMPRE input utente dopo login
+    await blockUserInput(session.page);
+    console.log('[OK] Input bloccato. Avvio automazione...');
+
+    return { session, account };
+}
+
 // ─── Command handlers ─────────────────────────────────────────────────────────
 
 export async function runSalesNavSyncCommand(args: string[]): Promise<void> {
     const positional = getPositionalArgs(args);
     const dryRun = hasOption(args, '--dry-run') || positional.includes('dry-run') || positional.includes('dry');
+    const interactive = hasOption(args, '--interactive') || hasOption(args, '-i');
     const listName = getOptionValue(args, '--list') ?? positional[0] ?? config.salesNavSyncListName;
-    const listUrl = getOptionValue(args, '--url') ?? positional[1] ?? config.salesNavSyncListUrl;
+    const positionalUrl = positional[1] && /^https?:\/\//i.test(positional[1]) ? positional[1] : undefined;
+    const listUrl = getOptionValue(args, '--url') ?? positionalUrl ?? config.salesNavSyncListUrl;
     const maxPagesRaw = getOptionValue(args, '--max-pages');
     const maxPages = maxPagesRaw
         ? Math.max(1, parseIntStrict(maxPagesRaw, '--max-pages'))
@@ -283,6 +303,7 @@ export async function runSalesNavSyncCommand(args: string[]): Promise<void> {
     const limitRaw = getOptionValue(args, '--limit');
     const maxLeadsPerList = limitRaw ? Math.max(1, parseIntStrict(limitRaw, '--limit')) : config.salesNavSyncLimit;
     const accountId = getOptionValue(args, '--account') ?? config.salesNavSyncAccountId;
+    const noProxy = hasOption(args, '--no-proxy');
 
     const report = await runSalesNavigatorListSync({
         listName: listName?.trim() ? listName : null,
@@ -291,6 +312,8 @@ export async function runSalesNavSyncCommand(args: string[]): Promise<void> {
         maxLeadsPerList,
         dryRun,
         accountId: accountId || undefined,
+        interactive,
+        noProxy,
     });
     console.log(JSON.stringify(report, null, 2));
 }
@@ -430,13 +453,8 @@ export async function runSalesNavResolveCommand(args: string[]): Promise<void> {
         return;
     }
 
-    const session = await launchBrowser({ headless: config.headless });
+    const { session } = await ensureSalesNavSession(args);
     try {
-        const loggedIn = await checkLogin(session.page);
-        if (!loggedIn) {
-            throw new Error('Sessione LinkedIn non autenticata. Esegui prima: .\\bot.ps1 login');
-        }
-
         for (const lead of leads) {
             report.scanned += 1;
             try {
@@ -528,155 +546,36 @@ export async function runSalesNavResolveCommand(args: string[]): Promise<void> {
     console.log(JSON.stringify(report, null, 2));
 }
 
-export async function runSalesNavExtractSearchCommand(args: string[]): Promise<void> {
-    const positional = getPositionalArgs(args);
-    const searchUrl = getOptionValue(args, '--url') ?? positional[0];
-    const targetListName = getOptionValue(args, '--list') ?? positional[1];
-    const maxPagesRaw = getOptionValue(args, '--max-pages');
-    const maxPages = maxPagesRaw ? Math.max(1, parseIntStrict(maxPagesRaw, '--max-pages')) : 5;
-
-    if (!searchUrl) {
-        throw new Error('Specificare l\'URL della ricerca salvata. Esempio: salesnav-extract-search <searchUrl> <listName>');
-    }
-    if (!targetListName) {
-        throw new Error('Specificare il nome della lista di destinazione. Esempio: salesnav-extract-search <searchUrl> <listName>');
-    }
-
-    const session = await launchBrowser({ headless: config.headless });
-    try {
-        const loggedIn = await checkLogin(session.page);
-        if (!loggedIn) {
-            throw new Error('Sessione LinkedIn non autenticata. Esegui prima: .\\bot.ps1 login');
-        }
-
-        const report = await scrapeSavedSearchAndSaveToList(session.page, searchUrl, targetListName, maxPages);
-        console.log(JSON.stringify({ ok: true, report }, null, 2));
-    } catch (error) {
-        console.error('Errore durante l\'estrazione dalla ricerca salvata:', error);
-        throw error;
-    } finally {
-        await closeBrowserSession(session);
-    }
-}
-
-/**
- * salesnav-extract-first-search
- *
- * Apre il browser (visibile), aspetta il login dell'utente, naviga alle
- * ricerche salvate, clicca "Visualizza" sulla prima ricerca trovata e
- * poi per ogni pagina: Seleziona tutto → Salva nell'elenco (lista recente
- * o quella indicata con --list).
- *
- * Opzioni:
- *   --list <nome>       Nome elenco di destinazione (default: primo elenco recente nel dropdown)
- *   --max-pages <n>     Numero massimo di pagine (default: 10)
- *   --account <id>      Account da usare
- */
-export async function runSalesNavExtractFirstSearchCommand(args: string[]): Promise<void> {
-    const targetListName = getOptionValue(args, '--list') ?? undefined;
-    const maxPagesRaw = getOptionValue(args, '--max-pages');
-    const visualCursor = hasOption(args, '--visual-cursor') || hasNpmConfigFlag('visual-cursor');
-    const maxPages = maxPagesRaw ? Math.max(1, parseIntStrict(maxPagesRaw, '--max-pages')) : 10;
-
-    // Forza headless=false e bypassProxy=true: login manuale senza proxy intermedi
-    const session = await launchBrowser({ headless: false, bypassProxy: true });
-    try {
-        // Naviga direttamente al login così il flusso manuale non dipende da redirect.
-        await session.page.goto('https://www.linkedin.com/login', { waitUntil: 'domcontentloaded' });
-
-        console.log('\n──────────────────────────────────────────────────────────────');
-        console.log('  Bot pronto. Effettua il LOGIN su LinkedIn nel browser aperto.');
-        console.log('  Quando sei loggato, premi INVIO qui per continuare.');
-        console.log('  Se il terminale non e\' interattivo, il bot attendera\' il login automaticamente.');
-        console.log('──────────────────────────────────────────────────────────────\n');
-
-        await waitForManualLinkedInLogin(session.page);
-        if (visualCursor) {
-            await enableVisualCursorOverlay(session.page);
-        }
-
-        console.log('[OK] Login rilevato. Avvio elaborazione di tutte le ricerche salvate...');
-        const report = await scrapeAllSavedSearchesAndSaveToList(session.page, maxPages, targetListName);
-        console.log(JSON.stringify({ ok: true, report }, null, 2));
-    } catch (error) {
-        console.error('Errore durante l\'estrazione dalla prima ricerca salvata:', error);
-        throw error;
-    } finally {
-        await closeBrowserSession(session);
-    }
-}
-
 export async function runSalesNavBulkSaveCommand(args: string[]): Promise<void> {
     const positional = getPositionalArgs(args);
 
-    // --list and --search-name are optional: if missing, the user picks interactively
-    // after login when the browser is open and searches are visible.
     let targetListName = getOptionValue(args, '--list') ?? getNpmConfigOptionValue('list') ?? positional[0] ?? null;
     let searchName = getOptionValue(args, '--search-name') ?? getNpmConfigOptionValue('search-name') ?? null;
 
     const maxPagesRaw = getOptionValue(args, '--max-pages') ?? getNpmConfigOptionValue('max-pages');
     const maxSearchesRaw = getOptionValue(args, '--max-searches') ?? getNpmConfigOptionValue('max-searches');
     const sessionLimitRaw = getOptionValue(args, '--session-limit') ?? getNpmConfigOptionValue('session-limit');
-    const visualCursor = hasOption(args, '--visual-cursor') || hasNpmConfigFlag('visual-cursor');
     const resume = hasOption(args, '--resume') || hasNpmConfigFlag('resume');
     const dryRun = hasOption(args, '--dry-run') || hasNpmConfigFlag('dry-run');
-    const accountId =
-        getOptionValue(args, '--account') ?? getNpmConfigOptionValue('account') ?? config.salesNavSyncAccountId;
 
     const maxPages = maxPagesRaw ? Math.max(1, parseIntStrict(maxPagesRaw, '--max-pages')) : 10;
     const maxSearches = maxSearchesRaw ? Math.max(1, parseIntStrict(maxSearchesRaw, '--max-searches')) : null;
     const sessionLimit = sessionLimitRaw ? Math.max(1, parseIntStrict(sessionLimitRaw, '--session-limit')) : null;
 
-    const account = getAccountProfileById(accountId || undefined);
-    const session = await launchBrowser({
-        headless: false,
-        sessionDir: account.sessionDir,
-        bypassProxy: true,
-    });
+    const { session, account } = await ensureSalesNavSession(args);
 
     try {
-        await session.page.goto('https://www.linkedin.com/login', { waitUntil: 'domcontentloaded' });
-
-        console.log('\n──────────────────────────────────────────────────────────────');
-        console.log('  SalesNav bulk save pronto.');
-        console.log('  Effettua il LOGIN nel browser aperto o verifica che la sessione sia attiva.');
-        console.log('  Quando sei pronto, premi INVIO qui per continuare.');
-        console.log('  Se il terminale non e\' interattivo, il bot attendera\' il login automaticamente.');
-        console.log('──────────────────────────────────────────────────────────────\n');
-
-        await waitForManualLinkedInLogin(session.page);
-        if (visualCursor) {
-            await enableVisualCursorOverlay(session.page);
-        }
-
-        // Interactive search selection: navigate to saved searches, show the list,
-        // ask the user to pick. Runs only when --search-name was not passed.
         if (!searchName || !searchName.trim()) {
-            await session.page.goto(SEARCHES_URL, { waitUntil: 'domcontentloaded' });
-            await humanDelay(session.page, 1500, 2800);
-            const discovered = await extractSavedSearches(session.page);
-            if (discovered.length === 0) {
-                throw new Error('Nessuna ricerca salvata trovata in Sales Navigator. Verifica di essere nella sezione corretta.');
-            }
-            if (process.stdin.isTTY) {
-                const chosen = await askUserToChooseSearch(discovered);
-                searchName = chosen.name;
-                console.log(`\n[OK] Ricerca selezionata: "${searchName}"\n`);
-            } else {
-                // Non-interactive: use the first search.
-                searchName = discovered[0].name;
-                console.log(`[INFO] Terminale non interattivo: uso prima ricerca trovata: "${searchName}"`);
-            }
+            searchName = null;
+            console.log('[INFO] Nessuna --search-name specificata: verranno processate tutte le ricerche salvate.');
         }
 
-        // Interactive list selection: show DB lists + ask the user.
-        // Runs only when --list was not passed.
         if (!targetListName || !targetListName.trim()) {
             if (process.stdin.isTTY) {
                 targetListName = await askUserToChooseList();
                 console.log(`\n[OK] Elenco selezionato: "${targetListName}"\n`);
             } else {
-                throw new Error('Lista non specificata. Usa --list "NOME LISTA" oppure esegui in modalità interattiva.');
+                throw new Error('Lista non specificata. Usa --list "NOME LISTA".');
             }
         }
 
@@ -685,7 +584,7 @@ export async function runSalesNavBulkSaveCommand(args: string[]): Promise<void> 
             targetListName: targetListName.trim(),
             maxPages,
             maxSearches,
-            searchName: searchName.trim() || null,
+            searchName: searchName?.trim() || null,
             resume,
             dryRun,
             sessionLimit,
@@ -693,12 +592,68 @@ export async function runSalesNavBulkSaveCommand(args: string[]): Promise<void> 
 
         console.log(JSON.stringify(report, null, 2));
 
-        if (process.stdin.isTTY) {
-            console.log('\nRun terminato. Premi INVIO per chiudere il browser.');
-            await waitForEnter();
-        }
+        const statusIcon = report.status === 'SUCCESS' ? '✅' : report.status === 'PAUSED' ? '⏸️' : '❌';
+        const telegramLines = [
+            `<b>${statusIcon} SalesNav Bulk Save — ${report.status}</b>`,
+            ``,
+            `📋 Lista: <code>${report.targetListName}</code>`,
+            `🔍 Ricerche: ${report.searchesProcessed}/${report.searchesPlanned}`,
+            `📄 Pagine processate: ${report.pagesProcessed}`,
+            `👤 Lead salvati: ${report.totalLeadsSaved}`,
+            report.pagesSkippedAllSaved > 0
+                ? `⏭️ Pagine skippate (già salvate): ${report.pagesSkippedAllSaved}`
+                : '',
+            report.challengeDetected ? `\n⚠️ Challenge LinkedIn rilevato` : '',
+            report.lastError ? `\n❗ Ultimo errore: ${report.lastError}` : '',
+        ]
+            .filter(Boolean)
+            .join('\n');
+
+        const severity = report.status === 'SUCCESS' ? 'info' : report.status === 'PAUSED' ? 'warn' : 'critical';
+        await sendTelegramAlert(telegramLines, undefined, severity).catch(() => {});
+
+        const closeDelaySec = 3 + Math.floor(Math.random() * 3);
+        console.log(`\nRun terminato. Chiusura browser tra ${closeDelaySec}s...`);
+        await new Promise(resolve => setTimeout(resolve, closeDelaySec * 1000));
     } finally {
         await closeBrowserSession(session);
+    }
+}
+
+// ─── Comando unificato ────────────────────────────────────────────────────────
+
+const SALESNAV_SUBCOMMANDS: Record<string, (args: string[]) => Promise<void>> = {
+    save: runSalesNavBulkSaveCommand,
+    sync: runSalesNavSyncCommand,
+    resolve: runSalesNavResolveCommand,
+    lists: runSalesNavListsCommand,
+    create: runSalesNavCreateListCommand,
+    add: runSalesNavAddLeadCommand,
+};
+
+/**
+ * Comando unificato `salesnav`. Smista in base al primo argomento posizionale:
+ *   salesnav save --list "X"       → bulk save (default)
+ *   salesnav sync --list "X"       → sync lista
+ *   salesnav resolve --fix         → risolvi URL
+ *   salesnav lists                 → mostra elenchi
+ *   salesnav create "Nome"         → crea lista
+ *   salesnav add <leadId> <list>   → aggiungi lead
+ *
+ * Se nessun sotto-comando riconosciuto → default bulk-save.
+ */
+export async function runSalesNavUnifiedCommand(args: string[]): Promise<void> {
+    const positional = getPositionalArgs(args);
+    const subCommand = positional[0]?.toLowerCase() ?? '';
+
+    const handler = SALESNAV_SUBCOMMANDS[subCommand];
+    if (handler) {
+        // Rimuovi il sotto-comando dagli args e passa il resto
+        const subArgs = args.filter((a) => a.toLowerCase() !== subCommand);
+        await handler(subArgs);
+    } else {
+        // Nessun sotto-comando → default bulk-save con tutti gli args
+        await runSalesNavBulkSaveCommand(args);
     }
 }
 

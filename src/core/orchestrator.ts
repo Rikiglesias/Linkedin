@@ -75,6 +75,34 @@ async function runCanaryIfNeeded(workflow: WorkflowSelection): Promise<boolean> 
                 return false;
             }
 
+            // Rileva restrizioni account (shadowban, limited, under review)
+            const restrictionIndicators = [
+                'restricted', 'under review', 'temporarily limited',
+                'limitato', 'attività sospetta', 'account bloccato',
+                'your account has been restricted', 'account is restricted',
+            ];
+            const pageText = await session.page.textContent('body').catch(() => '') ?? '';
+            const lowerText = pageText.toLowerCase();
+            const restriction = restrictionIndicators.find(ind => lowerText.includes(ind));
+            if (restriction) {
+                console.error(`[CANARY] Account ${account.id} RISTRETTO: trovato "${restriction}" nella pagina`);
+                await quarantineAccount('ACCOUNT_RESTRICTED', {
+                    accountId: account.id,
+                    indicator: restriction,
+                    url: session.page.url(),
+                });
+                return false;
+            }
+            const currentUrl = session.page.url();
+            if (/\/(checkpoint|challenge)\b/.test(currentUrl)) {
+                console.error(`[CANARY] Account ${account.id} bloccato da challenge: ${currentUrl}`);
+                await quarantineAccount('CHALLENGE_AT_LOGIN', {
+                    accountId: account.id,
+                    url: currentUrl,
+                });
+                return false;
+            }
+
             const report = await runSelectorCanaryDetailed(session.page, canaryWorkflow);
             await pushOutboxEvent(
                 'selector.canary.report',

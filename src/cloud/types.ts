@@ -83,3 +83,34 @@ export interface CloudCampaignConfig {
     daily_message_cap: number | null;
     updated_at?: string | null;
 }
+
+export interface CloudSalesNavMember {
+    local_id?: number | null;
+    list_name: string;
+    linkedin_url?: string | null;
+    salesnav_url?: string | null;
+    profile_name?: string | null;
+    first_name?: string | null;
+    last_name?: string | null;
+    company?: string | null;
+    title?: string | null;
+    location?: string | null;
+    name_company_hash?: string | null;
+    run_id?: number | null;
+    search_index?: number | null;
+    page_number?: number | null;
+    source?: string | null;
+    added_at?: string | null;
+    // Outreach lifecycle
+    invite_status?: string | null;
+    invited_at?: string | null;
+    accepted_at?: string | null;
+    rejected_at?: string | null;
+    message_sent_at?: string | null;
+    message_text?: string | null;
+    replied_at?: string | null;
+    reply_text?: string | null;
+    response_sent_at?: string | null;
+    response_text?: string | null;
+    outreach_notes?: string | null;
+}

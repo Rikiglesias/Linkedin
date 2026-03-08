@@ -390,15 +390,9 @@ export function computeDelayUntilSlot(slot: TimeSlot, now: Date = new Date()): n
     // Calculate days ahead to the target day of week
     let daysAhead = (slot.dayOfWeek - currentDow + 7) % 7;
 
-    // If same day but the target hour already passed, move to the next occurrence
-    // (next day with same dow = +7, but we search closer days first via the caller)
+    // If same day but the target hour already passed, next occurrence is 7 days ahead
     if (daysAhead === 0 && currentHour >= slot.hour) {
-        daysAhead = 1;
-        // Find the next day matching slot.dayOfWeek
-        // Instead of jumping a full week, advance to the very next day
-        // The caller will evaluate whether the delay is acceptable
-        const nextDaysAhead = (slot.dayOfWeek - ((currentDow + 1) % 7) + 7) % 7;
-        daysAhead = 1 + nextDaysAhead;
+        daysAhead = 7;
     }
 
     const hourDiff = slot.hour - currentHour;

@@ -111,7 +111,9 @@ async function fetchCloudFingerprints(): Promise<CloudFingerprint[]> {
             }
         }
     } catch {
-        // keep local fallback
+        // API error: invalidate stale cache so next call retries
+        cachedCloudFingerprints = null;
+        lastFingerprintFetchTime = 0;
     }
 
     return [];
@@ -131,6 +133,8 @@ export interface LaunchBrowserOptions {
     sessionDir?: string;
     preferredProxyType?: ProxyType;
     forceMobileProxy?: boolean;
+    /** Se true, forza un fingerprint desktop (mai mobile). Usato per SalesNav. */
+    forceDesktop?: boolean;
     /** Se true, ignora qualsiasi proxy configurato e usa connessione diretta. */
     bypassProxy?: boolean;
     /** Account identifier used for deterministic fingerprint IDs. */
@@ -193,7 +197,7 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
         const currentProxy = launchPlan[attempt];
         const cloudFingerprints = await fetchCloudFingerprints();
         const accountId = options.accountId ?? sessionDir;
-        const isMobileSession = pickFingerprintMode();
+        const isMobileSession = options.forceDesktop ? false : pickFingerprintMode();
         const fingerprint = isMobileSession
             ? pickMobileFingerprint(cloudFingerprints, accountId)
             : pickDesktopFingerprint(cloudFingerprints, accountId);
@@ -209,9 +213,20 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             audioNoise: consistentNoise.audioNoise,
         };
 
+        // Per sessioni non-headless, usa viewport null + --start-maximized
+        // così il browser riempie lo schermo (SalesNav ha bisogno di spazio per il virtual scroller).
+        // Per headless, forza un viewport grande (1920x1080).
+        let viewport: { width: number; height: number } | null;
+        if (headless) {
+            viewport = { width: 1920, height: 1080 };
+        } else {
+            // viewport null = il browser usa le dimensioni della finestra
+            viewport = null;
+        }
+
         const contextOptions: Parameters<typeof chromium.launchPersistentContext>[1] = {
             headless,
-            viewport: fingerprint.viewport,
+            viewport,
             locale: fingerprint.locale ?? 'it-IT',
             timezoneId: fingerprint.timezone ?? config.timezone,
             userAgent: fingerprint.userAgent,
@@ -226,6 +241,7 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                 '--disable-component-extensions-with-background-pages',
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
+                '--start-maximized', // Finestra massimizzata per SalesNav e rendering completo
                 '--enable-features=DnsOverHttps<DoHTrial', // AD-12: Enforce DoH via Cloudflare resolver
                 '--force-fieldtrials=DoHTrial/Group1',
                 '--force-fieldtrial-params=DoHTrial.Group1:server/https%3A%2F%2Fcloudflare-dns.com%2Fdns-query/method/POST',
@@ -238,7 +254,8 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             contextOptions.ignoreHTTPSErrors = true;
             contextOptions.args = [...(contextOptions.args ?? []), '--ignore-certificate-errors'];
         }
-        if (deviceProfile.isMobile) {
+        // isMobile, hasTouch e deviceScaleFactor non sono supportati con viewport: null (non-headless)
+        if (deviceProfile.isMobile && viewport !== null) {
             contextOptions.isMobile = true;
             contextOptions.hasTouch = true;
             contextOptions.deviceScaleFactor = fingerprint.deviceScaleFactor ?? 2.5;
@@ -456,7 +473,38 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
     throw new Error('Impossibile avviare il browser context.');
 }
 
+/**
+ * Wind-down umano prima della chiusura: simula un utente che finisce la sessione.
+ * Naviga via dalla pagina di lavoro, pausa breve, poi chiude.
+ * Un browser che si chiude di colpo su una pagina SalesNav è sospetto.
+ */
+async function humanWindDown(session: BrowserSession): Promise<void> {
+    try {
+        const page = session.page;
+        if (page.isClosed()) return;
+
+        const url = page.url().toLowerCase();
+        // Se siamo su una pagina di automazione (SalesNav, search, ecc.), naviga via
+        if (url.includes('/sales/') || url.includes('/search/') || url.includes('/mynetwork/')) {
+            // Torna al feed come farebbe un umano che finisce
+            await page.goto('https://www.linkedin.com/feed/', {
+                waitUntil: 'domcontentloaded',
+                timeout: 10_000,
+            }).catch(() => null);
+            // Breve scroll del feed come lettura casuale
+            await page.evaluate(() => window.scrollBy({ top: 150 + Math.random() * 300, behavior: 'smooth' })).catch(() => null);
+            await page.waitForTimeout(1_500 + Math.floor(Math.random() * 2_000)).catch(() => null);
+        } else {
+            // Su altre pagine, pausa breve prima di chiudere
+            await page.waitForTimeout(500 + Math.floor(Math.random() * 1_000)).catch(() => null);
+        }
+    } catch {
+        // Ignora errori durante wind-down — la chiusura deve procedere
+    }
+}
+
 export async function closeBrowser(session: BrowserSession): Promise<void> {
+    await humanWindDown(session);
     activeBrowsers.delete(session.browser);
     await session.browser.close().catch(() => { });
 }

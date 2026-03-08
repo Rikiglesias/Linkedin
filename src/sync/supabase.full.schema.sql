@@ -248,7 +248,7 @@ do $$
 declare
     tbl text;
 begin
-    foreach tbl in array array['accounts','campaigns','leads','prompt_variants','jobs_cloud','daily_stats_cloud','proxy_ips','telegram_commands']
+    foreach tbl in array array['accounts','campaigns','leads','prompt_variants','jobs_cloud','daily_stats_cloud','proxy_ips','telegram_commands','salesnav_list_members']
     loop
         execute format(
             'drop trigger if exists trg_%I_updated_at on public.%I;
@@ -267,6 +267,62 @@ $$;
 -- Il service role key bypassa RLS, la anon key no.
 -- Per ora disabilitiamo RLS sulle tabelle operative (accesso
 -- solo via service role key dal bot, non da browser).
+-- 9. SALESNAV_LIST_MEMBERS – lead estratti da Sales Navigator
+--    Mirror della tabella SQLite locale per visualizzazione/analytics cloud.
+--    Chiave di conflitto: (list_name, salesnav_url) per dedup.
+create table if not exists public.salesnav_list_members (
+    id bigserial primary key,
+    local_id integer,                                     -- id dal DB SQLite locale
+    list_name text not null,
+    linkedin_url text,
+    salesnav_url text,
+    profile_name text,
+    first_name text,
+    last_name text,
+    company text,
+    title text,
+    location text,
+    name_company_hash text,
+    run_id integer,
+    search_index integer,
+    page_number integer,
+    source text default 'bulk_save',
+    added_at timestamptz default now(),
+    synced_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    -- Outreach lifecycle tracking
+    invite_status text default 'PENDING',              -- PENDING | SENT | ACCEPTED | REJECTED
+    invited_at timestamptz,
+    accepted_at timestamptz,
+    rejected_at timestamptz,
+    message_sent_at timestamptz,
+    message_text text,
+    replied_at timestamptz,
+    reply_text text,
+    response_sent_at timestamptz,
+    response_text text,
+    outreach_notes text
+);
+
+-- Unique constraint per dedup: un lead per lista per URL SalesNav
+alter table public.salesnav_list_members
+    add constraint uq_snm_list_salesnav unique (list_name, salesnav_url);
+
+-- Unique constraint secondario: un lead per lista per URL LinkedIn
+create unique index if not exists idx_snm_list_linkedin
+    on public.salesnav_list_members(list_name, linkedin_url)
+    where linkedin_url is not null;
+
+-- Indici per query comuni
+create index if not exists idx_snm_company on public.salesnav_list_members(company) where company is not null;
+create index if not exists idx_snm_location on public.salesnav_list_members(location) where location is not null;
+create index if not exists idx_snm_list_name on public.salesnav_list_members(list_name);
+create index if not exists idx_snm_added_at on public.salesnav_list_members(added_at desc);
+
+-- Indici per outreach lifecycle
+create index if not exists idx_slm_invite_status on public.salesnav_list_members(invite_status) where invite_status is not null;
+create index if not exists idx_slm_accepted_pending_msg on public.salesnav_list_members(accepted_at) where invite_status = 'ACCEPTED' and message_sent_at is null;
+
 alter table public.accounts disable row level security;
 alter table public.campaigns disable row level security;
 alter table public.leads disable row level security;
@@ -275,3 +331,4 @@ alter table public.jobs_cloud disable row level security;
 alter table public.daily_stats_cloud disable row level security;
 alter table public.proxy_ips disable row level security;
 alter table public.telegram_commands disable row level security;
+alter table public.salesnav_list_members disable row level security;

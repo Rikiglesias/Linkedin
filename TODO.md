@@ -506,7 +506,7 @@
 
 **File eliminati:** ~~`src/services/emailEnricher.ts`~~ ELIMINATO (sostituito da `integrations/leadEnricher.ts`)
 **File spostati:** ~~`plugins/exampleEngagementBooster.js`~~ → `plugins/examples/exampleEngagementBooster.js`
-**File da deprecare:** `src/salesnav/searchExtractor.ts` (in attesa del refactor SalesNav selectors)
+**File eliminato:** ~~`src/salesnav/searchExtractor.ts`~~ ELIMINATO (logica legacy sostituita da `bulkSaveOrchestrator.ts`, comandi unificati in `salesnav` unico)
 **Migration create:** 035b–041 (7 nuove migration: salesnav index, list members, challenge events, telegram state, proxy metrics, leads version, hardening tables DDL)
 
 ---

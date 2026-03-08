@@ -22,8 +22,11 @@ export interface ExtractedProfile {
     salesnavUrl: string | null;
     linkedinUrl: string | null;
     name: string;
+    firstName: string;
+    lastName: string;
     company: string;
     title: string;
+    location: string;
     nameCompanyHash: string;
 }
 
@@ -54,8 +57,11 @@ export async function extractProfileUrlsFromPage(page: Page): Promise<ExtractedP
             salesnavUrl: string | null;
             linkedinUrl: string | null;
             name: string;
+            firstName: string;
+            lastName: string;
             company: string;
             title: string;
+            location: string;
         }> = [];
 
         // SalesNav lead cards: ogni card ha un link al profilo SalesNav
@@ -85,16 +91,86 @@ export async function extractProfileUrlsFromPage(page: Page): Promise<ExtractedP
                 link;
             const name = (nameEl?.textContent ?? '').trim();
 
+            // Split nome/cognome: "Mario Rossi" → firstName="Mario", lastName="Rossi"
+            const nameParts = name.split(/\s+/).filter(Boolean);
+            const firstName = nameParts[0] ?? '';
+            const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+
+            // ── Company: prova selettori specifici, poi fallback testo card ──
             const companyEl =
                 card?.querySelector('[data-anonymize="company-name"]') ??
                 card?.querySelector('span.result-lockup__subtitle') ??
-                card?.querySelector('a[href*="/sales/company/"]');
-            const company = (companyEl?.textContent ?? '').trim();
+                card?.querySelector('a[href*="/sales/company/"]') ??
+                card?.querySelector('[class*="company"]') ??
+                card?.querySelector('[class*="account-name"]');
+            let company = (companyEl?.textContent ?? '').trim();
 
+            // ── Title: prova selettori specifici ──
             const titleEl =
                 card?.querySelector('[data-anonymize="title"]') ??
-                card?.querySelector('span.result-lockup__highlight-keyword');
-            const title = (titleEl?.textContent ?? '').trim();
+                card?.querySelector('span.result-lockup__highlight-keyword') ??
+                card?.querySelector('[class*="body-text"]') ??
+                card?.querySelector('[class*="lockup__subtitle"]');
+            let title = (titleEl?.textContent ?? '').trim();
+
+            // ── Location: prova selettori specifici ──
+            const locationEl =
+                card?.querySelector('[data-anonymize="location"]') ??
+                card?.querySelector('[data-anonymize="geography"]') ??
+                card?.querySelector('span.result-lockup__misc-item') ??
+                card?.querySelector('[class*="member-location"]') ??
+                card?.querySelector('[class*="geography"]') ??
+                card?.querySelector('[class*="location"]');
+            let location = (locationEl?.textContent ?? '').trim();
+
+            // ── FALLBACK TESTUALE: se i selettori specifici non trovano nulla,
+            // parsa il testo completo della card. SalesNav mostra sempre:
+            //   Nome
+            //   Titolo at Azienda (o "presso" in italiano)
+            //   Località
+            // ──
+            if (card && (!company || !title)) {
+                const cardText = ((card as HTMLElement).innerText || card.textContent || '').trim();
+                const lines = cardText
+                    .split('\n')
+                    .map((l: string) => l.replace(/\s+/g, ' ').trim())
+                    .filter((l: string) => l.length > 1)
+                    // Rimuovi righe di navigazione/pulsanti
+                    .filter((l: string) => !/^(select|save|view|message|connect|inmail|more|seleziona|salva|visualizza|messaggio|collegati|altro)$/i.test(l))
+                    // Rimuovi la riga del nome (già estratto)
+                    .filter((l: string) => l !== name);
+
+                // La riga "titolo at/presso azienda" contiene " at " o " presso "
+                if (!company || !title) {
+                    const titleCompanyLine = lines.find(
+                        (l: string) => / (?:at|presso|@|bei|chez|en) /i.test(l),
+                    );
+                    if (titleCompanyLine) {
+                        const parts = titleCompanyLine.split(/ (?:at|presso|@|bei|chez|en) /i);
+                        if (!title && parts[0]) title = parts[0].trim();
+                        if (!company && parts[1]) company = parts[1].trim();
+                    }
+                }
+
+                // Se company non trovata: cerca link a company page
+                if (!company) {
+                    const companyLink = card.querySelector<HTMLAnchorElement>(
+                        'a[href*="/sales/company/"], a[href*="/company/"]',
+                    );
+                    if (companyLink) {
+                        company = (companyLink.textContent ?? '').trim();
+                    }
+                }
+
+                // Se location non trovata: cerca pattern città tipico nelle righe rimanenti
+                if (!location && lines.length > 0) {
+                    // Location è spesso l'ultima riga breve (< 60 char) con virgola
+                    const locationLine = lines.find(
+                        (l: string) => l.length < 60 && /,/.test(l) && !/\d{4}/.test(l) && l !== company && l !== title,
+                    );
+                    if (locationLine) location = locationLine;
+                }
+            }
 
             // Cerca anche il link LinkedIn classico (se visibile)
             const linkedinLink = card?.querySelector<HTMLAnchorElement>(
@@ -112,18 +188,38 @@ export async function extractProfileUrlsFromPage(page: Page): Promise<ExtractedP
                 salesnavUrl,
                 linkedinUrl: linkedinUrl ? `https://www.${linkedinUrl}` : null,
                 name,
+                firstName,
+                lastName,
                 company,
                 title,
+                location,
             });
         }
 
         return results;
     });
 
-    return profiles.map((p) => ({
+    // Filtra profili senza dati identificativi sufficienti:
+    // serve almeno un URL O un nome non vuoto per dedup affidabile
+    const validProfiles = profiles.filter((p) => {
+        const hasUrl = !!p.salesnavUrl || !!p.linkedinUrl;
+        const hasName = p.name.length > 0;
+        if (!hasUrl && !hasName) {
+            void logWarn('salesnav.dedup.profile_skipped', {
+                reason: 'no_identifying_data',
+                salesnavUrl: p.salesnavUrl,
+                linkedinUrl: p.linkedinUrl,
+            });
+        }
+        return hasUrl || hasName;
+    });
+
+    return validProfiles.map((p) => ({
         ...p,
-        nameCompanyHash: computeNameCompanyHash(p.name, p.company),
-    }));
+        nameCompanyHash: p.name.length > 0 && p.company.length > 0
+            ? computeNameCompanyHash(p.name, p.company)
+            : '',
+    })) as ExtractedProfile[];
 }
 
 /**
@@ -164,7 +260,8 @@ export async function checkDuplicates(
         }
 
         // Level 3: Fuzzy name+company hash (warning only, non blocco)
-        if (profile.nameCompanyHash) {
+        // Skip se hash vuoto (name o company mancanti — dedup fuzzy inaffidabile)
+        if (profile.nameCompanyHash && profile.nameCompanyHash.length > 0) {
             const fuzzyMatch = await db.get<{ id: number; profile_name: string }>(
                 'SELECT id, profile_name FROM salesnav_list_members WHERE list_name = ? AND name_company_hash = ?',
                 [listName, profile.nameCompanyHash],
@@ -208,16 +305,19 @@ export async function saveExtractedProfiles(
         try {
             await db.run(
                 `INSERT OR IGNORE INTO salesnav_list_members
-                 (list_name, linkedin_url, salesnav_url, profile_name, company, title, name_company_hash, run_id, search_index, page_number)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                 (list_name, linkedin_url, salesnav_url, profile_name, first_name, last_name, company, title, location, name_company_hash, run_id, search_index, page_number)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
                     listName,
                     profile.linkedinUrl,
                     profile.salesnavUrl,
-                    profile.name,
-                    profile.company,
-                    profile.title,
-                    profile.nameCompanyHash,
+                    profile.name || null,
+                    profile.firstName || null,
+                    profile.lastName || null,
+                    profile.company || null,
+                    profile.title || null,
+                    profile.location || null,
+                    profile.nameCompanyHash || null,
                     runId,
                     searchIndex,
                     pageNumber,
@@ -226,6 +326,30 @@ export async function saveExtractedProfiles(
             inserted++;
         } catch {
             // UNIQUE constraint violation — profilo già presente, ignora
+        }
+
+        // Arricchisci record esistenti: aggiorna campi NULL con dati nuovi
+        if (profile.salesnavUrl) {
+            const updates: string[] = [];
+            const values: unknown[] = [];
+            if (profile.firstName) { updates.push('first_name = ?'); values.push(profile.firstName); }
+            if (profile.lastName) { updates.push('last_name = ?'); values.push(profile.lastName); }
+            if (profile.company) { updates.push('company = ?'); values.push(profile.company); }
+            if (profile.title) { updates.push('title = ?'); values.push(profile.title); }
+            if (profile.location) { updates.push('location = ?'); values.push(profile.location); }
+            if (profile.nameCompanyHash) { updates.push('name_company_hash = ?'); values.push(profile.nameCompanyHash); }
+            if (updates.length > 0) {
+                // Aggiorna solo campi ancora NULL (non sovrascrivere dati esistenti)
+                const setClauses = updates.map(u => {
+                    const col = u.split(' = ')[0];
+                    return `${col} = COALESCE(${col}, ?)`;
+                });
+                values.push(listName, profile.salesnavUrl);
+                await db.run(
+                    `UPDATE salesnav_list_members SET ${setClauses.join(', ')} WHERE list_name = ? AND salesnav_url = ?`,
+                    values,
+                ).catch(() => {});
+            }
         }
     }
 

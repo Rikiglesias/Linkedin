@@ -496,7 +496,11 @@ export async function scheduleJobs(
     }
 
     if (!dryRun && riskSnapshot.action !== 'STOP') {
-        await promoteNewLeadsToReadyInvite(config.hardInviteCap * 4);
+        try {
+            await promoteNewLeadsToReadyInvite(config.hardInviteCap * 4);
+        } catch (e) {
+            console.error('[SCHEDULER] promoteNewLeadsToReadyInvite failed:', e instanceof Error ? e.message : e);
+        }
     }
 
     if (workflow === 'all' || workflow === 'invite') {

@@ -28,7 +28,7 @@ const VISUAL_CURSOR_STYLE_ID = `__lk_style_${_cursorHex}__`;
 const VISUAL_CURSOR_ELEMENT_ID = `__lk_cursor_${_cursorHex}__`;
 const VISUAL_CURSOR_ROOT_CLASS = `__lk_root_${_cursorHex}__`;
 
-async function ensureVisualCursorOverlay(page: Page): Promise<void> {
+export async function ensureVisualCursorOverlay(page: Page): Promise<void> {
     if (page.isClosed() || isMobilePage(page)) {
         return;
     }
@@ -125,6 +125,108 @@ export async function enableVisualCursorOverlay(page: Page): Promise<void> {
     await ensureVisualCursorOverlay(page);
 }
 
+// ─── Input Blocking Overlay ──────────────────────────────────────────────────
+
+const INPUT_BLOCK_TOAST_ID = `__lk_toast_${_cursorHex}__`;
+const INPUT_BLOCK_OVERLAY_ID = `__lk_block_${_cursorHex}__`;
+
+/**
+ * Inietta un overlay trasparente full-screen che blocca click/tastiera dell'utente.
+ * L'overlay ha pointer-events: auto → intercetta i click dell'utente.
+ * Prima dei click del bot, chiamare pauseInputBlock() per disabilitarlo temporaneamente.
+ * Deve essere ri-iniettato dopo ogni navigazione (il DOM viene distrutto).
+ */
+export async function ensureInputBlock(page: Page): Promise<void> {
+    if (page.isClosed() || isMobilePage(page)) {
+        return;
+    }
+
+    try {
+        await page.evaluate(
+            ({ toastId, overlayId }) => {
+                // Overlay full-screen trasparente che blocca click utente
+                if (!document.getElementById(overlayId)) {
+                    const overlay = document.createElement('div');
+                    overlay.id = overlayId;
+                    overlay.style.cssText = [
+                        'position: fixed',
+                        'top: 0', 'left: 0', 'right: 0', 'bottom: 0',
+                        'z-index: 2147483645',
+                        'background: transparent',
+                        'pointer-events: auto',
+                    ].join(';');
+                    document.documentElement.appendChild(overlay);
+                }
+
+                // Toast notifica
+                if (!document.getElementById(toastId)) {
+                    const toast = document.createElement('div');
+                    toast.id = toastId;
+                    toast.textContent = 'Automazione in corso — input bloccato';
+                    toast.style.cssText = [
+                        'position: fixed',
+                        'bottom: 20px',
+                        'left: 50%',
+                        'transform: translateX(-50%)',
+                        'background: rgba(0,0,0,0.85)',
+                        'color: #fff',
+                        'padding: 8px 18px',
+                        'border-radius: 8px',
+                        'font: 13px/1.4 system-ui, sans-serif',
+                        'z-index: 2147483647',
+                        'pointer-events: none',
+                        'opacity: 0',
+                        'transition: opacity 300ms ease',
+                    ].join(';');
+                    document.documentElement.appendChild(toast);
+
+                    let hideTimer: ReturnType<typeof setTimeout> | null = null;
+                    document.addEventListener('mousedown', () => {
+                        toast.style.opacity = '1';
+                        if (hideTimer) clearTimeout(hideTimer);
+                        hideTimer = setTimeout(() => { toast.style.opacity = '0'; }, 2500);
+                    }, true);
+                }
+            },
+            { toastId: INPUT_BLOCK_TOAST_ID, overlayId: INPUT_BLOCK_OVERLAY_ID },
+        );
+    } catch {
+        // Best effort.
+    }
+}
+
+/**
+ * Disabilita temporaneamente l'overlay di blocco input.
+ * Chiamare PRIMA di ogni click del bot (smartClick, visionClick).
+ */
+export async function pauseInputBlock(page: Page): Promise<void> {
+    if (page.isClosed()) return;
+    try {
+        await page.evaluate((id) => {
+            const el = document.getElementById(id);
+            if (el) el.style.pointerEvents = 'none';
+        }, INPUT_BLOCK_OVERLAY_ID);
+    } catch { /* best effort */ }
+}
+
+/**
+ * Riabilita l'overlay di blocco input dopo il click del bot.
+ */
+export async function resumeInputBlock(page: Page): Promise<void> {
+    if (page.isClosed()) return;
+    try {
+        await page.evaluate((id) => {
+            const el = document.getElementById(id);
+            if (el) el.style.pointerEvents = 'auto';
+        }, INPUT_BLOCK_OVERLAY_ID);
+    } catch { /* best effort */ }
+}
+
+export async function blockUserInput(page: Page): Promise<void> {
+    await enableVisualCursorOverlay(page);
+    await ensureInputBlock(page);
+}
+
 export async function pulseVisualCursorOverlay(page: Page): Promise<void> {
     const point = pageMouseState.get(page);
     if (!point || page.isClosed() || isMobilePage(page)) {
@@ -205,11 +307,13 @@ export async function humanMouseMove(page: Page, targetSelector: string): Promis
 
         const startPoint = getStartingPoint(page);
 
-        const finalX = box.x + box.width / 2 + (Math.random() * 8 - 4);
-        const finalY = box.y + box.height / 2 + (Math.random() * 8 - 4);
+        const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
+        const finalX = Math.max(0, Math.min(viewport.width - 1, box.x + box.width / 2 + (Math.random() * 8 - 4)));
+        const finalY = Math.max(0, Math.min(viewport.height - 1, box.y + box.height / 2 + (Math.random() * 8 - 4)));
 
         const distancePixels = Math.hypot(finalX - startPoint.x, finalY - startPoint.y);
-        const steps = Math.max(15, Math.round(distancePixels / 20));
+        // Più step = movimento più fluido e meno scattoso
+        const steps = Math.max(20, Math.round(distancePixels / 12));
         const isSmallTarget = box.width < 20 || box.height < 20;
 
         const path = MouseGenerator.generatePath(
@@ -218,16 +322,17 @@ export async function humanMouseMove(page: Page, targetSelector: string): Promis
             steps,
         );
 
-        const approachStart = isSmallTarget ? Math.floor(path.length * 0.8) : path.length;
+        const approachStart = isSmallTarget ? Math.floor(path.length * 0.7) : Math.floor(path.length * 0.85);
         for (let i = 0; i < path.length; i++) {
             const point = path[i];
             if (!point) continue;
             await page.mouse.move(point.x, point.y, { steps: 1 });
             await syncVisualCursorOverlay(page, point);
 
-            if (i % 5 === 0) {
+            // Pause più frequenti e più lunghe per movimento naturale
+            if (i % 3 === 0) {
                 const inApproachPhase = i >= approachStart;
-                const delay = inApproachPhase ? 15 + Math.random() * 35 : 10 + Math.random() * 20;
+                const delay = inApproachPhase ? 20 + Math.random() * 50 : 12 + Math.random() * 25;
                 await page.waitForTimeout(delay);
             }
         }
@@ -255,7 +360,7 @@ export async function humanMouseMoveToCoords(page: Page, targetX: number, target
         const startPoint = getStartingPoint(page);
 
         const distancePixels = Math.hypot(targetX - startPoint.x, targetY - startPoint.y);
-        const steps = Math.max(15, Math.round(distancePixels / 20));
+        const steps = Math.max(20, Math.round(distancePixels / 12));
 
         const path = MouseGenerator.generatePath(
             startPoint,
@@ -269,9 +374,9 @@ export async function humanMouseMoveToCoords(page: Page, targetX: number, target
             await page.mouse.move(point.x, point.y, { steps: 1 });
             await syncVisualCursorOverlay(page, point);
 
-            // Rallentamenti asincroni tipici
-            if (i % 5 === 0) {
-                await page.waitForTimeout(10 + Math.random() * 20);
+            // Pause più frequenti per movimento più fluido
+            if (i % 3 === 0) {
+                await page.waitForTimeout(12 + Math.random() * 25);
             }
         }
         updateMouseState(page, { x: targetX, y: targetY });
@@ -530,6 +635,8 @@ export async function humanType(page: Page, selector: string, text: string): Pro
  */
 export async function simulateHumanReading(page: Page): Promise<void> {
     const mobile = isMobilePage(page);
+    const isScrollable = await page.evaluate(() => document.body.scrollHeight > window.innerHeight).catch(() => false);
+    if (!isScrollable) return;
     const scrollCount = mobile ? 2 + Math.floor(Math.random() * 4) : 3 + Math.floor(Math.random() * 5);
     for (let i = 0; i < scrollCount; i++) {
         const deltaY = mobile ? 220 + Math.random() * 420 : 150 + Math.random() * 380;

@@ -8,6 +8,7 @@
 import { randomUUID } from 'crypto';
 import { config, getEffectiveLoopIntervalMs, getLocalDateString } from '../../config';
 import { launchBrowser, closeBrowser as closeBrowserSession } from '../../browser';
+import { checkSessionFreshness } from '../../browser/sessionCookieMonitor';
 import {
     acquireRuntimeLock,
     getDailyStatsSnapshot,
@@ -331,8 +332,8 @@ export async function runLoopCommand(args: string[]): Promise<void> {
               startedAt: new Date().toISOString(),
           });
 
+    let cycle = 0;
     try {
-        let cycle = 0;
         while (true) {
             cycle += 1;
             const started = new Date().toISOString();
@@ -373,6 +374,18 @@ export async function runLoopCommand(args: string[]): Promise<void> {
                 if (!doctorGate.proceed) {
                     console.warn(`[LOOP] cycle = ${cycle} skipped reason = ${doctorGate.reason} `);
                 } else {
+                    // Session freshness check — rileva sessioni stale prima del workflow
+                    if (!dryRun) {
+                        for (const account of getRuntimeAccountProfiles()) {
+                            const freshness = checkSessionFreshness(account.sessionDir);
+                            if (freshness.needsRotation) {
+                                console.warn(
+                                    `[LOOP] Sessione ${account.id} stale: ${freshness.sessionAgeDays}d (max ${freshness.maxAgeDays}d) — il doctor effettuerà la ri-autenticazione`,
+                                );
+                            }
+                        }
+                    }
+
                     const autoSiteCheck = await evaluateAutoSiteCheckDecision(dryRun);
                     if (autoSiteCheck.shouldRun) {
                         const siteCheckReport = await runSiteCheck({
@@ -565,6 +578,7 @@ export async function runLoopCommand(args: string[]): Promise<void> {
         if (lockOwnerId) {
             await releaseWorkflowRunnerLock(lockOwnerId);
         }
+        console.log(`[LOOP] Sessione terminata dopo ${cycle} cicli.`);
     }
 }
 

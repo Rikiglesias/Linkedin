@@ -42,6 +42,7 @@ import {
     CloudDailyStatIncrement,
     PendingTelegramCommand,
     CloudCampaignConfig,
+    CloudSalesNavMember,
 } from './types';
 
 export * from './types';
@@ -300,6 +301,107 @@ export async function markTelegramCommandProcessed(commandId: number): Promise<v
             processed_at: new Date().toISOString(),
         })
         .eq('id', commandId);
+}
+
+// ──────────────────────────────────────────────────────────────
+// SalesNav list members sync
+// ──────────────────────────────────────────────────────────────
+
+/**
+ * Batch upsert di profili SalesNav estratti verso Supabase.
+ * Usa salesnav_url come chiave di conflitto per dedup.
+ * Non-bloccante: errori loggati ma non propagati.
+ */
+export async function batchUpsertCloudSalesNavMembers(members: CloudSalesNavMember[]): Promise<number> {
+    if (members.length === 0) return 0;
+    const sb = getClient();
+    if (!sb) return 0;
+
+    const records = members.map((m) => ({
+        ...m,
+        synced_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    }));
+
+    const CHUNK_SIZE = 200;
+    let synced = 0;
+
+    for (let i = 0; i < records.length; i += CHUNK_SIZE) {
+        const chunk = records.slice(i, i + CHUNK_SIZE);
+        const { error, count } = await sb
+            .from('salesnav_list_members')
+            .upsert(chunk, { onConflict: 'list_name,salesnav_url', ignoreDuplicates: false })
+            .select('id');
+        if (error) {
+            await logWarn('cloud.salesnav_members.batch_upsert.error', {
+                chunk: i / CHUNK_SIZE,
+                count: chunk.length,
+                error: error.message,
+            });
+        } else {
+            synced += count ?? chunk.length;
+        }
+    }
+
+    return synced;
+}
+
+/**
+ * Sincronizza i profili SalesNav non ancora sincronizzati dal DB locale a Supabase.
+ * Legge dal DB locale i record con synced_at IS NULL o più vecchi di lastSyncAt.
+ * Ritorna il numero di record sincronizzati.
+ */
+export async function syncSalesNavMembersToCloud(
+    localDb: { query: (sql: string, params?: unknown[]) => Promise<Array<Record<string, unknown>>> },
+): Promise<number> {
+    if (!isConfigured()) return 0;
+
+    const rows = await localDb.query(
+        `SELECT id, list_name, linkedin_url, salesnav_url, profile_name,
+                first_name, last_name, company, title, location,
+                name_company_hash, run_id, search_index, page_number, source, added_at,
+                invite_status, invited_at, accepted_at, rejected_at,
+                message_sent_at, message_text, replied_at, reply_text,
+                response_sent_at, response_text, outreach_notes
+         FROM salesnav_list_members
+         WHERE salesnav_url IS NOT NULL
+         ORDER BY id ASC
+         LIMIT 500`,
+    );
+
+    if (rows.length === 0) return 0;
+
+    const members: CloudSalesNavMember[] = rows.map((r) => ({
+        local_id: r.id as number,
+        list_name: r.list_name as string,
+        linkedin_url: (r.linkedin_url as string) || null,
+        salesnav_url: (r.salesnav_url as string) || null,
+        profile_name: (r.profile_name as string) || null,
+        first_name: (r.first_name as string) || null,
+        last_name: (r.last_name as string) || null,
+        company: (r.company as string) || null,
+        title: (r.title as string) || null,
+        location: (r.location as string) || null,
+        name_company_hash: (r.name_company_hash as string) || null,
+        run_id: (r.run_id as number) || null,
+        search_index: (r.search_index as number) || null,
+        page_number: (r.page_number as number) || null,
+        source: (r.source as string) || null,
+        added_at: (r.added_at as string) || null,
+        invite_status: (r.invite_status as string) || null,
+        invited_at: (r.invited_at as string) || null,
+        accepted_at: (r.accepted_at as string) || null,
+        rejected_at: (r.rejected_at as string) || null,
+        message_sent_at: (r.message_sent_at as string) || null,
+        message_text: (r.message_text as string) || null,
+        replied_at: (r.replied_at as string) || null,
+        reply_text: (r.reply_text as string) || null,
+        response_sent_at: (r.response_sent_at as string) || null,
+        response_text: (r.response_text as string) || null,
+        outreach_notes: (r.outreach_notes as string) || null,
+    }));
+
+    return batchUpsertCloudSalesNavMembers(members);
 }
 
 // ──────────────────────────────────────────────────────────────

@@ -94,7 +94,7 @@ export async function createSalesNavList(listName: string, accountId?: string): 
             return { ok: false, accountId: account.id, message: 'Sessione non autenticata' };
         }
 
-        await session.page.goto('https://www.linkedin.com/sales/lists/people/', { waitUntil: 'domcontentloaded' });
+        await session.page.goto('https://www.linkedin.com/sales/lists/people/', { waitUntil: 'domcontentloaded', timeout: 60_000 });
         await humanDelay(session.page, 1400, 2600);
 
         const createButton = session.page.locator(CREATE_LIST_BUTTON_SELECTOR).first();

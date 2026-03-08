@@ -23,8 +23,9 @@ async function checkSentInvitations(page: Page, leadUrl: string): Promise<boolea
 
     const normalizedLeadUrl = normalizeLinkedInUrl(leadUrl);
 
-    // Scroll multi-page to load recent sent invites, with early-exit
-    for (let i = 0; i < 3; i++) {
+    // Scroll multi-page to load recent sent invites, with early-exit and deadline
+    const deadline = Date.now() + 15_000;
+    for (let i = 0; i < 3 && Date.now() < deadline; i++) {
         await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
         await humanDelay(page, 1000, 2000);
 

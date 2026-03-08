@@ -252,7 +252,7 @@ async function goToNextPage(page: Page): Promise<boolean> {
 }
 
 export async function navigateToSavedLists(page: Page): Promise<SalesNavSavedList[]> {
-    await page.goto(SALESNAV_LISTS_URL, { waitUntil: 'domcontentloaded' });
+    await page.goto(SALESNAV_LISTS_URL, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     await humanDelay(page, 1800, 3200);
     await simulateHumanReading(page);
     return extractSavedLists(page);

@@ -193,7 +193,111 @@ Respond with ONLY a single integer number of milliseconds between 1000 and 12000
         return 3000 + Math.floor(Math.random() * 5000);
     }
 
+    /** True if the model requires the Responses API instead of Chat Completions. */
+    private get useResponsesApi(): boolean {
+        return /^gpt-5(\.\d+)?/.test(this.model);
+    }
+
     private async callApi(messages: OpenAIMessage[]): Promise<string> {
+        if (this.useResponsesApi) {
+            return this.callResponsesApi(messages);
+        }
+        return this.callChatCompletionsApi(messages);
+    }
+
+    /** Responses API (POST /v1/responses) — required for gpt-5.x models. */
+    private async callResponsesApi(messages: OpenAIMessage[]): Promise<string> {
+        // Convert chat messages to Responses API input format
+        const input: Array<Record<string, unknown>> = [];
+        let instructions: string | undefined;
+        for (const msg of messages) {
+            if (msg.role === 'system') {
+                instructions = typeof msg.content === 'string' ? msg.content : '';
+                continue;
+            }
+            if (typeof msg.content === 'string') {
+                input.push({ role: msg.role, content: msg.content });
+            } else {
+                // Convert image_url content blocks to Responses API format
+                const contentBlocks: Array<Record<string, unknown>> = [];
+                for (const block of msg.content) {
+                    if (block.type === 'text' && block.text) {
+                        contentBlocks.push({ type: 'input_text', text: block.text });
+                    } else if (block.type === 'image_url' && block.image_url?.url) {
+                        contentBlocks.push({
+                            type: 'input_image',
+                            image_url: block.image_url.url,
+                        });
+                    }
+                }
+                input.push({ role: msg.role, content: contentBlocks });
+            }
+        }
+
+        const body: Record<string, unknown> = {
+            model: this.model,
+            input,
+            temperature: this.temperature,
+        };
+        if (instructions) {
+            body.instructions = instructions;
+        }
+
+        const response = await fetchWithRetryPolicy(
+            'https://api.openai.com/v1/responses',
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${this.apiKey}`,
+                },
+                body: JSON.stringify(body),
+            },
+            {
+                integration: 'vision.openai',
+                circuitKey: 'vision.openai.api',
+                timeoutMs: 90_000,
+                maxAttempts: 2,
+            },
+        );
+
+        if (!response.ok) {
+            const errorBody = await response.text().catch(() => '');
+            throw new Error(`OpenAI Vision API error: HTTP ${response.status} ${response.statusText} — ${errorBody.substring(0, 200)}`);
+        }
+
+        const data = (await response.json()) as {
+            output?: Array<{
+                type: string;
+                content?: Array<{ type: string; text?: string }>;
+            }>;
+            output_text?: string;
+            usage?: { input_tokens?: number; output_tokens?: number };
+        };
+
+        if (data.usage) {
+            void logInfo('vision.openai.usage', {
+                promptTokens: data.usage.input_tokens,
+                completionTokens: data.usage.output_tokens,
+                model: this.model,
+            });
+        }
+
+        // Extract text from Responses API output
+        if (data.output_text) return data.output_text.trim();
+        const msg = data.output?.find(o => o.type === 'message');
+        if (msg?.content) {
+            const text = msg.content
+                .filter(c => c.type === 'output_text' && c.text)
+                .map(c => c.text!)
+                .join('\n');
+            return text.trim();
+        }
+        return '';
+    }
+
+    /** Chat Completions API (POST /v1/chat/completions) — for gpt-4o and older models. */
+    private async callChatCompletionsApi(messages: OpenAIMessage[]): Promise<string> {
         const response = await fetchWithRetryPolicy(
             'https://api.openai.com/v1/chat/completions',
             {

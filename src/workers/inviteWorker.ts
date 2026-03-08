@@ -104,17 +104,16 @@ async function handleInviteModal(
     if (dryRun) return { sentWithNote: false, noteSource: null, variant: null };
 
     // Controlla se c'è il bottone "Add a note" (con retry breve se il modale sta caricando)
-    const addNoteBtn = page.locator(joinSelectors('addNoteButton')).first();
-    let canAddNote = (await addNoteBtn.count()) > 0;
+    let canAddNote = (await page.locator(joinSelectors('addNoteButton')).first().count()) > 0;
     if (config.inviteWithNote && !canAddNote) {
         await page.waitForSelector(joinSelectors('addNoteButton'), { timeout: 2000 }).catch(() => null);
-        canAddNote = (await addNoteBtn.count()) > 0;
+        canAddNote = (await page.locator(joinSelectors('addNoteButton')).first().count()) > 0;
     }
 
     if (config.inviteWithNote && canAddNote) {
         await humanMouseMove(page, joinSelectors('addNoteButton'));
         await humanDelay(page, 150, 350);
-        await addNoteBtn.click();
+        await page.locator(joinSelectors('addNoteButton')).first().click();
         await humanDelay(page, 600, 1200);
 
         // Scrivi la nota nella textarea del modale
@@ -316,7 +315,12 @@ export async function processInviteJob(
     }
 
     await humanDelay(context.session.page, 1200, 2200);
-    const proofOfSend = context.dryRun ? true : await detectInviteProof(context.session.page);
+    const proofOfSend = context.dryRun
+        ? true
+        : await Promise.race([
+              detectInviteProof(context.session.page),
+              new Promise<false>((resolve) => setTimeout(() => resolve(false), 5000)),
+          ]);
     if (!proofOfSend) {
         throw new RetryableWorkerError('Proof-of-send non rilevato', 'NO_PROOF_OF_SEND');
     }

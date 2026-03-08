@@ -101,13 +101,14 @@ export async function processMessageJob(
     await clickWithFallback(context.session.page, SELECTORS.messageButton, 'messageButton', {
         timeoutPerSelector: 5000,
         postClickDelayMs: 120,
-        verify: async (activePage) => {
-            await activePage.waitForSelector(joinSelectors('messageTextbox'), { timeout: 2500 });
-            return true;
-        },
     }).catch(() => {
         throw new RetryableWorkerError('Bottone messaggio non trovato', 'MESSAGE_BUTTON_NOT_FOUND');
     });
+    await context.session.page
+        .waitForSelector(joinSelectors('messageTextbox'), { timeout: 2500 })
+        .catch(() => {
+            throw new RetryableWorkerError('Textbox messaggio non apparsa dopo click', 'TEXTBOX_NOT_FOUND');
+        });
     await humanDelay(context.session.page, 1200, 2200);
 
     await typeWithFallback(context.session.page, SELECTORS.messageTextbox, message, 'messageTextbox', 5000).catch(

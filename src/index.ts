@@ -30,14 +30,7 @@ import {
     runCreateProfileCommand,
 } from './cli/commands/utilCommands';
 import {
-    runSalesNavSyncCommand,
-    runSalesNavListsCommand,
-    runSalesNavCreateListCommand,
-    runSalesNavAddLeadCommand,
-    runSalesNavResolveCommand,
-    runSalesNavExtractSearchCommand,
-    runSalesNavExtractFirstSearchCommand,
-    runSalesNavBulkSaveCommand,
+    runSalesNavUnifiedCommand,
 } from './cli/commands/salesNavCommands';
 import {
     runAiQualityCommand,
@@ -62,6 +55,8 @@ import {
 } from './cli/commands/adminCommands';
 import { startCycleTlsProxy, stopCycleTlsProxy } from './proxy/cycleTlsProxy';
 import { initPluginSystem, pluginRegistry } from './plugins/pluginLoader';
+import { getRuntimeAccountProfiles } from './accountManager';
+import { checkProxyHealth } from './proxyManager';
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 
@@ -71,6 +66,13 @@ function setupGracefulShutdown(): void {
         if (shuttingDown) return;
         shuttingDown = true;
         console.warn(`[SIGNAL] ${signal} ricevuto — chiusura in corso...`);
+
+        // Recupera job rimasti in RUNNING → PENDING per il prossimo avvio
+        try {
+            const recovered = await recoverStuckJobs(0);
+            if (recovered > 0) console.log(`[SHUTDOWN] ${recovered} job RUNNING → PENDING`);
+        } catch { /* DB potrebbe essere già chiuso */ }
+
         await stopCycleTlsProxy().catch(() => { });
         await closeDatabase();
         process.exit(0);
@@ -132,19 +134,13 @@ function printHelp(): void {
     console.log('  funnel');
     console.log('  site-check [limit] [--fix]');
     console.log('  state-sync [limit] [--fix]');
-    console.log('  salesnav-resolve [limit] [--fix] [--dry-run]');
-    console.log(
-        '  salesnav-sync [listName] [--url <salesnav_list_url>] [--max-pages <n>] [--limit <n>] [--account <id>] [--dry-run]',
-    );
-    console.log('  salesnav-lists [--limit <n>]');
-    console.log('  salesnav-create-list <nome> [--account <id>]');
-    console.log('  salesnav-add-lead <leadId> <listName> [--account <id>]');
-    console.log('  salesnav-add-to-list <leadId> <listName> [--account <id>]  # alias');
-    console.log('  salesnav-extract-search <searchUrl> <listName> [--max-pages <n>]');
-    console.log('  salesnav-extract-first-search [--list <nome>] [--max-pages <n>] [--account <id>] [--visual-cursor]');
-    console.log(
-        '  salesnav-bulk-save --list <nome> [--search-name <nome_ricerca>] [--max-pages <n>] [--max-searches <n>] [--resume] [--dry-run] [--session-limit <n>] [--account <id>] [--visual-cursor]',
-    );
+    console.log('  salesnav save [--list "X"] [--search-name "X"] [--max-pages N] [--resume] [--dry-run]');
+    console.log('  salesnav sync [--list "X"] [--url <url>] [--interactive|-i] [--max-pages N] [--dry-run]');
+    console.log('  salesnav resolve [--limit N] [--fix] [--dry-run]');
+    console.log('  salesnav lists [--limit N]');
+    console.log('  salesnav create "Nome"');
+    console.log('  salesnav add <leadId> <lista>');
+    console.log('  Opzioni globali: --no-proxy  --account <id>');
     console.log('  random-activity [--account <id>] [--max-actions <n>] [--dry-run]');
     console.log('  enrich-targets [limit] [--dry-run]');
     console.log('  pause [minutes|indefinite] [reason]');
@@ -221,14 +217,10 @@ async function main(): Promise<void> {
         'doctor',
         'site-check',
         'state-sync',
+        'salesnav',
         'salesnav-sync',
-        'salesnav-lists',
-        'salesnav-create-list',
-        'salesnav-add-lead',
-        'salesnav-add-to-list',
-        'salesnav-resolve',
-        'salesnav-extract-search',
         'salesnav-bulk-save',
+        'salesnav-resolve',
         'random-activity',
         'connect',
         'check',
@@ -298,6 +290,21 @@ async function main(): Promise<void> {
         console.log('[PREFLIGHT] OK');
     }
 
+    // ── Pre-flight proxy health check ────────────────────────────────────────
+    if (!isDryRunCommand && browserCommands.has(command ?? '')) {
+        const accounts = getRuntimeAccountProfiles();
+        for (const account of accounts) {
+            if (account.proxy) {
+                const healthy = await checkProxyHealth(account.proxy);
+                if (!healthy) {
+                    console.error(`[PREFLIGHT] Proxy ${account.proxy.server} NON raggiungibile (account: ${account.id})`);
+                } else {
+                    console.log(`[PREFLIGHT] Proxy OK: ${account.proxy.server} (${account.id})`);
+                }
+            }
+        }
+    }
+
     switch (command) {
         case 'import':
             await runImportCommand(commandArgs);
@@ -338,32 +345,38 @@ async function main(): Promise<void> {
         case 'state-sync':
             await runStateSyncCommand(commandArgs);
             break;
+        case 'salesnav':
+            await runSalesNavUnifiedCommand(commandArgs);
+            break;
         case 'salesnav-sync':
-            await runSalesNavSyncCommand(commandArgs);
-            break;
-        case 'salesnav-lists':
-            await runSalesNavListsCommand(commandArgs);
-            break;
-        case 'salesnav-create-list':
-            await runSalesNavCreateListCommand(commandArgs);
-            break;
-        case 'salesnav-add-lead':
-            await runSalesNavAddLeadCommand(commandArgs);
-            break;
-        case 'salesnav-add-to-list':
-            await runSalesNavAddLeadCommand(commandArgs);
-            break;
-        case 'salesnav-extract-search':
-            await runSalesNavExtractSearchCommand(commandArgs);
-            break;
-        case 'salesnav-extract-first-search':
-            await runSalesNavExtractFirstSearchCommand(commandArgs);
+            console.warn('[DEPRECATED] Usa "salesnav sync". Vedi help.');
+            await runSalesNavUnifiedCommand(['sync', ...commandArgs]);
             break;
         case 'salesnav-bulk-save':
-            await runSalesNavBulkSaveCommand(commandArgs);
+            console.warn('[DEPRECATED] Usa "salesnav save". Vedi help.');
+            await runSalesNavUnifiedCommand(['save', ...commandArgs]);
             break;
         case 'salesnav-resolve':
-            await runSalesNavResolveCommand(commandArgs);
+            console.warn('[DEPRECATED] Usa "salesnav resolve". Vedi help.');
+            await runSalesNavUnifiedCommand(['resolve', ...commandArgs]);
+            break;
+        case 'salesnav-lists':
+            console.warn('[DEPRECATED] Usa "salesnav lists". Vedi help.');
+            await runSalesNavUnifiedCommand(['lists', ...commandArgs]);
+            break;
+        case 'salesnav-create-list':
+            console.warn('[DEPRECATED] Usa "salesnav create". Vedi help.');
+            await runSalesNavUnifiedCommand(['create', ...commandArgs]);
+            break;
+        case 'salesnav-add-lead':
+        case 'salesnav-add-to-list':
+            console.warn('[DEPRECATED] Usa "salesnav add". Vedi help.');
+            await runSalesNavUnifiedCommand(['add', ...commandArgs]);
+            break;
+        case 'salesnav-extract-search':
+        case 'salesnav-extract-first-search':
+            console.error('[RIMOSSO] Usa "salesnav save" al posto di extract. Vedi help.');
+            process.exit(1);
             break;
         case 'enrich-targets':
             await runEnrichTargetsCommand(commandArgs);

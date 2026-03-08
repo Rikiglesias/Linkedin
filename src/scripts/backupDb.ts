@@ -123,7 +123,10 @@ export async function runBackup() {
     }
 }
 
-runBackup().catch((error) => {
-    console.error('❌ Errore durante il backup DB', error);
-    process.exit(1);
-});
+// Esegui solo se invocato direttamente come script (non su import)
+if (require.main === module) {
+    runBackup().catch((error) => {
+        console.error('❌ Errore durante il backup DB', error);
+        process.exit(1);
+    });
+}

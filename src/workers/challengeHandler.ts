@@ -75,7 +75,10 @@ export async function attemptChallengeResolution(page: Page): Promise<boolean> {
                     continue;
                 }
 
-                await page.mouse.click(coords.x, coords.y);
+                const vp = page.viewportSize() ?? { width: 1280, height: 800 };
+                const safeX = Math.max(0, Math.min(vp.width - 1, coords.x));
+                const safeY = Math.max(0, Math.min(vp.height - 1, coords.y));
+                await page.mouse.click(safeX, safeY);
                 await humanDelay(page, 1500, 3000);
 
                 const submitButton = page

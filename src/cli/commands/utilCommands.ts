@@ -54,10 +54,12 @@ export async function runLoginCommand(args: string[]): Promise<void> {
         );
     }
 
+    const noProxy = args.includes('--no-proxy');
     const session = await launchBrowser({
         headless: false,
         sessionDir: selectedAccount.sessionDir,
-        proxy: selectedAccount.proxy,
+        proxy: noProxy ? undefined : selectedAccount.proxy,
+        bypassProxy: noProxy,
     });
     try {
         await session.page.goto('https://www.linkedin.com/login', { waitUntil: 'load' });
