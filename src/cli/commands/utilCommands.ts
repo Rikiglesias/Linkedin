@@ -34,7 +34,7 @@ export async function runImportCommand(args: string[]): Promise<void> {
 
     const result = await importLeadsFromCSV(filePath, listName);
     console.log(
-        `Import completato.Lead inseriti = ${result.inserted}, Company target inseriti = ${result.companyTargetsInserted}, Skippati = ${result.skipped}, Lista = ${listName} `,
+        `Import completato. Lead inseriti = ${result.inserted}, Company target inseriti = ${result.companyTargetsInserted}, Skippati = ${result.skipped}, Errori = ${result.errors}, Lista = ${listName}`,
     );
 }
 

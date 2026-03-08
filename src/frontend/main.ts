@@ -575,7 +575,7 @@ function bindControls(): void {
                 byId<HTMLDialogElement>('pause-modal').close();
                 void refreshDashboard();
             }
-        });
+        }).catch(() => setStatusMessage('Errore di rete durante la pausa'));
     });
 
     byId<HTMLButtonElement>('btn-resume').addEventListener('click', () => {
@@ -584,7 +584,7 @@ function bindControls(): void {
             if (ok) {
                 void refreshDashboard();
             }
-        });
+        }).catch(() => setStatusMessage('Errore di rete durante la ripresa'));
     });
 
     byId<HTMLButtonElement>('btn-resolve-selected').addEventListener('click', () => {
@@ -595,7 +595,7 @@ function bindControls(): void {
             }
             setStatusMessage(`Incidenti risolti: ${report.resolved}/${report.total}`);
             void refreshDashboard();
-        });
+        }).catch(() => setStatusMessage('Errore di rete durante la risoluzione'));
     });
 
     byId<HTMLTableSectionElement>('incidents-tbody').addEventListener('change', (event) => {
@@ -627,7 +627,7 @@ function bindControls(): void {
                 selectedIncidentIds.delete(id);
                 void refreshDashboard();
             }
-        });
+        }).catch(() => setStatusMessage(`Errore di rete risoluzione #${id}`));
     });
 
     byId<HTMLTableSectionElement>('comment-suggestions-tbody').addEventListener('click', (event) => {
@@ -650,7 +650,7 @@ function bindControls(): void {
                 if (ok) {
                     void refreshDashboard();
                 }
-            });
+            }).catch(() => setStatusMessage(`Errore di rete approvazione bozza (lead #${leadId})`));
             return;
         }
 
@@ -660,7 +660,7 @@ function bindControls(): void {
                 if (ok) {
                     void refreshDashboard();
                 }
-            });
+            }).catch(() => setStatusMessage(`Errore di rete rifiuto bozza (lead #${leadId})`));
         }
     });
 

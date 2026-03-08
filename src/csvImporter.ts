@@ -7,6 +7,7 @@ export interface ImportResult {
     inserted: number;
     companyTargetsInserted: number;
     skipped: number;
+    errors: number;
 }
 
 /**
@@ -46,83 +47,90 @@ export async function importLeadsFromCSV(filePath: string, listName: string): Pr
     let inserted = 0;
     let companyTargetsInserted = 0;
     let skipped = 0;
+    let errors = 0;
 
-    for (const row of rows) {
-        // LinkedIn URL — Sales Navigator e formati alternativi
-        const lnUrlRaw = pickField(
-            row,
-            'linkedin_url',
-            'LinkedIn URL',
-            'linkedinUrl',
-            'LinkedIn Profile URL',
-            'Profile URL',
-            'Linkedin',
-            'Person Linkedin Url',
-            'Contact LinkedIn URL',
-        );
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        try {
+            // LinkedIn URL — Sales Navigator e formati alternativi
+            const lnUrlRaw = pickField(
+                row,
+                'linkedin_url',
+                'LinkedIn URL',
+                'linkedinUrl',
+                'LinkedIn Profile URL',
+                'Profile URL',
+                'Linkedin',
+                'Person Linkedin Url',
+                'Contact LinkedIn URL',
+            );
 
-        const linkedinUrl = normalizeLinkedInUrl(lnUrlRaw.trim());
+            const linkedinUrl = normalizeLinkedInUrl(lnUrlRaw.trim());
 
-        // Sales Navigator: "First Name" e "Last Name" separati
-        const firstName = pickField(row, 'First Name', 'first_name', 'FirstName');
-        const lastName = pickField(row, 'Last Name', 'last_name', 'LastName');
+            // Sales Navigator: "First Name" e "Last Name" separati
+            const firstName = pickField(row, 'First Name', 'first_name', 'FirstName');
+            const lastName = pickField(row, 'Last Name', 'last_name', 'LastName');
 
-        // Nome account / azienda
-        const accountName = pickField(
-            row,
-            'Account Name',
-            'account_name',
-            'Company',
-            'Company Name',
-            'company_name',
-            'companyName',
-            'Organization',
-        );
+            // Nome account / azienda
+            const accountName = pickField(
+                row,
+                'Account Name',
+                'account_name',
+                'Company',
+                'Company Name',
+                'company_name',
+                'companyName',
+                'Organization',
+            );
 
-        // Se non abbiamo accountName esplicito, lo costruiamo da first+last
-        const resolvedAccountName = accountName || [firstName, lastName].filter(Boolean).join(' ');
+            // Se non abbiamo accountName esplicito, lo costruiamo da first+last
+            const resolvedAccountName = accountName || [firstName, lastName].filter(Boolean).join(' ');
 
-        const jobTitle = pickField(row, 'Title', 'Job Title', 'job_title', 'Position');
-        const website = normalizeWebsite(
-            pickField(row, 'Website', 'website', 'Company Website', 'Company Domain', 'domain'),
-        );
+            const jobTitle = pickField(row, 'Title', 'Job Title', 'job_title', 'Position');
+            const website = normalizeWebsite(
+                pickField(row, 'Website', 'website', 'Company Website', 'Company Domain', 'domain'),
+            );
 
-        if (!linkedinUrl || !isLinkedInUrl(linkedinUrl)) {
-            const insertedCompanyTarget = await addCompanyTarget({
-                listName,
+            if (!linkedinUrl || !isLinkedInUrl(linkedinUrl)) {
+                const insertedCompanyTarget = await addCompanyTarget({
+                    listName,
+                    accountName: resolvedAccountName,
+                    website,
+                    sourceFile: filePath,
+                });
+                if (insertedCompanyTarget) {
+                    companyTargetsInserted += 1;
+                } else {
+                    skipped += 1;
+                }
+                continue;
+            }
+
+            const consentField = pickField(row, 'consent', 'opt_in', 'Consent', 'Opt-In', 'consent_basis');
+            const consentBasis = consentField || 'legitimate_interest';
+
+            const isNew = await addLead({
                 accountName: resolvedAccountName,
+                firstName,
+                lastName,
+                jobTitle,
                 website,
-                sourceFile: filePath,
+                linkedinUrl,
+                listName,
+                consentBasis,
+                consentRecordedAt: new Date().toISOString(),
             });
-            if (insertedCompanyTarget) {
-                companyTargetsInserted += 1;
+
+            if (isNew) {
+                inserted += 1;
             } else {
                 skipped += 1;
             }
-            continue;
-        }
-
-        const consentField = pickField(row, 'consent', 'opt_in', 'Consent', 'Opt-In', 'consent_basis');
-        const consentBasis = consentField || 'legitimate_interest';
-
-        const isNew = await addLead({
-            accountName: resolvedAccountName,
-            firstName,
-            lastName,
-            jobTitle,
-            website,
-            linkedinUrl,
-            listName,
-            consentBasis,
-            consentRecordedAt: new Date().toISOString(),
-        });
-
-        if (isNew) {
-            inserted += 1;
-        } else {
-            skipped += 1;
+        } catch (err) {
+            errors += 1;
+            console.error(`[CSV_IMPORT] Errore riga ${i + 1}:`, err instanceof Error ? err.message : err);
         }
     }
 
-    return { inserted, companyTargetsInserted, skipped };
+    return { inserted, companyTargetsInserted, skipped, errors };
 }
