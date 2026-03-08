@@ -1,3 +1,13 @@
+// ── Crash safety: catch unhandled promise rejections and uncaught exceptions ──
+process.on('unhandledRejection', (reason) => {
+    console.error('[FATAL] Unhandled Rejection:', reason);
+    process.exit(1);
+});
+process.on('uncaughtException', (error) => {
+    console.error('[FATAL] Uncaught Exception:', error);
+    process.exit(1);
+});
+
 import { closeDatabase, initDatabase } from './db';
 import { config, validateCriticalConfig } from './config';
 import { runDoctor } from './core/doctor';

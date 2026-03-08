@@ -81,6 +81,7 @@ class PostgresManager implements DatabaseManager {
             max: 10,
             idleTimeoutMillis: 30_000,
             connectionTimeoutMillis: 5_000,
+            statement_timeout: 30_000,
         });
     }
 
@@ -354,6 +355,7 @@ export async function getDatabase(): Promise<DatabaseManager> {
     await sqliteDb.exec(`PRAGMA journal_mode = WAL;`);
     await sqliteDb.exec(`PRAGMA busy_timeout = 5000;`);
     await sqliteDb.exec(`PRAGMA synchronous = NORMAL;`);
+    await sqliteDb.exec(`PRAGMA auto_vacuum = INCREMENTAL;`);
     ensureFilePrivate(config.dbPath);
 
     dbInstance = new SQLiteManager(sqliteDb);

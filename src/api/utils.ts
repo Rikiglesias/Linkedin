@@ -31,7 +31,8 @@ export function handleApiError(res: Response, err: unknown, context: string): vo
     }
 
     const message = err instanceof Error ? err.message : String(err);
-    void logError(context, { error: message });
+    const stack = err instanceof Error ? err.stack : undefined;
+    void logError(context, { error: message, stack });
     const body: ApiErrorBody = { error: { code: 'INTERNAL_ERROR', message: 'Errore interno del server.' } };
     res.status(500).json(body);
 }

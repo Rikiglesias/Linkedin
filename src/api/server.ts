@@ -270,7 +270,7 @@ function hashDashboardSessionToken(token: string): string {
 }
 
 function buildDashboardSessionCookie(token: string, maxAgeSec: number, req?: Request): string {
-    const isSecure = req ? (req.secure || req.headers['x-forwarded-proto'] === 'https') : process.env.NODE_ENV === 'production';
+    const isSecure = req ? (req.secure || req.headers['x-forwarded-proto'] === 'https') : Boolean(config.databaseUrl);
     const secureFlag = isSecure ? '; Secure' : '';
     return `${DASHBOARD_SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/api; HttpOnly; SameSite=Strict; Max-Age=${maxAgeSec}${secureFlag}`;
 }
