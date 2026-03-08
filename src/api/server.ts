@@ -923,6 +923,8 @@ app.get('/api/events', (_req, res) => {
     });
 
     const heartbeat = setInterval(() => {
+        // SSE comment ping (keeps connection alive through corporate proxies)
+        res.write(': ping\n\n');
         writeSseEvent(res, 'heartbeat', {
             timestamp: new Date().toISOString(),
         });

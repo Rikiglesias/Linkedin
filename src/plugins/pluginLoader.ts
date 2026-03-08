@@ -82,30 +82,43 @@ function normalizeManifestHooks(raw: unknown): PluginHookName[] | null {
     return hooks;
 }
 
-function parsePluginManifest(filePath: string): PluginManifest | null {
+interface ManifestParseResult {
+    manifest: PluginManifest | null;
+    error?: string;
+}
+
+function parsePluginManifest(filePath: string): ManifestParseResult {
     try {
         const raw = fs.readFileSync(filePath, 'utf8');
         const parsed = JSON.parse(raw) as Record<string, unknown>;
 
-        if (typeof parsed.name !== 'string' || parsed.name.trim().length === 0) return null;
-        if (typeof parsed.version !== 'string' || parsed.version.trim().length === 0) return null;
-        if (typeof parsed.entry !== 'string' || parsed.entry.trim().length === 0) return null;
-        if (parsed.enabled !== undefined && typeof parsed.enabled !== 'boolean') return null;
-        if (parsed.integritySha256 !== undefined && typeof parsed.integritySha256 !== 'string') return null;
+        if (typeof parsed.name !== 'string' || parsed.name.trim().length === 0)
+            return { manifest: null, error: 'campo "name" mancante o vuoto' };
+        if (typeof parsed.version !== 'string' || parsed.version.trim().length === 0)
+            return { manifest: null, error: 'campo "version" mancante o vuoto' };
+        if (typeof parsed.entry !== 'string' || parsed.entry.trim().length === 0)
+            return { manifest: null, error: 'campo "entry" mancante o vuoto' };
+        if (parsed.enabled !== undefined && typeof parsed.enabled !== 'boolean')
+            return { manifest: null, error: '"enabled" deve essere boolean' };
+        if (parsed.integritySha256 !== undefined && typeof parsed.integritySha256 !== 'string')
+            return { manifest: null, error: '"integritySha256" deve essere string' };
 
         const allowedHooks = normalizeManifestHooks(parsed.allowedHooks);
-        if (allowedHooks === null) return null;
+        if (allowedHooks === null)
+            return { manifest: null, error: '"allowedHooks" contiene valori non validi' };
 
         return {
-            name: parsed.name.trim(),
-            version: parsed.version.trim(),
-            entry: parsed.entry.trim(),
-            enabled: parsed.enabled,
-            integritySha256: parsed.integritySha256?.trim(),
-            allowedHooks,
+            manifest: {
+                name: parsed.name.trim(),
+                version: parsed.version.trim(),
+                entry: parsed.entry.trim(),
+                enabled: parsed.enabled,
+                integritySha256: parsed.integritySha256?.trim(),
+                allowedHooks,
+            },
         };
-    } catch {
-        return null;
+    } catch (err) {
+        return { manifest: null, error: err instanceof Error ? err.message : 'errore parsing JSON' };
     }
 }
 
@@ -253,9 +266,9 @@ export class PluginRegistry {
                     continue;
                 }
 
-                const manifest = parsePluginManifest(manifestPath);
+                const { manifest, error: manifestError } = parsePluginManifest(manifestPath);
                 if (!manifest) {
-                    await logWarn('plugin_loader.manifest_invalid', { file, manifestPath });
+                    await logWarn('plugin_loader.manifest_invalid', { file, manifestPath, reason: manifestError });
                     continue;
                 }
                 if (manifest.entry !== file) {
