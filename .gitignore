@@ -42,3 +42,6 @@ data/test_*.sqlite-*
 
 # Script di test temporanei
 test-*.js
+
+# Bright Data proxy certificates (sensibili)
+brightdata_proxy_ca/

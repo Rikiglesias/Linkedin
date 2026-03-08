@@ -16,6 +16,11 @@
  *  9. Battery API mock (navigator.getBattery)
  * 10. Notification.permission mock
  * 11. AudioContext Fingerprint Spoofing
+ * 15. getHasLiedOs bypass (OS consistency: userAgent vs platform vs oscpu)
+ * 16. getHasLiedLanguages bypass (language === languages[0])
+ * 17. CDP leak detection bypass (Runtime.enable / Debugger artifacts)
+ * 18. WebGL renderer consistency (GPU matches claimed OS)
+ * 19. iframe contentWindow.chrome consistency
  */
 
 export interface StealthScriptOptions {
@@ -464,6 +469,165 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
                 });
             };
         }
+    } catch {}
+
+    // ─── 15. getHasLiedOs bypass ──────────────────────────────────────────────
+    // LinkedIn (via FingerprintJS) chiama getHasLiedOs: controlla che userAgent,
+    // navigator.platform e navigator.oscpu siano coerenti con lo stesso OS.
+    // Se uno dice "Windows" e l'altro dice "Mac", il fingerprint è "forged".
+    try {
+        const ua = navigator.userAgent || '';
+        let expectedPlatform, expectedOscpu;
+        if (/Windows/.test(ua)) {
+            expectedPlatform = 'Win32';
+            expectedOscpu = 'Windows NT 10.0; Win64; x64';
+        } else if (/Macintosh|Mac OS X/.test(ua)) {
+            expectedPlatform = 'MacIntel';
+            expectedOscpu = 'Intel Mac OS X 10_15_7';
+        } else if (/Linux/.test(ua)) {
+            expectedPlatform = 'Linux x86_64';
+            expectedOscpu = 'Linux x86_64';
+        }
+        if (expectedPlatform) {
+            Object.defineProperty(navigator, 'platform', {
+                get: () => expectedPlatform,
+                configurable: true
+            });
+        }
+        if (expectedOscpu) {
+            Object.defineProperty(navigator, 'oscpu', {
+                get: () => expectedOscpu,
+                configurable: true
+            });
+        }
+    } catch {}
+
+    // ─── 16. getHasLiedLanguages bypass ───────────────────────────────────────
+    // LinkedIn verifica che navigator.language === navigator.languages[0].
+    // Se non corrispondono, è un segnale di spoofing.
+    try {
+        const langs = ${languagesJson};
+        if (langs && langs.length > 0) {
+            Object.defineProperty(navigator, 'language', {
+                get: () => langs[0],
+                configurable: true
+            });
+        }
+    } catch {}
+
+    // ─── 17. CDP leak detection bypass ────────────────────────────────────────
+    // Playwright usa Chrome DevTools Protocol. Alcuni detector cercano:
+    // - window.__playwright / window.__pw_* artefatti
+    // - Error stack trace con "Runtime.evaluate" o "__puppeteer_evaluation_script__"
+    // - document.__webdriver_evaluate / __selenium_evaluate
+    // - Debugger.scriptParsed artifacts nel prototype di Error
+    try {
+        // Pulisci artefatti CDP noti
+        const cdpArtifacts = [
+            '__playwright', '__pw_manual', '__pwresult', '__pw_d',
+            '__webdriver_evaluate', '__selenium_evaluate',
+            '__webdriver_script_function', '__webdriver_script_func',
+            '__driver_evaluate', '__webdriver_unwrap',
+            '__fxdriver_evaluate', '__driver_unwrap',
+            'callPhantom', '_phantom', 'phantom',
+            '__nightmare', 'domAutomation', 'domAutomationController'
+        ];
+        for (const prop of cdpArtifacts) {
+            if (prop in window) {
+                try { delete window[prop]; } catch {
+                    try { Object.defineProperty(window, prop, { get: () => undefined, configurable: true }); } catch {}
+                }
+            }
+            if (prop in document) {
+                try { delete document[prop]; } catch {
+                    try { Object.defineProperty(document, prop, { get: () => undefined, configurable: true }); } catch {}
+                }
+            }
+        }
+
+        // Maschera stack trace CDP in Error.prepareStackTrace
+        const originalPrepareStackTrace = Error.prepareStackTrace;
+        Error.prepareStackTrace = function(error, structuredStackTrace) {
+            const filtered = structuredStackTrace.filter(frame => {
+                const fn = frame.getFunctionName() || '';
+                const file = frame.getFileName() || '';
+                return !fn.includes('__puppeteer') &&
+                       !fn.includes('__playwright') &&
+                       !file.includes('pptr:') &&
+                       !file.includes('__playwright');
+            });
+            if (originalPrepareStackTrace) {
+                return originalPrepareStackTrace(error, filtered);
+            }
+            return filtered.map(f => '    at ' + f.toString()).join('\\n');
+        };
+    } catch {}
+
+    // ─── 18. WebGL renderer consistency ───────────────────────────────────────
+    // LinkedIn controlla che il WebGL renderer/vendor sia coerente con il OS
+    // dichiarato. Es: "ANGLE (Apple, Apple M1)" su un browser che dice Windows
+    // è un red flag immediato.
+    try {
+        const ua = navigator.userAgent || '';
+        const isWindows = /Windows/.test(ua);
+        const isMac = /Macintosh|Mac OS X/.test(ua);
+
+        const originalGetParameter = WebGLRenderingContext.prototype.getParameter;
+        const UNMASKED_VENDOR = 0x9245;
+        const UNMASKED_RENDERER = 0x9246;
+
+        function patchGetParameter(original) {
+            return function(param) {
+                if (param === UNMASKED_VENDOR) {
+                    return isWindows ? 'Google Inc. (NVIDIA)' :
+                           isMac ? 'Google Inc. (Apple)' :
+                           'Google Inc. (Mesa)';
+                }
+                if (param === UNMASKED_RENDERER) {
+                    return isWindows ? 'ANGLE (NVIDIA, NVIDIA GeForce GTX 1060 Direct3D11 vs_5_0 ps_5_0, D3D11)' :
+                           isMac ? 'ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)' :
+                           'Mesa Intel(R) UHD Graphics 630 (CFL GT2)';
+                }
+                return original.call(this, param);
+            };
+        }
+
+        WebGLRenderingContext.prototype.getParameter = patchGetParameter(originalGetParameter);
+
+        if (typeof WebGL2RenderingContext !== 'undefined') {
+            const originalGetParameter2 = WebGL2RenderingContext.prototype.getParameter;
+            WebGL2RenderingContext.prototype.getParameter = patchGetParameter(originalGetParameter2);
+        }
+    } catch {}
+
+    // ─── 19. iframe contentWindow.chrome consistency ──────────────────────────
+    // Bot detector crea un iframe nascosto e controlla se contentWindow.chrome
+    // esiste — in Playwright spesso è assente dentro iframe, tradendo l'automazione.
+    try {
+        const originalCreateElement = document.createElement.bind(document);
+        document.createElement = function(tagName, options) {
+            const el = originalCreateElement(tagName, options);
+            if (tagName.toLowerCase() === 'iframe') {
+                const originalAppendChild = Element.prototype.appendChild;
+                const observer = new MutationObserver(() => {
+                    try {
+                        if (el.contentWindow && !el.contentWindow.chrome) {
+                            el.contentWindow.chrome = window.chrome;
+                        }
+                    } catch {}
+                });
+                // Inietta chrome nel contentWindow quando l'iframe viene aggiunto al DOM
+                const origAttach = el.attachShadow;
+                setTimeout(() => {
+                    try {
+                        if (el.contentWindow && !el.contentWindow.chrome) {
+                            el.contentWindow.chrome = window.chrome;
+                        }
+                    } catch {}
+                }, 0);
+            }
+            return el;
+        };
     } catch {}
 })();`;
 }

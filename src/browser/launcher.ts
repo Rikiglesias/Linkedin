@@ -247,13 +247,14 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                 '--force-fieldtrial-params=DoHTrial.Group1:server/https%3A%2F%2Fcloudflare-dns.com%2Fdns-query/method/POST',
             ],
         };
-        const isBrightDataProxy = !!currentProxy && /brd\.superproxy\.io/i.test(currentProxy.server);
-        if (isBrightDataProxy) {
-            // Bright Data Unlocker can present cert chains not trusted by local store.
-            // Ignore HTTPS errors only for this specific upstream to avoid global downgrade.
-            contextOptions.ignoreHTTPSErrors = true;
-            contextOptions.args = [...(contextOptions.args ?? []), '--ignore-certificate-errors'];
-        }
+        // Bright Data: il certificato CA è installato nel sistema (certutil -addstore Root),
+        // quindi NON serve --ignore-certificate-errors (flag rilevabile dai bot detector).
+        // Se il cert non fosse installato, decommentare le righe sotto.
+        // const isBrightDataProxy = !!currentProxy && /brd\.superproxy\.io/i.test(currentProxy.server);
+        // if (isBrightDataProxy) {
+        //     contextOptions.ignoreHTTPSErrors = true;
+        //     contextOptions.args = [...(contextOptions.args ?? []), '--ignore-certificate-errors'];
+        // }
         // isMobile, hasTouch e deviceScaleFactor non sono supportati con viewport: null (non-headless)
         if (deviceProfile.isMobile && viewport !== null) {
             contextOptions.isMobile = true;

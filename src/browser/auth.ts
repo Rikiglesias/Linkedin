@@ -57,7 +57,7 @@ export async function isLoggedIn(page: Page): Promise<boolean> {
 
 /** Naviga alla home e verifica il login. */
 export async function checkLogin(page: Page): Promise<boolean> {
-    await page.goto('https://www.linkedin.com/', { waitUntil: 'load' });
+    await page.goto('https://www.linkedin.com/', { waitUntil: 'domcontentloaded', timeout: 45_000 });
     await humanDelay(page, 2000, 4000);
     return isLoggedIn(page);
 }
