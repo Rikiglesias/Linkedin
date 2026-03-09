@@ -117,17 +117,14 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
 
     const interactive = options.interactive === true;
     const noProxy = options.noProxy === true;
-    const session = await launchBrowser(
-        interactive
-            ? {
-                  headless: false,
-                  sessionDir: account.sessionDir,
-                  proxy: noProxy ? undefined : account.proxy,
-                  bypassProxy: noProxy,
-                  forceDesktop: true,
-              }
-            : { sessionDir: account.sessionDir, proxy: account.proxy },
-    );
+    // Anti-detection completa SEMPRE — non solo interactive
+    const session = await launchBrowser({
+        headless: !interactive,
+        sessionDir: account.sessionDir,
+        proxy: noProxy ? undefined : account.proxy,
+        bypassProxy: noProxy,
+        forceDesktop: true,
+    });
 
     try {
         let loggedIn = await checkLogin(session.page);
@@ -153,8 +150,9 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
         if (!loggedIn) {
             throw new Error(`Sales Navigator sync: sessione non autenticata (account=${account.id}).`);
         }
+        // blockUserInput SEMPRE — anche headless ne beneficia (stealth overlay)
+        await blockUserInput(session.page);
         if (interactive) {
-            await blockUserInput(session.page);
             console.log('[OK] Login rilevato. Input bloccato. Avvio sync lista...');
         }
 
@@ -168,6 +166,8 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
             ];
         } else {
             const discovered = await navigateToSavedLists(session.page);
+            // Re-inject overlay dopo navigazione (il DOM viene distrutto da page.goto)
+            if (interactive) await blockUserInput(session.page);
             report.listDiscoveryCount = discovered.length;
             if (listFilter) {
                 targetLists = discovered.filter((entry) => matchesListNameFilter(entry, listFilter));
@@ -177,7 +177,12 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
         }
 
         if (targetLists.length === 0) {
-            throw new Error('Sales Navigator sync: nessuna lista trovata con i criteri forniti.');
+            const discoveredNames = (await navigateToSavedLists(session.page).catch(() => [] as SalesNavSavedList[]))
+                .map((l) => l.name);
+            const hint = discoveredNames.length > 0
+                ? ` Liste trovate: [${discoveredNames.join(', ')}]. Usa --list "NOME" o --url <url>.`
+                : ' Nessuna lista trovata nella pagina SalesNav.';
+            throw new Error(`Sales Navigator sync: nessuna lista corrisponde al filtro "${listFilter || '(nessuno)'}".${hint}`);
         }
 
         for (const targetList of targetLists) {
@@ -202,6 +207,7 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
                 listUrl,
                 maxPages,
                 leadLimit: maxLeadsPerList,
+                interactive,
             });
             listReport.pagesVisited = scraped.pagesVisited;
             listReport.candidatesDiscovered = scraped.candidatesDiscovered;

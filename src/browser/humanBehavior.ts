@@ -404,64 +404,6 @@ export async function humanTap(page: Page, targetSelector: string): Promise<void
     }
 }
 
-/**
- * AD-03: Hover Pre-Click simulation.
- * Simula il comportamento organico di "assestamento" del mouse prima
- * di effettuare il click (Dwell Time). Eseguito con 80% di ratio.
- */
-export async function hoverPreClick(page: Page, targetSelector: string): Promise<void> {
-    if (isMobilePage(page)) {
-        // Su mobile il fall-through non applicherà logiche cursore
-        return;
-    }
-
-    try {
-        // 80% ratio chance di esecuzione
-        if (Math.random() > 0.8) {
-            return;
-        }
-
-        const box = await page.locator(targetSelector).first().boundingBox();
-        if (!box) return;
-
-        // Assicuriamoci che il mouse arrivi / stia sul box organicamente
-        await humanMouseMove(page, targetSelector);
-
-        // Hover Time asimmetrico tra i 300 e gli 800ms
-        const dwellTime = 300 + Math.random() * 500;
-
-        // Al 50% delle volte, compi una micro-correzione interna al button
-        const doMicroCorrection = Math.random() < 0.5;
-
-        if (doMicroCorrection) {
-            const splitTime = dwellTime * 0.4;
-            // Prima pausa
-            await page.waitForTimeout(splitTime);
-
-            // Micro correzione di pochi px
-            const currentMouse = getStartingPoint(page);
-            const nudgeX = currentMouse.x + (Math.random() * 6 - 3);
-            const nudgeY = currentMouse.y + (Math.random() * 4 - 2);
-
-            // Costringe i bounds a stare dentro il target
-            const boundedX = Math.max(box.x, Math.min(box.x + box.width, nudgeX));
-            const boundedY = Math.max(box.y, Math.min(box.y + box.height, nudgeY));
-
-            await page.mouse.move(boundedX, boundedY, { steps: randomInt(2, 4) });
-            await syncVisualCursorOverlay(page, { x: boundedX, y: boundedY });
-            updateMouseState(page, { x: boundedX, y: boundedY });
-
-            // Rimanente pausa
-            await page.waitForTimeout(dwellTime - splitTime);
-        } else {
-            // Sosta passiva di puro dwell time
-            await page.waitForTimeout(dwellTime);
-        }
-    } catch {
-        // Fall-soft. Se fallisce, il click reale successivo andrà comunque forward.
-    }
-}
-
 export async function humanSwipe(page: Page, direction: 'up' | 'down' = 'up'): Promise<void> {
     try {
         const viewport = page.viewportSize() ?? { width: 390, height: 844 };
@@ -730,18 +672,24 @@ function shuffle<T>(items: T[]): T[] {
 async function runDecoyStep(page: Page, step: DecoyStep): Promise<void> {
     if (step === 'feed') {
         await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
+        await ensureVisualCursorOverlay(page);
+        await ensureInputBlock(page);
         await humanDelay(page, 1200, 2600);
         await simulateHumanReading(page);
         return;
     }
     if (step === 'network') {
         await page.goto('https://www.linkedin.com/mynetwork/', { waitUntil: 'domcontentloaded' });
+        await ensureVisualCursorOverlay(page);
+        await ensureInputBlock(page);
         await humanDelay(page, 1200, 2400);
         await simulateHumanReading(page);
         return;
     }
     if (step === 'notifications') {
         await page.goto('https://www.linkedin.com/notifications/', { waitUntil: 'domcontentloaded' });
+        await ensureVisualCursorOverlay(page);
+        await ensureInputBlock(page);
         await humanDelay(page, 1200, 2400);
         return;
     }
@@ -750,11 +698,15 @@ async function runDecoyStep(page: Page, step: DecoyStep): Promise<void> {
         await page.goto(`https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(term)}`, {
             waitUntil: 'domcontentloaded',
         });
+        await ensureVisualCursorOverlay(page);
+        await ensureInputBlock(page);
         await humanDelay(page, 1200, 2600);
         await simulateHumanReading(page);
         return;
     }
     await page.goBack({ waitUntil: 'domcontentloaded' }).catch(() => null);
+    await ensureVisualCursorOverlay(page);
+    await ensureInputBlock(page);
     await humanDelay(page, 800, 1600);
 }
 
@@ -800,15 +752,21 @@ const DECOY_SEARCH_TERMS: readonly string[] = [
 
 export async function performDecoyAction(page: Page): Promise<void> {
     const terms = DECOY_SEARCH_TERMS;
+    const reInjectOverlay = async () => {
+        await ensureVisualCursorOverlay(page);
+        await ensureInputBlock(page);
+    };
     const actions = [
         async () => {
             await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
+            await reInjectOverlay();
             await simulateHumanReading(page);
             // AD-02: Interviene sul Feed con una probabilità del 20%
             await interactWithFeed(page, 0.20);
         },
         async () => {
             await page.goto('https://www.linkedin.com/mynetwork/', { waitUntil: 'domcontentloaded' });
+            await reInjectOverlay();
             await humanDelay(page, 2000, 5000);
             await simulateHumanReading(page);
         },
@@ -817,6 +775,7 @@ export async function performDecoyAction(page: Page): Promise<void> {
             await page.goto(`https://www.linkedin.com/search/results/people/?keywords=${search}`, {
                 waitUntil: 'domcontentloaded',
             });
+            await reInjectOverlay();
             await humanDelay(page, 1500, 4000);
             await simulateHumanReading(page);
         },
@@ -825,11 +784,13 @@ export async function performDecoyAction(page: Page): Promise<void> {
             const historyState = await page.evaluate(() => window.history.length).catch(() => 0);
             if (historyState > 2) {
                 await page.goBack({ waitUntil: 'domcontentloaded' }).catch(() => null);
+                await reInjectOverlay();
                 await humanDelay(page, 1000, 3000);
                 await simulateHumanReading(page);
             } else {
                 // Fallback action
                 await page.goto('https://www.linkedin.com/notifications/', { waitUntil: 'domcontentloaded' });
+                await reInjectOverlay();
                 await humanDelay(page, 1200, 2400);
             }
         },

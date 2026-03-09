@@ -1,5 +1,6 @@
 import { Page } from 'playwright';
-import { humanDelay, humanMouseMove, simulateHumanReading } from '../browser';
+import { humanDelay, humanMouseMove } from '../browser';
+import { blockUserInput, pauseInputBlock, resumeInputBlock } from '../browser/humanBehavior';
 import { isLinkedInUrl, normalizeLinkedInUrl } from '../linkedinUrl';
 import { SALESNAV_NEXT_PAGE_SELECTOR } from './selectors';
 
@@ -21,6 +22,7 @@ export interface SalesNavListScrapeOptions {
     listUrl: string;
     maxPages: number;
     leadLimit: number;
+    interactive?: boolean;
 }
 
 export interface SalesNavListScrapeResult {
@@ -37,6 +39,22 @@ interface RawLeadCandidate {
 }
 
 const SALESNAV_LISTS_URL = 'https://www.linkedin.com/sales/lists/people/';
+
+/**
+ * Scroll leggero per liste SalesNav: 1-2 scroll graduali verso il basso
+ * per rivelare il contenuto, senza back-to-top o tab switch.
+ * Molto più naturale di simulateHumanReading per pagine lista.
+ */
+async function lightListScroll(page: Page): Promise<void> {
+    const isScrollable = await page.evaluate(() => document.body.scrollHeight > window.innerHeight).catch(() => false);
+    if (!isScrollable) return;
+    const scrollCount = 1 + Math.floor(Math.random() * 2); // 1-2 scroll
+    for (let i = 0; i < scrollCount; i++) {
+        const deltaY = 200 + Math.random() * 300;
+        await page.evaluate((dy: number) => window.scrollBy({ top: dy, behavior: 'smooth' }), deltaY);
+        await humanDelay(page, 800, 1800);
+    }
+}
 
 const NEXT_PAGE_SELECTOR = SALESNAV_NEXT_PAGE_SELECTOR;
 
@@ -225,9 +243,11 @@ async function clickShowMoreIfPresent(page: Page): Promise<boolean> {
     if (disabled) {
         return false;
     }
+    await pauseInputBlock(page);
     await humanMouseMove(page, SHOW_MORE_SELECTOR);
     await humanDelay(page, 180, 450);
     await button.click();
+    await resumeInputBlock(page);
     await humanDelay(page, 1200, 2200);
     return true;
 }
@@ -244,9 +264,11 @@ async function goToNextPage(page: Page): Promise<boolean> {
         return false;
     }
 
+    await pauseInputBlock(page);
     await humanMouseMove(page, NEXT_PAGE_SELECTOR);
     await humanDelay(page, 180, 420);
     await nextButton.click();
+    await resumeInputBlock(page);
     await humanDelay(page, 1300, 2600);
     return true;
 }
@@ -254,7 +276,7 @@ async function goToNextPage(page: Page): Promise<boolean> {
 export async function navigateToSavedLists(page: Page): Promise<SalesNavSavedList[]> {
     await page.goto(SALESNAV_LISTS_URL, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     await humanDelay(page, 1800, 3200);
-    await simulateHumanReading(page);
+    await lightListScroll(page);
     return extractSavedLists(page);
 }
 
@@ -267,6 +289,8 @@ export async function scrapeLeadsFromSalesNavList(
 
     await page.goto(options.listUrl, { waitUntil: 'domcontentloaded' });
     await humanDelay(page, 1500, 2800);
+    // Re-inject overlay dopo navigazione (DOM distrutto da page.goto)
+    if (options.interactive) await blockUserInput(page);
 
     const byUrl = new Map<string, SalesNavLeadCandidate>();
     let pagesVisited = 0;
@@ -274,13 +298,13 @@ export async function scrapeLeadsFromSalesNavList(
 
     for (let pageNumber = 1; pageNumber <= maxPages; pageNumber++) {
         pagesVisited = pageNumber;
-        await simulateHumanReading(page);
+        await lightListScroll(page);
 
         // Prova 1-2 volte a espandere risultati nella pagina corrente.
         for (let i = 0; i < 2; i++) {
             const expanded = await clickShowMoreIfPresent(page);
             if (!expanded) break;
-            await simulateHumanReading(page);
+            await lightListScroll(page);
         }
 
         const rawCandidates = await extractRawLeadCandidates(page);
@@ -305,6 +329,8 @@ export async function scrapeLeadsFromSalesNavList(
         if (!moved) {
             break;
         }
+        // Re-inject overlay dopo cambio pagina
+        if (options.interactive) await blockUserInput(page);
     }
 
     return {

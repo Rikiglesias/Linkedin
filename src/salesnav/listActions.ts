@@ -1,5 +1,7 @@
+import { Page } from 'playwright';
 import { getAccountProfileById } from '../accountManager';
 import { checkLogin, closeBrowser, humanDelay, humanMouseMove, launchBrowser } from '../browser';
+import { blockUserInput, pauseInputBlock, resumeInputBlock } from '../browser/humanBehavior';
 import { normalizeLinkedInUrl } from '../linkedinUrl';
 import { navigateToSavedLists, SalesNavSavedList } from './listScraper';
 
@@ -77,51 +79,62 @@ async function resolveSavedListUrl(page: import('playwright').Page, listName: st
     }
 }
 
-export async function createSalesNavList(listName: string, accountId?: string): Promise<SalesNavActionResult> {
+export async function createSalesNavList(listName: string, accountId?: string, externalPage?: Page): Promise<SalesNavActionResult> {
     const account = getAccountProfileById(accountId);
     const normalizedListName = cleanText(listName);
     if (!normalizedListName) {
         return { ok: false, accountId: account.id, message: 'Nome lista non valido' };
     }
 
-    const session = await launchBrowser({
+    const ownSession = externalPage ? null : await launchBrowser({
+        headless: false,
         sessionDir: account.sessionDir,
         proxy: account.proxy,
+        forceDesktop: true,
     });
+    const page = externalPage ?? ownSession!.page;
     try {
-        const loggedIn = await checkLogin(session.page);
+        const loggedIn = await checkLogin(page);
         if (!loggedIn) {
             return { ok: false, accountId: account.id, message: 'Sessione non autenticata' };
         }
+        await blockUserInput(page);
 
-        await session.page.goto('https://www.linkedin.com/sales/lists/people/', { waitUntil: 'domcontentloaded', timeout: 60_000 });
-        await humanDelay(session.page, 1400, 2600);
+        await page.goto('https://www.linkedin.com/sales/lists/people/', { waitUntil: 'domcontentloaded', timeout: 60_000 });
+        await blockUserInput(page);
+        await humanDelay(page, 1400, 2600);
 
-        const createButton = session.page.locator(CREATE_LIST_BUTTON_SELECTOR).first();
+        const createButton = page.locator(CREATE_LIST_BUTTON_SELECTOR).first();
         if ((await createButton.count()) === 0) {
             return { ok: false, accountId: account.id, message: 'Bottone Create list non trovato' };
         }
-        await humanMouseMove(session.page, CREATE_LIST_BUTTON_SELECTOR);
-        await humanDelay(session.page, 150, 350);
+        await pauseInputBlock(page);
+        await humanMouseMove(page, CREATE_LIST_BUTTON_SELECTOR);
+        await humanDelay(page, 150, 350);
         await createButton.click();
-        await humanDelay(session.page, 800, 1600);
+        await resumeInputBlock(page);
+        await humanDelay(page, 800, 1600);
 
-        const nameInput = session.page.locator(LIST_NAME_INPUT_SELECTOR).first();
+        const nameInput = page.locator(LIST_NAME_INPUT_SELECTOR).first();
         if ((await nameInput.count()) === 0) {
             return { ok: false, accountId: account.id, message: 'Input nome lista non trovato' };
         }
+        await pauseInputBlock(page);
         await nameInput.fill(normalizedListName);
-        await humanDelay(session.page, 450, 900);
+        await resumeInputBlock(page);
+        await humanDelay(page, 450, 900);
 
-        const confirmButton = session.page.locator(CREATE_LIST_CONFIRM_SELECTOR).first();
+        const confirmButton = page.locator(CREATE_LIST_CONFIRM_SELECTOR).first();
         if ((await confirmButton.count()) === 0) {
             return { ok: false, accountId: account.id, message: 'Bottone conferma creazione non trovato' };
         }
-        await humanMouseMove(session.page, CREATE_LIST_CONFIRM_SELECTOR);
-        await humanDelay(session.page, 120, 320);
+        await pauseInputBlock(page);
+        await humanMouseMove(page, CREATE_LIST_CONFIRM_SELECTOR);
+        await humanDelay(page, 120, 320);
         await confirmButton.click();
-        await humanDelay(session.page, 1400, 2600);
-        const resolvedListUrl = await resolveSavedListUrl(session.page, normalizedListName);
+        await resumeInputBlock(page);
+        await humanDelay(page, 1400, 2600);
+        const resolvedListUrl = await resolveSavedListUrl(page, normalizedListName);
 
         return {
             ok: true,
@@ -131,7 +144,7 @@ export async function createSalesNavList(listName: string, accountId?: string): 
             message: `Lista creata (best-effort): ${normalizedListName}`,
         };
     } finally {
-        await closeBrowser(session);
+        if (ownSession) await closeBrowser(ownSession);
     }
 }
 
@@ -139,6 +152,7 @@ export async function addLeadToSalesNavList(
     leadLinkedinUrl: string,
     listName: string,
     accountId?: string,
+    externalPage?: Page,
 ): Promise<SalesNavActionResult> {
     const account = getAccountProfileById(accountId);
     const normalizedListName = cleanText(listName);
@@ -150,29 +164,36 @@ export async function addLeadToSalesNavList(
         return { ok: false, accountId: account.id, message: 'URL lead non valido' };
     }
 
-    const session = await launchBrowser({
+    const ownSession = externalPage ? null : await launchBrowser({
+        headless: false,
         sessionDir: account.sessionDir,
         proxy: account.proxy,
+        forceDesktop: true,
     });
+    const page = externalPage ?? ownSession!.page;
     try {
-        const loggedIn = await checkLogin(session.page);
+        const loggedIn = await checkLogin(page);
         if (!loggedIn) {
             return { ok: false, accountId: account.id, message: 'Sessione non autenticata' };
         }
+        await blockUserInput(page);
 
-        await session.page.goto(normalizedLeadUrl, { waitUntil: 'domcontentloaded' });
-        await humanDelay(session.page, 1400, 2600);
+        await page.goto(normalizedLeadUrl, { waitUntil: 'domcontentloaded' });
+        await blockUserInput(page);
+        await humanDelay(page, 1400, 2600);
 
-        const saveButton = session.page.locator(SAVE_TO_LIST_BUTTON_SELECTOR).first();
+        const saveButton = page.locator(SAVE_TO_LIST_BUTTON_SELECTOR).first();
         if ((await saveButton.count()) === 0) {
             return { ok: false, accountId: account.id, message: 'Bottone Save in list non trovato' };
         }
-        await humanMouseMove(session.page, SAVE_TO_LIST_BUTTON_SELECTOR);
-        await humanDelay(session.page, 160, 340);
+        await pauseInputBlock(page);
+        await humanMouseMove(page, SAVE_TO_LIST_BUTTON_SELECTOR);
+        await humanDelay(page, 160, 340);
         await saveButton.click();
-        await humanDelay(session.page, 900, 1800);
+        await resumeInputBlock(page);
+        await humanDelay(page, 900, 1800);
 
-        const listOption = session.page.locator(`text="${normalizedListName}"`).first();
+        const listOption = page.locator(`text="${normalizedListName}"`).first();
         if ((await listOption.count()) === 0) {
             return {
                 ok: false,
@@ -180,17 +201,21 @@ export async function addLeadToSalesNavList(
                 message: `Lista non trovata nel popup: ${normalizedListName}`,
             };
         }
+        await pauseInputBlock(page);
         await listOption.click();
-        await humanDelay(session.page, 400, 900);
+        await resumeInputBlock(page);
+        await humanDelay(page, 400, 900);
 
-        const confirmButton = session.page.locator(ADD_TO_LIST_CONFIRM_SELECTOR).first();
+        const confirmButton = page.locator(ADD_TO_LIST_CONFIRM_SELECTOR).first();
         if ((await confirmButton.count()) > 0) {
-            await humanMouseMove(session.page, ADD_TO_LIST_CONFIRM_SELECTOR);
-            await humanDelay(session.page, 120, 300);
+            await pauseInputBlock(page);
+            await humanMouseMove(page, ADD_TO_LIST_CONFIRM_SELECTOR);
+            await humanDelay(page, 120, 300);
             await confirmButton.click();
+            await resumeInputBlock(page);
         }
-        await humanDelay(session.page, 900, 1800);
-        const resolvedListUrl = await resolveSavedListUrl(session.page, normalizedListName);
+        await humanDelay(page, 900, 1800);
+        const resolvedListUrl = await resolveSavedListUrl(page, normalizedListName);
         return {
             ok: true,
             accountId: account.id,
@@ -199,6 +224,6 @@ export async function addLeadToSalesNavList(
             message: `Lead aggiunto (best-effort) a lista: ${normalizedListName}`,
         };
     } finally {
-        await closeBrowser(session);
+        if (ownSession) await closeBrowser(ownSession);
     }
 }
