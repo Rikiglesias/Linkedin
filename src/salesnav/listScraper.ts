@@ -41,18 +41,24 @@ interface RawLeadCandidate {
 const SALESNAV_LISTS_URL = 'https://www.linkedin.com/sales/lists/people/';
 
 /**
- * Scroll leggero per liste SalesNav: 1-2 scroll graduali verso il basso
- * per rivelare il contenuto, senza back-to-top o tab switch.
- * Molto più naturale di simulateHumanReading per pagine lista.
+ * Scroll graduale per liste SalesNav: scende fino in fondo alla pagina
+ * con step variabili e pause naturali. NON torna mai su (niente pattern
+ * su-giù-su-giù). Rivela tutti i lead lazy-loaded di SalesNav.
  */
 async function lightListScroll(page: Page): Promise<void> {
     const isScrollable = await page.evaluate(() => document.body.scrollHeight > window.innerHeight).catch(() => false);
     if (!isScrollable) return;
-    const scrollCount = 1 + Math.floor(Math.random() * 2); // 1-2 scroll
-    for (let i = 0; i < scrollCount; i++) {
-        const deltaY = 200 + Math.random() * 300;
+
+    // Scroll fino al fondo della pagina con step variabili
+    for (let attempt = 0; attempt < 12; attempt++) {
+        const atBottom = await page.evaluate(() =>
+            window.scrollY + window.innerHeight >= document.body.scrollHeight - 100,
+        ).catch(() => true);
+        if (atBottom) break;
+
+        const deltaY = 280 + Math.random() * 350;
         await page.evaluate((dy: number) => window.scrollBy({ top: dy, behavior: 'smooth' }), deltaY);
-        await humanDelay(page, 800, 1800);
+        await humanDelay(page, 600 + Math.random() * 800, 1200 + Math.random() * 600);
     }
 }
 
@@ -69,10 +75,30 @@ function cleanText(value: string): string {
     return value.replace(/\s+/g, ' ').trim();
 }
 
+/** Pattern di stato SalesNav che inquinano il nome (es. "era online 5 ore fa") */
+const SALESNAV_STATUS_PATTERNS = [
+    /\s+era online\b.*/i,
+    /\s+was online\b.*/i,
+    /\s+active\s+\d+.*/i,
+    /\s+attivo\s+\d+.*/i,
+    /\s+\d+[hdm]\s+ago\b.*/i,
+    /\s+\d+\s+(ore?|minut[oi]|giorni?|hours?|minutes?|days?)\s+(fa|ago)\b.*/i,
+    /\s+online\s+now.*/i,
+    /\s+online\s+ora.*/i,
+    /\s+\(\d+\).*/,  // "(3rd)" connection degree
+    /\s+·\s+\d+(st|nd|rd|th).*/i,
+];
+
+function cleanSalesNavName(raw: string): string {
+    let cleaned = cleanText(raw);
+    for (const pattern of SALESNAV_STATUS_PATTERNS) {
+        cleaned = cleaned.replace(pattern, '');
+    }
+    return cleaned.replace(/^(dr|dott|mr|mrs|ms)\.?\s+/i, '').trim();
+}
+
 function splitName(fullName: string): { firstName: string; lastName: string } {
-    const cleaned = cleanText(fullName)
-        .replace(/^(dr|dott|mr|mrs|ms)\.?\s+/i, '')
-        .trim();
+    const cleaned = cleanSalesNavName(fullName);
     if (!cleaned) {
         return { firstName: '', lastName: '' };
     }
@@ -102,7 +128,18 @@ function looksLikeNoise(line: string): boolean {
         normalized.includes('filtro') ||
         normalized.includes('view profile') ||
         normalized.includes('visualizza profilo') ||
-        normalized.includes('sales navigator')
+        normalized.includes('sales navigator') ||
+        normalized.includes('era online') ||
+        normalized.includes('was online') ||
+        normalized.includes('online now') ||
+        normalized.includes('online ora') ||
+        normalized.includes('active ') ||
+        /^\d+[hdm]\s+ago$/i.test(normalized) ||
+        /^\d+\s+(ore?|minut[oi]|giorni?)\s+fa$/i.test(normalized) ||
+        normalized.includes('select') ||
+        normalized.includes('seleziona') ||
+        normalized.includes('add to list') ||
+        normalized.includes('aggiungi a lista')
     );
 }
 
@@ -140,12 +177,15 @@ function pickJobAndAccount(lines: string[], fullName: string): { jobTitle: strin
 }
 
 function parseRawLeadCandidate(raw: RawLeadCandidate): SalesNavLeadCandidate | null {
-    const normalizedUrl = normalizeLinkedInUrl(raw.href);
+    let normalizedUrl = normalizeLinkedInUrl(raw.href);
     if (!isLinkedInUrl(normalizedUrl)) {
         return null;
     }
 
-    const fullName = cleanText(raw.anchorText) || cleanText(raw.lines[0] ?? '');
+    // Pulisci suffisso ,NAME_SEARCH,xxx dall'URL SalesNav
+    normalizedUrl = normalizedUrl.replace(/,NAME_SEARCH[^/]*/i, '');
+
+    const fullName = cleanSalesNavName(raw.anchorText) || cleanSalesNavName(raw.lines[0] ?? '');
     const { firstName, lastName } = splitName(fullName);
     const { jobTitle, accountName } = pickJobAndAccount(raw.lines, fullName);
     return {
@@ -200,32 +240,62 @@ async function extractSavedLists(page: Page): Promise<SalesNavSavedList[]> {
 
 async function extractRawLeadCandidates(page: Page): Promise<RawLeadCandidate[]> {
     return page.evaluate(() => {
-        const matches: RawLeadCandidate[] = [];
+        const matches: Array<{ href: string; anchorText: string; lines: string[] }> = [];
         const seen = new Set<string>();
 
+        // Strategia 1: cerca anchor con href /sales/lead/ o /in/
         const anchors = Array.from(document.querySelectorAll('a[href]')) as HTMLAnchorElement[];
         for (const anchor of anchors) {
             const href = anchor.href || anchor.getAttribute('href') || '';
             if (!href) continue;
             if (!/linkedin\.com\/(sales\/lead|in\/)/i.test(href)) continue;
+            // Escludi link a liste (non sono lead)
+            if (/\/sales\/lists\//i.test(href)) continue;
 
-            const dedupeKey = href.split('#')[0];
+            // Normalizza URL per dedup: rimuovi hash, query e suffisso ,NAME_SEARCH
+            const dedupeKey = href.split('#')[0].split('?')[0].replace(/,NAME_SEARCH.*$/i, '');
             if (seen.has(dedupeKey)) continue;
             seen.add(dedupeKey);
 
+            // Cerca il container più vicino (card del lead)
             const container = anchor.closest(
-                'li, article, .artdeco-entity-lockup, [data-test-search-result]',
+                'li, article, tr, .artdeco-entity-lockup, [data-test-search-result], ' +
+                '[class*="entity-result"], [class*="result-lockup"], [class*="lead-result"]',
             ) as HTMLElement | null;
             const textSource = container?.innerText ?? anchor.innerText ?? '';
             const lines = textSource
                 .split('\n')
                 .map((line) => line.replace(/\s+/g, ' ').trim())
                 .filter((line) => line.length > 0)
-                .slice(0, 8);
+                .slice(0, 10);
 
             matches.push({
-                href: dedupeKey,
+                href: href.split('#')[0],
                 anchorText: (anchor.innerText || '').replace(/\s+/g, ' ').trim(),
+                lines,
+            });
+        }
+
+        // Strategia 2: cerca data-entity-urn (SalesNav usa spesso questi)
+        const entityElements = document.querySelectorAll('[data-entity-urn*="lead"]');
+        for (const el of entityElements) {
+            const leadAnchor = el.querySelector('a[href*="/sales/lead/"]') as HTMLAnchorElement | null;
+            if (!leadAnchor) continue;
+            const href = leadAnchor.href || '';
+            const dedupeKey = href.split('#')[0].split('?')[0].replace(/,NAME_SEARCH.*$/i, '');
+            if (seen.has(dedupeKey)) continue;
+            seen.add(dedupeKey);
+
+            const textSource = (el as HTMLElement).innerText || '';
+            const lines = textSource
+                .split('\n')
+                .map((line) => line.replace(/\s+/g, ' ').trim())
+                .filter((line) => line.length > 0)
+                .slice(0, 10);
+
+            matches.push({
+                href: href.split('#')[0],
+                anchorText: (leadAnchor.innerText || '').replace(/\s+/g, ' ').trim(),
                 lines,
             });
         }
@@ -269,7 +339,11 @@ async function goToNextPage(page: Page): Promise<boolean> {
     await humanDelay(page, 180, 420);
     await nextButton.click();
     await resumeInputBlock(page);
-    await humanDelay(page, 1300, 2600);
+    // Attendi caricamento AJAX della nuova pagina (SalesNav non fa page reload)
+    await humanDelay(page, 2000, 3500);
+    // Attendi che i risultati siano visibili (indicatore di caricamento completato)
+    await page.waitForSelector('a[href*="/sales/lead/"]', { timeout: 10_000 }).catch(() => null);
+    await humanDelay(page, 500, 1000);
     return true;
 }
 
@@ -309,6 +383,7 @@ export async function scrapeLeadsFromSalesNavList(
 
         const rawCandidates = await extractRawLeadCandidates(page);
         candidatesDiscovered += rawCandidates.length;
+        console.log(`[SYNC] Pagina ${pageNumber}: ${rawCandidates.length} candidati trovati, ${byUrl.size} unici finora`);
         for (const raw of rawCandidates) {
             const parsed = parseRawLeadCandidate(raw);
             if (!parsed) continue;
