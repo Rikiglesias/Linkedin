@@ -275,7 +275,9 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
                         listReport.unchanged += 1;
                         report.unchanged += 1;
                     }
-                } catch {
+                } catch (err) {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    console.error(`[SYNC] Errore upsert lead ${candidate.linkedinUrl}: ${msg}`);
                     listReport.errors += 1;
                     report.errors += 1;
                 }

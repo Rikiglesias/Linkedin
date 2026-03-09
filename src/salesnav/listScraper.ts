@@ -1,5 +1,5 @@
 import { Page } from 'playwright';
-import { humanDelay, humanMouseMove } from '../browser';
+import { detectChallenge, humanDelay, humanMouseMove } from '../browser';
 import { blockUserInput, pauseInputBlock, resumeInputBlock } from '../browser/humanBehavior';
 import { isLinkedInUrl, normalizeLinkedInUrl } from '../linkedinUrl';
 import { SALESNAV_NEXT_PAGE_SELECTOR } from './selectors';
@@ -40,26 +40,93 @@ interface RawLeadCandidate {
 
 const SALESNAV_LISTS_URL = 'https://www.linkedin.com/sales/lists/people/';
 
+/** Selector combinato per lead card SalesNav (lead + people + profili standard) */
+const LEAD_ANCHOR_SELECTOR = 'a[href*="/sales/lead/"], a[href*="/sales/people/"], a[href*="/in/"]';
+
 /**
  * Scroll graduale per liste SalesNav: scende fino in fondo alla pagina
  * con step variabili e pause naturali. NON torna mai su (niente pattern
  * su-giù-su-giù). Rivela tutti i lead lazy-loaded di SalesNav.
+ *
+ * CRITICO: SalesNav spesso usa un div interno con overflow (non window scroll).
+ * Questa funzione rileva il container scrollabile corretto e scrolla quello.
  */
 async function lightListScroll(page: Page): Promise<void> {
-    const isScrollable = await page.evaluate(() => document.body.scrollHeight > window.innerHeight).catch(() => false);
-    if (!isScrollable) return;
+    // Attendi che almeno una lead card appaia (SalesNav lazy-load)
+    await page.waitForSelector(LEAD_ANCHOR_SELECTOR, { timeout: 10_000 }).catch(() => null);
+    await humanDelay(page, 200, 500);
 
-    // Scroll fino al fondo della pagina con step variabili
-    for (let attempt = 0; attempt < 12; attempt++) {
-        const atBottom = await page.evaluate(() =>
-            window.scrollY + window.innerHeight >= document.body.scrollHeight - 100,
-        ).catch(() => true);
+    // Rileva se SalesNav usa un container interno scrollabile (comune)
+    // oppure il window scroll standard. Marca il container con data-lk-scroll.
+    await page.evaluate((leadSel: string) => {
+        const bodyOverflow = document.body.scrollHeight - window.innerHeight;
+        if (bodyOverflow > 100) return; // Window scroll funziona — niente da fare
+
+        // Window non scrollabile → cerca container interno con lead card
+        const candidates = document.querySelectorAll('div, main, section, [role="main"]');
+        let best: HTMLElement | null = null;
+        let bestDiff = 0;
+        for (const el of candidates) {
+            const htmlEl = el as HTMLElement;
+            const diff = htmlEl.scrollHeight - htmlEl.clientHeight;
+            if (diff > 100 && diff > bestDiff) {
+                if (htmlEl.querySelector(leadSel)) {
+                    best = htmlEl;
+                    bestDiff = diff;
+                }
+            }
+        }
+        if (best) {
+            best.setAttribute('data-lk-scroll', '1');
+        }
+    }, LEAD_ANCHOR_SELECTOR).catch(() => {});
+
+    // Scroll fino in fondo con step variabili e tracking progresso
+    let noProgressCount = 0;
+    for (let step = 0; step < 20; step++) {
+        const atBottom = await page.evaluate(() => {
+            const c = document.querySelector('[data-lk-scroll="1"]') as HTMLElement | null;
+            if (c) return c.scrollTop + c.clientHeight >= c.scrollHeight - 100;
+            return window.scrollY + window.innerHeight >= document.body.scrollHeight - 100;
+        }).catch(() => true);
         if (atBottom) break;
 
+        const posBefore = await page.evaluate(() => {
+            const c = document.querySelector('[data-lk-scroll="1"]') as HTMLElement | null;
+            return c ? c.scrollTop : window.scrollY;
+        }).catch(() => 0);
+
         const deltaY = 280 + Math.random() * 350;
-        await page.evaluate((dy: number) => window.scrollBy({ top: dy, behavior: 'smooth' }), deltaY);
+        await page.evaluate((dy: number) => {
+            const c = document.querySelector('[data-lk-scroll="1"]') as HTMLElement | null;
+            if (c) {
+                c.scrollTop += dy;
+            } else {
+                window.scrollBy({ top: dy, behavior: 'smooth' });
+            }
+        }, deltaY);
+
         await humanDelay(page, 600 + Math.random() * 800, 1200 + Math.random() * 600);
+
+        // Verifica che lo scroll sia effettivamente avanzato
+        const posAfter = await page.evaluate(() => {
+            const c = document.querySelector('[data-lk-scroll="1"]') as HTMLElement | null;
+            return c ? c.scrollTop : window.scrollY;
+        }).catch(() => posBefore);
+
+        if (Math.abs(posAfter - posBefore) < 10) {
+            noProgressCount++;
+            if (noProgressCount >= 3) break; // Contenuto completamente caricato
+        } else {
+            noProgressCount = 0;
+        }
     }
+
+    // Cleanup marker
+    await page.evaluate(() => {
+        const el = document.querySelector('[data-lk-scroll="1"]');
+        if (el) el.removeAttribute('data-lk-scroll');
+    }).catch(() => {});
 }
 
 const NEXT_PAGE_SELECTOR = SALESNAV_NEXT_PAGE_SELECTOR;
@@ -248,7 +315,7 @@ async function extractRawLeadCandidates(page: Page): Promise<RawLeadCandidate[]>
         for (const anchor of anchors) {
             const href = anchor.href || anchor.getAttribute('href') || '';
             if (!href) continue;
-            if (!/linkedin\.com\/(sales\/lead|in\/)/i.test(href)) continue;
+            if (!/linkedin\.com\/(sales\/lead|sales\/people|in\/)/i.test(href)) continue;
             // Escludi link a liste (non sono lead)
             if (/\/sales\/lists\//i.test(href)) continue;
 
@@ -342,7 +409,7 @@ async function goToNextPage(page: Page): Promise<boolean> {
     // Attendi caricamento AJAX della nuova pagina (SalesNav non fa page reload)
     await humanDelay(page, 2000, 3500);
     // Attendi che i risultati siano visibili (indicatore di caricamento completato)
-    await page.waitForSelector('a[href*="/sales/lead/"]', { timeout: 10_000 }).catch(() => null);
+    await page.waitForSelector(LEAD_ANCHOR_SELECTOR, { timeout: 10_000 }).catch(() => null);
     await humanDelay(page, 500, 1000);
     return true;
 }
@@ -361,10 +428,12 @@ export async function scrapeLeadsFromSalesNavList(
     const maxPages = Math.max(1, options.maxPages);
     const leadLimit = Math.max(1, options.leadLimit);
 
-    await page.goto(options.listUrl, { waitUntil: 'domcontentloaded' });
+    await page.goto(options.listUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     await humanDelay(page, 1500, 2800);
     // Re-inject overlay dopo navigazione (DOM distrutto da page.goto)
     if (options.interactive) await blockUserInput(page);
+    // Attendi che almeno una lead card appaia prima di iniziare
+    await page.waitForSelector(LEAD_ANCHOR_SELECTOR, { timeout: 15_000 }).catch(() => null);
 
     const byUrl = new Map<string, SalesNavLeadCandidate>();
     let pagesVisited = 0;
@@ -381,7 +450,20 @@ export async function scrapeLeadsFromSalesNavList(
             await lightListScroll(page);
         }
 
-        const rawCandidates = await extractRawLeadCandidates(page);
+        // Challenge check per pagina — interrompi subito se LinkedIn blocca
+        if (await detectChallenge(page)) {
+            console.log(`[SYNC] Challenge rilevato a pagina ${pageNumber}. Interruzione.`);
+            break;
+        }
+
+        let rawCandidates = await extractRawLeadCandidates(page);
+        // Retry una volta se 0 candidati trovati (AJAX lento o scroll insufficiente)
+        if (rawCandidates.length === 0) {
+            console.log(`[SYNC] Pagina ${pageNumber}: 0 candidati, attendo e riprovo...`);
+            await humanDelay(page, 2000, 3000);
+            await lightListScroll(page);
+            rawCandidates = await extractRawLeadCandidates(page);
+        }
         candidatesDiscovered += rawCandidates.length;
         console.log(`[SYNC] Pagina ${pageNumber}: ${rawCandidates.length} candidati trovati, ${byUrl.size} unici finora`);
         for (const raw of rawCandidates) {

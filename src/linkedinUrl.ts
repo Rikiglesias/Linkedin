@@ -50,6 +50,16 @@ export function normalizeLinkedInUrl(raw: string): string {
         return normalized.toString();
     }
 
+    // Canonicalizza URL SalesNav /sales/lead/ e /sales/people/:
+    // rimuovi suffisso ,NAME_SEARCH e query params per evitare duplicati.
+    if (parts.length >= 3 && parts[0].toLowerCase() === 'sales'
+        && (parts[1].toLowerCase() === 'lead' || parts[1].toLowerCase() === 'people')) {
+        const leadId = parts[2].replace(/,NAME_SEARCH.*/i, '');
+        normalized.pathname = `/sales/${parts[1].toLowerCase()}/${leadId}`;
+        normalized.search = '';
+        return normalized.toString();
+    }
+
     normalized.pathname = normalized.pathname.replace(/\/+$/, '');
     return normalized.toString();
 }
