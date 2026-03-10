@@ -16,6 +16,7 @@ import {
     updateLeadScrapedContext,
 } from '../core/repositories';
 import { getLeadById } from '../core/repositories/leadsCore';
+import { isBlacklisted } from '../core/repositories/blacklist';
 import { transitionLead } from '../core/leadStateService';
 import { joinSelectors } from '../selectors';
 import { InviteJobPayload, LeadRecord } from '../types/domain';
@@ -196,6 +197,12 @@ export async function processInviteJob(
     const lead = await getLeadById(payload.leadId);
     if (!lead) {
         throw new RetryableWorkerError(`Lead ${payload.leadId} non trovato`, 'LEAD_NOT_FOUND');
+    }
+
+    // Check blacklist runtime: il lead potrebbe essere stato aggiunto alla blacklist
+    // DOPO la creazione del job nello scheduler (ore/giorni prima).
+    if (await isBlacklisted(lead.linkedin_url, lead.company_domain)) {
+        return workerResult(0);
     }
 
     if (lead.status === 'NEW') {

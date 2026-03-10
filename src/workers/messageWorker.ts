@@ -9,6 +9,7 @@ import {
     typeWithFallback,
 } from '../browser';
 import { transitionLead } from '../core/leadStateService';
+import { isBlacklisted } from '../core/repositories/blacklist';
 import {
     checkAndIncrementDailyLimit,
     countRecentMessageHash,
@@ -41,6 +42,12 @@ export async function processMessageJob(
 
     const isCampaignDriven = !!payload.campaignStateId;
     if (!lead || (!isCampaignDriven && lead.status !== 'READY_MESSAGE')) {
+        return workerResult(0);
+    }
+
+    // Check blacklist runtime: il lead potrebbe essere stato aggiunto alla blacklist
+    // DOPO la creazione del job nello scheduler (ore/giorni prima).
+    if (await isBlacklisted(lead.linkedin_url, lead.company_domain)) {
         return workerResult(0);
     }
 
