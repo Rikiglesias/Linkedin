@@ -74,6 +74,8 @@ class SQLiteManager implements DatabaseManager {
 class PostgresManager implements DatabaseManager {
     readonly isPostgres = true;
     private pool: Pool;
+    private sqlCache = new Map<string, string>();
+    private static readonly SQL_CACHE_MAX = 500;
 
     constructor(connectionString: string) {
         this.pool = new Pool({
@@ -92,6 +94,9 @@ class PostgresManager implements DatabaseManager {
     }
 
     private normalizeSql(sql: string): string {
+        const cached = this.sqlCache.get(sql);
+        if (cached) return cached;
+
         let normalized = this.adaptParams(sql);
 
         normalized = normalized.replace(
@@ -129,6 +134,13 @@ class PostgresManager implements DatabaseManager {
             normalized = normalized.replace(/;\s*$/, '');
             normalized = `${normalized} ON CONFLICT DO NOTHING`;
         }
+
+        // Cache il risultato per evitare 8 regex ad ogni query ripetuta
+        if (this.sqlCache.size >= PostgresManager.SQL_CACHE_MAX) {
+            const firstKey = this.sqlCache.keys().next().value;
+            if (firstKey !== undefined) this.sqlCache.delete(firstKey);
+        }
+        this.sqlCache.set(sql, normalized);
 
         return normalized;
     }
