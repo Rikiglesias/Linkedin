@@ -61,7 +61,7 @@ export async function lockNextQueuedJob(
             `
             SELECT ${JOB_SELECT_COLUMNS} FROM jobs
             WHERE ${whereClauses.join('\n              AND ')}
-            ORDER BY priority ASC, created_at ASC
+            ORDER BY priority ASC, ${db.isPostgres ? 'scheduled_at + (random() * interval \'60 seconds\')' : 'scheduled_at + (ABS(RANDOM()) % 60)'} ASC
             LIMIT 1${db.isPostgres ? ' FOR UPDATE SKIP LOCKED' : ''}
         `,
             params,

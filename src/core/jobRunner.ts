@@ -271,11 +271,13 @@ async function runQueuedJobsForAccount(
         const sessionHistory = await getSessionHistory(account.id, 7);
         const sessionPacingFactor = sessionHistory.pacingFactor;
 
+        const visitedProfilesToday = new Set<string>();
         const workerContext: WorkerContext = {
             session,
             dryRun: options.dryRun,
             localDate: options.localDate,
             accountId: account.id,
+            visitedProfilesToday,
         };
         let consecutiveFailures = 0;
         let processedOnCurrentSession = 0;

@@ -322,6 +322,13 @@ export async function processInviteJob(
         await logError('invite.worker.enrichment_failed', { leadId: payload.leadId, error: String(enrichErr) });
     }
 
+    // Skip profili già visitati oggi: evita duplicate profile view sullo stesso target
+    const normalizedUrl = lead.linkedin_url.replace(/\/+$/, '').toLowerCase();
+    if (context.visitedProfilesToday?.has(normalizedUrl)) {
+        return workerResult(0);
+    }
+    context.visitedProfilesToday?.add(normalizedUrl);
+
     await context.session.page.goto(lead.linkedin_url, { waitUntil: 'domcontentloaded' });
     await simulateHumanReading(context.session.page);
     await contextualReadingPause(context.session.page);
