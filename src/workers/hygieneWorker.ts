@@ -33,6 +33,7 @@ export async function processHygieneJob(
     const page = context.session.page;
     const errors: Array<{ leadId: number; message: string }> = [];
     let processedCount = 0;
+    let visionUsed = false;
 
     for (const lead of expired) {
         if (context.dryRun) {
@@ -63,6 +64,7 @@ export async function processHygieneJob(
                 });
             } catch (cssError) {
                 if (!isVisionAvailable()) throw cssError;
+                visionUsed = true;
                 await logWarn('hygiene.vision_fallback.pending', { leadId: lead.id });
                 try {
                     await visionClick(page, 'Find and click the "Pending" or "In attesa" button on this LinkedIn profile page', {
@@ -92,6 +94,7 @@ export async function processHygieneJob(
                 });
             } catch (cssError) {
                 if (!isVisionAvailable()) throw cssError;
+                visionUsed = true;
                 await logWarn('hygiene.vision_fallback.withdraw_dropdown', { leadId: lead.id });
                 try {
                     await visionClick(page, 'Find and click the "Withdraw" or "Ritira" option in the open dropdown menu', {
@@ -119,6 +122,7 @@ export async function processHygieneJob(
                 });
             } catch (cssError) {
                 if (!isVisionAvailable()) throw cssError;
+                visionUsed = true;
                 await logWarn('hygiene.vision_fallback.confirm_modal', { leadId: lead.id });
                 try {
                     await visionClick(page, 'Find and click the primary "Withdraw" or "Ritira" confirmation button in the modal dialog', {
@@ -149,5 +153,9 @@ export async function processHygieneJob(
         }
     }
 
-    return workerResult(processedCount, errors);
+    const result = workerResult(processedCount, errors);
+    if (visionUsed) {
+        result.visionFallbackUsed = true;
+    }
+    return result;
 }
