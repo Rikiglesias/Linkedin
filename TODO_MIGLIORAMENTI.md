@@ -172,7 +172,7 @@ Verifica sistematica che tutti i comandi CLI documentati nel help siano implemen
 - [x] **`dashboard` non documentato esplicitamente**. Il comando `dashboard` (riga 577) avvia il server Express. Non appare nell'help CLI (c'è solo in `package.json` scripts). Aggiungerlo.
 
 ### Workflow production — coerenza
-- [ ] **4 workflow production (`sync-list`, `sync-search`, `send-messages`, `send-invites`) vs comandi `run`**. I workflow production (righe 585-596) sono indipendenti dal sistema `run invite|check|message|all`. Usano un flusso diverso: preflight interattivo + enrichment + report. Il comando `run invite` e `send-invites` fanno cose diverse ma l'utente potrebbe confonderli. Documentare chiaramente nell'help la differenza: `run invite` = job queue processing, `send-invites` = workflow completo end-to-end.
+- [x] **4 workflow production vs comandi run**: già documentato nell'help CLI (`printHelp` in `index.ts`). Sezione "Production Workflows (pre-flight interattivo + enrichment + report)" per sync-list/sync-search/send-messages/send-invites, separata da "Comandi principali (job queue)" per run invite/check/message/all.
 
 ## 13. Performance, Velocità e Ottimizzazioni Anti-Ban Safe (Priorità: ALTA)
 Metodi per velocizzare il bot SENZA aumentare il rischio di ban. Il principio: ottimizzare il tempo NON speso su LinkedIn, non il tempo speso su LinkedIn.
@@ -261,7 +261,7 @@ Il flusso completo dall'accensione del PC allo spegnimento. Ogni fase ha un razi
 
 ### FASE 1 — Accensione e boot del bot
 - [x] **Login jitter**: prima del primo ciclo, aggiungere un delay random 0-30 minuti per non avere login alle 09:00:00 sharp ogni giorno. In `loopCommand.ts`, prima di `acquireWorkflowRunnerLock()`: `await sleep(Math.floor(Math.random() * 30 * 60 * 1000))`. Il `sessionMemory.ts` traccia `login_hour` — variare l'orario rende il pattern meno rilevabile.
-- [ ] **Health check proattivo**: all'avvio, prima di qualsiasi job: (a) `.\bot.ps1 doctor` automatico (già implementato con `MANDATORY_PREFLIGHT_ENABLED=true`); (b) verificare che il proxy risponda (`checkProxyHealth` in `proxyManager.ts` — già fatto nel preflight di `index.ts` righe 371-383); (c) verificare la sessione cookie non scaduta (`checkSessionFreshness` — già chiamata in `jobRunner.ts`). Tutti e 3 i check esistono già — verificare che siano effettivamente bloccanti (non solo warning).
+- [x] **Health check proattivo bloccante**: verificato. `MANDATORY_PREFLIGHT_ENABLED=true` esegue `runDoctor()` con 5 check bloccanti (DB integrity, login, account isolation, quarantine, compliance). Se qualsiasi fallisce → `process.exit(1)`. Proxy health check separato (checkProxyHealth per ogni account). Session freshness verificata in `jobRunner.ts`. Tutti e 3 sono bloccanti.
 - [ ] **Session warmup**: il `sessionWarmer.ts` (145 righe) esegue: feed reading, notifiche check, search simulation, messaging check, profile view. Con `WARMUP_TWO_SESSIONS_PER_DAY=true`, divide il budget in 2 finestre. Verificare che il warmup venga eseguito OGNI sessione, non solo alla prima del giorno. Il warmup crea "rumore di fondo" che maschera le azioni automatizzate successive.
 
 ### FASE 2 — Sessione operativa mattutina (es. 9:00-12:00)
