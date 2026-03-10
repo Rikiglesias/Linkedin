@@ -62,7 +62,7 @@ Serve blindare meglio le superfici davvero esposte e riallineare ciò che è dic
 - [x] **Docker container gira come root**: il `Dockerfile` non ha `USER` directive. Aggiungere `RUN groupadd -r botuser && useradd -r -g botuser botuser` + `USER botuser` prima del `CMD`. Riduce drasticamente la superficie d'attacco in caso di RCE.
 - [ ] **nginx senza HTTPS/TLS**: `nginx.conf` serve solo HTTP porta 80, nessuna configurazione SSL. In produzione: aggiungere TLS con cert Let's Encrypt (o documentare esplicitamente che HTTPS è delegato a reverse proxy esterno tipo Cloudflare/Caddy). Aggiungere `Strict-Transport-Security` header.
 - [ ] **PG backup non implementato**: `backupDatabase()` per PostgreSQL ritorna solo una stringa informativa. Implementare `pg_dump` via child_process oppure integrare con backup managed (Supabase, pg_dump cron in sidecar Docker).
-- [ ] **VACUUM INTO con interpolazione SQL**: in `db.ts` il backup SQLite usa `VACUUM INTO '${safePath}'` con path interpolato nella stringa SQL. Nonostante la regex di validazione, è un anti-pattern. Preferire VACUUM senza path + file copy, oppure usare il metodo `.backup()` di better-sqlite3.
+- [x] **VACUUM INTO con interpolazione SQL fixato**: sostituito `VACUUM INTO '${safePath}'` in `db.ts` con `PRAGMA wal_checkpoint(TRUNCATE)` + `fs.copyFileSync()`. Nessun path nella SQL, nessun rischio injection. WAL mode confermato attivo (riga 417).
 - [ ] **Rate limit solo per IP**: il rate limiter Express è basato esclusivamente su IP. Dietro un proxy/NAT, tutti gli utenti condividono il limite. Per gli endpoint autenticati, basare il rate limit anche sul session token o API key.
 
 ## 5. Database, Persistenza e Strategia Data Layer (Priorità: MEDIA)

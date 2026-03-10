@@ -454,13 +454,11 @@ export async function backupDatabase(): Promise<string> {
 
     ensureParentDirectoryPrivate(backupPath);
 
-    // Validate backup path to prevent SQL injection via path characters.
-    if (!/^[a-zA-Z0-9_\-. \\/:()\u00C0-\u024F]+$/.test(backupPath)) {
-        throw new Error(`Backup path contains invalid characters: ${backupPath}`);
-    }
-    const safePath = backupPath.replace(/'/g, "''");
-
-    await database.exec(`VACUUM INTO '${safePath}';`);
+    // Checkpoint WAL per assicurare che tutti i dati siano scritti nel file principale,
+    // poi copia atomica del file DB. Evita VACUUM INTO con path interpolato nella SQL
+    // (anti-pattern SQL injection anche con regex validation).
+    await database.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+    fs.copyFileSync(config.dbPath, backupPath);
     ensureFilePrivate(backupPath);
 
     return backupPath;
