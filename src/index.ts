@@ -449,11 +449,6 @@ async function main(): Promise<void> {
         case 'salesnav-add-to-list':
             await runSalesNavUnifiedCommand(['add', ...commandArgs]);
             break;
-        case 'salesnav-extract-search':
-        case 'salesnav-extract-first-search':
-            console.error('[RIMOSSO] Usa "salesnav save" al posto di extract. Vedi help.');
-            process.exit(1);
-            break;
         case 'enrich-targets':
             await runEnrichTargetsCommand(commandArgs);
             break;
