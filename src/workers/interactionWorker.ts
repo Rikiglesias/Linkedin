@@ -15,6 +15,7 @@ import { getDatabase } from '../db';
 import { ChallengeDetectedError } from './errors';
 import { config, getLocalDateString } from '../config';
 import { getDailyStat, incrementDailyStat } from '../core/repositories/stats';
+import { isBlacklisted } from '../core/repositories/blacklist';
 
 export interface InteractionJobPayload {
     leadId: number;
@@ -133,6 +134,11 @@ export async function processInteractionJob(
     if (!linkedinUrl) {
         await logError('interaction.lead_not_found', { leadId });
         return workerResult(0, [{ leadId, message: 'Lead URL non trovato' }]);
+    }
+
+    // Check blacklist runtime: non visitare profili, mettere like o followare lead in blacklist
+    if (await isBlacklisted(linkedinUrl, null)) {
+        return workerResult(0);
     }
 
     // Enforce profile view daily cap
