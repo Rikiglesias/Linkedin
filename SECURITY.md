@@ -1,8 +1,8 @@
 # Security & Privacy Hardening
 
 ## What is already hardened
-- No stealth/evasion browser plugins in runtime dependencies.
-- No fingerprint-evasion runtime patch injected into browser pages.
+- Browser stealth layer: 18 runtime patches in `stealthScripts.ts` (WebRTC kill, navigator normalization, plugins mock, headless guards, battery/audio/WebGL spoofing, CDP leak prevention). Patches are configurable: `STEALTH_SKIP_SECTIONS` disables specific sections, `CLOAKBROWSER_ENABLED` delegates to binary-level stealth. Canvas/WebGL noise is deterministic per fingerprint via PRNG Mulberry32.
+- Fingerprint deterministic selection: same account gets same fingerprint (UA, viewport, WebGL renderer, canvas noise) for ~1 week, then rotates automatically. No random variation between sessions.
 - Automatic pause/quarantine on risk bursts.
 - Sensitive log redaction (`token`, `key`, `cookie`, JWT-like values).
 - Local session and DB storage created with private-permission best effort.
@@ -111,8 +111,7 @@ It does not delete active leads/jobs.
 - Keep `OPENAI_API_KEY` only in local `.env` (never in repository files).
 - Rotate key periodically and after any suspected leak.
 - Keep `AI_PERSONALIZATION_ENABLED=false` / `AI_GUARDIAN_ENABLED=false` until dry-run validation is complete.
-- Keep `AI_ALLOW_REMOTE_ENDPOINT=false` for local-first AI and explicit privacy control.
-- If you need cloud AI (`api.openai.com`), set `AI_ALLOW_REMOTE_ENDPOINT=true` intentionally.
+- **Current deployment uses `AI_ALLOW_REMOTE_ENDPOINT=true`** with OpenAI GPT-5.4 for superior quality. This is intentional — the `AI_ALLOW_REMOTE_ENDPOINT` flag serves as a guardrail: set to `false` to force Ollama-only local AI. Green mode model (`AI_GREEN_MODEL`) always uses Ollama regardless of this flag.
 
 ## Database guardrail
 - SQLite is blocked in `NODE_ENV=production` unless `ALLOW_SQLITE_IN_PRODUCTION=true` is set explicitly.
@@ -143,4 +142,6 @@ The runtime currently requires `sqlite3`; monitor upstream advisories and patch 
 - Production execution model is aligned on compiled output (`dist/`), not `ts-node`.
 - Build both backend and dashboard frontend assets with `npm run build` before `npm start` / PM2 startup.
 - PM2 runs `dist/index.js` (`run-loop`) via `ecosystem.config.cjs`.
-- Dashboard frontend is served from local compiled assets (`/public/assets`) with strict CSP (`script-src 'self'`, `style-src 'self'`).
+- Dashboard frontend is served from local compiled assets (`/public/assets`) with strict CSP (`script-src 'self'`, `style-src 'self'`). Chart.js is bundled locally via esbuild (no CDN external).
+- Dashboard session TTL: 12 hours (`DASHBOARD_SESSION_TTL_MS`), sliding window refreshed on each authenticated request. Sessions stored server-side in DB with SHA-256 hashed token. Brute-force lockout: 5 failures in 15 min → 30 min lockout.
+- Export endpoints (`/api/export/*`, `/api/v1/export/*`) are rate-limited to 5 requests/hour and require authentication.
