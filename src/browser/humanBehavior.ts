@@ -606,16 +606,27 @@ export async function simulateHumanReading(page: Page): Promise<void> {
 /**
  * Pausa randomizzata tra un job e il successivo per evitare il pattern burst.
  * Range: 30–90s base + picco casuale (pausa caffè) con 8% di probabilità.
+ * Se il throttleSignal indica rallentamento LinkedIn, moltiplica il delay:
+ *   shouldSlow → ×1.5, shouldPause → pausa coffee break forzata 3-5 min.
  */
-export async function interJobDelay(page: Page): Promise<void> {
+export async function interJobDelay(page: Page, throttleSignal?: { shouldSlow: boolean; shouldPause: boolean }): Promise<void> {
     const minDelay = Math.max(1, config.interJobMinDelaySec) * 1000;
     const maxDelay = Math.max(config.interJobMinDelaySec, config.interJobMaxDelaySec) * 1000;
 
-    const totalDelay = calculateContextualDelay({
+    let totalDelay = calculateContextualDelay({
         actionType: 'interJob',
         baseMin: minDelay,
         baseMax: maxDelay,
     });
+
+    // Feedback loop reattivo: LinkedIn rallenta → il bot rallenta automaticamente
+    if (throttleSignal?.shouldPause) {
+        // Pausa coffee break forzata 3-5 min (LinkedIn è in stato critico)
+        totalDelay = (180 + Math.floor(Math.random() * 120)) * 1000;
+    } else if (throttleSignal?.shouldSlow) {
+        // Moltiplica delay ×1.5 (LinkedIn sta rallentando)
+        totalDelay = Math.round(totalDelay * 1.5);
+    }
 
     if (Math.random() < (isMobilePage(page) ? 0.2 : 0.35)) {
         await randomMouseMove(page);

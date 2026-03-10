@@ -463,7 +463,9 @@ async function runQueuedJobsForAccount(
                 }
 
                 // Pausa umana tra un job e il successivo (anti-burst)
-                await interJobDelay(session.page);
+                // Feedback loop reattivo: se LinkedIn sta rallentando, il delay aumenta automaticamente
+                const throttleSignal = session.httpThrottler.getThrottleSignal();
+                await interJobDelay(session.page, throttleSignal);
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
                 const attempts = job.attempts + 1;
