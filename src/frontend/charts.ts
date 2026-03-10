@@ -6,12 +6,11 @@
  *   - Gauge compliance health score
  */
 
+import { Chart } from 'chart.js/auto';
 import type { TrendRow } from './types';
 
-declare const Chart: typeof import('chart.js/auto').default;
-
-let invitesChart: InstanceType<typeof Chart> | null = null;
-let riskChart: InstanceType<typeof Chart> | null = null;
+let invitesChart: Chart | null = null;
+let riskChart: Chart | null = null;
 
 const BRAND_COLOR = '#0b6b78';
 const ACCENT_COLOR = '#e8b931';
@@ -19,7 +18,6 @@ const DANGER_COLOR = '#b3261e';
 const SUCCESS_COLOR = '#388e3c';
 
 export function renderInvitesChart(trend: TrendRow[]): void {
-    if (typeof Chart === 'undefined') return;
     const canvas = document.getElementById('chart-invites-daily') as HTMLCanvasElement | null;
     if (!canvas) return;
 
@@ -89,7 +87,6 @@ export function renderInvitesChart(trend: TrendRow[]): void {
 }
 
 export function renderRiskGauge(riskScore: number, healthScore: number): void {
-    if (typeof Chart === 'undefined') return;
     const canvas = document.getElementById('chart-risk-gauge') as HTMLCanvasElement | null;
     if (!canvas) return;
 
