@@ -63,9 +63,54 @@ export async function checkLogin(page: Page): Promise<boolean> {
 }
 
 /**
- * Rileva se LinkedIn ha presentato un challenge (CAPTCHA, verifica email,
- * account limitato). Controlla URL, selettori DOM e testo della pagina.
+ * Probe proattivo dello stato LinkedIn prima di lanciare job.
+ * Naviga alla home e verifica: login, challenge, response time.
+ * Ritorna un oggetto con lo stato e il motivo per non procedere.
  */
+export interface LinkedInProbeResult {
+    ok: boolean;
+    loggedIn: boolean;
+    challengeDetected: boolean;
+    responseTimeMs: number;
+    reason: string | null;
+}
+
+export async function probeLinkedInStatus(page: Page): Promise<LinkedInProbeResult> {
+    const startMs = Date.now();
+    try {
+        const response = await page.goto('https://www.linkedin.com/feed/', {
+            waitUntil: 'domcontentloaded',
+            timeout: 30_000,
+        });
+        const responseTimeMs = Date.now() - startMs;
+        const httpStatus = response?.status() ?? 0;
+
+        if (httpStatus === 429) {
+            return { ok: false, loggedIn: false, challengeDetected: false, responseTimeMs, reason: 'HTTP_429_RATE_LIMITED' };
+        }
+
+        const loggedIn = await isLoggedIn(page);
+        if (!loggedIn) {
+            return { ok: false, loggedIn: false, challengeDetected: false, responseTimeMs, reason: 'SESSION_EXPIRED' };
+        }
+
+        const challenge = await detectChallenge(page);
+        if (challenge) {
+            return { ok: false, loggedIn: true, challengeDetected: true, responseTimeMs, reason: 'CHALLENGE_ACTIVE' };
+        }
+
+        if (responseTimeMs > 15_000) {
+            return { ok: false, loggedIn: true, challengeDetected: false, responseTimeMs, reason: 'SLOW_RESPONSE' };
+        }
+
+        return { ok: true, loggedIn: true, challengeDetected: false, responseTimeMs, reason: null };
+    } catch (error) {
+        const responseTimeMs = Date.now() - startMs;
+        const message = error instanceof Error ? error.message : String(error);
+        return { ok: false, loggedIn: false, challengeDetected: false, responseTimeMs, reason: `PROBE_ERROR: ${message}` };
+    }
+}
+
 export async function detectChallenge(page: Page): Promise<boolean> {
     const currentUrl = page.url().toLowerCase();
     const challengeInUrl = [
