@@ -142,7 +142,24 @@ async function handleInviteModal(
                 }
             }
         } catch (e) {
-            console.error('[INVITE] Fallback a nota vuota per errore AI parsing', e);
+            console.error('[INVITE] Errore generazione nota AI, invio senza nota', e);
+        }
+
+        // Se la nota è vuota (AI down, errore parsing, template vuoto), NON digitare
+        // una stringa vuota — invia senza nota. Una nota vuota su LinkedIn è peggio
+        // di nessuna nota: sembra un errore e riduce l'acceptance rate.
+        if (!generatedNote.note || generatedNote.note.trim().length === 0) {
+            // Chiudi il modale nota e ricadi su invio senza nota
+            await page.keyboard.press('Escape').catch(() => null);
+            await humanDelay(page, 300, 600);
+            const sendWithoutNote = page.locator(joinSelectors('sendWithoutNote')).first();
+            if ((await sendWithoutNote.count()) > 0) {
+                await humanMouseMove(page, joinSelectors('sendWithoutNote'));
+                await humanDelay(page, 120, 300);
+                await sendWithoutNote.click();
+                return { sentWithNote: false, noteSource: null, variant: null };
+            }
+            // Se anche sendWithoutNote non c'è, prova sendFallback sotto
         }
 
         try {
