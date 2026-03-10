@@ -1,4 +1,5 @@
 import { config, getLocalDateString, getWeekStartDate, getWorkingHourIntensity, isGreenModeWindow } from '../config';
+import { randomInt } from '../utils/random';
 import { getSessionBudgetFactor } from './sessionWarmer';
 import { getSessionMaturity } from '../browser/sessionCookieMonitor';
 import { applyGrowthModel } from '../risk/accountBehaviorModel';
@@ -25,6 +26,7 @@ import {
     getListDailyStatsBatch,
     getRuntimeFlag,
     getRiskInputs,
+    isBlacklisted,
     listLeadCampaignConfigs,
     promoteNewLeadsToReadyInvite,
     syncLeadListsFromLeads,
@@ -178,12 +180,6 @@ function clamp01(value: number): number {
     return Math.min(1, Math.max(0, value));
 }
 
-function pickRandomInt(min: number, max: number): number {
-    const low = Math.min(min, max);
-    const high = Math.max(min, max);
-    if (high <= low) return low;
-    return Math.floor(Math.random() * (high - low + 1)) + low;
-}
 
 function applyAdaptiveFactor(rawBudget: number, factor: number): number {
     if (rawBudget <= 0 || factor <= 0) {
@@ -316,10 +312,10 @@ function createNoBurstPlanner(): NoBurstPlanner {
     return {
         nextDelaySec: () => {
             queuedJobs += 1;
-            totalDelaySec += pickRandomInt(minDelay, maxDelay);
+            totalDelaySec += randomInt(minDelay, maxDelay);
 
             if (longBreakEvery > 0 && queuedJobs % longBreakEvery === 0) {
-                totalDelaySec += pickRandomInt(longBreakMin, longBreakMax);
+                totalDelaySec += randomInt(longBreakMin, longBreakMax);
             }
 
             return totalDelaySec;
@@ -620,6 +616,10 @@ export async function scheduleJobs(
 
             let insertedForList = 0;
             for (const lead of inviteCandidates) {
+                // ── Blacklist check preventivo: skip lead in blacklist ──
+                if (await isBlacklisted(lead.linkedin_url, lead.company_domain)) {
+                    continue;
+                }
                 const accountId = pickAccountIdForLead(lead.id);
                 const remainingForAccount = accountInviteRemaining.get(accountId) ?? 0;
                 if (remainingForAccount <= 0) {
@@ -753,6 +753,10 @@ export async function scheduleJobs(
 
             let insertedForList = 0;
             for (const lead of readyToMessage) {
+                // ── Blacklist check preventivo: skip lead in blacklist ──
+                if (await isBlacklisted(lead.linkedin_url, lead.company_domain)) {
+                    continue;
+                }
                 const accountId = pickAccountIdForLead(lead.id);
                 const remainingForAccount = accountMessageRemaining.get(accountId) ?? 0;
                 if (remainingForAccount <= 0) {
@@ -763,7 +767,7 @@ export async function scheduleJobs(
                 const maxDelayHours = Math.max(minDelayHours, config.messageScheduleMaxDelayHours);
                 let acceptanceDelaySec = 0;
                 if (maxDelayHours > 0) {
-                    const targetDelaySec = pickRandomInt(minDelayHours * 3600, maxDelayHours * 3600);
+                    const targetDelaySec = randomInt(minDelayHours * 3600, maxDelayHours * 3600);
                     const acceptedAtMs = lead.accepted_at ? Date.parse(lead.accepted_at) : NaN;
                     const elapsedSec = Number.isFinite(acceptedAtMs)
                         ? Math.max(0, Math.floor((Date.now() - acceptedAtMs) / 1000))
@@ -823,7 +827,7 @@ export async function scheduleJobs(
                 `hygiene:${acc.id}:${localDate}`,
                 5,
                 1,
-                pickRandomInt(1800, 14400),
+                randomInt(1800, 14400),
                 acc.id,
             );
         }
@@ -844,7 +848,7 @@ export async function scheduleJobs(
                     `post_creation:${acc.id}:${localDate}`,
                     1,
                     2,
-                    pickRandomInt(3600, 10800),
+                    randomInt(3600, 10800),
                     acc.id,
                 );
             }
@@ -861,7 +865,7 @@ export async function scheduleJobs(
                 `enrichment:${lead.id}:${localDate}`,
                 1,
                 2,
-                pickRandomInt(300, 3600),
+                randomInt(300, 3600),
             );
         }
     }

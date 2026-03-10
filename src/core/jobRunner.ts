@@ -4,6 +4,7 @@ import {
     interJobDelay,
     launchBrowser,
     checkLogin,
+    probeLinkedInStatus,
     performDecoyBurst,
     performBrowserGC,
 } from '../browser';
@@ -19,6 +20,7 @@ import { handleChallengeDetected, pauseAutomation, quarantineAccount } from '../
 import { logError, logInfo, logWarn } from '../telemetry/logger';
 import { sendTelegramAlert } from '../telemetry/alerts';
 import { randomInt } from '../utils/random';
+import { retryDelayMs } from '../utils/async';
 import { JobType } from '../types/domain';
 import { WorkerContext } from '../workers/context';
 import { processAcceptanceJob } from '../workers/acceptanceWorker';
@@ -59,11 +61,6 @@ interface AccountRunHealthMetrics {
     challenges: number;
     deadLetters: number;
     startedAtMs: number;
-}
-
-function retryDelayMs(attempt: number, baseDelayMs: number = config.retryBaseMs): number {
-    const jitter = Math.floor(Math.random() * 250);
-    return baseDelayMs * Math.pow(2, Math.max(0, attempt - 1)) + jitter;
 }
 
 
@@ -207,6 +204,47 @@ async function runQueuedJobsForAccount(
         }
 
         recordSuccessfulAuth(account.sessionDir, account.id);
+
+        // ── LinkedIn API monitoring passivo: probe proattivo prima dei job ──
+        // Verifica che LinkedIn non sia già in stato degradato (429, challenge, slow)
+        // prima di consumare il budget giornaliero con job destinati a fallire.
+        const probe = await probeLinkedInStatus(session.page);
+        await logInfo('job_runner.linkedin_probe', {
+            accountId: account.id,
+            ok: probe.ok,
+            responseTimeMs: probe.responseTimeMs,
+            reason: probe.reason,
+        });
+        if (!probe.ok) {
+            if (probe.reason === 'HTTP_429_RATE_LIMITED') {
+                await pauseAutomation('LINKEDIN_PRE_THROTTLED', {
+                    accountId: account.id,
+                    responseTimeMs: probe.responseTimeMs,
+                    message: 'LinkedIn ha risposto 429 alla probe iniziale — sessione già rate-limited.',
+                }, config.autoPauseMinutesOnFailureBurst ?? 60);
+                return;
+            }
+            if (probe.reason === 'SESSION_EXPIRED') {
+                await quarantineAccount('LOGIN_MISSING', {
+                    accountId: account.id,
+                    message: 'Sessione LinkedIn scaduta rilevata dalla probe pre-sessione.',
+                });
+                return;
+            }
+            if (probe.challengeDetected) {
+                await handleChallengeDetected({
+                    source: 'linkedin_probe_pre_session',
+                    accountId: account.id,
+                });
+                return;
+            }
+            // SLOW_RESPONSE o PROBE_ERROR: log warning ma procedi con cautela
+            await logWarn('job_runner.linkedin_probe.degraded', {
+                accountId: account.id,
+                reason: probe.reason,
+                responseTimeMs: probe.responseTimeMs,
+            });
+        }
 
         const workerContext: WorkerContext = {
             session,

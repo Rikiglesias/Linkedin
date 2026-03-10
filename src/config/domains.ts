@@ -346,6 +346,7 @@ export function buildVisionDomainConfig() {
             const list = parseCsvEnv('STEALTH_SCRIPTS_SKIP_IF_CLOAK');
             return list.length > 0 ? list : ['canvas', 'webgl', 'hwconcurrency', 'plugins'];
         })(),
+        stealthSkipSections: parseCsvEnv('STEALTH_SKIP_SECTIONS'),
         warmupTwoSessionsPerDay: parseBoolEnv('WARMUP_TWO_SESSIONS_PER_DAY', false),
         weeklyStrategyEnabled: parseBoolEnv('WEEKLY_STRATEGY_ENABLED', true),
         growthModelEnabled: parseBoolEnv('GROWTH_MODEL_ENABLED', true),

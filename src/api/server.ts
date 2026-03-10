@@ -42,6 +42,12 @@ import {
     runAiValidationPipeline,
     searchLeads,
     setRuntimeFlag,
+    addToBlacklist,
+    countBlacklist,
+    countPendingOutboxEvents,
+    getAutomationPauseState,
+    listBlacklist,
+    removeFromBlacklist,
 } from '../core/repositories';
 import { getDatabase } from '../db';
 import campaignsRouter from './routes/campaigns';
@@ -636,6 +642,54 @@ function resolveQuarantineEnabled(payload: unknown): boolean {
     return parsed.data.action === 'set';
 }
 
+// ── Helper condivisi controls (deduplica legacy /api/controls/* e /api/v1/automation/controls/*) ──
+
+async function handlePauseAction(
+    req: Request,
+    source: string,
+    defaultMinutes?: number,
+): Promise<{ success: boolean; minutes: number }> {
+    const payload = defaultMinutes !== undefined && req.body?.minutes === undefined
+        ? { minutes: defaultMinutes }
+        : req.body;
+    const parsed = PauseSchema.safeParse(payload);
+    if (!parsed.success) throw parsed.error;
+    const minutes = parsed.data.minutes;
+    await pauseAutomation(`MANUAL_${source.toUpperCase()}_PAUSE`, { source }, minutes);
+    auditSecurityEvent({
+        category: 'runtime_control',
+        action: 'pause',
+        actor: resolveRequestIp(req),
+        result: 'ALLOW',
+        metadata: { minutes, source },
+    });
+    return { success: true, minutes };
+}
+
+async function handleResumeAction(req: Request, source: string): Promise<void> {
+    await resumeAutomation();
+    auditSecurityEvent({
+        category: 'runtime_control',
+        action: 'resume',
+        actor: resolveRequestIp(req),
+        result: 'ALLOW',
+        metadata: { source },
+    });
+}
+
+async function handleQuarantineAction(req: Request, source: string): Promise<{ enabled: boolean }> {
+    const enabled = resolveQuarantineEnabled(req.body);
+    await setQuarantine(enabled);
+    auditSecurityEvent({
+        category: 'runtime_control',
+        action: enabled ? 'quarantine_enable' : 'quarantine_disable',
+        actor: resolveRequestIp(req),
+        result: 'ALLOW',
+        metadata: { enabled, source },
+    });
+    return { enabled };
+}
+
 app.use('/api', dashboardAuthMiddleware);
 
 async function apiV1AuthMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -689,6 +743,65 @@ app.use(express.static(publicDir));
 // ── Health ───────────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+app.get('/api/health/deep', async (_req, res) => {
+    const checks: Record<string, { ok: boolean; detail?: string }> = {};
+    let allOk = true;
+
+    // 1. Connettività DB
+    try {
+        const db = await getDatabase();
+        await db.get<{ v: number }>('SELECT 1 as v');
+        checks.database = { ok: true };
+    } catch (err: unknown) {
+        checks.database = { ok: false, detail: err instanceof Error ? err.message : String(err) };
+        allOk = false;
+    }
+
+    // 2. Stato pausa/quarantine
+    try {
+        const pause = await getAutomationPauseState();
+        checks.automation = {
+            ok: !pause.paused,
+            detail: pause.paused ? `Paused: ${pause.reason ?? 'unknown'}` : 'running',
+        };
+    } catch {
+        checks.automation = { ok: false, detail: 'Unable to read pause state' };
+        allOk = false;
+    }
+
+    // 3. Outbox backlog
+    try {
+        const pendingOutbox = await countPendingOutboxEvents();
+        const threshold = config.outboxAlertBacklog ?? 1000;
+        checks.outbox = {
+            ok: pendingOutbox < threshold,
+            detail: `${pendingOutbox} pending (threshold: ${threshold})`,
+        };
+        if (pendingOutbox >= threshold) allOk = false;
+    } catch {
+        checks.outbox = { ok: false, detail: 'Unable to read outbox' };
+        allOk = false;
+    }
+
+    // 4. Queue depth
+    try {
+        const db = await getDatabase();
+        const row = await db.get<{ total: number }>('SELECT COUNT(*) as total FROM jobs WHERE status = \'QUEUED\'');
+        const queueDepth = row ? Number(row.total) : 0;
+        checks.queue = { ok: true, detail: `${queueDepth} queued jobs` };
+    } catch {
+        checks.queue = { ok: false, detail: 'Unable to read job queue' };
+        allOk = false;
+    }
+
+    const statusCode = allOk ? 200 : 503;
+    res.status(statusCode).json({
+        status: allOk ? 'healthy' : 'degraded',
+        timestamp: new Date().toISOString(),
+        checks,
+    });
 });
 
 // ── API v1 (automazioni esterne) ────────────────────────────────────────────
@@ -797,29 +910,8 @@ app.get('/api/v1/automation/incidents', async (req, res) => {
 
 app.post('/api/v1/automation/controls/pause', async (req, res) => {
     try {
-        const payload = req.body?.minutes === undefined ? { minutes: 1440 } : req.body;
-        const parsed = PauseSchema.safeParse(payload);
-        if (!parsed.success) {
-            handleApiError(res, parsed.error, 'api.v1.automation.controls.pause.validation');
-            return;
-        }
-        const minutes = parsed.data.minutes;
-        await pauseAutomation('MANUAL_API_V1_PAUSE', { source: 'api_v1' }, minutes);
-        auditSecurityEvent({
-            category: 'runtime_control',
-            action: 'pause',
-            actor: resolveRequestIp(req),
-            result: 'ALLOW',
-            metadata: {
-                minutes,
-                source: 'api_v1',
-            },
-        });
-        sendApiV1(res, {
-            success: true,
-            action: 'pause',
-            minutes,
-        });
+        const result = await handlePauseAction(req, 'api_v1', 1440);
+        sendApiV1(res, { ...result, action: 'pause' });
     } catch (err: unknown) {
         handleApiError(res, err, 'api.v1.automation.controls.pause');
     }
@@ -827,20 +919,8 @@ app.post('/api/v1/automation/controls/pause', async (req, res) => {
 
 app.post('/api/v1/automation/controls/resume', async (req, res) => {
     try {
-        await resumeAutomation();
-        auditSecurityEvent({
-            category: 'runtime_control',
-            action: 'resume',
-            actor: resolveRequestIp(req),
-            result: 'ALLOW',
-            metadata: {
-                source: 'api_v1',
-            },
-        });
-        sendApiV1(res, {
-            success: true,
-            action: 'resume',
-        });
+        await handleResumeAction(req, 'api_v1');
+        sendApiV1(res, { success: true, action: 'resume' });
     } catch (err: unknown) {
         handleApiError(res, err, 'api.v1.automation.controls.resume');
     }
@@ -848,23 +928,8 @@ app.post('/api/v1/automation/controls/resume', async (req, res) => {
 
 app.post('/api/v1/automation/controls/quarantine', async (req, res) => {
     try {
-        const enabled = resolveQuarantineEnabled(req.body);
-        await setQuarantine(enabled);
-        auditSecurityEvent({
-            category: 'runtime_control',
-            action: enabled ? 'quarantine_enable' : 'quarantine_disable',
-            actor: resolveRequestIp(req),
-            result: 'ALLOW',
-            metadata: {
-                enabled,
-                source: 'api_v1',
-            },
-        });
-        sendApiV1(res, {
-            success: true,
-            action: 'quarantine',
-            enabled,
-        });
+        const result = await handleQuarantineAction(req, 'api_v1');
+        sendApiV1(res, { success: true, action: 'quarantine', enabled: result.enabled });
     } catch (err: unknown) {
         handleApiError(res, err, 'api.v1.automation.controls.quarantine');
     }
@@ -1399,21 +1464,8 @@ app.get('/api/review-queue', async (req, res) => {
 // ── Controls ──────────────────────────────────────────────────────────────────
 app.post('/api/controls/pause', async (req, res) => {
     try {
-        const parsed = PauseSchema.safeParse(req.body);
-        if (!parsed.success) {
-            handleApiError(res, parsed.error, 'api.controls.pause.validation');
-            return;
-        }
-        const minutes = parsed.data.minutes;
-        await pauseAutomation('MANUAL_UI_PAUSE', { source: 'dashboard' }, minutes);
-        auditSecurityEvent({
-            category: 'runtime_control',
-            action: 'pause',
-            actor: resolveRequestIp(req),
-            result: 'ALLOW',
-            metadata: { minutes },
-        });
-        res.json({ success: true, message: `Pausa attivata per ${minutes} minuti.` });
+        const result = await handlePauseAction(req, 'dashboard');
+        res.json({ ...result, message: `Pausa attivata per ${result.minutes} minuti.` });
     } catch (err: unknown) {
         handleApiError(res, err, 'api.controls.pause');
     }
@@ -1421,13 +1473,7 @@ app.post('/api/controls/pause', async (req, res) => {
 
 app.post('/api/controls/resume', async (req, res) => {
     try {
-        await resumeAutomation();
-        auditSecurityEvent({
-            category: 'runtime_control',
-            action: 'resume',
-            actor: resolveRequestIp(req),
-            result: 'ALLOW',
-        });
+        await handleResumeAction(req, 'dashboard');
         res.json({ success: true, message: 'Ripresa automazione.' });
     } catch (err: unknown) {
         handleApiError(res, err, 'api.controls.resume');
@@ -1436,16 +1482,8 @@ app.post('/api/controls/resume', async (req, res) => {
 
 app.post('/api/controls/quarantine', async (req, res) => {
     try {
-        const enabled = resolveQuarantineEnabled(req.body);
-        await setQuarantine(enabled);
-        auditSecurityEvent({
-            category: 'runtime_control',
-            action: enabled ? 'quarantine_enable' : 'quarantine_disable',
-            actor: resolveRequestIp(req),
-            result: 'ALLOW',
-            metadata: { enabled },
-        });
-        res.json({ success: true, message: `Quarantena ${enabled ? 'attivata' : 'disattivata'}.` });
+        const result = await handleQuarantineAction(req, 'dashboard');
+        res.json({ success: true, message: `Quarantena ${result.enabled ? 'attivata' : 'disattivata'}.` });
     } catch (err: unknown) {
         handleApiError(res, err, 'api.controls.quarantine');
     }
@@ -1535,6 +1573,62 @@ const exportLimiter = rateLimit({
 });
 app.use('/api/v1/export', apiV1AuthMiddleware, exportLimiter, exportRouter);
 app.use('/api/export', apiV1AuthMiddleware, exportLimiter, exportRouter);
+
+// ==========================================
+// BLACKLIST
+// ==========================================
+
+app.get('/api/blacklist', async (_req, res) => {
+    try {
+        const entries = await listBlacklist(500);
+        const total = await countBlacklist();
+        res.json({ entries, total });
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.blacklist.list');
+    }
+});
+
+app.post('/api/blacklist', async (req, res) => {
+    try {
+        const { linkedin_url, company_domain, reason, added_by } = req.body as {
+            linkedin_url?: string;
+            company_domain?: string;
+            reason?: string;
+            added_by?: string;
+        };
+        if (!linkedin_url && !company_domain) {
+            res.status(400).json({ error: 'Serve almeno linkedin_url o company_domain.' });
+            return;
+        }
+        if (!reason) {
+            res.status(400).json({ error: 'Il campo reason è obbligatorio.' });
+            return;
+        }
+        const id = await addToBlacklist(
+            linkedin_url ?? null,
+            company_domain ?? null,
+            reason,
+            added_by ?? 'dashboard',
+        );
+        res.status(201).json({ id, message: 'Aggiunto alla blacklist.' });
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.blacklist.add');
+    }
+});
+
+app.delete('/api/blacklist/:id', async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (!Number.isFinite(id) || id <= 0) {
+            res.status(400).json({ error: 'ID non valido.' });
+            return;
+        }
+        await removeFromBlacklist(id);
+        res.json({ message: 'Rimosso dalla blacklist.' });
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.blacklist.remove');
+    }
+});
 
 // ── 404 catch-all ─────────────────────────────────────────────────────────────
 app.use('/api/', (_req, res) => {

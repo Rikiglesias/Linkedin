@@ -1,4 +1,5 @@
 import { config, ProxyType } from '../config';
+import { sleep } from '../utils/async';
 import {
     buildProxyUrl,
     getIntegrationProxyAsync,
@@ -144,10 +145,6 @@ function computeDelayMs(attempt: number, baseDelayMs: number, maxDelayMs: number
     const base = Math.min(maxDelayMs, baseDelayMs * Math.pow(2, exponent));
     const jitter = Math.floor(Math.random() * Math.max(50, Math.floor(base * 0.25)));
     return Math.min(maxDelayMs, base + jitter);
-}
-
-function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function createTimedAbortController(

@@ -2,7 +2,7 @@
  * scripts/buildFrontend.ts
  * ─────────────────────────────────────────────────────────────────
  * Bundle tutti i file frontend TypeScript in un singolo bundle.js
- * usando esbuild. Chart.js resta come CDN external (global `Chart`).
+ * usando esbuild. Chart.js è incluso nel bundle (no CDN external).
  *
  * Uso:  npx tsx scripts/buildFrontend.ts
  *       oppure: node -e "require('esbuild').buildSync({...})"
@@ -17,13 +17,11 @@ const result = buildSync({
     entryPoints: [path.join(ROOT, 'src/frontend/main.ts')],
     outfile: path.join(ROOT, 'public/assets/bundle.js'),
     bundle: true,
-    minify: process.argv.includes('--minify'),
+    minify: true,
     sourcemap: true,
     format: 'esm',
     target: ['es2022'],
     platform: 'browser',
-    // Chart.js è caricato da CDN come global — non includerlo nel bundle
-    external: ['chart.js', 'chart.js/auto'],
     logLevel: 'info',
 });
 

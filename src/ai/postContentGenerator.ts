@@ -8,6 +8,7 @@
 import { isOpenAIConfigured, requestOpenAIText } from './openaiClient';
 import { logWarn } from '../telemetry/logger';
 import { config } from '../config';
+import { randomElement } from '../utils/random';
 
 export interface PostContentRequest {
     topic?: string;
@@ -44,11 +45,11 @@ const TEMPLATE_POSTS: string[] = [
 ];
 
 function pickRandomTopic(): string {
-    return DEFAULT_TOPICS[Math.floor(Math.random() * DEFAULT_TOPICS.length)];
+    return randomElement(DEFAULT_TOPICS);
 }
 
 function pickTemplatePost(): PostContentResult {
-    const post = TEMPLATE_POSTS[Math.floor(Math.random() * TEMPLATE_POSTS.length)];
+    const post = randomElement(TEMPLATE_POSTS);
     return {
         content: post,
         topic: 'general',

@@ -4,6 +4,7 @@
  */
 
 import { config } from '../config';
+import { randomElement } from '../utils/random';
 import { getDatabase } from '../db';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { computeTwoProportionSignificance } from './significance';
@@ -117,9 +118,6 @@ export function computeBayesianBanditScore(sent: number, accepted: number, total
     return computePosteriorStats(sent, accepted, totalSent).bayesScore;
 }
 
-function pickRandomVariant(variants: string[]): string {
-    return variants[Math.floor(Math.random() * variants.length)] as string;
-}
 
 function buildStatsMap(rows: BanditDecisionInputRow[]): Map<string, BanditDecisionInputRow> {
     return new Map(rows.map((row) => [row.variantId, row]));
@@ -320,7 +318,7 @@ export async function selectVariant(variants: string[], context?: BanditContext)
         const epsilon = Math.max(MIN_EPSILON, INITIAL_EPSILON * Math.pow(0.999, totalTrials));
 
         if (Math.random() < epsilon) {
-            const picked = pickRandomVariant(variants);
+            const picked = randomElement(variants);
             await logInfo('ab_bandit.explore', {
                 picked,
                 epsilon,
@@ -357,7 +355,7 @@ export async function selectVariant(variants: string[], context?: BanditContext)
             error: err instanceof Error ? err.message : String(err),
             segment: segmentKey,
         });
-        return pickRandomVariant(variants);
+        return randomElement(variants);
     }
 }
 

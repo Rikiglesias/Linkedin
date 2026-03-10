@@ -1,3 +1,5 @@
+import { randomElement } from '../utils/random';
+
 export interface Fingerprint {
     id: string;
     ja3: string;
@@ -157,8 +159,7 @@ export const mobileFingerprintPool: Fingerprint[] = [
 
 export function pickRandomFingerprint(pool: ReadonlyArray<Fingerprint>): Fingerprint {
     const safePool = pool.length > 0 ? pool : desktopFingerprintPool;
-    const index = Math.floor(Math.random() * safePool.length);
-    return safePool[index] as Fingerprint;
+    return randomElement(safePool);
 }
 
 /**

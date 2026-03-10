@@ -1,5 +1,6 @@
 import { createHmac } from 'crypto';
 import { config } from '../config';
+import { retryDelayMs } from '../utils/async';
 import { sendTelegramAlert } from '../telemetry/alerts';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { fetchWithRetryPolicy } from '../core/integrationPolicy';
@@ -13,12 +14,6 @@ import {
     setRuntimeFlag,
 } from '../core/repositories';
 import { clampBackpressureLevel, computeBackpressureBatchSize, computeNextBackpressureLevel } from './backpressure';
-
-function retryDelayMs(attempt: number): number {
-    const base = Math.max(1000, config.webhookSyncTimeoutMs);
-    const jitter = Math.floor(Math.random() * 500);
-    return base * Math.pow(2, Math.max(0, attempt - 1)) + jitter;
-}
 
 import { parseOutboxPayload } from './outboxUtils';
 
@@ -152,7 +147,7 @@ export async function runWebhookSyncOnce(): Promise<void> {
                         error: errorMessage,
                     });
                 } else {
-                    const delay = retryDelayMs(attempts);
+                    const delay = retryDelayMs(attempts, Math.max(1000, config.webhookSyncTimeoutMs));
                     const marked = await markOutboxRetryClaimed(event.id, ownerId, attempts, delay, errorMessage);
                     if (!marked) {
                         await logWarn('webhook.sync.event.claim_lost', {
@@ -200,7 +195,7 @@ export async function runWebhookSyncOnce(): Promise<void> {
                     error: message,
                 });
             } else {
-                const delay = retryDelayMs(attempts);
+                const delay = retryDelayMs(attempts, Math.max(1000, config.webhookSyncTimeoutMs));
                 const marked = await markOutboxRetryClaimed(event.id, ownerId, attempts, delay, message);
                 if (!marked) {
                     await logWarn('webhook.sync.event.claim_lost', {

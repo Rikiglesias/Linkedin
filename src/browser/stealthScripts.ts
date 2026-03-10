@@ -524,42 +524,11 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
         };
     } catch {}
 
-    // ─── 18. WebGL renderer consistency ───────────────────────────────────────
-    // LinkedIn controlla che il WebGL renderer/vendor sia coerente con il OS
-    // dichiarato. Es: "ANGLE (Apple, Apple M1)" su un browser che dice Windows
-    // è un red flag immediato.
-    try {
-        const ua = navigator.userAgent || '';
-        const isWindows = /Windows/.test(ua);
-        const isMac = /Macintosh|Mac OS X/.test(ua);
-
-        const originalGetParameter = WebGLRenderingContext.prototype.getParameter;
-        const UNMASKED_VENDOR = 0x9245;
-        const UNMASKED_RENDERER = 0x9246;
-
-        function patchGetParameter(original) {
-            return function(param) {
-                if (param === UNMASKED_VENDOR) {
-                    return isWindows ? 'Google Inc. (NVIDIA)' :
-                           isMac ? 'Google Inc. (Apple)' :
-                           'Google Inc. (Mesa)';
-                }
-                if (param === UNMASKED_RENDERER) {
-                    return isWindows ? 'ANGLE (NVIDIA, NVIDIA GeForce GTX 1060 Direct3D11 vs_5_0 ps_5_0, D3D11)' :
-                           isMac ? 'ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)' :
-                           'Mesa Intel(R) UHD Graphics 630 (CFL GT2)';
-                }
-                return original.call(this, param);
-            };
-        }
-
-        WebGLRenderingContext.prototype.getParameter = patchGetParameter(originalGetParameter);
-
-        if (typeof WebGL2RenderingContext !== 'undefined') {
-            const originalGetParameter2 = WebGL2RenderingContext.prototype.getParameter;
-            WebGL2RenderingContext.prototype.getParameter = patchGetParameter(originalGetParameter2);
-        }
-    } catch {}
+    // ─── 18. [RIMOSSO] WebGL renderer consistency ─────────────────────────────
+    // Rimosso: la patch WebGL è ora gestita UNICAMENTE in launcher.ts con un pool
+    // di 12 renderer realistici (8 desktop ANGLE + 4 Apple) selezionati
+    // deterministicamente per fingerprint. Avere due patch separate causava
+    // sovrascrittura e incoerenza rilevabile (la seconda patch ignorava la prima).
 
     // ─── 19. iframe contentWindow.chrome consistency ──────────────────────────
     // Bot detector crea un iframe nascosto e controlla se contentWindow.chrome

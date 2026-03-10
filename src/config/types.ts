@@ -302,6 +302,7 @@ export interface AppConfig {
     visionTemperature: number;
     cloakBrowserEnabled: boolean;
     stealthScriptsSkipIfCloak: string[];
+    stealthSkipSections: string[];
     warmupTwoSessionsPerDay: boolean;
     weeklyStrategyEnabled: boolean;
     growthModelEnabled: boolean;

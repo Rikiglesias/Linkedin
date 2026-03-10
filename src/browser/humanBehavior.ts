@@ -542,13 +542,21 @@ export async function humanType(page: Page, selector: string, text: string): Pro
     await element.click();
     await humanDelay(page, 200, 500);
 
+    // Context-aware WPM: testi lunghi → ritmo più lento (affaticamento naturale).
+    // Testi brevi (< 30 char): veloce. Medi (30-150): normale. Lunghi (> 150): lento.
+    const lengthSlowFactor = text.length <= 30 ? 0.85
+        : text.length <= 150 ? 1.0
+        : text.length <= 400 ? 1.15
+        : 1.3;
+
     for (let i = 0; i < text.length; i++) {
         const originalChar = text[i] ?? '';
         const { char: typedChar, isTypo } = determineNextKeystroke(originalChar, computeSessionTypoRate());
 
-        // AD-11: Implementazione Delay Bimodale
+        // AD-11: Implementazione Delay Bimodale + context-aware per lunghezza testo
         const isSpaceOrPunctuation = /[\s.,!?-]/.test(typedChar);
-        const delayBase = isSpaceOrPunctuation ? Math.floor(Math.random() * 150) + 150 : Math.floor(Math.random() * 50) + 40;
+        const rawDelay = isSpaceOrPunctuation ? Math.floor(Math.random() * 150) + 150 : Math.floor(Math.random() * 50) + 40;
+        const delayBase = Math.round(rawDelay * lengthSlowFactor);
 
         await element.pressSequentially(typedChar, { delay: delayBase });
 

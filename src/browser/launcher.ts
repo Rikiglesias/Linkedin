@@ -305,6 +305,10 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             // Iniezione noise Canvas/WebGL nativa in stack V8
             // Se CloakBrowser è attivo, salta le manipolazioni già gestite a livello binario
             const skipIfCloak = config.cloakBrowserEnabled ? new Set(config.stealthScriptsSkipIfCloak) : new Set<string>();
+            // Merge: sezioni skip da CloakBrowser + sezioni skip esplicite via STEALTH_SKIP_SECTIONS
+            for (const section of config.stealthSkipSections) {
+                skipIfCloak.add(section);
+            }
             const scriptContent = `
                 (() => {
                     const canvasNoise = ${deviceProfile.canvasNoise ?? 0};
@@ -338,12 +342,30 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                         }
                         if ((type === 'webgl' || type === 'webgl2') && ctx) {
                             const originalGetParameter = ctx.getParameter;
+                            // Pool esteso di renderer realistici, selezionati deterministicamente per fingerprint
+                            const desktopRenderers = [
+                                { vendor: 'Google Inc. (Intel)', renderer: 'ANGLE (Intel, Intel(R) Iris(R) Xe Graphics Direct3D11 vs_5_0 ps_5_0)' },
+                                { vendor: 'Google Inc. (Intel)', renderer: 'ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0)' },
+                                { vendor: 'Google Inc. (Intel)', renderer: 'ANGLE (Intel, Intel(R) UHD Graphics 770 Direct3D11 vs_5_0 ps_5_0)' },
+                                { vendor: 'Google Inc. (NVIDIA)', renderer: 'ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 Direct3D11 vs_5_0 ps_5_0)' },
+                                { vendor: 'Google Inc. (NVIDIA)', renderer: 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0)' },
+                                { vendor: 'Google Inc. (NVIDIA)', renderer: 'ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Direct3D11 vs_5_0 ps_5_0)' },
+                                { vendor: 'Google Inc. (AMD)', renderer: 'ANGLE (AMD, AMD Radeon RX 580 Direct3D11 vs_5_0 ps_5_0)' },
+                                { vendor: 'Google Inc. (AMD)', renderer: 'ANGLE (AMD, AMD Radeon(TM) Graphics Direct3D11 vs_5_0 ps_5_0)' },
+                            ];
+                            const appleRenderers = [
+                                { vendor: 'Apple', renderer: 'Apple GPU' },
+                                { vendor: 'Apple', renderer: 'Apple M1' },
+                                { vendor: 'Apple', renderer: 'Apple M2' },
+                                { vendor: 'Apple', renderer: 'Apple M3' },
+                            ];
+                            const pool = isApple ? appleRenderers : desktopRenderers;
+                            const rendererIdx = Math.abs(canvasNoise * 1e6 | 0) % pool.length;
+                            const selected = pool[rendererIdx];
                             ctx.getParameter = function(parameter) {
                                 const res = originalGetParameter.call(this, parameter);
-                                // UNMASKED_VENDOR_WEBGL (37445)
-                                if (parameter === 37445) return isApple ? 'Apple Inc.' : 'Google Inc. (Intel)';
-                                // UNMASKED_RENDERER_WEBGL (37446)
-                                if (parameter === 37446) return isApple ? 'Apple GPU' : 'ANGLE (Intel, Intel(R) Iris(R) Xe Graphics' + (webglNoise > 0.5 ? ' Direct3D11' : '') + ' vs_5_0 ps_5_0)';
+                                if (parameter === 37445) return selected.vendor;
+                                if (parameter === 37446) return selected.renderer;
                                 return res;
                             };
                         }

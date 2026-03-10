@@ -1,6 +1,6 @@
 import { DashboardApi } from './apiClient';
 import { renderInvitesChart, renderRiskGauge } from './charts';
-import { byId, setText, exportToCSV, downloadCanvasAsPng, printReport } from './dom';
+import { byId, setText, exportToCSV, downloadCanvasAsPng, printReport, showToast } from './dom';
 import {
     renderAbLeaderboard,
     renderCommentSuggestions,
@@ -821,7 +821,7 @@ function bindLeadSearch(): void {
                     });
                 },
             );
-        }).catch(() => setStatusMessage('Errore ricerca lead'));
+        }).catch(() => showToast('Errore ricerca lead', 'error'));
     }
 
     document.getElementById('btn-lead-search')?.addEventListener('click', () => doSearch(1));
@@ -858,13 +858,13 @@ function bindControls(): void {
         }));
         const dateStr = new Date().toISOString().slice(0, 10);
         exportToCSV(rows, `linkedin-bot-trend-${dateStr}.csv`);
-        setStatusMessage('Trend CSV esportato');
+        showToast('Trend CSV esportato', 'success', 3000);
     });
 
     document.getElementById('btn-export-chart')?.addEventListener('click', () => {
         const dateStr = new Date().toISOString().slice(0, 10);
         downloadCanvasAsPng('chart-invites-daily', `linkedin-bot-chart-${dateStr}.png`);
-        setStatusMessage('Grafico PNG scaricato');
+        showToast('Grafico PNG scaricato', 'success', 3000);
     });
 
     document.getElementById('btn-print')?.addEventListener('click', () => {
@@ -896,38 +896,42 @@ function bindControls(): void {
         input.setCustomValidity('');
 
         void api.pause(minutes).then((ok) => {
-            setStatusMessage(ok ? `Pausa attivata per ${minutes} minuti` : 'Errore durante la pausa');
             if (ok) {
+                showToast(`Pausa attivata per ${minutes} minuti`, 'success');
                 byId<HTMLDialogElement>('pause-modal').close();
                 void refreshDashboard();
+            } else {
+                showToast('Errore durante la pausa', 'error');
             }
-        }).catch(() => setStatusMessage('Errore di rete durante la pausa'));
+        }).catch(() => showToast('Errore di rete durante la pausa', 'error'));
     });
 
     byId<HTMLButtonElement>('btn-resume').addEventListener('click', () => {
         void api.resume().then((ok) => {
-            setStatusMessage(ok ? 'Automazione ripresa' : 'Errore durante la ripresa');
             if (ok) {
+                showToast('Automazione ripresa', 'success');
                 void refreshDashboard();
+            } else {
+                showToast('Errore durante la ripresa', 'error');
             }
-        }).catch(() => setStatusMessage('Errore di rete durante la ripresa'));
+        }).catch(() => showToast('Errore di rete durante la ripresa', 'error'));
     });
 
     document.getElementById('btn-trigger-run')?.addEventListener('click', () => {
         void api.triggerRun('all').then((ok) => {
-            setStatusMessage(ok ? 'Run workflow "all" schedulato per il prossimo ciclo' : 'Errore trigger run');
-        }).catch(() => setStatusMessage('Errore di rete trigger run'));
+            showToast(ok ? 'Run workflow "all" schedulato' : 'Errore trigger run', ok ? 'success' : 'error');
+        }).catch(() => showToast('Errore di rete trigger run', 'error'));
     });
 
     byId<HTMLButtonElement>('btn-resolve-selected').addEventListener('click', () => {
         void resolveSelectedIncidents().then((report) => {
             if (report.total === 0) {
-                setStatusMessage('Nessun incidente selezionato');
+                showToast('Nessun incidente selezionato', 'warning');
                 return;
             }
-            setStatusMessage(`Incidenti risolti: ${report.resolved}/${report.total}`);
+            showToast(`Incidenti risolti: ${report.resolved}/${report.total}`, 'success');
             void refreshDashboard();
-        }).catch(() => setStatusMessage('Errore di rete durante la risoluzione'));
+        }).catch(() => showToast('Errore di rete durante la risoluzione', 'error'));
     });
 
     byId<HTMLTableSectionElement>('incidents-tbody').addEventListener('change', (event) => {
@@ -954,12 +958,14 @@ function bindControls(): void {
         if (!Number.isFinite(id)) return;
 
         void api.resolveIncident(id).then((ok) => {
-            setStatusMessage(ok ? `Incidente #${id} risolto` : `Errore risoluzione #${id}`);
             if (ok) {
+                showToast(`Incidente #${id} risolto`, 'success');
                 selectedIncidentIds.delete(id);
                 void refreshDashboard();
+            } else {
+                showToast(`Errore risoluzione #${id}`, 'error');
             }
-        }).catch(() => setStatusMessage(`Errore di rete risoluzione #${id}`));
+        }).catch(() => showToast(`Errore di rete risoluzione #${id}`, 'error'));
     });
 
     byId<HTMLTableSectionElement>('comment-suggestions-tbody').addEventListener('click', (event) => {

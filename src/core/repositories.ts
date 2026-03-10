@@ -13,6 +13,7 @@ export * from './repositories/aiQuality';
 export * from './repositories/featureStore';
 export * from './repositories/campaigns';
 export * from './repositories/salesnavSync';
+export * from './repositories/blacklist';
 
 export type {
     AddLeadInput,

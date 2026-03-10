@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { config } from '../config';
+import { retryDelayMs } from '../utils/async';
 import { sendTelegramAlert } from '../telemetry/alerts';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { executeWithRetryPolicy, isLikelyTransientError } from '../core/integrationPolicy';
@@ -36,12 +37,6 @@ function getClient(): SupabaseClient | null {
         });
     }
     return client;
-}
-
-function retryDelayMs(attempt: number): number {
-    const base = config.supabaseSyncIntervalMs;
-    const jitter = Math.floor(Math.random() * 500);
-    return base * Math.pow(2, Math.max(0, attempt - 1)) + jitter;
 }
 
 import { parseOutboxPayload } from './outboxUtils';
@@ -156,7 +151,7 @@ export async function runSupabaseSyncOnce(): Promise<void> {
                     error: message,
                 });
             } else {
-                const delay = retryDelayMs(attempts);
+                const delay = retryDelayMs(attempts, config.supabaseSyncIntervalMs);
                 const marked = await markOutboxRetryClaimed(event.id, ownerId, attempts, delay, message);
                 if (!marked) {
                     await logWarn('supabase.sync.event.claim_lost', {

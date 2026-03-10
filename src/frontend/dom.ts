@@ -108,3 +108,56 @@ function downloadBlob(blob: Blob, filename: string): void {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 }
+
+// ─── Toast Notifications ─────────────────────────────────────────────────────
+
+export type ToastSeverity = 'success' | 'error' | 'warning' | 'info';
+
+const TOAST_ICONS: Record<ToastSeverity, string> = {
+    success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>',
+    error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>',
+    warning: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>',
+    info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>',
+};
+
+const MAX_TOASTS = 5;
+
+export function showToast(
+    message: string,
+    severity: ToastSeverity = 'info',
+    durationMs: number = 4000,
+): void {
+    const stack = document.getElementById('toast-stack');
+    if (!stack) return;
+
+    const toast = document.createElement('div');
+    toast.className = `toast toast--${severity}`;
+    toast.setAttribute('role', 'status');
+    toast.innerHTML = `
+        <span class="toast-icon">${TOAST_ICONS[severity]}</span>
+        <span class="toast-body">${escapeHtml(message)}</span>
+    `;
+
+    stack.appendChild(toast);
+
+    // Limita il numero massimo di toast visibili
+    while (stack.children.length > MAX_TOASTS) {
+        stack.removeChild(stack.children[0] as Node);
+    }
+
+    // Auto-dismiss dopo durationMs
+    setTimeout(() => {
+        toast.classList.add('toast-removing');
+        setTimeout(() => {
+            if (toast.parentNode === stack) {
+                stack.removeChild(toast);
+            }
+        }, 300);
+    }, durationMs);
+}
+
+function escapeHtml(text: string): string {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}

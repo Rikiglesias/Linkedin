@@ -7,6 +7,7 @@
 
 import { randomUUID } from 'crypto';
 import { config, getEffectiveLoopIntervalMs, getLocalDateString } from '../../config';
+import { sleep } from '../../utils/async';
 import { launchBrowser, closeBrowser as closeBrowserSession } from '../../browser';
 import { checkSessionFreshness } from '../../browser/sessionCookieMonitor';
 import {
@@ -86,10 +87,6 @@ interface SalesNavSyncDecision {
 }
 
 // ─── Helper lock ──────────────────────────────────────────────────────────────
-
-function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function createLockOwnerId(command: string): string {
     const suffix = randomUUID().split('-')[0];
