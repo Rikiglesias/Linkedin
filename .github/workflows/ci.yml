@@ -40,8 +40,8 @@ jobs:
       - name: Audit sicurezza (blocca high+critical)
         run: npm audit --audit-level=high
 
-      - name: Unit tests (vitest)
-        run: npm run test:vitest
+      - name: Unit tests (vitest + coverage)
+        run: npx vitest run --coverage --coverage.thresholds.lines=50
         env:
           NODE_ENV: test
 
