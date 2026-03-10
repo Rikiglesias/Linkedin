@@ -1,5 +1,5 @@
 import { Page } from 'playwright';
-import { detectChallenge, humanDelay, humanMouseMove } from '../browser';
+import { detectChallenge, dismissKnownOverlays, humanDelay, humanMouseMove } from '../browser';
 import { blockUserInput, pauseInputBlock, resumeInputBlock } from '../browser/humanBehavior';
 import { isLinkedInUrl, normalizeLinkedInUrl } from '../linkedinUrl';
 import { SALESNAV_NEXT_PAGE_SELECTOR } from './selectors';
@@ -16,6 +16,9 @@ export interface SalesNavLeadCandidate {
     jobTitle: string;
     accountName: string;
     website: string;
+    location: string;
+    /** Public /in/ URL se trovato nella stessa card SalesNav */
+    publicProfileUrl?: string;
 }
 
 export interface SalesNavListScrapeOptions {
@@ -36,6 +39,7 @@ interface RawLeadCandidate {
     href: string;
     anchorText: string;
     lines: string[];
+    publicProfileUrl?: string;
 }
 
 const SALESNAV_LISTS_URL = 'https://www.linkedin.com/sales/lists/people/';
@@ -44,9 +48,28 @@ const SALESNAV_LISTS_URL = 'https://www.linkedin.com/sales/lists/people/';
 const LEAD_ANCHOR_SELECTOR = 'a[href*="/sales/lead/"], a[href*="/sales/people/"], a[href*="/in/"]';
 
 /**
+ * Log-normal scroll increment: media ~400px con varianza naturale.
+ * Simula il fatto che gli esseri umani scrollano con step irregolari.
+ */
+function logNormalScrollDelta(): number {
+    const mu = Math.log(400);
+    const sigma = 0.35;
+    const u1 = Math.max(0.0001, Math.random());
+    const u2 = Math.random();
+    const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    return Math.max(150, Math.min(700, Math.exp(mu + sigma * z)));
+}
+
+/**
  * Scroll graduale per liste SalesNav: scende fino in fondo alla pagina
- * con step variabili e pause naturali. NON torna mai su (niente pattern
- * su-giù-su-giù). Rivela tutti i lead lazy-loaded di SalesNav.
+ * con step variabili e pause naturali, simulando comportamento umano.
+ *
+ * Pattern humanizzati:
+ *   - Incrementi log-normali (media 400px, varianza naturale)
+ *   - 15% scroll-up occasionale (simula ri-lettura di un lead interessante)
+ *   - 10% overshoot + scroll-back (simula correzione)
+ *   - Hover su lead card random per 1-3s (simula lettura)
+ *   - Pause mid-scroll variabili (200-800ms)
  *
  * CRITICO: SalesNav spesso usa un div interno con overflow (non window scroll).
  * Questa funzione rileva il container scrollabile corretto e scrolla quello.
@@ -79,44 +102,83 @@ async function lightListScroll(page: Page): Promise<void> {
         if (best) {
             best.setAttribute('data-lk-scroll', '1');
         }
-    }, LEAD_ANCHOR_SELECTOR).catch(() => {});
+    }, LEAD_ANCHOR_SELECTOR).catch(() => { });
 
-    // Scroll fino in fondo con step variabili e tracking progresso
-    let noProgressCount = 0;
-    for (let step = 0; step < 20; step++) {
-        const atBottom = await page.evaluate(() => {
+    // Helper: esegui scroll sul container corretto
+    const doScroll = async (dy: number) => {
+        await page.evaluate((delta: number) => {
             const c = document.querySelector('[data-lk-scroll="1"]') as HTMLElement | null;
-            if (c) return c.scrollTop + c.clientHeight >= c.scrollHeight - 100;
-            return window.scrollY + window.innerHeight >= document.body.scrollHeight - 100;
-        }).catch(() => true);
-        if (atBottom) break;
+            if (c) {
+                c.scrollTop += delta;
+            } else {
+                window.scrollBy({ top: delta, behavior: 'smooth' });
+            }
+        }, dy);
+    };
 
-        const posBefore = await page.evaluate(() => {
+    const getScrollPos = () =>
+        page.evaluate(() => {
             const c = document.querySelector('[data-lk-scroll="1"]') as HTMLElement | null;
             return c ? c.scrollTop : window.scrollY;
         }).catch(() => 0);
 
-        const deltaY = 280 + Math.random() * 350;
-        await page.evaluate((dy: number) => {
+    const isAtBottom = () =>
+        page.evaluate(() => {
             const c = document.querySelector('[data-lk-scroll="1"]') as HTMLElement | null;
-            if (c) {
-                c.scrollTop += dy;
-            } else {
-                window.scrollBy({ top: dy, behavior: 'smooth' });
-            }
-        }, deltaY);
+            if (c) return c.scrollTop + c.clientHeight >= c.scrollHeight - 100;
+            return window.scrollY + window.innerHeight >= document.body.scrollHeight - 100;
+        }).catch(() => true);
 
-        await humanDelay(page, 600 + Math.random() * 800, 1200 + Math.random() * 600);
+    // Scroll fino in fondo con pattern humanizzati
+    let noProgressCount = 0;
+    for (let step = 0; step < 25; step++) {
+        if (await isAtBottom()) break;
+
+        const posBefore = await getScrollPos();
+
+        // 15%: scroll-up occasionale (ri-lettura di un lead visto)
+        if (step > 2 && Math.random() < 0.15) {
+            const scrollBackDelta = -(100 + Math.random() * 200);
+            await doScroll(scrollBackDelta);
+            await humanDelay(page, 400, 900);
+            // Hover su una lead card visibile (simula lettura)
+            await hoverRandomLeadCard(page);
+            await humanDelay(page, 800, 2000);
+            // Torna giù
+            await doScroll(Math.abs(scrollBackDelta) + 50);
+            await humanDelay(page, 300, 600);
+            continue;
+        }
+
+        // Incremento log-normale
+        const deltaY = logNormalScrollDelta();
+
+        // 10%: overshoot + scroll-back
+        if (Math.random() < 0.10) {
+            const overshoot = deltaY * (1.3 + Math.random() * 0.4);
+            await doScroll(overshoot);
+            await humanDelay(page, 200, 500);
+            // Correzione: torna indietro della differenza
+            await doScroll(-(overshoot - deltaY));
+            await humanDelay(page, 300, 600);
+        } else {
+            await doScroll(deltaY);
+        }
+
+        // Pausa mid-scroll variabile
+        await humanDelay(page, 500 + Math.random() * 800, 1200 + Math.random() * 600);
+
+        // 20%: hover su una lead card per 1-3s (lettura naturale)
+        if (Math.random() < 0.20) {
+            await hoverRandomLeadCard(page);
+            await humanDelay(page, 1000, 3000);
+        }
 
         // Verifica che lo scroll sia effettivamente avanzato
-        const posAfter = await page.evaluate(() => {
-            const c = document.querySelector('[data-lk-scroll="1"]') as HTMLElement | null;
-            return c ? c.scrollTop : window.scrollY;
-        }).catch(() => posBefore);
-
+        const posAfter = await getScrollPos();
         if (Math.abs(posAfter - posBefore) < 10) {
             noProgressCount++;
-            if (noProgressCount >= 3) break; // Contenuto completamente caricato
+            if (noProgressCount >= 3) break;
         } else {
             noProgressCount = 0;
         }
@@ -126,7 +188,29 @@ async function lightListScroll(page: Page): Promise<void> {
     await page.evaluate(() => {
         const el = document.querySelector('[data-lk-scroll="1"]');
         if (el) el.removeAttribute('data-lk-scroll');
-    }).catch(() => {});
+    }).catch(() => { });
+}
+
+/**
+ * Hover su una lead card visibile random — simula il comportamento
+ * di un utente che legge i dettagli di un lead mentre scrolla.
+ */
+async function hoverRandomLeadCard(page: Page): Promise<void> {
+    try {
+        const cardCount = await page.locator(LEAD_ANCHOR_SELECTOR).count();
+        if (cardCount === 0) return;
+        const idx = Math.floor(Math.random() * Math.min(cardCount, 10));
+        const card = page.locator(LEAD_ANCHOR_SELECTOR).nth(idx);
+        const box = await card.boundingBox();
+        if (box) {
+            // Muovi il mouse verso la card con un po' di jitter
+            const x = box.x + box.width * (0.2 + Math.random() * 0.6);
+            const y = box.y + box.height * (0.2 + Math.random() * 0.6);
+            await page.mouse.move(x, y, { steps: 5 + Math.floor(Math.random() * 5) });
+        }
+    } catch {
+        // Best-effort hover
+    }
 }
 
 const NEXT_PAGE_SELECTOR = SALESNAV_NEXT_PAGE_SELECTOR;
@@ -206,11 +290,36 @@ function looksLikeNoise(line: string): boolean {
         normalized.includes('select') ||
         normalized.includes('seleziona') ||
         normalized.includes('add to list') ||
-        normalized.includes('aggiungi a lista')
+        normalized.includes('aggiungi a lista') ||
+        // Gradi di connessione LinkedIn — non sono dati utili
+        /^[1-4]°$/.test(line.trim()) ||
+        /collegamento di \d+° grado/i.test(normalized) ||
+        /\d+(st|nd|rd|th) degree connection/i.test(normalized) ||
+        /^degree connection$/i.test(normalized) ||
+        /è online$|is online$/i.test(normalized)
     );
 }
 
-function pickJobAndAccount(lines: string[], fullName: string): { jobTitle: string; accountName: string } {
+/**
+ * Rileva se una riga sembra una location geografica (es. "Milan, Lombardy, Italy").
+ * SalesNav mostra la location come riga separata nella card del lead.
+ */
+function looksLikeLocation(line: string): boolean {
+    const normalized = line.toLowerCase().trim();
+    if (!normalized) return false;
+    // Pattern: "City, Region, Country" o "City, Country" o "Area metropolitana di X"
+    if (/^area metropolitana/i.test(normalized)) return true;
+    if (/metropolitan area$/i.test(normalized)) return true;
+    if (/greater .+ area$/i.test(normalized)) return true;
+    // Contiene virgole con segmenti brevi (tipico di location)
+    const parts = normalized.split(',').map((p) => p.trim());
+    if (parts.length >= 2 && parts.every((p) => p.length > 1 && p.length < 40)) return true;
+    // Paesi comuni a fine riga
+    if (/\b(italy|italia|france|spain|españa|netherlands|nederland|germany|deutschland|belgium|uk|united kingdom|portugal|switzerland|austria|ireland|poland|czech|sweden|denmark|norway|finland|greece|romania|hungary|croatia|brazil|argentina|mexico|india|china|japan|australia|canada|united states)\s*$/i.test(normalized)) return true;
+    return false;
+}
+
+function pickJobAccountAndLocation(lines: string[], fullName: string): { jobTitle: string; accountName: string; location: string } {
     const normalizedName = cleanText(fullName).toLowerCase();
     const candidates = lines
         .map(cleanText)
@@ -220,8 +329,13 @@ function pickJobAndAccount(lines: string[], fullName: string): { jobTitle: strin
 
     let jobTitle = '';
     let accountName = '';
+    let location = '';
 
     for (const line of candidates) {
+        if (!location && looksLikeLocation(line)) {
+            location = line;
+            continue;
+        }
         if (!jobTitle) {
             jobTitle = line;
         }
@@ -234,13 +348,15 @@ function pickJobAndAccount(lines: string[], fullName: string): { jobTitle: strin
     }
 
     if (!accountName && candidates.length > 1) {
-        accountName = candidates[1];
+        const nonLocation = candidates.filter((c) => c !== location);
+        if (nonLocation.length > 1) accountName = nonLocation[1];
+        else if (nonLocation.length === 1) accountName = nonLocation[0];
     }
-    if (!accountName && candidates.length === 1) {
+    if (!accountName && candidates.length === 1 && candidates[0] !== location) {
         accountName = candidates[0];
     }
 
-    return { jobTitle, accountName };
+    return { jobTitle, accountName, location };
 }
 
 function parseRawLeadCandidate(raw: RawLeadCandidate): SalesNavLeadCandidate | null {
@@ -254,7 +370,7 @@ function parseRawLeadCandidate(raw: RawLeadCandidate): SalesNavLeadCandidate | n
 
     const fullName = cleanSalesNavName(raw.anchorText) || cleanSalesNavName(raw.lines[0] ?? '');
     const { firstName, lastName } = splitName(fullName);
-    const { jobTitle, accountName } = pickJobAndAccount(raw.lines, fullName);
+    const { jobTitle, accountName, location } = pickJobAccountAndLocation(raw.lines, fullName);
     return {
         linkedinUrl: normalizedUrl,
         firstName,
@@ -262,6 +378,8 @@ function parseRawLeadCandidate(raw: RawLeadCandidate): SalesNavLeadCandidate | n
         jobTitle,
         accountName: accountName || fullName,
         website: '',
+        location,
+        publicProfileUrl: raw.publicProfileUrl,
     };
 }
 
@@ -307,8 +425,23 @@ async function extractSavedLists(page: Page): Promise<SalesNavSavedList[]> {
 
 async function extractRawLeadCandidates(page: Page): Promise<RawLeadCandidate[]> {
     return page.evaluate(() => {
-        const matches: Array<{ href: string; anchorText: string; lines: string[] }> = [];
+        const matches: Array<{ href: string; anchorText: string; lines: string[]; publicProfileUrl?: string }> = [];
         const seen = new Set<string>();
+
+        /** Cerca un link /in/ nella stessa card container */
+        function findPublicProfileUrl(container: HTMLElement | null, primaryHref: string): string | undefined {
+            if (!container) return undefined;
+            // Se il link primario è già /in/, non serve cercare
+            if (/\/in\//i.test(primaryHref)) return undefined;
+            const publicLinks = container.querySelectorAll('a[href*="/in/"]') as NodeListOf<HTMLAnchorElement>;
+            for (const link of publicLinks) {
+                const h = link.href || link.getAttribute('href') || '';
+                if (h && /linkedin\.com\/in\//i.test(h)) {
+                    return h.split('#')[0].split('?')[0];
+                }
+            }
+            return undefined;
+        }
 
         // Strategia 1: cerca anchor con href /sales/lead/ o /in/
         const anchors = Array.from(document.querySelectorAll('a[href]')) as HTMLAnchorElement[];
@@ -340,6 +473,7 @@ async function extractRawLeadCandidates(page: Page): Promise<RawLeadCandidate[]>
                 href: href.split('#')[0],
                 anchorText: (anchor.innerText || '').replace(/\s+/g, ' ').trim(),
                 lines,
+                publicProfileUrl: findPublicProfileUrl(container, href),
             });
         }
 
@@ -364,6 +498,7 @@ async function extractRawLeadCandidates(page: Page): Promise<RawLeadCandidate[]>
                 href: href.split('#')[0],
                 anchorText: (leadAnchor.innerText || '').replace(/\s+/g, ' ').trim(),
                 lines,
+                publicProfileUrl: findPublicProfileUrl(el as HTMLElement, href),
             });
         }
 
@@ -372,6 +507,7 @@ async function extractRawLeadCandidates(page: Page): Promise<RawLeadCandidate[]>
 }
 
 async function clickShowMoreIfPresent(page: Page): Promise<boolean> {
+    await dismissKnownOverlays(page);
     const button = page.locator(SHOW_MORE_SELECTOR).first();
     if ((await button.count()) === 0) {
         return false;
@@ -390,6 +526,7 @@ async function clickShowMoreIfPresent(page: Page): Promise<boolean> {
 }
 
 async function goToNextPage(page: Page): Promise<boolean> {
+    await dismissKnownOverlays(page);
     const nextButton = page.locator(NEXT_PAGE_SELECTOR).first();
     if ((await nextButton.count()) === 0) {
         return false;
@@ -430,8 +567,8 @@ export async function scrapeLeadsFromSalesNavList(
 
     await page.goto(options.listUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     await humanDelay(page, 1500, 2800);
-    // Re-inject overlay dopo navigazione (DOM distrutto da page.goto)
-    if (options.interactive) await blockUserInput(page);
+    // Re-inject overlay dopo navigazione (DOM distrutto da page.goto) — skip in interactive
+    if (!options.interactive) await blockUserInput(page);
     // Attendi che almeno una lead card appaia prima di iniziare
     await page.waitForSelector(LEAD_ANCHOR_SELECTOR, { timeout: 15_000 }).catch(() => null);
 
@@ -486,8 +623,8 @@ export async function scrapeLeadsFromSalesNavList(
         if (!moved) {
             break;
         }
-        // Re-inject overlay dopo cambio pagina
-        if (options.interactive) await blockUserInput(page);
+        // Re-inject overlay dopo cambio pagina — skip in interactive
+        if (!options.interactive) await blockUserInput(page);
     }
 
     return {

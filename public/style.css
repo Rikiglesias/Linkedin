@@ -37,6 +37,61 @@
     --space-7: 32px;
 }
 
+/* ─── Dark Mode ───────────────────────────────────────────────── */
+[data-theme="dark"] {
+    --bg-page: #0f1419;
+    --bg-panel: #1a2332;
+    --bg-panel-alt: #1e2b3a;
+    --bg-strong: #243447;
+
+    --ink-strong: #e1e8ed;
+    --ink-muted: #8b9fad;
+    --ink-soft: #627785;
+
+    --border: #2c3e50;
+    --border-strong: #3d5a6e;
+
+    --brand: #17a2b8;
+    --brand-soft: #0d2f36;
+    --accent: #e8a838;
+
+    --success: #28a96b;
+    --warning: #d9930d;
+    --danger: #e05545;
+    --info: #2b8fd4;
+
+    --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.3);
+    --shadow-focus: 0 0 0 3px rgba(23, 162, 184, 0.35);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --bg-page: #0f1419;
+        --bg-panel: #1a2332;
+        --bg-panel-alt: #1e2b3a;
+        --bg-strong: #243447;
+
+        --ink-strong: #e1e8ed;
+        --ink-muted: #8b9fad;
+        --ink-soft: #627785;
+
+        --border: #2c3e50;
+        --border-strong: #3d5a6e;
+
+        --brand: #17a2b8;
+        --brand-soft: #0d2f36;
+        --accent: #e8a838;
+
+        --success: #28a96b;
+        --warning: #d9930d;
+        --danger: #e05545;
+        --info: #2b8fd4;
+
+        --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.3);
+        --shadow-focus: 0 0 0 3px rgba(23, 162, 184, 0.35);
+    }
+}
+
 *,
 *::before,
 *::after {
@@ -57,6 +112,11 @@ body {
         radial-gradient(circle at 20% 0%, rgba(217, 236, 239, 0.9), transparent 35%),
         radial-gradient(circle at 90% 10%, rgba(246, 223, 196, 0.55), transparent 28%), var(--bg-page);
     line-height: 1.45;
+}
+
+[data-theme="dark"] body,
+:root:not([data-theme="light"]) body {
+    background: var(--bg-page);
 }
 
 .skip-link {
@@ -802,4 +862,184 @@ dialog::backdrop {
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
     }
+}
+
+/* ─── Print Styles ─────────────────────────────────────────────────── */
+
+@media print {
+    body {
+        background: white !important;
+        color: black !important;
+        font-size: 11pt;
+    }
+
+    .header-actions,
+    .skip-link,
+    .sse-indicator,
+    .feedback,
+    .voice-feedback-wrap,
+    .filters,
+    dialog,
+    #btn-pause,
+    #btn-resume,
+    #btn-refresh,
+    #btn-voice,
+    #btn-export-csv,
+    #btn-export-chart,
+    #btn-print,
+    #btn-theme-toggle,
+    .incident-resolve,
+    .incident-select,
+    .comment-suggestion-actions,
+    #sse-reconnect {
+        display: none !important;
+    }
+
+    .card {
+        break-inside: avoid;
+        box-shadow: none;
+        border: 1px solid #ccc;
+        margin-bottom: 8pt;
+    }
+
+    .chart-container {
+        height: 200px !important;
+    }
+
+    .two-col,
+    .three-col {
+        display: block;
+    }
+
+    .status-badge {
+        border: 1px solid currentColor;
+    }
+}
+
+/* ─── Keyboard Shortcuts Help Overlay ──────────────────────────────── */
+
+.shortcut-help-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(2px);
+}
+
+.shortcut-help-card {
+    background: var(--bg-panel);
+    color: var(--ink-strong);
+    border-radius: 12px;
+    padding: var(--space-5) var(--space-6);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+    min-width: 320px;
+    max-width: 420px;
+}
+
+.shortcut-help-card h3 {
+    margin: 0 0 var(--space-3);
+    font-size: 1.1rem;
+}
+
+.shortcut-help-card table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.shortcut-help-card td {
+    padding: var(--space-1) var(--space-2);
+    border-bottom: 1px solid var(--border);
+}
+
+.shortcut-help-card td:first-child {
+    text-align: center;
+    width: 60px;
+}
+
+.shortcut-help-card kbd {
+    display: inline-block;
+    background: var(--bg-panel-alt);
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+}
+
+.shortcut-help-footer {
+    margin: var(--space-3) 0 0;
+    text-align: center;
+    color: var(--ink-muted);
+    font-size: 0.85rem;
+}
+
+/* ─── Lead Search ──────────────────────────────────────────────────────────── */
+
+.lead-search-controls {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+    margin-bottom: var(--space-2);
+    flex-wrap: wrap;
+}
+
+.lead-search-controls .modal-input {
+    flex: 1 1 250px;
+    min-width: 180px;
+}
+
+.lead-search-select {
+    padding: 0.4rem 0.6rem;
+    border-radius: var(--radius-s);
+    border: 1px solid var(--border-base);
+    background: var(--bg-panel);
+    color: var(--ink-strong);
+    font-size: 0.85rem;
+}
+
+.lead-search-pager {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+}
+
+.lead-detail-content {
+    margin-top: var(--space-3);
+    padding: var(--space-3);
+    border-top: 1px solid var(--border-base);
+}
+
+.lead-detail-content[hidden] {
+    display: none;
+}
+
+.lead-detail-meta p {
+    margin: 0.25rem 0;
+    font-size: 0.9rem;
+}
+
+.lead-detail-meta a {
+    color: var(--accent-primary);
+    text-decoration: none;
+}
+
+.lead-detail-meta a:hover {
+    text-decoration: underline;
+}
+
+/* ─── i18n locale toggle ───────────────────────────────────────────────────── */
+
+.locale-toggle {
+    font-size: 0.8rem;
+    padding: 0.2rem 0.5rem;
+    cursor: pointer;
+    background: var(--bg-panel-alt);
+    border: 1px solid var(--border-base);
+    border-radius: var(--radius-s);
+    color: var(--ink-base);
 }

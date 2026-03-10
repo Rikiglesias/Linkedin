@@ -4,6 +4,8 @@ import { isAiRequestConfigured } from './env';
 interface ConfigValidationRule {
     message: string;
     when: (cfg: AppConfig, nodeEnv: string) => boolean;
+    /** 'error' (default) blocks startup; 'warn' only prints a warning. */
+    severity?: 'error' | 'warn';
 }
 
 const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
@@ -328,14 +330,68 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
             }
         },
     },
+
+    // ─── Cross-domain validation rules ───────────────────────────────────────
+    {
+        message:
+            '[CONFIG] SALESNAV_SYNC_ENABLED=true ma SALESNAV_LIST_NAME è vuoto — specificare il nome della lista SalesNav',
+        when: (cfg) => cfg.salesNavSyncEnabled && !cfg.salesNavSyncListName,
+    },
+    {
+        message:
+            '[CONFIG] PROXY_URL configurato ma USE_JA3_PROXY=false — gap stealth: il proxy non simula fingerprint TLS',
+        when: (cfg) => !!cfg.proxyUrl && !cfg.useJa3Proxy,
+        severity: 'warn',
+    },
+    {
+        message:
+            '[CONFIG] NODE_ENV=production ma DASHBOARD_AUTH_ENABLED=false — la dashboard è esposta senza autenticazione',
+        when: (_cfg, nodeEnv) => nodeEnv === 'production' && !_cfg.dashboardAuthEnabled,
+    },
+    {
+        message:
+            '[CONFIG] GROWTH_MODEL_ENABLED=true ma nessun account ha warmupEnabled — consigliato per fasi di crescita più precise (il growth model usa comunque ageDays dal DB)',
+        when: (cfg) =>
+            cfg.growthModelEnabled && cfg.accountProfiles.length > 0 && !cfg.accountProfiles.some((a) => a.warmupEnabled),
+        severity: 'warn',
+    },
+    {
+        message: '[CONFIG] RANDOM_ACTIVITY_PROBABILITY deve essere compreso tra 0 e 1',
+        when: (cfg) => cfg.randomActivityProbability < 0 || cfg.randomActivityProbability > 1,
+    },
+    {
+        message:
+            '[CONFIG] NO_BURST_MIN_DELAY_SEC > NO_BURST_MAX_DELAY_SEC — i limiti sono invertiti',
+        when: (cfg) => cfg.noBurstMinDelaySec > cfg.noBurstMaxDelaySec,
+    },
+    {
+        message:
+            '[CONFIG] HARD_INVITE_CAP > 100 — valore pericolosamente alto, rischio ban LinkedIn',
+        when: (cfg) => cfg.hardInviteCap > 100,
+    },
 ];
 
+export interface ConfigValidationResult {
+    errors: string[];
+    warnings: string[];
+}
+
 export function validateConfigSchema(config: AppConfig, nodeEnv: string = process.env.NODE_ENV ?? ''): string[] {
+    const { errors } = validateConfigFull(config, nodeEnv);
+    return errors;
+}
+
+export function validateConfigFull(cfg: AppConfig, nodeEnv: string = process.env.NODE_ENV ?? ''): ConfigValidationResult {
     const errors: string[] = [];
+    const warnings: string[] = [];
     for (const rule of CONFIG_VALIDATION_RULES) {
-        if (rule.when(config, nodeEnv)) {
-            errors.push(rule.message);
+        if (rule.when(cfg, nodeEnv)) {
+            if (rule.severity === 'warn') {
+                warnings.push(rule.message);
+            } else {
+                errors.push(rule.message);
+            }
         }
     }
-    return errors;
+    return { errors, warnings };
 }

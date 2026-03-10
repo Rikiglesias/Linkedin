@@ -99,7 +99,24 @@ export interface IPlugin {
     onDailyReport?(stats: PluginDailyStats): Promise<void>;
 
     /**
+     * Restituisce sub-task custom da registrare nel loop orchestrator.
+     * Permette al plugin di iniettare logica nel ciclo run-loop.
+     */
+    getLoopSubTasks?(): PluginLoopSubTask[];
+
+    /**
      * Chiamato alla chiusura del bot. Usare per cleanup.
      */
     onShutdown?(): Promise<void>;
+}
+
+export interface PluginLoopSubTask {
+    /** Nome univoco del sub-task (verrà prefissato con "plugin:"). */
+    name: string;
+    /** Predicato: il task esegue solo se ritorna true. */
+    shouldRun: (ctx: PluginIdleEvent) => Promise<boolean> | boolean;
+    /** Logica del task. */
+    execute: (ctx: PluginIdleEvent) => Promise<void>;
+    /** Comportamento su errore: 'skip' continua, 'abort' interrompe il ciclo. */
+    onError: 'skip' | 'abort';
 }

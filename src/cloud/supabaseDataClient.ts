@@ -43,6 +43,7 @@ import {
     PendingTelegramCommand,
     CloudCampaignConfig,
     CloudSalesNavMember,
+    CloudEnrichmentData,
 } from './types';
 
 export * from './types';
@@ -402,6 +403,93 @@ export async function syncSalesNavMembersToCloud(
     }));
 
     return batchUpsertCloudSalesNavMembers(members);
+}
+
+// ──────────────────────────────────────────────────────────────
+// Enrichment data sync
+// ──────────────────────────────────────────────────────────────
+
+/**
+ * Upserta i dati di deep enrichment (Person Data Finder) nel cloud.
+ * Richiede il lead_id Supabase (non locale) — il chiamante deve risolvere il mapping.
+ */
+export async function upsertCloudEnrichmentData(data: CloudEnrichmentData): Promise<void> {
+    const sb = getClient();
+    if (!sb) return;
+
+    const { error } = await sb
+        .from('lead_enrichment_data')
+        .upsert(
+            { ...data, updated_at: new Date().toISOString() },
+            { onConflict: 'lead_id' },
+        );
+    if (error) {
+        await logWarn('cloud.enrichment.upsert.error', { leadId: data.lead_id, error: error.message });
+    }
+}
+
+/**
+ * Sync batch di enrichment data dal DB locale a Supabase.
+ * Risolve il mapping local_lead_id → cloud lead_id tramite linkedin_url.
+ */
+export async function syncEnrichmentDataToCloud(
+    localDb: { query: (sql: string, params?: unknown[]) => Promise<Array<Record<string, unknown>>> },
+): Promise<number> {
+    if (!isConfigured()) return 0;
+    const sb = getClient();
+    if (!sb) return 0;
+
+    // Legge enrichment data locale con il linkedin_url del lead per risolvere il mapping
+    const rows = await localDb.query(
+        `SELECT e.lead_id AS local_lead_id,
+                e.company_json, e.phones_json, e.socials_json,
+                e.seniority, e.department, e.data_points, e.confidence,
+                e.sources_json, e.enriched_at,
+                l.linkedin_url
+         FROM lead_enrichment_data e
+         JOIN leads l ON l.id = e.lead_id
+         ORDER BY e.lead_id ASC
+         LIMIT 500`,
+    );
+
+    if (rows.length === 0) return 0;
+
+    // Risolve linkedin_url → cloud lead_id
+    const urls = rows.map((r) => r.linkedin_url as string).filter(Boolean);
+    const { data: cloudLeads } = await sb
+        .from('leads')
+        .select('id, linkedin_url')
+        .in('linkedin_url', urls);
+
+    const urlToCloudId = new Map<string, number>();
+    for (const cl of cloudLeads ?? []) {
+        urlToCloudId.set(cl.linkedin_url as string, cl.id as number);
+    }
+
+    let synced = 0;
+    for (const r of rows) {
+        const cloudLeadId = urlToCloudId.get(r.linkedin_url as string);
+        if (!cloudLeadId) continue;
+
+        const record: CloudEnrichmentData = {
+            lead_id: cloudLeadId,
+            local_lead_id: r.local_lead_id as number,
+            company_json: r.company_json ? JSON.parse(r.company_json as string) : null,
+            phones_json: r.phones_json ? JSON.parse(r.phones_json as string) : null,
+            socials_json: r.socials_json ? JSON.parse(r.socials_json as string) : null,
+            seniority: (r.seniority as string) || null,
+            department: (r.department as string) || null,
+            data_points: (r.data_points as number) || 0,
+            confidence: (r.confidence as number) || 0,
+            sources_json: r.sources_json ? JSON.parse(r.sources_json as string) : null,
+            enriched_at: (r.enriched_at as string) || null,
+        };
+
+        await upsertCloudEnrichmentData(record);
+        synced++;
+    }
+
+    return synced;
 }
 
 // ──────────────────────────────────────────────────────────────

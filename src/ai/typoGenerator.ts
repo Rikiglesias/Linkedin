@@ -36,6 +36,63 @@ const QWERTY_ADJACENT: Record<string, string[]> = {
 
 type TypoKind = 'adjacent' | 'double' | 'missing' | 'transposition';
 
+// ─── Session Typo Rate ──────────────────────────────────────────────────────
+
+/** Cached session typo rate — computed once per process */
+let _sessionTypoRate: number | null = null;
+
+/**
+ * Computes a session-aware typo rate (0.015–0.07) to avoid a fixed fingerprint.
+ *
+ * Factors:
+ *   - Account seed: deterministic per-account baseline from ACCOUNT_ID env
+ *   - Time of day: more typos early morning (< 8) and late evening (> 21)
+ *   - Session fatigue: increases slowly during the process uptime
+ *
+ * The rate is computed once per session and cached.
+ */
+export function computeSessionTypoRate(): number {
+    if (_sessionTypoRate !== null) return _sessionTypoRate;
+
+    const BASE_MIN = 0.015;
+    const BASE_MAX = 0.07;
+
+    // 1. Account seed: deterministic baseline from ACCOUNT_ID (or fallback random)
+    const accountId = process.env.ACCOUNT_ID || process.env.LINKEDIN_ACCOUNT || '';
+    let seedHash = 2166136261;
+    for (let i = 0; i < accountId.length; i++) {
+        seedHash ^= accountId.charCodeAt(i);
+        seedHash = Math.imul(seedHash, 16777619);
+    }
+    // Normalize to 0–1
+    const accountSeed = ((seedHash >>> 0) % 10000) / 10000;
+    // Account baseline: 0.02–0.05 range
+    const accountBaseline = 0.02 + accountSeed * 0.03;
+
+    // 2. Time-of-day factor: more typos early morning and late evening
+    const hour = new Date().getHours();
+    let todFactor = 0;
+    if (hour < 8) todFactor = 0.008 + (8 - hour) * 0.002; // 6am = +0.012
+    else if (hour > 21) todFactor = 0.005 + (hour - 21) * 0.003; // 11pm = +0.011
+    else if (hour >= 12 && hour <= 14) todFactor = 0.003; // post-lunch dip
+
+    // 3. Session fatigue: +0.5% every 30min of uptime (max +2%)
+    const uptimeMinutes = process.uptime() / 60;
+    const fatigueFactor = Math.min(0.02, (uptimeMinutes / 30) * 0.005);
+
+    // Combine and clamp
+    const rate = accountBaseline + todFactor + fatigueFactor;
+    _sessionTypoRate = Math.max(BASE_MIN, Math.min(BASE_MAX, rate));
+    return _sessionTypoRate;
+}
+
+/** Reset the cached rate (useful for testing or long-running sessions) */
+export function resetSessionTypoRate(): void {
+    _sessionTypoRate = null;
+}
+
+// ─── Core ───────────────────────────────────────────────────────────────────
+
 export function determineNextKeystroke(char: string, baseTypoProb: number = 0.03): { char: string; isTypo: boolean } {
     if (Math.random() < baseTypoProb) {
         const lowerChar = char.toLowerCase();

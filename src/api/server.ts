@@ -24,6 +24,8 @@ import {
     getDailyStat,
     getGlobalKPIData,
     getLeadsByStatus,
+    getLeadById,
+    getLeadTimeline,
     getOperationalObservabilitySnapshot,
     getRecentDailyStats,
     getRiskInputs,
@@ -38,6 +40,8 @@ import {
     reviewCommentSuggestion,
     resolveIncident,
     runAiValidationPipeline,
+    searchLeads,
+    setRuntimeFlag,
 } from '../core/repositories';
 import { getDatabase } from '../db';
 import campaignsRouter from './routes/campaigns';
@@ -56,6 +60,7 @@ import {
 } from '../telemetry/liveEvents';
 import { resolveCorrelationId, runWithCorrelationId } from '../telemetry/correlation';
 import { getCircuitBreakerSnapshot } from '../core/integrationPolicy';
+import { WebSocketServer, WebSocket } from 'ws';
 
 const app = express();
 app.set('trust proxy', false);
@@ -1446,6 +1451,77 @@ app.post('/api/controls/quarantine', async (req, res) => {
     }
 });
 
+app.post('/api/controls/trigger-run', async (req, res) => {
+    try {
+        const workflow = typeof req.body?.workflow === 'string' ? req.body.workflow : 'all';
+        const validWorkflows = ['invite', 'check', 'message', 'warmup', 'all'];
+        if (!validWorkflows.includes(workflow)) {
+            res.status(400).json({ success: false, error: `Workflow non valido: ${workflow}` });
+            return;
+        }
+        await setRuntimeFlag('ui_trigger_run', JSON.stringify({
+            workflow,
+            requestedAt: new Date().toISOString(),
+            source: 'dashboard',
+        }));
+        auditSecurityEvent({
+            category: 'runtime_control',
+            action: 'trigger_run',
+            actor: resolveRequestIp(req),
+            result: 'ALLOW',
+            metadata: { workflow },
+        });
+        res.json({ success: true, message: `Run "${workflow}" schedulato. Verrà eseguito al prossimo ciclo.` });
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.controls.trigger-run');
+    }
+});
+
+// ==========================================
+// LEAD SEARCH + DETAIL
+// ==========================================
+
+app.get('/api/leads/search', async (req, res) => {
+    try {
+        const query = typeof req.query.q === 'string' ? req.query.q.trim() : undefined;
+        const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+        const listName = typeof req.query.list === 'string' ? req.query.list : undefined;
+        const page = typeof req.query.page === 'string' ? Math.max(1, parseInt(req.query.page, 10) || 1) : 1;
+        const pageSize = typeof req.query.pageSize === 'string' ? Math.min(100, parseInt(req.query.pageSize, 10) || 25) : 25;
+
+        const result = await searchLeads({
+            query: query || undefined,
+            status: status as never,
+            listName: listName || undefined,
+            page,
+            pageSize,
+        });
+
+        res.json(result);
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.leads.search');
+    }
+});
+
+app.get('/api/leads/:id', async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (!Number.isFinite(id) || id <= 0) {
+            res.status(400).json({ error: 'Invalid lead ID' });
+            return;
+        }
+        const lead = await getLeadById(id);
+        if (!lead) {
+            res.status(404).json({ error: 'Lead not found' });
+            return;
+        }
+        const timeline = await getLeadTimeline(id);
+        res.json({ lead, timeline });
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.leads.detail');
+    }
+});
+
 // ==========================================
 // CAMPAIGNS (Router Esterno)
 // ==========================================
@@ -1471,5 +1547,56 @@ export function startServer(port: number = 3000) {
         const effectivePort = typeof address === 'object' && address ? address.port : port;
         console.log(`\n🚀 Dashboard & Web API is running on http://localhost:${effectivePort}\n`);
     });
+
+    // ── WebSocket server (real-time push, same port) ─────────────────────────
+    const wss = new WebSocketServer({ server, path: '/ws' });
+
+    wss.on('connection', (ws) => {
+        const onEvent = (event: LiveEventMessage): void => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(event));
+            }
+        };
+        const unsubscribe = subscribeLiveEvents(onEvent);
+
+        ws.send(JSON.stringify({
+            type: 'connected',
+            payload: { subscribers: getLiveEventSubscribersCount() },
+            timestamp: new Date().toISOString(),
+        }));
+
+        const heartbeat = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'heartbeat',
+                    payload: {},
+                    timestamp: new Date().toISOString(),
+                }));
+            }
+        }, 20_000);
+
+        ws.on('message', (raw) => {
+            try {
+                const msg = JSON.parse(String(raw)) as { action?: string; channels?: string[] };
+                if (msg.action === 'subscribe' && Array.isArray(msg.channels)) {
+                    // Channel subscription stored for future per-channel filtering
+                    (ws as WebSocket & { _channels?: Set<string> })._channels = new Set(msg.channels);
+                }
+            } catch {
+                // ignore malformed messages
+            }
+        });
+
+        ws.on('close', () => {
+            clearInterval(heartbeat);
+            unsubscribe();
+        });
+
+        ws.on('error', () => {
+            clearInterval(heartbeat);
+            unsubscribe();
+        });
+    });
+
     return server;
 }

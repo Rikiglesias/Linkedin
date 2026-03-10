@@ -43,6 +43,8 @@ export interface UpsertSalesNavigatorLeadInput {
     listName: string;
     leadScore?: number | null;
     confidenceScore?: number | null;
+    location?: string | null;
+    salesnavUrl?: string | null;
 }
 
 export interface UpsertSalesNavigatorLeadResult {

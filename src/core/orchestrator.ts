@@ -1,5 +1,6 @@
 import { checkLogin, closeBrowser, launchBrowser, runSelectorCanaryDetailed } from '../browser';
 import { getRuntimeAccountProfiles } from '../accountManager';
+import { getSessionMaturity } from '../browser/sessionCookieMonitor';
 import { config, getLocalDateString, getWeekStartDate, isWorkingHour } from '../config';
 import { pauseAutomation, quarantineAccount } from '../risk/incidentManager';
 import {
@@ -31,6 +32,16 @@ import { sendTelegramAlert } from '../telemetry/alerts';
 export interface RunWorkflowOptions {
     workflow: WorkflowSelection;
     dryRun: boolean;
+    /** Filtra solo lead di questa lista (null = tutte le liste attive) */
+    listFilter?: string | null;
+    /** Score minimo per inviti (default: nessun filtro) */
+    minScore?: number;
+    /** Limite massimo job per questa sessione (sovrascrive budget giornaliero) */
+    sessionLimit?: number;
+    /** Modalità nota invito: 'ai', 'template', 'none' */
+    noteMode?: 'ai' | 'template' | 'none';
+    /** Lingua preferita per AI generation (it, en, fr, es, nl) */
+    lang?: string;
 }
 
 function mapDailySnapshotToPredictiveSample(snapshot: {
@@ -68,6 +79,7 @@ async function runCanaryIfNeeded(workflow: WorkflowSelection): Promise<boolean> 
         const session = await launchBrowser({
             sessionDir: account.sessionDir,
             proxy: account.proxy,
+            forceDesktop: true,
         });
         try {
             const loggedIn = await checkLogin(session.page);
@@ -367,7 +379,14 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
         }
     }
 
-    const schedule = await scheduleJobs(options.workflow, { dryRun: options.dryRun });
+    const schedule = await scheduleJobs(options.workflow, {
+        dryRun: options.dryRun,
+        listFilter: options.listFilter,
+        minScore: options.minScore,
+        sessionLimit: options.sessionLimit,
+        noteMode: options.noteMode,
+        lang: options.lang,
+    });
 
     if (!options.dryRun) {
         const touchesOutreach =
@@ -590,6 +609,32 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
             await logInfo('workflow.warmup.end', { localDate: schedule.localDate });
         }
         return;
+    }
+
+    // Session maturity guard: force random LinkedIn activity before outreach
+    // when cookies are < 2 days old to avoid triggering detection on fresh sessions
+    if (!options.dryRun) {
+        const touchesOutreach =
+            options.workflow === 'all' || options.workflow === 'invite' || options.workflow === 'message';
+        if (touchesOutreach) {
+            const allAccounts = getRuntimeAccountProfiles();
+            for (const acc of allAccounts) {
+                const maturity = getSessionMaturity(acc.sessionDir);
+                if (maturity.forceRandomActivityFirst) {
+                    await logInfo('workflow.maturity.force_random_first', {
+                        accountId: acc.id,
+                        maturity: maturity.maturity,
+                        ageDays: maturity.ageDays,
+                        budgetFactor: maturity.budgetFactor,
+                    });
+                    await runRandomLinkedinActivity({
+                        accountId: acc.id,
+                        maxActions: 2 + Math.floor(Math.random() * 3),
+                        dryRun: false,
+                    });
+                }
+            }
+        }
     }
 
     await runQueuedJobs({

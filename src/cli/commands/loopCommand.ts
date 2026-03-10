@@ -52,6 +52,9 @@ import { pluginRegistry } from '../../plugins/pluginLoader';
 import { resolveCorrelationId, runWithCorrelationId } from '../../telemetry/correlation';
 import { processTelegramImportCommand } from '../../cloud/telegramAiImporter';
 import { sendTelegramAlert } from '../../telemetry/alerts';
+import { LoopSubTask, LoopCycleContext, runLoopCycle } from '../../core/loopOrchestrator';
+import { recordSessionPattern } from '../../risk/sessionMemory';
+import { startConfigWatcher, stopConfigWatcher } from '../../config/hotReload';
 
 // ─── Costanti lock ────────────────────────────────────────────────────────────
 
@@ -277,6 +280,301 @@ async function processCloudCommands(): Promise<void> {
     }
 }
 
+// ─── Sub-task registry builder ────────────────────────────────────────────────
+
+interface LoopSubTaskBuildContext {
+    workflow: string;
+    lockOwnerId: string | null;
+    lockTtlSeconds: number;
+    profilesDiscoveredRef: { count: number };
+}
+
+function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
+    const tasks: LoopSubTask[] = [];
+
+    // 1. Lock heartbeat
+    tasks.push({
+        name: 'lock_heartbeat',
+        shouldRun: () => !!buildCtx.lockOwnerId,
+        execute: async () => {
+            const owner = buildCtx.lockOwnerId;
+            if (owner) {
+                await heartbeatWorkflowRunnerLock(owner, buildCtx.lockTtlSeconds);
+            }
+        },
+        onError: 'abort',
+    });
+
+    // 2. Cloud commands (Telegram)
+    tasks.push({
+        name: 'cloud_commands',
+        shouldRun: (ctx) => !ctx.dryRun,
+        execute: async () => {
+            await processCloudCommands();
+        },
+        onError: 'skip',
+    });
+
+    // 3. Control plane sync
+    tasks.push({
+        name: 'control_plane_sync',
+        shouldRun: (ctx) => !ctx.dryRun && config.supabaseControlPlaneEnabled,
+        execute: async () => {
+            const controlPlane = await runControlPlaneSync();
+            if (controlPlane.executed || controlPlane.reason !== 'interval_not_elapsed') {
+                console.log('[LOOP] control-plane', {
+                    executed: controlPlane.executed,
+                    reason: controlPlane.reason,
+                    fetched: controlPlane.fetched,
+                    applied: controlPlane.applied,
+                    hashChanged: controlPlane.hashChanged,
+                });
+            }
+        },
+        onError: 'skip',
+    });
+
+    // 4. Doctor gate
+    tasks.push({
+        name: 'doctor_gate',
+        shouldRun: () => true,
+        execute: async (ctx) => {
+            const gate = await evaluateLoopDoctorGate(ctx.dryRun);
+            if (!gate.proceed) {
+                console.warn(`[LOOP] cycle=${ctx.cycle} skipped reason=${gate.reason}`);
+                throw new Error(`doctor_gate:${gate.reason}`);
+            }
+        },
+        onError: 'abort',
+    });
+
+    // 5. Session freshness check
+    tasks.push({
+        name: 'session_freshness',
+        shouldRun: (ctx) => !ctx.dryRun,
+        execute: async () => {
+            for (const account of getRuntimeAccountProfiles()) {
+                const freshness = checkSessionFreshness(account.sessionDir);
+                if (freshness.needsRotation) {
+                    console.warn(
+                        `[LOOP] Sessione ${account.id} stale: ${freshness.sessionAgeDays}d (max ${freshness.maxAgeDays}d)`,
+                    );
+                }
+            }
+        },
+        onError: 'skip',
+    });
+
+    // 6. Auto site-check + warmup session
+    tasks.push({
+        name: 'auto_site_check',
+        shouldRun: async (ctx) => {
+            const decision = await evaluateAutoSiteCheckDecision(ctx.dryRun);
+            return decision.shouldRun;
+        },
+        execute: async (ctx) => {
+            const siteCheckReport = await runSiteCheck({
+                limitPerStatus: config.autoSiteCheckLimit,
+                autoFix: config.autoSiteCheckFix,
+            });
+            await setRuntimeFlag(AUTO_SITE_CHECK_LAST_RUN_KEY, new Date().toISOString());
+            console.log('[LOOP] auto-site-check', {
+                intervalHours: config.autoSiteCheckIntervalHours,
+                limitPerStatus: config.autoSiteCheckLimit,
+                autoFix: config.autoSiteCheckFix,
+                report: siteCheckReport,
+            });
+
+            if (!ctx.dryRun) {
+                try {
+                    const warmupSessionInstance = await launchBrowser({ headless: config.headless, forceDesktop: true });
+                    try {
+                        await warmupSession(warmupSessionInstance.page);
+                    } finally {
+                        await closeBrowserSession(warmupSessionInstance);
+                    }
+                } catch (e) {
+                    console.log('[LOOP] Errore Session Warmer (non fatale):', e);
+                }
+            }
+        },
+        onError: 'skip',
+    });
+
+    // 7. SalesNav sync
+    tasks.push({
+        name: 'salesnav_sync',
+        shouldRun: async (ctx) => {
+            if (!config.salesNavSyncEnabled) return false;
+            if (buildCtx.workflow !== 'all' && buildCtx.workflow !== 'invite') return false;
+            const decision = await evaluateSalesNavSyncDecision(ctx.dryRun);
+            return decision.shouldRun;
+        },
+        execute: async (ctx) => {
+            const report = await runSalesNavigatorListSync({
+                listName: config.salesNavSyncListName,
+                listUrl: config.salesNavSyncListUrl || undefined,
+                maxPages: config.salesNavSyncMaxPages,
+                maxLeadsPerList: config.salesNavSyncLimit,
+                dryRun: ctx.dryRun,
+                accountId: config.salesNavSyncAccountId || undefined,
+            });
+            await setRuntimeFlag(SALESNAV_LAST_SYNC_KEY, new Date().toISOString());
+            console.log('[LOOP] salesnav-sync', { report });
+        },
+        onError: 'skip',
+    });
+
+    // 8. Auto DB backup (daily, leader only)
+    tasks.push({
+        name: 'auto_backup',
+        shouldRun: async (ctx) => {
+            if (ctx.dryRun || !ctx.isLeader) return false;
+            const lastRun = await getRuntimeFlag('db_backup.last_run_at');
+            return !lastRun || Date.now() - Date.parse(lastRun) > 24 * 60 * 60 * 1000;
+        },
+        execute: async () => {
+            const backupPath = await backupDatabase();
+            await setRuntimeFlag('db_backup.last_run_at', new Date().toISOString());
+            console.log(`[LOOP] Auto-backup completato: ${backupPath}`);
+        },
+        onError: 'skip',
+    });
+
+    // 9. Dead Letter Queue (every 6h, leader only)
+    tasks.push({
+        name: 'dead_letter_queue',
+        shouldRun: async (ctx) => {
+            if (ctx.dryRun || !ctx.isLeader) return false;
+            const lastRun = await getRuntimeFlag('dlq.last_run_at');
+            return !lastRun || Date.now() - Date.parse(lastRun) > 6 * 60 * 60 * 1000;
+        },
+        execute: async () => {
+            const result = await runDeadLetterWorker({ batchSize: 200, recycleDelaySec: 43200 });
+            await setRuntimeFlag('dlq.last_run_at', new Date().toISOString());
+            console.log(`[LOOP] DLQ: processati=${result.processed} riciclati=${result.recycled} archiviati=${result.deadLettered}`);
+        },
+        onError: 'skip',
+    });
+
+    // 10. Company enrichment
+    tasks.push({
+        name: 'company_enrichment',
+        shouldRun: () =>
+            config.companyEnrichmentEnabled &&
+            (buildCtx.workflow === 'all' || buildCtx.workflow === 'invite'),
+        execute: async (ctx) => {
+            const enrichment = await runCompanyEnrichmentBatch({
+                limit: config.companyEnrichmentBatch,
+                maxProfilesPerCompany: config.companyEnrichmentMaxProfilesPerCompany,
+                dryRun: ctx.dryRun,
+            });
+            buildCtx.profilesDiscoveredRef.count += enrichment.createdLeads;
+            console.log('[LOOP] enrichment', enrichment);
+        },
+        onError: 'skip',
+    });
+
+    // 11. Ramp-up
+    tasks.push({
+        name: 'ramp_up',
+        shouldRun: (ctx) => !ctx.dryRun && config.rampUpEnabled,
+        execute: async () => {
+            const report = await runRampUpWorker();
+            console.log('[LOOP] ramp-up', report);
+        },
+        onError: 'skip',
+    });
+
+    // 12. Selector learner (once daily)
+    tasks.push({
+        name: 'selector_learner',
+        shouldRun: async (ctx) => {
+            if (ctx.dryRun) return false;
+            const lastRun = await getRuntimeFlag(SELECTOR_LEARNER_LAST_RUN_KEY);
+            return lastRun !== ctx.localDate;
+        },
+        execute: async (ctx) => {
+            const report = await runSelectorLearner({ limit: 100, minSuccess: 3 });
+            await setRuntimeFlag(SELECTOR_LEARNER_LAST_RUN_KEY, ctx.localDate);
+            console.log('[LOOP] selector-learner', report);
+        },
+        onError: 'skip',
+    });
+
+    // 13. Campaign dispatch
+    tasks.push({
+        name: 'campaign_dispatch',
+        shouldRun: (ctx) => !ctx.dryRun,
+        execute: async () => {
+            const steps = await dispatchReadyCampaignSteps();
+            if (steps > 0) {
+                console.log(`[LOOP] campagne dispatch: ${steps} step maturati inseriti in coda.`);
+            }
+        },
+        onError: 'skip',
+    });
+
+    // 14. Main workflow
+    tasks.push({
+        name: 'workflow',
+        shouldRun: () => true,
+        execute: async (ctx) => {
+            const cycleCorrelationId = resolveCorrelationId(`loop-${ctx.workflow}-${ctx.cycle}-${randomUUID()}`);
+            await runWithCorrelationId(cycleCorrelationId, async () => {
+                await runWorkflow({ workflow: ctx.workflow as import('../../core/scheduler').WorkflowSelection, dryRun: ctx.dryRun });
+            });
+        },
+        onError: 'abort',
+    });
+
+    // 15. Random activity
+    tasks.push({
+        name: 'random_activity',
+        shouldRun: (ctx) =>
+            !ctx.dryRun &&
+            pluginRegistry.count === 0 &&
+            config.randomActivityEnabled &&
+            Math.random() <= config.randomActivityProbability,
+        execute: async (ctx) => {
+            const report = await runRandomLinkedinActivity({
+                accountId: config.salesNavSyncAccountId || undefined,
+                maxActions: config.randomActivityMaxActions,
+                dryRun: ctx.dryRun,
+            });
+            console.log('[LOOP] random-activity', report);
+        },
+        onError: 'skip',
+    });
+
+    // 16. Plugin idle
+    tasks.push({
+        name: 'plugin_idle',
+        shouldRun: (ctx) => !ctx.dryRun && pluginRegistry.count > 0,
+        execute: async (ctx) => {
+            await pluginRegistry.fireIdle({
+                cycle: ctx.cycle,
+                workflow: ctx.workflow,
+                localDate: ctx.localDate,
+            });
+        },
+        onError: 'skip',
+    });
+
+    // 17+. Plugin-contributed sub-tasks
+    const pluginTasks = pluginRegistry.collectLoopSubTasks();
+    for (const pt of pluginTasks) {
+        tasks.push({
+            name: pt.name,
+            shouldRun: (ctx) => pt.shouldRun({ cycle: ctx.cycle, workflow: ctx.workflow, localDate: ctx.localDate }),
+            execute: (ctx) => pt.execute({ cycle: ctx.cycle, workflow: ctx.workflow, localDate: ctx.localDate }),
+            onError: pt.onError,
+        });
+    }
+
+    return tasks;
+}
+
 // ─── Command handlers ─────────────────────────────────────────────────────────
 
 export async function runLoopCommand(args: string[]): Promise<void> {
@@ -320,17 +618,18 @@ export async function runLoopCommand(args: string[]): Promise<void> {
 
     if (!dryRun) {
         await startTelegramListener().catch((e) => console.error('[TELEGRAM] Errore listener background', e));
+        startConfigWatcher();
     }
 
     const lockTtlSeconds = computeWorkflowLockTtlSeconds(getEffectiveLoopIntervalMs(intervalMs));
     const lockOwnerId = dryRun
         ? null
         : await acquireWorkflowRunnerLock('run-loop', lockTtlSeconds, {
-              workflow,
-              dryRun,
-              intervalMs,
-              startedAt: new Date().toISOString(),
-          });
+            workflow,
+            dryRun,
+            intervalMs,
+            startedAt: new Date().toISOString(),
+        });
 
     let cycle = 0;
     try {
@@ -348,198 +647,24 @@ export async function runLoopCommand(args: string[]): Promise<void> {
                 runId = await startCampaignRun();
             }
 
+            const profilesDiscoveredRef = { count: 0 };
+            const subTasks = buildLoopSubTasks({
+                workflow,
+                lockOwnerId,
+                lockTtlSeconds,
+                profilesDiscoveredRef,
+            });
+
             try {
-                if (lockOwnerId) {
-                    await heartbeatWorkflowRunnerLock(lockOwnerId, lockTtlSeconds);
-                }
+                const cycleCtx: LoopCycleContext = { cycle, localDate, workflow, dryRun, isLeader };
+                const cycleResult = await runLoopCycle(subTasks, cycleCtx);
+                profilesDiscoveredThisRun = profilesDiscoveredRef.count;
 
-                if (!dryRun) {
-                    await processCloudCommands();
-                }
-
-                if (!dryRun && config.supabaseControlPlaneEnabled) {
-                    const controlPlane = await runControlPlaneSync();
-                    if (controlPlane.executed || controlPlane.reason !== 'interval_not_elapsed') {
-                        console.log('[LOOP] control-plane', {
-                            executed: controlPlane.executed,
-                            reason: controlPlane.reason,
-                            fetched: controlPlane.fetched,
-                            applied: controlPlane.applied,
-                            hashChanged: controlPlane.hashChanged,
-                        });
-                    }
-                }
-
-                const doctorGate = await evaluateLoopDoctorGate(dryRun);
-                if (!doctorGate.proceed) {
-                    console.warn(`[LOOP] cycle = ${cycle} skipped reason = ${doctorGate.reason} `);
-                } else {
-                    // Session freshness check — rileva sessioni stale prima del workflow
-                    if (!dryRun) {
-                        for (const account of getRuntimeAccountProfiles()) {
-                            const freshness = checkSessionFreshness(account.sessionDir);
-                            if (freshness.needsRotation) {
-                                console.warn(
-                                    `[LOOP] Sessione ${account.id} stale: ${freshness.sessionAgeDays}d (max ${freshness.maxAgeDays}d) — il doctor effettuerà la ri-autenticazione`,
-                                );
-                            }
-                        }
-                    }
-
-                    const autoSiteCheck = await evaluateAutoSiteCheckDecision(dryRun);
-                    if (autoSiteCheck.shouldRun) {
-                        const siteCheckReport = await runSiteCheck({
-                            limitPerStatus: config.autoSiteCheckLimit,
-                            autoFix: config.autoSiteCheckFix,
-                        });
-                        await setRuntimeFlag(AUTO_SITE_CHECK_LAST_RUN_KEY, new Date().toISOString());
-                        console.log('[LOOP] auto-site-check', {
-                            reason: autoSiteCheck.reason,
-                            intervalHours: config.autoSiteCheckIntervalHours,
-                            limitPerStatus: config.autoSiteCheckLimit,
-                            staleDays: config.siteCheckStaleDays,
-                            autoFix: config.autoSiteCheckFix,
-                            report: siteCheckReport,
-                        });
-
-                        if (!dryRun) {
-                            try {
-                                const warmupSessionInstance = await launchBrowser({ headless: config.headless });
-                                try {
-                                    await warmupSession(warmupSessionInstance.page);
-                                } finally {
-                                    await closeBrowserSession(warmupSessionInstance);
-                                }
-                            } catch (e) {
-                                console.log('[LOOP] Errore nel Session Warmer, ignoro (non fatale):', e);
-                            }
-                        }
-                    } else {
-                        console.log('[LOOP] auto-site-check skipped', autoSiteCheck);
-                    }
-
-                    if (config.salesNavSyncEnabled && (workflow === 'all' || workflow === 'invite')) {
-                        const salesNavDecision = await evaluateSalesNavSyncDecision(dryRun);
-                        if (salesNavDecision.shouldRun) {
-                            const salesNavSyncReport = await runSalesNavigatorListSync({
-                                listName: config.salesNavSyncListName,
-                                listUrl: config.salesNavSyncListUrl || undefined,
-                                maxPages: config.salesNavSyncMaxPages,
-                                maxLeadsPerList: config.salesNavSyncLimit,
-                                dryRun,
-                                accountId: config.salesNavSyncAccountId || undefined,
-                            });
-                            await setRuntimeFlag(SALESNAV_LAST_SYNC_KEY, new Date().toISOString());
-                            console.log('[LOOP] salesnav-sync', {
-                                reason: salesNavDecision.reason,
-                                intervalHours: config.salesNavSyncIntervalHours,
-                                limitPerList: config.salesNavSyncLimit,
-                                report: salesNavSyncReport,
-                            });
-                        } else {
-                            console.log('[LOOP] salesnav-sync skipped', salesNavDecision);
-                        }
-                    }
-
-                    // Auto-Backup Giornaliero SQLite
-                    if (!dryRun && isLeader) {
-                        const AUTO_BACKUP_LAST_RUN_KEY = 'db_backup.last_run_at';
-                        const backupLastRunRaw = await getRuntimeFlag(AUTO_BACKUP_LAST_RUN_KEY);
-                        const shouldRunBackup =
-                            !backupLastRunRaw || Date.now() - Date.parse(backupLastRunRaw) > 24 * 60 * 60 * 1000;
-                        if (shouldRunBackup) {
-                            try {
-                                const backupPath = await backupDatabase();
-                                await setRuntimeFlag(AUTO_BACKUP_LAST_RUN_KEY, new Date().toISOString());
-                                console.log(`[LOOP] Auto - backup giornaliero completato: ${backupPath} `);
-                            } catch (e) {
-                                console.error(`[LOOP] Auto - backup fallito`, e);
-                            }
-                        }
-                    }
-
-                    // Dead Letter Queue Periodico
-                    if (!dryRun && isLeader) {
-                        const DLQ_LAST_RUN_KEY = 'dlq.last_run_at';
-                        const dlqLastRunRaw = await getRuntimeFlag(DLQ_LAST_RUN_KEY);
-                        const shouldRunDlq =
-                            !dlqLastRunRaw || Date.now() - Date.parse(dlqLastRunRaw) > 6 * 60 * 60 * 1000;
-                        if (shouldRunDlq) {
-                            try {
-                                const dlqResult = await runDeadLetterWorker({ batchSize: 200, recycleDelaySec: 43200 });
-                                await setRuntimeFlag(DLQ_LAST_RUN_KEY, new Date().toISOString());
-                                console.log(
-                                    `[LOOP] Dead Letter Worker completato. Processati: ${dlqResult.processed}, Riciclati: ${dlqResult.recycled}, Archiviati: ${dlqResult.deadLettered}`,
-                                );
-                            } catch (e) {
-                                console.error('[LOOP] Dead Letter Worker fallito', e);
-                            }
-                        }
-                    }
-
-                    if (config.companyEnrichmentEnabled && (workflow === 'all' || workflow === 'invite')) {
-                        const enrichment = await runCompanyEnrichmentBatch({
-                            limit: config.companyEnrichmentBatch,
-                            maxProfilesPerCompany: config.companyEnrichmentMaxProfilesPerCompany,
-                            dryRun,
-                        });
-                        profilesDiscoveredThisRun += enrichment.createdLeads;
-                        console.log('[LOOP] enrichment', enrichment);
-                    }
-                    if (!dryRun && config.rampUpEnabled) {
-                        const rampUpReport = await runRampUpWorker();
-                        console.log('[LOOP] ramp-up', rampUpReport);
-                    }
-                    if (!dryRun) {
-                        const learnerLastRun = await getRuntimeFlag(SELECTOR_LEARNER_LAST_RUN_KEY);
-                        if (learnerLastRun !== localDate) {
-                            const learnerReport = await runSelectorLearner({ limit: 100, minSuccess: 3 });
-                            await setRuntimeFlag(SELECTOR_LEARNER_LAST_RUN_KEY, localDate);
-                            console.log('[LOOP] selector-learner', learnerReport);
-                        }
-                    }
-
-                    if (!dryRun) {
-                        try {
-                            const dispatchedCampaignSteps = await dispatchReadyCampaignSteps();
-                            if (dispatchedCampaignSteps > 0) {
-                                console.log(
-                                    `[LOOP] campagne dispatch: ${dispatchedCampaignSteps} step maturati inseriti in coda.`,
-                                );
-                            }
-                        } catch (e) {
-                            console.error('[LOOP] Errore modulo Drip Campaigns dispatch', e);
-                        }
-                    }
-
-                    const cycleCorrelationId = resolveCorrelationId(`loop-${workflow}-${cycle}-${randomUUID()}`);
-                    await runWithCorrelationId(cycleCorrelationId, async () => {
-                        await runWorkflow({ workflow, dryRun });
-                    });
-
-                    if (
-                        !dryRun &&
-                        pluginRegistry.count === 0 &&
-                        config.randomActivityEnabled &&
-                        Math.random() <= config.randomActivityProbability
-                    ) {
-                        const randomActivityReport = await runRandomLinkedinActivity({
-                            accountId: config.salesNavSyncAccountId || undefined,
-                            maxActions: config.randomActivityMaxActions,
-                            dryRun,
-                        });
-                        console.log('[LOOP] random-activity', randomActivityReport);
-                    }
-                    if (!dryRun && pluginRegistry.count > 0) {
-                        await pluginRegistry.fireIdle({
-                            cycle,
-                            workflow,
-                            localDate,
-                        });
-                    }
-
+                if (!cycleResult.aborted) {
                     runStatus = 'SUCCESS';
-                    console.log(`[LOOP] cycle = ${cycle} completed`);
+                    console.log(`[LOOP] cycle=${cycle} completed tasks=${cycleResult.tasksRun.length} skipped=${cycleResult.tasksSkipped.length} errors=${cycleResult.tasksErrored.length}`);
+                } else {
+                    console.warn(`[LOOP] cycle=${cycle} aborted at task: ${cycleResult.tasksErrored[cycleResult.tasksErrored.length - 1]?.name}`);
                 }
             } catch (error) {
                 console.error(`[LOOP] cycle = ${cycle} failed`, error);
@@ -558,6 +683,19 @@ export async function runLoopCommand(args: string[]): Promise<void> {
                         errors: errorsDiff,
                     });
                     console.log(`[LOOP] Campaign run ${runId} completed with status ${runStatus}`);
+
+                    // Record session pattern for cross-session memory
+                    const currentHour = new Date().getHours();
+                    const accountId = accountOverride || config.accountProfiles[0]?.id || 'default';
+                    await recordSessionPattern(accountId, localDate, {
+                        loginHour: cycle === 1 ? currentHour : undefined,
+                        logoutHour: currentHour,
+                        totalActions: invitesDiff + messagesDiff,
+                        inviteCount: invitesDiff,
+                        messageCount: messagesDiff,
+                        checkCount: 0,
+                        challenges: postStats.challengesCount - preStats.challengesCount,
+                    }).catch((e) => console.warn('[LOOP] session pattern record failed:', e));
                 }
             }
 
@@ -575,6 +713,7 @@ export async function runLoopCommand(args: string[]): Promise<void> {
             }
         }
     } finally {
+        stopConfigWatcher();
         if (lockOwnerId) {
             await releaseWorkflowRunnerLock(lockOwnerId);
         }

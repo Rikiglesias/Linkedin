@@ -13,7 +13,7 @@
 import fs from 'fs';
 import path from 'path';
 import { createHash } from 'crypto';
-import type { IPlugin, PluginLeadSnapshot, PluginDailyStats, PluginIdleEvent, PluginMessageEvent } from './IPlugin';
+import type { IPlugin, PluginLeadSnapshot, PluginDailyStats, PluginIdleEvent, PluginMessageEvent, PluginLoopSubTask } from './IPlugin';
 import { logInfo, logWarn } from '../telemetry/logger';
 
 type PluginHookName =
@@ -399,6 +399,26 @@ export class PluginRegistry {
                 void this.safeCall(p.name, 'onIdle', () => fn(event));
             }
         }
+    }
+
+    /**
+     * Collect loop sub-tasks from all plugins that implement getLoopSubTasks.
+     */
+    collectLoopSubTasks(): PluginLoopSubTask[] {
+        const tasks: PluginLoopSubTask[] = [];
+        for (const p of this.plugins) {
+            if (p.getLoopSubTasks) {
+                try {
+                    const pluginTasks = p.getLoopSubTasks();
+                    for (const t of pluginTasks) {
+                        tasks.push({ ...t, name: `plugin:${p.name}:${t.name}` });
+                    }
+                } catch (err) {
+                    console.warn(`[PLUGIN] ${p.name} getLoopSubTasks() failed:`, err);
+                }
+            }
+        }
+        return tasks;
     }
 
     get count(): number {

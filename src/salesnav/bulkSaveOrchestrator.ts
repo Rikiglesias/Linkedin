@@ -86,7 +86,7 @@ async function waitForManualLogin(page: Page, context: string): Promise<void> {
         );
     } finally {
         _inputBlockSuspended = false;
-        await resumeInputBlock(page).catch(() => {});
+        await resumeInputBlock(page).catch(() => { });
     }
 }
 
@@ -273,11 +273,12 @@ async function reInjectOverlays(page: Page): Promise<void> {
     // to all named functions/consts, which breaks inside page.evaluate() where the
     // helper doesn't exist. This shim makes them safe.
     await page.evaluate(() => {
-        if (typeof (window as any).__name === 'undefined') {
-            (window as any).__name = (target: any, _value: any) => target;
+        const w = window as unknown as Record<string, unknown>;
+        if (typeof w.__name === 'undefined') {
+            w.__name = (target: unknown, _value: unknown) => target;
         }
-        if (typeof (window as any).__defProp === 'undefined') {
-            (window as any).__defProp = Object.defineProperty;
+        if (typeof w.__defProp === 'undefined') {
+            w.__defProp = Object.defineProperty;
         }
     }).catch(() => null);
     await ensureVisualCursorOverlay(page);
@@ -337,7 +338,7 @@ async function findVisibleClickTarget(
                         if (pass === 2 && (!text.includes(lower) || text.length > lower.length * 8)) continue;
 
                         // Inline getBox logic
-                        let rect = el.getBoundingClientRect();
+                        const rect = el.getBoundingClientRect();
                         if (el.tagName === 'INPUT') {
                             const label = el.closest('label');
                             if (label) {
@@ -1116,8 +1117,9 @@ async function chooseTargetList(page: Page, targetListName: string, dryRun: bool
                     // Re-open the dialog
                     const saveBtn = page.locator(SAVE_TO_LIST_SELECTOR).first();
                     if (await hasLocator(saveBtn)) {
-                        await smartClick(page, (await locatorBoundingBox(saveBtn))!);
-                        await dialogLocator.waitFor({ state: 'visible', timeout: 8_000 }).catch(() => {});
+                        const box = await locatorBoundingBox(saveBtn);
+                        if (box) await smartClick(page, box);
+                        await dialogLocator.waitFor({ state: 'visible', timeout: 8_000 }).catch(() => { });
                         await humanDelay(page, 300, 500);
                     }
                     continue; // Retry
@@ -1136,8 +1138,9 @@ async function chooseTargetList(page: Page, targetListName: string, dryRun: bool
                     await humanDelay(page, 500, 800);
                     const saveBtn = page.locator(SAVE_TO_LIST_SELECTOR).first();
                     if (await hasLocator(saveBtn)) {
-                        await smartClick(page, (await locatorBoundingBox(saveBtn))!);
-                        await dialogLocator.waitFor({ state: 'visible', timeout: 8_000 }).catch(() => {});
+                        const box = await locatorBoundingBox(saveBtn);
+                        if (box) await smartClick(page, box);
+                        await dialogLocator.waitFor({ state: 'visible', timeout: 8_000 }).catch(() => { });
                         await humanDelay(page, 300, 500);
                     }
                     continue; // Retry
@@ -1277,7 +1280,7 @@ async function clickNextPage(page: Page, dryRun: boolean): Promise<boolean> {
     const pageBefore = await readPaginationInfo(page);
 
     // Scrolla il bottone Next nel viewport — la paginazione è in fondo al container
-    await nextButton.scrollIntoViewIfNeeded().catch(() => {});
+    await nextButton.scrollIntoViewIfNeeded().catch(() => { });
     await humanDelay(page, 300, 500);
 
     const clip =
@@ -1303,8 +1306,8 @@ async function clickNextPage(page: Page, dryRun: boolean): Promise<boolean> {
     if (pageBefore && pageAfter && pageAfter.current <= pageBefore.current) {
         console.warn(`[WARN] Click Next non ha cambiato pagina (prima: ${pageBefore.current}, dopo: ${pageAfter.current}). Riprovo con click diretto...`);
         // Fallback: click diretto con force
-        await nextButton.click({ force: true }).catch(() => {});
-        await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {});
+        await nextButton.click({ force: true }).catch(() => { });
+        await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => { });
         await humanDelay(page, 1000, 2_000);
     }
     return true;
@@ -1325,13 +1328,15 @@ export async function scrollAndReadPage(page: Page): Promise<number> {
 
     // Set globale per accumulare ID lead (il virtual scroller rimuove card fuori viewport)
     await page.evaluate(() => {
-        (window as any).__collectedLeadIds = new Set<string>();
+        const w = window as unknown as Record<string, unknown>;
+        w.__collectedLeadIds = new Set<string>();
     });
 
     const collectVisibleLeads = async (): Promise<number> => {
         return page.evaluate(() => {
             const anchors = document.querySelectorAll('a[href*="/sales/lead/"], a[href*="/sales/people/"]');
-            const collected = (window as any).__collectedLeadIds as Set<string>;
+            const w = window as unknown as Record<string, unknown>;
+            const collected = w.__collectedLeadIds as Set<string>;
             for (const a of anchors) {
                 const href = a.getAttribute('href') ?? '';
                 const id = href.match(/\/(lead|people)\/([^,/?]+)/)?.[2];
@@ -1430,7 +1435,7 @@ export async function scrollAndReadPage(page: Page): Promise<number> {
             await page.waitForFunction(
                 () => !document.querySelector('.artdeco-loader, [class*="skeleton"], [class*="ghost"]'),
                 { timeout: 1_500 },
-            ).catch(() => {});
+            ).catch(() => { });
         }
 
         const countAfter = await collectVisibleLeads();
@@ -1457,13 +1462,14 @@ export async function scrollAndReadPage(page: Page): Promise<number> {
     await page.evaluate(() => {
         const el = document.querySelector('[data-scroll-target="true"]');
         if (el) el.removeAttribute('data-scroll-target');
-    }).catch(() => {});
+    }).catch(() => { });
 
     // Leggi totale accumulato
     const leadCount = await page.evaluate(() => {
-        const collected = (window as any).__collectedLeadIds as Set<string>;
+        const w = window as unknown as Record<string, unknown>;
+        const collected = w.__collectedLeadIds as Set<string>;
         const count = collected.size;
-        delete (window as any).__collectedLeadIds;
+        delete w.__collectedLeadIds;
         return count;
     });
 

@@ -34,8 +34,15 @@ export interface CloudLeadUpsert {
     about?: string | null;
     experience?: string | null;
     invite_note_sent?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    location?: string | null;
+    salesnav_url?: string | null;
     lead_score?: number | null;
     confidence_score?: number | null;
+    company_domain?: string | null;
+    business_email?: string | null;
+    business_email_confidence?: number | null;
     updated_at?: string | null;
 }
 
@@ -81,6 +88,21 @@ export interface CloudCampaignConfig {
     priority: number;
     daily_invite_cap: number | null;
     daily_message_cap: number | null;
+    updated_at?: string | null;
+}
+
+export interface CloudEnrichmentData {
+    lead_id: number;       // Supabase leads.id (cloud)
+    local_lead_id?: number | null; // SQLite leads.id (local)
+    company_json?: Record<string, unknown> | null;
+    phones_json?: Array<Record<string, unknown>> | null;
+    socials_json?: Array<Record<string, unknown>> | null;
+    seniority?: string | null;
+    department?: string | null;
+    data_points?: number;
+    confidence?: number;
+    sources_json?: string[] | null;
+    enriched_at?: string | null;
     updated_at?: string | null;
 }
 

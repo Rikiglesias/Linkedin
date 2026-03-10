@@ -8,7 +8,14 @@
       "Bash(ollama --version)",
       "Bash(npx tsc -p tsconfig.frontend.json --noEmit)",
       "Bash(npx vitest run)",
-      "Bash(npx tsc --noEmit)"
+      "Bash(npx tsc --noEmit)",
+      "Bash(cmd.exe /c \"icacls c:\\\\Users\\\\albie\\\\Desktop\\\\Programmi\\\\Linkedin\\\\data\\\\linkedin_bot.sqlite /grant albie:F\")",
+      "Bash(npx ts-node -e \":*)",
+      "Bash(grep -E \"sql$\")",
+      "Bash(npm install cheerio libphonenumber-js)",
+      "Bash(npm ls cheerio libphonenumber-js)",
+      "Bash(node node_modules/typescript/lib/tsc.js --noEmit)",
+      "Bash(xargs grep -l \"PROFILE_VIEW\\\\|getSessionBudgetFactor\")"
     ]
   }
 }

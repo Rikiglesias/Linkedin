@@ -9,7 +9,7 @@ process.on('uncaughtException', (error) => {
 });
 
 import { closeDatabase, initDatabase } from './db';
-import { config, validateCriticalConfig } from './config';
+import { config, validateConfigFull } from './config';
 import { runDoctor } from './core/doctor';
 import { getGlobalKPIData, listOpenIncidents, recoverStuckJobs, recoverStuckAcceptedLeads, recoverStuckPublishingPosts } from './core/repositories';
 import { getEventSyncStatus, runEventSyncOnce } from './sync/eventSync';
@@ -18,6 +18,7 @@ import { startServer } from './api/server';
 
 import { hasOption, parseWorkflow, getWorkflowValue } from './cli/cliParser';
 import { runLoopCommand, runAutopilotCommand, runWorkflowCommand } from './cli/commands/loopCommand';
+import { runReplCommand } from './cli/commands/replCommand';
 import {
     runLoginCommand,
     runImportCommand,
@@ -27,15 +28,27 @@ import {
     runProxyStatusCommand,
     runRandomActivityCommand,
     runEnrichTargetsCommand,
+    runEnrichDeepCommand,
+    runEnrichProfilesCommand,
+    runEnrichFastCommand,
     runCreateProfileCommand,
+    runTestConnectionCommand,
 } from './cli/commands/utilCommands';
 import {
     runSalesNavUnifiedCommand,
 } from './cli/commands/salesNavCommands';
 import {
+    runSyncListCommand,
+    runSyncSearchCommand,
+    runSendMessagesCommand,
+    runSendInvitesCommand,
+} from './cli/commands/workflowCommands';
+import {
     runAiQualityCommand,
     runCompanyTargetsCommand,
+    runDbAnalyzeCommand,
     runDbBackupCommand,
+    runDbRollbackCommand,
     runDiagnosticsCommand,
     runFeatureStoreCommand,
     runRestoreDrillCommand,
@@ -57,6 +70,7 @@ import { startCycleTlsProxy, stopCycleTlsProxy } from './proxy/cycleTlsProxy';
 import { initPluginSystem, pluginRegistry } from './plugins/pluginLoader';
 import { getRuntimeAccountProfiles } from './accountManager';
 import { checkProxyHealth } from './proxyManager';
+import { printCommandHelp } from './cli/commandHelp';
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 
@@ -118,6 +132,14 @@ function printHelp(): void {
     console.log('Utilizzo consigliato (Windows): .\\bot.ps1 <comando> [opzioni]');
     console.log('Produzione: npm run build && npm start -- <comando> -- [opzioni]');
     console.log('Sviluppo: npm run start:dev -- <comando> -- [opzioni]');
+    console.log('');
+    console.log('Production Workflows (pre-flight interattivo + enrichment + report):');
+    console.log('  sync-list     [--list "X"] [--url <url>] [--max-pages N] [--max-leads N] [--dry-run] [--interactive]');
+    console.log('  sync-search   [--search-name "X"] [--list "X"] [--max-pages N] [--limit N] [--dry-run]');
+    console.log('  send-messages [--list "X"] [--template "X"] [--lang it|en] [--limit N] [--dry-run]');
+    console.log('  send-invites  [--list "X"] [--note ai|template|none] [--min-score N] [--limit N] [--dry-run]');
+    console.log('  Opzioni comuni: --skip-preflight  --no-proxy  --account <id>  --no-enrich');
+    console.log('');
     console.log('Comandi principali:');
     console.log('  import --file <file.csv> --list <nome_lista>');
     console.log('  run invite|check|message|all (oppure --workflow <valore>)');
@@ -131,6 +153,7 @@ function printHelp(): void {
     console.log('  diagnostics [--sections <all|health,locks,queue,sync,selectors>] [--date <YYYY-MM-DD>]');
     console.log('    alias: diag');
     console.log('  proxy-status');
+    console.log('  test-connection [--account <id>] [--no-proxy]');
     console.log('  funnel');
     console.log('  site-check [limit] [--fix]');
     console.log('  state-sync [limit] [--fix]');
@@ -143,6 +166,9 @@ function printHelp(): void {
     console.log('  Opzioni globali: --no-proxy  --account <id>');
     console.log('  random-activity [--account <id>] [--max-actions <n>] [--dry-run]');
     console.log('  enrich-targets [limit] [--dry-run]');
+    console.log('  enrich-deep --lead <id> | --list <nome> [--limit N] [--dry-run]');
+    console.log('  enrich-profiles --list <nome> [--limit 15] [--dry-run] [--no-proxy]');
+    console.log('  enrich-fast [--list <nome>] [--limit 50] [--concurrency 5]  (parallelo, zero LinkedIn)');
     console.log('  pause [minutes|indefinite] [reason]');
     console.log('  resume');
     console.log('  unquarantine');
@@ -172,8 +198,9 @@ function printHelp(): void {
     console.log(
         '  secrets-rotate [--apply] [--interval-days <n>] [--actor <name>] [--include <SECRET_A,SECRET_B>] [--env-file <path>]',
     );
-    console.log('Alias retrocompatibili: connect, check, message');
+    console.log('Alias retrocompatibili [DEPRECATED]: connect → run invite, check → run check, message → run message');
     console.log('Flag utili: --skip-preflight (salta doctor preflight obbligatorio)');
+    console.log('           --strict (rifiuta alias deprecati)');
 }
 
 function shouldRunMandatoryPreflight(command: string | undefined): boolean {
@@ -189,7 +216,12 @@ async function main(): Promise<void> {
     setupPlannedRestart();
 
     // ── Validazione configurazione critica ────────────────────────────────────
-    const configErrors = validateCriticalConfig();
+    const { errors: configErrors, warnings: configWarnings } = validateConfigFull(config);
+    if (configWarnings.length > 0) {
+        console.warn('\n⚠️  AVVISI CONFIGURAZIONE:\n');
+        configWarnings.forEach((w) => console.warn(`  • ${w}`));
+        console.warn('');
+    }
     if (configErrors.length > 0) {
         console.error('\n❌ ERRORI CONFIGURAZIONE CRITICA — correggere il file .env prima di procedere:\n');
         configErrors.forEach((err) => console.error(`  • ${err}`));
@@ -204,9 +236,47 @@ async function main(): Promise<void> {
 
     const args = process.argv.slice(2);
     const command = args[0];
+
+    // ── Per-command --help: intercetta prima dell'inizializzazione pesante ────
+    if (command && (args.includes('--help') || args.includes('-h'))) {
+        if (printCommandHelp(command)) {
+            return;
+        }
+        // Comando senza help specifico: mostra help globale
+        printHelp();
+        return;
+    }
+    if (command === 'help' || command === '--help' || command === '-h') {
+        printHelp();
+        return;
+    }
     const commandArgs = args.slice(1);
+    const strictMode = hasOption(commandArgs, '--strict');
     const skipPreflight = hasOption(commandArgs, '--skip-preflight');
     const isDryRunCommand = command === 'dry-run' || hasOption(commandArgs, '--dry-run');
+
+    // ── Deprecation handling ─────────────────────────────────────────────────
+    const DEPRECATED_ALIASES: Record<string, string> = {
+        'connect': 'run invite',
+        'check': 'run check',
+        'message': 'run message',
+        'salesnav-sync': 'salesnav sync',
+        'salesnav-bulk-save': 'salesnav save',
+        'salesnav-resolve': 'salesnav resolve',
+        'salesnav-lists': 'salesnav lists',
+        'salesnav-create-list': 'salesnav create',
+        'salesnav-add-lead': 'salesnav add',
+        'salesnav-add-to-list': 'salesnav add',
+    };
+
+    if (command && command in DEPRECATED_ALIASES) {
+        const replacement = DEPRECATED_ALIASES[command];
+        if (strictMode) {
+            console.error(`[STRICT] Comando deprecato "${command}" rifiutato. Usa "${replacement}" al suo posto.`);
+            process.exit(1);
+        }
+        console.warn(`[DEPRECATED] "${command}" è deprecato e verrà rimosso. Usa "${replacement}" al suo posto.`);
+    }
     const browserCommands = new Set([
         'run',
         'dry-run',
@@ -222,10 +292,15 @@ async function main(): Promise<void> {
         'salesnav-bulk-save',
         'salesnav-resolve',
         'random-activity',
+        'test-connection',
         'connect',
         'check',
         'message',
         'warmup',
+        'sync-list',
+        'sync-search',
+        'send-messages',
+        'send-invites',
     ]);
 
     await initDatabase();
@@ -240,6 +315,8 @@ async function main(): Promise<void> {
         command === 'connect' ||
         command === 'check' ||
         command === 'message' ||
+        command === 'send-messages' ||
+        command === 'send-invites' ||
         (command === 'run-loop' && !hasOption(commandArgs, '--dry-run'));
     if (shouldRecoverStuckJobs) {
         const recoveredJobs = await recoverStuckJobs(config.jobStuckMinutes);
@@ -349,28 +426,22 @@ async function main(): Promise<void> {
             await runSalesNavUnifiedCommand(commandArgs);
             break;
         case 'salesnav-sync':
-            console.warn('[DEPRECATED] Usa "salesnav sync". Vedi help.');
             await runSalesNavUnifiedCommand(['sync', ...commandArgs]);
             break;
         case 'salesnav-bulk-save':
-            console.warn('[DEPRECATED] Usa "salesnav save". Vedi help.');
             await runSalesNavUnifiedCommand(['save', ...commandArgs]);
             break;
         case 'salesnav-resolve':
-            console.warn('[DEPRECATED] Usa "salesnav resolve". Vedi help.');
             await runSalesNavUnifiedCommand(['resolve', ...commandArgs]);
             break;
         case 'salesnav-lists':
-            console.warn('[DEPRECATED] Usa "salesnav lists". Vedi help.');
             await runSalesNavUnifiedCommand(['lists', ...commandArgs]);
             break;
         case 'salesnav-create-list':
-            console.warn('[DEPRECATED] Usa "salesnav create". Vedi help.');
             await runSalesNavUnifiedCommand(['create', ...commandArgs]);
             break;
         case 'salesnav-add-lead':
         case 'salesnav-add-to-list':
-            console.warn('[DEPRECATED] Usa "salesnav add". Vedi help.');
             await runSalesNavUnifiedCommand(['add', ...commandArgs]);
             break;
         case 'salesnav-extract-search':
@@ -380,6 +451,15 @@ async function main(): Promise<void> {
             break;
         case 'enrich-targets':
             await runEnrichTargetsCommand(commandArgs);
+            break;
+        case 'enrich-deep':
+            await runEnrichDeepCommand(commandArgs);
+            break;
+        case 'enrich-profiles':
+            await runEnrichProfilesCommand(commandArgs);
+            break;
+        case 'enrich-fast':
+            await runEnrichFastCommand(commandArgs);
             break;
         case 'status':
             await runStatusCommand();
@@ -395,6 +475,9 @@ async function main(): Promise<void> {
         }
         case 'proxy-status':
             await runProxyStatusCommand();
+            break;
+        case 'test-connection':
+            await runTestConnectionCommand(commandArgs);
             break;
         case 'random-activity':
             await runRandomActivityCommand(commandArgs);
@@ -446,8 +529,14 @@ async function main(): Promise<void> {
             await runEventSyncOnce();
             console.log('Sync eventi completato.');
             break;
+        case 'db-analyze':
+            await runDbAnalyzeCommand();
+            break;
         case 'db-backup':
             await runDbBackupCommand();
+            break;
+        case 'db-rollback':
+            await runDbRollbackCommand(commandArgs);
             break;
         case 'restore-drill':
             await runRestoreDrillCommand(commandArgs);
@@ -473,10 +562,10 @@ async function main(): Promise<void> {
         case 'connect':
             await runWorkflowCommand('invite', false);
             break;
-        case 'check':
+        case 'check':  // deprecated → run check
             await runWorkflowCommand('check', false);
             break;
-        case 'message':
+        case 'message': // deprecated → run message
             await runWorkflowCommand('message', false);
             break;
         case 'warmup':
@@ -490,7 +579,25 @@ async function main(): Promise<void> {
             console.log('Premi Ctrl+C per fermare la Dashboard e spegnere il database.');
             await new Promise(() => { });
             break;
+        case 'repl':
+            await runReplCommand();
+            break;
+        case 'sync-list':
+            await runSyncListCommand(commandArgs);
+            break;
+        case 'sync-search':
+            await runSyncSearchCommand(commandArgs);
+            break;
+        case 'send-messages':
+            await runSendMessagesCommand(commandArgs);
+            break;
+        case 'send-invites':
+            await runSendInvitesCommand(commandArgs);
+            break;
         default:
+            if (command) {
+                console.error(`[WARN] Comando sconosciuto: "${command}". Usa "help" per l'elenco comandi.`);
+            }
             printHelp();
             break;
     }

@@ -266,7 +266,7 @@ export async function runCompanyEnrichmentBatch(
         return report;
     }
 
-    const session = await launchBrowser();
+    const session = await launchBrowser({ forceDesktop: true });
     try {
         const loggedIn = await checkLogin(session.page);
         if (!loggedIn) {

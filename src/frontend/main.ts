@@ -1,12 +1,14 @@
 import { DashboardApi } from './apiClient';
 import { renderInvitesChart, renderRiskGauge } from './charts';
-import { byId, setText } from './dom';
+import { byId, setText, exportToCSV, downloadCanvasAsPng, printReport } from './dom';
 import {
     renderAbLeaderboard,
     renderCommentSuggestions,
     renderIncidents,
     renderKpiComparison,
     renderKpis,
+    renderLeadDetail,
+    renderLeadSearchResults,
     renderOperationalSlo,
     renderPredictiveRisk,
     renderReviewQueue,
@@ -16,7 +18,7 @@ import {
     renderTimingSlots,
 } from './renderers';
 import { TimelineStore } from './timeline';
-import { TimelineFilter } from './types';
+import { TimelineFilter, TrendRow } from './types';
 import {
     type DashboardVoiceAction,
     describeVoiceAction,
@@ -68,16 +70,21 @@ type WindowWithSpeechRecognition = Window & {
 const api = new DashboardApi();
 const timeline = new TimelineStore();
 const selectedIncidentIds = new Set<number>();
+let lastTrendData: TrendRow[] = [];
 
 let eventSource: EventSource | null = null;
+let wsConnection: WebSocket | null = null;
 let pollTimer: number | null = null;
 let refreshTimer: number | null = null;
 let reconnectTimer: number | null = null;
 let reconnectAttempts = 0;
 const PREFS_KEY = 'lkbot_ui_prefs';
 
+type ThemePreference = 'light' | 'dark' | 'auto';
+
 interface UiPrefs {
     filter: TimelineFilter;
+    theme: ThemePreference;
 }
 
 function loadUiPrefs(): UiPrefs {
@@ -91,10 +98,27 @@ function loadUiPrefs(): UiPrefs {
                     accountId: parsed.filter?.accountId ?? 'all',
                     listName: parsed.filter?.listName ?? 'all',
                 },
+                theme: parsed.theme ?? 'auto',
             };
         }
     } catch { /* ignore corrupt data */ }
-    return { filter: { type: 'all', accountId: 'all', listName: 'all' } };
+    return { filter: { type: 'all', accountId: 'all', listName: 'all' }, theme: 'auto' };
+}
+
+function applyTheme(theme: ThemePreference): void {
+    if (theme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+    } else if (theme === 'light') {
+        document.documentElement.setAttribute('data-theme', 'light');
+    } else {
+        document.documentElement.removeAttribute('data-theme');
+    }
+}
+
+function cycleTheme(current: ThemePreference): ThemePreference {
+    if (current === 'auto') return 'dark';
+    if (current === 'dark') return 'light';
+    return 'auto';
 }
 
 function saveUiPrefs(prefs: UiPrefs): void {
@@ -103,7 +127,12 @@ function saveUiPrefs(prefs: UiPrefs): void {
     } catch { /* quota exceeded or private browsing */ }
 }
 
-let currentFilter: TimelineFilter = loadUiPrefs().filter;
+const initialPrefs = loadUiPrefs();
+let currentFilter: TimelineFilter = initialPrefs.filter;
+let currentTheme: ThemePreference = initialPrefs.theme;
+
+// Apply saved theme immediately (before DOM renders charts)
+applyTheme(currentTheme);
 
 type SseConnectionState = 'UNKNOWN' | 'CONNECTED' | 'DISCONNECTED';
 
@@ -172,6 +201,58 @@ let voiceRecognition: SpeechRecognitionLike | null = null;
 let isVoiceListening = false;
 let pendingVoiceAction: DashboardVoiceAction | null = null;
 
+// ─── Browser Notifications ───────────────────────────────────────────────────
+
+let notificationsGranted = false;
+
+function requestNotificationPermission(): void {
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'granted') {
+        notificationsGranted = true;
+        return;
+    }
+    if (Notification.permission !== 'denied') {
+        void Notification.requestPermission().then((perm) => {
+            notificationsGranted = perm === 'granted';
+        });
+    }
+}
+
+function fireDesktopNotification(eventType: string, rawData: string): void {
+    if (!notificationsGranted) return;
+    // Only notify when tab is not focused
+    if (document.hasFocus()) return;
+
+    let title = 'LinkedIn Bot';
+    let body = eventType;
+
+    try {
+        const parsed = JSON.parse(rawData) as Record<string, unknown>;
+        if (eventType === 'incident.opened') {
+            const severity = String(parsed.severity ?? 'INFO');
+            const type = String(parsed.type ?? 'incident');
+            title = `Incidente ${severity}`;
+            body = type;
+        } else if (eventType === 'system.quarantine') {
+            title = 'Quarantena attivata';
+            body = String(parsed.reason ?? 'Il sistema è entrato in quarantena');
+        } else if (eventType === 'challenge.review_queued') {
+            title = 'Challenge rilevato';
+            body = 'Un lead richiede review manuale';
+        }
+    } catch { /* use defaults */ }
+
+    try {
+        new Notification(title, {
+            body,
+            icon: '/favicon.ico',
+            tag: `lkbot-${eventType}`,
+        });
+    } catch { /* notification blocked or unavailable */ }
+}
+
+// ─── Scheduling ──────────────────────────────────────────────────────────────
+
 function scheduleRefresh(delayMs = 250): void {
     if (refreshTimer) {
         window.clearTimeout(refreshTimer);
@@ -207,33 +288,85 @@ function appendTimelineEvent(type: string, data: string): void {
     renderTimelineSection();
 }
 
-function connectEventStream(): void {
-    if (eventSource) {
-        eventSource.close();
-    }
-    if (reconnectTimer) {
-        window.clearTimeout(reconnectTimer);
-    }
+const TRACKED_EVENTS = [
+    'connected',
+    'lead.transition',
+    'lead.reconciled',
+    'incident.opened',
+    'incident.resolved',
+    'automation.paused',
+    'automation.resumed',
+    'system.quarantine',
+    'challenge.review_queued',
+    'run.log',
+];
 
+const NOTIFICATION_EVENTS = new Set(['incident.opened', 'system.quarantine', 'challenge.review_queued']);
+
+function handleRealtimeEvent(eventName: string, data: string): void {
+    appendTimelineEvent(eventName, data);
+    scheduleRefresh(eventName === 'run.log' ? 350 : 200);
+    if (NOTIFICATION_EVENTS.has(eventName)) {
+        fireDesktopNotification(eventName, data);
+    }
+}
+
+function scheduleReconnect(): void {
+    reconnectAttempts += 1;
+    updateSseIndicator('DISCONNECTED');
+    const delay = Math.min(30_000, SSE_RECONNECT_BASE_MS * Math.pow(2, Math.min(6, reconnectAttempts)));
+    reconnectTimer = window.setTimeout(() => {
+        if (!document.hidden) {
+            connectEventStream();
+        }
+    }, delay);
+}
+
+function connectWebSocket(): boolean {
+    if (typeof WebSocket === 'undefined') return false;
+
+    try {
+        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(`${protocol}//${location.host}/ws`);
+
+        ws.onopen = () => {
+            wsConnection = ws;
+            reconnectAttempts = 0;
+            updateSseIndicator('CONNECTED');
+        };
+
+        ws.onmessage = (evt) => {
+            try {
+                const msg = JSON.parse(evt.data as string) as { type?: string; payload?: Record<string, unknown> };
+                if (msg.type && msg.type !== 'heartbeat' && TRACKED_EVENTS.includes(msg.type)) {
+                    handleRealtimeEvent(msg.type, evt.data as string);
+                }
+            } catch {
+                // ignore malformed messages
+            }
+        };
+
+        ws.onclose = () => {
+            wsConnection = null;
+            scheduleReconnect();
+        };
+
+        ws.onerror = () => {
+            ws.close();
+        };
+
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function connectSseFallback(): void {
     eventSource = new EventSource('/api/events');
 
-    const trackedEvents = [
-        'connected',
-        'lead.transition',
-        'lead.reconciled',
-        'incident.opened',
-        'incident.resolved',
-        'automation.paused',
-        'automation.resumed',
-        'system.quarantine',
-        'challenge.review_queued',
-        'run.log',
-    ];
-
-    trackedEvents.forEach((eventName) => {
+    TRACKED_EVENTS.forEach((eventName) => {
         eventSource?.addEventListener(eventName, (evt: MessageEvent<string>) => {
-            appendTimelineEvent(eventName, evt.data);
-            scheduleRefresh(eventName === 'run.log' ? 350 : 200);
+            handleRealtimeEvent(eventName, evt.data);
         });
     });
 
@@ -245,15 +378,28 @@ function connectEventStream(): void {
     eventSource.onerror = () => {
         eventSource?.close();
         eventSource = null;
-        reconnectAttempts += 1;
-        updateSseIndicator('DISCONNECTED');
-        const delay = Math.min(30_000, SSE_RECONNECT_BASE_MS * Math.pow(2, Math.min(6, reconnectAttempts)));
-        reconnectTimer = window.setTimeout(() => {
-            if (!document.hidden) {
-                connectEventStream();
-            }
-        }, delay);
+        scheduleReconnect();
     };
+}
+
+function connectEventStream(): void {
+    // Cleanup existing connections
+    if (wsConnection) {
+        wsConnection.close();
+        wsConnection = null;
+    }
+    if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+    }
+    if (reconnectTimer) {
+        window.clearTimeout(reconnectTimer);
+    }
+
+    // Try WebSocket first, fall back to SSE
+    if (!connectWebSocket()) {
+        connectSseFallback();
+    }
 }
 
 function startPolling(): void {
@@ -269,6 +415,10 @@ function stopRealtime(): void {
     if (pollTimer) {
         window.clearInterval(pollTimer);
         pollTimer = null;
+    }
+    if (wsConnection) {
+        wsConnection.close();
+        wsConnection = null;
     }
     if (eventSource) {
         eventSource.close();
@@ -286,6 +436,7 @@ async function refreshDashboard(): Promise<void> {
         const snapshot = await api.loadSnapshot();
 
         renderKpis(snapshot.kpis);
+        lastTrendData = snapshot.trend;
         renderKpiComparison(snapshot.trend);
         renderInvitesChart(snapshot.trend);
         const riskScore = snapshot.kpis.risk?.score ?? 0;
@@ -404,6 +555,31 @@ async function executeVoiceAction(action: DashboardVoiceAction): Promise<void> {
         if (ok) {
             await refreshDashboard();
         }
+        return;
+    }
+
+    if (action.kind === 'trigger_run') {
+        const ok = await api.triggerRun(action.workflow);
+        setStatusMessage(ok ? `Run "${action.workflow}" schedulato` : 'Errore trigger run');
+        setVoiceMessage(ok ? `Comando vocale eseguito: avvia run ${action.workflow}` : 'Comando vocale fallito: trigger run');
+        return;
+    }
+
+    if (action.kind === 'export_csv') {
+        document.getElementById('btn-export-csv')?.click();
+        setVoiceMessage('Comando vocale eseguito: esporta CSV');
+        return;
+    }
+
+    if (action.kind === 'toggle_theme') {
+        document.getElementById('btn-theme-toggle')?.click();
+        setVoiceMessage('Comando vocale eseguito: cambia tema');
+        return;
+    }
+
+    if (action.kind === 'print_report') {
+        printReport();
+        setVoiceMessage('Comando vocale eseguito: stampa report');
         return;
     }
 
@@ -540,9 +716,159 @@ function bindVoiceControls(): void {
     });
 }
 
+// ─── Keyboard Shortcuts ──────────────────────────────────────────────────────
+
+function bindKeyboardShortcuts(): void {
+    document.addEventListener('keydown', (e: KeyboardEvent) => {
+        // Ignore when typing in inputs/textareas
+        const tag = (e.target as HTMLElement).tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+        // Ignore if modifier keys are held (except shift for ?)
+        if (e.ctrlKey || e.altKey || e.metaKey) return;
+
+        switch (e.key) {
+            case '?':
+                e.preventDefault();
+                toggleShortcutHelp();
+                break;
+            case 'r':
+                e.preventDefault();
+                api.forceRefresh();
+                void refreshDashboard();
+                setStatusMessage('Dashboard aggiornata (shortcut R)');
+                break;
+            case 'd':
+                e.preventDefault();
+                currentTheme = cycleTheme(currentTheme);
+                applyTheme(currentTheme);
+                saveUiPrefs({ filter: currentFilter, theme: currentTheme });
+                break;
+            case 'Escape': {
+                // Close any open modal/dialog
+                const openDialogs = document.querySelectorAll<HTMLDialogElement>('dialog[open]');
+                openDialogs.forEach((d) => d.close());
+                // Close shortcut help if open
+                const helpEl = document.getElementById('shortcut-help-overlay');
+                if (helpEl && !helpEl.hidden) helpEl.hidden = true;
+                break;
+            }
+            case 'e':
+                e.preventDefault();
+                document.getElementById('btn-export-csv')?.click();
+                break;
+            case 'p':
+                e.preventDefault();
+                printReport();
+                break;
+        }
+    });
+}
+
+function toggleShortcutHelp(): void {
+    let overlay = document.getElementById('shortcut-help-overlay');
+    if (overlay) {
+        overlay.hidden = !overlay.hidden;
+        return;
+    }
+    // Create overlay on first use
+    overlay = document.createElement('div');
+    overlay.id = 'shortcut-help-overlay';
+    overlay.className = 'shortcut-help-overlay';
+    overlay.innerHTML = `
+        <div class="shortcut-help-card">
+            <h3>Scorciatoie tastiera</h3>
+            <table>
+                <tr><td><kbd>?</kbd></td><td>Mostra/nascondi questo help</td></tr>
+                <tr><td><kbd>R</kbd></td><td>Aggiorna dashboard</td></tr>
+                <tr><td><kbd>D</kbd></td><td>Cambia tema (auto/dark/light)</td></tr>
+                <tr><td><kbd>E</kbd></td><td>Esporta CSV</td></tr>
+                <tr><td><kbd>P</kbd></td><td>Stampa report</td></tr>
+                <tr><td><kbd>Esc</kbd></td><td>Chiudi modale/overlay</td></tr>
+            </table>
+            <p class="shortcut-help-footer">Premi <kbd>?</kbd> o <kbd>Esc</kbd> per chiudere</p>
+        </div>`;
+    overlay.addEventListener('click', (ev) => {
+        if (ev.target === overlay && overlay) overlay.hidden = true;
+    });
+    document.body.appendChild(overlay);
+}
+
+function bindLeadSearch(): void {
+    function doSearch(page: number = 1): void {
+        const query = (document.getElementById('lead-search-input') as HTMLInputElement)?.value ?? '';
+        const status = (document.getElementById('lead-search-status') as HTMLSelectElement)?.value ?? '';
+
+        // Hide detail panel when starting a new search
+        const detailEl = document.getElementById('lead-detail-content');
+        if (detailEl) detailEl.hidden = true;
+
+        void api.searchLeads(query, status || undefined, undefined, page).then((result) => {
+            renderLeadSearchResults(
+                result.leads,
+                result.total,
+                result.page,
+                result.pageSize,
+                (p) => doSearch(p),
+                (leadId) => {
+                    void api.getLeadDetail(leadId).then((detail) => {
+                        if (!detail) return;
+                        const el = document.getElementById('lead-detail-content');
+                        if (el) {
+                            el.hidden = false;
+                            renderLeadDetail(detail.lead, detail.timeline);
+                        }
+                    });
+                },
+            );
+        }).catch(() => setStatusMessage('Errore ricerca lead'));
+    }
+
+    document.getElementById('btn-lead-search')?.addEventListener('click', () => doSearch(1));
+    document.getElementById('lead-search-input')?.addEventListener('keydown', (e) => {
+        if ((e as KeyboardEvent).key === 'Enter') doSearch(1);
+    });
+}
+
 function bindControls(): void {
     byId<HTMLButtonElement>('btn-refresh').addEventListener('click', () => {
+        api.forceRefresh();
         void refreshDashboard();
+    });
+
+    document.getElementById('btn-theme-toggle')?.addEventListener('click', () => {
+        currentTheme = cycleTheme(currentTheme);
+        applyTheme(currentTheme);
+        saveUiPrefs({ filter: currentFilter, theme: currentTheme });
+    });
+
+    document.getElementById('btn-export-csv')?.addEventListener('click', () => {
+        if (lastTrendData.length === 0) {
+            setStatusMessage('Nessun dato trend da esportare');
+            return;
+        }
+        const rows = lastTrendData.map((r) => ({
+            date: r.date,
+            invites_sent: r.invitesSent,
+            messages_sent: r.messagesSent,
+            acceptances: r.acceptances,
+            run_errors: r.runErrors,
+            challenges: r.challenges,
+            risk_score: Math.round(r.estimatedRiskScore ?? 0),
+        }));
+        const dateStr = new Date().toISOString().slice(0, 10);
+        exportToCSV(rows, `linkedin-bot-trend-${dateStr}.csv`);
+        setStatusMessage('Trend CSV esportato');
+    });
+
+    document.getElementById('btn-export-chart')?.addEventListener('click', () => {
+        const dateStr = new Date().toISOString().slice(0, 10);
+        downloadCanvasAsPng('chart-invites-daily', `linkedin-bot-chart-${dateStr}.png`);
+        setStatusMessage('Grafico PNG scaricato');
+    });
+
+    document.getElementById('btn-print')?.addEventListener('click', () => {
+        printReport();
     });
 
     document.getElementById('sse-reconnect')?.addEventListener('click', () => {
@@ -585,6 +911,12 @@ function bindControls(): void {
                 void refreshDashboard();
             }
         }).catch(() => setStatusMessage('Errore di rete durante la ripresa'));
+    });
+
+    document.getElementById('btn-trigger-run')?.addEventListener('click', () => {
+        void api.triggerRun('all').then((ok) => {
+            setStatusMessage(ok ? 'Run workflow "all" schedulato per il prossimo ciclo' : 'Errore trigger run');
+        }).catch(() => setStatusMessage('Errore di rete trigger run'));
     });
 
     byId<HTMLButtonElement>('btn-resolve-selected').addEventListener('click', () => {
@@ -667,7 +999,7 @@ function bindControls(): void {
     ['timeline-filter-type', 'timeline-filter-account', 'timeline-filter-list'].forEach((id) => {
         byId<HTMLSelectElement>(id).addEventListener('change', () => {
             currentFilter = readTimelineFilter();
-            saveUiPrefs({ filter: currentFilter });
+            saveUiPrefs({ filter: currentFilter, theme: currentTheme });
             renderTimelineSection();
         });
     });
@@ -682,7 +1014,9 @@ function bindControls(): void {
         connectEventStream();
     });
 
+    bindLeadSearch();
     bindVoiceControls();
+    bindKeyboardShortcuts();
 }
 
 function restoreFilterSelects(): void {
@@ -699,8 +1033,18 @@ function restoreFilterSelects(): void {
     }
 }
 
+function registerServiceWorker(): void {
+    if ('serviceWorker' in navigator) {
+        void navigator.serviceWorker.register('/sw.js').catch(() => {
+            // SW registration failed — offline caching unavailable
+        });
+    }
+}
+
 async function bootstrap(): Promise<void> {
     bindControls();
+    requestNotificationPermission();
+    registerServiceWorker();
     await api.bootstrapSessionFromUrl();
     await refreshDashboard();
     restoreFilterSelects();

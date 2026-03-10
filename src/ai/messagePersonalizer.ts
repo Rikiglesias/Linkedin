@@ -34,7 +34,18 @@ function safeFirstName(lead: LeadRecord): string {
     return 'collega';
 }
 
-export async function buildPersonalizedFollowUpMessage(lead: LeadRecord): Promise<PersonalizedMessageResult> {
+const LANG_LABELS: Record<string, string> = {
+    it: 'italiano',
+    en: 'English',
+    fr: 'français',
+    es: 'español',
+    nl: 'Nederlands',
+};
+
+export async function buildPersonalizedFollowUpMessage(
+    lead: LeadRecord,
+    lang?: string,
+): Promise<PersonalizedMessageResult> {
     const template = buildFollowUpMessage(lead);
     if (!config.aiPersonalizationEnabled || !isOpenAIConfigured()) {
         return {
@@ -44,8 +55,9 @@ export async function buildPersonalizedFollowUpMessage(lead: LeadRecord): Promis
         };
     }
 
+    const langLabel = LANG_LABELS[lang ?? 'it'] ?? LANG_LABELS['it'];
     const systemPrompt = [
-        'Sei un assistant B2B per outreach LinkedIn in italiano.',
+        `Sei un assistant B2B per outreach LinkedIn in ${langLabel}.`,
         'Genera un singolo messaggio breve, naturale, professionale.',
         `Massimo ${config.aiMessageMaxChars} caratteri.`,
         'Niente hype, niente emoji, niente claim aggressivi, niente link.',

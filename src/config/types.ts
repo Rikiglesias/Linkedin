@@ -193,6 +193,7 @@ export interface AppConfig {
     salesforceInstanceUrl: string;
     salesforceClientId: string;
     salesforceClientSecret: string;
+    apolloApiKey: string;
     hunterApiKey: string;
     clearbitApiKey: string;
     followUpDelayDays: number;
@@ -302,5 +303,13 @@ export interface AppConfig {
     cloakBrowserEnabled: boolean;
     stealthScriptsSkipIfCloak: string[];
     warmupTwoSessionsPerDay: boolean;
+    weeklyStrategyEnabled: boolean;
+    growthModelEnabled: boolean;
+    growthBrowseOnlyDays: number;
+    growthSoftOutreachDays: number;
+    growthSoftOutreachInviteMax: number;
+    growthModerateGrowthDays: number;
+    growthModerateGrowthInviteMax: number;
+    growthModerateGrowthMessageMax: number;
     ollamaEndpoint: string;
 }

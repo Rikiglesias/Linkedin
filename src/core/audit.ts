@@ -341,6 +341,7 @@ export async function runSiteCheck(options: SiteCheckOptions): Promise<SiteCheck
         const session = await launchBrowser({
             sessionDir: account.sessionDir,
             proxy: account.proxy,
+            forceDesktop: true,
         });
         try {
             const loggedIn = await checkLogin(session.page);

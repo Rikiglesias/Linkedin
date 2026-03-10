@@ -2,6 +2,7 @@ import { Page } from 'playwright';
 import {
     contextualReadingPause,
     detectChallenge,
+    dismissKnownOverlays,
     humanDelay,
     humanMouseMove,
     humanType,
@@ -100,17 +101,21 @@ async function handleInviteModal(
     dryRun: boolean,
     localDate: string,
     campaignOverrideNote?: string | null,
+    noteMode?: 'ai' | 'template' | 'none' | null,
 ): Promise<{ sentWithNote: boolean; noteSource: 'template' | 'ai' | null; variant?: string | null }> {
     if (dryRun) return { sentWithNote: false, noteSource: null, variant: null };
 
+    // noteMode='none' forza invito senza nota, indipendentemente da config
+    const wantsNote = noteMode === 'none' ? false : ((noteMode !== null && noteMode !== undefined) || config.inviteWithNote);
+
     // Controlla se c'è il bottone "Add a note" (con retry breve se il modale sta caricando)
     let canAddNote = (await page.locator(joinSelectors('addNoteButton')).first().count()) > 0;
-    if (config.inviteWithNote && !canAddNote) {
+    if (wantsNote && !canAddNote) {
         await page.waitForSelector(joinSelectors('addNoteButton'), { timeout: 2000 }).catch(() => null);
         canAddNote = (await page.locator(joinSelectors('addNoteButton')).first().count()) > 0;
     }
 
-    if (config.inviteWithNote && canAddNote) {
+    if (wantsNote && canAddNote) {
         await humanMouseMove(page, joinSelectors('addNoteButton'));
         await humanDelay(page, 150, 350);
         await page.locator(joinSelectors('addNoteButton')).first().click();
@@ -200,14 +205,18 @@ export async function processInviteJob(
         return workerResult(0);
     }
 
-    // Estrai nota campagna dal metadata JSON senza contaminare l'oggetto lead
+    // Estrai nota campagna e noteMode dal metadata JSON
     let campaignOverrideNote: string | null = null;
-    if (isCampaignDriven && payload.metadata_json) {
+    let noteMode: 'ai' | 'template' | 'none' | null = null;
+    if (payload.metadata_json) {
         try {
             const meta = JSON.parse(payload.metadata_json);
-            if (meta.note) {
+            if (isCampaignDriven && meta.note) {
                 lead.invite_prompt_variant = 'campaign_metadata';
                 campaignOverrideNote = meta.note;
+            }
+            if (meta.noteMode === 'ai' || meta.noteMode === 'template' || meta.noteMode === 'none') {
+                noteMode = meta.noteMode;
             }
         } catch {
             // ignore JSON parse error in metadata
@@ -279,6 +288,9 @@ export async function processInviteJob(
         }
     }
 
+    // Chiudi overlay LinkedIn prima di cercare il bottone Connect
+    await dismissKnownOverlays(context.session.page);
+
     const connectClicked = await clickConnectOnProfile(context.session.page);
     if (!connectClicked) {
         await incrementDailyStat(context.localDate, 'selector_failures');
@@ -294,6 +306,7 @@ export async function processInviteJob(
         context.dryRun,
         context.localDate,
         campaignOverrideNote,
+        noteMode,
     );
 
     // Post-click: verify no weekly limit error was triggered by our action
@@ -318,9 +331,9 @@ export async function processInviteJob(
     const proofOfSend = context.dryRun
         ? true
         : await Promise.race([
-              detectInviteProof(context.session.page),
-              new Promise<false>((resolve) => setTimeout(() => resolve(false), 5000)),
-          ]);
+            detectInviteProof(context.session.page),
+            new Promise<false>((resolve) => setTimeout(() => resolve(false), 5000)),
+        ]);
     if (!proofOfSend) {
         throw new RetryableWorkerError('Proof-of-send non rilevato', 'NO_PROOF_OF_SEND');
     }
@@ -347,7 +360,7 @@ export async function processInviteJob(
 
     if (!context.dryRun && inviteResult.variant) {
         const segmentKey = inferLeadSegment(lead.job_title);
-        await recordSent(inviteResult.variant, { segmentKey }).catch(() => {});
+        await recordSent(inviteResult.variant, { segmentKey }).catch(() => { });
     }
     await incrementDailyStat(context.localDate, 'invites_sent');
     await incrementListDailyStat(context.localDate, lead.list_name, 'invites_sent');

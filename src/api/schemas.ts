@@ -20,23 +20,6 @@ export const QuarantineSchema = z.union([
     }),
 ]);
 
-export const IncidentResolveParamsSchema = z.object({
-    id: z.string().regex(/^\d+$/).transform(Number),
-});
-
-export const CommentSuggestionParamsSchema = z.object({
-    leadId: z.string().regex(/^\d+$/).transform(Number),
-    suggestionIndex: z.string().regex(/^\d+$/).transform(Number),
-});
-
-export const CommentApproveBodySchema = z.object({
-    comment: z.string().min(1).max(500).optional(),
-});
-
-export const CsvImportSchema = z.object({
-    filePath: z.string().min(1),
-    listName: z.string().min(1).max(200).default('default'),
-});
 
 export const ExportLeadsQuerySchema = z.object({
     format: z.enum(['csv', 'json']).default('json'),
@@ -45,7 +28,3 @@ export const ExportLeadsQuerySchema = z.object({
     limit: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(1).max(500)).optional(),
 });
 
-export const PaginationSchema = z.object({
-    page: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(1)).optional(),
-    limit: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(1).max(500)).optional(),
-});

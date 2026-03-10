@@ -247,7 +247,7 @@ async function applyMigrations(database: DatabaseManager): Promise<void> {
     const migrationDir = resolveMigrationDirectory();
     const files = fs
         .readdirSync(migrationDir)
-        .filter((file) => file.endsWith('.sql'))
+        .filter((file) => file.endsWith('.sql') && !file.endsWith('.down.sql'))
         .sort((a, b) => a.localeCompare(b));
 
     // Load all already-applied migrations in a single query instead of one per file.
@@ -314,6 +314,56 @@ async function applyMigrations(database: DatabaseManager): Promise<void> {
     await ensureColumn(database, 'company_targets', 'attempts', 'INTEGER NOT NULL DEFAULT 0');
     await ensureColumn(database, 'company_targets', 'last_error', 'TEXT');
     await ensureColumn(database, 'company_targets', 'processed_at', ts);
+}
+
+/**
+ * Rollback a specific migration by executing its `.down.sql` file.
+ * Returns true if the rollback was applied, false if no down file exists.
+ */
+export async function rollbackMigration(migrationName: string): Promise<boolean> {
+    const db = await getDatabase();
+    const migrationDir = resolveMigrationDirectory();
+
+    // Check if migration was applied
+    const row = await db.get<{ name: string }>(`SELECT name FROM _migrations WHERE name = ?`, [migrationName]);
+    if (!row) {
+        throw new Error(`Migration "${migrationName}" non trovata tra le migration applicate.`);
+    }
+
+    // Look for .down.sql file
+    const baseName = migrationName.replace(/\.sql$/, '');
+    const downFile = path.join(migrationDir, `${baseName}.down.sql`);
+
+    if (!fs.existsSync(downFile)) {
+        return false;
+    }
+
+    let sql = fs.readFileSync(downFile, 'utf8');
+    if (isPostgres) {
+        sql = sql.replace(/\bDATETIME\b(?!\s*\()/gi, 'TIMESTAMP');
+        sql = sql.replace(/datetime\('now'\)/gi, 'CURRENT_TIMESTAMP');
+    }
+
+    await db.exec('BEGIN');
+    try {
+        await db.exec(sql);
+        await db.run(`DELETE FROM _migrations WHERE name = ?`, [migrationName]);
+        await db.exec('COMMIT');
+        return true;
+    } catch (error) {
+        await db.exec('ROLLBACK');
+        throw error;
+    }
+}
+
+/**
+ * List all applied migrations with their applied_at timestamp.
+ */
+export async function listAppliedMigrations(): Promise<Array<{ name: string; applied_at: string }>> {
+    const db = await getDatabase();
+    return db.query<{ name: string; applied_at: string }>(
+        `SELECT name, applied_at FROM _migrations ORDER BY name`,
+    );
 }
 
 export async function getDatabase(): Promise<DatabaseManager> {

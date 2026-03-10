@@ -12,9 +12,10 @@ import { joinSelectors } from '../selectors';
 import { isMobilePage } from './deviceProfile';
 import { MouseGenerator, Point } from '../ml/mouseGenerator';
 import { calculateContextualDelay } from '../ml/timingModel';
-import { determineNextKeystroke } from '../ai/typoGenerator';
+import { computeSessionTypoRate, determineNextKeystroke } from '../ai/typoGenerator';
 import { interactWithFeed } from './organicContent';
 import { shouldMissclick, shouldAccidentalNav, performMissclick, performAccidentalNavigation } from './missclick';
+import { dismissKnownOverlays } from './overlayDismisser';
 
 // ─── Stato Memoria Mouse ─────────────────────────────────────────────────────
 
@@ -225,6 +226,8 @@ export async function resumeInputBlock(page: Page): Promise<void> {
 export async function blockUserInput(page: Page): Promise<void> {
     await enableVisualCursorOverlay(page);
     await ensureInputBlock(page);
+    // Auto-dismiss overlay LinkedIn dopo navigazione
+    await dismissKnownOverlays(page);
 }
 
 export async function pulseVisualCursorOverlay(page: Page): Promise<void> {
@@ -302,6 +305,8 @@ export async function humanMouseMove(page: Page, targetSelector: string): Promis
         return;
     }
     try {
+        // Chiudi overlay che potrebbero intercettare il click
+        await dismissKnownOverlays(page);
         const box = await page.locator(targetSelector).first().boundingBox();
         if (!box) return;
 
@@ -548,7 +553,7 @@ export async function humanType(page: Page, selector: string, text: string): Pro
 
     for (let i = 0; i < text.length; i++) {
         const originalChar = text[i] ?? '';
-        const { char: typedChar, isTypo } = determineNextKeystroke(originalChar, 0.035);
+        const { char: typedChar, isTypo } = determineNextKeystroke(originalChar, computeSessionTypoRate());
 
         // AD-11: Implementazione Delay Bimodale
         const isSpaceOrPunctuation = /[\s.,!?-]/.test(typedChar);

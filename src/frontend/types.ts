@@ -168,6 +168,40 @@ export interface DashboardSnapshot {
     commentSuggestions: CommentSuggestionQueueResponse;
 }
 
+export interface LeadSearchRecord {
+    id: number;
+    account_name: string | null;
+    first_name: string | null;
+    last_name: string | null;
+    job_title: string | null;
+    linkedin_url: string;
+    status: string;
+    list_name: string | null;
+    lead_score: number | null;
+    email: string | null;
+    updated_at: string;
+}
+
+export interface LeadSearchResponse {
+    leads: LeadSearchRecord[];
+    total: number;
+    page: number;
+    pageSize: number;
+}
+
+export interface LeadTimelineEvent {
+    from_status: string;
+    to_status: string;
+    reason: string;
+    metadata_json: string;
+    created_at: string;
+}
+
+export interface LeadDetailResponse {
+    lead: LeadSearchRecord;
+    timeline: LeadTimelineEvent[];
+}
+
 export interface TimelineEntry {
     id: string;
     type: string;

@@ -16,6 +16,7 @@ import {
     clickWithFallback,
     contextualReadingPause,
     detectChallenge,
+    dismissKnownOverlays,
     humanDelay,
     humanMouseMove,
     simulateHumanReading,
@@ -24,6 +25,7 @@ import {
 import { buildFollowUpReminderMessage } from '../ai/messagePersonalizer';
 import { config } from '../config';
 import {
+    checkAndIncrementDailyLimit,
     getLeadIntent,
     getLeadsForFollowUp,
     recordFollowUpSent,
@@ -122,6 +124,9 @@ async function processSingleFollowUp(
         throw new ChallengeDetectedError();
     }
 
+    // Chiudi overlay LinkedIn prima di cercare il bottone messaggio
+    await dismissKnownOverlays(context.session.page);
+
     // Cerca bottone messaggio
     await humanMouseMove(context.session.page, joinSelectors('messageButton'));
     await humanDelay(context.session.page, 120, 320);
@@ -150,6 +155,13 @@ async function processSingleFollowUp(
     await humanDelay(context.session.page, 800, 1600);
 
     if (!context.dryRun) {
+        // Atomic daily cap check: incrementa follow_ups_sent solo se sotto il limite
+        const withinCap = await checkAndIncrementDailyLimit(context.localDate, 'follow_ups_sent', config.followUpDailyCap);
+        if (!withinCap) {
+            await logInfo('follow_up.daily_cap_atomic', { leadId, cap: config.followUpDailyCap });
+            return false;
+        }
+
         const sendBtn = context.session.page.locator(joinSelectors('messageSendButton')).first();
         if ((await sendBtn.count()) === 0 || (await sendBtn.isDisabled())) {
             await incrementDailyStat(context.localDate, 'selector_failures');
@@ -167,7 +179,7 @@ async function processSingleFollowUp(
         // Persisti l'invio nel DB
         await recordFollowUpSent(leadId);
         await storeMessageHash(leadId, messageHash);
-        await incrementDailyStat(context.localDate, 'follow_ups_sent');
+        // follow_ups_sent already incremented atomically by checkAndIncrementDailyLimit
 
         await logInfo('follow_up.sent', { leadId, source, daysSince: days, messageLength: message.length });
     } else {

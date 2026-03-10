@@ -1,0 +1,3 @@
+-- SQLite does not support DROP COLUMN in older versions.
+-- To reverse this migration, recreate the leads table without the
+-- `location` and `salesnav_url` columns and copy data across.

@@ -289,7 +289,7 @@ Respond with ONLY a single integer number of milliseconds between 1000 and 12000
         if (msg?.content) {
             const text = msg.content
                 .filter(c => c.type === 'output_text' && c.text)
-                .map(c => c.text!)
+                .map(c => c.text ?? '')
                 .join('\n');
             return text.trim();
         }

@@ -247,14 +247,16 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                 '--force-fieldtrial-params=DoHTrial.Group1:server/https%3A%2F%2Fcloudflare-dns.com%2Fdns-query/method/POST',
             ],
         };
-        // Bright Data: il certificato CA è installato nel sistema (certutil -addstore Root),
-        // quindi NON serve --ignore-certificate-errors (flag rilevabile dai bot detector).
-        // Se il cert non fosse installato, decommentare le righe sotto.
-        // const isBrightDataProxy = !!currentProxy && /brd\.superproxy\.io/i.test(currentProxy.server);
-        // if (isBrightDataProxy) {
-        //     contextOptions.ignoreHTTPSErrors = true;
-        //     contextOptions.args = [...(contextOptions.args ?? []), '--ignore-certificate-errors'];
-        // }
+        // Proxy provider HTTPS handling: ignoreHTTPSErrors SOLO per domini proxy noti.
+        // NON usa --ignore-certificate-errors (flag Chrome rilevabile dai bot detector).
+        // Playwright ignoreHTTPSErrors agisce a livello di context, non espone flag al DOM.
+        // Nota: Oxylabs (pr.oxylabs.io) usa CONNECT tunnel senza MITM — non serve
+        // ignoreHTTPSErrors, ma lo abilitiamo comunque per resilienza su cert self-signed.
+        const PROXY_DOMAINS_ALLOWLIST =
+            /brd\.superproxy\.io|lum-superproxy\.io|brightdata\.com|luminati\.io|oxylabs\.io/i;
+        if (currentProxy && PROXY_DOMAINS_ALLOWLIST.test(currentProxy.server)) {
+            contextOptions.ignoreHTTPSErrors = true;
+        }
         // isMobile, hasTouch e deviceScaleFactor non sono supportati con viewport: null (non-headless)
         if (deviceProfile.isMobile && viewport !== null) {
             contextOptions.isMobile = true;

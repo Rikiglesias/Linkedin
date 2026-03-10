@@ -72,19 +72,26 @@ export async function requestOpenAIText(input: OpenAITextRequest): Promise<strin
         headers.authorization = `Bearer ${config.openaiApiKey}`;
     }
 
+    const model = resolveAiModel();
+    // GPT-4o+ / GPT-5+ richiedono max_completion_tokens; modelli legacy usano max_tokens
+    const usesCompletionTokens = /^(gpt-[45]\.|o[1-9]|chatgpt-)/i.test(model);
+    const tokenParam = usesCompletionTokens
+        ? { max_completion_tokens: input.maxOutputTokens }
+        : { max_tokens: input.maxOutputTokens };
+
     const response = await fetchWithRetryPolicy(
         safeJoinUrl(config.openaiBaseUrl, '/chat/completions'),
         {
             method: 'POST',
             headers,
             body: JSON.stringify({
-                model: resolveAiModel(),
+                model,
                 messages: [
                     { role: 'system', content: input.system },
                     { role: 'user', content: input.user },
                 ],
                 temperature: input.temperature,
-                max_tokens: input.maxOutputTokens, // OpenAI uses max_tokens natively, non max_output_tokens
+                ...tokenParam,
                 ...(input.responseFormat ? { response_format: { type: input.responseFormat } } : {}),
             }),
         },

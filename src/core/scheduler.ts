@@ -1,5 +1,9 @@
 import { config, getLocalDateString, getWeekStartDate, getWorkingHourIntensity, isGreenModeWindow } from '../config';
 import { getSessionBudgetFactor } from './sessionWarmer';
+import { getSessionMaturity } from '../browser/sessionCookieMonitor';
+import { applyGrowthModel } from '../risk/accountBehaviorModel';
+import { getSessionHistory } from '../risk/sessionMemory';
+import { getTodayStrategy } from '../risk/strategyPlanner';
 import { countTodayPosts } from '../workers/postCreatorWorker';
 import { pickAccountIdForLead, getRuntimeAccountProfiles } from '../accountManager';
 import {
@@ -17,6 +21,7 @@ import {
     getDailyStat,
     getLeadStatusCountsForLists,
     getLeadsByStatusForList,
+    getLeadsNeedingEnrichment,
     getListDailyStatsBatch,
     getRuntimeFlag,
     getRiskInputs,
@@ -46,6 +51,16 @@ export interface ScheduleResult {
 
 export interface ScheduleOptions {
     dryRun?: boolean;
+    /** Filtra solo lead di questa lista (null = tutte le liste attive) */
+    listFilter?: string | null;
+    /** Score minimo per inviti (default: 0 = nessun filtro) */
+    minScore?: number;
+    /** Limite massimo job per questa sessione (sovrascrive budget giornaliero) */
+    sessionLimit?: number;
+    /** Modalità nota invito: 'ai', 'template', 'none' */
+    noteMode?: 'ai' | 'template' | 'none';
+    /** Lingua preferita per AI generation (it, en, fr, es, nl) */
+    lang?: string;
 }
 
 export interface ListScheduleBreakdown {
@@ -63,7 +78,7 @@ export interface ListScheduleBreakdown {
 }
 
 export function workflowToJobTypes(workflow: WorkflowSelection): JobType[] {
-    if (workflow === 'all') return ['INVITE', 'ACCEPTANCE_CHECK', 'MESSAGE', 'HYGIENE', 'POST_CREATION'];
+    if (workflow === 'all') return ['INVITE', 'ACCEPTANCE_CHECK', 'MESSAGE', 'HYGIENE', 'POST_CREATION', 'ENRICHMENT'];
     if (workflow === 'invite') return ['INVITE'];
     if (workflow === 'check') return ['ACCEPTANCE_CHECK', 'HYGIENE'];
     if (workflow === 'warmup') return [];
@@ -357,11 +372,11 @@ export async function scheduleJobs(
     const dbAccountAgeDays = await getAccountAgeDays();
     const weeklyInviteLimitEffective = config.complianceDynamicWeeklyLimitEnabled
         ? calculateDynamicWeeklyInviteLimit(
-              dbAccountAgeDays,
-              config.complianceDynamicWeeklyMinInvites,
-              Math.min(config.complianceDynamicWeeklyMaxInvites, config.weeklyInviteLimit),
-              config.complianceDynamicWeeklyWarmupDays,
-          )
+            dbAccountAgeDays,
+            config.complianceDynamicWeeklyMinInvites,
+            Math.min(config.complianceDynamicWeeklyMaxInvites, config.weeklyInviteLimit),
+            config.complianceDynamicWeeklyWarmupDays,
+        )
         : config.weeklyInviteLimit;
     const weeklyRemaining = Math.max(0, weeklyInviteLimitEffective - weeklyInvitesSent);
     const ssiRaw = config.ssiDynamicLimitsEnabled ? await getRuntimeFlag(config.ssiStateKey) : null;
@@ -412,15 +427,20 @@ export async function scheduleJobs(
             riskSnapshot.action,
         );
 
-        const accountInviteLimit =
+        let accountInviteLimit =
             warmupFactor < 1.0
                 ? Math.max(account.warmupMinActions || 5, Math.floor(limitInvite * warmupFactor))
                 : limitInvite;
 
-        const accountMessageLimit =
+        let accountMessageLimit =
             warmupFactor < 1.0
                 ? Math.max(account.warmupMinActions || 5, Math.floor(limitMessage * warmupFactor))
                 : limitMessage;
+
+        // Growth model: cap per-account budget based on account age phase
+        const growthResult = applyGrowthModel(accountInviteLimit, accountMessageLimit, ageDays);
+        accountInviteLimit = growthResult.inviteBudget;
+        accountMessageLimit = growthResult.messageBudget;
 
         inviteBudget += accountInviteLimit;
         messageBudget += accountMessageLimit;
@@ -441,6 +461,41 @@ export async function scheduleJobs(
         messageBudget = applyHourIntensityToBudget(messageBudget, sessionFactor);
     }
 
+    // Cookie maturity: fresh sessions get reduced budget to avoid detection
+    const maturityFactors = accounts.map((acc) => getSessionMaturity(acc.sessionDir).budgetFactor);
+    const worstMaturityFactor = maturityFactors.length > 0 ? Math.min(...maturityFactors) : 1.0;
+    if (worstMaturityFactor < 1.0) {
+        inviteBudget = applyHourIntensityToBudget(inviteBudget, worstMaturityFactor);
+        messageBudget = applyHourIntensityToBudget(messageBudget, worstMaturityFactor);
+    }
+
+    // Session memory: modulate budget based on recent behavioral history
+    const primaryAccountId = accounts[0]?.id || 'default';
+    const sessionHistory = await getSessionHistory(primaryAccountId, 7);
+    if (sessionHistory.daysWithActivity > 0 && sessionHistory.pacingFactor < 1.0) {
+        inviteBudget = applyHourIntensityToBudget(inviteBudget, sessionHistory.pacingFactor);
+        messageBudget = applyHourIntensityToBudget(messageBudget, sessionHistory.pacingFactor);
+    }
+
+    // Weekly strategy: per-day-of-week activity multipliers
+    const todayStrategy = getTodayStrategy();
+    if (todayStrategy.inviteFactor < 1.0) {
+        inviteBudget = applyHourIntensityToBudget(inviteBudget, todayStrategy.inviteFactor);
+    } else if (todayStrategy.inviteFactor > 1.0) {
+        inviteBudget = Math.floor(inviteBudget * todayStrategy.inviteFactor);
+    }
+    if (todayStrategy.messageFactor < 1.0) {
+        messageBudget = applyHourIntensityToBudget(messageBudget, todayStrategy.messageFactor);
+    } else if (todayStrategy.messageFactor > 1.0) {
+        messageBudget = Math.floor(messageBudget * todayStrategy.messageFactor);
+    }
+
+    // Session limit: cap budget per singola sessione workflow
+    if (options.sessionLimit !== null && options.sessionLimit !== undefined && options.sessionLimit > 0) {
+        inviteBudget = Math.min(inviteBudget, options.sessionLimit);
+        messageBudget = Math.min(messageBudget, options.sessionLimit);
+    }
+
     // WARMUP BYPASS: nessun invio email/connessioni
     const effectiveInviteBudget = workflow === 'warmup' ? 0 : inviteBudget;
     const effectiveMessageBudget = workflow === 'warmup' ? 0 : messageBudget;
@@ -456,7 +511,15 @@ export async function scheduleJobs(
         await ensureLeadList('default');
         listConfigs = await listLeadCampaignConfigs(true);
     }
-    const activeListNames = listConfigs.length > 0 ? listConfigs.map((list) => list.name) : await resolveActiveLists();
+    let activeListNames = listConfigs.length > 0 ? listConfigs.map((list) => list.name) : await resolveActiveLists();
+    if (options.listFilter) {
+        const filterName = options.listFilter;
+        activeListNames = activeListNames.filter((name) => name === filterName);
+        if (activeListNames.length === 0) {
+            // Lista filtrata non trovata tra le attive — aggiungi comunque
+            activeListNames = [filterName];
+        }
+    }
     const listBreakdown = initListBreakdown(activeListNames);
     const listConfigMap = new Map(listConfigs.map((list) => [list.name, list]));
     const statusRows = await getLeadStatusCountsForLists(activeListNames);
@@ -532,7 +595,7 @@ export async function scheduleJobs(
             if (listBudget <= 0) continue;
 
             if (dryRun) {
-                const readyCandidates = await getLeadsByStatusForList('READY_INVITE', listName, listBudget);
+                const readyCandidates = await getLeadsByStatusForList('READY_INVITE', listName, listBudget, options.minScore);
                 const newCandidates = await getLeadsByStatusForList('NEW', listName, listBudget);
                 const orderedCandidates = [...readyCandidates, ...newCandidates];
                 const seenLeadIds = new Set<number>();
@@ -553,7 +616,7 @@ export async function scheduleJobs(
                 continue;
             }
 
-            const inviteCandidates = await getLeadsByStatusForList('READY_INVITE', listName, listBudget);
+            const inviteCandidates = await getLeadsByStatusForList('READY_INVITE', listName, listBudget, options.minScore);
 
             let insertedForList = 0;
             for (const lead of inviteCandidates) {
@@ -565,24 +628,28 @@ export async function scheduleJobs(
                 const noBurstDelaySec = noBurstPlanner ? noBurstPlanner.nextDelaySec() : 0;
                 const timingDecision = await resolveTimingDecision('invite', lead.job_title);
                 const initialDelaySec = noBurstDelaySec + timingDecision.delaySec;
+                const invitePayload: Record<string, unknown> = {
+                    leadId: lead.id,
+                    localDate,
+                    timing: {
+                        strategy: timingDecision.strategy,
+                        segment: timingDecision.segment,
+                        score: timingDecision.score,
+                        sampleSize: timingDecision.sampleSize,
+                        slotHour: timingDecision.slot?.hour ?? null,
+                        slotDow: timingDecision.slot?.dayOfWeek ?? null,
+                        delaySec: timingDecision.delaySec,
+                        reason: timingDecision.reason,
+                        model: timingDecision.model,
+                        explored: timingDecision.explored,
+                    },
+                };
+                if (options.noteMode) {
+                    invitePayload.metadata_json = JSON.stringify({ noteMode: options.noteMode });
+                }
                 const inserted = await enqueueJob(
                     'INVITE',
-                    {
-                        leadId: lead.id,
-                        localDate,
-                        timing: {
-                            strategy: timingDecision.strategy,
-                            segment: timingDecision.segment,
-                            score: timingDecision.score,
-                            sampleSize: timingDecision.sampleSize,
-                            slotHour: timingDecision.slot?.hour ?? null,
-                            slotDow: timingDecision.slot?.dayOfWeek ?? null,
-                            delaySec: timingDecision.delaySec,
-                            reason: timingDecision.reason,
-                            model: timingDecision.model,
-                            explored: timingDecision.explored,
-                        },
-                    },
+                    invitePayload,
                     buildInviteKey(lead.id, localDate),
                     10,
                     config.retryMaxAttempts,
@@ -707,24 +774,28 @@ export async function scheduleJobs(
                 const noBurstDelaySec = noBurstPlanner ? noBurstPlanner.nextDelaySec() : 0;
                 const timingDecision = await resolveTimingDecision('message', lead.job_title);
                 const initialDelaySec = acceptanceDelaySec + noBurstDelaySec + timingDecision.delaySec;
+                const messagePayload: Record<string, unknown> = {
+                    leadId: lead.id,
+                    acceptedAtDate,
+                    timing: {
+                        strategy: timingDecision.strategy,
+                        segment: timingDecision.segment,
+                        score: timingDecision.score,
+                        sampleSize: timingDecision.sampleSize,
+                        slotHour: timingDecision.slot?.hour ?? null,
+                        slotDow: timingDecision.slot?.dayOfWeek ?? null,
+                        delaySec: timingDecision.delaySec,
+                        reason: timingDecision.reason,
+                        model: timingDecision.model,
+                        explored: timingDecision.explored,
+                    },
+                };
+                if (options.lang) {
+                    messagePayload.metadata_json = JSON.stringify({ lang: options.lang });
+                }
                 const inserted = await enqueueJob(
                     'MESSAGE',
-                    {
-                        leadId: lead.id,
-                        acceptedAtDate,
-                        timing: {
-                            strategy: timingDecision.strategy,
-                            segment: timingDecision.segment,
-                            score: timingDecision.score,
-                            sampleSize: timingDecision.sampleSize,
-                            slotHour: timingDecision.slot?.hour ?? null,
-                            slotDow: timingDecision.slot?.dayOfWeek ?? null,
-                            delaySec: timingDecision.delaySec,
-                            reason: timingDecision.reason,
-                            model: timingDecision.model,
-                            explored: timingDecision.explored,
-                        },
-                    },
+                    messagePayload,
                     buildMessageKey(lead.id, acceptedAtDate),
                     20,
                     config.retryMaxAttempts,
@@ -777,6 +848,21 @@ export async function scheduleJobs(
                     acc.id,
                 );
             }
+        }
+    }
+
+    // ─── Enrichment Scheduling ────────────────────────────────────────────
+    if (!dryRun && (workflow === 'all' || workflow === 'invite') && riskSnapshot.action !== 'STOP') {
+        const enrichCandidates = await getLeadsNeedingEnrichment(50);
+        for (const lead of enrichCandidates) {
+            await enqueueJob(
+                'ENRICHMENT',
+                { leadId: lead.id },
+                `enrichment:${lead.id}:${localDate}`,
+                1,
+                2,
+                pickRandomInt(300, 3600),
+            );
         }
     }
 

@@ -94,8 +94,11 @@ export async function processAcceptanceJob(
         accepted = false;
     } else if (connectedWithoutBadge) {
         // Lagged UI: Has Message button but no 1st badge, and no Pending/Connect.
-        // Check Sent Invitations as the absolute Source of Truth
-        const isStillPendingInManager = await checkSentInvitations(context.session.page, lead.linkedin_url);
+        // Check Sent Invitations as the absolute Source of Truth.
+        // On network error/timeout, assume accepted (optimistic) — il lead ha già
+        // il bottone messaggio e nessun indicatore pending, quindi è molto probabilmente accettato.
+        const isStillPendingInManager = await checkSentInvitations(context.session.page, lead.linkedin_url)
+            .catch(() => false);
         if (!isStillPendingInManager) {
             accepted = true;
         }

@@ -36,9 +36,16 @@ export function getWorkflowValue(args: string[]): string | undefined {
 
 // ─── Parsing valori ───────────────────────────────────────────────────────────
 
+const VALID_WORKFLOWS: readonly string[] = ['invite', 'check', 'message', 'warmup', 'all'];
+
 export function parseWorkflow(input: string | undefined): WorkflowSelection {
     if (input === 'invite' || input === 'check' || input === 'message' || input === 'warmup' || input === 'all') {
         return input;
+    }
+    if (input && input.trim()) {
+        console.warn(
+            `[WARN] Workflow sconosciuto: "${input}". Valori validi: ${VALID_WORKFLOWS.join(', ')}. Uso "all".`,
+        );
     }
     return 'all';
 }

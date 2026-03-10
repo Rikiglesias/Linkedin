@@ -51,3 +51,60 @@ export function readString(record: Record<string, unknown>, ...keys: string[]): 
     }
     return null;
 }
+
+// ─── Export Utilities ────────────────────────────────────────────────────────
+
+/**
+ * Export an array of row objects to a CSV file and trigger download.
+ */
+export function exportToCSV(
+    rows: Record<string, string | number>[],
+    filename: string,
+): void {
+    if (rows.length === 0) return;
+    const headers = Object.keys(rows[0]);
+    const csvLines = [headers.join(',')];
+    for (const row of rows) {
+        const values = headers.map((h) => {
+            const v = row[h];
+            if (typeof v === 'string' && (v.includes(',') || v.includes('"') || v.includes('\n'))) {
+                return `"${v.replace(/"/g, '""')}"`;
+            }
+            return String(v ?? '');
+        });
+        csvLines.push(values.join(','));
+    }
+    const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    downloadBlob(blob, filename);
+}
+
+/**
+ * Download a Chart.js canvas as PNG.
+ */
+export function downloadCanvasAsPng(canvasId: string, filename: string): void {
+    const canvas = document.getElementById(canvasId) as HTMLCanvasElement | null;
+    if (!canvas) return;
+    const url = canvas.toDataURL('image/png');
+    const link = document.createElement('a');
+    link.download = filename;
+    link.href = url;
+    link.click();
+}
+
+/**
+ * Trigger browser print dialog for report.
+ */
+export function printReport(): void {
+    window.print();
+}
+
+function downloadBlob(blob: Blob, filename: string): void {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+}

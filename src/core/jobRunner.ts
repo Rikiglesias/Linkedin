@@ -144,6 +144,7 @@ async function rotateSessionWithLoginCheck(
         sessionDir: account.sessionDir,
         proxy: account.proxy,
         preferredProxyType: config.proxyMobilePriorityEnabled ? 'mobile' : undefined,
+        forceDesktop: true,
     });
     const loggedIn = await checkLogin(rotated.page);
     if (!loggedIn) {
@@ -177,6 +178,7 @@ async function runQueuedJobsForAccount(
         sessionDir: account.sessionDir,
         proxy: account.proxy,
         preferredProxyType: config.proxyMobilePriorityEnabled ? 'mobile' : undefined,
+        forceDesktop: true,
     });
     let sessionClosed = false;
     try {

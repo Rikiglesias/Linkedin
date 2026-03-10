@@ -644,6 +644,33 @@ export async function incrementDailyStat(
     );
 }
 
+/**
+ * Controlla atomicamente se il cap giornaliero è raggiunto e, se no, incrementa.
+ * Usa INSERT + ON CONFLICT con RETURNING (SQLite 3.35+) per atomicità.
+ *
+ * @returns `true` se l'incremento è avvenuto (sotto il cap), `false` se il cap è raggiunto.
+ */
+export async function checkAndIncrementDailyLimit(
+    dateString: string,
+    field: 'messages_sent' | 'follow_ups_sent',
+    hardCap: number,
+): Promise<boolean> {
+    const db = await getDatabase();
+
+    // Upsert atomico: INSERT o UPDATE solo se il valore corrente < hardCap
+    const result = await db.run(
+        `
+        INSERT INTO daily_stats (date, ${field}) VALUES (?, 1)
+        ON CONFLICT(date) DO UPDATE SET ${field} = ${field} + 1
+        WHERE ${field} < ?
+    `,
+        [dateString, hardCap],
+    );
+
+    // Se changes === 0, il WHERE ha bloccato l'update → cap raggiunto
+    return (result.changes ?? 0) > 0;
+}
+
 export async function incrementListDailyStat(
     dateString: string,
     listName: string,

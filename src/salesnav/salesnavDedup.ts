@@ -96,22 +96,27 @@ export async function extractProfileUrlsFromPage(page: Page): Promise<ExtractedP
             const firstName = nameParts[0] ?? '';
             const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
 
+            // Pattern "grado di connessione" che inquinano company/title
+            const connectionDegreeRe = /^[1-4]°$|collegamento di \d+° grado|\d+(?:st|nd|rd|th) degree|degree connection/i;
+
             // ── Company: prova selettori specifici, poi fallback testo card ──
             const companyEl =
                 card?.querySelector('[data-anonymize="company-name"]') ??
-                card?.querySelector('span.result-lockup__subtitle') ??
                 card?.querySelector('a[href*="/sales/company/"]') ??
                 card?.querySelector('[class*="company"]') ??
                 card?.querySelector('[class*="account-name"]');
             let company = (companyEl?.textContent ?? '').trim();
+            // Scarta valori che sono gradi di connessione, non aziende
+            if (connectionDegreeRe.test(company)) company = '';
 
             // ── Title: prova selettori specifici ──
             const titleEl =
                 card?.querySelector('[data-anonymize="title"]') ??
                 card?.querySelector('span.result-lockup__highlight-keyword') ??
-                card?.querySelector('[class*="body-text"]') ??
-                card?.querySelector('[class*="lockup__subtitle"]');
+                card?.querySelector('[class*="body-text"]');
             let title = (titleEl?.textContent ?? '').trim();
+            // Scarta valori che sono gradi di connessione, non titoli
+            if (connectionDegreeRe.test(title)) title = '';
 
             // ── Location: prova selettori specifici ──
             const locationEl =

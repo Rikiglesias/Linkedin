@@ -30,3 +30,5 @@ export type { SelectorCanaryStepResult, SelectorCanaryReport } from './browser/h
 export { clickWithFallback, waitForSelectorWithFallback, typeWithFallback } from './browser/uiFallback';
 
 export { isLoggedIn, checkLogin, detectChallenge } from './browser/auth';
+
+export { dismissKnownOverlays, hasBlockingOverlay } from './browser/overlayDismisser';

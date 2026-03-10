@@ -23,6 +23,11 @@ export const LEAD_SELECT_COLUMNS = [
     'confidence_score',
     'email',
     'phone',
+    'location',
+    'salesnav_url',
+    'company_domain',
+    'business_email',
+    'business_email_confidence',
     'created_at',
     'updated_at',
 ].join(', ');

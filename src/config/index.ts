@@ -129,4 +129,6 @@ export function validateCriticalConfig(): string[] {
     return validateConfigSchema(config);
 }
 
+export { validateConfigFull } from './validation';
+
 export type { AppConfig, AccountProfileConfig, EventSyncSink, ProxyType };

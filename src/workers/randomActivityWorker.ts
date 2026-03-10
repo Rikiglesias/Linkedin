@@ -116,6 +116,7 @@ export async function runRandomLinkedinActivity(options: RandomActivityOptions):
         session = await launchBrowser({
             sessionDir: account.sessionDir,
             proxy: account.proxy,
+            forceDesktop: true,
         });
     }
     try {

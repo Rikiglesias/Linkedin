@@ -21,6 +21,11 @@ CREATE INDEX IF NOT EXISTS idx_list_daily_stats_list_date ON list_daily_stats(li
 CREATE INDEX IF NOT EXISTS idx_leads_status_list_created ON leads(status, list_name, created_at);
 CREATE INDEX IF NOT EXISTS idx_leads_status_last_site_check ON leads(status, last_site_check_at, created_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_type_status_next_run ON jobs(type, status, next_run_at, priority, created_at);
+-- Ensure account_id column exists before creating index (was previously added by ensureColumn in db.ts)
+-- SQLite ignores ALTER TABLE ADD COLUMN if column already exists (raises error, caught by app layer).
+-- For fresh DBs, this is required before the index below.
+ALTER TABLE jobs ADD COLUMN account_id TEXT NOT NULL DEFAULT 'default';
+
 CREATE INDEX IF NOT EXISTS idx_jobs_account_status_next_run ON jobs(account_id, status, next_run_at, priority, created_at);
 
 -- ─── company_targets ─────────────────────────────────────────────────────────

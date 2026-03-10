@@ -1,0 +1,3 @@
+-- Down migration 049: SQLite does not support DROP COLUMN easily.
+-- ALTER TABLE leads DROP COLUMN business_email;
+-- ALTER TABLE leads DROP COLUMN business_email_confidence;

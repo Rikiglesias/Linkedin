@@ -15,6 +15,7 @@ import {
     recordSelectorFallbackSuccess,
 } from '../core/repositories';
 import { humanDelay, humanMouseMoveToCoords } from './humanBehavior';
+import { computeSessionTypoRate, determineNextKeystroke } from '../ai/typoGenerator';
 import { VisionSolver } from '../captcha/solver';
 
 export interface ClickFallbackOptions {
@@ -433,15 +434,17 @@ export async function typeWithFallback(
             await loc.first().click();
             await humanDelay(page, 200, 500);
 
+            const typoRate = computeSessionTypoRate();
             for (let j = 0; j < text.length; j++) {
-                if (Math.random() < 0.03 && text.length > 3) {
-                    const wrongChar = String.fromCharCode(97 + Math.floor(Math.random() * 26));
-                    await loc.first().pressSequentially(wrongChar, { delay: Math.floor(Math.random() * 130) + 40 });
+                const originalChar = text[j] ?? '';
+                const { char: typedChar, isTypo } = determineNextKeystroke(originalChar, typoRate);
+                if (isTypo && text.length > 3) {
+                    await loc.first().pressSequentially(typedChar, { delay: Math.floor(Math.random() * 130) + 40 });
                     await page.waitForTimeout(280 + Math.random() * 420);
                     await loc.first().press('Backspace');
                     await page.waitForTimeout(180 + Math.random() * 250);
                 }
-                await loc.first().pressSequentially(text[j] ?? '', { delay: Math.floor(Math.random() * 150) + 40 });
+                await loc.first().pressSequentially(originalChar, { delay: Math.floor(Math.random() * 150) + 40 });
                 if (Math.random() < 0.04) await humanDelay(page, 400, 1100);
             }
             await trackSelectorSuccess(page, label, sel);

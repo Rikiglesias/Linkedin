@@ -92,7 +92,8 @@ export async function createSalesNavList(listName: string, accountId?: string, e
         proxy: account.proxy,
         forceDesktop: true,
     });
-    const page = externalPage ?? ownSession!.page;
+    const page = externalPage ?? ownSession?.page;
+    if (!page) return { ok: false, accountId: account.id, message: 'Nessuna pagina disponibile' };
     try {
         const loggedIn = await checkLogin(page);
         if (!loggedIn) {
@@ -170,7 +171,8 @@ export async function addLeadToSalesNavList(
         proxy: account.proxy,
         forceDesktop: true,
     });
-    const page = externalPage ?? ownSession!.page;
+    const page = externalPage ?? ownSession?.page;
+    if (!page) return { ok: false, accountId: account.id, message: 'Nessuna pagina disponibile' };
     try {
         const loggedIn = await checkLogin(page);
         if (!loggedIn) {

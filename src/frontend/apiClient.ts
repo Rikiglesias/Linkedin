@@ -5,6 +5,8 @@ import {
     DashboardSnapshot,
     IncidentRecord,
     KpiResponse,
+    LeadDetailResponse,
+    LeadSearchResponse,
     ObservabilitySnapshot,
     PredictiveRiskResponse,
     ReviewQueueResponse,
@@ -27,6 +29,30 @@ function ensureObject(value: unknown): Record<string, unknown> {
 
 export class DashboardApi {
     private bootstrapApiKey = '';
+    private cache = new Map<string, { data: unknown; cachedAt: number }>();
+
+    private static readonly CACHE_TTL: Record<string, number> = {
+        '/api/kpis': 15_000,
+        '/api/runs': 30_000,
+        '/api/incidents': 10_000,
+        '/api/stats/trend': 60_000,
+        '/api/risk/predictive': 60_000,
+        '/api/review-queue': 20_000,
+        '/api/ml/ab-leaderboard': 60_000,
+        '/api/ml/timing-slots': 60_000,
+        '/api/observability': 30_000,
+        '/api/ai/comment-suggestions': 20_000,
+    };
+
+    private getCacheTtl(path: string): number {
+        const basePath = path.split('?')[0];
+        return DashboardApi.CACHE_TTL[basePath] ?? 15_000;
+    }
+
+    /** Invalida tutta la cache — il prossimo loadSnapshot farà fetch fresche. */
+    forceRefresh(): void {
+        this.cache.clear();
+    }
 
     private async apiFetch(path: string, init: RequestInit = {}, apiKeyOverride = ''): Promise<Response> {
         const headers = new Headers(init.headers ?? {});
@@ -65,11 +91,18 @@ export class DashboardApi {
     }
 
     private async readJson<T>(path: string, fallback: T): Promise<T> {
+        const now = Date.now();
+        const cached = this.cache.get(path);
+        if (cached && now - cached.cachedAt < this.getCacheTtl(path)) {
+            return cached.data as T;
+        }
+
         const resp = await this.apiFetch(path);
         if (!resp.ok) {
             return fallback;
         }
         const raw = (await resp.json()) as unknown;
+        this.cache.set(path, { data: raw, cachedAt: now });
         return raw as T;
     }
 
@@ -84,6 +117,15 @@ export class DashboardApi {
 
     async resume(): Promise<boolean> {
         const resp = await this.apiFetch('/api/controls/resume', { method: 'POST' });
+        return resp.ok;
+    }
+
+    async triggerRun(workflow: string = 'all'): Promise<boolean> {
+        const resp = await this.apiFetch('/api/controls/trigger-run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ workflow }),
+        });
         return resp.ok;
     }
 
@@ -107,6 +149,25 @@ export class DashboardApi {
             method: 'POST',
         });
         return resp.ok;
+    }
+
+    async searchLeads(query: string, status?: string, list?: string, page: number = 1): Promise<LeadSearchResponse> {
+        const params = new URLSearchParams();
+        if (query) params.set('q', query);
+        if (status) params.set('status', status);
+        if (list) params.set('list', list);
+        params.set('page', String(page));
+        params.set('pageSize', '25');
+        return this.readJson<LeadSearchResponse>(
+            `/api/leads/search?${params.toString()}`,
+            { leads: [], total: 0, page: 1, pageSize: 25 },
+        );
+    }
+
+    async getLeadDetail(id: number): Promise<LeadDetailResponse | null> {
+        const resp = await this.apiFetch(`/api/leads/${id}`);
+        if (!resp.ok) return null;
+        return (await resp.json()) as LeadDetailResponse;
     }
 
     async loadSnapshot(): Promise<DashboardSnapshot> {

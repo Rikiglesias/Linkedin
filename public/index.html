@@ -9,6 +9,10 @@
         />
         <title>LinkedIn Bot Control Room</title>
         <link rel="stylesheet" href="/style.css" />
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#0b6b78" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js" defer></script>
     </head>
     <body>
@@ -60,10 +64,15 @@
                     <span id="status-text">In attesa...</span>
                 </div>
                 <div class="header-actions">
+                    <button id="btn-theme-toggle" type="button" class="btn btn-secondary" title="Cambia tema">Tema</button>
+                    <button id="btn-export-csv" type="button" class="btn btn-secondary" title="Esporta trend CSV">CSV</button>
+                    <button id="btn-export-chart" type="button" class="btn btn-secondary" title="Scarica grafico PNG">PNG</button>
+                    <button id="btn-print" type="button" class="btn btn-secondary" title="Stampa report">Print</button>
                     <button id="btn-refresh" type="button" class="btn btn-secondary">Aggiorna</button>
                     <button id="btn-voice" type="button" class="btn btn-secondary" aria-pressed="false">
                         Comando Voce
                     </button>
+                    <button id="btn-trigger-run" type="button" class="btn btn-primary" title="Avvia run workflow">Run</button>
                     <button id="btn-pause" type="button" class="btn btn-warning">Pausa</button>
                     <button id="btn-resume" type="button" class="btn btn-success">Riprendi</button>
                 </div>
@@ -329,6 +338,49 @@
                 </div>
             </section>
 
+            <section class="card" id="lead-search-section">
+                <header class="card-header">
+                    <h2>Ricerca Lead</h2>
+                </header>
+                <div class="lead-search-controls">
+                    <input id="lead-search-input" type="text" class="modal-input" placeholder="Cerca per nome, azienda, URL..." />
+                    <select id="lead-search-status" class="lead-search-select">
+                        <option value="">Tutti gli stati</option>
+                        <option value="NEW">NEW</option>
+                        <option value="READY_INVITE">READY_INVITE</option>
+                        <option value="INVITED">INVITED</option>
+                        <option value="ACCEPTED">ACCEPTED</option>
+                        <option value="READY_MESSAGE">READY_MESSAGE</option>
+                        <option value="MESSAGED">MESSAGED</option>
+                        <option value="REPLIED">REPLIED</option>
+                        <option value="BLOCKED">BLOCKED</option>
+                        <option value="SKIPPED">SKIPPED</option>
+                    </select>
+                    <button id="btn-lead-search" type="button" class="btn btn-primary">Cerca</button>
+                </div>
+                <p id="lead-search-info" class="card-subtitle">Usa il campo sopra per cercare lead</p>
+                <div class="table-wrapper">
+                    <table class="data-table" aria-label="Risultati ricerca lead">
+                        <thead>
+                            <tr>
+                                <th>Nome</th>
+                                <th>Azienda</th>
+                                <th>Titolo</th>
+                                <th>Stato</th>
+                                <th>Lista</th>
+                                <th>Score</th>
+                                <th>Aggiornato</th>
+                            </tr>
+                        </thead>
+                        <tbody id="lead-search-tbody">
+                            <tr><td colspan="7" class="empty-state">Inserisci una ricerca</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div id="lead-search-pager" class="lead-search-pager"></div>
+                <div id="lead-detail-content" class="lead-detail-content" hidden></div>
+            </section>
+
             <section class="card">
                 <header class="card-header">
                     <h2>Campaign Runs Recenti</h2>
@@ -361,6 +413,6 @@
             <span>Control Room v2</span>
         </footer>
 
-        <script type="module" src="/assets/main.js"></script>
+        <script type="module" src="/assets/bundle.js"></script>
     </body>
 </html>

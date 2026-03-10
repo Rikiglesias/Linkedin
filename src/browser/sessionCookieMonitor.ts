@@ -157,3 +157,69 @@ export async function rotateSessionCookies(
 export function getSessionMetaSummary(sessionDir: string): SessionMeta | null {
     return readMeta(sessionDir);
 }
+
+// ─── Session Maturity ────────────────────────────────────────────────────────
+
+export type SessionMaturity = 'new' | 'warm' | 'established';
+
+export interface SessionMaturityResult {
+    maturity: SessionMaturity;
+    ageDays: number;
+    /** Budget multiplier based on maturity (0.3 new, 0.6 warm, 1.0 established) */
+    budgetFactor: number;
+    /** Se true, suggerisce attività random prima delle azioni di valore */
+    forceRandomActivityFirst: boolean;
+}
+
+/**
+ * Calcola la maturità della sessione basandosi sull'età del file .session-meta.json.
+ * Le sessioni nuove (cookie freschi) partono con budget ridotto per evitare
+ * detection da parte di LinkedIn.
+ *
+ * - `new` (0-2 giorni): 30% budget, forza random activity prima
+ * - `warm` (2-7 giorni): 60% budget
+ * - `established` (7+ giorni): 100% budget
+ */
+export function getSessionMaturity(sessionDir: string): SessionMaturityResult {
+    const meta = readMeta(sessionDir);
+
+    if (!meta) {
+        // Nessun meta → sessione mai verificata, trattala come nuovissima
+        return {
+            maturity: 'new',
+            ageDays: 0,
+            budgetFactor: 0.3,
+            forceRandomActivityFirst: true,
+        };
+    }
+
+    const createdMs = new Date(meta.createdAt).getTime();
+    const ageDays = Number.isFinite(createdMs)
+        ? (Date.now() - createdMs) / (24 * 60 * 60 * 1000)
+        : 0;
+
+    if (ageDays < 2) {
+        return {
+            maturity: 'new',
+            ageDays: Math.round(ageDays * 10) / 10,
+            budgetFactor: 0.3,
+            forceRandomActivityFirst: true,
+        };
+    }
+
+    if (ageDays < 7) {
+        return {
+            maturity: 'warm',
+            ageDays: Math.round(ageDays * 10) / 10,
+            budgetFactor: 0.6,
+            forceRandomActivityFirst: false,
+        };
+    }
+
+    return {
+        maturity: 'established',
+        ageDays: Math.round(ageDays * 10) / 10,
+        budgetFactor: 1.0,
+        forceRandomActivityFirst: false,
+    };
+}

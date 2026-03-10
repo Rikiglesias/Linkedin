@@ -2,6 +2,7 @@ import {
     clickWithFallback,
     contextualReadingPause,
     detectChallenge,
+    dismissKnownOverlays,
     humanDelay,
     humanMouseMove,
     simulateHumanReading,
@@ -9,13 +10,16 @@ import {
 } from '../browser';
 import { transitionLead } from '../core/leadStateService';
 import {
+    checkAndIncrementDailyLimit,
     countRecentMessageHash,
+    getDailyStat,
     getLeadById,
     incrementDailyStat,
     incrementListDailyStat,
     recordLeadTimingAttribution,
     storeMessageHash,
 } from '../core/repositories';
+import { config } from '../config';
 import { joinSelectors, SELECTORS } from '../selectors';
 import { MessageJobPayload } from '../types/domain';
 import { hashMessage, validateMessageContent } from '../validation/messageValidator';
@@ -45,24 +49,35 @@ export async function processMessageJob(
         return workerResult(1);
     }
 
+    // Pre-flight cap check (read-only): evita navigazione + typing se il cap è già raggiunto
+    if (!context.dryRun) {
+        const currentMessages = await getDailyStat(context.localDate, 'messages_sent');
+        if (currentMessages >= config.hardMsgCap) {
+            await logInfo('message.daily_cap_reached', { leadId: lead.id, cap: config.hardMsgCap });
+            return workerResult(0);
+        }
+    }
+
     let message = '';
     let messageSource: 'template' | 'ai' = 'ai';
     let messageModel: string | null = null;
 
-    if (isCampaignDriven && payload.metadata_json) {
+    let lang: string | undefined;
+    if (payload.metadata_json) {
         try {
             const meta = JSON.parse(payload.metadata_json);
-            if (meta.message) {
+            if (isCampaignDriven && meta.message) {
                 message = meta.message;
                 messageSource = 'template';
             }
+            if (meta.lang) lang = meta.lang;
         } catch {
             // ignore JSON parse error in metadata
         }
     }
 
     if (!message) {
-        const personalized = await buildPersonalizedFollowUpMessage(lead);
+        const personalized = await buildPersonalizedFollowUpMessage(lead, lang);
         message = personalized.message;
         messageSource = personalized.source as 'template' | 'ai';
         messageModel = personalized.model;
@@ -96,6 +111,9 @@ export async function processMessageJob(
         }
     }
 
+    // Chiudi overlay LinkedIn prima di cercare il bottone messaggio
+    await dismissKnownOverlays(context.session.page);
+
     await humanMouseMove(context.session.page, joinSelectors('messageButton'));
     await humanDelay(context.session.page, 120, 320);
     await clickWithFallback(context.session.page, SELECTORS.messageButton, 'messageButton', {
@@ -120,6 +138,13 @@ export async function processMessageJob(
     await humanDelay(context.session.page, 800, 1600);
 
     if (!context.dryRun) {
+        // Atomic daily cap check: incrementa solo se sotto il limite
+        const withinCap = await checkAndIncrementDailyLimit(context.localDate, 'messages_sent', config.hardMsgCap);
+        if (!withinCap) {
+            await logInfo('message.daily_cap_reached', { leadId: lead.id, cap: config.hardMsgCap });
+            return workerResult(0);
+        }
+
         const sendBtn = context.session.page.locator(joinSelectors('messageSendButton')).first();
         if ((await sendBtn.count()) === 0 || (await sendBtn.isDisabled())) {
             await incrementDailyStat(context.localDate, 'selector_failures');
@@ -157,7 +182,10 @@ export async function processMessageJob(
         isCampaignDriven,
     });
     await storeMessageHash(lead.id, messageHash);
-    await incrementDailyStat(context.localDate, 'messages_sent');
+    // messages_sent already incremented atomically by checkAndIncrementDailyLimit (non dry-run)
+    if (context.dryRun) {
+        await incrementDailyStat(context.localDate, 'messages_sent');
+    }
     await incrementListDailyStat(context.localDate, lead.list_name, 'messages_sent');
     // Cloud sync non-bloccante
     bridgeLeadStatus(lead.linkedin_url, 'MESSAGED', { messaged_at: new Date().toISOString() });

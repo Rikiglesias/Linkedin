@@ -49,6 +49,11 @@ export interface LeadRecord {
     confidence_score: number | null;
     email?: string | null;
     phone?: string | null;
+    location?: string | null;
+    salesnav_url?: string | null;
+    company_domain?: string | null;
+    business_email?: string | null;
+    business_email_confidence?: number | null;
     created_at: string;
     updated_at: string | null;
 }

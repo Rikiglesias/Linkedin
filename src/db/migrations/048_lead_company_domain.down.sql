@@ -1,0 +1,4 @@
+-- Down migration 048: SQLite does not support DROP COLUMN easily.
+-- To reverse: recreate leads table without company_domain column.
+-- ALTER TABLE leads DROP COLUMN company_domain;
+-- ALTER TABLE lead_enrichment_data DROP COLUMN domain_source;

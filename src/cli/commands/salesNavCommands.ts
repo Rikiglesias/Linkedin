@@ -22,9 +22,10 @@ import {
     linkLeadToSalesNavList,
     upsertSalesNavList,
     updateLeadLinkedinUrl,
+    updateLeadProfileData,
 } from '../../core/repositories';
 import { reconcileLeadStatus } from '../../core/leadStateService';
-import { runSalesNavigatorListSync } from '../../core/salesNavigatorSync';
+import { runSalesNavigatorListSync, formatFinalReport } from '../../core/salesNavigatorSync';
 import {
     runSalesNavBulkSave,
 } from '../../salesnav/bulkSaveOrchestrator';
@@ -36,6 +37,14 @@ import { sendTelegramAlert } from '../../telemetry/alerts';
 
 // ─── Tipi locali ──────────────────────────────────────────────────────────────
 
+interface SalesNavProfileData {
+    firstName: string | null;
+    lastName: string | null;
+    headline: string | null;
+    company: string | null;
+    location: string | null;
+}
+
 interface SalesNavResolveItem {
     leadId: number;
     status: string;
@@ -43,6 +52,7 @@ interface SalesNavResolveItem {
     resolvedProfileUrl: string | null;
     action: 'resolved' | 'updated' | 'conflict' | 'unresolved' | 'challenge_detected' | 'error';
     conflictLeadId?: number | null;
+    profileData?: SalesNavProfileData | null;
     error?: string;
 }
 
@@ -50,6 +60,7 @@ interface SalesNavResolveReport {
     scanned: number;
     resolvable: number;
     updated: number;
+    enriched: number;
     conflicts: number;
     unresolved: number;
     challengeDetected: boolean;
@@ -105,6 +116,48 @@ function pickResolvedProfileUrl(candidates: string[]): string | null {
     return null;
 }
 
+async function extractSalesNavProfileData(page: Page): Promise<SalesNavProfileData> {
+    return page.evaluate(() => {
+        const text = (sel: string): string | null => {
+            const el = document.querySelector(sel);
+            return el?.textContent?.trim() || null;
+        };
+
+        // SalesNav profile topcard selectors (multiple fallbacks)
+        const firstName =
+            text('[data-anonymize="person-name"]')?.split(/\s+/)[0] ??
+            text('.profile-topcard-person-entity__name')?.split(/\s+/)[0] ??
+            null;
+
+        const fullName =
+            text('[data-anonymize="person-name"]') ??
+            text('.profile-topcard-person-entity__name') ??
+            null;
+        const lastName = fullName ? fullName.split(/\s+/).slice(1).join(' ') || null : null;
+
+        const headline =
+            text('.profile-topcard__summary-position') ??
+            text('[data-anonymize="headline"]') ??
+            text('.profile-topcard__headline') ??
+            null;
+
+        const company =
+            text('[data-anonymize="company-name"]') ??
+            text('.profile-topcard__summary-company') ??
+            text('.profile-topcard-person-entity__summary-position-company') ??
+            null;
+
+        const location =
+            text('[data-anonymize="location"]') ??
+            text('[data-anonymize="geography"]') ??
+            text('.profile-topcard__location-data') ??
+            text('.profile-topcard-person-entity__location') ??
+            null;
+
+        return { firstName, lastName, headline, company, location };
+    });
+}
+
 function getRecoveryStatusFromBlockedReason(
     reason: string | null,
 ): 'READY_INVITE' | 'INVITED' | 'READY_MESSAGE' | null {
@@ -140,31 +193,9 @@ function hasNpmConfigFlag(name: string): boolean {
     return raw === 'true' || raw === '1';
 }
 
-async function waitForEnter(): Promise<void> {
-    await new Promise<void>((resolve) => {
-        process.stdin.resume();
-        process.stdin.setEncoding('utf8');
-        process.stdin.once('data', () => resolve());
-    });
-}
-
-async function readLineFromStdin(prompt: string): Promise<string> {
-    return new Promise<string>((resolve) => {
-        process.stdout.write(prompt);
-        process.stdin.resume();
-        process.stdin.setEncoding('utf8');
-        let buffer = '';
-        const onData = (chunk: string) => {
-            buffer += chunk;
-            const newlineIndex = buffer.indexOf('\n');
-            if (newlineIndex !== -1) {
-                process.stdin.removeListener('data', onData);
-                resolve(buffer.slice(0, newlineIndex).replace(/\r/g, '').trim());
-            }
-        };
-        process.stdin.on('data', onData);
-    });
-}
+// Re-export da stdinHelper per backward-compat locale
+import { waitForEnter, readLineFromStdin } from '../stdinHelper';
+export { waitForEnter, readLineFromStdin };
 
 async function askUserToChooseList(): Promise<string> {
     const lists = await listSalesNavLists(50);
@@ -250,7 +281,7 @@ async function waitForManualLinkedInLogin(page: Page, timeoutSeconds: number = 3
  * gestisce login manuale, blocca input utente.
  * Usato da tutti i comandi SalesNav che aprono il browser.
  */
-async function ensureSalesNavSession(args: string[]) {
+async function ensureSalesNavSession(args: string[], opts?: { interactive?: boolean }) {
     const accountId =
         getOptionValue(args, '--account') ?? getNpmConfigOptionValue('account') ?? config.salesNavSyncAccountId;
     const noProxy = hasOption(args, '--no-proxy');
@@ -280,9 +311,13 @@ async function ensureSalesNavSession(args: string[]) {
         await waitForManualLinkedInLogin(session.page);
     }
 
-    // Blocca SEMPRE input utente dopo login
-    await blockUserInput(session.page);
-    console.log('[OK] Input bloccato. Avvio automazione...');
+    // Blocca input utente dopo login — skip in interactive per mouse libero
+    if (!opts?.interactive) {
+        await blockUserInput(session.page);
+        console.log('[OK] Input bloccato. Avvio automazione...');
+    } else {
+        console.log('[OK] Avvio automazione (mouse libero)...');
+    }
 
     return { session, account };
 }
@@ -315,6 +350,8 @@ export async function runSalesNavSyncCommand(args: string[]): Promise<void> {
         interactive,
         noProxy,
     });
+    console.log(formatFinalReport(report));
+    console.log('\n[JSON completo]');
     console.log(JSON.stringify(report, null, 2));
 }
 
@@ -440,6 +477,7 @@ export async function runSalesNavResolveCommand(args: string[]): Promise<void> {
         scanned: 0,
         resolvable: 0,
         updated: 0,
+        enriched: 0,
         conflicts: 0,
         unresolved: 0,
         challengeDetected: false,
@@ -473,7 +511,10 @@ export async function runSalesNavResolveCommand(args: string[]): Promise<void> {
                     break;
                 }
 
-                const candidates = await collectProfileUrlCandidates(session.page);
+                const [candidates, profileData] = await Promise.all([
+                    collectProfileUrlCandidates(session.page),
+                    extractSalesNavProfileData(session.page),
+                ]);
                 const resolvedProfileUrl = pickResolvedProfileUrl(candidates);
                 if (!resolvedProfileUrl) {
                     report.unresolved += 1;
@@ -482,6 +523,7 @@ export async function runSalesNavResolveCommand(args: string[]): Promise<void> {
                         status: lead.status,
                         currentUrl: lead.linkedin_url,
                         resolvedProfileUrl: null,
+                        profileData,
                         action: 'unresolved',
                     });
                     continue;
@@ -494,6 +536,7 @@ export async function runSalesNavResolveCommand(args: string[]): Promise<void> {
                         status: lead.status,
                         currentUrl: lead.linkedin_url,
                         resolvedProfileUrl,
+                        profileData,
                         action: 'resolved',
                     });
                     continue;
@@ -501,6 +544,19 @@ export async function runSalesNavResolveCommand(args: string[]): Promise<void> {
 
                 const updated = await updateLeadLinkedinUrl(lead.id, resolvedProfileUrl);
                 if (updated.updated) {
+                    // Enrich lead with profile data extracted from SalesNav page
+                    const hasProfileData =
+                        profileData.firstName || profileData.lastName || profileData.headline || profileData.company;
+                    if (hasProfileData) {
+                        await updateLeadProfileData(lead.id, {
+                            firstName: profileData.firstName ?? undefined,
+                            lastName: profileData.lastName ?? undefined,
+                            jobTitle: profileData.headline ?? undefined,
+                            about: profileData.company ? `Company: ${profileData.company}` : undefined,
+                        });
+                        report.enriched += 1;
+                    }
+
                     const recoveryStatus =
                         lead.status === 'BLOCKED' ? getRecoveryStatusFromBlockedReason(lead.blocked_reason) : null;
                     if (recoveryStatus) {
@@ -515,6 +571,7 @@ export async function runSalesNavResolveCommand(args: string[]): Promise<void> {
                         status: lead.status,
                         currentUrl: lead.linkedin_url,
                         resolvedProfileUrl,
+                        profileData,
                         action: 'updated',
                     });
                 } else {
@@ -524,6 +581,7 @@ export async function runSalesNavResolveCommand(args: string[]): Promise<void> {
                         status: lead.status,
                         currentUrl: lead.linkedin_url,
                         resolvedProfileUrl,
+                        profileData,
                         action: 'conflict',
                         conflictLeadId: updated.conflictLeadId,
                     });
@@ -651,6 +709,12 @@ export async function runSalesNavUnifiedCommand(args: string[]): Promise<void> {
         // Rimuovi il sotto-comando dagli args e passa il resto
         const subArgs = args.filter((a) => a.toLowerCase() !== subCommand);
         await handler(subArgs);
+    } else if (subCommand && !subCommand.startsWith('http') && !/^\d+$/.test(subCommand)) {
+        // Primo argomento non è un sotto-comando valido, né un URL né un numero
+        const validSubs = Object.keys(SALESNAV_SUBCOMMANDS).join(', ');
+        console.warn(`[WARN] Sotto-comando sconosciuto: "${subCommand}". Comandi validi: ${validSubs}`);
+        console.warn('[WARN] Fallback → salesnav save');
+        await runSalesNavBulkSaveCommand(args);
     } else {
         // Nessun sotto-comando → default bulk-save con tutti gli args
         await runSalesNavBulkSaveCommand(args);

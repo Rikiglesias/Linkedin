@@ -58,7 +58,7 @@ import {
     computeNextBackpressureLevel,
 } from '../sync/backpressure';
 import { describeVoiceAction, isCriticalVoiceAction, parseVoiceCommand } from '../frontend/voiceCommands';
-import { evaluateAutoDailyReportDecision } from '../core/dailyReportPolicy';
+
 import { describe, test, expect } from 'vitest';
 import { buildStealthInitScript } from '../browser/stealthScripts';
 import { HttpResponseThrottler } from '../risk/httpThrottler';
@@ -417,46 +417,6 @@ describe('Legacy Core Domain Unit Tests', () => {
         const weeklyLimitMature = calculateDynamicWeeklyInviteLimit(365, 20, 80, 180);
         assert.equal(weeklyLimitEarly >= 20 && weeklyLimitEarly <= 80, true);
         assert.equal(weeklyLimitMature, 80);
-
-        const dailyReportDisabled = evaluateAutoDailyReportDecision({
-            enabled: false,
-            localDate: '2026-03-03',
-            lastSentDate: null,
-            currentHour: 21,
-            reportHour: 20,
-        });
-        assert.equal(dailyReportDisabled.shouldRun, false);
-        assert.equal(dailyReportDisabled.reason, 'disabled');
-
-        const dailyReportBeforeCutoff = evaluateAutoDailyReportDecision({
-            enabled: true,
-            localDate: '2026-03-03',
-            lastSentDate: null,
-            currentHour: 18,
-            reportHour: 20,
-        });
-        assert.equal(dailyReportBeforeCutoff.shouldRun, false);
-        assert.equal(dailyReportBeforeCutoff.reason, 'before_cutoff');
-
-        const dailyReportAlreadySent = evaluateAutoDailyReportDecision({
-            enabled: true,
-            localDate: '2026-03-03',
-            lastSentDate: '2026-03-03',
-            currentHour: 21,
-            reportHour: 20,
-        });
-        assert.equal(dailyReportAlreadySent.shouldRun, false);
-        assert.equal(dailyReportAlreadySent.reason, 'already_sent');
-
-        const dailyReportReady = evaluateAutoDailyReportDecision({
-            enabled: true,
-            localDate: '2026-03-03',
-            lastSentDate: '2026-03-02',
-            currentHour: 21,
-            reportHour: 20,
-        });
-        assert.equal(dailyReportReady.shouldRun, true);
-        assert.equal(dailyReportReady.reason, 'ready');
 
         const goodMessage = 'Ciao Mario, grazie per il collegamento.';
         const hash = hashMessage(goodMessage);

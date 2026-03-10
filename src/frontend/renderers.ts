@@ -5,6 +5,8 @@ import {
     CommentSuggestionQueueResponse,
     IncidentRecord,
     KpiResponse,
+    LeadSearchRecord,
+    LeadTimelineEvent,
     OperationalSloSnapshot,
     PredictiveRiskResponse,
     ReviewQueueResponse,
@@ -234,8 +236,8 @@ export function renderIncidents(incidents: IncidentRecord[], selectedIds: Set<nu
             incident.severity === 'CRITICAL'
                 ? 'pill-danger'
                 : incident.severity === 'WARN'
-                  ? 'pill-warning'
-                  : 'pill-info';
+                    ? 'pill-warning'
+                    : 'pill-info';
         severityCell.appendChild(statusPill(incident.severity, severityClass));
 
         const detailsCell = document.createElement('td');
@@ -551,5 +553,123 @@ function populateSelect(id: string, values: string[]): void {
         select.value = previousValue;
     } else {
         select.value = 'all';
+    }
+}
+
+// ─── Lead Search ──────────────────────────────────────────────────────────────
+
+export function renderLeadSearchResults(
+    leads: LeadSearchRecord[],
+    total: number,
+    page: number,
+    pageSize: number,
+    onPageChange: (page: number) => void,
+    onLeadClick: (id: number) => void,
+): void {
+    const tbody = byId<HTMLTableSectionElement>('lead-search-tbody');
+    const info = byId<HTMLElement>('lead-search-info');
+    const pager = byId<HTMLElement>('lead-search-pager');
+    clearChildren(tbody);
+    clearChildren(pager);
+
+    if (leads.length === 0) {
+        info.textContent = total === 0 ? 'Nessun risultato' : 'Caricamento...';
+        return;
+    }
+
+    const totalPages = Math.ceil(total / pageSize);
+    info.textContent = `${total} lead trovati — Pagina ${page}/${totalPages}`;
+
+    for (const lead of leads) {
+        const tr = document.createElement('tr');
+        tr.style.cursor = 'pointer';
+        tr.addEventListener('click', () => onLeadClick(lead.id));
+
+        const fullName = [lead.first_name, lead.last_name].filter(Boolean).join(' ') || '—';
+        tr.appendChild(createCell(fullName));
+        tr.appendChild(createCell(lead.account_name ?? '—'));
+        tr.appendChild(createCell(lead.job_title ?? '—'));
+
+        const statusTd = document.createElement('td');
+        statusTd.appendChild(statusPill(lead.status, `pill-${lead.status.toLowerCase()}`));
+        tr.appendChild(statusTd);
+
+        tr.appendChild(createCell(lead.list_name ?? '—'));
+        tr.appendChild(createCell(lead.lead_score !== null && lead.lead_score !== undefined ? String(lead.lead_score) : '—'));
+        tr.appendChild(createCell(lead.updated_at ? formatDate(lead.updated_at) : '—'));
+        tbody.appendChild(tr);
+    }
+
+    if (totalPages > 1) {
+        if (page > 1) {
+            const prev = document.createElement('button');
+            prev.textContent = '← Precedente';
+            prev.className = 'btn btn-small';
+            prev.addEventListener('click', () => onPageChange(page - 1));
+            pager.appendChild(prev);
+        }
+        const span = document.createElement('span');
+        span.textContent = ` ${page} / ${totalPages} `;
+        span.style.margin = '0 0.5rem';
+        pager.appendChild(span);
+        if (page < totalPages) {
+            const next = document.createElement('button');
+            next.textContent = 'Successiva →';
+            next.className = 'btn btn-small';
+            next.addEventListener('click', () => onPageChange(page + 1));
+            pager.appendChild(next);
+        }
+    }
+}
+
+export function renderLeadDetail(
+    lead: LeadSearchRecord,
+    timeline: LeadTimelineEvent[],
+): void {
+    const container = byId<HTMLElement>('lead-detail-content');
+    clearChildren(container);
+
+    const fullName = [lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Unknown';
+
+    const header = document.createElement('h3');
+    header.textContent = fullName;
+    container.appendChild(header);
+
+    const meta = document.createElement('div');
+    meta.className = 'lead-detail-meta';
+    meta.innerHTML = `
+        <p><strong>Azienda:</strong> ${lead.account_name ?? '—'}</p>
+        <p><strong>Titolo:</strong> ${lead.job_title ?? '—'}</p>
+        <p><strong>Stato:</strong> ${lead.status}</p>
+        <p><strong>Lista:</strong> ${lead.list_name ?? '—'}</p>
+        <p><strong>Score:</strong> ${lead.lead_score ?? '—'}</p>
+        <p><strong>Email:</strong> ${lead.email ?? '—'}</p>
+        <p><strong>LinkedIn:</strong> <a href="${lead.linkedin_url}" target="_blank" rel="noopener">${lead.linkedin_url}</a></p>
+    `;
+    container.appendChild(meta);
+
+    if (timeline.length > 0) {
+        const timelineHeader = document.createElement('h4');
+        timelineHeader.textContent = 'Timeline';
+        timelineHeader.style.marginTop = '1rem';
+        container.appendChild(timelineHeader);
+
+        const table = document.createElement('table');
+        table.className = 'compact-table';
+        const thead = document.createElement('thead');
+        thead.innerHTML = '<tr><th>Da</th><th>A</th><th>Motivo</th><th>Data</th></tr>';
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        for (const evt of timeline) {
+            const tr = document.createElement('tr');
+            tr.appendChild(createCell(evt.from_status));
+            tr.appendChild(createCell(evt.to_status));
+            tr.appendChild(createCell(evt.reason));
+            tr.appendChild(createCell(formatDate(evt.created_at)));
+            tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+        container.appendChild(table);
     }
 }

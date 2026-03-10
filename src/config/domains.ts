@@ -271,6 +271,7 @@ export function buildCommsAndBusinessDomainConfig() {
         salesforceInstanceUrl: parseStringEnv('SALESFORCE_INSTANCE_URL'),
         salesforceClientId: parseStringEnv('SALESFORCE_CLIENT_ID'),
         salesforceClientSecret: parseStringEnv('SALESFORCE_CLIENT_SECRET'),
+        apolloApiKey: parseStringEnv('APOLLO_API_KEY'),
         hunterApiKey: parseStringEnv('HUNTER_API_KEY'),
         clearbitApiKey: parseStringEnv('CLEARBIT_API_KEY'),
         followUpDelayDays: Math.max(1, parseIntEnv('FOLLOW_UP_DELAY_DAYS', 5)),
@@ -302,7 +303,7 @@ export function buildProxyDomainConfig() {
         proxyProviderApiKey: parseStringEnv('PROXY_PROVIDER_API_KEY'),
         proxyTorSocks5Url: parseStringEnv('TOR_SOCKS5_URL', 'socks5://127.0.0.1:9050'),
         fingerprintApiEndpoint: parseStringEnv('FINGERPRINT_API_ENDPOINT'),
-        mobileProbability: Math.min(1, Math.max(0, parseFloatEnv('MOBILE_PROBABILITY', 0.3))),
+        mobileProbability: Math.min(1, Math.max(0, parseFloatEnv('MOBILE_PROBABILITY', 0))),
         useJa3Proxy: parseBoolEnv('USE_JA3_PROXY', false),
         ja3ProxyPort: Math.max(1, parseIntEnv('JA3_PROXY_PORT', 8080)),
         ja3Fingerprint: parseStringEnv(
@@ -346,6 +347,14 @@ export function buildVisionDomainConfig() {
             return list.length > 0 ? list : ['canvas', 'webgl', 'hwconcurrency', 'plugins'];
         })(),
         warmupTwoSessionsPerDay: parseBoolEnv('WARMUP_TWO_SESSIONS_PER_DAY', false),
+        weeklyStrategyEnabled: parseBoolEnv('WEEKLY_STRATEGY_ENABLED', true),
+        growthModelEnabled: parseBoolEnv('GROWTH_MODEL_ENABLED', true),
+        growthBrowseOnlyDays: Math.max(0, parseIntEnv('GROWTH_BROWSE_ONLY_DAYS', 7)),
+        growthSoftOutreachDays: Math.max(1, parseIntEnv('GROWTH_SOFT_OUTREACH_DAYS', 14)),
+        growthSoftOutreachInviteMax: Math.max(1, parseIntEnv('GROWTH_SOFT_OUTREACH_INVITE_MAX', 5)),
+        growthModerateGrowthDays: Math.max(1, parseIntEnv('GROWTH_MODERATE_GROWTH_DAYS', 21)),
+        growthModerateGrowthInviteMax: Math.max(1, parseIntEnv('GROWTH_MODERATE_GROWTH_INVITE_MAX', 10)),
+        growthModerateGrowthMessageMax: Math.max(1, parseIntEnv('GROWTH_MODERATE_GROWTH_MESSAGE_MAX', 5)),
         ollamaEndpoint: parseStringEnv('OLLAMA_ENDPOINT', 'http://127.0.0.1:11434'),
     };
 }

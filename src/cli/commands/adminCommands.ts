@@ -470,9 +470,95 @@ export async function runPrivacyCleanupCommand(args: string[]): Promise<void> {
     console.log(JSON.stringify({ retentionDays: days, ...result }, null, 2));
 }
 
+export async function runDbAnalyzeCommand(): Promise<void> {
+    const { getDatabase } = await import('../../db');
+    const db = await getDatabase();
+
+    const TOP_QUERIES = [
+        'SELECT * FROM leads WHERE status = ? AND list_name = ? ORDER BY updated_at LIMIT 10',
+        'SELECT * FROM job_queue WHERE status = ? AND type = ? ORDER BY priority DESC, created_at ASC LIMIT 10',
+        'SELECT count(*) FROM leads WHERE status = ?',
+        'SELECT * FROM daily_stats WHERE date = ?',
+        'SELECT * FROM campaign_runs ORDER BY start_time DESC LIMIT 10',
+        'SELECT * FROM leads WHERE linkedin_url = ?',
+        'SELECT * FROM runtime_flags WHERE key = ?',
+        'SELECT name, applied_at FROM _migrations ORDER BY name',
+        'SELECT * FROM incidents WHERE status = ? ORDER BY opened_at DESC LIMIT 10',
+        'SELECT * FROM session_patterns WHERE account_id = ? ORDER BY date DESC LIMIT 7',
+    ];
+
+    console.log('LinkedIn Bot — Database Query Analysis');
+    console.log('═══════════════════════════════════════════════════════');
+
+    for (const query of TOP_QUERIES) {
+        console.log(`\nQuery: ${query.slice(0, 80)}${query.length > 80 ? '...' : ''}`);
+        try {
+            const plan = await db.query<Record<string, unknown>>(`EXPLAIN QUERY PLAN ${query}`);
+            if (plan.length === 0) {
+                console.log('  (vuoto)');
+            }
+            for (const row of plan) {
+                const detail = row.detail ?? JSON.stringify(row);
+                const isFullScan = String(detail).includes('SCAN') && !String(detail).includes('INDEX');
+                const marker = isFullScan ? ' [FULL SCAN]' : '';
+                console.log(`  ${detail}${marker}`);
+            }
+        } catch (e) {
+            console.log(`  Errore: ${e instanceof Error ? e.message : e}`);
+        }
+    }
+
+    console.log('\n═══════════════════════════════════════════════════════');
+    console.log('Dimensioni tabelle:');
+    try {
+        const tables = await db.query<{ name: string }>(
+            `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`,
+        );
+        for (const t of tables) {
+            const rows = await db.query<{ cnt: number }>(`SELECT count(*) as cnt FROM "${t.name}"`);
+            console.log(`  ${t.name.padEnd(30)} ${rows[0]?.cnt ?? 0} righe`);
+        }
+    } catch (e) {
+        console.log(`  Errore: ${e instanceof Error ? e.message : e}`);
+    }
+}
+
 export async function runDbBackupCommand(): Promise<void> {
     console.log('Avvio backup database manuale (con checksum + retention)...');
     await runBackup();
+}
+
+export async function runDbRollbackCommand(args: string[]): Promise<void> {
+    const { rollbackMigration, listAppliedMigrations } = await import('../../db');
+    const { getOptionValue, getPositionalArgs } = await import('../cliParser');
+
+    const positional = getPositionalArgs(args);
+    const migrationName = getOptionValue(args, '--migration') ?? positional[0];
+
+    if (!migrationName) {
+        console.log('Uso: db-rollback <migration_name.sql> | --migration <name>');
+        console.log('\nMigration applicate:');
+        const applied = await listAppliedMigrations();
+        for (const m of applied) {
+            console.log(`  ${m.name}  (applicata: ${m.applied_at})`);
+        }
+        return;
+    }
+
+    const name = migrationName.endsWith('.sql') ? migrationName : `${migrationName}.sql`;
+    console.log(`Tentativo rollback: ${name}`);
+
+    try {
+        const ok = await rollbackMigration(name);
+        if (ok) {
+            console.log(`Rollback completato: ${name}`);
+        } else {
+            console.warn(`Nessun file .down.sql trovato per ${name}. Rollback manuale richiesto.`);
+        }
+    } catch (error) {
+        console.error(`Errore rollback ${name}:`, error instanceof Error ? error.message : error);
+        process.exitCode = 1;
+    }
 }
 
 export async function runCompanyTargetsCommand(args: string[]): Promise<void> {

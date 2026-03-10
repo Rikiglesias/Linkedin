@@ -64,20 +64,20 @@ export async function listLeadCampaignConfigs(onlyActive: boolean = false): Prom
     const db = await getDatabase();
     const rows = onlyActive
         ? await db.query<LeadListRow>(
-              `
+            `
             SELECT name, source, is_active, priority, daily_invite_cap, daily_message_cap, scoring_criteria, created_at
             FROM lead_lists
             WHERE is_active = 1
             ORDER BY priority ASC, created_at ASC, name ASC
         `,
-          )
+        )
         : await db.query<LeadListRow>(
-              `
+            `
             SELECT name, source, is_active, priority, daily_invite_cap, daily_message_cap, scoring_criteria, created_at
             FROM lead_lists
             ORDER BY is_active DESC, priority ASC, created_at ASC, name ASC
         `,
-          );
+        );
 
     return rows.map(normalizeLeadListRow);
 }
@@ -376,6 +376,8 @@ export async function upsertSalesNavigatorLead(
         const normalizedLastName = normalizeTextValue(input.lastName);
         const normalizedJobTitle = normalizeTextValue(input.jobTitle);
         const normalizedWebsite = normalizeTextValue(input.website);
+        const normalizedLocation = normalizeTextValue(input.location ?? '');
+        const normalizedSalesnavUrl = normalizeTextValue(input.salesnavUrl ?? '');
 
         let leadId = 0;
         let action: UpsertSalesNavigatorLeadResult['action'] = 'unchanged';
@@ -384,8 +386,8 @@ export async function upsertSalesNavigatorLead(
             const insertResult = await db.run(
                 `
                 INSERT INTO leads
-                    (account_name, first_name, last_name, job_title, website, linkedin_url, status, list_name, about, experience, invite_prompt_variant, lead_score, confidence_score)
-                VALUES (?, ?, ?, ?, ?, ?, 'NEW', ?, NULL, NULL, NULL, ?, ?)
+                    (account_name, first_name, last_name, job_title, website, linkedin_url, status, list_name, about, experience, invite_prompt_variant, lead_score, confidence_score, location, salesnav_url)
+                VALUES (?, ?, ?, ?, ?, ?, 'NEW', ?, NULL, NULL, NULL, ?, ?, ?, ?)
             `,
                 [
                     normalizedAccountName,
@@ -397,6 +399,8 @@ export async function upsertSalesNavigatorLead(
                     listName,
                     input.leadScore ?? null,
                     input.confidenceScore ?? null,
+                    normalizedLocation || null,
+                    normalizedSalesnavUrl || null,
                 ],
             );
             leadId = insertResult.lastID ?? 0;
@@ -410,6 +414,10 @@ export async function upsertSalesNavigatorLead(
             const nextWebsite = normalizeTextValue(existing.website)
                 ? existing.website
                 : mergedLeadValue(existing.website, normalizedWebsite);
+            const nextLocation = mergedLeadValue(existing.location ?? '', normalizedLocation);
+            const nextSalesnavUrl = normalizeTextValue(existing.salesnav_url ?? '')
+                ? (existing.salesnav_url ?? '')
+                : mergedLeadValue(existing.salesnav_url ?? '', normalizedSalesnavUrl);
             const nextListName = listName;
 
             const changed =
@@ -418,6 +426,8 @@ export async function upsertSalesNavigatorLead(
                 nextLastName !== existing.last_name ||
                 nextJobTitle !== existing.job_title ||
                 nextWebsite !== existing.website ||
+                nextLocation !== (existing.location ?? '') ||
+                nextSalesnavUrl !== (existing.salesnav_url ?? '') ||
                 nextListName !== existing.list_name;
 
             if (changed) {
@@ -430,10 +440,12 @@ export async function upsertSalesNavigatorLead(
                         job_title = ?,
                         website = ?,
                         list_name = ?,
+                        location = ?,
+                        salesnav_url = ?,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
                 `,
-                    [nextAccountName, nextFirstName, nextLastName, nextJobTitle, nextWebsite, nextListName, leadId],
+                    [nextAccountName, nextFirstName, nextLastName, nextJobTitle, nextWebsite, nextListName, nextLocation || null, nextSalesnavUrl || null, leadId],
                 );
                 action = 'updated';
             }
@@ -495,8 +507,8 @@ export async function countCompanyTargets(listName?: string): Promise<number> {
     const db = await getDatabase();
     const row = listName
         ? await db.get<{ total: number }>(`SELECT COUNT(*) as total FROM company_targets WHERE list_name = ?`, [
-              listName,
-          ])
+            listName,
+        ])
         : await db.get<{ total: number }>(`SELECT COUNT(*) as total FROM company_targets`);
     return row?.total ?? 0;
 }
@@ -637,6 +649,50 @@ export async function updateLeadPromptVariant(leadId: number, variant: string | 
     );
 }
 
+export interface UpdateLeadProfileDataInput {
+    firstName?: string | null;
+    lastName?: string | null;
+    jobTitle?: string | null;
+    about?: string | null;
+}
+
+export async function updateLeadProfileData(
+    leadId: number,
+    data: UpdateLeadProfileDataInput,
+): Promise<boolean> {
+    const db = await getDatabase();
+    const sets: string[] = [];
+    const params: unknown[] = [];
+
+    if (data.firstName !== undefined) {
+        sets.push('first_name = COALESCE(NULLIF(first_name, \'\'), ?)');
+        params.push(data.firstName);
+    }
+    if (data.lastName !== undefined) {
+        sets.push('last_name = COALESCE(NULLIF(last_name, \'\'), ?)');
+        params.push(data.lastName);
+    }
+    if (data.jobTitle !== undefined) {
+        sets.push('job_title = COALESCE(NULLIF(job_title, \'\'), ?)');
+        params.push(data.jobTitle);
+    }
+    if (data.about !== undefined) {
+        sets.push('about = COALESCE(NULLIF(about, \'\'), ?)');
+        params.push(data.about);
+    }
+
+    if (sets.length === 0) return false;
+
+    sets.push('updated_at = CURRENT_TIMESTAMP');
+    params.push(leadId);
+
+    const result = await db.run(
+        `UPDATE leads SET ${sets.join(', ')} WHERE id = ?`,
+        params,
+    );
+    return (result.changes ?? 0) > 0;
+}
+
 export async function updateLeadScores(
     leadId: number,
     leadScore: number | null,
@@ -652,6 +708,50 @@ export async function updateLeadScores(
         WHERE id = ?
     `,
         [leadScore, confidenceScore, leadId],
+    );
+}
+
+export interface UpsertLeadEnrichmentDataInput {
+    leadId: number;
+    companyJson: string | null;
+    phonesJson: string | null;
+    socialsJson: string | null;
+    seniority: string | null;
+    department: string | null;
+    dataPoints: number;
+    confidence: number;
+    sourcesJson: string | null;
+}
+
+export async function upsertLeadEnrichmentData(input: UpsertLeadEnrichmentDataInput): Promise<void> {
+    const db = await getDatabase();
+    await db.run(
+        `
+        INSERT INTO lead_enrichment_data
+            (lead_id, company_json, phones_json, socials_json, seniority, department, data_points, confidence, sources_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(lead_id) DO UPDATE SET
+            company_json = COALESCE(excluded.company_json, company_json),
+            phones_json  = COALESCE(excluded.phones_json, phones_json),
+            socials_json = COALESCE(excluded.socials_json, socials_json),
+            seniority    = COALESCE(excluded.seniority, seniority),
+            department   = COALESCE(excluded.department, department),
+            data_points  = excluded.data_points,
+            confidence   = excluded.confidence,
+            sources_json = excluded.sources_json,
+            updated_at   = CURRENT_TIMESTAMP
+    `,
+        [
+            input.leadId,
+            input.companyJson,
+            input.phonesJson,
+            input.socialsJson,
+            input.seniority,
+            input.department,
+            input.dataPoints,
+            input.confidence,
+            input.sourcesJson,
+        ],
     );
 }
 
@@ -954,17 +1054,26 @@ export async function getLeadsByStatusForList(
     status: LeadStatus,
     listName: string,
     limit: number,
+    minScore?: number,
 ): Promise<LeadRecord[]> {
     const db = await getDatabase();
     const normalized = normalizeLegacyStatus(status);
+    const params: unknown[] = [normalized, listName];
+    let scoreClause = '';
+    if (minScore !== null && minScore !== undefined && minScore > 0) {
+        scoreClause = 'AND lead_score IS NOT NULL AND lead_score >= ?';
+        params.push(minScore);
+    }
+    params.push(limit);
     const leads = await db.query<LeadRecord>(
         `
         SELECT ${LEAD_SELECT_COLUMNS}
         FROM leads
         WHERE status = ?
           AND list_name = ?
+          ${scoreClause}
           AND NOT EXISTS (
-              SELECT 1 
+              SELECT 1
               FROM lead_campaign_state lcs
               JOIN campaigns c ON lcs.campaign_id = c.id
               WHERE lcs.lead_id = leads.id
@@ -976,7 +1085,7 @@ export async function getLeadsByStatusForList(
             created_at ASC
         LIMIT ?
     `,
-        [normalized, listName, limit],
+        params,
     );
     return leads.map((lead) => ({ ...lead, status: normalizeLegacyStatus(lead.status) }));
 }
@@ -1036,10 +1145,10 @@ export async function setLeadStatus(
         normalized === 'INVITED'
             ? 'invited_at'
             : normalized === 'ACCEPTED'
-              ? 'accepted_at'
-              : normalized === 'MESSAGED'
-                ? 'messaged_at'
-                : null;
+                ? 'accepted_at'
+                : normalized === 'MESSAGED'
+                    ? 'messaged_at'
+                    : null;
 
     if (timestampColumn) {
         await db.run(
@@ -1077,5 +1186,109 @@ export async function appendLeadEvent(
         VALUES (?, ?, ?, ?, ?)
     `,
         [leadId, normalizeLegacyStatus(fromStatus), normalizeLegacyStatus(toStatus), reason, JSON.stringify(metadata)],
+    );
+}
+
+export interface SearchLeadsOptions {
+    query?: string;
+    status?: LeadStatus;
+    listName?: string;
+    page?: number;
+    pageSize?: number;
+}
+
+export interface SearchLeadsResult {
+    leads: LeadRecord[];
+    total: number;
+    page: number;
+    pageSize: number;
+}
+
+export async function searchLeads(opts: SearchLeadsOptions): Promise<SearchLeadsResult> {
+    const db = await getDatabase();
+    const page = Math.max(1, opts.page ?? 1);
+    const pageSize = Math.min(100, Math.max(1, opts.pageSize ?? 25));
+    const offset = (page - 1) * pageSize;
+
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (opts.query) {
+        const like = `%${opts.query}%`;
+        conditions.push(
+            `(first_name LIKE ? OR last_name LIKE ? OR account_name LIKE ? OR linkedin_url LIKE ? OR job_title LIKE ? OR email LIKE ?)`,
+        );
+        params.push(like, like, like, like, like, like);
+    }
+    if (opts.status) {
+        conditions.push(`status = ?`);
+        params.push(opts.status);
+    }
+    if (opts.listName) {
+        conditions.push(`list_name = ?`);
+        params.push(opts.listName);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const countRow = await db.get<{ total: number }>(
+        `SELECT COUNT(*) as total FROM leads ${whereClause}`,
+        params,
+    );
+    const total = countRow?.total ?? 0;
+
+    const leads = await db.query<LeadRecord>(
+        `SELECT ${LEAD_SELECT_COLUMNS} FROM leads ${whereClause} ORDER BY updated_at DESC LIMIT ? OFFSET ?`,
+        [...params, pageSize, offset],
+    );
+
+    for (const lead of leads) {
+        lead.status = normalizeLegacyStatus(lead.status);
+    }
+
+    return { leads, total, page, pageSize };
+}
+
+export async function getLeadTimeline(leadId: number): Promise<Array<{
+    from_status: string;
+    to_status: string;
+    reason: string;
+    metadata_json: string;
+    created_at: string;
+}>> {
+    const db = await getDatabase();
+    return db.query(
+        `SELECT from_status, to_status, reason, metadata_json, created_at
+         FROM lead_events WHERE lead_id = ? ORDER BY created_at DESC LIMIT 50`,
+        [leadId],
+    );
+}
+
+/**
+ * Ritorna lead che necessitano di enrichment:
+ * - Status NEW o READY_INVITE
+ * - Mai arricchiti (nessun record in lead_enrichment_data)
+ *   OPPURE arricchiti ma senza business email (solo email personale)
+ * Usato dallo scheduler per enqueue automatico di job ENRICHMENT.
+ */
+export async function getLeadsNeedingEnrichment(limit: number): Promise<Array<{ id: number }>> {
+    const db = await getDatabase();
+    const safeLimit = Math.max(1, Math.min(limit, 200));
+    return db.query<{ id: number }>(
+        `
+        SELECT l.id
+        FROM leads l
+        LEFT JOIN lead_enrichment_data e ON e.lead_id = l.id
+        WHERE l.status IN ('NEW', 'READY_INVITE', 'ACCEPTED')
+          AND (
+            e.lead_id IS NULL
+            OR (l.business_email IS NULL AND l.account_name IS NOT NULL AND TRIM(l.account_name) != '')
+          )
+        ORDER BY
+          CASE WHEN e.lead_id IS NULL THEN 0 ELSE 1 END,
+          l.created_at DESC
+        LIMIT ?
+        `,
+        [safeLimit],
     );
 }

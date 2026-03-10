@@ -299,7 +299,7 @@ export async function computerUseTask(
                 if (message) {
                     lastResponseText = message.content
                         .filter(c => c.type === 'output_text' && c.text)
-                        .map(c => c.text!)
+                        .map(c => c.text ?? '')
                         .join('\n');
                     console.log(`[COMPUTER USE] Modello risponde: "${lastResponseText.substring(0, 120)}"`);
                 }
@@ -313,9 +313,9 @@ export async function computerUseTask(
                 const action = computerCall.actions[i];
                 const actionDesc = action.type === 'click' ? `click(${action.x},${action.y})`
                     : action.type === 'type' ? `type("${action.text?.substring(0, 30)}")`
-                    : action.type === 'scroll' ? `scroll(${action.scroll_x},${action.scroll_y})`
-                    : action.type === 'keypress' ? `keypress(${action.keys?.join('+')})`
-                    : action.type;
+                        : action.type === 'scroll' ? `scroll(${action.scroll_x},${action.scroll_y})`
+                            : action.type === 'keypress' ? `keypress(${action.keys?.join('+')})`
+                                : action.type;
                 console.log(`  [${i + 1}/${computerCall.actions.length}] ${actionDesc}`);
 
                 options?.onAction?.(action, i);

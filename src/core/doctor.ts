@@ -297,6 +297,7 @@ export async function runDoctor(): Promise<DoctorReport> {
         const session = await launchBrowser({
             sessionDir: account.sessionDir,
             proxy: account.proxy,
+            forceDesktop: true,
         });
         try {
             const sessionLoginOk = await checkLogin(session.page);
