@@ -7,7 +7,7 @@
 import crypto from 'node:crypto';
 import { config } from '../config';
 import { randomElement } from '../utils/random';
-import { Fingerprint, desktopFingerprintPool, mobileFingerprintPool, pickRandomFingerprint } from '../fingerprint/pool';
+import { Fingerprint, desktopFingerprintPool, mobileFingerprintPool, pickDeterministicFingerprint } from '../fingerprint/pool';
 
 const FINGERPRINT_VERSION = '1';
 
@@ -26,7 +26,7 @@ export interface BrowserFingerprint extends Fingerprint {}
 
 function normalizeCloudFingerprint(input: CloudFingerprint, isMobile: boolean, accountId: string): BrowserFingerprint {
     const defaultPool = isMobile ? mobileFingerprintPool : desktopFingerprintPool;
-    const base = pickRandomFingerprint(defaultPool);
+    const base = pickDeterministicFingerprint(defaultPool, accountId);
     const id = crypto.createHash('sha256').update(accountId + FINGERPRINT_VERSION).digest('hex').slice(0, 16);
     return {
         id,
@@ -62,7 +62,7 @@ export function pickBrowserFingerprint(
     }
 
     const localPool = isMobile ? mobileFingerprintPool : desktopFingerprintPool;
-    const selected = pickRandomFingerprint(localPool);
+    const selected = pickDeterministicFingerprint(localPool, accountId);
     return {
         ...selected,
         timezone: selected.timezone ?? config.timezone,

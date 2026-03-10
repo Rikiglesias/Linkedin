@@ -160,3 +160,30 @@ export function pickRandomFingerprint(pool: ReadonlyArray<Fingerprint>): Fingerp
     const index = Math.floor(Math.random() * safePool.length);
     return safePool[index] as Fingerprint;
 }
+
+/**
+ * Selezione deterministica dal pool basata su accountId + settimana corrente.
+ * Lo stesso account ottiene lo stesso fingerprint per ~1 settimana, poi cambia
+ * (simula aggiornamento browser naturale). Usa FNV-1a come hash veloce.
+ */
+export function pickDeterministicFingerprint(
+    pool: ReadonlyArray<Fingerprint>,
+    accountId: string,
+): Fingerprint {
+    const safePool = pool.length > 0 ? pool : desktopFingerprintPool;
+    if (safePool.length === 1) return safePool[0] as Fingerprint;
+
+    // Week number: cambia ogni ~7 giorni → il fingerprint ruota settimanalmente
+    const now = new Date();
+    const weekNumber = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000));
+    const seed = `${accountId}:week${weekNumber}`;
+
+    // FNV-1a 32-bit hash per determinismo veloce senza dipendenze crypto
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < seed.length; i++) {
+        hash ^= seed.charCodeAt(i);
+        hash = Math.imul(hash, 0x01000193);
+    }
+    const index = (hash >>> 0) % safePool.length;
+    return safePool[index] as Fingerprint;
+}
