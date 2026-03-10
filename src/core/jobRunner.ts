@@ -8,7 +8,7 @@ import {
     performDecoyBurst,
     performBrowserGC,
 } from '../browser';
-import { recordSuccessfulAuth, checkSessionFreshness } from '../browser/sessionCookieMonitor';
+import { recordSuccessfulAuth, checkSessionFreshness, detectSessionCookieAnomaly } from '../browser/sessionCookieMonitor';
 import {
     updateAccountBackpressure,
     getAccountBackpressureLevel,
@@ -204,6 +204,25 @@ async function runQueuedJobsForAccount(
         }
 
         recordSuccessfulAuth(account.sessionDir, account.id);
+
+        // ── Session cookie anomaly detection ──────────────────────────────
+        // Rileva se il cookie li_at è cambiato o scomparso senza rotazione esplicita.
+        // Segnale di invalidazione server-side o ban imminente.
+        const cookieAnomaly = await detectSessionCookieAnomaly(session.page, account.sessionDir);
+        if (cookieAnomaly) {
+            await sendTelegramAlert(
+                `Session cookie anomaly: ${cookieAnomaly.anomaly} (account: ${account.id})`,
+                'Session Cookie Alert',
+                cookieAnomaly.anomaly === 'COOKIE_MISSING' ? 'critical' : 'warn',
+            );
+            if (cookieAnomaly.anomaly === 'COOKIE_MISSING') {
+                await quarantineAccount('SESSION_COOKIE_MISSING', {
+                    accountId: account.id,
+                    message: 'Cookie li_at scomparso — possibile ban o invalidazione server-side.',
+                });
+                return;
+            }
+        }
 
         // ── LinkedIn API monitoring passivo: probe proattivo prima dei job ──
         // Verifica che LinkedIn non sia già in stato degradato (429, challenge, slow)

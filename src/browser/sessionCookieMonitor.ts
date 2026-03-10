@@ -9,6 +9,7 @@
  * con il timestamp dell'ultima autenticazione verificata.
  */
 
+import crypto from 'node:crypto';
 import fs from 'fs';
 import path from 'path';
 import { Page } from 'playwright';
@@ -21,6 +22,7 @@ interface SessionMeta {
     lastVerifiedBy: string;
     createdAt: string;
     rotationCount: number;
+    cookieHash?: string;
 }
 
 const DEFAULT_MAX_AGE_DAYS = 7;
@@ -53,7 +55,7 @@ function writeMeta(sessionDir: string, meta: SessionMeta): void {
  * Registra una verifica di autenticazione avvenuta con successo.
  * Chiamare dopo ogni `checkLogin()` che ritorna `true`.
  */
-export function recordSuccessfulAuth(sessionDir: string, actor: string = 'orchestrator'): void {
+export function recordSuccessfulAuth(sessionDir: string, actor: string = 'orchestrator', cookieHash?: string): void {
     const existing = readMeta(sessionDir);
     const now = new Date().toISOString();
     writeMeta(sessionDir, {
@@ -61,6 +63,7 @@ export function recordSuccessfulAuth(sessionDir: string, actor: string = 'orches
         lastVerifiedBy: actor,
         createdAt: existing?.createdAt ?? now,
         rotationCount: existing?.rotationCount ?? 0,
+        cookieHash: cookieHash ?? existing?.cookieHash,
     });
 }
 
@@ -156,6 +159,64 @@ export async function rotateSessionCookies(
  */
 export function getSessionMetaSummary(sessionDir: string): SessionMeta | null {
     return readMeta(sessionDir);
+}
+
+/**
+ * Rileva anomalie nel session cookie LinkedIn:
+ * - Cookie cambiato senza rotazione esplicita (segnale di invalidazione server-side)
+ * - Cookie scomparso (sessione scaduta/revocata)
+ * Ritorna null se tutto OK, altrimenti il tipo di anomalia.
+ */
+export async function detectSessionCookieAnomaly(
+    page: Page,
+    sessionDir: string,
+): Promise<{ anomaly: 'COOKIE_CHANGED' | 'COOKIE_MISSING'; previous: string | null; current: string | null } | null> {
+    const meta = readMeta(sessionDir);
+    const previousHash = meta?.cookieHash ?? null;
+
+    let currentHash: string | null = null;
+    try {
+        const cookies = await page.context().cookies('https://www.linkedin.com');
+        const liAt = cookies.find((c) => c.name === 'li_at' && c.value.trim().length > 0);
+        if (liAt) {
+            currentHash = crypto.createHash('sha256').update(liAt.value).digest('hex').slice(0, 16);
+        }
+    } catch {
+        return null;
+    }
+
+    if (!currentHash) {
+        if (previousHash) {
+            await logWarn('session_cookie.anomaly.missing', {
+                sessionDir,
+                previousHash,
+                message: 'Cookie li_at scomparso — possibile invalidazione server-side o ban imminente.',
+            });
+            return { anomaly: 'COOKIE_MISSING', previous: previousHash, current: null };
+        }
+        return null;
+    }
+
+    if (previousHash && currentHash !== previousHash) {
+        await logWarn('session_cookie.anomaly.changed', {
+            sessionDir,
+            previousHash,
+            currentHash,
+            message: 'Cookie li_at cambiato senza rotazione esplicita — LinkedIn potrebbe aver rigenerato la sessione.',
+        });
+        // Aggiorna il meta con il nuovo hash per non ri-alertare
+        if (meta) {
+            writeMeta(sessionDir, { ...meta, cookieHash: currentHash });
+        }
+        return { anomaly: 'COOKIE_CHANGED', previous: previousHash, current: currentHash };
+    }
+
+    // Se non avevamo un hash precedente, salvalo ora (prima volta)
+    if (!previousHash && currentHash && meta) {
+        writeMeta(sessionDir, { ...meta, cookieHash: currentHash });
+    }
+
+    return null;
 }
 
 // ─── Session Maturity ────────────────────────────────────────────────────────
