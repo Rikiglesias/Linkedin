@@ -1,8 +1,0 @@
-
-> linkedin@1.0.0 typecheck
-> npm run typecheck:backend && npm run typecheck:frontend
-
-
-> linkedin@1.0.0 typecheck:backend
-> tsc -p tsconfig.json --noEmit
-
