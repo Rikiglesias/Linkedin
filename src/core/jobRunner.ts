@@ -618,6 +618,21 @@ async function runQueuedJobsForAccount(
 
                 consecutiveFailures += 1;
                 if (consecutiveFailures >= config.maxConsecutiveJobFailures) {
+                    // Circuit breaker sessione: forza rotazione browser+fingerprint PRIMA della pausa.
+                    // Se LinkedIn ha flaggato questa combinazione IP+fingerprint, riprendere con la
+                    // stessa sessione è inutile. La rotazione dà al retry una chance reale di successo.
+                    const rotated = await rotateSessionWithLoginCheck(
+                        session,
+                        workerContext,
+                        'circuit_breaker_consecutive_failures',
+                        account,
+                    );
+                    if (rotated) {
+                        session = rotated;
+                        processedOnCurrentSession = 0;
+                        sessionStartedAtMs = Date.now();
+                    }
+
                     await pauseAutomation(
                         'CONSECUTIVE_JOB_FAILURES',
                         {
@@ -627,6 +642,7 @@ async function runQueuedJobsForAccount(
                             lastJobType: job.type,
                             lastError: message,
                             accountId: account.id,
+                            sessionRotated: !!rotated,
                         },
                         config.autoPauseMinutesOnFailureBurst,
                     );
@@ -635,6 +651,7 @@ async function runQueuedJobsForAccount(
                         consecutiveFailures,
                         pauseMinutes: config.autoPauseMinutesOnFailureBurst,
                         accountId: account.id,
+                        sessionRotated: !!rotated,
                     });
                     break;
                 }
