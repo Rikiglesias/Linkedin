@@ -198,6 +198,11 @@ function printHelp(): void {
     console.log(
         '  secrets-rotate [--apply] [--interval-days <n>] [--actor <name>] [--include <SECRET_A,SECRET_B>] [--env-file <path>]',
     );
+    console.log('  db-analyze');
+    console.log('  daily-report');
+    console.log('  dashboard');
+    console.log('  repl');
+    console.log('  warmup');
     console.log('Alias retrocompatibili [DEPRECATED]: connect → run invite, check → run check, message → run message');
     console.log('Flag utili: --skip-preflight (salta doctor preflight obbligatorio)');
     console.log('           --strict (rifiuta alias deprecati)');
