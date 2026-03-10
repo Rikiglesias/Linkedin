@@ -487,14 +487,29 @@ async function humanWindDown(session: BrowserSession): Promise<void> {
         if (page.isClosed()) return;
 
         const url = page.url().toLowerCase();
-        // Se siamo su una pagina di automazione (SalesNav, search, ecc.), naviga via
-        if (url.includes('/sales/') || url.includes('/search/') || url.includes('/mynetwork/')) {
-            // Torna al feed come farebbe un umano che finisce
-            await page.goto('https://www.linkedin.com/feed/', {
-                waitUntil: 'domcontentloaded',
-                timeout: 10_000,
-            }).catch(() => null);
-            // Breve scroll del feed come lettura casuale
+        const isAutomationPage = url.includes('/sales/') || url.includes('/search/') || url.includes('/mynetwork/');
+
+        if (isAutomationPage) {
+            // Variare la destinazione di uscita — un pattern costante "sempre al feed" è rilevabile.
+            // Distribuzione pesata: feed 40%, notifiche 20%, homepage 15%, restare 25%
+            const roll = Math.random();
+            let windDownUrl: string | null = null;
+            if (roll < 0.40) {
+                windDownUrl = 'https://www.linkedin.com/feed/';
+            } else if (roll < 0.60) {
+                windDownUrl = 'https://www.linkedin.com/notifications/';
+            } else if (roll < 0.75) {
+                windDownUrl = 'https://www.linkedin.com/';
+            }
+            // roll >= 0.75: resta sulla pagina corrente (25%)
+
+            if (windDownUrl) {
+                await page.goto(windDownUrl, {
+                    waitUntil: 'domcontentloaded',
+                    timeout: 10_000,
+                }).catch(() => null);
+            }
+            // Breve scroll come lettura casuale
             await page.evaluate(() => window.scrollBy({ top: 150 + Math.random() * 300, behavior: 'smooth' })).catch(() => null);
             await page.waitForTimeout(1_500 + Math.floor(Math.random() * 2_000)).catch(() => null);
         } else {

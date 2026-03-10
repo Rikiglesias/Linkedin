@@ -631,6 +631,17 @@ export async function runLoopCommand(args: string[]): Promise<void> {
             startedAt: new Date().toISOString(),
         });
 
+    // ── Login jitter: delay random 0-30 min prima del primo ciclo ──────────
+    // Evita pattern "login alle 09:00:00 ogni giorno" — un umano varia.
+    if (!dryRun) {
+        const jitterMs = Math.floor(Math.random() * 30 * 60 * 1000);
+        if (jitterMs > 60_000) {
+            const jitterMin = (jitterMs / 60_000).toFixed(1);
+            console.log(`[LOOP] Login jitter: attesa ${jitterMin} minuti prima del primo ciclo`);
+            await sleepWithLockHeartbeat(jitterMs, lockOwnerId ?? '', lockTtlSeconds);
+        }
+    }
+
     let cycle = 0;
     try {
         while (true) {
