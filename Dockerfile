@@ -37,8 +37,13 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/scripts ./scripts
 
-# Crea directory dati con permessi corretti
-RUN mkdir -p data logs && chmod 700 data && chmod 700 logs
+# Crea utente non-root e directory dati con permessi corretti
+RUN groupadd -r botuser && useradd -r -g botuser -d /app botuser \
+    && mkdir -p data logs plugins \
+    && chown -R botuser:botuser /app
+
+# Switch a utente non-root (riduce superficie d'attacco in caso di RCE)
+USER botuser
 
 # Healthcheck via API
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \

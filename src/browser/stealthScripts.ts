@@ -426,50 +426,11 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
             });
         }
     } catch {}
-    // ─── 14. Fake Storage Seeder (IndexedDB / LocalStorage) ──────────────────
-    // Container puliti destano sospetto. Iniettiamo finte tracce storiche.
-    try {
-        // 1. LocalStorage Seed
-        if (typeof window.localStorage !== 'undefined') {
-            try {
-                if (!window.localStorage.getItem('_ga')) {
-                    const randomGATail = Math.floor(Math.random() * 1000000000) + '.' + (Math.floor(Date.now() / 1000) - 86400 * 5);
-                    window.localStorage.setItem('_ga', 'GA1.2.' + randomGATail);
-                }
-                if (!window.localStorage.getItem('_fbp')) {
-                    const fbTail = Math.floor(Math.random() * 10000000000);
-                    window.localStorage.setItem('_fbp', 'fb.1.' + Date.now() + '.' + fbTail);
-                }
-                // li_sp rimossa: chiave proprietaria LinkedIn, iniettarla è più rischioso di non averla
-            } catch {}
-        }
-
-        // 2. IndexedDB Monkey Patch
-        // Simula la presenza di vecchi database (es. localforage / firebase)
-        if (typeof window.indexedDB !== 'undefined' && typeof window.indexedDB.databases === 'function') {
-            const originalDatabases = window.indexedDB.databases;
-            window.indexedDB.databases = function() {
-                return originalDatabases.apply(this, arguments).then((dbs) => {
-                    const mockDBs = [
-                        { name: 'localforage', version: 2 },
-                        { name: 'firebaseLocalStorageDb', version: 1 }
-                    ];
-                    
-                    if (!dbs || dbs.length === 0) {
-                        return mockDBs;
-                    }
-                    
-                    const merged = [...dbs];
-                    for (const m of mockDBs) {
-                        if (!merged.find(x => x.name === m.name)) {
-                            merged.push(m);
-                        }
-                    }
-                    return merged;
-                });
-            };
-        }
-    } catch {}
+    // ─── 14. [RIMOSSO] Fake Storage Seeder ──────────────────────────────────────
+    // Rimosso: iniettava _ga (Google Analytics) e _fbp (Facebook Pixel) in localStorage
+    // + finti database IndexedDB (localforage, firebaseLocalStorageDb).
+    // LinkedIn NON usa GA/Facebook Pixel/Firebase sul proprio dominio.
+    // Un detector che verifica la coerenza cookie/script rileva lo spoofing.
 
     // ─── 15. getHasLiedOs bypass ──────────────────────────────────────────────
     // LinkedIn (via FingerprintJS) chiama getHasLiedOs: controlla che userAgent,
@@ -608,16 +569,7 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
         document.createElement = function(tagName, options) {
             const el = originalCreateElement(tagName, options);
             if (tagName.toLowerCase() === 'iframe') {
-                const originalAppendChild = Element.prototype.appendChild;
-                const observer = new MutationObserver(() => {
-                    try {
-                        if (el.contentWindow && !el.contentWindow.chrome) {
-                            el.contentWindow.chrome = window.chrome;
-                        }
-                    } catch {}
-                });
                 // Inietta chrome nel contentWindow quando l'iframe viene aggiunto al DOM
-                const origAttach = el.attachShadow;
                 setTimeout(() => {
                     try {
                         if (el.contentWindow && !el.contentWindow.chrome) {
