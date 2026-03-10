@@ -154,10 +154,10 @@ Analisi sistematica di ogni file in root e della struttura del repository per ri
 - [ ] **`TODO.md` (75KB)** — TODO legacy enorme. Verificare quanti task sono ancora aperti vs completati. Se la maggior parte è completata, archiviare e usare solo `TODO_MIGLIORAMENTI.md` come TODO attivo.
 
 ### `.dockerignore` — lacune
-- [ ] **`.dockerignore` incompleto**. Attuale (98 bytes, 9 righe): `.git`, `node_modules`, `dist`, `data`, `*.log`, `repomix-output.txt`, `.env`, `playwright-report`, `test-results`. Mancano: `coverage/`, `logs/`, `.github/`, `.vscode/`, `.claude/`, `*.md` (tranne README), `lint.json`, `lint_output.txt`, `typecheck_output.txt`, `.env.*`, `.prettierrc`, `.prettierignore`, `eslint.config.js`, `vitest.config.ts`, `tsconfig.frontend.json`, `n8n/`, `TODO*.md`, `AUDIT*.md`. Il build context copia inutilmente ~200KB di file non necessari all'immagine.
+- [x] **`.dockerignore` espanso**. Già completato (51 righe): coverage, logs, .github, .vscode, .claude, TODO*.md, AUDIT*.md, lint.*, .prettierrc, eslint.config.js, vitest.config.ts, n8n/. Originale era 98 bytes, 9 righe: `.git`, `node_modules`, `dist`, `data`, `*.log`, `repomix-output.txt`, `.env`, `playwright-report`, `test-results`. Mancano: `coverage/`, `logs/`, `.github/`, `.vscode/`, `.claude/`, `*.md` (tranne README), `lint.json`, `lint_output.txt`, `typecheck_output.txt`, `.env.*`, `.prettierrc`, `.prettierignore`, `eslint.config.js`, `vitest.config.ts`, `tsconfig.frontend.json`, `n8n/`, `TODO*.md`, `AUDIT*.md`. Il build context copia inutilmente ~200KB di file non necessari all'immagine.
 
 ### `.gitignore` — lacune
-- [ ] **`.gitignore` mancanze**. Non presenti ma dovrebbero esserci: `lint.json`, `lint_output.txt`, `typecheck_output.txt`, `repomix-output.txt` (c'era repomix ma non il suo output), `.claude/`. Verificare anche che `data/linkedin.db` sia coperto dal pattern `data/*.sqlite` (non lo è — `linkedin.db` non ha estensione `.sqlite`). Aggiungere `data/linkedin.db` esplicitamente.
+- [x] **`.gitignore` espanso**. Già completato: `lint.json`, `lint_output.txt`, `typecheck_output.txt`, `.claude/`, `data/linkedin.db` aggiunti esplicitamente.
 
 ## 12. Coerenza Comandi CLI e Workflow (Priorità: MEDIA)
 Verifica sistematica che tutti i comandi CLI documentati nel help siano implementati, che gli alias deprecati siano gestiti coerentemente, e che i workflow siano completi.
