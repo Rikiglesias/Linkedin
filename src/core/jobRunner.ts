@@ -20,6 +20,7 @@ import { handleChallengeDetected, pauseAutomation, quarantineAccount } from '../
 import { logError, logInfo, logWarn } from '../telemetry/logger';
 import { sendTelegramAlert } from '../telemetry/alerts';
 import { randomInt } from '../utils/random';
+import { getSessionHistory } from '../risk/sessionMemory';
 import { retryDelayMs } from '../utils/async';
 import { JobType } from '../types/domain';
 import { WorkerContext } from '../workers/context';
@@ -265,6 +266,10 @@ async function runQueuedJobsForAccount(
             });
         }
 
+        // Pacing factor dalla session memory: dopo challenge recenti → delay più lunghi
+        const sessionHistory = await getSessionHistory(account.id, 7);
+        const sessionPacingFactor = sessionHistory.pacingFactor;
+
         const workerContext: WorkerContext = {
             session,
             dryRun: options.dryRun,
@@ -465,7 +470,7 @@ async function runQueuedJobsForAccount(
                 // Pausa umana tra un job e il successivo (anti-burst)
                 // Feedback loop reattivo: se LinkedIn sta rallentando, il delay aumenta automaticamente
                 const throttleSignal = session.httpThrottler.getThrottleSignal();
-                await interJobDelay(session.page, throttleSignal);
+                await interJobDelay(session.page, throttleSignal, sessionPacingFactor);
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
                 const attempts = job.attempts + 1;

@@ -302,6 +302,18 @@ export async function processInviteJob(
     await simulateHumanReading(context.session.page);
     await contextualReadingPause(context.session.page);
 
+    // Anti-pattern: 20% di probabilità di visitare la pagina attività recente del target
+    // prima di tornare al profilo e cliccare Connect. Un umano curioso guarda i post
+    // del target prima di decidere se connettersi — rende la visita più organica.
+    if (Math.random() < 0.20) {
+        const activityUrl = lead.linkedin_url.replace(/\/$/, '') + '/recent-activity/all/';
+        await context.session.page.goto(activityUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 }).catch(() => null);
+        await simulateHumanReading(context.session.page);
+        // Torna al profilo per procedere con il Connect
+        await context.session.page.goto(lead.linkedin_url, { waitUntil: 'domcontentloaded' });
+        await humanDelay(context.session.page, 500, 1500);
+    }
+
     if (await detectChallenge(context.session.page)) {
         const resolved = await attemptChallengeResolution(context.session.page);
         if (!resolved) {

@@ -609,7 +609,11 @@ export async function simulateHumanReading(page: Page): Promise<void> {
  * Se il throttleSignal indica rallentamento LinkedIn, moltiplica il delay:
  *   shouldSlow → ×1.5, shouldPause → pausa coffee break forzata 3-5 min.
  */
-export async function interJobDelay(page: Page, throttleSignal?: { shouldSlow: boolean; shouldPause: boolean }): Promise<void> {
+export async function interJobDelay(
+    page: Page,
+    throttleSignal?: { shouldSlow: boolean; shouldPause: boolean },
+    pacingFactor?: number,
+): Promise<void> {
     const minDelay = Math.max(1, config.interJobMinDelaySec) * 1000;
     const maxDelay = Math.max(config.interJobMinDelaySec, config.interJobMaxDelaySec) * 1000;
 
@@ -618,6 +622,14 @@ export async function interJobDelay(page: Page, throttleSignal?: { shouldSlow: b
         baseMin: minDelay,
         baseMax: maxDelay,
     });
+
+    // Pacing factor da sessionMemory: dopo challenge recenti il bot rallenta,
+    // dopo giorni tranquilli può essere leggermente più veloce.
+    // pacingFactor < 1.0 → delay più lungo (inverso: divido per il factor)
+    // pacingFactor > 1.0 → delay leggermente più corto
+    if (pacingFactor !== undefined && pacingFactor > 0 && pacingFactor !== 1.0) {
+        totalDelay = Math.round(totalDelay / pacingFactor);
+    }
 
     // Feedback loop reattivo: LinkedIn rallenta → il bot rallenta automaticamente
     if (throttleSignal?.shouldPause) {
