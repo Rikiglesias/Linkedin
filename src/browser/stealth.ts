@@ -6,7 +6,6 @@
 
 import crypto from 'node:crypto';
 import { config } from '../config';
-import { randomElement } from '../utils/random';
 import { Fingerprint, desktopFingerprintPool, mobileFingerprintPool, pickDeterministicFingerprint } from '../fingerprint/pool';
 
 const FINGERPRINT_VERSION = '1';
@@ -57,7 +56,17 @@ export function pickBrowserFingerprint(
           : cloudFingerprints;
 
     if (cloudPool.length > 0) {
-        const fp = randomElement(cloudPool);
+        // Selezione deterministica anche dal cloud pool: stesso account → stesso fingerprint per ~1 settimana
+        const now = new Date();
+        const weekNumber = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000));
+        const seed = `${accountId}:cloud:week${weekNumber}`;
+        let hash = 0x811c9dc5;
+        for (let i = 0; i < seed.length; i++) {
+            hash ^= seed.charCodeAt(i);
+            hash = Math.imul(hash, 0x01000193);
+        }
+        const idx = (hash >>> 0) % cloudPool.length;
+        const fp = cloudPool[idx] as CloudFingerprint;
         return normalizeCloudFingerprint(fp, isMobile, accountId);
     }
 
@@ -73,15 +82,27 @@ export function pickBrowserFingerprint(
     };
 }
 
-export function pickFingerprintMode(): boolean {
-    return Math.random() < config.mobileProbability;
+export function pickFingerprintMode(accountId?: string): boolean {
+    if (!accountId || config.mobileProbability <= 0) return false;
+    if (config.mobileProbability >= 1) return true;
+    // Deterministico per account+settimana: lo stesso account è sempre mobile o desktop per tutta la settimana
+    const now = new Date();
+    const weekNumber = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000));
+    const seed = `${accountId}:mode:week${weekNumber}`;
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < seed.length; i++) {
+        hash ^= seed.charCodeAt(i);
+        hash = Math.imul(hash, 0x01000193);
+    }
+    // Normalizza hash a [0,1) e confronta con la probabilità
+    return ((hash >>> 0) / 0xFFFFFFFF) < config.mobileProbability;
 }
 
 export function pickMobileFingerprint(cloudFingerprints: ReadonlyArray<CloudFingerprint>, accountId: string): BrowserFingerprint {
     const mobileOnly = cloudFingerprints.filter((fp) => fp.isMobile === true);
     if (mobileOnly.length > 0) {
-        const fp = randomElement(mobileOnly);
-        return normalizeCloudFingerprint(fp, true, accountId);
+        // Deterministico: stesso account → stesso fingerprint mobile per ~1 settimana
+        return pickBrowserFingerprint(mobileOnly, true, accountId);
     }
     return pickBrowserFingerprint([], true, accountId);
 }

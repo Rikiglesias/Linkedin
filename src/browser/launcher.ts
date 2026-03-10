@@ -197,7 +197,7 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
         const currentProxy = launchPlan[attempt];
         const cloudFingerprints = await fetchCloudFingerprints();
         const accountId = options.accountId ?? sessionDir;
-        const isMobileSession = options.forceDesktop ? false : pickFingerprintMode();
+        const isMobileSession = options.forceDesktop ? false : pickFingerprintMode(accountId);
         const fingerprint = isMobileSession
             ? pickMobileFingerprint(cloudFingerprints, accountId)
             : pickDesktopFingerprint(cloudFingerprints, accountId);
@@ -322,16 +322,25 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                             const originalGetImageData = ctx.getImageData;
                             ctx.getImageData = function(x, y, w, h) {
                                 const imageData = originalGetImageData.call(this, x, y, w, h);
-                                // Noise bidirezionale (+ e -) per evitare alterazioni unicamente incrementali.
+                                // Noise bidirezionale con PRNG Mulberry32 seedato dal fingerprint.
+                                // Deterministico per sessione ma pseudo-casuale — non rilevabile
+                                // statisticamente (a differenza del vecchio pattern pixelIndex % 2/3/5).
                                 // Alpha (i+3) intatto — alterarlo è un marker di bot.
                                 const noiseR = Math.floor(canvasNoise * 255);
                                 const noiseG = Math.floor(canvasNoise * 230);
                                 const noiseB = Math.floor(canvasNoise * 245);
+                                // Mulberry32 PRNG: veloce, 32-bit, periodo 2^32
+                                let prngState = Math.abs(canvasNoise * 1e9 | 0) || 1;
+                                function nextRng() {
+                                    prngState |= 0; prngState = prngState + 0x6D2B79F5 | 0;
+                                    let t = Math.imul(prngState ^ prngState >>> 15, 1 | prngState);
+                                    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+                                    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+                                }
                                 for (let i = 0; i < imageData.data.length; i += 4) {
-                                    const pixelIndex = i / 4;
-                                    const signR = (pixelIndex % 2 === 0) ? 1 : -1;
-                                    const signG = (pixelIndex % 3 === 0) ? 1 : -1;
-                                    const signB = (pixelIndex % 5 === 0) ? 1 : -1;
+                                    const signR = nextRng() < 0.5 ? 1 : -1;
+                                    const signG = nextRng() < 0.5 ? 1 : -1;
+                                    const signB = nextRng() < 0.5 ? 1 : -1;
                                     
                                     imageData.data[i]     = Math.max(0, Math.min(255, imageData.data[i]     + (noiseR * signR)));
                                     imageData.data[i + 1] = Math.max(0, Math.min(255, imageData.data[i + 1] + (noiseG * signG)));
