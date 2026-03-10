@@ -1,4 +1,5 @@
 import { getAccountProfileById } from '../accountManager';
+import { cleanText } from '../utils/text';
 import { cleanLeadDataWithAI } from '../ai/leadDataCleaner';
 import { scoreLeadProfile } from '../ai/leadScorer';
 import { checkLogin, closeBrowser, detectChallenge, isLoggedIn, launchBrowser } from '../browser';
@@ -101,10 +102,6 @@ export interface SalesNavigatorSyncReport {
     dbBefore: DbSnapshot | null;
     dbAfter: DbSnapshot | null;
     durationMs: number;
-}
-
-function cleanText(value: string | null | undefined): string {
-    return (value ?? '').replace(/\s+/g, ' ').trim();
 }
 
 function matchesListNameFilter(list: SalesNavSavedList, filter: string): boolean {

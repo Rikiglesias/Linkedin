@@ -26,6 +26,7 @@ import { load as cheerioLoad, type CheerioAPI } from 'cheerio';
 import { parsePhoneNumberFromString, type PhoneNumber } from 'libphonenumber-js';
 import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 import { logInfo } from '../telemetry/logger';
+import { cleanText } from '../utils/text';
 
 // ─── Types (public — all backward-compatible) ────────────────────────────────
 
@@ -137,10 +138,6 @@ const MAX_SUBPAGES = 5;
 const companyCache = new Map<string, PersonDataCompany | null>();
 
 // ─── Utility ─────────────────────────────────────────────────────────────────
-
-function cleanText(text: string | undefined | null): string {
-    return (text ?? '').replace(/\s+/g, ' ').trim();
-}
 
 function delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));

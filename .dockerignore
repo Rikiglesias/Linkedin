@@ -1,9 +1,50 @@
+# VCS e dipendenze
 .git
 node_modules
 dist
+
+# Dati runtime e sessioni browser
 data
-*.log
-repomix-output.txt
+logs
+
+# Segreti (iniettati via env_file o Docker secrets)
 .env
+.env.*
+!.env.example
+
+# Test e coverage
+coverage
 playwright-report
 test-results
+
+# Output temporanei
+*.log
+lint.json
+lint.txt
+lint_output.txt
+typecheck_output.txt
+repomix-output.txt
+tsc_out.log
+
+# Documentazione non necessaria nel container
+TODO*.md
+AUDIT*.md
+AI_QUALITY_PIPELINE.md
+CONFIG_REFERENCE.md
+INTEGRATIONS.md
+GUIDA_ANTI_BAN.md
+THREAT_MODEL.md
+SECURITY.md
+
+# Config IDE e tool
+.vscode
+.claude
+.github
+.prettierrc
+.prettierignore
+eslint.config.js
+vitest.config.ts
+repomix.config.json
+
+# Workflow n8n (non servono nel container bot)
+n8n

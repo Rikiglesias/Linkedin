@@ -18,6 +18,7 @@ import { config } from '../config';
 import { handleChallengeDetected, pauseAutomation, quarantineAccount } from '../risk/incidentManager';
 import { logError, logInfo, logWarn } from '../telemetry/logger';
 import { sendTelegramAlert } from '../telemetry/alerts';
+import { randomInt } from '../utils/random';
 import { JobType } from '../types/domain';
 import { WorkerContext } from '../workers/context';
 import { processAcceptanceJob } from '../workers/acceptanceWorker';
@@ -65,11 +66,6 @@ function retryDelayMs(attempt: number, baseDelayMs: number = config.retryBaseMs)
     return baseDelayMs * Math.pow(2, Math.max(0, attempt - 1)) + jitter;
 }
 
-function randomInt(min: number, max: number): number {
-    const low = Math.min(min, max);
-    const high = Math.max(min, max);
-    return Math.floor(Math.random() * (high - low + 1)) + low;
-}
 
 function evaluateAccountHealth(metrics: AccountRunHealthMetrics): {
     health: 'GREEN' | 'YELLOW' | 'RED';

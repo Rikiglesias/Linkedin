@@ -15,7 +15,7 @@
         "tsconfig.json",
         "eslint.config.js",
         ".env.example",
-        "ROADMAP.md",
+        "TODO_MIGLIORAMENTI.md",
         "INTEGRATIONS.md",
         "SECURITY.md"
     ],

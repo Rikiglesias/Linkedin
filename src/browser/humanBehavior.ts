@@ -16,6 +16,7 @@ import { computeSessionTypoRate, determineNextKeystroke } from '../ai/typoGenera
 import { interactWithFeed } from './organicContent';
 import { shouldMissclick, shouldAccidentalNav, performMissclick, performAccidentalNavigation } from './missclick';
 import { dismissKnownOverlays } from './overlayDismisser';
+import { randomElement, randomInt } from '../utils/random';
 
 // ─── Stato Memoria Mouse ─────────────────────────────────────────────────────
 
@@ -266,17 +267,7 @@ function updateMouseState(page: Page, point: Point): void {
     pageMouseState.set(page, { x: point.x, y: point.y });
 }
 
-// ─── Utility Generali ────────────────────────────────────────────────────────
-
-function randomElement<T>(arr: ReadonlyArray<T>): T {
-    return arr[Math.floor(Math.random() * arr.length)] as T;
-}
-
-function randomInt(min: number, max: number): number {
-    const low = Math.min(min, max);
-    const high = Math.max(min, max);
-    return Math.floor(Math.random() * (high - low + 1)) + low;
-}
+// ─── Utility Generali (importate da ../utils/random) ─────────────────────────
 
 /**
  * Pausa con distribuzione log-normale asimmetrica (Cronometria Disfasica):

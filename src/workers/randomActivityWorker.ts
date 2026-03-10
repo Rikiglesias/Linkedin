@@ -1,4 +1,5 @@
 import { getAccountProfileById } from '../accountManager';
+import { randomElement } from '../utils/random';
 import {
     BrowserSession,
     checkLogin,
@@ -37,9 +38,7 @@ const STATIC_ACTIVITY_URLS: Record<Exclude<Activity, 'profile_from_page'>, strin
     settings: 'https://www.linkedin.com/mypreferences/d/categories/account',
 };
 
-function pickRandom<T>(items: T[]): T {
-    return items[Math.floor(Math.random() * items.length)];
-}
+const pickRandom = randomElement;
 
 async function extractProfileUrlsFromCurrentPage(page: import('playwright').Page): Promise<string[]> {
     const urls = await page

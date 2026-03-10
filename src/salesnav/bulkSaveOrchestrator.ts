@@ -6,6 +6,7 @@ import {
     performDecoyAction,
     randomMouseMove,
 } from '../browser';
+import { cleanText } from '../utils/text';
 import { ensureVisualCursorOverlay, ensureInputBlock, pauseInputBlock, resumeInputBlock, humanMouseMoveToCoords, pulseVisualCursorOverlay } from '../browser/humanBehavior';
 import {
     addSyncItem,
@@ -191,9 +192,6 @@ function isPageClosedError(error: unknown): boolean {
     return /Target page, context or browser has been closed|page\.goto:.*closed/i.test(message);
 }
 
-function cleanText(value: string | null | undefined): string {
-    return (value ?? '').replace(/\s+/g, ' ').trim();
-}
 
 function normalizeSearchName(value: string | null | undefined): string {
     return cleanText(value).toLowerCase();

@@ -32,9 +32,19 @@ tsc_out.log
 
 # Output analisi temporanei
 lint.txt
+lint.json
+lint_output.txt
+typecheck_output.txt
 depcheck_output.txt
 madge_output.txt
 *.resolved
+
+# IDE e tool config personali
+.claude/
+
+# File DB orfani (il DB attivo è data/linkedin_bot.sqlite)
+data/linkedin.db
+data/.pm2/
 
 # Test artifacts
 data/test_*.sqlite

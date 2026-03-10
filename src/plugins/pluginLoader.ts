@@ -13,6 +13,7 @@
 import fs from 'fs';
 import path from 'path';
 import { createHash } from 'crypto';
+import { splitCsv } from '../utils/text';
 import type { IPlugin, PluginLeadSnapshot, PluginDailyStats, PluginIdleEvent, PluginMessageEvent, PluginLoopSubTask } from './IPlugin';
 import { logInfo, logWarn } from '../telemetry/logger';
 
@@ -45,14 +46,6 @@ const KNOWN_PLUGIN_HOOKS: PluginHookName[] = [
     'onDailyReport',
     'onIdle',
 ];
-
-function parseCsvEnv(raw: string | undefined): string[] {
-    if (!raw) return [];
-    return raw
-        .split(',')
-        .map((item) => item.trim())
-        .filter((item) => item.length > 0);
-}
 
 function normalizeForPathComparison(input: string): string {
     if (process.platform === 'win32') {
@@ -162,12 +155,12 @@ export class PluginRegistry {
     }
 
     private getAllowedPluginNames(): Set<string> {
-        return new Set(parseCsvEnv(process.env.PLUGIN_ALLOWLIST));
+        return new Set(splitCsv(process.env.PLUGIN_ALLOWLIST));
     }
 
     private getAllowedPluginRoots(): string[] {
         const defaults = [path.resolve(process.cwd(), 'plugins')];
-        const configuredRoots = parseCsvEnv(process.env.PLUGIN_DIR_ALLOWLIST).map((rawPath) =>
+        const configuredRoots = splitCsv(process.env.PLUGIN_DIR_ALLOWLIST).map((rawPath: string) =>
             path.resolve(process.cwd(), rawPath),
         );
         return configuredRoots.length > 0 ? configuredRoots : defaults;

@@ -1,5 +1,6 @@
 import { Page } from 'playwright';
 import { getAccountProfileById } from '../accountManager';
+import { cleanText } from '../utils/text';
 import { checkLogin, closeBrowser, humanDelay, humanMouseMove, launchBrowser } from '../browser';
 import { blockUserInput, pauseInputBlock, resumeInputBlock } from '../browser/humanBehavior';
 import { normalizeLinkedInUrl } from '../linkedinUrl';
@@ -47,9 +48,6 @@ const ADD_TO_LIST_CONFIRM_SELECTOR = [
     'button:has-text("Fatto")',
 ].join(', ');
 
-function cleanText(value: string): string {
-    return value.replace(/\s+/g, ' ').trim();
-}
 
 function normalizeListName(value: string): string {
     return cleanText(value).toLowerCase();

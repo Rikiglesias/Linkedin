@@ -8,15 +8,15 @@ import {
     humanType,
     simulateHumanReading,
 } from '../browser';
-import { transitionLead } from '../core/leadStateService';
 import {
-    getLeadById,
     incrementDailyStat,
     incrementListDailyStat,
     recordLeadTimingAttribution,
     updateLeadPromptVariant,
     updateLeadScrapedContext,
 } from '../core/repositories';
+import { getLeadById } from '../core/repositories/leadsCore';
+import { transitionLead } from '../core/leadStateService';
 import { joinSelectors } from '../selectors';
 import { InviteJobPayload, LeadRecord } from '../types/domain';
 import { WorkerContext } from './context';
@@ -30,6 +30,9 @@ import { bridgeDailyStat, bridgeLeadStatus } from '../cloud/cloudBridge';
 import { recordSent } from '../ml/abBandit';
 import { WorkerExecutionResult, workerResult } from './result';
 import { inferLeadSegment } from '../ml/segments';
+import { enrichLeadAuto } from '../integrations/leadEnricher';
+import { getDatabase } from '../db';
+import { logError, logInfo } from '../telemetry/logger';
 
 async function clickConnectOnProfile(page: Page): Promise<boolean> {
     const primaryBtn = page.locator(joinSelectors('connectButtonPrimary')).first();
@@ -226,6 +229,73 @@ export async function processInviteJob(
     if (isSalesNavigatorUrl(lead.linkedin_url)) {
         await transitionLead(lead.id, 'BLOCKED', 'salesnav_url_requires_profile_invite');
         return workerResult(1);
+    }
+
+    // ── Enrichment al volo: arricchisci il lead prima di navigare al profilo ──
+    // Guard: salta se il lead è già stato arricchito (evita doppio enrichment e spreco API)
+    try {
+        const db = await getDatabase();
+        const alreadyEnriched = await db.get<{ lead_id: number }>(
+            `SELECT lead_id FROM lead_enrichment_data WHERE lead_id = ?`,
+            [payload.leadId],
+        );
+
+        if (!alreadyEnriched) {
+            await logInfo('invite.worker.enrichment_start', { leadId: payload.leadId });
+            const enrichResult = await enrichLeadAuto(lead);
+
+            // Aggiorna i campi core sulla tabella leads
+            await db.run(
+                `UPDATE leads SET
+                    email = COALESCE(email, ?),
+                    phone = COALESCE(phone, ?),
+                    company_domain = COALESCE(company_domain, ?),
+                    business_email = COALESCE(business_email, ?),
+                    business_email_confidence = CASE
+                        WHEN business_email IS NOT NULL THEN business_email_confidence
+                        WHEN ? IS NOT NULL THEN ?
+                        ELSE business_email_confidence
+                    END,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?`,
+                [
+                    enrichResult.email, enrichResult.phone, enrichResult.companyDomain,
+                    enrichResult.businessEmail,
+                    enrichResult.businessEmail, enrichResult.businessEmailConfidence,
+                    payload.leadId,
+                ],
+            );
+
+            // Persisti il risultato completo in lead_enrichment_data
+            await db.run(
+                `INSERT OR REPLACE INTO lead_enrichment_data
+                 (lead_id, company_json, phones_json, socials_json, seniority, department, data_points, confidence, sources_json, domain_source, enriched_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+                [
+                    payload.leadId,
+                    enrichResult.companyName || enrichResult.companyDomain || enrichResult.industry
+                        ? JSON.stringify({ name: enrichResult.companyName, domain: enrichResult.companyDomain, industry: enrichResult.industry })
+                        : null,
+                    enrichResult.phone ? JSON.stringify([{ number: enrichResult.phone, type: 'work', source: enrichResult.source }]) : null,
+                    enrichResult.deepEnrichment?.socialProfiles?.length
+                        ? JSON.stringify(enrichResult.deepEnrichment.socialProfiles)
+                        : null,
+                    enrichResult.seniority,
+                    enrichResult.deepEnrichment?.department ?? null,
+                    [enrichResult.email, enrichResult.phone, enrichResult.jobTitle, enrichResult.companyName, enrichResult.location, enrichResult.seniority]
+                        .filter(Boolean).length,
+                    enrichResult.emailConfidence,
+                    JSON.stringify([enrichResult.source]),
+                    enrichResult.domainSource ?? null,
+                ],
+            );
+            await logInfo('invite.worker.enrichment_done', { leadId: payload.leadId, emailFound: !!enrichResult.email });
+        } else {
+            await logInfo('invite.worker.enrichment_skipped', { leadId: payload.leadId, reason: 'already_enriched' });
+        }
+    } catch (enrichErr) {
+        // L'enrichment non deve MAI bloccare l'invio dell'invito
+        await logError('invite.worker.enrichment_failed', { leadId: payload.leadId, error: String(enrichErr) });
     }
 
     await context.session.page.goto(lead.linkedin_url, { waitUntil: 'domcontentloaded' });

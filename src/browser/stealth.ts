@@ -6,6 +6,7 @@
 
 import crypto from 'node:crypto';
 import { config } from '../config';
+import { randomElement } from '../utils/random';
 import { Fingerprint, desktopFingerprintPool, mobileFingerprintPool, pickRandomFingerprint } from '../fingerprint/pool';
 
 const FINGERPRINT_VERSION = '1';
@@ -22,10 +23,6 @@ export interface CloudFingerprint {
 }
 
 export interface BrowserFingerprint extends Fingerprint {}
-
-function randomElement<T>(arr: ReadonlyArray<T>): T {
-    return arr[Math.floor(Math.random() * arr.length)] as T;
-}
 
 function normalizeCloudFingerprint(input: CloudFingerprint, isMobile: boolean, accountId: string): BrowserFingerprint {
     const defaultPool = isMobile ? mobileFingerprintPool : desktopFingerprintPool;

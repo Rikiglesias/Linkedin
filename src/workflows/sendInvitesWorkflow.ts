@@ -9,6 +9,9 @@ import { runPreflight } from './preflight';
 import { formatWorkflowReport } from './reportFormatter';
 import type { PreflightDbStats, PreflightConfigStatus, PreflightWarning, WorkflowReport } from './types';
 import { getDatabase } from '../db';
+import { runSyncSearchWorkflow } from './syncSearchWorkflow';
+import { enrichLeadsParallel } from '../integrations/parallelEnricher';
+import inquirer from 'inquirer';
 
 export interface SendInvitesOptions {
     listName?: string;
@@ -17,6 +20,7 @@ export interface SendInvitesOptions {
     limit?: number;
     dryRun?: boolean;
     skipPreflight?: boolean;
+    accountId?: string;
 }
 
 async function getScoreStats(): Promise<{ min: number; max: number; avg: number; count: number }> {
@@ -131,8 +135,82 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
 
     const dryRun = preflight.answers['dryRun'] === 'true';
     const listFilter = preflight.answers['list'] || null;
+
+    const db = await getDatabase();
+    let query = `SELECT COUNT(*) as cnt FROM leads WHERE status = 'READY_INVITE'`;
+    const params: unknown[] = [];
+    if (listFilter) {
+        query += ` AND list_name = ?`;
+        params.push(listFilter);
+    }
+    const row = await db.get<{cnt: number}>(query, params);
+
+    if (!row || row.cnt === 0) {
+        if (listFilter) {
+            console.log(`\n  ✅ Sono già state inviate tutte le connessioni per la lista "${listFilter}".\n`);
+        } else {
+            console.log(`\n  ✅ Sono già state inviate tutte le connessioni.\n`);
+        }
+
+        // Fallback: Chiedi all'utente se vuole rimpinguare la lista tramite SalesNav Search
+        if (!dryRun) {
+            const { wantSync } = await inquirer.prompt([{
+                type: 'confirm',
+                name: 'wantSync',
+                message: 'Non ci sono lead READY_INVITE disponibili. Vuoi estrarre nuovi lead da una ricerca salvata di Sales Navigator?',
+                default: true,
+            }]);
+
+            if (wantSync) {
+                const answers = await inquirer.prompt([
+                    {
+                        type: 'input',
+                        name: 'searchName',
+                        message: 'Nome della ricerca salvata (lascia vuoto per farle tutte):',
+                        default: '',
+                    },
+                    {
+                        type: 'input',
+                        name: 'targetList',
+                        message: 'Nome della lista in cui aggiungere i nuovi lead:',
+                        default: listFilter || config.salesNavSyncListName || 'default',
+                    }
+                ]);
+
+                console.log(`\n  Passaggio automatico al flow sync-search...\n`);
+                await runSyncSearchWorkflow({
+                    searchName: answers.searchName,
+                    listName: answers.targetList,
+                    enrichment: true,
+                    dryRun: false,
+                    accountId: opts.accountId,
+                    skipPreflight: true // Skip preflight because the user already answered our minimal prompts
+                });
+            }
+        }
+        return;
+    }
+
     const minScore = parseInt(preflight.answers['minScore'] || '0', 10);
     const sessionLimit = parseInt(preflight.answers['limit'] || '0', 10);
+
+    // ── Pre-enrichment parallelo (zero browser, solo API) ──
+    if (!dryRun) {
+        console.log('\n  ⚡ Pre-enrichment parallelo dei lead (senza browser)...');
+        const enrichReport = await enrichLeadsParallel({
+            listName: listFilter || undefined,
+            limit: sessionLimit > 0 ? sessionLimit : row.cnt,
+            concurrency: 5,
+            onProgress: (done, total, lastLead) => {
+                process.stdout.write(`\r  Enrichment: ${done}/${total} — ${lastLead}`);
+            },
+        });
+        if (enrichReport.total > 0) {
+            console.log(`\n  ✅ Enrichment completato: ${enrichReport.enriched}/${enrichReport.total} arricchiti (${enrichReport.emailsFound} email, ${enrichReport.phonesFound} tel) in ${Math.round(enrichReport.durationMs / 1000)}s\n`);
+        } else {
+            console.log('  ✅ Tutti i lead sono già arricchiti.\n');
+        }
+    }
 
     // Run the existing orchestrator for invite workflow
     console.log('\n  Avvio invio inviti...\n');

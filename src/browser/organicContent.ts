@@ -1,20 +1,7 @@
 import { Page } from 'playwright';
 import { humanDelay, humanMouseMoveToCoords, simulateHumanReading } from './humanBehavior';
 import { logInfo, logWarn } from '../telemetry/logger';
-
-/**
- * Ritorna un intero casuale tra min e max (inclusi).
- */
-function randomInt(min: number, max: number): number {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-/**
- * Seleziona un elemento casuale da un array.
- */
-function randomElement<T>(arr: ReadonlyArray<T>): T {
-    return arr[Math.floor(Math.random() * arr.length)];
-}
+import { randomInt, randomElement } from '../utils/random';
 
 /**
  * Modulo per l'Interazione Organica sui contenuti del Feed LinkedIn.

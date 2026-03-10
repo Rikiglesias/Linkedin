@@ -1,5 +1,3 @@
-version: '3.9'
-
 # ═══════════════════════════════════════════════════════════════════
 # LinkedIn Bot — Docker Compose (Phase 8)
 # Services:
@@ -62,6 +60,11 @@ services:
     networks:
       - linkedin-net
     shm_size: '1gb' # Richiesto da Chromium/Playwright
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # ── Dashboard (Nginx) ────────────────────────────────────────────
   dashboard:
@@ -76,6 +79,11 @@ services:
     depends_on:
       bot:
         condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
     networks:
       - linkedin-net
 

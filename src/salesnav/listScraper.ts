@@ -1,5 +1,6 @@
 import { Page } from 'playwright';
 import { detectChallenge, dismissKnownOverlays, humanDelay, humanMouseMove } from '../browser';
+import { cleanText } from '../utils/text';
 import { blockUserInput, pauseInputBlock, resumeInputBlock } from '../browser/humanBehavior';
 import { isLinkedInUrl, normalizeLinkedInUrl } from '../linkedinUrl';
 import { SALESNAV_NEXT_PAGE_SELECTOR } from './selectors';
@@ -222,9 +223,6 @@ const SHOW_MORE_SELECTOR = [
     'button:has-text("Mostra risultati")',
 ].join(', ');
 
-function cleanText(value: string): string {
-    return value.replace(/\s+/g, ' ').trim();
-}
 
 /** Pattern di stato SalesNav che inquinano il nome (es. "era online 5 ore fa") */
 const SALESNAV_STATUS_PATTERNS = [
