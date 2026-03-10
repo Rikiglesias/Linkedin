@@ -63,7 +63,7 @@ Serve blindare meglio le superfici davvero esposte e riallineare ciò che è dic
 - [x] **nginx senza HTTPS/TLS documentato**: aggiunta nota in cima a `nginx.conf` che spiega la scelta HTTP-only e la delegazione TLS al reverse proxy esterno (Cloudflare, Caddy, Traefik). Se esposto direttamente a Internet → aggiungere TLS con Let's Encrypt.
 - [ ] **PG backup non implementato**: `backupDatabase()` per PostgreSQL ritorna solo una stringa informativa. Implementare `pg_dump` via child_process oppure integrare con backup managed (Supabase, pg_dump cron in sidecar Docker).
 - [x] **VACUUM INTO con interpolazione SQL fixato**: sostituito `VACUUM INTO '${safePath}'` in `db.ts` con `PRAGMA wal_checkpoint(TRUNCATE)` + `fs.copyFileSync()`. Nessun path nella SQL, nessun rischio injection. WAL mode confermato attivo (riga 417).
-- [ ] **Rate limit solo per IP**: il rate limiter Express è basato esclusivamente su IP. Dietro un proxy/NAT, tutti gli utenti condividono il limite. Per gli endpoint autenticati, basare il rate limit anche sul session token o API key.
+- [x] **Rate limit per session/API key**: implementato `rateLimitKeyGenerator` in `server.ts`. Identifica il client per: API key (primi 8 char), session cookie (primi 8 char), o IP come fallback. Applicato a `globalLimiter` e `controlsLimiter`. Dietro NAT ogni client autenticato ha il proprio rate limit indipendente.
 
 ## 5. Database, Persistenza e Strategia Data Layer (Priorità: MEDIA)
 Le decisioni qui vanno prese su profili di carico reali, non per moda architetturale.

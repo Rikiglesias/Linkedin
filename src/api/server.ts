@@ -142,12 +142,24 @@ app.use((req, res, next) => {
 });
 
 // ── Rate Limiting ────────────────────────────────────────────────────────────
-// Limite globale: 120 req/min per IP su tutti gli endpoint /api/
+// keyGenerator: identifica il client per session token o API key, non solo IP.
+// Dietro NAT/proxy tutti condividono l'IP → il rate limit per IP è insufficiente.
+function rateLimitKeyGenerator(req: Request): string {
+    const ip = req.ip ?? req.socket?.remoteAddress ?? 'unknown';
+    const apiKey = (req.header('x-api-key') ?? '').trim();
+    if (apiKey) return `apikey:${apiKey.slice(0, 8)}`;
+    const sessionToken = parseCookieHeader(req)[DASHBOARD_SESSION_COOKIE];
+    if (sessionToken) return `session:${sessionToken.slice(0, 8)}`;
+    return `ip:${ip}`;
+}
+
+// Limite globale: 120 req/min per client su tutti gli endpoint /api/
 const globalLimiter = rateLimit({
     windowMs: 60_000,
     max: 120,
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: rateLimitKeyGenerator,
     skip: (req) => {
         const path = req.path ?? '';
         const originalUrl = req.originalUrl ?? '';
@@ -163,6 +175,7 @@ const controlsLimiter = rateLimit({
     max: 10,
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: rateLimitKeyGenerator,
     message: { error: 'Troppe operazioni di controllo. Attendi prima di riprovare.' },
 });
 app.use('/api/controls/', controlsLimiter);
