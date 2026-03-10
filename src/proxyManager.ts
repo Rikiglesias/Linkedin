@@ -625,7 +625,10 @@ export function markIntegrationProxyHealthy(proxy: ProxyConfig): void {
     integrationProxyFailureUntil.delete(proxyKey(proxy));
 }
 
-export function getProxyPoolStatus(): ProxyPoolStatus {
+function getPoolStatusInternal(
+    cooldownRegistry: Map<string, number>,
+    cursor: number,
+): ProxyPoolStatus {
     const pool = loadProxyPool();
     if (pool.length === 0) {
         return {
@@ -644,7 +647,7 @@ export function getProxyPoolStatus(): ProxyPoolStatus {
     let ready = 0;
     let cooling = 0;
     for (const proxy of pool) {
-        const cooldownUntil = proxyFailureUntil.get(proxyKey(proxy)) ?? 0;
+        const cooldownUntil = cooldownRegistry.get(proxyKey(proxy)) ?? 0;
         if (cooldownUntil > now) {
             cooling += 1;
         } else {
@@ -664,51 +667,16 @@ export function getProxyPoolStatus(): ProxyPoolStatus {
         mobile,
         residential,
         unknown,
-        rotationCursor,
+        rotationCursor: cursor,
     };
 }
 
+export function getProxyPoolStatus(): ProxyPoolStatus {
+    return getPoolStatusInternal(proxyFailureUntil, rotationCursor);
+}
+
 export function getIntegrationProxyPoolStatus(): ProxyPoolStatus {
-    const pool = loadProxyPool();
-    if (pool.length === 0) {
-        return {
-            configured: false,
-            total: 0,
-            ready: 0,
-            cooling: 0,
-            mobile: 0,
-            residential: 0,
-            unknown: 0,
-            rotationCursor: 0,
-        };
-    }
-
-    const now = Date.now();
-    let ready = 0;
-    let cooling = 0;
-    for (const proxy of pool) {
-        const cooldownUntil = integrationProxyFailureUntil.get(proxyKey(proxy)) ?? 0;
-        if (cooldownUntil > now) {
-            cooling += 1;
-        } else {
-            ready += 1;
-        }
-    }
-
-    const mobile = pool.filter((proxy) => normalizeProxyType(proxy.type, 'unknown') === 'mobile').length;
-    const residential = pool.filter((proxy) => normalizeProxyType(proxy.type, 'unknown') === 'residential').length;
-    const unknown = Math.max(0, pool.length - mobile - residential);
-
-    return {
-        configured: true,
-        total: pool.length,
-        ready,
-        cooling,
-        mobile,
-        residential,
-        unknown,
-        rotationCursor: integrationRotationCursor,
-    };
+    return getPoolStatusInternal(integrationProxyFailureUntil, integrationRotationCursor);
 }
 
 export function buildProxyUrl(proxy: ProxyConfig): string {
