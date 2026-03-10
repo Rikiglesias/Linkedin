@@ -49,6 +49,8 @@ export interface ScheduleResult {
     queuedMessageJobs: number;
     listBreakdown: ListScheduleBreakdown[];
     dryRun: boolean;
+    moodFactor?: number;
+    ratioShift?: number;
 }
 
 export interface ScheduleOptions {
@@ -910,5 +912,7 @@ export async function scheduleJobs(
         queuedMessageJobs,
         listBreakdown: Array.from(listBreakdown.values()),
         dryRun,
+        moodFactor: Math.round(inviteMoodFactor * 100) / 100,
+        ratioShift: Math.round(ratioShift * 100) / 100,
     };
 }

@@ -984,21 +984,21 @@ function bindControls(): void {
             const editor = row?.querySelector<HTMLTextAreaElement>('textarea.comment-suggestion-editor');
             const comment = editor?.value ?? '';
             void api.approveCommentSuggestion(leadId, suggestionIndex, comment).then((ok) => {
-                setStatusMessage(ok ? `Bozza approvata (lead #${leadId})` : `Errore approvazione bozza (lead #${leadId})`);
+                showToast(ok ? `Bozza approvata (lead #${leadId})` : `Errore approvazione bozza (lead #${leadId})`, ok ? 'success' : 'error');
                 if (ok) {
                     void refreshDashboard();
                 }
-            }).catch(() => setStatusMessage(`Errore di rete approvazione bozza (lead #${leadId})`));
+            }).catch(() => showToast(`Errore di rete approvazione bozza (lead #${leadId})`, 'error'));
             return;
         }
 
         if (target.classList.contains('comment-suggestion-reject')) {
             void api.rejectCommentSuggestion(leadId, suggestionIndex).then((ok) => {
-                setStatusMessage(ok ? `Bozza rifiutata (lead #${leadId})` : `Errore rifiuto bozza (lead #${leadId})`);
+                showToast(ok ? `Bozza rifiutata (lead #${leadId})` : `Errore rifiuto bozza (lead #${leadId})`, ok ? 'success' : 'error');
                 if (ok) {
                     void refreshDashboard();
                 }
-            }).catch(() => setStatusMessage(`Errore di rete rifiuto bozza (lead #${leadId})`));
+            }).catch(() => showToast(`Errore di rete rifiuto bozza (lead #${leadId})`, 'error'));
         }
     });
 
