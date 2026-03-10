@@ -140,7 +140,7 @@ function printHelp(): void {
     console.log('  send-invites  [--list "X"] [--note ai|template|none] [--min-score N] [--limit N] [--dry-run]');
     console.log('  Opzioni comuni: --skip-preflight  --no-proxy  --account <id>  --no-enrich');
     console.log('');
-    console.log('Comandi principali:');
+    console.log('Comandi principali (job queue — processa job dalla coda):');
     console.log('  import --file <file.csv> --list <nome_lista>');
     console.log('  run invite|check|message|all (oppure --workflow <valore>)');
     console.log('  dry-run invite|check|message|all (oppure --workflow <valore>)');
