@@ -134,19 +134,17 @@ Risultati della ricerca sistematica con grep su tutta la codebase per funzioni d
 - [ ] **Due file `pool.ts` separati con ruoli diversi**: `src/fingerprint/pool.ts` (163 righe — pool di fingerprint reali con UA, JA3, viewport) e `src/browser/fingerprint/pool.ts` (55 righe — `FingerprintPool` class con noise generation FNV-1a). `stealth.ts` importa dal primo, `launcher.ts` importa dal secondo. La separazione è funzionale ma la struttura a cartelle è confusa (stesso nome `pool.ts` in due path diversi). Consolidare in una posizione unica (es. `src/fingerprint/pool.ts` + `src/fingerprint/noiseGenerator.ts`) per chiarezza.
 
 ### File morti confermati
-- [ ] **`data/compare_extras.js`** — script standalone JS che usa `require('sqlite3')` e Supabase per confrontare record. Non è importato né referenziato da nessun file nella codebase. Spostare in `scripts/` se ancora utile, altrimenti eliminare.
-- [ ] **`data/linkedin.db`** — file vuoto di 0 bytes, residuo di un vecchio path. Il DB attivo è `linkedin_bot.sqlite`. Eliminare.
+- [x] **`data/compare_extras.js`** — eliminato (file morto, mai referenziato).
+- [x] **`data/linkedin.db`** — non esisteva (già documentato nel `.gitignore`).
 
 ## 11. Pulizia Root, Igiene Repository e Coerenza File (Priorità: MEDIA)
 Analisi sistematica di ogni file in root e della struttura del repository per rimuovere il rumore, allineare la documentazione, e rendere il progetto professionale.
 
 ### File root da rimuovere o spostare
-- [ ] **`lint.json` (50KB)** — output di `eslint --format json` persistito in root. Non è nel `.gitignore`. Aggiungere `lint.json` al `.gitignore` ed eliminare il file.
-- [ ] **`lint_output.txt` (49 bytes)** — output vuoto di lint. Stesso problema. Aggiungere al `.gitignore` ed eliminare.
-- [ ] **`typecheck_output.txt` (73 bytes)** — output vuoto di typecheck. Stessa cosa.
+- [x] **`lint.json`, `lint_output.txt`, `typecheck_output.txt`**: già aggiunti al `.gitignore` (righe 35-37).
 - [ ] **`.env.bak` (4.7KB)** — backup manuale del `.env`. Il `.gitignore` ha il pattern `.env.bak` ma verificare che non sia tracked in git (`git ls-files .env.bak`). Se tracked, rimuovere dalla history con `git rm --cached`.
 - [ ] **`repomix.config.json`** — configurazione per Repomix (tool per generare dump codebase per AI). Referenzia `ROADMAP.md` che non esiste in root. Utile se usi Repomix, altrimenti eliminare. Se lo tieni, aggiornare la lista `include` (rimuovere `ROADMAP.md`, aggiungere `TODO_MIGLIORAMENTI.md`).
-- [ ] **`.claude/` directory (1 file: `settings.local.json`)** — configurazione Claude Code locale. Aggiungere `.claude/` al `.gitignore` se non già presente — è config personale che non va in repo.
+- [x] **`.claude/` directory**: già aggiunto `.claude/` al `.gitignore` (riga 43).
 
 ### Documentazione root — consolidamento
 - [ ] **Troppi `.md` in root (9 file, ~130KB)**. I file: `README.md` (33KB), `TODO.md` (75KB!), `TODO_MIGLIORAMENTI.md` (41KB), `SECURITY.md` (8KB), `THREAT_MODEL.md` (5KB), `GUIDA_ANTI_BAN.md` (4KB), `INTEGRATIONS.md` (5KB), `CONFIG_REFERENCE.md` (8KB), `AI_QUALITY_PIPELINE.md` (1KB), `AUDIT_COMPLETAMENTI_2026.md` (39KB). Consolidare: spostare `AI_QUALITY_PIPELINE.md`, `CONFIG_REFERENCE.md`, `INTEGRATIONS.md`, `AUDIT_COMPLETAMENTI_2026.md` in una directory `docs/`. Tenere in root solo: `README.md`, `SECURITY.md`, `THREAT_MODEL.md`, `GUIDA_ANTI_BAN.md`, `TODO_MIGLIORAMENTI.md`. Valutare se `TODO.md` (75KB) è ancora attuale o va archiviato.
