@@ -161,7 +161,7 @@ Analisi sistematica di ogni file in root e della struttura del repository per ri
 Verifica sistematica che tutti i comandi CLI documentati nel help siano implementati, che gli alias deprecati siano gestiti coerentemente, e che i workflow siano completi.
 
 ### Comandi deprecati — pulizia
-- [ ] **10 alias deprecati ancora funzionanti**. In `index.ts` righe 259-279 ci sono 10 alias deprecati: `connect`, `check`, `message`, `salesnav-sync`, `salesnav-bulk-save`, `salesnav-resolve`, `salesnav-lists`, `salesnav-create-list`, `salesnav-add-lead`, `salesnav-add-to-list`. Tutti hanno un handler nel switch/case (righe 428-451, 562-570) che delega al comando nuovo. Il flag `--strict` li rifiuta. **Azione**: definire una data di rimozione (es. v2.0) e aggiungere un warning con countdown ("sarà rimosso tra X release"). Per i comandi SalesNav vecchi, lo switch case ha già il redirect — ma `salesnav-extract-search` e `salesnav-extract-first-search` (righe 447-451) fanno `process.exit(1)` con errore. Rimuovere queste 2 entry morte che non servono più nemmeno come warning.
+- [ ] **10 alias deprecati ancora funzionanti**. `DEPRECATED_ALIASES` in `index.ts` con 10 redirect + warning. `--strict` li rifiuta. `salesnav-extract-search` e `salesnav-extract-first-search` già rimossi dal codice. Resta da: definire data di rimozione (v2.0) e aggiungere countdown nel warning.
 - [ ] **`browserCommands` Set non allineato con deprecati**. In `index.ts` righe 280-304, il Set `browserCommands` include sia i comandi nuovi che quelli deprecati (`salesnav-sync`, `salesnav-bulk-save`, `salesnav-resolve`, `connect`, `check`, `message`, `warmup`). Se i deprecati vengono rimossi, questo Set va aggiornato.
 
 ### Comandi non documentati nel help
