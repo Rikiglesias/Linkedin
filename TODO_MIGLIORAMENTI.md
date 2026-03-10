@@ -276,8 +276,8 @@ Il flusso completo dall'accensione del PC allo spegnimento. Ogni fase ha un razi
 
 ### FASE 4 — Fine giornata e shutdown
 - [x] **humanWindDown**: già implementato in `launcher.ts` con distribuzione pesata: feed 40%, notifiche 20%, homepage 15%, restare 25%. Vedi sez.3.
-- [ ] **Daily report automatico**: `DAILY_REPORT_AUTO_ENABLED=true` + `DAILY_REPORT_HOUR=20` invia un report Telegram alle 20:00 con KPI giornalieri. Verificare che funzioni e che il report includa: inviti inviati, accettazioni, messaggi, risposte, risk score, incidenti, pending ratio.
-- [ ] **Backup automatico**: il `run-loop` in `loopCommand.ts` esegue `backupDatabase()` periodicamente. Con `BACKUP_RETENTION_DAYS=7`, i backup vecchi vengono cancellati. Verificare che il backup avvenga PRIMA dello shutdown, non dopo.
+- [x] **Daily report automatico**: `DAILY_REPORT_AUTO_ENABLED=true` + `DAILY_REPORT_HOUR=20`. Report Telegram include: funnel metrics, bot execution, risk score + pending ratio (aggiunto), SLO, selector cache KPI, AB testing, timing slots.
+- [x] **Backup automatico**: già implementato nel `run-loop` come sub-task `db_backup` in `loopCommand.ts`. Esegue `backupDatabase()` con WAL checkpoint + file copy (fixato da VACUUM INTO). `BACKUP_RETENTION_DAYS=7` gestito da `scripts/backupDb.ts`.
 - [x] **Graceful shutdown**: già implementato. `setupGracefulShutdown()` in `index.ts` gestisce SIGINT/SIGTERM. PM2 `kill_timeout: 10000` confermato in `ecosystem.config.cjs`.
 
 ### FASE 5 — Monitoring notturno e weekend
