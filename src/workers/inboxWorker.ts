@@ -2,6 +2,7 @@ import { clickWithFallback, humanDelay, humanMouseMove, simulateHumanReading, ty
 import { WorkerContext } from './context';
 import { resolveIntentAndDraft } from '../ai/intentResolver';
 import { logInfo, logWarn } from '../telemetry/logger';
+import { sendTelegramAlert } from '../telemetry/alerts';
 import { WorkerExecutionResult, workerResult } from './result';
 import { appendLeadReplyDraft, countRecentMessageHash, getLeadByLinkedinUrl, storeLeadIntent, storeMessageHash } from '../core/repositories';
 import { hashMessage } from '../validation/messageValidator';
@@ -252,6 +253,26 @@ export async function processInboxJob(
                                 reasoning: resolution.reasoning,
                                 autoReplySent,
                             });
+
+                            // ── Export lead "hot": notifica immediata per lead con intent positivo ──
+                            // L'utente vuole sapere SUBITO quando un lead risponde positivamente,
+                            // non dopo ore nel report giornaliero.
+                            if (
+                                (resolution.intent === 'POSITIVE' || resolution.intent === 'QUESTIONS') &&
+                                resolution.confidence >= 0.8
+                            ) {
+                                const name = `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'Lead';
+                                const company = lead.account_name || '';
+                                void sendTelegramAlert(
+                                    `🔥 **Lead caldo: ${name}${company ? ` di ${company}` : ''}**\n` +
+                                    `Intent: ${resolution.intent} (${Math.round(resolution.confidence * 100)}%)\n` +
+                                    `Email: ${lead.email || lead.business_email || 'N/A'}\n` +
+                                    `LinkedIn: ${lead.linkedin_url || 'N/A'}\n` +
+                                    `Messaggio: "${rawText.trim().substring(0, 100)}${rawText.trim().length > 100 ? '...' : ''}"`,
+                                    'Lead Hot',
+                                    'info',
+                                ).catch(() => {});
+                            }
                         }
                     }
                     await logInfo('inbox.analyzed_message', {
