@@ -646,6 +646,16 @@ export async function runLoopCommand(args: string[]): Promise<void> {
             const started = new Date().toISOString();
             console.log(`[LOOP] cycle = ${cycle} started_at = ${started} `);
 
+            // ── Maintenance window skip (03:00-06:00 locale) ──────────────────
+            // LinkedIn fa maintenance notturno e deploy infrastrutturali. Durante
+            // questi periodi i selettori possono cambiare e le API sono instabili.
+            const currentHour = new Date().getHours();
+            if (currentHour >= 3 && currentHour < 6) {
+                console.log(`[LOOP] maintenance_window_skip hour=${currentHour} — skipping cycle`);
+                await sleepWithLockHeartbeat(15 * 60 * 1000, lockOwnerId ?? '', lockTtlSeconds);
+                continue;
+            }
+
             let runId: number | null = null;
             let profilesDiscoveredThisRun = 0;
             let runStatus: RunStatus = 'RUNNING';
