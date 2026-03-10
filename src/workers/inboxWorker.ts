@@ -96,6 +96,40 @@ export async function processInboxJob(
         return workerResult(0);
     }
 
+    // ── Anti-ban: rilevare messaggi di sistema LinkedIn ("unusual activity", "restricted") ──
+    // LinkedIn manda messaggi prima di un ban. Se ne troviamo uno, pausa immediata.
+    try {
+        const allConvos = page.locator(joinSelectors('inboxConversationItem'));
+        const convoCount = await allConvos.count();
+        for (let c = 0; c < Math.min(convoCount, 8); c++) {
+            const previewText = await allConvos.nth(c).innerText().catch(() => '');
+            const lower = previewText.toLowerCase();
+            const isLinkedInSystemWarning =
+                (lower.includes('linkedin') || lower.includes('security')) &&
+                (lower.includes('unusual activity') || lower.includes('restricted') ||
+                 lower.includes('verify your identity') || lower.includes('temporarily limited') ||
+                 lower.includes('attività insolita') || lower.includes('account limitato') ||
+                 lower.includes('verifica la tua identità'));
+            if (isLinkedInSystemWarning) {
+                await logWarn('inbox.linkedin_system_warning_detected', {
+                    accountId: payload.accountId,
+                    preview: previewText.slice(0, 200),
+                });
+                const { pauseAutomation } = await import('../risk/incidentManager');
+                await pauseAutomation('LINKEDIN_INBOX_WARNING', { preview: previewText.slice(0, 200) }, 1440);
+                const { sendTelegramAlert } = await import('../telemetry/alerts');
+                await sendTelegramAlert(
+                    `🚨 **LinkedIn warning rilevato nella inbox!**\n\nPreview: ${previewText.slice(0, 150)}\n\n_Automazione in pausa per 24h._`,
+                    'LinkedIn Warning',
+                    'critical',
+                ).catch(() => null);
+                return workerResult(0);
+            }
+        }
+    } catch {
+        // Best effort — non bloccare l'inbox processing se il check fallisce
+    }
+
     const unreadConversations = page.locator(`${joinSelectors('inboxConversationItem')}:has(${joinSelectors('inboxUnreadBadge')})`);
     const count = await unreadConversations.count();
 
