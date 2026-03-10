@@ -202,6 +202,7 @@ async function runQueuedJobsForAccount(
                 },
                 60,
             );
+            return;
         }
 
         recordSuccessfulAuth(account.sessionDir, account.id);
