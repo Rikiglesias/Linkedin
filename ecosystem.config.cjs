@@ -17,6 +17,7 @@ module.exports = {
         merge_logs: true,
         log_date_format: "YYYY-MM-DD HH:mm:ss Z",
         log_type: "json",
+        max_size: "50M",
         env: {
             NODE_ENV: "development",
             FORCE_COLOR: "1"
