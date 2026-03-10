@@ -130,11 +130,12 @@ export function showToast(
     const stack = document.getElementById('toast-stack');
     if (!stack) return;
 
+    const safeSeverity: ToastSeverity = severity in TOAST_ICONS ? severity : 'info';
     const toast = document.createElement('div');
-    toast.className = `toast toast--${severity}`;
+    toast.className = `toast toast--${safeSeverity}`;
     toast.setAttribute('role', 'status');
     toast.innerHTML = `
-        <span class="toast-icon">${TOAST_ICONS[severity]}</span>
+        <span class="toast-icon">${TOAST_ICONS[safeSeverity]}</span>
         <span class="toast-body">${escapeHtml(message)}</span>
     `;
 
