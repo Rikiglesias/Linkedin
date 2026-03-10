@@ -1,7 +1,8 @@
 import { sendTelegramAlert } from './alerts';
-import { getDailyStatsSnapshot, getOperationalObservabilitySnapshot } from '../core/repositories';
+import { getDailyStatsSnapshot, getOperationalObservabilitySnapshot, getRiskInputs } from '../core/repositories';
+import { evaluateRisk } from '../risk/riskEngine';
 import { getDatabase } from '../db';
-import { getLocalDateString } from '../config';
+import { config, getLocalDateString } from '../config';
 import { getTimingExperimentReport, getTopTimeSlots } from '../ml/timingOptimizer';
 import { getVariantLeaderboard } from '../ml/abBandit';
 
@@ -11,6 +12,10 @@ export async function generateAndSendDailyReport(targetDate?: string): Promise<b
     // Raccogliamo i dati aggregati di tutto il giorno da `daily_stats`
     const stats = await getDailyStatsSnapshot(localDate);
     const observability = await getOperationalObservabilitySnapshot(localDate);
+
+    // Risk snapshot per pending ratio e risk score — i KPI più importanti per l'utente
+    const riskInputs = await getRiskInputs(localDate, config.hardInviteCap);
+    const riskSnapshot = evaluateRisk(riskInputs);
 
     // Contiamo le conversioni e l'impatto funnel globale attingendo alla tabella leads
     const db = await getDatabase();
@@ -131,6 +136,8 @@ export async function generateAndSendDailyReport(targetDate?: string): Promise<b
         `• Campaign Runs Totali: *${campaignRunsStats?.total_runs ?? 0}*`,
         `• Fallimenti Critici Runs: *${campaignRunsStats?.failed_runs ?? 0}*`,
         `\n*⚠️ Risk & Health*`,
+        `• Risk Score: *${riskSnapshot.score}/100* (${riskSnapshot.action})`,
+        `• Pending Ratio: *${(riskSnapshot.pendingRatio * 100).toFixed(1)}%*`,
         `• Errori Esecuzione (Job/Orchestrator): *${stats.runErrors}*`,
         `• Problemi Selettori UI: *${stats.selectorFailures}*`,
         `• Challenge LinkedIn Apparse: *${stats.challengesCount}*`,
