@@ -107,6 +107,10 @@ It does not delete active leads/jobs.
 - Use a password manager and enable 2FA on LinkedIn and email.
 - Restrict remote-access software and unknown browser extensions.
 
+## Dashboard auth bootstrap warning
+- The dashboard supports session bootstrap via URL query string (`?api_key=...`). The API key transits in the URL and may be captured by browser history, server access logs, or referer headers. After bootstrap, the key is removed from the URL via `history.replaceState` and a session cookie is created.
+- **Recommendation**: use this method only on localhost or trusted networks. For remote access, prefer direct API key header (`x-api-key`) or Basic auth. A form-based login page is planned for a future release.
+
 ## AI key hygiene (if enabled)
 - Keep `OPENAI_API_KEY` only in local `.env` (never in repository files).
 - Rotate key periodically and after any suspected leak.
