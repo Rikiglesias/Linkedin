@@ -283,8 +283,8 @@ Il flusso completo dall'accensione del PC allo spegnimento. Ogni fase ha un razi
 - [x] **Graceful shutdown**: già implementato. `setupGracefulShutdown()` in `index.ts` gestisce SIGINT/SIGTERM. PM2 `kill_timeout: 10000` confermato in `ecosystem.config.cjs`.
 
 ### FASE 5 — Monitoring notturno e weekend
-- [ ] **Zero attività nel weekend**: `WEEKEND_POLICY_ENABLED=true` blocca le operazioni sabato e domenica. Il `isWorkingHour()` in `config/index.ts` ritorna `false` se `day === 0 || day === 6`. Verificare che il `run-loop` rispetti questo e non esegua job nel weekend.
-- [ ] **Alert notturni**: se il bot è in `run-loop` con PM2, e un incidente critico avviene di notte (challenge, 429, quarantine), il Telegram alert (`sendTelegramAlert` in `telemetry/alerts.ts`) deve notificare immediatamente. Verificare che il token Telegram e chat ID siano configurati e funzionanti.
+- [x] **Zero attività nel weekend**: già implementato. `isWorkingHour()` in `config/index.ts` ritorna `false` se `weekendPolicyEnabled && (day === 0 || day === 6)`. Lo scheduler ritorna `getWorkingHourIntensity() === 0` → budget zero → nessun job. `WEEKEND_POLICY_ENABLED=true` nel `.env`.
+- [x] **Alert notturni**: già implementato. `sendTelegramAlert` in `telemetry/alerts.ts` invia notifiche 24/7 indipendentemente dall'orario. Token Telegram e chat ID configurati nel `.env` (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`). Challenge, 429, quarantine e cookie anomaly generano alert immediati.
 - [ ] **Security advisor periodico**: `SECURITY_ADVISOR_ENABLED=true` + `SECURITY_ADVISOR_INTERVAL_DAYS=30` esegue un audit automatico. Il `securityAdvisor.ts` (564 righe) verifica: documenti SECURITY.md/THREAT_MODEL.md aggiornati, audit trail attivo, secret rotation status, incidenti aperti. Verificare che il report venga generato in `data/security-advisor/`.
 
 ### FASE 6 — Manutenzione periodica (settimanale/mensile)
