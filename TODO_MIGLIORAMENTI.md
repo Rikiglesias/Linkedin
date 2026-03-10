@@ -103,7 +103,7 @@ Sezione completamente nuova emersa dall'analisi 360°. Copre infrastruttura, igi
 - [x] **`docker-compose.yml` `version: '3.9'` deprecato**: il campo `version` è deprecato nelle versioni recenti di Docker Compose. Rimuovere la riga.
 - [x] **Deep healthcheck endpoint**: implementato `GET /api/health/deep` in `server.ts`. Verifica: (1) connettività DB (`SELECT 1`), (2) stato pausa/quarantine, (3) outbox backlog vs threshold, (4) queue depth. Ritorna 200 se tutto OK, 503 se degradato con dettaglio per ogni check.
 - [ ] **Monitoring / APM assente**: nessuna integrazione con Prometheus, Grafana, Sentry o equivalenti. Esporre metriche Prometheus su `/metrics` (invites/hour, risk score, error rate, queue depth, proxy health). Aggiungere Sentry per error tracking centralizzato.
-- [x] **File orfani in root da pulire**: `lint.json`, `lint_output.txt`, `typecheck_output.txt`, `data/linkedin.db`, `.claude/` aggiunti al `.gitignore`. I file `data/compare_extras.js` e `data/linkedin.db` restano da eliminare manualmente.
+- [x] **File orfani in root da pulire**: `lint.json`, `lint_output.txt`, `typecheck_output.txt`, `data/linkedin.db`, `.claude/` aggiunti al `.gitignore`. `data/compare_extras.js` eliminato. `data/linkedin.db` non esisteva.
 - [x] **`src/services/` directory vuota**: directory presente ma completamente vuota. Rimuoverla oppure usarla come target per la separazione business logic dai repository (vedi sezione 2, repository pattern).
 - [ ] **Backup manuali non gestiti in `data/`**: 3 file `.sqlite` di backup manuali accumulati. Verificare che `BACKUP_RETENTION_DAYS` funzioni correttamente e gestisca la pulizia automatica. Rimuovere i backup manuali obsoleti.
 
@@ -277,10 +277,10 @@ Il flusso completo dall'accensione del PC allo spegnimento. Ogni fase ha un razi
 - [ ] **Enrichment parallelo durante i delay**: durante i `interJobDelay` (120-180s) il processo è idle. Integrare `enrichLeadsParallel()` (da `parallelEnricher.ts`) per arricchire lead in background senza browser. Zero traffico LinkedIn, zero rischio.
 
 ### FASE 4 — Fine giornata e shutdown
-- [ ] **humanWindDown**: `launcher.ts` `humanWindDown()` (righe 484-507) naviga al feed prima di chiudere. Come da sezione 3 del TODO: variare la destinazione (feed, notifiche, homepage, o restare sulla pagina corrente). Implementare.
+- [x] **humanWindDown**: già implementato in `launcher.ts` con distribuzione pesata: feed 40%, notifiche 20%, homepage 15%, restare 25%. Vedi sez.3.
 - [ ] **Daily report automatico**: `DAILY_REPORT_AUTO_ENABLED=true` + `DAILY_REPORT_HOUR=20` invia un report Telegram alle 20:00 con KPI giornalieri. Verificare che funzioni e che il report includa: inviti inviati, accettazioni, messaggi, risposte, risk score, incidenti, pending ratio.
 - [ ] **Backup automatico**: il `run-loop` in `loopCommand.ts` esegue `backupDatabase()` periodicamente. Con `BACKUP_RETENTION_DAYS=7`, i backup vecchi vengono cancellati. Verificare che il backup avvenga PRIMA dello shutdown, non dopo.
-- [ ] **Graceful shutdown**: `index.ts` `setupGracefulShutdown()` (righe 78-99) gestisce SIGINT/SIGTERM: recupera job RUNNING → PENDING, chiude CycleTLS, chiude DB. Verificare che PM2 invii SIGTERM (non SIGKILL) con `kill_timeout: 10000` in `ecosystem.config.cjs` (già configurato).
+- [x] **Graceful shutdown**: già implementato. `setupGracefulShutdown()` in `index.ts` gestisce SIGINT/SIGTERM. PM2 `kill_timeout: 10000` confermato in `ecosystem.config.cjs`.
 
 ### FASE 5 — Monitoring notturno e weekend
 - [ ] **Zero attività nel weekend**: `WEEKEND_POLICY_ENABLED=true` blocca le operazioni sabato e domenica. Il `isWorkingHour()` in `config/index.ts` ritorna `false` se `day === 0 || day === 6`. Verificare che il `run-loop` rispetti questo e non esegua job nel weekend.
