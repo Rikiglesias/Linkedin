@@ -35,9 +35,24 @@ import { enrichLeadAuto } from '../integrations/leadEnricher';
 import { getDatabase } from '../db';
 import { logError, logInfo } from '../telemetry/logger';
 
+// Parole attese nel bottone Connect per confidence check pre-click.
+// Previene click su bottone sbagliato se LinkedIn cambia il layout.
+const CONNECT_BUTTON_KEYWORDS = ['connect', 'collegati', 'connetti'];
+
+function textContainsConnectKeyword(text: string): boolean {
+    const lower = text.toLowerCase().trim();
+    return CONNECT_BUTTON_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
 async function clickConnectOnProfile(page: Page): Promise<boolean> {
     const primaryBtn = page.locator(joinSelectors('connectButtonPrimary')).first();
     if ((await primaryBtn.count()) > 0) {
+        // Confidence check: il testo del bottone contiene "Connect"/"Collegati"?
+        const btnText = await primaryBtn.innerText().catch(() => '');
+        if (!textContainsConnectKeyword(btnText)) {
+            console.warn(`[INVITE] Confidence check FAILED: bottone primario dice "${btnText.trim().substring(0, 40)}" — skip`);
+            return false;
+        }
         await humanMouseMove(page, joinSelectors('connectButtonPrimary'));
         await humanDelay(page, 120, 320);
         await primaryBtn.click();
@@ -52,6 +67,11 @@ async function clickConnectOnProfile(page: Page): Promise<boolean> {
         await humanDelay(page, 700, 1300);
         const connectInMenu = page.locator(joinSelectors('connectInMoreMenu')).first();
         if ((await connectInMenu.count()) > 0) {
+            const menuText = await connectInMenu.innerText().catch(() => '');
+            if (!textContainsConnectKeyword(menuText)) {
+                console.warn(`[INVITE] Confidence check FAILED: menu item dice "${menuText.trim().substring(0, 40)}" — skip`);
+                return false;
+            }
             await humanMouseMove(page, joinSelectors('connectInMoreMenu'));
             await humanDelay(page, 120, 300);
             await connectInMenu.click();
