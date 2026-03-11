@@ -4,7 +4,7 @@ import path from 'path';
 const rootDir = process.cwd();
 const domainsPath = path.resolve(rootDir, 'src', 'config', 'domains.ts');
 const envPath = path.resolve(rootDir, 'src', 'config', 'env.ts');
-const outputPath = path.resolve(rootDir, 'CONFIG_REFERENCE.md');
+const outputPath = path.resolve(rootDir, 'docs', 'CONFIG_REFERENCE.md');
 
 const domainsSource = fs.readFileSync(domainsPath, 'utf8');
 const envSource = fs.readFileSync(envPath, 'utf8');

@@ -48,6 +48,16 @@ export async function attemptChallengeResolution(page: Page): Promise<boolean> {
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         try {
+            const stillPresent = await isStillOnChallengePage(page);
+            if (!stillPresent) {
+                if (attempt > 1) challengeResolutionsToday += 1;
+                await logInfo('challenge.resolved_before_screenshot', {
+                    attempt,
+                    dailyTotal: challengeResolutionsToday,
+                });
+                return true;
+            }
+
             await logInfo('challenge.resolution_attempt', {
                 attempt,
                 maxAttempts: MAX_ATTEMPTS,

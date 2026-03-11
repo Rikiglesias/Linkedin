@@ -27,11 +27,9 @@ repomix-output.txt
 tsc_out.log
 
 # Documentazione non necessaria nel container
+docs
+README.md
 TODO*.md
-AUDIT*.md
-AI_QUALITY_PIPELINE.md
-CONFIG_REFERENCE.md
-INTEGRATIONS.md
 GUIDA_ANTI_BAN.md
 THREAT_MODEL.md
 SECURITY.md

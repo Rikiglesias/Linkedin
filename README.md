@@ -182,7 +182,7 @@ npm run start:dev -- run-loop
 | `npm run lint` | ESLint su tutto il progetto |
 | `npm run format` | Prettier su src/ e public/ |
 | `npm run docs` | Genera TypeDoc in docs/ |
-| `npm run docs:config` | Genera CONFIG_REFERENCE.md da types.ts |
+| `npm run docs:config` | Genera docs/CONFIG_REFERENCE.md da types.ts |
 | `npm test` | Suite completa: vitest + integration + e2e:dry + a11y |
 | `npm run ramp-up` | Ramp-up graduale del budget giornaliero |
 
@@ -279,8 +279,14 @@ linkedin/
 ├── tsconfig.json                   # TypeScript backend
 ├── tsconfig.frontend.json          # TypeScript frontend
 ├── .env.example                    # Template variabili d'ambiente
-├── CONFIG_REFERENCE.md             # Riferimento completo 180+ variabili .env
-└── AUDIT_COMPLETAMENTI_2026.md     # Storico audit task P0–P5
+├── docs/
+│   ├── AI_QUALITY_PIPELINE.md      # Pipeline qualità AI
+│   ├── CONFIG_REFERENCE.md         # Riferimento completo 180+ variabili .env
+│   ├── INTEGRATIONS.md             # Guida integrazioni (Supabase, n8n, Telegram)
+│   └── archive/
+│       ├── AUDIT_COMPLETAMENTI_2026.md  # Storico audit task P0–P5
+│       └── TODO.md                     # TODO legacy (188 task completati)
+└── TODO_MIGLIORAMENTI.md           # TODO attivo V2 — miglioramenti enterprise
 ```
 
 ---
@@ -394,7 +400,7 @@ npm run db:restore:drill   # Verifica integrità su DB temporaneo senza toccare 
 
 ## Configurazione .env
 
-Copia `.env.example` in `.env` e configura le variabili. Vedi [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md) per la lista completa (180+).
+Copia `.env.example` in `.env` e configura le variabili. Vedi [CONFIG_REFERENCE.md](docs/CONFIG_REFERENCE.md) per la lista completa (180+).
 
 ### Variabili obbligatorie
 

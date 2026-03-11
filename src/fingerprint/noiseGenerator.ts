@@ -1,4 +1,4 @@
-import { BrowserFingerprint } from '../stealth';
+import { Fingerprint } from './pool';
 
 export interface FingerprintSet {
     id: string;
@@ -39,7 +39,7 @@ export class FingerprintPool {
         return Math.max(0.000001, (hash % 10000) / 1000000);
     }
 
-    public static generateConsistentProfile(base: BrowserFingerprint): FingerprintSet {
+    public static generateConsistentProfile(base: Fingerprint): FingerprintSet {
         const seedBase = `${base.userAgent}|${base.id}`;
 
         return {

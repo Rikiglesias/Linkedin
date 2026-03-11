@@ -16,7 +16,7 @@
         "eslint.config.js",
         ".env.example",
         "TODO_MIGLIORAMENTI.md",
-        "INTEGRATIONS.md",
+        "docs/INTEGRATIONS.md",
         "SECURITY.md"
     ],
     "ignore": {

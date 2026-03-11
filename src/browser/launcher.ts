@@ -30,7 +30,7 @@ import { buildStealthInitScript } from './stealthScripts';
 import { HttpResponseThrottler } from '../risk/httpThrottler';
 import { DeviceProfile, registerPageDeviceProfile } from './deviceProfile';
 import { fetchWithRetryPolicy } from '../core/integrationPolicy';
-import { FingerprintPool } from './fingerprint/pool';
+import { FingerprintPool } from '../fingerprint/noiseGenerator';
 
 const activeBrowsers = new Set<BrowserContext>();
 
