@@ -12,6 +12,24 @@ export interface DBRunResult {
     changes?: number;
 }
 
+// ─── Query Profiling ─────────────────────────────────────────────────────────
+const QUERY_PROFILING_ENABLED = process.env.DB_QUERY_PROFILING === 'true';
+const QUERY_PROFILING_THRESHOLD_MS = Math.max(1, Number.parseInt(process.env.DB_QUERY_PROFILING_THRESHOLD_MS ?? '50', 10) || 50);
+
+async function profileQuery<T>(label: string, sql: string, fn: () => Promise<T>): Promise<T> {
+    if (!QUERY_PROFILING_ENABLED) return fn();
+    const start = performance.now();
+    try {
+        return await fn();
+    } finally {
+        const elapsed = performance.now() - start;
+        if (elapsed >= QUERY_PROFILING_THRESHOLD_MS) {
+            const truncatedSql = sql.length > 200 ? sql.substring(0, 200) + '...' : sql;
+            console.warn(`[DB-PROFILE] ${label} ${elapsed.toFixed(1)}ms: ${truncatedSql}`);
+        }
+    }
+}
+
 // ------------------------------------------------------------------
 // INTERFACE ASTRAZIONE DB
 // ------------------------------------------------------------------
@@ -40,11 +58,11 @@ class SQLiteManager implements DatabaseManager {
     }
 
     async query<T = unknown>(sql: string, params?: unknown[]): Promise<T[]> {
-        return this.db.all<T[]>(sql, params);
+        return profileQuery('sqlite.query', sql, () => this.db.all<T[]>(sql, params));
     }
 
     async get<T = unknown>(sql: string, params?: unknown[]): Promise<T | undefined> {
-        return this.db.get<T>(sql, params);
+        return profileQuery('sqlite.get', sql, () => this.db.get<T>(sql, params));
     }
 
     async exec(sql: string, params?: unknown[]): Promise<void> {
@@ -57,7 +75,7 @@ class SQLiteManager implements DatabaseManager {
     }
 
     async run(sql: string, params?: unknown[], _options?: RunOptions): Promise<DBRunResult> {
-        const result = await this.db.run(sql, params);
+        const result = await profileQuery('sqlite.run', sql, () => this.db.run(sql, params));
         return {
             lastID: result.lastID,
             changes: result.changes,
@@ -147,12 +165,14 @@ class PostgresManager implements DatabaseManager {
     }
 
     async query<T = unknown>(sql: string, params?: unknown[]): Promise<T[]> {
-        const result = await this.pool.query(this.normalizeSql(sql), params);
+        const normalized = this.normalizeSql(sql);
+        const result = await profileQuery('pg.query', normalized, () => this.pool.query(normalized, params));
         return result.rows;
     }
 
     async get<T = unknown>(sql: string, params?: unknown[]): Promise<T | undefined> {
-        const result = await this.pool.query(this.normalizeSql(sql), params);
+        const normalized = this.normalizeSql(sql);
+        const result = await profileQuery('pg.get', normalized, () => this.pool.query(normalized, params));
         return result.rows[0];
     }
 
