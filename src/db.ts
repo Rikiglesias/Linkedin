@@ -210,6 +210,53 @@ class PostgresManager implements DatabaseManager {
     }
 }
 
+/**
+ * Espone la logica di normalizzazione SQL SQLite→PG per testing.
+ * Replica la logica di PostgresManager.normalizeSql senza richiedere un'istanza.
+ */
+export function normalizeSqlForPg(sql: string): string {
+    let count = 1;
+    let normalized = sql.replace(/\?/g, () => `$${count++}`);
+
+    normalized = normalized.replace(
+        /strftime\('%Y-%m-%dT%H:%M:%f',\s*'now'\)/gi,
+        `TO_CHAR(CURRENT_TIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS.MS')`,
+    );
+    normalized = normalized.replace(/\bDATETIME\('now'\)/gi, 'CURRENT_TIMESTAMP');
+    normalized = normalized.replace(/\bDATE\('now'\)/gi, 'CURRENT_DATE');
+
+    normalized = normalized.replace(
+        /\bDATETIME\('now',\s*'([+-])\s*(\d+)\s*(seconds?|minutes?|hours?|days?)'\s*\)/gi,
+        (_match: string, sign: string, amount: string, unit: string) => {
+            const op = sign === '+' ? '+' : '-';
+            return `CURRENT_TIMESTAMP ${op} INTERVAL '${amount} ${unit.toLowerCase()}'`;
+        },
+    );
+    normalized = normalized.replace(
+        /\bDATE\('now',\s*'([+-])\s*(\d+)\s*(days?)'\s*\)/gi,
+        (_match: string, sign: string, amount: string, unit: string) => {
+            const op = sign === '+' ? '+' : '-';
+            return `CURRENT_DATE ${op} INTERVAL '${amount} ${unit.toLowerCase()}'`;
+        },
+    );
+    normalized = normalized.replace(
+        /\bDATETIME\('now',\s*'([+-])'\s*\|\|\s*(\$\d+)\s*\|\|\s*'\s*(seconds?|minutes?|hours?|days?)'\s*\)/gi,
+        (_match: string, sign: string, paramRef: string, unit: string) => {
+            const op = sign === '+' ? '+' : '-';
+            return `CURRENT_TIMESTAMP ${op} ((${paramRef} || ' ${unit.toLowerCase()}')::interval)`;
+        },
+    );
+
+    const hadInsertOrIgnore = /\bINSERT\s+OR\s+IGNORE\s+INTO\b/i.test(normalized);
+    normalized = normalized.replace(/\bINSERT\s+OR\s+IGNORE\s+INTO\b/gi, 'INSERT INTO');
+    if (hadInsertOrIgnore && !/\bON\s+CONFLICT\b/i.test(normalized)) {
+        normalized = normalized.replace(/;\s*$/, '');
+        normalized = `${normalized} ON CONFLICT DO NOTHING`;
+    }
+
+    return normalized;
+}
+
 // ------------------------------------------------------------------
 // ISTANZA E INIZIALIZZAZIONE
 // ------------------------------------------------------------------
