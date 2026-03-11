@@ -454,7 +454,24 @@ function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
         onError: 'skip',
     });
 
-    // 10. Company enrichment
+    // 10. Privacy cleanup (every 24h, leader only)
+    tasks.push({
+        name: 'privacy_cleanup',
+        shouldRun: async (ctx) => {
+            if (ctx.dryRun || !ctx.isLeader) return false;
+            const lastRun = await getRuntimeFlag('privacy_cleanup.last_run_at');
+            return !lastRun || Date.now() - Date.parse(lastRun) > 24 * 60 * 60 * 1000;
+        },
+        execute: async () => {
+            const { cleanupPrivacyData } = await import('../../core/repositories/system');
+            const result = await cleanupPrivacyData(config.retentionDays);
+            await setRuntimeFlag('privacy_cleanup.last_run_at', new Date().toISOString());
+            console.log(`[LOOP] privacy-cleanup: retentionDays=${config.retentionDays}`, result);
+        },
+        onError: 'skip',
+    });
+
+    // 11. Company enrichment
     tasks.push({
         name: 'company_enrichment',
         shouldRun: () =>
