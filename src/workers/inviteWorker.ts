@@ -28,7 +28,7 @@ import { config } from '../config';
 import { buildPersonalizedInviteNote } from '../ai/inviteNotePersonalizer';
 import { pauseAutomation } from '../risk/incidentManager';
 import { bridgeDailyStat, bridgeLeadStatus } from '../cloud/cloudBridge';
-import { recordSent } from '../ml/abBandit';
+import { recordSent, inferHourBucket } from '../ml/abBandit';
 import { WorkerExecutionResult, workerResult } from './result';
 import { inferLeadSegment } from '../ml/segments';
 import { enrichLeadAuto } from '../integrations/leadEnricher';
@@ -502,7 +502,8 @@ export async function processInviteJob(
 
     if (!context.dryRun && inviteResult.variant) {
         const segmentKey = inferLeadSegment(lead.job_title);
-        await recordSent(inviteResult.variant, { segmentKey }).catch(() => { });
+        const hourBucket = inferHourBucket(new Date().getHours());
+        await recordSent(inviteResult.variant, { segmentKey, hourBucket }).catch(() => { });
     }
     await incrementDailyStat(context.localDate, 'invites_sent');
     await incrementListDailyStat(context.localDate, lead.list_name, 'invites_sent');

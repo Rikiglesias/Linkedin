@@ -20,6 +20,7 @@ export type ABOutcome = 'accepted' | 'replied' | 'ignored';
 
 export interface BanditContext {
     segmentKey?: string;
+    hourBucket?: 'morning' | 'afternoon' | 'evening';
 }
 
 export interface BanditDecisionInputRow {
@@ -82,7 +83,24 @@ function normalizeCounter(value: number): number {
 
 function normalizeSegmentKey(context?: BanditContext): string {
     const raw = context?.segmentKey?.trim().toLowerCase();
+    const base = raw && raw.length > 0 ? raw : 'global';
+    if (context?.hourBucket) {
+        return `${base}:${context.hourBucket}`;
+    }
+    return base;
+}
+
+function getBaseSegmentKey(context?: BanditContext): string {
+    const raw = context?.segmentKey?.trim().toLowerCase();
     return raw && raw.length > 0 ? raw : 'global';
+}
+
+export function inferHourBucket(hour?: number): 'morning' | 'afternoon' | 'evening' | undefined {
+    if (hour === undefined || !Number.isFinite(hour)) return undefined;
+    if (hour >= 6 && hour < 12) return 'morning';
+    if (hour >= 12 && hour < 18) return 'afternoon';
+    if (hour >= 18 && hour < 22) return 'evening';
+    return undefined;
 }
 
 function toInputRows(rows: ABStatRow[]): BanditDecisionInputRow[] {
@@ -328,10 +346,27 @@ export async function selectVariant(variants: string[], context?: BanditContext)
             return picked;
         }
 
-        // Se il segmento e' troppo freddo, fallback su globale.
+        // Fallback a 3 livelli: segment:hourBucket → segment base → global
         const segmentTotal = rows.reduce((sum, row) => sum + normalizeCounter(row.sent), 0);
-        const effectiveRows =
-            segmentKey !== 'global' && segmentTotal < variants.length ? await fetchGlobalStats(db) : rows;
+        let effectiveRows = rows;
+        let fallbackLevel: 'exact' | 'base_segment' | 'global' = 'exact';
+        if (segmentKey !== 'global' && segmentTotal < variants.length) {
+            const baseKey = getBaseSegmentKey(context);
+            if (baseKey !== segmentKey && baseKey !== 'global') {
+                const baseRows = await fetchSegmentStats(db, baseKey);
+                const baseTotal = baseRows.reduce((sum, row) => sum + normalizeCounter(row.sent), 0);
+                if (baseTotal >= variants.length) {
+                    effectiveRows = baseRows;
+                    fallbackLevel = 'base_segment';
+                } else {
+                    effectiveRows = await fetchGlobalStats(db);
+                    fallbackLevel = 'global';
+                }
+            } else {
+                effectiveRows = await fetchGlobalStats(db);
+                fallbackLevel = 'global';
+            }
+        }
         const decision = evaluateBanditDecision(variants, toInputRows(effectiveRows), {
             alpha: config.aiQualitySignificanceAlpha,
             minSampleSize: config.aiQualityMinSampleSize,
@@ -343,7 +378,7 @@ export async function selectVariant(variants: string[], context?: BanditContext)
             score: decision.score,
             totalSent: decision.totalSent,
             segment: segmentKey,
-            fallbackToGlobal: segmentKey !== 'global' && effectiveRows !== rows,
+            fallbackLevel,
             significanceWinner: decision.winner?.winnerVariant ?? null,
             significanceBaseline: decision.winner?.baselineVariant ?? null,
             significancePValue: decision.winner?.pValue ?? null,

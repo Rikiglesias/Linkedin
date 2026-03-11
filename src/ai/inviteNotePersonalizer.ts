@@ -3,7 +3,7 @@ import { LeadRecord } from '../types/domain';
 import { logWarn } from '../telemetry/logger';
 import { isOpenAIConfigured, requestOpenAIText } from './openaiClient';
 import { SemanticChecker } from './semanticChecker';
-import { selectVariant } from '../ml/abBandit';
+import { selectVariant, inferHourBucket } from '../ml/abBandit';
 import { inferLeadSegment } from '../ml/segments';
 
 // ─── Tipi ────────────────────────────────────────────────────────────────────
@@ -100,7 +100,8 @@ function safeFirstName(lead: LeadRecord): string {
 export async function buildPersonalizedInviteNote(lead: LeadRecord): Promise<PersonalizedInviteNoteResult> {
     const segmentKey = inferLeadSegment(lead.job_title);
     const templateVariants = NOTE_TEMPLATES.map((template) => template.variant);
-    const selectedTemplateVariant = await selectVariant(templateVariants, { segmentKey }).catch(() => null);
+    const hourBucket = inferHourBucket(new Date().getHours());
+    const selectedTemplateVariant = await selectVariant(templateVariants, { segmentKey, hourBucket }).catch(() => null);
     const tplResult = selectedTemplateVariant
         ? generateInviteNoteByVariant(lead.first_name ?? '', selectedTemplateVariant)
         : generateInviteNote(lead.first_name ?? '');
@@ -116,7 +117,7 @@ export async function buildPersonalizedInviteNote(lead: LeadRecord): Promise<Per
     }
 
     // Varianti Prompt A/B Testing
-    const variantId = await selectVariant(['AI_VAR_A_DIRECT', 'AI_VAR_B_VALUE'], { segmentKey }).catch(() =>
+    const variantId = await selectVariant(['AI_VAR_A_DIRECT', 'AI_VAR_B_VALUE'], { segmentKey, hourBucket }).catch(() =>
         Math.random() > 0.5 ? 'AI_VAR_B_VALUE' : 'AI_VAR_A_DIRECT',
     );
     const isVariantB = variantId === 'AI_VAR_B_VALUE';
