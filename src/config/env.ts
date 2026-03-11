@@ -3,6 +3,32 @@ import fs from 'fs';
 import dotenv from 'dotenv';
 import { AccountProfileConfig, EventSyncSink, ProxyType } from './types';
 
+const DOCKER_SECRETS_DIR = '/run/secrets';
+
+/**
+ * Risolve un segreto con priorità: Docker Secrets → process.env → fallback.
+ * Docker Secrets: file in /run/secrets/{key_lowercase} (standard Docker Swarm/Compose).
+ * In dev (senza Docker): fallback trasparente su process.env.
+ */
+export function resolveSecret(key: string, fallback: string = ''): string {
+    const envValue = process.env[key];
+    if (envValue !== undefined && envValue !== '') return envValue;
+
+    try {
+        const safeKey = path.basename(key.toLowerCase());
+        if (!safeKey || safeKey === '.' || safeKey === '..') return fallback;
+        const secretPath = path.join(DOCKER_SECRETS_DIR, safeKey);
+        if (fs.existsSync(secretPath)) {
+            const value = fs.readFileSync(secretPath, 'utf8').trim();
+            if (value) return value;
+        }
+    } catch {
+        // Docker secrets non disponibili (dev locale, Windows, permessi)
+    }
+
+    return fallback;
+}
+
 export function loadDotEnv(): void {
     const envPath = path.resolve(process.cwd(), '.env');
     if (fs.existsSync(envPath)) {
