@@ -280,7 +280,7 @@ async function main(): Promise<void> {
             console.error(`[STRICT] Comando deprecato "${command}" rifiutato. Usa "${replacement}" al suo posto.`);
             process.exit(1);
         }
-        console.warn(`[DEPRECATED] "${command}" è deprecato e verrà rimosso. Usa "${replacement}" al suo posto.`);
+        console.warn(`[DEPRECATED] "${command}" è deprecato e verrà rimosso in v2.0. Usa "${replacement}" al suo posto.`);
     }
     const browserCommands = new Set([
         'run',
@@ -296,6 +296,10 @@ async function main(): Promise<void> {
         'salesnav-sync',
         'salesnav-bulk-save',
         'salesnav-resolve',
+        'salesnav-lists',
+        'salesnav-create-list',
+        'salesnav-add-lead',
+        'salesnav-add-to-list',
         'random-activity',
         'test-connection',
         'connect',
