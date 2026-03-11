@@ -438,6 +438,39 @@ function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
         onError: 'skip',
     });
 
+    // 8b. SSI scraping (weekly, leader only — alimenta budget dinamico inviti/messaggi)
+    tasks.push({
+        name: 'ssi_scrape',
+        shouldRun: async (ctx) => {
+            if (ctx.dryRun || !ctx.isLeader) return false;
+            if (!config.ssiDynamicLimitsEnabled) return false;
+            const lastRun = await getRuntimeFlag('ssi_scrape.last_run_at');
+            return !lastRun || Date.now() - Date.parse(lastRun) > 7 * 24 * 60 * 60 * 1000;
+        },
+        execute: async () => {
+            const { scrapeSsiScore } = await import('../../browser/ssiScraper');
+            let session;
+            try {
+                session = await launchBrowser({ headless: config.headless, forceDesktop: true });
+                const result = await scrapeSsiScore(session.page);
+                if (result.scraped && result.score !== null) {
+                    await setRuntimeFlag(config.ssiStateKey, JSON.stringify({
+                        score: result.score,
+                        ...result.breakdown,
+                        scrapedAt: new Date().toISOString(),
+                    }));
+                    console.log(`[LOOP] SSI score aggiornato: ${result.score}`);
+                } else {
+                    console.log(`[LOOP] SSI scrape fallito: ${result.error ?? 'unknown'}`);
+                }
+                await setRuntimeFlag('ssi_scrape.last_run_at', new Date().toISOString());
+            } finally {
+                if (session) await closeBrowserSession(session);
+            }
+        },
+        onError: 'skip',
+    });
+
     // 9. Dead Letter Queue (every 6h, leader only)
     tasks.push({
         name: 'dead_letter_queue',
@@ -524,6 +557,24 @@ function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
             const steps = await dispatchReadyCampaignSteps();
             if (steps > 0) {
                 console.log(`[LOOP] campagne dispatch: ${steps} step maturati inseriti in coda.`);
+            }
+        },
+        onError: 'skip',
+    });
+
+    // 13c. Message pre-build (offline AI batch — riduce tempo browser di ~2-5s/messaggio)
+    tasks.push({
+        name: 'message_prebuild',
+        shouldRun: (ctx) => {
+            if (ctx.dryRun) return false;
+            const w = buildCtx.workflow;
+            return w === 'all' || w === 'message';
+        },
+        execute: async () => {
+            const { runMessagePrebuild } = await import('../../workers/messagePrebuildWorker');
+            const report = await runMessagePrebuild(10);
+            if (report.generated > 0 || report.expired > 0) {
+                console.log('[LOOP] message-prebuild', report);
             }
         },
         onError: 'skip',
