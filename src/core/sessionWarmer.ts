@@ -52,14 +52,15 @@ export function getSessionWindow(now: Date = new Date()): 'first' | 'second' | '
 
 /**
  * Calcola il fattore di budget per la sessione corrente.
- * Con 2 sessioni/giorno, ogni sessione usa il 50% del budget.
+ * Con 2 sessioni/giorno, la mattina riceve 60% e il pomeriggio 40%.
  * Nella gap tra le sessioni, il budget è 0 (pausa).
+ * Razionale: la mattina ha tipicamente acceptance rate più alto su LinkedIn.
  */
 export function getSessionBudgetFactor(): number {
     if (!config.warmupTwoSessionsPerDay) return 1.0;
     const window = getSessionWindow();
     if (window === 'gap') return 0;
-    return 0.5;
+    return window === 'first' ? 0.6 : 0.4;
 }
 
 export async function warmupSession(page: Page): Promise<void> {
