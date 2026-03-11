@@ -91,11 +91,27 @@ let currentTheme: ThemePreference = initialPrefs.theme;
 // Apply saved theme immediately (before DOM renders charts)
 applyTheme(currentTheme);
 
+let sseDisconnectedAt: number | null = null;
+let sseDisconnectedTimer: number | null = null;
+
+function formatDisconnectedDuration(ms: number): string {
+    const sec = Math.floor(ms / 1000);
+    if (sec < 60) return `${sec}s`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min}min`;
+    return `${Math.floor(min / 60)}h ${min % 60}min`;
+}
+
 function updateSseIndicator(state: SseConnectionState): void {
     const el = document.getElementById('sse-indicator');
     const textEl = document.getElementById('sse-text');
     const reconnectBtn = document.getElementById('sse-reconnect') as HTMLButtonElement | null;
     if (!el || !textEl) return;
+
+    if (sseDisconnectedTimer) {
+        window.clearInterval(sseDisconnectedTimer);
+        sseDisconnectedTimer = null;
+    }
 
     el.classList.remove('sse-unknown', 'sse-connected', 'sse-disconnected');
     switch (state) {
@@ -103,16 +119,24 @@ function updateSseIndicator(state: SseConnectionState): void {
             el.classList.add('sse-unknown');
             textEl.textContent = 'Connessione...';
             if (reconnectBtn) reconnectBtn.hidden = true;
+            sseDisconnectedAt = null;
             break;
         case 'CONNECTED':
             el.classList.add('sse-connected');
             textEl.textContent = 'Live';
             if (reconnectBtn) reconnectBtn.hidden = true;
+            sseDisconnectedAt = null;
             break;
         case 'DISCONNECTED':
             el.classList.add('sse-disconnected');
-            textEl.textContent = 'Disconnesso';
+            sseDisconnectedAt = Date.now();
+            textEl.textContent = 'Disconnesso (0s)';
             if (reconnectBtn) reconnectBtn.hidden = false;
+            sseDisconnectedTimer = window.setInterval(() => {
+                if (sseDisconnectedAt) {
+                    textEl.textContent = `Disconnesso (${formatDisconnectedDuration(Date.now() - sseDisconnectedAt)})`;
+                }
+            }, 30_000);
             break;
     }
     updateFavicon(state);
