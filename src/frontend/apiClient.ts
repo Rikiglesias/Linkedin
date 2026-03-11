@@ -99,6 +99,10 @@ export class DashboardApi {
 
         const resp = await this.apiFetch(path);
         if (!resp.ok) {
+            if (resp.status === 401 || resp.status === 403) {
+                // Auth scaduta o insufficiente — tenta bootstrap o notifica
+                console.warn(`[API] Auth error ${resp.status} su ${path}`);
+            }
             return fallback;
         }
         const raw = (await resp.json()) as unknown;
