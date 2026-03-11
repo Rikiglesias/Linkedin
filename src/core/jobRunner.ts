@@ -34,6 +34,7 @@ import {
     getDailyStat,
     getAutomationPauseState,
     getRuntimeFlag,
+    setRuntimeFlag,
     incrementDailyStat,
     lockNextQueuedJob,
     markJobRetryOrDeadLetter,
@@ -287,6 +288,7 @@ async function runQueuedJobsForAccount(
         const accountBpLevel = await getAccountBackpressureLevel(account.id);
         const maxJobsPerRun = Math.max(1, computeBackpressureBatchSize(config.accountMaxJobsPerRun, accountBpLevel));
         let sessionStartedAtMs = Date.now();
+        await setRuntimeFlag(`browser_session_started_at:${account.id}`, new Date(sessionStartedAtMs).toISOString()).catch(() => null);
         let processedThisRun = 0;
 
         while (true) {
@@ -599,6 +601,7 @@ async function runQueuedJobsForAccount(
                         session = rotated;
                         processedOnCurrentSession = 0;
                         sessionStartedAtMs = Date.now();
+                        await setRuntimeFlag(`browser_session_started_at:${account.id}`, new Date(sessionStartedAtMs).toISOString()).catch(() => null);
                     }
 
                     await pauseAutomation(
@@ -684,6 +687,7 @@ async function runQueuedJobsForAccount(
                 session = rotated;
                 processedOnCurrentSession = 0;
                 sessionStartedAtMs = Date.now();
+                await setRuntimeFlag(`browser_session_started_at:${account.id}`, new Date(sessionStartedAtMs).toISOString()).catch(() => null);
             } else if (processedOnCurrentSession > 0 && processedOnCurrentSession % 10 === 0) {
                 // Collect garbage proactively to prevent browser bloating
                 await performBrowserGC(session);

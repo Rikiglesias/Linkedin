@@ -1156,3 +1156,8 @@ dialog::backdrop {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.4; }
 }
+
+#session-timer.session-timer-warning {
+    color: var(--danger);
+    font-weight: 600;
+}

@@ -225,6 +225,34 @@ export function renderProxyHealth(pool: ProxyPoolSnapshot | undefined): void {
     ));
 }
 
+export function renderSessionTimer(startedAt: string | null | undefined): void {
+    const el = document.getElementById('session-timer');
+    if (!el) return;
+
+    if (!startedAt) {
+        el.textContent = 'Browser: inattivo';
+        el.classList.remove('session-timer-warning');
+        return;
+    }
+
+    const startMs = Date.parse(startedAt);
+    if (!Number.isFinite(startMs)) {
+        el.textContent = 'Browser: inattivo';
+        return;
+    }
+
+    const elapsedMs = Date.now() - startMs;
+    const minutes = Math.floor(elapsedMs / 60000);
+    const isLong = minutes >= 45;
+
+    el.textContent = `Browser: attivo da ${minutes} min${isLong ? ' — considera di chiudere la sessione' : ''}`;
+    if (isLong) {
+        el.classList.add('session-timer-warning');
+    } else {
+        el.classList.remove('session-timer-warning');
+    }
+}
+
 export function renderIncidents(incidents: IncidentRecord[], selectedIds: Set<number>): void {
     setText('incidents-count', incidents.length === 0 ? 'Nessun incidente aperto' : `${incidents.length} aperti`);
     const tbody = byId<HTMLTableSectionElement>('incidents-tbody');

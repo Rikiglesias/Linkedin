@@ -10,6 +10,7 @@ import {
     renderOperationalSlo,
     renderPredictiveRisk,
     renderProxyHealth,
+    renderSessionTimer,
     renderReviewQueue,
     renderRuns,
     renderSelectorCacheKpi,
@@ -334,6 +335,7 @@ async function refreshDashboard(): Promise<void> {
         renderOperationalSlo(snapshot.observability.slo);
         renderSelectorCacheKpi(snapshot.observability.selectorCacheKpi);
         renderProxyHealth(snapshot.observability.proxyPool);
+        renderSessionTimer(snapshot.observability.browserSessionStartedAt);
         renderReviewQueue(snapshot.reviewQueue);
         renderCommentSuggestions(snapshot.commentSuggestions);
         renderRuns(snapshot.runs);

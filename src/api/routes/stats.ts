@@ -146,6 +146,7 @@ statsRouter.get('/observability', async (_req, res) => {
             },
             circuitBreakers: getCircuitBreakerSnapshot(),
             proxyPool: getProxyPoolStatus(),
+            browserSessionStartedAt: await getRuntimeFlag('browser_session_started_at:default').catch(() => null),
         });
     } catch (err: unknown) {
         handleApiError(res, err, 'api.observability');

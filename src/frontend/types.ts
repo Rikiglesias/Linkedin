@@ -158,6 +158,7 @@ export interface ObservabilitySnapshot {
     slo?: OperationalSloSnapshot;
     selectorCacheKpi?: SelectorCacheKpiSnapshot;
     proxyPool?: ProxyPoolSnapshot;
+    browserSessionStartedAt?: string | null;
 }
 
 export interface CommentSuggestionItem {
