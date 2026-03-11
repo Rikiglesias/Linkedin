@@ -40,7 +40,7 @@ export function getSessionWindow(now: Date = new Date()): 'first' | 'second' | '
     const currentHour = parseInt(hour, 10);
 
     const totalHours = config.workingHoursEnd - config.workingHoursStart;
-    const sessionLength = Math.floor(totalHours / 2) - 1; // -1h per gap minimo
+    const sessionLength = Math.max(1, Math.floor(totalHours / 2) - 1); // -1h per gap minimo, min 1h
     const firstEnd = config.workingHoursStart + sessionLength;
     const gapEnd = firstEnd + 2; // 2h gap (pausa pranzo)
     const secondEnd = Math.min(gapEnd + sessionLength, config.workingHoursEnd);
