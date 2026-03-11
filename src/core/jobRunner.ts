@@ -431,8 +431,17 @@ async function runQueuedJobsForAccount(
 
                 // Pausa umana tra un job e il successivo (anti-burst)
                 // Feedback loop reattivo: se LinkedIn sta rallentando, il delay aumenta automaticamente
+                // Durante il delay, lancia enrichment parallelo (zero traffico LinkedIn)
                 const throttleSignal = session.httpThrottler.getThrottleSignal();
-                await interJobDelay(session.page, throttleSignal, sessionPacingFactor);
+                await Promise.allSettled([
+                    interJobDelay(session.page, throttleSignal, sessionPacingFactor),
+                    (async () => {
+                        try {
+                            const { enrichLeadsParallel } = await import('../integrations/parallelEnricher');
+                            await enrichLeadsParallel({ limit: 2, concurrency: 1 });
+                        } catch { /* enrichment best-effort, never blocks job flow */ }
+                    })(),
+                ]);
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
                 const attempts = job.attempts + 1;
