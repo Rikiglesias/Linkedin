@@ -266,11 +266,14 @@ async function applyMigrations(database: DatabaseManager): Promise<void> {
     const appliedRows = await database.query<{ name: string }>(`SELECT name FROM _migrations`);
     const applied = new Set(appliedRows.map((row) => row.name));
 
-    for (const fileName of files) {
-        if (applied.has(fileName)) {
-            continue;
-        }
+    // Fast path: if all migration files are already applied, skip file I/O and ensureColumn.
+    // Saves ~50 fs.readFileSync + ~20 ALTER TABLE idempotent calls per boot.
+    const pendingFiles = files.filter((f) => !applied.has(f));
+    if (pendingFiles.length === 0) {
+        return;
+    }
 
+    for (const fileName of pendingFiles) {
         let sql = fs.readFileSync(path.join(migrationDir, fileName), 'utf8');
 
         if (isPostgres) {
@@ -300,6 +303,7 @@ async function applyMigrations(database: DatabaseManager): Promise<void> {
     // ora create dalla migration 041_hardening_tables.sql.
     // Le colonne di hardening restano qui perché ensureColumn* è idempotente
     // e gestisce il dialetto SQLite/Postgres in modo diverso.
+    // Eseguite SOLO quando ci sono nuove migrazioni (primo boot o aggiornamento).
     const ensureColumn = isPostgres ? ensureColumnPg : ensureColumnSqlite;
     const ts = isPostgres ? 'TIMESTAMP' : 'DATETIME';
 
