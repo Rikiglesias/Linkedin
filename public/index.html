@@ -29,20 +29,6 @@
             </div>
         </dialog>
 
-        <dialog id="voice-command-modal" aria-labelledby="voice-command-title">
-            <div class="modal-inner">
-                <h2 id="voice-command-title" class="modal-title">Conferma comando vocale</h2>
-                <p class="modal-label">Trascrizione riconosciuta</p>
-                <p id="voice-transcript-text" class="modal-transcript">—</p>
-                <p class="modal-label">Azione</p>
-                <p id="voice-action-summary" class="modal-action-summary">—</p>
-                <div class="modal-actions">
-                    <button class="btn btn-warning" id="voice-confirm-btn" type="button">Conferma azione</button>
-                    <button class="btn btn-secondary" id="voice-cancel-btn" type="button">Annulla</button>
-                </div>
-            </div>
-        </dialog>
-
         <header class="header">
             <div class="brand-wrap">
                 <div class="brand-mark" aria-hidden="true">LB</div>
@@ -68,9 +54,6 @@
                     <button id="btn-export-chart" type="button" class="btn btn-secondary" title="Scarica grafico PNG">PNG</button>
                     <button id="btn-print" type="button" class="btn btn-secondary" title="Stampa report">Print</button>
                     <button id="btn-refresh" type="button" class="btn btn-secondary">Aggiorna</button>
-                    <button id="btn-voice" type="button" class="btn btn-secondary" aria-pressed="false">
-                        Comando Voce
-                    </button>
                     <button id="btn-trigger-run" type="button" class="btn btn-primary" title="Avvia run workflow">Run</button>
                     <button id="btn-pause" type="button" class="btn btn-warning">Pausa</button>
                     <button id="btn-resume" type="button" class="btn btn-success">Riprendi</button>
@@ -79,13 +62,6 @@
         </header>
 
         <p id="action-feedback" class="feedback" role="status" aria-live="polite"></p>
-        <div id="voice-feedback-wrap" class="voice-feedback-wrap" hidden>
-            <div id="voice-mic-indicator" class="voice-mic-indicator" aria-hidden="true">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
-            </div>
-            <p id="voice-feedback" class="feedback feedback-secondary" role="status" aria-live="polite"></p>
-            <p id="voice-partial-transcript" class="voice-partial-transcript"></p>
-        </div>
 
         <main id="main-content" class="main">
             <section class="kpi-grid" aria-label="KPI principali">

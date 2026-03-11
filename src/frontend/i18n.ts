@@ -19,7 +19,6 @@ const IT: TranslationMap = {
     'header.csv': 'CSV',
     'header.png': 'PNG',
     'header.print': 'Stampa',
-    'header.voice': 'Voce',
     'header.run': 'Run',
     'header.pause': 'Pausa',
     'header.resume': 'Riprendi',
@@ -81,11 +80,6 @@ const IT: TranslationMap = {
     'ctrl.confirm': 'Conferma',
     'ctrl.cancel': 'Annulla',
 
-    // Voice
-    'voice.listening': 'In ascolto...',
-    'voice.confirm_action': 'Confermi l\'azione: {action}?',
-    'voice.not_supported': 'Riconoscimento vocale non supportato',
-
     // Shortcuts
     'shortcut.title': 'Scorciatoie Tastiera',
     'shortcut.refresh': 'Aggiorna dati',
@@ -115,7 +109,6 @@ const EN: TranslationMap = {
     'header.csv': 'CSV',
     'header.png': 'PNG',
     'header.print': 'Print',
-    'header.voice': 'Voice',
     'header.run': 'Run',
     'header.pause': 'Pause',
     'header.resume': 'Resume',
@@ -176,11 +169,6 @@ const EN: TranslationMap = {
     'ctrl.pause_minutes': 'Pause minutes',
     'ctrl.confirm': 'Confirm',
     'ctrl.cancel': 'Cancel',
-
-    // Voice
-    'voice.listening': 'Listening...',
-    'voice.confirm_action': 'Confirm action: {action}?',
-    'voice.not_supported': 'Speech recognition not supported',
 
     // Shortcuts
     'shortcut.title': 'Keyboard Shortcuts',

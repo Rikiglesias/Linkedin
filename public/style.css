@@ -292,39 +292,6 @@ body {
     color: var(--ink-soft);
 }
 
-.voice-feedback-wrap {
-    margin: var(--space-3) var(--space-6) 0;
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-}
-
-.voice-feedback-wrap[hidden] {
-    display: none;
-}
-
-.voice-mic-indicator {
-    color: var(--danger);
-    display: flex;
-    align-items: center;
-}
-
-.voice-mic-indicator.listening {
-    animation: mic-pulse 1s ease-in-out infinite;
-}
-
-@keyframes mic-pulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.4; transform: scale(1.2); }
-}
-
-.voice-partial-transcript {
-    font-size: 0.82rem;
-    color: var(--ink-soft);
-    font-style: italic;
-    margin: 0;
-}
-
 .chart-container {
     position: relative;
     height: 220px;
@@ -840,10 +807,6 @@ dialog::backdrop {
         flex: 1 1 calc(50% - var(--space-2));
     }
 
-    .voice-feedback-wrap {
-        margin-left: var(--space-3);
-        margin-right: var(--space-3);
-    }
 
     .chart-container {
         height: 180px;
@@ -877,13 +840,11 @@ dialog::backdrop {
     .skip-link,
     .sse-indicator,
     .feedback,
-    .voice-feedback-wrap,
     .filters,
     dialog,
     #btn-pause,
     #btn-resume,
     #btn-refresh,
-    #btn-voice,
     #btn-export-csv,
     #btn-export-chart,
     #btn-print,
