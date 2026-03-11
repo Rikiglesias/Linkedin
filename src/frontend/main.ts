@@ -9,6 +9,7 @@ import {
     renderKpis,
     renderOperationalSlo,
     renderPredictiveRisk,
+    renderProxyHealth,
     renderReviewQueue,
     renderRuns,
     renderSelectorCacheKpi,
@@ -32,6 +33,32 @@ const api = new DashboardApi();
 const timeline = new TimelineStore();
 const selectedIncidentIds = new Set<number>();
 let lastTrendData: TrendRow[] = [];
+
+let lastAuthErrorToastAt = 0;
+api.onAuthError((status, path) => {
+    console.warn(`[Dashboard] Auth error ${status} on ${path}`);
+    const now = Date.now();
+    if (now - lastAuthErrorToastAt > 10_000) {
+        lastAuthErrorToastAt = now;
+        showToast(`Sessione scaduta (${status}) — ricarica la pagina o ri-autentica`, 'error', 8000);
+    }
+});
+
+api.onFetchStateChange((state) => {
+    const indicator = document.getElementById('fetch-state-indicator');
+    if (!indicator) return;
+    indicator.classList.remove('fetch-idle', 'fetch-loading', 'fetch-success', 'fetch-error');
+    indicator.classList.add(`fetch-${state}`);
+    if (state === 'loading') {
+        document.querySelectorAll('.kpi-value').forEach((el) => {
+            if (el.textContent === '0' || el.textContent === '—') {
+                el.classList.add('shimmer');
+            }
+        });
+    } else {
+        document.querySelectorAll('.shimmer').forEach((el) => el.classList.remove('shimmer'));
+    }
+});
 
 let pollTimer: number | null = null;
 let refreshTimer: number | null = null;
@@ -306,6 +333,7 @@ async function refreshDashboard(): Promise<void> {
         renderPredictiveRisk(snapshot.predictive);
         renderOperationalSlo(snapshot.observability.slo);
         renderSelectorCacheKpi(snapshot.observability.selectorCacheKpi);
+        renderProxyHealth(snapshot.observability.proxyPool);
         renderReviewQueue(snapshot.reviewQueue);
         renderCommentSuggestions(snapshot.commentSuggestions);
         renderRuns(snapshot.runs);

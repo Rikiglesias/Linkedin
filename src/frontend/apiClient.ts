@@ -1,8 +1,10 @@
 import {
     AbLeaderboardRow,
+    ApiError,
     CampaignRunRecord,
     CommentSuggestionQueueResponse,
     DashboardSnapshot,
+    FetchState,
     IncidentRecord,
     KpiResponse,
     LeadDetailResponse,
@@ -15,6 +17,12 @@ import {
 } from './types';
 
 const DASHBOARD_API_KEY_PARAM = 'api_key';
+const RETRYABLE_STATUSES = new Set([429, 502, 503, 504]);
+const MAX_RETRIES = 2;
+const RETRY_BASE_DELAY_MS = 1000;
+
+export type AuthErrorCallback = (status: number, path: string) => void;
+export type FetchStateCallback = (state: FetchState) => void;
 
 function ensureArray<T>(value: unknown): T[] {
     return Array.isArray(value) ? (value as T[]) : [];
@@ -30,6 +38,31 @@ function ensureObject(value: unknown): Record<string, unknown> {
 export class DashboardApi {
     private bootstrapApiKey = '';
     private cache = new Map<string, { data: unknown; cachedAt: number }>();
+    private _fetchState: FetchState = 'idle';
+    private _lastError: ApiError | null = null;
+    private _onAuthError: AuthErrorCallback | null = null;
+    private _onFetchStateChange: FetchStateCallback | null = null;
+
+    get fetchState(): FetchState {
+        return this._fetchState;
+    }
+
+    get lastError(): ApiError | null {
+        return this._lastError;
+    }
+
+    onAuthError(cb: AuthErrorCallback): void {
+        this._onAuthError = cb;
+    }
+
+    onFetchStateChange(cb: FetchStateCallback): void {
+        this._onFetchStateChange = cb;
+    }
+
+    private setFetchState(state: FetchState): void {
+        this._fetchState = state;
+        this._onFetchStateChange?.(state);
+    }
 
     private static readonly CACHE_TTL: Record<string, number> = {
         '/api/kpis': 15_000,
@@ -97,17 +130,61 @@ export class DashboardApi {
             return cached.data as T;
         }
 
-        const resp = await this.apiFetch(path);
-        if (!resp.ok) {
-            if (resp.status === 401 || resp.status === 403) {
-                // Auth scaduta o insufficiente — tenta bootstrap o notifica
-                console.warn(`[API] Auth error ${resp.status} su ${path}`);
+        this.setFetchState('loading');
+
+        let lastStatus = 0;
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                const resp = await this.apiFetch(path);
+                lastStatus = resp.status;
+
+                if (resp.ok) {
+                    const raw = (await resp.json()) as unknown;
+                    this.cache.set(path, { data: raw, cachedAt: Date.now() });
+                    this._lastError = null;
+                    this.setFetchState('success');
+                    return raw as T;
+                }
+
+                if (resp.status === 401 || resp.status === 403) {
+                    const err: ApiError = { status: resp.status, message: `Auth error on ${path}`, retryable: false };
+                    this._lastError = err;
+                    this.setFetchState('error');
+                    this._onAuthError?.(resp.status, path);
+                    return fallback;
+                }
+
+                if (RETRYABLE_STATUSES.has(resp.status) && attempt < MAX_RETRIES) {
+                    const delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
+                    await new Promise((r) => setTimeout(r, delay));
+                    continue;
+                }
+
+                const err: ApiError = { status: resp.status, message: `HTTP ${resp.status} on ${path}`, retryable: false };
+                this._lastError = err;
+                this.setFetchState('error');
+                return fallback;
+            } catch (e) {
+                if (attempt < MAX_RETRIES) {
+                    const delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
+                    await new Promise((r) => setTimeout(r, delay));
+                    continue;
+                }
+                const err: ApiError = {
+                    status: 0,
+                    message: e instanceof Error ? e.message : 'Network error',
+                    retryable: false,
+                };
+                this._lastError = err;
+                this.setFetchState('error');
+                return fallback;
             }
-            return fallback;
         }
-        const raw = (await resp.json()) as unknown;
-        this.cache.set(path, { data: raw, cachedAt: now });
-        return raw as T;
+
+        const err: ApiError = { status: lastStatus, message: `Max retries exceeded on ${path}`, retryable: false };
+        this._lastError = err;
+        this.setFetchState('error');
+        return fallback;
     }
 
     async pause(minutes: number): Promise<boolean> {

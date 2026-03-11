@@ -1,3 +1,19 @@
+// ─── Data Layer Types ─────────────────────────────────────────────────────────
+
+export type FetchState = 'idle' | 'loading' | 'success' | 'error';
+
+export interface FetchResult<T> {
+    state: FetchState;
+    data: T;
+    error: ApiError | null;
+}
+
+export interface ApiError {
+    status: number;
+    message: string;
+    retryable: boolean;
+}
+
 export interface FunnelMetrics {
     totalLeads: number;
     invited: number;
@@ -127,9 +143,21 @@ export interface SelectorCacheKpiSnapshot {
     targetMet: boolean;
 }
 
+export interface ProxyPoolSnapshot {
+    configured: boolean;
+    total: number;
+    ready: number;
+    cooling: number;
+    mobile: number;
+    residential: number;
+    unknown: number;
+    rotationCursor: number;
+}
+
 export interface ObservabilitySnapshot {
     slo?: OperationalSloSnapshot;
     selectorCacheKpi?: SelectorCacheKpiSnapshot;
+    proxyPool?: ProxyPoolSnapshot;
 }
 
 export interface CommentSuggestionItem {
