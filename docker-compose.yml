@@ -29,13 +29,14 @@ services:
     networks:
       - linkedin-net
 
-  # ── Bot (Node.js + Playwright) ───────────────────────────────────
-  bot:
+  # ── Bot API (Express dashboard + REST API) ──────────────────────
+  bot-api:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: linkedin-bot
+    container_name: linkedin-bot-api
     restart: unless-stopped
+    command: ["node", "dist/index.js", "dashboard"]
     env_file:
       - .env
     environment:
@@ -47,11 +48,11 @@ services:
         condition: service_healthy
     volumes:
       - ./.env:/app/.env
-      - ./data:/app/data # SQLite fallback + backups + screenshots
-      - ./plugins:/app/plugins # Plugin esterni
-      - ./public:/app/public # Dashboard UI (condivisa con nginx)
+      - ./data:/app/data
+      - ./plugins:/app/plugins
+      - ./public:/app/public
     ports:
-      - "3000:3000" # API REST + Dashboard express
+      - "3000:3000"
     healthcheck:
       test: [ "CMD-SHELL", "curl -sf http://localhost:3000/api/health/deep || exit 1" ]
       interval: 30s
@@ -59,7 +60,43 @@ services:
       retries: 3
     networks:
       - linkedin-net
-    shm_size: '1gb' # Richiesto da Chromium/Playwright
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Bot Worker (run-loop + Playwright browser) ─────────────────
+  bot-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: linkedin-bot-worker
+    restart: unless-stopped
+    command: ["node", "dist/index.js", "run-loop"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-bot_user}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-linkedin_bot}
+      NODE_ENV: production
+      TZ: Europe/Rome
+    depends_on:
+      db:
+        condition: service_healthy
+      bot-api:
+        condition: service_healthy
+    volumes:
+      - ./.env:/app/.env
+      - ./data:/app/data
+      - ./plugins:/app/plugins
+    # Worker non espone porte — comunica solo via DB (job queue)
+    shm_size: '1gb'
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+    networks:
+      - linkedin-net
     logging:
       driver: json-file
       options:
@@ -75,9 +112,9 @@ services:
       - "80:80"
     volumes:
       - ./public:/usr/share/nginx/html:ro
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro # Config custom con proxy + gzip
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
-      bot:
+      bot-api:
         condition: service_healthy
     logging:
       driver: json-file
