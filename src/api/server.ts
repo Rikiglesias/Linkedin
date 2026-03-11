@@ -50,7 +50,7 @@ import {
 import { resolveCorrelationId, runWithCorrelationId } from '../telemetry/correlation';
 import { WebSocketServer, WebSocket } from 'ws';
 
-const app = express();
+export const app = express();
 app.set('trust proxy', false);
 const DASHBOARD_SESSION_COOKIE = 'dashboard_session';
 const DASHBOARD_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
