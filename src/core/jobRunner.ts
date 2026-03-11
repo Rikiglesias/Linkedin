@@ -771,6 +771,18 @@ export async function runQueuedJobs(options: RunJobsOptions): Promise<void> {
         await runQueuedJobsForAccount(options, account, includeLegacyDefaultQueue);
 
         await logInfo('job_runner.account.done', { accountId: account.id });
+
+        // Anti-correlazione: delay 2-5 min tra account per evitare che LinkedIn
+        // veda due account dallo stesso IP nello stesso minuto (pattern rilevabile).
+        if (index < accounts.length - 1) {
+            const gapMs = (120 + Math.floor(Math.random() * 180)) * 1000;
+            await logInfo('job_runner.inter_account_gap', {
+                accountId: account.id,
+                nextAccountId: accounts[index + 1]?.id,
+                gapMs,
+            });
+            await new Promise((r) => setTimeout(r, gapMs));
+        }
         const latestQuarantineFlag = await getRuntimeFlag('account_quarantine');
         if (latestQuarantineFlag === 'true') {
             break;
