@@ -1,6 +1,6 @@
 {
   "name": "linkedin",
-  "version": "1.0.0",
+  "version": "2.0.0-beta.1",
   "description": "LinkedIn B2B outreach automation platform with stealth browser, risk engine, AI guardian, and drip campaigns",
   "main": "index.js",
   "scripts": {
