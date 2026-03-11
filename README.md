@@ -396,6 +396,24 @@ npm run db:restore         # Restore dall'ultimo backup
 npm run db:restore:drill   # Verifica integrità su DB temporaneo senza toccare quello live
 ```
 
+### Rollback dopo problemi
+
+```bash
+# 1. Tornare a una versione precedente del codice
+git revert HEAD            # Annulla l'ultimo commit
+git checkout v2.0.0-beta.1 # Torna a un tag specifico
+
+# 2. Ripristinare il database
+npm run db:restore         # Restore dall'ultimo backup automatico
+
+# 3. Re-deploy container (se Docker)
+docker-compose down && docker-compose up -d --build
+
+# 4. Verificare
+npm run preflight-env      # Check ambiente
+npm run doctor             # Check salute bot
+```
+
 ---
 
 ## Configurazione .env
