@@ -9,10 +9,13 @@ import {
     buildVisionDomainConfig,
 } from './domains';
 import { loadDotEnv, parseAccountProfileFromEnv } from './env';
+import { applyProfileDefaults } from './profiles';
 import { AppConfig, AccountProfileConfig, EventSyncSink, ProxyType } from './types';
 import { validateConfigSchema } from './validation';
 
 loadDotEnv();
+const activeProfile = applyProfileDefaults();
+console.log(`[CONFIG] Profilo attivo: ${activeProfile}`);
 
 const configuredAccountProfiles: AccountProfileConfig[] = [
     parseAccountProfileFromEnv(1),
