@@ -203,6 +203,13 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             : pickDesktopFingerprint(cloudFingerprints, accountId);
         const consistentNoise = FingerprintPool.generateConsistentProfile(fingerprint);
         validateFingerprintConsistency(fingerprint);
+        await logInfo('browser.fingerprint_selected', {
+            fingerprintId: fingerprint.id,
+            isMobile: isMobileSession,
+            accountId,
+            canvasNoise: consistentNoise.canvasNoise,
+            attempt,
+        });
 
         const deviceProfile: DeviceProfile = {
             fingerprintId: fingerprint.id,
