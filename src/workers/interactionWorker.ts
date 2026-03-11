@@ -166,9 +166,11 @@ export async function processInteractionJob(
                 break;
             case 'LIKE_POST':
                 await performLikePost(page, linkedinUrl);
+                await incrementDailyStat(getLocalDateString(), 'likes_given');
                 break;
             case 'FOLLOW':
                 await performFollow(page, linkedinUrl);
+                await incrementDailyStat(getLocalDateString(), 'follows_given');
                 break;
             default:
                 await logWarn('interaction.unknown_action', { actionType });
