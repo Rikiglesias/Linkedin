@@ -20,21 +20,12 @@ import rateLimit from 'express-rate-limit';
 import type { NextFunction, Request, Response } from 'express';
 import {
     getABTestingStats,
-    getAiQualitySnapshot,
     getGlobalKPIData,
-    getLeadsByStatus,
     getOperationalObservabilitySnapshot,
     getRiskInputs,
     getRuntimeFlag,
-    listAccountHealthSnapshots,
-    listLatestAccountHealthSnapshots,
     listOpenIncidents,
-    listRecentBackupRuns,
-    listSecurityAuditEvents,
-    listCommentSuggestionsForReview,
     recordSecurityAuditEvent,
-    reviewCommentSuggestion,
-    runAiValidationPipeline,
     countPendingOutboxEvents,
     getAutomationPauseState,
 } from '../core/repositories';
@@ -46,6 +37,8 @@ import leadsRouter from './routes/leads';
 import { handlePauseAction, handleResumeAction, handleQuarantineAction } from './helpers/controlActions';
 import controlsRouter from './routes/controls';
 import { statsRouter } from './routes/stats';
+import { aiRouter } from './routes/ai';
+import { securityRouter } from './routes/security';
 import { sendApiV1, handleApiError } from './utils';
 import { evaluateRisk } from '../risk/riskEngine';
 import { getLocalDateString, config } from '../config';
@@ -611,6 +604,8 @@ function writeSseEvent(res: Response, eventType: string, data: unknown): void {
 
 app.use('/api', dashboardAuthMiddleware);
 app.use('/api', statsRouter);
+app.use('/api', aiRouter);
+app.use('/api', securityRouter);
 
 async function apiV1AuthMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
     if (!config.dashboardAuthEnabled) {
@@ -980,212 +975,8 @@ app.get('/api/ml/timing-slots', async (req, res) => {
 
 // Trend, Observability, Risk → routes/stats.ts
 
-app.get('/api/ai/quality', async (req, res) => {
-    try {
-        const rawDays = Number.parseInt(String(req.query.days ?? '30'), 10);
-        const days = Number.isFinite(rawDays) ? Math.max(1, Math.min(180, rawDays)) : 30;
-        const snapshot = await getAiQualitySnapshot(days);
-        res.json(snapshot);
-    } catch (err: unknown) {
-        handleApiError(res, err, 'api.ai.quality');
-    }
-});
-
-app.post('/api/ai/quality/run', async (req, res) => {
-    try {
-        const triggeredBy =
-            typeof req.body?.triggeredBy === 'string' && req.body.triggeredBy.trim()
-                ? req.body.triggeredBy.trim()
-                : 'dashboard';
-        const run = await runAiValidationPipeline(triggeredBy);
-        auditSecurityEvent({
-            category: 'ai_quality',
-            action: 'validation_run',
-            actor: resolveRequestIp(req),
-            result: 'ALLOW',
-            metadata: {
-                runId: run.id,
-                status: run.status,
-            },
-        });
-        res.json(run);
-    } catch (err: unknown) {
-        handleApiError(res, err, 'api.ai.quality.run');
-    }
-});
-
-app.get('/api/ai/comment-suggestions', async (req, res) => {
-    try {
-        const rawLimit = Number.parseInt(String(req.query.limit ?? '25'), 10);
-        const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(100, rawLimit)) : 25;
-        const rawStatus =
-            typeof req.query.status === 'string' ? req.query.status.trim().toUpperCase() : 'REVIEW_PENDING';
-        if (rawStatus !== 'REVIEW_PENDING' && rawStatus !== 'APPROVED' && rawStatus !== 'REJECTED') {
-            res.status(400).json({ error: 'Parametro status non valido.' });
-            return;
-        }
-
-        const rows = await listCommentSuggestionsForReview(limit, rawStatus);
-        res.json({
-            status: rawStatus,
-            count: rows.length,
-            rows,
-        });
-    } catch (err: unknown) {
-        handleApiError(res, err, 'api.ai.comment-suggestions');
-    }
-});
-
-app.post('/api/ai/comment-suggestions/:leadId/:suggestionIndex/approve', async (req, res) => {
-    const leadId = Number.parseInt(String(req.params.leadId ?? ''), 10);
-    const suggestionIndex = Number.parseInt(String(req.params.suggestionIndex ?? ''), 10);
-    if (!Number.isFinite(leadId) || leadId <= 0 || !Number.isFinite(suggestionIndex) || suggestionIndex < 0) {
-        res.status(400).json({ error: 'Parametri non validi.' });
-        return;
-    }
-
-    try {
-        const comment = typeof req.body?.comment === 'string' ? req.body.comment.trim() : undefined;
-        const result = await reviewCommentSuggestion({
-            leadId,
-            suggestionIndex,
-            action: 'approve',
-            reviewer: resolveRequestIp(req),
-            comment,
-        });
-        auditSecurityEvent({
-            category: 'ai_quality',
-            action: 'comment_suggestion_approve',
-            actor: resolveRequestIp(req),
-            result: 'ALLOW',
-            metadata: {
-                leadId,
-                suggestionIndex,
-            },
-        });
-        res.json(result);
-    } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : '';
-        if (message.startsWith('lead_not_found:') || message.startsWith('comment_suggestion_not_found:')) {
-            res.status(404).json({ error: 'Suggestion non trovata.' });
-            return;
-        }
-        handleApiError(res, err, 'api.ai.comment-suggestions.approve');
-    }
-});
-
-app.post('/api/ai/comment-suggestions/:leadId/:suggestionIndex/reject', async (req, res) => {
-    const leadId = Number.parseInt(String(req.params.leadId ?? ''), 10);
-    const suggestionIndex = Number.parseInt(String(req.params.suggestionIndex ?? ''), 10);
-    if (!Number.isFinite(leadId) || leadId <= 0 || !Number.isFinite(suggestionIndex) || suggestionIndex < 0) {
-        res.status(400).json({ error: 'Parametri non validi.' });
-        return;
-    }
-
-    try {
-        const result = await reviewCommentSuggestion({
-            leadId,
-            suggestionIndex,
-            action: 'reject',
-            reviewer: resolveRequestIp(req),
-        });
-        auditSecurityEvent({
-            category: 'ai_quality',
-            action: 'comment_suggestion_reject',
-            actor: resolveRequestIp(req),
-            result: 'ALLOW',
-            metadata: {
-                leadId,
-                suggestionIndex,
-            },
-        });
-        res.json(result);
-    } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : '';
-        if (message.startsWith('lead_not_found:') || message.startsWith('comment_suggestion_not_found:')) {
-            res.status(404).json({ error: 'Suggestion non trovata.' });
-            return;
-        }
-        handleApiError(res, err, 'api.ai.comment-suggestions.reject');
-    }
-});
-
-app.get('/api/accounts/health', async (req, res) => {
-    try {
-        const rawLimit = Number.parseInt(String(req.query.limit ?? '25'), 10);
-        const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(100, rawLimit)) : 25;
-        const accountId = typeof req.query.accountId === 'string' ? req.query.accountId.trim() : '';
-        const rows = accountId
-            ? await listAccountHealthSnapshots(accountId, limit)
-            : await listLatestAccountHealthSnapshots(limit);
-        res.json({
-            accountId: accountId || null,
-            count: rows.length,
-            rows,
-        });
-    } catch (err: unknown) {
-        handleApiError(res, err, 'api.accounts.health');
-    }
-});
-
-app.get('/api/security/audit', async (req, res) => {
-    try {
-        const rawLimit = Number.parseInt(String(req.query.limit ?? '50'), 10);
-        const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(200, rawLimit)) : 50;
-        const category = typeof req.query.category === 'string' ? req.query.category.trim() : undefined;
-        const rows = await listSecurityAuditEvents(limit, category);
-        res.json({ count: rows.length, rows });
-    } catch (err: unknown) {
-        handleApiError(res, err, 'api.security.audit');
-    }
-});
-
-app.get('/api/backups', async (req, res) => {
-    try {
-        const rawLimit = Number.parseInt(String(req.query.limit ?? '20'), 10);
-        const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(100, rawLimit)) : 20;
-        const rows = await listRecentBackupRuns(limit);
-        res.json({ count: rows.length, rows });
-    } catch (err: unknown) {
-        handleApiError(res, err, 'api.backups');
-    }
-});
-
-// ── Review queue (challenge/manual review) ───────────────────────────────────
-app.get('/api/review-queue', async (req, res) => {
-    try {
-        const rawLimit = Number.parseInt(String(req.query.limit ?? '25'), 10);
-        const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(100, rawLimit)) : 25;
-
-        const [reviewLeads, incidents, challengePendingFlag, lastIncidentId] = await Promise.all([
-            getLeadsByStatus('REVIEW_REQUIRED', limit),
-            listOpenIncidents(),
-            getRuntimeFlag('challenge_review_pending'),
-            getRuntimeFlag('challenge_review_last_incident_id'),
-        ]);
-        const challengeIncidents = incidents.filter((incident) => incident.type === 'CHALLENGE_DETECTED');
-
-        res.json({
-            pending: challengePendingFlag === 'true',
-            lastIncidentId: lastIncidentId ? Number.parseInt(lastIncidentId, 10) : null,
-            reviewLeadCount: reviewLeads.length,
-            challengeIncidentCount: challengeIncidents.length,
-            leads: reviewLeads.map((lead) => ({
-                id: lead.id,
-                status: lead.status,
-                listName: lead.list_name,
-                firstName: lead.first_name,
-                lastName: lead.last_name,
-                linkedinUrl: lead.linkedin_url,
-                updatedAt: lead.updated_at,
-                lastError: lead.last_error,
-            })),
-            incidents: challengeIncidents,
-        });
-    } catch (err: unknown) {
-        handleApiError(res, err, 'api.review-queue');
-    }
-});
+// AI routes (quality, comment-suggestions) → routes/ai.ts
+// Security routes (audit, backups, accounts/health, review-queue) → routes/security.ts
 
 // ── Controls ──────────────────────────────────────────────────────────────────
 // CONTROLS (routes in api/routes/controls.ts)
