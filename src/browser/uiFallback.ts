@@ -9,6 +9,7 @@
 
 import { Page } from 'playwright';
 import {
+    countOpenSelectorFailuresByActionLabels,
     getDynamicSelectors,
     listDynamicSelectorCandidates,
     recordSelectorFailure,
@@ -501,4 +502,140 @@ export async function typeWithFallback(
     const errorMessage = `typeWithFallback("${label}"): nessun selettore ha funzionato su ${selectorChain.length} tentativi.`;
     await trackSelectorFailure(page, label, selectorChain, errorMessage);
     throw new Error(errorMessage);
+}
+
+// ─── Shadow DOM Penetration ──────────────────────────────────────────────────
+
+/**
+ * Cerca un elemento attraverso Shadow DOM chiusi usando page.evaluate con
+ * ricorsione su shadowRoot. LinkedIn usa Web Components in messaging e notifiche.
+ * Ritorna le coordinate del primo elemento trovato, o null.
+ */
+export async function findInShadowDom(
+    page: Page,
+    cssSelector: string,
+): Promise<{ x: number; y: number; width: number; height: number } | null> {
+    return page.evaluate((sel) => {
+        function deepQuerySelector(root: Document | ShadowRoot, selector: string): Element | null {
+            const found = root.querySelector(selector);
+            if (found) return found;
+            const allElements = root.querySelectorAll('*');
+            for (const el of allElements) {
+                if (el.shadowRoot) {
+                    const inner = deepQuerySelector(el.shadowRoot, selector);
+                    if (inner) return inner;
+                }
+            }
+            return null;
+        }
+        const el = deepQuerySelector(document, sel);
+        if (!el) return null;
+        const rect = el.getBoundingClientRect();
+        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, width: rect.width, height: rect.height };
+    }, cssSelector);
+}
+
+/**
+ * Click con fallback Shadow DOM: se il locator standard fallisce,
+ * prova a trovare l'elemento dentro Shadow DOM e clicca via coordinate.
+ */
+export async function clickWithShadowFallback(
+    page: Page,
+    selectors: readonly string[],
+    label: string,
+    options?: ClickFallbackOptions,
+): Promise<void> {
+    try {
+        await clickWithFallback(page, selectors, label, options ?? 5000);
+    } catch {
+        for (const sel of selectors) {
+            const coords = await findInShadowDom(page, sel);
+            if (coords) {
+                console.warn(`[FALLBACK-SHADOW] clickWithShadowFallback("${label}"): trovato in Shadow DOM via "${sel.substring(0, 60)}"`);
+                await humanMouseMoveToCoords(page, coords.x, coords.y);
+                await page.mouse.click(coords.x, coords.y);
+                await trackSelectorSuccess(page, label, `shadow:${sel}`);
+                return;
+            }
+        }
+        throw new Error(`clickWithShadowFallback("${label}"): non trovato né in DOM regolare né in Shadow DOM`);
+    }
+}
+
+// ─── Post-Action Verification ────────────────────────────────────────────────
+
+/**
+ * Verifica generica post-azione: controlla che un elemento atteso sia apparso
+ * dopo un click (es. modale nota dopo click Connect, textbox dopo click Message).
+ * Ritorna true se l'elemento è apparso entro il timeout.
+ */
+export async function verifyPostAction(
+    page: Page,
+    expectedSelector: string | readonly string[],
+    timeoutMs: number = 3000,
+): Promise<boolean> {
+    const selectors = typeof expectedSelector === 'string' ? [expectedSelector] : expectedSelector;
+    for (const sel of selectors) {
+        try {
+            await page.locator(sel).first().waitFor({ state: 'visible', timeout: timeoutMs });
+            return true;
+        } catch {
+            continue;
+        }
+    }
+    return false;
+}
+
+// ─── Selector Drift Metrics ─────────────────────────────────────────────────
+
+export interface SelectorDriftReport {
+    label: string;
+    currentFailures: number;
+    previousFailures: number;
+    driftRate: number;
+    drifting: boolean;
+}
+
+/**
+ * Calcola il "selector drift" per un insieme di label: quanto i selettori stanno
+ * diventando instabili confrontando failure count attuale vs periodo precedente.
+ * Un drift rate > 0.5 indica che LinkedIn probabilmente ha cambiato i class name.
+ */
+export async function measureSelectorDrift(
+    labels: string[],
+    currentWindowDays: number = 3,
+    previousWindowDays: number = 7,
+): Promise<SelectorDriftReport[]> {
+    const reports: SelectorDriftReport[] = [];
+
+    for (const label of labels) {
+        try {
+            const [currentCount, previousCount] = await Promise.all([
+                countOpenSelectorFailuresByActionLabels([label], currentWindowDays).catch(() => 0),
+                countOpenSelectorFailuresByActionLabels([label], previousWindowDays).catch(() => 0),
+            ]);
+
+            const previousOnly = Math.max(0, previousCount - currentCount);
+            const baseline = Math.max(1, previousOnly);
+            const driftRate = currentCount / baseline;
+
+            reports.push({
+                label,
+                currentFailures: currentCount,
+                previousFailures: previousOnly,
+                driftRate: Number.parseFloat(driftRate.toFixed(3)),
+                drifting: driftRate > 1.5 && currentCount >= 3,
+            });
+        } catch {
+            reports.push({
+                label,
+                currentFailures: 0,
+                previousFailures: 0,
+                driftRate: 0,
+                drifting: false,
+            });
+        }
+    }
+
+    return reports;
 }
