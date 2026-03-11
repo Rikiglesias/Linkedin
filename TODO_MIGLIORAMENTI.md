@@ -121,7 +121,7 @@ Sezione completamente nuova emersa dall'analisi 360°. Copre infrastruttura, igi
 - [ ] **Monitoring / APM assente**: nessuna integrazione con Prometheus, Grafana, Sentry o equivalenti. Esporre metriche Prometheus su `/metrics` (invites/hour, risk score, error rate, queue depth, proxy health). Aggiungere Sentry per error tracking centralizzato.
 - [x] **File orfani in root da pulire**: `lint.json`, `lint_output.txt`, `typecheck_output.txt`, `data/linkedin.db`, `.claude/` aggiunti al `.gitignore`. `data/compare_extras.js` eliminato. `data/linkedin.db` non esisteva.
 - [x] **`src/services/` directory vuota**: directory presente ma completamente vuota. Rimuoverla oppure usarla come target per la separazione business logic dai repository (vedi sezione 2, repository pattern).
-- [ ] **Backup manuali non gestiti in `data/`**: 3 file `.sqlite` di backup manuali accumulati. Verificare che `BACKUP_RETENTION_DAYS` funzioni correttamente e gestisca la pulizia automatica. Rimuovere i backup manuali obsoleti.
+- [x] **Backup manuali non gestiti in `data/`** — verificato: `data/backups/` è vuota (nessun backup manuale residuo). **Bug L3 fixato**: la retention policy in `backupDb.ts` filtrava solo `backup-*` ma i backup PG usano `pg_backup_*` — aggiunto pattern `pg_backup_` al filtro. Ora la retention copre sia SQLite che PG.
 
 ## 9. Findings Critici dal Secondo Passaggio (Priorità: CRITICA)
 Problemi emersi dall'analisi approfondita di file precedentemente non letti. Include `.env` reale, stealth scripts completi, API routes, proxy manager.
