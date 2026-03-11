@@ -285,7 +285,7 @@ Il flusso completo dall'accensione del PC allo spegnimento. Ogni fase ha un razi
 - [ ] **Pausa pranzo naturale**: con `WARMUP_TWO_SESSIONS_PER_DAY=true`, il `getSessionWindow()` in `sessionWarmer.ts` crea un gap di 2h tra le sessioni (simula pausa pranzo). Il bot ritorna `budgetFactor=0` durante il gap → non esegue job. Verificare che il `run-loop` gestisca correttamente il gap senza restartare il browser (attualmente chiude e riapre — OK).
 
 ### FASE 3 — Sessione operativa pomeridiana (es. 14:00-17:00)
-- [ ] **Secondo warmup**: all'inizio della sessione pomeridiana, il warmup deve rieseguire. Il `sessionWarmer.ts` ha una logica specifica per `sessionWindow === 'second'` (riga 120-127): controlla messaging tab (simula "torno a controllare risposte"). Verificare che venga eseguito.
+- [x] **Secondo warmup**: coperto dal task `session_warmup` (#13b) aggiunto in `loopCommand.ts`. Esegue `warmupSession()` ad ogni ciclo — la funzione ha già logica differenziata: `sessionWindow === 'second'` (riga 121) controlla messaging tab (simula "torno a controllare risposte"). Il gap pranzo è rispettato (`getSessionWindow() === 'gap'` → skip).
 - [ ] **Follow-up e messaggi**: il pomeriggio è il momento ideale per i follow-up (`followUpWorker.ts`) perché i lead hanno avuto il tempo di leggere il primo messaggio. Il `weeklyStrategyPlanner` assegna factor più alto ai messaggi il giovedì — coerente con il principio "follow-up a metà settimana".
 - [ ] **Enrichment parallelo durante i delay**: durante i `interJobDelay` (120-180s) il processo è idle. Integrare `enrichLeadsParallel()` (da `parallelEnricher.ts`) per arricchire lead in background senza browser. Zero traffico LinkedIn, zero rischio.
 
