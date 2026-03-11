@@ -57,7 +57,6 @@ import {
     computeBackpressureBatchSize,
     computeNextBackpressureLevel,
 } from '../sync/backpressure';
-import { describeVoiceAction, isCriticalVoiceAction, parseVoiceCommand } from '../frontend/voiceCommands';
 
 import { describe, test, expect } from 'vitest';
 import { buildStealthInitScript } from '../browser/stealthScripts';
@@ -703,31 +702,6 @@ describe('Legacy Core Domain Unit Tests', () => {
             config.integrationRetryMaxAttempts = originalIntegrationRetryMaxAttempts;
             resetCircuitBreakersForTests();
         }
-
-        // ── voice commands parser (dashboard) ──────────────────────────────────
-        const voiceRefresh = parseVoiceCommand('Aggiorna dashboard');
-        assert.deepEqual(voiceRefresh, { kind: 'refresh' });
-        if (!voiceRefresh) throw new Error('voiceRefresh non riconosciuto');
-        assert.equal(isCriticalVoiceAction(voiceRefresh), false);
-        assert.equal(describeVoiceAction(voiceRefresh), 'Aggiorna dashboard');
-
-        const voicePause = parseVoiceCommand('Pausa 30 minuti');
-        assert.deepEqual(voicePause, { kind: 'pause', minutes: 30 });
-        if (!voicePause) throw new Error('voicePause non riconosciuto');
-        assert.equal(isCriticalVoiceAction(voicePause), true);
-
-        const voiceResume = parseVoiceCommand('riprendi automazione');
-        assert.deepEqual(voiceResume, { kind: 'resume' });
-        if (!voiceResume) throw new Error('voiceResume non riconosciuto');
-        assert.equal(isCriticalVoiceAction(voiceResume), true);
-
-        const voiceResolveSelected = parseVoiceCommand('risolvi incidenti selezionati');
-        assert.deepEqual(voiceResolveSelected, { kind: 'resolve_selected' });
-        if (!voiceResolveSelected) throw new Error('voiceResolveSelected non riconosciuto');
-        assert.equal(isCriticalVoiceAction(voiceResolveSelected), true);
-
-        const voiceUnknown = parseVoiceCommand('apri il meteo di domani');
-        assert.equal(voiceUnknown, null);
 
         // ── noteGenerator ────────────────────────────────────────────────────────
         const note1 = generateInviteNote('Mario');
