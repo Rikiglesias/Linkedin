@@ -18,7 +18,6 @@ import {
     markProxyHealthy,
     releaseStickyProxy,
 } from '../proxyManager';
-import { ensureCycleTlsProxy, stopCycleTlsProxy } from '../proxy/cycleTlsProxy';
 import {
     CloudFingerprint,
     BrowserFingerprint,
@@ -43,7 +42,6 @@ const cleanupBrowsers = async () => {
         }
     }
     activeBrowsers.clear();
-    await stopCycleTlsProxy().catch(() => { });
 };
 
 process.on('SIGINT', () => {
@@ -271,19 +269,7 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             contextOptions.deviceScaleFactor = fingerprint.deviceScaleFactor ?? 2.5;
         }
 
-        if (config.useJa3Proxy) {
-            const cycleProxyEndpoint = await ensureCycleTlsProxy({
-                upstreamProxy: currentProxy,
-                ja3Fingerprint: fingerprint.ja3,
-                userAgent: fingerprint.userAgent,
-            });
-            if (!cycleProxyEndpoint) {
-                throw new Error('CycleTLS proxy endpoint non disponibile.');
-            }
-            contextOptions.proxy = {
-                server: cycleProxyEndpoint,
-            };
-        } else if (currentProxy) {
+        if (currentProxy) {
             contextOptions.proxy = {
                 server: currentProxy.server,
                 username: currentProxy.username,

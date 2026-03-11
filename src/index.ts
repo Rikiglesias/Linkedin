@@ -66,7 +66,6 @@ import {
     runStatusCommand,
     runUnquarantineCommand,
 } from './cli/commands/adminCommands';
-import { startCycleTlsProxy, stopCycleTlsProxy } from './proxy/cycleTlsProxy';
 import { initPluginSystem, pluginRegistry } from './plugins/pluginLoader';
 import { getRuntimeAccountProfiles } from './accountManager';
 import { checkProxyHealth } from './proxyManager';
@@ -87,7 +86,6 @@ function setupGracefulShutdown(): void {
             if (recovered > 0) console.log(`[SHUTDOWN] ${recovered} job RUNNING → PENDING`);
         } catch { /* DB potrebbe essere già chiuso */ }
 
-        await stopCycleTlsProxy().catch(() => { });
         await closeDatabase();
         process.exit(0);
     };
@@ -115,10 +113,8 @@ function setupPlannedRestart(): void {
                 `[PLANNED_RESTART] Uptime = ${uptimeHours}h >= limit ${config.processMaxUptimeHours}h — riavvio pianificato.`,
             );
             clearInterval(interval);
-            stopCycleTlsProxy()
-                .catch(() => { })
-                .then(() => closeDatabase())
-                .catch((err) => console.error('[PLANNED_RESTART] Errore chiusura DB:', err))
+            closeDatabase()
+                .catch((err: unknown) => console.error('[PLANNED_RESTART] Errore chiusura DB:', err))
                 .finally(() => process.exit(0));
         }
     }, CHECK_INTERVAL_MS);
@@ -316,9 +312,6 @@ async function main(): Promise<void> {
     await initPluginSystem().catch((error) => {
         console.warn('[PLUGIN] init failed', error);
     });
-    if (!isDryRunCommand && config.useJa3Proxy && browserCommands.has(command ?? '')) {
-        await startCycleTlsProxy();
-    }
     const shouldRecoverStuckJobs =
         command === 'run' ||
         command === 'connect' ||
@@ -614,6 +607,5 @@ main()
     })
     .finally(async () => {
         await pluginRegistry.shutdown().catch(() => { });
-        await stopCycleTlsProxy().catch(() => { });
         await closeDatabase();
     });
