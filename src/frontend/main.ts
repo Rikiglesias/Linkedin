@@ -527,6 +527,7 @@ function bindControls(): void {
         const id = Number.parseInt(target.dataset.incidentId ?? '', 10);
         if (!Number.isFinite(id)) return;
 
+        if (!confirm(`Risolvere incidente #${id}? Questa azione non è reversibile.`)) return;
         void api.resolveIncident(id).then((ok) => {
             if (ok) {
                 showToast(`Incidente #${id} risolto`, 'success');
