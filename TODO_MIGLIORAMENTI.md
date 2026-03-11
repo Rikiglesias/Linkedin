@@ -84,7 +84,7 @@ Il problema non è solo “avere test”, ma avere test leggibili, granulari e a
 - [x] **Coverage threshold in CI**: il CI esegue `vitest run` senza `--coverage` e senza soglia minima. Aggiungere `vitest run --coverage` con threshold (es. 60% come baseline, poi incrementare). Impedisce regressioni silenziose di copertura.
 - [ ] **E2E Playwright per la dashboard**: il progetto USA Playwright per l'automazione LinkedIn ma non per testare la propria UI. Aggiungere test E2E: login dashboard, KPI visibili, pause/resume flow, SSE connection, lead search. Copertura reale della superficie operativa.
 - [ ] **Mutation testing**: per un bot dove un singolo bug = ban LinkedIn, il mutation testing (es. Stryker) verifica che i test catturano realmente le mutazioni nei moduli critici (riskEngine, scheduler, cooldown, compliance). Da applicare almeno ai moduli safety-critical.
-- [ ] **Automazione dipendenze**: `.github/dependabot.yml` (32 righe) è già configurato: weekly npm minor+patch, monthly GitHub Actions, grouping dev/prod, ignore major. Dependabot + CodeQL SAST (`ci.yml` righe 139-163) coprono il necessario. Verifica: controllare PR Dependabot pendenti e che il CI le validi. Non servono tool aggiuntivi — evitare backlog duplicato.
+- [x] **Automazione dipendenze**: `.github/dependabot.yml` già configurato (weekly npm minor+patch, monthly Actions, grouping). CodeQL SAST nel CI. Nessun tool aggiuntivo necessario.
 
 ## 7. AI, Provider Strategy e Personalizzazione Dati (Priorità: BASSA)
 Qui serve un’evoluzione governata, non più “AI” sparsa o fallback poco coerenti tra loro.
