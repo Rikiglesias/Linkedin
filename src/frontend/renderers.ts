@@ -9,6 +9,7 @@ import {
     LeadTimelineEvent,
     OperationalSloSnapshot,
     PredictiveRiskResponse,
+    ProxyPoolSnapshot,
     ReviewQueueResponse,
     SelectorCacheKpiSnapshot,
     TimelineEntry,
@@ -202,6 +203,26 @@ export function renderSelectorCacheKpi(kpi: SelectorCacheKpiSnapshot | undefined
         'selector-cache-kpi',
         `Selector cache KPI 7d: ${status} (riduzione ${reduction}, target ${target}, fail ${kpi.currentFailures}/${kpi.previousFailures}${baselineNote})`,
     );
+}
+
+export function renderProxyHealth(pool: ProxyPoolSnapshot | undefined): void {
+    const el = document.getElementById('proxy-health');
+    if (!el) return;
+
+    if (!pool || !pool.configured) {
+        el.textContent = 'Proxy: non configurato';
+        return;
+    }
+
+    const failed = pool.total - pool.ready - pool.cooling;
+    const healthPct = pool.total > 0 ? Math.round((pool.ready / pool.total) * 100) : 0;
+    const statusClass = healthPct >= 80 ? 'pill-ok' : healthPct >= 50 ? 'pill-warn' : 'pill-critical';
+    el.innerHTML = '';
+    const pill = statusPill(`${healthPct}%`, statusClass);
+    el.appendChild(pill);
+    el.appendChild(document.createTextNode(
+        ` Proxy: ${pool.ready}/${pool.total} pronti, ${pool.cooling} in cooldown, ${failed < 0 ? 0 : failed} falliti (mobile: ${pool.mobile}, residential: ${pool.residential})`,
+    ));
 }
 
 export function renderIncidents(incidents: IncidentRecord[], selectedIds: Set<number>): void {

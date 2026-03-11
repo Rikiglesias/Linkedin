@@ -13,6 +13,7 @@ import {
 } from '../../core/repositories';
 import { evaluateRisk, explainRisk, evaluatePredictiveRiskAlerts } from '../../risk/riskEngine';
 import { getCircuitBreakerSnapshot } from '../../core/integrationPolicy';
+import { getProxyPoolStatus } from '../../proxyManager';
 import { publishLiveEvent } from '../../telemetry/liveEvents';
 import { handleApiError } from '../utils';
 import { resolveRequestIp } from '../helpers/requestIp';
@@ -144,6 +145,7 @@ statsRouter.get('/observability', async (_req, res) => {
                 slo: snapshot.slo.thresholds,
             },
             circuitBreakers: getCircuitBreakerSnapshot(),
+            proxyPool: getProxyPoolStatus(),
         });
     } catch (err: unknown) {
         handleApiError(res, err, 'api.observability');
