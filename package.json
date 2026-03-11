@@ -61,6 +61,7 @@
     "express-rate-limit": "^8.2.1",
     "inquirer": "^8.2.7",
     "libphonenumber-js": "^1.12.38",
+    "otpauth": "^9.5.0",
     "pg": "^8.19.0",
     "playwright": "^1.58.2",
     "pm2": "^6.0.14",
