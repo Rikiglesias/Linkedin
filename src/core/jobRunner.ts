@@ -24,16 +24,9 @@ import { getSessionHistory } from '../risk/sessionMemory';
 import { retryDelayMs } from '../utils/async';
 import { JobType } from '../types/domain';
 import { WorkerContext } from '../workers/context';
-import { processAcceptanceJob } from '../workers/acceptanceWorker';
-import { processInviteJob } from '../workers/inviteWorker';
-import { processMessageJob } from '../workers/messageWorker';
-import { processHygieneJob } from '../workers/hygieneWorker';
-import { processInteractionJob } from '../workers/interactionWorker';
-import { processEnrichmentJob } from '../workers/enrichmentWorker';
 import { ChallengeDetectedError, resolveWorkerRetryPolicy, RetryableWorkerError } from '../workers/errors';
 import { runFollowUpWorker } from '../workers/followUpWorker';
-import { createAndPublishPost, PostCreatorOptions } from '../workers/postCreatorWorker';
-import { WorkerExecutionResult, workerResult } from '../workers/result';
+import { workerRegistry } from '../workers/registry';
 import { transitionLead } from './leadStateService';
 import { advanceLeadCampaign, failLeadCampaign } from './campaignEngine';
 import {
@@ -371,48 +364,14 @@ async function runQueuedJobsForAccount(
 
             let processedCurrentJob = false;
             try {
-                let executionResult: WorkerExecutionResult = workerResult(0);
-                if (job.type === 'INVITE') {
-                    const parsed = parseJobPayload<{ leadId: number; localDate: string }>(job);
-                    executionResult = await processInviteJob(parsed.payload, workerContext);
-                } else if (job.type === 'ACCEPTANCE_CHECK') {
-                    const parsed = parseJobPayload<{ leadId: number }>(job);
-                    executionResult = await processAcceptanceJob(parsed.payload, workerContext);
-                } else if (job.type === 'MESSAGE') {
-                    const parsed = parseJobPayload<{ leadId: number; acceptedAtDate: string }>(job);
-                    executionResult = await processMessageJob(parsed.payload, workerContext);
-                } else if (job.type === 'HYGIENE') {
-                    const parsed = parseJobPayload<{ accountId: string }>(job);
-                    executionResult = await processHygieneJob(parsed.payload, workerContext);
-                } else if (job.type === 'INTERACTION') {
-                    const parsed = parseJobPayload<{
-                        leadId: number;
-                        actionType: 'VIEW_PROFILE' | 'LIKE_POST' | 'FOLLOW';
-                        campaignStateId?: number;
-                    }>(job);
-                    executionResult = await processInteractionJob(parsed.payload, workerContext);
-                } else if (job.type === 'ENRICHMENT') {
-                    const parsed = parseJobPayload<{ leadId: number; campaignStateId?: number }>(job);
-                    executionResult = await processEnrichmentJob(parsed.payload, workerContext);
-                } else if (job.type === 'POST_CREATION') {
-                    const parsed = parseJobPayload<{ accountId: string; topic?: string; tone?: string }>(job);
-                    const postResult = await createAndPublishPost(session.page, {
-                        accountId: parsed.payload.accountId,
-                        topic: parsed.payload.topic,
-                        tone: parsed.payload.tone as PostCreatorOptions['tone'],
-                        dryRun: options.dryRun,
-                    });
-                    executionResult = workerResult(
-                        postResult.published ? 1 : 0,
-                        postResult.error ? [{ message: postResult.error }] : [],
-                    );
-                } else {
-                    const _exhaustive: never = job.type;
+                const processor = workerRegistry.get(job.type);
+                if (!processor) {
                     throw new RetryableWorkerError(
-                        `Tipo job non riconosciuto: ${_exhaustive as string}`,
+                        `Tipo job non riconosciuto: ${job.type}`,
                         'UNKNOWN_JOB_TYPE',
                     );
                 }
+                const executionResult = await processor.process(job, workerContext);
 
                 processedCurrentJob = true;
 
