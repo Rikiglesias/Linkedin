@@ -529,6 +529,34 @@ function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
         onError: 'skip',
     });
 
+    // 13b. Session warmup (pre-workflow) — anti-ban: simula attività organica
+    // PRIMA di qualsiasi azione operativa. Un umano prima scorre il feed,
+    // controlla notifiche, ecc. Senza warmup il bot sembra bot.
+    tasks.push({
+        name: 'session_warmup',
+        shouldRun: (ctx) => {
+            if (ctx.dryRun) return false;
+            const w = buildCtx.workflow;
+            return w === 'all' || w === 'invite' || w === 'message';
+        },
+        execute: async () => {
+            const { getSessionWindow } = await import('../../core/sessionWarmer');
+            const window = getSessionWindow();
+            if (window === 'gap') return;
+            try {
+                const session = await launchBrowser({ headless: config.headless, forceDesktop: true });
+                try {
+                    await warmupSession(session.page);
+                } finally {
+                    await closeBrowserSession(session);
+                }
+            } catch (e) {
+                console.log('[LOOP] Session warmup non fatale:', e);
+            }
+        },
+        onError: 'skip',
+    });
+
     // 14. Main workflow
     tasks.push({
         name: 'workflow',
