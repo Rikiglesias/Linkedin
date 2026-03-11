@@ -29,6 +29,7 @@ import { ChallengeDetectedError, RetryableWorkerError } from './errors';
 import { attemptChallengeResolution } from './challengeHandler';
 import { isSalesNavigatorUrl } from '../linkedinUrl';
 import { buildPersonalizedFollowUpMessage } from '../ai/messagePersonalizer';
+import { getUnusedPrebuiltMessage, markPrebuiltMessageUsed } from '../core/repositories/prebuiltMessages';
 import { logInfo } from '../telemetry/logger';
 import { bridgeDailyStat, bridgeLeadStatus } from '../cloud/cloudBridge';
 import { WorkerExecutionResult, workerResult } from './result';
@@ -84,10 +85,21 @@ export async function processMessageJob(
     }
 
     if (!message) {
-        const personalized = await buildPersonalizedFollowUpMessage(lead, lang);
-        message = personalized.message;
-        messageSource = personalized.source as 'template' | 'ai';
-        messageModel = personalized.model;
+        // Cerca prima un messaggio pre-built (generato offline in batch — zero latenza AI)
+        const prebuilt = await getUnusedPrebuiltMessage(lead.id);
+        if (prebuilt) {
+            message = prebuilt.message;
+            messageSource = prebuilt.source as 'template' | 'ai';
+            messageModel = prebuilt.model;
+            await markPrebuiltMessageUsed(prebuilt.id);
+            await logInfo('message.used_prebuilt', { leadId: lead.id, prebuiltId: prebuilt.id });
+        } else {
+            // Fallback: generazione on-the-fly (aggiunge ~2-5s di latenza AI)
+            const personalized = await buildPersonalizedFollowUpMessage(lead, lang);
+            message = personalized.message;
+            messageSource = personalized.source as 'template' | 'ai';
+            messageModel = personalized.model;
+        }
     }
 
     const messageHash = hashMessage(message);
