@@ -17,6 +17,8 @@ import { humanDelay } from '../browser/humanBehavior';
 import { logInfo, logWarn, logError } from '../telemetry/logger';
 
 const MAX_ATTEMPTS = 2;
+const MAX_AUTO_CHALLENGE_RESOLUTIONS_PER_DAY = 3;
+let challengeResolutionsToday = 0;
 
 /**
  * Tenta di risolvere un challenge/CAPTCHA sulla pagina corrente.
@@ -32,6 +34,16 @@ const MAX_ATTEMPTS = 2;
  * @returns true se il challenge è stato risolto, false altrimenti
  */
 export async function attemptChallengeResolution(page: Page): Promise<boolean> {
+    // Cap giornaliero: troppi CAPTCHA risolti automaticamente in un giorno
+    // sono più sospetti di non risolverli. Limita a 3/giorno (in-memory, reset al restart).
+    if (challengeResolutionsToday >= MAX_AUTO_CHALLENGE_RESOLUTIONS_PER_DAY) {
+        await logWarn('challenge.daily_cap_reached', {
+            todayResolutions: challengeResolutionsToday,
+            cap: MAX_AUTO_CHALLENGE_RESOLUTIONS_PER_DAY,
+        });
+        return false;
+    }
+
     const provider: VisionProvider = createVisionProvider();
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -93,7 +105,8 @@ export async function attemptChallengeResolution(page: Page): Promise<boolean> {
 
                 const stillChallenge = await isStillOnChallengePage(page);
                 if (!stillChallenge) {
-                    await logInfo('challenge.resolved', { attempt, provider: provider.name });
+                    challengeResolutionsToday += 1;
+                    await logInfo('challenge.resolved', { attempt, provider: provider.name, dailyTotal: challengeResolutionsToday });
                     return true;
                 }
 
