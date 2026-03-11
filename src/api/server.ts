@@ -54,7 +54,7 @@ import campaignsRouter from './routes/campaigns';
 import exportRouter from './routes/export';
 import { sendApiV1, handleApiError } from './utils';
 import { PauseSchema, QuarantineSchema } from './schemas';
-import { evaluatePredictiveRiskAlerts, evaluateRisk } from '../risk/riskEngine';
+import { evaluatePredictiveRiskAlerts, evaluateRisk, explainRisk } from '../risk/riskEngine';
 import { getLocalDateString, config } from '../config';
 import { pauseAutomation, resumeAutomation, setQuarantine } from '../risk/incidentManager';
 import { CampaignRunRecord } from '../types/domain';
@@ -1226,6 +1226,18 @@ app.get('/api/observability/slo', async (_req, res) => {
         res.json(snapshot.slo);
     } catch (err: unknown) {
         handleApiError(res, err, 'api.observability.slo');
+    }
+});
+
+// ── Risk explain: contributo di ogni fattore allo score ──────────────────────
+app.get('/api/risk/explain', async (_req, res) => {
+    try {
+        const localDate = getLocalDateString();
+        const riskInputs = await getRiskInputs(localDate, config.hardInviteCap);
+        const explanation = explainRisk(riskInputs);
+        res.json(explanation);
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.risk.explain');
     }
 });
 

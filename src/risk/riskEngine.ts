@@ -59,6 +59,61 @@ export function evaluateRisk(inputs: RiskInputs): RiskSnapshot {
     };
 }
 
+export interface RiskExplanation {
+    score: number;
+    action: RiskSnapshot['action'];
+    factors: Array<{
+        name: string;
+        rawValue: number;
+        weight: number;
+        contribution: number;
+        threshold: string;
+    }>;
+    triggers: string[];
+    thresholds: {
+        riskWarn: number;
+        riskStop: number;
+        pendingRatioWarn: number;
+        pendingRatioStop: number;
+    };
+}
+
+export function explainRisk(inputs: RiskInputs): RiskExplanation {
+    const snapshot = evaluateRisk(inputs);
+    const errorContrib = clampRatio(inputs.errorRate) * 40;
+    const selectorContrib = clampRatio(inputs.selectorFailureRate) * 20;
+    const pendingContrib = clampRatio(inputs.pendingRatio) * 25;
+    const challengeContrib = Math.min(30, Math.max(0, Math.floor(inputs.challengeCount ?? 0)) * 10);
+    const velocityContrib = clampRatio(inputs.inviteVelocityRatio) * 15;
+
+    const factors = [
+        { name: 'errorRate', rawValue: inputs.errorRate, weight: 40, contribution: Math.round(errorContrib * 100) / 100, threshold: `score += errorRate × 40` },
+        { name: 'selectorFailureRate', rawValue: inputs.selectorFailureRate, weight: 20, contribution: Math.round(selectorContrib * 100) / 100, threshold: `score += selectorFailureRate × 20` },
+        { name: 'pendingRatio', rawValue: inputs.pendingRatio, weight: 25, contribution: Math.round(pendingContrib * 100) / 100, threshold: `WARN ≥ ${config.pendingRatioWarn}, STOP ≥ ${config.pendingRatioStop}` },
+        { name: 'challengeCount', rawValue: inputs.challengeCount, weight: 10, contribution: Math.round(challengeContrib * 100) / 100, threshold: `any challenge > 0 → STOP` },
+        { name: 'inviteVelocityRatio', rawValue: inputs.inviteVelocityRatio, weight: 15, contribution: Math.round(velocityContrib * 100) / 100, threshold: `score += velocity × 15` },
+    ];
+
+    const triggers: string[] = [];
+    if (inputs.challengeCount > 0) triggers.push(`challengeCount=${inputs.challengeCount} > 0 → STOP`);
+    if (inputs.pendingRatio >= config.pendingRatioStop) triggers.push(`pendingRatio=${(inputs.pendingRatio * 100).toFixed(1)}% ≥ ${(config.pendingRatioStop * 100).toFixed(0)}% → STOP`);
+    if (snapshot.score >= config.riskStopThreshold) triggers.push(`score=${snapshot.score} ≥ ${config.riskStopThreshold} → STOP`);
+    if (snapshot.action === 'WARN') triggers.push(`score=${snapshot.score} ≥ ${config.riskWarnThreshold} or pendingRatio ≥ ${(config.pendingRatioWarn * 100).toFixed(0)}% → WARN`);
+
+    return {
+        score: snapshot.score,
+        action: snapshot.action,
+        factors,
+        triggers,
+        thresholds: {
+            riskWarn: config.riskWarnThreshold,
+            riskStop: config.riskStopThreshold,
+            pendingRatioWarn: config.pendingRatioWarn,
+            pendingRatioStop: config.pendingRatioStop,
+        },
+    };
+}
+
 export function calculateAccountWarmupMultiplier(ageDays: number, maxDays: number): number {
     if (ageDays >= maxDays) return 1.0;
     // Linear progression from 10% to 100% over maxDays
