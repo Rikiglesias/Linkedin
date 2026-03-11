@@ -24,8 +24,6 @@ import {
     getDailyStat,
     getGlobalKPIData,
     getLeadsByStatus,
-    getLeadById,
-    getLeadTimeline,
     getOperationalObservabilitySnapshot,
     getRecentDailyStats,
     getRiskInputs,
@@ -40,7 +38,6 @@ import {
     reviewCommentSuggestion,
     resolveIncident,
     runAiValidationPipeline,
-    searchLeads,
     setRuntimeFlag,
     countPendingOutboxEvents,
     getAutomationPauseState,
@@ -49,6 +46,7 @@ import { getDatabase } from '../db';
 import campaignsRouter from './routes/campaigns';
 import exportRouter from './routes/export';
 import blacklistRouter from './routes/blacklist';
+import leadsRouter from './routes/leads';
 import { sendApiV1, handleApiError } from './utils';
 import { PauseSchema, QuarantineSchema } from './schemas';
 import { evaluatePredictiveRiskAlerts, evaluateRisk, explainRisk } from '../risk/riskEngine';
@@ -1541,46 +1539,8 @@ app.post('/api/controls/trigger-run', async (req, res) => {
 // LEAD SEARCH + DETAIL
 // ==========================================
 
-app.get('/api/leads/search', async (req, res) => {
-    try {
-        const query = typeof req.query.q === 'string' ? req.query.q.trim() : undefined;
-        const status = typeof req.query.status === 'string' ? req.query.status : undefined;
-        const listName = typeof req.query.list === 'string' ? req.query.list : undefined;
-        const page = typeof req.query.page === 'string' ? Math.max(1, parseInt(req.query.page, 10) || 1) : 1;
-        const pageSize = typeof req.query.pageSize === 'string' ? Math.min(100, parseInt(req.query.pageSize, 10) || 25) : 25;
-
-        const result = await searchLeads({
-            query: query || undefined,
-            status: status as never,
-            listName: listName || undefined,
-            page,
-            pageSize,
-        });
-
-        res.json(result);
-    } catch (err: unknown) {
-        handleApiError(res, err, 'api.leads.search');
-    }
-});
-
-app.get('/api/leads/:id', async (req, res) => {
-    try {
-        const id = parseInt(req.params.id, 10);
-        if (!Number.isFinite(id) || id <= 0) {
-            res.status(400).json({ error: 'Invalid lead ID' });
-            return;
-        }
-        const lead = await getLeadById(id);
-        if (!lead) {
-            res.status(404).json({ error: 'Lead not found' });
-            return;
-        }
-        const timeline = await getLeadTimeline(id);
-        res.json({ lead, timeline });
-    } catch (err: unknown) {
-        handleApiError(res, err, 'api.leads.detail');
-    }
-});
+// LEADS (routes in api/routes/leads.ts)
+app.use('/api/leads', leadsRouter);
 
 // ==========================================
 // CAMPAIGNS (Router Esterno)
