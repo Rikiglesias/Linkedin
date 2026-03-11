@@ -3,6 +3,7 @@ import sqlite3 from 'sqlite3';
 import { open, Database as SQLiteDatabase } from 'sqlite';
 import path from 'path';
 import fs from 'fs';
+import { execFileSync } from 'child_process';
 import { config } from './config';
 import { ensureFilePrivate, ensureParentDirectoryPrivate } from './security/filesystem';
 
@@ -442,9 +443,31 @@ export async function closeDatabase(): Promise<void> {
 
 export async function backupDatabase(): Promise<string> {
     if (isPostgres) {
-        // I backup in postgres devono essere affidati a un container esterno o un servizio gestito (pg_dump)
-        // Per ora facciamo return silenzioso per mantenere la compatibilità dell'interfaccia.
-        return 'PostgreSQL backup must be handled by infrastructure (e.g. pg_dump script in cron)';
+        const backupsDir = path.resolve('data', 'backups');
+        ensureParentDirectoryPrivate(path.join(backupsDir, '_'));
+        if (!fs.existsSync(backupsDir)) {
+            fs.mkdirSync(backupsDir, { recursive: true });
+        }
+        const dateStr = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const backupPath = path.join(backupsDir, `pg_backup_${dateStr}.sql`);
+        try {
+            execFileSync('pg_dump', [
+                '--dbname', config.databaseUrl,
+                '--format', 'plain',
+                '--no-owner',
+                '--no-privileges',
+                '--file', backupPath,
+            ], { timeout: 120_000, stdio: 'pipe' });
+            ensureFilePrivate(backupPath);
+            return backupPath;
+        } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            if (msg.includes('ENOENT') || msg.includes('not found') || msg.includes('not recognized')) {
+                console.warn('[BACKUP] pg_dump non trovato. Installare postgresql-client o delegare il backup all\'infrastruttura.');
+                return 'pg_dump not available — install postgresql-client for automated backups';
+            }
+            throw new Error(`pg_dump failed: ${msg}`);
+        }
     }
 
     const database = await getDatabase();
