@@ -9,17 +9,9 @@ import { Router } from 'express';
 import { setRuntimeFlag, recordSecurityAuditEvent } from '../../core/repositories';
 import { handleApiError } from '../utils';
 import { handlePauseAction, handleResumeAction, handleQuarantineAction } from '../helpers/controlActions';
-import type { Request } from 'express';
+import { resolveRequestIp } from '../helpers/requestIp';
 
 const router = Router();
-
-function resolveRequestIp(req: Request): string {
-    const fromExpress = (req.ip ?? '').trim();
-    if (fromExpress && fromExpress !== '::1') return fromExpress.startsWith('::ffff:') ? fromExpress.slice(7) : fromExpress;
-    if (fromExpress === '::1') return '127.0.0.1';
-    const fallback = req.socket?.remoteAddress ?? '';
-    return fallback.trim().startsWith('::ffff:') ? fallback.trim().slice(7) : fallback.trim();
-}
 
 router.post('/pause', async (req, res) => {
     try {

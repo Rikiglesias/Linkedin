@@ -10,14 +10,7 @@ import type { Request } from 'express';
 import { PauseSchema, QuarantineSchema } from '../schemas';
 import { pauseAutomation, resumeAutomation, setQuarantine } from '../../risk/incidentManager';
 import { recordSecurityAuditEvent } from '../../core/repositories';
-
-function resolveRequestIp(req: Request): string {
-    const fromExpress = (req.ip ?? '').trim();
-    if (fromExpress && fromExpress !== '::1') return fromExpress.startsWith('::ffff:') ? fromExpress.slice(7) : fromExpress;
-    if (fromExpress === '::1') return '127.0.0.1';
-    const fallback = req.socket?.remoteAddress ?? '';
-    return fallback.trim().startsWith('::ffff:') ? fallback.trim().slice(7) : fallback.trim();
-}
+import { resolveRequestIp } from './requestIp';
 
 function auditSecurityEvent(event: {
     category: string;
