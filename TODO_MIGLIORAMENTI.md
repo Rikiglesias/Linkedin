@@ -97,6 +97,22 @@ Qui serve un’evoluzione governata, non più “AI” sparsa o fallback poco co
 ## 8. DevOps, Pulizia Codebase e Observability (Priorità: MEDIA)
 Sezione completamente nuova emersa dall'analisi 360°. Copre infrastruttura, igiene del repository e monitoring — aspetti non presenti nelle sezioni precedenti.
 
+### File root da rimuovere o spostare
+- [x] **`lint.json`, `lint_output.txt`, `typecheck_output.txt`**: già aggiunti al `.gitignore` (righe 35-37).
+- [x] **`.env.bak` (4.7KB)** — verificato: NON tracked in git (`git ls-files .env.bak` = vuoto). Il `.gitignore` copre già il pattern. Nessuna azione necessaria.
+- [x] **`repomix.config.json`** — aggiornato: `INTEGRATIONS.md` → `docs/INTEGRATIONS.md`. Include già `TODO_MIGLIORAMENTI.md` e `SECURITY.md`. `ROADMAP.md` non presente (già rimosso in sessione precedente).
+- [x] **`.claude/` directory**: già aggiunto `.claude/` al `.gitignore` (riga 43).
+
+### Documentazione root — consolidamento
+- [x] **Troppi `.md` in root — consolidati in `docs/`**. Spostati con `git mv`: `AI_QUALITY_PIPELINE.md` → `docs/`, `CONFIG_REFERENCE.md` → `docs/`, `INTEGRATIONS.md` → `docs/`. Aggiornati tutti i riferimenti: `README.md` (3 link + tree struttura), `repomix.config.json` (path INTEGRATIONS), `scripts/generate-config-docs.mjs` (output path), `.dockerignore` (aggiunta `docs/` + `README.md`). In root restano solo: `README.md`, `SECURITY.md`, `THREAT_MODEL.md`, `GUIDA_ANTI_BAN.md`, `TODO_MIGLIORAMENTI.md`.
+- [x] **`AUDIT_COMPLETAMENTI_2026.md` (39KB)** — spostato in `docs/archive/AUDIT_COMPLETAMENTI_2026.md` con `git mv`. File storico, non operativo.
+- [x] **`TODO.md` (75KB)** — verificato: 0 punti aperti, 188 completati. File 100% legacy. Archiviato in `docs/archive/TODO.md` con `git mv`. `TODO_MIGLIORAMENTI.md` è l'unico TODO attivo.
+
+### `.dockerignore` — lacune
+- [x] **`.dockerignore` espanso**. Già completato (51 righe): coverage, logs, .github, .vscode, .claude, TODO*.md, AUDIT*.md, lint.*, .prettierrc, eslint.config.js, vitest.config.ts, n8n/. Originale era 98 bytes, 9 righe: `.git`, `node_modules`, `dist`, `data`, `*.log`, `repomix-output.txt`, `.env`, `playwright-report`, `test-results`. Mancano: `coverage/`, `logs/`, `.github/`, `.vscode/`, `.claude/`, `*.md` (tranne README), `lint.json`, `lint_output.txt`, `typecheck_output.txt`, `.env.*`, `.prettierrc`, `.prettierignore`, `eslint.config.js`, `vitest.config.ts`, `tsconfig.frontend.json`, `n8n/`, `TODO*.md`, `AUDIT*.md`. Il build context copia inutilmente ~200KB di file non necessari all'immagine.
+
+### `.gitignore` — lacune
+- [x] **`.gitignore` espanso**. Già completato: `lint.json`, `lint_output.txt`, `typecheck_output.txt`, `.claude/`, `data/linkedin.db` aggiunti esplicitamente.
 - [x] **Docker log rotation mancante**: in `docker-compose.yml` nessun driver logging configurato. In produzione i log JSON possono riempire il disco. Aggiungere `logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }` ai servizi bot e dashboard.
 - [x] **`.dockerignore` espanso**: aggiunto: output temporanei (lint.json, lint_output.txt, typecheck_output.txt), documentazione non necessaria (TODO*.md, AUDIT*.md, ecc.), config IDE (.vscode, .claude, .github), tool config (.prettierrc, eslint.config.js, vitest.config.ts), n8n/.
 - [x] **PM2 in `devDependencies`**: `pm2` è usato in produzione (`ecosystem.config.cjs`, `daemon:start`) ma è dichiarato come devDependency. `npm ci --omit=dev` lo esclude. Spostare in `dependencies` oppure affidarsi solo a Docker restart policy.
