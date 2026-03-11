@@ -465,6 +465,11 @@ async function main(): Promise<void> {
         case 'diag':
             await runDiagnosticsCommand(commandArgs);
             break;
+        case 'preflight-env': {
+            const { runPreflightEnvCommand } = await import('./cli/commands/preflightEnv');
+            await runPreflightEnvCommand();
+            break;
+        }
         case 'kpi': {
             const kpi = await getGlobalKPIData();
             console.log(JSON.stringify(kpi, null, 2));

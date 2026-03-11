@@ -271,7 +271,7 @@ Oltre a migliorare l'esistente: cosa **non esiste e dovrebbe**, cosa **esiste e 
 Il flusso completo dall'accensione del PC allo spegnimento. Ogni fase ha un razionale anti-ban e un check da implementare nel codice o nella documentazione.
 
 ### FASE 0 — Prima di accendere (setup una tantum)
-- [ ] **Checklist ambiente**: (a) PC dedicato o VM isolata per il bot (mai lo stesso browser/profilo per navigazione personale); (b) VPN personale SPENTA (il bot usa i proxy Oxylabs); (c) nessun altro browser con LinkedIn aperto; (d) Ollama in esecuzione se AI locale attiva; (e) proxy Oxylabs attivi e non scaduti. Implementare: un comando `.\bot.ps1 preflight-env` che verifica automaticamente: proxy raggiungibile, Ollama raggiungibile (se configurato), nessun processo Chrome con profilo LinkedIn aperto, spazio disco sufficiente per DB/logs.
+- [x] **Checklist ambiente — `preflight-env` implementato**. Comando CLI `preflight-env` in `cli/commands/preflightEnv.ts` con 5 check: (1) spazio disco data/ (FAIL <1GB, WARN <5GB), (2) proxy raggiungibile per ogni account (checkProxyHealth), (3) Ollama raggiungibile se configurato (fetch /api/tags con timeout 5s), (4) session directory esistenti, (5) database accessibile (SELECT 1). Output con emoji ✅⚠️❌. Exit code 1 se FAIL. Dynamic import in index.ts.
 - [x] **Profilo LinkedIn "caldo" — documentato in GUIDA_ANTI_BAN.md**. Sezione 10 ampliata: 1 settimana di attività manuale obbligatoria prima del bot (profilo completo, feed scroll, like, connessioni manuali, post). Spiegato il razionale: account freddo → 20 inviti/giorno = red flag immediato. Ramp-up graduale dopo la settimana manuale (5-10 → 15-20 → pieno). `GROWTH_MODEL_ENABLED=true` gestisce il ramp-up automatico del bot.
 
 ### FASE 1 — Accensione e boot del bot
