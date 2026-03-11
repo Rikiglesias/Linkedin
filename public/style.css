@@ -1044,6 +1044,46 @@ dialog::backdrop {
     color: var(--ink-base);
 }
 
+/* ─── Blacklist Section ────────────────────────────────────────────────────── */
+
+.blacklist-add-form {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.blacklist-add-form .input-field {
+    flex: 1;
+    min-width: 140px;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    background: var(--bg);
+    color: var(--text);
+}
+
+.blacklist-add-form .btn-sm {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+.btn-remove-blacklist {
+    background: none;
+    border: none;
+    color: var(--danger, #ef4444);
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 0.2rem 0.4rem;
+}
+
+.btn-remove-blacklist:hover {
+    text-decoration: underline;
+}
+
 /* ─── Toast Notification Stack ────────────────────────────────────────────── */
 
 #toast-stack {

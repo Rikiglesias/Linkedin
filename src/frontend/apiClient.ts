@@ -229,4 +229,29 @@ export class DashboardApi {
             commentSuggestions: ensureObject(commentSuggestions) as unknown as CommentSuggestionQueueResponse,
         };
     }
+
+    async getBlacklist(): Promise<Array<{ id: number; linkedin_url: string | null; company_domain: string | null; reason: string | null; created_at: string }>> {
+        const resp = await this.apiFetch('/api/blacklist');
+        if (!resp.ok) return [];
+        const data = await resp.json() as { entries?: unknown[] };
+        return ensureArray(data.entries ?? data);
+    }
+
+    async addToBlacklist(linkedinUrl: string, companyDomain: string, reason: string): Promise<boolean> {
+        const resp = await this.apiFetch('/api/blacklist', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                linkedin_url: linkedinUrl || null,
+                company_domain: companyDomain || null,
+                reason: reason || 'manual_dashboard',
+            }),
+        });
+        return resp.ok;
+    }
+
+    async removeFromBlacklist(id: number): Promise<boolean> {
+        const resp = await this.apiFetch(`/api/blacklist/${id}`, { method: 'DELETE' });
+        return resp.ok;
+    }
 }

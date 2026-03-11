@@ -380,6 +380,33 @@
                 <div id="lead-detail-content" class="lead-detail-content" hidden></div>
             </section>
 
+            <section class="card" id="blacklist-section">
+                <header class="card-header">
+                    <h2>Blacklist</h2>
+                    <p id="blacklist-count" class="card-subtitle">—</p>
+                </header>
+                <div class="blacklist-add-form">
+                    <input type="text" id="blacklist-url" placeholder="LinkedIn URL" class="input-field" />
+                    <input type="text" id="blacklist-domain" placeholder="Company domain (opz.)" class="input-field" />
+                    <input type="text" id="blacklist-reason" placeholder="Motivo" class="input-field" />
+                    <button id="btn-blacklist-add" class="btn btn-danger btn-sm">Aggiungi</button>
+                </div>
+                <div class="table-wrapper">
+                    <table class="data-table" aria-label="Blacklist">
+                        <thead>
+                            <tr>
+                                <th>URL</th>
+                                <th>Dominio</th>
+                                <th>Motivo</th>
+                                <th>Data</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="blacklist-tbody"></tbody>
+                    </table>
+                </div>
+            </section>
+
             <section class="card">
                 <header class="card-header">
                     <h2>Campaign Runs Recenti</h2>
