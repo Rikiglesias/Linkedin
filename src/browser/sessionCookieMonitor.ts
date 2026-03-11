@@ -190,7 +190,7 @@ export async function detectSessionCookieAnomaly(
             await logWarn('session_cookie.anomaly.missing', {
                 sessionDir,
                 previousHash,
-                message: 'Cookie li_at scomparso — possibile invalidazione server-side o ban imminente.',
+                message: 'Cookie li_at scomparso — possibile invalidazione server-side. Verifica manualmente il login su LinkedIn. Se funziona, il cookie verrà rigenerato al prossimo avvio.',
             });
             return { anomaly: 'COOKIE_MISSING', previous: previousHash, current: null };
         }
