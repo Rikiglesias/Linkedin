@@ -11,7 +11,7 @@ import {
     listOpenIncidents,
     resolveIncident,
 } from '../../core/repositories';
-import { evaluateRisk, explainRisk, evaluatePredictiveRiskAlerts } from '../../risk/riskEngine';
+import { evaluateRisk, explainRisk, evaluatePredictiveRiskAlerts, calculateDynamicBudget } from '../../risk/riskEngine';
 import { getCircuitBreakerSnapshot } from '../../core/integrationPolicy';
 import { getProxyPoolStatus } from '../../proxyManager';
 import { publishLiveEvent } from '../../telemetry/liveEvents';
@@ -170,6 +170,63 @@ statsRouter.get('/risk/explain', async (_req, res) => {
         res.json(explanation);
     } catch (err: unknown) {
         handleApiError(res, err, 'api.risk.explain');
+    }
+});
+
+statsRouter.post('/risk/what-if', async (req, res) => {
+    try {
+        const localDate = getLocalDateString();
+        const currentInputs = await getRiskInputs(localDate, config.hardInviteCap);
+
+        const body = req.body as Record<string, unknown> ?? {};
+        const hypotheticalHardInviteCap = typeof body.hardInviteCap === 'number' ? body.hardInviteCap : config.hardInviteCap;
+        const hypotheticalSoftInviteCap = typeof body.softInviteCap === 'number' ? body.softInviteCap : config.softInviteCap;
+        const hypotheticalHardMsgCap = typeof body.hardMsgCap === 'number' ? body.hardMsgCap : config.hardMsgCap;
+        const hypotheticalSoftMsgCap = typeof body.softMsgCap === 'number' ? body.softMsgCap : config.softMsgCap;
+
+        const hypotheticalInputs: typeof currentInputs = {
+            ...currentInputs,
+            inviteVelocityRatio: hypotheticalHardInviteCap > 0
+                ? (currentInputs.inviteVelocityRatio * config.hardInviteCap) / hypotheticalHardInviteCap
+                : currentInputs.inviteVelocityRatio,
+        };
+
+        const currentRisk = evaluateRisk(currentInputs);
+        const hypotheticalRisk = evaluateRisk(hypotheticalInputs);
+
+        const { getDailyStat } = await import('../../core/repositories');
+        const invitesSentToday = await getDailyStat(localDate, 'invites_sent');
+        const messagesSentToday = await getDailyStat(localDate, 'messages_sent');
+
+        const currentInviteBudget = calculateDynamicBudget(config.softInviteCap, config.hardInviteCap, invitesSentToday, currentRisk.action);
+        const hypotheticalInviteBudget = calculateDynamicBudget(hypotheticalSoftInviteCap, hypotheticalHardInviteCap, invitesSentToday, hypotheticalRisk.action);
+        const currentMsgBudget = calculateDynamicBudget(config.softMsgCap, config.hardMsgCap, messagesSentToday, currentRisk.action);
+        const hypotheticalMsgBudget = calculateDynamicBudget(hypotheticalSoftMsgCap, hypotheticalHardMsgCap, messagesSentToday, hypotheticalRisk.action);
+
+        res.json({
+            current: {
+                riskScore: currentRisk.score,
+                riskAction: currentRisk.action,
+                inviteBudgetRemaining: currentInviteBudget,
+                messageBudgetRemaining: currentMsgBudget,
+                caps: { softInvite: config.softInviteCap, hardInvite: config.hardInviteCap, softMsg: config.softMsgCap, hardMsg: config.hardMsgCap },
+            },
+            hypothetical: {
+                riskScore: hypotheticalRisk.score,
+                riskAction: hypotheticalRisk.action,
+                inviteBudgetRemaining: hypotheticalInviteBudget,
+                messageBudgetRemaining: hypotheticalMsgBudget,
+                caps: { softInvite: hypotheticalSoftInviteCap, hardInvite: hypotheticalHardInviteCap, softMsg: hypotheticalSoftMsgCap, hardMsg: hypotheticalHardMsgCap },
+            },
+            delta: {
+                riskScore: hypotheticalRisk.score - currentRisk.score,
+                inviteBudget: hypotheticalInviteBudget - currentInviteBudget,
+                messageBudget: hypotheticalMsgBudget - currentMsgBudget,
+                riskActionChanged: hypotheticalRisk.action !== currentRisk.action,
+            },
+        });
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.risk.what_if');
     }
 });
 
