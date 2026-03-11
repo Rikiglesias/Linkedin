@@ -433,6 +433,15 @@ export async function processInviteJob(
 
     await humanDelay(context.session.page, 900, 1800);
 
+    // Verifica post-azione: dopo click Connect, il modale invito deve apparire.
+    // Se non appare, il click potrebbe aver colpito un bottone sbagliato.
+    const modalAppeared = await context.session.page.locator(
+        joinSelectors('addNoteButton') + ', ' + joinSelectors('sendWithoutNote') + ', ' + joinSelectors('sendFallback'),
+    ).first().isVisible({ timeout: 3000 }).catch(() => false);
+    if (!modalAppeared) {
+        await logInfo('invite.post_action_verify_failed', { leadId: lead.id, message: 'Modale invito non apparso dopo click Connect' });
+    }
+
     const inviteResult = await handleInviteModal(
         context.session.page,
         lead,
