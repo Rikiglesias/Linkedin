@@ -42,16 +42,13 @@ import {
     runAiValidationPipeline,
     searchLeads,
     setRuntimeFlag,
-    addToBlacklist,
-    countBlacklist,
     countPendingOutboxEvents,
     getAutomationPauseState,
-    listBlacklist,
-    removeFromBlacklist,
 } from '../core/repositories';
 import { getDatabase } from '../db';
 import campaignsRouter from './routes/campaigns';
 import exportRouter from './routes/export';
+import blacklistRouter from './routes/blacklist';
 import { sendApiV1, handleApiError } from './utils';
 import { PauseSchema, QuarantineSchema } from './schemas';
 import { evaluatePredictiveRiskAlerts, evaluateRisk, explainRisk } from '../risk/riskEngine';
@@ -1600,60 +1597,9 @@ app.use('/api/v1/export', apiV1AuthMiddleware, exportLimiter, exportRouter);
 app.use('/api/export', apiV1AuthMiddleware, exportLimiter, exportRouter);
 
 // ==========================================
-// BLACKLIST
+// BLACKLIST (routes in api/routes/blacklist.ts)
 // ==========================================
-
-app.get('/api/blacklist', async (_req, res) => {
-    try {
-        const entries = await listBlacklist(500);
-        const total = await countBlacklist();
-        res.json({ entries, total });
-    } catch (err: unknown) {
-        handleApiError(res, err, 'api.blacklist.list');
-    }
-});
-
-app.post('/api/blacklist', async (req, res) => {
-    try {
-        const { linkedin_url, company_domain, reason, added_by } = req.body as {
-            linkedin_url?: string;
-            company_domain?: string;
-            reason?: string;
-            added_by?: string;
-        };
-        if (!linkedin_url && !company_domain) {
-            res.status(400).json({ error: 'Serve almeno linkedin_url o company_domain.' });
-            return;
-        }
-        if (!reason) {
-            res.status(400).json({ error: 'Il campo reason è obbligatorio.' });
-            return;
-        }
-        const id = await addToBlacklist(
-            linkedin_url ?? null,
-            company_domain ?? null,
-            reason,
-            added_by ?? 'dashboard',
-        );
-        res.status(201).json({ id, message: 'Aggiunto alla blacklist.' });
-    } catch (err: unknown) {
-        handleApiError(res, err, 'api.blacklist.add');
-    }
-});
-
-app.delete('/api/blacklist/:id', async (req, res) => {
-    try {
-        const id = parseInt(req.params.id, 10);
-        if (!Number.isFinite(id) || id <= 0) {
-            res.status(400).json({ error: 'ID non valido.' });
-            return;
-        }
-        await removeFromBlacklist(id);
-        res.json({ message: 'Rimosso dalla blacklist.' });
-    } catch (err: unknown) {
-        handleApiError(res, err, 'api.blacklist.remove');
-    }
-});
+app.use('/api/blacklist', blacklistRouter);
 
 // ── 404 catch-all ─────────────────────────────────────────────────────────────
 app.use('/api/', (_req, res) => {
