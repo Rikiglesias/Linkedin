@@ -286,7 +286,7 @@ Il flusso completo dall'accensione del PC allo spegnimento. Ogni fase ha un razi
 
 ### FASE 3 — Sessione operativa pomeridiana (es. 14:00-17:00)
 - [x] **Secondo warmup**: coperto dal task `session_warmup` (#13b) aggiunto in `loopCommand.ts`. Esegue `warmupSession()` ad ogni ciclo — la funzione ha già logica differenziata: `sessionWindow === 'second'` (riga 121) controlla messaging tab (simula "torno a controllare risposte"). Il gap pranzo è rispettato (`getSessionWindow() === 'gap'` → skip).
-- [ ] **Follow-up e messaggi**: il pomeriggio è il momento ideale per i follow-up (`followUpWorker.ts`) perché i lead hanno avuto il tempo di leggere il primo messaggio. Il `weeklyStrategyPlanner` assegna factor più alto ai messaggi il giovedì — coerente con il principio "follow-up a metà settimana".
+- [x] **Follow-up e messaggi — VERIFICATO**. `followUpWorker.ts` è integrato nel `jobRunner.ts` come tipo job. Il `weeklyStrategyPlanner` assegna `messageFactor: 1.3` il giovedì (confermato in `strategyPlanner.ts` riga 31). La sessione pomeridiana (`sessionWindow === 'second'`) ha budget 40% (vs 60% mattina) — coerente con il principio di concentrare i follow-up nel pomeriggio quando i lead hanno avuto tempo di leggere.
 - [ ] **Enrichment parallelo durante i delay**: durante i `interJobDelay` (120-180s) il processo è idle. Integrare `enrichLeadsParallel()` (da `parallelEnricher.ts`) per arricchire lead in background senza browser. Zero traffico LinkedIn, zero rischio.
 
 ### FASE 4 — Fine giornata e shutdown
