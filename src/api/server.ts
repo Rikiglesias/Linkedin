@@ -47,11 +47,10 @@ import campaignsRouter from './routes/campaigns';
 import exportRouter from './routes/export';
 import blacklistRouter from './routes/blacklist';
 import leadsRouter from './routes/leads';
+import { handlePauseAction, handleResumeAction, handleQuarantineAction } from './helpers/controlActions';
 import { sendApiV1, handleApiError } from './utils';
-import { PauseSchema, QuarantineSchema } from './schemas';
 import { evaluatePredictiveRiskAlerts, evaluateRisk, explainRisk } from '../risk/riskEngine';
 import { getLocalDateString, config } from '../config';
-import { pauseAutomation, resumeAutomation, setQuarantine } from '../risk/incidentManager';
 import { CampaignRunRecord } from '../types/domain';
 import {
     publishLiveEvent,
@@ -639,64 +638,7 @@ function mapDailyToPredictiveSample(day: {
     };
 }
 
-function resolveQuarantineEnabled(payload: unknown): boolean {
-    const parsed = QuarantineSchema.safeParse(payload);
-    if (!parsed.success) {
-        throw parsed.error;
-    }
-    if ('enabled' in parsed.data) {
-        return parsed.data.enabled;
-    }
-    return parsed.data.action === 'set';
-}
-
-// ── Helper condivisi controls (deduplica legacy /api/controls/* e /api/v1/automation/controls/*) ──
-
-async function handlePauseAction(
-    req: Request,
-    source: string,
-    defaultMinutes?: number,
-): Promise<{ success: boolean; minutes: number }> {
-    const payload = defaultMinutes !== undefined && req.body?.minutes === undefined
-        ? { minutes: defaultMinutes }
-        : req.body;
-    const parsed = PauseSchema.safeParse(payload);
-    if (!parsed.success) throw parsed.error;
-    const minutes = parsed.data.minutes;
-    await pauseAutomation(`MANUAL_${source.toUpperCase()}_PAUSE`, { source }, minutes);
-    auditSecurityEvent({
-        category: 'runtime_control',
-        action: 'pause',
-        actor: resolveRequestIp(req),
-        result: 'ALLOW',
-        metadata: { minutes, source },
-    });
-    return { success: true, minutes };
-}
-
-async function handleResumeAction(req: Request, source: string): Promise<void> {
-    await resumeAutomation();
-    auditSecurityEvent({
-        category: 'runtime_control',
-        action: 'resume',
-        actor: resolveRequestIp(req),
-        result: 'ALLOW',
-        metadata: { source },
-    });
-}
-
-async function handleQuarantineAction(req: Request, source: string): Promise<{ enabled: boolean }> {
-    const enabled = resolveQuarantineEnabled(req.body);
-    await setQuarantine(enabled);
-    auditSecurityEvent({
-        category: 'runtime_control',
-        action: enabled ? 'quarantine_enable' : 'quarantine_disable',
-        actor: resolveRequestIp(req),
-        result: 'ALLOW',
-        metadata: { enabled, source },
-    });
-    return { enabled };
-}
+// ── Helper condivisi controls (estratti in api/helpers/controlActions.ts) ──
 
 app.use('/api', dashboardAuthMiddleware);
 
