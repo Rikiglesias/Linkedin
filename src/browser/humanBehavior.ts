@@ -13,7 +13,6 @@ import { isMobilePage } from './deviceProfile';
 import { MouseGenerator, Point } from '../ml/mouseGenerator';
 import { calculateContextualDelay } from '../ml/timingModel';
 import { computeSessionTypoRate, determineNextKeystroke } from '../ai/typoGenerator';
-import { interactWithFeed } from './organicContent';
 import { shouldMissclick, shouldAccidentalNav, performMissclick, performAccidentalNavigation } from './missclick';
 import { dismissKnownOverlays } from './overlayDismisser';
 import { randomElement, randomInt } from '../utils/random';
@@ -789,6 +788,7 @@ export async function performDecoyAction(page: Page): Promise<void> {
             await reInjectOverlay();
             await simulateHumanReading(page);
             // AD-02: Interviene sul Feed con una probabilità del 20%
+            const { interactWithFeed } = await import('./organicContent');
             await interactWithFeed(page, 0.20);
         },
         async () => {

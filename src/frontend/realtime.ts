@@ -101,7 +101,7 @@ function connectSseFallback(): void {
 export function connectEventStream(): void {
     if (wsConnection) { wsConnection.close(); wsConnection = null; }
     if (eventSource) { eventSource.close(); eventSource = null; }
-    if (reconnectTimer) { window.clearTimeout(reconnectTimer); }
+    if (reconnectTimer) { window.clearTimeout(reconnectTimer); reconnectTimer = null; }
     if (!connectWebSocket()) { connectSseFallback(); }
 }
 

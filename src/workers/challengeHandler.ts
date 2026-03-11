@@ -19,6 +19,15 @@ import { logInfo, logWarn, logError } from '../telemetry/logger';
 const MAX_ATTEMPTS = 2;
 const MAX_AUTO_CHALLENGE_RESOLUTIONS_PER_DAY = 3;
 let challengeResolutionsToday = 0;
+let challengeCountDate = new Date().toISOString().slice(0, 10);
+
+function resetDailyCounterIfNeeded(): void {
+    const today = new Date().toISOString().slice(0, 10);
+    if (today !== challengeCountDate) {
+        challengeResolutionsToday = 0;
+        challengeCountDate = today;
+    }
+}
 
 /**
  * Tenta di risolvere un challenge/CAPTCHA sulla pagina corrente.
@@ -34,8 +43,9 @@ let challengeResolutionsToday = 0;
  * @returns true se il challenge è stato risolto, false altrimenti
  */
 export async function attemptChallengeResolution(page: Page): Promise<boolean> {
+    resetDailyCounterIfNeeded();
     // Cap giornaliero: troppi CAPTCHA risolti automaticamente in un giorno
-    // sono più sospetti di non risolverli. Limita a 3/giorno (in-memory, reset al restart).
+    // sono più sospetti di non risolverli. Limita a 3/giorno (in-memory, reset a mezzanotte).
     if (challengeResolutionsToday >= MAX_AUTO_CHALLENGE_RESOLUTIONS_PER_DAY) {
         await logWarn('challenge.daily_cap_reached', {
             todayResolutions: challengeResolutionsToday,
