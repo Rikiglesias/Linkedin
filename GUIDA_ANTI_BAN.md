@@ -49,7 +49,17 @@ Il bot simula decoy actions, ma una vera attività organica è meglio.
 ## 🟢 Best Practice
 
 ### 10. Account warmup per nuovi profili
-Se usi un account nuovo o dormiente:
+
+**PRIMA di lanciare il bot su un account nuovo**, fai almeno 1 settimana di attività manuale:
+- Completa il profilo al 100% (foto, headline, about, experience, education)
+- Scorra il feed 10-15 min/giorno
+- Metti 5-10 like a post rilevanti
+- Connettiti manualmente con 3-5 colleghi reali
+- Pubblica 1-2 post originali
+
+Il `GROWTH_MODEL_ENABLED=true` gestisce il ramp-up automatico del bot, ma LinkedIn è molto più sospettoso di account che passano da 0 attività a bot attivo. Un profilo "freddo" che improvvisamente invia 20 inviti/giorno è un red flag immediato.
+
+**Dopo la settimana manuale**, lancia il bot con gradualità:
 - **Settimana 1-2**: Solo 5-10 inviti/giorno, con nota personalizzata
 - **Settimana 3-4**: Sali a 15-20/giorno
 - **Da settimana 5**: Budget pieno (il bot ha il warmup automatico, basta non forzarlo)
