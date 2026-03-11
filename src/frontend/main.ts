@@ -25,9 +25,15 @@ import {
     isCriticalVoiceAction,
     parseVoiceCommand,
 } from './voiceCommands';
+import {
+    type SseConnectionState,
+    initRealtime,
+    connectEventStream,
+    disconnectEventStream,
+    isNotificationEvent,
+} from './realtime';
 
 const POLL_INTERVAL_MS = 20_000;
-const SSE_RECONNECT_BASE_MS = 2_000;
 const SPEECH_RECOGNITION_LANG = 'it-IT';
 
 interface SpeechRecognitionAlternativeLike {
@@ -72,12 +78,8 @@ const timeline = new TimelineStore();
 const selectedIncidentIds = new Set<number>();
 let lastTrendData: TrendRow[] = [];
 
-let eventSource: EventSource | null = null;
-let wsConnection: WebSocket | null = null;
 let pollTimer: number | null = null;
 let refreshTimer: number | null = null;
-let reconnectTimer: number | null = null;
-let reconnectAttempts = 0;
 const PREFS_KEY = 'lkbot_ui_prefs';
 
 type ThemePreference = 'light' | 'dark' | 'auto';
@@ -133,8 +135,6 @@ let currentTheme: ThemePreference = initialPrefs.theme;
 
 // Apply saved theme immediately (before DOM renders charts)
 applyTheme(currentTheme);
-
-type SseConnectionState = 'UNKNOWN' | 'CONNECTED' | 'DISCONNECTED';
 
 function updateSseIndicator(state: SseConnectionState): void {
     const el = document.getElementById('sse-indicator');
@@ -288,119 +288,17 @@ function appendTimelineEvent(type: string, data: string): void {
     renderTimelineSection();
 }
 
-const TRACKED_EVENTS = [
-    'connected',
-    'lead.transition',
-    'lead.reconciled',
-    'incident.opened',
-    'incident.resolved',
-    'automation.paused',
-    'automation.resumed',
-    'system.quarantine',
-    'challenge.review_queued',
-    'run.log',
-];
-
-const NOTIFICATION_EVENTS = new Set(['incident.opened', 'system.quarantine', 'challenge.review_queued']);
-
-function handleRealtimeEvent(eventName: string, data: string): void {
-    appendTimelineEvent(eventName, data);
-    scheduleRefresh(eventName === 'run.log' ? 350 : 200);
-    if (NOTIFICATION_EVENTS.has(eventName)) {
-        fireDesktopNotification(eventName, data);
-    }
-}
-
-function scheduleReconnect(): void {
-    reconnectAttempts += 1;
-    updateSseIndicator('DISCONNECTED');
-    const delay = Math.min(30_000, SSE_RECONNECT_BASE_MS * Math.pow(2, Math.min(6, reconnectAttempts)));
-    reconnectTimer = window.setTimeout(() => {
-        if (!document.hidden) {
-            connectEventStream();
+// ─── Realtime bridge: collega realtime.ts alle funzioni locali di main.ts ────
+initRealtime({
+    onStateChange: updateSseIndicator,
+    onRealtimeEvent: (eventName: string, data: string) => {
+        appendTimelineEvent(eventName, data);
+        scheduleRefresh(eventName === 'run.log' ? 350 : 200);
+        if (isNotificationEvent(eventName)) {
+            fireDesktopNotification(eventName, data);
         }
-    }, delay);
-}
-
-function connectWebSocket(): boolean {
-    if (typeof WebSocket === 'undefined') return false;
-
-    try {
-        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const ws = new WebSocket(`${protocol}//${location.host}/ws`);
-
-        ws.onopen = () => {
-            wsConnection = ws;
-            reconnectAttempts = 0;
-            updateSseIndicator('CONNECTED');
-        };
-
-        ws.onmessage = (evt) => {
-            try {
-                const msg = JSON.parse(evt.data as string) as { type?: string; payload?: Record<string, unknown> };
-                if (msg.type && msg.type !== 'heartbeat' && TRACKED_EVENTS.includes(msg.type)) {
-                    handleRealtimeEvent(msg.type, evt.data as string);
-                }
-            } catch {
-                // ignore malformed messages
-            }
-        };
-
-        ws.onclose = () => {
-            wsConnection = null;
-            scheduleReconnect();
-        };
-
-        ws.onerror = () => {
-            ws.close();
-        };
-
-        return true;
-    } catch {
-        return false;
-    }
-}
-
-function connectSseFallback(): void {
-    eventSource = new EventSource('/api/events');
-
-    TRACKED_EVENTS.forEach((eventName) => {
-        eventSource?.addEventListener(eventName, (evt: MessageEvent<string>) => {
-            handleRealtimeEvent(eventName, evt.data);
-        });
-    });
-
-    eventSource.onopen = () => {
-        reconnectAttempts = 0;
-        updateSseIndicator('CONNECTED');
-    };
-
-    eventSource.onerror = () => {
-        eventSource?.close();
-        eventSource = null;
-        scheduleReconnect();
-    };
-}
-
-function connectEventStream(): void {
-    // Cleanup existing connections
-    if (wsConnection) {
-        wsConnection.close();
-        wsConnection = null;
-    }
-    if (eventSource) {
-        eventSource.close();
-        eventSource = null;
-    }
-    if (reconnectTimer) {
-        window.clearTimeout(reconnectTimer);
-    }
-
-    // Try WebSocket first, fall back to SSE
-    if (!connectWebSocket()) {
-        connectSseFallback();
-    }
-}
+    },
+});
 
 function startPolling(): void {
     if (pollTimer) {
@@ -416,19 +314,7 @@ function stopRealtime(): void {
         window.clearInterval(pollTimer);
         pollTimer = null;
     }
-    if (wsConnection) {
-        wsConnection.close();
-        wsConnection = null;
-    }
-    if (eventSource) {
-        eventSource.close();
-        eventSource = null;
-    }
-    if (reconnectTimer) {
-        window.clearTimeout(reconnectTimer);
-        reconnectTimer = null;
-    }
-    updateSseIndicator('UNKNOWN');
+    disconnectEventStream();
 }
 
 async function refreshDashboard(): Promise<void> {
