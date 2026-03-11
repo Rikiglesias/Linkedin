@@ -38,7 +38,6 @@ import {
     reviewCommentSuggestion,
     resolveIncident,
     runAiValidationPipeline,
-    setRuntimeFlag,
     countPendingOutboxEvents,
     getAutomationPauseState,
 } from '../core/repositories';
@@ -48,6 +47,7 @@ import exportRouter from './routes/export';
 import blacklistRouter from './routes/blacklist';
 import leadsRouter from './routes/leads';
 import { handlePauseAction, handleResumeAction, handleQuarantineAction } from './helpers/controlActions';
+import controlsRouter from './routes/controls';
 import { sendApiV1, handleApiError } from './utils';
 import { evaluatePredictiveRiskAlerts, evaluateRisk, explainRisk } from '../risk/riskEngine';
 import { getLocalDateString, config } from '../config';
@@ -1424,58 +1424,8 @@ app.get('/api/review-queue', async (req, res) => {
 });
 
 // ── Controls ──────────────────────────────────────────────────────────────────
-app.post('/api/controls/pause', async (req, res) => {
-    try {
-        const result = await handlePauseAction(req, 'dashboard');
-        res.json({ ...result, message: `Pausa attivata per ${result.minutes} minuti.` });
-    } catch (err: unknown) {
-        handleApiError(res, err, 'api.controls.pause');
-    }
-});
-
-app.post('/api/controls/resume', async (req, res) => {
-    try {
-        await handleResumeAction(req, 'dashboard');
-        res.json({ success: true, message: 'Ripresa automazione.' });
-    } catch (err: unknown) {
-        handleApiError(res, err, 'api.controls.resume');
-    }
-});
-
-app.post('/api/controls/quarantine', async (req, res) => {
-    try {
-        const result = await handleQuarantineAction(req, 'dashboard');
-        res.json({ success: true, message: `Quarantena ${result.enabled ? 'attivata' : 'disattivata'}.` });
-    } catch (err: unknown) {
-        handleApiError(res, err, 'api.controls.quarantine');
-    }
-});
-
-app.post('/api/controls/trigger-run', async (req, res) => {
-    try {
-        const workflow = typeof req.body?.workflow === 'string' ? req.body.workflow : 'all';
-        const validWorkflows = ['invite', 'check', 'message', 'warmup', 'all'];
-        if (!validWorkflows.includes(workflow)) {
-            res.status(400).json({ success: false, error: `Workflow non valido: ${workflow}` });
-            return;
-        }
-        await setRuntimeFlag('ui_trigger_run', JSON.stringify({
-            workflow,
-            requestedAt: new Date().toISOString(),
-            source: 'dashboard',
-        }));
-        auditSecurityEvent({
-            category: 'runtime_control',
-            action: 'trigger_run',
-            actor: resolveRequestIp(req),
-            result: 'ALLOW',
-            metadata: { workflow },
-        });
-        res.json({ success: true, message: `Run "${workflow}" schedulato. Verrà eseguito al prossimo ciclo.` });
-    } catch (err: unknown) {
-        handleApiError(res, err, 'api.controls.trigger-run');
-    }
-});
+// CONTROLS (routes in api/routes/controls.ts)
+app.use('/api/controls', controlsRouter);
 
 // ==========================================
 // LEAD SEARCH + DETAIL
