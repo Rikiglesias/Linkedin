@@ -17,12 +17,22 @@ import { logInfo, logWarn } from '../telemetry/logger';
 
 const META_FILENAME = '.session-meta.json';
 
+interface BehavioralProfile {
+    avgScrollSpeedPxPerSec: number;
+    avgClickDelayMs: number;
+    preferredWarmupOrder: 'feed-first' | 'notifications-first' | 'search-first';
+    peakActivityHour: number;
+    avgSessionDurationMin: number;
+    profileVersion: number;
+}
+
 interface SessionMeta {
     lastVerifiedAt: string;
     lastVerifiedBy: string;
     createdAt: string;
     rotationCount: number;
     cookieHash?: string;
+    behavioralProfile?: BehavioralProfile;
 }
 
 const DEFAULT_MAX_AGE_DAYS = 7;
@@ -283,4 +293,81 @@ export function getSessionMaturity(sessionDir: string): SessionMaturityResult {
         budgetFactor: 1.0,
         forceRandomActivityFirst: false,
     };
+}
+
+// ─── AB-1: Behavioral Fingerprint Cross-Session ─────────────────────────────
+
+const BEHAVIORAL_PROFILE_VERSION = 1;
+
+/**
+ * Genera un profilo comportamentale iniziale deterministico per account.
+ * Usa FNV-1a sull'accountId per creare valori "personali" unici ma stabili.
+ * Simula un umano con abitudini coerenti: velocità scroll, delay click,
+ * ordine navigazione preferito, orario di punta.
+ */
+function generateInitialProfile(accountId: string): BehavioralProfile {
+    let hash = 0x811c9dc5;
+    const seed = `behavioral:${accountId}`;
+    for (let i = 0; i < seed.length; i++) {
+        hash ^= seed.charCodeAt(i);
+        hash = Math.imul(hash, 0x01000193);
+    }
+    const h = hash >>> 0;
+
+    const warmupOrders: BehavioralProfile['preferredWarmupOrder'][] = [
+        'feed-first', 'notifications-first', 'search-first',
+    ];
+
+    return {
+        avgScrollSpeedPxPerSec: 120 + (h % 180),
+        avgClickDelayMs: 800 + (h % 1200),
+        preferredWarmupOrder: warmupOrders[h % 3] ?? 'feed-first',
+        peakActivityHour: 9 + (h % 4),
+        avgSessionDurationMin: 18 + (h % 15),
+        profileVersion: BEHAVIORAL_PROFILE_VERSION,
+    };
+}
+
+/**
+ * Applica drift lento al profilo: ±5% su valori numerici per simulare
+ * la naturale evoluzione delle abitudini umane nel tempo.
+ */
+function applyProfileDrift(profile: BehavioralProfile): BehavioralProfile {
+    const drift = (value: number, maxPct: number): number => {
+        const delta = value * maxPct * (Math.random() * 2 - 1);
+        return Math.round(value + delta);
+    };
+
+    return {
+        ...profile,
+        avgScrollSpeedPxPerSec: Math.max(60, drift(profile.avgScrollSpeedPxPerSec, 0.05)),
+        avgClickDelayMs: Math.max(300, drift(profile.avgClickDelayMs, 0.05)),
+        avgSessionDurationMin: Math.max(10, drift(profile.avgSessionDurationMin, 0.05)),
+        profileVersion: BEHAVIORAL_PROFILE_VERSION,
+    };
+}
+
+/**
+ * Ritorna il profilo comportamentale per una sessione.
+ * Se non esiste, lo genera deterministicamente dall'accountId.
+ * Se esiste, applica drift lento (~5%) e lo persiste.
+ * Il caller usa questi valori per modulare delay, scroll speed, ordine warmup.
+ */
+export function getBehavioralProfile(sessionDir: string, accountId: string): BehavioralProfile {
+    const meta = readMeta(sessionDir);
+    const existing = meta?.behavioralProfile;
+
+    if (existing && existing.profileVersion === BEHAVIORAL_PROFILE_VERSION) {
+        const drifted = applyProfileDrift(existing);
+        if (meta) {
+            writeMeta(sessionDir, { ...meta, behavioralProfile: drifted });
+        }
+        return drifted;
+    }
+
+    const initial = generateInitialProfile(accountId);
+    if (meta) {
+        writeMeta(sessionDir, { ...meta, behavioralProfile: initial });
+    }
+    return initial;
 }

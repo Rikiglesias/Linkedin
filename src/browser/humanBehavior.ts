@@ -571,6 +571,32 @@ export async function humanType(page: Page, selector: string, text: string): Pro
         if (Math.random() < 0.04) {
             await humanDelay(page, 400, 1100);
         }
+
+        // AB-4: Micro-pause "distrazione" — un umano si distrae durante la digitazione.
+        // Ogni ~30 caratteri, 6% di probabilità di una micro-pausa riflessiva.
+        if (i > 0 && i % 30 === 0 && Math.random() < 0.06) {
+            const distractionType = Math.random();
+            if (distractionType < 0.5) {
+                // Tipo 1: Pausa lunga "rileggere il testo" (2-5s)
+                await page.waitForTimeout(2000 + Math.random() * 3000);
+            } else if (distractionType < 0.8) {
+                // Tipo 2: Correzione riflessiva — cancella e riscrive ultimi 2-3 char
+                const charsToRetype = Math.min(i, 2 + Math.floor(Math.random() * 2));
+                for (let b = 0; b < charsToRetype; b++) {
+                    await element.press('Backspace');
+                    await page.waitForTimeout(80 + Math.random() * 120);
+                }
+                await page.waitForTimeout(400 + Math.random() * 600);
+                const retypeStart = Math.max(0, i - charsToRetype + 1);
+                for (let r = retypeStart; r <= i; r++) {
+                    const ch = text[r] ?? '';
+                    await element.pressSequentially(ch, { delay: Math.floor(Math.random() * 60) + 50 });
+                }
+            } else {
+                // Tipo 3: Micro-pausa "controllo telefono" (1-3s, nessuna azione)
+                await page.waitForTimeout(1000 + Math.random() * 2000);
+            }
+        }
     }
 }
 
