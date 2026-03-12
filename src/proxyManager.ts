@@ -569,10 +569,64 @@ export async function getIntegrationProxyAsync(options: GetProxyChainOptions = {
  * Restituisce o alloca un proxy permanente per una specifica sessionId.
  * Assicura che la sessione usi costantemente lo stesso nodo per non allertare Linkedin con cambi IP anomali.
  */
+/**
+ * AB-2: Calcola il week number corrente (stessa logica del fingerprint in pool.ts).
+ * Lo sticky proxy ruota alla stessa frequenza del fingerprint → geo-consistency.
+ */
+function currentWeekNumber(): number {
+    const now = new Date();
+    return Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000));
+}
+
+/** AB-2: Persistenza sticky proxy su file per sopravvivere ai riavvii. */
+function loadPersistedStickyProxy(sessionDir: string | undefined): { proxy: ProxyConfig; weekNumber: number } | null {
+    if (!sessionDir) return null;
+    try {
+        const metaPath = path.join(sessionDir, '.session-meta.json');
+        if (!fs.existsSync(metaPath)) return null;
+        const raw = JSON.parse(fs.readFileSync(metaPath, 'utf8')) as Record<string, unknown>;
+        const sp = raw.stickyProxy as { server?: string; username?: string; password?: string; type?: string; weekNumber?: number } | undefined;
+        if (!sp?.server || typeof sp.weekNumber !== 'number') return null;
+        return {
+            proxy: { server: sp.server, username: sp.username, password: sp.password, type: sp.type as ProxyType },
+            weekNumber: sp.weekNumber,
+        };
+    } catch { return null; }
+}
+
+function persistStickyProxy(sessionDir: string | undefined, proxy: ProxyConfig, weekNumber: number): void {
+    if (!sessionDir) return;
+    try {
+        const metaPath = path.join(sessionDir, '.session-meta.json');
+        let meta: Record<string, unknown> = {};
+        if (fs.existsSync(metaPath)) {
+            meta = JSON.parse(fs.readFileSync(metaPath, 'utf8')) as Record<string, unknown>;
+        }
+        meta.stickyProxy = { server: proxy.server, username: proxy.username, password: proxy.password, type: proxy.type, weekNumber };
+        fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf8');
+    } catch { /* best effort */ }
+}
+
 export async function getStickyProxy(
     sessionId: string,
     options: GetProxyChainOptions = {},
+    sessionDir?: string,
 ): Promise<ProxyConfig | undefined> {
+    const week = currentWeekNumber();
+
+    // AB-2: Prova a ripristinare il proxy persistito (sopravvive ai riavvii)
+    if (!stickyProxySessions.has(sessionId) && sessionDir) {
+        const persisted = loadPersistedStickyProxy(sessionDir);
+        if (persisted && persisted.weekNumber === week) {
+            // Verifica che il proxy persistito sia ancora nel pool
+            const pool = loadProxyPool();
+            const stillInPool = pool.some(p => p.server === persisted.proxy.server);
+            if (stillInPool) {
+                stickyProxySessions.set(sessionId, persisted.proxy);
+            }
+        }
+    }
+
     // 1. Check if we already have a sticky proxy for this session
     const existing = stickyProxySessions.get(sessionId);
     if (existing) {
@@ -599,6 +653,7 @@ export async function getStickyProxy(
     const proxy = await getProxyAsync(options);
     if (proxy) {
         stickyProxySessions.set(sessionId, proxy);
+        persistStickyProxy(sessionDir, proxy, week);
     }
     return proxy;
 }
