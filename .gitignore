@@ -56,3 +56,11 @@ test-*.js
 
 # Bright Data proxy certificates (sensibili)
 brightdata_proxy_ca/
+
+# File audit/TODO generati da sessioni AI
+AUDIT_REPORT.md
+TODO_AUDIT_GAPS.md
+TODO_MIGLIORAMENTI.md
+audit-*.md
+docs/archive/AUDIT_*.md
+docs/archive/TODO.md
