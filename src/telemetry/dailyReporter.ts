@@ -123,6 +123,55 @@ export async function generateAndSendDailyReport(targetDate?: string): Promise<b
         `• Failures: corrente=${observability.selectorCacheKpi.currentFailures}, precedente=${observability.selectorCacheKpi.previousFailures}`,
     ].join('\n');
 
+    // F-3: Hot leads — top 3 lead con intent POSITIVE/QUESTIONS oggi
+    const hotLeads = await db.query<{ first_name: string; last_name: string; account_name: string; linkedin_url: string; confidence: number; intent: string }>(
+        `SELECT l.first_name, l.last_name, l.account_name, l.linkedin_url, 
+                li.confidence, li.intent
+         FROM lead_intents li
+         JOIN leads l ON l.id = li.lead_id
+         WHERE li.intent IN ('POSITIVE', 'QUESTIONS')
+           AND li.confidence >= 0.8
+           AND li.detected_at LIKE ? || '%'
+         ORDER BY li.confidence DESC
+         LIMIT 3`,
+        [localDate],
+    ).catch(() => [] as Array<{ first_name: string; last_name: string; account_name: string; linkedin_url: string; confidence: number; intent: string }>);
+
+    const hotLeadsSection = hotLeads.length > 0
+        ? [
+            `\n*🔥 Hot Leads (intent positivo oggi)*`,
+            ...hotLeads.map((hl) => {
+                const name = `${hl.first_name || ''} ${hl.last_name || ''}`.trim() || 'Lead';
+                const company = hl.account_name ? ` (${hl.account_name})` : '';
+                return `• ${name}${company} — ${hl.intent} ${Math.round(hl.confidence * 100)}%`;
+            }),
+        ].join('\n')
+        : '';
+
+    // F-3: Pending ratio trend — confronto vs ieri e media 7 giorni
+    const yesterdayDate = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const yesterdayRiskInputs = await getRiskInputs(yesterdayDate, config.hardInviteCap).catch(() => null);
+    const yesterdayPendingRatio = yesterdayRiskInputs ? yesterdayRiskInputs.pendingRatio : null;
+    const pendingTrend = yesterdayPendingRatio !== null
+        ? riskSnapshot.pendingRatio > yesterdayPendingRatio ? '📈 in salita' : riskSnapshot.pendingRatio < yesterdayPendingRatio ? '📉 in discesa' : '➡️ stabile'
+        : '';
+    const pendingTrendText = yesterdayPendingRatio !== null
+        ? ` (ieri: ${(yesterdayPendingRatio * 100).toFixed(1)}% ${pendingTrend})`
+        : '';
+
+    // F-3: Suggestion automatica — ritiro inviti pending
+    const expiredInvitesRow = await db.get<{ count: number }>(
+        `SELECT COUNT(*) as count FROM leads WHERE status = 'INVITED' AND invited_at < DATETIME('now', '-21 days')`,
+    ).catch(() => null);
+    const expiredInvites = expiredInvitesRow?.count ?? 0;
+    const suggestionSection = (riskSnapshot.pendingRatio > 0.5 || expiredInvites > 5)
+        ? [
+            `\n*💡 Suggerimenti*`,
+            ...(expiredInvites > 5 ? [`• Ritira ${expiredInvites} inviti pending >21gg per abbassare il pending ratio`] : []),
+            ...(riskSnapshot.pendingRatio > 0.5 ? [`• Pending ratio ${(riskSnapshot.pendingRatio * 100).toFixed(0)}% — considera di ridurre il budget inviti o migliorare il targeting`] : []),
+        ].join('\n')
+        : '';
+
     // Format Report Markdown per Telegram
     const reportText = [
         `📊 *Daily Performance Summary (${localDate})* 📊`,
@@ -132,12 +181,13 @@ export async function generateAndSendDailyReport(targetDate?: string): Promise<b
         `• Nuove Connessioni Accettate: *${leadsAccepted?.count ?? 0}*`,
         `• Messaggi Follow-Up: *${leadsMessaged?.count ?? 0}*`,
         `• Risposte Ricevute: *${leadsReplied?.count ?? 0}*`,
+        hotLeadsSection,
         `\n*🤖 Bot Execution*`,
         `• Campaign Runs Totali: *${campaignRunsStats?.total_runs ?? 0}*`,
         `• Fallimenti Critici Runs: *${campaignRunsStats?.failed_runs ?? 0}*`,
         `\n*⚠️ Risk & Health*`,
         `• Risk Score: *${riskSnapshot.score}/100* (${riskSnapshot.action})`,
-        `• Pending Ratio: *${(riskSnapshot.pendingRatio * 100).toFixed(1)}%*`,
+        `• Pending Ratio: *${(riskSnapshot.pendingRatio * 100).toFixed(1)}%*${pendingTrendText}`,
         `• Errori Esecuzione (Job/Orchestrator): *${stats.runErrors}*`,
         `• Problemi Selettori UI: *${stats.selectorFailures}*`,
         `• Challenge LinkedIn Apparse: *${stats.challengesCount}*`,
@@ -146,6 +196,7 @@ export async function generateAndSendDailyReport(targetDate?: string): Promise<b
         abSection,
         timingSection,
         timingExperimentSection,
+        suggestionSection,
     ]
         .filter((s) => s.length > 0)
         .join('\n');
