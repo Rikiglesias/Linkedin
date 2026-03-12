@@ -55,88 +55,14 @@ import {
 // backpressure imports moved to backpressure.vitest.ts
 
 import { describe, test, expect } from 'vitest';
-import { buildStealthInitScript } from '../browser/stealthScripts';
 // HttpResponseThrottler imports moved to httpThrottler.vitest.ts
 import { generatePostContent } from '../ai/postContentGenerator';
 import { checkSessionFreshness } from '../browser/sessionCookieMonitor';
 
-describe('Stealth Init Script', () => {
-    test('genera script JS valido con keyword critiche', () => {
-        const script = buildStealthInitScript({
-            locale: 'it-IT',
-            languages: ['it-IT', 'it', 'en-US', 'en'],
-            isHeadless: false,
-            viewportWidth: 1920,
-            viewportHeight: 1080,
-        });
-
-        expect(typeof script).toBe('string');
-        expect(script.length).toBeGreaterThan(100);
-        expect(script).toContain('RTCPeerConnection');
-        expect(script).toContain('navigator.plugins');
-        expect(script).toContain('chrome.runtime');
-        expect(script).toContain('navigator.webdriver');
-        expect(script).toContain('permissions.query');
-    });
-
-    test('headless mode aggiunge guard extra', () => {
-        const script = buildStealthInitScript({
-            locale: 'en-US',
-            languages: ['en-US', 'en'],
-            isHeadless: true,
-            viewportWidth: 1280,
-            viewportHeight: 800,
-        });
-
-        expect(script).toContain('outerWidth');
-        expect(script).toContain('navigator.connection');
-    });
-
-    test('default options funzionano', () => {
-        const script = buildStealthInitScript();
-        expect(typeof script).toBe('string');
-        expect(script.length).toBeGreaterThan(100);
-    });
-
-    test('contiene nuovi mock anti-detection', () => {
-        const script = buildStealthInitScript({
-            locale: 'it-IT',
-            languages: ['it-IT', 'it'],
-            isHeadless: false,
-            viewportWidth: 1920,
-            viewportHeight: 1080,
-        });
-
-        expect(script).toContain('hardwareConcurrency');
-        expect(script).toContain('getBattery');
-        expect(script).toContain('Notification.permission');
-        expect(script).toContain('PluginArray.prototype');
-        expect(script).toContain('MimeTypeArray.prototype');
-        expect(script).toContain('Symbol.iterator');
-    });
-});
-
-describe('Fingerprint Pool', () => {
-    test('User-Agent pool contiene versioni Chrome moderne (>= 130)', async () => {
-        const { desktopFingerprintPool, mobileFingerprintPool } = await import('../fingerprint/pool');
-        const chromeFingerprints = [...desktopFingerprintPool, ...mobileFingerprintPool].filter((fp) =>
-            fp.userAgent.includes('Chrome/'),
-        );
-        expect(chromeFingerprints.length).toBeGreaterThan(0);
-
-        for (const fp of chromeFingerprints) {
-            const match = fp.userAgent.match(/Chrome\/(\d+)/);
-            expect(match).not.toBeNull();
-            if (match) {
-                expect(Number(match[1])).toBeGreaterThanOrEqual(130);
-            }
-        }
-    });
-});
-
-// HTTP Response Throttler tests moved to httpThrottler.vitest.ts
-
-// Backpressure tests moved to backpressure.vitest.ts
+// Stealth Init Script tests → stealth.vitest.ts (16 test + 3 runtime)
+// Fingerprint Pool tests → fingerprint-coherence.vitest.ts (14 test)
+// HTTP Response Throttler tests → httpThrottler.vitest.ts
+// Backpressure tests → backpressure.vitest.ts
 
 describe('Post Content Generator', () => {
     test('genera contenuto template o AI fallback', async () => {

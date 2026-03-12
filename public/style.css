@@ -735,6 +735,16 @@ dialog::backdrop {
     gap: var(--space-2);
 }
 
+.login-error {
+    color: var(--danger);
+    font-size: 0.82rem;
+    margin: var(--space-2) 0 0;
+    padding: var(--space-2) var(--space-3);
+    background: color-mix(in srgb, var(--danger) 8%, transparent);
+    border-radius: var(--radius-sm);
+    border-left: 3px solid var(--danger);
+}
+
 .modal-transcript,
 .modal-action-summary {
     margin: 0 0 var(--space-2);

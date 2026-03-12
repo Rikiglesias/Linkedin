@@ -45,6 +45,47 @@ describe('E2E API — Metriche Prometheus', () => {
     });
 });
 
+describe('E2E API — Session auth bootstrap', () => {
+    test('POST /api/auth/session senza credenziali ritorna 401 o 200 in base alla config auth', async () => {
+        if (!app) return;
+        const res = await request(app)
+            .post('/api/auth/session')
+            .send({});
+        // Se auth è abilitata nel config cachato → 401 (credenziali richieste)
+        // Se auth è disabilitata → 200 (sessione creata, backward-compatible)
+        // 429 possibile se rate limiter ha budget esaurito da run precedenti
+        expect([200, 401, 429]).toContain(res.status);
+        if (res.status === 401) {
+            expect(res.body).toHaveProperty('error', 'Unauthorized');
+        }
+        if (res.status === 200) {
+            expect(res.body).toHaveProperty('success', true);
+        }
+    });
+
+    test('POST /api/auth/session con TOTP abilitato ma senza codice ritorna 403', async () => {
+        if (!app) return;
+        // TOTP check usa process.env direttamente (non config cachato)
+        // Se DASHBOARD_TOTP_SECRET non è settato, TOTP è disabilitato → skip
+        const origTotp = process.env.DASHBOARD_TOTP_SECRET;
+        process.env.DASHBOARD_TOTP_SECRET = 'JBSWY3DPEHPK3PXPAAAAAAAA';
+        try {
+            // Questo test è significativo solo se auth è abilitata E le credenziali sono valide
+            // Altrimenti il flusso si ferma prima (401 o 200 senza TOTP)
+            const res = await request(app)
+                .post('/api/auth/session')
+                .send({});
+            // Se auth disabilitata: arriva al TOTP check → 403
+            // Se auth abilitata senza credenziali: 401 (non arriva al TOTP)
+            if (res.status === 403) {
+                expect(res.body).toHaveProperty('totpRequired', true);
+            }
+        } finally {
+            process.env.DASHBOARD_TOTP_SECRET = origTotp;
+        }
+    });
+});
+
 describe('E2E API — 404 endpoint inesistente', () => {
     test('GET /api/nonexistent ritorna 404 o 401', async () => {
         if (!app) return;

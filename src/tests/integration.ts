@@ -1725,11 +1725,17 @@ async function run(): Promise<void> {
     }
 }
 
-run()
-    .then(() => {
-        console.log('Integration tests passed.');
-    })
-    .catch((error) => {
-        console.error(error);
-        process.exit(1);
-    });
+export { run };
+
+// Esecuzione diretta via ts-node (retrocompatibile con npm run test:integration)
+const isDirectRun = !process.env.VITEST;
+if (isDirectRun) {
+    run()
+        .then(() => {
+            console.log('Integration tests passed.');
+        })
+        .catch((error) => {
+            console.error(error);
+            process.exit(1);
+        });
+}

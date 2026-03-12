@@ -123,6 +123,42 @@ export class DashboardApi {
         }
     }
 
+    /**
+     * Login via form POST — non espone la API key nella URL.
+     * Ritorna: { success, totpRequired, error? }
+     */
+    async loginWithCredentials(apiKey: string, totpCode?: string): Promise<{ success: boolean; totpRequired: boolean; error?: string }> {
+        try {
+            const headers = new Headers({ 'Content-Type': 'application/json', 'x-api-key': apiKey });
+            const body = totpCode ? JSON.stringify({ totp_code: totpCode }) : '{}';
+            const resp = await fetch('/api/auth/session', { method: 'POST', headers, body });
+            const data = await resp.json().catch(() => ({})) as Record<string, unknown>;
+
+            if (resp.ok) {
+                return { success: true, totpRequired: false };
+            }
+            if (resp.status === 403 && data.totpRequired === true) {
+                return { success: false, totpRequired: true, error: String(data.error ?? 'TOTP code required') };
+            }
+            return { success: false, totpRequired: false, error: String(data.error ?? `HTTP ${resp.status}`) };
+        } catch (err) {
+            return { success: false, totpRequired: false, error: err instanceof Error ? err.message : 'Network error' };
+        }
+    }
+
+    /**
+     * Verifica se la sessione corrente è valida facendo un GET su /api/health.
+     * Se ritorna 401 → sessione non valida, mostrare il form login.
+     */
+    async hasValidSession(): Promise<boolean> {
+        try {
+            const resp = await fetch('/api/kpis');
+            return resp.ok;
+        } catch {
+            return true; // Network error → non mostrare login, potrebbe essere offline
+        }
+    }
+
     private async readJson<T>(path: string, fallback: T): Promise<T> {
         const now = Date.now();
         const cached = this.cache.get(path);

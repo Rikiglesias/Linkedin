@@ -185,6 +185,32 @@ const COMMAND_HELP: Record<string, CommandHelp> = {
         ],
         examples: ['bot random-activity --max-actions 3'],
     },
+    'db-analyze': {
+        usage: 'db-analyze',
+        description: 'Analizza il database: tabelle, conteggi, indici, dimensione, integrità.',
+        options: [],
+        examples: ['bot db-analyze'],
+    },
+    'daily-report': {
+        usage: 'daily-report',
+        description: 'Genera e invia il report giornaliero (Telegram + log). Utile per trigger manuale.',
+        options: [],
+        examples: ['bot daily-report'],
+    },
+    repl: {
+        usage: 'repl',
+        description: 'Avvia una REPL interattiva per eseguire comandi e query sul database.',
+        options: [],
+        examples: ['bot repl'],
+    },
+    warmup: {
+        usage: 'warmup [--account <id>]',
+        description: 'Esegue un singolo ciclo di warmup sessione (feed, notifiche, ricerca).',
+        options: [
+            { flag: '--account <id>', description: 'ID account da scaldare' },
+        ],
+        examples: ['bot warmup', 'bot warmup --account main'],
+    },
 };
 
 /**

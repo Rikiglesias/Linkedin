@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import { normalizeSqlForPg } from '../db';
+import { Pool } from 'pg';
 
 describe('SQLite → PostgreSQL SQL normalization', () => {
     test('? placeholder → $N positional params', () => {
@@ -76,5 +77,51 @@ describe('SQLite → PostgreSQL SQL normalization', () => {
         expect(result).toContain('$1');
         expect(result).toContain('$2');
         expect(result).toContain('ON CONFLICT DO NOTHING');
+    });
+});
+
+describe('PostgreSQL real execution (skip se DATABASE_URL assente)', () => {
+    const dbUrl = process.env.DATABASE_URL;
+    const skip = !dbUrl;
+
+    test('SELECT con CURRENT_TIMESTAMP esegue senza errori su PG reale', async () => {
+        if (skip) return;
+        const pool = new Pool({ connectionString: dbUrl });
+        try {
+            const normalized = normalizeSqlForPg("SELECT DATETIME('now') AS ts");
+            const result = await pool.query(normalized);
+            expect(result.rows).toHaveLength(1);
+            expect(result.rows[0]).toHaveProperty('ts');
+        } finally {
+            await pool.end();
+        }
+    });
+
+    test('SELECT con CURRENT_DATE - INTERVAL esegue senza errori su PG reale', async () => {
+        if (skip) return;
+        const pool = new Pool({ connectionString: dbUrl });
+        try {
+            const normalized = normalizeSqlForPg("SELECT DATE('now', '-7 days') AS d");
+            const result = await pool.query(normalized);
+            expect(result.rows).toHaveLength(1);
+        } finally {
+            await pool.end();
+        }
+    });
+
+    test('INSERT INTO ... ON CONFLICT DO NOTHING è SQL PG valido', async () => {
+        if (skip) return;
+        const pool = new Pool({ connectionString: dbUrl });
+        try {
+            await pool.query('CREATE TEMP TABLE _test_coherence (key TEXT PRIMARY KEY, val TEXT)');
+            const normalized = normalizeSqlForPg('INSERT OR IGNORE INTO _test_coherence (key, val) VALUES (?, ?)');
+            await pool.query(normalized, ['k1', 'v1']);
+            await pool.query(normalized, ['k1', 'v1_dup']);
+            const result = await pool.query('SELECT * FROM _test_coherence');
+            expect(result.rows).toHaveLength(1);
+            expect(result.rows[0].val).toBe('v1');
+        } finally {
+            await pool.end();
+        }
     });
 });

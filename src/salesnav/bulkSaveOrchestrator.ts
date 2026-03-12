@@ -1,4 +1,4 @@
-import type { Locator, Page } from 'playwright';
+import type { Page } from 'playwright';
 import {
     detectChallenge,
     humanDelay,
@@ -7,7 +7,22 @@ import {
     randomMouseMove,
 } from '../browser';
 import { cleanText } from '../utils/text';
-import { ensureVisualCursorOverlay, ensureInputBlock, pauseInputBlock, resumeInputBlock, humanMouseMoveToCoords, pulseVisualCursorOverlay } from '../browser/humanBehavior';
+import { pauseInputBlock, resumeInputBlock } from '../browser/humanBehavior';
+import {
+    isPageClosedError,
+    getSafeMaxSearches,
+    getSafeSessionLimit,
+    hasLocator,
+    locatorBoundingBox,
+    buildClipAroundLocator,
+    reInjectOverlays,
+    smartClick,
+    safeVisionClick,
+    visionNavigationStep,
+    findVisibleClickTarget,
+    getViewButtonLocator,
+    setInputBlockSuspended,
+} from './bulkSaveHelpers';
 import {
     addSyncItem,
     completeSyncRun,
@@ -20,13 +35,11 @@ import {
 } from '../core/repositories';
 import type { SalesNavSyncRunRecord, SalesNavSyncRunSummary } from '../core/repositories.types';
 import {
-    visionClick,
     visionContextualDelay,
     visionRead,
     visionReadTotalResults,
     visionVerify,
     visionWaitFor,
-    type VisionRegionClip,
 } from './visionNavigator';
 import { checkDuplicates, extractProfileUrlsFromPage, saveExtractedProfiles } from './salesnavDedup';
 import { computerUseSelectList } from './computerUse';
@@ -40,8 +53,7 @@ import {
 
 export const SEARCHES_URL = 'https://www.linkedin.com/sales/search/saved-searches';
 
-/** When true, reInjectOverlays skips ensureInputBlock — user needs to interact with the browser. */
-let _inputBlockSuspended = false;
+// _inputBlockSuspended state managed by bulkSaveHelpers.ts (setInputBlockSuspended/isInputBlockSuspended)
 
 const VIEW_SAVED_SEARCH_SELECTOR = [
     'button:has-text("Visualizza")',
@@ -62,7 +74,7 @@ async function waitForManualLogin(page: Page, context: string): Promise<void> {
     const startTime = Date.now();
 
     // Sospendi l'input blocker globalmente — impedisce che reInjectOverlays lo riattivi
-    _inputBlockSuspended = true;
+    setInputBlockSuspended(true);
     await pauseInputBlock(page);
 
     console.warn(`[${context}] Sessione scaduta — in attesa del login manuale nel browser...`);
@@ -86,7 +98,7 @@ async function waitForManualLogin(page: Page, context: string): Promise<void> {
             `Timeout: login manuale non completato entro 3 minuti. URL: ${page.url()}`,
         );
     } finally {
-        _inputBlockSuspended = false;
+        setInputBlockSuspended(false);
         await resumeInputBlock(page).catch(() => { });
     }
 }
@@ -187,277 +199,17 @@ class ChallengeDetectedError extends Error {
     }
 }
 
-function isPageClosedError(error: unknown): boolean {
-    const message = error instanceof Error ? error.message : String(error);
-    return /Target page, context or browser has been closed|page\.goto:.*closed/i.test(message);
-}
-
 
 function normalizeSearchName(value: string | null | undefined): string {
     return cleanText(value).toLowerCase();
 }
 
-function clampNumber(value: number, min: number, max: number): number {
-    return Math.max(min, Math.min(max, value));
-}
+// Le seguenti funzioni sono state consolidate in ./bulkSaveHelpers.ts:
+// isPageClosedError, clampNumber, getSafeMaxSearches, getSafeSessionLimit,
+// getViewButtonLocator, hasLocator, locatorBoundingBox, buildClipFromBox,
+// buildClipAroundLocator, reInjectOverlays, findVisibleClickTarget,
+// smartClick, safeVisionClick, visionNavigationStep
 
-function getSafeMaxSearches(value: number | null | undefined): number {
-    if (typeof value !== 'number' || !Number.isFinite(value) || value < 1) {
-        return Number.MAX_SAFE_INTEGER;
-    }
-    return Math.max(1, Math.floor(value));
-}
-
-function getSafeSessionLimit(value: number | null | undefined): number | null {
-    if (typeof value !== 'number' || !Number.isFinite(value) || value < 1) {
-        return null;
-    }
-    return Math.max(1, Math.floor(value));
-}
-
-function getViewButtonLocator(page: Page, index: number): Locator {
-    return page.locator(VIEW_SAVED_SEARCH_SELECTOR).nth(index);
-}
-
-async function hasLocator(locator: Locator): Promise<boolean> {
-    try {
-        return (await locator.count()) > 0;
-    } catch {
-        return false;
-    }
-}
-
-async function locatorBoundingBox(locator: Locator): Promise<{ x: number; y: number; width: number; height: number } | null> {
-    try {
-        const box = await locator.boundingBox();
-        if (!box || box.width <= 0 || box.height <= 0) {
-            return null;
-        }
-        return box;
-    } catch {
-        return null;
-    }
-}
-
-function buildClipFromBox(
-    page: Page,
-    box: { x: number; y: number; width: number; height: number },
-    padding: { top: number; right: number; bottom: number; left: number },
-): VisionRegionClip {
-    const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
-    const x = clampNumber(Math.floor(box.x - padding.left), 0, viewport.width);
-    const y = clampNumber(Math.floor(box.y - padding.top), 0, viewport.height);
-    const maxWidth = viewport.width - x;
-    const maxHeight = viewport.height - y;
-    const width = clampNumber(Math.floor(box.width + padding.left + padding.right), 1, Math.max(1, maxWidth));
-    const height = clampNumber(Math.floor(box.height + padding.top + padding.bottom), 1, Math.max(1, maxHeight));
-    return { x, y, width, height };
-}
-
-async function buildClipAroundLocator(
-    page: Page,
-    locator: Locator,
-    padding: { top: number; right: number; bottom: number; left: number },
-): Promise<VisionRegionClip | undefined> {
-    const box = await locatorBoundingBox(locator);
-    if (!box) {
-        return undefined;
-    }
-    return buildClipFromBox(page, box, padding);
-}
-
-async function reInjectOverlays(page: Page): Promise<void> {
-    // Inject __name no-op in browser context — tsx keepNames:true adds __name() calls
-    // to all named functions/consts, which breaks inside page.evaluate() where the
-    // helper doesn't exist. This shim makes them safe.
-    await page.evaluate(() => {
-        const w = window as unknown as Record<string, unknown>;
-        if (typeof w.__name === 'undefined') {
-            w.__name = (target: unknown, _value: unknown) => target;
-        }
-        if (typeof w.__defProp === 'undefined') {
-            w.__defProp = Object.defineProperty;
-        }
-    }).catch(() => null);
-    await ensureVisualCursorOverlay(page);
-    // Skip input block if suspended (user needs to interact, e.g. manual login)
-    if (!_inputBlockSuspended) {
-        await ensureInputBlock(page);
-    }
-}
-
-/**
- * Cerca nel DOM un elemento visibile il cui testo corrisponde a uno dei pattern.
- * Gestisce input nascosti risalendo al <label> padre.
- *
- * @param includeGenericElements — se true, cerca anche div/span/li (per dialog liste).
- *   Default false: cerca solo elementi interattivi (button, label, input, checkbox).
- *   Questo evita di matchare container giganti che contengono il testo nei figli.
- */
-async function findVisibleClickTarget(
-    page: Page,
-    textPatterns: string[],
-    containerSelector?: string,
-    includeGenericElements: boolean = false,
-    strictMatch: boolean = false,
-): Promise<{ x: number; y: number; width: number; height: number } | null> {
-    // NOTE: No named const/function inside page.evaluate — tsx keepNames adds __name which breaks browser context
-    return page.evaluate(
-        ({ patterns, container, includeGeneric, strict }) => {
-            const root = container
-                ? (document.querySelector(container) ?? document)
-                : document;
-            const interactiveSelector =
-                'button, a, label, input, [role="button"], [role="checkbox"], [role="menuitem"], [role="option"]';
-            const genericSelector = interactiveSelector + ', span, div, li';
-            const candidates = root.querySelectorAll(includeGeneric ? genericSelector : interactiveSelector);
-
-            // Build a flat list of {el, text} to avoid repeated DOM reads
-            const entries: Array<{ el: HTMLElement; text: string }> = [];
-            for (const el of candidates) {
-                const htmlEl = el as HTMLElement;
-                const text = (htmlEl.innerText || htmlEl.textContent || '')
-                    .replace(/\s+/g, ' ')
-                    .trim()
-                    .toLowerCase();
-                if (text.length > 0) entries.push({ el: htmlEl, text });
-            }
-
-            // Inline box extraction (no named function to avoid tsx __name issue)
-            for (let pass = 0; pass < (strict ? 2 : 3); pass++) {
-                for (const pattern of patterns) {
-                    const lower = pattern.toLowerCase().replace(/\s+/g, ' ').trim();
-                    for (const { el, text } of entries) {
-                        // Pass 0: exact match
-                        if (pass === 0 && text !== lower) continue;
-                        // Pass 1: starts-with match (allow small suffix like " (25)")
-                        if (pass === 1 && (!text.startsWith(lower) || text.length > lower.length + 30)) continue;
-                        // Pass 2: partial includes (original behavior)
-                        if (pass === 2 && (!text.includes(lower) || text.length > lower.length * 8)) continue;
-
-                        // Inline getBox logic
-                        const rect = el.getBoundingClientRect();
-                        if (el.tagName === 'INPUT') {
-                            const label = el.closest('label');
-                            if (label) {
-                                const lr = label.getBoundingClientRect();
-                                if (lr.width >= 5 && lr.height >= 5) {
-                                    return { x: lr.x, y: lr.y, width: lr.width, height: lr.height };
-                                }
-                            }
-                            if (rect.width < 5 || rect.height < 5) continue;
-                        }
-                        if (rect.width < 5 || rect.height < 5) continue;
-                        const style = window.getComputedStyle(el);
-                        if (style.display === 'none' || style.visibility === 'hidden') continue;
-                        if (parseFloat(style.opacity) < 0.1) continue;
-                        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
-                    }
-                }
-            }
-            return null;
-        },
-        { patterns: textPatterns, container: containerSelector ?? null, includeGeneric: includeGenericElements, strict: strictMatch },
-    );
-}
-
-/**
- * Click intelligente: prova DOM text search → Playwright locator → Vision AI.
- * Usa humanMouseMove + page.mouse.click per sembrare un utente reale.
- */
-async function smartClick(
-    page: Page,
-    box: { x: number; y: number; width: number; height: number },
-): Promise<void> {
-    const targetX = box.x + box.width / 2 + (Math.random() * 4 - 2);
-    const targetY = box.y + box.height / 2 + (Math.random() * 3 - 1.5);
-    await humanMouseMoveToCoords(page, targetX, targetY);
-    await pulseVisualCursorOverlay(page);
-    // Disabilita overlay blocco → click → riabilita
-    await pauseInputBlock(page);
-    await page.mouse.click(targetX, targetY, { delay: 40 + Math.floor(Math.random() * 70) });
-    await resumeInputBlock(page);
-}
-
-/** Wrapper per visionClick che disabilita l'overlay durante il click. */
-async function safeVisionClick(
-    page: Page,
-    description: string,
-    options?: Parameters<typeof visionClick>[2],
-): Promise<void> {
-    await pauseInputBlock(page);
-    try {
-        await visionClick(page, description, options);
-    } finally {
-        await resumeInputBlock(page);
-    }
-}
-
-/**
- * Navigazione vision-guided verso le ricerche salvate di Sales Navigator.
- *
- * Funziona come un umano: guarda lo schermo, capisce dove cliccare, clicca.
- * Ogni step fa screenshot → AI analizza → click → verifica.
- *
- * Flusso:
- *   1. Vai alla home di Sales Navigator (/sales/home)
- *   2. AI trova e clicca "Search" / "Ricerca" nella barra di navigazione
- *   3. AI trova e clicca "Saved searches" / "Ricerche salvate"
- *   4. Verifica che i bottoni View/Visualizza siano apparsi
- *
- * Se un fast-path DOM riesce, lo usa; altrimenti l'AI prende il controllo.
- */
-async function visionNavigationStep(
-    page: Page,
-    stepName: string,
-    prompt: string,
-    verifyFn: () => Promise<boolean>,
-    domFallbackSelectors?: string[],
-): Promise<boolean> {
-    // Fast-path: prova selettori DOM prima di usare Vision AI
-    if (domFallbackSelectors) {
-        for (const sel of domFallbackSelectors) {
-            const el = page.locator(sel).first();
-            if ((await el.count().catch(() => 0)) > 0) {
-                const box = await locatorBoundingBox(el);
-                if (box) {
-                    console.log(`[AI-NAV] ${stepName}: trovato via DOM (${sel})`);
-                    await smartClick(page, box);
-                } else {
-                    await pauseInputBlock(page);
-                    await el.click({ timeout: 5_000 }).catch(() => null);
-                    await resumeInputBlock(page);
-                }
-                await page.waitForLoadState('domcontentloaded', { timeout: 15_000 }).catch(() => null);
-                await humanDelay(page, 800, 1_500);
-                if (await verifyFn()) return true;
-            }
-        }
-    }
-
-    // Vision AI: screenshot → analisi → click
-    for (let attempt = 1; attempt <= 2; attempt++) {
-        try {
-            console.log(`[AI-NAV] ${stepName}: analizzo screenshot (tentativo ${attempt})...`);
-            await visionClick(page, prompt, { retries: 2 });
-            await page.waitForLoadState('domcontentloaded', { timeout: 15_000 }).catch(() => null);
-            await humanDelay(page, 1_000, 2_000);
-            await dismissTransientUi(page);
-
-            if (await verifyFn()) {
-                console.log(`[AI-NAV] ${stepName}: completato con successo`);
-                return true;
-            }
-            console.log(`[AI-NAV] ${stepName}: click eseguito ma verifica fallita, riprovo...`);
-        } catch (error) {
-            const msg = error instanceof Error ? error.message : String(error);
-            console.log(`[AI-NAV] ${stepName}: tentativo ${attempt} fallito — ${msg}`);
-        }
-        await humanDelay(page, 500, 1_000);
-    }
-
-    return false;
-}
 
 async function navigateToSavedSearches(page: Page): Promise<void> {
     // Helper: siamo nell'area Sales Navigator? (URL deve contenere /sales/)
@@ -673,7 +425,7 @@ async function verifyVisionSurface(page: Page): Promise<void> {
 }
 
 async function clickSavedSearchView(page: Page, search: SavedSearchDescriptor, dryRun: boolean): Promise<void> {
-    const button = getViewButtonLocator(page, search.index);
+    const button = getViewButtonLocator(page, search.index, VIEW_SAVED_SEARCH_SELECTOR);
     if (!(await hasLocator(button))) {
         throw new Error(`Bottone View non trovato per ricerca ${search.index + 1}`);
     }

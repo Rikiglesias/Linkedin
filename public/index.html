@@ -17,6 +17,22 @@
     <body>
         <a class="skip-link" href="#main-content">Vai al contenuto principale</a>
 
+        <dialog id="login-modal" aria-labelledby="login-modal-title">
+            <div class="modal-inner">
+                <h2 id="login-modal-title" class="modal-title">Autenticazione Dashboard</h2>
+                <form id="login-form" autocomplete="off">
+                    <label for="login-api-key" class="modal-label">API Key</label>
+                    <input id="login-api-key" class="modal-input" type="password" placeholder="Inserisci la tua API key" required autocomplete="current-password" />
+                    <label for="login-totp" class="modal-label">Codice TOTP <small>(opzionale)</small></label>
+                    <input id="login-totp" class="modal-input" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" autocomplete="one-time-code" />
+                    <p id="login-error" class="login-error" hidden></p>
+                    <div class="modal-actions">
+                        <button class="btn btn-primary" id="login-submit-btn" type="submit">Accedi</button>
+                    </div>
+                </form>
+            </div>
+        </dialog>
+
         <dialog id="pause-modal" aria-labelledby="pause-modal-title">
             <div class="modal-inner">
                 <h2 id="pause-modal-title" class="modal-title">Pausa automazione</h2>

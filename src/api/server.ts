@@ -20,11 +20,6 @@ import rateLimit from 'express-rate-limit';
 import type { NextFunction, Request, Response } from 'express';
 import {
     getABTestingStats,
-    getGlobalKPIData,
-    getOperationalObservabilitySnapshot,
-    getRiskInputs,
-    getRuntimeFlag,
-    listOpenIncidents,
     recordSecurityAuditEvent,
     countPendingOutboxEvents,
     getAutomationPauseState,
@@ -34,14 +29,15 @@ import campaignsRouter from './routes/campaigns';
 import exportRouter from './routes/export';
 import blacklistRouter from './routes/blacklist';
 import leadsRouter from './routes/leads';
-import { handlePauseAction, handleResumeAction, handleQuarantineAction } from './helpers/controlActions';
 import controlsRouter from './routes/controls';
 import { statsRouter } from './routes/stats';
 import { aiRouter } from './routes/ai';
 import { securityRouter } from './routes/security';
-import { sendApiV1, handleApiError } from './utils';
-import { evaluateRisk } from '../risk/riskEngine';
-import { getLocalDateString, config } from '../config';
+import { handleApiError } from './utils';
+import v1AutomationRouter from './routes/v1Automation';
+import metricsRouter from './routes/metrics';
+import { isTotpEnabled, validateTotpCode } from '../security/totp';
+import { config } from '../config';
 import {
     subscribeLiveEvents,
     getLiveEventSubscribersCount,
@@ -649,7 +645,6 @@ async function apiV1AuthMiddleware(req: Request, res: Response, next: NextFuncti
 app.use('/api/v1', apiV1AuthMiddleware);
 app.use('/api/v1/campaigns', campaignsRouter);
 
-// sendApiV1 importato da ./utils
 
 // ── Static (Dashboard UI) ────────────────────────────────────────────────────
 const publicDir = path.resolve(__dirname, '../../public');
@@ -719,218 +714,65 @@ app.get('/api/health/deep', async (_req, res) => {
     });
 });
 
-// ── Prometheus Metrics ───────────────────────────────────────────────────────
-app.get('/metrics', async (_req, res) => {
-    try {
-        const localDate = getLocalDateString();
-        const db = await getDatabase();
-        const { getDailyStat, getRiskInputs } = await import('../core/repositories');
+// ── Prometheus Metrics — routes/metrics.ts ──────────────────────────────────
+app.use('/metrics', metricsRouter);
 
-        const [invitesSent, messagesSent, runErrors, challenges, selectorFailures, riskInputs] = await Promise.all([
-            getDailyStat(localDate, 'invites_sent'),
-            getDailyStat(localDate, 'messages_sent'),
-            getDailyStat(localDate, 'run_errors'),
-            getDailyStat(localDate, 'challenges_count'),
-            getDailyStat(localDate, 'selector_failures'),
-            getRiskInputs(localDate, config.hardInviteCap),
-        ]);
-        const riskSnapshot = evaluateRisk(riskInputs);
-
-        const queueRow = await db.get<{ total: number | string }>(
-            "SELECT COUNT(*) as total FROM jobs WHERE status = 'QUEUED'",
-        );
-        const queueDepth = queueRow ? Number(queueRow.total) : 0;
-
-        const { getProxyPoolStatus: getProxyPool } = await import('../proxyManager');
-        const proxy = getProxyPool();
-
-        const lines = [
-            '# HELP lkbot_invites_sent_today Total invites sent today',
-            '# TYPE lkbot_invites_sent_today gauge',
-            `lkbot_invites_sent_today ${invitesSent}`,
-            '# HELP lkbot_messages_sent_today Total messages sent today',
-            '# TYPE lkbot_messages_sent_today gauge',
-            `lkbot_messages_sent_today ${messagesSent}`,
-            '# HELP lkbot_run_errors_today Total run errors today',
-            '# TYPE lkbot_run_errors_today gauge',
-            `lkbot_run_errors_today ${runErrors}`,
-            '# HELP lkbot_challenges_today Total challenges detected today',
-            '# TYPE lkbot_challenges_today gauge',
-            `lkbot_challenges_today ${challenges}`,
-            '# HELP lkbot_selector_failures_today Total selector failures today',
-            '# TYPE lkbot_selector_failures_today gauge',
-            `lkbot_selector_failures_today ${selectorFailures}`,
-            '# HELP lkbot_risk_score Current risk score (0-100)',
-            '# TYPE lkbot_risk_score gauge',
-            `lkbot_risk_score ${riskSnapshot.score}`,
-            '# HELP lkbot_queue_depth Number of queued jobs',
-            '# TYPE lkbot_queue_depth gauge',
-            `lkbot_queue_depth ${queueDepth}`,
-            '# HELP lkbot_proxy_ready Number of ready proxies',
-            '# TYPE lkbot_proxy_ready gauge',
-            `lkbot_proxy_ready ${proxy.ready}`,
-            '# HELP lkbot_proxy_total Total configured proxies',
-            '# TYPE lkbot_proxy_total gauge',
-            `lkbot_proxy_total ${proxy.total}`,
-            '# HELP lkbot_proxy_cooling Number of proxies in cooldown',
-            '# TYPE lkbot_proxy_cooling gauge',
-            `lkbot_proxy_cooling ${proxy.cooling}`,
-            '',
-        ];
-
-        res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
-        res.send(lines.join('\n'));
-    } catch (err: unknown) {
-        res.status(500).send(`# error generating metrics: ${err instanceof Error ? err.message : 'unknown'}\n`);
-    }
-});
-
-// ── API v1 (automazioni esterne) ────────────────────────────────────────────
-app.get('/api/v1/meta', (_req, res) => {
-    sendApiV1(res, {
-        service: 'linkedin-bot',
-        supportedVersions: ['v1'],
-        auth: {
-            required: true,
-            schemes: ['x-api-key', 'authorization: bearer', 'authorization: basic'],
-        },
-        endpoints: [
-            { method: 'GET', path: '/api/v1/meta' },
-            { method: 'GET', path: '/api/v1/automation/snapshot' },
-            { method: 'GET', path: '/api/v1/automation/incidents?limit=25' },
-            { method: 'POST', path: '/api/v1/automation/controls/pause' },
-            { method: 'POST', path: '/api/v1/automation/controls/resume' },
-            { method: 'POST', path: '/api/v1/automation/controls/quarantine' },
-        ],
-    });
-});
-
-app.get('/api/v1/automation/snapshot', async (_req, res) => {
-    try {
-        const localDate = getLocalDateString();
-        const [kpi, riskInputs, runtimePause, isQuarantinedRaw, incidents, observability] = await Promise.all([
-            getGlobalKPIData(),
-            getRiskInputs(localDate, config.hardInviteCap),
-            getRuntimeFlag('automation_paused_until'),
-            getRuntimeFlag('account_quarantine'),
-            listOpenIncidents(),
-            getOperationalObservabilitySnapshot(localDate),
-        ]);
-        const risk = evaluateRisk(riskInputs);
-        const isQuarantined = isQuarantinedRaw === 'true';
-        const criticalIncidents = incidents.filter((incident) => incident.severity === 'CRITICAL');
-
-        sendApiV1(res, {
-            localDate,
-            system: {
-                pausedUntil: runtimePause ?? null,
-                quarantined: isQuarantined,
-            },
-            funnel: {
-                totalLeads: kpi.totalLeads,
-                invited: kpi.statusCounts['INVITED'] ?? 0,
-                accepted: kpi.statusCounts['ACCEPTED'] ?? 0,
-                readyMessage: kpi.statusCounts['READY_MESSAGE'] ?? 0,
-                messaged: kpi.statusCounts['MESSAGED'] ?? 0,
-                replied: kpi.statusCounts['REPLIED'] ?? 0,
-            },
-            risk: {
-                score: risk.score,
-                action: risk.action,
-                pendingRatio: risk.pendingRatio,
-                errorRate: risk.errorRate,
-                selectorFailureRate: risk.selectorFailureRate,
-                challengeCount: risk.challengeCount,
-                inviteVelocityRatio: risk.inviteVelocityRatio,
-            },
-            incidents: {
-                openCount: incidents.length,
-                criticalCount: criticalIncidents.length,
-            },
-            observability: {
-                queueLagSeconds: observability.queueLagSeconds,
-                oldestRunningJobSeconds: observability.oldestRunningJobSeconds,
-                runErrors: observability.runErrors,
-                selectorFailures: observability.selectorFailures,
-                challengesCount: observability.challengesCount,
-                sloStatus: observability.slo.status,
-                selectorCacheKpi: {
-                    windowDays: observability.selectorCacheKpi.windowDays,
-                    currentFailures: observability.selectorCacheKpi.currentFailures,
-                    previousFailures: observability.selectorCacheKpi.previousFailures,
-                    reductionPct: observability.selectorCacheKpi.reductionPct,
-                    targetReductionPct: Number.parseFloat(
-                        (observability.selectorCacheKpi.targetReductionRate * 100).toFixed(2),
-                    ),
-                    minBaselineFailures: observability.selectorCacheKpi.minBaselineFailures,
-                    baselineSufficient: observability.selectorCacheKpi.baselineSufficient,
-                    validationStatus: observability.selectorCacheKpi.validationStatus,
-                    targetMet: observability.selectorCacheKpi.targetMet,
-                },
-            },
-        });
-    } catch (err: unknown) {
-        handleApiError(res, err, 'api.v1.automation.snapshot');
-    }
-});
-
-app.get('/api/v1/automation/incidents', async (req, res) => {
-    try {
-        const rawLimit = Number.parseInt(String(req.query.limit ?? '25'), 10);
-        const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(100, rawLimit)) : 25;
-        const incidents = await listOpenIncidents();
-        sendApiV1(res, {
-            count: incidents.length,
-            limit,
-            rows: incidents.slice(0, limit),
-        });
-    } catch (err: unknown) {
-        handleApiError(res, err, 'api.v1.automation.incidents');
-    }
-});
-
-app.post('/api/v1/automation/controls/pause', async (req, res) => {
-    try {
-        const result = await handlePauseAction(req, 'api_v1', 1440);
-        sendApiV1(res, { ...result, action: 'pause' });
-    } catch (err: unknown) {
-        handleApiError(res, err, 'api.v1.automation.controls.pause');
-    }
-});
-
-app.post('/api/v1/automation/controls/resume', async (req, res) => {
-    try {
-        await handleResumeAction(req, 'api_v1');
-        sendApiV1(res, { success: true, action: 'resume' });
-    } catch (err: unknown) {
-        handleApiError(res, err, 'api.v1.automation.controls.resume');
-    }
-});
-
-app.post('/api/v1/automation/controls/quarantine', async (req, res) => {
-    try {
-        const result = await handleQuarantineAction(req, 'api_v1');
-        sendApiV1(res, { success: true, action: 'quarantine', enabled: result.enabled });
-    } catch (err: unknown) {
-        handleApiError(res, err, 'api.v1.automation.controls.quarantine');
-    }
-});
+// ── API v1 (automazioni esterne) — routes/v1Automation.ts ───────────────────
+app.use('/api/v1', v1AutomationRouter);
 
 // ── Session bootstrap (cookie-based auth for browser SSE/fetch) ─────────────
 app.post('/api/auth/session', async (req, res) => {
     try {
+        const requestIp = resolveRequestIp(req);
+
+        // Verifica credenziali PRIMA di creare la sessione
+        if (config.dashboardAuthEnabled) {
+            if (!isApiKeyAuthValid(req) && !isBasicAuthValid(req)) {
+                auditSecurityEvent({
+                    category: 'dashboard_auth',
+                    action: 'session_auth_failed',
+                    actor: requestIp,
+                    result: 'DENY',
+                    metadata: { reason: 'invalid_credentials' },
+                });
+                res.status(401).json({ error: 'Unauthorized', totpRequired: false });
+                return;
+            }
+
+            // TOTP 2FA: se abilitato, richiede codice valido nel body
+            if (isTotpEnabled()) {
+                const totpCode = typeof req.body?.totp_code === 'string' ? req.body.totp_code : '';
+                if (!totpCode) {
+                    res.status(403).json({ error: 'TOTP code required', totpRequired: true });
+                    return;
+                }
+                if (!validateTotpCode(totpCode)) {
+                    auditSecurityEvent({
+                        category: 'dashboard_auth',
+                        action: 'session_totp_failed',
+                        actor: requestIp,
+                        result: 'DENY',
+                        metadata: { reason: 'invalid_totp_code' },
+                    });
+                    res.status(403).json({ error: 'Invalid TOTP code', totpRequired: true });
+                    return;
+                }
+            }
+        }
+
         await createDashboardSessionCookie(req, res);
         await cleanupExpiredDashboardSessions();
         auditSecurityEvent({
             category: 'dashboard_auth',
             action: 'session_created',
-            actor: resolveRequestIp(req),
+            actor: requestIp,
             result: 'ALLOW',
             metadata: {
                 userAgent: req.header('user-agent') ?? '',
+                totpVerified: isTotpEnabled(),
             },
         });
-        res.json({ success: true, ttlSeconds: Math.floor(DASHBOARD_SESSION_TTL_MS / 1000) });
+        res.json({ success: true, ttlSeconds: Math.floor(DASHBOARD_SESSION_TTL_MS / 1000), totpVerified: isTotpEnabled() });
     } catch (err: unknown) {
         handleApiError(res, err, 'api.auth.session');
     }

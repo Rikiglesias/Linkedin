@@ -187,7 +187,7 @@ class PostgresManager implements DatabaseManager {
         const isInsert = /^\s*INSERT\b/i.test(normalizedSql);
         const hasReturning = /\bRETURNING\b/i.test(normalizedSql);
         if (shouldReturn && isInsert && !hasReturning) {
-            normalizedSql = normalizedSql.replace(/;\s*$/, '') + ' RETURNING id';
+            normalizedSql = normalizedSql.replace(/;\s*$/, '') + ' RETURNING *';
         }
 
         const result = await this.pool.query(normalizedSql, params);

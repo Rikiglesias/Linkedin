@@ -95,3 +95,116 @@ describe('Stealth Regression Tests', () => {
         expect(defaultScript).toContain('iframe');
     });
 });
+
+describe('Stealth Runtime Execution Tests', () => {
+    // Esegue lo script stealth in un contesto JS simulato per verificare
+    // che non lanci errori a runtime (TypeError, ReferenceError, ecc.)
+    // Questo cattura bug che i test string-based non vedono.
+
+    function createMockBrowserGlobals(): Record<string, unknown> {
+        const mockElement = {
+            id: '',
+            style: { cssText: '' },
+            textContent: '',
+            classList: { add: () => {}, remove: () => {}, contains: () => false },
+            setAttribute: () => {},
+            removeAttribute: () => {},
+            appendChild: () => {},
+            addEventListener: () => {},
+            removeEventListener: () => {},
+            dispatchEvent: () => true,
+        };
+        const mockDocument = {
+            getElementById: () => null,
+            querySelector: () => null,
+            querySelectorAll: () => [],
+            createElement: () => ({ ...mockElement }),
+            documentElement: {
+                appendChild: () => {},
+                classList: { add: () => {}, remove: () => {} },
+            },
+            addEventListener: () => {},
+            dispatchEvent: () => true,
+            visibilityState: 'visible',
+            hidden: false,
+        };
+        const mockNavigator = {
+            webdriver: false,
+            plugins: [],
+            languages: ['it-IT', 'it', 'en-US', 'en'],
+            language: 'it-IT',
+            hardwareConcurrency: 8,
+            deviceMemory: 8,
+            platform: 'Win32',
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            permissions: { query: () => Promise.resolve({ state: 'prompt', onchange: null, addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: () => true }) },
+            getBattery: undefined,
+            connection: undefined,
+        };
+        return {
+            window: {
+                chrome: undefined,
+                RTCPeerConnection: undefined,
+                webkitRTCPeerConnection: undefined,
+                AudioContext: undefined,
+                webkitAudioContext: undefined,
+                dispatchEvent: () => true,
+                addEventListener: () => {},
+            },
+            document: mockDocument,
+            navigator: mockNavigator,
+            Object,
+            Promise,
+            Math,
+            Date,
+            Array,
+            Set,
+            Map,
+            Notification: { permission: 'default' },
+            AudioBuffer: { prototype: { getChannelData: () => new Float32Array(0) } },
+            HTMLCanvasElement: { prototype: { getContext: () => null } },
+            setTimeout,
+            clearTimeout,
+            console,
+        };
+    }
+
+    function executeStealthInMockContext(script: string, globals: Record<string, unknown>): void {
+        // L'IIFE accede a globali come `window`, `document`, `navigator` direttamente.
+        // In Node.js non esistono — li iniettiamo via `with` statement simulato
+        // wrappando lo script in una funzione che li riceve come variabili locali.
+        const paramNames = Object.keys(globals);
+        const paramValues = paramNames.map((k) => globals[k]);
+        const wrappedBody = `"use strict"; ${script}`;
+        const fn = new Function(...paramNames, wrappedBody);
+        fn(...paramValues);
+    }
+
+    test('script stealth default esegue senza errori runtime', () => {
+        const script = buildStealthInitScript({
+            locale: 'it-IT',
+            languages: ['it-IT', 'it', 'en-US', 'en'],
+            isHeadless: false,
+        });
+        expect(() => executeStealthInMockContext(script, createMockBrowserGlobals())).not.toThrow();
+    });
+
+    test('script stealth headless esegue senza errori runtime', () => {
+        const script = buildStealthInitScript({
+            locale: 'en-US',
+            languages: ['en-US', 'en'],
+            isHeadless: true,
+        });
+        expect(() => executeStealthInMockContext(script, createMockBrowserGlobals())).not.toThrow();
+    });
+
+    test('script stealth con skip sections esegue senza errori runtime', () => {
+        const script = buildStealthInitScript({
+            locale: 'it-IT',
+            languages: ['it-IT'],
+            isHeadless: false,
+            skipSections: new Set(['webrtc', 'battery', 'audio', 'plugins']),
+        });
+        expect(() => executeStealthInMockContext(script, createMockBrowserGlobals())).not.toThrow();
+    });
+});
