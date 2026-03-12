@@ -596,6 +596,15 @@ function bindLoginForm(): void {
     const submitBtn = document.getElementById('login-submit-btn') as HTMLButtonElement | null;
     if (!modal || !form || !apiKeyInput) return;
 
+    // F-2: Restore API key from sessionStorage (scompare alla chiusura tab)
+    const savedKey = sessionStorage.getItem('lkbot_api_key');
+    if (savedKey) apiKeyInput.value = savedKey;
+
+    // F-2: Toggle password visibility
+    apiKeyInput.addEventListener('dblclick', () => {
+        apiKeyInput.type = apiKeyInput.type === 'password' ? 'text' : 'password';
+    });
+
     form.addEventListener('submit', (e) => { void (async () => {
         e.preventDefault();
         const apiKey = apiKeyInput.value.trim();
@@ -608,10 +617,13 @@ function bindLoginForm(): void {
         const result = await api.loginWithCredentials(apiKey, totpCode);
 
         if (result.success) {
+            sessionStorage.setItem('lkbot_api_key', apiKey);
             modal.close();
             apiKeyInput.value = '';
             if (totpInput) totpInput.value = '';
             await refreshDashboard();
+            restoreFilterSelects();
+            renderTimelineSection();
             startPolling();
             connectEventStream();
             return;
