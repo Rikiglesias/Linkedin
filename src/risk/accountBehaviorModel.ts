@@ -153,6 +153,69 @@ export function getAccountGrowthBudget(ageDays: number): AccountGrowthBudget {
     };
 }
 
+// ─── AB-3: Trust Score Composito ─────────────────────────────────────────────
+
+export interface AccountTrustInputs {
+    ssiScore: number;
+    ageDays: number;
+    acceptanceRatePct: number;
+    challengesLast7d: number;
+    pendingRatio: number;
+}
+
+export interface AccountTrustResult {
+    score: number;
+    budgetMultiplier: number;
+    factors: Record<string, number>;
+}
+
+/**
+ * AB-3: Calcola un trust score composito [0, 100] che rappresenta quanto
+ * LinkedIn "si fida" di questo account. Combina 5 segnali con pesi diversi.
+ *
+ * Il budgetMultiplier (0.3-1.0) viene usato dallo scheduler per modulare
+ * il budget: account con basso trust → budget ridotto → meno rischio ban.
+ *
+ * Pesi:
+ *   SSI score (30%): LinkedIn premia chi usa la piattaforma "bene"
+ *   Account age (25%): account vecchi hanno più credito
+ *   Acceptance rate (25%): alto acceptance = inviti rilevanti
+ *   Challenge history (10%): challenge recenti = account sotto osservazione
+ *   Pending ratio (10%): pending alto = targeting scarso
+ */
+export function calculateAccountTrustScore(inputs: AccountTrustInputs): AccountTrustResult {
+    const ssiNorm = Math.min(100, Math.max(0, inputs.ssiScore));
+    const ageNorm = Math.min(100, Math.max(0, inputs.ageDays) / 3.65);
+    const acceptanceNorm = Math.min(100, Math.max(0, inputs.acceptanceRatePct));
+    const challengeNorm = Math.max(0, 100 - inputs.challengesLast7d * 25);
+    const pendingNorm = Math.max(0, 100 - inputs.pendingRatio * 150);
+
+    const factors = {
+        ssi: Math.round(ssiNorm * 100) / 100,
+        age: Math.round(ageNorm * 100) / 100,
+        acceptance: Math.round(acceptanceNorm * 100) / 100,
+        challengeHistory: Math.round(challengeNorm * 100) / 100,
+        pendingRatio: Math.round(pendingNorm * 100) / 100,
+    };
+
+    const score = Math.round(
+        ssiNorm * 0.30 +
+        ageNorm * 0.25 +
+        acceptanceNorm * 0.25 +
+        challengeNorm * 0.10 +
+        pendingNorm * 0.10,
+    );
+
+    const clampedScore = Math.min(100, Math.max(0, score));
+    const budgetMultiplier = Math.max(0.3, Math.min(1.0, 0.3 + (clampedScore / 100) * 0.7));
+
+    return {
+        score: clampedScore,
+        budgetMultiplier: Math.round(budgetMultiplier * 100) / 100,
+        factors,
+    };
+}
+
 /**
  * Applica il modello di crescita ai budget calcolati dal scheduler.
  * Ritorna i budget eventualmente ridotti (mai aumentati).
