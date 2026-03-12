@@ -287,6 +287,20 @@ export class DashboardApi {
         return (await resp.json()) as LeadDetailResponse;
     }
 
+    async simulateWhatIf(params: { softInviteCap: number; hardInviteCap: number; softMsgCap: number; hardMsgCap: number }): Promise<Record<string, unknown>> {
+        try {
+            const resp = await this.apiFetch('/api/risk/what-if', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(params),
+            });
+            if (!resp.ok) return {};
+            return (await resp.json()) as Record<string, unknown>;
+        } catch {
+            return {};
+        }
+    }
+
     async loadSnapshot(): Promise<DashboardSnapshot> {
         const [
             kpis,

@@ -513,6 +513,56 @@ function bindControls(): void {
     bindLeadSearch(api);
     bindBlacklist(api);
     bindKeyboardShortcuts();
+    bindWhatIf();
+}
+
+function bindWhatIf(): void {
+    const sliders = ['whatif-soft-invite', 'whatif-hard-invite', 'whatif-soft-msg', 'whatif-hard-msg'];
+    for (const id of sliders) {
+        const slider = document.getElementById(id) as HTMLInputElement | null;
+        const valEl = document.getElementById(`${id}-val`);
+        if (slider && valEl) {
+            slider.addEventListener('input', () => { valEl.textContent = slider.value; });
+        }
+    }
+
+    const btn = document.getElementById('btn-whatif-simulate');
+    if (!btn) return;
+    btn.addEventListener('click', () => { void (async () => {
+        const softInvite = Number((document.getElementById('whatif-soft-invite') as HTMLInputElement)?.value ?? 15);
+        const hardInvite = Number((document.getElementById('whatif-hard-invite') as HTMLInputElement)?.value ?? 20);
+        const softMsg = Number((document.getElementById('whatif-soft-msg') as HTMLInputElement)?.value ?? 8);
+        const hardMsg = Number((document.getElementById('whatif-hard-msg') as HTMLInputElement)?.value ?? 10);
+
+        const result = await api.simulateWhatIf({
+            softInviteCap: softInvite,
+            hardInviteCap: hardInvite,
+            softMsgCap: softMsg,
+            hardMsgCap: hardMsg,
+        });
+
+        const resultEl = document.getElementById('whatif-result');
+        if (!resultEl) return;
+        resultEl.hidden = false;
+
+        const data = result.data as Record<string, unknown> | undefined;
+        const current = (data?.current ?? {}) as Record<string, unknown>;
+        const hypo = (data?.hypothetical ?? {}) as Record<string, unknown>;
+        const delta = (data?.delta ?? {}) as Record<string, unknown>;
+
+        const setText = (id: string, val: unknown) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = String(val ?? '—');
+        };
+
+        setText('whatif-risk-current', current.riskScore ?? '—');
+        setText('whatif-risk-hypo', hypo.riskScore ?? '—');
+        setText('whatif-invite-current', current.inviteBudget ?? '—');
+        setText('whatif-invite-hypo', hypo.inviteBudget ?? '—');
+        setText('whatif-msg-current', current.messageBudget ?? '—');
+        setText('whatif-msg-hypo', hypo.messageBudget ?? '—');
+        setText('whatif-action-changed', delta.riskActionChanged ? '⚠️ Cambiato' : '✅ Invariato');
+    })(); });
 }
 
 function restoreFilterSelects(): void {

@@ -374,6 +374,28 @@
                 <div id="lead-detail-content" class="lead-detail-content" hidden></div>
             </section>
 
+            <section class="card" id="whatif-section">
+                <header class="card-header">
+                    <h2>What-If Simulator</h2>
+                    <p class="card-subtitle">Simula l'impatto di modifiche ai cap sul risk score e budget</p>
+                </header>
+                <div class="whatif-controls">
+                    <label class="whatif-label">Soft Invite Cap <input type="range" id="whatif-soft-invite" min="1" max="50" value="15" class="whatif-slider" /><span id="whatif-soft-invite-val">15</span></label>
+                    <label class="whatif-label">Hard Invite Cap <input type="range" id="whatif-hard-invite" min="1" max="50" value="20" class="whatif-slider" /><span id="whatif-hard-invite-val">20</span></label>
+                    <label class="whatif-label">Soft Msg Cap <input type="range" id="whatif-soft-msg" min="1" max="50" value="8" class="whatif-slider" /><span id="whatif-soft-msg-val">8</span></label>
+                    <label class="whatif-label">Hard Msg Cap <input type="range" id="whatif-hard-msg" min="1" max="50" value="10" class="whatif-slider" /><span id="whatif-hard-msg-val">10</span></label>
+                    <button id="btn-whatif-simulate" class="btn btn-primary btn-sm">Simula</button>
+                </div>
+                <div id="whatif-result" class="whatif-result" hidden>
+                    <div class="whatif-grid">
+                        <div><strong>Risk Score</strong><br/><span id="whatif-risk-current">—</span> → <span id="whatif-risk-hypo">—</span></div>
+                        <div><strong>Invite Budget</strong><br/><span id="whatif-invite-current">—</span> → <span id="whatif-invite-hypo">—</span></div>
+                        <div><strong>Msg Budget</strong><br/><span id="whatif-msg-current">—</span> → <span id="whatif-msg-hypo">—</span></div>
+                        <div><strong>Risk Action</strong><br/><span id="whatif-action-changed">—</span></div>
+                    </div>
+                </div>
+            </section>
+
             <section class="card" id="blacklist-section">
                 <header class="card-header">
                     <h2>Blacklist</h2>
