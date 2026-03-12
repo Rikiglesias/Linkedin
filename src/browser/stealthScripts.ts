@@ -426,6 +426,30 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
             });
         }
     } catch {}
+    // ─── 12. AB-6: performance.memory mock ─────────────────────────────────────
+    // Chromium espone performance.memory (non-standard) — un browser headless
+    // fresco ha un heap piccolo e costante. Un browser reale con tab aperte
+    // ha un heap che cresce nel tempo. Simuliamo crescita progressiva.
+    try {
+        if (typeof performance !== 'undefined' && !performance.memory) {
+            const startHeap = 18_000_000 + Math.floor(Math.random() * 12_000_000);
+            const pageStartTime = Date.now();
+            Object.defineProperty(performance, 'memory', {
+                get: () => {
+                    const elapsedMin = (Date.now() - pageStartTime) / 60000;
+                    const growth = Math.floor(elapsedMin * 800_000 * (0.8 + Math.random() * 0.4));
+                    const used = startHeap + growth;
+                    return {
+                        jsHeapSizeLimit: 2_197_815_296,
+                        totalJSHeapSize: used + 4_000_000 + Math.floor(Math.random() * 2_000_000),
+                        usedJSHeapSize: used,
+                    };
+                },
+                configurable: true,
+            });
+        }
+    } catch {}
+
     // ─── 14. [RIMOSSO] Fake Storage Seeder ──────────────────────────────────────
     // Rimosso: iniettava _ga (Google Analytics) e _fbp (Facebook Pixel) in localStorage
     // + finti database IndexedDB (localforage, firebaseLocalStorageDb).
