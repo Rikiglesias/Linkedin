@@ -134,6 +134,12 @@ const COMMAND_HELP: Record<string, CommandHelp> = {
         ],
         examples: ['bot diagnostics', 'bot diag --sections health,queue'],
     },
+    'config-validate': {
+        usage: 'config-validate',
+        description: 'Valida la configurazione completa e restituisce un report JSON con errori, warning, stato proxy e JA3.',
+        options: [],
+        examples: ['bot config-validate', 'bot config-validate | jq .summary'],
+    },
     pause: {
         usage: 'pause [minutes|indefinite] [reason]',
         description: 'Mette in pausa l\'automazione per N minuti.',

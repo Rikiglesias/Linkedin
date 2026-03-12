@@ -64,6 +64,7 @@ import {
     runSecretsRotateCommand,
     runSecretsStatusCommand,
     runStatusCommand,
+    runConfigValidateCommand,
     runUnquarantineCommand,
 } from './cli/commands/adminCommands';
 import { initPluginSystem, pluginRegistry } from './plugins/pluginLoader';
@@ -74,32 +75,63 @@ import { printCommandHelp } from './cli/commandHelp';
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 
 let shuttingDown = false;
-function setupGracefulShutdown(): void {
-    const handler = async (signal: string): Promise<void> => {
-        if (shuttingDown) return;
-        shuttingDown = true;
-        console.warn(`[SIGNAL] ${signal} ricevuto — chiusura in corso...`);
+export function isShuttingDown(): boolean { return shuttingDown; }
 
-        // Recupera job rimasti in RUNNING → PENDING per il prossimo avvio
-        try {
-            const recovered = await recoverStuckJobs(0);
-            if (recovered > 0) console.log(`[SHUTDOWN] ${recovered} job RUNNING → PENDING`);
-        } catch { /* DB potrebbe essere già chiuso */ }
+const SHUTDOWN_TIMEOUT_MS = 30_000;
 
+async function performGracefulShutdown(reason: string): Promise<void> {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.warn(`[SHUTDOWN] ${reason} — chiusura graceful in corso (timeout ${SHUTDOWN_TIMEOUT_MS / 1000}s)...`);
+
+    // Timeout di sicurezza: se lo shutdown supera 30s, forza uscita
+    const forceExitTimer = setTimeout(() => {
+        console.error('[SHUTDOWN] Timeout raggiunto — force exit');
+        process.exit(1);
+    }, SHUTDOWN_TIMEOUT_MS);
+    forceExitTimer.unref();
+
+    // 1. Plugin shutdown
+    try {
+        await pluginRegistry.shutdown();
+    } catch { /* best effort */ }
+
+    // 2. Chiudi browser aperti (con humanWindDown se possibile)
+    try {
+        const { cleanupBrowsers } = await import('./browser/launcher');
+        await cleanupBrowsers();
+        console.log('[SHUTDOWN] Browser chiusi');
+    } catch { /* best effort */ }
+
+    // 3. Recupera job rimasti in RUNNING → PENDING per il prossimo avvio
+    try {
+        const recovered = await recoverStuckJobs(0);
+        if (recovered > 0) console.log(`[SHUTDOWN] ${recovered} job RUNNING → PENDING`);
+    } catch { /* DB potrebbe essere già chiuso */ }
+
+    // 4. Chiudi DB
+    try {
         await closeDatabase();
-        process.exit(0);
-    };
+        console.log('[SHUTDOWN] Database chiuso');
+    } catch { /* best effort */ }
+
+    clearTimeout(forceExitTimer);
+    process.exit(0);
+}
+
+function setupGracefulShutdown(): void {
     process.on('SIGINT', () => {
-        void handler('SIGINT');
+        void performGracefulShutdown('SIGINT ricevuto');
     });
     process.on('SIGTERM', () => {
-        void handler('SIGTERM');
+        void performGracefulShutdown('SIGTERM ricevuto');
     });
 }
 
 /**
  * Auto-restart pianificato (memory leak protection).
  * Dopo PROCESS_MAX_UPTIME_HOURS il processo esce con code 0.
+ * Usa lo stesso path di graceful shutdown per chiudere browser + DB.
  */
 function setupPlannedRestart(): void {
     const maxUptimeMs = config.processMaxUptimeHours * 60 * 60 * 1000;
@@ -113,9 +145,7 @@ function setupPlannedRestart(): void {
                 `[PLANNED_RESTART] Uptime = ${uptimeHours}h >= limit ${config.processMaxUptimeHours}h — riavvio pianificato.`,
             );
             clearInterval(interval);
-            closeDatabase()
-                .catch((err: unknown) => console.error('[PLANNED_RESTART] Errore chiusura DB:', err))
-                .finally(() => process.exit(0));
+            void performGracefulShutdown(`Planned restart dopo ${uptimeHours}h`);
         }
     }, CHECK_INTERVAL_MS);
 
@@ -521,6 +551,9 @@ async function main(): Promise<void> {
             break;
         case 'list-config':
             await runListConfigCommand(commandArgs);
+            break;
+        case 'config-validate':
+            await runConfigValidateCommand();
             break;
         case 'sync-status': {
             const status = await getEventSyncStatus();

@@ -33,7 +33,7 @@ import { FingerprintPool } from '../fingerprint/noiseGenerator';
 
 const activeBrowsers = new Set<BrowserContext>();
 
-const cleanupBrowsers = async () => {
+export const cleanupBrowsers = async (): Promise<void> => {
     for (const browser of activeBrowsers) {
         try {
             await browser.close();
@@ -43,14 +43,6 @@ const cleanupBrowsers = async () => {
     }
     activeBrowsers.clear();
 };
-
-process.on('SIGINT', () => {
-    void cleanupBrowsers().then(() => process.exit(0));
-});
-
-process.on('SIGTERM', () => {
-    void cleanupBrowsers().then(() => process.exit(0));
-});
 
 function validateFingerprintConsistency(fp: BrowserFingerprint): void {
     const isMobile = fp.isMobile === true;

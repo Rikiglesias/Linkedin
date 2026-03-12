@@ -1042,3 +1042,53 @@ export async function runAiQualityCommand(args: string[]): Promise<void> {
         ),
     );
 }
+
+export async function runConfigValidateCommand(): Promise<void> {
+    const { validateConfigFull } = await import('../../config');
+    const { runFullProxyDiagnostic } = await import('../../proxyManager');
+
+    const configResult = validateConfigFull(config);
+
+    // Proxy & JA3 diagnostica (non bloccante)
+    let proxyDiag: Awaited<ReturnType<typeof runFullProxyDiagnostic>> | null = null;
+    try {
+        proxyDiag = await runFullProxyDiagnostic();
+    } catch { /* best effort */ }
+
+    const report = {
+        timestamp: new Date().toISOString(),
+        valid: configResult.errors.length === 0,
+        errors: configResult.errors,
+        warnings: configResult.warnings,
+        proxy: proxyDiag ? {
+            pool: proxyDiag.pool,
+            quality: proxyDiag.quality ? {
+                overallScore: proxyDiag.quality.overallScore,
+                degraded: proxyDiag.quality.degraded,
+                datacenterCount: proxyDiag.quality.datacenterCount,
+                residentialCount: proxyDiag.quality.residentialCount,
+                mobileCount: proxyDiag.quality.mobileCount,
+                totalProxies: proxyDiag.quality.proxies.length,
+            } : null,
+            ja3: proxyDiag.ja3 ? {
+                status: proxyDiag.ja3.status,
+                cycleTlsActive: proxyDiag.ja3.cycleTlsActive,
+                uaJa3Coherent: proxyDiag.ja3.uaJa3Coherent,
+                recommendation: proxyDiag.ja3.recommendation,
+            } : null,
+        } : null,
+        summary: {
+            errorCount: configResult.errors.length,
+            warningCount: configResult.warnings.length,
+            proxyConfigured: proxyDiag?.pool.configured ?? false,
+            proxyQualityScore: proxyDiag?.quality?.overallScore ?? null,
+            ja3Status: proxyDiag?.ja3?.status ?? null,
+        },
+    };
+
+    console.log(JSON.stringify(report, null, 2));
+
+    if (!report.valid) {
+        process.exitCode = 1;
+    }
+}
