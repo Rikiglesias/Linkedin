@@ -21,8 +21,6 @@ import type { NextFunction, Request, Response } from 'express';
 import {
     getABTestingStats,
     recordSecurityAuditEvent,
-    countPendingOutboxEvents,
-    getAutomationPauseState,
 } from '../core/repositories';
 import { getDatabase } from '../db';
 import campaignsRouter from './routes/campaigns';
@@ -33,6 +31,7 @@ import controlsRouter from './routes/controls';
 import { statsRouter } from './routes/stats';
 import { aiRouter } from './routes/ai';
 import { securityRouter } from './routes/security';
+import { healthRouter } from './routes/health';
 import { handleApiError } from './utils';
 import v1AutomationRouter from './routes/v1Automation';
 import metricsRouter from './routes/metrics';
@@ -334,6 +333,8 @@ async function hasValidDashboardSession(req: Request): Promise<boolean> {
     return true;
 }
 
+const MAX_ACTIVE_DASHBOARD_SESSIONS = 5;
+
 async function createDashboardSessionCookie(req: Request, res: Response): Promise<void> {
     const currentToken = getDashboardSessionTokenFromRequest(req);
     if (currentToken) {
@@ -349,6 +350,24 @@ async function createDashboardSessionCookie(req: Request, res: Response): Promis
     const requestIp = resolveRequestIp(req);
 
     const db = await getDatabase();
+
+    // Enforce max concurrent sessions: revoke oldest if limit reached
+    const activeSessions = await db.query<{ token_hash: string; created_at: string }>(
+        `SELECT token_hash, created_at FROM dashboard_sessions
+         WHERE expires_at > ? AND revoked_at IS NULL
+         ORDER BY created_at ASC`,
+        [nowIso],
+    );
+    if (activeSessions.length >= MAX_ACTIVE_DASHBOARD_SESSIONS) {
+        const toRevoke = activeSessions.slice(0, activeSessions.length - MAX_ACTIVE_DASHBOARD_SESSIONS + 1);
+        for (const session of toRevoke) {
+            await db.run(
+                `UPDATE dashboard_sessions SET revoked_at = ? WHERE token_hash = ?`,
+                [nowIso, session.token_hash],
+            );
+        }
+    }
+
     await db.run(
         `INSERT INTO dashboard_sessions (
             token_hash,
@@ -650,69 +669,8 @@ app.use('/api/v1/campaigns', campaignsRouter);
 const publicDir = path.resolve(__dirname, '../../public');
 app.use(express.static(publicDir));
 
-// ── Health ───────────────────────────────────────────────────────────────────
-app.get('/api/health', (_req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-app.get('/api/health/deep', async (_req, res) => {
-    const checks: Record<string, { ok: boolean; detail?: string }> = {};
-    let allOk = true;
-
-    // 1. Connettività DB
-    try {
-        const db = await getDatabase();
-        await db.get<{ v: number }>('SELECT 1 as v');
-        checks.database = { ok: true };
-    } catch (err: unknown) {
-        checks.database = { ok: false, detail: err instanceof Error ? err.message : String(err) };
-        allOk = false;
-    }
-
-    // 2. Stato pausa/quarantine
-    try {
-        const pause = await getAutomationPauseState();
-        checks.automation = {
-            ok: !pause.paused,
-            detail: pause.paused ? `Paused: ${pause.reason ?? 'unknown'}` : 'running',
-        };
-    } catch {
-        checks.automation = { ok: false, detail: 'Unable to read pause state' };
-        allOk = false;
-    }
-
-    // 3. Outbox backlog
-    try {
-        const pendingOutbox = await countPendingOutboxEvents();
-        const threshold = config.outboxAlertBacklog ?? 1000;
-        checks.outbox = {
-            ok: pendingOutbox < threshold,
-            detail: `${pendingOutbox} pending (threshold: ${threshold})`,
-        };
-        if (pendingOutbox >= threshold) allOk = false;
-    } catch {
-        checks.outbox = { ok: false, detail: 'Unable to read outbox' };
-        allOk = false;
-    }
-
-    // 4. Queue depth
-    try {
-        const db = await getDatabase();
-        const row = await db.get<{ total: number }>('SELECT COUNT(*) as total FROM jobs WHERE status = \'QUEUED\'');
-        const queueDepth = row ? Number(row.total) : 0;
-        checks.queue = { ok: true, detail: `${queueDepth} queued jobs` };
-    } catch {
-        checks.queue = { ok: false, detail: 'Unable to read job queue' };
-        allOk = false;
-    }
-
-    const statusCode = allOk ? 200 : 503;
-    res.status(statusCode).json({
-        status: allOk ? 'healthy' : 'degraded',
-        timestamp: new Date().toISOString(),
-        checks,
-    });
-});
+// ── Health — routes/health.ts ────────────────────────────────────────────────
+app.use('/api/health', healthRouter);
 
 // ── Prometheus Metrics — routes/metrics.ts ──────────────────────────────────
 app.use('/metrics', metricsRouter);
