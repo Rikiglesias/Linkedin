@@ -143,6 +143,13 @@ export async function processInboxJob(
     }
 
     for (let i = 0; i < Math.min(count, 5); i++) {
+        // AB-5: Defer probabilistico — 30% delle conversazioni vengono skippate
+        // e processate nel ciclo successivo. Simula "l'ho visto ma rispondo dopo".
+        if (Math.random() < 0.30) {
+            await logInfo('inbox.deferred', { accountId: payload.accountId, index: i });
+            continue;
+        }
+
         const convo = unreadConversations.nth(i);
         await humanMouseMove(page, `${joinSelectors('inboxConversationItem')}:has(${joinSelectors('inboxUnreadBadge')})`);
         await humanDelay(page, 200, 600);
