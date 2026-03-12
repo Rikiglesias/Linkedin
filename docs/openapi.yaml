@@ -1,0 +1,649 @@
+openapi: 3.0.3
+info:
+  title: LinkedIn Bot API
+  description: |
+    API per il controllo e monitoraggio del LinkedIn Bot.
+    Autenticazione: API Key (header `x-api-key`) o Basic Auth, oppure session cookie per la dashboard.
+  version: 2.1.0
+  contact:
+    name: LinkedIn Bot
+servers:
+  - url: http://localhost:3000
+    description: Sviluppo locale
+
+security:
+  - apiKey: []
+  - basicAuth: []
+
+tags:
+  - name: Health
+    description: Health check e stato del sistema
+  - name: KPIs & Stats
+    description: Metriche, trend, osservabilità
+  - name: Risk
+    description: Risk engine, what-if, predictive alerts
+  - name: Proxy
+    description: Stato proxy pool e diagnostica qualità
+  - name: Incidents
+    description: Gestione incidenti operativi
+  - name: Leads
+    description: Ricerca e dettaglio lead
+  - name: Campaigns
+    description: Gestione campagne e liste
+  - name: Controls
+    description: Pausa, resume, quarantena automazione
+  - name: Security
+    description: Audit, health account, backup, review queue
+  - name: AI
+    description: AI quality, validation, sentiment
+  - name: Export
+    description: Export dati CSV
+  - name: Auth
+    description: Sessioni dashboard
+  - name: Automation API v1
+    description: API versionizzata per automazioni esterne
+  - name: Metrics
+    description: Prometheus metrics endpoint
+
+paths:
+  # ── Health ──────────────────────────────────────────────────────
+  /api/health:
+    get:
+      tags: [Health]
+      summary: Health check base
+      responses:
+        '200':
+          description: Sistema operativo
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /api/health/deep:
+    get:
+      tags: [Health]
+      summary: Deep health check (DB, automation, outbox, queue)
+      responses:
+        '200':
+          description: Tutti i sottosistemi sani
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeepHealthResponse'
+        '503':
+          description: Almeno un sottosistema degradato
+
+  # ── KPIs & Stats ────────────────────────────────────────────────
+  /api/kpis:
+    get:
+      tags: [KPIs & Stats]
+      summary: KPI globali del funnel + risk score
+      responses:
+        '200':
+          description: KPI snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KpiResponse'
+
+  /api/runs:
+    get:
+      tags: [KPIs & Stats]
+      summary: Ultime 10 campaign runs
+      responses:
+        '200':
+          description: Lista run
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CampaignRun'
+
+  /api/stats/trend:
+    get:
+      tags: [KPIs & Stats]
+      summary: Trend giornaliero (inviti, messaggi, errori, risk)
+      parameters:
+        - name: days
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 30
+            default: 7
+      responses:
+        '200':
+          description: Array di dati giornalieri
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  days:
+                    type: integer
+                  rows:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TrendRow'
+
+  /api/observability:
+    get:
+      tags: [KPIs & Stats]
+      summary: Snapshot osservabilità completa (SLO, circuit breakers, proxy, JA3)
+      responses:
+        '200':
+          description: Snapshot operativo
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/observability/slo:
+    get:
+      tags: [KPIs & Stats]
+      summary: Solo metriche SLO/SLA
+      responses:
+        '200':
+          description: SLO snapshot
+
+  # ── Risk ────────────────────────────────────────────────────────
+  /api/risk/explain:
+    get:
+      tags: [Risk]
+      summary: Spiegazione dettagliata del risk score corrente
+      responses:
+        '200':
+          description: Breakdown fattori di rischio
+
+  /api/risk/what-if:
+    post:
+      tags: [Risk]
+      summary: Simulazione what-if con cap ipotetico
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                hardInviteCap:
+                  type: integer
+                  example: 30
+                softInviteCap:
+                  type: integer
+                  example: 20
+                hardMsgCap:
+                  type: integer
+                  example: 40
+                softMsgCap:
+                  type: integer
+                  example: 25
+      responses:
+        '200':
+          description: Confronto current vs hypothetical
+
+  /api/risk/predictive:
+    get:
+      tags: [Risk]
+      summary: Alert predittivi basati su deviazioni statistiche
+      responses:
+        '200':
+          description: Alert con sigma deviation
+
+  # ── Proxy ───────────────────────────────────────────────────────
+  /api/proxy/diagnostic:
+    get:
+      tags: [Proxy]
+      summary: Diagnostica completa proxy pool + qualità + JA3
+      description: |
+        Esegue un check completo: ASN lookup per ogni proxy, latency measurement,
+        JA3 validation. Può richiedere alcuni secondi per pool grandi.
+      responses:
+        '200':
+          description: Report diagnostico
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProxyDiagnostic'
+
+  # ── Incidents ───────────────────────────────────────────────────
+  /api/incidents:
+    get:
+      tags: [Incidents]
+      summary: Lista incidenti aperti
+      responses:
+        '200':
+          description: Array di incidenti
+
+  /api/incidents/{id}/resolve:
+    post:
+      tags: [Incidents]
+      summary: Risolvi un incidente
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Incidente risolto
+        '400':
+          description: ID non valido
+
+  # ── Leads ───────────────────────────────────────────────────────
+  /api/leads/search:
+    get:
+      tags: [Leads]
+      summary: Cerca lead per query, status, lista
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: list
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Lista lead trovati
+
+  /api/leads/{id}:
+    get:
+      tags: [Leads]
+      summary: Dettaglio singolo lead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lead completo
+        '404':
+          description: Lead non trovato
+
+  # ── Controls ────────────────────────────────────────────────────
+  /api/controls/pause:
+    post:
+      tags: [Controls]
+      summary: Metti in pausa l'automazione
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                minutes:
+                  type: integer
+                  example: 60
+                reason:
+                  type: string
+                  example: manutenzione
+      responses:
+        '200':
+          description: Automazione in pausa
+
+  /api/controls/resume:
+    post:
+      tags: [Controls]
+      summary: Riprendi automazione
+      responses:
+        '200':
+          description: Automazione ripresa
+
+  # ── Security ────────────────────────────────────────────────────
+  /api/accounts/health:
+    get:
+      tags: [Security]
+      summary: Health snapshot degli account
+      parameters:
+        - name: accountId
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 25
+      responses:
+        '200':
+          description: Health snapshots
+
+  /api/security/audit:
+    get:
+      tags: [Security]
+      summary: Eventi di audit sicurezza
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: category
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Audit events
+
+  /api/backups:
+    get:
+      tags: [Security]
+      summary: Lista backup recenti
+      responses:
+        '200':
+          description: Array backup
+
+  /api/review-queue:
+    get:
+      tags: [Security]
+      summary: Coda di revisione AI-generated content
+      responses:
+        '200':
+          description: Items in review
+
+  # ── Auth ────────────────────────────────────────────────────────
+  /api/auth/session:
+    post:
+      tags: [Auth]
+      summary: Crea sessione dashboard (cookie-based)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                totp_code:
+                  type: string
+                  description: Codice TOTP se 2FA abilitato
+      responses:
+        '200':
+          description: Sessione creata
+        '401':
+          description: Credenziali non valide
+        '403':
+          description: TOTP richiesto o non valido
+
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout sessione dashboard
+      responses:
+        '200':
+          description: Sessione revocata
+
+  # ── SSE ─────────────────────────────────────────────────────────
+  /api/events:
+    get:
+      tags: [KPIs & Stats]
+      summary: Server-Sent Events stream (real-time)
+      description: Stream SSE per notifiche push in tempo reale
+      responses:
+        '200':
+          description: Event stream
+          content:
+            text/event-stream: {}
+
+  # ── Prometheus ──────────────────────────────────────────────────
+  /metrics:
+    get:
+      tags: [Metrics]
+      summary: Metriche Prometheus
+      description: |
+        25 metriche: funnel (invites, messages, acceptances, follow-ups, profile views),
+        risk (score, action, pending ratio), proxy (pool status, quality, JA3).
+      responses:
+        '200':
+          description: Metriche in formato text/plain
+          content:
+            text/plain: {}
+
+  # ── API v1 ──────────────────────────────────────────────────────
+  /api/v1/meta:
+    get:
+      tags: [Automation API v1]
+      summary: Metadata servizio e versioni supportate
+      responses:
+        '200':
+          description: Service metadata
+
+  /api/v1/automation/snapshot:
+    get:
+      tags: [Automation API v1]
+      summary: Snapshot completo automazione (KPI + risk + incidents + observability)
+      responses:
+        '200':
+          description: Snapshot envelope v1
+
+  /api/v1/automation/incidents:
+    get:
+      tags: [Automation API v1]
+      summary: Lista incidenti (v1 envelope)
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 25
+      responses:
+        '200':
+          description: Incidents v1
+
+  /api/v1/automation/controls/pause:
+    post:
+      tags: [Automation API v1]
+      summary: Pausa automazione (v1)
+      responses:
+        '200':
+          description: Paused
+
+  /api/v1/automation/controls/resume:
+    post:
+      tags: [Automation API v1]
+      summary: Resume automazione (v1)
+      responses:
+        '200':
+          description: Resumed
+
+  /api/v1/automation/controls/quarantine:
+    post:
+      tags: [Automation API v1]
+      summary: Toggle quarantena account (v1)
+      responses:
+        '200':
+          description: Quarantine toggled
+
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: x-api-key
+    basicAuth:
+      type: http
+      scheme: basic
+
+  schemas:
+    DeepHealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded]
+        timestamp:
+          type: string
+          format: date-time
+        checks:
+          type: object
+          properties:
+            database:
+              $ref: '#/components/schemas/HealthCheck'
+            automation:
+              $ref: '#/components/schemas/HealthCheck'
+            outbox:
+              $ref: '#/components/schemas/HealthCheck'
+            queue:
+              $ref: '#/components/schemas/HealthCheck'
+
+    HealthCheck:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        detail:
+          type: string
+
+    KpiResponse:
+      type: object
+      properties:
+        funnel:
+          type: object
+          properties:
+            totalLeads:
+              type: integer
+            invited:
+              type: integer
+            accepted:
+              type: integer
+            messaged:
+              type: integer
+            replied:
+              type: integer
+        risk:
+          type: object
+          properties:
+            score:
+              type: integer
+            action:
+              type: string
+              enum: [GO, SLOW, STOP]
+            pendingRatio:
+              type: number
+        activeCampaigns:
+          type: integer
+
+    CampaignRun:
+      type: object
+      properties:
+        id:
+          type: integer
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          type: string
+        profiles_discovered:
+          type: integer
+        invites_sent:
+          type: integer
+        messages_sent:
+          type: integer
+        errors_count:
+          type: integer
+
+    TrendRow:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        invitesSent:
+          type: integer
+        messagesSent:
+          type: integer
+        acceptances:
+          type: integer
+        runErrors:
+          type: integer
+        challenges:
+          type: integer
+        estimatedRiskScore:
+          type: integer
+
+    ProxyDiagnostic:
+      type: object
+      properties:
+        pool:
+          type: object
+          properties:
+            configured:
+              type: boolean
+            total:
+              type: integer
+            ready:
+              type: integer
+            cooling:
+              type: integer
+            mobile:
+              type: integer
+            residential:
+              type: integer
+        quality:
+          type: object
+          nullable: true
+          properties:
+            overallScore:
+              type: integer
+              description: 0-100
+            degraded:
+              type: boolean
+            datacenterCount:
+              type: integer
+            residentialCount:
+              type: integer
+            mobileCount:
+              type: integer
+            proxies:
+              type: array
+              items:
+                type: object
+                properties:
+                  server:
+                    type: string
+                  type:
+                    type: string
+                    enum: [datacenter, residential, mobile, unknown]
+                  asnOrg:
+                    type: string
+                  latencyMs:
+                    type: integer
+                  score:
+                    type: integer
+        ja3:
+          type: object
+          nullable: true
+          properties:
+            status:
+              type: string
+              enum: [SECURE, GAP, DIRECT]
+            cycleTlsActive:
+              type: boolean
+            uaJa3Coherent:
+              type: boolean
+            recommendation:
+              type: string
