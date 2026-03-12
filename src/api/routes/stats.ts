@@ -13,7 +13,7 @@ import {
 } from '../../core/repositories';
 import { evaluateRisk, explainRisk, evaluatePredictiveRiskAlerts, calculateDynamicBudget } from '../../risk/riskEngine';
 import { getCircuitBreakerSnapshot } from '../../core/integrationPolicy';
-import { getProxyPoolStatus } from '../../proxyManager';
+import { getProxyPoolStatus, getProxyQualityStatus, runFullProxyDiagnostic } from '../../proxyManager';
 import { publishLiveEvent } from '../../telemetry/liveEvents';
 import { handleApiError } from '../utils';
 import { resolveRequestIp } from '../helpers/requestIp';
@@ -135,6 +135,7 @@ statsRouter.get('/observability', async (_req, res) => {
     try {
         const localDate = getLocalDateString();
         const snapshot = await getOperationalObservabilitySnapshot(localDate);
+        const qualityStatus = await getProxyQualityStatus();
         res.json({
             ...snapshot,
             thresholds: {
@@ -146,10 +147,21 @@ statsRouter.get('/observability', async (_req, res) => {
             },
             circuitBreakers: getCircuitBreakerSnapshot(),
             proxyPool: getProxyPoolStatus(),
+            proxyQuality: qualityStatus.quality,
+            proxyJa3: qualityStatus.ja3,
             browserSessionStartedAt: await getRuntimeFlag('browser_session_started_at:default').catch(() => null),
         });
     } catch (err: unknown) {
         handleApiError(res, err, 'api.observability');
+    }
+});
+
+statsRouter.get('/proxy/diagnostic', async (_req, res) => {
+    try {
+        const diagnostic = await runFullProxyDiagnostic();
+        res.json(diagnostic);
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.proxy.diagnostic');
     }
 });
 

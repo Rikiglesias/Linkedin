@@ -3,6 +3,13 @@ import path from 'path';
 import * as net from 'net';
 import { config, ProxyType } from './config';
 import { logInfo, logWarn } from './telemetry/logger';
+import {
+    checkAllProxiesQuality,
+    shouldRunQualityCheck,
+    getLastQualityReport,
+    type ProxyQualityReport,
+} from './proxy/proxyQualityChecker';
+import { validateJa3Configuration, getLastJa3Report, type Ja3ValidationReport } from './proxy/ja3Validator';
 
 export interface ProxyConfig {
     server: string;
@@ -732,6 +739,38 @@ export function getProxyPoolStatus(): ProxyPoolStatus {
 
 export function getIntegrationProxyPoolStatus(): ProxyPoolStatus {
     return getPoolStatusInternal(integrationProxyFailureUntil, integrationRotationCursor);
+}
+
+export interface ProxyQualityStatus {
+    pool: ProxyPoolStatus;
+    quality: ProxyQualityReport | null;
+    ja3: Ja3ValidationReport | null;
+}
+
+export async function runProxyQualityCheckIfDue(): Promise<ProxyQualityReport | null> {
+    if (!shouldRunQualityCheck()) return getLastQualityReport();
+
+    const pool = loadProxyPool();
+    if (pool.length === 0) return null;
+
+    return checkAllProxiesQuality(pool);
+}
+
+export async function getProxyQualityStatus(): Promise<ProxyQualityStatus> {
+    const pool = getProxyPoolStatus();
+    const quality = getLastQualityReport();
+    const ja3 = getLastJa3Report();
+    return { pool, quality, ja3 };
+}
+
+export async function runFullProxyDiagnostic(): Promise<ProxyQualityStatus> {
+    const pool = getProxyPoolStatus();
+
+    const proxyList = loadProxyPool();
+    const quality = proxyList.length > 0 ? await checkAllProxiesQuality(proxyList) : null;
+    const ja3 = await validateJa3Configuration();
+
+    return { pool, quality, ja3 };
 }
 
 export function buildProxyUrl(proxy: ProxyConfig): string {

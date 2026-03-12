@@ -369,6 +369,18 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
             '[CONFIG] HARD_INVITE_CAP > 100 — valore pericolosamente alto, rischio ban LinkedIn',
         when: (cfg) => cfg.hardInviteCap > 100,
     },
+    {
+        message:
+            '[CONFIG] PROXY_QUALITY_CHECK_ENABLED=true ma nessun proxy configurato (PROXY_URL e PROXY_LIST vuoti)',
+        when: (cfg) => cfg.proxyQualityCheckEnabled && !cfg.proxyUrl && !cfg.proxyListPath,
+        severity: 'warn',
+    },
+    {
+        message:
+            '[CONFIG] PROXY_TYPE_DEFAULT=unknown e PROXY_LIST non usa prefissi tipo — i proxy non saranno classificati per qualità',
+        when: (cfg) => !!cfg.proxyUrl && cfg.proxyTypeDefault === 'unknown' && !cfg.proxyListPath,
+        severity: 'warn',
+    },
 ];
 
 export interface ConfigValidationResult {

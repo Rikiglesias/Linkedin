@@ -226,6 +226,10 @@ export interface AppConfig {
     ja3Fingerprint: string;
     ja3UserAgent: string;
     ja3ProxyUpstream: string;
+    proxyQualityCheckEnabled: boolean;
+    proxyQualityCheckIntervalMinutes: number;
+    proxyQualityMinScore: number;
+    proxyQualityAsnApiUrl: string;
     ssiDynamicLimitsEnabled: boolean;
     ssiStateKey: string;
     ssiDefaultScore: number;

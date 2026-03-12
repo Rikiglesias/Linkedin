@@ -19,6 +19,8 @@ import { config } from '../config';
 import { handleChallengeDetected, pauseAutomation, quarantineAccount } from '../risk/incidentManager';
 import { logError, logInfo, logWarn } from '../telemetry/logger';
 import { sendTelegramAlert } from '../telemetry/alerts';
+import { broadcast } from '../telemetry/broadcaster';
+import { runProxyQualityCheckIfDue } from '../proxyManager';
 import { randomInt } from '../utils/random';
 import { getSessionHistory } from '../risk/sessionMemory';
 import { retryDelayMs } from '../utils/async';
@@ -259,6 +261,22 @@ async function runQueuedJobsForAccount(
                 reason: probe.reason,
                 responseTimeMs: probe.responseTimeMs,
             });
+        }
+
+        // Proxy quality check pre-batch (non bloccante)
+        if (config.proxyQualityCheckEnabled) {
+            try {
+                const qualityReport = await runProxyQualityCheckIfDue();
+                if (qualityReport?.degraded) {
+                    await broadcast({
+                        level: 'WARNING',
+                        title: 'Proxy Quality Degradata',
+                        body: `Quality score ${qualityReport.overallScore}/100 (soglia: ${config.proxyQualityMinScore}). Datacenter: ${qualityReport.datacenterCount}/${qualityReport.proxies.length}`,
+                    });
+                }
+            } catch {
+                // Non bloccante: se il quality check fallisce, procediamo comunque
+            }
         }
 
         // Pacing factor dalla session memory: dopo challenge recenti → delay più lunghi

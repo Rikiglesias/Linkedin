@@ -5,6 +5,7 @@ import { getDatabase } from '../db';
 import { config, getLocalDateString } from '../config';
 import { getTimingExperimentReport, getTopTimeSlots } from '../ml/timingOptimizer';
 import { getVariantLeaderboard } from '../ml/abBandit';
+import { getProxyQualityStatus } from '../proxyManager';
 
 export async function generateAndSendDailyReport(targetDate?: string): Promise<boolean> {
     const localDate = targetDate || getLocalDateString();
@@ -197,6 +198,7 @@ export async function generateAndSendDailyReport(targetDate?: string): Promise<b
         timingSection,
         timingExperimentSection,
         suggestionSection,
+        await buildProxyStatusSection(),
     ]
         .filter((s) => s.length > 0)
         .join('\n');
@@ -205,4 +207,44 @@ export async function generateAndSendDailyReport(targetDate?: string): Promise<b
 
     console.log(`[DAILY_REPORTER] Report inviato a Telegram per la data ${localDate}`);
     return true;
+}
+
+async function buildProxyStatusSection(): Promise<string> {
+    try {
+        const status = await getProxyQualityStatus();
+        const lines: string[] = [`\n*🛡️ Proxy & TLS Status*`];
+
+        // Pool status
+        const pool = status.pool;
+        if (!pool.configured) {
+            lines.push(`• Proxy: *non configurato* (connessione diretta)`);
+        } else {
+            lines.push(`• Pool: ${pool.total} proxy (${pool.ready} ready, ${pool.cooling} cooling)`);
+            lines.push(`• Tipi: ${pool.mobile} mobile, ${pool.residential} residential, ${pool.unknown} unknown`);
+        }
+
+        // Quality report
+        const quality = status.quality;
+        if (quality) {
+            const scoreEmoji = quality.degraded ? '🔴' : quality.overallScore >= 70 ? '🟢' : '🟡';
+            lines.push(`• Quality Score: ${scoreEmoji} *${quality.overallScore}/100*`);
+            if (quality.datacenterCount > 0) {
+                lines.push(`• ⚠️ ${quality.datacenterCount} proxy datacenter rilevati (rischio ban alto)`);
+            }
+        }
+
+        // JA3 status
+        const ja3 = status.ja3;
+        if (ja3) {
+            const ja3Emoji = ja3.status === 'SECURE' ? '🟢' : ja3.status === 'GAP' ? '🔴' : '🟡';
+            lines.push(`• JA3 Spoofing: ${ja3Emoji} *${ja3.status}*${ja3.cycleTlsActive ? ' (CycleTLS attivo)' : ''}`);
+            if (ja3.status === 'GAP') {
+                lines.push(`• 💡 ${ja3.recommendation}`);
+            }
+        }
+
+        return lines.join('\n');
+    } catch {
+        return '';
+    }
 }
