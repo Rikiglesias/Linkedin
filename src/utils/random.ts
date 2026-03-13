@@ -8,14 +8,18 @@
  * abBandit.ts, randomActivityWorker.ts.
  */
 
+import { randomInt as cryptoRandomInt } from 'crypto';
+
 /**
  * Ritorna un intero casuale tra min e max (inclusi).
  * Gestisce correttamente min > max invertendo i valori.
+ * Usa crypto.randomInt per distribuzione uniforme non predicibile.
  */
 export function randomInt(min: number, max: number): number {
     const low = Math.min(min, max);
     const high = Math.max(min, max);
-    return Math.floor(Math.random() * (high - low + 1)) + low;
+    if (low === high) return low;
+    return cryptoRandomInt(low, high + 1);
 }
 
 /**
@@ -23,5 +27,5 @@ export function randomInt(min: number, max: number): number {
  * L'array DEVE avere almeno un elemento — il chiamante è responsabile.
  */
 export function randomElement<T>(arr: ReadonlyArray<T>): T {
-    return arr[Math.floor(Math.random() * arr.length)] as T;
+    return arr[cryptoRandomInt(0, arr.length)] as T;
 }

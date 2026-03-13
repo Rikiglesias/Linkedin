@@ -92,7 +92,39 @@ export async function runPreflightEnvCommand(): Promise<void> {
         });
     }
 
-    // 5. Database accessible
+    // 5. LinkedIn session cookie validation
+    for (const account of accounts) {
+        const sessionDir = path.resolve(account.sessionDir);
+        const metaPath = path.join(sessionDir, 'session_meta.json');
+        const hasSessionMeta = fs.existsSync(metaPath);
+        if (hasSessionMeta) {
+            try {
+                const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+                const lastVerified = meta?.lastVerifiedAt;
+                checks.push({
+                    name: `LinkedIn session (${account.id})`,
+                    status: lastVerified ? 'OK' : 'WARN',
+                    detail: lastVerified
+                        ? `Ultimo login verificato: ${lastVerified}`
+                        : 'session_meta.json presente ma lastVerifiedAt mancante',
+                });
+            } catch {
+                checks.push({
+                    name: `LinkedIn session (${account.id})`,
+                    status: 'WARN',
+                    detail: 'session_meta.json corrotto — eseguire `login` per ri-autenticarsi',
+                });
+            }
+        } else {
+            checks.push({
+                name: `LinkedIn session (${account.id})`,
+                status: 'FAIL',
+                detail: 'Nessuna sessione LinkedIn trovata — eseguire `login` prima di avviare il bot',
+            });
+        }
+    }
+
+    // 6. Database accessible
     try {
         const { getDatabase } = await import('../../db');
         const db = await getDatabase();

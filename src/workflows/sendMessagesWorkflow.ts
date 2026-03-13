@@ -5,7 +5,7 @@
 import { config, getLocalDateString } from '../config';
 import { runWorkflow } from '../core/orchestrator';
 import { getDailyStat } from '../core/repositories';
-import { runPreflight } from './preflight';
+import { runPreflight, appendProxyReputationWarning } from './preflight';
 import { formatWorkflowReport } from './reportFormatter';
 import type { PreflightDbStats, PreflightConfigStatus, PreflightWarning, WorkflowReport } from './types';
 
@@ -24,6 +24,8 @@ function generateWarnings(
     _answers: Record<string, string>,
 ): PreflightWarning[] {
     const warnings: PreflightWarning[] = [];
+
+    appendProxyReputationWarning(warnings, cfgStatus);
 
     const accepted = (stats.byStatus['ACCEPTED'] ?? 0) + (stats.byStatus['READY_MESSAGE'] ?? 0);
     if (accepted === 0) {

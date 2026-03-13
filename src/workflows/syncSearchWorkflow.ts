@@ -8,7 +8,7 @@ import { launchBrowser, closeBrowser, checkLogin } from '../browser';
 import { runSalesNavBulkSave } from '../salesnav/bulkSaveOrchestrator';
 import type { SalesNavBulkSaveReport } from '../salesnav/bulkSaveOrchestrator';
 import { runSalesNavigatorListSync, formatFinalReport } from '../core/salesNavigatorSync';
-import { runPreflight } from './preflight';
+import { runPreflight, appendProxyReputationWarning } from './preflight';
 import { formatWorkflowReport } from './reportFormatter';
 import type { PreflightDbStats, PreflightConfigStatus, PreflightWarning, WorkflowReport } from './types';
 
@@ -30,6 +30,9 @@ function generateWarnings(
     answers: Record<string, string>,
 ): PreflightWarning[] {
     const warnings: PreflightWarning[] = [];
+
+    appendProxyReputationWarning(warnings, cfgStatus);
+
     const targetList = answers['list'];
 
     if (!cfgStatus.proxyConfigured) {

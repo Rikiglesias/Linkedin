@@ -9,6 +9,7 @@
 
 import { getDatabase } from '../db';
 import { enrichLeadAuto, EnrichmentResult } from './leadEnricher';
+import { bridgeLeadUpsert } from '../cloud/cloudBridge';
 import { logInfo, logError, logWarn } from '../telemetry/logger';
 
 export interface ParallelEnrichmentOptions {
@@ -200,12 +201,41 @@ async function enrichSingleLead(
             ],
         );
 
+        // CC-29: Sync enrichment data verso Supabase (non-bloccante)
+        if (lead.linkedin_url) {
+            bridgeLeadUpsert({
+                linkedin_url: lead.linkedin_url,
+                first_name: lead.first_name ?? '',
+                last_name: lead.last_name ?? '',
+                job_title: '',
+                account_name: lead.account_name ?? '',
+                website: lead.website ?? '',
+                list_name: '',
+                status: '',
+                email: result.email,
+                phone: result.phone,
+                company_domain: result.companyDomain ?? null,
+                business_email: result.businessEmail ?? null,
+                business_email_confidence: result.businessEmailConfidence ?? null,
+            });
+        }
+
         return result;
     } catch (error) {
-        await logError('parallel_enricher.lead_error', {
-            leadId: lead.id,
-            error: error instanceof Error ? error.message : String(error),
-        });
+        const errMsg = error instanceof Error ? error.message : String(error);
+        await logError('parallel_enricher.lead_error', { leadId: lead.id, error: errMsg });
+        // CC-23: Registra il tentativo fallito per evitare re-enrichment infinito.
+        // data_points = -1 è il flag per "tutti gli enricher hanno fallito" (distingue da "0 risultati trovati").
+        try {
+            await db.run(
+                `INSERT OR REPLACE INTO lead_enrichment_data
+                 (lead_id, data_points, confidence, sources_json, enriched_at, updated_at)
+                 VALUES (?, -1, 0, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+                [lead.id, JSON.stringify([`error:${errMsg.slice(0, 200)}`])],
+            );
+        } catch {
+            // best-effort: non bloccare il flusso principale
+        }
         throw error;
     }
 }

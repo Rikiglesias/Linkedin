@@ -34,7 +34,6 @@ export const desktopFingerprintPool: Fingerprint[] = [
         userAgent:
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
         viewport: { width: 1920, height: 1080 },
-        timezone: 'Europe/Rome',
         locale: 'it-IT',
     },
     {
@@ -43,7 +42,6 @@ export const desktopFingerprintPool: Fingerprint[] = [
         userAgent:
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
         viewport: { width: 1536, height: 864 },
-        timezone: 'Europe/Rome',
         locale: 'it-IT',
     },
     {
@@ -52,7 +50,6 @@ export const desktopFingerprintPool: Fingerprint[] = [
         userAgent:
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
         viewport: { width: 1440, height: 900 },
-        timezone: 'Europe/Rome',
         locale: 'it-IT',
     },
     {
@@ -61,7 +58,6 @@ export const desktopFingerprintPool: Fingerprint[] = [
         userAgent:
             'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
         viewport: { width: 1366, height: 768 },
-        timezone: 'Europe/Rome',
         locale: 'it-IT',
     },
     {
@@ -70,7 +66,6 @@ export const desktopFingerprintPool: Fingerprint[] = [
         userAgent:
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 Edg/132.0.0.0',
         viewport: { width: 1600, height: 900 },
-        timezone: 'Europe/Rome',
         locale: 'it-IT',
     },
     {
@@ -78,7 +73,6 @@ export const desktopFingerprintPool: Fingerprint[] = [
         ja3: JA3_FIREFOX,
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:134.0) Gecko/20100101 Firefox/134.0',
         viewport: { width: 1280, height: 720 },
-        timezone: 'Europe/Rome',
         locale: 'it-IT',
     },
 ];
@@ -90,7 +84,6 @@ export const mobileFingerprintPool: Fingerprint[] = [
         userAgent:
             'Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Mobile/15E148 Safari/604.1',
         viewport: { width: 390, height: 844 },
-        timezone: 'Europe/Rome',
         locale: 'it-IT',
         isMobile: true,
         hasTouch: true,
@@ -102,7 +95,6 @@ export const mobileFingerprintPool: Fingerprint[] = [
         userAgent:
             'Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/132.0.0.0 Mobile/15E148 Safari/604.1',
         viewport: { width: 393, height: 852 },
-        timezone: 'Europe/Rome',
         locale: 'it-IT',
         isMobile: true,
         hasTouch: true,
@@ -114,7 +106,6 @@ export const mobileFingerprintPool: Fingerprint[] = [
         userAgent:
             'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Mobile Safari/537.36',
         viewport: { width: 412, height: 915 },
-        timezone: 'Europe/Rome',
         locale: 'it-IT',
         isMobile: true,
         hasTouch: true,
@@ -126,7 +117,6 @@ export const mobileFingerprintPool: Fingerprint[] = [
         userAgent:
             'Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36',
         viewport: { width: 360, height: 800 },
-        timezone: 'Europe/Rome',
         locale: 'it-IT',
         isMobile: true,
         hasTouch: true,
@@ -137,7 +127,6 @@ export const mobileFingerprintPool: Fingerprint[] = [
         ja3: JA3_FIREFOX,
         userAgent: 'Mozilla/5.0 (Android 15; Mobile; rv:134.0) Gecko/134.0 Firefox/134.0',
         viewport: { width: 360, height: 780 },
-        timezone: 'Europe/Rome',
         locale: 'it-IT',
         isMobile: true,
         hasTouch: true,
@@ -149,7 +138,6 @@ export const mobileFingerprintPool: Fingerprint[] = [
         userAgent:
             'Mozilla/5.0 (Linux; Android 14; 2306EPN60G) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Mobile Safari/537.36',
         viewport: { width: 393, height: 873 },
-        timezone: 'Europe/Rome',
         locale: 'it-IT',
         isMobile: true,
         hasTouch: true,

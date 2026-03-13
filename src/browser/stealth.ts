@@ -7,6 +7,19 @@
 import crypto from 'node:crypto';
 import { config } from '../config';
 import { Fingerprint, desktopFingerprintPool, mobileFingerprintPool, pickDeterministicFingerprint } from '../fingerprint/pool';
+import { detectBrowserFamily } from '../proxy/ja3Validator';
+
+// JA3: Quando CycleTLS non è attivo, Playwright usa sempre il TLS stack di Chromium.
+// Un Firefox/Safari UA con TLS Chromium è un'incoerenza rilevabile da Cloudflare/LinkedIn.
+// Filtriamo il pool per includere solo UA coerenti col TLS stack effettivo.
+function filterTlsCoherentPool(pool: ReadonlyArray<Fingerprint>): ReadonlyArray<Fingerprint> {
+    if (config.useJa3Proxy) return pool; // CycleTLS attivo → tutti i fingerprint sono sicuri
+    const filtered = pool.filter((fp) => {
+        const family = detectBrowserFamily(fp.userAgent);
+        return family === 'chrome' || family === 'edge' || family === 'unknown';
+    });
+    return filtered.length > 0 ? filtered : pool; // Fallback al pool completo se filtro troppo aggressivo
+}
 
 const FINGERPRINT_VERSION = '1';
 
@@ -70,7 +83,8 @@ export function pickBrowserFingerprint(
         return normalizeCloudFingerprint(fp, isMobile, accountId);
     }
 
-    const localPool = isMobile ? mobileFingerprintPool : desktopFingerprintPool;
+    const rawPool = isMobile ? mobileFingerprintPool : desktopFingerprintPool;
+    const localPool = filterTlsCoherentPool(rawPool);
     const selected = pickDeterministicFingerprint(localPool, accountId);
     return {
         ...selected,
@@ -101,9 +115,9 @@ export function pickFingerprintMode(accountId?: string): boolean {
 export function pickMobileFingerprint(cloudFingerprints: ReadonlyArray<CloudFingerprint>, accountId: string): BrowserFingerprint {
     const mobileOnly = cloudFingerprints.filter((fp) => fp.isMobile === true);
     if (mobileOnly.length > 0) {
-        // Deterministico: stesso account → stesso fingerprint mobile per ~1 settimana
         return pickBrowserFingerprint(mobileOnly, true, accountId);
     }
+    // Nessun cloud fingerprint mobile → usa pool locale filtrato per coerenza TLS
     return pickBrowserFingerprint([], true, accountId);
 }
 

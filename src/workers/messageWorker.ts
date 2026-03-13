@@ -164,19 +164,27 @@ export async function processMessageJob(
             return workerResult(0);
         }
 
-        const sendBtn = context.session.page.locator(joinSelectors('messageSendButton')).first();
-        if ((await sendBtn.count()) === 0 || (await sendBtn.isDisabled())) {
-            await incrementDailyStat(context.localDate, 'selector_failures');
-            throw new RetryableWorkerError('Bottone invio non disponibile', 'SEND_NOT_AVAILABLE');
-        }
-        await humanMouseMove(context.session.page, joinSelectors('messageSendButton'));
-        await humanDelay(context.session.page, 100, 300);
-        await clickWithFallback(context.session.page, SELECTORS.messageSendButton, 'messageSendButton').catch(
-            async () => {
+        // Se il click Send fallisce DOPO l'incremento atomico, compensiamo
+        // decrementando la stat per evitare phantom increments (NEW-7 fix).
+        try {
+            const sendBtn = context.session.page.locator(joinSelectors('messageSendButton')).first();
+            if ((await sendBtn.count()) === 0 || (await sendBtn.isDisabled())) {
                 await incrementDailyStat(context.localDate, 'selector_failures');
                 throw new RetryableWorkerError('Bottone invio non disponibile', 'SEND_NOT_AVAILABLE');
-            },
-        );
+            }
+            await humanMouseMove(context.session.page, joinSelectors('messageSendButton'));
+            await humanDelay(context.session.page, 100, 300);
+            await clickWithFallback(context.session.page, SELECTORS.messageSendButton, 'messageSendButton').catch(
+                async () => {
+                    await incrementDailyStat(context.localDate, 'selector_failures');
+                    throw new RetryableWorkerError('Bottone invio non disponibile', 'SEND_NOT_AVAILABLE');
+                },
+            );
+        } catch (sendError) {
+            // Compensazione: decrementa messages_sent perché il messaggio NON è stato inviato
+            await incrementDailyStat(context.localDate, 'messages_sent', -1).catch(() => {});
+            throw sendError;
+        }
     }
 
     await transitionLead(lead.id, 'MESSAGED', context.dryRun ? 'message_dry_run' : 'message_sent', {

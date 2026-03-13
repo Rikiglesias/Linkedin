@@ -20,6 +20,7 @@ import {
     updateCloudAccountHealth,
     CloudLeadUpsert,
 } from './supabaseDataClient';
+import { pushOutboxEvent } from '../core/repositories';
 import { logWarn } from '../telemetry/logger';
 
 // ──────────────────────────────────────────────────────────────
@@ -31,8 +32,19 @@ import { logWarn } from '../telemetry/logger';
  * Chiamare dopo addLead() o upsertSalesNavigatorLead() locale.
  */
 export function bridgeLeadUpsert(lead: CloudLeadUpsert): void {
-    void upsertCloudLead(lead).catch((err: unknown) => {
-        void logWarn('cloud_bridge.lead_upsert_failed', { error: err instanceof Error ? err.message : String(err) });
+    void upsertCloudLead(lead).catch(async (err: unknown) => {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        void logWarn('cloud_bridge.lead_upsert_failed', { error: errMsg });
+        // Outbox fallback: garantisce retry via sync worker (CC-28 fix)
+        try {
+            await pushOutboxEvent(
+                'cloud.lead.upsert',
+                { lead, error: errMsg },
+                `cloud.lead.upsert:${lead.linkedin_url}:${Date.now()}`,
+            );
+        } catch {
+            // outbox push best-effort: se anche questo fallisce, il log sopra traccia il problema
+        }
     });
 }
 

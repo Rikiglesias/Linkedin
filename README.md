@@ -60,7 +60,7 @@ Piattaforma di automazione LinkedIn B2B enterprise-grade. Gestisce l'intero funn
 ║       │               │                                         ║
 ║   fingerprint      WebGL/Canvas      humanBehavior.ts           ║
 ║   DoH flags        Perlin noise      mouseGenerator.ts          ║
-║   proxy inject     JA3/TLS spoof     organicContent.ts          ║
+║   proxy inject     JA3/CycleTLS      organicContent.ts          ║
 ║       │                              bimodal keystroke          ║
 ║   selfHealingSelectors               tab visibility sim         ║
 ║   visionCaptchaSolver (LLaVA)                                   ║
@@ -69,7 +69,7 @@ Piattaforma di automazione LinkedIn B2B enterprise-grade. Gestisce l'intero funn
 ╔═════════════════════════▼══════════════════════════════════════╗
 ║                    PERSISTENCE LAYER                            ║
 ║   SQLite (dev) / PostgreSQL (prod)   Supabase (cloud sync)     ║
-║   34 migrations auto-applied         non-blocking fire&forget  ║
+║   55 migrations auto-applied         outbox pattern + retry    ║
 ╚════════════════════════════════════════════════════════════════╝
 ```
 
@@ -199,11 +199,11 @@ linkedin/
 │   │   └── types.ts                # AppConfig interface (295 proprietà tipizzate)
 │   ├── db.ts                       # Astrazione DB duale SQLite/PostgreSQL + query builder
 │   ├── db/
-│   │   └── migrations/             # 34 migration SQL (001–034), applicate all'avvio
+│   │   └── migrations/             # 55 migration SQL (001–055), applicate all'avvio
 │   ├── browser/
 │   │   ├── launcher.ts             # Avvio Playwright: fingerprint, proxy, DoH, stealth
 │   │   ├── stealth.ts              # Selezione profilo fingerprint + fetch API cloud
-│   │   ├── stealthScripts.ts       # 14-layer JS injection (navigator, canvas, WebGL, ...)
+│   │   ├── stealthScripts.ts       # 19-layer JS injection (navigator, canvas, WebGL, font, ...)
 │   │   ├── humanBehavior.ts        # Movimento mouse, typing, tab switch, organic feed
 │   │   ├── organicContent.ts       # Like/reaction/expand-post su feed decoy
 │   │   └── auth.ts                 # Login, cookie persistence, session restore

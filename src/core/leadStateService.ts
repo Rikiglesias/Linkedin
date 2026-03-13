@@ -14,8 +14,8 @@ const allowedTransitions: Record<LeadStatus, LeadStatus[]> = {
     CONNECTED: ['READY_MESSAGE', 'BLOCKED', 'REVIEW_REQUIRED', 'DEAD'],
     READY_MESSAGE: ['MESSAGED', 'BLOCKED', 'REVIEW_REQUIRED', 'DEAD'],
     MESSAGED: ['REPLIED', 'REVIEW_REQUIRED'],
-    REPLIED: [],
-    SKIPPED: [],
+    REPLIED: ['BLOCKED', 'REVIEW_REQUIRED', 'DEAD'],
+    SKIPPED: ['REVIEW_REQUIRED', 'READY_INVITE'],
     BLOCKED: [],
     DEAD: [],
     REVIEW_REQUIRED: ['READY_INVITE', 'READY_MESSAGE', 'INVITED', 'BLOCKED', 'DEAD', 'WITHDRAWN'],
@@ -33,31 +33,43 @@ export async function transitionLead(
     reason: string,
     metadata: Record<string, unknown> = {},
 ): Promise<void> {
-    const lead = await getLeadById(leadId);
-    if (!lead) {
-        throw new Error(`Lead ${leadId} non trovato.`);
-    }
+    const db = await getDatabase();
 
-    const fromStatus = lead.status;
-    const targetStatus = toStatus;
-    if (!isValidLeadTransition(fromStatus, targetStatus)) {
-        throw new Error(`Transizione non consentita: ${fromStatus} -> ${targetStatus}.`);
-    }
+    // Operazioni DB atomiche: se appendLeadEvent o pushOutboxEvent falliscono,
+    // lo status viene rollbackato (prima era non-atomico — CC-6).
+    // AsyncLocalStorage garantisce che getLeadById/setLeadStatus/appendLeadEvent/
+    // pushOutboxEvent usino lo stesso client transazionale.
+    const { lead, fromStatus, targetStatus } = await withTransaction(db, async () => {
+        const txLead = await getLeadById(leadId);
+        if (!txLead) {
+            throw new Error(`Lead ${leadId} non trovato.`);
+        }
 
-    const blockedReason = targetStatus === 'BLOCKED' ? reason : undefined;
-    await setLeadStatus(leadId, targetStatus, undefined, blockedReason);
-    await appendLeadEvent(leadId, fromStatus, targetStatus, reason, metadata);
-    await pushOutboxEvent(
-        'lead.transition',
-        {
-            leadId,
-            fromStatus,
-            toStatus: targetStatus,
-            reason,
-            metadata,
-        },
-        `lead.transition:${leadId}:${fromStatus}:${targetStatus}:${reason}`,
-    );
+        const txFromStatus = txLead.status;
+        const txTargetStatus = toStatus;
+        if (!isValidLeadTransition(txFromStatus, txTargetStatus)) {
+            throw new Error(`Transizione non consentita: ${txFromStatus} -> ${txTargetStatus}.`);
+        }
+
+        const blockedReason = txTargetStatus === 'BLOCKED' ? reason : undefined;
+        await setLeadStatus(leadId, txTargetStatus, undefined, blockedReason);
+        await appendLeadEvent(leadId, txFromStatus, txTargetStatus, reason, metadata);
+        await pushOutboxEvent(
+            'lead.transition',
+            {
+                leadId,
+                fromStatus: txFromStatus,
+                toStatus: txTargetStatus,
+                reason,
+                metadata,
+            },
+            `lead.transition:${leadId}:${txFromStatus}:${txTargetStatus}:${reason}`,
+        );
+
+        return { lead: txLead, fromStatus: txFromStatus, targetStatus: txTargetStatus };
+    });
+
+    // Post-transaction side-effects (non-blocking, non-rollbackabili)
     publishLiveEvent('lead.transition', {
         leadId,
         fromStatus,

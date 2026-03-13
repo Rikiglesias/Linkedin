@@ -26,7 +26,7 @@ import { getSessionHistory } from '../risk/sessionMemory';
 import { retryDelayMs } from '../utils/async';
 import { JobType } from '../types/domain';
 import { WorkerContext } from '../workers/context';
-import { ChallengeDetectedError, resolveWorkerRetryPolicy, RetryableWorkerError } from '../workers/errors';
+import { ChallengeDetectedError, isProxyConnectionError, resolveWorkerRetryPolicy, RetryableWorkerError } from '../workers/errors';
 import { runFollowUpWorker } from '../workers/followUpWorker';
 import { workerRegistry } from '../workers/registry';
 import { transitionLead } from './leadStateService';
@@ -284,11 +284,17 @@ async function runQueuedJobsForAccount(
         const sessionPacingFactor = sessionHistory.pacingFactor;
 
         const visitedProfilesToday = new Set<string>();
+        const { getBehavioralProfile } = await import('../browser/sessionCookieMonitor');
+        const behavioralProfile = getBehavioralProfile(account.sessionDir, account.id);
+        // NEW-4: Inietta profileMultiplier nel DeviceProfile della page
+        // così humanDelay/interJobDelay lo leggono automaticamente via getPageDeviceProfile
+        session.deviceProfile.profileMultiplier = behavioralProfile.avgClickDelayMs / 1000;
         const workerContext: WorkerContext = {
             session,
             dryRun: options.dryRun,
             localDate: options.localDate,
             accountId: account.id,
+            behavioralProfile,
             visitedProfilesToday,
         };
         let consecutiveFailures = 0;
@@ -393,7 +399,10 @@ async function runQueuedJobsForAccount(
                 }
                 const executionResult = await processor.process(job, workerContext);
 
-                processedCurrentJob = true;
+                // CC-5: Solo job con processedCount > 0 contano come "processed".
+                // workerResult(0) con success=true indica skip (blacklist, validazione, etc.)
+                // e non deve sprecare slot budget.
+                processedCurrentJob = executionResult.processedCount > 0;
 
                 await logInfo('job.worker_result', {
                     jobId: job.id,
@@ -438,15 +447,30 @@ async function runQueuedJobsForAccount(
                 consecutiveFailures = 0;
 
                 // ── Campaign state advance ───────────────────────────────
-                // Se il job era parte di una Drip Campaign, avanza lo stato leadcampaign
-                // non-blocking: non blocca la pipeline se fallisce
+                // Se il job era parte di una Drip Campaign, avanza lo stato leadcampaign.
+                // Non blocca la pipeline, ma logga e marca ERROR per evitare stuck (NEW-8 fix).
                 try {
                     const maybeCampaignPayload = parseJobPayload<{ campaignStateId?: number }>(job);
                     if (typeof maybeCampaignPayload.payload.campaignStateId === 'number') {
                         await advanceLeadCampaign(maybeCampaignPayload.payload.campaignStateId);
                     }
-                } catch {
-                    // Ignora errori nella campaign engine — non impatta la job run principale
+                } catch (campaignError) {
+                    const campaignMsg = campaignError instanceof Error ? campaignError.message : String(campaignError);
+                    await logWarn('job_runner.campaign_advance_failed', {
+                        jobId: job.id,
+                        type: job.type,
+                        accountId: account.id,
+                        error: campaignMsg,
+                    });
+                    // Tenta di marcare il campaign state come ERROR per evitare stuck
+                    try {
+                        const fallbackPayload = parseJobPayload<{ campaignStateId?: number }>(job);
+                        if (typeof fallbackPayload.payload.campaignStateId === 'number') {
+                            await failLeadCampaign(fallbackPayload.payload.campaignStateId, campaignMsg);
+                        }
+                    } catch {
+                        // best-effort: se anche failLeadCampaign fallisce, il log sopra traccia il problema
+                    }
                 }
 
                 // Pausa umana tra un job e il successivo (anti-burst)
@@ -514,6 +538,30 @@ async function runQueuedJobsForAccount(
                         message,
                         accountId: account.id,
                     });
+                    break;
+                }
+
+                // ── Proxy failure: terminazione immediata sessione ──────────
+                // Se il proxy è morto (ERR_PROXY_CONNECTION_FAILED, etc.),
+                // ogni retry successivo fallirebbe identicamente. Termina subito
+                // la sessione con wind-down per evitare pattern di reconnect rapidi.
+                if (isProxyConnectionError(error)) {
+                    await markJobRetryOrDeadLetter(job.id, attempts, job.max_attempts, retryDelayMs(attempts, config.retryBaseMs), message);
+                    await logWarn('job_runner.proxy_failure.session_abort', {
+                        jobId: job.id,
+                        type: job.type,
+                        accountId: account.id,
+                        message,
+                    });
+                    await pauseAutomation(
+                        'PROXY_CONNECTION_FAILED',
+                        {
+                            accountId: account.id,
+                            jobId: job.id,
+                            message,
+                        },
+                        15,
+                    );
                     break;
                 }
 

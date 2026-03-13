@@ -31,9 +31,13 @@ export async function getDailyStat(
         | 'profile_views'
         | 'likes_given'
         | 'follows_given',
+    accountId: string = 'default',
 ): Promise<number> {
     const db = await getDatabase();
-    const row = await db.get<Record<string, number>>(`SELECT ${field} FROM daily_stats WHERE date = ?`, [dateString]);
+    const row = await db.get<Record<string, number>>(
+        `SELECT ${field} FROM daily_stats WHERE date = ? AND account_id = ?`,
+        [dateString, accountId],
+    );
     return row?.[field] ?? 0;
 }
 
@@ -113,7 +117,7 @@ export async function getComplianceHealthMetrics(
     };
 }
 
-export async function getDailyStatsSnapshot(dateString: string): Promise<DailyStatsSnapshot> {
+export async function getDailyStatsSnapshot(dateString: string, accountId: string = 'default'): Promise<DailyStatsSnapshot> {
     const db = await getDatabase();
     const row = await db.get<{
         invites_sent: number;
@@ -122,8 +126,8 @@ export async function getDailyStatsSnapshot(dateString: string): Promise<DailySt
         selector_failures: number;
         run_errors: number;
     }>(
-        `SELECT invites_sent, messages_sent, challenges_count, selector_failures, run_errors FROM daily_stats WHERE date = ?`,
-        [dateString],
+        `SELECT invites_sent, messages_sent, challenges_count, selector_failures, run_errors FROM daily_stats WHERE date = ? AND account_id = ?`,
+        [dateString, accountId],
     );
 
     return {
@@ -136,7 +140,7 @@ export async function getDailyStatsSnapshot(dateString: string): Promise<DailySt
     };
 }
 
-export async function getRecentDailyStats(limit: number): Promise<DailyStatsSnapshot[]> {
+export async function getRecentDailyStats(limit: number, accountId: string = 'default'): Promise<DailyStatsSnapshot[]> {
     const db = await getDatabase();
     const safeLimit = Math.max(1, Math.floor(limit));
     const rows = await db.query<{
@@ -150,10 +154,11 @@ export async function getRecentDailyStats(limit: number): Promise<DailyStatsSnap
         `
         SELECT date, invites_sent, messages_sent, challenges_count, selector_failures, run_errors
         FROM daily_stats
+        WHERE account_id = ?
         ORDER BY date DESC
         LIMIT ?
     `,
-        [safeLimit],
+        [accountId, safeLimit],
     );
 
     return rows.map((row) => ({
@@ -637,14 +642,15 @@ export async function incrementDailyStat(
         | 'likes_given'
         | 'follows_given',
     amount: number = 1,
+    accountId: string = 'default',
 ): Promise<void> {
     const db = await getDatabase();
     await db.run(
         `
-        INSERT INTO daily_stats (date, ${field}) VALUES (?, ?)
-        ON CONFLICT(date) DO UPDATE SET ${field} = ${field} + ?
+        INSERT INTO daily_stats (date, account_id, ${field}) VALUES (?, ?, ?)
+        ON CONFLICT(date, account_id) DO UPDATE SET ${field} = ${field} + ?
     `,
-        [dateString, amount, amount],
+        [dateString, accountId, amount, amount],
     );
 }
 
@@ -656,19 +662,20 @@ export async function incrementDailyStat(
  */
 export async function checkAndIncrementDailyLimit(
     dateString: string,
-    field: 'messages_sent' | 'follow_ups_sent',
+    field: 'invites_sent' | 'messages_sent' | 'follow_ups_sent',
     hardCap: number,
+    accountId: string = 'default',
 ): Promise<boolean> {
     const db = await getDatabase();
 
     // Upsert atomico: INSERT o UPDATE solo se il valore corrente < hardCap
     const result = await db.run(
         `
-        INSERT INTO daily_stats (date, ${field}) VALUES (?, 1)
-        ON CONFLICT(date) DO UPDATE SET ${field} = ${field} + 1
+        INSERT INTO daily_stats (date, account_id, ${field}) VALUES (?, ?, 1)
+        ON CONFLICT(date, account_id) DO UPDATE SET ${field} = ${field} + 1
         WHERE ${field} < ?
     `,
-        [dateString, hardCap],
+        [dateString, accountId, hardCap],
     );
 
     // Se changes === 0, il WHERE ha bloccato l'update → cap raggiunto
@@ -691,11 +698,11 @@ export async function incrementListDailyStat(
     );
 }
 
-export async function countWeeklyInvites(weekStartDate: string): Promise<number> {
+export async function countWeeklyInvites(weekStartDate: string, accountId: string = 'default'): Promise<number> {
     const db = await getDatabase();
     const row = await db.get<{ total: number }>(
-        `SELECT COALESCE(SUM(invites_sent), 0) as total FROM daily_stats WHERE date >= ?`,
-        [weekStartDate],
+        `SELECT COALESCE(SUM(invites_sent), 0) as total FROM daily_stats WHERE date >= ? AND account_id = ?`,
+        [weekStartDate, accountId],
     );
     return row?.total ?? 0;
 }

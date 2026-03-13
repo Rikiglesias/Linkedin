@@ -38,6 +38,13 @@ export interface PreflightConfigStatus {
     budgetMessages: number;
     invitesSentToday: number;
     messagesSentToday: number;
+    proxyIpReputation: {
+        ip: string;
+        abuseScore: number;
+        isSafe: boolean;
+        isp: string;
+        country: string;
+    } | null;
 }
 
 export interface PreflightWarning {

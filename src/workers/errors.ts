@@ -45,11 +45,29 @@ const RETRY_POLICY_BY_CODE: Record<string, RetryPolicyTemplate> = {
     WORKER_REPORTED_FAILURE: { retryable: true, maxAttempts: 2, baseDelayMultiplier: 1.5, category: 'workflow' },
     ACCEPTANCE_PENDING: { retryable: true, maxAttempts: 40, baseDelayMultiplier: 0, fixedDelayMs: 30_000, category: 'workflow' },
     WEEKLY_LIMIT_REACHED: { retryable: false, maxAttempts: 1, baseDelayMultiplier: 0, category: 'quota' },
+    SESSION_EXPIRED: { retryable: false, maxAttempts: 1, baseDelayMultiplier: 0, category: 'workflow' },
     LEAD_NOT_FOUND: { retryable: false, maxAttempts: 1, baseDelayMultiplier: 0, category: 'data' },
     UNKNOWN_JOB_TYPE: { retryable: false, maxAttempts: 1, baseDelayMultiplier: 0, category: 'data' },
 };
 
 const TRANSIENT_ERROR_PATTERNS = [/timeout/i, /target closed/i, /navigation/i, /net::/i, /context closed/i];
+
+const PROXY_ERROR_PATTERNS = [
+    /ERR_PROXY_CONNECTION_FAILED/i,
+    /ERR_TUNNEL_CONNECTION_FAILED/i,
+    /ERR_PROXY_AUTH_UNSUPPORTED/i,
+    /ERR_SOCKS_CONNECTION_FAILED/i,
+    /ERR_PROXY_CERTIFICATE_INVALID/i,
+    /proxy.*refused/i,
+    /proxy.*reset/i,
+    /proxy.*unreachable/i,
+];
+
+export function isProxyConnectionError(error: unknown): boolean {
+    if (!error) return false;
+    const msg = error instanceof Error ? error.message : String(error);
+    return PROXY_ERROR_PATTERNS.some((pattern) => pattern.test(msg));
+}
 
 export function resolveWorkerRetryPolicy(
     error: unknown,

@@ -304,6 +304,22 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
         when: (cfg) => !cfg.sessionDir,
     },
     {
+        message: '[CONFIG] SOFT_INVITE_CAP deve essere >= 1 (valore 0 disabilita gli inviti senza warning)',
+        when: (cfg) => cfg.softInviteCap < 1,
+    },
+    {
+        message: '[CONFIG] HARD_INVITE_CAP deve essere >= 1',
+        when: (cfg) => cfg.hardInviteCap < 1,
+    },
+    {
+        message: '[CONFIG] SOFT_MSG_CAP deve essere >= 1 (valore 0 disabilita i messaggi senza warning)',
+        when: (cfg) => cfg.softMsgCap < 1,
+    },
+    {
+        message: '[CONFIG] HARD_MSG_CAP deve essere >= 1',
+        when: (cfg) => cfg.hardMsgCap < 1,
+    },
+    {
         message: '[CONFIG] SOFT_INVITE_CAP deve essere <= HARD_INVITE_CAP',
         when: (cfg) => cfg.softInviteCap > cfg.hardInviteCap,
     },

@@ -230,6 +230,8 @@ export interface AppConfig {
     proxyQualityCheckIntervalMinutes: number;
     proxyQualityMinScore: number;
     proxyQualityAsnApiUrl: string;
+    ipReputationApiKey: string;
+    ipReputationMaxAbuseScore: number;
     ssiDynamicLimitsEnabled: boolean;
     ssiStateKey: string;
     ssiDefaultScore: number;

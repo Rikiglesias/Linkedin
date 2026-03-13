@@ -1,7 +1,7 @@
 # Roadmap v2.1 + Ottimizzazioni Anti-Ban Avanzate
 
-**Data**: 2026-03-12  
-**Baseline**: v2.0.0-beta.1 — 137 test, audit completo, 0 debito critico  
+**Data**: 2026-03-12 | **Aggiornato**: 2026-03-13  
+**Baseline**: v2.0.0-beta.1 — 202 test, audit 52/52 task completati, 0 debito critico  
 **Principio guida**: anti-ban viene PRIMA di ogni feature. Ogni proposta è valutata per impatto detection.
 
 ---
@@ -19,7 +19,7 @@ L'architettura anti-ban è già solida:
 
 ### Proposte miglioramento (ordinate per impatto/rischio)
 
-#### AB-1: Behavioral Fingerprint Cross-Session (ALTO impatto, BASSO rischio)
+#### AB-1: Behavioral Fingerprint Cross-Session (ALTO impatto, BASSO rischio) ✔️ IMPLEMENTATO
 **Problema**: LinkedIn può correlare sessioni diverse dello stesso account analizzando pattern comportamentali (timing tra click, velocità scroll, ordine navigazione). Attualmente ogni sessione parte da zero — nessuna memoria comportamentale.
 
 **Proposta**: `sessionMemory.ts` già traccia `pacingFactor` — estenderlo con un **profilo comportamentale persistente** per account:
@@ -33,6 +33,7 @@ I valori vengono seedati dalla prima sessione e poi mantenuti con drift lento (�
 **Impatto anti-ban**: alto. LinkedIn usa ML per behavioral fingerprinting — sessioni coerenti nel tempo sono meno sospette.
 **Rischio**: basso. Solo lettura/scrittura `.session-meta.json`, nessun cambio nel flusso browser.
 **Effort**: 1 sessione.
+**Stato**: ✅ Implementato (2026-03-13). `getBehavioralProfile` genera profilo deterministico per account, `profileMultiplier` wired in `humanDelay`/`interJobDelay` via `DeviceProfile` WeakMap.
 
 #### AB-2: Geolocation Consistency (ALTO impatto, MEDIO rischio)
 **Problema**: se il proxy cambia IP da Milano a Roma tra sessioni, LinkedIn vede un "teletrasporto" sospetto. `proxyManager.ts` ha rotation ma nessun vincolo geografico.
@@ -76,14 +77,12 @@ Il trust score modula il budget con curva non-lineare: account giovane con basso
 **Impatto anti-ban**: basso (inbox monitoring è già non-critico).
 **Effort**: 15 minuti.
 
-#### AB-6: Browser Memory Footprint Realismo (BASSO impatto, MEDIO rischio)
+#### AB-6: Browser Memory Footprint Realismo (BASSO impatto, MEDIO rischio) ✔️ GIÀ IMPLEMENTATO
 **Problema**: `performance.memory` in Chromium espone `usedJSHeapSize` — un browser con 0 history e poche tab ha un heap piccolo e costante, diverso da un browser reale con decine di tab e history.
 
 **Proposta**: mock `performance.memory` in `stealthScripts.ts` con valori realistici che crescono durante la sessione (simulando memory leak naturale di un browser con tab aperte).
 
-**Impatto anti-ban**: basso (pochi detector usano questo segnale).
-**Rischio**: medio — tocca stealth scripts.
-**Effort**: 30 minuti.
+**Stato**: ✅ Già implementato nella sezione 12 di `stealthScripts.ts`. Heap cresce progressivamente (~800KB/min con jitter ±20%).
 
 ---
 

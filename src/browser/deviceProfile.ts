@@ -7,6 +7,8 @@ export interface DeviceProfile {
     canvasNoise?: number;
     webglNoise?: number;
     audioNoise?: number;
+    /** Per-account timing multiplier from behavioral profile (NEW-4). Default 1.0. */
+    profileMultiplier?: number;
 }
 
 const pageProfileMap = new WeakMap<Page, DeviceProfile>();

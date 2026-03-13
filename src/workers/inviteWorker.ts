@@ -9,6 +9,7 @@ import {
     simulateHumanReading,
 } from '../browser';
 import {
+    checkAndIncrementDailyLimit,
     incrementDailyStat,
     incrementListDailyStat,
     recordLeadTimingAttribution,
@@ -25,6 +26,7 @@ import { ChallengeDetectedError, RetryableWorkerError } from './errors';
 import { attemptChallengeResolution } from './challengeHandler';
 import { isSalesNavigatorUrl } from '../linkedinUrl';
 import { config } from '../config';
+import { isLoggedIn } from '../browser/auth';
 import { buildPersonalizedInviteNote } from '../ai/inviteNotePersonalizer';
 import { pauseAutomation } from '../risk/incidentManager';
 import { bridgeDailyStat, bridgeLeadStatus } from '../cloud/cloudBridge';
@@ -162,7 +164,9 @@ async function handleInviteModal(
                 }
             }
         } catch (e) {
-            console.error('[INVITE] Errore generazione nota AI, invio senza nota', e);
+            const errMsg = e instanceof Error ? e.message : String(e);
+            await logInfo('invite.ai_note_fallback', { leadId: lead.id, error: errMsg });
+            await incrementDailyStat(localDate, 'run_errors');
         }
 
         // Se la nota è vuota (AI down, errore parsing, template vuoto), NON digitare
@@ -403,6 +407,16 @@ export async function processInviteJob(
         }
     }
 
+    // Atomic daily cap check: incrementa invites_sent solo se sotto il limite.
+    // Fatto PRIMA del click per non sprecare azioni su LinkedIn se il cap è raggiunto.
+    if (!context.dryRun) {
+        const withinCap = await checkAndIncrementDailyLimit(context.localDate, 'invites_sent', config.hardInviteCap);
+        if (!withinCap) {
+            await logInfo('invite.daily_cap_reached', { leadId: lead.id, cap: config.hardInviteCap });
+            return workerResult(0);
+        }
+    }
+
     // Pre-click: check weekly invite limit before sending (prevents wasted invites)
     if (!context.dryRun) {
         const preClickLimitReached = await detectWeeklyInviteLimit(context.session.page);
@@ -418,6 +432,19 @@ export async function processInviteJob(
                 7 * 24 * 60,
             );
             throw new RetryableWorkerError('Limite settimanale inviti raggiunto (pre-click)', 'WEEKLY_LIMIT_REACHED');
+        }
+    }
+
+    // CC-18: Session validity check prima di azioni critiche.
+    // Se il cookie è scaduto mid-session, la pagina redirige al login.
+    // Detectare subito evita retry inutili su una pagina di login.
+    if (!context.dryRun) {
+        const stillLoggedIn = await isLoggedIn(context.session.page);
+        if (!stillLoggedIn) {
+            throw new RetryableWorkerError(
+                'Sessione LinkedIn scaduta durante il flusso invite — aborto per evitare retry su login page',
+                'SESSION_EXPIRED',
+            );
         }
     }
 
@@ -477,6 +504,14 @@ export async function processInviteJob(
             new Promise<false>((resolve) => setTimeout(() => resolve(false), 5000)),
         ]);
     if (!proofOfSend) {
+        // NEW-9: Prima di ritentare, verifica se il lead è già INVITED nel DB.
+        // Se sì, l'invito è stato inviato ma il proof-of-send ha fatto timeout (rete lenta).
+        // Ritentare causerebbe un invito duplicato.
+        const freshLead = await getLeadById(lead.id);
+        if (freshLead?.status === 'INVITED') {
+            await logInfo('invite.proof_timeout_already_invited', { leadId: lead.id });
+            return workerResult(1);
+        }
         throw new RetryableWorkerError('Proof-of-send non rilevato', 'NO_PROOF_OF_SEND');
     }
 
@@ -505,7 +540,7 @@ export async function processInviteJob(
         const hourBucket = inferHourBucket(new Date().getHours());
         await recordSent(inviteResult.variant, { segmentKey, hourBucket }).catch(() => { });
     }
-    await incrementDailyStat(context.localDate, 'invites_sent');
+    // invites_sent already incremented atomically by checkAndIncrementDailyLimit (pre-send)
     await incrementListDailyStat(context.localDate, lead.list_name, 'invites_sent');
     // Cloud sync non-bloccante
     bridgeLeadStatus(lead.linkedin_url, 'INVITED', {

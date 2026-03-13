@@ -1,7 +1,7 @@
 # Security & Privacy Hardening
 
 ## What is already hardened
-- Browser stealth layer: 18 runtime patches in `stealthScripts.ts` (WebRTC kill, navigator normalization, plugins mock, headless guards, battery/audio/WebGL spoofing, CDP leak prevention). Patches are configurable: `STEALTH_SKIP_SECTIONS` disables specific sections, `CLOAKBROWSER_ENABLED` delegates to binary-level stealth. Canvas/WebGL noise is deterministic per fingerprint via PRNG Mulberry32.
+- Browser stealth layer: 19 runtime patches in `stealthScripts.ts` (WebRTC kill, navigator normalization, plugins mock, headless guards, battery/audio/WebGL spoofing, CDP leak prevention, font enumeration defense, platform consistency for iPhone/Android). Firefox UA gets Firefox-appropriate patches (no Chrome plugins/window.chrome). Patches are configurable: `STEALTH_SKIP_SECTIONS` disables specific sections, `CLOAKBROWSER_ENABLED` delegates to binary-level stealth. Canvas/WebGL noise is deterministic per fingerprint via PRNG Mulberry32 with per-region seed. Audio noise uses pseudo-random sample selection (not fixed interval).
 - Fingerprint deterministic selection: same account gets same fingerprint (UA, viewport, WebGL renderer, canvas noise) for ~1 week, then rotates automatically. No random variation between sessions.
 - Automatic pause/quarantine on risk bursts.
 - Sensitive log redaction (`token`, `key`, `cookie`, JWT-like values).
@@ -11,6 +11,12 @@
 - Security audit trail for critical operations (auth, controls, incidents).
 - Secret rotation inventory with CLI governance commands.
 - Per-account health snapshots for multi-account runtime.
+- PostgreSQL transactions atomiche via `AsyncLocalStorage`: tutte le query in una transazione usano lo stesso client PG. SQLite supporta nested transactions via SAVEPOINT.
+- JA3/TLS coherence: fingerprint pool filtrato per coerenza UA↔TLS quando CycleTLS non è attivo. Con CycleTLS, JA3 spoofing reale per ogni browser family.
+- IP reputation pre-check via AbuseIPDB: proxy con IP blacklisted scartati prima del lancio browser. Cache 24h per IP.
+- SQLite disk space guard: `checkDiskSpace()` al boot e ad ogni ciclo workflow. Sotto 100MB → pausa automazione + alert Telegram.
+- daily_stats per-account (migration 055): budget giornaliero isolato per account in setup multi-account.
+- Cloud lead sync con outbox fallback: se il sync diretto fallisce, l'evento viene salvato nella outbox per retry automatico.
 
 ## Threat model
 - Full model: [THREAT_MODEL.md](/c:/Users/albie/Desktop/Programmi/Linkedin/THREAT_MODEL.md)
@@ -114,8 +120,7 @@ It does not delete active leads/jobs.
 ## AI key hygiene (if enabled)
 - Keep `OPENAI_API_KEY` only in local `.env` (never in repository files).
 - Rotate key periodically and after any suspected leak.
-- Keep `AI_PERSONALIZATION_ENABLED=false` / `AI_GUARDIAN_ENABLED=false` until dry-run validation is complete.
-- **Current deployment uses `AI_ALLOW_REMOTE_ENDPOINT=true`** with OpenAI GPT-5.4 for superior quality. This is intentional — the `AI_ALLOW_REMOTE_ENDPOINT` flag serves as a guardrail: set to `false` to force Ollama-only local AI. Green mode model (`AI_GREEN_MODEL`) always uses Ollama regardless of this flag.
+- **Current deployment**: `AI_PERSONALIZATION_ENABLED=true`, `AI_GUARDIAN_ENABLED=true`, `AI_SENTIMENT_ENABLED=true`, `AI_ALLOW_REMOTE_ENDPOINT=true` with OpenAI GPT-5.4. The `AI_ALLOW_REMOTE_ENDPOINT` flag serves as a guardrail: set to `false` to force Ollama-only local AI. Green mode model (`AI_GREEN_MODEL`) uses Ollama when available.
 
 ## Database guardrail
 - SQLite is blocked in `NODE_ENV=production` unless `ALLOW_SQLITE_IN_PRODUCTION=true` is set explicitly.

@@ -3,6 +3,26 @@ import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 
 export type AlertSeverity = 'info' | 'warn' | 'critical';
 
+// ─── Rate Limiter (CC-21) ────────────────────────────────────────────────
+// Sliding window: max RATE_LIMIT_MAX alert per RATE_LIMIT_WINDOW_MS.
+// Previene flooding del bot Telegram durante cascading failures.
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 10;
+const alertTimestamps: number[] = [];
+
+function isRateLimited(): boolean {
+    const now = Date.now();
+    // Rimuovi timestamp fuori dalla finestra
+    while (alertTimestamps.length > 0 && (alertTimestamps[0] ?? 0) < now - RATE_LIMIT_WINDOW_MS) {
+        alertTimestamps.shift();
+    }
+    if (alertTimestamps.length >= RATE_LIMIT_MAX) {
+        return true;
+    }
+    alertTimestamps.push(now);
+    return false;
+}
+
 export async function sendTelegramAlert(
     message: string,
     title?: string,
@@ -12,13 +32,18 @@ export async function sendTelegramAlert(
         return;
     }
 
+    if (isRateLimited()) {
+        console.warn(`[TELEGRAM] Alert rate-limited (max ${RATE_LIMIT_MAX}/min): ${title ?? message.slice(0, 80)}`);
+        return;
+    }
+
     const icons: Record<AlertSeverity, string> = {
         info: 'ℹ️',
         warn: '⚠️',
         critical: '🚨',
     };
 
-    const header = title ? `${icons[severity]} *${title}*\n\n` : `${icons[severity]} `;
+    const header = title ? `${icons[severity]} <b>${title}</b>\n\n` : `${icons[severity]} `;
     const text = `${header}${message}`;
 
     const endpoint = `https://api.telegram.org/bot${config.telegramBotToken}/sendMessage`;

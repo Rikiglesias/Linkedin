@@ -11,6 +11,7 @@ import {
 } from '../risk/riskEngine';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { runEventSyncOnce } from '../sync/eventSync';
+import { checkDiskSpace } from '../db';
 import { ListScheduleBreakdown, scheduleJobs, workflowToJobTypes, WorkflowSelection } from './scheduler';
 import { runSiteCheck } from './audit';
 
@@ -326,6 +327,22 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
                 remainingSeconds: pauseState.remainingSeconds,
             });
             return;
+        }
+    }
+
+    if (!options.dryRun) {
+        const diskStatus = checkDiskSpace();
+        if (diskStatus.level === 'critical') {
+            await pauseAutomation(
+                'DISK_SPACE_CRITICAL',
+                { freeMb: diskStatus.freeMb, message: diskStatus.message },
+                60,
+            );
+            await logWarn('workflow.skipped.disk_critical', { freeMb: diskStatus.freeMb });
+            return;
+        }
+        if (diskStatus.level === 'warn') {
+            await logWarn('workflow.disk_warn', { freeMb: diskStatus.freeMb, message: diskStatus.message });
         }
     }
 

@@ -889,7 +889,16 @@ export function startServer(port: number = 3000) {
     // ── WebSocket server (real-time push, same port) ─────────────────────────
     const wss = new WebSocketServer({ server, path: '/ws' });
 
-    wss.on('connection', (ws) => {
+    wss.on('connection', (ws, req) => {
+        // CC-10: Auth token-based per WebSocket
+        if (config.dashboardAuthEnabled && config.dashboardApiKey) {
+            const url = new URL(req.url ?? '', `http://${req.headers.host ?? 'localhost'}`);
+            const token = url.searchParams.get('token') ?? '';
+            if (!secureEquals(token, config.dashboardApiKey)) {
+                ws.close(4401, 'Unauthorized');
+                return;
+            }
+        }
         const onEvent = (event: LiveEventMessage): void => {
             if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify(event));

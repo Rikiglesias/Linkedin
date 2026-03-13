@@ -258,9 +258,16 @@ function evaluateAdaptiveBudgetContext(
     const invited = statusCounts.INVITED ?? 0;
     const acceptedLike =
         (statusCounts.ACCEPTED ?? 0) + (statusCounts.READY_MESSAGE ?? 0) + (statusCounts.MESSAGED ?? 0);
+    // Tutti i lead che hanno ricevuto un invito (allineato con stats.ts getRiskInputs
+    // che usa `invited_at IS NOT NULL` come denominatore globale — CC-4 fix).
+    const everInvitedOutcome =
+        acceptedLike +
+        (statusCounts.REPLIED ?? 0) +
+        (statusCounts.CONNECTED ?? 0) +
+        (statusCounts.WITHDRAWN ?? 0);
     const blockedSkipped = (statusCounts.BLOCKED ?? 0) + (statusCounts.SKIPPED ?? 0);
 
-    const pendingRatioDenominator = Math.max(1, invited + acceptedLike);
+    const pendingRatioDenominator = Math.max(1, invited + everInvitedOutcome);
     const pendingRatio = invited / pendingRatioDenominator;
 
     const blockedRatioDenominator = Math.max(1, invited + acceptedLike + blockedSkipped);
@@ -512,8 +519,8 @@ export async function scheduleJobs(
     const inviteMoodFactor = moodFactor + ratioShift;
     const messageMoodFactor = moodFactor - ratioShift;
 
-    inviteBudget = Math.max(1, Math.round(inviteBudget * inviteMoodFactor));
-    messageBudget = Math.max(1, Math.round(messageBudget * messageMoodFactor));
+    inviteBudget = inviteBudget > 0 ? Math.max(1, Math.round(inviteBudget * inviteMoodFactor)) : 0;
+    messageBudget = messageBudget > 0 ? Math.max(1, Math.round(messageBudget * messageMoodFactor)) : 0;
 
     // Session limit: cap budget per singola sessione workflow
     if (options.sessionLimit !== null && options.sessionLimit !== undefined && options.sessionLimit > 0) {

@@ -127,6 +127,8 @@ async function reactToPost(page: Page): Promise<void> {
                     await humanMouseMoveToCoords(page, rBox.x + rBox.width / 2, rBox.y + rBox.height / 2);
                     await humanDelay(page, 200, 500);
                     await specificReaction.click({ delay: randomInt(40, 90) });
+                    // NEW-12: Dwell time post-reaction (osserva conteggio reazioni)
+                    await humanDelay(page, 500, 2000);
                     await logInfo('organicContent.specificReaction', {});
                     return;
                 }
@@ -135,6 +137,8 @@ async function reactToPost(page: Page): Promise<void> {
 
         // Fallback a un semplice Like / React Toggle
         await locator.click({ delay: randomInt(40, 100) });
+        // NEW-12: Dwell time post-like (osserva animazione contatore)
+        await humanDelay(page, 500, 1800);
         await logInfo('organicContent.genericLike', {});
         return;
     }

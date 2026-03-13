@@ -77,6 +77,26 @@ export async function collectConfigStatus(): Promise<PreflightConfigStatus> {
     const invitesSentToday = await getDailyStat(localDate, 'invites_sent');
     const messagesSentToday = await getDailyStat(localDate, 'messages_sent');
 
+    // IP reputation check del proxy attivo (NEW-15)
+    let proxyIpReputation: PreflightConfigStatus['proxyIpReputation'] = null;
+    if (config.ipReputationApiKey && config.proxyUrl) {
+        try {
+            const { checkIpReputation } = await import('../proxy/ipReputationChecker');
+            const result = await checkIpReputation(config.proxyUrl);
+            if (result) {
+                proxyIpReputation = {
+                    ip: result.ip,
+                    abuseScore: result.abuseConfidenceScore,
+                    isSafe: result.isSafe,
+                    isp: result.isp,
+                    country: result.countryCode,
+                };
+            }
+        } catch {
+            // Best-effort: se fallisce, procedi senza
+        }
+    }
+
     return {
         proxyConfigured: !!config.proxyUrl,
         apolloConfigured: !!config.apolloApiKey,
@@ -91,7 +111,21 @@ export async function collectConfigStatus(): Promise<PreflightConfigStatus> {
         budgetMessages: config.hardMsgCap,
         invitesSentToday,
         messagesSentToday,
+        proxyIpReputation,
     };
+}
+
+/**
+ * Helper per tutti i workflow: aggiunge warning se il proxy è blacklisted.
+ * Chiamare dentro generateWarnings() di ogni workflow.
+ */
+export function appendProxyReputationWarning(warnings: PreflightWarning[], cfgStatus: PreflightConfigStatus): void {
+    if (cfgStatus.proxyIpReputation && !cfgStatus.proxyIpReputation.isSafe) {
+        warnings.push({
+            level: 'critical',
+            message: `Proxy IP ${cfgStatus.proxyIpReputation.ip} BLACKLISTED (abuse score: ${cfgStatus.proxyIpReputation.abuseScore}/100, ISP: ${cfgStatus.proxyIpReputation.isp}). Cambiare proxy prima di procedere.`,
+        });
+    }
 }
 
 // ─── Display Functions ───────────────────────────────────────────────────────
@@ -139,6 +173,9 @@ function displayConfigStatus(cs: PreflightConfigStatus): void {
         ['AI Personalization:', checkMark(cs.aiConfigured) + ' ' + (cs.aiConfigured ? 'attivo' : 'mancante')],
         ['Supabase Cloud:', checkMark(cs.supabaseConfigured) + ' ' + (cs.supabaseConfigured ? 'attivo' : 'non configurato')],
         ['Proxy:', checkMark(cs.proxyConfigured) + ' ' + (cs.proxyConfigured ? 'configurato' : 'diretto (no proxy)')],
+        ...(cs.proxyIpReputation ? [['Proxy IP Reputation:', cs.proxyIpReputation.isSafe
+            ? `${checkMark(true)} ${cs.proxyIpReputation.ip} — score ${cs.proxyIpReputation.abuseScore}/100 (${cs.proxyIpReputation.isp}, ${cs.proxyIpReputation.country})`
+            : `${checkMark(false)} ${cs.proxyIpReputation.ip} — BLACKLISTED score ${cs.proxyIpReputation.abuseScore}/100 (${cs.proxyIpReputation.isp})`] as [string, string]] : []),
         ['Growth Model:', checkMark(cs.growthModelEnabled) + ' ' + (cs.growthModelEnabled ? 'attivo' : 'disabilitato')],
         ['Weekly Strategy:', checkMark(cs.weeklyStrategyEnabled) + ' ' + (cs.weeklyStrategyEnabled ? 'attivo' : 'disabilitato')],
         ['Budget inviti:', `${cs.invitesSentToday}/${cs.budgetInvites} oggi`],

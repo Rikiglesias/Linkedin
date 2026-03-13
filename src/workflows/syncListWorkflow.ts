@@ -4,7 +4,7 @@
 
 import { config } from '../config';
 import { runSalesNavigatorListSync, formatFinalReport } from '../core/salesNavigatorSync';
-import { runPreflight } from './preflight';
+import { runPreflight, appendProxyReputationWarning } from './preflight';
 import { formatWorkflowReport } from './reportFormatter';
 import type { PreflightDbStats, PreflightConfigStatus, PreflightWarning, WorkflowReport } from './types';
 
@@ -27,6 +27,8 @@ function generateWarnings(
     _answers: Record<string, string>,
 ): PreflightWarning[] {
     const warnings: PreflightWarning[] = [];
+
+    appendProxyReputationWarning(warnings, cfgStatus);
 
     if (!cfgStatus.proxyConfigured) {
         warnings.push({ level: 'warn', message: 'Nessun proxy configurato — connessione diretta (rischio detection)' });

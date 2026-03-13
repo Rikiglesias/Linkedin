@@ -10,15 +10,7 @@ export function parsePayload<T>(raw: string): T {
 }
 
 export async function withTransaction<T>(database: DatabaseManager, callback: () => Promise<T>): Promise<T> {
-    await database.exec('BEGIN');
-    try {
-        const result = await callback();
-        await database.exec('COMMIT');
-        return result;
-    } catch (error) {
-        await database.exec('ROLLBACK');
-        throw error;
-    }
+    return database.withTransaction(() => callback());
 }
 
 export function normalizeLegacyStatus(status: LeadStatus): LeadStatus {

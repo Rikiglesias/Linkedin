@@ -197,20 +197,52 @@ export function parseJobPayload<T extends Record<string, unknown>>(job: JobRecor
 
 export async function recoverStuckJobs(staleAfterMinutes: number = 30): Promise<number> {
     const db = await getDatabase();
-    const result = await db.run(
-        `UPDATE jobs
-         SET status = 'QUEUED',
-             locked_at = NULL,
-             updated_at = CURRENT_TIMESTAMP,
-             last_error = 'Recovered from RUNNING on startup'
-         WHERE status = 'RUNNING'
-           AND (
-             locked_at IS NULL
-             OR locked_at <= DATETIME('now', '-' || ? || ' minutes')
-           )`,
-        [Math.max(1, staleAfterMinutes)],
-    );
-    return result.changes ?? 0;
+    const safeMinutes = Math.max(1, staleAfterMinutes);
+
+    return withTransaction(db, async () => {
+        // Trova i job stuck PRIMA di resetarli (per recuperare i leadId)
+        const stuckJobs = await db.query<{ id: number; type: string; payload_json: string }>(
+            `SELECT id, type, payload_json FROM jobs
+             WHERE status = 'RUNNING'
+               AND (locked_at IS NULL OR locked_at <= DATETIME('now', '-' || ? || ' minutes'))`,
+            [safeMinutes],
+        );
+
+        if (stuckJobs.length === 0) return 0;
+
+        // Resetta i job stuck → QUEUED
+        const result = await db.run(
+            `UPDATE jobs
+             SET status = 'QUEUED',
+                 locked_at = NULL,
+                 updated_at = CURRENT_TIMESTAMP,
+                 last_error = 'Recovered from RUNNING on startup'
+             WHERE status = 'RUNNING'
+               AND (locked_at IS NULL OR locked_at <= DATETIME('now', '-' || ? || ' minutes'))`,
+            [safeMinutes],
+        );
+
+        // Resetta i lead associati ai job stuck a REVIEW_REQUIRED.
+        // Solo per job type che hanno un leadId nel payload (INVITE, MESSAGE, ACCEPTANCE_CHECK).
+        const leadJobTypes = new Set(['INVITE', 'MESSAGE', 'ACCEPTANCE_CHECK']);
+        for (const stuckJob of stuckJobs) {
+            if (!leadJobTypes.has(stuckJob.type)) continue;
+            try {
+                const payload = parsePayload<{ leadId?: number }>(stuckJob.payload_json);
+                if (typeof payload.leadId === 'number') {
+                    await db.run(
+                        `UPDATE leads SET status = 'REVIEW_REQUIRED', last_error = ?, updated_at = CURRENT_TIMESTAMP
+                         WHERE id = ? AND status NOT IN ('ACCEPTED', 'CONNECTED', 'MESSAGED', 'REPLIED', 'BLOCKED', 'DEAD')`,
+                        [`Job ${stuckJob.id} stuck recovery`, payload.leadId],
+                    );
+                }
+            } catch {
+                // payload parsing failure: skip lead reset for this job
+            }
+        }
+
+        return result.changes ?? 0;
+    });
 }
 
 export async function getFailedJobs(limit: number): Promise<JobRecord[]> {
@@ -227,6 +259,32 @@ export async function markJobAsDeadLetter(jobId: number, explanation: string): P
          WHERE id = ?`,
         [explanation, now, jobId],
     );
+}
+
+/**
+ * Cancella job QUEUED in eccesso per un dato tipo, mantenendo solo `maxToKeep`.
+ * Usato quando un cap diminuisce via hot-reload (CC-24).
+ * Cancella i job più recenti (LIFO — i più vecchi hanno priorità).
+ */
+export async function cancelExcessQueuedJobs(jobType: JobType, maxToKeep: number): Promise<number> {
+    const db = await getDatabase();
+    const safeMax = Math.max(0, Math.floor(maxToKeep));
+    const result = await db.run(
+        `UPDATE jobs
+         SET status = 'DEAD_LETTER',
+             last_error = 'Cancelled: cap decreased via hot-reload',
+             updated_at = CURRENT_TIMESTAMP
+         WHERE status = 'QUEUED'
+           AND type = ?
+           AND id NOT IN (
+               SELECT id FROM jobs
+               WHERE status = 'QUEUED' AND type = ?
+               ORDER BY priority ASC, next_run_at ASC
+               LIMIT ?
+           )`,
+        [jobType, jobType, safeMax],
+    );
+    return result.changes ?? 0;
 }
 
 export async function recycleJob(jobId: number, newDelaySec: number, newPriority: number): Promise<void> {

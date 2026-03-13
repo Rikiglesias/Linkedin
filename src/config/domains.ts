@@ -319,6 +319,8 @@ export function buildProxyDomainConfig() {
         proxyQualityCheckIntervalMinutes: Math.max(5, parseIntEnv('PROXY_QUALITY_CHECK_INTERVAL_MINUTES', 60)),
         proxyQualityMinScore: Math.min(100, Math.max(0, parseIntEnv('PROXY_QUALITY_MIN_SCORE', 50))),
         proxyQualityAsnApiUrl: parseStringEnv('PROXY_QUALITY_ASN_API_URL', 'http://ip-api.com/json/'),
+        ipReputationApiKey: parseStringEnv('IP_REPUTATION_API_KEY'),
+        ipReputationMaxAbuseScore: Math.min(100, Math.max(0, parseIntEnv('IP_REPUTATION_MAX_ABUSE_SCORE', 25))),
         ssiDynamicLimitsEnabled: parseBoolEnv('SSI_DYNAMIC_LIMITS_ENABLED', true),
         ssiStateKey: parseStringEnv('SSI_STATE_KEY', 'linkedin_ssi_score'),
         ssiDefaultScore: Math.min(100, Math.max(0, parseIntEnv('SSI_DEFAULT_SCORE', 55))),

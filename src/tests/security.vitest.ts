@@ -82,7 +82,7 @@ describe('Lead State Machine — transizioni rifiutate', () => {
 });
 
 describe('Lead State Machine — stati terminali', () => {
-    const terminalStates: LeadStatus[] = ['REPLIED', 'SKIPPED', 'BLOCKED', 'DEAD'];
+    const terminalStates: LeadStatus[] = ['BLOCKED', 'DEAD'];
 
     for (const state of terminalStates) {
         it(`${state} è uno stato terminale (nessuna transizione in uscita eccetto verso se stesso)`, () => {
@@ -97,6 +97,21 @@ describe('Lead State Machine — stati terminali', () => {
             }
         });
     }
+
+    it('REPLIED ha transizioni di escape limitate (BLOCKED, REVIEW_REQUIRED, DEAD)', () => {
+        expect(isValidLeadTransition('REPLIED', 'BLOCKED')).toBe(true);
+        expect(isValidLeadTransition('REPLIED', 'REVIEW_REQUIRED')).toBe(true);
+        expect(isValidLeadTransition('REPLIED', 'DEAD')).toBe(true);
+        expect(isValidLeadTransition('REPLIED', 'NEW')).toBe(false);
+        expect(isValidLeadTransition('REPLIED', 'READY_INVITE')).toBe(false);
+    });
+
+    it('SKIPPED ha transizioni di escape limitate (REVIEW_REQUIRED, READY_INVITE)', () => {
+        expect(isValidLeadTransition('SKIPPED', 'REVIEW_REQUIRED')).toBe(true);
+        expect(isValidLeadTransition('SKIPPED', 'READY_INVITE')).toBe(true);
+        expect(isValidLeadTransition('SKIPPED', 'BLOCKED')).toBe(false);
+        expect(isValidLeadTransition('SKIPPED', 'INVITED')).toBe(false);
+    });
 });
 
 describe('Lead State Machine — REVIEW_REQUIRED è un hub di recovery', () => {

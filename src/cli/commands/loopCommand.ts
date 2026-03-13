@@ -55,7 +55,7 @@ import { processTelegramImportCommand } from '../../cloud/telegramAiImporter';
 import { sendTelegramAlert } from '../../telemetry/alerts';
 import { LoopSubTask, LoopCycleContext, runLoopCycle } from '../../core/loopOrchestrator';
 import { recordSessionPattern } from '../../risk/sessionMemory';
-import { startConfigWatcher, stopConfigWatcher } from '../../config/hotReload';
+import { onConfigReload, startConfigWatcher, stopConfigWatcher } from '../../config/hotReload';
 
 // ─── Costanti lock ────────────────────────────────────────────────────────────
 
@@ -712,6 +712,25 @@ export async function runLoopCommand(args: string[]): Promise<void> {
     if (!dryRun) {
         await startTelegramListener().catch((e) => console.error('[TELEGRAM] Errore listener background', e));
         startConfigWatcher();
+        // CC-24: Quando un cap diminuisce via hot-reload, cancella job in coda in eccesso
+        onConfigReload((changedKeys) => { void (async () => {
+            if (changedKeys.includes('hardInviteCap') || changedKeys.includes('hardMsgCap')) {
+                try {
+                    const { cancelExcessQueuedJobs } = await import('../../core/repositories/jobs');
+                    const { config: liveConfig } = await import('../../config');
+                    if (changedKeys.includes('hardInviteCap')) {
+                        const cancelled = await cancelExcessQueuedJobs('INVITE', liveConfig.hardInviteCap);
+                        if (cancelled > 0) console.log(`[CONFIG] Cancelled ${cancelled} excess INVITE jobs (new cap: ${liveConfig.hardInviteCap})`);
+                    }
+                    if (changedKeys.includes('hardMsgCap')) {
+                        const cancelled = await cancelExcessQueuedJobs('MESSAGE', liveConfig.hardMsgCap);
+                        if (cancelled > 0) console.log(`[CONFIG] Cancelled ${cancelled} excess MESSAGE jobs (new cap: ${liveConfig.hardMsgCap})`);
+                    }
+                } catch (e) {
+                    console.warn('[CONFIG] Failed to cancel excess jobs after cap decrease:', e instanceof Error ? e.message : e);
+                }
+            }
+        })(); });
     }
 
     const lockTtlSeconds = computeWorkflowLockTtlSeconds(getEffectiveLoopIntervalMs(intervalMs));

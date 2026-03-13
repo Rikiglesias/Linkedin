@@ -1,11 +1,18 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import sqlite3 from 'sqlite3';
 import { open, Database as SQLiteDatabase } from 'sqlite';
+import { AsyncLocalStorage } from 'async_hooks';
 import path from 'path';
 import fs from 'fs';
 import { execFile } from 'child_process';
 import { config } from './config';
 import { ensureFilePrivate, ensureParentDirectoryPrivate } from './security/filesystem';
+
+// ─── Transaction Context ────────────────────────────────────────────────────
+// AsyncLocalStorage permette a getDatabase() di restituire il client
+// transazionale quando siamo dentro un withTransaction(), senza cambiare
+// la firma di nessuna funzione repository.
+const transactionContext = new AsyncLocalStorage<DatabaseManager>();
 
 export interface DBRunResult {
     lastID?: number;
@@ -43,6 +50,7 @@ export interface DatabaseManager {
     get<T = unknown>(sql: string, params?: unknown[]): Promise<T | undefined>;
     exec(sql: string, params?: unknown[]): Promise<void>;
     run(sql: string, params?: unknown[], options?: RunOptions): Promise<DBRunResult>;
+    withTransaction<T>(callback: (tx: DatabaseManager) => Promise<T>): Promise<T>;
     close(): Promise<void>;
 }
 
@@ -80,6 +88,36 @@ class SQLiteManager implements DatabaseManager {
             lastID: result.lastID,
             changes: result.changes,
         };
+    }
+
+    async withTransaction<T>(callback: (tx: DatabaseManager) => Promise<T>): Promise<T> {
+        // SQLite is single-connection, so BEGIN/COMMIT on `this` is safe.
+        // transactionContext permette a getDatabase() di restituire `this`
+        // quando chiamato da funzioni nested nel callback.
+        const isNested = transactionContext.getStore() === this;
+        if (isNested) {
+            // Nested transaction: usa SAVEPOINT per evitare "cannot start
+            // a transaction within a transaction" (SQLite supporta SAVEPOINT ≥3.6.8)
+            const sp = `sp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+            await this.exec(`SAVEPOINT ${sp}`);
+            try {
+                const result = await callback(this);
+                await this.exec(`RELEASE SAVEPOINT ${sp}`);
+                return result;
+            } catch (error) {
+                await this.exec(`ROLLBACK TO SAVEPOINT ${sp}`);
+                throw error;
+            }
+        }
+        await this.exec('BEGIN');
+        try {
+            const result = await transactionContext.run(this, () => callback(this));
+            await this.exec('COMMIT');
+            return result;
+        } catch (error) {
+            await this.exec('ROLLBACK');
+            throw error;
+        }
     }
 
     async close(): Promise<void> {
@@ -205,8 +243,107 @@ class PostgresManager implements DatabaseManager {
         };
     }
 
+    async withTransaction<T>(callback: (tx: DatabaseManager) => Promise<T>): Promise<T> {
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN');
+            const txManager = new PostgresClientManager(client, (sql: string) => this.normalizeSql(sql));
+            const result = await transactionContext.run(txManager, () => callback(txManager));
+            await client.query('COMMIT');
+            return result;
+        } catch (error) {
+            try {
+                await client.query('ROLLBACK');
+            } catch {
+                // ROLLBACK best-effort: il client potrebbe essere già disconnesso
+            }
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
     async close(): Promise<void> {
         await this.pool.end();
+    }
+}
+
+// ------------------------------------------------------------------
+// WRAPPER POSTGRES SINGLE-CLIENT (per transazioni)
+// ------------------------------------------------------------------
+// Usa un singolo PoolClient dedicato garantendo che tutte le query
+// della transazione vadano sulla stessa connessione PostgreSQL.
+class PostgresClientManager implements DatabaseManager {
+    readonly isPostgres = true;
+    private client: PoolClient;
+    private normalize: (sql: string) => string;
+
+    constructor(client: PoolClient, normalize: (sql: string) => string) {
+        this.client = client;
+        this.normalize = normalize;
+    }
+
+    async query<T = unknown>(sql: string, params?: unknown[]): Promise<T[]> {
+        const normalized = this.normalize(sql);
+        const result = await profileQuery('pg-tx.query', normalized, () => this.client.query(normalized, params));
+        return result.rows;
+    }
+
+    async get<T = unknown>(sql: string, params?: unknown[]): Promise<T | undefined> {
+        const normalized = this.normalize(sql);
+        const result = await profileQuery('pg-tx.get', normalized, () => this.client.query(normalized, params));
+        return result.rows[0];
+    }
+
+    async exec(sql: string, params?: unknown[]): Promise<void> {
+        await this.client.query(this.normalize(sql), params);
+    }
+
+    async run(sql: string, params?: unknown[], options?: RunOptions): Promise<DBRunResult> {
+        let normalizedSql = this.normalize(sql);
+
+        const shouldReturn = options?.returning !== false;
+        const isInsert = /^\s*INSERT\b/i.test(normalizedSql);
+        const hasReturning = /\bRETURNING\b/i.test(normalizedSql);
+        if (shouldReturn && isInsert && !hasReturning) {
+            normalizedSql = normalizedSql.replace(/;\s*$/, '') + ' RETURNING *';
+        }
+
+        const result = await this.client.query(normalizedSql, params);
+        const row = (result.rows[0] ?? {}) as Record<string, unknown>;
+        const rowId = row.id;
+        const parsedLastId =
+            typeof rowId === 'number'
+                ? rowId
+                : typeof rowId === 'string' && /^[0-9]+$/.test(rowId)
+                  ? Number.parseInt(rowId, 10)
+                  : undefined;
+        return {
+            lastID: parsedLastId,
+            changes: result.rowCount ?? undefined,
+        };
+    }
+
+    async withTransaction<T>(callback: (tx: DatabaseManager) => Promise<T>): Promise<T> {
+        // Transazione nidificata: usa SAVEPOINT per simulare sub-transazioni
+        const savepointName = `sp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        await this.client.query(`SAVEPOINT ${savepointName}`);
+        try {
+            const result = await callback(this);
+            await this.client.query(`RELEASE SAVEPOINT ${savepointName}`);
+            return result;
+        } catch (error) {
+            try {
+                await this.client.query(`ROLLBACK TO SAVEPOINT ${savepointName}`);
+            } catch {
+                // best-effort
+            }
+            throw error;
+        }
+    }
+
+    async close(): Promise<void> {
+        // No-op: il client è gestito da PostgresManager.withTransaction()
     }
 }
 
@@ -352,15 +489,14 @@ async function applyMigrations(database: DatabaseManager): Promise<void> {
             sql = sql.replace(/INTEGER PRIMARY KEY AUTOINCREMENT/gi, 'SERIAL PRIMARY KEY');
         }
 
-        await database.exec('BEGIN');
         try {
-            // Eseguiamo il file SQL intero: evita parser naive su ';'
-            // che rompe blocchi complessi (es. funzioni/DO blocks in Postgres).
-            await database.exec(sql);
-            await database.run(`INSERT OR IGNORE INTO _migrations (name) VALUES (?)`, [fileName]);
-            await database.exec('COMMIT');
+            await database.withTransaction(async (tx) => {
+                // Eseguiamo il file SQL intero: evita parser naive su ';'
+                // che rompe blocchi complessi (es. funzioni/DO blocks in Postgres).
+                await tx.exec(sql);
+                await tx.run(`INSERT OR IGNORE INTO _migrations (name) VALUES (?)`, [fileName]);
+            });
         } catch (error) {
-            await database.exec('ROLLBACK');
             console.error(`Migration error on file ${fileName}`);
             throw error;
         }
@@ -428,16 +564,11 @@ export async function rollbackMigration(migrationName: string): Promise<boolean>
         sql = sql.replace(/datetime\('now'\)/gi, 'CURRENT_TIMESTAMP');
     }
 
-    await db.exec('BEGIN');
-    try {
-        await db.exec(sql);
-        await db.run(`DELETE FROM _migrations WHERE name = ?`, [migrationName]);
-        await db.exec('COMMIT');
-        return true;
-    } catch (error) {
-        await db.exec('ROLLBACK');
-        throw error;
-    }
+    await db.withTransaction(async (tx) => {
+        await tx.exec(sql);
+        await tx.run(`DELETE FROM _migrations WHERE name = ?`, [migrationName]);
+    });
+    return true;
 }
 
 /**
@@ -451,6 +582,11 @@ export async function listAppliedMigrations(): Promise<Array<{ name: string; app
 }
 
 export async function getDatabase(): Promise<DatabaseManager> {
+    // Se siamo dentro un withTransaction(), restituisce il client TX
+    // garantendo che tutte le query vadano sulla stessa connessione.
+    const txStore = transactionContext.getStore();
+    if (txStore) return txStore;
+
     if (dbInstance) return dbInstance;
 
     // Controlla se abbiamo il DATABASE_URL configurato (Postgres)
@@ -458,17 +594,18 @@ export async function getDatabase(): Promise<DatabaseManager> {
         isPostgres = true;
 
         console.log(`📡 Connecting to PostgreSQL database...`);
-        dbInstance = new PostgresManager(config.databaseUrl);
+        const pgManager = new PostgresManager(config.databaseUrl);
 
         // Verifica la connessione
         try {
-            await dbInstance.query('SELECT 1');
+            await pgManager.query('SELECT 1');
         } catch (error) {
             console.error('❌ Failed to connect to PostgreSQL:', error);
             throw error;
         }
 
-        return dbInstance;
+        dbInstance = pgManager;
+        return pgManager;
     }
 
     // Default to SQLite
@@ -496,7 +633,79 @@ export async function getDatabase(): Promise<DatabaseManager> {
     return dbInstance;
 }
 
+// ------------------------------------------------------------------
+// DISK SPACE CHECK (SQLite only)
+// ------------------------------------------------------------------
+const DISK_CRITICAL_MB = 100;
+const DISK_WARN_MB = 500;
+
+export interface DiskSpaceStatus {
+    ok: boolean;
+    level: 'ok' | 'warn' | 'critical';
+    freeMb: number;
+    message: string;
+}
+
+/**
+ * Controlla lo spazio disco disponibile per il database SQLite.
+ * Per PostgreSQL restituisce sempre ok (il disco è gestito lato server).
+ * Soglie: < 100MB = critical (blocco scritture consigliato), < 500MB = warn.
+ */
+export function checkDiskSpace(): DiskSpaceStatus {
+    if (isPostgres) {
+        return { ok: true, level: 'ok', freeMb: -1, message: 'PostgreSQL: disco gestito lato server' };
+    }
+
+    try {
+        const dbDir = path.dirname(path.resolve(config.dbPath));
+        if (!fs.existsSync(dbDir)) {
+            fs.mkdirSync(dbDir, { recursive: true });
+        }
+        const stats = fs.statfsSync(dbDir);
+        const freeBytes = stats.bavail * stats.bsize;
+        const freeMb = Math.round(freeBytes / (1024 * 1024));
+
+        if (freeMb < DISK_CRITICAL_MB) {
+            return {
+                ok: false,
+                level: 'critical',
+                freeMb,
+                message: `Spazio disco CRITICO: ${freeMb}MB liberi (soglia: ${DISK_CRITICAL_MB}MB). Rischio SQLITE_FULL.`,
+            };
+        }
+        if (freeMb < DISK_WARN_MB) {
+            return {
+                ok: true,
+                level: 'warn',
+                freeMb,
+                message: `Spazio disco basso: ${freeMb}MB liberi (soglia warning: ${DISK_WARN_MB}MB).`,
+            };
+        }
+        return { ok: true, level: 'ok', freeMb, message: `Spazio disco OK: ${freeMb}MB liberi` };
+    } catch {
+        return { ok: true, level: 'ok', freeMb: -1, message: 'Impossibile verificare spazio disco (statfsSync non disponibile)' };
+    }
+}
+
+/**
+ * Rileva se un errore è SQLITE_FULL o SQLITE_IOERR legato a disco pieno.
+ * Utilizzabile da qualsiasi modulo per gestire uniformemente l'errore.
+ */
+export function isSqliteFullError(error: unknown): boolean {
+    if (!error || isPostgres) return false;
+    const msg = error instanceof Error ? error.message : String(error);
+    return /SQLITE_FULL|SQLITE_IOERR.*full|disk.*full|no space left/i.test(msg);
+}
+
 export async function initDatabase(): Promise<void> {
+    const diskStatus = checkDiskSpace();
+    if (diskStatus.level === 'critical') {
+        console.error(`[DB] ${diskStatus.message}`);
+        throw new Error(diskStatus.message);
+    }
+    if (diskStatus.level === 'warn') {
+        console.warn(`[DB] ${diskStatus.message}`);
+    }
     const database = await getDatabase();
     await applyMigrations(database);
 }

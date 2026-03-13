@@ -41,6 +41,10 @@ interface LeadExportRow {
     gdpr_opt_out: number;
     email: string | null;
     phone: string | null;
+    company_domain: string | null;
+    website: string | null;
+    business_email: string | null;
+    business_email_confidence: number | null;
     invited_at: string | null;
     accepted_at: string | null;
     messaged_at: string | null;
@@ -64,6 +68,10 @@ const CSV_COLUMNS: (keyof LeadExportRow)[] = [
     'gdpr_opt_out',
     'email',
     'phone',
+    'company_domain',
+    'website',
+    'business_email',
+    'business_email_confidence',
     'invited_at',
     'accepted_at',
     'messaged_at',

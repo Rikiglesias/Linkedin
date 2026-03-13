@@ -156,7 +156,7 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
         forceMobile: options.forceMobileProxy,
     };
     const stickyProxy =
-        !explicitProxy && managedProxyEnabled ? await getStickyProxy(sessionDir, proxySelection) : undefined;
+        !explicitProxy && managedProxyEnabled ? await getStickyProxy(sessionDir, proxySelection, sessionDir) : undefined;
 
     let launchPlan: Array<ProxyConfig | undefined> = [];
     let mobileEscalationAppended = false;
@@ -269,6 +269,20 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             };
         }
 
+        // JA3 Parte B: Se CycleTLS è attivo, sovrascrive il proxy per instradare
+        // tutto il traffico attraverso CycleTLS locale che spofa il TLS fingerprint.
+        // CycleTLS usa il JA3_FINGERPRINT configurato e forwarda al proxy upstream.
+        if (config.useJa3Proxy) {
+            contextOptions.proxy = {
+                server: `http://127.0.0.1:${config.ja3ProxyPort}`,
+            };
+            await logInfo('browser.ja3_proxy_enabled', {
+                ja3Port: config.ja3ProxyPort,
+                ja3Fingerprint: fingerprint.ja3?.substring(0, 40) ?? 'default',
+                upstreamProxy: currentProxy?.server ?? 'direct',
+            });
+        }
+
         try {
             // CloakBrowser integration: se attivo, usa il binario stealth Chromium
             // che patcha canvas, WebGL, audio, fonts, GPU, CDP leaks a livello C++.
@@ -308,14 +322,18 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                             ctx.getImageData = function(x, y, w, h) {
                                 const imageData = originalGetImageData.call(this, x, y, w, h);
                                 // Noise bidirezionale con PRNG Mulberry32 seedato dal fingerprint.
-                                // Deterministico per sessione ma pseudo-casuale — non rilevabile
-                                // statisticamente (a differenza del vecchio pattern pixelIndex % 2/3/5).
+                                // Deterministico per regione canvas — stessa (x,y,w,h) produce
+                                // sempre lo stesso noise (come un browser reale).
+                                // Regioni diverse producono noise diverso, impedendo ai servizi
+                                // di fingerprinting di correlare il pattern tra crop diversi.
                                 // Alpha (i+3) intatto — alterarlo è un marker di bot.
                                 const noiseR = Math.floor(canvasNoise * 255);
                                 const noiseG = Math.floor(canvasNoise * 230);
                                 const noiseB = Math.floor(canvasNoise * 245);
-                                // Mulberry32 PRNG: veloce, 32-bit, periodo 2^32
+                                // Mulberry32 PRNG con seed che incorpora coordinate del crop
                                 let prngState = Math.abs(canvasNoise * 1e9 | 0) || 1;
+                                prngState = (prngState + (x * 7919 + y * 104729 + w * 31337 + h * 65537)) | 0;
+                                if (prngState === 0) prngState = 1;
                                 function nextRng() {
                                     prngState |= 0; prngState = prngState + 0x6D2B79F5 | 0;
                                     let t = Math.imul(prngState ^ prngState >>> 15, 1 | prngState);
@@ -354,13 +372,27 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                                 { vendor: 'Apple', renderer: 'Apple M3' },
                             ];
                             const pool = isApple ? appleRenderers : desktopRenderers;
-                            const rendererIdx = Math.abs(canvasNoise * 1e6 | 0) % pool.length;
+                            const rendererIdx = Math.abs(webglNoise * 1e6 | 0) % pool.length;
                             const selected = pool[rendererIdx];
                             ctx.getParameter = function(parameter) {
                                 const res = originalGetParameter.call(this, parameter);
                                 if (parameter === 37445) return selected.vendor;
                                 if (parameter === 37446) return selected.renderer;
                                 return res;
+                            };
+                            // NEW-6: Intercettare getExtension per WEBGL_debug_renderer_info
+                            // Senza questo, un detector può ottenere il renderer reale via:
+                            //   const ext = gl.getExtension('WEBGL_debug_renderer_info');
+                            //   gl.getParameter(ext.UNMASKED_RENDERER_WEBGL);
+                            const originalGetExtension = ctx.getExtension;
+                            ctx.getExtension = function(name) {
+                                if (name === 'WEBGL_debug_renderer_info') {
+                                    return {
+                                        UNMASKED_VENDOR_WEBGL: 37445,
+                                        UNMASKED_RENDERER_WEBGL: 37446,
+                                    };
+                                }
+                                return originalGetExtension.call(this, name);
                             };
                         }
                         return ctx;
@@ -403,6 +435,7 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                 hardwareConcurrency: coherentHwConcurrency,
                 deviceMemory: coherentDeviceMemory,
                 colorDepth: coherentColorDepth,
+                userAgent: fingerprint.userAgent,
                 skipSections: skipIfCloak,
             });
             await browser.addInitScript({ content: stealthScript });

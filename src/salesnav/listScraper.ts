@@ -552,6 +552,24 @@ async function goToNextPage(page: Page): Promise<boolean> {
 export async function navigateToSavedLists(page: Page): Promise<SalesNavSavedList[]> {
     await page.goto(SALESNAV_LISTS_URL, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     await humanDelay(page, 1800, 3200);
+
+    // CC-33: Detection paywall/subscription SalesNav
+    const pageText = await page.textContent('body').catch(() => '') ?? '';
+    const lowerText = pageText.toLowerCase();
+    const paywallIndicators = [
+        'start your free trial', 'start free trial', 'subscribe to sales navigator',
+        'upgrade to sales navigator', 'get sales navigator', 'try sales navigator',
+        'unlock sales navigator', 'sales navigator core', 'sales navigator advanced',
+        'choose a plan', 'pick your plan', 'compare plans',
+    ];
+    const isPaywall = paywallIndicators.some(indicator => lowerText.includes(indicator));
+    if (isPaywall) {
+        throw new Error(
+            'Sales Navigator subscription non rilevata. La pagina mostra un paywall/upgrade prompt. ' +
+            'Verifica che l\'account abbia un abbonamento SalesNav attivo.',
+        );
+    }
+
     await lightListScroll(page);
     return extractSavedLists(page);
 }

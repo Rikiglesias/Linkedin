@@ -9,7 +9,7 @@
 import { Page } from 'playwright';
 import { config } from '../config';
 import { joinSelectors } from '../selectors';
-import { isMobilePage } from './deviceProfile';
+import { getPageDeviceProfile, isMobilePage } from './deviceProfile';
 import { MouseGenerator, Point } from '../ml/mouseGenerator';
 import { calculateContextualDelay } from '../ml/timingModel';
 import { computeSessionTypoRate, determineNextKeystroke } from '../ai/typoGenerator';
@@ -277,6 +277,7 @@ export async function humanDelay(page: Page, min: number = 1500, max: number = 3
         actionType: 'read',
         baseMin: min,
         baseMax: max,
+        profileMultiplier: getPageDeviceProfile(page).profileMultiplier,
     });
 
     // Smooth asymmetric application
@@ -390,7 +391,12 @@ export async function humanTap(page: Page, targetSelector: string): Promise<void
         }
         const tapX = box.x + box.width / 2 + (Math.random() * 10 - 5);
         const tapY = box.y + box.height / 2 + (Math.random() * 10 - 5);
-        await page.mouse.move(tapX, tapY, { steps: 5 });
+        if (isMobilePage(page)) {
+            // CC-15: Usa TouchEvent su mobile UA per coerenza col fingerprint
+            await page.touchscreen.tap(tapX, tapY);
+        } else {
+            await page.mouse.move(tapX, tapY, { steps: 5 });
+        }
         await syncVisualCursorOverlay(page, { x: tapX, y: tapY });
         updateMouseState(page, { x: tapX, y: tapY });
         await page.waitForTimeout(30 + Math.random() * 80);
@@ -414,12 +420,36 @@ export async function humanSwipe(page: Page, direction: 'up' | 'down' = 'up'): P
         const endY = direction === 'up' ? startY - delta : startY + delta;
         const endX = startX + randomInt(-20, 20);
 
-        await page.mouse.move(startX, startY, { steps: 4 });
-        await syncVisualCursorOverlay(page, { x: startX, y: startY });
-        await page.mouse.down();
-        await page.mouse.move(endX, endY, { steps: 10 });
-        await syncVisualCursorOverlay(page, { x: endX, y: endY });
-        await page.mouse.up();
+        if (isMobilePage(page)) {
+            // CC-15: Swipe via CDP Touch.* per generare TouchEvent su mobile
+            // Playwright non ha un'API swipe nativa, usiamo mouse come fallback
+            // ma con touchscreen.tap per start/end per generare almeno touch events
+            await page.touchscreen.tap(startX, startY);
+            await page.waitForTimeout(50 + Math.random() * 50);
+            // Simulate drag via evaluate (touch move sequence)
+            await page.evaluate(([sx, sy, ex, ey]) => {
+                const target = document.elementFromPoint(sx, sy) ?? document.body;
+                target.dispatchEvent(new TouchEvent('touchstart', {
+                    touches: [new Touch({ identifier: 1, target, clientX: sx, clientY: sy })],
+                    bubbles: true,
+                }));
+                target.dispatchEvent(new TouchEvent('touchmove', {
+                    touches: [new Touch({ identifier: 1, target, clientX: ex, clientY: ey })],
+                    bubbles: true,
+                }));
+                target.dispatchEvent(new TouchEvent('touchend', {
+                    changedTouches: [new Touch({ identifier: 1, target, clientX: ex, clientY: ey })],
+                    bubbles: true,
+                }));
+            }, [startX, startY, endX, endY] as [number, number, number, number]);
+        } else {
+            await page.mouse.move(startX, startY, { steps: 4 });
+            await syncVisualCursorOverlay(page, { x: startX, y: startY });
+            await page.mouse.down();
+            await page.mouse.move(endX, endY, { steps: 10 });
+            await syncVisualCursorOverlay(page, { x: endX, y: endY });
+            await page.mouse.up();
+        }
         updateMouseState(page, { x: endX, y: endY });
         await page.waitForTimeout(120 + Math.random() * 220);
     } catch {
@@ -611,7 +641,7 @@ export async function simulateHumanReading(page: Page): Promise<void> {
     const scrollCount = mobile ? 2 + Math.floor(Math.random() * 4) : 3 + Math.floor(Math.random() * 5);
     for (let i = 0; i < scrollCount; i++) {
         const deltaY = mobile ? 220 + Math.random() * 420 : 150 + Math.random() * 380;
-        await page.evaluate((dy: number) => window.scrollBy({ top: dy, behavior: 'smooth' }), deltaY);
+        await page.mouse.wheel(0, deltaY);
         if (mobile && Math.random() < 0.4) {
             await humanSwipe(page, 'up');
         }
@@ -646,6 +676,7 @@ export async function interJobDelay(
         actionType: 'interJob',
         baseMin: minDelay,
         baseMax: maxDelay,
+        profileMultiplier: getPageDeviceProfile(page).profileMultiplier,
     });
 
     // Pacing factor da sessionMemory: dopo challenge recenti il bot rallenta,

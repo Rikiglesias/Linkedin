@@ -33,6 +33,9 @@ export interface StealthScriptOptions {
     deviceMemory?: number;
     colorDepth?: number;
     audioNoise?: number;
+    /** User-Agent string per determinare il browser family (Chrome vs Firefox).
+     * Se contiene 'Firefox', le sezioni Chrome-specific (plugins, window.chrome) vengono saltate. */
+    userAgent?: string;
     /** Sezioni da saltare se CloakBrowser gestisce già queste API a livello binario.
      * Valori: 'canvas', 'webgl', 'hwconcurrency', 'plugins', 'audio', 'battery', 'webrtc' */
     skipSections?: Set<string>;
@@ -67,8 +70,11 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
     // Serialize skip set so the browser IIFE can check at runtime
     const skipJson = JSON.stringify([...skip]);
 
+    const isFirefoxBrowser = /Firefox\//i.test(opts.userAgent ?? '');
+
     return `(() => {
     const _skip = new Set(${skipJson});
+    const _isFirefox = ${isFirefoxBrowser};
     // ─── 1. WebRTC Leak Prevention ───────────────────────────────────────────
     // Impedisce che RTCPeerConnection riveli l'IP reale bypassando il proxy.
     // Il flag Chrome --disable-webrtc copre il rendering, ma non il JS diretto.
@@ -118,7 +124,8 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
     // ─── 3. navigator.plugins normalization (PluginArray-compliant) ──────────
     // Playwright/headless ha plugins vuoti. Chrome reale ne ha almeno 3.
     // CRITICO: ritornare un oggetto che superi instanceof PluginArray check.
-    if (!_skip.has('plugins')) try {
+    // Firefox ha un PluginArray vuoto (length=0) — NON iniettare Chrome plugins.
+    if (!_skip.has('plugins') && !_isFirefox) try {
         const fakePluginData = [
             {
                 name: 'Chrome PDF Plugin',
@@ -228,10 +235,11 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
     // ─── 5. window.chrome mock ───────────────────────────────────────────────
     // In un Chrome reale, window.chrome esiste con runtime, loadTimes, csi.
     // Playwright non lo crea, e questo è un red flag per i bot detector.
-    if (!window.chrome) {
+    // Firefox NON ha window.chrome — iniettarlo su Firefox è un marker di spoofing.
+    if (!_isFirefox && !window.chrome) {
         window.chrome = {};
     }
-    if (!window.chrome.runtime) {
+    if (!_isFirefox && window.chrome && !window.chrome.runtime) {
         window.chrome.runtime = {
             // id è undefined in Chrome senza estensioni attive — alcuni detector controllano typeof
             id: undefined,
@@ -244,7 +252,7 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
             sendMessage: function() {},
         };
     }
-    if (!window.chrome.loadTimes) {
+    if (!_isFirefox && window.chrome && !window.chrome.loadTimes) {
         window.chrome.loadTimes = function() {
             return {
                 commitLoadTime: Date.now() / 1000,
@@ -263,7 +271,7 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
             };
         };
     }
-    if (!window.chrome.csi) {
+    if (!_isFirefox && window.chrome && !window.chrome.csi) {
         window.chrome.csi = function() {
             return {
                 onloadT: Date.now(),
@@ -384,10 +392,25 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
         if (audioContexts) {
             const originalGetChannelData = AudioBuffer.prototype.getChannelData;
             const baseNoise = ${audioNoise};
+            // Mulberry32 PRNG per selezione pseudo-casuale dei campioni da modificare.
+            // Evita pattern a intervallo fisso (ogni N-esimo campione) che sono
+            // trivialmente rilevabili da servizi di fingerprinting.
+            let _audioSeed = Math.abs(baseNoise * 1e9 | 0) || 1;
+            function audioRng() {
+                _audioSeed |= 0; _audioSeed = _audioSeed + 0x6D2B79F5 | 0;
+                let t = Math.imul(_audioSeed ^ _audioSeed >>> 15, 1 | _audioSeed);
+                t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+                return ((t ^ t >>> 14) >>> 0) / 4294967296;
+            }
             AudioBuffer.prototype.getChannelData = function(channel) {
                 const results = originalGetChannelData.apply(this, arguments);
-                for (let i = 0; i < results.length; i += 7) {
-                    results[i] += baseNoise * (0.5 + Math.sin(i * 0.017) * 0.5);
+                // Reseed per-call con channel + buffer length per varianza tra chiamate
+                _audioSeed = Math.abs((baseNoise * 1e9 | 0) + channel * 7919 + results.length * 104729) || 1;
+                for (let i = 0; i < results.length; i++) {
+                    if (audioRng() < 0.15) {
+                        const sign = audioRng() < 0.5 ? 1 : -1;
+                        results[i] += baseNoise * sign * audioRng();
+                    }
                 }
                 return results;
             };
@@ -396,8 +419,12 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
                 const originalGetFloatFrequencyData = AnalyserNode.prototype.getFloatFrequencyData;
                 AnalyserNode.prototype.getFloatFrequencyData = function(array) {
                     originalGetFloatFrequencyData.apply(this, arguments);
-                    for (let i = 0; i < array.length; i += 5) {
-                        array[i] += baseNoise * (0.3 + Math.cos(i * 0.023) * 0.7);
+                    _audioSeed = Math.abs((baseNoise * 1e9 | 0) + array.length * 31337) || 1;
+                    for (let i = 0; i < array.length; i++) {
+                        if (audioRng() < 0.12) {
+                            const sign = audioRng() < 0.5 ? 1 : -1;
+                            array[i] += baseNoise * sign * audioRng();
+                        }
                     }
                 };
             }
@@ -450,11 +477,32 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
         }
     } catch {}
 
-    // ─── 14. [RIMOSSO] Fake Storage Seeder ──────────────────────────────────────
-    // Rimosso: iniettava _ga (Google Analytics) e _fbp (Facebook Pixel) in localStorage
-    // + finti database IndexedDB (localforage, firebaseLocalStorageDb).
-    // LinkedIn NON usa GA/Facebook Pixel/Firebase sul proprio dominio.
-    // Un detector che verifica la coerenza cookie/script rileva lo spoofing.
+    // ─── 14. Font Enumeration Defense (NEW-5) ──────────────────────────────────
+    // FingerprintJS 4.x usa document.fonts.check() per enumerare font installati.
+    // Headless browser riportano disponibilità font diversa dai browser reali.
+    // Mock: restituisce true per font di sistema comuni, false per font esotici.
+    try {
+        if (typeof document !== 'undefined' && document.fonts && document.fonts.check) {
+            const commonFonts = new Set([
+                'Arial', 'Verdana', 'Helvetica', 'Times New Roman', 'Georgia',
+                'Courier New', 'Trebuchet MS', 'Impact', 'Comic Sans MS',
+                'Segoe UI', 'Tahoma', 'Lucida Sans', 'Palatino Linotype',
+                'Lucida Console', 'Microsoft Sans Serif', 'Calibri', 'Cambria',
+                'Consolas', 'Roboto', 'Open Sans', 'Lato', 'Montserrat',
+                'system-ui', '-apple-system', 'BlinkMacSystemFont',
+            ]);
+            const originalCheck = document.fonts.check.bind(document.fonts);
+            document.fonts.check = function(font, text) {
+                try {
+                    const fontFamily = font.replace(/^[\d.]+[a-z]+\s+/i, '').replace(/["']/g, '').trim();
+                    if (commonFonts.has(fontFamily)) return true;
+                    return originalCheck(font, text);
+                } catch {
+                    return originalCheck(font, text);
+                }
+            };
+        }
+    } catch {}
 
     // ─── 15. getHasLiedOs bypass ──────────────────────────────────────────────
     // LinkedIn (via FingerprintJS) chiama getHasLiedOs: controlla che userAgent,
@@ -463,7 +511,13 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
     try {
         const ua = navigator.userAgent || '';
         let expectedPlatform, expectedOscpu;
-        if (/Windows/.test(ua)) {
+        if (/iPhone/.test(ua)) {
+            expectedPlatform = 'iPhone';
+            expectedOscpu = undefined;
+        } else if (/Android/.test(ua)) {
+            expectedPlatform = 'Linux armv81';
+            expectedOscpu = 'Linux armv81';
+        } else if (/Windows/.test(ua)) {
             expectedPlatform = 'Win32';
             expectedOscpu = 'Windows NT 10.0; Win64; x64';
         } else if (/Macintosh|Mac OS X/.test(ua)) {
@@ -557,7 +611,8 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
     // ─── 19. iframe contentWindow.chrome consistency ──────────────────────────
     // Bot detector crea un iframe nascosto e controlla se contentWindow.chrome
     // esiste — in Playwright spesso è assente dentro iframe, tradendo l'automazione.
-    try {
+    // Firefox non ha window.chrome, quindi skippa per coerenza.
+    if (!_isFirefox) try {
         const originalCreateElement = document.createElement.bind(document);
         document.createElement = function(tagName, options) {
             const el = originalCreateElement(tagName, options);

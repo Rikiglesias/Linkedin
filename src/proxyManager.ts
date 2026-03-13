@@ -498,9 +498,11 @@ export function getIntegrationProxy(options: GetProxyChainOptions = {}): ProxyCo
 
 /**
  * Esegue un ping TCP sulla porta del proxy per verificare se è raggiungibile.
+ * Se IP_REPUTATION_API_KEY è configurata, verifica anche che l'IP non sia
+ * in blacklist AbuseIPDB (NEW-15).
  */
 export async function checkProxyHealth(proxy: ProxyConfig): Promise<boolean> {
-    return new Promise((resolve) => {
+    const tcpOk = await new Promise<boolean>((resolve) => {
         try {
             const url = new URL(proxy.server);
             const port = url.port ? parseInt(url.port, 10) : url.protocol === 'https:' ? 443 : 80;
@@ -528,6 +530,23 @@ export async function checkProxyHealth(proxy: ProxyConfig): Promise<boolean> {
             resolve(false);
         }
     });
+
+    if (!tcpOk) return false;
+
+    // NEW-15: IP reputation check (non-bloccante se API key non configurata)
+    if (config.ipReputationApiKey) {
+        try {
+            const { checkIpReputation } = await import('./proxy/ipReputationChecker');
+            const reputation = await checkIpReputation(proxy.server);
+            if (reputation && !reputation.isSafe) {
+                return false;
+            }
+        } catch {
+            // Best-effort: se il check fallisce, procedi comunque
+        }
+    }
+
+    return true;
 }
 
 /**

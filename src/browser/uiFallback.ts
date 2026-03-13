@@ -288,7 +288,7 @@ export async function clickWithFallback(
         const sel = candidate.selector;
         try {
             const loc = sel.startsWith('//') ? page.locator(`xpath=${sel}`) : page.locator(sel);
-            await loc.first().click({ timeout: options.timeoutPerSelector });
+            await loc.first().click({ timeout: options.timeoutPerSelector, delay: 20 + Math.floor(Math.random() * 60) });
             if (options.postClickDelayMs > 0) {
                 await page.waitForTimeout(options.postClickDelayMs);
             }

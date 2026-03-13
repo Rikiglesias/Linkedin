@@ -17,7 +17,7 @@ import { logInfo, logWarn } from '../telemetry/logger';
 
 const META_FILENAME = '.session-meta.json';
 
-interface BehavioralProfile {
+export interface BehavioralProfile {
     avgScrollSpeedPxPerSec: number;
     avgClickDelayMs: number;
     preferredWarmupOrder: 'feed-first' | 'notifications-first' | 'search-first';
