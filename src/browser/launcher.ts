@@ -5,7 +5,7 @@
  */
 
 import path from 'path';
-import { chromium, BrowserContext, Page } from 'playwright';
+import { chromium, firefox, BrowserContext, Page } from 'playwright';
 import { config, ProxyType } from '../config';
 import { logInfo } from '../telemetry/logger';
 import { ensureDirectoryPrivate } from '../security/filesystem';
@@ -221,28 +221,40 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             viewport = null;
         }
 
+        // D.2: Supporto Firefox — args Chromium-specific non supportati da Firefox
+        const useFirefox = config.browserEngine === 'firefox';
+        const chromiumArgs = [
+            '--disable-blink-features=AutomationControlled',
+            '--disable-features=IsolateOrigins,site-per-process',
+            '--disable-webrtc',
+            '--disable-background-networking',
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding',
+            '--disable-component-extensions-with-background-pages',
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--start-maximized',
+            '--enable-features=DnsOverHttps<DoHTrial',
+            '--force-fieldtrials=DoHTrial/Group1',
+            '--force-fieldtrial-params=DoHTrial.Group1:server/https%3A%2F%2Fcloudflare-dns.com%2Fdns-query/method/POST',
+        ];
+        // Firefox usa firefoxUserPrefs per le configurazioni, non args
+        const firefoxUserPrefs = {
+            'media.peerconnection.enabled': false, // WebRTC leak prevention
+            'privacy.resistFingerprinting': false, // Non attivare — altera troppi valori
+            'dom.webdriver.enabled': false, // navigator.webdriver = false
+        };
+
         const contextOptions: Parameters<typeof chromium.launchPersistentContext>[1] = {
             headless,
             viewport,
             locale: fingerprint.locale ?? 'it-IT',
             timezoneId: fingerprint.timezone ?? config.timezone,
             userAgent: fingerprint.userAgent,
-            args: [
-                '--disable-blink-features=AutomationControlled', // Nasconde flag navigator.webdriver
-                '--disable-features=IsolateOrigins,site-per-process', // Migliora fallback iframe extraction
-                '--disable-webrtc', // Previene TCP/IP WebRTC leaks (fondamentale per proxy/Tor)
-                '--disable-background-networking',
-                '--disable-background-timer-throttling',
-                '--disable-backgrounding-occluded-windows',
-                '--disable-renderer-backgrounding',
-                '--disable-component-extensions-with-background-pages',
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--start-maximized', // Finestra massimizzata per SalesNav e rendering completo
-                '--enable-features=DnsOverHttps<DoHTrial', // AD-12: Enforce DoH via Cloudflare resolver
-                '--force-fieldtrials=DoHTrial/Group1',
-                '--force-fieldtrial-params=DoHTrial.Group1:server/https%3A%2F%2Fcloudflare-dns.com%2Fdns-query/method/POST',
-            ],
+            ...(useFirefox
+                ? { firefoxUserPrefs }
+                : { args: chromiumArgs }),
         };
         // Proxy provider HTTPS handling: ignoreHTTPSErrors SOLO per domini proxy noti.
         // NON usa --ignore-certificate-errors (flag Chrome rilevabile dai bot detector).
@@ -288,7 +300,8 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             // che patcha canvas, WebGL, audio, fonts, GPU, CDP leaks a livello C++.
             // Passa 30/30 test detection (reCAPTCHA v3, Cloudflare Turnstile, FingerprintJS).
             let browser: BrowserContext;
-            if (config.cloakBrowserEnabled) {
+            const engineLabel = useFirefox ? 'firefox' : 'chromium';
+            if (config.cloakBrowserEnabled && !useFirefox) {
                 try {
                     const cloakbrowser = require('cloakbrowser') as { launch: typeof chromium.launchPersistentContext };
                     browser = await cloakbrowser.launch(sessionDir, contextOptions);
@@ -297,6 +310,9 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                     console.warn('[BROWSER] CloakBrowser non disponibile, fallback a Playwright standard:', cloakErr instanceof Error ? cloakErr.message : String(cloakErr));
                     browser = await chromium.launchPersistentContext(sessionDir, contextOptions);
                 }
+            } else if (useFirefox) {
+                browser = await firefox.launchPersistentContext(sessionDir, contextOptions);
+                void logInfo('browser.firefox_launched', { sessionDir, engine: engineLabel });
             } else {
                 browser = await chromium.launchPersistentContext(sessionDir, contextOptions);
             }

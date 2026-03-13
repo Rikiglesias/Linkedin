@@ -158,12 +158,13 @@ Ogni task DEVE essere verificato con i **6 livelli di controllo + anti-ban**:
 - **Fix**: Aggiungere jitter +-20% sull'intervallo: `effectiveInterval = base * (0.8 + Math.random() * 0.4)`.
 - **Anti-ban**: BASSO ma contribuisce alla varianza complessiva
 
-### D.2 JA3 Forward Proxy Locale (CycleTLS)
-- [ ] **File**: nuovo `src/proxy/ja3ForwardProxy.ts`, `src/cli/commands/loopCommand.ts`
-- **Problema**: `USE_JA3_PROXY=true` assume un forward proxy HTTP su `127.0.0.1:8080` ma CycleTLS e' un client HTTP, non un forward proxy. Il servizio locale non esiste — Playwright non puo' connettersi.
-- **Fix**: Creare un forward proxy HTTP locale che intercetta CONNECT requests e usa CycleTLS per ri-negoziare il TLS con JA3 fingerprint personalizzato. Avviarlo automaticamente nel boot del bot.
-- **Priorita'**: BASSA per volumi <=20/giorno (proxy residenziale Oxylabs mitiga il rischio). ALTA per volumi >50/giorno.
-- **Anti-ban**: ALTO a volumi alti — TLS fingerprint Playwright e' rilevabile senza spoofing
+### D.2 JA3 TLS Fingerprint Spoofing
+- [ ] **File**: `src/browser/launcher.ts`
+- **Problema**: Il TLS fingerprint (JA3) e' generato da Chromium di Playwright, NON dal proxy. Un forward proxy locale (CycleTLS) non puo' cambiarlo perche' fa solo tunneling TCP — il browser fa il TLS handshake direttamente con LinkedIn. CycleTLS e' un client HTTP Go, non un intercept proxy.
+- **Analisi tecnica**: Per spoofing JA3 reale servono: (a) Playwright+Firefox (TLS nativo reale, diverso da Chromium), (b) browser patchato (camoufox, undetected-chromium), (c) MITM proxy con certificati CA custom (instabile).
+- **Fix raccomandato**: Passare a `playwright.firefox.launch()` nel launcher. Firefox ha JA3 nativo non-Chromium. Richiede test selettori e adattamento stealth scripts.
+- **Priorita'**: BASSA a <=20/giorno con proxy residenziale (LinkedIn usa JA3 come 1 segnale su decine, volume basso non triggera threshold). ALTA a >50/giorno o con account nuovi.
+- **Anti-ban**: ALTO a volumi alti
 
 ### D.3 Transizione Weekend Graduale
 - [ ] **File**: `src/risk/strategyPlanner.ts`

@@ -19,6 +19,7 @@ export interface AccountProfileConfig {
 export interface AppConfig {
     timezone: string;
     headless: boolean;
+    browserEngine: 'chromium' | 'firefox';
     dashboardAuthEnabled: boolean;
     dashboardApiKey: string;
     dashboardBasicUser: string;

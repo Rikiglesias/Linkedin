@@ -15,6 +15,10 @@ export function buildRuntimeDomainConfig(accountProfiles: AccountProfileConfig[]
     return {
         timezone: process.env.TIMEZONE ?? 'Europe/Rome',
         headless: parseBoolEnv('HEADLESS', false),
+        browserEngine: (() => {
+            const raw = parseStringEnv('BROWSER_ENGINE', 'chromium').toLowerCase();
+            return raw === 'firefox' ? 'firefox' as const : 'chromium' as const;
+        })(),
         dashboardAuthEnabled: parseBoolEnv('DASHBOARD_AUTH_ENABLED', true),
         dashboardApiKey: parseStringEnv('DASHBOARD_API_KEY'),
         dashboardBasicUser: parseStringEnv('DASHBOARD_BASIC_USER'),
