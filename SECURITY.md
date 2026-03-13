@@ -18,6 +18,25 @@
 - daily_stats per-account (migration 055): budget giornaliero isolato per account in setup multi-account.
 - Cloud lead sync con outbox fallback: se il sync diretto fallisce, l'evento viene salvato nella outbox per retry automatico.
 
+## Data Privacy & AI Exposure
+
+Il sistema integra l'AI (OpenAI GPT-5.4 o Ollama) per diverse funzionalità. È fondamentale capire **quali dati** vengono esposti a provider esterni quando si usa l'API Cloud (OpenAI):
+
+| Flusso | Dati inviati a OpenAI (Cloud) | Dati trattenuti localmente |
+|--------|------------------------------|----------------------------|
+| **Lead Scoring** | Nome, Qualifica/Headline, Nome Azienda target. | Email, Telefono, Location, Profilo completo. |
+| **Data Cleaning** | Nome grezzo, Qualifica, Azienda, URL profilo. | - |
+| **Note Invito** | Nome, Azienda, Qualifica, estratti "About" e "Experience". | - |
+| **Messaggi / Follow-up** | Nome, Azienda, Qualifica. | Email, Telefono. |
+| **Sentiment Analysis** | Testo del messaggio ricevuto dal lead. | Identità del mittente. |
+| **AI Guardian** | Statistiche di rischio aggregate (es. *pending ratio: 0.5*). | Nessun dato personale (PII). |
+
+**Mitigazioni Privacy:**
+1. I dati vengono inviati all'AI solo "just-in-time" durante il task specifico.
+2. Contatti diretti (email, telefono raccolti da Apollo/Hunter) **non vengono mai inviati a OpenAI**.
+3. OpenAI Enterprise (API) ha una policy di **zero data retention** per l'addestramento dei modelli (i dati inviati non vengono usati per trainare GPT).
+4. `VISION_REDACT_SCREENSHOTS=true` offusca informazioni sensibili negli screenshot prima di inviarli al Vision provider (per CAPTCHA).
+
 ## Threat model
 - Full model: [THREAT_MODEL.md](/c:/Users/albie/Desktop/Programmi/Linkedin/THREAT_MODEL.md)
 - Review cadence: weekly checks + monthly update + post-incident review.

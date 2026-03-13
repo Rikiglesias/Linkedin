@@ -1,6 +1,28 @@
-# ⚠️ Guida Anti-Ban — Regole Operative per l'Utente
+# ⚠️ Guida Anti-Ban — Regole Operative e Protezioni
 
-Queste sono regole **per te**, non per il codice. Il bot fa la sua parte, ma se l'utente si comporta male, LinkedIn ti becca lo stesso.
+Questa guida spiega le regole da seguire per evitare blocchi e illustra i meccanismi invisibili che il bot usa per proteggere il tuo account.
+
+---
+
+## 🛡️ Come il bot ti protegge in modo invisibile
+
+Il bot v2.0 è dotato di un motore *stealth* a 19 strati. Non devi configurarli, funzionano in background:
+
+1. **IP Reputation Pre-Check**: Prima di lanciare il browser, il bot interroga AbuseIPDB. Se l'IP del tuo proxy risulta "sporco" (usato da spammer o bot in passato), il bot si ferma prima ancora di aprire LinkedIn. Questo evita di bruciare l'account connettendosi da un IP già segnalato.
+2. **Behavioral Fingerprint (Profilo Comportamentale)**: Il bot assegna al tuo account un "profilo umano" unico (velocità di scroll, latenza nei click, preferenze di lettura). Questo profilo rimane costante: il bot si comporterà sempre con lo stesso stile per il tuo account, evitando cambi bruschi che i sistemi anti-bot (ML) usano per individuare le automazioni.
+3. **Coerenza TLS (JA3)**: Quando usi un proxy normale, il bot fa in modo che la firma del tuo browser (Chrome, Mac, Windows) combaci perfettamente con il modo in cui i pacchetti di rete vengono cifrati (Chromium TLS). LinkedIn e Cloudflare non possono distinguere la connessione da un browser reale.
+4. **Tempi di reazione Log-Normali**: Il bot non aspetta mai un tempo fisso (es. "3 secondi"). Usa una distribuzione statistica *Log-Normale*: risponde per lo più velocemente, ma a volte ha pause più lunghe (simulando una distrazione umana o la lettura di una notifica).
+5. **Circuit Breaker per Fallimenti**: Se il proxy muore o LinkedIn risponde con troppi errori (429 Too Many Requests), il bot interrompe immediatamente la sessione e va in pausa. Niente pattern di *reconnect* furiosi.
+
+---
+
+## 🚨 Come gestire gli avvisi del Pre-Flight
+
+Quando avvii un workflow, il sistema esegue un "Pre-Flight Check". Non ignorare mai i warning rossi (`[!!!]`):
+
+- **`Proxy IP <IP> BLACKLISTED`**: L'IP che stai per usare è segnalato come malevolo. **Azione**: Riavvia il bot o il router/proxy finché non ottieni un IP pulito. Non forzare la partenza.
+- **`Nessuna sessione LinkedIn trovata` / `Sessione scaduta`**: Il cookie di login è vuoto o invalidato. **Azione**: Esegui il comando `npm run create-profile` o `npm run start:dev -- run-login` per accedere di nuovo manualmente.
+- **`Budget inviti esaurito`**: Il cap giornaliero è rigido e garantito atomicamente dal DB. Se è esaurito, forzare il sistema non funzionerà: il bot si rifiuterà di cliccare "Connect".
 
 ---
 
@@ -13,10 +35,10 @@ LinkedIn vede **due sessioni attive** dallo stesso account, con fingerprint dive
 Il bot usa proxy dedicati con IP residenziali/mobile. Se tu contemporaneamente navighi con una VPN, LinkedIn vede lo stesso account da 2 IP diversi nello stesso minuto → sospetto.
 
 ### 3. NON modificare manualmente lo stato dei lead nel DB
-Il bot traccia ogni transizione di stato. Se cambi `status = 'READY_INVITE'` a mano su un lead già INVITED, il bot lo re-invita → LinkedIn vede invito doppio → flag.
+Il bot traccia ogni transizione di stato atomicamente. Se cambi `status = 'READY_INVITE'` a mano su un lead già INVITED, il bot lo re-invita → LinkedIn vede invito doppio → flag e spreco del proof-of-send timeout. Usa solo l'apposita interfaccia di recovery.
 
-### 4. NON lanciare il bot multiplo (2 istanze)
-Una sola istanza per account. Due istanze = due browser = due fingerprint = ban.
+### 4. NON lanciare il bot multiplo (2 istanze) sullo stesso account
+Una sola istanza per account. Due istanze = due browser = due fingerprint = collisioni di lock sul DB e ban.
 
 ---
 
@@ -33,16 +55,16 @@ Non lanciare il bot 5 volte nello stesso giorno. Un uso realistico è:
 ### 7. Non superare mai 80-100 inviti a settimana
 LinkedIn ha un soft cap a ~100 inviti/settimana. Il bot ha il warmup automatico, ma se forzi i limiti manualmente rischi. Per account nuovi (< 30 giorni), stai sotto i 30/settimana.
 
-### 8. Personalizza le note
-Gli inviti senza nota hanno un acceptance rate del 15-20%. Con nota personalizzata sale al 30-40%. Più acceptance = meno pending = meno rischio. **Usa sempre la modalità `ai`**.
+### 8. Personalizza le note (Usa l'AI)
+Gli inviti senza nota hanno un acceptance rate del 15-20%. Con la nota AI (GPT-5.4) che estrae il contesto del profilo (about/experience), sale al 30-40%. Più acceptance = meno inviti pending = meno rischio che LinkedIn classifichi il tuo account come spammer. **Usa sempre la modalità `ai`**.
 
 ### 9. Tieni il profilo attivo "umanamente"
 LinkedIn si aspetta che un utente attivo:
 - Scorra il feed qualche volta a settimana
-- Metta qualche like ogni tanto
+- Metta qualche like ogni tanto (il bot simula il dwell time per questo)
 - Aggiorni il profilo occasionalmente
 
-Il bot simula decoy actions, ma una vera attività organica è meglio.
+Il bot simula *decoy actions* (azioni organiche finte per nascondere il pattern di automazione), ma una vera attività organica è l'ideale.
 
 ---
 

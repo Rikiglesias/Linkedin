@@ -1,24 +1,39 @@
-# Threat Model (Web/API/Plugin/Cloud)
+# Threat Model (Web/API/Plugin/Cloud & Evasion)
 
 ## Scope
-- Dashboard/API (`/api/*`, SSE, session auth, control endpoints)
-- Worker runtime (LinkedIn automation, scheduler, queue, multi-account execution)
-- Plugin loader (`PLUGIN_DIR`, manifests, integrity checks)
-- Cloud integrations (Supabase/Webhook/Telegram/OpenAI)
-- Secrets handling (`.env`, provider keys, dashboard credentials)
+- **Evasion & Anti-Detection**: Cloudflare, LinkedIn bot detection, FingerprintJS.
+- **Platform**: Dashboard/API (`/api/*`, SSE, session auth, control endpoints)
+- **Runtime**: Worker runtime (LinkedIn automation, scheduler, queue, multi-account execution)
+- **Ecosystem**: Plugin loader (`PLUGIN_DIR`, manifests, integrity checks)
+- **Integrations**: Cloud integrations (Supabase/Webhook/Telegram/OpenAI)
+- **Secrets**: Secrets handling (`.env`, provider keys, dashboard credentials)
 
 ## Trust Boundaries
-- Browser <-> Dashboard API
-- Runtime process <-> Database
-- Runtime process <-> Third-party APIs
-- Local plugin code <-> core runtime
-- CI/CD and operator workstation
+- **Host <-> Detection Systems**: Il browser locale contro i JS iniettati da LinkedIn/Cloudflare per rilevare bot.
+- **Browser <-> Dashboard API**: L'utente remoto o locale verso la dashboard.
+- **Runtime process <-> Database**: Isolamento tenant e transazioni.
+- **Runtime process <-> Third-party APIs**: Rate limit, autenticazione.
+- **Local plugin code <-> core runtime**: Sandboxing e integrità.
 
-## Main Threats and Controls
-1. Unauthorized dashboard/control access  
-Control: API key/basic auth, lockout, persisted sessions, trusted IP policy, rate limits, strict CSP, security audit trail (`security_audit_events`).
+## 🛡️ Evasion Threat Model (Anti-Detection)
 
-2. Session abuse/replay  
+L'attore di minaccia primario qui non è un hacker, ma **LinkedIn e i suoi provider WAF (Cloudflare)** che tentano di rilevare e bannare l'automazione.
+
+| Minaccia | Metodo di Rilevamento | Controllo Implementato |
+|----------|-----------------------|------------------------|
+| **Hardware/OS Spoofing** | Discrepanze tra User-Agent e funzionalità reali (es. `navigator.platform`, `oscpu`). Font enumeration per dedurre l'OS reale. | Override coerente di `platform` e `oscpu` in base allo UA (iPhone/Android/Mac/Win). `document.fonts.check()` mockato per restituire font di sistema coerenti (NEW-5). |
+| **WebGL/Canvas Fingerprinting** | Rendering identico per sessioni diverse o rendering anomalo (bot). | Pool di 12 renderer WebGL realistici. Rumore Canvas/WebGL bidirezionale via PRNG (Mulberry32) **deterministico per regione**, non piatto. |
+| **Network/TLS Fingerprinting** | Il TLS handshake (JA3) rivela che stai usando Chromium (Playwright) ma lo UA dice Firefox o Safari. | **Pool Filtering**: se CycleTLS non è usato, il bot filtra Firefox/Safari e usa solo UA Chrome/Edge (coerenti con Chromium). **CycleTLS**: se attivato, esegue vero spoofing TLS. |
+| **Behavioral Correlation** | L'account compie azioni con gli stessi esatti ritmi ogni giorno o senza pause umane. | **Behavioral Profiles**: Ogni account riceve un profilo di latenza unico (`profileMultiplier`). **Timing Log-Normali**: Simulate pause asimmetriche con long-tail. Dwell time post-interazione. |
+| **IP Reputation/Bursts** | L'IP del proxy è in una blacklist o il bot esegue troppe azioni troppo velocemente (429). | **AbuseIPDB Pre-Check**: Gli IP blacklisted vengono scartati prima del login. **Circuit Breaker**: Chiusura immediata della sessione al primo errore Proxy. |
+| **Headless/CDP Leaks** | Variabili globali iniettate da Playwright (`webdriver`, `__playwright`, stack traces CDP). | Pulizia prototipo `Error`, override `webdriver`, mock batteria e hardwareConcurrency, `isHeadless` fallback. |
+
+## 🔒 Platform Main Threats and Controls
+
+1. **Unauthorized dashboard/control access**  
+   Control: API key/basic auth, lockout, persisted sessions, trusted IP policy, rate limits, strict CSP, security audit trail (`security_audit_events`).
+
+2. **Session abuse/replay**  
 Control: hashed session tokens, server-side revoke/rotation, expiry refresh, logout invalidation, auth-failure lockout.
 
 3. Privilege misuse on critical operations  
