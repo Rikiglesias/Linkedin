@@ -4,7 +4,7 @@
  */
 
 import { config, getLocalDateString } from '../config';
-import { getDatabase } from '../db';
+import { checkDiskSpace, getDatabase } from '../db';
 import { getDailyStat, getRuntimeFlag } from '../core/repositories';
 import { getRuntimeAccountProfiles } from '../accountManager';
 import { readLineFromStdin, askConfirmation, askNumber, askChoice, isInteractiveTTY } from '../cli/stdinHelper';
@@ -195,15 +195,20 @@ export async function computeSessionRiskLevel(
         }
     }
 
+    // Factor 6: Disk space (C.2) — peso 15
+    const diskStatus = checkDiskSpace();
+    const diskFactor = diskStatus.level === 'critical' ? 15 : diskStatus.level === 'warn' ? 5 : 0;
+
     const factors: Record<string, number> = {
         challenges: challengeFactor,
         pendingRatio: pendingFactor,
         errorRate: errorFactor,
         proxyReputation: proxyFactor,
         runFrequency: frequencyFactor,
+        diskSpace: diskFactor,
     };
 
-    const score = Math.min(100, challengeFactor + pendingFactor + errorFactor + proxyFactor + frequencyFactor);
+    const score = Math.min(100, challengeFactor + pendingFactor + errorFactor + proxyFactor + frequencyFactor + diskFactor);
 
     let level: 'GO' | 'CAUTION' | 'STOP';
     let recommendation: string;

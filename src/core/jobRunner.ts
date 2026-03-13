@@ -282,6 +282,9 @@ async function runQueuedJobsForAccount(
             }
         }
 
+        // C.1: Reset proxy failure counter — il proxy funziona in questo ciclo
+        await setRuntimeFlag(`proxy_failure_count:${account.id}`, '0').catch(() => null);
+
         // Proxy quality check pre-batch (non bloccante)
         if (config.proxyQualityCheckEnabled) {
             try {
@@ -638,27 +641,46 @@ async function runQueuedJobsForAccount(
                     break;
                 }
 
-                // ── Proxy failure: terminazione immediata sessione ──────────
-                // Se il proxy è morto (ERR_PROXY_CONNECTION_FAILED, etc.),
-                // ogni retry successivo fallirebbe identicamente. Termina subito
-                // la sessione con wind-down per evitare pattern di reconnect rapidi.
+                // ── Proxy failure con escalation cross-ciclo (C.1) ──────────
+                // Se il proxy è morto, traccia failure consecutive in runtime_flags.
+                // Dopo 3 failure consecutive → pausa INDEFINITA + alert Telegram critico.
+                // Prima: loop infinito (pausa 15min → riprova → fallisce → pausa 15min).
+                // Dopo: 3 fallimenti → STOP + "cambia proxy".
                 if (isProxyConnectionError(error)) {
                     await markJobRetryOrDeadLetter(job.id, attempts, job.max_attempts, retryDelayMs(attempts, config.retryBaseMs), message);
+
+                    const cbKey = `proxy_failure_count:${account.id}`;
+                    const prevCount = parseInt(await getRuntimeFlag(cbKey).catch(() => '0') ?? '0', 10);
+                    const failCount = (Number.isFinite(prevCount) ? prevCount : 0) + 1;
+                    await setRuntimeFlag(cbKey, String(failCount)).catch(() => null);
+
                     await logWarn('job_runner.proxy_failure.session_abort', {
                         jobId: job.id,
                         type: job.type,
                         accountId: account.id,
                         message,
+                        consecutiveProxyFailures: failCount,
                     });
-                    await pauseAutomation(
-                        'PROXY_CONNECTION_FAILED',
-                        {
-                            accountId: account.id,
-                            jobId: job.id,
-                            message,
-                        },
-                        15,
-                    );
+
+                    if (failCount >= 3) {
+                        // Proxy permanentemente morto → pausa indefinita
+                        await pauseAutomation(
+                            'PROXY_PERMANENTLY_DEAD',
+                            { accountId: account.id, consecutiveFailures: failCount, message },
+                            7 * 24 * 60, // 7 giorni — l'utente deve fare 'resume' dopo aver fixato il proxy
+                        );
+                        await sendTelegramAlert(
+                            `🚨 Proxy MORTO per account ${account.id}.\n${failCount} fallimenti consecutivi.\n\nAzione richiesta:\n1. Verificare le credenziali proxy\n2. Testare il proxy manualmente\n3. Cambiare proxy nel .env\n4. Eseguire 'bot.ps1 resume' per riprendere`,
+                            'Proxy Morto',
+                            'critical',
+                        ).catch(() => null);
+                    } else {
+                        await pauseAutomation(
+                            'PROXY_CONNECTION_FAILED',
+                            { accountId: account.id, jobId: job.id, message, consecutiveFailures: failCount },
+                            15,
+                        );
+                    }
                     break;
                 }
 

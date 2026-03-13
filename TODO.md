@@ -178,9 +178,9 @@ Ogni task DEVE essere verificato con i **6 livelli di controllo + anti-ban**:
 ```
 Sprint A (P0 anti-ban arch) → A.1, A.2, A.3                     [3/3] ✅
 Sprint B (P1 observability) → B.1, B.2, B.3, B.4                [4/4] ✅
-Sprint C (P1 resilience)    → C.1, C.2, C.3                     [0/3]
+Sprint C (P1 resilience)    → C.1, C.2, C.3                     [3/3] ✅
 Sprint D (P2 UX/lifecycle)  → D.1, D.2, D.3                      [0/3]
-                                                          Totale [7/14]
+                                                          Totale [10/14]
 ```
 
 Gate: `npm run conta-problemi` = EXIT 0 dopo ogni sprint
