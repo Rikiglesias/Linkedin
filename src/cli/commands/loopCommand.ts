@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from 'crypto';
-import { config, getEffectiveLoopIntervalMs, getLocalDateString, isWorkingHour } from '../../config';
+import { config, getEffectiveLoopIntervalMs, getHourInTimezone, getLocalDateString, isWorkingHour } from '../../config';
 import { sleep } from '../../utils/async';
 import { launchBrowser, closeBrowser as closeBrowserSession } from '../../browser';
 import { checkSessionFreshness } from '../../browser/sessionCookieMonitor';
@@ -498,7 +498,6 @@ function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
         shouldRun: async (ctx) => {
             if (ctx.dryRun || !ctx.isLeader) return false;
             if (!config.dailyReportAutoEnabled) return false;
-            const { getHourInTimezone } = await import('../../config');
             const currentHour = getHourInTimezone(new Date(), config.timezone);
             if (currentHour < config.dailyReportHour) return false;
             const lastSent = await getRuntimeFlag('daily_report.last_sent_date');
@@ -744,8 +743,9 @@ export async function runLoopCommand(args: string[]): Promise<void> {
 
     // B.3: Alert Telegram avvio bot
     if (!dryRun) {
+        const localTime = new Intl.DateTimeFormat('it-IT', { timeZone: config.timezone, hour: '2-digit', minute: '2-digit' }).format(new Date());
         await sendTelegramAlert(
-            `Bot avviato.\nWorkflow: ${workflow}\nOra: ${new Date().toISOString().substring(11, 19)}`,
+            `Bot avviato.\nWorkflow: ${workflow}\nOra: ${localTime} (${config.timezone})`,
             'Bot Avviato',
             'info',
         ).catch(() => null);
@@ -847,8 +847,9 @@ export async function runLoopCommand(args: string[]): Promise<void> {
         stopConfigWatcher();
         // B.3: Alert Telegram spegnimento bot
         if (!dryRun) {
+            const stopTime = new Intl.DateTimeFormat('it-IT', { timeZone: config.timezone, hour: '2-digit', minute: '2-digit' }).format(new Date());
             await sendTelegramAlert(
-                `Bot spento dopo ${cycle} cicli.\nOra: ${new Date().toISOString().substring(11, 19)}`,
+                `Bot spento dopo ${cycle} cicli.\nOra: ${stopTime} (${config.timezone})`,
                 'Bot Spento',
                 'info',
             ).catch(() => null);
