@@ -264,6 +264,24 @@ async function runQueuedJobsForAccount(
             });
         }
 
+        // ── Session Warmup integrato (A.1a + A.2) ──────────────────────────
+        // Il warmup gira nella STESSA sessione browser che processerà i job.
+        // Un umano prima scorre feed/notifiche, poi lavora — non apre un browser
+        // per scrollare, lo chiude, ne apre un altro per lavorare.
+        if (!options.dryRun) {
+            try {
+                const { warmupSession } = await import('./sessionWarmer');
+                await warmupSession(session.page);
+                await logInfo('job_runner.warmup_integrated', { accountId: account.id });
+            } catch (warmupErr) {
+                await logWarn('job_runner.warmup_failed', {
+                    accountId: account.id,
+                    error: warmupErr instanceof Error ? warmupErr.message : String(warmupErr),
+                });
+                // Non bloccante: se il warmup fallisce, il jobRunner prosegue
+            }
+        }
+
         // Proxy quality check pre-batch (non bloccante)
         if (config.proxyQualityCheckEnabled) {
             try {

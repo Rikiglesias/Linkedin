@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from 'crypto';
-import { config, getEffectiveLoopIntervalMs, getLocalDateString } from '../../config';
+import { config, getEffectiveLoopIntervalMs, getLocalDateString, isWorkingHour } from '../../config';
 import { sleep } from '../../utils/async';
 import { launchBrowser, closeBrowser as closeBrowserSession } from '../../browser';
 import { checkSessionFreshness } from '../../browser/sessionCookieMonitor';
@@ -28,7 +28,7 @@ import { runDoctor } from '../../core/doctor';
 import { runWorkflow } from '../../core/orchestrator';
 import { dispatchReadyCampaignSteps } from '../../core/campaignEngine';
 import { runSalesNavigatorListSync } from '../../core/salesNavigatorSync';
-import { warmupSession } from '../../core/sessionWarmer';
+// warmupSession rimosso da qui — ora integrato nel jobRunner (A.1a)
 import { runSiteCheck } from '../../core/audit';
 import { runCompanyEnrichmentBatch } from '../../core/companyEnrichment';
 import { runRandomLinkedinActivity } from '../../workers/randomActivityWorker';
@@ -362,14 +362,14 @@ function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
         onError: 'skip',
     });
 
-    // 6. Auto site-check + warmup session
+    // 6. Auto site-check (warmup rimosso — A.1b: ora integrato nel jobRunner)
     tasks.push({
         name: 'auto_site_check',
         shouldRun: async (ctx) => {
             const decision = await evaluateAutoSiteCheckDecision(ctx.dryRun);
             return decision.shouldRun;
         },
-        execute: async (ctx) => {
+        execute: async () => {
             const siteCheckReport = await runSiteCheck({
                 limitPerStatus: config.autoSiteCheckLimit,
                 autoFix: config.autoSiteCheckFix,
@@ -381,19 +381,6 @@ function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
                 autoFix: config.autoSiteCheckFix,
                 report: siteCheckReport,
             });
-
-            if (!ctx.dryRun) {
-                try {
-                    const warmupSessionInstance = await launchBrowser({ headless: config.headless, forceDesktop: true });
-                    try {
-                        await warmupSession(warmupSessionInstance.page);
-                    } finally {
-                        await closeBrowserSession(warmupSessionInstance);
-                    }
-                } catch (e) {
-                    console.log('[LOOP] Errore Session Warmer (non fatale):', e);
-                }
-            }
         },
         onError: 'skip',
     });
@@ -580,33 +567,10 @@ function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
         onError: 'skip',
     });
 
-    // 13b. Session warmup (pre-workflow) — anti-ban: simula attività organica
-    // PRIMA di qualsiasi azione operativa. Un umano prima scorre il feed,
-    // controlla notifiche, ecc. Senza warmup il bot sembra bot.
-    tasks.push({
-        name: 'session_warmup',
-        shouldRun: (ctx) => {
-            if (ctx.dryRun) return false;
-            const w = buildCtx.workflow;
-            return w === 'all' || w === 'invite' || w === 'message';
-        },
-        execute: async () => {
-            const { getSessionWindow } = await import('../../core/sessionWarmer');
-            const window = getSessionWindow();
-            if (window === 'gap') return;
-            try {
-                const session = await launchBrowser({ headless: config.headless, forceDesktop: true });
-                try {
-                    await warmupSession(session.page);
-                } finally {
-                    await closeBrowserSession(session);
-                }
-            } catch (e) {
-                console.log('[LOOP] Session warmup non fatale:', e);
-            }
-        },
-        onError: 'skip',
-    });
+    // 13b. Session warmup — RIMOSSO (A.1a): il warmup è ora integrato nel jobRunner
+    // (src/core/jobRunner.ts) nella STESSA sessione browser che processerà i job.
+    // Prima apriva un browser separato per il warmup, poi lo chiudeva, poi il jobRunner
+    // ne apriva un altro — LinkedIn vedeva 2 sessioni separate. Ora è una sessione unica.
 
     // 14. Main workflow
     tasks.push({
@@ -761,13 +725,14 @@ export async function runLoopCommand(args: string[]): Promise<void> {
             const started = new Date().toISOString();
             console.log(`[LOOP] cycle = ${cycle} started_at = ${started} `);
 
-            // ── Maintenance window skip (03:00-06:00 locale) ──────────────────
-            // LinkedIn fa maintenance notturno e deploy infrastrutturali. Durante
-            // questi periodi i selettori possono cambiare e le API sono instabili.
-            const currentHour = new Date().getHours();
-            if (currentHour >= 3 && currentHour < 6) {
-                console.log(`[LOOP] maintenance_window_skip hour=${currentHour} — skipping cycle`);
-                await sleepWithLockHeartbeat(15 * 60 * 1000, lockOwnerId ?? '', lockTtlSeconds);
+            // ── Working Hours Guard (A.3) ──────────────────────────────────────
+            // Se fuori orario lavorativo (config HOUR_START/HOUR_END + timezone),
+            // skip l'intero ciclo. Previene attività LinkedIn di notte quando PM2
+            // riavvia il bot dopo crash/OOM. Usa config.timezone (non ora locale server).
+            if (!dryRun && !isWorkingHour()) {
+                console.log(`[LOOP] outside_working_hours — skipping cycle (timezone: ${config.timezone})`);
+                // Sleep breve (5 min) per ricontrollare rapidamente quando l'orario rientra
+                await sleepWithLockHeartbeat(5 * 60 * 1000, lockOwnerId ?? '', lockTtlSeconds);
                 continue;
             }
 

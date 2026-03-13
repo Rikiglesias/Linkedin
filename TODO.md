@@ -1,205 +1,199 @@
-# TODO — Workflow 360° Improvement Plan
+# TODO — Analisi 360° Sistema Completo
 
-> Generated: 2026-03-13 | Prev audit: 52/52 completati (archiviato)
-> Focus: Anti-ban hardening, workflow intelligence, realismo comportamentale, resilienza
-> 30 item su 6 sprint + 3 deferred audit — Anti-ban first, 6 livelli di verifica
-> **Completati: 30/30** (+ 7 fix critici da analisi effetti composti)
-> Tutti i task implementati, verificati L1→L6, test E2E dry-run passa
-
----
-
-## Sprint 1: Anti-Ban Hardening Critico (P0)
-
-### 1.1 Session Duration Variance + Wind-Down
-- [x] **File**: `src/core/jobRunner.ts` (linee 734-739), `src/browser/humanBehavior.ts`
-- **Problema**: Hard limit fissi `500 job` e `60 min` — pattern rilevabile da LinkedIn
-- **Fix**: Range jitterato `35-70 min` e `300-600 job`. Fase wind-down nell'ultimo 15%: `interJobDelay ×1.5`, velocità azioni `-30%`
-- **Anti-ban**: FORTEMENTE POSITIVO
-
-### 1.2 Navigation Context Chains (Intent Simulation)
-- [x] **File**: Nuovo `src/browser/navigationContext.ts`, `src/workers/inviteWorker.ts`, `src/workers/messageWorker.ts`
-- **Problema**: Bot naviga direttamente `page.goto(profileUrl)` — segnale bot #1 (no referral chain)
-- **Fix**: Catene realistiche: Feed→Search→Scroll→Click profilo→Connect (70%), diretto (30%). Per messaggi: Feed→Messaging inbox→Conversazione
-- **Anti-ban**: FORTEMENTE POSITIVO — risolve segnale detection principale
-
-### 1.3 Wire Trust Score nello Scheduler
-- [x] **File**: `src/core/scheduler.ts` (dopo linea 448), `src/core/repositories.ts`
-- **Problema**: `calculateAccountTrustScore()` in `accountBehaviorModel.ts:186` produce `budgetMultiplier` (0.3-1.0) ma MAI collegata allo scheduler
-- **Fix**: Dopo `applyGrowthModel()`, chiamare trust score e moltiplicare budget. Aggiungere `getAccountTrustInputs()` query (acceptance rate, challenges 7d, pending ratio)
-- **Anti-ban**: FORTEMENTE POSITIVO — account basso trust auto-limitati
-
-### 1.4 Multi-Account Target Deconfliction
-- [x] **File**: `src/core/scheduler.ts` (prima linea 686), `src/core/repositories.ts`
-- **Problema**: 2 account possono invitare la stessa persona — LinkedIn rileva coordinamento
-- **Fix**: Query `hasOtherAccountTargeted(linkedinUrl, excludeAccountId, 30gg)` prima di `enqueueJob()`. Se positivo, skip lead
-- **Anti-ban**: FORTEMENTE POSITIVO — previene detection coordinamento multi-account
+> Generated: 2026-03-13 | Aggiornato dopo analisi completa codebase
+> Audit precedente: 30/30 + 7 fix effetti composti + 3 fix L1→L6 — COMPLETATO e archiviato
+> Focus: GAP trovati dall'analisi lifecycle completo (boot → sessione → shutdown → multi-giorno)
+> **Completati: 0/13**
 
 ---
 
-## Sprint 2: Intelligenza Workflow (P0)
+## REGOLA OBBLIGATORIA PER OGNI MODIFICA
 
-### 2.1 Outcome-Driven Budget per Lista (Acceptance Rate Feedback)
-- [x] **File**: `src/core/scheduler.ts`, `src/core/repositories.ts`
-- **Problema**: `evaluateAdaptiveBudgetContext()` usa solo pending/blocked ratio, NON acceptance rate storico. Liste con acceptance <15% ricevono budget pieno
-- **Fix**: `computeListPerformanceMultiplier(listName, lookbackDays)`: acceptance >40%→×1.15, 20-40%→×1.0, <20%→×0.5, <10%→×0.25
-- **Anti-ban**: FORTEMENTE POSITIVO — auto-throttle liste bassa qualità
+Ogni task DEVE essere verificato con i **6 livelli di controllo + anti-ban**:
 
-### 2.2 Post-Action Verification per Inviti
-- [x] **File**: `src/workers/inviteWorker.ts` (o follow-up worker), `src/workers/errors.ts`
-- **Problema**: Dopo click Connect, nessuna verifica che invito sia stato effettivamente inviato. Inviti fantasma inflazionano pending ratio
-- **Fix**: Attendere 2-5s, verificare bottone diventato "Pending"/"Sent". Se no → `INVITE_NOT_CONFIRMED` error
-- **Anti-ban**: NEUTRO/POSITIVO — dwell time realistico + previene pending ratio inflazionato
+### Anti-ban (PRIORITA' ZERO — prima di scrivere codice)
+1. Questa modifica cambia il comportamento del browser su LinkedIn?
+2. Cambia timing, delay, ordine delle azioni?
+3. Tocca fingerprint, stealth, cookie, session?
+4. Aggiunge un'azione nuova su LinkedIn?
+5. Cambia volumi (budget, cap, limiti)?
 
----
+### L1 — Compilazione e test (BLOCCANTE)
+- `npm run conta-problemi` = EXIT 0 (typecheck 0, lint 0, tutti i test passano)
+- Dead code check, circular dependency check se moduli core
 
-## Sprint 3: Realismo Comportamentale (P1)
+### L2 — Catene dirette
+- Import→export→chiamata per ogni file toccato
+- Parametri opzionali per retrocompatibilita'
+- Barrel file propagano a tutti i consumatori
 
-### 3.1 Warm-Up Sessione con Sequenza Ordinata
-- [x] **File**: `src/core/sessionWarmer.ts`
-- **Problema**: Ordine warmup randomizzato. Umano reale fa Feed (90%) → Notifiche (70%) → Messaging (40%). Mai Search/Settings per primo
-- **Fix**: Catena probabilistica ordinata. Feed primo (90%), poi notifications (70%), poi messaging (40%, solo sessione 2)
-- **Anti-ban**: POSITIVO — pattern primo-accesso realistico
+### L3 — Runtime profondo
+- Edge case: NaN, null, undefined, array vuoti, numeri negativi
+- Performance: costo per iterazione nel loop
+- Per browser: memory leak? Listener rimossi? Timeout propaga?
+- Per DB: transazione? Crash consistency?
 
-### 3.2 Scroll Velocity a 3 Fasi
-- [x] **File**: `src/browser/humanBehavior.ts` (funzione `simulateHumanReading()`)
-- **Problema**: `deltaY` range uniforme 150-530px. Scroll reale ha 3 fasi
-- **Fix**: Fase 1 orientation (400-600px, 300-800ms), Fase 2 reading (100-250px, 500-2000ms), Fase 3 skip (500-800px, 200-500ms). Transizioni probabilistiche
-- **Anti-ban**: POSITIVO — scroll uniforme è rilevabile
+### L4 — Ragionamento preventivo
+- "E se null/undefined?" per ogni input
+- "E se fallisce a meta'?" per ogni flusso multi-step
+- "E se chiamata 2 volte?" per ogni side-effect
+- Scenari: multi-giorno, recovery, interazione utente, aggiornamento LinkedIn
 
-### 3.3 Viewport Dwell Time Before Click
-- [x] **File**: `src/browser/humanBehavior.ts`, `src/workers/inviteWorker.ts`, `src/workers/messageWorker.ts`
-- **Problema**: LinkedIn traccia IntersectionObserver. Click <500ms dopo apparizione nel viewport = sospetto
-- **Fix**: `ensureViewportDwell(page, selector, minMs=800, maxMs=2000)`: verifica elemento nel viewport da almeno `minMs` prima del click
-- **Anti-ban**: POSITIVO — previene segnale click-before-visible
+### L5 — Visione prodotto
+- Utente capisce cosa succede (log, Telegram, report)
+- Alert dicono COSA FARE, non solo cosa e' successo
 
-### 3.4 Content-Aware Profile Dwell Time
-- [x] **File**: `src/browser/humanBehavior.ts`, `src/workers/inviteWorker.ts`
-- **Problema**: Dwell time profilo fisso indipendente dalla ricchezza contenuto
-- **Fix**: `computeProfileDwellTime(page)` — misura lunghezza DOM, scala tempo lettura. Profilo ricco 15-30s, sparse 5-10s. Usa `contextualReadingPause()` (linea 724, non usata per profili)
-- **Anti-ban**: POSITIVO — dwell time fisso è segnale bot
+### L6 — Coerenza sistema e osservabilita'
+- Dati end-to-end: dato arriva fino all'utente?
+- Reversibilita': rollback senza data loss?
+- Config: nuova var .env documentata, parsata, validata?
 
----
-
-## Sprint 4: Resilienza + Checkpoint (P1)
-
-### 4.1 Workflow Checkpoint/Resume
-- [x] **File**: `src/workflows/syncSearchWorkflow.ts`, `src/workflows/syncListWorkflow.ts`
-- **Problema**: Crash sync-search dopo 3/5 ricerche → riparte da zero. Spreco page view
-- **Fix**: Persistere `lastProcessedSearchIndex` e `lastProcessedPage` in `runtime_flags` (usa `setRuntimeFlag/getRuntimeFlag` già presenti). Resume dall'ultimo checkpoint
-- **Anti-ban**: POSITIVO — meno page view ripetute
-
-### 4.2 Smart Batch Sizing Mid-Session
-- [x] **File**: `src/core/jobRunner.ts` (near linea 339-367)
-- **Problema**: `maxJobsPerRun` da backpressure ma non riduce mid-session se LinkedIn rallenta
-- **Fix**: Se `httpThrottler.shouldSlow` → ridurre batch -30%. Se 3+ job consecutivi con response time >2x baseline → terminare sessione con wind-down
-- **Anti-ban**: POSITIVO — cattura pushback prima di 429/challenge
-
-### 4.3 Selector Self-Healing con Fallback Chain (già implementato)
-- [x] **File**: `src/browser/uiFallback.ts` (già esiste — estendere), `src/browser/humanBehavior.ts`
-- **Problema**: Selector canary rileva selettori rotti e blocca tutto il workflow
-- **Fix**: Per ogni selettore critico, lista prioritizzata 3-5 alternative. Primario fallisce → prova secondario. Log fallback per aggiornamento pool
-- **Anti-ban**: NEUTRO — nessun comportamento LinkedIn-visible
+### Workflow obbligatorio
+```
+1. npm run pre-modifiche PRIMA di iniziare
+2. Valutare impatto anti-ban
+3. Ragionare a 360° breve/medio/lungo termine + effetti composti
+4. Implementare la modifica
+5. npm run conta-problemi DOPO (DEVE essere exit code 0)
+6. Verifica L2→L3→L4→L5→L6
+7. Se qualsiasi livello trova un problema → STOP e fixare
+```
 
 ---
 
-## Sprint 5: Monitoring + Reporting (P1)
+## Sprint A: Anti-Ban Architetturale (P0 — CRITICO)
 
-### 5.1 Preflight Risk Assessment con Go/No-Go
-- [x] **File**: `src/workflows/preflight.ts`, `src/workflows/types.ts`
-- **Problema**: Preflight mostra config/warning ma non calcola rischio sessione
-- **Fix**: `computeSessionRiskLevel()`: challenge recenti + pending ratio + account health + proxy reputation + tempo dall'ultimo run. Output: GO / CAUTION / STOP
-- **Anti-ban**: POSITIVO — previene run durante periodi alto rischio
+### A.1 Browser Singleton per Ciclo (rivisto dopo analisi L4: multi-account)
+- [x] **File**: `src/cli/commands/loopCommand.ts`, `src/core/orchestrator.ts`, `src/core/jobRunner.ts`
+- **Problema**: Ogni ciclo del loop apre fino a **4 browser separati**: (1) auto_site_check warmup, (2) session_warmup, (3) canary check nell'orchestratore, (4) jobRunner. Ogni apertura = nuovo fingerprint check, nuovo TLS handshake, nuova sessione LinkedIn. LinkedIn correla multiple sessioni dallo stesso account come automatismo.
+- **Fix**: Creare un `SessionManager` che apre il browser UNA VOLTA per ciclo e lo passa a tutti i sub-task (warmup, canary, jobRunner, follow-up). Il browser viene chiuso solo alla fine del ciclo.
+- **Impatto breve**: Elimina 3 aperture browser ridondanti per ciclo
+- **Impatto medio**: Fingerprint coerente per tutta la sessione, meno TLS handshake, meno cookie load
+- **Impatto lungo**: LinkedIn vede una singola sessione continua e naturale, non 4 micro-sessioni da 30 secondi
+- **Anti-ban**: CRITICO — risolve il problema di detection multi-sessione piu' grave
 
-### 5.2 Per-List Performance in Report
-- [x] **File**: `src/workflows/types.ts`, `src/workflows/reportFormatter.ts`, `src/workflows/sendInvitesWorkflow.ts`, `src/workflows/sendMessagesWorkflow.ts`
-- **Problema**: Report mostra solo aggregati, non per-lista
-- **Fix**: Sezione `listBreakdown` in `WorkflowReport` con acceptance rate, inviti inviati, flag per liste sottoperformanti
-- **Anti-ban**: NEUTRO — solo osservabilità
+### A.2 Warmup Integrato nel JobRunner (implementato in A.1)
+- [x] **File**: `src/core/jobRunner.ts`, `src/core/sessionWarmer.ts`
+- **Problema**: Il warmup (sub-task 17 del loop) apre un browser SEPARATO, fa warmup, chiude il browser. Poi il jobRunner apre il SUO browser e va direttamente al primo lead. Nessun warmup nella sessione operativa. E' come se un umano aprisse il browser, navigasse feed/notifiche, chiudesse il browser, lo riaprisse e andasse subito a lavorare.
+- **Fix**: Il jobRunner deve fare warmup nella PROPRIA sessione browser, PRIMA del primo job. Usare `warmupSession(session.page)` dopo `checkLogin()` e prima del loop dei job. Rimuovere il sub-task 17 separato.
+- **Dipendenza**: Si risolve automaticamente con A.1 (browser singleton), ma va fatto comunque come fallback
+- **Impatto breve**: Il primo job della sessione ha warmup organico nella stessa sessione
+- **Impatto medio**: LinkedIn vede un pattern naturale: feed → notifiche → poi lavoro
+- **Impatto lungo**: Pattern coerente cross-sessione
+- **Anti-ban**: ALTO — primo job senza warmup nella stessa sessione = segnale bot
 
-### 5.3 Preflight Stale Data Warning
-- [x] **File**: `src/workflows/sendInvitesWorkflow.ts`, `src/workflows/sendMessagesWorkflow.ts`
-- **Problema**: Nessun warning se ultimo sync >7 giorni. Lead stale = basso acceptance = rischio
-- **Fix**: In `generateWarnings()`: se `lastSyncAt > 7gg` → WARNING "Dati lead obsoleti"
-- **Anti-ban**: POSITIVO — lead freschi = acceptance più alto
-
-### 5.4 Predictive Ban Probability Score
-- [x] **File**: `src/risk/riskEngine.ts`, `src/core/orchestrator.ts`
-- **Problema**: `evaluatePredictiveRiskAlerts()` manda solo alert Telegram. Manca punteggio ban 0-100
-- **Fix**: `estimateBanProbability()`: z-score predittivi + trend acceptance + frequenza challenge + trend durata sessione. Output a dashboard e outbox
-- **Anti-ban**: POSITIVO — early warning prima ban irreversibili
+### A.3 Working Hours Guard all'Avvio del Loop
+- [x] **File**: `src/cli/commands/loopCommand.ts`
+- **Problema**: Se PM2 riavvia il bot alle 2 di notte (dopo crash/OOM), il bot parte, passa il doctor preflight (sessione LinkedIn valida), e inizia a lavorare. Il `maintenance_window_skip` (3:00-6:00) copre solo 3 ore. Tra 0:00-3:00 e 6:00-HOUR_START il bot fa warmup, site-check, SalesNav sync — tutte azioni che aprono browser su LinkedIn di notte.
+- **Fix**: All'inizio di ogni ciclo del loop, PRIMA di qualsiasi sub-task, verificare `isWorkingHour()`. Se fuori orario → skip TUTTO il ciclo (non solo il maintenance window). Il sleep inter-ciclo puo' essere piu' corto fuori orario (5 min invece di 15) per ricontrollare rapidamente.
+- **Impatto breve**: Nessuna attivita' LinkedIn fuori orario lavorativo
+- **Impatto medio**: Pattern di attivita' coerente con un umano che lavora 9-18
+- **Impatto lungo**: Nessun accumulo di segnali "attivita' notturna" nel profilo LinkedIn
+- **Anti-ban**: ALTO — attivita' notturna e' un segnale bot forte
 
 ---
 
-## Sprint 6: Polish (P2)
+## Sprint B: Operativita' e Osservabilita' (P1)
 
-### 6.1 Cross-Day Pattern Randomization
-- [x] **File**: `src/risk/strategyPlanner.ts`, `src/core/scheduler.ts`
-- **Fix**: Jitter per-account per-settimana con seed `FNV-1a(accountId + weekNumber)` sui fattori giornalieri
+### B.1 Daily Report Automatico nel Loop
+- [ ] **File**: `src/cli/commands/loopCommand.ts`
+- **Problema**: Il daily report (251 righe, molto completo) NON viene mai chiamato automaticamente. Il config ha `dailyReportAutoEnabled` e `dailyReportHour` ma nessun sub-task nel loop li usa. L'utente deve eseguire `npm start -- daily-report` manualmente ogni giorno.
+- **Fix**: Aggiungere un sub-task `daily_report` nel loop che verifica se `config.dailyReportAutoEnabled` e se l'ora corrente >= `config.dailyReportHour` e se il report non e' gia' stato inviato oggi (flag `daily_report.last_sent_date`). Se tutte le condizioni sono vere, chiama `generateAndSendDailyReport()`.
+- **Impatto breve**: L'utente riceve il report ogni sera senza doverlo lanciare manualmente
+- **Impatto medio**: Visibilita' quotidiana su pending ratio, acceptance rate, ban risk
+- **Impatto lungo**: L'utente rileva trend negativi prima che diventino problemi
+- **Anti-ban**: NEUTRO (nessuna azione LinkedIn) ma CRITICO per la visibilita' utente
 
-### 6.2 Mouse Ease-In-Out
-- [x] **File**: `src/ml/mouseGenerator.ts`
-- **Fix**: Sostituire ease-out con ease-in-out-quint per profilo velocità a campana realistico
+### B.2 Ban Probability nel Daily Report
+- [ ] **File**: `src/telemetry/dailyReporter.ts`
+- **Problema**: `estimateBanProbability()` e' implementata e integrata nell'orchestratore, ma il daily report Telegram NON la include. L'utente vede il risk score (0-100) ma non il ban probability score separato che pesa diversamente i fattori.
+- **Fix**: Aggiungere sezione `Ban Probability` nel daily report con score, level, fattori principali, e trend vs ieri.
+- **Anti-ban**: NEUTRO (solo osservabilita') ma CRITICO per early warning
 
-### 6.3 Typing Flow State
-- [x] **File**: `src/browser/humanBehavior.ts`, `src/ai/typoGenerator.ts`
-- **Fix**: Parole comuni → 0.7x delay, parole rare → 1.4x delay (dizionario frequenza)
+### B.3 Alert Telegram Avvio/Spegnimento Bot
+- [ ] **File**: `src/index.ts`, `src/cli/commands/loopCommand.ts`
+- **Problema**: L'utente non sa se il bot e' attivo o no, a meno di guardare PM2 o la dashboard. Se il bot crasha silenziosamente, l'utente non riceve nessun alert.
+- **Fix**: Inviare alert Telegram "Bot avviato" all'inizio del loop e "Bot spento" nel graceful shutdown. Includere: ora, workflow, account, motivo shutdown.
+- **Impatto breve**: L'utente sa immediatamente se il bot e' attivo
+- **Impatto medio**: Rileva crash/restart anomali via storico alert
+- **Impatto lungo**: Audit trail delle sessioni del bot
 
-### 6.4 Report con Suggerimenti Azionabili
-- [x] **File**: `src/workflows/reportFormatter.ts`
-- **Fix**: `nextAction` arricchito con suggerimenti multi-step context-aware
+### B.4 Wind-Down Naturale a Fine Sessione
+- [ ] **File**: `src/core/jobRunner.ts`, `src/browser/humanBehavior.ts`
+- **Problema**: Quando il browser viene chiuso (fine sessione, rotazione, shutdown), la chiusura e' immediata. L'ultima azione visibile e' un invito/messaggio → chiusura browser. Un umano non fa cosi' — torna al feed, scrolla un po', poi chiude.
+- **Fix**: Aggiungere `humanWindDown(page)` che fa: 30% probabilita' tornare al feed e scrollare 2-3 secondi, poi chiudere. Chiamarla prima di `closeBrowser()` nel jobRunner (fine sessione) e nel graceful shutdown.
+- **Impatto breve**: L'ultima azione non e' sempre un'azione operativa
+- **Impatto medio**: Pattern di chiusura naturale
+- **Anti-ban**: MEDIO — chiusura brusca dopo azione operativa e' un pattern bot
 
-### 6.5 Graceful Degradation Enrichment
-- [x] **File**: `src/workflows/sendInvitesWorkflow.ts`
-- **Fix**: Se enrichment fallisce >80% e nota AI selezionata → auto-downgrade a template con warning
+---
 
-### 6.6 Circuit Breaker Per-Lista
-- [x] **File**: `src/core/scheduler.ts`, `src/core/jobRunner.ts`, `src/risk/incidentManager.ts`
-- **Fix**: Per-lista con prefix `cb::list::${listName}` in runtime_flags (attualmente solo globale)
+## Sprint C: Resilienza e Infrastruttura (P1)
 
-### 6.7 Session Replay Breadcrumbs
-- [x] **File**: `src/workers/context.ts`, `src/core/jobRunner.ts`, `src/risk/incidentManager.ts`
-- **Fix**: Ultimi 20 eventi navigazione in memoria. Su challenge/errore → dump nel record incidente + Telegram
+### C.1 Proxy Morto — Circuit Breaker con Escalation
+- [ ] **File**: `src/core/jobRunner.ts`, `src/proxyManager.ts`
+- **Problema**: Se il proxy e' permanentemente morto, il bot cicla infinitamente: avvio → proxy error → pausa 15min → riavvio → proxy error. L'utente non viene avvisato che il proxy e' **permanentemente** morto (non temporaneamente lento).
+- **Fix**: Tracciare failure proxy consecutive cross-ciclo in `runtime_flags`. Dopo 3 cicli consecutivi con proxy error: (1) inviare alert Telegram CRITICO "Proxy morto permanentemente — intervento manuale richiesto", (2) pausare automazione indefinitamente, (3) NON riprovare automaticamente.
+- **Impatto breve**: L'utente sa subito che deve cambiare proxy
+- **Impatto medio**: Non spreca budget in tentativi inutili
+- **Impatto lungo**: Previene accumulo segnali di connessione instabile su LinkedIn
+
+### C.2 Disk Space Check nel Preflight
+- [ ] **File**: `src/workflows/preflight.ts`, `src/core/doctor.ts`
+- **Problema**: Se il disco e' pieno, il DB write fallisce con errore criptico. `checkDiskSpace()` esiste nell'orchestratore ma il preflight non lo verifica. Il bot puo' partire su disco pieno → crash mid-session → job stuck.
+- **Fix**: Aggiungere check spazio disco nel doctor preflight e nel `computeSessionRiskLevel()`. Se <500MB → WARNING, se <100MB → STOP.
+
+### C.3 Docker CMD Corretto
+- [ ] **File**: `Dockerfile`, `docker-compose.yml`
+- **Problema**: Il Dockerfile usa `CMD ["node", "dist/index.js", "dashboard"]` che avvia SOLO la dashboard, NON il bot. L'utente pensa "il container gira" ma il bot non sta facendo nulla.
+- **Fix**: Cambiare il CMD a un entrypoint che avvia SIA il dashboard (background) SIA il run-loop. Oppure documentare chiaramente che servono 2 container separati.
+
+---
+
+## Sprint D: UX e Lifecycle (P2)
+
+### D.1 Intervallo Loop con Jitter
+- [ ] **File**: `src/config/index.ts`, `src/cli/commands/loopCommand.ts`
+- **Problema**: L'intervallo tra i cicli del loop e' costante (15 min default). Un umano non lavora a intervalli di 15 minuti precisi.
+- **Fix**: Aggiungere jitter +-20% sull'intervallo: `effectiveInterval = base * (0.8 + Math.random() * 0.4)`.
+- **Anti-ban**: BASSO ma contribuisce alla varianza complessiva
+
+### D.2 Transizione Weekend Graduale
+- [ ] **File**: `src/risk/strategyPlanner.ts`
+- **Problema**: Il bot passa da 100% attivita' venerdi' sera a 10% sabato mattina. Transizione brusca e innaturale.
+- **Fix**: Venerdi' pomeriggio (14:00+) → `inviteFactor` cala progressivamente. Lunedi' mattina → parte lento e accelera. Modellare come una curva sinusoidale, non un gradino.
+- **Anti-ban**: BASSO ma contribuisce al realismo multi-giorno
 
 ---
 
 ## Ordine Implementazione
 
 ```
-Sprint 1 (P0 anti-ban)    → 1.1, 1.2, 1.3, 1.4              [4/4] ✅
-Sprint 2 (P0 intelligence) → 2.1, 2.2                        [2/2] ✅
-Sprint 3 (P1 behavioral)  → 3.1, 3.2, 3.3, 3.4              [4/4] ✅
-Sprint 4 (P1 resilience)  → 4.1, 4.2, 4.3                    [3/3] ✅
-Sprint 5 (P1 monitoring)  → 5.1, 5.2, 5.3, 5.4              [4/4] ✅
-Sprint 6 (P2 polish)      → 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7  [7/7] ✅
-Deferred audit            → D-1, D-2, D-3                    [3/3] ✅
+Sprint A (P0 anti-ban arch) → A.1, A.2, A.3                     [3/3] ✅
+Sprint B (P1 observability) → B.1, B.2, B.3, B.4                [0/4]
+Sprint C (P1 resilience)    → C.1, C.2, C.3                     [0/3]
+Sprint D (P2 UX/lifecycle)  → D.1, D.2                          [0/2]
+                                                          Totale [3/13]
 ```
 
 Gate: `npm run conta-problemi` = EXIT 0 dopo ogni sprint
 
 ---
 
-## Deferred dall'Audit Precedente (da chiudere)
+## Archivio: Audit Precedente (COMPLETATO 2026-03-13)
 
-### D-1: CC-25 — Selector learning false positives from slow pages
-- [x] **File**: `src/browser/uiFallback.ts`
-- **Problema**: Su proxy lenti, selector timeout inflaziona `selectorFailureRate` nel risk engine → quarantine ingiusta
-- **Fix**: `trackSelectorFailure` ora verifica body length >200 chars prima di registrare failure. Pagina vuota = problema connettività, non selettore.
-- **Stato**: ✅ Completato
-
-### D-2: NEW-10 — No lead-level lock during worker processing
-- [x] **File**: `src/core/leadStateService.ts`
-- **Problema**: Job table ha lock (`locked_at`), ma lead table NO row-level lock
-- **Fix**: Confermato che `transitionLead` usa `withTransaction` + `isValidLeadTransition` check-and-set atomico. SQLite serializza le transazioni. Su PG, la seconda transazione concurrent fallirebbe con "transizione non consentita" (check-and-set pattern funzionante).
-- **Stato**: ✅ Confermato mitigato — robustezza sufficiente per il setup attuale
-
-### D-3: Verifica end-to-end dei 4 workflow
-- [x] **Verifica**: Test E2E dry-run automatizzato per `invite`, `check`, `message`, `all` + verifica nuove funzioni esportate
-- **Stato**: ✅ Completato — `npm run test:e2e:dry` passa con 4 workflow + validazione trust score, list performance, risk assessment, ban probability, breadcrumbs
-
----
-
-## Archivio Audit Precedente
-
-> L'audit originale (52/52 task + JA3 extra) è stato completato il 2026-03-13.
-> 2 item deferred (CC-25, NEW-10) ora inclusi sopra come D-1, D-2.
-> Tutti i fix verificati L1→L6 + anti-ban.
+> **30/30 task + 7 fix effetti composti + 3 fix L1→L6 wiring**
+> Commit: `fdcf92e` — "feat: TODO 30/30"
+> Verificato: `npm run conta-problemi` EXIT 0 (202/202 test), `npm run test:e2e:dry` PASS
+>
+> Sprint 1-6 completati: session variance, navigation chains, trust score, deconfliction,
+> outcome-driven budget, post-action verification, warmup ordinato, scroll 3 fasi,
+> viewport dwell, profile dwell, checkpoint/resume, smart batch, risk assessment,
+> per-list report, stale data warning, ban probability, cross-day jitter, mouse ease-in-out,
+> typing flow, suggerimenti azionabili, graceful degradation, circuit breaker per-lista,
+> session breadcrumbs, selector false positives fix.
+>
+> Fix effetti composti: computeProfileDwellTime unificata, nav chain keywords generiche + decay,
+> trust score fuori loop, hasOtherAccountTargeted senza JSON_EXTRACT, list perf >=7gg,
+> checkpoint per nome, selector body check, import statico getLeadById,
+> frequencyFactor timestamp ISO, estimateBanProbability sempre attivo.
