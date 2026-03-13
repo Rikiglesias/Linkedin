@@ -30,7 +30,7 @@ const DEFAULT_WEEKLY_PLAN: readonly DayStrategy[] = [
     { dayOfWeek: 3, dayName: 'Wednesday', inviteFactor: 1.0, messageFactor: 1.0, description: 'Balanced' },
     { dayOfWeek: 4, dayName: 'Thursday', inviteFactor: 0.7, messageFactor: 1.3, description: 'Message focus' },
     { dayOfWeek: 5, dayName: 'Friday', inviteFactor: 0.5, messageFactor: 0.5, description: 'Wind-down' },
-    { dayOfWeek: 6, dayName: 'Saturday', inviteFactor: 0.1, messageFactor: 0.1, description: 'Minimal' },
+    { dayOfWeek: 6, dayName: 'Saturday', inviteFactor: 0.0, messageFactor: 0.0, description: 'Rest day' },
 ];
 
 /**
