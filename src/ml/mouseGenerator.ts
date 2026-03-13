@@ -53,8 +53,10 @@ export class MouseGenerator {
         const tremorPhaseX = Math.random() * Math.PI * 2;
         const tremorPhaseY = Math.random() * Math.PI * 2;
 
-        // Fitts's-Law easing: ease-out quint for stronger deceleration near t=1
-        const fittsEase = (t: number): number => 1 - Math.pow(1 - t, 5);
+        // Ease-in-out quint (6.2): profilo velocità a campana realistico.
+        // Un umano reale accelera all'inizio e decelera alla fine (bell curve).
+        const fittsEase = (t: number): number =>
+            t < 0.5 ? 16 * t * t * t * t * t : 1 - Math.pow(-2 * t + 2, 5) / 2;
 
         for (let i = 0; i <= steps; i++) {
             const rawT = i / steps;

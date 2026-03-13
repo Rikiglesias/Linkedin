@@ -91,6 +91,37 @@ export function resetSessionTypoRate(): void {
     _sessionTypoRate = null;
 }
 
+// ─── Typing Flow State (6.3) ────────────────────────────────────────────────
+
+// Parole comuni — digitate in "flow state" (più veloci)
+const COMMON_WORDS = new Set([
+    'the', 'and', 'for', 'that', 'with', 'this', 'from', 'your', 'have', 'been',
+    'will', 'are', 'was', 'not', 'but', 'all', 'can', 'had', 'her', 'one',
+    'our', 'out', 'you', 'day', 'get', 'has', 'him', 'his', 'how', 'its',
+    'may', 'new', 'now', 'old', 'see', 'way', 'who', 'did', 'let', 'say',
+    // Italian common words
+    'che', 'per', 'con', 'una', 'sono', 'del', 'non', 'come', 'alla', 'anche',
+    'più', 'nel', 'hai', 'era', 'dal', 'suo', 'molto', 'dopo', 'dove', 'solo',
+    // Business common words
+    'team', 'work', 'would', 'like', 'about', 'great', 'time', 'look', 'help',
+    'know', 'just', 'make', 'think', 'good', 'need', 'well', 'back', 'want',
+]);
+
+/**
+ * Calcola il moltiplicatore di velocità per una parola in base alla sua frequenza.
+ * Parole comuni → 0.7x (più veloci, flow state)
+ * Parole normali → 1.0x
+ * Parole rare/lunghe → 1.4x (più lente, pensiero)
+ */
+export function getWordFlowMultiplier(word: string): number {
+    const lower = word.toLowerCase().trim();
+    if (!lower || lower.length <= 1) return 1.0;
+    if (COMMON_WORDS.has(lower)) return 0.7;
+    if (lower.length > 10) return 1.4;  // Parole lunghe = rare
+    if (/[0-9@#$%]/.test(lower)) return 1.3;  // Numeri/simboli = pensiero
+    return 1.0;
+}
+
 // ─── Core ───────────────────────────────────────────────────────────────────
 
 export function determineNextKeystroke(char: string, baseTypoProb: number = 0.03): { char: string; isTypo: boolean } {

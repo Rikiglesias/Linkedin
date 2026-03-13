@@ -1,6 +1,5 @@
 import { Page } from 'playwright';
 import {
-    contextualReadingPause,
     detectChallenge,
     dismissKnownOverlays,
     humanDelay,
@@ -8,6 +7,8 @@ import {
     humanType,
     simulateHumanReading,
 } from '../browser';
+import { ensureViewportDwell, computeProfileDwellTime } from '../browser/humanBehavior';
+import { navigateToProfileWithContext } from '../browser/navigationContext';
 import {
     checkAndIncrementDailyLimit,
     incrementDailyStat,
@@ -353,9 +354,18 @@ export async function processInviteJob(
     }
     context.visitedProfilesToday?.add(normalizedUrl);
 
-    await context.session.page.goto(lead.linkedin_url, { waitUntil: 'domcontentloaded' });
-    await simulateHumanReading(context.session.page);
-    await contextualReadingPause(context.session.page);
+    // Navigation Context Chain (1.2): catena di navigazione realistica
+    // invece di goto diretto al profilo (segnale detection #1).
+    await navigateToProfileWithContext(
+        context.session.page,
+        lead.linkedin_url,
+        { name: `${lead.first_name} ${lead.last_name}`.trim(), job_title: lead.job_title, company: lead.account_name },
+        context.accountId,
+    );
+    // Content-Aware Profile Reading (3.4 fix): funzione UNIFICATA scroll + dwell
+    // in budget totale proporzionale alla ricchezza del profilo (4-20s).
+    // Sostituisce simulateHumanReading + contextualReadingPause per i profili.
+    await computeProfileDwellTime(context.session.page);
 
     // Anti-pattern: 20% di probabilità di visitare la pagina attività recente del target
     // prima di tornare al profilo e cliccare Connect. Un umano curioso guarda i post
@@ -451,6 +461,10 @@ export async function processInviteJob(
     // Chiudi overlay LinkedIn prima di cercare il bottone Connect
     await dismissKnownOverlays(context.session.page);
 
+    // Viewport Dwell Time (3.3): assicura che il bottone Connect sia nel viewport
+    // da almeno 800-2000ms prima del click — previene segnale click-before-visible.
+    await ensureViewportDwell(context.session.page, joinSelectors('connectButtonPrimary'));
+
     const connectClicked = await clickConnectOnProfile(context.session.page);
     if (!connectClicked) {
         await incrementDailyStat(context.localDate, 'selector_failures');
@@ -496,7 +510,10 @@ export async function processInviteJob(
         }
     }
 
-    await humanDelay(context.session.page, 1200, 2200);
+    // Post-Action Verification (2.2): delay realistico 2-5s prima di verificare
+    // che l'invito sia stato effettivamente inviato. Un umano aspetta di vedere
+    // il feedback visivo prima di procedere.
+    await humanDelay(context.session.page, 2000, 5000);
     const proofOfSend = context.dryRun
         ? true
         : await Promise.race([
@@ -512,7 +529,12 @@ export async function processInviteJob(
             await logInfo('invite.proof_timeout_already_invited', { leadId: lead.id });
             return workerResult(1);
         }
-        throw new RetryableWorkerError('Proof-of-send non rilevato', 'NO_PROOF_OF_SEND');
+        await logInfo('invite.not_confirmed', {
+            leadId: lead.id,
+            linkedinUrl: lead.linkedin_url.substring(0, 60),
+            message: 'Bottone non diventato Pending/Sent dopo invio',
+        });
+        throw new RetryableWorkerError('Invito non confermato: proof-of-send non rilevato', 'INVITE_NOT_CONFIRMED');
     }
 
     await transitionLead(lead.id, 'INVITED', context.dryRun ? 'invite_dry_run' : 'invite_sent', {

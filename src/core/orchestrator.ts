@@ -4,6 +4,7 @@ import { getSessionMaturity } from '../browser/sessionCookieMonitor';
 import { config, getLocalDateString, getWeekStartDate, isWorkingHour } from '../config';
 import { pauseAutomation, quarantineAccount } from '../risk/incidentManager';
 import {
+    estimateBanProbability,
     evaluateComplianceHealthScore,
     evaluateCooldownDecision,
     evaluatePredictiveRiskAlerts,
@@ -463,6 +464,40 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
                 `Anomalia predittiva rilevata.\nWorkflow: ${options.workflow}\n${summary}`,
                 'Risk Predictive Alert',
                 'warn',
+            );
+        }
+
+    }
+
+    // Ban Probability Score (5.4 wire): stima probabilità ban 0-100.
+    // Fuori dal blocco riskPredictiveAlertsEnabled perché il ban score è utile SEMPRE,
+    // anche se l'utente disabilita gli alert predittivi (troppo rumorosi).
+    if (!options.dryRun) {
+        const banProb = estimateBanProbability(
+            [], // predictiveAlerts non disponibili se alerts disabilitati — score usa gli altri 3 fattori
+            schedule.riskSnapshot.pendingRatio > 0
+                ? (1 - schedule.riskSnapshot.pendingRatio) * 100
+                : 50,
+            schedule.riskSnapshot.challengeCount,
+            schedule.riskSnapshot.pendingRatio,
+        );
+        await logInfo('risk.ban_probability', {
+            workflow: options.workflow,
+            localDate: schedule.localDate,
+            score: banProb.score,
+            level: banProb.level,
+            factors: banProb.factors,
+        });
+        await pushOutboxEvent(
+            'risk.ban_probability',
+            { ...banProb, workflow: options.workflow, localDate: schedule.localDate },
+            `risk.ban_probability:${schedule.localDate}:${options.workflow}`,
+        );
+        if (banProb.level === 'HIGH' || banProb.level === 'CRITICAL') {
+            await sendTelegramAlert(
+                `Ban Probability: ${banProb.score}/100 (${banProb.level})\n${banProb.recommendation}`,
+                'Ban Risk Alert',
+                banProb.level === 'CRITICAL' ? 'critical' : 'warn',
             );
         }
     }

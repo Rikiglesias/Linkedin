@@ -2,7 +2,7 @@ import { config, getLocalDateString, getWeekStartDate, getWorkingHourIntensity, 
 import { randomInt } from '../utils/random';
 import { getSessionBudgetFactor } from './sessionWarmer';
 import { getSessionMaturity } from '../browser/sessionCookieMonitor';
-import { applyGrowthModel } from '../risk/accountBehaviorModel';
+import { applyGrowthModel, calculateAccountTrustScore } from '../risk/accountBehaviorModel';
 import { getSessionHistory } from '../risk/sessionMemory';
 import { getTodayStrategy } from '../risk/strategyPlanner';
 import { countTodayPosts } from '../workers/postCreatorWorker';
@@ -31,6 +31,9 @@ import {
     promoteNewLeadsToReadyInvite,
     syncLeadListsFromLeads,
     getAccountAgeDays,
+    getAccountTrustInputs,
+    hasOtherAccountTargeted,
+    computeListPerformanceMultiplier,
 } from './repositories';
 import { transitionLead } from './leadStateService';
 
@@ -399,6 +402,12 @@ export async function scheduleJobs(
     let inviteBudget = 0;
     let messageBudget = 0;
 
+    // Trust Score (1.3 fix): query globale FUORI dal loop account.
+    // acceptance rate, challenges 7d e pending ratio sono condivisi tra account —
+    // non serve ricalcolarli per ogni account (evita N query identiche).
+    const trustInputs = await getAccountTrustInputs(ssiScore, dbAccountAgeDays);
+    const trustResult = calculateAccountTrustScore(trustInputs);
+
     for (const account of accounts) {
         let ageDays = dbAccountAgeDays;
         if (account.warmupEnabled && account.warmupStartDate) {
@@ -446,6 +455,12 @@ export async function scheduleJobs(
         const growthResult = applyGrowthModel(accountInviteLimit, accountMessageLimit, ageDays);
         accountInviteLimit = growthResult.inviteBudget;
         accountMessageLimit = growthResult.messageBudget;
+
+        // Trust Score (1.3): applica il multiplier calcolato fuori dal loop
+        if (trustResult.budgetMultiplier < 1.0) {
+            accountInviteLimit = Math.max(1, Math.floor(accountInviteLimit * trustResult.budgetMultiplier));
+            accountMessageLimit = Math.max(1, Math.floor(accountMessageLimit * trustResult.budgetMultiplier));
+        }
 
         inviteBudget += accountInviteLimit;
         messageBudget += accountMessageLimit;
@@ -614,6 +629,17 @@ export async function scheduleJobs(
             const breakdown = listBreakdown.get(listName);
             if (!breakdown) continue;
 
+            // Circuit Breaker Per-Lista (6.6): se la lista ha un circuit break attivo, skip.
+            // Le liste con errori ricorrenti vengono isolate senza fermare le altre.
+            const listCbFlag = await getRuntimeFlag(`cb::list::${listName}`).catch(() => null);
+            if (listCbFlag) {
+                const cbExpiry = parseInt(listCbFlag, 10);
+                if (cbExpiry > Date.now()) {
+                    breakdown.inviteBudget = 0;
+                    continue;
+                }
+            }
+
             const listConfig = listConfigMap.get(listName);
             const listInvitesSent = inviteStatsMap.get(listName) ?? 0;
             const rawListBudget = computeListBudget(
@@ -622,7 +648,15 @@ export async function scheduleJobs(
                 listInvitesSent,
             );
             const adaptive = adaptiveContextMap.get(listName);
-            const listBudget = applyAdaptiveFactor(rawListBudget, adaptive?.factor ?? 1);
+            let listBudget = applyAdaptiveFactor(rawListBudget, adaptive?.factor ?? 1);
+
+            // Outcome-Driven Budget (2.1): modula budget in base all'acceptance rate storico.
+            // Liste con bassa acceptance ricevono meno budget → auto-throttle qualità scarsa.
+            const listPerf = await computeListPerformanceMultiplier(listName, 30);
+            if (listPerf.multiplier !== 1.0 && listPerf.sampleSize >= 5) {
+                listBudget = Math.max(1, Math.floor(listBudget * listPerf.multiplier));
+            }
+
             breakdown.inviteBudget = listBudget;
             if (listBudget <= 0) continue;
 
@@ -661,6 +695,15 @@ export async function scheduleJobs(
                 if (remainingForAccount <= 0) {
                     continue;
                 }
+                // Multi-Account Deconfliction (1.4): skip lead se un altro account
+                // lo ha già targetizzato negli ultimi 30 giorni — previene detection coordinamento.
+                if (accounts.length > 1) {
+                    const alreadyTargeted = await hasOtherAccountTargeted(lead.linkedin_url, accountId, 30);
+                    if (alreadyTargeted) {
+                        continue;
+                    }
+                }
+
                 const noBurstDelaySec = noBurstPlanner ? noBurstPlanner.nextDelaySec() : 0;
                 const timingDecision = await resolveTimingDecision('invite', lead.job_title);
                 const initialDelaySec = noBurstDelaySec + timingDecision.delaySec;

@@ -4,10 +4,10 @@
 
 import { config, getLocalDateString } from '../config';
 import { runWorkflow } from '../core/orchestrator';
-import { getDailyStat } from '../core/repositories';
+import { computeListPerformanceMultiplier, getDailyStat, getListDailyStatsBatch } from '../core/repositories';
 import { runPreflight, appendProxyReputationWarning } from './preflight';
 import { formatWorkflowReport } from './reportFormatter';
-import type { PreflightDbStats, PreflightConfigStatus, PreflightWarning, WorkflowReport } from './types';
+import type { PreflightDbStats, PreflightConfigStatus, PreflightWarning, WorkflowReport, WorkflowReportListBreakdown } from './types';
 import { getDatabase } from '../db';
 import { runSyncSearchWorkflow } from './syncSearchWorkflow';
 import { enrichLeadsParallel } from '../integrations/parallelEnricher';
@@ -69,6 +69,24 @@ function generateWarnings(
     const withoutCompany = stats.totalLeads - stats.withJobTitle;
     if (withoutCompany > 5) {
         warnings.push({ level: 'info', message: `${withoutCompany} lead senza company/job_title — nota generica per questi` });
+    }
+
+    // Stale Data Warning (5.3): lead non sincronizzati da >7 giorni = obsoleti
+    // Lead stale → basso acceptance → pending ratio alto → rischio ban
+    if (stats.lastSyncAt) {
+        const syncAgeMs = Date.now() - new Date(stats.lastSyncAt).getTime();
+        const syncAgeDays = Math.floor(syncAgeMs / 86400000);
+        if (syncAgeDays > 7) {
+            warnings.push({
+                level: 'warn',
+                message: `Dati lead obsoleti: ultimo sync ${syncAgeDays} giorni fa. Lead stale riducono acceptance rate — esegui sync-list prima.`,
+            });
+        }
+    } else if (stats.totalLeads > 0) {
+        warnings.push({
+            level: 'info',
+            message: 'Nessun sync registrato per questa lista — verifica che i lead siano aggiornati.',
+        });
     }
 
     return warnings;
@@ -197,6 +215,7 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
     const sessionLimit = parseInt(preflight.answers['limit'] || '0', 10);
 
     // ── Pre-enrichment parallelo (zero browser, solo API) ──
+    let enrichmentDegraded = false;
     if (!dryRun) {
         console.log('\n  ⚡ Pre-enrichment parallelo dei lead (senza browser)...');
         const enrichReport = await enrichLeadsParallel({
@@ -212,12 +231,27 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
         } else {
             console.log('  ✅ Tutti i lead sono già arricchiti.\n');
         }
+
+        // Graceful Degradation (6.5): se enrichment fallisce per >80% dei lead
+        // e noteMode è 'ai', auto-downgrade a 'template' con warning.
+        // Nota AI senza dati arricchiti = nota generica vuota → basso acceptance → rischio ban.
+        if (enrichReport.total > 5 && enrichReport.enriched / enrichReport.total < 0.20) {
+            enrichmentDegraded = true;
+            console.warn('\n  ⚠️  DEGRADATION: Enrichment fallito per >80% dei lead. API probabilmente down o rate-limited.');
+            if (preflight.answers['noteMode'] === 'ai') {
+                console.warn('  ⚠️  Auto-downgrade nota: ai → template (nota AI senza dati = vuota/generica).\n');
+            }
+        }
     }
 
     // Run the existing orchestrator for invite workflow
     console.log('\n  Avvio invio inviti...\n');
 
-    const noteMode = (preflight.answers['noteMode'] || 'ai') as 'ai' | 'template' | 'none';
+    let noteMode = (preflight.answers['noteMode'] || 'ai') as 'ai' | 'template' | 'none';
+    // Graceful Degradation (6.5): downgrade effettivo
+    if (enrichmentDegraded && noteMode === 'ai') {
+        noteMode = 'template';
+    }
 
     await runWorkflow({
         workflow: 'invite',
@@ -231,6 +265,27 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
     // Capture post-run stats
     const invitesAfter = await getDailyStat(localDate, 'invites_sent');
     const invitesSent = invitesAfter - invitesBefore;
+
+    // Per-List Performance Breakdown (5.2 wire)
+    const listBreakdown: WorkflowReportListBreakdown[] = [];
+    try {
+        const listInviteStats = await getListDailyStatsBatch(localDate, 'invites_sent');
+        const listMessageStats = await getListDailyStatsBatch(localDate, 'messages_sent');
+        for (const [ln, inv] of listInviteStats) {
+            const perf = await computeListPerformanceMultiplier(ln, 30);
+            const msg = listMessageStats.get(ln) ?? 0;
+            let flag: WorkflowReportListBreakdown['flag'] = null;
+            if (perf.sampleSize >= 10 && perf.acceptanceRatePct < 10) flag = 'critical';
+            else if (perf.sampleSize >= 10 && perf.acceptanceRatePct < 20) flag = 'underperforming';
+            listBreakdown.push({
+                listName: ln,
+                invitesSent: inv,
+                messagesSent: msg,
+                acceptanceRatePct: perf.acceptanceRatePct,
+                flag,
+            });
+        }
+    } catch { /* best-effort list breakdown */ }
 
     // Report
     const workflowReport: WorkflowReport = {
@@ -247,12 +302,42 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
             dry_run: dryRun ? 'SI' : 'no',
         },
         errors: [],
-        nextAction: invitesAfter >= config.hardInviteCap
-            ? 'Budget inviti esaurito — riprendi domani'
-            : `Budget rimanente: ${config.hardInviteCap - invitesAfter} inviti. Esegui 'send-messages' dopo le accettazioni.`,
+        nextAction: buildNextActionSuggestion(invitesSent, invitesAfter, config.hardInviteCap, dryRun),
+        listBreakdown,
     };
 
     console.log(formatWorkflowReport(workflowReport));
+}
+
+function buildNextActionSuggestion(
+    invitesSent: number,
+    invitesAfter: number,
+    hardCap: number,
+    dryRun: boolean,
+): string {
+    if (dryRun) {
+        return 'Dry run completato. Rimuovi --dry-run per inviare gli inviti reali.';
+    }
+    const remaining = hardCap - invitesAfter;
+    const steps: string[] = [];
+
+    if (remaining <= 0) {
+        steps.push('Budget inviti esaurito per oggi.');
+        steps.push("Domani: esegui 'send-invites' per il prossimo batch.");
+    } else {
+        steps.push(`Budget rimanente: ${remaining} inviti.`);
+    }
+
+    if (invitesSent === 0) {
+        steps.push('ATTENZIONE: 0 inviti inviati. Verifica: lead READY_INVITE disponibili? Sessione LinkedIn valida? Challenge in corso?');
+    } else if (invitesSent < 5) {
+        steps.push(`Solo ${invitesSent} inviti inviati — possibile sessione breve o challenge. Controlla i log.`);
+    }
+
+    steps.push("Prossimo step: esegui 'send-messages' per i lead che hanno accettato.");
+    steps.push("Monitora il pending ratio nel daily report — se > 50% considera di ritirare inviti vecchi.");
+
+    return steps.join(' ');
 }
 
 function buildCliOverrides(opts: SendInvitesOptions): Record<string, string> {

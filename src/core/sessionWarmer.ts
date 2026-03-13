@@ -78,31 +78,44 @@ export async function warmupSession(page: Page): Promise<void> {
         return;
     }
 
+    // Catena probabilistica ordinata (3.1): un umano reale segue sempre
+    // lo stesso ordine di navigazione al primo accesso. Feed è SEMPRE primo,
+    // poi notifiche, poi messaging. Search e profile view sono rari e mai primi.
+    const stepsExecuted: string[] = [];
+
     try {
-        // 1. Vai alla Home Page
-        await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
-        await humanDelay(page, 2000, 5000);
-
-        // 2. Scrolling organico sul feed (leggere articoli passivamente)
-        await logInfo('session_warmer.feed_reading');
-        const maxScrollAttempts = Math.floor(Math.random() * 3) + 2; // Da 2 a 4 scroll
-        for (let i = 0; i < maxScrollAttempts; i++) {
-            await simulateHumanReading(page);
-            await humanDelay(page, 1500, 4000);
-        }
-
-        // 3. Check Notifiche incrociato (Blink passivo)
-        if (Math.random() > 0.5) {
-            await logInfo('session_warmer.notifications_check');
-            const notificationsTab = await page.$('a[href*="/notifications/"]');
-            if (notificationsTab) {
-                await notificationsTab.hover();
-                await humanDelay(page, 1000, 2000);
+        // Step 1: Feed — SEMPRE primo (90% lo visita, 10% skip raro es. clic diretto su notifica)
+        if (Math.random() < 0.90) {
+            await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
+            await humanDelay(page, 2000, 5000);
+            await logInfo('session_warmer.feed_reading');
+            const maxScrollAttempts = Math.floor(Math.random() * 3) + 2;
+            for (let i = 0; i < maxScrollAttempts; i++) {
+                await simulateHumanReading(page);
+                await humanDelay(page, 1500, 4000);
             }
+            stepsExecuted.push('feed');
         }
 
-        // 4. Interazione col motore di ricerca (digita qualcosa, cancella) [Raro: 30%]
-        if (Math.random() > 0.7) {
+        // Step 2: Notifiche — 70% (secondo passo naturale dopo feed)
+        if (Math.random() < 0.70) {
+            await logInfo('session_warmer.notifications_check');
+            await page.goto('https://www.linkedin.com/notifications/', { waitUntil: 'domcontentloaded' });
+            await humanDelay(page, 1500, 3000);
+            await simulateHumanReading(page);
+            stepsExecuted.push('notifications');
+        }
+
+        // Step 3: Messaging — 40% (solo sessione 2: "torno a controllare risposte")
+        if (sessionWindow === 'second' && Math.random() < 0.40) {
+            await logInfo('session_warmer.messaging_check');
+            await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'domcontentloaded' });
+            await humanDelay(page, 1200, 2500);
+            stepsExecuted.push('messaging');
+        }
+
+        // Step 4: Search — raro (20%), mai primo. Simula curiosità.
+        if (stepsExecuted.length > 0 && Math.random() < 0.20) {
             await logInfo('session_warmer.search_simulation');
             const searchInput = await page.$('input.search-global-typeahead__input');
             if (searchInput) {
@@ -114,32 +127,24 @@ export async function warmupSession(page: Page): Promise<void> {
                 await searchInput.fill('');
                 await humanDelay(page, 500, 1000);
                 await page.keyboard.press('Escape');
+                stepsExecuted.push('search');
             }
         }
 
-        // 5. Messaging tab check (sessione 2 only — simula "torno a controllare risposte")
-        if (sessionWindow === 'second' && Math.random() > 0.6) {
-            await logInfo('session_warmer.messaging_check');
-            const messagingTab = await page.$('a[href*="/messaging/"]');
-            if (messagingTab) {
-                await messagingTab.hover();
-                await humanDelay(page, 800, 1500);
-            }
-        }
-
-        // 6. Profile view (raro, 15% — simula curiosità naturale)
-        if (Math.random() > 0.85) {
+        // Step 5: Profile view — raro (15%), mai primo. Curiosità naturale.
+        if (stepsExecuted.length > 0 && Math.random() < 0.15) {
             await logInfo('session_warmer.own_profile_view');
             const myProfileLink = await page.$('a[href*="/in/"] img.presence-entity__image');
             if (myProfileLink) {
                 await myProfileLink.hover();
                 await humanDelay(page, 500, 1200);
+                stepsExecuted.push('profile');
             }
         }
     } catch (e) {
         await logWarn('session_warmer.interrupted', { error: e instanceof Error ? e.message : String(e) });
     } finally {
-        await logInfo('session_warmer.done');
+        await logInfo('session_warmer.done', { stepsExecuted });
         await humanDelay(page, 1000, 2000);
     }
 }

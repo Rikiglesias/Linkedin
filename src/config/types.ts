@@ -272,6 +272,13 @@ export interface AppConfig {
     behaviorCoffeeBreakMaxSec: number;
     contextualPauseMinMs: number;
     contextualPauseMaxMs: number;
+    sessionMemoryProtectionMinJobs: number;
+    sessionMemoryProtectionMaxJobs: number;
+    sessionMemoryProtectionMinMinutes: number;
+    sessionMemoryProtectionMaxMinutes: number;
+    sessionWindDownPct: number;
+    sessionWindDownDelayMultiplier: number;
+    sessionWindDownSpeedReduction: number;
     mondayLowActivityFactor: number;
     mondayLowActivityStartHour: number;
     mondayLowActivityEndHour: number;

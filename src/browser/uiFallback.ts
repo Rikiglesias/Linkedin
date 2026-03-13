@@ -241,6 +241,20 @@ async function trackSelectorFailure(
     selectors: readonly string[],
     message: string,
 ): Promise<void> {
+    // D-1: Distinguere "selector not found" da "page didn't load".
+    // Su proxy lenti, la pagina potrebbe non aver caricato il DOM → qualsiasi selettore
+    // fallirebbe. Registrare come selector failure inflaziona selectorFailureRate
+    // nel risk engine → quarantine ingiusta. Verifichiamo che la pagina abbia contenuto.
+    try {
+        const bodyLength = await page.evaluate(() => (document.body?.innerText ?? '').length).catch(() => 0);
+        if (bodyLength < 200) {
+            // Pagina non caricata — problema di connettività, non del selettore
+            return;
+        }
+    } catch {
+        // Se non riusciamo nemmeno a valutare il body, la pagina è probabilmente chiusa
+        return;
+    }
     await recordSelectorFailure(label, page.url(), selectors, message).catch(() => null);
 }
 

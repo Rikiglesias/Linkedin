@@ -39,7 +39,27 @@ const DEFAULT_WEEKLY_PLAN: readonly DayStrategy[] = [
  *
  * Disabled by default — returns (1.0, 1.0) unless WEEKLY_STRATEGY_ENABLED=true.
  */
-export function getTodayStrategy(): DayStrategy {
+/**
+ * FNV-1a hash per generare jitter deterministico per account+settimana (6.1).
+ * Stesso account + stessa settimana = stesso jitter. Settimana diversa = jitter diverso.
+ */
+function fnv1aHash(input: string): number {
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < input.length; i++) {
+        hash ^= input.charCodeAt(i);
+        hash = Math.imul(hash, 0x01000193);
+    }
+    return hash >>> 0;
+}
+
+function getWeekNumber(date: Date): number {
+    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+}
+
+export function getTodayStrategy(accountId?: string): DayStrategy {
     if (!config.weeklyStrategyEnabled) {
         const now = new Date();
         const dow = now.getDay();
@@ -54,7 +74,25 @@ export function getTodayStrategy(): DayStrategy {
 
     const now = new Date();
     const dow = now.getDay();
-    return DEFAULT_WEEKLY_PLAN[dow];
+    const base = DEFAULT_WEEKLY_PLAN[dow];
+
+    // Cross-Day Pattern Randomization (6.1): jitter ±15% per-account per-settimana.
+    // Deterministico: stesso account+settimana = stesso jitter ogni giorno.
+    if (accountId) {
+        const weekNum = getWeekNumber(now);
+        const inviteSeed = fnv1aHash(`${accountId}:${weekNum}:invite:${dow}`);
+        const messageSeed = fnv1aHash(`${accountId}:${weekNum}:message:${dow}`);
+        const inviteJitter = 0.85 + (inviteSeed % 31) / 100; // [0.85, 1.15]
+        const messageJitter = 0.85 + (messageSeed % 31) / 100;
+        return {
+            ...base,
+            inviteFactor: Math.round(base.inviteFactor * inviteJitter * 100) / 100,
+            messageFactor: Math.round(base.messageFactor * messageJitter * 100) / 100,
+            description: `${base.description} (jittered)`,
+        };
+    }
+
+    return base;
 }
 
 /**

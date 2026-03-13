@@ -122,6 +122,9 @@ export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<vo
             return;
         }
 
+        // Checkpoint/Resume (4.1): resume=true abilita il ripristino dall'ultimo
+        // checkpoint se un run precedente è stato interrotto (crash, challenge, timeout).
+        // Evita di rifare page view già completate → meno traffico LinkedIn.
         bulkReport = await runSalesNavBulkSave(session.page, {
             accountId: account.id,
             targetListName: targetList,
@@ -129,6 +132,7 @@ export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<vo
             searchName,
             dryRun,
             sessionLimit: limit,
+            resume: true,
         });
 
         console.log(`\n  Bulk save completato: ${bulkReport.searchesDiscovered} ricerche trovate`);

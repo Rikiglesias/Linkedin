@@ -37,6 +37,16 @@ export function formatWorkflowReport(report: WorkflowReport): string {
         }
     }
 
+    // Per-List Performance (5.2)
+    if (report.listBreakdown && report.listBreakdown.length > 0) {
+        lines.push('');
+        lines.push('  PER-LISTA:');
+        for (const lb of report.listBreakdown) {
+            const flag = lb.flag === 'critical' ? ' [CRITICA]' : lb.flag === 'underperforming' ? ' [SOTTO]' : '';
+            lines.push(`    ${lb.listName.padEnd(20)} inv:${lb.invitesSent} msg:${lb.messagesSent} acc:${lb.acceptanceRatePct.toFixed(1)}%${flag}`);
+        }
+    }
+
     lines.push('');
     lines.push(`  Prossima azione: ${report.nextAction}`);
     lines.push(SEP);

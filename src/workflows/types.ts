@@ -52,12 +52,30 @@ export interface PreflightWarning {
     message: string;
 }
 
+export type SessionRiskLevel = 'GO' | 'CAUTION' | 'STOP';
+
+export interface SessionRiskAssessment {
+    level: SessionRiskLevel;
+    score: number;
+    factors: Record<string, number>;
+    recommendation: string;
+}
+
 export interface PreflightResult {
     answers: Record<string, string>;
     dbStats: PreflightDbStats;
     configStatus: PreflightConfigStatus;
     warnings: PreflightWarning[];
     confirmed: boolean;
+    riskAssessment?: SessionRiskAssessment;
+}
+
+export interface WorkflowReportListBreakdown {
+    listName: string;
+    invitesSent: number;
+    messagesSent: number;
+    acceptanceRatePct: number;
+    flag?: 'underperforming' | 'critical' | null;
 }
 
 export interface WorkflowReport {
@@ -68,4 +86,5 @@ export interface WorkflowReport {
     summary: Record<string, number | string>;
     errors: string[];
     nextAction: string;
+    listBreakdown?: WorkflowReportListBreakdown[];
 }

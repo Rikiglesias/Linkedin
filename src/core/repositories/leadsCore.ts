@@ -1271,6 +1271,44 @@ export async function getLeadTimeline(leadId: number): Promise<Array<{
  *   OPPURE arricchiti ma senza business email (solo email personale)
  * Usato dallo scheduler per enqueue automatico di job ENRICHMENT.
  */
+// ─── Multi-Account Deconfliction (1.4) ───────────────────────────────────────
+
+/**
+ * Verifica se un altro account (diverso da excludeAccountId) ha già
+ * targetizzato lo stesso lead (per linkedin_url) negli ultimi lookbackDays.
+ * Controlla sia job INVITE enqueued che lead già INVITED da altro account.
+ * Previene che 2 account invitino la stessa persona — LinkedIn rileva coordinamento.
+ */
+export async function hasOtherAccountTargeted(
+    linkedinUrl: string,
+    excludeAccountId: string,
+    lookbackDays: number = 30,
+): Promise<boolean> {
+    const db = await getDatabase();
+    const normalizedUrl = normalizeLinkedInUrl(linkedinUrl);
+    const safeLookbackDays = Math.max(1, Math.floor(lookbackDays));
+
+    // Approccio efficiente senza JSON_EXTRACT: cerco il lead per URL, poi
+    // verifico se ha job INVITE da un account diverso. Usa indice su linkedin_url.
+    const row = await db.get<{ cnt: number }>(`
+        SELECT COUNT(*) as cnt
+        FROM leads l
+        WHERE l.linkedin_url = ?
+          AND l.invited_at IS NOT NULL
+          AND l.invited_at >= DATETIME('now', '-' || ? || ' days')
+          AND EXISTS (
+            SELECT 1 FROM jobs j
+            WHERE j.type = 'INVITE'
+              AND j.account_id != ?
+              AND j.status IN ('QUEUED', 'RUNNING', 'SUCCEEDED')
+              AND j.created_at >= DATETIME('now', '-' || ? || ' days')
+              AND j.payload_json LIKE '%"leadId":' || l.id || '%'
+          )
+    `, [normalizedUrl, safeLookbackDays, excludeAccountId, safeLookbackDays]);
+
+    return (row?.cnt ?? 0) > 0;
+}
+
 export async function getLeadsNeedingEnrichment(limit: number): Promise<Array<{ id: number }>> {
     const db = await getDatabase();
     const safeLimit = Math.max(1, Math.min(limit, 200));

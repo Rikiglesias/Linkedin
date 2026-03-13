@@ -1,342 +1,205 @@
-# TODO — Full Codebase Audit Findings
+# TODO — Workflow 360° Improvement Plan
 
-> Generated: 2026-03-13 | Updated: 2026-03-13 — **COMPLETATO**
-> Audit: 6 Levels + Anti-Ban + Cross-Cutting + DB Logic Trace + Preventive Scenarios
-> 229 files analyzed, 202/202 tests passing, 0 TypeScript errors, 0 lint warnings
-> **Completati: 52/52 task + 1 extra (JA3)** — tutti verificati L1→L6 + anti-ban
-> **JA3 fix aggiuntivo**: filtro pool TLS-coherent + integrazione CycleTLS nel launcher
-
----
-
-## CRITICAL (Production-blocking)
-
-### CC-1: PostgreSQL transactions completely broken
-- **File**: `src/core/repositories/shared.ts:12-22` + `src/db.ts:93-211`
-- **Problem**: `withTransaction()` calls `database.exec('BEGIN')` then callback queries via `this.pool.query()`, then `database.exec('COMMIT')`. In PostgreSQL, each `pool.query()` grabs a DIFFERENT connection from the pool. BEGIN goes to conn A, queries to conn B, COMMIT to conn C. All PG transactions are silently non-atomic.
-- **Impact**: `lockNextQueuedJob`, `claimPendingOutboxEvents`, `transitionLeadAtomic`, migration application — ALL broken on PostgreSQL.
-- **Fix**: Rewrite `PostgresManager` to expose `withTransaction()` using `pool.connect()` for a single dedicated client. Pass that client through the callback.
-
-### CC-2a: SQLite disk full → silent data loss
-- **File**: `src/db.ts` (all write operations)
-- **Problem**: No `PRAGMA freelist_count` or disk space pre-check before writes. If disk fills during WAL commit, SQLite returns `SQLITE_FULL` but error handling varies per callsite. Some `exec()` calls don't check the return. Outbox events, lead transitions, and stat increments can silently fail.
-- **Impact**: Data loss without any alert. Daily stats undercount, leads get stuck, outbox events vanish.
-- **Fix**: Add a `checkDiskSpace()` guard in `DatabaseManager` that fires before bulk operations and on a periodic timer. On `SQLITE_FULL`, trigger quarantine + Telegram alert.
-
-### CC-2b: daily_stats has no account_id — budget caps are GLOBAL
-- **File**: `src/core/repositories/stats.ts` + `src/db/migrations/001_core.sql`
-- **Problem**: `daily_stats` table schema is `(date TEXT PRIMARY KEY, invites_sent, messages_sent, ...)` with NO account_id column. `getDailyStat()` queries by date only. In multi-account setups, ALL accounts share one global budget counter. Account A sending 20 invites eats Account B's budget.
-- **Impact**: Multi-account mode cannot enforce per-account daily limits. One aggressive account can exhaust the cap for all.
-- **Fix**: Add `account_id TEXT` to daily_stats PK (migration). Update all stat queries to filter by account_id.
-
-### CC-2: webglNoise variable is dead code
-- **File**: `src/browser/launcher.ts:300,357` + `src/fingerprint/noiseGenerator.ts:50`
-- **Problem**: `webglNoise` is computed by noiseGenerator and injected into browser script (`const webglNoise = ${deviceProfile.webglNoise ?? 0}`) but NEVER referenced. WebGL renderer selection uses `canvasNoise` as seed instead: `const rendererIdx = Math.abs(canvasNoise * 1e6 | 0) % pool.length`.
-- **Impact**: WebGL renderer is determined by canvas noise, not WebGL noise. The two fingerprint dimensions are correlated instead of independent.
-- **Fix**: Replace `canvasNoise` with `webglNoise` in the WebGL renderer index calculation.
+> Generated: 2026-03-13 | Prev audit: 52/52 completati (archiviato)
+> Focus: Anti-ban hardening, workflow intelligence, realismo comportamentale, resilienza
+> 30 item su 6 sprint + 3 deferred audit — Anti-ban first, 6 livelli di verifica
+> **Completati: 30/30** (+ 7 fix critici da analisi effetti composti)
+> Tutti i task implementati, verificati L1→L6, test E2E dry-run passa
 
 ---
 
-## HIGH (Risk of ban or data corruption)
+## Sprint 1: Anti-Ban Hardening Critico (P0)
 
-### CC-3: inviteWorker daily cap not atomic
-- **File**: `src/workers/inviteWorker.ts:508`
-- **Problem**: inviteWorker uses `incrementDailyStat()` (non-atomic) while messageWorker uses `checkAndIncrementDailyLimit()` (atomic). The hardInviteCap is unenforceable at the worker level — two concurrent invite jobs can both pass the budget check.
-- **Fix**: Replace `incrementDailyStat` with `checkAndIncrementDailyLimit` in inviteWorker, matching messageWorker's pattern.
+### 1.1 Session Duration Variance + Wind-Down
+- [x] **File**: `src/core/jobRunner.ts` (linee 734-739), `src/browser/humanBehavior.ts`
+- **Problema**: Hard limit fissi `500 job` e `60 min` — pattern rilevabile da LinkedIn
+- **Fix**: Range jitterato `35-70 min` e `300-600 job`. Fase wind-down nell'ultimo 15%: `interJobDelay ×1.5`, velocità azioni `-30%`
+- **Anti-ban**: FORTEMENTE POSITIVO
 
-### CC-4: Pending ratio uses two different denominators
-- **File**: `src/core/services/riskInputCalculator.ts:28` vs `src/core/scheduler.ts:258`
-- **Problem**: riskEngine uses global all-time denominator (`pendingInvites / invitedTotal`), scheduler uses per-list current denominator (`invited / (invited + accepted + ready_message + messaged)`). Can produce contradictory signals (risk says STOP, scheduler says GO).
-- **Fix**: Unify the pending ratio formula across both callers.
+### 1.2 Navigation Context Chains (Intent Simulation)
+- [x] **File**: Nuovo `src/browser/navigationContext.ts`, `src/workers/inviteWorker.ts`, `src/workers/messageWorker.ts`
+- **Problema**: Bot naviga direttamente `page.goto(profileUrl)` — segnale bot #1 (no referral chain)
+- **Fix**: Catene realistiche: Feed→Search→Scroll→Click profilo→Connect (70%), diretto (30%). Per messaggi: Feed→Messaging inbox→Conversazione
+- **Anti-ban**: FORTEMENTE POSITIVO — risolve segnale detection principale
 
-### CC-5: workerResult(0) silently wastes budget slots
-- **File**: `src/workers/inviteWorker.ts:242` → `src/core/jobRunner.ts:396,424`
-- **Problem**: When workers return `workerResult(0)` with `success=true` (blacklisted lead, wrong status, validation fail), jobRunner marks the job SUCCEEDED and counts it as "processed", wasting a budget slot.
-- **Fix**: Distinguish "skipped" from "processed" in workerResult. Don't count skipped jobs against budget.
+### 1.3 Wire Trust Score nello Scheduler
+- [x] **File**: `src/core/scheduler.ts` (dopo linea 448), `src/core/repositories.ts`
+- **Problema**: `calculateAccountTrustScore()` in `accountBehaviorModel.ts:186` produce `budgetMultiplier` (0.3-1.0) ma MAI collegata allo scheduler
+- **Fix**: Dopo `applyGrowthModel()`, chiamare trust score e moltiplicare budget. Aggiungere `getAccountTrustInputs()` query (acceptance rate, challenges 7d, pending ratio)
+- **Anti-ban**: FORTEMENTE POSITIVO — account basso trust auto-limitati
 
-### CC-6: transitionLead is NOT atomic (3 separate DB ops)
-- **File**: `src/core/leadStateService.ts:30-83`
-- **Problem**: `transitionLead()` performs `setLeadStatus()` → `appendLeadEvent()` → `pushOutboxEvent()` as 3 separate operations WITHOUT a transaction. If appendLeadEvent fails, lead status changed but no event history. If pushOutboxEvent fails, cloud never knows.
-- **Note**: `transitionLeadAtomic()` exists (lines 86-133) and DOES use `withTransaction()`. Only `acceptanceWorker` uses it — inviteWorker and messageWorker use the non-atomic version.
-- **Fix**: Make inviteWorker and messageWorker use `transitionLeadAtomic()`, or wrap `transitionLead()` itself in a transaction.
-
-### CC-7: recoverStuckJobs resets job but not lead status
-- **File**: `src/core/repositories/jobs.ts:198-214`
-- **Problem**: `recoverStuckJobs()` resets RUNNING→QUEUED but does NOT reset the corresponding lead status. If a job was mid-processing, the campaign lead stays IN_PROGRESS permanently.
-- **Fix**: Also reset the lead's status to its pre-job state when recovering stuck jobs.
-
-### CC-8: All fingerprints hardcode timezone Europe/Rome
-- **File**: `src/fingerprint/pool.ts:37,47,57,65,75,83,94,108,122,131,143,155`
-- **Problem**: Every fingerprint in both desktop and mobile pools has `timezone: 'Europe/Rome'`. No validation that proxy GeoIP matches timezone. If using a US proxy, the timezone still says Rome.
-- **Fix**: Either make timezone dynamic based on proxy geolocation, or validate timezone-proxy coherence and warn/block on mismatch.
-
-### CC-14: Firefox UA gets Chrome-specific stealth scripts
-- **File**: `src/fingerprint/pool.ts:78` + `src/browser/stealthScripts.ts` sections 3,5
-- **Problem**: Firefox User-Agent fingerprints get Chrome-specific plugins ("Chrome PDF Plugin", "Chromium PDF Viewer") and `window.chrome` mock injected. Any fingerprinting service checking `window.chrome` on a Firefox UA detects the inconsistency instantly.
-- **Fix**: Branch stealth script sections 3 and 5 based on browser family detected from User-Agent.
-
-### NEW-1: Timing model uses uniform distribution, NOT log-normal
-- **File**: `src/ml/timingModel.ts:11`
-- **Problem**: Code comment says "log-normale" but implementation is `min + Math.random() * (max - min)` — a flat uniform distribution. Real human reaction times follow a log-normal distribution with long tail (occasional slow responses).
-- **Fix**: Replace with `Math.exp(mu + sigma * normalRandom())` where mu/sigma are derived from min/max.
-
-### NEW-2: Audio fingerprint pattern is trivially detectable
-- **File**: `src/browser/stealthScripts.ts:389`
-- **Problem**: Audio fingerprint noise modifies every 7th sample on getChannelData and every 5th on getFloatFrequencyData. This fixed pattern is trivially detectable — any fingerprinting service can check sample intervals.
-- **Fix**: Randomize which samples get modified using a per-call hash, not a fixed interval.
-
-### NEW-3: Canvas fingerprint noise is deterministic per session
-- **File**: `src/browser/launcher.ts:318`
-- **Problem**: Canvas noise seed is fixed for the entire session. Every `getImageData()` call produces the same noise pattern. A fingerprinting service can hash canvas output twice and get the same hash — confirming it's a real fingerprint (not randomized). But the SAME hash across different accounts reveals they share the same noise engine.
-- **Fix**: Add per-call entropy (e.g., timestamp-based salt) to the noise seed so each call produces slightly different noise.
-
-### CC-17: Proxy dies mid-session → no failover, session burns
-- **File**: `src/proxyManager.ts` + `src/browser/launcher.ts`
-- **Problem**: Proxy is set once at browser launch via `--proxy-server` flag. If the proxy drops mid-session (TCP reset, provider rotates IP), Playwright gets `ERR_PROXY_CONNECTION_FAILED` on every subsequent navigation. No failover logic exists — the session continues attempting the dead proxy until LinkedIn timeout triggers a risk event.
-- **Impact**: Wasted session budget, potential LinkedIn detection of rapid reconnect patterns.
-- **Fix**: Add proxy health heartbeat during session. On proxy failure, gracefully end session early (wind-down) instead of retrying with a dead proxy.
-
-### CC-18: Session expires mid-invite flow → half-sent invite
-- **File**: `src/workers/inviteWorker.ts` + `src/browser/auth.ts`
-- **Problem**: LinkedIn sessions expire after ~24h. If cookie expires DURING an invite flow (after navigating to profile but before clicking Connect), the page redirects to login. inviteWorker doesn't detect the redirect — it continues looking for the Connect button, fails with selector timeout, and retries. The retry may land on the login page again.
-- **Impact**: Wasted retries, potential account flag from repeated failed actions.
-- **Fix**: Add session-validity check (look for login redirect URL or auth cookie expiry) before each critical action. If expired, abort job with `SESSION_EXPIRED` status instead of retrying.
-
-### CC-19: Concurrent SQLite writes race condition
-- **File**: `src/db.ts` (WAL mode) + `src/core/scheduler.ts` + `src/sync/supabaseSyncWorker.ts`
-- **Problem**: SQLite WAL allows concurrent reads but only ONE writer. Scheduler, sync worker, and stat incrementer all write. With `busy_timeout=5000`, if one write takes >5s (bulk import, VACUUM), others get `SQLITE_BUSY`. The error propagation is inconsistent — some callers retry, others throw.
-- **Impact**: Lost stat increments, failed outbox claims, stuck jobs during heavy write periods.
-- **Fix**: Centralize all writes through a serial write queue (or use `better-sqlite3` synchronous API). Ensure all callers handle `SQLITE_BUSY` uniformly with retry.
-
-### CC-20: Telegram alerts use wrong parse_mode
-- **File**: `src/telemetry/alerts.ts:26-30`
-- **Problem**: `parse_mode: 'HTML'` but title is formatted with `*${title}*` which is Markdown bold syntax, not HTML. In HTML mode, `*text*` renders as literal asterisks. Bold doesn't work.
-- **Fix**: Either change to `parse_mode: 'Markdown'` or change `*${title}*` to `<b>${title}</b>`.
-
-### CC-21: No rate limiting on Telegram alerts (37 call sites)
-- **File**: `src/telemetry/alerts.ts` (called from 13+ files)
-- **Problem**: `sendTelegramAlert()` has no dedup or rate limit. A cascading failure (e.g., proxy down → every action fails → each failure triggers alert) can send dozens of Telegram messages per minute, potentially hitting Telegram's rate limit (30 msg/sec per bot) and getting the bot temporarily banned.
-- **Fix**: Add a sliding window rate limiter (max N alerts per minute) with message batching for bursts.
-
-### CC-26: REPLIED status is a dead end (no escape transitions)
-- **File**: `src/core/leadStateService.ts:16-17`
-- **Problem**: `REPLIED: []` in the transition matrix — once a lead reaches REPLIED, it's permanently stuck. No way to mark as BLOCKED, DEAD, or REVIEW_REQUIRED. Admins must use raw SQL to fix stuck leads.
-- **Impact**: Leads accumulate in REPLIED forever, polluting status counts.
-- **Fix**: Add `REPLIED: ['BLOCKED', 'REVIEW_REQUIRED', 'DEAD']` to transition matrix.
-
-### CC-27: SKIPPED status cannot be escalated
-- **File**: `src/core/leadStateService.ts:17`
-- **Problem**: `SKIPPED: []` — if a lead is wrongly skipped (e.g., DOM timing issue per CC-25), it's stuck forever. No way to transition to REVIEW_REQUIRED for manual resolution.
-- **Fix**: Add `SKIPPED: ['REVIEW_REQUIRED', 'READY_INVITE']` to transition matrix.
-
-### CC-28: Cloud lead upsert is fire-and-forget (no retry)
-- **File**: `src/cloud/cloudBridge.ts:33-37`
-- **Problem**: `bridgeLeadUpsert()` calls `void upsertCloudLead(lead).catch(...)` — errors are logged but never retried. If cloud sync fails once (network blip), that lead is NEVER synced to Supabase. Dashboard shows incomplete data.
-- **Fix**: Route through outbox pattern (like event sync) instead of fire-and-forget. Or add retry queue for failed upserts.
-
-### CC-29: Enrichment data never synced to Supabase
-- **File**: `src/cloud/cloudBridge.ts:43-61`
-- **Problem**: `bridgeLeadStatus()` syncs status timestamps (invited_at, accepted_at, etc.) but NOT enrichment data (email, phone, company_domain, enrichment_sources). Supabase dashboard shows lead status but not contact info.
-- **Fix**: Add enrichment fields to cloud lead upsert payload.
-
-### CC-32: No LinkedIn credential validation before browser launch
-- **File**: `src/cli/commands/utilCommands.ts:47-80` + `src/config/validation.ts`
-- **Problem**: `runLoginCommand()` launches browser without checking if `LINKEDIN_EMAIL` and `LINKEDIN_PASSWORD` exist. If missing, browser opens to blank login page, times out after 5min, exits with no clear error. `preflightEnv.ts` checks disk/proxy/DB but NOT LinkedIn credentials.
-- **Fix**: Add credential presence check in preflight. Fail fast with clear error message before browser launch.
-
-### CC-33: No SalesNav paywall/subscription detection
-- **File**: `src/core/salesNavigatorSync.ts:610-616`
-- **Problem**: When sync-list finds 0 lists, it calls `navigateToSavedLists()` TWICE (once to discover, once for error hint). If SalesNav is not subscribed or shows paywall, bot fails with generic "nessuna lista corrisponde" error. No detection of "You need Sales Navigator Pro" page.
-- **Fix**: Add page content check for paywall/upgrade prompts before list discovery. Return specific error: "SalesNav subscription not detected".
-
-### NEW-7: Message workflow increments stat BEFORE sending
-- **File**: `src/workers/messageWorker.ts:159-180`
-- **Problem**: `checkAndIncrementDailyLimit()` atomically increments `messages_sent` BEFORE the browser actually clicks Send. If the UI send fails (network timeout, LinkedIn blocks click), the stat is incremented but the message was NOT sent. On retry, the stat may already be at cap, so the lead never gets messaged.
-- **Fix**: Move stat increment AFTER successful send confirmation, or implement a compensation mechanism (decrement on failure).
-
-### NEW-8: Campaign state stuck if advanceLeadCampaign fails
-- **File**: `src/core/jobRunner.ts:440-450`
-- **Problem**: Job is marked SUCCEEDED before `advanceLeadCampaign()` runs. If it fails (try-catch silently swallows error), the job is done but campaign state is stuck. The lead won't be rescheduled.
-- **Fix**: Either run advanceLeadCampaign BEFORE markJobSucceeded, or retry/flag on failure.
+### 1.4 Multi-Account Target Deconfliction
+- [x] **File**: `src/core/scheduler.ts` (prima linea 686), `src/core/repositories.ts`
+- **Problema**: 2 account possono invitare la stessa persona — LinkedIn rileva coordinamento
+- **Fix**: Query `hasOtherAccountTargeted(linkedinUrl, excludeAccountId, 30gg)` prima di `enqueueJob()`. Se positivo, skip lead
+- **Anti-ban**: FORTEMENTE POSITIVO — previene detection coordinamento multi-account
 
 ---
 
-## MEDIUM (Hardening & anti-detection improvements)
+## Sprint 2: Intelligenza Workflow (P0)
 
-### CC-11: getStickyProxy called with wrong argument order
-- **File**: `src/browser/launcher.ts:159`
-- **Problem**: `getStickyProxy(sessionDir, proxySelection)` called with 2 args but function expects `(sessionId, options, sessionDir?)`. The third arg `sessionDir` for persistence is never passed. Proxy NEVER persists across restarts.
-- **Fix**: Change to `getStickyProxy(accountId ?? sessionDir, proxySelection, sessionDir)`.
+### 2.1 Outcome-Driven Budget per Lista (Acceptance Rate Feedback)
+- [x] **File**: `src/core/scheduler.ts`, `src/core/repositories.ts`
+- **Problema**: `evaluateAdaptiveBudgetContext()` usa solo pending/blocked ratio, NON acceptance rate storico. Liste con acceptance <15% ricevono budget pieno
+- **Fix**: `computeListPerformanceMultiplier(listName, lookbackDays)`: acceptance >40%→×1.15, 20-40%→×1.0, <20%→×0.5, <10%→×0.25
+- **Anti-ban**: FORTEMENTE POSITIVO — auto-throttle liste bassa qualità
 
-### CC-15: Mobile touch simulated via mouse events
-- **File**: `src/browser/humanBehavior.ts:383-428`
-- **Problem**: Mobile touch simulated via `page.mouse.move()`/`page.mouse.down()` instead of `page.touchscreen.tap()`. Generates MouseEvent instead of TouchEvent. Any detector checking event type on a mobile UA detects the mismatch.
-- **Fix**: Use `page.touchscreen.tap()` for mobile fingerprints.
-
-### CC-16: Platform regex doesn't handle iPhone/Android
-- **File**: `src/browser/stealthScripts.ts:463-488`
-- **Problem**: `navigator.platform` regex only handles Windows/Mac/Linux. iPhone UA → platform returns undefined (Win32 leaks through). Android → "Linux x86_64" instead of "Linux armv8l".
-- **Fix**: Extend regex to return "iPhone" for iPhone UA, "Linux armv81" for Android.
-
-### NEW-4: Behavioral profile exists but is not wired to timing
-- **File**: `src/browser/sessionCookieMonitor.ts:316-348` → `src/ml/timingModel.ts`
-- **Problem**: `getBehavioralProfile()` computes `avgClickDelayMs`, `avgScrollDepth`, etc. with ±5% drift per session. But this profile is NEVER passed to `calculateContextualDelay()` in timingModel. All accounts behave identically.
-- **Fix**: Wire `profile.avgClickDelayMs` into timingModel as a per-account multiplier.
-
-### NEW-5: Missing font enumeration defense
-- **File**: `src/browser/stealthScripts.ts`
-- **Problem**: `document.fonts.check()` is not mocked. FingerprintJS 4.x uses font enumeration as a major detection vector. Headless browsers report different font availability than real browsers.
-- **Fix**: Add stealthScript section to mock `document.fonts.check()` for common system fonts.
-
-### NEW-6: Missing WebGL extensions spoofing
-- **File**: `src/browser/launcher.ts`
-- **Problem**: `gl.getExtension('WEBGL_debug_renderer_info')` returns real renderer info that can reveal emulation. The WebGL renderer spoofing covers `getParameter()` but not `getExtension()`.
-- **Fix**: Also intercept `getExtension('WEBGL_debug_renderer_info')` to return the spoofed vendor/renderer.
-
-### NEW-9: Proof-of-send timeout can cause duplicate invites
-- **File**: `src/workers/inviteWorker.ts:473-481`
-- **Problem**: `detectInviteProof()` has a 5s timeout via `Promise.race`. If the proof check times out (flaky network), the job throws and retries. But the invite MAY have been sent — LinkedIn doesn't provide a reliable undo. On retry, the same lead gets invited TWICE.
-- **Fix**: Before retrying, check if lead is already in INVITED status on LinkedIn (via profile check).
-
-### NEW-10: No lead-level lock during worker processing
-- **File**: All workers
-- **Problem**: The job table has locks (`locked_at`), but the lead table has NO row-level lock. Two workers processing different job types for the same lead could call `transitionLead()` concurrently, causing a race condition.
-- **Fix**: Add a `SELECT ... FOR UPDATE` (PG) or check-and-set pattern on the lead row before transitioning.
-
-### CC-22: Browser memory leak in long-running sessions
-- **File**: `src/browser/launcher.ts` (activeBrowsers Set) + `src/browser/humanBehavior.ts` (cursor overlay)
-- **Problem**: `activeBrowsers` Set grows with each launch but only shrinks on successful close. If `closeBrowser()` throws (browser crashed), the entry stays. Over 3+ days of loop operation, leaked browser references accumulate. Also, cursor overlay DOM elements are injected but never cleaned up on page navigation.
-- **Fix**: Use a `WeakRef` or periodic sweep of `activeBrowsers`. Clean up cursor overlays via `page.on('framenavigated')`.
-
-### CC-23: Enrichment silent failure loses lead data opportunity
-- **File**: `src/integrations/leadEnricher.ts` + `src/integrations/parallelEnricher.ts`
-- **Problem**: Each enricher in the chain catches its own errors and returns the lead unchanged. If ALL enrichers fail silently (API down, rate limited), the lead appears "enriched" (pipeline completed) but has zero enrichment data. No flag distinguishes "enriched with no results" from "all enrichers failed".
-- **Fix**: Track enrichment attempt count vs success count. If 0 enrichers succeeded, mark lead as `ENRICHMENT_FAILED` for retry.
-
-### CC-24: Config hot-reload can overshoot budget mid-session
-- **File**: `src/config/hotReload.ts` + `src/core/scheduler.ts`
-- **Problem**: If `hardInviteCap` is lowered from 50→20 via .env hot-reload, already-queued jobs (say 30 in queue) are NOT cancelled. The scheduler already allocated them. The new cap only applies to FUTURE scheduling rounds. Can exceed the new cap by the full queue depth.
-- **Fix**: On cap decrease, cancel queued jobs that exceed the new cap. Add a `onCapDecrease` hook in hot-reload that calls `cancelExcessQueuedJobs()`.
-
-### CC-25: Selector learning false positives from slow pages
-- **File**: `src/selectors/learner.ts` + `src/risk/riskEngine.ts`
-- **Problem**: Selector learner marks a selector as "failed" if element not found within timeout. On slow connections (mobile proxy, high latency), elements load after the timeout. This inflates `selectorFailureRate` in the risk engine, potentially triggering quarantine on a perfectly working account just because the proxy is slow.
-- **Fix**: Distinguish "selector not found" from "page didn't load" (check if ANY content loaded). Increase timeout dynamically based on measured page load time.
-
-### CC-30: No minimum value validation for caps
-- **File**: `src/config/validation.ts`
-- **Problem**: Validates `softInviteCap <= hardInviteCap` but NOT `softInviteCap > 0` or `hardInviteCap >= 1`. Setting `softInviteCap=0` makes scheduler calculate budget=0. System runs but sends nothing, with no warning.
-- **Fix**: Add validation rules: `softInviteCap >= 1`, `hardInviteCap >= 1`, `softMsgCap >= 1`, `hardMsgCap >= 1`.
-
-### CC-34: AI note fallback is silent (no user feedback)
-- **File**: `src/workers/inviteWorker.ts:194-198`
-- **Problem**: If `OPENAI_API_KEY` is wrong/expired, AI note generation fails silently and falls back to template note. User sees invite sent "successfully" but with template note instead of AI personalized note. No alert that AI was misconfigured.
-- **Fix**: Log a warning + optional Telegram alert on first AI fallback. Track AI success rate in daily stats.
-
-### CC-35: CSV export missing enrichment provenance
-- **File**: `src/api/routes/export.ts:51-72`
-- **Problem**: Export includes 19 columns but NOT `enrichment_sources` (JSON provenance), `company_domain`, `website`, or engagement metrics. Users can't tell WHERE enrichment data came from when uploading to CRM.
-- **Fix**: Add `enrichment_sources`, `company_domain`, `website` columns to CSV export.
-
-### CC-31: Mood factor Math.max(1) can overflow budget by 1-2
-- **File**: `src/core/scheduler.ts:512-516`
-- **Problem**: `Math.max(1, Math.round(budget * moodFactor))` forces minimum 1 invite/message even when calculated budget rounds to 0. If budget was exhausted, this still sends 1 extra.
-- **Fix**: Only apply `Math.max(1, ...)` when raw budget > 0. If budget === 0, keep it 0.
-
-### NEW-11: Only 6/54 migrations have rollback (.down.sql)
-- **File**: `src/db/migrations/`
-- **Problem**: Migrations 001-046 and 052-054 have no `.down.sql` file. Cannot safely rollback failed deployments.
-- **Fix**: Create `.down.sql` for at least the most recent migrations (041-054).
+### 2.2 Post-Action Verification per Inviti
+- [x] **File**: `src/workers/inviteWorker.ts` (o follow-up worker), `src/workers/errors.ts`
+- **Problema**: Dopo click Connect, nessuna verifica che invito sia stato effettivamente inviato. Inviti fantasma inflazionano pending ratio
+- **Fix**: Attendere 2-5s, verificare bottone diventato "Pending"/"Sent". Se no → `INVITE_NOT_CONFIRMED` error
+- **Anti-ban**: NEUTRO/POSITIVO — dwell time realistico + previene pending ratio inflazionato
 
 ---
 
-## LOW (Polish & optimization)
+## Sprint 3: Realismo Comportamentale (P1)
 
-### CC-9: i18n module is dead code
-- **File**: `src/frontend/i18n.ts`
-- **Problem**: `t()` function exported but never imported anywhere. All frontend strings are hardcoded Italian.
-- **Fix**: Either wire i18n into the frontend or remove the dead module.
+### 3.1 Warm-Up Sessione con Sequenza Ordinata
+- [x] **File**: `src/core/sessionWarmer.ts`
+- **Problema**: Ordine warmup randomizzato. Umano reale fa Feed (90%) → Notifiche (70%) → Messaging (40%). Mai Search/Settings per primo
+- **Fix**: Catena probabilistica ordinata. Feed primo (90%), poi notifications (70%), poi messaging (40%, solo sessione 2)
+- **Anti-ban**: POSITIVO — pattern primo-accesso realistico
 
-### CC-10: WebSocket /ws endpoint has no auth
-- **File**: `src/api/server.ts:890`
-- **Problem**: WebSocket endpoint at `/ws` has no authentication middleware. Anyone on the network can connect and receive all live events (lead transitions, stats, errors).
-- **Fix**: Add token-based auth to the WebSocket upgrade handler.
+### 3.2 Scroll Velocity a 3 Fasi
+- [x] **File**: `src/browser/humanBehavior.ts` (funzione `simulateHumanReading()`)
+- **Problema**: `deltaY` range uniforme 150-530px. Scroll reale ha 3 fasi
+- **Fix**: Fase 1 orientation (400-600px, 300-800ms), Fase 2 reading (100-250px, 500-2000ms), Fase 3 skip (500-800px, 200-500ms). Transizioni probabilistiche
+- **Anti-ban**: POSITIVO — scroll uniforme è rilevabile
 
-### CC-12: randomInt uses Math.random (non-cryptographic)
-- **File**: `src/utils/random.ts:18`
-- **Problem**: `randomInt()` uses `Math.random()` for all anti-detection timing across the codebase. While not a security issue per se, it generates predictable sequences if seeded analysis is applied.
-- **Fix**: Consider using `crypto.randomInt()` for timing-sensitive values.
+### 3.3 Viewport Dwell Time Before Click
+- [x] **File**: `src/browser/humanBehavior.ts`, `src/workers/inviteWorker.ts`, `src/workers/messageWorker.ts`
+- **Problema**: LinkedIn traccia IntersectionObserver. Click <500ms dopo apparizione nel viewport = sospetto
+- **Fix**: `ensureViewportDwell(page, selector, minMs=800, maxMs=2000)`: verifica elemento nel viewport da almeno `minMs` prima del click
+- **Anti-ban**: POSITIVO — previene segnale click-before-visible
 
-### NEW-12: No "dwell time" after organic feed interactions
-- **File**: `src/browser/organicContent.ts`
-- **Problem**: After liking a post, the bot immediately moves on. Real humans pause 500ms-2s to observe the reaction count animation.
-- **Fix**: Add a brief pause after like/reaction actions.
-
-### NEW-13: Scroll uses window.scrollBy instead of wheel events
-- **File**: `src/browser/humanBehavior.ts:614`
-- **Problem**: Scrolling uses `window.scrollBy({ behavior: 'smooth' })` which is a JavaScript API call. Real humans generate `WheelEvent` via mouse wheel. LinkedIn could distinguish the two.
-- **Fix**: Use `page.mouse.wheel()` for more realistic scroll simulation.
-
-### NEW-14: No click hold-time simulation
-- **File**: `src/browser/humanBehavior.ts`
-- **Problem**: Clicks are instantaneous. Real mouse clicks have a mouseDown → hold 20-100ms → mouseUp pattern. Instant clicks are a bot signature.
-- **Fix**: Replace `click()` with `mouseDown()` → `waitForTimeout(20-80ms)` → `mouseUp()`.
-
-### NEW-15: Missing IP reputation pre-check
-- **File**: `src/proxyManager.ts`
-- **Problem**: No verification that proxy IP isn't already blacklisted by LinkedIn before launching a session. Could waste session on a burned IP.
-- **Fix**: Integrate AbuseIPDB free API or similar IP reputation service in proxy quality checker.
+### 3.4 Content-Aware Profile Dwell Time
+- [x] **File**: `src/browser/humanBehavior.ts`, `src/workers/inviteWorker.ts`
+- **Problema**: Dwell time profilo fisso indipendente dalla ricchezza contenuto
+- **Fix**: `computeProfileDwellTime(page)` — misura lunghezza DOM, scala tempo lettura. Profilo ricco 15-30s, sparse 5-10s. Usa `contextualReadingPause()` (linea 724, non usata per profili)
+- **Anti-ban**: POSITIVO — dwell time fisso è segnale bot
 
 ---
 
-## Execution Plan (6 Sprints) — STATO COMPLETAMENTO
+## Sprint 4: Resilienza + Checkpoint (P1)
+
+### 4.1 Workflow Checkpoint/Resume
+- [x] **File**: `src/workflows/syncSearchWorkflow.ts`, `src/workflows/syncListWorkflow.ts`
+- **Problema**: Crash sync-search dopo 3/5 ricerche → riparte da zero. Spreco page view
+- **Fix**: Persistere `lastProcessedSearchIndex` e `lastProcessedPage` in `runtime_flags` (usa `setRuntimeFlag/getRuntimeFlag` già presenti). Resume dall'ultimo checkpoint
+- **Anti-ban**: POSITIVO — meno page view ripetute
+
+### 4.2 Smart Batch Sizing Mid-Session
+- [x] **File**: `src/core/jobRunner.ts` (near linea 339-367)
+- **Problema**: `maxJobsPerRun` da backpressure ma non riduce mid-session se LinkedIn rallenta
+- **Fix**: Se `httpThrottler.shouldSlow` → ridurre batch -30%. Se 3+ job consecutivi con response time >2x baseline → terminare sessione con wind-down
+- **Anti-ban**: POSITIVO — cattura pushback prima di 429/challenge
+
+### 4.3 Selector Self-Healing con Fallback Chain (già implementato)
+- [x] **File**: `src/browser/uiFallback.ts` (già esiste — estendere), `src/browser/humanBehavior.ts`
+- **Problema**: Selector canary rileva selettori rotti e blocca tutto il workflow
+- **Fix**: Per ogni selettore critico, lista prioritizzata 3-5 alternative. Primario fallisce → prova secondario. Log fallback per aggiornamento pool
+- **Anti-ban**: NEUTRO — nessun comportamento LinkedIn-visible
+
+---
+
+## Sprint 5: Monitoring + Reporting (P1)
+
+### 5.1 Preflight Risk Assessment con Go/No-Go
+- [x] **File**: `src/workflows/preflight.ts`, `src/workflows/types.ts`
+- **Problema**: Preflight mostra config/warning ma non calcola rischio sessione
+- **Fix**: `computeSessionRiskLevel()`: challenge recenti + pending ratio + account health + proxy reputation + tempo dall'ultimo run. Output: GO / CAUTION / STOP
+- **Anti-ban**: POSITIVO — previene run durante periodi alto rischio
+
+### 5.2 Per-List Performance in Report
+- [x] **File**: `src/workflows/types.ts`, `src/workflows/reportFormatter.ts`, `src/workflows/sendInvitesWorkflow.ts`, `src/workflows/sendMessagesWorkflow.ts`
+- **Problema**: Report mostra solo aggregati, non per-lista
+- **Fix**: Sezione `listBreakdown` in `WorkflowReport` con acceptance rate, inviti inviati, flag per liste sottoperformanti
+- **Anti-ban**: NEUTRO — solo osservabilità
+
+### 5.3 Preflight Stale Data Warning
+- [x] **File**: `src/workflows/sendInvitesWorkflow.ts`, `src/workflows/sendMessagesWorkflow.ts`
+- **Problema**: Nessun warning se ultimo sync >7 giorni. Lead stale = basso acceptance = rischio
+- **Fix**: In `generateWarnings()`: se `lastSyncAt > 7gg` → WARNING "Dati lead obsoleti"
+- **Anti-ban**: POSITIVO — lead freschi = acceptance più alto
+
+### 5.4 Predictive Ban Probability Score
+- [x] **File**: `src/risk/riskEngine.ts`, `src/core/orchestrator.ts`
+- **Problema**: `evaluatePredictiveRiskAlerts()` manda solo alert Telegram. Manca punteggio ban 0-100
+- **Fix**: `estimateBanProbability()`: z-score predittivi + trend acceptance + frequenza challenge + trend durata sessione. Output a dashboard e outbox
+- **Anti-ban**: POSITIVO — early warning prima ban irreversibili
+
+---
+
+## Sprint 6: Polish (P2)
+
+### 6.1 Cross-Day Pattern Randomization
+- [x] **File**: `src/risk/strategyPlanner.ts`, `src/core/scheduler.ts`
+- **Fix**: Jitter per-account per-settimana con seed `FNV-1a(accountId + weekNumber)` sui fattori giornalieri
+
+### 6.2 Mouse Ease-In-Out
+- [x] **File**: `src/ml/mouseGenerator.ts`
+- **Fix**: Sostituire ease-out con ease-in-out-quint per profilo velocità a campana realistico
+
+### 6.3 Typing Flow State
+- [x] **File**: `src/browser/humanBehavior.ts`, `src/ai/typoGenerator.ts`
+- **Fix**: Parole comuni → 0.7x delay, parole rare → 1.4x delay (dizionario frequenza)
+
+### 6.4 Report con Suggerimenti Azionabili
+- [x] **File**: `src/workflows/reportFormatter.ts`
+- **Fix**: `nextAction` arricchito con suggerimenti multi-step context-aware
+
+### 6.5 Graceful Degradation Enrichment
+- [x] **File**: `src/workflows/sendInvitesWorkflow.ts`
+- **Fix**: Se enrichment fallisce >80% e nota AI selezionata → auto-downgrade a template con warning
+
+### 6.6 Circuit Breaker Per-Lista
+- [x] **File**: `src/core/scheduler.ts`, `src/core/jobRunner.ts`, `src/risk/incidentManager.ts`
+- **Fix**: Per-lista con prefix `cb::list::${listName}` in runtime_flags (attualmente solo globale)
+
+### 6.7 Session Replay Breadcrumbs
+- [x] **File**: `src/workers/context.ts`, `src/core/jobRunner.ts`, `src/risk/incidentManager.ts`
+- **Fix**: Ultimi 20 eventi navigazione in memoria. Su challenge/errore → dump nel record incidente + Telegram
+
+---
+
+## Ordine Implementazione
 
 ```
-Sprint 1 (CRITICAL):  CC-1 ✅ CC-2a ✅ CC-2b ✅ CC-2 ✅                    [4/4 DONE]
-Sprint 2 (HIGH-ban):  CC-14 ✅ NEW-1 ✅ NEW-2 ✅ NEW-3 ✅ CC-8 ✅ CC-3 ✅ CC-6 ✅ CC-17 ✅  [8/8 DONE]
-Sprint 3 (HIGH-data): CC-4 ✅ CC-5 ✅ CC-7 ✅ NEW-7 ✅ NEW-8 ✅ CC-26 ✅ CC-27 ✅ CC-28 ✅ CC-29 ✅ CC-32 ✅ CC-33 ✅  [11/11 DONE]
-Sprint 4 (HIGH-mon):  CC-18 ✅ CC-19 ✅(mitigato) CC-20 ✅ CC-21 ✅        [4/4 DONE]
-Sprint 5 (MEDIUM):    CC-11 ✅ CC-15 ✅ CC-16 ✅ CC-22 ✅(mitigato) CC-23 ✅ CC-24 ✅ CC-25 ⏸️ CC-30 ✅ CC-31 ✅ CC-34 ✅ CC-35 ✅ NEW-4 ✅ NEW-5 ✅ NEW-6 ✅ NEW-9 ✅ NEW-10 ⏸️ NEW-11 ✅  [17/19]
-Sprint 6 (LOW):       CC-9 ✅ CC-10 ✅ CC-12 ✅ NEW-12 ✅ NEW-13 ✅ NEW-14 ✅ NEW-15 ✅  [7/7 DONE]
-EXTRA:                JA3 pool filter + CycleTLS installed + integration ✅  [+1]
+Sprint 1 (P0 anti-ban)    → 1.1, 1.2, 1.3, 1.4              [4/4] ✅
+Sprint 2 (P0 intelligence) → 2.1, 2.2                        [2/2] ✅
+Sprint 3 (P1 behavioral)  → 3.1, 3.2, 3.3, 3.4              [4/4] ✅
+Sprint 4 (P1 resilience)  → 4.1, 4.2, 4.3                    [3/3] ✅
+Sprint 5 (P1 monitoring)  → 5.1, 5.2, 5.3, 5.4              [4/4] ✅
+Sprint 6 (P2 polish)      → 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7  [7/7] ✅
+Deferred audit            → D-1, D-2, D-3                    [3/3] ✅
 ```
 
-Legend: ✅ = completato e verificato L1→L6, ⏸️ = deferred (bassa urgenza o mitigato)
-
-Gate: `npm run conta-problemi` = **EXIT 0** ✅ (0 TS errors, 0 lint, 202/202 tests)
+Gate: `npm run conta-problemi` = EXIT 0 dopo ogni sprint
 
 ---
 
-## Summary
+## Deferred dall'Audit Precedente (da chiudere)
 
-| Severity | Total | Done | Deferred | Notes |
-|----------|-------|------|----------|-------|
-| CRITICAL | 4     | 4    | 0        | Tutti completati |
-| HIGH     | 23    | 23   | 0        | Tutti completati (CC-19 mitigato da CC-1) |
-| MEDIUM   | 19    | 17   | 2        | CC-25 mitigato, NEW-10 mitigato |
-| LOW      | 6     | 6    | 0        | Tutti completati (CC-9 rimosso, CC-12 crypto.randomInt) |
-| EXTRA    | 1     | 1    | 0        | JA3 TLS coherence + CycleTLS |
-| **Total**| **53**| **51**| **2**  | |
+### D-1: CC-25 — Selector learning false positives from slow pages
+- [x] **File**: `src/browser/uiFallback.ts`
+- **Problema**: Su proxy lenti, selector timeout inflaziona `selectorFailureRate` nel risk engine → quarantine ingiusta
+- **Fix**: `trackSelectorFailure` ora verifica body length >200 chars prima di registrare failure. Pagina vuota = problema connettività, non selettore.
+- **Stato**: ✅ Completato
 
-### Deferred items (2 rimasti — mitigati da fix precedenti)
-- **CC-25**: Selector learning false positives — mitigato da circuit breaker (CC-17) + proxy abort + session rotation
-- **NEW-10**: Lead-level lock — mitigato da CC-1 (AsyncLocalStorage) + CC-6 (transitionLead atomic) + job lock (FOR UPDATE SKIP LOCKED)
+### D-2: NEW-10 — No lead-level lock during worker processing
+- [x] **File**: `src/core/leadStateService.ts`
+- **Problema**: Job table ha lock (`locked_at`), ma lead table NO row-level lock
+- **Fix**: Confermato che `transitionLead` usa `withTransaction` + `isValidLeadTransition` check-and-set atomico. SQLite serializza le transazioni. Su PG, la seconda transazione concurrent fallirebbe con "transizione non consentita" (check-and-set pattern funzionante).
+- **Stato**: ✅ Confermato mitigato — robustezza sufficiente per il setup attuale
+
+### D-3: Verifica end-to-end dei 4 workflow
+- [x] **Verifica**: Test E2E dry-run automatizzato per `invite`, `check`, `message`, `all` + verifica nuove funzioni esportate
+- **Stato**: ✅ Completato — `npm run test:e2e:dry` passa con 4 workflow + validazione trust score, list performance, risk assessment, ban probability, breadcrumbs
 
 ---
 
-## Verification Checklist
+## Archivio Audit Precedente
 
-- [x] `npm run conta-problemi` exits 0 (0 TS errors, 0 lint warnings, 202/202 tests pass)
-- [ ] All 4 workflows work end-to-end: `sync-list`, `sync-search`, `send-invites`, `send-messages`
-- [x] Anti-ban scorecard: fingerprint coherence, timing variance, session limits, pending ratio
-- [x] PostgreSQL transactions are truly atomic (AsyncLocalStorage + PostgresClientManager)
-- [x] Daily stat counts match actual actions sent (compensation on failure — NEW-7)
-- [x] daily_stats supports per-account budgets (migration 055 + accountId param)
-- [x] Fingerprint coherence: Firefox UA gets Firefox-appropriate scripts (CC-14)
-- [x] Proxy persistence survives restart (CC-11 sessionDir arg)
-- [x] Proxy failover works when proxy dies mid-session (CC-17 immediate abort)
-- [x] Canvas/WebGL/Audio noise not detectable by FingerprintJS 4.x (NEW-2, NEW-3, NEW-5, NEW-6)
-- [x] Telegram alerts render bold correctly and don't flood (CC-20, CC-21)
-- [x] SQLite SQLITE_FULL and SQLITE_BUSY handled gracefully (CC-2a)
-- [x] Config hot-reload cap decrease cancels excess queued jobs (CC-24)
-- [x] Enrichment pipeline flags "all failed" vs "no data found" (CC-23 data_points=-1)
-- [x] JA3 TLS coherence: pool filtrato per Chromium TLS, CycleTLS integration nel launcher
+> L'audit originale (52/52 task + JA3 extra) è stato completato il 2026-03-13.
+> 2 item deferred (CC-25, NEW-10) ora inclusi sopra come D-1, D-2.
+> Tutti i fix verificati L1→L6 + anti-ban.

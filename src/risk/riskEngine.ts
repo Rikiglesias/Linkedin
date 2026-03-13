@@ -331,3 +331,79 @@ export function evaluatePredictiveRiskAlerts(
 
     return alerts.sort((a, b) => b.zScore - a.zScore);
 }
+
+// ─── Predictive Ban Probability Score (5.4) ──────────────────────────────────
+
+export interface BanProbabilityResult {
+    score: number; // 0-100
+    level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+    factors: Record<string, number>;
+    recommendation: string;
+}
+
+/**
+ * Stima la probabilità di ban 0-100 combinando 4 segnali predittivi:
+ *   - Z-score anomalie (peso 30): alert attivi = account sotto osservazione
+ *   - Trend acceptance (peso 25): acceptance in calo = targeting scadente
+ *   - Frequenza challenge (peso 25): challenge recenti = account flaggato
+ *   - Pending ratio (peso 20): pending alto = inviti non accettati = sospetto
+ *
+ * Score → Livello:
+ *   0-20  → LOW (operazioni normali)
+ *   21-45 → MEDIUM (monitoraggio attivo)
+ *   46-70 → HIGH (ridurre budget, pausa consigliata)
+ *   71+   → CRITICAL (stop immediato, rischio ban imminente)
+ */
+export function estimateBanProbability(
+    alerts: PredictiveRiskAlert[],
+    acceptanceRatePct: number,
+    challengesLast7d: number,
+    pendingRatio: number,
+): BanProbabilityResult {
+    // Factor 1: Z-score anomalie attive — peso 30
+    const maxZScore = alerts.length > 0 ? Math.max(...alerts.map(a => a.zScore)) : 0;
+    const anomalyFactor = Math.min(30, Math.floor(Math.min(maxZScore, 5) * 6));
+
+    // Factor 2: Trend acceptance — peso 25
+    // acceptance >40% = 0 punti, <40% = crescente fino a 25
+    const acceptanceFactor = acceptanceRatePct >= 40
+        ? 0
+        : Math.min(25, Math.floor((40 - Math.max(0, acceptanceRatePct)) * 0.625));
+
+    // Factor 3: Frequenza challenge — peso 25
+    // 0 challenge = 0, 1 = 12, 2 = 25 (cap)
+    const challengeFactor = Math.min(25, challengesLast7d * 12.5);
+
+    // Factor 4: Pending ratio — peso 20
+    // <30% = 0, 30-65% = crescente, >65% = 20 (red flag LinkedIn)
+    const pendingFactor = pendingRatio < 0.30
+        ? 0
+        : Math.min(20, Math.floor((pendingRatio - 0.30) * 57));
+
+    const factors: Record<string, number> = {
+        anomalyZScore: Math.round(anomalyFactor * 100) / 100,
+        acceptanceTrend: Math.round(acceptanceFactor * 100) / 100,
+        challengeFrequency: Math.round(challengeFactor * 100) / 100,
+        pendingRatio: Math.round(pendingFactor * 100) / 100,
+    };
+
+    const score = Math.min(100, Math.round(anomalyFactor + acceptanceFactor + challengeFactor + pendingFactor));
+
+    let level: BanProbabilityResult['level'];
+    let recommendation: string;
+    if (score <= 20) {
+        level = 'LOW';
+        recommendation = 'Rischio basso — operazioni normali';
+    } else if (score <= 45) {
+        level = 'MEDIUM';
+        recommendation = 'Rischio medio — monitorare acceptance rate e pending ratio';
+    } else if (score <= 70) {
+        level = 'HIGH';
+        recommendation = 'Rischio alto — ridurre budget del 50%, considerare pausa 24h';
+    } else {
+        level = 'CRITICAL';
+        recommendation = 'Rischio critico — STOP immediato. Verificare account, ritirare inviti pending, cambiare proxy';
+    }
+
+    return { score, level, factors, recommendation };
+}

@@ -51,6 +51,18 @@ function generateWarnings(
         }
     }
 
+    // Stale Data Warning (5.3)
+    if (stats.lastSyncAt) {
+        const syncAgeMs = Date.now() - new Date(stats.lastSyncAt).getTime();
+        const syncAgeDays = Math.floor(syncAgeMs / 86400000);
+        if (syncAgeDays > 7) {
+            warnings.push({
+                level: 'warn',
+                message: `Dati lead obsoleti: ultimo sync ${syncAgeDays} giorni fa — esegui sync-list prima.`,
+            });
+        }
+    }
+
     return warnings;
 }
 

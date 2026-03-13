@@ -25,7 +25,7 @@ import { randomInt } from '../utils/random';
 import { getSessionHistory } from '../risk/sessionMemory';
 import { retryDelayMs } from '../utils/async';
 import { JobType } from '../types/domain';
-import { WorkerContext } from '../workers/context';
+import { WorkerContext, addBreadcrumb, formatBreadcrumbs } from '../workers/context';
 import { ChallengeDetectedError, isProxyConnectionError, resolveWorkerRetryPolicy, RetryableWorkerError } from '../workers/errors';
 import { runFollowUpWorker } from '../workers/followUpWorker';
 import { workerRegistry } from '../workers/registry';
@@ -35,6 +35,7 @@ import {
     createJobAttempt,
     getDailyStat,
     getAutomationPauseState,
+    getLeadById,
     getRuntimeFlag,
     setRuntimeFlag,
     incrementDailyStat,
@@ -309,8 +310,27 @@ async function runQueuedJobsForAccount(
         const rotateEveryJobs = config.proxyRotateEveryJobs;
         const rotateEveryMinutes = config.proxyRotateEveryMinutes;
         const rotateEveryMs = rotateEveryMinutes > 0 ? rotateEveryMinutes * 60_000 : 0;
+
+        // ── Session Duration Variance (1.1) ──────────────────────────────
+        // Jitterare i limiti di memoria/durata sessione per evitare pattern fissi.
+        // Ogni sessione riceve un cap diverso dentro il range configurato.
+        const sessionMaxJobs = randomInt(
+            config.sessionMemoryProtectionMinJobs,
+            config.sessionMemoryProtectionMaxJobs,
+        );
+        const sessionMaxMs = randomInt(
+            config.sessionMemoryProtectionMinMinutes,
+            config.sessionMemoryProtectionMaxMinutes,
+        ) * 60_000;
+        // Wind-down: nell'ultimo X% della sessione, rallenta delay e azioni
+        const windDownJobThreshold = Math.floor(sessionMaxJobs * (1 - config.sessionWindDownPct));
+        const windDownMsThreshold = Math.floor(sessionMaxMs * (1 - config.sessionWindDownPct));
+        let windDownActive = false;
+        const listFailureTracker = new Map<string, number>(); // Circuit Breaker Per-Lista (6.6)
         const accountBpLevel = await getAccountBackpressureLevel(account.id);
-        const maxJobsPerRun = Math.max(1, computeBackpressureBatchSize(config.accountMaxJobsPerRun, accountBpLevel));
+        let maxJobsPerRun = Math.max(1, computeBackpressureBatchSize(config.accountMaxJobsPerRun, accountBpLevel));
+        let consecutiveSlowResponses = 0;
+        let batchReducedMidSession = false;
         let sessionStartedAtMs = Date.now();
         await setRuntimeFlag(`browser_session_started_at:${account.id}`, new Date(sessionStartedAtMs).toISOString()).catch(() => null);
         let processedThisRun = 0;
@@ -336,6 +356,26 @@ async function runQueuedJobsForAccount(
                 break;
             }
 
+            // ── Wind-Down Detection (1.1) ─────────────────────────────────
+            // Nell'ultimo X% della sessione (per job O per tempo), attiva wind-down:
+            // interJobDelay più lento, azioni più caute — simula umano che si stanca.
+            const sessionElapsedMs = Date.now() - sessionStartedAtMs;
+            if (!windDownActive && (
+                processedOnCurrentSession >= windDownJobThreshold ||
+                sessionElapsedMs >= windDownMsThreshold
+            )) {
+                windDownActive = true;
+                workerContext.windDownSpeedReduction = config.sessionWindDownSpeedReduction;
+                await logInfo('job_runner.wind_down.activated', {
+                    accountId: account.id,
+                    processedOnCurrentSession,
+                    windDownJobThreshold,
+                    sessionElapsedMs,
+                    windDownMsThreshold,
+                    speedReduction: config.sessionWindDownSpeedReduction,
+                });
+            }
+
             const throttleSignal = session.httpThrottler.getThrottleSignal();
             if (throttleSignal.shouldPause) {
                 await logWarn('job_runner.http_throttle.pause', {
@@ -357,13 +397,43 @@ async function runQueuedJobsForAccount(
                 break;
             }
             if (throttleSignal.shouldSlow) {
+                consecutiveSlowResponses += 1;
                 const extraDelayMs = 3000 + Math.floor(Math.random() * 5000);
                 await logInfo('job_runner.http_throttle.slow', {
                     accountId: account.id,
                     ratio: throttleSignal.ratio,
                     extraDelayMs,
+                    consecutiveSlowResponses,
                 });
                 await new Promise((r) => setTimeout(r, extraDelayMs));
+
+                // Smart Batch Sizing (4.2): 3+ slow consecutivi → terminare sessione
+                // LinkedIn sta chiaramente pushback — meglio fermarsi prima del 429.
+                if (consecutiveSlowResponses >= 3) {
+                    await logWarn('job_runner.smart_batch.session_abort', {
+                        accountId: account.id,
+                        consecutiveSlowResponses,
+                        processedThisRun,
+                        maxJobsPerRun,
+                        reason: 'consecutive_slow_responses',
+                    });
+                    break;
+                }
+
+                // Prima volta shouldSlow → ridurre batch -30% per rallentare proattivamente
+                if (!batchReducedMidSession) {
+                    const reducedBatch = Math.max(1, Math.floor(maxJobsPerRun * 0.7));
+                    await logInfo('job_runner.smart_batch.reduced', {
+                        accountId: account.id,
+                        oldMaxJobs: maxJobsPerRun,
+                        newMaxJobs: reducedBatch,
+                    });
+                    maxJobsPerRun = reducedBatch;
+                    batchReducedMidSession = true;
+                }
+            } else {
+                // Reset counter se il throttle non è più attivo
+                consecutiveSlowResponses = 0;
             }
 
             const job = await lockNextQueuedJob(options.allowedTypes, account.id, includeLegacyDefaultQueue);
@@ -387,6 +457,7 @@ async function runQueuedJobsForAccount(
                 accountId: account.id,
                 jobAccountId: job.account_id,
             });
+            addBreadcrumb(workerContext, `job.start:${job.type}`, `id=${job.id} attempt=${job.attempts + 1}`);
 
             let processedCurrentJob = false;
             try {
@@ -432,6 +503,7 @@ async function runQueuedJobsForAccount(
 
                 await markJobSucceeded(job.id);
                 await createJobAttempt(job.id, true, null, null, null);
+                addBreadcrumb(workerContext, `job.ok:${job.type}`, `id=${job.id}`);
                 await pushOutboxEvent(
                     hasWorkerWarnings ? 'job.succeeded_with_errors' : 'job.succeeded',
                     {
@@ -476,9 +548,14 @@ async function runQueuedJobsForAccount(
                 // Pausa umana tra un job e il successivo (anti-burst)
                 // Feedback loop reattivo: se LinkedIn sta rallentando, il delay aumenta automaticamente
                 // Durante il delay, lancia enrichment parallelo (zero traffico LinkedIn)
+                // Wind-down: durante l'ultimo X% della sessione, rallenta interJobDelay
+                // moltiplicando il delay (pacingFactor < 1 → delay più lungo in interJobDelay)
+                const effectivePacingFactor = windDownActive
+                    ? sessionPacingFactor / config.sessionWindDownDelayMultiplier
+                    : sessionPacingFactor;
                 const throttleSignal = session.httpThrottler.getThrottleSignal();
                 await Promise.allSettled([
-                    interJobDelay(session.page, throttleSignal, sessionPacingFactor),
+                    interJobDelay(session.page, throttleSignal, effectivePacingFactor),
                     (async () => {
                         try {
                             const { enrichLeadsParallel } = await import('../integrations/parallelEnricher');
@@ -520,6 +597,7 @@ async function runQueuedJobsForAccount(
                             // ignore payload parsing issues during challenge flow
                         }
                     }
+                    addBreadcrumb(workerContext, 'CHALLENGE_DETECTED', message.substring(0, 100));
                     await handleChallengeDetected({
                         source: 'job_runner',
                         accountId: account.id,
@@ -529,6 +607,7 @@ async function runQueuedJobsForAccount(
                         message,
                         extra: {
                             statusBeforeFailure: job.status,
+                            breadcrumbs: formatBreadcrumbs(workerContext),
                         },
                     });
                     await markJobRetryOrDeadLetter(job.id, attempts, attempts, 0, message);
@@ -622,6 +701,34 @@ async function runQueuedJobsForAccount(
                                 leadId: parsed.payload.leadId,
                                 type: job.type,
                             });
+
+                            // Circuit Breaker Per-Lista (6.6 wire): traccia dead letters per lista.
+                            // Quando una lista accumula 3+ dead letters in una sessione, attiva CB per 4h.
+                            try {
+                                const cbLead = await getLeadById(parsed.payload.leadId);
+                                if (cbLead?.list_name) {
+                                    const prevCount = listFailureTracker.get(cbLead.list_name) ?? 0;
+                                    const newCount = prevCount + 1;
+                                    listFailureTracker.set(cbLead.list_name, newCount);
+                                    if (newCount >= 3) {
+                                        const cbExpiry = Date.now() + 4 * 60 * 60 * 1000; // 4 ore
+                                        await setRuntimeFlag(`cb::list::${cbLead.list_name}`, String(cbExpiry));
+                                        const expiresAt = new Date(cbExpiry).toISOString();
+                                        await logWarn('job_runner.circuit_breaker.list_activated', {
+                                            accountId: account.id,
+                                            listName: cbLead.list_name,
+                                            deadLetters: newCount,
+                                            expiresAt,
+                                        });
+                                        // L5: Alert Telegram per visibilità utente
+                                        await sendTelegramAlert(
+                                            `Circuit Breaker attivato per lista "${cbLead.list_name}".\n${newCount} dead letters in questa sessione.\nLista sospesa fino a ${expiresAt}.\nVerifica selettori e lead di questa lista.`,
+                                            'Circuit Breaker Lista',
+                                            'warn',
+                                        ).catch(() => null);
+                                    }
+                                }
+                            } catch { /* best-effort CB tracking */ }
                         }
                     } catch {
                         // ignore if payload cannot be parsed
@@ -652,6 +759,7 @@ async function runQueuedJobsForAccount(
                     accountId: account.id,
                 });
 
+                addBreadcrumb(workerContext, `job.fail:${job.type}`, message.substring(0, 80));
                 consecutiveFailures += 1;
                 if (consecutiveFailures >= config.maxConsecutiveJobFailures) {
                     // Circuit breaker sessione: forza rotazione browser+fingerprint PRIMA della pausa.
@@ -730,13 +838,12 @@ async function runQueuedJobsForAccount(
                 rotateReasons.push(`threshold_${rotateEveryMinutes}_minutes`);
             }
 
-            // Memory Leak Protection (Hard Limits to prevent Zombie Chromium and Heap explosion)
-            if (processedOnCurrentSession >= 500) {
-                rotateReasons.push('memory_protection_500_jobs');
+            // Memory Leak Protection (Jittered Limits — 1.1)
+            if (processedOnCurrentSession >= sessionMaxJobs) {
+                rotateReasons.push(`memory_protection_${sessionMaxJobs}_jobs`);
             }
-            if (Date.now() - sessionStartedAtMs >= 60 * 60 * 1000) {
-                // 60 minutes
-                rotateReasons.push('memory_protection_60_min');
+            if (Date.now() - sessionStartedAtMs >= sessionMaxMs) {
+                rotateReasons.push(`memory_protection_${Math.round(sessionMaxMs / 60_000)}_min`);
             }
 
             if (rotateReasons.length > 0) {

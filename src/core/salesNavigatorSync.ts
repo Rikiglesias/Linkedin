@@ -14,9 +14,11 @@ import {
     getLeadById,
     getLeadByLinkedinUrl,
     getListScoringCriteria,
+    getRuntimeFlag,
     linkLeadToSalesNavList,
     markSalesNavListSynced,
     setLeadStatus,
+    setRuntimeFlag,
     updateLeadScores,
     upsertSalesNavList,
     upsertSalesNavigatorLead,
@@ -616,9 +618,21 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
             throw new Error(`Sales Navigator sync: nessuna lista corrisponde al filtro "${listFilter || '(nessuno)'}".${hint}`);
         }
 
-        for (const targetList of targetLists) {
+        // Checkpoint/Resume (4.1 fix): salva i NOMI delle liste già completate
+        // (non l'indice numerico che è fragile se le liste cambiano ordine/quantità).
+        const checkpointKey = `sync_list_checkpoint:${options.listName ?? 'all'}`;
+        const lastCheckpointRaw = await getRuntimeFlag(checkpointKey).catch(() => null);
+        const completedListNames = new Set<string>(
+            lastCheckpointRaw ? JSON.parse(lastCheckpointRaw) as string[] : [],
+        );
+
+        for (let listIdx = 0; listIdx < targetLists.length; listIdx++) {
+            const targetList = targetLists[listIdx];
             const listName = cleanText(targetList.name) || 'default';
             const listUrl = cleanText(targetList.url);
+
+            // Skip liste già completate nel run precedente
+            if (completedListNames.has(listName)) continue;
             const listReport: SalesNavigatorSyncListReport = {
                 listName,
                 listUrl,
@@ -731,6 +745,17 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
 
             report.lists.push(listReport);
             allSyncedLeadIds.push(...syncedLeadIds.map(id => ({ id, listName })));
+
+            // Checkpoint (4.1 fix): persisti nomi liste completate
+            if (!options.dryRun) {
+                completedListNames.add(listName);
+                await setRuntimeFlag(checkpointKey, JSON.stringify([...completedListNames])).catch(() => null);
+            }
+        }
+
+        // Reset checkpoint al termine del sync completo (tutte le liste processate)
+        if (!options.dryRun) {
+            await setRuntimeFlag(checkpointKey, '[]').catch(() => null);
         }
 
         // Chiudi browser SUBITO dopo scraping (non serve piu per enrichment)

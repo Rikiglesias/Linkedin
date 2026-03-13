@@ -28,6 +28,8 @@ import { WorkerContext } from './context';
 import { ChallengeDetectedError, RetryableWorkerError } from './errors';
 import { attemptChallengeResolution } from './challengeHandler';
 import { isSalesNavigatorUrl } from '../linkedinUrl';
+import { navigateToProfileForMessage } from '../browser/navigationContext';
+import { ensureViewportDwell } from '../browser/humanBehavior';
 import { buildPersonalizedFollowUpMessage } from '../ai/messagePersonalizer';
 import { getUnusedPrebuiltMessage, markPrebuiltMessageUsed } from '../core/repositories/prebuiltMessages';
 import { logInfo } from '../telemetry/logger';
@@ -118,7 +120,13 @@ export async function processMessageJob(
         ]);
     }
 
-    await context.session.page.goto(lead.linkedin_url, { waitUntil: 'domcontentloaded' });
+    // Navigation Context Chain (1.2): catena di navigazione realistica
+    // invece di goto diretto al profilo (segnale detection #1).
+    await navigateToProfileForMessage(
+        context.session.page,
+        lead.linkedin_url,
+        context.accountId,
+    );
     await humanDelay(context.session.page, 2500, 5000);
     await simulateHumanReading(context.session.page);
     await contextualReadingPause(context.session.page);
@@ -132,6 +140,10 @@ export async function processMessageJob(
 
     // Chiudi overlay LinkedIn prima di cercare il bottone messaggio
     await dismissKnownOverlays(context.session.page);
+
+    // Viewport Dwell Time (3.3): assicura che il bottone Message sia nel viewport
+    // da almeno 800-2000ms prima del click — previene segnale click-before-visible.
+    await ensureViewportDwell(context.session.page, joinSelectors('messageButton'));
 
     await humanMouseMove(context.session.page, joinSelectors('messageButton'));
     await humanDelay(context.session.page, 120, 320);

@@ -752,6 +752,128 @@ export async function getRiskInputs(localDate: string, hardInviteCap: number): P
     };
 }
 
+// ─── List Performance Multiplier (2.1) ───────────────────────────────────────
+
+/**
+ * Calcola un moltiplicatore budget per lista basato sull'acceptance rate storico.
+ * Liste con bassa acceptance ricevono meno budget → auto-throttle qualità scarsa.
+ *
+ * Fasce:
+ *   acceptance >40% → ×1.15 (lista premium, boost leggero)
+ *   acceptance 20-40% → ×1.0 (lista normale)
+ *   acceptance 10-20% → ×0.5 (lista sottoperformante, dimezza budget)
+ *   acceptance <10% → ×0.25 (lista critica, quasi fermata)
+ *   nessun dato → ×1.0 (nessun penalty per liste nuove)
+ */
+export async function computeListPerformanceMultiplier(
+    listName: string,
+    lookbackDays: number = 30,
+): Promise<{ multiplier: number; acceptanceRatePct: number; sampleSize: number }> {
+    const db = await getDatabase();
+    const safeLookbackDays = Math.max(1, Math.floor(lookbackDays));
+
+    // Query sulla tabella leads: count inviti e accettazioni per questa lista.
+    // IMPORTANTE: contiamo solo lead invitati da almeno 7 giorni per dare tempo
+    // sufficiente all'acceptance check. Lead invitati ieri con accepted_at NULL
+    // NON significa rifiuto — significa che il check non è ancora stato eseguito.
+    // Senza questo filtro, le liste verrebbero falsamente penalizzate.
+    const row = await db.get<{ invites: number; acceptances: number }>(`
+        SELECT
+            COUNT(*) AS invites,
+            COUNT(CASE WHEN accepted_at IS NOT NULL THEN 1 END) AS acceptances
+        FROM leads
+        WHERE list_name = ?
+          AND invited_at IS NOT NULL
+          AND invited_at >= DATETIME('now', '-' || ? || ' days')
+          AND invited_at <= DATETIME('now', '-7 days')
+    `, [listName, safeLookbackDays]);
+
+    const invites = row?.invites ?? 0;
+    const acceptances = row?.acceptances ?? 0;
+
+    // Nessun dato → nessun penalty (lista nuova, pochi inviti, o tutti recenti <7gg)
+    if (invites < 10) {
+        return { multiplier: 1.0, acceptanceRatePct: 0, sampleSize: invites };
+    }
+
+    const acceptanceRatePct = (acceptances / invites) * 100;
+
+    let multiplier: number;
+    if (acceptanceRatePct > 40) {
+        multiplier = 1.15;
+    } else if (acceptanceRatePct >= 20) {
+        multiplier = 1.0;
+    } else if (acceptanceRatePct >= 10) {
+        multiplier = 0.5;
+    } else {
+        multiplier = 0.25;
+    }
+
+    return {
+        multiplier,
+        acceptanceRatePct: Math.round(acceptanceRatePct * 100) / 100,
+        sampleSize: invites,
+    };
+}
+
+// ─── Trust Score Inputs (1.3) ────────────────────────────────────────────────
+
+export interface AccountTrustQueryInputs {
+    ssiScore: number;
+    ageDays: number;
+    acceptanceRatePct: number;
+    challengesLast7d: number;
+    pendingRatio: number;
+}
+
+/**
+ * Aggrega i 5 segnali necessari per calculateAccountTrustScore().
+ * Usata dallo scheduler dopo applyGrowthModel() per modulare il budget
+ * in base al livello di trust dell'account.
+ */
+export async function getAccountTrustInputs(
+    ssiScore: number,
+    ageDays: number,
+): Promise<AccountTrustQueryInputs> {
+    const db = await getDatabase();
+
+    // Acceptance rate ultimi 30 giorni
+    const acceptanceRow = await db.get<{ invites: number; acceptances: number }>(`
+        SELECT
+            COALESCE(SUM(invites_sent), 0) AS invites,
+            COALESCE(SUM(acceptances), 0) AS acceptances
+        FROM daily_stats
+        WHERE date >= DATE('now', '-30 days')
+    `);
+    const invites30d = acceptanceRow?.invites ?? 0;
+    const acceptances30d = acceptanceRow?.acceptances ?? 0;
+    const acceptanceRatePct = invites30d > 0 ? (acceptances30d / invites30d) * 100 : 50; // default 50% se no data
+
+    // Challenges ultimi 7 giorni
+    const challengeRow = await db.get<{ total: number }>(`
+        SELECT COALESCE(SUM(challenges_count), 0) AS total
+        FROM daily_stats
+        WHERE date >= DATE('now', '-7 days')
+    `);
+    const challengesLast7d = challengeRow?.total ?? 0;
+
+    // Pending ratio
+    const pendingInvites = await countLeadsByStatuses(['INVITED']);
+    const invitedTotalRow = await db.get<{ total: number }>(
+        `SELECT COUNT(*) as total FROM leads WHERE invited_at IS NOT NULL`,
+    );
+    const invitedTotal = invitedTotalRow?.total ?? 0;
+    const pendingRatio = invitedTotal > 0 ? pendingInvites / invitedTotal : 0;
+
+    return {
+        ssiScore,
+        ageDays,
+        acceptanceRatePct: Math.round(acceptanceRatePct * 100) / 100,
+        challengesLast7d,
+        pendingRatio: Math.round(pendingRatio * 10000) / 10000,
+    };
+}
+
 export interface GlobalKPIData {
     totalLeads: number;
     statusCounts: Record<string, number>;
