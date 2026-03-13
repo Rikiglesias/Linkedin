@@ -28,32 +28,29 @@ Quando avvii un workflow, il sistema esegue un "Pre-Flight Check". Non ignorare 
 
 ## 🔴 Regole Critiche (viola queste = ban garantito)
 
-### 1. NON aprire LinkedIn su un altro browser mentre il bot gira
-LinkedIn vede **due sessioni attive** dallo stesso account, con fingerprint diversi → red flag immediata. Se devi controllare qualcosa, fallo dal telefono sull'app (IP diverso, fingerprint diverso, è previsto).
+### 1. Attenzione all'IP "Teletrasporto" (Uso parallelo browser)
+Puoi tenere aperto LinkedIn sul tuo telefono o sul tuo PC personale mentre il bot gira, **MA** devi fare attenzione agli IP. Se il bot usa un proxy a Milano, e tu apri LinkedIn dal PC connesso a una VPN a Tokyo, LinkedIn vede il tuo account connesso da Milano e Tokyo nello stesso secondo. Questo è un "teletrasporto" impossibile per un umano e causa blocchi o richieste di ri-autenticazione. 
+*Se usi il bot senza proxy, usa LinkedIn dal PC normalmente.*
+*Se usi il bot con un proxy estero, evita di usare LinkedIn dal PC contemporaneamente.*
 
-### 2. NON usare VPN personali durante il bot
-Il bot usa proxy dedicati con IP residenziali/mobile. Se tu contemporaneamente navighi con una VPN, LinkedIn vede lo stesso account da 2 IP diversi nello stesso minuto → sospetto.
+### 2. VPN Personali vs Proxy del Bot
+Se nel `.env` hai configurato un `PROXY_URL` (es. Oxylabs), il bot instrada tutto il suo traffico direttamente lì. La tua VPN personale sul PC (es. NordVPN) **non influenza il bot**. 
 
 ### 3. NON modificare manualmente lo stato dei lead nel DB
-Il bot traccia ogni transizione di stato atomicamente. Se cambi `status = 'READY_INVITE'` a mano su un lead già INVITED, il bot lo re-invita → LinkedIn vede invito doppio → flag e spreco del proof-of-send timeout. Usa solo l'apposita interfaccia di recovery.
+Il bot traccia ogni transizione di stato atomicamente. Se cambi `status = 'READY_INVITE'` a mano su un lead già INVITED, il bot tenterà di re-invitarlo → LinkedIn bloccherà l'azione perché l'invito esiste già → il bot andrà in errore. Usa solo l'apposita interfaccia di recovery.
 
-### 4. NON lanciare il bot multiplo (2 istanze) sullo stesso account
-Una sola istanza per account. Due istanze = due browser = due fingerprint = collisioni di lock sul DB e ban.
+### 4. NON lanciare due istanze del bot contemporaneamente
+Non lanciare mai due finestre terminale con `npm run start:dev` sullo stesso account. Questo corrompe il database locale (database locked), crea collisioni nel profilo del browser Chromium e raddoppia i ritmi delle azioni rendendo il bot rilevabile.
 
 ---
 
 ## 🟡 Regole Importanti
 
-### 5. Rispetta gli orari lavorativi
-Lancia il bot durante orari lavorativi del paese target (9:00-18:00). Un umano non manda 25 inviti alle 3 di notte.
+### 5. Lascia che il bot gestisca il ritmo (Run-Loop)
+Non serve spezzare le attività in "sessioni" manuali. Il comando `run-loop` è progettato per girare in background tutto il giorno. Spalma gli inviti e i messaggi con pause lunghe (2-5 minuti) e fa finte attività organiche in mezzo. Avvialo la mattina e lascialo fare.
 
-### 6. 1 sessione al giorno, massimo 2
-Non lanciare il bot 5 volte nello stesso giorno. Un uso realistico è:
-- **Mattina**: sessione inviti (20-30 inviti max)
-- **Pomeriggio** (opzionale): sessione messaggi per chi ha accettato
-
-### 7. Non superare mai 80-100 inviti a settimana
-LinkedIn ha un soft cap a ~100 inviti/settimana. Il bot ha il warmup automatico, ma se forzi i limiti manualmente rischi. Per account nuovi (< 30 giorni), stai sotto i 30/settimana.
+### 6. Non superare mai i 100 inviti a settimana
+LinkedIn ha un limite assoluto di ~100 inviti a settimana. Il bot ha un limite di sicurezza impostato a 70. Non forzare l'invio manuale oltre questa soglia, altrimenti scattano le penalità. Per account nuovi (< 3 mesi), non superare i 30/settimana.
 
 ### 8. Personalizza le note (Usa l'AI)
 Gli inviti senza nota hanno un acceptance rate del 15-20%. Con la nota AI (GPT-5.4) che estrae il contesto del profilo (about/experience), sale al 30-40%. Più acceptance = meno inviti pending = meno rischio che LinkedIn classifichi il tuo account come spammer. **Usa sempre la modalità `ai`**.
