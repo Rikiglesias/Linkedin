@@ -491,6 +491,30 @@ function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
         onError: 'skip',
     });
 
+    // 10b. Daily report automatico (B.1): invia il report giornaliero via Telegram
+    // all'ora configurata (config.dailyReportHour), una volta al giorno.
+    tasks.push({
+        name: 'daily_report',
+        shouldRun: async (ctx) => {
+            if (ctx.dryRun || !ctx.isLeader) return false;
+            if (!config.dailyReportAutoEnabled) return false;
+            const { getHourInTimezone } = await import('../../config');
+            const currentHour = getHourInTimezone(new Date(), config.timezone);
+            if (currentHour < config.dailyReportHour) return false;
+            const lastSent = await getRuntimeFlag('daily_report.last_sent_date');
+            return lastSent !== ctx.localDate;
+        },
+        execute: async (ctx) => {
+            const { generateAndSendDailyReport } = await import('../../telemetry/dailyReporter');
+            const sent = await generateAndSendDailyReport(ctx.localDate);
+            if (sent) {
+                await setRuntimeFlag('daily_report.last_sent_date', ctx.localDate);
+                console.log(`[LOOP] daily-report inviato per ${ctx.localDate}`);
+            }
+        },
+        onError: 'skip',
+    });
+
     // 11. Company enrichment
     tasks.push({
         name: 'company_enrichment',
@@ -718,6 +742,15 @@ export async function runLoopCommand(args: string[]): Promise<void> {
         }
     }
 
+    // B.3: Alert Telegram avvio bot
+    if (!dryRun) {
+        await sendTelegramAlert(
+            `Bot avviato.\nWorkflow: ${workflow}\nOra: ${new Date().toISOString().substring(11, 19)}`,
+            'Bot Avviato',
+            'info',
+        ).catch(() => null);
+    }
+
     let cycle = 0;
     try {
         while (true) {
@@ -812,6 +845,14 @@ export async function runLoopCommand(args: string[]): Promise<void> {
         }
     } finally {
         stopConfigWatcher();
+        // B.3: Alert Telegram spegnimento bot
+        if (!dryRun) {
+            await sendTelegramAlert(
+                `Bot spento dopo ${cycle} cicli.\nOra: ${new Date().toISOString().substring(11, 19)}`,
+                'Bot Spento',
+                'info',
+            ).catch(() => null);
+        }
         if (lockOwnerId) {
             await releaseWorkflowRunnerLock(lockOwnerId);
         }

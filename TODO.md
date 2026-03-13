@@ -158,7 +158,14 @@ Ogni task DEVE essere verificato con i **6 livelli di controllo + anti-ban**:
 - **Fix**: Aggiungere jitter +-20% sull'intervallo: `effectiveInterval = base * (0.8 + Math.random() * 0.4)`.
 - **Anti-ban**: BASSO ma contribuisce alla varianza complessiva
 
-### D.2 Transizione Weekend Graduale
+### D.2 JA3 Forward Proxy Locale (CycleTLS)
+- [ ] **File**: nuovo `src/proxy/ja3ForwardProxy.ts`, `src/cli/commands/loopCommand.ts`
+- **Problema**: `USE_JA3_PROXY=true` assume un forward proxy HTTP su `127.0.0.1:8080` ma CycleTLS e' un client HTTP, non un forward proxy. Il servizio locale non esiste — Playwright non puo' connettersi.
+- **Fix**: Creare un forward proxy HTTP locale che intercetta CONNECT requests e usa CycleTLS per ri-negoziare il TLS con JA3 fingerprint personalizzato. Avviarlo automaticamente nel boot del bot.
+- **Priorita'**: BASSA per volumi <=20/giorno (proxy residenziale Oxylabs mitiga il rischio). ALTA per volumi >50/giorno.
+- **Anti-ban**: ALTO a volumi alti — TLS fingerprint Playwright e' rilevabile senza spoofing
+
+### D.3 Transizione Weekend Graduale
 - [ ] **File**: `src/risk/strategyPlanner.ts`
 - **Problema**: Il bot passa da 100% attivita' venerdi' sera a 10% sabato mattina. Transizione brusca e innaturale.
 - **Fix**: Venerdi' pomeriggio (14:00+) → `inviteFactor` cala progressivamente. Lunedi' mattina → parte lento e accelera. Modellare come una curva sinusoidale, non un gradino.
@@ -170,10 +177,10 @@ Ogni task DEVE essere verificato con i **6 livelli di controllo + anti-ban**:
 
 ```
 Sprint A (P0 anti-ban arch) → A.1, A.2, A.3                     [3/3] ✅
-Sprint B (P1 observability) → B.1, B.2, B.3, B.4                [0/4]
+Sprint B (P1 observability) → B.1, B.2, B.3, B.4                [4/4] ✅
 Sprint C (P1 resilience)    → C.1, C.2, C.3                     [0/3]
-Sprint D (P2 UX/lifecycle)  → D.1, D.2                          [0/2]
-                                                          Totale [3/13]
+Sprint D (P2 UX/lifecycle)  → D.1, D.2, D.3                      [0/3]
+                                                          Totale [7/14]
 ```
 
 Gate: `npm run conta-problemi` = EXIT 0 dopo ogni sprint

@@ -188,6 +188,7 @@ export async function generateAndSendDailyReport(targetDate?: string): Promise<b
         `• Fallimenti Critici Runs: *${campaignRunsStats?.failed_runs ?? 0}*`,
         `\n*⚠️ Risk & Health*`,
         `• Risk Score: *${riskSnapshot.score}/100* (${riskSnapshot.action})`,
+        await buildBanProbabilitySection(riskSnapshot),
         `• Pending Ratio: *${(riskSnapshot.pendingRatio * 100).toFixed(1)}%*${pendingTrendText}`,
         `• Errori Esecuzione (Job/Orchestrator): *${stats.runErrors}*`,
         `• Problemi Selettori UI: *${stats.selectorFailures}*`,
@@ -207,6 +208,20 @@ export async function generateAndSendDailyReport(targetDate?: string): Promise<b
 
     console.log(`[DAILY_REPORTER] Report inviato a Telegram per la data ${localDate}`);
     return true;
+}
+
+async function buildBanProbabilitySection(riskSnapshot: { pendingRatio: number; challengeCount: number }): Promise<string> {
+    try {
+        const { estimateBanProbability } = await import('../risk/riskEngine');
+        const acceptanceApprox = riskSnapshot.pendingRatio > 0
+            ? (1 - riskSnapshot.pendingRatio) * 100
+            : 50;
+        const banProb = estimateBanProbability([], acceptanceApprox, riskSnapshot.challengeCount, riskSnapshot.pendingRatio);
+        const icon = banProb.level === 'LOW' ? '🟢' : banProb.level === 'MEDIUM' ? '🟡' : banProb.level === 'HIGH' ? '🟠' : '🔴';
+        return `• Ban Probability: ${icon} *${banProb.score}/100* (${banProb.level})`;
+    } catch {
+        return '';
+    }
 }
 
 async function buildProxyStatusSection(): Promise<string> {

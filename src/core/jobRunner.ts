@@ -930,6 +930,17 @@ async function runQueuedJobsForAccount(
             }
         }
     } finally {
+        // Wind-down naturale (B.4): prima di chiudere il browser, simula un umano
+        // che torna al feed e scrolla un po' prima di uscire. Non chiude bruscamente
+        // dopo l'ultima azione operativa — un umano naviga un po' poi chiude.
+        if (!sessionClosed && !options.dryRun) {
+            try {
+                if (Math.random() < 0.30) {
+                    await session.page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 10_000 });
+                    await session.page.waitForTimeout(2000 + Math.floor(Math.random() * 3000));
+                }
+            } catch { /* best-effort wind-down */ }
+        }
         if (!sessionClosed) {
             await closeBrowser(session);
         }
