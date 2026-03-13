@@ -835,7 +835,9 @@ export async function runLoopCommand(args: string[]): Promise<void> {
                 break;
             }
 
-            const effectiveIntervalMs = getEffectiveLoopIntervalMs(intervalMs);
+            // D.1: Jitter ±20% sull'intervallo — un umano non lavora a intervalli precisi
+            const baseIntervalMs = getEffectiveLoopIntervalMs(intervalMs);
+            const effectiveIntervalMs = Math.floor(baseIntervalMs * (0.8 + Math.random() * 0.4));
             console.log(`[LOOP] waiting ${Math.floor(effectiveIntervalMs / 1000)}s before next cycle...`);
             if (lockOwnerId) {
                 await sleepWithLockHeartbeat(effectiveIntervalMs, lockOwnerId, lockTtlSeconds);

@@ -13,7 +13,7 @@
  * Sunday    → zero
  */
 
-import { config } from '../config';
+import { config, getHourInTimezone } from '../config';
 
 export interface DayStrategy {
     dayOfWeek: number; // 0=Sunday, 6=Saturday
@@ -74,7 +74,19 @@ export function getTodayStrategy(accountId?: string): DayStrategy {
 
     const now = new Date();
     const dow = now.getDay();
-    const base = DEFAULT_WEEKLY_PLAN[dow];
+    let base = { ...DEFAULT_WEEKLY_PLAN[dow] };
+
+    // D.3: Transizione weekend graduale — rampa oraria ven pomeriggio e lun mattina
+    const hour = getHourInTimezone(now, config.timezone);
+    if (dow === 5 && hour >= 14) {
+        // Venerdì 14:00+ → cala progressivamente: 14h=0.5, 16h=0.25, 18h=0.05
+        const ramp = Math.max(0, 1 - (hour - 14) / 5); // 14→1.0, 19→0.0
+        base = { ...base, inviteFactor: Math.round(base.inviteFactor * ramp * 100) / 100, messageFactor: Math.round(base.messageFactor * ramp * 100) / 100, description: 'Friday wind-down (gradual)' };
+    } else if (dow === 1 && hour < 12) {
+        // Lunedì 9-12 → sale progressivamente: 9h=0.5, 10h=0.7, 11h=0.9, 12h=1.0
+        const ramp = Math.min(1, 0.5 + (hour - config.workingHoursStart) * 0.17); // 9→0.5, 12→1.0
+        base = { ...base, inviteFactor: Math.round(base.inviteFactor * ramp * 100) / 100, messageFactor: Math.round(base.messageFactor * ramp * 100) / 100, description: 'Monday ramp-up (gradual)' };
+    }
 
     // Cross-Day Pattern Randomization (6.1): jitter ±15% per-account per-settimana.
     // Deterministico: stesso account+settimana = stesso jitter ogni giorno.
