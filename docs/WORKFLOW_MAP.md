@@ -66,6 +66,7 @@ Il sistema è diviso in 4 workflow **manuali** e 1 workflow **automatico** (il r
   - Svolge azioni "distrazione" (scrolla il feed, guarda le notifiche).
   - Esegue gli inviti o messaggi programmati.
   - Fa un backup del database e pulisce i log vecchi.
+- **Cosa succede dietro le quinte:** È un vero e proprio "Orchestratore di dipendenze". Non è un cronjob rigido, ma adatta i suoi ritmi in base al giorno: implementa il "Mood Factor" (un giorno fa 35 inviti, il giorno dopo 42, quello dopo 28, mai numeri identici). Suddivide il lavoro in sessioni corte di circa 25 minuti (per non sembrare un bot lasciato acceso) e svolge la *Hygiene*: controlla in background chi non accetta il tuo invito da 30 giorni e ritira silenziosamente le richieste vecchie (per tenere il tuo "Pending Ratio" basso, il KPI numero 1 che LinkedIn usa per bannare le persone). Inoltre, mentre dormi, prepara ("prebuild") i testi dei messaggi che invierà il giorno dopo per risparmiare tempo e far sembrare la scrittura ancora più naturale.
 
 ---
 
