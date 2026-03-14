@@ -63,6 +63,8 @@ export const cleanupBrowsers = async (): Promise<void> => {
                     await activePage.evaluate(() => window.scrollBy({ top: 100 + Math.random() * 200, behavior: 'smooth' })).catch(() => null);
                     await activePage.waitForTimeout(1000 + Math.random() * 1000).catch(() => null);
                 }
+                // Naviga via per chiudere la sessione LinkedIn in modo organico (trigger unload events)
+                await activePage.goto('about:blank', { timeout: 2000 }).catch(() => null);
             }
             await browser.close();
         } catch {
