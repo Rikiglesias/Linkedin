@@ -1,5 +1,6 @@
 import path from 'path';
-import { chromium } from 'playwright';
+import { chromium, firefox } from 'playwright';
+import { config } from '../config';
 import { ensureDirectoryPrivate } from '../security/filesystem';
 
 export interface CreateProfileOptions {
@@ -25,7 +26,8 @@ export async function createPersistentProfile(options: Partial<CreateProfileOpti
     const timeoutSeconds = Math.max(60, Math.floor(options.timeoutSeconds ?? 900));
 
     ensureDirectoryPrivate(profileDir);
-    const context = await chromium.launchPersistentContext(profileDir, {
+    const engine = config.browserEngine === 'firefox' ? firefox : chromium;
+    const context = await engine.launchPersistentContext(profileDir, {
         headless: false,
         viewport: { width: 1366, height: 768 },
         locale: 'it-IT',

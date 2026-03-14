@@ -75,6 +75,20 @@ export const desktopFingerprintPool: Fingerprint[] = [
         viewport: { width: 1280, height: 720 },
         locale: 'it-IT',
     },
+    {
+        id: 'desktop_firefox_win_2',
+        ja3: JA3_FIREFOX,
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
+        viewport: { width: 1920, height: 1080 },
+        locale: 'it-IT',
+    },
+    {
+        id: 'desktop_firefox_mac_1',
+        ja3: JA3_FIREFOX,
+        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14.7; rv:134.0) Gecko/20100101 Firefox/134.0',
+        viewport: { width: 1440, height: 900 },
+        locale: 'it-IT',
+    },
 ];
 
 export const mobileFingerprintPool: Fingerprint[] = [

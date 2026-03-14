@@ -40,24 +40,35 @@ function isScreenshotTimeout(error: unknown): boolean {
 }
 
 async function captureScreenshotViaCdp(page: Page, clip?: VisionRegionClip): Promise<Buffer> {
-    const cdp = await page.context().newCDPSession(page);
+    // CDP è Chromium-only — Firefox non lo supporta.
+    // Fallback a page.screenshot() standard di Playwright per Firefox.
     try {
-        const payload = clip
-            ? {
-                format: 'png' as const,
-                clip: {
-                    x: clip.x,
-                    y: clip.y,
-                    width: clip.width,
-                    height: clip.height,
-                    scale: 1,
-                },
-            }
-            : { format: 'png' as const };
-        const result = (await cdp.send('Page.captureScreenshot', payload)) as { data: string };
-        return Buffer.from(result.data, 'base64');
-    } finally {
-        await cdp.detach().catch(() => null);
+        const cdp = await page.context().newCDPSession(page);
+        try {
+            const payload = clip
+                ? {
+                    format: 'png' as const,
+                    clip: {
+                        x: clip.x,
+                        y: clip.y,
+                        width: clip.width,
+                        height: clip.height,
+                        scale: 1,
+                    },
+                }
+                : { format: 'png' as const };
+            const result = (await cdp.send('Page.captureScreenshot', payload)) as { data: string };
+            return Buffer.from(result.data, 'base64');
+        } finally {
+            await cdp.detach().catch(() => null);
+        }
+    } catch {
+        // Firefox fallback: usa Playwright screenshot API standard
+        const screenshotOptions: Parameters<Page['screenshot']>[0] = { type: 'png' };
+        if (clip) {
+            screenshotOptions.clip = { x: clip.x, y: clip.y, width: clip.width, height: clip.height };
+        }
+        return page.screenshot(screenshotOptions);
     }
 }
 

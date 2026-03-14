@@ -9,16 +9,21 @@ import { config } from '../config';
 import { Fingerprint, desktopFingerprintPool, mobileFingerprintPool, pickDeterministicFingerprint } from '../fingerprint/pool';
 import { detectBrowserFamily } from '../proxy/ja3Validator';
 
-// JA3: Quando CycleTLS non è attivo, Playwright usa sempre il TLS stack di Chromium.
-// Un Firefox/Safari UA con TLS Chromium è un'incoerenza rilevabile da Cloudflare/LinkedIn.
-// Filtriamo il pool per includere solo UA coerenti col TLS stack effettivo.
+// Filtra il pool fingerprint per coerenza con il browser engine effettivo.
+// Con Firefox → solo UA Firefox. Con Chromium → solo UA Chrome/Edge.
+// Incoerenza UA↔engine (es. UA Chrome su browser Firefox) è un marker di spoofing
+// rilevabile immediatamente da LinkedIn/Cloudflare.
 function filterTlsCoherentPool(pool: ReadonlyArray<Fingerprint>): ReadonlyArray<Fingerprint> {
     if (config.useJa3Proxy) return pool; // CycleTLS attivo → tutti i fingerprint sono sicuri
+    const isFirefoxEngine = config.browserEngine === 'firefox';
     const filtered = pool.filter((fp) => {
         const family = detectBrowserFamily(fp.userAgent);
+        if (isFirefoxEngine) {
+            return family === 'firefox' || family === 'unknown';
+        }
         return family === 'chrome' || family === 'edge' || family === 'unknown';
     });
-    return filtered.length > 0 ? filtered : pool; // Fallback al pool completo se filtro troppo aggressivo
+    return filtered.length > 0 ? filtered : pool;
 }
 
 const FINGERPRINT_VERSION = '1';
