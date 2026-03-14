@@ -820,6 +820,13 @@ export async function interJobDelay(
         await performAccidentalNavigation(page);
     }
 
+    // GAP #2: Micro-azione organica interleavata — 20% di probabilità.
+    // LinkedIn analizza la diversità di azioni nella sessione.
+    // Solo inviti consecutivi = segnale bot. Azioni organiche in mezzo = umano.
+    if (Math.random() < 0.20) {
+        await performDecoyAction(page);
+    }
+
     if (Math.random() < (isMobilePage(page) ? 0.15 : 0.25)) {
         await randomMouseMove(page);
     }

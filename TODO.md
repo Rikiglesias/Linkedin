@@ -3,7 +3,7 @@
 > Generated: 2026-03-13 | Aggiornato dopo analisi completa codebase
 > Audit precedente: 30/30 + 7 fix effetti composti + 3 fix L1→L6 — COMPLETATO e archiviato
 > Focus: GAP trovati dall'analisi lifecycle completo (boot → sessione → shutdown → multi-giorno)
-> **Completati: 0/13**
+> **Completati: 13/14** (D.2 JA3 implementato con supporto Firefox)
 
 ---
 
@@ -180,8 +180,8 @@ Ogni task DEVE essere verificato con i **6 livelli di controllo + anti-ban**:
 Sprint A (P0 anti-ban arch) → A.1, A.2, A.3                     [3/3] ✅
 Sprint B (P1 observability) → B.1, B.2, B.3, B.4                [4/4] ✅
 Sprint C (P1 resilience)    → C.1, C.2, C.3                     [3/3] ✅
-Sprint D (P2 UX/lifecycle)  → D.1, D.2, D.3                      [2/3] (D.2 JA3 rimandato)
-                                                          Totale [12/14]
+Sprint D (P2 UX/lifecycle)  → D.1, D.2, D.3                      [3/3] ✅
+                                                          Totale [13/14]
 ```
 
 Gate: `npm run conta-problemi` = EXIT 0 dopo ogni sprint
