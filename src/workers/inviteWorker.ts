@@ -427,6 +427,11 @@ export async function processInviteJob(
         }
     }
 
+    // Compensazione phantom increment: se l'invito fallisce dopo checkAndIncrementDailyLimit,
+    // decrementiamo invites_sent per evitare di gonfiare il budget (stessa logica di messageWorker).
+    let inviteResult: { sentWithNote: boolean; noteSource: 'template' | 'ai' | null; variant?: string | null };
+    try {
+
     // Pre-click: check weekly invite limit before sending (prevents wasted invites)
     if (!context.dryRun) {
         const preClickLimitReached = await detectWeeklyInviteLimit(context.session.page);
@@ -469,6 +474,8 @@ export async function processInviteJob(
     if (!connectClicked) {
         await incrementDailyStat(context.localDate, 'selector_failures');
         await transitionLead(lead.id, 'SKIPPED', 'connect_not_found');
+        // Compensazione: invito NON inviato ma invites_sent già incrementato
+        if (!context.dryRun) await incrementDailyStat(context.localDate, 'invites_sent', -1).catch(() => {});
         return workerResult(1);
     }
 
@@ -483,7 +490,7 @@ export async function processInviteJob(
         await logInfo('invite.post_action_verify_failed', { leadId: lead.id, message: 'Modale invito non apparso dopo click Connect' });
     }
 
-    const inviteResult = await handleInviteModal(
+    inviteResult = await handleInviteModal(
         context.session.page,
         lead,
         context.dryRun,
@@ -535,6 +542,12 @@ export async function processInviteJob(
             message: 'Bottone non diventato Pending/Sent dopo invio',
         });
         throw new RetryableWorkerError('Invito non confermato: proof-of-send non rilevato', 'INVITE_NOT_CONFIRMED');
+    }
+
+    } catch (inviteError) {
+        // Compensazione: decrementa invites_sent perché l'invito NON è stato inviato
+        if (!context.dryRun) await incrementDailyStat(context.localDate, 'invites_sent', -1).catch(() => {});
+        throw inviteError;
     }
 
     await transitionLead(lead.id, 'INVITED', context.dryRun ? 'invite_dry_run' : 'invite_sent', {

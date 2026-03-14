@@ -118,8 +118,9 @@ export async function processAcceptanceJob(
         const segmentKey = (lead.job_title || 'unknown').toLowerCase().trim() || 'unknown';
         recordOutcome(lead.invite_prompt_variant, 'accepted', { segmentKey }).catch(() => {});
     }
-    // Cloud sync non-bloccante
-    bridgeLeadStatus(lead.linkedin_url, 'ACCEPTED', { accepted_at: new Date().toISOString() });
+    // Cloud sync non-bloccante — stato finale è READY_MESSAGE (non ACCEPTED)
+    // perché transitionLeadAtomic esegue INVITED→ACCEPTED→READY_MESSAGE in un'unica transazione.
+    bridgeLeadStatus(lead.linkedin_url, 'READY_MESSAGE', { accepted_at: new Date().toISOString() });
     bridgeDailyStat(context.localDate, context.accountId, 'acceptances');
     return workerResult(1);
 }
