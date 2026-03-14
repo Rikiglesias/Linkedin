@@ -3,10 +3,11 @@
  * Raccoglie domande, mostra stats DB, config, warning, chiede conferma.
  */
 
-import { config, getLocalDateString } from '../config';
+import { config, getLocalDateString, getWeekStartDate } from '../config';
 import { checkDiskSpace, getDatabase } from '../db';
-import { getDailyStat, getRuntimeFlag } from '../core/repositories';
+import { countWeeklyInvites, getDailyStat, getRuntimeFlag } from '../core/repositories';
 import { getRuntimeAccountProfiles } from '../accountManager';
+import { checkSessionFreshness } from '../browser/sessionCookieMonitor';
 import { readLineFromStdin, askConfirmation, askNumber, askChoice, isInteractiveTTY } from '../cli/stdinHelper';
 import { formatPreflightSection } from './reportFormatter';
 import type { PreflightQuestion, PreflightDbStats, PreflightConfigStatus, PreflightWarning, PreflightResult, SessionRiskAssessment } from './types';
@@ -41,11 +42,16 @@ export async function collectDbStats(listFilter?: string): Promise<PreflightDbSt
 
     let lastSyncAt: string | null = null;
     if (listFilter) {
-        const syncRow = await db.get<{ synced_at: string }>(
-            `SELECT synced_at FROM salesnav_lists WHERE name = ? ORDER BY synced_at DESC LIMIT 1`,
+        const syncRow = await db.get<{ last_synced_at: string }>(
+            `SELECT last_synced_at FROM salesnav_lists WHERE name = ? ORDER BY last_synced_at DESC LIMIT 1`,
             [listFilter],
         );
-        lastSyncAt = syncRow?.synced_at ?? null;
+        lastSyncAt = syncRow?.last_synced_at ?? null;
+    } else {
+        const syncRow = await db.get<{ last_synced_at: string }>(
+            `SELECT MAX(last_synced_at) as last_synced_at FROM salesnav_lists`,
+        );
+        lastSyncAt = syncRow?.last_synced_at ?? null;
     }
 
     const byStatus: Record<string, number> = {};
@@ -98,6 +104,21 @@ export async function collectConfigStatus(): Promise<PreflightConfigStatus> {
         }
     }
 
+    // Cookie freshness check per ogni account — sessioni vecchie = rischio ban
+    const staleAccounts: string[] = [];
+    const noLoginAccounts: string[] = [];
+    const accounts = getRuntimeAccountProfiles();
+    for (const acc of accounts) {
+        const freshness = checkSessionFreshness(acc.sessionDir, config.sessionCookieMaxAgeDays);
+        if (freshness.lastVerifiedAt === null) {
+            noLoginAccounts.push(acc.id);
+        } else if (freshness.needsRotation) {
+            staleAccounts.push(`${acc.id} (${freshness.sessionAgeDays}d)`);
+        }
+    }
+
+    const weeklyInvitesSent = await countWeeklyInvites(getWeekStartDate());
+
     return {
         proxyConfigured: !!config.proxyUrl,
         apolloConfigured: !!config.apolloApiKey,
@@ -112,7 +133,11 @@ export async function collectConfigStatus(): Promise<PreflightConfigStatus> {
         budgetMessages: config.hardMsgCap,
         invitesSentToday,
         messagesSentToday,
+        weeklyInvitesSent,
+        weeklyInviteLimit: config.weeklyInviteLimit,
         proxyIpReputation,
+        staleAccounts,
+        noLoginAccounts,
     };
 }
 
@@ -125,6 +150,18 @@ export function appendProxyReputationWarning(warnings: PreflightWarning[], cfgSt
         warnings.push({
             level: 'critical',
             message: `Proxy IP ${cfgStatus.proxyIpReputation.ip} BLACKLISTED (abuse score: ${cfgStatus.proxyIpReputation.abuseScore}/100, ISP: ${cfgStatus.proxyIpReputation.isp}). Cambiare proxy prima di procedere.`,
+        });
+    }
+    if (cfgStatus.staleAccounts.length > 0) {
+        warnings.push({
+            level: 'warn',
+            message: `Cookie sessione scaduti per: ${cfgStatus.staleAccounts.join(', ')}. Rinnovare il profilo con create-profile.`,
+        });
+    }
+    if (cfgStatus.noLoginAccounts.length > 0) {
+        warnings.push({
+            level: 'critical',
+            message: `Nessun login registrato per: ${cfgStatus.noLoginAccounts.join(', ')}. Esegui "bot login" prima di procedere.`,
         });
     }
 }
@@ -277,6 +314,7 @@ function displayConfigStatus(cs: PreflightConfigStatus): void {
         ['Growth Model:', checkMark(cs.growthModelEnabled) + ' ' + (cs.growthModelEnabled ? 'attivo' : 'disabilitato')],
         ['Weekly Strategy:', checkMark(cs.weeklyStrategyEnabled) + ' ' + (cs.weeklyStrategyEnabled ? 'attivo' : 'disabilitato')],
         ['Budget inviti:', `${cs.invitesSentToday}/${cs.budgetInvites} oggi`],
+        ['Budget inviti sett.:', `${cs.weeklyInvitesSent}/${cs.weeklyInviteLimit} questa settimana`],
         ['Budget messaggi:', `${cs.messagesSentToday}/${cs.budgetMessages} oggi`],
     ];
 
@@ -292,6 +330,112 @@ function displayWarnings(warnings: PreflightWarning[]): void {
         const prefix = w.level === 'critical' ? '[!!!]' : w.level === 'warn' ? '[!]' : '[i]';
         console.log(`    ${prefix} ${w.message}`);
     }
+}
+
+// ─── Anti-Ban Checklist Interattiva ──────────────────────────────────────────
+
+interface AntiBanCheckItem {
+    question: string;
+    /** Se true, risposta "no" blocca il workflow */
+    blocking: boolean;
+    /** Suggerimento se l'utente risponde "no" */
+    hint: string;
+}
+
+const CHECKLIST_OUTREACH: ReadonlyArray<AntiBanCheckItem> = [
+    {
+        question: 'Hai chiuso TUTTI gli altri tab/finestre di LinkedIn?',
+        blocking: true,
+        hint: 'Chiudi ogni tab LinkedIn in tutti i browser prima di procedere.',
+    },
+    {
+        question: 'Sono passate almeno 2 ore dall\'ultima sessione manuale su LinkedIn?',
+        blocking: false,
+        hint: 'Sessioni troppo ravvicinate aumentano il rischio ban. Consigliato aspettare.',
+    },
+    {
+        question: 'Il VPN/Proxy e\' lo stesso della sessione precedente (o prima volta)?',
+        blocking: false,
+        hint: 'Cambiare IP tra sessioni vicine e\' un segnale di automazione.',
+    },
+    {
+        question: 'Sai che NON devi cliccare nella finestra del browser automatizzato?',
+        blocking: true,
+        hint: 'Il bot blocca l\'input, ma click accidentali possono interferire.',
+    },
+    {
+        question: 'Sai che per chiudere devi usare Ctrl+C (MAI chiudere la finestra)?',
+        blocking: true,
+        hint: 'Chiusura brusca = segnale bot. Ctrl+C fa wind-down umano prima di chiudere.',
+    },
+];
+
+const CHECKLIST_SCRAPING: ReadonlyArray<AntiBanCheckItem> = [
+    {
+        question: 'Hai chiuso TUTTI gli altri tab/finestre di LinkedIn?',
+        blocking: true,
+        hint: 'Chiudi ogni tab LinkedIn in tutti i browser prima di procedere.',
+    },
+    {
+        question: 'E\' passata almeno 1 ora dall\'ultima sessione su LinkedIn?',
+        blocking: false,
+        hint: 'Sessioni troppo ravvicinate aumentano il rischio detection.',
+    },
+    {
+        question: 'Sai che NON devi interagire con la finestra del browser?',
+        blocking: true,
+        hint: 'Il bot gestisce tutto. Intervieni solo se appare un CAPTCHA.',
+    },
+    {
+        question: 'Sai che per chiudere devi usare Ctrl+C (MAI chiudere la finestra)?',
+        blocking: true,
+        hint: 'Ctrl+C = chiusura sicura con wind-down. Chiudere la finestra = rischio.',
+    },
+];
+
+async function runAntiBanChecklist(workflowName: string): Promise<boolean> {
+    const isOutreach = workflowName === 'send-invites' || workflowName === 'send-messages';
+    const checklist = isOutreach ? CHECKLIST_OUTREACH : CHECKLIST_SCRAPING;
+
+    console.log('');
+    console.log('  CHECKLIST ANTI-BAN (rispondi a ogni domanda):');
+    console.log('');
+
+    let blocked = false;
+    const failedItems: string[] = [];
+
+    for (const item of checklist) {
+        const ok = await askConfirmation(`    ${item.question} [Y/n] `);
+        if (!ok) {
+            console.log(`      -> ${item.hint}`);
+            if (item.blocking) {
+                blocked = true;
+                failedItems.push(item.question);
+            }
+        }
+    }
+
+    if (blocked) {
+        console.log('');
+        console.log('  [!!!] Checklist anti-ban NON superata. Risolvi prima di procedere:');
+        for (const f of failedItems) {
+            console.log(`    - ${f}`);
+        }
+        return false;
+    }
+
+    // Tips finali (non bloccanti, solo promemoria)
+    console.log('');
+    console.log('  TIPS SESSIONE:');
+    console.log('    [i] Se appare un CAPTCHA: risolvilo manualmente, il bot riprende da solo');
+    if (isOutreach) {
+        console.log('    [i] Dopo la sessione: aspetta almeno 2h prima di usare LinkedIn');
+    } else {
+        console.log('    [i] Dopo la sessione: aspetta almeno 1h prima di usare LinkedIn');
+    }
+    console.log('');
+
+    return true;
 }
 
 // ─── Main Pre-flight Runner ──────────────────────────────────────────────────
@@ -334,6 +478,19 @@ export async function runPreflight(pfConfig: PreflightConfig): Promise<Preflight
     console.log('════════════════════════════════════════════════════════════════');
     console.log(`  PRE-FLIGHT: ${pfConfig.workflowName.toUpperCase()}`);
     console.log('════════════════════════════════════════════════════════════════');
+
+    // ── Checklist anti-ban interattiva ─────────────────────────
+    const checklistPassed = await runAntiBanChecklist(pfConfig.workflowName);
+    if (!checklistPassed) {
+        return {
+            answers,
+            dbStats: await collectDbStats(pfConfig.listFilter),
+            configStatus: await collectConfigStatus(),
+            warnings: [],
+            confirmed: false,
+            riskAssessment: { level: 'STOP', score: 100, factors: { checklist: 100 }, recommendation: 'Checklist anti-ban non superata' },
+        };
+    }
 
     // Ask questions (skip if already answered via CLI flags)
     for (const q of pfConfig.questions) {
@@ -398,6 +555,9 @@ export async function runPreflight(pfConfig: PreflightConfig): Promise<Preflight
     }
 
     const confirmed = await askConfirmation('  Procedo? [Y/n] ');
+
+    // Rilascia stdin dopo le domande per evitare che il processo resti appeso
+    process.stdin.pause();
 
     return { answers, dbStats, configStatus, warnings, confirmed, riskAssessment };
 }

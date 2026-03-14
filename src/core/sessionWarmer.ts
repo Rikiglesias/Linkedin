@@ -18,7 +18,7 @@
  */
 
 import { Page } from 'playwright';
-import { simulateHumanReading, humanType, humanDelay } from '../browser';
+import { simulateHumanReading, humanType, humanDelay, dismissKnownOverlays } from '../browser';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { config } from '../config';
 
@@ -87,6 +87,7 @@ export async function warmupSession(page: Page): Promise<void> {
         // Step 1: Feed — SEMPRE primo (90% lo visita, 10% skip raro es. clic diretto su notifica)
         if (Math.random() < 0.90) {
             await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
+            await dismissKnownOverlays(page);
             await humanDelay(page, 2000, 5000);
             await logInfo('session_warmer.feed_reading');
             const maxScrollAttempts = Math.floor(Math.random() * 3) + 2;
@@ -101,6 +102,7 @@ export async function warmupSession(page: Page): Promise<void> {
         if (Math.random() < 0.70) {
             await logInfo('session_warmer.notifications_check');
             await page.goto('https://www.linkedin.com/notifications/', { waitUntil: 'domcontentloaded' });
+            await dismissKnownOverlays(page);
             await humanDelay(page, 1500, 3000);
             await simulateHumanReading(page);
             stepsExecuted.push('notifications');
@@ -110,6 +112,7 @@ export async function warmupSession(page: Page): Promise<void> {
         if (sessionWindow === 'second' && Math.random() < 0.40) {
             await logInfo('session_warmer.messaging_check');
             await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'domcontentloaded' });
+            await dismissKnownOverlays(page);
             await humanDelay(page, 1200, 2500);
             stepsExecuted.push('messaging');
         }

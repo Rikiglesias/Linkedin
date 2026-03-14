@@ -4,7 +4,7 @@
 
 import { config, getLocalDateString } from '../config';
 import { runWorkflow } from '../core/orchestrator';
-import { getDailyStat } from '../core/repositories';
+import { getAutomationPauseState, getDailyStat, getRuntimeFlag } from '../core/repositories';
 import { runPreflight, appendProxyReputationWarning } from './preflight';
 import { formatWorkflowReport } from './reportFormatter';
 import type { PreflightDbStats, PreflightConfigStatus, PreflightWarning, WorkflowReport } from './types';
@@ -16,12 +16,13 @@ export interface SendMessagesOptions {
     limit?: number;
     dryRun?: boolean;
     skipPreflight?: boolean;
+    accountId?: string;
 }
 
 function generateWarnings(
     stats: PreflightDbStats,
     cfgStatus: PreflightConfigStatus,
-    _answers: Record<string, string>,
+    answers: Record<string, string>,
 ): PreflightWarning[] {
     const warnings: PreflightWarning[] = [];
 
@@ -29,7 +30,8 @@ function generateWarnings(
 
     const accepted = (stats.byStatus['ACCEPTED'] ?? 0) + (stats.byStatus['READY_MESSAGE'] ?? 0);
     if (accepted === 0) {
-        warnings.push({ level: 'critical', message: 'Nessun lead ACCEPTED/READY_MESSAGE trovato — nulla da messaggiare' });
+        const listNote = answers['list'] ? ` (conteggio globale — la lista "${answers['list']}" potrebbe avere lead messaggiabili)` : '';
+        warnings.push({ level: 'critical', message: `Nessun lead ACCEPTED/READY_MESSAGE trovato${listNote} — nulla da messaggiare` });
     }
 
     const remaining = cfgStatus.budgetMessages - cfgStatus.messagesSentToday;
@@ -84,18 +86,11 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
                 defaultValue: opts.listName ?? '',
             },
             {
-                id: 'mode',
-                prompt: 'Modalita\' messaggio',
-                type: 'choice',
-                choices: ['ai', 'template'],
-                defaultValue: opts.template ? 'template' : 'ai',
-            },
-            {
                 id: 'lang',
                 prompt: 'Lingua preferita',
                 type: 'choice',
                 choices: ['it', 'en', 'fr', 'es', 'nl'],
-                defaultValue: opts.lang ?? 'it',
+                defaultValue: opts.lang ?? 'en',
             },
             {
                 id: 'limit',
@@ -110,6 +105,7 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
                 defaultValue: opts.dryRun ? 'true' : 'false',
             },
         ],
+        listFilter: opts.listName,
         generateWarnings,
         skipPreflight: opts.skipPreflight,
         cliOverrides: buildCliOverrides(opts),
@@ -125,19 +121,42 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
     const sessionLimit = parseInt(preflight.answers['limit'] || '0', 10);
     const lang = preflight.answers['lang'] || undefined;
 
+    // ── Guard: quarantina e pausa ─────────────────────────────────────────────
+    if (!dryRun) {
+        const quarantine = (await getRuntimeFlag('account_quarantine')) === 'true';
+        if (quarantine) {
+            console.error('\n  [BLOCCATO] Account in quarantina — operazione annullata. Esegui "bot unquarantine" dopo aver risolto il problema.\n');
+            return;
+        }
+        const pauseState = await getAutomationPauseState();
+        if (pauseState.paused) {
+            console.error(`\n  [BLOCCATO] Automazione in pausa: ${pauseState.reason ?? 'motivo sconosciuto'}. Riprendi con "bot resume".\n`);
+            return;
+        }
+    }
+
     // Run the existing orchestrator for message workflow
     console.log('\n  Avvio invio messaggi...\n');
 
-    await runWorkflow({
-        workflow: 'message',
-        dryRun,
-        listFilter: listFilter || undefined,
-        sessionLimit: sessionLimit > 0 ? sessionLimit : undefined,
-        lang,
-    });
+    let workflowError: string | null = null;
+    try {
+        await runWorkflow({
+            workflow: 'message',
+            dryRun,
+            listFilter: listFilter || undefined,
+            sessionLimit: sessionLimit > 0 ? sessionLimit : undefined,
+            lang,
+        });
+    } catch (err) {
+        workflowError = err instanceof Error ? err.message : String(err);
+        console.error(`\n  [ERRORE] runWorkflow fallito: ${workflowError}\n`);
+    }
 
-    // Capture post-run stats
-    const msgAfter = await getDailyStat(localDate, 'messages_sent');
+    // Capture post-run stats (anche dopo errore — le stats parziali sono valide)
+    let msgAfter = msgBefore;
+    try {
+        msgAfter = await getDailyStat(localDate, 'messages_sent');
+    } catch { /* fallback a msgBefore se DB non raggiungibile */ }
     const messagesSent = msgAfter - msgBefore;
 
     // Report
@@ -145,17 +164,18 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
         workflow: 'send-messages',
         startedAt,
         finishedAt: new Date(),
-        success: true,
+        success: !workflowError,
         summary: {
             messaggi_inviati: messagesSent,
             budget_utilizzato: `${msgAfter}/${config.hardMsgCap}`,
             budget_rimanente: config.hardMsgCap - msgAfter,
             dry_run: dryRun ? 'SI' : 'no',
         },
-        errors: [],
+        errors: workflowError ? [workflowError] : [],
         nextAction: msgAfter >= config.hardMsgCap
             ? 'Budget messaggi esaurito — riprendi domani'
             : `Budget rimanente: ${config.hardMsgCap - msgAfter} messaggi`,
+        riskAssessment: preflight.riskAssessment,
     };
 
     console.log(formatWorkflowReport(workflowReport));
@@ -164,9 +184,9 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
 function buildCliOverrides(opts: SendMessagesOptions): Record<string, string> {
     const overrides: Record<string, string> = {};
     if (opts.listName) overrides['list'] = opts.listName;
-    if (opts.template) overrides['mode'] = 'template';
     if (opts.lang) overrides['lang'] = opts.lang;
     if (opts.limit !== null && opts.limit !== undefined) overrides['limit'] = String(opts.limit);
     if (opts.dryRun !== null && opts.dryRun !== undefined) overrides['dryRun'] = String(opts.dryRun);
+    if (opts.accountId) overrides['accountId'] = opts.accountId;
     return overrides;
 }

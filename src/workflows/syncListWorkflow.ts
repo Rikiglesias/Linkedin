@@ -4,6 +4,7 @@
 
 import { config } from '../config';
 import { runSalesNavigatorListSync, formatFinalReport } from '../core/salesNavigatorSync';
+import { getAutomationPauseState, getRuntimeFlag } from '../core/repositories';
 import { runPreflight, appendProxyReputationWarning } from './preflight';
 import { formatWorkflowReport } from './reportFormatter';
 import type { PreflightDbStats, PreflightConfigStatus, PreflightWarning, WorkflowReport } from './types';
@@ -31,7 +32,7 @@ function generateWarnings(
     appendProxyReputationWarning(warnings, cfgStatus);
 
     if (!cfgStatus.proxyConfigured) {
-        warnings.push({ level: 'warn', message: 'Nessun proxy configurato — connessione diretta (rischio detection)' });
+        warnings.push({ level: 'critical', message: 'Nessun proxy configurato — connessione diretta su SalesNav (rischio detection ALTO)' });
     }
     if (!cfgStatus.apolloConfigured && !cfgStatus.hunterConfigured) {
         warnings.push({ level: 'info', message: 'Nessun API enrichment configurato (Apollo/Hunter) — solo OSINT' });
@@ -95,6 +96,18 @@ export async function runSyncListWorkflow(opts: SyncListOptions): Promise<void> 
     const maxPages = parseInt(preflight.answers['maxPages'] || '10', 10);
     const maxLeads = parseInt(preflight.answers['maxLeads'] || '500', 10);
 
+    // ── Guard: quarantina e pausa ─────────────────────────────────────────────
+    const quarantine = (await getRuntimeFlag('account_quarantine')) === 'true';
+    if (quarantine) {
+        console.error('\n  [BLOCCATO] Account in quarantina — operazione annullata. Esegui "bot unquarantine" dopo aver risolto il problema.\n');
+        return;
+    }
+    const pauseState = await getAutomationPauseState();
+    if (pauseState.paused) {
+        console.error(`\n  [BLOCCATO] Automazione in pausa: ${pauseState.reason ?? 'motivo sconosciuto'}. Riprendi con "bot resume".\n`);
+        return;
+    }
+
     // Run the existing sync engine
     console.log('\n  Avvio sync lista...\n');
 
@@ -143,8 +156,10 @@ export async function runSyncListWorkflow(opts: SyncListOptions): Promise<void> 
 function buildCliOverrides(opts: SyncListOptions): Record<string, string> {
     const overrides: Record<string, string> = {};
     if (opts.listName) overrides['list'] = opts.listName;
+    if (opts.listUrl) overrides['listUrl'] = opts.listUrl;
     if (opts.maxPages !== null && opts.maxPages !== undefined) overrides['maxPages'] = String(opts.maxPages);
     if (opts.maxLeads !== null && opts.maxLeads !== undefined) overrides['maxLeads'] = String(opts.maxLeads);
     if (opts.enrichment !== null && opts.enrichment !== undefined) overrides['enrichment'] = String(opts.enrichment);
+    if (opts.dryRun !== null && opts.dryRun !== undefined) overrides['dryRun'] = String(opts.dryRun);
     return overrides;
 }

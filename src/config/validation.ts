@@ -397,6 +397,24 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
         when: (cfg) => !!cfg.proxyUrl && cfg.proxyTypeDefault === 'unknown' && !cfg.proxyListPath,
         severity: 'warn',
     },
+    {
+        message:
+            '[CONFIG] PROXY_QUALITY_CHECK_ENABLED=true ma IP_REPUTATION_API_KEY vuota — il check AbuseIPDB non funzionerà',
+        when: (cfg) => cfg.proxyQualityCheckEnabled && !cfg.ipReputationApiKey,
+        severity: 'warn',
+    },
+    {
+        message:
+            '[CONFIG] BROWSER_ENGINE=camoufox e CLOAKBROWSER_ENABLED=true — conflitto: usare uno solo dei due',
+        when: (cfg) => cfg.browserEngine === 'camoufox' && cfg.cloakBrowserEnabled,
+        severity: 'warn',
+    },
+    {
+        message:
+            '[CONFIG] BROWSER_ENGINE=camoufox e USE_JA3_PROXY=true — inutile: Camoufox ha TLS fingerprint Firefox nativo',
+        when: (cfg) => cfg.browserEngine === 'camoufox' && cfg.useJa3Proxy,
+        severity: 'warn',
+    },
 ];
 
 export interface ConfigValidationResult {

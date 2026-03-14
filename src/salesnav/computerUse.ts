@@ -244,6 +244,19 @@ export async function computerUseTask(
 
     console.log(`[COMPUTER USE] Task: "${task.substring(0, 80)}..." (max ${maxTurns} turns)`);
 
+    // Computer Use richiede modelli specifici (es. computer-use-preview).
+    // GPT-5.4 e altri modelli vision generici non lo supportano — skip silenzioso.
+    const model = getModel();
+    const COMPUTER_USE_COMPATIBLE_MODELS = ['computer-use-preview', 'gpt-4o-computer-use'];
+    if (!COMPUTER_USE_COMPATIBLE_MODELS.some((m) => model.includes(m))) {
+        return {
+            success: false,
+            turns: 0,
+            totalActions: 0,
+            error: `Modello "${model}" non supporta Computer Use — usa fallback DOM`,
+        };
+    }
+
     try {
         // Initial request with screenshot
         const screenshot = await captureScreenshot(page);
@@ -251,7 +264,7 @@ export async function computerUseTask(
         let response = await callResponsesApi({
             model: getModel(),
             tools: [{
-                type: 'computer',
+                type: 'computer_use_preview',
                 display_width: viewport.width,
                 display_height: viewport.height,
                 environment: 'browser',
@@ -337,9 +350,9 @@ export async function computerUseTask(
             response = await callResponsesApi({
                 model: getModel(),
                 tools: [{
-                    type: 'computer',
-                    display_width: viewport.width,
-                    display_height: viewport.height,
+                    type: 'computer_use_preview',
+                    display_width_px: viewport.width,
+                    display_height_px: viewport.height,
                     environment: 'browser',
                 }],
                 previous_response_id: previousResponseId,

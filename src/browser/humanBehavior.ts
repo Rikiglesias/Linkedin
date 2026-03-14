@@ -33,6 +33,10 @@ export async function ensureVisualCursorOverlay(page: Page): Promise<void> {
     if (page.isClosed() || isMobilePage(page)) {
         return;
     }
+    // Camoufox ha il suo cursore nativo — il nostro overlay DOM crea un doppio cursore confuso.
+    if (config.browserEngine === 'camoufox') {
+        return;
+    }
 
     try {
         await page.evaluate(
@@ -89,7 +93,7 @@ html.${rootClass}, html.${rootClass} * {
 }
 
 async function syncVisualCursorOverlay(page: Page, point: Point, clicking: boolean = false): Promise<void> {
-    if (page.isClosed() || isMobilePage(page)) {
+    if (page.isClosed() || isMobilePage(page) || config.browserEngine === 'camoufox') {
         return;
     }
 
@@ -232,7 +236,7 @@ export async function blockUserInput(page: Page): Promise<void> {
 
 export async function pulseVisualCursorOverlay(page: Page): Promise<void> {
     const point = pageMouseState.get(page);
-    if (!point || page.isClosed() || isMobilePage(page)) {
+    if (!point || page.isClosed() || isMobilePage(page) || config.browserEngine === 'camoufox') {
         return;
     }
 
@@ -334,11 +338,20 @@ export async function humanMouseMove(page: Page, targetSelector: string): Promis
         const box = await page.locator(targetSelector).first().boundingBox();
         if (!box) return;
 
-        const startPoint = getStartingPoint(page);
-
         const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
         const finalX = Math.max(0, Math.min(viewport.width - 1, box.x + box.width / 2 + (Math.random() * 8 - 4)));
         const finalY = Math.max(0, Math.min(viewport.height - 1, box.y + box.height / 2 + (Math.random() * 8 - 4)));
+
+        // Camoufox con humanize=true: movimento diretto, Camoufox umanizza a livello C++.
+        if (config.browserEngine === 'camoufox' && config.camoufoxHumanize) {
+            const distancePixels = Math.hypot(finalX - (pageMouseState.get(page)?.x ?? 0), finalY - (pageMouseState.get(page)?.y ?? 0));
+            const steps = Math.max(5, Math.min(15, Math.round(distancePixels / 80)));
+            await page.mouse.move(finalX, finalY, { steps });
+            updateMouseState(page, { x: finalX, y: finalY });
+            return;
+        }
+
+        const startPoint = getStartingPoint(page);
 
         const distancePixels = Math.hypot(finalX - startPoint.x, finalY - startPoint.y);
         // Più step = movimento più fluido e meno scattoso
@@ -386,6 +399,18 @@ export async function humanMouseMoveToCoords(page: Page, targetX: number, target
         return;
     }
     try {
+        // Camoufox con humanize=true umanizza i movimenti a livello C++ (curve, jitter, tremor).
+        // Il nostro Bézier path è ridondante e causa: doppio cursore, lentezza, pattern innaturale.
+        // Con Camoufox: movimento diretto con pochi step — Camoufox aggiunge naturalezza internamente.
+        if (config.browserEngine === 'camoufox' && config.camoufoxHumanize) {
+            const startPoint = getStartingPoint(page);
+            const distancePixels = Math.hypot(targetX - startPoint.x, targetY - startPoint.y);
+            const steps = Math.max(5, Math.min(15, Math.round(distancePixels / 80)));
+            await page.mouse.move(targetX, targetY, { steps });
+            updateMouseState(page, { x: targetX, y: targetY });
+            return;
+        }
+
         const startPoint = getStartingPoint(page);
 
         const distancePixels = Math.hypot(targetX - startPoint.x, targetY - startPoint.y);

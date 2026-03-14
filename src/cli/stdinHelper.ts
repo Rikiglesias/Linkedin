@@ -45,7 +45,7 @@ export async function askNumber(prompt: string, defaultValue: number): Promise<n
     const raw = await readLineFromStdin(`${prompt} (default: ${defaultValue}): `);
     if (!raw) return defaultValue;
     const parsed = parseInt(raw, 10);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : defaultValue;
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : defaultValue;
 }
 
 /**

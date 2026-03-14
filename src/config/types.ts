@@ -19,7 +19,7 @@ export interface AccountProfileConfig {
 export interface AppConfig {
     timezone: string;
     headless: boolean;
-    browserEngine: 'chromium' | 'firefox';
+    browserEngine: 'chromium' | 'firefox' | 'camoufox';
     dashboardAuthEnabled: boolean;
     dashboardApiKey: string;
     dashboardBasicUser: string;
@@ -317,6 +317,9 @@ export interface AppConfig {
     cloakBrowserEnabled: boolean;
     stealthScriptsSkipIfCloak: string[];
     stealthSkipSections: string[];
+    camoufoxGeoip: boolean;
+    camoufoxHumanize: boolean;
+    camoufoxBlockWebrtc: boolean;
     warmupTwoSessionsPerDay: boolean;
     weeklyStrategyEnabled: boolean;
     growthModelEnabled: boolean;

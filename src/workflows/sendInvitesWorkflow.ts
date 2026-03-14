@@ -4,14 +4,14 @@
 
 import { config, getLocalDateString } from '../config';
 import { runWorkflow } from '../core/orchestrator';
-import { computeListPerformanceMultiplier, getDailyStat, getListDailyStatsBatch } from '../core/repositories';
+import { computeListPerformanceMultiplier, getAutomationPauseState, getDailyStat, getListDailyStatsBatch, getRuntimeFlag } from '../core/repositories';
 import { runPreflight, appendProxyReputationWarning } from './preflight';
 import { formatWorkflowReport } from './reportFormatter';
 import type { PreflightDbStats, PreflightConfigStatus, PreflightWarning, WorkflowReport, WorkflowReportListBreakdown } from './types';
 import { getDatabase } from '../db';
 import { runSyncSearchWorkflow } from './syncSearchWorkflow';
 import { enrichLeadsParallel } from '../integrations/parallelEnricher';
-import inquirer from 'inquirer';
+import { isInteractiveTTY, askConfirmation, readLineFromStdin } from '../cli/stdinHelper';
 
 export interface SendInvitesOptions {
     listName?: string;
@@ -56,6 +56,13 @@ function generateWarnings(
         warnings.push({ level: 'critical', message: `Budget inviti esaurito oggi (${cfgStatus.invitesSentToday}/${cfgStatus.budgetInvites})` });
     } else if (remaining < 5) {
         warnings.push({ level: 'warn', message: `Budget inviti quasi esaurito: ${remaining} rimanenti` });
+    }
+
+    const weeklyRemaining = cfgStatus.weeklyInviteLimit - cfgStatus.weeklyInvitesSent;
+    if (weeklyRemaining <= 0) {
+        warnings.push({ level: 'critical', message: `Budget inviti SETTIMANALE esaurito (${cfgStatus.weeklyInvitesSent}/${cfgStatus.weeklyInviteLimit})` });
+    } else if (weeklyRemaining < 10) {
+        warnings.push({ level: 'warn', message: `Budget inviti settimanale quasi esaurito: ${weeklyRemaining} rimanenti su ${cfgStatus.weeklyInviteLimit}` });
     }
 
     if (cfgStatus.warmupEnabled) {
@@ -138,6 +145,7 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
                 defaultValue: opts.dryRun ? 'true' : 'false',
             },
         ],
+        listFilter: opts.listName,
         generateWarnings,
         skipPreflight: opts.skipPreflight,
         cliOverrides: buildCliOverrides(opts),
@@ -173,38 +181,21 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
         }
 
         // Fallback: Chiedi all'utente se vuole rimpinguare la lista tramite SalesNav Search
-        if (!dryRun) {
-            const { wantSync } = await inquirer.prompt([{
-                type: 'confirm',
-                name: 'wantSync',
-                message: 'Non ci sono lead READY_INVITE disponibili. Vuoi estrarre nuovi lead da una ricerca salvata di Sales Navigator?',
-                default: true,
-            }]);
+        if (!dryRun && isInteractiveTTY()) {
+            const wantSync = await askConfirmation('  Non ci sono lead READY_INVITE disponibili. Vuoi estrarre nuovi lead da una ricerca salvata di Sales Navigator? [Y/n] ');
 
             if (wantSync) {
-                const answers = await inquirer.prompt([
-                    {
-                        type: 'input',
-                        name: 'searchName',
-                        message: 'Nome della ricerca salvata (lascia vuoto per farle tutte):',
-                        default: '',
-                    },
-                    {
-                        type: 'input',
-                        name: 'targetList',
-                        message: 'Nome della lista in cui aggiungere i nuovi lead:',
-                        default: listFilter || config.salesNavSyncListName || 'default',
-                    }
-                ]);
+                const searchName = await readLineFromStdin('  Nome della ricerca salvata (lascia vuoto per farle tutte): ');
+                const targetList = await readLineFromStdin(`  Nome della lista in cui aggiungere i nuovi lead (default: ${listFilter || config.salesNavSyncListName || 'default'}): `);
 
                 console.log(`\n  Passaggio automatico al flow sync-search...\n`);
                 await runSyncSearchWorkflow({
-                    searchName: answers.searchName,
-                    listName: answers.targetList,
+                    searchName: searchName || undefined,
+                    listName: targetList || listFilter || config.salesNavSyncListName || 'default',
                     enrichment: true,
                     dryRun: false,
                     accountId: opts.accountId,
-                    skipPreflight: true // Skip preflight because the user already answered our minimal prompts
+                    skipPreflight: true,
                 });
             }
         }
@@ -213,6 +204,20 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
 
     const minScore = parseInt(preflight.answers['minScore'] || '0', 10);
     const sessionLimit = parseInt(preflight.answers['limit'] || '0', 10);
+
+    // ── Guard: quarantina e pausa ─────────────────────────────────────────────
+    if (!dryRun) {
+        const quarantine = (await getRuntimeFlag('account_quarantine')) === 'true';
+        if (quarantine) {
+            console.error('\n  [BLOCCATO] Account in quarantina — operazione annullata. Esegui "bot unquarantine" dopo aver risolto il problema.\n');
+            return;
+        }
+        const pauseState = await getAutomationPauseState();
+        if (pauseState.paused) {
+            console.error(`\n  [BLOCCATO] Automazione in pausa: ${pauseState.reason ?? 'motivo sconosciuto'}. Riprendi con "bot resume".\n`);
+            return;
+        }
+    }
 
     // ── Pre-enrichment parallelo (zero browser, solo API) ──
     let enrichmentDegraded = false;
@@ -253,17 +258,26 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
         noteMode = 'template';
     }
 
-    await runWorkflow({
-        workflow: 'invite',
-        dryRun,
-        listFilter: listFilter || undefined,
-        minScore: minScore > 0 ? minScore : undefined,
-        sessionLimit: sessionLimit > 0 ? sessionLimit : undefined,
-        noteMode,
-    });
+    let workflowError: string | null = null;
+    try {
+        await runWorkflow({
+            workflow: 'invite',
+            dryRun,
+            listFilter: listFilter || undefined,
+            minScore: minScore > 0 ? minScore : undefined,
+            sessionLimit: sessionLimit > 0 ? sessionLimit : undefined,
+            noteMode,
+        });
+    } catch (err) {
+        workflowError = err instanceof Error ? err.message : String(err);
+        console.error(`\n  [ERRORE] runWorkflow fallito: ${workflowError}\n`);
+    }
 
-    // Capture post-run stats
-    const invitesAfter = await getDailyStat(localDate, 'invites_sent');
+    // Capture post-run stats (anche dopo errore — le stats parziali sono valide)
+    let invitesAfter = invitesBefore;
+    try {
+        invitesAfter = await getDailyStat(localDate, 'invites_sent');
+    } catch { /* fallback a invitesBefore se DB non raggiungibile */ }
     const invitesSent = invitesAfter - invitesBefore;
 
     // Per-List Performance Breakdown (5.2 wire)
@@ -292,7 +306,7 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
         workflow: 'send-invites',
         startedAt,
         finishedAt: new Date(),
-        success: true,
+        success: !workflowError,
         summary: {
             inviti_inviati: invitesSent,
             budget_utilizzato: `${invitesAfter}/${config.hardInviteCap}`,
@@ -301,9 +315,10 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
             nota_modalita: preflight.answers['noteMode'] ?? 'ai',
             dry_run: dryRun ? 'SI' : 'no',
         },
-        errors: [],
+        errors: workflowError ? [workflowError] : [],
         nextAction: buildNextActionSuggestion(invitesSent, invitesAfter, config.hardInviteCap, dryRun),
         listBreakdown,
+        riskAssessment: preflight.riskAssessment,
     };
 
     console.log(formatWorkflowReport(workflowReport));
@@ -347,5 +362,6 @@ function buildCliOverrides(opts: SendInvitesOptions): Record<string, string> {
     if (opts.minScore !== null && opts.minScore !== undefined) overrides['minScore'] = String(opts.minScore);
     if (opts.limit !== null && opts.limit !== undefined) overrides['limit'] = String(opts.limit);
     if (opts.dryRun !== null && opts.dryRun !== undefined) overrides['dryRun'] = String(opts.dryRun);
+    if (opts.accountId) overrides['accountId'] = opts.accountId;
     return overrides;
 }

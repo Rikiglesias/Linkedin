@@ -47,6 +47,20 @@ export function formatWorkflowReport(report: WorkflowReport): string {
         }
     }
 
+    if (report.riskAssessment) {
+        const ra = report.riskAssessment;
+        const riskIcon = ra.level === 'GO' ? '[OK]' : ra.level === 'CAUTION' ? '[!]' : '[!!!]';
+        lines.push('');
+        lines.push(`  ${riskIcon} Risk: ${ra.level} (score: ${ra.score}/100)`);
+        if (ra.score > 30) {
+            const factors = Object.entries(ra.factors)
+                .filter(([, v]) => v > 0)
+                .map(([k, v]) => `${k}=${v}`)
+                .join(', ');
+            if (factors) lines.push(`      Fattori: ${factors}`);
+        }
+    }
+
     lines.push('');
     lines.push(`  Prossima azione: ${report.nextAction}`);
     lines.push(SEP);

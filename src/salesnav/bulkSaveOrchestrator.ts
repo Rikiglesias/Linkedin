@@ -1,6 +1,7 @@
 import type { Page } from 'playwright';
 import {
     detectChallenge,
+    dismissKnownOverlays,
     humanDelay,
     isLoggedIn,
     performDecoyAction,
@@ -1454,35 +1455,26 @@ async function preSyncListToDb(
     }
 
     // ── Step 2: Naviga alla pagina degli elenchi lead ──
+    // Navigazione diretta via URL — i click DOM su link SalesNav si bloccano
+    // perché SalesNav usa SPA navigation e waitForLoadState non completa mai.
     console.log('[PRE-SYNC] Step 2/4: Navigazione alla sezione Lead Lists...');
+    await page.goto('https://www.linkedin.com/sales/lists/people/', {
+        waitUntil: 'domcontentloaded',
+        timeout: 60_000,
+    });
+    await dismissTransientUi(page);
 
-    const isOnListsPage = (): boolean => page.url().toLowerCase().includes('/sales/lists/people');
-
-    const listsPageOk = await visionNavigationStep(
-        page,
-        'Pre-sync: click su Lists/Elenchi',
-        'In the Sales Navigator interface, find and click on "Lists" or "Lead lists" or "Elenchi" or "Elenchi lead" in the left sidebar or top navigation bar. Look for a section that shows your saved lead lists. It might be under a "Leads" dropdown menu or in the sidebar.',
-        async () => isOnListsPage(),
-        [
-            'a[href*="/sales/lists/people"]',
-            'a:has-text("Lists")',
-            'a:has-text("Elenchi")',
-            'a:has-text("Lead lists")',
-            'a:has-text("Elenchi lead")',
-            'nav a[href*="/lists"]',
-        ],
-    );
-
-    if (!listsPageOk) {
-        // Fallback: navigazione diretta
-        console.log('[PRE-SYNC] Vision/DOM navigation fallita — provo URL diretto...');
+    // Se SalesNav richiede login separato, aspetta
+    if (page.url().toLowerCase().includes('/sales/login')) {
+        console.log('[PRE-SYNC] SalesNav richiede login separato — in attesa...');
+        await waitForManualLogin(page, 'PRE-SYNC');
         await page.goto('https://www.linkedin.com/sales/lists/people/', {
             waitUntil: 'domcontentloaded',
             timeout: 60_000,
         });
         await dismissTransientUi(page);
-        await humanDelay(page, 1_500, 2_500);
     }
+    await humanDelay(page, 1_500, 2_500);
 
     // Wait for list links to appear in DOM (non usare networkidle — SalesNav non lo raggiunge mai)
     await page.waitForSelector('a[href*="/sales/lists/people/"]', { timeout: 20_000 }).catch(() => {
@@ -1676,8 +1668,10 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
     try {
         // Inject __name shim + overlays immediately on current page
         await reInjectOverlays(page);
+        await dismissKnownOverlays(page);
         // Auto re-inject overlays on every page load — elimina flash e "automazione in corso" ripetuto
-        page.on('load', () => { void reInjectOverlays(page).catch(() => null); });
+        // + dismiss overlay LinkedIn nativi (cookie consent, premium upsell, download app)
+        page.on('load', () => { void reInjectOverlays(page).then(() => dismissKnownOverlays(page)).catch(() => null); });
 
         // ── PRE-SYNC: scarica i membri attuali della lista target dal sito e salvali nel DB ──
         // Così il dedup funziona anche al primo run o se i lead sono stati aggiunti manualmente.
@@ -1723,34 +1717,73 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
             throw new Error('Nessuna ricerca salvata trovata in Sales Navigator');
         }
 
-        // Match ricerca: esatto → contiene → contenuto in
+        // Match ricerca: supporta nomi multipli separati da virgola
+        // es. "Eventi 1-10,11-50,Paesi Bassi" → cerca ciascuno separatamente
         let filteredSearches: SavedSearchDescriptor[] = [];
         if (normalizedRequestedSearchName.length > 0) {
-            // 1. Match esatto (normalizzato)
-            filteredSearches = discoveredSearches.filter(
-                (search) => normalizeSearchName(search.name) === normalizedRequestedSearchName,
-            );
-            // 2. Fuzzy: il nome della ricerca contiene la query
-            if (filteredSearches.length === 0) {
-                filteredSearches = discoveredSearches.filter(
-                    (search) => normalizeSearchName(search.name).includes(normalizedRequestedSearchName),
-                );
+            // Splitta per virgola — supporta "A,B,C" come filtro multi-ricerca
+            const requestedNames = (options.searchName ?? '')
+                .split(',')
+                .map((s) => normalizeSearchName(s))
+                .filter((s) => s.length > 0);
+
+            if (requestedNames.length > 1) {
+                // Multi-search: match ogni nome richiesto contro le ricerche scoperte
+                for (const reqName of requestedNames) {
+                    const exact = discoveredSearches.filter(
+                        (search) => normalizeSearchName(search.name) === reqName,
+                    );
+                    if (exact.length > 0) {
+                        filteredSearches.push(...exact);
+                        continue;
+                    }
+                    const fuzzy = discoveredSearches.filter(
+                        (search) => normalizeSearchName(search.name).includes(reqName) || reqName.includes(normalizeSearchName(search.name)),
+                    );
+                    filteredSearches.push(...fuzzy);
+                }
+                // Deduplica per nome
+                const seen = new Set<string>();
+                filteredSearches = filteredSearches.filter((s) => {
+                    const key = normalizeSearchName(s.name);
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                });
                 if (filteredSearches.length > 0) {
-                    console.log(`[SEARCH] Match fuzzy (contiene "${options.searchName}"):`);
+                    console.log(`[SEARCH] Ricerche selezionate (${filteredSearches.length}/${discoveredSearches.length}):`);
                     for (const s of filteredSearches) {
                         console.log(`  → "${s.name}"`);
                     }
                 }
-            }
-            // 3. Fuzzy: la query contiene il nome della ricerca
-            if (filteredSearches.length === 0) {
+            } else {
+                // Singolo nome: match esatto → contiene → contenuto in
+                // 1. Match esatto (normalizzato)
                 filteredSearches = discoveredSearches.filter(
-                    (search) => normalizedRequestedSearchName.includes(normalizeSearchName(search.name)),
+                    (search) => normalizeSearchName(search.name) === normalizedRequestedSearchName,
                 );
-                if (filteredSearches.length > 0) {
-                    console.log(`[SEARCH] Match fuzzy (contenuto in "${options.searchName}"):`);
-                    for (const s of filteredSearches) {
-                        console.log(`  → "${s.name}"`);
+                // 2. Fuzzy: il nome della ricerca contiene la query
+                if (filteredSearches.length === 0) {
+                    filteredSearches = discoveredSearches.filter(
+                        (search) => normalizeSearchName(search.name).includes(normalizedRequestedSearchName),
+                    );
+                    if (filteredSearches.length > 0) {
+                        console.log(`[SEARCH] Match fuzzy (contiene "${options.searchName}"):`);
+                        for (const s of filteredSearches) {
+                            console.log(`  → "${s.name}"`);
+                        }
+                    }
+                }
+                // 3. Fuzzy: la query contiene il nome della ricerca
+                if (filteredSearches.length === 0) {
+                    filteredSearches = discoveredSearches.filter(
+                        (search) => normalizedRequestedSearchName.includes(normalizeSearchName(search.name)),
+                    );
+                    if (filteredSearches.length > 0) {
+                        console.log(`[SEARCH] Match fuzzy (contenuto in "${options.searchName}"):`);
+                        for (const s of filteredSearches) {
+                            console.log(`  → "${s.name}"`);
+                        }
                     }
                 }
             }

@@ -17,7 +17,9 @@ export function buildRuntimeDomainConfig(accountProfiles: AccountProfileConfig[]
         headless: parseBoolEnv('HEADLESS', false),
         browserEngine: (() => {
             const raw = parseStringEnv('BROWSER_ENGINE', 'chromium').toLowerCase();
-            return raw === 'firefox' ? 'firefox' as const : 'chromium' as const;
+            if (raw === 'firefox') return 'firefox' as const;
+            if (raw === 'camoufox') return 'camoufox' as const;
+            return 'chromium' as const;
         })(),
         dashboardAuthEnabled: parseBoolEnv('DASHBOARD_AUTH_ENABLED', true),
         dashboardApiKey: parseStringEnv('DASHBOARD_API_KEY'),
@@ -74,11 +76,11 @@ export function buildRuntimeDomainConfig(accountProfiles: AccountProfileConfig[]
 
 export function buildLimitsAndRiskDomainConfig() {
     return {
-        softInviteCap: Math.max(1, parseIntEnv('SOFT_INVITE_CAP', 25)),
-        hardInviteCap: Math.max(1, parseIntEnv('HARD_INVITE_CAP', 35)),
-        weeklyInviteLimit: Math.max(1, parseIntEnv('WEEKLY_INVITE_LIMIT', 120)),
-        softMsgCap: Math.max(1, parseIntEnv('SOFT_MSG_CAP', 40)),
-        hardMsgCap: Math.max(1, parseIntEnv('HARD_MSG_CAP', 60)),
+        softInviteCap: Math.max(1, parseIntEnv('SOFT_INVITE_CAP', 15)),
+        hardInviteCap: Math.max(1, parseIntEnv('HARD_INVITE_CAP', 25)),
+        weeklyInviteLimit: Math.max(1, parseIntEnv('WEEKLY_INVITE_LIMIT', 80)),
+        softMsgCap: Math.max(1, parseIntEnv('SOFT_MSG_CAP', 20)),
+        hardMsgCap: Math.max(1, parseIntEnv('HARD_MSG_CAP', 35)),
         complianceEnforced: parseBoolEnv('COMPLIANCE_ENFORCED', true),
         complianceMaxHardInviteCap: Math.max(1, parseIntEnv('COMPLIANCE_MAX_HARD_INVITE_CAP', 20)),
         complianceMaxWeeklyInviteLimit: Math.max(1, parseIntEnv('COMPLIANCE_MAX_WEEKLY_INVITE_LIMIT', 100)),
@@ -357,6 +359,9 @@ export function buildVisionDomainConfig() {
             return list.length > 0 ? list : ['canvas', 'webgl', 'hwconcurrency', 'plugins'];
         })(),
         stealthSkipSections: parseCsvEnv('STEALTH_SKIP_SECTIONS'),
+        camoufoxGeoip: parseBoolEnv('CAMOUFOX_GEOIP', true),
+        camoufoxHumanize: parseBoolEnv('CAMOUFOX_HUMANIZE', true),
+        camoufoxBlockWebrtc: parseBoolEnv('CAMOUFOX_BLOCK_WEBRTC', true),
         warmupTwoSessionsPerDay: parseBoolEnv('WARMUP_TWO_SESSIONS_PER_DAY', false),
         weeklyStrategyEnabled: parseBoolEnv('WEEKLY_STRATEGY_ENABLED', true),
         growthModelEnabled: parseBoolEnv('GROWTH_MODEL_ENABLED', true),
@@ -394,7 +399,7 @@ export function buildBehaviorDomainConfig() {
         randomActivityProbability: Math.min(1, Math.max(0, parseFloatEnv('RANDOM_ACTIVITY_PROBABILITY', 0.15))),
         randomActivityMaxActions: Math.max(1, parseIntEnv('RANDOM_ACTIVITY_MAX_ACTIONS', 3)),
         interJobMinDelaySec: Math.max(1, parseIntEnv('INTER_JOB_MIN_DELAY_SEC', 45)),
-        interJobMaxDelaySec: Math.max(1, parseIntEnv('INTER_JOB_MAX_DELAY_SEC', 90)),
+        interJobMaxDelaySec: Math.max(1, parseIntEnv('INTER_JOB_MAX_DELAY_SEC', 180)),
         behaviorDecoyMinIntervalJobs: Math.max(1, parseIntEnv('DECOY_MIN_INTERVAL_JOBS', 3)),
         behaviorDecoyMaxIntervalJobs: Math.max(1, parseIntEnv('DECOY_MAX_INTERVAL_JOBS', 5)),
         behaviorCoffeeBreakMinIntervalJobs: Math.max(1, parseIntEnv('COFFEE_BREAK_MIN_INTERVAL_JOBS', 10)),

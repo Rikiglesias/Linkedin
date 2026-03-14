@@ -4,6 +4,7 @@ import {
     BrowserSession,
     checkLogin,
     closeBrowser,
+    dismissKnownOverlays,
     humanDelay,
     launchBrowser,
     randomMouseMove,
@@ -66,6 +67,7 @@ async function runSingleActivity(
         }
         const profileUrl = pickRandom(profiles);
         await page.goto(profileUrl, { waitUntil: 'domcontentloaded' });
+        await dismissKnownOverlays(page);
         report.visitedUrls.push(profileUrl);
         report.profileVisits += 1;
         await humanDelay(page, 2000, 4200);
@@ -75,6 +77,7 @@ async function runSingleActivity(
 
     const targetUrl = STATIC_ACTIVITY_URLS[activity];
     await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+    await dismissKnownOverlays(page);
     report.visitedUrls.push(targetUrl);
     await humanDelay(page, 1800, 3600);
     await simulateHumanReading(page);

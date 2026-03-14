@@ -54,7 +54,6 @@ import { resolveCorrelationId, runWithCorrelationId } from '../../telemetry/corr
 import { processTelegramImportCommand } from '../../cloud/telegramAiImporter';
 import { sendTelegramAlert } from '../../telemetry/alerts';
 import { LoopSubTask, LoopCycleContext, runLoopCycle } from '../../core/loopOrchestrator';
-import { recordSessionPattern } from '../../risk/sessionMemory';
 import { onConfigReload, startConfigWatcher, stopConfigWatcher } from '../../config/hotReload';
 
 // ─── Costanti lock ────────────────────────────────────────────────────────────
@@ -658,6 +657,9 @@ function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
 // ─── Command handlers ─────────────────────────────────────────────────────────
 
 export async function runLoopCommand(args: string[]): Promise<void> {
+    // Reset lock key al valore default per evitare stato residuo da chiamate precedenti
+    _workflowRunnerLockKey = 'workflow.runner';
+
     const workflow = parseWorkflow(getWorkflowValue(args));
     const positional = getPositionalArgs(args);
     const workflowTokens = new Set(['invite', 'check', 'message', 'all']);
@@ -689,6 +691,12 @@ export async function runLoopCommand(args: string[]): Promise<void> {
         if (numericPositional) {
             intervalMs = Math.max(10, parseIntStrict(numericPositional, 'intervalSec')) * 1000;
         }
+    }
+
+    const SAFE_MIN_INTERVAL_MS = 300_000; // 5 minuti — anti-ban: cicli più rapidi sono rischiosi
+    if (!dryRun && intervalMs < SAFE_MIN_INTERVAL_MS) {
+        console.warn(`[LOOP] Intervallo ${Math.floor(intervalMs / 1000)}s troppo breve — alzato a ${SAFE_MIN_INTERVAL_MS / 1000}s per sicurezza anti-ban`);
+        intervalMs = SAFE_MIN_INTERVAL_MS;
     }
 
     const maxCycles = cyclesRaw ? Math.max(1, parseIntStrict(cyclesRaw, '--cycles')) : null;
@@ -814,19 +822,6 @@ export async function runLoopCommand(args: string[]): Promise<void> {
                         errors: errorsDiff,
                     });
                     console.log(`[LOOP] Campaign run ${runId} completed with status ${runStatus}`);
-
-                    // Record session pattern for cross-session memory
-                    const currentHour = new Date().getHours();
-                    const accountId = accountOverride || config.accountProfiles[0]?.id || 'default';
-                    await recordSessionPattern(accountId, localDate, {
-                        loginHour: cycle === 1 ? currentHour : undefined,
-                        logoutHour: currentHour,
-                        totalActions: invitesDiff + messagesDiff,
-                        inviteCount: invitesDiff,
-                        messageCount: messagesDiff,
-                        checkCount: 0,
-                        challenges: postStats.challengesCount - preStats.challengesCount,
-                    }).catch((e) => console.warn('[LOOP] session pattern record failed:', e));
                 }
             }
 

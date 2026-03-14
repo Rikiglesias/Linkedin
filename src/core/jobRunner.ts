@@ -9,6 +9,7 @@ import {
     performBrowserGC,
 } from '../browser';
 import { recordSuccessfulAuth, checkSessionFreshness, detectSessionCookieAnomaly } from '../browser/sessionCookieMonitor';
+import { blockUserInput } from '../browser/humanBehavior';
 import {
     updateAccountBackpressure,
     getAccountBackpressureLevel,
@@ -22,7 +23,7 @@ import { sendTelegramAlert } from '../telemetry/alerts';
 import { broadcast } from '../telemetry/broadcaster';
 import { runProxyQualityCheckIfDue } from '../proxyManager';
 import { randomInt } from '../utils/random';
-import { getSessionHistory } from '../risk/sessionMemory';
+import { getSessionHistory, recordSessionPattern } from '../risk/sessionMemory';
 import { retryDelayMs } from '../utils/async';
 import { JobType } from '../types/domain';
 import { WorkerContext, addBreadcrumb, formatBreadcrumbs } from '../workers/context';
@@ -59,6 +60,9 @@ interface AccountRunHealthMetrics {
     challenges: number;
     deadLetters: number;
     startedAtMs: number;
+    inviteSuccesses: number;
+    messageSuccesses: number;
+    checkSuccesses: number;
 }
 
 
@@ -164,6 +168,9 @@ async function runQueuedJobsForAccount(
         challenges: 0,
         deadLetters: 0,
         startedAtMs: Date.now(),
+        inviteSuccesses: 0,
+        messageSuccesses: 0,
+        checkSuccesses: 0,
     };
     let session = await launchBrowser({
         sessionDir: account.sessionDir,
@@ -203,6 +210,11 @@ async function runQueuedJobsForAccount(
         }
 
         recordSuccessfulAuth(account.sessionDir, account.id);
+
+        // Blocca input utente per tutta la sessione automatica.
+        // Previene click accidentali durante warmup, decoy, e inter-job delay.
+        // I navigation context re-iniettano l'overlay dopo ogni page.goto.
+        await blockUserInput(session.page);
 
         // ── Session cookie anomaly detection ──────────────────────────────
         // Rileva se il cookie li_at è cambiato o scomparso senza rotazione esplicita.
@@ -846,6 +858,9 @@ async function runQueuedJobsForAccount(
                 processedOnCurrentSession += 1;
                 processedThisRun += 1;
                 accountHealthMetrics.processed += 1;
+                if (job.type === 'INVITE') accountHealthMetrics.inviteSuccesses += 1;
+                else if (job.type === 'MESSAGE') accountHealthMetrics.messageSuccesses += 1;
+                else if (job.type === 'ACCEPTANCE_CHECK') accountHealthMetrics.checkSuccesses += 1;
                 jobsSinceDecoy += 1;
                 jobsSinceCoffeeBreak += 1;
             }
@@ -972,6 +987,22 @@ async function runQueuedJobsForAccount(
             failed: accountHealthMetrics.failed,
             permanentFailures: accountHealthMetrics.deadLetters,
         }).catch(() => null);
+
+        // Record session pattern for cross-session pacing factor learning.
+        // Senza questo, getSessionHistory() ritorna sempre vuoto e il pacing
+        // factor non si adatta mai alle sessioni passate.
+        if (!options.dryRun && accountHealthMetrics.processed > 0) {
+            const sessionStartHour = new Date(accountHealthMetrics.startedAtMs).getHours();
+            await recordSessionPattern(account.id, options.localDate, {
+                loginHour: sessionStartHour,
+                logoutHour: new Date().getHours(),
+                totalActions: accountHealthMetrics.processed,
+                inviteCount: accountHealthMetrics.inviteSuccesses,
+                messageCount: accountHealthMetrics.messageSuccesses,
+                checkCount: accountHealthMetrics.checkSuccesses,
+                challenges: accountHealthMetrics.challenges,
+            }).catch(() => null);
+        }
     }
 }
 

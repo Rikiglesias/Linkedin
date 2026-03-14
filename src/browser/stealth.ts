@@ -15,7 +15,7 @@ import { detectBrowserFamily } from '../proxy/ja3Validator';
 // rilevabile immediatamente da LinkedIn/Cloudflare.
 function filterTlsCoherentPool(pool: ReadonlyArray<Fingerprint>): ReadonlyArray<Fingerprint> {
     if (config.useJa3Proxy) return pool; // CycleTLS attivo → tutti i fingerprint sono sicuri
-    const isFirefoxEngine = config.browserEngine === 'firefox';
+    const isFirefoxEngine = config.browserEngine === 'firefox' || config.browserEngine === 'camoufox';
     const filtered = pool.filter((fp) => {
         const family = detectBrowserFamily(fp.userAgent);
         if (isFirefoxEngine) {

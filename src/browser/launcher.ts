@@ -5,6 +5,7 @@
  */
 
 import path from 'path';
+import { execSync } from 'child_process';
 import { chromium, firefox, BrowserContext, Page } from 'playwright';
 import { config, ProxyType } from '../config';
 import { logInfo } from '../telemetry/logger';
@@ -32,6 +33,19 @@ import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 import { FingerprintPool } from '../fingerprint/noiseGenerator';
 
 const activeBrowsers = new Set<BrowserContext>();
+
+// Sezioni stealth gestite nativamente da Camoufox a livello C++.
+// NON iniettare JS per queste — doppia patch = marker di bot.
+// Elenca SOLO le sezioni con guard `_skip.has()` in stealthScripts.ts.
+const CAMOUFOX_NATIVE_SECTIONS = new Set([
+    'webrtc',       // protocol-level IP spoofing
+    'plugins',      // N/A Firefox
+    'hwconcurrency',// C++ level
+    'audio',        // C++ level
+    'battery',      // C++ level
+    'canvas',       // C++ rendering level
+    'webgl',        // C++ webgl_config
+]);
 
 export const cleanupBrowsers = async (): Promise<void> => {
     for (const browser of activeBrowsers) {
@@ -235,8 +249,9 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             viewport = null;
         }
 
-        // D.2: Supporto Firefox — args Chromium-specific non supportati da Firefox
-        const useFirefox = config.browserEngine === 'firefox';
+        // D.2: Supporto Firefox/Camoufox — args Chromium-specific non supportati
+        const useCamoufox = config.browserEngine === 'camoufox';
+        const useFirefox = config.browserEngine === 'firefox' || useCamoufox;
         const chromiumArgs = [
             '--disable-blink-features=AutomationControlled',
             '--disable-features=IsolateOrigins,site-per-process',
@@ -317,8 +332,59 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             // che patcha canvas, WebGL, audio, fonts, GPU, CDP leaks a livello C++.
             // Passa 30/30 test detection (reCAPTCHA v3, Cloudflare Turnstile, FingerprintJS).
             let browser: BrowserContext;
-            const engineLabel = useFirefox ? 'firefox' : 'chromium';
-            if (config.cloakBrowserEnabled && !useFirefox) {
+            const engineLabel = useCamoufox ? 'camoufox' : useFirefox ? 'firefox' : 'chromium';
+            if (useCamoufox) {
+                // Camoufox: browser stealth basato su Firefox con fingerprint a livello C++.
+                // Usa Camoufox() con user_data_dir per sessioni persistenti (cookie/localStorage).
+                const { Camoufox } = await import('camoufox-js');
+
+                // Dimensioni finestra: legge la risoluzione schermo dall'OS per adattarsi
+                // a qualsiasi monitor. window.resizeTo non funziona in Firefox (security).
+                let cfxWindow: [number, number] | undefined;
+                if (viewport) {
+                    cfxWindow = [viewport.width, viewport.height];
+                } else if (!headless) {
+                    try {
+                        const out = execSync(
+                            'powershell -NoProfile -c "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea | Format-List Width,Height"',
+                            { encoding: 'utf8', timeout: 5000 },
+                        );
+                        const wMatch = out.match(/Width\s*:\s*(\d+)/);
+                        const hMatch = out.match(/Height\s*:\s*(\d+)/);
+                        if (wMatch && hMatch) {
+                            cfxWindow = [parseInt(wMatch[1], 10), parseInt(hMatch[1], 10)];
+                        }
+                    } catch {
+                        // Fallback: dimensione conservativa per laptop comuni
+                        cfxWindow = [1366, 768];
+                    }
+                }
+
+                browser = await Camoufox({
+                    user_data_dir: sessionDir,
+                    headless: headless,
+                    humanize: config.camoufoxHumanize,
+                    geoip: config.camoufoxGeoip && !!currentProxy,
+                    block_webrtc: config.camoufoxBlockWebrtc,
+                    locale: fingerprint.locale ?? 'it-IT',
+                    window: cfxWindow,
+                    proxy: currentProxy ? {
+                        server: currentProxy.server,
+                        username: currentProxy.username,
+                        password: currentProxy.password,
+                    } : undefined,
+                    firefox_user_prefs: {
+                        'dom.webdriver.enabled': false,
+                    },
+                });
+                void logInfo('browser.camoufox_launched', {
+                    sessionDir,
+                    engine: 'camoufox',
+                    geoip: config.camoufoxGeoip,
+                    humanize: config.camoufoxHumanize,
+                    windowSize: cfxWindow ? `${cfxWindow[0]}x${cfxWindow[1]}` : 'default',
+                });
+            } else if (config.cloakBrowserEnabled && !useFirefox) {
                 try {
                     const cloakbrowser = require('cloakbrowser') as { launch: typeof chromium.launchPersistentContext };
                     browser = await cloakbrowser.launch(sessionDir, contextOptions);
@@ -335,8 +401,12 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             }
 
             // Iniezione noise Canvas/WebGL nativa in stack V8
-            // Se CloakBrowser è attivo, salta le manipolazioni già gestite a livello binario
-            const skipIfCloak = config.cloakBrowserEnabled ? new Set(config.stealthScriptsSkipIfCloak) : new Set<string>();
+            // Camoufox/CloakBrowser gestiscono già queste API a livello binario — skip per evitare doppia patch
+            const skipIfCloak = useCamoufox
+                ? new Set(CAMOUFOX_NATIVE_SECTIONS)
+                : config.cloakBrowserEnabled
+                  ? new Set(config.stealthScriptsSkipIfCloak)
+                  : new Set<string>();
             // Merge: sezioni skip da CloakBrowser + sezioni skip esplicite via STEALTH_SKIP_SECTIONS
             for (const section of config.stealthSkipSections) {
                 skipIfCloak.add(section);
@@ -617,10 +687,13 @@ export async function performBrowserGC(session: BrowserSession): Promise<void> {
                 await p.close().catch(() => { });
             }
         }
-        const client = await session.page.context().newCDPSession(session.page);
-        await client.send('HeapProfiler.enable').catch(() => { });
-        await client.send('HeapProfiler.collectGarbage').catch(() => { });
-        await client.detach().catch(() => { });
+        // CDP GC e' Chromium-only — Firefox/Camoufox usano Juggler
+        if (config.browserEngine === 'chromium') {
+            const client = await session.page.context().newCDPSession(session.page);
+            await client.send('HeapProfiler.enable').catch(() => { });
+            await client.send('HeapProfiler.collectGarbage').catch(() => { });
+            await client.detach().catch(() => { });
+        }
     } catch {
         // ignore GC errors
     }

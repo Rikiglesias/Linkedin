@@ -51,6 +51,7 @@ export async function runSendMessagesCommand(args: string[]): Promise<void> {
         limit: parseOptionalInt(getOptionValue(args, '--limit')),
         dryRun: hasOption(args, '--dry-run'),
         skipPreflight: hasOption(args, '--skip-preflight'),
+        accountId: getOptionValue(args, '--account') ?? undefined,
     });
 }
 

@@ -26,7 +26,8 @@ export async function createPersistentProfile(options: Partial<CreateProfileOpti
     const timeoutSeconds = Math.max(60, Math.floor(options.timeoutSeconds ?? 900));
 
     ensureDirectoryPrivate(profileDir);
-    const engine = config.browserEngine === 'firefox' ? firefox : chromium;
+    const isFirefox = config.browserEngine === 'firefox' || config.browserEngine === 'camoufox';
+    const engine = isFirefox ? firefox : chromium;
     const context = await engine.launchPersistentContext(profileDir, {
         headless: false,
         viewport: { width: 1366, height: 768 },

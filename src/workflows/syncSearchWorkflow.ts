@@ -8,6 +8,7 @@ import { launchBrowser, closeBrowser, checkLogin } from '../browser';
 import { runSalesNavBulkSave } from '../salesnav/bulkSaveOrchestrator';
 import type { SalesNavBulkSaveReport } from '../salesnav/bulkSaveOrchestrator';
 import { runSalesNavigatorListSync, formatFinalReport } from '../core/salesNavigatorSync';
+import { getAutomationPauseState, getRuntimeFlag } from '../core/repositories';
 import { runPreflight, appendProxyReputationWarning } from './preflight';
 import { formatWorkflowReport } from './reportFormatter';
 import type { PreflightDbStats, PreflightConfigStatus, PreflightWarning, WorkflowReport } from './types';
@@ -36,7 +37,7 @@ function generateWarnings(
     const targetList = answers['list'];
 
     if (!cfgStatus.proxyConfigured) {
-        warnings.push({ level: 'warn', message: 'Nessun proxy configurato — connessione diretta' });
+        warnings.push({ level: 'critical', message: 'Nessun proxy configurato — connessione diretta su SalesNav (rischio detection ALTO)' });
     }
     if (targetList && stats.byList[targetList]) {
         warnings.push({ level: 'info', message: `Lista "${targetList}" ha gia\' ${stats.byList[targetList]} lead — i duplicati saranno skippati` });
@@ -54,7 +55,7 @@ export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<vo
         questions: [
             {
                 id: 'searchName',
-                prompt: 'Nome della ricerca salvata su SalesNav (vuoto = tutte)',
+                prompt: 'Ricerche salvate (vuoto = tutte, oppure nomi separati da virgola)',
                 type: 'string',
                 defaultValue: opts.searchName ?? '',
             },
@@ -103,6 +104,18 @@ export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<vo
     const accountId = opts.accountId ?? config.salesNavSyncAccountId;
     const account = getAccountProfileById(accountId || undefined);
 
+    // ── Guard: quarantina e pausa ─────────────────────────────────────────────
+    const quarantine = (await getRuntimeFlag('account_quarantine')) === 'true';
+    if (quarantine) {
+        console.error('\n  [BLOCCATO] Account in quarantina — operazione annullata. Esegui "bot unquarantine" dopo aver risolto il problema.\n');
+        return;
+    }
+    const pauseState = await getAutomationPauseState();
+    if (pauseState.paused) {
+        console.error(`\n  [BLOCCATO] Automazione in pausa: ${pauseState.reason ?? 'motivo sconosciuto'}. Riprendi con "bot resume".\n`);
+        return;
+    }
+
     // Step 1: Launch browser and run bulk save
     console.log('\n  Avvio bulk save da ricerche salvate...\n');
 
@@ -121,6 +134,10 @@ export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<vo
             console.error('[ERRORE] Sessione non autenticata. Esegui prima "login".');
             return;
         }
+
+        // Input block: NON bloccare qui — SalesNav può richiedere login manuale separato.
+        // Il blocco input viene attivato dentro bulkSaveOrchestrator.reInjectOverlays()
+        // DOPO che la navigazione SalesNav è completata e il login confermato.
 
         // Checkpoint/Resume (4.1): resume=true abilita il ripristino dall'ultimo
         // checkpoint se un run precedente è stato interrotto (crash, challenge, timeout).
@@ -141,17 +158,25 @@ export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<vo
     }
 
     // Step 2: Sync the target list (enrichment + scoring + cloud)
+    let syncInserted = 0;
+    let syncUpdated = 0;
+    let syncEnriched = 0;
+    let syncPromoted = 0;
     if (!dryRun && bulkReport && bulkReport.status !== 'FAILED') {
         console.log(`\n  Avvio sync lista "${targetList}" per enrichment...\n`);
 
         const syncReport = await runSalesNavigatorListSync({
             listName: targetList,
-            maxPages: config.salesNavSyncMaxPages,
-            maxLeadsPerList: config.salesNavSyncLimit,
+            maxPages,
+            maxLeadsPerList: limit,
             dryRun: false,
             accountId,
             interactive: false,
         });
+        syncInserted = syncReport.inserted;
+        syncUpdated = syncReport.updated;
+        syncEnriched = syncReport.enrichment.enriched;
+        syncPromoted = syncReport.enrichment.promoted;
 
         console.log(formatFinalReport(syncReport));
     }
@@ -161,16 +186,22 @@ export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<vo
         workflow: 'sync-search',
         startedAt,
         finishedAt: new Date(),
-        success: bulkReport?.status !== 'FAILED',
+        success: !!bulkReport && bulkReport.status !== 'FAILED',
         summary: {
             ricerca: searchName || '(tutte)',
             lista_target: targetList,
             ricerche_trovate: bulkReport?.searchesDiscovered ?? 0,
+            lead_inseriti: syncInserted,
+            lead_aggiornati: syncUpdated,
+            enrichment_completati: syncEnriched,
+            promossi_ready_invite: syncPromoted,
             challenge: bulkReport?.challengeDetected ? 'SI' : 'no',
             dry_run: dryRun ? 'SI' : 'no',
         },
         errors: bulkReport?.status === 'FAILED' ? ['Bulk save fallito'] : [],
-        nextAction: `Esegui 'send-invites --list "${targetList}"' per invitare i nuovi lead`,
+        nextAction: syncPromoted > 0
+            ? `Esegui 'send-invites --list "${targetList}"' per invitare i ${syncPromoted} lead pronti`
+            : `Esegui 'send-invites --list "${targetList}"' per invitare i nuovi lead`,
     };
 
     console.log(formatWorkflowReport(workflowReport));
@@ -183,5 +214,6 @@ function buildCliOverrides(opts: SyncSearchOptions): Record<string, string> {
     if (opts.maxPages !== null && opts.maxPages !== undefined) overrides['maxPages'] = String(opts.maxPages);
     if (opts.limit !== null && opts.limit !== undefined) overrides['limit'] = String(opts.limit);
     if (opts.enrichment !== null && opts.enrichment !== undefined) overrides['enrichment'] = String(opts.enrichment);
+    if (opts.dryRun !== null && opts.dryRun !== undefined) overrides['dryRun'] = String(opts.dryRun);
     return overrides;
 }

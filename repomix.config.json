@@ -30,6 +30,8 @@
         "SECURITY.md",
         "THREAT_MODEL.md",
         "GUIDA_ANTI_BAN.md",
+        "GUIDA.md",
+        "TODO.md",
         "ROADMAP_V2.1.md"
     ],
     "ignore": {

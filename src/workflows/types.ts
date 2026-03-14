@@ -38,6 +38,8 @@ export interface PreflightConfigStatus {
     budgetMessages: number;
     invitesSentToday: number;
     messagesSentToday: number;
+    weeklyInvitesSent: number;
+    weeklyInviteLimit: number;
     proxyIpReputation: {
         ip: string;
         abuseScore: number;
@@ -45,6 +47,8 @@ export interface PreflightConfigStatus {
         isp: string;
         country: string;
     } | null;
+    staleAccounts: string[];
+    noLoginAccounts: string[];
 }
 
 export interface PreflightWarning {
@@ -87,4 +91,5 @@ export interface WorkflowReport {
     errors: string[];
     nextAction: string;
     listBreakdown?: WorkflowReportListBreakdown[];
+    riskAssessment?: SessionRiskAssessment;
 }
