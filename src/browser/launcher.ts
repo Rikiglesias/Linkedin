@@ -266,6 +266,9 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             locale: fingerprint.locale ?? 'it-IT',
             timezoneId: fingerprint.timezone ?? config.timezone,
             userAgent: fingerprint.userAgent,
+            handleSIGINT: true,
+            handleSIGTERM: true,
+            handleSIGHUP: true,
             ...(useFirefox
                 ? { firefoxUserPrefs }
                 : { args: chromiumArgs }),
