@@ -1,11 +1,11 @@
 // ── Crash safety: catch unhandled promise rejections and uncaught exceptions ──
 process.on('unhandledRejection', (reason) => {
     console.error('[FATAL] Unhandled Rejection:', reason);
-    process.exit(1);
+    void performGracefulShutdown('Unhandled Rejection').catch(() => process.exit(1));
 });
 process.on('uncaughtException', (error) => {
     console.error('[FATAL] Uncaught Exception:', error);
-    process.exit(1);
+    void performGracefulShutdown('Uncaught Exception').catch(() => process.exit(1));
 });
 
 import { closeDatabase, initDatabase } from './db';
