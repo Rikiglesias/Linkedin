@@ -173,6 +173,27 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
     }
     const row = await db.get<{cnt: number}>(query, params);
 
+    // Preview primi 5 lead che verranno processati
+    if (row && row.cnt > 0) {
+        let previewQuery = `SELECT first_name, last_name, job_title, lead_score FROM leads WHERE status = 'READY_INVITE'`;
+        const previewParams: unknown[] = [];
+        if (listFilter) {
+            previewQuery += ` AND list_name = ?`;
+            previewParams.push(listFilter);
+        }
+        previewQuery += ` ORDER BY lead_score DESC NULLS LAST LIMIT 5`;
+        const previewLeads = await db.query<{ first_name: string; last_name: string; job_title: string | null; lead_score: number | null }>(previewQuery, previewParams);
+        if (previewLeads.length > 0) {
+            console.log(`\n  Prossimi lead da invitare (top ${previewLeads.length} su ${row.cnt}):`);
+            for (const lead of previewLeads) {
+                const name = `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim() || 'N/A';
+                const title = lead.job_title || 'N/A';
+                const score = lead.lead_score !== null ? `score:${lead.lead_score}` : 'no score';
+                console.log(`    - ${name.padEnd(25)} ${title.substring(0, 35).padEnd(36)} ${score}`);
+            }
+        }
+    }
+
     if (!row || row.cnt === 0) {
         if (listFilter) {
             console.log(`\n  ✅ Sono già state inviate tutte le connessioni per la lista "${listFilter}".\n`);
@@ -217,6 +238,13 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
             console.error(`\n  [BLOCCATO] Automazione in pausa: ${pauseState.reason ?? 'motivo sconosciuto'}. Riprendi con "bot resume".\n`);
             return;
         }
+    }
+
+    // ── Stima tempo ─────────────────────────────────────────────────────────────
+    const effectiveLimit = sessionLimit > 0 ? Math.min(sessionLimit, row.cnt) : row.cnt;
+    const estimatedMinutes = Math.ceil((90 + effectiveLimit * 75) / 60); // ~90s warmup + ~75s/invito
+    if (!dryRun && effectiveLimit > 0) {
+        console.log(`  ⏱  Tempo stimato: ~${estimatedMinutes} minuti per ${effectiveLimit} inviti\n`);
     }
 
     // ── Pre-enrichment parallelo (zero browser, solo API) ──

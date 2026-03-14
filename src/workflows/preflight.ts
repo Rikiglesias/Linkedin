@@ -349,11 +349,6 @@ const CHECKLIST_OUTREACH: ReadonlyArray<AntiBanCheckItem> = [
         hint: 'Chiudi ogni tab LinkedIn in tutti i browser prima di procedere.',
     },
     {
-        question: 'Sono passate almeno 2 ore dall\'ultima sessione manuale su LinkedIn?',
-        blocking: false,
-        hint: 'Sessioni troppo ravvicinate aumentano il rischio ban. Consigliato aspettare.',
-    },
-    {
         question: 'Il VPN/Proxy e\' lo stesso della sessione precedente (o prima volta)?',
         blocking: false,
         hint: 'Cambiare IP tra sessioni vicine e\' un segnale di automazione.',
@@ -377,11 +372,6 @@ const CHECKLIST_SCRAPING: ReadonlyArray<AntiBanCheckItem> = [
         hint: 'Chiudi ogni tab LinkedIn in tutti i browser prima di procedere.',
     },
     {
-        question: 'E\' passata almeno 1 ora dall\'ultima sessione su LinkedIn?',
-        blocking: false,
-        hint: 'Sessioni troppo ravvicinate aumentano il rischio detection.',
-    },
-    {
         question: 'Sai che NON devi interagire con la finestra del browser?',
         blocking: true,
         hint: 'Il bot gestisce tutto. Intervieni solo se appare un CAPTCHA.',
@@ -396,10 +386,33 @@ const CHECKLIST_SCRAPING: ReadonlyArray<AntiBanCheckItem> = [
 async function runAntiBanChecklist(workflowName: string): Promise<boolean> {
     const isOutreach = workflowName === 'send-invites' || workflowName === 'send-messages';
     const checklist = isOutreach ? CHECKLIST_OUTREACH : CHECKLIST_SCRAPING;
+    const minHours = isOutreach ? 2 : 1;
+
+    // Check automatico tempo dall'ultima sessione (sostituisce la domanda manuale)
+    const accounts = getRuntimeAccountProfiles();
+    let recentSessionWarning: string | null = null;
+    for (const acc of accounts) {
+        const lastTs = await getRuntimeFlag(`browser_session_started_at:${acc.id}`).catch(() => null);
+        if (lastTs) {
+            const parsedMs = Date.parse(lastTs);
+            if (Number.isFinite(parsedMs)) {
+                const hoursSince = (Date.now() - parsedMs) / 3600000;
+                if (hoursSince < minHours) {
+                    recentSessionWarning = `Ultima sessione bot (${acc.id}): ${hoursSince.toFixed(1)}h fa — consigliato attendere almeno ${minHours}h tra sessioni.`;
+                    break;
+                }
+            }
+        }
+    }
 
     console.log('');
-    console.log('  CHECKLIST ANTI-BAN (rispondi a ogni domanda):');
+    console.log('  CHECKLIST ANTI-BAN:');
     console.log('');
+
+    if (recentSessionWarning) {
+        console.log(`    [!] ${recentSessionWarning}`);
+        console.log('');
+    }
 
     let blocked = false;
     const failedItems: string[] = [];

@@ -162,31 +162,41 @@ export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<vo
     let syncUpdated = 0;
     let syncEnriched = 0;
     let syncPromoted = 0;
+    let syncError: string | null = null;
     if (!dryRun && bulkReport && bulkReport.status !== 'FAILED') {
         console.log(`\n  Avvio sync lista "${targetList}" per enrichment...\n`);
 
-        const syncReport = await runSalesNavigatorListSync({
-            listName: targetList,
-            maxPages,
-            maxLeadsPerList: limit,
-            dryRun: false,
-            accountId,
-            interactive: false,
-        });
-        syncInserted = syncReport.inserted;
-        syncUpdated = syncReport.updated;
-        syncEnriched = syncReport.enrichment.enriched;
-        syncPromoted = syncReport.enrichment.promoted;
+        try {
+            const syncReport = await runSalesNavigatorListSync({
+                listName: targetList,
+                maxPages,
+                maxLeadsPerList: limit,
+                dryRun: false,
+                accountId,
+                interactive: false,
+            });
+            syncInserted = syncReport.inserted;
+            syncUpdated = syncReport.updated;
+            syncEnriched = syncReport.enrichment.enriched;
+            syncPromoted = syncReport.enrichment.promoted;
 
-        console.log(formatFinalReport(syncReport));
+            console.log(formatFinalReport(syncReport));
+        } catch (err) {
+            syncError = err instanceof Error ? err.message : String(err);
+            console.error(`\n  [ERRORE] Sync lista fallito: ${syncError}\n`);
+        }
     }
 
     // Report
+    const errors: string[] = [];
+    if (bulkReport?.status === 'FAILED') errors.push('Bulk save fallito');
+    if (syncError) errors.push(`Sync lista: ${syncError}`);
+
     const workflowReport: WorkflowReport = {
         workflow: 'sync-search',
         startedAt,
         finishedAt: new Date(),
-        success: !!bulkReport && bulkReport.status !== 'FAILED',
+        success: !!bulkReport && bulkReport.status !== 'FAILED' && !syncError,
         summary: {
             ricerca: searchName || '(tutte)',
             lista_target: targetList,
@@ -198,7 +208,7 @@ export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<vo
             challenge: bulkReport?.challengeDetected ? 'SI' : 'no',
             dry_run: dryRun ? 'SI' : 'no',
         },
-        errors: bulkReport?.status === 'FAILED' ? ['Bulk save fallito'] : [],
+        errors,
         nextAction: syncPromoted > 0
             ? `Esegui 'send-invites --list "${targetList}"' per invitare i ${syncPromoted} lead pronti`
             : `Esegui 'send-invites --list "${targetList}"' per invitare i nuovi lead`,

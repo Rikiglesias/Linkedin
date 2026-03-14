@@ -111,41 +111,51 @@ export async function runSyncListWorkflow(opts: SyncListOptions): Promise<void> 
     // Run the existing sync engine
     console.log('\n  Avvio sync lista...\n');
 
-    const report = await runSalesNavigatorListSync({
-        listName: listName || null,
-        listUrl: listUrl || null,
-        maxPages,
-        maxLeadsPerList: maxLeads,
-        dryRun: opts.dryRun ?? false,
-        accountId: opts.accountId,
-        interactive: opts.interactive ?? false,
-        noProxy: opts.noProxy ?? false,
-    });
+    let syncError: string | null = null;
+    let report: Awaited<ReturnType<typeof runSalesNavigatorListSync>> | null = null;
+    try {
+        report = await runSalesNavigatorListSync({
+            listName: listName || null,
+            listUrl: listUrl || null,
+            maxPages,
+            maxLeadsPerList: maxLeads,
+            dryRun: opts.dryRun ?? false,
+            accountId: opts.accountId,
+            interactive: opts.interactive ?? false,
+            noProxy: opts.noProxy ?? false,
+        });
 
-    // Display the existing detailed report
-    console.log(formatFinalReport(report));
+        // Display the existing detailed report
+        console.log(formatFinalReport(report));
+    } catch (err) {
+        syncError = err instanceof Error ? err.message : String(err);
+        console.error(`\n  [ERRORE] runSalesNavigatorListSync fallito: ${syncError}\n`);
+    }
 
     // Display workflow summary
     const workflowReport: WorkflowReport = {
         workflow: 'sync-list',
         startedAt,
         finishedAt: new Date(),
-        success: report.errors === 0 && !report.challengeDetected,
+        success: !syncError && !!report && report.errors === 0 && !report.challengeDetected,
         summary: {
             lista: listName || '(tutte)',
-            pagine_visitate: report.pagesVisited,
-            candidati_trovati: report.candidatesDiscovered,
-            candidati_unici: report.uniqueCandidates,
-            inseriti: report.inserted,
-            aggiornati: report.updated,
-            invariati: report.unchanged,
-            errori: report.errors,
-            enrichment_completati: report.enrichment.enriched,
-            promossi_ready_invite: report.enrichment.promoted,
-            cloud_sync: report.enrichment.cloudSynced,
+            pagine_visitate: report?.pagesVisited ?? 0,
+            candidati_trovati: report?.candidatesDiscovered ?? 0,
+            candidati_unici: report?.uniqueCandidates ?? 0,
+            inseriti: report?.inserted ?? 0,
+            aggiornati: report?.updated ?? 0,
+            invariati: report?.unchanged ?? 0,
+            errori: report?.errors ?? 0,
+            enrichment_completati: report?.enrichment.enriched ?? 0,
+            promossi_ready_invite: report?.enrichment.promoted ?? 0,
+            cloud_sync: report?.enrichment.cloudSynced ?? 0,
         },
-        errors: report.challengeDetected ? ['Challenge LinkedIn rilevato durante sync'] : [],
-        nextAction: report.enrichment.promoted > 0
+        errors: [
+            ...(syncError ? [syncError] : []),
+            ...(report?.challengeDetected ? ['Challenge LinkedIn rilevato durante sync'] : []),
+        ],
+        nextAction: report && report.enrichment.promoted > 0
             ? `Esegui 'send-invites --list "${listName}"' per invitare i lead pronti`
             : 'Attendi enrichment o abbassa la soglia score',
     };
