@@ -1,0 +1,110 @@
+# Guida Operativa ai Workflow
+
+Benvenuto nella documentazione dei **Workflow del Bot LinkedIn**. Questa guida è pensata per spiegarti come operano i 5 flussi principali, cosa chiedono, come ti proteggono e cosa generano.
+
+Se stai cercando il modo migliore per estrarre lead, scaldarli e inviare messaggi personalizzati, sei nel posto giusto.
+
+---
+
+## I 5 Workflow Principali
+
+Il sistema è diviso in 4 workflow **manuali** e 1 workflow **automatico** (il run-loop). I workflow manuali ti guidano passo-passo con domande interattive e controlli di sicurezza (il "Preflight").
+
+### 1. `sync-list` (Estrai da una Lista)
+**Cosa fa:** Prende una lista che hai già creato e salvato su Sales Navigator e ne importa tutti i profili nel tuo database locale, arricchendoli con email e calcolando uno score.
+- **Come si lancia:** `.\bot.ps1 sync-list`
+- **Cosa ti chiede:**
+  1. Qual è il nome della lista Sales Navigator da cui vuoi pescare?
+  2. Quante pagine massimo vuoi scansionare?
+  3. Qual è il limite di lead da estrarre?
+  4. Vuoi usare l'arricchimento dati per trovare le email?
+- **Risultato:** Ti ritrovi i lead pronti per essere invitati (status `READY_INVITE`).
+
+### 2. `sync-search` (Estrai da Ricerche Salvate)
+**Cosa fa:** Estrae in massa i risultati delle tue *Ricerche Salvate* di Sales Navigator e li butta in una nuova lista, per poi fare il sync e l'enrichment. Perfetto per pescare a strascico.
+- **Come si lancia:** `.\bot.ps1 sync-search`
+- **Cosa ti chiede:**
+  1. Quale ricerca salvata vuoi usare? (Se lasci vuoto, le fa tutte).
+  2. In quale lista vuoi salvare i risultati?
+  3. Quante pagine e quanti lead massimo?
+  4. Vuoi arricchire i dati?
+- **Risultato:** I lead delle ricerche finiscono in una lista SalesNav e nel DB, pronti per essere invitati (status `READY_INVITE`).
+
+### 3. `send-invites` (Invia Inviti)
+**Cosa fa:** Pesca i lead pronti (`READY_INVITE`) e invia loro la richiesta di collegamento, scrivendo (se vuoi) una nota generata dall'Intelligenza Artificiale calibrata sul loro profilo.
+- **Come si lancia:** `.\bot.ps1 send-invites`
+- **Cosa ti chiede:**
+  1. Vuoi invitare lead di una lista specifica o tutti?
+  2. Come vuoi la nota? Generata dall'AI, da un tuo template fisso, o vuoi mandare l'invito vuoto?
+  3. Quale "punteggio minimo" deve avere il lead per meritarsi l'invito?
+  4. Quanti inviti vuoi fare in questa sessione? (Il sistema rispetta i limiti di sicurezza).
+- **Risultato:** I lead passano allo status `INVITED`. Appena accetteranno, il sistema se ne accorgerà e li passerà a `ACCEPTED` / `READY_MESSAGE`.
+- **Chicca:** Se scopre che hai 0 lead pronti, ti chiede in automatico se vuoi lanciare un `sync-search` per rimpinguare il database.
+
+### 4. `send-messages` (Invia Messaggi a chi ha accettato)
+**Cosa fa:** Trova chi ha accettato il tuo invito (`READY_MESSAGE`) e invia il primo messaggio di follow-up, generato in maniera iper-personalizzata.
+- **Come si lancia:** `.\bot.ps1 send-messages`
+- **Cosa ti chiede:**
+  1. Da quale lista vuoi pescare i contatti?
+  2. In che lingua deve scrivere l'AI? (Italiano, Inglese, Francese, Spagnolo, Olandese).
+  3. Quanti messaggi vuoi mandare in questa sessione?
+- **Risultato:** Il lead riceve un messaggio non "da bot" e passa allo status `MESSAGED`. Se risponderà in futuro, andrà in `REPLIED`.
+
+### 5. `run-loop` / `autopilot` (Il Pilota Automatico)
+**Cosa fa:** Gira in background. Esegue ciclicamente i controlli, invia gli inviti, manda i messaggi, arricchisce i dati e ti manda il report su Telegram, gestendo pause e ritmi in modo totalmente umanoide.
+- **Come si lancia:** `.\bot.ps1 autopilot` (o `.\bot.ps1 run-loop all`)
+- **Come funziona:**
+  - Controlla se siamo in orario lavorativo (non fa nulla di notte).
+  - Aspetta un tempo casuale (fino a 30 minuti) per simulare che ti sei appena seduto alla scrivania.
+  - Verifica la tua salute (proxy, cookie, ban).
+  - Scansiona chi ha accettato gli inviti e aggiorna il DB.
+  - Prepara i messaggi offline.
+  - Svolge azioni "distrazione" (scrolla il feed, guarda le notifiche).
+  - Esegue gli inviti o messaggi programmati.
+  - Fa un backup del database e pulisce i log vecchi.
+
+---
+
+## La Magia del "Preflight" (Prima del Volo)
+
+Ogni volta che lanci manualmente i workflow 1, 2, 3 o 4, il bot non parte alla cieca. Entra in modalità **Preflight** e ti mostra una dashboard nella console:
+
+1. **Checklist Anti-Ban Automatica:** 
+   Ti chiede se hai chiuso le altre finestre di LinkedIn e controlla da solo quante ore sono passate dall'ultima sessione, avvisandoti se stai agendo troppo in fretta.
+2. **Dashboard DB:** 
+   Ti mostra quanti lead hai, quanti con email trovate, e come sono divisi per liste.
+3. **Stato della Configurazione:** 
+   Ti dice chiaramente: "Il proxy è ok? L'AI è accesa? Quanti inviti hai mandato questa settimana? (es. 40/80)".
+4. **Valutazione del Rischio (Risk Assessment):**
+   Il cuore anti-ban. Calcola un punteggio da 0 a 100 basato sui tuoi pending request, i tuoi errori recenti e le abitudini. Ti darà un semaforo verde `[OK] GO`, un giallo `[!] CAUTION`, o un rosso `[!!!] STOP`. Se è rosso, il bot si rifiuterà di partire per proteggere l'account.
+5. **Preview Lead (Novità):**
+   Ti fa vedere l'anteprima esatta di chi sta per contattare: "Prossimi 5 lead da invitare: Mario Rossi (CEO), Laura Bianchi (CTO)..." e una stima del tempo che ci metterà (es. "Tempo stimato: ~12 minuti").
+6. **Conferma Finale:** "Procedo? [Y/n]". Se dici sì, lui lavora.
+
+---
+
+## Il Ciclo di Vita del tuo Lead (Il "Funnel")
+
+Il bot sposta i tuoi lead tra queste "scatole" in automatico:
+
+1. **`NEW`**: Appena importati da SalesNav.
+2. **`READY_INVITE`**: Arricchiti, analizzati e pronti per l'invito.
+3. **`INVITED`**: Invito spedito.
+4. **`ACCEPTED`**: Ha accettato l'invito.
+5. **`READY_MESSAGE`**: Pronto per ricevere il messaggio.
+6. **`MESSAGED`**: Messaggio spedito.
+7. **`REPLIED`**: Ha risposto. (Qui il bot si ferma e tocca a te subentrare).
+
+*Stati negativi protettivi:* Se il bot non trova l'email o non si fida del profilo lo mette in `SKIPPED`. Se ci sono problemi con l'url lo mette in `BLOCKED`.
+
+---
+
+## Perché il bot è "Paranoico" (E perché devi esserne felice)
+
+LinkedIn banna chi usa l'automazione in modo stupido. Questo bot usa le strategie più avanzate del 2025/2026:
+- **Delay Asimmetrici (Cronometria Disfasica):** Non clicca mai "ogni 3 secondi". Finge distrazioni, sbaglia a scrivere e preme `Backspace` per correggere.
+- **Rallentamento a Fine Turno (Wind-Down):** Se ha lavorato per 40 minuti, verso la fine inizia a cliccare più lentamente e si distrae di più, come una persona stanca. Quando ha finito, scrolla il feed un po' e chiude la finestra dolcemente.
+- **Circuit Breaker per Liste:** Se tenta di invitare 3 persone di una lista e LinkedIn non glielo fa fare, invece di farsi bannare "spegne" quella lista per 4 ore e passa ad altro.
+- **Pre-Enrichment e AI:** Il bot arricchisce i dati *prima* di inviare i messaggi. Così l'IA può scrivere "Ho visto che in Apple hai fatto X" invece di un banale "Ciao".
+
+Usa questa guida per sfruttare tutto il potenziale dei workflow senza mai bruciare il tuo account. Buon lavoro!
