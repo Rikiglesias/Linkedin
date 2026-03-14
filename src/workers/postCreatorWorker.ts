@@ -244,31 +244,3 @@ export async function countTodayPosts(accountId: string): Promise<number> {
     return row?.count ?? 0;
 }
 
-/**
- * Restituisce i post recenti di un account per la dashboard.
- */
-export async function getRecentPosts(
-    accountId: string,
-    limit: number = 10,
-): Promise<
-    Array<{
-        id: number;
-        content: string;
-        topic: string;
-        source: string;
-        status: PostStatus;
-        published_at: string | null;
-        engagement_likes: number;
-        engagement_comments: number;
-    }>
-> {
-    const db = await getDatabase();
-    return db.query(
-        `SELECT id, content, topic, source, status, published_at, engagement_likes, engagement_comments
-         FROM published_posts
-         WHERE account_id = ?
-         ORDER BY created_at DESC
-         LIMIT ?`,
-        [accountId, limit],
-    );
-}

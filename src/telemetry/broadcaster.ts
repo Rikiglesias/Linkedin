@@ -192,6 +192,3 @@ export function broadcastWarning(title: string, body: string, metadata?: Record<
     return broadcast({ level: 'WARNING', title, body, metadata });
 }
 
-export function broadcastInfo(title: string, body: string, metadata?: Record<string, unknown>): Promise<void> {
-    return broadcast({ level: 'INFO', title, body, metadata });
-}

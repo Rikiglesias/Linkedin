@@ -351,10 +351,3 @@ export function getLastQualityReport(): ProxyQualityReport | null {
     return lastReport;
 }
 
-// ─── Cache management (for testing) ──────────────────────────────────────────
-
-export function clearQualityCache(): void {
-    asnCache.clear();
-    lastReport = null;
-    lastFullCheckAt = null;
-}

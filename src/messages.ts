@@ -78,4 +78,3 @@ export function buildFollowUpMessage(lead: LeadRecord, lang?: string): string {
     return resolveTemplate(pool[index], lead, lang);
 }
 
-export const SUPPORTED_LANGUAGES = Object.keys(templatesByLang);

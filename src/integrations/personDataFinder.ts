@@ -1275,33 +1275,3 @@ export async function findPersonData(input: PersonDataFinderInput): Promise<Pers
     return result;
 }
 
-/**
- * Versione batch con rate limiting per non sovraccaricare i siti target.
- */
-export async function findPersonDataBatch(
-    inputs: PersonDataFinderInput[],
-    opts?: { concurrency?: number; onProgress?: (done: number, total: number) => void },
-): Promise<PersonDataResult[]> {
-    const concurrency = opts?.concurrency ?? 2;
-    const results: PersonDataResult[] = [];
-    let completed = 0;
-
-    for (let i = 0; i < inputs.length; i += concurrency) {
-        const batch = inputs.slice(i, i + concurrency);
-        const batchResults = await Promise.all(batch.map((input) => findPersonData(input)));
-        results.push(...batchResults);
-        completed += batch.length;
-        opts?.onProgress?.(completed, inputs.length);
-
-        if (i + concurrency < inputs.length) {
-            await delay(RATE_LIMIT_DELAY_MS * 2);
-        }
-    }
-
-    return results;
-}
-
-/** Resets the company cache (useful for tests). */
-export function resetCompanyCache(): void {
-    companyCache.clear();
-}

@@ -432,33 +432,3 @@ export async function computerUseSelectList(
         },
     );
 }
-
-/**
- * Convenience: use Computer Use to click "Select All" on a search results page.
- */
-export async function computerUseSelectAll(
-    page: Page,
-): Promise<ComputerUseResult> {
-    return computerUseTask(
-        page,
-        `You are looking at a LinkedIn Sales Navigator search results page. ` +
-        `Find and click the "Select all" or "Seleziona tutto" checkbox to select all leads on this page. ` +
-        `It is usually a checkbox at the top of the results list.`,
-        { maxTurns: 4 },
-    );
-}
-
-/**
- * Convenience: use Computer Use to click "Save to list" button.
- */
-export async function computerUseSaveToList(
-    page: Page,
-): Promise<ComputerUseResult> {
-    return computerUseTask(
-        page,
-        `You are looking at a LinkedIn Sales Navigator search results page with leads selected. ` +
-        `Find and click the "Save to list" or "Salva nell'elenco" button. ` +
-        `It should be visible at the top of the results after selecting leads.`,
-        { maxTurns: 4 },
-    );
-}

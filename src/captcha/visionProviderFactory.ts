@@ -222,13 +222,3 @@ export function getOpenAIProviderFromCurrent(): OpenAIVisionProvider | null {
     if (_cachedProvider instanceof HybridVisionProvider) return _cachedProvider.getOpenAIProvider();
     return null;
 }
-
-/**
- * Restituisce il costo stimato della sessione corrente (USD).
- */
-export function getSessionCostUsd(): number {
-    if (!_cachedProvider) return 0;
-    if (_cachedProvider instanceof HybridVisionProvider) return _cachedProvider.sessionCostUsd;
-    if (_cachedProvider instanceof OpenAIVisionProvider) return _cachedProvider.currentSessionCostUsd;
-    return 0;
-}

@@ -85,17 +85,6 @@ export async function expireOldPrebuiltMessages(maxAgeHours: number = 48): Promi
 }
 
 /**
- * Conta i messaggi pre-built non ancora usati per lead in stato READY_MESSAGE.
- */
-export async function countUnusedPrebuiltMessages(): Promise<number> {
-    const db = await getDatabase();
-    const row = await db.get<{ count: number | string }>(
-        `SELECT COUNT(*) as count FROM prebuilt_messages WHERE used_at IS NULL AND expired_at IS NULL`,
-    );
-    return row ? Number(row.count) : 0;
-}
-
-/**
  * Ritorna gli ID dei lead READY_MESSAGE che NON hanno un messaggio pre-built pronto.
  */
 export async function getLeadsWithoutPrebuiltMessage(limit: number = 20): Promise<number[]> {

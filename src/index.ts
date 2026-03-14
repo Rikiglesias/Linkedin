@@ -75,7 +75,6 @@ import { printCommandHelp } from './cli/commandHelp';
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 
 let shuttingDown = false;
-export function isShuttingDown(): boolean { return shuttingDown; }
 
 const SHUTDOWN_TIMEOUT_MS = 30_000;
 

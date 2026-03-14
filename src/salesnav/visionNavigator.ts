@@ -1,6 +1,6 @@
 import type { Locator, Page } from 'playwright';
 import type { VisionProvider } from '../captcha/visionProvider';
-import { createVisionProvider, resetVisionProvider, getOpenAIProviderFromCurrent } from '../captcha/visionProviderFactory';
+import { createVisionProvider, getOpenAIProviderFromCurrent } from '../captcha/visionProviderFactory';
 import { humanMouseMoveToCoords, pulseVisualCursorOverlay } from '../browser/humanBehavior';
 
 export interface VisionRegionClip {
@@ -106,14 +106,6 @@ function parseYesNo(raw: string): boolean {
 function getProvider(options?: VisionInteractionOptions): VisionProvider {
     if (options?.provider) return options.provider;
     return createVisionProvider();
-}
-
-/**
- * Resetta il provider cached. Richiama resetVisionProvider del factory.
- * Mantiene retrocompatibilità con i test esistenti.
- */
-export function resetVisionSolver(): void {
-    resetVisionProvider();
 }
 
 export class OllamaDownError extends Error {
@@ -291,22 +283,6 @@ export async function visionReadTotalResults(
         return Number.isFinite(num) && num > 0 ? num : null;
     } catch {
         return null;
-    }
-}
-
-export async function visionPageAllAlreadySaved(
-    page: Page,
-    options?: VisionInteractionOptions,
-): Promise<boolean> {
-    try {
-        const result = await visionVerify(
-            page,
-            'Are ALL visible lead cards on this page already marked as saved to a list? Look for checkmarks, "Saved", "Salvato" badges, or any saved-indicator on every single card. Answer YES only if EVERY card shows a saved indicator.',
-            options,
-        );
-        return result;
-    } catch {
-        return false;
     }
 }
 

@@ -38,7 +38,6 @@ function isConfigured(): boolean {
 import {
     CloudAccount,
     CloudLeadUpsert,
-    CloudJobUpsert,
     CloudDailyStatIncrement,
     PendingTelegramCommand,
     CloudCampaignConfig,
@@ -51,22 +50,6 @@ export * from './types';
 // ──────────────────────────────────────────────────────────────
 // Account sync
 // ──────────────────────────────────────────────────────────────
-
-/**
- * Upserta un account nel cloud. Usare al boot del worker
- * per sincronizzare lo stato dell'account verso Supabase.
- */
-export async function upsertCloudAccount(account: CloudAccount): Promise<void> {
-    const sb = getClient();
-    if (!sb) return;
-
-    const { error } = await sb
-        .from('accounts')
-        .upsert({ ...account, updated_at: new Date().toISOString() }, { onConflict: 'id' });
-    if (error) {
-        await logWarn('cloud.accounts.upsert.error', { accountId: account.id, error: error.message });
-    }
-}
 
 /**
  * Aggiorna health e tier di un account cloud.
@@ -88,43 +71,6 @@ export async function updateCloudAccountHealth(
     const { error } = await sb.from('accounts').update(patch).eq('id', accountId);
     if (error) {
         await logWarn('cloud.accounts.health.update.error', { accountId, error: error.message });
-    }
-}
-
-/**
- * Aggiorna il contatore giornaliero inviti/messaggi su un account cloud.
- */
-export async function incrementCloudAccountCounter(
-    accountId: string,
-    field: 'daily_invites_sent' | 'daily_messages_sent',
-    amount: number = 1,
-): Promise<void> {
-    const sb = getClient();
-    if (!sb) return;
-
-    // PostgreSQL: usiamo rpc per fare incremento atomico
-    const { error } = await sb.rpc('increment_account_counter', {
-        p_account_id: accountId,
-        p_field: field,
-        p_amount: amount,
-    });
-    if (error) {
-        const MAX_RETRIES = 2;
-        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-            const { data } = await sb.from('accounts').select(field).eq('id', accountId).single();
-            const current = (data as Record<string, number> | null)?.[field] ?? 0;
-            const { error: updateErr } = await sb
-                .from('accounts')
-                .update({
-                    [field]: current + amount,
-                    updated_at: new Date().toISOString(),
-                })
-                .eq('id', accountId);
-            if (!updateErr) break;
-            if (attempt < MAX_RETRIES) {
-                await new Promise(r => setTimeout(r, 50 + Math.random() * 150));
-            }
-        }
     }
 }
 
@@ -194,26 +140,6 @@ export async function batchUpsertCloudLeads(leads: CloudLeadUpsert[]): Promise<v
                 error: error.message,
             });
         }
-    }
-}
-
-// ──────────────────────────────────────────────────────────────
-// Job sync
-// ──────────────────────────────────────────────────────────────
-
-/**
- * Upserta un job nel cloud. Usare al momento della creazione
- * e aggiornamento dello stato del job.
- */
-export async function upsertCloudJob(job: CloudJobUpsert): Promise<void> {
-    const sb = getClient();
-    if (!sb) return;
-
-    const { error } = await sb
-        .from('jobs_cloud')
-        .upsert({ ...job, updated_at: new Date().toISOString() }, { onConflict: 'idempotency_key' });
-    if (error) {
-        await logWarn('cloud.jobs.upsert.error', { idempotencyKey: job.idempotency_key, error: error.message });
     }
 }
 
@@ -495,23 +421,6 @@ export async function syncEnrichmentDataToCloud(
 // ──────────────────────────────────────────────────────────────
 // Health check
 // ──────────────────────────────────────────────────────────────
-
-/**
- * Verifica la connettività con Supabase.
- * Ritorna true se il cloud è raggiungibile e configurato.
- */
-export async function checkCloudConnectivity(): Promise<boolean> {
-    if (!isConfigured()) return false;
-    const sb = getClient();
-    if (!sb) return false;
-
-    try {
-        const { error } = await sb.from('accounts').select('id').limit(1);
-        return !error;
-    } catch {
-        return false;
-    }
-}
 
 /**
  * Legge le configurazioni campagne dal Control Plane Supabase.

@@ -295,8 +295,3 @@ export async function discoverCompanyDomain(
     return result;
 }
 
-/** Pulisce la cache (utile per test). */
-export function clearDomainCache(): void {
-    domainCache.clear();
-    mxCache.clear();
-}

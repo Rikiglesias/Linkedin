@@ -107,9 +107,3 @@ export function getTodayStrategy(accountId?: string): DayStrategy {
     return base;
 }
 
-/**
- * Get the full weekly plan for display/reporting.
- */
-export function getWeeklyPlan(): readonly DayStrategy[] {
-    return DEFAULT_WEEKLY_PLAN;
-}

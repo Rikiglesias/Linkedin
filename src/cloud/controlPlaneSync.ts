@@ -75,17 +75,6 @@ export interface ControlPlaneSyncReport {
     skippedInvalid: number;
 }
 
-export async function getControlPlaneStatus(): Promise<ControlPlaneStatus> {
-    const lastRunAt = await getRuntimeFlag(CONTROL_PLANE_LAST_RUN_KEY);
-    return {
-        enabled: config.supabaseControlPlaneEnabled,
-        configured: isControlPlaneConfigured(),
-        intervalMs: config.supabaseControlPlaneSyncIntervalMs,
-        maxCampaigns: config.supabaseControlPlaneMaxCampaigns,
-        lastRunAt,
-    };
-}
-
 async function syncAccountsDown() {
     const lastSyncAt = await getRuntimeFlag(CONTROL_PLANE_ACCOUNTS_LAST_SYNC_KEY);
     const updates = await fetchCloudAccountsUpdates(lastSyncAt, 100);

@@ -1,5 +1,3 @@
-import { randomElement } from '../utils/random';
-
 export interface Fingerprint {
     id: string;
     ja3: string;
@@ -158,11 +156,6 @@ export const mobileFingerprintPool: Fingerprint[] = [
         deviceScaleFactor: 2.75,
     },
 ];
-
-export function pickRandomFingerprint(pool: ReadonlyArray<Fingerprint>): Fingerprint {
-    const safePool = pool.length > 0 ? pool : desktopFingerprintPool;
-    return randomElement(safePool);
-}
 
 /**
  * Selezione deterministica dal pool basata su accountId + settimana corrente.

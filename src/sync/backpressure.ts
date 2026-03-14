@@ -87,17 +87,3 @@ export interface AccountBackpressureSnapshot {
     effectiveBatchSize: number;
 }
 
-/**
- * Ritorna lo snapshot di backpressure per un account, utile per diagnostica.
- */
-export async function getAccountBackpressureSnapshot(
-    accountId: string,
-    baseBatch: number,
-): Promise<AccountBackpressureSnapshot> {
-    const level = await getAccountBackpressureLevel(accountId);
-    return {
-        accountId,
-        level,
-        effectiveBatchSize: computeBackpressureBatchSize(baseBatch, level),
-    };
-}
