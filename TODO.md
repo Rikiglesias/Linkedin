@@ -26,9 +26,10 @@ Azioni da fare dopo che il bot è partito stabilmente.
 - [ ] **Testare Enrichment** (verificare che Apollo funzioni: `.\bot.ps1 enrich-fast`)
 - [ ] **Verifica 360° Configurazioni e Tool Esterni**: controllare che TUTTI i tool configurati nel `.env` si intreccino correttamente durante il workflow, verificando specificamente:
   - **OpenAI/Ollama**: personalizzazione messaggi, analisi intent, score dei lead e fallback
-  - **Proxy Oxylabs**: rotazione corretta IP, mantenimento sessioni, risoluzione anti-bot
+  - **Proxy Oxylabs & IP Reputation**: rotazione corretta IP, mantenimento sessioni, risoluzione anti-bot, verifica IP tramite **AbuseIPDB** e **Proxy Quality ASN API**
   - **Telegram Bot**: ricezione report puntuale, allarmi attivi, comandi di controllo
   - **Integrazioni Data (Apollo, Clearbit, Hunter)**: risoluzione API key, rate limits e fallback incrociato (es. da Apollo a Email Guesser se API fallisce)
+  - **AI / Scraping Interno**: *Person Data Finder*, *Email Guesser*, *Web Search Enricher* funzionanti e silenti
   - **Database & Sync**: consistenza SQLite, sync (opzionale) Supabase
 - [ ] **Attivare Inbox Auto-Reply** (`INBOX_AUTO_REPLY_ENABLED=true` nel `.env` per far rispondere l'AI)
 
