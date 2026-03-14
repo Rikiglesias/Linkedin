@@ -54,10 +54,36 @@ Control: validation dataset + run results (`ai_validation_*`), quality snapshot 
 8. Backup/restore failure blindness  
 Control: backup run tracking (`backup_runs`), checksum capture, failure alerting.
 
+## 🧹 Process Lifecycle & Trace Cleanup
+
+Tracce di sistema che LinkedIn NON vede direttamente, ma che possono corrompere sessioni future o lasciare artefatti rilevabili.
+
+| Minaccia | Causa | Controllo Implementato |
+|----------|-------|------------------------|
+| **Zombie browser process** | Ctrl+C brusco o crash fatale lascia firefox.exe/chrome.exe nel task manager | `handleSIGINT/SIGTERM/SIGHUP: true` nelle opzioni Playwright + `cleanupBrowsers()` con wind-down organico + `performGracefulShutdown()` su uncaughtException/unhandledRejection |
+| **Chiusura brusca su pagina operativa** | L'utente chiude la finestra del terminale (X) mentre il bot è su un profilo LinkedIn | Wind-down rapido in `cleanupBrowsers()`: se su pagina /sales/, /search/, /in/ → naviga al feed prima di chiudere (timeout 3s) |
+| **File temporanei sessione Chromium** | La cartella `data/session/` contiene profilo Chromium vecchio (cache, .tmp, Crashpad, IndexedDB) incompatibile con Firefox | **Azione manuale**: svuotare `data/session/` prima del primo login Firefox. Il bot crea un profilo Firefox pulito al primo avvio. |
+| **Job stuck in RUNNING** | Crash mid-job lascia record DB in stato RUNNING → al riavvio il bot li salta | `recoverStuckJobs()` nel graceful shutdown e nel preflight: RUNNING → PENDING |
+| **Memory leak browser** | Sessioni lunghe (>30 min) accumulano memoria nel browser | `performBrowserGC()` ogni 10 job + `processMaxUptimeHours` per auto-restart pianificato |
+| **Crash dump accumulo** | Crashpad/minidump files crescono nel tempo | Crashpad attualmente < 1KB. Monitorare. Firefox non usa Crashpad. |
+
+### Procedura sicura di spegnimento
+1. **Sempre Ctrl+C** — MAI chiudere la finestra del terminale
+2. Attendere il messaggio `[SHUTDOWN] Database chiuso`
+3. Il bot fa: wind-down organico → chiudi browser → recupera job → chiudi DB → alert Telegram "Bot Spento"
+
+### Pulizia pre-Firefox (una tantum)
+Prima del primo login con Firefox, eliminare la vecchia sessione Chromium:
+```powershell
+Remove-Item -Recurse -Force data\session\*
+```
+Firefox creerà un profilo pulito al primo `.\bot.ps1 login`.
+
 ## Residual Risks
 - Browser platform changes may still cause temporary selector degradation.
 - Third-party API outages can degrade features even with retries/circuit breaker.
 - Local workstation compromise can bypass application-layer controls.
+- **File temporanei sessione**: se il bot crasha ripetutamente, i file .tmp nella cartella Network crescono. Pulizia periodica consigliata.
 
 ## Incident Response Playbook (Severity-Based)
 

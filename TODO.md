@@ -10,6 +10,7 @@
 Da fare in orario lavorativo (9:00 - 19:00).
 
 - [ ] **Build del progetto** (`npm run build`)
+- [ ] **Pulizia sessione Chromium** (`Remove-Item -Recurse -Force data\session\*` — elimina profilo Chromium vecchio, Firefox ne crea uno nuovo)
 - [ ] **Login account Europa** (`.\bot.ps1 login` — necessario perché siamo passati a Firefox)
 - [ ] **Scoprire liste SalesNav** (`.\bot.ps1 salesnav lists`)
 - [ ] **Importare lead da SalesNav** (`.\bot.ps1 sync-list --list "NOME"`)
