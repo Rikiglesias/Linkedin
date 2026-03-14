@@ -3,7 +3,7 @@
 > Generated: 2026-03-13 | Aggiornato dopo analisi completa codebase
 > Audit precedente: 30/30 + 7 fix effetti composti + 3 fix L1→L6 — COMPLETATO e archiviato
 > Focus: GAP trovati dall'analisi lifecycle completo (boot → sessione → shutdown → multi-giorno)
-> **Completati: 13/14** (D.2 JA3 implementato con supporto Firefox)
+> **Completati: 16/16** (tutti gli sprint + fix Firefox deep + azioni organiche + GUIDA.md)
 
 ---
 
@@ -180,11 +180,33 @@ Ogni task DEVE essere verificato con i **6 livelli di controllo + anti-ban**:
 Sprint A (P0 anti-ban arch) → A.1, A.2, A.3                     [3/3] ✅
 Sprint B (P1 observability) → B.1, B.2, B.3, B.4                [4/4] ✅
 Sprint C (P1 resilience)    → C.1, C.2, C.3                     [3/3] ✅
-Sprint D (P2 UX/lifecycle)  → D.1, D.2, D.3                      [3/3] ✅
-                                                          Totale [13/14]
+Sprint D (P2 UX/lifecycle)  → D.1, D.2, D.3                     [3/3] ✅
+Extra: Firefox L2-L6 deep + azioni organiche + GUIDA.md          [3/3] ✅
+                                                          Totale [16/16]
 ```
 
 Gate: `npm run conta-problemi` = EXIT 0 dopo ogni sprint
+
+---
+
+## Prossimi Step Operativi
+
+### LUNEDI' MATTINA (in orario 9-19)
+- [ ] `.\bot.ps1 login` — ri-login con Firefox (cookie Chromium non trasferibili)
+- [ ] `.\bot.ps1 salesnav lists` — vedere liste disponibili
+- [ ] `.\bot.ps1 sync-list --list "NOME"` — importare lead nel DB
+- [ ] `.\bot.ps1 funnel` — verificare lead importati
+- [ ] `.\bot.ps1 send-invites --dry-run` — test completo senza invii reali
+- [ ] `.\bot.ps1 autopilot --cycles 1` — primo run reale (10 inviti)
+- [ ] Verificare alert Telegram durante il run
+
+### PIU' AVANTI
+- [ ] Inserire template messaggi follow-up inglese nel bot
+- [ ] Testare enrichment end-to-end (Apollo + OSINT + Email Guesser)
+- [ ] Attivare `INBOX_AUTO_REPLY_ENABLED=true` per risposte AI automatiche
+- [ ] Scalare a 30-35 inviti/giorno (dopo 2-3 settimane se acceptance >25%)
+- [ ] Configurare account 2 Italia (proxy, session, lingua)
+- [ ] Valutare Camoufox per >50/giorno
 
 ---
 
