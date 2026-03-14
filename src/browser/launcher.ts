@@ -36,6 +36,20 @@ const activeBrowsers = new Set<BrowserContext>();
 export const cleanupBrowsers = async (): Promise<void> => {
     for (const browser of activeBrowsers) {
         try {
+            // Se c'è almeno una pagina attiva, tenta un wind-down veloce prima di chiudere.
+            // Serve per evitare che Ctrl+C interrompa la connessione improvvisamente
+            // mentre si è su un profilo o una chat (segnale bot).
+            const pages = browser.pages();
+            const activePage = pages.find((p: import('playwright').Page) => !p.isClosed());
+            if (activePage) {
+                // Wind-down rapido (timeout stretto per non bloccare lo shutdown)
+                const isAutomationPage = activePage.url().includes('/sales/') || activePage.url().includes('/search/') || activePage.url().includes('/mynetwork/') || activePage.url().includes('/in/');
+                if (isAutomationPage) {
+                    await activePage.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 3000 }).catch(() => null);
+                    await activePage.evaluate(() => window.scrollBy({ top: 100 + Math.random() * 200, behavior: 'smooth' })).catch(() => null);
+                    await activePage.waitForTimeout(1000 + Math.random() * 1000).catch(() => null);
+                }
+            }
             await browser.close();
         } catch {
             // ignore close errors during shutdown

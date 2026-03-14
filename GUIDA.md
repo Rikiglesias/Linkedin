@@ -77,10 +77,11 @@ Il bot fa: warmup (feed, notifiche) → inviti con pause umane → wind-down →
 .\bot.ps1 doctor          # Check salute sistema
 ```
 
-### Fermare il bot
-- Se in primo piano: `Ctrl+C`
-- Il bot fa shutdown graceful (chiude browser, salva stato)
-- Ricevi alert Telegram "Bot Spento"
+### Fermare il bot (MOLTO IMPORTANTE)
+- **Modo corretto**: Premi `Ctrl+C` nel terminale.
+- Il bot farà uno "shutdown graceful": se sta guardando un profilo, tornerà al feed (per sembrare umano) e poi chiuderà i browser salvando lo stato.
+- **NON CHUDERE LA FINESTRA DEL TERMINALE**: se chiudi la X in alto a destra, Windows uccide il processo all'istante. LinkedIn vedrà una disconnessione anomala brutale mentre stavi guardando un profilo. Questo è un forte segnale bot (zombie process trace). Usa sempre `Ctrl+C` e aspetta il messaggio "Database chiuso".
+- Al termine ricevi alert Telegram "Bot Spento".
 
 ---
 
