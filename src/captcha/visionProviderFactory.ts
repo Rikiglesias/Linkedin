@@ -274,10 +274,14 @@ export function createVisionProvider(overrideConfig?: Partial<VisionProviderConf
         }
     }
 
+    const primaryModel = cfg.provider === 'ollama' || cfg.provider === 'local-first'
+        ? cfg.ollamaModel
+        : cfg.openaiModel;
     void logInfo('vision.factory.provider_created', {
         type: cfg.provider,
         actualProvider: provider.name,
-        model: cfg.provider === 'ollama' ? cfg.ollamaModel : cfg.openaiModel,
+        model: primaryModel,
+        fallbackModel: cfg.provider === 'local-first' ? cfg.openaiModel : cfg.provider === 'auto' ? cfg.ollamaModel : undefined,
         budgetMaxUsd: cfg.budgetMaxUsd,
         redact: cfg.redactScreenshots,
     });
