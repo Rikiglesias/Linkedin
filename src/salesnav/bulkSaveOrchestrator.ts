@@ -1396,8 +1396,8 @@ export async function scrollAndReadPage(page: Page, fast: boolean = false): Prom
 async function prepareResultsPage(page: Page): Promise<void> {
     // Scroll veloce in cima — "Select All" è nell'header dei risultati
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
-    // Micro-scroll occasionale per sembrare umano (30% delle volte)
-    if (Math.random() < 0.3) {
+    // Micro-scroll occasionale per sembrare umano (10% delle volte — ridotto da 30% per velocità)
+    if (Math.random() < 0.1) {
         await humanDelay(page, 100, 300);
         const dy = 60 + Math.random() * 150;
         await page.evaluate((d: number) => window.scrollBy({ top: d, behavior: 'smooth' }), dy);
@@ -1407,19 +1407,24 @@ async function prepareResultsPage(page: Page): Promise<void> {
     await humanDelay(page, 200, 450);
 }
 
-async function restoreSearchPagePosition(page: Page, targetPageNumber: number): Promise<void> {
+async function restoreSearchPagePosition(page: Page, targetPageNumber: number): Promise<boolean> {
     if (targetPageNumber <= 1) {
-        return;
+        return true;
     }
 
+    console.log(`[RESUME] Ripristino posizione pagina ${targetPageNumber}...`);
     for (let currentPage = 1; currentPage < targetPageNumber; currentPage++) {
         const moved = await clickNextPage(page, false);
         if (!moved) {
-            throw new Error(
-                `Impossibile ripristinare la pagina ${targetPageNumber}: Next non disponibile alla pagina ${currentPage}`,
+            // NON crashare — fallback a pagina 1. Meglio rifare pagine già processate che fermare tutto.
+            console.warn(
+                `[RESUME] WARN: Next non disponibile alla pagina ${currentPage} (target: ${targetPageNumber}). Riparto da pagina 1.`,
             );
+            return false;
         }
     }
+    console.log(`[RESUME] Posizione ripristinata a pagina ${targetPageNumber}.`);
+    return true;
 }
 
 async function dismissTransientUi(page: Page): Promise<void> {
@@ -1487,8 +1492,8 @@ let _nextHoverAt = 15 + Math.floor(Math.random() * 8);  // ~15-22
 let _nextAiDelayAt = 8 + Math.floor(Math.random() * 6); // ~8-13
 
 async function runAntiDetectionNoise(page: Page, totalProcessedPages: number): Promise<void> {
-    // Movimento mouse leggero (40% delle volte) — basso impatto
-    if (Math.random() < 0.4) {
+    // Movimento mouse leggero (20% delle volte — ridotto da 40% per velocità)
+    if (Math.random() < 0.2) {
         await randomMouseMove(page);
     }
     // Micro-pausa occasionale (5% → 1-3s)
@@ -1889,6 +1894,20 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
     // Reset cache lista — ogni sessione parte da zero
     _bulkSaveListFoundInSession = false;
 
+    // Cleanup run zombie: marca come FAILED tutti i run RUNNING più vecchi di 30 minuti.
+    // Un run RUNNING che non è stato aggiornato da 30+ minuti è un crash/SIGINT non gestito.
+    try {
+        const { getDatabase } = await import('../db');
+        const db = await getDatabase();
+        const zombieResult = await db.run(
+            `UPDATE salesnav_sync_runs SET status = 'FAILED', last_error = 'Zombie run cleanup (non aggiornato da 30+ min)', completed_at = datetime('now')
+             WHERE status = 'RUNNING' AND updated_at < datetime('now', '-30 minutes')`,
+        );
+        if (zombieResult.changes && zombieResult.changes > 0) {
+            console.log(`[CLEANUP] ${zombieResult.changes} run zombie marcati come FAILED`);
+        }
+    } catch { /* best-effort cleanup */ }
+
     const report = buildInitialReport(options);
     const dryRun = options.dryRun === true;
     const safeMaxPages = Math.max(1, Math.floor(options.maxPages));
@@ -2167,7 +2186,12 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                 }
 
                 if (!dryRun && initialPageNumber > 1) {
-                    await restoreSearchPagePosition(page, initialPageNumber);
+                    const restored = await restoreSearchPagePosition(page, initialPageNumber);
+                    if (!restored) {
+                        // Fallback: riparte da pagina 1 (meglio rifare pagine che crashare)
+                        searchReport.startedPage = 1;
+                        currentPageNumber = 1;
+                    }
                 }
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);

@@ -70,11 +70,22 @@ export async function warmupSession(page: Page): Promise<void> {
         sessionWindow,
     });
 
-    // Se siamo nella gap tra le due sessioni, skip warm-up
+    // Se siamo nella gap tra le due sessioni, warmup RIDOTTO (solo feed).
+    // Un utente reale che apre LinkedIn fuori orario guarda comunque il feed.
+    // Skip totale = sospetto (il browser si apre e va dritto su SalesNav).
     if (config.warmupTwoSessionsPerDay && sessionWindow === 'gap') {
-        await logInfo('session_warmer.skipped_gap', {
-            reason: 'Between session windows (lunch break simulation)',
+        await logInfo('session_warmer.reduced_gap', {
+            reason: 'Between session windows — reduced warmup (feed only)',
         });
+        try {
+            await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
+            await dismissKnownOverlays(page);
+            await humanDelay(page, 2000, 4000);
+            await simulateHumanReading(page);
+            await humanDelay(page, 1000, 2000);
+        } catch (e) {
+            await logWarn('session_warmer.reduced_gap_error', { error: e instanceof Error ? e.message : String(e) });
+        }
         return;
     }
 

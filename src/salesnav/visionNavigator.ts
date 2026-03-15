@@ -126,9 +126,12 @@ function classifyVisionError(error: unknown): Error {
     const message = error instanceof Error ? error.message : String(error);
     // Lazy-import to avoid circular dependency
     const { config: appConfig } = require('../config') as typeof import('../config');
-    const hint = appConfig.visionProvider === 'openai'
+    const provider = appConfig.visionProvider;
+    const hint = provider === 'openai'
         ? 'Verifica che OPENAI_API_KEY sia valida e che il servizio sia raggiungibile.'
-        : `Verifica che Ollama sia attivo su ${appConfig.ollamaEndpoint} e che il modello ${appConfig.visionModelOllama} sia disponibile.`;
+        : provider === 'ollama'
+            ? `Verifica che Ollama sia attivo su ${appConfig.ollamaEndpoint} e che il modello ${appConfig.visionModelOllama} sia disponibile.`
+            : `Verifica OPENAI_API_KEY o che Ollama sia attivo su ${appConfig.ollamaEndpoint} con modello ${appConfig.visionModelOllama}.`;
 
     if (/ECONNREFUSED|ENOTFOUND|ETIMEDOUT|circuit.?open|fetch failed|socket hang up/i.test(message)) {
         return new OllamaDownError(`${message}. ${hint}`);
