@@ -378,7 +378,11 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                 browser = await Camoufox({
                     user_data_dir: sessionDir,
                     headless: headless,
-                    humanize: config.camoufoxHumanize,
+                    // humanize DISABILITATO: il nostro MouseGenerator (Bézier + fractal noise +
+                    // micro-tremor + Fitts's Law) è più sofisticato. humanize di Camoufox
+                    // causa freeze quando il mouse reale dell'utente compete con Playwright CDP
+                    // (cfr. camoufox issue #139). Il nostro sistema è al 100% controllato da noi.
+                    humanize: false,
                     geoip: currentProxy ? '93.63.96.1' : config.camoufoxGeoip,
                     block_webrtc: config.camoufoxBlockWebrtc,
                     locale: fingerprint.locale ?? 'it-IT',
