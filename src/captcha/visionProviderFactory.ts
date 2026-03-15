@@ -96,6 +96,69 @@ class HybridVisionProvider implements VisionProvider {
     }
 }
 
+/**
+ * Provider local-first: Ollama locale primary → OpenAI fallback.
+ * Ottimale per anti-ban: zero traffico rete extra durante la sessione LinkedIn.
+ * OpenAI viene usato SOLO se Ollama non è raggiungibile o fallisce.
+ */
+class LocalFirstHybridVisionProvider implements VisionProvider {
+    readonly name = 'local-first';
+    private primary: OllamaVisionProvider;
+    private fallback: OpenAIVisionProvider;
+    private primaryFailed = false;
+
+    constructor(primary: OllamaVisionProvider, fallback: OpenAIVisionProvider) {
+        this.primary = primary;
+        this.fallback = fallback;
+    }
+
+    async analyzeImage(base64Image: string, prompt: string): Promise<VisionAnalysisResult> {
+        if (!this.primaryFailed) {
+            try {
+                return await this.primary.analyzeImage(base64Image, prompt);
+            } catch (error) {
+                void logWarn('vision.local_first.ollama_failed', {
+                    error: error instanceof Error ? error.message : String(error),
+                });
+                this.primaryFailed = true;
+            }
+        }
+        return this.fallback.analyzeImage(base64Image, prompt);
+    }
+
+    async findCoordinates(
+        base64Image: string,
+        description: string,
+        viewportBounds?: { width: number; height: number },
+    ): Promise<Coordinates | null> {
+        if (!this.primaryFailed) {
+            try {
+                return await this.primary.findCoordinates(base64Image, description, viewportBounds);
+            } catch (error) {
+                void logWarn('vision.local_first.ollama_coords_failed', {
+                    error: error instanceof Error ? error.message : String(error),
+                });
+                this.primaryFailed = true;
+            }
+        }
+        return this.fallback.findCoordinates(base64Image, description, viewportBounds);
+    }
+
+    async isAvailable(): Promise<boolean> {
+        const localOk = await this.primary.isAvailable();
+        if (localOk) return true;
+        return this.fallback.isAvailable();
+    }
+
+    getOpenAIProvider(): OpenAIVisionProvider | null {
+        return this.primaryFailed ? this.fallback : null;
+    }
+
+    get sessionCostUsd(): number {
+        return this.fallback.currentSessionCostUsd;
+    }
+}
+
 let _cachedProvider: VisionProvider | null = null;
 let _cachedConfigHash = '';
 
@@ -162,6 +225,26 @@ export function createVisionProvider(overrideConfig?: Partial<VisionProviderConf
                 model: cfg.ollamaModel,
                 temperature: cfg.temperature,
             });
+            break;
+        }
+        case 'local-first': {
+            const localPrimary = new OllamaVisionProvider({
+                endpoint: cfg.ollamaEndpoint,
+                model: cfg.ollamaModel,
+                temperature: cfg.temperature,
+            });
+            if (cfg.openaiApiKey) {
+                const cloudFallback = new OpenAIVisionProvider({
+                    apiKey: cfg.openaiApiKey,
+                    model: cfg.openaiModel,
+                    temperature: cfg.temperature,
+                    budgetMaxUsd: cfg.budgetMaxUsd,
+                    redactScreenshots: cfg.redactScreenshots,
+                });
+                provider = new LocalFirstHybridVisionProvider(localPrimary, cloudFallback);
+            } else {
+                provider = localPrimary;
+            }
             break;
         }
         case 'auto':

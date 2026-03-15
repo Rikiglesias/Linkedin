@@ -309,7 +309,7 @@ export interface AppConfig {
     postCreationEnabled: boolean;
     postCreationMaxPerDay: number;
     postCreationDefaultTone: 'professional' | 'casual' | 'inspirational' | 'educational' | 'storytelling';
-    visionProvider: 'auto' | 'openai' | 'ollama';
+    visionProvider: 'auto' | 'local-first' | 'openai' | 'ollama';
     visionModelOpenai: string;
     visionModelOllama: string;
     visionBudgetMaxUsd: number;

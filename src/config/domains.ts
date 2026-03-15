@@ -344,9 +344,9 @@ export function buildProxyDomainConfig() {
 
 export function buildVisionDomainConfig() {
     return {
-        visionProvider: ((): 'auto' | 'openai' | 'ollama' => {
+        visionProvider: ((): 'auto' | 'local-first' | 'openai' | 'ollama' => {
             const raw = parseStringEnv('VISION_PROVIDER', 'auto');
-            if (raw === 'openai' || raw === 'ollama') return raw;
+            if (raw === 'openai' || raw === 'ollama' || raw === 'local-first') return raw;
             return 'auto';
         })(),
         visionModelOpenai: parseStringEnv('VISION_MODEL_OPENAI', 'gpt-5.4'),

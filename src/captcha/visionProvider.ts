@@ -12,8 +12,8 @@ export interface Coordinates {
 }
 
 export interface VisionProviderConfig {
-    /** 'auto' = GPT-5.4 primary → Ollama fallback. 'openai' = solo GPT-5.4. 'ollama' = solo locale. */
-    provider: 'auto' | 'openai' | 'ollama';
+    /** 'auto' = GPT-5.4 primary → Ollama fallback. 'local-first' = Ollama primary → OpenAI fallback. 'openai' = solo GPT-5.4. 'ollama' = solo locale. */
+    provider: 'auto' | 'local-first' | 'openai' | 'ollama';
     /** Ollama endpoint (default: http://127.0.0.1:11434) */
     ollamaEndpoint: string;
     /** Ollama model (default: llava-llama3:8b) */
