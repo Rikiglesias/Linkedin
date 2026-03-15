@@ -60,7 +60,9 @@ export async function askChoice<T extends string>(prompt: string, choices: T[], 
 
 /**
  * Rileva se lo stdin è un terminale interattivo.
+ * Su Windows, `npm start` non passa stdin come TTY ma stdout sì —
+ * usiamo stdout.isTTY come fallback per non saltare le domande interattive.
  */
 export function isInteractiveTTY(): boolean {
-    return process.stdin.isTTY === true;
+    return process.stdin.isTTY === true || process.stdout.isTTY === true;
 }

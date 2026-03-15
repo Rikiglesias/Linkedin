@@ -4,11 +4,12 @@ import {
     dismissKnownOverlays,
     humanDelay,
     isLoggedIn,
-    performDecoyAction,
     randomMouseMove,
 } from '../browser';
+import { config } from '../config';
 import { cleanText } from '../utils/text';
-import { pauseInputBlock, resumeInputBlock } from '../browser/humanBehavior';
+import { attemptChallengeResolution } from '../workers/challengeHandler';
+import { pauseInputBlock, resumeInputBlock, humanMouseMoveToCoords, removeAllOverlays } from '../browser/humanBehavior';
 import {
     isPageClosedError,
     getSafeMaxSearches,
@@ -19,7 +20,6 @@ import {
     reInjectOverlays,
     smartClick,
     safeVisionClick,
-    visionNavigationStep,
     findVisibleClickTarget,
     getViewButtonLocator,
     setInputBlockSuspended,
@@ -36,14 +36,13 @@ import {
 } from '../core/repositories';
 import type { SalesNavSyncRunRecord, SalesNavSyncRunSummary } from '../core/repositories.types';
 import {
-    visionContextualDelay,
     visionRead,
     visionReadTotalResults,
     visionVerify,
     visionWaitFor,
 } from './visionNavigator';
 import { checkDuplicates, extractProfileUrlsFromPage, saveExtractedProfiles } from './salesnavDedup';
-import { computerUseSelectList } from './computerUse';
+import { computerUseSelectList, computerUseTask } from './computerUse';
 // listScraper: navigateToSavedLists/scrapeLeadsFromSalesNavList non piu' usati — pre-sync usa vision-guided navigation
 import {
     SALESNAV_NEXT_PAGE_SELECTOR as NEXT_PAGE_SELECTOR,
@@ -55,6 +54,14 @@ import {
 export const SEARCHES_URL = 'https://www.linkedin.com/sales/search/saved-searches';
 
 // _inputBlockSuspended state managed by bulkSaveHelpers.ts (setInputBlockSuspended/isInputBlockSuspended)
+
+// Traccia se la lista target è già stata usata in questa sessione di bulk save.
+// Dopo il primo save riuscito, skip digitazione nome lista → click diretto (come un umano esperto).
+let _bulkSaveListFoundInSession = false;
+
+// Guard: evita registrazione multipla del page.on('load') handler sulla stessa Page.
+// Senza questo, ogni chiamata a runSalesNavBulkSave accumula handler → N re-inject per load.
+const _loadHandlerRegistered = new WeakSet<Page>();
 
 const VIEW_SAVED_SEARCH_SELECTOR = [
     'button:has-text("Visualizza")',
@@ -74,9 +81,15 @@ async function waitForManualLogin(page: Page, context: string): Promise<void> {
     const POLL_INTERVAL_MS = 5_000;
     const startTime = Date.now();
 
-    // Sospendi l'input blocker globalmente — impedisce che reInjectOverlays lo riattivi
-    setInputBlockSuspended(true);
+    // Sospendi l'input blocker globalmente — impedisce che reInjectOverlays lo riattivi.
+    // DEVE essere PRIMA di removeAllOverlays: così il page.on('load') non ri-inietta durante la rimozione.
+    setInputBlockSuspended(page, true);
     await pauseInputBlock(page);
+
+    // Rimuovi completamente TUTTI gli overlay dal DOM usando gli ID dinamici corretti.
+    // removeAllOverlays conosce gli ID generati da crypto.randomBytes (a differenza di ID hardcoded).
+    // Rimuove: stile cursor:none, classe root, cursore visuale, input block, toast.
+    await removeAllOverlays(page);
 
     console.warn(`[${context}] Sessione scaduta — in attesa del login manuale nel browser...`);
     console.warn(`[${context}] URL: ${page.url()}`);
@@ -85,11 +98,16 @@ async function waitForManualLogin(page: Page, context: string): Promise<void> {
     try {
         while (Date.now() - startTime < MAX_WAIT_MS) {
             await page.waitForTimeout(POLL_INTERVAL_MS);
-            if (await isLoggedIn(page)) {
-                const elapsed = Math.round((Date.now() - startTime) / 1000);
-                console.log(`[${context}] Login completato dopo ${elapsed}s. Riprendo...`);
-                await humanDelay(page, 1000, 2000);
-                return;
+            try {
+                if (await isLoggedIn(page)) {
+                    const elapsed = Math.round((Date.now() - startTime) / 1000);
+                    console.log(`[${context}] Login completato dopo ${elapsed}s. Riprendo...`);
+                    // Attendi che la pagina post-login si stabilizzi
+                    await humanDelay(page, 2000, 3000);
+                    return;
+                }
+            } catch {
+                // isLoggedIn può fallire durante navigazione/reload — ignora e riprova
             }
             const remaining = Math.round((MAX_WAIT_MS - (Date.now() - startTime)) / 1000);
             console.log(`[${context}] Ancora in attesa del login... (${remaining}s rimanenti)`);
@@ -99,8 +117,11 @@ async function waitForManualLogin(page: Page, context: string): Promise<void> {
             `Timeout: login manuale non completato entro 3 minuti. URL: ${page.url()}`,
         );
     } finally {
-        setInputBlockSuspended(false);
-        await resumeInputBlock(page).catch(() => { });
+        setInputBlockSuspended(page, false);
+        // Re-inject overlays COMPLETAMENTE — la pagina è cambiata durante il login
+        await reInjectOverlays(page).catch(() => { });
+        await dismissKnownOverlays(page).catch(() => { });
+        console.log(`[${context}] Overlay e input-block riattivati.`);
     }
 }
 
@@ -217,11 +238,13 @@ async function navigateToSavedSearches(page: Page): Promise<void> {
     const isOnSalesNav = (): boolean => page.url().toLowerCase().includes('/sales/');
 
     // Helper: verifica se siamo sulla pagina delle ricerche salvate
-    // MUST be on /sales/ AND see View buttons — altrimenti falsi positivi sulla homepage LinkedIn
+    // MUST be on /sales/search AND see View buttons — /sales/home ha bottoni "Visualizza" per alert/raccomandazioni
     const isOnSavedSearches = async (): Promise<boolean> => {
         const url = page.url().toLowerCase();
         if (!url.includes('/sales/')) return false;
         if (url.includes('/saved-searches') || url.includes('/saved_searches')) return true;
+        // Solo su /sales/search* i bottoni View indicano ricerche salvate (non sulla home)
+        if (!url.includes('/sales/search')) return false;
         const viewCount = await page.locator(VIEW_SAVED_SEARCH_SELECTOR).count().catch(() => 0);
         return viewCount > 0;
     };
@@ -230,6 +253,14 @@ async function navigateToSavedSearches(page: Page): Promise<void> {
     const isOnSearchSection = async (): Promise<boolean> => {
         return page.url().toLowerCase().includes('/sales/search');
     };
+
+    // Fast-exit: se siamo GIÀ sulla pagina delle ricerche salvate, non navigare via
+    // (nel loop ricerche, dopo la prima iterazione siamo già qui)
+    if (await isOnSavedSearches()) {
+        console.log('[AI-NAV] Già sulla pagina delle ricerche salvate (skip navigazione).');
+        await humanDelay(page, 200, 400);
+        return;
+    }
 
     // ── Step 0: Vai alla home di Sales Navigator ──
     const salesNavHome = 'https://www.linkedin.com/sales/home';
@@ -274,24 +305,40 @@ async function navigateToSavedSearches(page: Page): Promise<void> {
         return;
     }
 
-    // ── Step 1: Dalla home SalesNav, trova e clicca "Search" / "Ricerca" ──
+    // ── Step 1: Dalla home SalesNav, naviga a Search (DOM-first, URL fallback) ──
+    // Vision AI NON usata qui — GPT-5.4 restituisce null sistematicamente per "Search"
+    // in SalesNav (il link è dentro un dropdown/nav non standard). DOM + URL diretto è
+    // affidabile al 100% e istantaneo.
     const onSearch = await isOnSearchSection();
     if (!onSearch) {
-        const searchOk = await visionNavigationStep(
-            page,
-            'Step 2/3: click su Search/Ricerca',
-            'Look at the Sales Navigator interface. Find and click on the "Search" or "Ricerca" navigation link/button in the top navigation bar. It may be a dropdown or a direct link. Click on the main Search navigation item.',
-            isOnSearchSection,
-            [
-                'a[href*="/sales/search"]',
-                'a:has-text("Search")',
-                'a:has-text("Ricerca")',
-                'button:has-text("Search")',
-                'nav a[href*="/search"]',
-            ],
-        );
-        if (!searchOk) {
-            console.log('[AI-NAV] Fallback: navigazione diretta a /sales/search/saved-searches...');
+        console.log('[AI-NAV] Step 2/3: click su Search/Ricerca (DOM-first)...');
+        let searchClicked = false;
+
+        // Prova selettori DOM in ordine di affidabilità
+        const searchSelectors = [
+            'a[href*="/sales/search"]',
+            'a:has-text("Search")',
+            'a:has-text("Ricerca")',
+            'button:has-text("Search")',
+            'nav a[href*="/search"]',
+        ];
+        for (const sel of searchSelectors) {
+            const locator = page.locator(sel).first();
+            if ((await locator.count().catch(() => 0)) > 0) {
+                const box = await locator.boundingBox().catch(() => null);
+                if (box && box.width > 3 && box.height > 3) {
+                    console.log(`[AI-NAV] Search trovata via DOM: ${sel}`);
+                    await smartClick(page, box);
+                    await page.waitForLoadState('domcontentloaded', { timeout: 15_000 }).catch(() => null);
+                    await humanDelay(page, 800, 1_500);
+                    searchClicked = true;
+                    break;
+                }
+            }
+        }
+
+        if (!searchClicked || !(await isOnSearchSection())) {
+            console.log('[AI-NAV] DOM fallback: navigazione diretta a /sales/search/saved-searches...');
             await page.goto(SEARCHES_URL, { waitUntil: 'domcontentloaded', timeout: 60_000 });
             await dismissTransientUi(page);
             await humanDelay(page, 800, 1_500);
@@ -305,26 +352,36 @@ async function navigateToSavedSearches(page: Page): Promise<void> {
         return;
     }
 
-    // ── Step 2: Trova e clicca "Saved searches" / "Ricerche salvate" ──
-    const savedOk = await visionNavigationStep(
-        page,
-        'Step 3/3: click su Saved searches / Ricerche salvate',
-        'Look at this LinkedIn Sales Navigator page. Find and click on "Saved searches", "Ricerche salvate", or any tab/link/button that leads to the list of previously saved searches. It might be a tab at the top of the search section, a sidebar link, or a dropdown option.',
-        isOnSavedSearches,
-        [
-            'a:has-text("Saved searches")',
-            'a:has-text("Ricerche salvate")',
-            'button:has-text("Saved searches")',
-            'button:has-text("Ricerche salvate")',
-            '[role="tab"]:has-text("Saved searches")',
-            '[role="tab"]:has-text("Ricerche salvate")',
-            'a[href*="saved-searches"]',
-            'a[href*="saved_searches"]',
-        ],
-    );
+    // ── Step 2: Trova e clicca "Saved searches" / "Ricerche salvate" (DOM-first) ──
+    console.log('[AI-NAV] Step 3/3: click su Saved searches (DOM-first)...');
+    let savedClicked = false;
+    const savedSelectors = [
+        'a[href*="saved-searches"]',
+        'a[href*="saved_searches"]',
+        'a:has-text("Saved searches")',
+        'a:has-text("Ricerche salvate")',
+        'button:has-text("Saved searches")',
+        'button:has-text("Ricerche salvate")',
+        '[role="tab"]:has-text("Saved searches")',
+        '[role="tab"]:has-text("Ricerche salvate")',
+    ];
+    for (const sel of savedSelectors) {
+        const locator = page.locator(sel).first();
+        if ((await locator.count().catch(() => 0)) > 0) {
+            const box = await locator.boundingBox().catch(() => null);
+            if (box && box.width > 3 && box.height > 3) {
+                console.log(`[AI-NAV] Saved searches trovata via DOM: ${sel}`);
+                await smartClick(page, box);
+                await page.waitForLoadState('domcontentloaded', { timeout: 15_000 }).catch(() => null);
+                await humanDelay(page, 800, 1_500);
+                savedClicked = true;
+                break;
+            }
+        }
+    }
 
-    if (!savedOk) {
-        console.log('[AI-NAV] Tutti i tentativi falliti — provo URL diretto come ultimo tentativo...');
+    if (!savedClicked || !(await isOnSavedSearches())) {
+        console.log('[AI-NAV] URL diretto come fallback...');
         await page.goto(SEARCHES_URL, { waitUntil: 'domcontentloaded', timeout: 60_000 });
         await dismissTransientUi(page);
         await humanDelay(page, 800, 1_500);
@@ -336,7 +393,7 @@ async function navigateToSavedSearches(page: Page): Promise<void> {
         .then(() => true, () => false);
 
     if (!viewReady) {
-        await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => null);
+        await page.waitForLoadState('domcontentloaded', { timeout: 10_000 }).catch(() => null);
         await dismissTransientUi(page);
         await humanDelay(page, 500, 1_000);
         console.log('[AI-NAV] Bottoni View non trovati dopo navigazione, URL:', page.url());
@@ -446,12 +503,15 @@ async function clickSavedSearchView(page: Page, search: SavedSearchDescriptor, d
     } else {
         // Fallback: click Playwright diretto
         await pauseInputBlock(page);
-        await button.click();
-        await resumeInputBlock(page);
+        try {
+            await button.click({ timeout: 5_000 });
+        } finally {
+            await resumeInputBlock(page);
+        }
     }
 
     await humanDelay(page, 800, 1_400);
-    await page.waitForLoadState('domcontentloaded').catch((err) => {
+    await page.waitForLoadState('domcontentloaded', { timeout: 15_000 }).catch((err) => {
         console.warn('[WARN] domcontentloaded timeout dopo click ricerca salvata:', err instanceof Error ? err.message : String(err));
     });
     // Overlays auto-injected via 'load' event
@@ -590,6 +650,11 @@ async function openSaveToListDialog(page: Page, dryRun: boolean): Promise<void> 
                 await smartClick(page, box);
             } else {
                 console.log('[SAVE TO LIST] Strategia 3: button hidden, force click');
+                // Tentativo mouse move anche su elemento nascosto (best-effort)
+                const hiddenBox = await btn.boundingBox().catch(() => null);
+                if (hiddenBox) {
+                    await humanMouseMoveToCoords(page, hiddenBox.x + hiddenBox.width / 2, hiddenBox.y + hiddenBox.height / 2);
+                }
                 await btn.click({ force: true });
             }
             clicked = true;
@@ -669,17 +734,47 @@ async function chooseTargetList(page: Page, targetListName: string, dryRun: bool
     }
 
     const dialogContainerSelector = DIALOG_SELECTOR.split(', ')[0];
-    console.log(`[CHOOSE LIST] Cerco "${targetListName}" nel dialog...`);
+    console.log(`[CHOOSE LIST] Cerco "${targetListName}" nel dialog...${_bulkSaveListFoundInSession ? ' (fast path: lista già usata)' : ''}`);
+
+    // ── Fast path: se la lista è già stata usata in questa sessione, prova click diretto ──
+    // Un umano esperto che fa bulk save ripetitivo NON riscrive il nome ogni volta.
+    // La lista è in cima al dialog (recente) → click diretto.
+    if (_bulkSaveListFoundInSession) {
+        const directBox = await findVisibleClickTarget(page, [targetListName], dialogContainerSelector, true, true);
+        if (directBox) {
+            console.log(`[CHOOSE LIST] Fast path OK: click diretto a (${Math.round(directBox.x)},${Math.round(directBox.y)})`);
+            await smartClick(page, directBox);
+            await humanDelay(page, 300, 600);
+
+            // Verifica e chiudi dialog
+            const fastDialogClosed = await dialogLocator.waitFor({ state: 'hidden', timeout: 6_000 }).then(
+                () => true,
+                () => false,
+            );
+            if (fastDialogClosed) {
+                await verifyToast(page, targetListName);
+                return;
+            }
+            // Dialog ancora aperta → prova conferma
+            const confirmBox = await findVisibleClickTarget(
+                page,
+                ['save', 'salva', 'done', 'fatto', 'confirm', 'conferma'],
+                dialogContainerSelector,
+            );
+            if (confirmBox) {
+                await smartClick(page, confirmBox);
+                await dialogLocator.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => null);
+                await verifyToast(page, targetListName);
+                return;
+            }
+            // Fast path non ha chiuso il dialog → fall through alle strategie normali
+            console.log('[CHOOSE LIST] Fast path: dialog non chiusa, fallback a strategie standard...');
+        }
+    }
 
     // ── Strategia 0 (PRIMARIA): GPT-5.4 Computer Use ──
     // Il modello vede lo screenshot del dialog e decide autonomamente dove cliccare.
-    const apiKey = (() => {
-        try {
-            const { config: cfg } = require('../config') as typeof import('../config');
-            return cfg.openaiApiKey;
-        } catch { return ''; }
-    })();
-    if (apiKey) {
+    if (config.openaiApiKey) {
         console.log('[CHOOSE LIST] Strategia 0: GPT-5.4 Computer Use...');
         const cuResult = await computerUseSelectList(page, targetListName);
         if (cuResult.success) {
@@ -765,6 +860,13 @@ async function chooseTargetList(page: Page, targetListName: string, dryRun: bool
         const searchInput = dialogLocator.locator('input[type="text"], input[type="search"], input[placeholder*="Search"], input[placeholder*="Cerca"]').first();
         if ((await searchInput.count()) > 0) {
             console.log('[CHOOSE LIST] Strategia 1: filtro via campo ricerca (STRICT match)...');
+            // Mouse move umano sull'input prima di digitare
+            const inputBox = await searchInput.boundingBox().catch(() => null);
+            if (inputBox) {
+                await humanMouseMoveToCoords(page, inputBox.x + inputBox.width / 2 + (Math.random() * 6 - 3), inputBox.y + inputBox.height / 2 + (Math.random() * 4 - 2));
+            }
+            await searchInput.click();
+            await humanDelay(page, 150, 300);
             await searchInput.fill('');
             await humanDelay(page, 100, 200);
             await searchInput.type(targetListName, { delay: 25 + Math.floor(Math.random() * 20) });
@@ -779,6 +881,13 @@ async function chooseTargetList(page: Page, targetListName: string, dryRun: bool
             } else {
                 // Fallback: partial name search but still strict match
                 console.log('[CHOOSE LIST] Strategia 1: strict fallita, provo ricerca parziale...');
+                // Mouse move umano sull'input per il retry parziale
+                const retryBox = await searchInput.boundingBox().catch(() => null);
+                if (retryBox) {
+                    await humanMouseMoveToCoords(page, retryBox.x + retryBox.width / 2 + (Math.random() * 6 - 3), retryBox.y + retryBox.height / 2 + (Math.random() * 4 - 2));
+                }
+                await searchInput.click();
+                await humanDelay(page, 100, 200);
                 await searchInput.fill('');
                 await humanDelay(page, 100, 200);
                 const partialName = targetListName.substring(0, Math.min(25, targetListName.length));
@@ -936,6 +1045,9 @@ async function chooseTargetList(page: Page, targetListName: string, dryRun: bool
         // ── TOAST VERIFICATION ──
         await verifyToast(page, targetListName);
 
+        // Segna la lista come usata — dalla prossima pagina usa fast path (click diretto)
+        _bulkSaveListFoundInSession = true;
+
         // Success — exit the attempt loop
         break;
     }
@@ -1047,10 +1159,8 @@ async function clickNextPage(page: Page, dryRun: boolean): Promise<boolean> {
             postClickDelayMs: 1_000,
         });
     }
-    await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch((err) => {
-        console.warn('[WARN] networkidle timeout dopo click Next:', err instanceof Error ? err.message : String(err));
-    });
-    await humanDelay(page, 1000, 2_000);
+    await page.waitForLoadState('domcontentloaded', { timeout: 10_000 }).catch(() => null);
+    await humanDelay(page, 600, 1_200);
 
     // Verifica che la pagina sia effettivamente cambiata
     const pageAfter = await readPaginationInfo(page);
@@ -1058,9 +1168,15 @@ async function clickNextPage(page: Page, dryRun: boolean): Promise<boolean> {
         console.warn(`[WARN] Click Next non ha cambiato pagina (prima: ${pageBefore.current}, dopo: ${pageAfter.current}). Riprovo con click diretto...`);
         // Fallback: click diretto con force
         await nextButton.click({ force: true }).catch(() => { });
-        await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => { });
-        await humanDelay(page, 1000, 2_000);
+        // domcontentloaded (non networkidle — SalesNav ha WebSocket permanente)
+        await page.waitForLoadState('domcontentloaded', { timeout: 10_000 }).catch(() => { });
+        await humanDelay(page, 600, 1_200);
     }
+
+    // Attendi che le card lead appaiano nel DOM (lazy rendering post-navigazione).
+    // Senza questo, scrollAndReadPage inizia prima che le card siano renderizzate.
+    await page.waitForSelector('a[href*="/sales/lead/"], a[href*="/sales/people/"]', { timeout: 8_000 }).catch(() => null);
+
     return true;
 }
 
@@ -1074,81 +1190,85 @@ async function clickNextPage(page: Page, dryRun: boolean): Promise<boolean> {
  * Garantisce il rendering lazy di SalesNav accumulando gli ID in un Set globale.
  * Restituisce il numero di lead card trovate nel DOM dopo lo scroll completo.
  */
-export async function scrollAndReadPage(page: Page): Promise<number> {
+export async function scrollAndReadPage(page: Page, fast: boolean = false): Promise<number> {
     const viewport = page.viewportSize() ?? { width: 1400, height: 900 };
 
-    // Set globale per accumulare ID lead (il virtual scroller rimuove card fuori viewport)
-    await page.evaluate(() => {
-        const w = window as unknown as Record<string, unknown>;
-        w.__collectedLeadIds = new Set<string>();
-    });
+    // Accumula ID lead lato Node (NON lato browser — evita fingerprint window.__collectedLeadIds)
+    const collectedLeadIds = new Set<string>();
 
     const collectVisibleLeads = async (): Promise<number> => {
-        return page.evaluate(() => {
+        const newIds = await page.evaluate(() => {
             const anchors = document.querySelectorAll('a[href*="/sales/lead/"], a[href*="/sales/people/"]');
-            const w = window as unknown as Record<string, unknown>;
-            const collected = w.__collectedLeadIds as Set<string>;
+            const ids: string[] = [];
             for (const a of anchors) {
                 const href = a.getAttribute('href') ?? '';
                 const id = href.match(/\/(lead|people)\/([^,/?]+)/)?.[2];
-                if (id) collected.add(id);
+                if (id) ids.push(id);
             }
-            return collected.size;
+            return ids;
         });
+        for (const id of newIds) collectedLeadIds.add(id);
+        return collectedLeadIds.size;
     };
 
-    // Posiziona mouse nell'area risultati
+    // Posiziona mouse nell'area risultati (curva Bezier, no teletrasporto)
     const mouseX = Math.round(viewport.width * 0.6);
     const mouseY = Math.round(viewport.height * 0.4);
-    await page.mouse.move(mouseX, mouseY);
+    await humanMouseMoveToCoords(page, mouseX, mouseY);
     await page.waitForTimeout(100 + Math.floor(Math.random() * 150));
 
     const initialCount = await collectVisibleLeads();
 
-    // Trova container scrollabile (SalesNav usa div interno, non body)
+    // Trova container scrollabile (SalesNav usa div interno, non body).
+    // Ritorna l'indice nell'elenco DOM invece di settare un attributo visibile —
+    // data-scroll-target era un fingerprint rilevabile da LinkedIn.
     const scrollContainerInfo = await page.evaluate(() => {
         const allElements = document.querySelectorAll('div, main, section, [role="main"]');
-        let bestContainer: HTMLElement | null = null;
+        let bestIndex = -1;
         let bestDiff = 0;
-        for (const el of allElements) {
-            const htmlEl = el as HTMLElement;
+        for (let idx = 0; idx < allElements.length; idx++) {
+            const htmlEl = allElements[idx] as HTMLElement;
             const diff = htmlEl.scrollHeight - htmlEl.clientHeight;
             if (diff > 50 && diff > bestDiff) {
                 const hasLeads = htmlEl.querySelector('a[href*="/sales/lead/"], a[href*="/sales/people/"]');
                 if (hasLeads) {
-                    bestContainer = htmlEl;
+                    bestIndex = idx;
                     bestDiff = diff;
                 }
             }
         }
-        if (bestContainer) {
-            bestContainer.setAttribute('data-scroll-target', 'true');
+        if (bestIndex >= 0) {
+            const best = allElements[bestIndex] as HTMLElement;
             return {
                 found: true,
-                scrollHeight: bestContainer.scrollHeight,
-                clientHeight: bestContainer.clientHeight,
+                index: bestIndex,
+                scrollHeight: best.scrollHeight,
+                clientHeight: best.clientHeight,
                 overflow: bestDiff,
             };
         }
-        return { found: false, scrollHeight: 0, clientHeight: 0, overflow: 0 };
+        return { found: false, index: -1, scrollHeight: 0, clientHeight: 0, overflow: 0 };
     });
 
     console.log(
-        `[SCROLL] Container: ${scrollContainerInfo.found ? 'OK' : 'body'}` +
+        `[SCROLL${fast ? ' FAST' : ''}] Container: ${scrollContainerInfo.found ? 'OK' : 'body'}` +
         ` | overflow=${scrollContainerInfo.overflow}px | Lead iniziali: ${initialCount}`,
     );
 
     // ── Scroll con velocità variabile ──
-    const MAX_STEPS = 20;
+    // fast=true: scroll veloce solo per caricare le card nel DOM (bulk save — l'utente NON legge i profili)
+    // fast=false: scroll umano con pause di lettura (navigazione esplorativa)
+    const MAX_STEPS = fast ? 12 : 20;
     let noNewLeadsCount = 0;
 
-    // Funzione di scroll singola (container o wheel)
+    // Funzione di scroll singola (container via indice o wheel)
+    const containerIndex = scrollContainerInfo.index;
     const doScroll = async (delta: number): Promise<void> => {
         if (scrollContainerInfo.found) {
-            await page.evaluate((d: number) => {
-                const container = document.querySelector('[data-scroll-target="true"]');
-                if (container) (container as HTMLElement).scrollTop += d;
-            }, delta);
+            await page.evaluate(({ d, idx }) => {
+                const el = document.querySelectorAll('div, main, section, [role="main"]')[idx] as HTMLElement | undefined;
+                if (el) el.scrollTop += d;
+            }, { d: delta, idx: containerIndex });
         } else {
             await page.mouse.wheel(0, delta);
         }
@@ -1157,28 +1277,48 @@ export async function scrollAndReadPage(page: Page): Promise<number> {
     for (let i = 0; i < MAX_STEPS; i++) {
         const countBefore = await collectVisibleLeads();
 
-        // ── Decide il "ritmo" di questo step ──
-        const roll = Math.random();
-
-        if (roll < 0.25) {
-            // 25%: BURST — 2-3 scroll rapidi consecutivi (come chi scorre veloce cercando)
+        if (fast) {
+            // FAST MODE: burst scroll rapidi — solo per caricare le card nel DOM.
+            // Un power user SalesNav che fa bulk save scorre veloce senza leggere.
             const burstCount = 2 + Math.floor(Math.random() * 2);
             for (let b = 0; b < burstCount; b++) {
-                const delta = 400 + Math.floor(Math.random() * 250);
+                const delta = 450 + Math.floor(Math.random() * 300);
                 await doScroll(delta);
-                await page.waitForTimeout(60 + Math.floor(Math.random() * 60));
+                await page.waitForTimeout(40 + Math.floor(Math.random() * 40));
             }
-            await page.waitForTimeout(120 + Math.floor(Math.random() * 150));
-        } else if (roll < 0.33) {
-            // 8%: PAUSA BREVE — scroll piccolo, poi pausa (come chi si ferma un attimo)
-            const delta = 200 + Math.floor(Math.random() * 150);
-            await doScroll(delta);
-            await page.waitForTimeout(600 + Math.floor(Math.random() * 600));
+            // Attendi lazy-load: SalesNav rende le card 500-1000ms dopo lo scroll.
+            // Senza questo wait, il bot vede 0 nuovi lead ed esce troppo presto.
+            const prevCount = collectedLeadIds.size;
+            await page.waitForFunction(
+                (prev) => document.querySelectorAll('a[href*="/sales/lead/"], a[href*="/sales/people/"]').length > prev,
+                prevCount,
+                { timeout: 1_500 },
+            ).catch(() => null);
+            await page.waitForTimeout(80 + Math.floor(Math.random() * 100));
         } else {
-            // 67%: SCROLL NORMALE — delta variabile, pausa breve
-            const delta = 300 + Math.floor(Math.random() * 200);
-            await doScroll(delta);
-            await page.waitForTimeout(140 + Math.floor(Math.random() * 120));
+            // ── Decide il "ritmo" di questo step ──
+            const roll = Math.random();
+
+            if (roll < 0.25) {
+                // 25%: BURST — 2-3 scroll rapidi consecutivi (come chi scorre veloce cercando)
+                const burstCount = 2 + Math.floor(Math.random() * 2);
+                for (let b = 0; b < burstCount; b++) {
+                    const delta = 400 + Math.floor(Math.random() * 250);
+                    await doScroll(delta);
+                    await page.waitForTimeout(60 + Math.floor(Math.random() * 60));
+                }
+                await page.waitForTimeout(120 + Math.floor(Math.random() * 150));
+            } else if (roll < 0.33) {
+                // 8%: PAUSA BREVE — scroll piccolo, poi pausa (come chi si ferma un attimo)
+                const delta = 200 + Math.floor(Math.random() * 150);
+                await doScroll(delta);
+                await page.waitForTimeout(600 + Math.floor(Math.random() * 600));
+            } else {
+                // 67%: SCROLL NORMALE — delta variabile, pausa breve
+                const delta = 300 + Math.floor(Math.random() * 200);
+                await doScroll(delta);
+                await page.waitForTimeout(140 + Math.floor(Math.random() * 120));
+            }
         }
 
         // Controlla skeleton/loader solo ogni 4 step (non ad ogni step — troppo lento)
@@ -1192,45 +1332,55 @@ export async function scrollAndReadPage(page: Page): Promise<number> {
         const countAfter = await collectVisibleLeads();
 
         if (countAfter > countBefore) {
-            // Nuovi lead trovati — rallenta leggermente (come chi "nota" il contenuto)
+            if (!fast) {
+                // Nuovi lead trovati — rallenta leggermente (come chi "nota" il contenuto)
+                await page.waitForTimeout(200 + Math.floor(Math.random() * 300));
+            }
             console.log(`[SCROLL] Step ${i + 1}: ${countAfter} lead (+${countAfter - countBefore})`);
-            await page.waitForTimeout(200 + Math.floor(Math.random() * 300));
             noNewLeadsCount = 0;
         } else {
             noNewLeadsCount++;
-            if (noNewLeadsCount >= 3) break; // Fine contenuto
+            // fast: 4 step senza nuovi lead (lazy-load può essere lento), normal: 3
+            if (noNewLeadsCount >= (fast ? 4 : 3)) break;
         }
 
-        // Micro-movimento mouse occasionale (20%)
-        if (Math.random() < 0.20) {
+        // Micro-movimento mouse occasionale — skip in fast mode (un umano che fa bulk save non muove il mouse random)
+        if (!fast && Math.random() < 0.20) {
             const jitterX = mouseX + Math.floor(Math.random() * 80 - 40);
             const jitterY = mouseY + Math.floor(Math.random() * 50 - 25);
-            await page.mouse.move(jitterX, jitterY);
+            await humanMouseMoveToCoords(page, jitterX, jitterY);
         }
     }
 
-    // Cleanup marker
-    await page.evaluate(() => {
-        const el = document.querySelector('[data-scroll-target="true"]');
-        if (el) el.removeAttribute('data-scroll-target');
-    }).catch(() => { });
+    // Se in fast mode e abbiamo trovato meno di 20 lead (SalesNav mostra 25/pagina),
+    // prova un ultimo scroll-to-bottom + wait per lazy-load residuo.
+    if (fast && collectedLeadIds.size < 20 && collectedLeadIds.size > 0) {
+        if (scrollContainerInfo.found) {
+            await page.evaluate((idx: number) => {
+                const el = document.querySelectorAll('div, main, section, [role="main"]')[idx] as HTMLElement | undefined;
+                if (el) el.scrollTop = el.scrollHeight;
+            }, containerIndex);
+        } else {
+            await page.mouse.wheel(0, 3000);
+        }
+        await page.waitForFunction(
+            (prev) => document.querySelectorAll('a[href*="/sales/lead/"], a[href*="/sales/people/"]').length > prev,
+            collectedLeadIds.size,
+            { timeout: 2_000 },
+        ).catch(() => null);
+        await collectVisibleLeads();
+    }
 
-    // Leggi totale accumulato
-    const leadCount = await page.evaluate(() => {
-        const w = window as unknown as Record<string, unknown>;
-        const collected = w.__collectedLeadIds as Set<string>;
-        const count = collected.size;
-        delete w.__collectedLeadIds;
-        return count;
-    });
+    // Totale accumulato lato Node — nessun cleanup DOM necessario
+    const leadCount = collectedLeadIds.size;
 
-    // Torna in cima — usa scrollTop diretto se abbiamo il container, altrimenti wheel rapido
+    // Torna in cima — usa scrollTop via indice se abbiamo il container, altrimenti wheel rapido
     if (scrollContainerInfo.found) {
-        await page.evaluate(() => {
-            const container = document.querySelector('[data-scroll-target="true"]');
-            if (container) (container as HTMLElement).scrollTop = 0;
+        await page.evaluate((idx: number) => {
+            const el = document.querySelectorAll('div, main, section, [role="main"]')[idx] as HTMLElement | undefined;
+            if (el) el.scrollTop = 0;
             window.scrollTo({ top: 0 });
-        });
+        }, containerIndex);
     } else {
         // Wheel veloce su (meno step del vecchio codice)
         for (let i = 0; i < 12; i++) {
@@ -1294,27 +1444,47 @@ async function dismissTransientUi(page: Page): Promise<void> {
  * Restituisce true se è sicuro procedere, false se bisogna fermarsi.
  */
 async function aiCheckPageHealth(page: Page): Promise<{ safe: boolean; warning: string | null }> {
+    // DOM-first: check rapido per testi sospetti senza screenshot AI.
+    // Se il DOM è pulito, ritorna safe immediatamente (0 token, 0 latenza).
     try {
+        const suspiciousText = await page.evaluate(() => {
+            const body = (document.body.innerText || '').toLowerCase();
+            const patterns = [
+                'unusual activity', 'attività insolita',
+                'restricted', 'limitato', 'sospeso', 'suspended',
+                'too fast', 'troppo veloce', 'slow down', 'rallenta',
+                'security verification', 'verifica di sicurezza',
+                'something went wrong', 'qualcosa è andato storto',
+                'captcha', 'robot',
+            ];
+            for (const p of patterns) {
+                if (body.includes(p)) return p;
+            }
+            return null;
+        });
+
+        if (!suspiciousText) {
+            return { safe: true, warning: null };
+        }
+
+        // Testo sospetto trovato → conferma con Vision AI (potrebbe essere un falso positivo)
         const response = await visionRead(
             page,
-            'Analyze this LinkedIn page. Check for ANY of these warning signals:\n' +
-            '- Rate limiting messages ("too fast", "limite raggiunto", "slow down")\n' +
-            '- Account restriction or suspension notices\n' +
-            '- CAPTCHA or security verification overlays\n' +
-            '- Error pages or "something went wrong" messages\n' +
-            '- Unusual banners blocking normal content\n\n' +
-            'If EVERYTHING looks normal (search results, lead cards visible), respond: "OK"\n' +
-            'If you see ANY warning signal, respond: "WARNING: [brief description]"',
+            `The page DOM contains the text "${suspiciousText}". Is this a warning/restriction from LinkedIn, or normal content? Answer "OK" if normal, "WARNING: description" if it's a real problem.`,
         );
         if (response.toUpperCase().startsWith('OK')) {
             return { safe: true, warning: null };
         }
         return { safe: false, warning: response };
     } catch {
-        // Se la vision fallisce, assumi safe e continua
         return { safe: true, warning: null };
     }
 }
+
+// Soglie jitterate per anti-detection noise — cambiano ad ogni sessione per evitare pattern fissi.
+// Un umano NON fa azioni a intervalli esatti di modulo (18, 36, 54...). Rigenerate ad ogni trigger.
+let _nextHoverAt = 15 + Math.floor(Math.random() * 8);  // ~15-22
+let _nextAiDelayAt = 8 + Math.floor(Math.random() * 6); // ~8-13
 
 async function runAntiDetectionNoise(page: Page, totalProcessedPages: number): Promise<void> {
     // Movimento mouse leggero (40% delle volte) — basso impatto
@@ -1325,26 +1495,24 @@ async function runAntiDetectionNoise(page: Page, totalProcessedPages: number): P
     if (Math.random() < 0.05) {
         await humanDelay(page, 1_000, 3_000);
     }
-    // Decoy browsing ogni ~18 pagine — meno aggressivo, niente tab switch
-    if (totalProcessedPages > 0 && totalProcessedPages % 18 === 0) {
-        const returnUrl = page.url();
-        await performDecoyAction(page);
-        await page.goto(returnUrl, { waitUntil: 'domcontentloaded' }).catch(() => null);
-        await humanDelay(page, 600, 1_200);
-        await waitForSearchResultsReady(page, 12_000);
+    // Micro-interazione SalesNav-safe con jitter: hover su un profilo (come un umano curioso).
+    // NON naviga fuori da SalesNav — page.goto() a /feed/ o /mynetwork/ nel mezzo del bulk save
+    // è un segnale di detection (navigazione senza click, referrer chain incoerente).
+    if (totalProcessedPages > 0 && totalProcessedPages >= _nextHoverAt) {
+        _nextHoverAt = totalProcessedPages + 14 + Math.floor(Math.random() * 10); // prossimo tra 14-23 pagine
+        const leadLink = page.locator('a[href*="/sales/lead/"], a[href*="/sales/people/"]').first();
+        if ((await leadLink.count().catch(() => 0)) > 0) {
+            await leadLink.hover().catch(() => null);
+            await humanDelay(page, 400, 900);
+        }
     }
 
-    // AI contextual delay: l'AI decide quanto aspettare basandosi sulla complessità della pagina.
-    // Ogni ~5 pagine usa vision per una pausa più intelligente (evita overhead costante).
-    if (totalProcessedPages > 0 && totalProcessedPages % 5 === 0) {
-        try {
-            const aiDelay = await visionContextualDelay(page);
-            console.log(`[AI] Pausa contestuale: ${Math.round(aiDelay / 1000)}s`);
-            await page.waitForTimeout(aiDelay);
-        } catch {
-            // Fallback a delay standard se vision non disponibile
-            await humanDelay(page, 2_000, 4_000);
-        }
+    // Pausa contestuale con jitter: delay casuale per anti-detection.
+    // Sostituisce visionContextualDelay (screenshot + AI) — un delay casuale è altrettanto
+    // efficace e costa 0 token. L'intervallo 2-5s simula un utente che si distrae brevemente.
+    if (totalProcessedPages > 0 && totalProcessedPages >= _nextAiDelayAt) {
+        _nextAiDelayAt = totalProcessedPages + 7 + Math.floor(Math.random() * 8);
+        await humanDelay(page, 2_000, 5_000);
     }
 }
 
@@ -1371,11 +1539,15 @@ async function processSearchPage(page: Page, targetListName: string, dryRun: boo
             if (error instanceof ChallengeDetectedError) throw error;
             console.log(`[RETRY] Tentativo ${attempt + 1}/3 fallito: ${lastError.message}`);
 
+            // Backoff esponenziale tra tentativi: 1-2s → 3-5s → (reload + 3-5s)
+            // Senza backoff, 3 retry rapidi peggiorano un eventuale rate limit.
+            const backoffMs = attempt === 0 ? 1000 + Math.random() * 1000 : 3000 + Math.random() * 2000;
+            await humanDelay(page, backoffMs, backoffMs * 1.3);
+
             if (attempt === 1) {
                 // Solo al 2° fallimento: reload come ultima risorsa
                 console.log('[RETRY] Ricarico pagina come fallback...');
                 await dismissTransientUi(page);
-                await humanDelay(page, 300, 600);
                 await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => null);
                 await waitForSearchResultsReady(page, 15_000);
                 await humanDelay(page, 300, 500);
@@ -1486,82 +1658,93 @@ async function preSyncListToDb(
 
     console.log(`[PRE-SYNC] URL corrente: ${page.url()}`);
 
-    // ── Step 3: Trova e clicca la lista target (GPT-5.4 Computer Use) ──
+    // ── Step 3: Trova e clicca la lista target (DOM-first, CU fallback) ──
     console.log(`[PRE-SYNC] Step 3/4: Cerco la lista "${targetListName}"...`);
 
     const urlBefore = page.url();
     let listClicked = false;
 
-    // Strategia primaria: GPT-5.4 Computer Use — il modello vede, clicca, e verifica da solo
-    const cuApiKey = (() => {
-        try {
-            const { config: cfg } = require('../config') as typeof import('../config');
-            return cfg.openaiApiKey;
-        } catch { return ''; }
-    })();
-    if (cuApiKey) {
-        console.log('[PRE-SYNC] Computer Use: GPT-5.4 cerca e apre la lista...');
-        const { computerUseTask } = require('./computerUse') as typeof import('./computerUse');
-        const cuResult = await computerUseTask(
-            page,
-            `You are on a LinkedIn Sales Navigator page showing a list of Lead Lists. ` +
-            `Find the list named "${targetListName}" and click on it to OPEN it. ` +
-            `The list name should be a clickable link — click directly on the text of the list name. ` +
-            `After clicking, verify that the page changed to show the list's members/leads. ` +
-            `If the page did NOT change (same URL, no lead profiles visible), it means you clicked in the wrong spot. ` +
-            `Try clicking directly on the list name text link instead. ` +
-            `If the list is not visible, scroll down to find it. ` +
-            `The current URL is: ${page.url()}. After opening the list, the URL should change to include a list ID.`,
-            { maxTurns: 10 },
-        );
-
-        if (cuResult.success) {
-            // Verifica: l'URL è cambiato? (la lista si è aperta)
-            const urlAfter = page.url();
-            if (urlAfter !== urlBefore && /\/sales\/lists\/people\/\w+/.test(urlAfter)) {
-                console.log(`[PRE-SYNC] ✓ Computer Use ha aperto la lista: ${urlAfter}`);
-                listClicked = true;
-            } else {
-                console.warn(`[PRE-SYNC] Computer Use completato ma URL non cambiato (${urlAfter})`);
-            }
-        } else {
-            console.warn(`[PRE-SYNC] Computer Use fallito: ${cuResult.error ?? 'sconosciuto'}`);
-        }
-    }
-
-    // Fallback DOM: se Computer Use non disponibile o fallito
-    if (!listClicked) {
-        console.log('[PRE-SYNC] Fallback: cerco la lista via DOM...');
+    // Strategia primaria: DOM locator — trova la lista in <100ms (vs 46k token e 15s di CU)
+    {
+        console.log('[PRE-SYNC] Cerco la lista via DOM...');
         const nameVariants = [targetListName];
         if (targetListName.length > 25) nameVariants.push(targetListName.substring(0, 25));
         if (targetListName.length > 15) nameVariants.push(targetListName.substring(0, 15));
 
         // Cerca link <a> con href /sales/lists/people/ che contenga il nome
-        const listLink = await page.evaluate((variants: string[]) => {
-            const anchors = Array.from(
-                document.querySelectorAll('a[href*="/sales/lists/people/"]'),
-            ) as HTMLAnchorElement[];
-            for (const anchor of anchors) {
-                const text = (anchor.innerText || anchor.textContent || '').trim().toLowerCase();
-                const container = anchor.closest('li, article, tr, div') as HTMLElement | null;
-                const containerText = (container?.innerText || '').trim().toLowerCase();
-                for (const variant of variants) {
-                    const lower = variant.toLowerCase();
-                    if (text.includes(lower) || containerText.includes(lower)) {
-                        const rect = anchor.getBoundingClientRect();
-                        if (rect.width > 5 && rect.height > 5) {
-                            return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+        // Strategia 1: click diretto via Playwright locator (bypassa overlay)
+        const listAnchors = page.locator('a[href*="/sales/lists/people/"]');
+        const anchorCount = await listAnchors.count().catch(() => 0);
+        console.log(`[PRE-SYNC] Trovati ${anchorCount} link a liste nel DOM`);
+
+        for (let i = 0; i < anchorCount; i++) {
+            const anchor = listAnchors.nth(i);
+            const text = ((await anchor.textContent({ timeout: 3_000 }).catch(() => '')) ?? '').trim().toLowerCase();
+            console.log(`[PRE-SYNC]   anchor[${i}]: "${text.substring(0, 60)}"`);
+            const matchesName = nameVariants.some((v) => text.includes(v.toLowerCase()));
+            if (matchesName) {
+                console.log(`[PRE-SYNC] Lista trovata via DOM locator: "${text.substring(0, 50)}"`);
+                await pauseInputBlock(page);
+                try {
+                    await anchor.scrollIntoViewIfNeeded({ timeout: 3_000 }).catch(() => null);
+                    await humanDelay(page, 300, 600);
+                    await anchor.click({ timeout: 5_000, force: true });
+                } finally {
+                    await resumeInputBlock(page);
+                }
+                listClicked = true;
+                break;
+            }
+        }
+
+        // Strategia 2: coordinate mouse (se locator non ha trovato match per nome)
+        if (!listClicked) {
+            const listLink = await page.evaluate((variants: string[]) => {
+                const anchors = Array.from(
+                    document.querySelectorAll('a[href*="/sales/lists/people/"]'),
+                ) as HTMLAnchorElement[];
+                for (const anchor of anchors) {
+                    const anchorText = (anchor.innerText || anchor.textContent || '').trim().toLowerCase();
+                    const container = anchor.closest('li, article, tr, div') as HTMLElement | null;
+                    const containerText = (container?.innerText || '').trim().toLowerCase();
+                    for (const variant of variants) {
+                        const lower = variant.toLowerCase();
+                        if (anchorText.includes(lower) || containerText.includes(lower)) {
+                            const rect = anchor.getBoundingClientRect();
+                            if (rect.width > 5 && rect.height > 5) {
+                                return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+                            }
                         }
                     }
                 }
-            }
-            return null;
-        }, nameVariants);
+                return null;
+            }, nameVariants);
 
-        if (listLink) {
-            console.log('[PRE-SYNC] Lista trovata via anchor DOM');
-            await smartClick(page, listLink);
-            listClicked = true;
+            if (listLink) {
+                console.log('[PRE-SYNC] Lista trovata via coordinate DOM');
+                await smartClick(page, listLink);
+                listClicked = true;
+            }
+        }
+    }
+
+    // Fallback: Computer Use se DOM non ha trovato la lista (nome diverso, non visibile, ecc.)
+    if (!listClicked && config.openaiApiKey) {
+        console.log('[PRE-SYNC] DOM non ha trovato la lista — provo Computer Use...');
+        const cuResult = await computerUseTask(
+            page,
+            `You are on a LinkedIn Sales Navigator page showing a list of Lead Lists. ` +
+            `Find the list named "${targetListName}" and click on it to OPEN it. ` +
+            `Click directly on the list name text link. If not visible, scroll down. ` +
+            `The current URL is: ${page.url()}. After opening, the URL should change to include a list ID.`,
+            { maxTurns: 6 },
+        );
+        if (cuResult.success) {
+            const urlAfter = page.url();
+            if (urlAfter !== urlBefore && /\/sales\/lists\/people\/\w+/.test(urlAfter)) {
+                console.log(`[PRE-SYNC] ✓ Computer Use ha aperto la lista: ${urlAfter}`);
+                listClicked = true;
+            }
         }
     }
 
@@ -1579,8 +1762,56 @@ async function preSyncListToDb(
     await humanDelay(page, 1_500, 2_500);
     await dismissTransientUi(page);
 
+    // Gestisci redirect a /sales/login dopo il click sulla lista (sessione scaduta)
+    // isLoggedIn può lanciare durante navigazione — se fallisce, assume sessione scaduta (safe default)
+    const stillLoggedIn = await isLoggedIn(page).catch(() => false);
+    if (page.url().toLowerCase().includes('/sales/login') || !stillLoggedIn) {
+        console.warn('[PRE-SYNC] Sessione scaduta dopo click lista — in attesa del login manuale...');
+        await waitForManualLogin(page, 'PRE-SYNC');
+        // Dopo il login, ri-naviga alla pagina delle liste e riprova
+        await page.goto('https://www.linkedin.com/sales/lists/people/', {
+            waitUntil: 'domcontentloaded',
+            timeout: 60_000,
+        });
+        await dismissTransientUi(page);
+        await humanDelay(page, 1_500, 2_500);
+        // Riprova click sulla lista — ora dovrebbe funzionare
+        const retryAnchor = page.locator('a[href*="/sales/lists/people/"]');
+        const retryCount = await retryAnchor.count().catch(() => 0);
+        let retryClicked = false;
+        const nameVariantsRetry = [targetListName];
+        if (targetListName.length > 25) nameVariantsRetry.push(targetListName.substring(0, 25));
+        for (let i = 0; i < retryCount; i++) {
+            const text = ((await retryAnchor.nth(i).textContent({ timeout: 3_000 }).catch(() => '')) ?? '').trim().toLowerCase();
+            if (nameVariantsRetry.some((v) => text.includes(v.toLowerCase()))) {
+                await pauseInputBlock(page);
+                try {
+                    await retryAnchor.nth(i).scrollIntoViewIfNeeded({ timeout: 3_000 }).catch(() => null);
+                    await humanDelay(page, 300, 600);
+                    await retryAnchor.nth(i).click({ timeout: 5_000, force: true });
+                } finally {
+                    await resumeInputBlock(page);
+                }
+                retryClicked = true;
+                break;
+            }
+        }
+        if (retryClicked) {
+            await page.waitForLoadState('domcontentloaded', { timeout: 15_000 }).catch(() => null);
+            await humanDelay(page, 1_500, 2_500);
+            await dismissTransientUi(page);
+        }
+    }
+
     const listUrl = page.url();
     console.log(`[PRE-SYNC] Lista aperta: ${listUrl}`);
+
+    // Verifica finale: se ancora su login o pagina sbagliata, abort pre-sync
+    if (listUrl.toLowerCase().includes('/sales/login') || !listUrl.toLowerCase().includes('/sales/')) {
+        console.warn(`[PRE-SYNC] ATTENZIONE: Non sulla pagina della lista (URL: ${listUrl})`);
+        console.warn('[PRE-SYNC] Il dedup si baserà solo sui dati già presenti nel DB.\n');
+        return { synced: 0, total: 0, listUrl: null };
+    }
 
     // ── Step 4: Scrapa tutti i membri pagina per pagina ──
     console.log('[PRE-SYNC] Step 4/4: Scansione di tutti i membri della lista...\n');
@@ -1655,6 +1886,9 @@ async function preSyncListToDb(
 }
 
 export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveOptions): Promise<SalesNavBulkSaveReport> {
+    // Reset cache lista — ogni sessione parte da zero
+    _bulkSaveListFoundInSession = false;
+
     const report = buildInitialReport(options);
     const dryRun = options.dryRun === true;
     const safeMaxPages = Math.max(1, Math.floor(options.maxPages));
@@ -1671,7 +1905,11 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
         await dismissKnownOverlays(page);
         // Auto re-inject overlays on every page load — elimina flash e "automazione in corso" ripetuto
         // + dismiss overlay LinkedIn nativi (cookie consent, premium upsell, download app)
-        page.on('load', () => { void reInjectOverlays(page).then(() => dismissKnownOverlays(page)).catch(() => null); });
+        // Guard: registra il handler una sola volta per Page (evita accumulo se chiamato 2x)
+        if (!_loadHandlerRegistered.has(page)) {
+            _loadHandlerRegistered.add(page);
+            page.on('load', () => { void reInjectOverlays(page).then(() => dismissKnownOverlays(page)).catch(() => null); });
+        }
 
         // ── PRE-SYNC: scarica i membri attuali della lista target dal sito e salvali nel DB ──
         // Così il dedup funziona anche al primo run o se i lead sono stati aggiunti manualmente.
@@ -1717,46 +1955,72 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
             throw new Error('Nessuna ricerca salvata trovata in Sales Navigator');
         }
 
-        // Match ricerca: supporta nomi multipli separati da virgola
-        // es. "Eventi 1-10,11-50,Paesi Bassi" → cerca ciascuno separatamente
+        // Match ricerca: prima match esatto sull'input completo, poi split per virgola
         let filteredSearches: SavedSearchDescriptor[] = [];
         if (normalizedRequestedSearchName.length > 0) {
-            // Splitta per virgola — supporta "A,B,C" come filtro multi-ricerca
-            const requestedNames = (options.searchName ?? '')
-                .split(',')
-                .map((s) => normalizeSearchName(s))
-                .filter((s) => s.length > 0);
+            // FASE 1: match esatto sull'input completo (PRIMA dello split per virgola).
+            // Se il nome della ricerca salvata contiene virgole (es. "Eventi 1-10, 11-50, Paesi Bassi"),
+            // lo split per virgola romperebbe il match. Proviamo prima il nome intero.
+            filteredSearches = discoveredSearches.filter(
+                (search) => normalizeSearchName(search.name) === normalizedRequestedSearchName,
+            );
+            if (filteredSearches.length === 0) {
+                filteredSearches = discoveredSearches.filter(
+                    (search) => normalizeSearchName(search.name).includes(normalizedRequestedSearchName) ||
+                        normalizedRequestedSearchName.includes(normalizeSearchName(search.name)),
+                );
+            }
+            if (filteredSearches.length > 0) {
+                console.log(`[SEARCH] Match diretto sull'input completo (${filteredSearches.length}):`);
+                for (const s of filteredSearches) {
+                    console.log(`  → "${s.name}"`);
+                }
+            }
 
-            if (requestedNames.length > 1) {
-                // Multi-search: match ogni nome richiesto contro le ricerche scoperte
-                for (const reqName of requestedNames) {
-                    const exact = discoveredSearches.filter(
-                        (search) => normalizeSearchName(search.name) === reqName,
-                    );
-                    if (exact.length > 0) {
-                        filteredSearches.push(...exact);
-                        continue;
+            // FASE 2: se nessun match sull'input completo, splitta per virgola e cerca ciascuno
+            if (filteredSearches.length === 0) {
+                const requestedNames = (options.searchName ?? '')
+                    .split(',')
+                    .map((s) => normalizeSearchName(s))
+                    .filter((s) => s.length > 0);
+
+                if (requestedNames.length > 1) {
+                    for (const reqName of requestedNames) {
+                        // Solo match esatto per frammento — no fuzzy su pezzi corti
+                        // per evitare che "spagna" matchi tutte le ricerche europee
+                        const exact = discoveredSearches.filter(
+                            (search) => normalizeSearchName(search.name) === reqName,
+                        );
+                        if (exact.length > 0) {
+                            filteredSearches.push(...exact);
+                            continue;
+                        }
+                        // Fuzzy solo se il frammento è lungo abbastanza (>10 char)
+                        if (reqName.length > 10) {
+                            const fuzzy = discoveredSearches.filter(
+                                (search) => normalizeSearchName(search.name).includes(reqName),
+                            );
+                            filteredSearches.push(...fuzzy);
+                        }
                     }
-                    const fuzzy = discoveredSearches.filter(
-                        (search) => normalizeSearchName(search.name).includes(reqName) || reqName.includes(normalizeSearchName(search.name)),
-                    );
-                    filteredSearches.push(...fuzzy);
-                }
-                // Deduplica per nome
-                const seen = new Set<string>();
-                filteredSearches = filteredSearches.filter((s) => {
-                    const key = normalizeSearchName(s.name);
-                    if (seen.has(key)) return false;
-                    seen.add(key);
-                    return true;
-                });
-                if (filteredSearches.length > 0) {
-                    console.log(`[SEARCH] Ricerche selezionate (${filteredSearches.length}/${discoveredSearches.length}):`);
-                    for (const s of filteredSearches) {
-                        console.log(`  → "${s.name}"`);
+                    const seen = new Set<string>();
+                    filteredSearches = filteredSearches.filter((s) => {
+                        const key = normalizeSearchName(s.name);
+                        if (seen.has(key)) return false;
+                        seen.add(key);
+                        return true;
+                    });
+                    if (filteredSearches.length > 0) {
+                        console.log(`[SEARCH] Ricerche selezionate per multi-match (${filteredSearches.length}/${discoveredSearches.length}):`);
+                        for (const s of filteredSearches) {
+                            console.log(`  → "${s.name}"`);
+                        }
                     }
                 }
-            } else {
+            }
+
+            // FASE 3: single name fallback (se FASE 1 e FASE 2 non hanno trovato nulla)
+            if (filteredSearches.length === 0) {
                 // Singolo nome: match esatto → contiene → contenuto in
                 // 1. Match esatto (normalizzato)
                 filteredSearches = discoveredSearches.filter(
@@ -1889,11 +2153,16 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                 await ensureNoChallenge(page);
 
                 // Read total results count once per search to cap maxPages accurately.
-                // Avoids navigating to empty pages beyond the real last page (bot pattern).
+                // DOM-first: readPaginationInfo è istantaneo. Vision AI solo come fallback.
                 if (!dryRun) {
-                    const totalResults = await visionReadTotalResults(page);
-                    if (totalResults !== null) {
-                        searchReport.totalResultsDetected = totalResults;
+                    const paginationData = await readPaginationInfo(page);
+                    if (paginationData && paginationData.total > 0) {
+                        searchReport.totalResultsDetected = paginationData.total * 25;
+                    } else {
+                        const totalResults = await visionReadTotalResults(page);
+                        if (totalResults !== null) {
+                            searchReport.totalResultsDetected = totalResults;
+                        }
                     }
                 }
 
@@ -1908,6 +2177,13 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
 
                 if (error instanceof ChallengeDetectedError) {
                     report.challengeDetected = true;
+                    // Tenta risoluzione automatica CAPTCHA prima di andare in pausa
+                    const resolved = await attemptChallengeResolution(page).catch(() => false);
+                    if (resolved) {
+                        console.log('[CHALLENGE] CAPTCHA risolto automaticamente — riprendo...');
+                        await humanDelay(page, 1500, 3000);
+                        continue;
+                    }
                     report.status = 'PAUSED';
                     if (run) {
                         await pauseSyncRun(run.id, message, {
@@ -1990,8 +2266,9 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                     break;
                 }
 
-                // ── FASE 0: AI health check — ogni 3 pagine l'AI verifica che non ci siano segnali sospetti ──
-                if (pageNumber > 1 && (pageNumber - 1) % 3 === 0) {
+                // ── FASE 0: AI health check — ogni 8 pagine l'AI verifica che non ci siano segnali sospetti ──
+                // Ridotto da 3 a 8: un power user SalesNav non si ferma ogni 3 pagine.
+                if (pageNumber > 1 && (pageNumber - 1) % 8 === 0) {
                     const healthCheck = await aiCheckPageHealth(page);
                     if (!healthCheck.safe) {
                         console.log(`[AI-WARN] Segnale sospetto rilevato: ${healthCheck.warning}`);
@@ -2008,9 +2285,9 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                 const currentDisplayPage = paginationInfo?.current ?? pageNumber;
                 const remaining = Math.max(0, totalPagesDetected - currentDisplayPage);
 
-                // ── FASE 2: Scroll umano — "leggi" tutta la pagina come farebbe un umano ──
-                // Questo carica tutte le lead card nel DOM (lazy rendering) e sembra naturale
-                const leadsOnPage = await scrollAndReadPage(page);
+                // ── FASE 2: Fast scroll — carica le card nel DOM (lazy rendering) ──
+                // fast=true: un power user SalesNav che fa bulk save scorre veloce senza leggere i profili
+                const leadsOnPage = await scrollAndReadPage(page, true);
                 console.log(
                     `[PAGE] Pagina ${currentDisplayPage}/${totalPagesDetected}` +
                     ` — ${leadsOnPage} lead trovati dopo scroll` +
@@ -2123,8 +2400,10 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                             }).catch((e: unknown) => console.error('[DB] addSyncItem error:', e)),
                         );
                     }
-                    // Fire DB writes — await them later (before next page)
+                    // Attendi DB writes PRIMA di aggiornare i contatori — se il DB fallisce
+                    // i contatori non devono incrementare (evita discrepanza report/DB su resume)
                     const dbWritePromise = dbWrites.length > 0 ? Promise.all(dbWrites) : null;
+                    if (dbWritePromise) await dbWritePromise;
 
                     report.pagesProcessed += 1;
                     report.totalLeadsSaved += dedupResult.newProfiles;
@@ -2149,9 +2428,6 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                             lastError: null,
                         });
                     }
-
-                    // Attendi DB writes prima di procedere
-                    if (dbWritePromise) await dbWritePromise;
 
                     await ensureNoChallenge(page);
                     await runAntiDetectionNoise(page, report.pagesProcessed);
@@ -2206,6 +2482,13 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
 
                     if (error instanceof ChallengeDetectedError || (await detectChallenge(page))) {
                         report.challengeDetected = true;
+                        // Tenta risoluzione automatica CAPTCHA prima di andare in pausa
+                        const resolved = await attemptChallengeResolution(page).catch(() => false);
+                        if (resolved) {
+                            console.log('[CHALLENGE] CAPTCHA risolto automaticamente — riprendo pagina...');
+                            await humanDelay(page, 1500, 3000);
+                            continue;
+                        }
                         report.status = 'PAUSED';
                         if (run) {
                             await pauseSyncRun(run.id, message, {
@@ -2281,7 +2564,16 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
 
         if (error instanceof ChallengeDetectedError) {
             report.challengeDetected = true;
-            report.status = 'PAUSED';
+            // Tenta risoluzione automatica CAPTCHA prima di andare in pausa
+            const resolved = await attemptChallengeResolution(page).catch(() => false);
+            if (resolved) {
+                console.log('[CHALLENGE] CAPTCHA risolto automaticamente nel catch globale.');
+                // Non possiamo fare continue qui (siamo nel catch globale) —
+                // segnaliamo successo ma il run è comunque terminato, verrà ripreso con --resume
+                report.status = 'PAUSED';
+            } else {
+                report.status = 'PAUSED';
+            }
             if (run) {
                 await pauseSyncRun(run.id, message, {
                     currentSearchIndex: currentAbsoluteSearchIndex,

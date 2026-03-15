@@ -10,6 +10,7 @@
  */
 
 import { Page } from 'playwright';
+import { humanMouseMoveToCoords } from './humanBehavior';
 
 // ─── Selectors noti per overlay LinkedIn ─────────────────────────────────────
 
@@ -44,11 +45,11 @@ const OVERLAY_RULES: readonly OverlayRule[] = [
         containerSelector: '#artdeco-toasts-wormhole .artdeco-toast-item',
         dismissSelector: '.artdeco-toast-item__dismiss, button[data-test-artdeco-toast-close-btn]',
     },
-    // ─── Cookie consent banner
+    // ─── Cookie consent banner — RIFIUTA sempre (non accettare tracking)
     {
         id: 'cookie_consent',
-        containerSelector: '.artdeco-global-alert--COOKIE_CONSENT, [data-test-id="cookie-consent"]',
-        dismissSelector: 'button[action-type="ACCEPT"], button:has-text("Accept"), button:has-text("Accetta")',
+        containerSelector: '.artdeco-global-alert--COOKIE_CONSENT, [data-test-id="cookie-consent"], #artdeco-global-alert-container',
+        dismissSelector: 'button[action-type="DENY"], button:has-text("Reject"), button:has-text("Rifiuta"), button:has-text("Decline"), button:has-text("Rifiuta tutti"), button:has-text("Reject all"), button:has-text("Only required"), button:has-text("Solo necessari")',
     },
     // ─── "Continua nel browser" / mobile app redirect prompt
     {
@@ -120,15 +121,22 @@ export async function dismissKnownOverlays(page: Page): Promise<number> {
             if (containerCount === 0) continue;
 
             // Cerca il bottone di chiusura dentro il container
-            const dismissBtn = page.locator(`${rule.containerSelector} ${rule.dismissSelector}`).first();
+            // Usa locator chain (non template string) per scoping corretto:
+            // `${container} ${a}, ${b}` → solo `a` è scoped, `b` è globale!
+            // locator(container).locator(dismiss) → tutto scoped correttamente
+            const dismissBtn = page.locator(rule.containerSelector).locator(rule.dismissSelector).first();
             const btnCount = await dismissBtn.count();
 
             if (btnCount > 0) {
                 const isVisible = await dismissBtn.isVisible().catch(() => false);
                 if (isVisible) {
+                    // Mouse move umano prima del click di chiusura overlay
+                    const btnBox = await dismissBtn.boundingBox().catch(() => null);
+                    if (btnBox) {
+                        await humanMouseMoveToCoords(page, btnBox.x + btnBox.width / 2, btnBox.y + btnBox.height / 2).catch(() => null);
+                    }
                     await dismissBtn.click({ timeout: 1500 }).catch(() => null);
                     dismissed++;
-                    // Breve pausa per animazione di chiusura
                     await page.waitForTimeout(150 + Math.random() * 200).catch(() => null);
                     continue;
                 }
@@ -140,6 +148,10 @@ export async function dismissKnownOverlays(page: Page): Promise<number> {
             if (standaloneCount > 0) {
                 const isVisible = await standaloneDismiss.isVisible().catch(() => false);
                 if (isVisible) {
+                    const standaloneBox = await standaloneDismiss.boundingBox().catch(() => null);
+                    if (standaloneBox) {
+                        await humanMouseMoveToCoords(page, standaloneBox.x + standaloneBox.width / 2, standaloneBox.y + standaloneBox.height / 2).catch(() => null);
+                    }
                     await standaloneDismiss.click({ timeout: 1500 }).catch(() => null);
                     dismissed++;
                     await page.waitForTimeout(150 + Math.random() * 200).catch(() => null);

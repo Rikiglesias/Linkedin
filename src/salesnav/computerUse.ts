@@ -12,6 +12,7 @@
  */
 
 import type { Page } from 'playwright';
+import { config } from '../config';
 import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { humanMouseMoveToCoords, pulseVisualCursorOverlay, pauseInputBlock, resumeInputBlock } from '../browser/humanBehavior';
@@ -66,13 +67,61 @@ export interface ComputerUseResult {
 // ── Config ──────────────────────────────────────────────────────
 
 function getApiKey(): string {
-    const { config } = require('../config') as typeof import('../config');
     return config.openaiApiKey;
 }
 
+/** Modello per Computer Use — GPT-5.4 con tool 'computer' (sostituisce il deprecato 'computer-use-preview'). */
+const COMPUTER_USE_MODEL = 'gpt-5.4';
+
 function getModel(): string {
-    const { config } = require('../config') as typeof import('../config');
-    return config.visionModelOpenai || 'gpt-5.4';
+    return COMPUTER_USE_MODEL;
+}
+
+// ── Session Token Tracker ───────────────────────────────────────
+// Tracking cumulativo dei token usati da Computer Use in questa sessione processo.
+// Previene spese eccessive se il modello gira in loop o viene chiamato troppe volte.
+
+interface CuSessionStats {
+    totalInputTokens: number;
+    totalOutputTokens: number;
+    totalCalls: number;
+    dailyDate: string;
+}
+
+const _cuStats: CuSessionStats = {
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    totalCalls: 0,
+    dailyDate: new Date().toISOString().slice(0, 10),
+};
+
+/** Cap giornaliero di token input per Computer Use. Default 2M token (~$6 a $3/M input). */
+const CU_DAILY_INPUT_TOKEN_CAP = 2_000_000;
+
+function trackUsage(usage: { input_tokens?: number; output_tokens?: number } | undefined): void {
+    if (!usage) return;
+    // Reset contatore se il giorno è cambiato
+    const today = new Date().toISOString().slice(0, 10);
+    if (_cuStats.dailyDate !== today) {
+        _cuStats.totalInputTokens = 0;
+        _cuStats.totalOutputTokens = 0;
+        _cuStats.totalCalls = 0;
+        _cuStats.dailyDate = today;
+    }
+    _cuStats.totalInputTokens += usage.input_tokens ?? 0;
+    _cuStats.totalOutputTokens += usage.output_tokens ?? 0;
+    _cuStats.totalCalls++;
+}
+
+function isDailyCapReached(): boolean {
+    const today = new Date().toISOString().slice(0, 10);
+    if (_cuStats.dailyDate !== today) return false;
+    return _cuStats.totalInputTokens >= CU_DAILY_INPUT_TOKEN_CAP;
+}
+
+/** Statistiche correnti Computer Use per logging/monitoring. */
+export function getComputerUseStats(): Readonly<CuSessionStats> {
+    return { ..._cuStats };
 }
 
 // ── Core API call ──────────────────────────────────────────────
@@ -101,6 +150,14 @@ async function callResponsesApi(body: Record<string, unknown>): Promise<Response
         },
     );
 
+    if (response.status === 404) {
+        const errorText = await response.text().catch(() => '');
+        if (errorText.includes('model_not_found') || errorText.includes('does not exist')) {
+            throw new Error(
+                `Computer Use API error: HTTP 404 Not Found — ${errorText.substring(0, 200)}`
+            );
+        }
+    }
     if (!response.ok) {
         const errorText = await response.text().catch(() => '');
         throw new Error(`Computer Use API error: HTTP ${response.status} ${response.statusText} — ${errorText.substring(0, 300)}`);
@@ -160,8 +217,17 @@ async function executeAction(page: Page, action: ComputerAction): Promise<void> 
 
         case 'keypress': {
             if (action.keys && action.keys.length > 0) {
+                // GPT-5.4 usa nomi UPPERCASE (TAB, ENTER, ESCAPE) ma Playwright vuole PascalCase (Tab, Enter, Escape)
+                const KEY_MAP: Record<string, string> = {
+                    TAB: 'Tab', ENTER: 'Enter', ESCAPE: 'Escape', BACKSPACE: 'Backspace',
+                    DELETE: 'Delete', SPACE: 'Space', ARROWUP: 'ArrowUp', ARROWDOWN: 'ArrowDown',
+                    ARROWLEFT: 'ArrowLeft', ARROWRIGHT: 'ArrowRight', HOME: 'Home', END: 'End',
+                    PAGEUP: 'PageUp', PAGEDOWN: 'PageDown', SHIFT: 'Shift', CONTROL: 'Control',
+                    ALT: 'Alt', META: 'Meta', F1: 'F1', F2: 'F2', F3: 'F3', F4: 'F4', F5: 'F5',
+                };
                 await pauseInputBlock(page);
-                for (const key of action.keys) {
+                for (const rawKey of action.keys) {
+                    const key = KEY_MAP[rawKey.toUpperCase()] ?? rawKey;
                     await page.keyboard.press(key);
                     await page.waitForTimeout(50 + Math.floor(Math.random() * 50));
                 }
@@ -244,17 +310,13 @@ export async function computerUseTask(
 
     console.log(`[COMPUTER USE] Task: "${task.substring(0, 80)}..." (max ${maxTurns} turns)`);
 
-    // Computer Use richiede modelli specifici (es. computer-use-preview).
-    // GPT-5.4 e altri modelli vision generici non lo supportano — skip silenzioso.
-    const model = getModel();
-    const COMPUTER_USE_COMPATIBLE_MODELS = ['computer-use-preview', 'gpt-4o-computer-use'];
-    if (!COMPUTER_USE_COMPATIBLE_MODELS.some((m) => model.includes(m))) {
-        return {
-            success: false,
-            turns: 0,
-            totalActions: 0,
-            error: `Modello "${model}" non supporta Computer Use — usa fallback DOM`,
-        };
+    // Daily cap check: evita spese eccessive se il modello è stato chiamato troppe volte oggi
+    if (isDailyCapReached()) {
+        const stats = getComputerUseStats();
+        const msg = `Daily cap raggiunto: ${stats.totalInputTokens.toLocaleString()} input tokens, ${stats.totalCalls} chiamate`;
+        console.warn(`[COMPUTER USE] ${msg}`);
+        void logWarn('computer_use.daily_cap_reached', { ...stats });
+        return { success: false, turns: 0, totalActions: 0, error: msg };
     }
 
     try {
@@ -263,13 +325,8 @@ export async function computerUseTask(
 
         let response = await callResponsesApi({
             model: getModel(),
-            tools: [{
-                type: 'computer_use_preview',
-                display_width: viewport.width,
-                display_height: viewport.height,
-                environment: 'browser',
-            }],
-            instructions: systemPrompt,
+            tools: [{ type: 'computer' }],
+            instructions: systemPrompt + ` The screen resolution is ${viewport.width}x${viewport.height} pixels.`,
             input: [
                 {
                     role: 'user',
@@ -287,11 +344,13 @@ export async function computerUseTask(
 
         previousResponseId = response.id;
 
+        trackUsage(response.usage);
         if (response.usage) {
             void logInfo('computer_use.usage', {
                 turn: 0,
                 inputTokens: response.usage.input_tokens,
                 outputTokens: response.usage.output_tokens,
+                cumulative: { input: _cuStats.totalInputTokens, output: _cuStats.totalOutputTokens, calls: _cuStats.totalCalls },
             });
         }
 
@@ -349,12 +408,7 @@ export async function computerUseTask(
 
             response = await callResponsesApi({
                 model: getModel(),
-                tools: [{
-                    type: 'computer_use_preview',
-                    display_width_px: viewport.width,
-                    display_height_px: viewport.height,
-                    environment: 'browser',
-                }],
+                tools: [{ type: 'computer' }],
                 previous_response_id: previousResponseId,
                 input: [
                     {
@@ -371,11 +425,13 @@ export async function computerUseTask(
 
             previousResponseId = response.id;
 
+            trackUsage(response.usage);
             if (response.usage) {
                 void logInfo('computer_use.usage', {
                     turn,
                     inputTokens: response.usage.input_tokens,
                     outputTokens: response.usage.output_tokens,
+                    cumulative: { input: _cuStats.totalInputTokens, output: _cuStats.totalOutputTokens, calls: _cuStats.totalCalls },
                 });
             }
         }

@@ -1,4 +1,5 @@
 import { checkLogin, closeBrowser, detectChallenge, humanDelay, launchBrowser } from '../browser';
+import { attemptChallengeResolution } from '../workers/challengeHandler';
 import { config } from '../config';
 import { handleChallengeDetected, quarantineAccount } from '../risk/incidentManager';
 import { logInfo, logWarn } from '../telemetry/logger';
@@ -159,17 +160,21 @@ async function processCompanyTarget(
         await humanDelay(page, 1700, 3000);
 
         if (await detectChallenge(page)) {
-            await handleChallengeDetected({
-                source: 'company_enrichment',
-                accountId: 'default',
-                message: 'Challenge rilevato durante enrichment',
-                extra: {
-                    targetId: target.id,
-                    listName: target.list_name,
-                    accountName: target.account_name,
-                },
-            });
-            throw new Error('Challenge rilevato durante enrichment');
+            const resolved = await attemptChallengeResolution(page).catch(() => false);
+            if (!resolved) {
+                await handleChallengeDetected({
+                    source: 'company_enrichment',
+                    accountId: 'default',
+                    message: 'Challenge rilevato durante enrichment',
+                    extra: {
+                        targetId: target.id,
+                        listName: target.list_name,
+                        accountName: target.account_name,
+                    },
+                });
+                throw new Error('Challenge rilevato durante enrichment');
+            }
+            await humanDelay(page, 1500, 3000);
         }
 
         profiles = await extractProfiles(page, options.maxProfilesPerCompany);

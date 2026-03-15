@@ -1,7 +1,8 @@
 import { Page } from 'playwright';
 import { detectChallenge, dismissKnownOverlays, humanDelay, humanMouseMove } from '../browser';
+import { attemptChallengeResolution } from '../workers/challengeHandler';
 import { cleanText } from '../utils/text';
-import { blockUserInput, pauseInputBlock, resumeInputBlock } from '../browser/humanBehavior';
+import { blockUserInput, pauseInputBlock, resumeInputBlock, humanMouseMoveToCoords } from '../browser/humanBehavior';
 import { isLinkedInUrl, normalizeLinkedInUrl } from '../linkedinUrl';
 import { SALESNAV_NEXT_PAGE_SELECTOR } from './selectors';
 
@@ -207,7 +208,7 @@ async function hoverRandomLeadCard(page: Page): Promise<void> {
             // Muovi il mouse verso la card con un po' di jitter
             const x = box.x + box.width * (0.2 + Math.random() * 0.6);
             const y = box.y + box.height * (0.2 + Math.random() * 0.6);
-            await page.mouse.move(x, y, { steps: 5 + Math.floor(Math.random() * 5) });
+            await humanMouseMoveToCoords(page, x, y);
         }
     } catch {
         // Best-effort hover
@@ -603,10 +604,16 @@ export async function scrapeLeadsFromSalesNavList(
             await lightListScroll(page);
         }
 
-        // Challenge check per pagina — interrompi subito se LinkedIn blocca
+        // Challenge check per pagina — tenta auto-risoluzione, interrompi solo se fallisce
         if (await detectChallenge(page)) {
-            console.log(`[SYNC] Challenge rilevato a pagina ${pageNumber}. Interruzione.`);
-            break;
+            console.log(`[SYNC] Challenge rilevato a pagina ${pageNumber}. Tentativo auto-risoluzione...`);
+            const resolved = await attemptChallengeResolution(page).catch(() => false);
+            if (!resolved) {
+                console.log(`[SYNC] Challenge NON risolto — interruzione.`);
+                break;
+            }
+            console.log(`[SYNC] Challenge risolto automaticamente — riprendo.`);
+            await humanDelay(page, 1500, 3000);
         }
 
         let rawCandidates = await extractRawLeadCandidates(page);

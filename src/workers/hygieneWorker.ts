@@ -6,7 +6,10 @@ import { humanDelay } from '../browser';
 import { clickWithFallback } from '../browser/uiFallback';
 import { visionClick, OllamaDownError } from '../salesnav/visionNavigator';
 import { config } from '../config';
+import { navigateToProfileForCheck } from '../browser/navigationContext';
 import { WorkerExecutionResult, workerResult } from './result';
+
+const HYGIENE_DAILY_WITHDRAW_CAP = 10;
 
 /** Vision fallback is available when a non-default Ollama endpoint is configured. */
 function isVisionAvailable(): boolean {
@@ -29,13 +32,14 @@ export async function processHygieneJob(
         return workerResult(0);
     }
 
-    await logInfo('hygiene.found_expired_invites', { count: expired.length, accountId: payload.accountId });
+    const cappedExpired = expired.slice(0, HYGIENE_DAILY_WITHDRAW_CAP);
+    await logInfo('hygiene.found_expired_invites', { count: expired.length, capped: cappedExpired.length, cap: HYGIENE_DAILY_WITHDRAW_CAP, accountId: payload.accountId });
     const page = context.session.page;
     const errors: Array<{ leadId: number; message: string }> = [];
     let processedCount = 0;
     let visionUsed = false;
 
-    for (const lead of expired) {
+    for (const lead of cappedExpired) {
         if (context.dryRun) {
             console.log(`[DRY RUN] Hygiene ritirerebbe invito per lead ${lead.linkedin_url}`);
             processedCount += 1;
@@ -43,7 +47,7 @@ export async function processHygieneJob(
         }
 
         try {
-            await page.goto(lead.linkedin_url, { waitUntil: 'domcontentloaded' });
+            await navigateToProfileForCheck(page, lead.linkedin_url, payload.accountId);
             await humanDelay(page, 2000, 4000);
 
             // Fase 1: Cerca bottone "In attesa" / "Pending" con Fallback progressivo

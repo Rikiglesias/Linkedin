@@ -57,6 +57,7 @@ export interface AppConfig {
     softInviteCap: number;
     hardInviteCap: number;
     weeklyInviteLimit: number;
+    weeklyMessageLimit: number;
     softMsgCap: number;
     hardMsgCap: number;
     complianceEnforced: boolean;

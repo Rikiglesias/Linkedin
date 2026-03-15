@@ -11,18 +11,26 @@ import { runSendInvitesWorkflow } from '../../workflows/sendInvitesWorkflow';
 // ─── sync-list ───────────────────────────────────────────────────────────────
 
 export async function runSyncListCommand(args: string[]): Promise<void> {
-    await runSyncListWorkflow({
-        listName: getOptionValue(args, '--list') ?? undefined,
-        listUrl: getOptionValue(args, '--url') ?? undefined,
-        maxPages: parseOptionalInt(getOptionValue(args, '--max-pages')),
-        maxLeads: parseOptionalInt(getOptionValue(args, '--max-leads') ?? getOptionValue(args, '--limit')),
-        enrichment: hasOption(args, '--no-enrich') ? false : undefined,
-        dryRun: hasOption(args, '--dry-run'),
-        interactive: hasOption(args, '--interactive') || hasOption(args, '-i'),
-        accountId: getOptionValue(args, '--account') ?? undefined,
-        noProxy: hasOption(args, '--no-proxy'),
-        skipPreflight: hasOption(args, '--skip-preflight'),
-    });
+    const rawList = getOptionValue(args, '--list') ?? undefined;
+    const listNames = rawList ? rawList.split(',').map((s) => s.trim()).filter(Boolean) : [undefined];
+
+    for (const listName of listNames) {
+        if (listNames.length > 1 && listName) {
+            console.log(`\n  ══════ Sync lista: ${listName} ══════\n`);
+        }
+        await runSyncListWorkflow({
+            listName,
+            listUrl: getOptionValue(args, '--url') ?? undefined,
+            maxPages: parseOptionalInt(getOptionValue(args, '--max-pages')),
+            maxLeads: parseOptionalInt(getOptionValue(args, '--max-leads') ?? getOptionValue(args, '--limit')),
+            enrichment: hasOption(args, '--no-enrich') ? false : undefined,
+            dryRun: hasOption(args, '--dry-run'),
+            interactive: hasOption(args, '--interactive') || hasOption(args, '-i'),
+            accountId: getOptionValue(args, '--account') ?? undefined,
+            noProxy: hasOption(args, '--no-proxy'),
+            skipPreflight: hasOption(args, '--skip-preflight'),
+        });
+    }
 }
 
 // ─── sync-search ─────────────────────────────────────────────────────────────

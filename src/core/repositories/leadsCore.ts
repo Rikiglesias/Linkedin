@@ -477,7 +477,7 @@ export async function getExpiredInvitedLeads(_accountId: string, olderThanDays: 
          FROM leads
          WHERE status = 'INVITED'
            AND invited_at < datetime('now', '-' || ? || ' days')
-         ORDER BY invited_at ASC
+         ORDER BY COALESCE(lead_score, 0) ASC, invited_at ASC
          LIMIT 50`,
         [olderThanDays],
     );
@@ -691,6 +691,17 @@ export async function updateLeadProfileData(
         params,
     );
     return (result.changes ?? 0) > 0;
+}
+
+export async function adjustLeadScore(leadId: number, delta: number): Promise<void> {
+    const db = await getDatabase();
+    await db.run(
+        `UPDATE leads
+         SET lead_score = MAX(0, MIN(100, COALESCE(lead_score, 50) + ?)),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [delta, leadId],
+    );
 }
 
 export async function updateLeadScores(

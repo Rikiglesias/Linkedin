@@ -67,8 +67,18 @@ export function bridgeLeadStatus(
         invite_note_sent?: string | null;
     },
 ): void {
-    void updateCloudLeadStatus(linkedinUrl, status, timestamps).catch((err: unknown) => {
-        void logWarn('cloud_bridge.lead_status_failed', { status, error: err instanceof Error ? err.message : String(err) });
+    void updateCloudLeadStatus(linkedinUrl, status, timestamps).catch(async (err: unknown) => {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        void logWarn('cloud_bridge.lead_status_failed', { status, error: errMsg });
+        try {
+            await pushOutboxEvent(
+                'cloud.lead.status',
+                { linkedinUrl, status, timestamps, error: errMsg },
+                `cloud.lead.status:${linkedinUrl}:${status}:${Date.now()}`,
+            );
+        } catch {
+            // outbox push best-effort
+        }
     });
 }
 
@@ -93,8 +103,18 @@ export function bridgeDailyStat(
         | 'run_errors',
     amount: number = 1,
 ): void {
-    void incrementCloudDailyStat({ local_date: localDate, account_id: accountId, field, amount }).catch((err: unknown) => {
-        void logWarn('cloud_bridge.daily_stat_failed', { field, error: err instanceof Error ? err.message : String(err) });
+    void incrementCloudDailyStat({ local_date: localDate, account_id: accountId, field, amount }).catch(async (err: unknown) => {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        void logWarn('cloud_bridge.daily_stat_failed', { field, error: errMsg });
+        try {
+            await pushOutboxEvent(
+                'cloud.daily_stat',
+                { localDate, accountId, field, amount, error: errMsg },
+                `cloud.daily_stat:${accountId}:${localDate}:${field}:${Date.now()}`,
+            );
+        } catch {
+            // outbox push best-effort
+        }
     });
 }
 
@@ -112,7 +132,17 @@ export function bridgeAccountHealth(
     quarantineReason?: string | null,
     quarantineUntil?: string | null,
 ): void {
-    void updateCloudAccountHealth(accountId, health, quarantineReason, quarantineUntil).catch((err: unknown) => {
-        void logWarn('cloud_bridge.account_health_failed', { accountId, error: err instanceof Error ? err.message : String(err) });
+    void updateCloudAccountHealth(accountId, health, quarantineReason, quarantineUntil).catch(async (err: unknown) => {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        void logWarn('cloud_bridge.account_health_failed', { accountId, error: errMsg });
+        try {
+            await pushOutboxEvent(
+                'cloud.account.health',
+                { accountId, health, quarantineReason, quarantineUntil, error: errMsg },
+                `cloud.account.health:${accountId}:${Date.now()}`,
+            );
+        } catch {
+            // outbox push best-effort
+        }
     });
 }

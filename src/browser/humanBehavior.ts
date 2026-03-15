@@ -13,7 +13,7 @@ import { getPageDeviceProfile, isMobilePage } from './deviceProfile';
 import { MouseGenerator, Point } from '../ml/mouseGenerator';
 import { calculateContextualDelay } from '../ml/timingModel';
 import { computeSessionTypoRate, determineNextKeystroke, getWordFlowMultiplier } from '../ai/typoGenerator';
-import { shouldMissclick, shouldAccidentalNav, performMissclick, performAccidentalNavigation } from './missclick';
+import { shouldAccidentalNav, performAccidentalNavigation } from './missclick';
 import { dismissKnownOverlays } from './overlayDismisser';
 import { randomElement, randomInt } from '../utils/random';
 
@@ -22,6 +22,25 @@ import { randomElement, randomInt } from '../utils/random';
 // Mantiene l'ultima posizione nota del mouse per ogni pagina attiva.
 // L'uso di WeakMap assicura l'assenza di memory leak quando la Page viene chiusa.
 const pageMouseState = new WeakMap<Page, Point>();
+
+/** Timeout globale per movimenti mouse: protegge da hang quando il mouse reale
+ *  dell'utente interferisce con Camoufox humanize o il browser perde focus.
+ *  Se scade, il movimento viene abortito e il bot prosegue. */
+const MOUSE_MOVE_TIMEOUT_MS = 3_000;
+
+async function withMouseTimeout<T>(fn: () => Promise<T>, timeoutMs: number = MOUSE_MOVE_TIMEOUT_MS): Promise<T | undefined> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+        return await Promise.race([
+            fn(),
+            new Promise<undefined>((resolve) => {
+                timer = setTimeout(() => resolve(undefined), timeoutMs);
+            }),
+        ]);
+    } finally {
+        if (timer) clearTimeout(timer);
+    }
+}
 import crypto from 'crypto';
 
 const _cursorHex = crypto.randomBytes(8).toString('hex');
@@ -130,6 +149,92 @@ export async function enableVisualCursorOverlay(page: Page): Promise<void> {
     await ensureVisualCursorOverlay(page);
 }
 
+/**
+ * Rimuove TUTTI gli overlay iniettati dal bot (cursore visuale, input block, toast, stile cursor:none).
+ * Usato da waitForManualLogin per restituire il controllo completo all'utente.
+ * Conosce gli ID dinamici generati da crypto.randomBytes — a differenza di ID hardcoded.
+ */
+export async function removeAllOverlays(page: Page): Promise<void> {
+    if (page.isClosed()) return;
+    try {
+        await page.evaluate(
+            ({ styleId, cursorId, rootClass, overlayId, toastId }) => {
+                // Rimuovi la regola CSS cursor:none dal documento
+                const style = document.getElementById(styleId);
+                if (style) style.remove();
+                // Rimuovi la classe root che attiva cursor:none
+                document.documentElement.classList.remove(rootClass);
+                // Rimuovi il cursore visuale (pallino verde)
+                const cursor = document.getElementById(cursorId);
+                if (cursor) cursor.remove();
+                // Rimuovi l'overlay input block
+                const overlay = document.getElementById(overlayId);
+                if (overlay) overlay.remove();
+                // Rimuovi il toast "Automazione in corso"
+                const toast = document.getElementById(toastId);
+                if (toast) toast.remove();
+            },
+            {
+                styleId: VISUAL_CURSOR_STYLE_ID,
+                cursorId: VISUAL_CURSOR_ELEMENT_ID,
+                rootClass: VISUAL_CURSOR_ROOT_CLASS,
+                overlayId: INPUT_BLOCK_OVERLAY_ID,
+                toastId: INPUT_BLOCK_TOAST_ID,
+            },
+        );
+    } catch {
+        // Best effort — page might be navigating
+    }
+}
+
+/**
+ * Attende che l'utente completi il login manualmente nel browser.
+ * Funzione condivisa — usata da syncSearchWorkflow, salesNavigatorSync, e come modello
+ * per waitForManualLogin in bulkSaveOrchestrator (che ha logica aggiuntiva con setInputBlockSuspended).
+ *
+ * 1. Rimuove TUTTI gli overlay (cursore, input block, toast) → l'utente ha pieno controllo
+ * 2. Polling ogni 4-6s con isLoggedIn()
+ * 3. Timeout configurabile (default 3 minuti)
+ * 4. Ritorna true se login completato, false se timeout
+ */
+export async function awaitManualLogin(
+    page: Page,
+    context: string,
+    options?: { timeoutMs?: number },
+): Promise<boolean> {
+    const maxWaitMs = options?.timeoutMs ?? 3 * 60 * 1000;
+    const startTime = Date.now();
+
+    await removeAllOverlays(page);
+
+    console.warn(`[${context}] Sessione non autenticata — in attesa del login manuale nel browser...`);
+    console.warn(`[${context}] URL: ${page.url()}`);
+    console.warn(`[${context}] Hai ${Math.round(maxWaitMs / 60_000)} minuti per completare il login.`);
+
+    while (Date.now() - startTime < maxWaitMs) {
+        await page.waitForTimeout(4000 + Math.floor(Math.random() * 2000));
+        try {
+            if (page.isClosed()) return false;
+            const { isLoggedIn: checkIsLoggedIn } = await import('./auth');
+            if (await checkIsLoggedIn(page)) {
+                const elapsed = Math.round((Date.now() - startTime) / 1000);
+                console.log(`[${context}] Login completato dopo ${elapsed}s.`);
+                await humanDelay(page, 1500, 2500);
+                return true;
+            }
+        } catch {
+            // isLoggedIn può fallire durante navigazione — riprova
+        }
+        const remaining = Math.round((maxWaitMs - (Date.now() - startTime)) / 1000);
+        if (remaining > 0) {
+            console.log(`[${context}] Ancora in attesa del login... (${remaining}s rimanenti)`);
+        }
+    }
+
+    console.error(`[${context}] Timeout: login manuale non completato entro ${Math.round(maxWaitMs / 60_000)} minuti.`);
+    return false;
+}
+
 // ─── Input Blocking Overlay ──────────────────────────────────────────────────
 
 const INPUT_BLOCK_TOAST_ID = `__lk_toast_${_cursorHex}__`;
@@ -149,7 +254,7 @@ export async function ensureInputBlock(page: Page): Promise<void> {
     try {
         await page.evaluate(
             ({ toastId, overlayId }) => {
-                // Overlay full-screen trasparente che blocca click utente
+                // Overlay full-screen trasparente che blocca click + scroll + keyboard utente
                 if (!document.getElementById(overlayId)) {
                     const overlay = document.createElement('div');
                     overlay.id = overlayId;
@@ -159,8 +264,28 @@ export async function ensureInputBlock(page: Page): Promise<void> {
                         'z-index: 2147483645',
                         'background: transparent',
                         'pointer-events: auto',
+                        'cursor: none',
                     ].join(';');
                     document.documentElement.appendChild(overlay);
+
+                    // Blocca TUTTI gli eventi utente: scroll, keyboard, touch, mouse hover
+                    const blockEvent = (e: Event) => { e.preventDefault(); e.stopPropagation(); };
+                    const blockOpts = { capture: true, passive: false } as AddEventListenerOptions;
+                    overlay.addEventListener('wheel', blockEvent, blockOpts);
+                    overlay.addEventListener('touchmove', blockEvent, blockOpts);
+                    overlay.addEventListener('keydown', blockEvent, blockOpts);
+                    overlay.addEventListener('keyup', blockEvent, blockOpts);
+                    overlay.addEventListener('keypress', blockEvent, blockOpts);
+                    // Blocca mouse hover utente: impedisce che il cursore reale triggeri
+                    // tooltip/dropdown/hover su elementi LinkedIn sotto l'overlay.
+                    // Senza questo, passare il mouse sopra il browser confonde il bot.
+                    overlay.addEventListener('mousemove', blockEvent, blockOpts);
+                    overlay.addEventListener('mouseenter', blockEvent, blockOpts);
+                    overlay.addEventListener('mouseover', blockEvent, blockOpts);
+                    overlay.addEventListener('mouseout', blockEvent, blockOpts);
+                    // Blocca scroll anche a livello document (wheel cattura lo scroll ovunque)
+                    document.addEventListener('wheel', blockEvent, blockOpts);
+                    document.addEventListener('touchmove', blockEvent, blockOpts);
                 }
 
                 // Toast notifica
@@ -342,45 +467,23 @@ export async function humanMouseMove(page: Page, targetSelector: string): Promis
         const finalX = Math.max(0, Math.min(viewport.width - 1, box.x + box.width / 2 + (Math.random() * 8 - 4)));
         const finalY = Math.max(0, Math.min(viewport.height - 1, box.y + box.height / 2 + (Math.random() * 8 - 4)));
 
-        // Camoufox con humanize=true: movimento diretto, Camoufox umanizza a livello C++.
-        if (config.browserEngine === 'camoufox' && config.camoufoxHumanize) {
-            const distancePixels = Math.hypot(finalX - (pageMouseState.get(page)?.x ?? 0), finalY - (pageMouseState.get(page)?.y ?? 0));
-            const steps = Math.max(5, Math.min(15, Math.round(distancePixels / 80)));
-            await page.mouse.move(finalX, finalY, { steps });
-            updateMouseState(page, { x: finalX, y: finalY });
-            return;
-        }
+        // Movimento mouse con curva Bezier + micro-delay tra step.
+        // Delay proporzionale alla distanza: brevi (~100px) ~120ms, lunghi (~800px) ~350ms.
+        const startPt = pageMouseState.get(page) ?? getStartingPoint(page);
+        const distancePixels = Math.hypot(finalX - startPt.x, finalY - startPt.y);
+        const steps = Math.max(8, Math.min(15, Math.round(distancePixels / 50)));
+        // Tempo totale: 100-350ms proporzionale alla distanza (un umano muove ~400px in ~200ms)
+        const totalMoveMs = Math.max(100, Math.min(350, distancePixels * 0.4));
+        const baseStepDelay = totalMoveMs / steps;
 
-        const startPoint = getStartingPoint(page);
-
-        const distancePixels = Math.hypot(finalX - startPoint.x, finalY - startPoint.y);
-        // Più step = movimento più fluido e meno scattoso
-        const steps = Math.max(20, Math.round(distancePixels / 12));
-        const isSmallTarget = box.width < 20 || box.height < 20;
-
-        const path = MouseGenerator.generatePath(
-            startPoint,
-            { x: finalX, y: finalY },
-            steps,
-        );
-
-        const approachStart = isSmallTarget ? Math.floor(path.length * 0.7) : Math.floor(path.length * 0.85);
-        for (let i = 0; i < path.length; i++) {
-            const point = path[i];
-            if (!point) continue;
-            await page.mouse.move(point.x, point.y, { steps: 1 });
-            await syncVisualCursorOverlay(page, point);
-
-            // Pause più frequenti e più lunghe per movimento naturale
-            if (i % 3 === 0) {
-                const inApproachPhase = i >= approachStart;
-                const delay = inApproachPhase ? 20 + Math.random() * 50 : 12 + Math.random() * 25;
-                await page.waitForTimeout(delay);
+        const path = MouseGenerator.generatePath(startPt, { x: finalX, y: finalY }, steps);
+        await withMouseTimeout(async () => {
+            for (const point of path) {
+                await page.mouse.move(point.x, point.y);
+                const jitter = baseStepDelay * (0.6 + Math.random() * 0.8);
+                await page.waitForTimeout(Math.round(jitter));
             }
-        }
-        if (shouldMissclick('navigation')) {
-            await performMissclick(page, finalX, finalY);
-        }
+        });
 
         updateMouseState(page, { x: finalX, y: finalY });
     } catch {
@@ -399,40 +502,21 @@ export async function humanMouseMoveToCoords(page: Page, targetX: number, target
         return;
     }
     try {
-        // Camoufox con humanize=true umanizza i movimenti a livello C++ (curve, jitter, tremor).
-        // Il nostro Bézier path è ridondante e causa: doppio cursore, lentezza, pattern innaturale.
-        // Con Camoufox: movimento diretto con pochi step — Camoufox aggiunge naturalezza internamente.
-        if (config.browserEngine === 'camoufox' && config.camoufoxHumanize) {
-            const startPoint = getStartingPoint(page);
-            const distancePixels = Math.hypot(targetX - startPoint.x, targetY - startPoint.y);
-            const steps = Math.max(5, Math.min(15, Math.round(distancePixels / 80)));
-            await page.mouse.move(targetX, targetY, { steps });
-            updateMouseState(page, { x: targetX, y: targetY });
-            return;
-        }
-
         const startPoint = getStartingPoint(page);
-
         const distancePixels = Math.hypot(targetX - startPoint.x, targetY - startPoint.y);
-        const steps = Math.max(20, Math.round(distancePixels / 12));
+        const steps = Math.max(8, Math.min(15, Math.round(distancePixels / 50)));
+        const totalMoveMs = Math.max(100, Math.min(350, distancePixels * 0.4));
+        const baseStepDelay = totalMoveMs / steps;
 
-        const path = MouseGenerator.generatePath(
-            startPoint,
-            { x: targetX, y: targetY },
-            steps,
-        );
-
-        for (let i = 0; i < path.length; i++) {
-            const point = path[i];
-            if (!point) continue;
-            await page.mouse.move(point.x, point.y, { steps: 1 });
-            await syncVisualCursorOverlay(page, point);
-
-            // Pause più frequenti per movimento più fluido
-            if (i % 3 === 0) {
-                await page.waitForTimeout(12 + Math.random() * 25);
+        const path = MouseGenerator.generatePath(startPoint, { x: targetX, y: targetY }, steps);
+        await withMouseTimeout(async () => {
+            for (const point of path) {
+                await page.mouse.move(point.x, point.y);
+                const jitter = baseStepDelay * (0.6 + Math.random() * 0.8);
+                await page.waitForTimeout(Math.round(jitter));
             }
-        }
+        });
+
         updateMouseState(page, { x: targetX, y: targetY });
     } catch {
         // Best effort
@@ -526,32 +610,30 @@ export async function randomMouseMove(page: Page): Promise<void> {
     }
     try {
         const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
-        const startPoint = getStartingPoint(page);
-        const startX = startPoint.x;
-        const startY = startPoint.y;
 
         const endX = Math.random() * viewport.width;
         const endY = Math.random() * viewport.height;
 
-        await page.mouse.move(startX, startY, { steps: 6 });
-        await syncVisualCursorOverlay(page, { x: startX, y: startY });
-        await page.waitForTimeout(30 + Math.random() * 80);
-
-        const midX = startX + (endX - startX) * 0.5 + (Math.random() * 20 - 10);
-        const midY = startY + (endY - startY) * 0.5 + (Math.random() * 20 - 10);
-        await page.mouse.move(midX, midY, { steps: 5 });
-        await syncVisualCursorOverlay(page, { x: midX, y: midY });
-        await page.waitForTimeout(20 + Math.random() * 60);
-
-        if (Math.random() < 0.14) {
-            const overshootX = endX + (Math.random() * 24 - 12);
-            const overshootY = endY + (Math.random() * 18 - 9);
-            await page.mouse.move(overshootX, overshootY, { steps: 6 });
-            await syncVisualCursorOverlay(page, { x: overshootX, y: overshootY });
+        // Movimento principale con curva Bezier (no più move lineari)
+        await withMouseTimeout(async () => {
+            // Punto intermedio per spezzare il pattern diretto
+            const startPt = getStartingPoint(page);
+            const midX = startPt.x + (endX - startPt.x) * 0.5 + (Math.random() * 20 - 10);
+            const midY = startPt.y + (endY - startPt.y) * 0.5 + (Math.random() * 20 - 10);
+            await humanMouseMoveToCoords(page, midX, midY);
             await page.waitForTimeout(20 + Math.random() * 60);
-        }
-        await page.mouse.move(endX, endY, { steps: 8 });
-        await syncVisualCursorOverlay(page, { x: endX, y: endY });
+
+            // Overshoot occasionale (14% — esitazione umana)
+            if (Math.random() < 0.14) {
+                const overshootX = endX + (Math.random() * 24 - 12);
+                const overshootY = endY + (Math.random() * 18 - 9);
+                await humanMouseMoveToCoords(page, overshootX, overshootY);
+                await page.waitForTimeout(20 + Math.random() * 60);
+            }
+
+            await humanMouseMoveToCoords(page, endX, endY);
+        });
+
         updateMouseState(page, { x: endX, y: endY });
     } catch {
         // Non bloccante

@@ -863,6 +863,27 @@ async function runQueuedJobsForAccount(
                 else if (job.type === 'ACCEPTANCE_CHECK') accountHealthMetrics.checkSuccesses += 1;
                 jobsSinceDecoy += 1;
                 jobsSinceCoffeeBreak += 1;
+
+                // Progress bar con ETA dinamico (terminale in-place)
+                const elapsedSec = Math.floor((Date.now() - accountHealthMetrics.startedAtMs) / 1000);
+                const avgSecPerJob = processedThisRun > 0 ? elapsedSec / processedThisRun : 0;
+                const remainingJobs = maxJobsPerRun - processedThisRun;
+                const etaSec = Math.ceil(avgSecPerJob * remainingJobs);
+                const etaMin = Math.floor(etaSec / 60);
+                const etaStr = etaMin > 0 ? `~${etaMin}m${etaSec % 60}s` : `~${etaSec}s`;
+                const bar = `[${'█'.repeat(Math.min(20, Math.floor((processedThisRun / maxJobsPerRun) * 20)))}${'░'.repeat(Math.max(0, 20 - Math.floor((processedThisRun / maxJobsPerRun) * 20)))}]`;
+                process.stdout.write(`\r  ${bar} ${processedThisRun}/${maxJobsPerRun} | I:${accountHealthMetrics.inviteSuccesses} M:${accountHealthMetrics.messageSuccesses} C:${accountHealthMetrics.checkSuccesses} | ETA ${etaStr}   `);
+
+                // Telegram progress: notifica ogni 5 job completati (non bloccante)
+                if (processedThisRun > 0 && processedThisRun % 5 === 0) {
+                    void sendTelegramAlert(
+                        `Progresso: ${processedThisRun}/${maxJobsPerRun} job completati\n` +
+                        `Inviti: ${accountHealthMetrics.inviteSuccesses} | Messaggi: ${accountHealthMetrics.messageSuccesses} | Check: ${accountHealthMetrics.checkSuccesses}\n` +
+                        `ETA: ${etaStr}`,
+                        'Progresso Sessione',
+                        'info',
+                    ).catch(() => null);
+                }
             }
 
             if (!options.dryRun && jobsSinceCoffeeBreak >= nextCoffeeBreakAt) {

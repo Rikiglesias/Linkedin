@@ -79,6 +79,7 @@ export function buildLimitsAndRiskDomainConfig() {
         softInviteCap: Math.max(1, parseIntEnv('SOFT_INVITE_CAP', 15)),
         hardInviteCap: Math.max(1, parseIntEnv('HARD_INVITE_CAP', 25)),
         weeklyInviteLimit: Math.max(1, parseIntEnv('WEEKLY_INVITE_LIMIT', 80)),
+        weeklyMessageLimit: Math.max(1, parseIntEnv('WEEKLY_MESSAGE_LIMIT', 120)),
         softMsgCap: Math.max(1, parseIntEnv('SOFT_MSG_CAP', 20)),
         hardMsgCap: Math.max(1, parseIntEnv('HARD_MSG_CAP', 35)),
         complianceEnforced: parseBoolEnv('COMPLIANCE_ENFORCED', true),

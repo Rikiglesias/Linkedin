@@ -44,6 +44,8 @@ export interface RunWorkflowOptions {
     noteMode?: 'ai' | 'template' | 'none';
     /** Lingua preferita per AI generation (it, en, fr, es, nl) */
     lang?: string;
+    /** Modalità messaggio: 'ai' (default) o 'template' (forza template senza AI) */
+    messageMode?: 'ai' | 'template';
 }
 
 function mapDailySnapshotToPredictiveSample(snapshot: {
@@ -404,6 +406,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
         sessionLimit: options.sessionLimit,
         noteMode: options.noteMode,
         lang: options.lang,
+        messageMode: options.messageMode,
     });
 
     if (!options.dryRun) {

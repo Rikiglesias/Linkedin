@@ -75,36 +75,30 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
     const localDate = getLocalDateString();
 
     // Capture pre-run stats
-    const msgBefore = await getDailyStat(localDate, 'messages_sent');
+    const msgBefore = await getDailyStat(localDate, 'messages_sent').catch(() => 0);
 
     // Pre-flight
     const preflight = await runPreflight({
         workflowName: 'send-messages',
         questions: [
             {
-                id: 'list',
-                prompt: 'Da quale lista vuoi messaggiare? (vuoto = tutte)',
-                type: 'string',
-                defaultValue: opts.listName ?? '',
-            },
-            {
-                id: 'lang',
-                prompt: 'Lingua preferita',
-                type: 'choice',
-                choices: ['it', 'en', 'fr', 'es', 'nl'],
-                defaultValue: opts.lang ?? 'en',
-            },
-            {
                 id: 'limit',
-                prompt: 'Limite messaggi per questa sessione?',
+                prompt: 'Quanti messaggi vuoi inviare al massimo?',
                 type: 'number',
                 defaultValue: String(opts.limit ?? config.hardMsgCap),
             },
             {
-                id: 'dryRun',
-                prompt: 'Dry run (mostra senza inviare)?',
+                id: 'messageMode',
+                prompt: 'Tipo messaggio?',
+                type: 'choice',
+                choices: ['template', 'ai'],
+                defaultValue: config.aiPersonalizationEnabled ? 'ai' : 'template',
+            },
+            {
+                id: 'enrichment',
+                prompt: 'Eseguire pre-enrichment dei lead prima dell\'invio? (Apollo/Hunter/OSINT)',
                 type: 'boolean',
-                defaultValue: opts.dryRun ? 'true' : 'false',
+                defaultValue: 'true',
             },
         ],
         listFilter: opts.listName,
@@ -118,10 +112,10 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
         return;
     }
 
-    const dryRun = preflight.answers['dryRun'] === 'true';
-    const listFilter = preflight.answers['list'] || null;
+    const dryRun = opts.dryRun ?? false;
+    const listFilter = opts.listName || null;
     const sessionLimit = parseInt(preflight.answers['limit'] || '0', 10);
-    const lang = preflight.answers['lang'] || undefined;
+    const lang = opts.lang || undefined;
 
     // Preview primi 5 lead che verranno messaggiati
     const readyCount = (preflight.dbStats.byStatus['ACCEPTED'] ?? 0) + (preflight.dbStats.byStatus['READY_MESSAGE'] ?? 0);
@@ -147,18 +141,43 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
         }
     }
 
-    // ── Guard: quarantina e pausa ─────────────────────────────────────────────
-    if (!dryRun) {
-        const quarantine = (await getRuntimeFlag('account_quarantine')) === 'true';
-        if (quarantine) {
-            console.error('\n  [BLOCCATO] Account in quarantina — operazione annullata. Esegui "bot unquarantine" dopo aver risolto il problema.\n');
-            return;
+    // ── Preview messaggio in dry-run: mostra il messaggio che verrebbe inviato ──
+    if (dryRun && readyCount > 0) {
+        try {
+            const { buildPersonalizedFollowUpMessage } = await import('../ai/messagePersonalizer');
+            const { getLeadById } = await import('../core/repositories/leadsCore');
+            const db = await getDatabase();
+            const firstLeadRow = await db.get<{ id: number }>(
+                `SELECT id FROM leads WHERE status IN ('ACCEPTED','READY_MESSAGE')${listFilter ? ' AND list_name = ?' : ''} LIMIT 1`,
+                listFilter ? [listFilter] : [],
+            );
+            if (firstLeadRow) {
+                const sampleLead = await getLeadById(firstLeadRow.id);
+                if (sampleLead) {
+                    const preview = await buildPersonalizedFollowUpMessage(sampleLead, lang);
+                    console.log(`\n  📝 Preview messaggio (${preview.source}):`);
+                    console.log(`  ┌──────────────────────────────────────────────`);
+                    for (const line of preview.message.split('\n')) {
+                        console.log(`  │ ${line}`);
+                    }
+                    console.log(`  └──────────────────────────────────────────────\n`);
+                }
+            }
+        } catch {
+            // Preview best-effort — non blocca il workflow
         }
-        const pauseState = await getAutomationPauseState();
-        if (pauseState.paused) {
-            console.error(`\n  [BLOCCATO] Automazione in pausa: ${pauseState.reason ?? 'motivo sconosciuto'}. Riprendi con "bot resume".\n`);
-            return;
-        }
+    }
+
+    // ── Guard: quarantina e pausa (sempre attivi, anche in dry-run) ──────────
+    const quarantine = (await getRuntimeFlag('account_quarantine')) === 'true';
+    if (quarantine) {
+        console.error('\n  [BLOCCATO] Account in quarantina — operazione annullata. Esegui "bot unquarantine" dopo aver risolto il problema.\n');
+        return;
+    }
+    const pauseState = await getAutomationPauseState();
+    if (pauseState.paused) {
+        console.error(`\n  [BLOCCATO] Automazione in pausa: ${pauseState.reason ?? 'motivo sconosciuto'}. Riprendi con "bot resume".\n`);
+        return;
     }
 
     // ── Stima tempo ─────────────────────────────────────────────────────────────
@@ -170,8 +189,10 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
     }
 
     // ── Pre-enrichment parallelo (zero browser, solo API) ──
-    if (!dryRun && effectiveLimit > 0) {
-        console.log('\n  ⚡ Pre-enrichment parallelo dei lead (senza browser)...');
+    let enrichmentDegraded = false;
+    const doEnrichment = preflight.answers['enrichment'] !== 'false';
+    if (!dryRun && effectiveLimit > 0 && doEnrichment) {
+        console.log('\n  Pre-enrichment parallelo dei lead (senza browser)...');
         try {
             const enrichReport = await enrichLeadsParallel({
                 listName: listFilter || undefined,
@@ -186,6 +207,17 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
             } else {
                 console.log('  ✅ Tutti i lead sono già arricchiti.\n');
             }
+
+            // Graceful Degradation: se enrichment fallisce per >80% dei lead,
+            // segnala all'utente che i messaggi AI saranno meno personalizzati.
+            // A differenza di send-invites (che downgrade nota ai→template), qui
+            // il messaggio AI usa comunque nome/company/role dal DB. Ma l'utente
+            // deve sapere che la qualità è ridotta.
+            if (enrichReport.total > 5 && enrichReport.enriched / enrichReport.total < 0.20) {
+                enrichmentDegraded = true;
+                console.warn('\n  ⚠️  DEGRADATION: Enrichment fallito per >80% dei lead. API probabilmente down o rate-limited.');
+                console.warn('  ⚠️  I messaggi AI saranno meno personalizzati (solo dati base dal profilo LinkedIn).\n');
+            }
         } catch {
             console.warn('  ⚠️  Pre-enrichment fallito (non bloccante, proseguo).\n');
         }
@@ -193,15 +225,20 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
 
     // Run the existing orchestrator for message workflow
     console.log('\n  Avvio invio messaggi...\n');
+    if (enrichmentDegraded) {
+        console.warn('  ⚠️  Modalità degradata: messaggi con dati base (enrichment >80% fallito).\n');
+    }
 
     let workflowError: string | null = null;
     try {
+        const messageModeAnswer = preflight.answers['messageMode'];
         await runWorkflow({
             workflow: 'message',
             dryRun,
             listFilter: listFilter || undefined,
             sessionLimit: sessionLimit > 0 ? sessionLimit : undefined,
             lang,
+            messageMode: messageModeAnswer === 'template' ? 'template' : undefined,
         });
     } catch (err) {
         workflowError = err instanceof Error ? err.message : String(err);
@@ -261,10 +298,6 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
 
 function buildCliOverrides(opts: SendMessagesOptions): Record<string, string> {
     const overrides: Record<string, string> = {};
-    if (opts.listName) overrides['list'] = opts.listName;
-    if (opts.lang) overrides['lang'] = opts.lang;
     if (opts.limit !== null && opts.limit !== undefined) overrides['limit'] = String(opts.limit);
-    if (opts.dryRun !== null && opts.dryRun !== undefined) overrides['dryRun'] = String(opts.dryRun);
-    if (opts.accountId) overrides['accountId'] = opts.accountId;
     return overrides;
 }

@@ -20,6 +20,7 @@ import {
     humanDelay,
     simulateHumanReading,
 } from './humanBehavior';
+import { isInputBlockSuspended } from '../salesnav/bulkSaveHelpers';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { randomInt } from '../utils/random';
 
@@ -70,8 +71,14 @@ function buildSearchKeywords(lead: { name?: string | null; job_title?: string | 
 
 /**
  * Re-inietta overlay dopo navigazione (il DOM viene distrutto su ogni page load).
+ * Rispetta il flag di sospensione globale (durante login manuale).
  */
 async function reInjectOverlays(page: Page): Promise<void> {
+    // Quando suspended (login manuale in corso), NON iniettare nessun overlay —
+    // né il cursore visuale (cursor:none nasconde il mouse reale) né l'input block.
+    if (isInputBlockSuspended(page)) {
+        return;
+    }
     await ensureVisualCursorOverlay(page);
     await ensureInputBlock(page);
 }
@@ -238,15 +245,66 @@ export async function navigateToProfileWithContext(
 }
 
 /**
- * Naviga alla messaging inbox con contesto realistico per il messageWorker.
+ * Naviga al profilo per azioni leggere (acceptance check, view, like, follow).
  *
  * Distribuzione:
- *   - 60%: Feed → Messaging (umano controlla feed poi messaggi)
- *   - 40%: Diretto a profilo (da notifica o link diretto)
+ *   - 40%: Feed → Profilo (simula browsing e poi check)
+ *   - 30%: Notifiche → Profilo (simula "ho visto notifica, vado a controllare")
+ *   - 30%: Diretto (da tab aperto, bookmark, link copiato)
  *
- * Per i messaggi, la catena è più semplice perché l'umano tipicamente
- * va alla conversazione dal profilo (già navigato) o dalla inbox.
+ * Più leggera della catena invite (niente search), perché queste azioni
+ * sono tipicamente post-invito: l'umano controlla se hanno accettato.
  */
+export async function navigateToProfileForCheck(
+    page: Page,
+    profileUrl: string,
+    accountId: string,
+): Promise<NavigationResult> {
+    const roll = Math.random();
+    let result: NavigationResult;
+
+    if (roll < 0.40) {
+        try {
+            await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 15_000 });
+            await reInjectOverlays(page);
+            await humanDelay(page, 1200, 2800);
+            await simulateHumanReading(page);
+            await page.goto(profileUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 });
+            await reInjectOverlays(page);
+            result = { strategy: 'organic_feed', success: true, stepsCompleted: 2 };
+        } catch {
+            await page.goto(profileUrl, { waitUntil: 'domcontentloaded' });
+            await reInjectOverlays(page);
+            result = { strategy: 'direct', success: true, stepsCompleted: 1 };
+        }
+    } else if (roll < 0.70) {
+        try {
+            await page.goto('https://www.linkedin.com/notifications/', { waitUntil: 'domcontentloaded', timeout: 10_000 });
+            await reInjectOverlays(page);
+            await humanDelay(page, 1500, 3000);
+            await page.goto(profileUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 });
+            await reInjectOverlays(page);
+            result = { strategy: 'organic_feed', success: true, stepsCompleted: 2 };
+        } catch {
+            await page.goto(profileUrl, { waitUntil: 'domcontentloaded' });
+            await reInjectOverlays(page);
+            result = { strategy: 'direct', success: true, stepsCompleted: 1 };
+        }
+    } else {
+        await page.goto(profileUrl, { waitUntil: 'domcontentloaded' });
+        await reInjectOverlays(page);
+        result = { strategy: 'direct', success: true, stepsCompleted: 1 };
+    }
+
+    await logInfo('navigation_context.check_profile_arrived', {
+        accountId,
+        strategy: result.strategy,
+        stepsCompleted: result.stepsCompleted,
+    });
+
+    return result;
+}
+
 export async function navigateToProfileForMessage(
     page: Page,
     profileUrl: string,

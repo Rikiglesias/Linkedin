@@ -55,29 +55,16 @@ export async function runSyncListWorkflow(opts: SyncListOptions): Promise<void> 
         workflowName: 'sync-list',
         questions: [
             {
-                id: 'list',
-                prompt: 'Nome della lista SalesNav (o URL diretto)',
-                type: 'string',
-                defaultValue: opts.listName ?? config.salesNavSyncListName ?? '',
-                required: true,
-            },
-            {
                 id: 'maxPages',
-                prompt: 'Quante pagine massimo scansionare?',
+                prompt: 'Quante pagine vuoi scorrere?',
                 type: 'number',
                 defaultValue: String(opts.maxPages ?? config.salesNavSyncMaxPages),
             },
             {
-                id: 'maxLeads',
-                prompt: 'Limite lead massimi?',
-                type: 'number',
-                defaultValue: String(opts.maxLeads ?? config.salesNavSyncLimit),
-            },
-            {
                 id: 'enrichment',
-                prompt: 'Vuoi enrichment profondo (OSINT)?',
+                prompt: 'Eseguire enrichment dati dopo il sync? (Apollo/Hunter/OSINT/scoring/cloud)',
                 type: 'boolean',
-                defaultValue: opts.enrichment !== false ? 'true' : 'false',
+                defaultValue: opts.enrichment === false ? 'false' : 'true',
             },
         ],
         listFilter: opts.listName,
@@ -91,10 +78,11 @@ export async function runSyncListWorkflow(opts: SyncListOptions): Promise<void> 
         return;
     }
 
-    const listName = preflight.answers['list'] || opts.listName;
+    const listName = opts.listName ?? config.salesNavSyncListName ?? '';
     const listUrl = opts.listUrl;
     const maxPages = parseInt(preflight.answers['maxPages'] || '10', 10);
-    const maxLeads = parseInt(preflight.answers['maxLeads'] || '500', 10);
+    const enrichment = preflight.answers['enrichment'] !== 'false';
+    const maxLeads = opts.maxLeads ?? config.salesNavSyncLimit;
 
     // ── Guard: quarantina e pausa ─────────────────────────────────────────────
     const quarantine = (await getRuntimeFlag('account_quarantine')) === 'true';
@@ -108,8 +96,12 @@ export async function runSyncListWorkflow(opts: SyncListOptions): Promise<void> 
         return;
     }
 
+    // ── Stima tempo ─────────────────────────────────────────────────────────────
+    const estimatedMinutes = Math.ceil((60 + maxPages * 15) / 60); // ~60s warmup + ~15s/pagina
+    console.log(`\n  Tempo stimato: ~${estimatedMinutes} minuti per ${maxPages} pagine\n`);
+
     // Run the existing sync engine
-    console.log('\n  Avvio sync lista...\n');
+    console.log('  Avvio sync lista...\n');
 
     let syncError: string | null = null;
     let report: Awaited<ReturnType<typeof runSalesNavigatorListSync>> | null = null;
@@ -123,6 +115,7 @@ export async function runSyncListWorkflow(opts: SyncListOptions): Promise<void> 
             accountId: opts.accountId,
             interactive: opts.interactive ?? false,
             noProxy: opts.noProxy ?? false,
+            skipEnrichment: !enrichment,
         });
 
         // Display the existing detailed report
@@ -158,6 +151,7 @@ export async function runSyncListWorkflow(opts: SyncListOptions): Promise<void> 
         nextAction: report && report.enrichment.promoted > 0
             ? `Esegui 'send-invites --list "${listName}"' per invitare i lead pronti`
             : 'Attendi enrichment o abbassa la soglia score',
+        riskAssessment: preflight.riskAssessment,
     };
 
     console.log(formatWorkflowReport(workflowReport));
@@ -165,11 +159,7 @@ export async function runSyncListWorkflow(opts: SyncListOptions): Promise<void> 
 
 function buildCliOverrides(opts: SyncListOptions): Record<string, string> {
     const overrides: Record<string, string> = {};
-    if (opts.listName) overrides['list'] = opts.listName;
-    if (opts.listUrl) overrides['listUrl'] = opts.listUrl;
     if (opts.maxPages !== null && opts.maxPages !== undefined) overrides['maxPages'] = String(opts.maxPages);
-    if (opts.maxLeads !== null && opts.maxLeads !== undefined) overrides['maxLeads'] = String(opts.maxLeads);
-    if (opts.enrichment !== null && opts.enrichment !== undefined) overrides['enrichment'] = String(opts.enrichment);
-    if (opts.dryRun !== null && opts.dryRun !== undefined) overrides['dryRun'] = String(opts.dryRun);
+    if (opts.enrichment === false) overrides['enrichment'] = 'false';
     return overrides;
 }

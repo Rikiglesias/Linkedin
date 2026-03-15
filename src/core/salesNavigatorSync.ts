@@ -2,8 +2,9 @@ import { getAccountProfileById } from '../accountManager';
 import { cleanText } from '../utils/text';
 import { cleanLeadDataWithAI } from '../ai/leadDataCleaner';
 import { scoreLeadProfile } from '../ai/leadScorer';
-import { checkLogin, closeBrowser, detectChallenge, isLoggedIn, launchBrowser } from '../browser';
-import { blockUserInput } from '../browser/humanBehavior';
+import { checkLogin, closeBrowser, detectChallenge, humanDelay, launchBrowser } from '../browser';
+import { attemptChallengeResolution } from '../workers/challengeHandler';
+import { awaitManualLogin, blockUserInput } from '../browser/humanBehavior';
 import { batchUpsertCloudLeads, syncSalesNavMembersToCloud } from '../cloud/supabaseDataClient';
 import { CloudLeadUpsert } from '../cloud/types';
 import { config } from '../config';
@@ -22,6 +23,7 @@ import {
     updateLeadScores,
     upsertSalesNavList,
     upsertSalesNavigatorLead,
+    pushOutboxEvent,
 } from './repositories';
 import {
     navigateToSavedLists,
@@ -39,6 +41,8 @@ export interface SalesNavigatorSyncOptions {
     accountId?: string;
     interactive?: boolean;
     noProxy?: boolean;
+    /** Se true, salta enrichment post-sync (Apollo/Hunter/OSINT/scoring/cloud) */
+    skipEnrichment?: boolean;
 }
 
 export interface SalesNavigatorSyncListReport {
@@ -460,8 +464,8 @@ async function postSyncEnrichment(
     // 5. Cloud sync → Supabase (non-bloccante: errori loggati ma non propagati)
     if (config.supabaseSyncEnabled) {
         console.log(`[CLOUD-SYNC] Push ${total} lead verso Supabase...`);
+        const cloudLeads: CloudLeadUpsert[] = [];
         try {
-            const cloudLeads: CloudLeadUpsert[] = [];
             for (const leadId of leadIds) {
                 const lead = await getLeadById(leadId);
                 if (!lead) continue;
@@ -503,6 +507,19 @@ async function postSyncEnrichment(
             const msg = err instanceof Error ? err.message : String(err);
             console.error(`  [CLOUD-SYNC] Errore sync Supabase: ${msg}`);
             enrichReport.cloudErrors += 1;
+            // Outbox fallback: salva i lead per retry via sync worker
+            try {
+                for (const lead of cloudLeads) {
+                    await pushOutboxEvent(
+                        'cloud.lead.upsert',
+                        { lead, error: msg },
+                        `cloud.lead.upsert:${lead.linkedin_url}:${Date.now()}`,
+                    );
+                }
+                console.log(`  [CLOUD-SYNC] ${cloudLeads.length} lead salvati in outbox per retry.`);
+            } catch {
+                // outbox push best-effort
+            }
         }
     }
 
@@ -562,25 +579,25 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
         if (!loggedIn && interactive) {
             const currentUrl = session.page.url().toLowerCase();
             if (!currentUrl.includes('/login')) {
-                await session.page.goto('https://www.linkedin.com/login', { waitUntil: 'domcontentloaded' }).catch(() => null);
+                await session.page.goto('https://www.linkedin.com/login', { waitUntil: 'domcontentloaded', timeout: 15_000 }).catch(() => null);
             }
-            console.log('\n──────────────────────────────────────────────────────────────');
-            console.log('  SalesNav sync pronto. Effettua il LOGIN nel browser aperto.');
-            console.log('  Quando sei loggato, premi INVIO qui per continuare.');
-            console.log('──────────────────────────────────────────────────────────────\n');
-            // Attendi login interattivo (max 5 min)
-            const deadline = Date.now() + 300_000;
-            while (Date.now() < deadline) {
-                if (await isLoggedIn(session.page)) {
-                    loggedIn = await checkLogin(session.page);
-                    if (loggedIn) break;
-                }
-                await session.page.waitForTimeout(2500);
-            }
+            loggedIn = await awaitManualLogin(session.page, 'salesnav-sync', { timeoutMs: 5 * 60 * 1000 });
         }
         if (!loggedIn) {
             throw new Error(`Sales Navigator sync: sessione non autenticata (account=${account.id}).`);
         }
+
+        // Warmup sessione: simula navigazione umana (feed, notifiche) prima di operare su SalesNav.
+        // Un utente reale non apre LinkedIn e va dritto su una lista SalesNav.
+        if (!interactive) {
+            try {
+                const { warmupSession } = await import('./sessionWarmer');
+                await warmupSession(session.page);
+            } catch (warmupErr) {
+                console.warn(`[WARN] Warmup fallito: ${warmupErr instanceof Error ? warmupErr.message : String(warmupErr)}`);
+            }
+        }
+
         // blockUserInput solo in modalità automatica — in interactive l'utente deve poter usare il mouse
         if (!interactive) {
             await blockUserInput(session.page);
@@ -663,19 +680,23 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
             report.uniqueCandidates += scraped.uniqueCandidates;
 
             if (await detectChallenge(session.page)) {
-                report.challengeDetected = true;
-                await handleChallengeDetected({
-                    source: 'salesnav_sync',
-                    accountId: account.id,
-                    linkedinUrl: listUrl,
-                    message: 'Challenge rilevato durante sincronizzazione Sales Navigator',
-                    extra: {
-                        listName,
-                        listUrl,
-                    },
-                });
-                report.lists.push(listReport);
-                break;
+                const resolved = await attemptChallengeResolution(session.page).catch(() => false);
+                if (!resolved) {
+                    report.challengeDetected = true;
+                    await handleChallengeDetected({
+                        source: 'salesnav_sync',
+                        accountId: account.id,
+                        linkedinUrl: listUrl,
+                        message: 'Challenge rilevato durante sincronizzazione Sales Navigator',
+                        extra: {
+                            listName,
+                            listUrl,
+                        },
+                    });
+                    report.lists.push(listReport);
+                    break;
+                }
+                await humanDelay(session.page, 1500, 3000);
             }
 
             const listRow = options.dryRun ? null : await upsertSalesNavList(listName, listUrl);
@@ -761,25 +782,30 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
         // Chiudi browser SUBITO dopo scraping (non serve piu per enrichment)
         await closeBrowser(session);
         browserClosed = true;
-        console.log('[OK] Browser chiuso. Avvio enrichment offline...');
 
-        // Post-sync enrichment per tutti i lead estratti (no browser needed)
-        const byList = new Map<string, number[]>();
-        for (const entry of allSyncedLeadIds) {
-            const arr = byList.get(entry.listName) ?? [];
-            arr.push(entry.id);
-            byList.set(entry.listName, arr);
-        }
-        for (const [ln, ids] of byList) {
-            const enrichResult = await postSyncEnrichment(ids, ln, options.dryRun);
-            report.enrichment.leadsProcessed += enrichResult.leadsProcessed;
-            report.enrichment.dataCleaned += enrichResult.dataCleaned;
-            report.enrichment.scored += enrichResult.scored;
-            report.enrichment.enriched += enrichResult.enriched;
-            report.enrichment.promoted += enrichResult.promoted;
-            report.enrichment.errors += enrichResult.errors;
-            report.enrichment.cloudSynced += enrichResult.cloudSynced;
-            report.enrichment.cloudErrors += enrichResult.cloudErrors;
+        if (options.skipEnrichment) {
+            console.log('[OK] Browser chiuso. Enrichment saltato (--no-enrich).');
+        } else {
+            console.log('[OK] Browser chiuso. Avvio enrichment offline...');
+
+            // Post-sync enrichment per tutti i lead estratti (no browser needed)
+            const byList = new Map<string, number[]>();
+            for (const entry of allSyncedLeadIds) {
+                const arr = byList.get(entry.listName) ?? [];
+                arr.push(entry.id);
+                byList.set(entry.listName, arr);
+            }
+            for (const [ln, ids] of byList) {
+                const enrichResult = await postSyncEnrichment(ids, ln, options.dryRun);
+                report.enrichment.leadsProcessed += enrichResult.leadsProcessed;
+                report.enrichment.dataCleaned += enrichResult.dataCleaned;
+                report.enrichment.scored += enrichResult.scored;
+                report.enrichment.enriched += enrichResult.enriched;
+                report.enrichment.promoted += enrichResult.promoted;
+                report.enrichment.errors += enrichResult.errors;
+                report.enrichment.cloudSynced += enrichResult.cloudSynced;
+                report.enrichment.cloudErrors += enrichResult.cloudErrors;
+            }
         }
 
         report.dbAfter = await takeDbSnapshot().catch(() => null);

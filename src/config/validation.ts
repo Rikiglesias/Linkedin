@@ -356,7 +356,7 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
     {
         message:
             '[CONFIG] PROXY_URL configurato ma USE_JA3_PROXY=false — gap stealth: il proxy non simula fingerprint TLS',
-        when: (cfg) => !!cfg.proxyUrl && !cfg.useJa3Proxy,
+        when: (cfg) => !!cfg.proxyUrl && !cfg.useJa3Proxy && cfg.browserEngine !== 'camoufox',
         severity: 'warn',
     },
     {

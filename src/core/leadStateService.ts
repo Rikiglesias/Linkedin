@@ -1,4 +1,4 @@
-import { appendLeadEvent, getLeadById, pushOutboxEvent, setLeadStatus, recordSecurityAuditEvent } from './repositories';
+import { adjustLeadScore, appendLeadEvent, getLeadById, pushOutboxEvent, setLeadStatus, recordSecurityAuditEvent } from './repositories';
 import { getDatabase } from '../db';
 import { withTransaction } from './repositories/shared';
 import { LeadStatus } from '../types/domain';
@@ -85,6 +85,8 @@ export async function transitionLead(
             'Lead Accettato',
             'info',
         ).catch(() => {});
+        // Engagement score boost: accettazione = segnale positivo → score +10 (cap 100)
+        void adjustLeadScore(leadId, 10).catch(() => {});
     } else if (targetStatus === 'REPLIED' && fromStatus !== 'REPLIED') {
         const name = `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'Lead Sconosciuto';
         void sendTelegramAlert(
@@ -92,6 +94,11 @@ export async function transitionLead(
             'Nuova Risposta',
             'warn',
         ).catch(() => {});
+        // Engagement score boost: risposta = segnale molto positivo → score +15 (cap 100)
+        void adjustLeadScore(leadId, 15).catch(() => {});
+    } else if (targetStatus === 'WITHDRAWN') {
+        // Engagement score penalty: invito ritirato (non accettato) = segnale negativo → score -10 (floor 0)
+        void adjustLeadScore(leadId, -10).catch(() => {});
     }
 }
 

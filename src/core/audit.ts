@@ -1,4 +1,5 @@
 import { checkLogin, closeBrowser, detectChallenge, humanDelay, launchBrowser } from '../browser';
+import { attemptChallengeResolution } from '../workers/challengeHandler';
 import { getAccountProfileById, pickAccountIdForLead } from '../accountManager';
 import { config } from '../config';
 import { handleChallengeDetected, quarantineAccount } from '../risk/incidentManager';
@@ -359,18 +360,22 @@ export async function runSiteCheck(options: SiteCheckOptions): Promise<SiteCheck
                 await touchLeadSiteCheckAt(lead.id);
 
                 if (await detectChallenge(session.page)) {
-                    await handleChallengeDetected({
-                        source: 'site_check',
-                        accountId,
-                        leadId: lead.id,
-                        linkedinUrl: lead.linkedin_url,
-                        message: 'Challenge rilevato durante site-check',
-                        extra: {
-                            status: lead.status,
-                        },
-                    });
-                    challengeDetected = true;
-                    break;
+                    const resolved = await attemptChallengeResolution(session.page).catch(() => false);
+                    if (!resolved) {
+                        await handleChallengeDetected({
+                            source: 'site_check',
+                            accountId,
+                            leadId: lead.id,
+                            linkedinUrl: lead.linkedin_url,
+                            message: 'Challenge rilevato durante site-check',
+                            extra: {
+                                status: lead.status,
+                            },
+                        });
+                        challengeDetected = true;
+                        break;
+                    }
+                    await humanDelay(session.page, 1500, 3000);
                 }
 
                 const mismatch = classifySiteMismatch(lead.status, signals);

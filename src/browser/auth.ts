@@ -50,15 +50,39 @@ export async function isLoggedIn(page: Page): Promise<boolean> {
         return true;
     }
 
+    // Sales Navigator ha una navbar diversa da LinkedIn standard
+    const salesNavNav = await page.locator(
+        '.global-nav, [data-test-global-nav], .nav-main, #global-nav, .search-global-typeahead',
+    ).count();
+    if (salesNavNav > 0) {
+        return true;
+    }
+
+    // Se siamo su una pagina /sales/ senza form di login, siamo autenticati
+    if (currentUrl.includes('/sales/') && !currentUrl.includes('/sales/login')) {
+        return true;
+    }
+
     // Fallback: se non siamo su /login e non c'e' form login, il cookie li_at
     // resta un indicatore utile ma non deve sovrascrivere segnali espliciti.
     return hasLinkedinAuthCookie(page);
 }
 
-/** Naviga alla home e verifica il login. */
+/** Naviga al feed (endpoint protetto, redirect a login se sessione scaduta) e verifica il login. */
 export async function checkLogin(page: Page): Promise<boolean> {
-    await page.goto('https://www.linkedin.com/', { waitUntil: 'domcontentloaded', timeout: 45_000 });
+    const response = await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 45_000 });
     await humanDelay(page, 2000, 4000);
+    // Se LinkedIn ha fatto redirect a login, la risposta HTTP originale è 302
+    // ma dopo il redirect siamo su /login → isLoggedIn lo rileva via URL
+    const finalUrl = page.url().toLowerCase();
+    if (finalUrl.includes('/login') || finalUrl.includes('/authwall') || finalUrl.includes('/uas/login')) {
+        return false;
+    }
+    // Controlla anche lo status HTTP (429 = rate limited, 403 = bloccato)
+    const status = response?.status() ?? 200;
+    if (status === 429 || status === 403) {
+        return false;
+    }
     return isLoggedIn(page);
 }
 

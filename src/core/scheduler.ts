@@ -15,6 +15,7 @@ import {
 } from '../risk/riskEngine';
 import { JobType, RiskSnapshot } from '../types/domain';
 import { getTimingDecisionForLead, TimingAction } from '../ml/timingOptimizer';
+import { computeTimezoneDelaySec } from '../ml/locationTimezone';
 import {
     countWeeklyInvites,
     ensureLeadList,
@@ -68,6 +69,8 @@ export interface ScheduleOptions {
     noteMode?: 'ai' | 'template' | 'none';
     /** Lingua preferita per AI generation (it, en, fr, es, nl) */
     lang?: string;
+    /** Modalità messaggio: 'ai' (default) o 'template' (forza template senza AI) */
+    messageMode?: 'ai' | 'template';
 }
 
 export interface ListScheduleBreakdown {
@@ -377,6 +380,8 @@ export async function scheduleJobs(
     const dailyMessagesSent = await getDailyStat(localDate, 'messages_sent');
     const weekStartDate = getWeekStartDate();
     const weeklyInvitesSent = await countWeeklyInvites(weekStartDate);
+    const { countWeeklyMessages } = await import('./repositories/stats');
+    const weeklyMessagesSent = await countWeeklyMessages(weekStartDate);
     const dbAccountAgeDays = await getAccountAgeDays();
     const weeklyInviteLimitEffective = config.complianceDynamicWeeklyLimitEnabled
         ? calculateDynamicWeeklyInviteLimit(
@@ -467,6 +472,8 @@ export async function scheduleJobs(
     }
 
     inviteBudget = Math.min(inviteBudget, weeklyRemaining);
+    const weeklyMessageRemaining = Math.max(0, config.weeklyMessageLimit - weeklyMessagesSent);
+    messageBudget = Math.min(messageBudget, weeklyMessageRemaining);
     inviteBudget = applyHourIntensityToBudget(inviteBudget, hourIntensity);
     messageBudget = applyHourIntensityToBudget(messageBudget, hourIntensity);
     if (isGreenModeWindow()) {
@@ -706,7 +713,8 @@ export async function scheduleJobs(
 
                 const noBurstDelaySec = noBurstPlanner ? noBurstPlanner.nextDelaySec() : 0;
                 const timingDecision = await resolveTimingDecision('invite', lead.job_title);
-                const initialDelaySec = noBurstDelaySec + timingDecision.delaySec;
+                const timezoneDelaySec = computeTimezoneDelaySec(lead.location);
+                const initialDelaySec = noBurstDelaySec + timingDecision.delaySec + timezoneDelaySec;
                 const invitePayload: Record<string, unknown> = {
                     leadId: lead.id,
                     localDate,
@@ -873,8 +881,11 @@ export async function scheduleJobs(
                         explored: timingDecision.explored,
                     },
                 };
-                if (options.lang) {
-                    messagePayload.metadata_json = JSON.stringify({ lang: options.lang });
+                const msgMeta: Record<string, string> = {};
+                if (options.lang) msgMeta.lang = options.lang;
+                if (options.messageMode === 'template') msgMeta.messageMode = 'template';
+                if (Object.keys(msgMeta).length > 0) {
+                    messagePayload.metadata_json = JSON.stringify(msgMeta);
                 }
                 const inserted = await enqueueJob(
                     'MESSAGE',

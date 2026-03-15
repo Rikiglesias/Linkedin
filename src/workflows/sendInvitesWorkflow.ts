@@ -103,8 +103,8 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
     const startedAt = new Date();
     const localDate = getLocalDateString();
 
-    // Capture pre-run stats
-    const invitesBefore = await getDailyStat(localDate, 'invites_sent');
+    // Capture pre-run stats (default 0 se DB non raggiungibile — evita NaN nel report)
+    const invitesBefore = await getDailyStat(localDate, 'invites_sent').catch(() => 0);
 
     // Score stats for display
     const scoreStats = await getScoreStats();
@@ -114,35 +114,23 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
         workflowName: 'send-invites',
         questions: [
             {
-                id: 'list',
-                prompt: 'Da quale lista vuoi invitare? (vuoto = tutte le READY_INVITE)',
-                type: 'string',
-                defaultValue: opts.listName ?? '',
-            },
-            {
-                id: 'noteMode',
-                prompt: 'Modalita\' nota invito',
-                type: 'choice',
-                choices: ['ai', 'template', 'none'],
-                defaultValue: opts.noteMode ?? 'ai',
-            },
-            {
-                id: 'minScore',
-                prompt: 'Score minimo per invitare?',
-                type: 'number',
-                defaultValue: String(opts.minScore ?? 30),
-            },
-            {
                 id: 'limit',
-                prompt: 'Limite inviti per questa sessione?',
+                prompt: 'Quanti inviti vuoi inviare al massimo?',
                 type: 'number',
                 defaultValue: String(opts.limit ?? config.hardInviteCap),
             },
             {
-                id: 'dryRun',
-                prompt: 'Dry run (mostra senza invitare)?',
+                id: 'noteMode',
+                prompt: 'Nota di connessione?',
+                type: 'choice',
+                choices: ['none', 'template', 'ai'],
+                defaultValue: opts.noteMode ?? 'none',
+            },
+            {
+                id: 'enrichment',
+                prompt: 'Eseguire pre-enrichment dei lead prima dell\'invio? (Apollo/Hunter/OSINT)',
                 type: 'boolean',
-                defaultValue: opts.dryRun ? 'true' : 'false',
+                defaultValue: 'true',
             },
         ],
         listFilter: opts.listName,
@@ -161,8 +149,8 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
         console.log(`\n  Score READY_INVITE: min=${scoreStats.min} avg=${scoreStats.avg} max=${scoreStats.max} (${scoreStats.count} con score)`);
     }
 
-    const dryRun = preflight.answers['dryRun'] === 'true';
-    const listFilter = preflight.answers['list'] || null;
+    const dryRun = opts.dryRun ?? false;
+    const listFilter = opts.listName || null;
 
     const db = await getDatabase();
     let query = `SELECT COUNT(*) as cnt FROM leads WHERE status = 'READY_INVITE'`;
@@ -223,21 +211,19 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
         return;
     }
 
-    const minScore = parseInt(preflight.answers['minScore'] || '0', 10);
+    const minScore = opts.minScore ?? 30;
     const sessionLimit = parseInt(preflight.answers['limit'] || '0', 10);
 
-    // ── Guard: quarantina e pausa ─────────────────────────────────────────────
-    if (!dryRun) {
-        const quarantine = (await getRuntimeFlag('account_quarantine')) === 'true';
-        if (quarantine) {
-            console.error('\n  [BLOCCATO] Account in quarantina — operazione annullata. Esegui "bot unquarantine" dopo aver risolto il problema.\n');
-            return;
-        }
-        const pauseState = await getAutomationPauseState();
-        if (pauseState.paused) {
-            console.error(`\n  [BLOCCATO] Automazione in pausa: ${pauseState.reason ?? 'motivo sconosciuto'}. Riprendi con "bot resume".\n`);
-            return;
-        }
+    // ── Guard: quarantina e pausa (sempre attivi, anche in dry-run) ──────────
+    const quarantine = (await getRuntimeFlag('account_quarantine')) === 'true';
+    if (quarantine) {
+        console.error('\n  [BLOCCATO] Account in quarantina — operazione annullata. Esegui "bot unquarantine" dopo aver risolto il problema.\n');
+        return;
+    }
+    const pauseState = await getAutomationPauseState();
+    if (pauseState.paused) {
+        console.error(`\n  [BLOCCATO] Automazione in pausa: ${pauseState.reason ?? 'motivo sconosciuto'}. Riprendi con "bot resume".\n`);
+        return;
     }
 
     // ── Stima tempo ─────────────────────────────────────────────────────────────
@@ -248,9 +234,12 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
     }
 
     // ── Pre-enrichment parallelo (zero browser, solo API) ──
+    const doEnrichment = preflight.answers['enrichment'] !== 'false';
     let enrichmentDegraded = false;
-    if (!dryRun) {
-        console.log('\n  ⚡ Pre-enrichment parallelo dei lead (senza browser)...');
+    const noteModeAnswer = preflight.answers['noteMode'] ?? opts.noteMode ?? 'none';
+    let noteMode: 'ai' | 'template' | 'none' = (noteModeAnswer === 'ai' || noteModeAnswer === 'template') ? noteModeAnswer : 'none';
+    if (!dryRun && doEnrichment) {
+        console.log('\n  Pre-enrichment parallelo dei lead (senza browser)...');
         const enrichReport = await enrichLeadsParallel({
             listName: listFilter || undefined,
             limit: sessionLimit > 0 ? sessionLimit : row.cnt,
@@ -271,7 +260,7 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
         if (enrichReport.total > 5 && enrichReport.enriched / enrichReport.total < 0.20) {
             enrichmentDegraded = true;
             console.warn('\n  ⚠️  DEGRADATION: Enrichment fallito per >80% dei lead. API probabilmente down o rate-limited.');
-            if (preflight.answers['noteMode'] === 'ai') {
+            if (noteMode === 'ai') {
                 console.warn('  ⚠️  Auto-downgrade nota: ai → template (nota AI senza dati = vuota/generica).\n');
             }
         }
@@ -280,7 +269,6 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
     // Run the existing orchestrator for invite workflow
     console.log('\n  Avvio invio inviti...\n');
 
-    let noteMode = (preflight.answers['noteMode'] || 'ai') as 'ai' | 'template' | 'none';
     // Graceful Degradation (6.5): downgrade effettivo
     if (enrichmentDegraded && noteMode === 'ai') {
         noteMode = 'template';
@@ -339,8 +327,8 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
             inviti_inviati: invitesSent,
             budget_utilizzato: `${invitesAfter}/${config.hardInviteCap}`,
             budget_rimanente: config.hardInviteCap - invitesAfter,
-            score_minimo: preflight.answers['minScore'] ?? '30',
-            nota_modalita: preflight.answers['noteMode'] ?? 'ai',
+            score_minimo: minScore,
+            nota_modalita: noteMode,
             dry_run: dryRun ? 'SI' : 'no',
         },
         errors: workflowError ? [workflowError] : [],
@@ -385,11 +373,6 @@ function buildNextActionSuggestion(
 
 function buildCliOverrides(opts: SendInvitesOptions): Record<string, string> {
     const overrides: Record<string, string> = {};
-    if (opts.listName) overrides['list'] = opts.listName;
-    if (opts.noteMode) overrides['noteMode'] = opts.noteMode;
-    if (opts.minScore !== null && opts.minScore !== undefined) overrides['minScore'] = String(opts.minScore);
     if (opts.limit !== null && opts.limit !== undefined) overrides['limit'] = String(opts.limit);
-    if (opts.dryRun !== null && opts.dryRun !== undefined) overrides['dryRun'] = String(opts.dryRun);
-    if (opts.accountId) overrides['accountId'] = opts.accountId;
     return overrides;
 }

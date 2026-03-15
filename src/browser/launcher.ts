@@ -362,19 +362,28 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                     }
                 }
 
+                const cfxProxy = currentProxy ? {
+                    server: currentProxy.server,
+                    username: currentProxy.username,
+                    password: currentProxy.password,
+                } : undefined;
+                if (cfxProxy) {
+                    void logInfo('browser.camoufox_proxy_config', {
+                        server: cfxProxy.server,
+                        hasUsername: !!cfxProxy.username,
+                        hasPassword: !!cfxProxy.password,
+                        passwordHasSpecialChars: /[^a-zA-Z0-9]/.test(cfxProxy.password ?? ''),
+                    });
+                }
                 browser = await Camoufox({
                     user_data_dir: sessionDir,
                     headless: headless,
                     humanize: config.camoufoxHumanize,
-                    geoip: config.camoufoxGeoip && !!currentProxy,
+                    geoip: currentProxy ? '93.63.96.1' : config.camoufoxGeoip,
                     block_webrtc: config.camoufoxBlockWebrtc,
                     locale: fingerprint.locale ?? 'it-IT',
                     window: cfxWindow,
-                    proxy: currentProxy ? {
-                        server: currentProxy.server,
-                        username: currentProxy.username,
-                        password: currentProxy.password,
-                    } : undefined,
+                    proxy: cfxProxy,
                     firefox_user_prefs: {
                         'dom.webdriver.enabled': false,
                     },

@@ -216,6 +216,12 @@ export async function createAndPublishPost(page: Page, options: PostCreatorOptio
 
         await humanDelay(page, 3000, 5000);
 
+        // Challenge check post-submit: LinkedIn può mostrare un challenge dopo la pubblicazione
+        if (await detectChallenge(page)) {
+            await updatePostStatus(postId, 'FAILED', { error: 'challenge_detected_post_submit' });
+            return { postId, status: 'FAILED', content, topic, source, published: false, error: 'challenge_detected_post_submit' };
+        }
+
         await updatePostStatus(postId, 'PUBLISHED', {
             publishedAt: new Date().toISOString(),
         });

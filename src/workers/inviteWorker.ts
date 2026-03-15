@@ -35,7 +35,7 @@ import { recordSent, inferHourBucket } from '../ml/abBandit';
 import { WorkerExecutionResult, workerResult } from './result';
 import { inferLeadSegment } from '../ml/segments';
 import { enrichLeadAuto } from '../integrations/leadEnricher';
-import { getDatabase } from '../db';
+import { isLeadAlreadyEnriched, persistEnrichmentResult } from '../integrations/persistEnrichment';
 import { logError, logInfo } from '../telemetry/logger';
 
 // Parole attese nel bottone Connect per confidence check pre-click.
@@ -283,61 +283,27 @@ export async function processInviteJob(
     // ── Enrichment al volo: arricchisci il lead prima di navigare al profilo ──
     // Guard: salta se il lead è già stato arricchito (evita doppio enrichment e spreco API)
     try {
-        const db = await getDatabase();
-        const alreadyEnriched = await db.get<{ lead_id: number }>(
-            `SELECT lead_id FROM lead_enrichment_data WHERE lead_id = ?`,
-            [payload.leadId],
-        );
-
-        if (!alreadyEnriched) {
+        if (!(await isLeadAlreadyEnriched(payload.leadId))) {
             await logInfo('invite.worker.enrichment_start', { leadId: payload.leadId });
             const enrichResult = await enrichLeadAuto(lead);
 
-            // Aggiorna i campi core sulla tabella leads
-            await db.run(
-                `UPDATE leads SET
-                    email = COALESCE(email, ?),
-                    phone = COALESCE(phone, ?),
-                    company_domain = COALESCE(company_domain, ?),
-                    business_email = COALESCE(business_email, ?),
-                    business_email_confidence = CASE
-                        WHEN business_email IS NOT NULL THEN business_email_confidence
-                        WHEN ? IS NOT NULL THEN ?
-                        ELSE business_email_confidence
-                    END,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?`,
-                [
-                    enrichResult.email, enrichResult.phone, enrichResult.companyDomain,
-                    enrichResult.businessEmail,
-                    enrichResult.businessEmail, enrichResult.businessEmailConfidence,
-                    payload.leadId,
-                ],
-            );
-
-            // Persisti il risultato completo in lead_enrichment_data
-            await db.run(
-                `INSERT OR REPLACE INTO lead_enrichment_data
-                 (lead_id, company_json, phones_json, socials_json, seniority, department, data_points, confidence, sources_json, domain_source, enriched_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-                [
-                    payload.leadId,
-                    enrichResult.companyName || enrichResult.companyDomain || enrichResult.industry
-                        ? JSON.stringify({ name: enrichResult.companyName, domain: enrichResult.companyDomain, industry: enrichResult.industry })
-                        : null,
-                    enrichResult.phone ? JSON.stringify([{ number: enrichResult.phone, type: 'work', source: enrichResult.source }]) : null,
-                    enrichResult.deepEnrichment?.socialProfiles?.length
-                        ? JSON.stringify(enrichResult.deepEnrichment.socialProfiles)
-                        : null,
-                    enrichResult.seniority,
-                    enrichResult.deepEnrichment?.department ?? null,
-                    [enrichResult.email, enrichResult.phone, enrichResult.jobTitle, enrichResult.companyName, enrichResult.location, enrichResult.seniority]
-                        .filter(Boolean).length,
-                    enrichResult.emailConfidence,
-                    JSON.stringify([enrichResult.source]),
-                    enrichResult.domainSource ?? null,
-                ],
-            );
+            await persistEnrichmentResult({
+                leadId: payload.leadId,
+                email: enrichResult.email,
+                phone: enrichResult.phone,
+                companyDomain: enrichResult.companyDomain,
+                businessEmail: enrichResult.businessEmail,
+                businessEmailConfidence: enrichResult.businessEmailConfidence,
+                emailConfidence: enrichResult.emailConfidence,
+                companyName: enrichResult.companyName,
+                industry: enrichResult.industry,
+                seniority: enrichResult.seniority,
+                jobTitle: enrichResult.jobTitle,
+                location: enrichResult.location,
+                source: enrichResult.source,
+                domainSource: enrichResult.domainSource,
+                deepEnrichment: enrichResult.deepEnrichment,
+            });
             await logInfo('invite.worker.enrichment_done', { leadId: payload.leadId, emailFound: !!enrichResult.email });
         } else {
             await logInfo('invite.worker.enrichment_skipped', { leadId: payload.leadId, reason: 'already_enriched' });
@@ -380,7 +346,7 @@ export async function processInviteJob(
     }
 
     if (await detectChallenge(context.session.page)) {
-        const resolved = await attemptChallengeResolution(context.session.page);
+        const resolved = await attemptChallengeResolution(context.session.page).catch(() => false);
         if (!resolved) {
             throw new ChallengeDetectedError();
         }
@@ -550,11 +516,15 @@ export async function processInviteJob(
         throw inviteError;
     }
 
+    const effectiveVariant = inviteResult.variant || (inviteResult.sentWithNote ? null : 'NO_NOTE');
+    if (!inviteResult.variant && effectiveVariant) {
+        await updateLeadPromptVariant(lead.id, effectiveVariant);
+    }
     await transitionLead(lead.id, 'INVITED', context.dryRun ? 'invite_dry_run' : 'invite_sent', {
         dryRun: context.dryRun,
         withNote: inviteResult.sentWithNote,
         withNoteSource: inviteResult.noteSource,
-        variant: inviteResult.variant || null,
+        variant: effectiveVariant,
         timing: payload.timing ?? null,
     });
 
@@ -570,10 +540,11 @@ export async function processInviteJob(
         });
     }
 
-    if (!context.dryRun && inviteResult.variant) {
+    if (!context.dryRun) {
+        const abVariant = inviteResult.variant || (inviteResult.sentWithNote ? 'UNKNOWN_NOTE' : 'NO_NOTE');
         const segmentKey = inferLeadSegment(lead.job_title);
         const hourBucket = inferHourBucket(new Date().getHours());
-        await recordSent(inviteResult.variant, { segmentKey, hourBucket }).catch(() => { });
+        await recordSent(abVariant, { segmentKey, hourBucket }).catch(() => { });
     }
     // invites_sent already incremented atomically by checkAndIncrementDailyLimit (pre-send)
     await incrementListDailyStat(context.localDate, lead.list_name, 'invites_sent');

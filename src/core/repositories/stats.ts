@@ -707,6 +707,15 @@ export async function countWeeklyInvites(weekStartDate: string, accountId: strin
     return row?.total ?? 0;
 }
 
+export async function countWeeklyMessages(weekStartDate: string, accountId: string = 'default'): Promise<number> {
+    const db = await getDatabase();
+    const row = await db.get<{ total: number }>(
+        `SELECT COALESCE(SUM(messages_sent), 0) as total FROM daily_stats WHERE date >= ? AND account_id = ?`,
+        [weekStartDate, accountId],
+    );
+    return row?.total ?? 0;
+}
+
 export async function getRiskInputs(localDate: string, hardInviteCap: number): Promise<RiskInputs> {
     const db = await getDatabase();
     const pendingInvites = await countLeadsByStatuses(['INVITED']);

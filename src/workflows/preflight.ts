@@ -334,118 +334,100 @@ function displayWarnings(warnings: PreflightWarning[]): void {
 
 // ─── Anti-Ban Checklist Interattiva ──────────────────────────────────────────
 
-interface AntiBanCheckItem {
-    question: string;
-    /** Se true, risposta "no" blocca il workflow */
-    blocking: boolean;
-    /** Suggerimento se l'utente risponde "no" */
-    hint: string;
-}
-
-const CHECKLIST_OUTREACH: ReadonlyArray<AntiBanCheckItem> = [
-    {
-        question: 'Hai chiuso TUTTI gli altri tab/finestre di LinkedIn?',
-        blocking: true,
-        hint: 'Chiudi ogni tab LinkedIn in tutti i browser prima di procedere.',
-    },
-    {
-        question: 'Il VPN/Proxy e\' lo stesso della sessione precedente (o prima volta)?',
-        blocking: false,
-        hint: 'Cambiare IP tra sessioni vicine e\' un segnale di automazione.',
-    },
-    {
-        question: 'Sai che NON devi cliccare nella finestra del browser automatizzato?',
-        blocking: true,
-        hint: 'Il bot blocca l\'input, ma click accidentali possono interferire.',
-    },
-    {
-        question: 'Sai che per chiudere devi usare Ctrl+C (MAI chiudere la finestra)?',
-        blocking: true,
-        hint: 'Chiusura brusca = segnale bot. Ctrl+C fa wind-down umano prima di chiudere.',
-    },
-];
-
-const CHECKLIST_SCRAPING: ReadonlyArray<AntiBanCheckItem> = [
-    {
-        question: 'Hai chiuso TUTTI gli altri tab/finestre di LinkedIn?',
-        blocking: true,
-        hint: 'Chiudi ogni tab LinkedIn in tutti i browser prima di procedere.',
-    },
-    {
-        question: 'Sai che NON devi interagire con la finestra del browser?',
-        blocking: true,
-        hint: 'Il bot gestisce tutto. Intervieni solo se appare un CAPTCHA.',
-    },
-    {
-        question: 'Sai che per chiudere devi usare Ctrl+C (MAI chiudere la finestra)?',
-        blocking: true,
-        hint: 'Ctrl+C = chiusura sicura con wind-down. Chiudere la finestra = rischio.',
-    },
-];
-
-async function runAntiBanChecklist(workflowName: string): Promise<boolean> {
+async function runAntiBanChecklist(workflowName: string, dbStats?: PreflightDbStats, _cfgStatus?: PreflightConfigStatus): Promise<boolean> {
     const isOutreach = workflowName === 'send-invites' || workflowName === 'send-messages';
-    const checklist = isOutreach ? CHECKLIST_OUTREACH : CHECKLIST_SCRAPING;
     const minHours = isOutreach ? 2 : 1;
 
-    // Check automatico tempo dall'ultima sessione (sostituisce la domanda manuale)
+    // ── Raccolta dati per domande intelligenti ──────────────────────────────
     const accounts = getRuntimeAccountProfiles();
-    let recentSessionWarning: string | null = null;
+    let recentSessionHours: number | null = null;
     for (const acc of accounts) {
         const lastTs = await getRuntimeFlag(`browser_session_started_at:${acc.id}`).catch(() => null);
         if (lastTs) {
             const parsedMs = Date.parse(lastTs);
             if (Number.isFinite(parsedMs)) {
-                const hoursSince = (Date.now() - parsedMs) / 3600000;
-                if (hoursSince < minHours) {
-                    recentSessionWarning = `Ultima sessione bot (${acc.id}): ${hoursSince.toFixed(1)}h fa — consigliato attendere almeno ${minHours}h tra sessioni.`;
-                    break;
-                }
+                const h = (Date.now() - parsedMs) / 3600000;
+                if (recentSessionHours === null || h < recentSessionHours) recentSessionHours = h;
             }
         }
     }
+
+    const pendingCount = dbStats?.byStatus['INVITED'] ?? 0;
+    const totalInvited = dbStats ? Object.values(dbStats.byStatus).reduce((s, v) => s + v, 0) : 0;
+    const pendingRatio = totalInvited > 0 ? pendingCount / totalInvited : 0;
+    const readyInvite = dbStats?.byStatus['READY_INVITE'] ?? 0;
+    const readyMessage = (dbStats?.byStatus['ACCEPTED'] ?? 0) + (dbStats?.byStatus['READY_MESSAGE'] ?? 0);
+    const lastSyncDaysAgo = dbStats?.lastSyncAt
+        ? Math.floor((Date.now() - new Date(dbStats.lastSyncAt).getTime()) / 86400000)
+        : null;
+    const leadsWithoutEmail = dbStats?.withoutEmail ?? 0;
+    const totalLeads = dbStats?.totalLeads ?? 0;
+    const isFirstSessionToday = recentSessionHours === null || recentSessionHours > 12;
 
     console.log('');
     console.log('  CHECKLIST ANTI-BAN:');
     console.log('');
 
-    if (recentSessionWarning) {
-        console.log(`    [!] ${recentSessionWarning}`);
+    // ── Domanda 1: SEMPRE — rapida, unica domanda bloccante ─────────────────
+    const tabOk = await askConfirmation('    Tab LinkedIn chiusi e browser pronto? [Y/n] ');
+    if (!tabOk) {
+        console.log('      -> Chiudi TUTTI i tab LinkedIn. Per fermare: Ctrl+C (mai chiudere la finestra).');
         console.log('');
-    }
-
-    let blocked = false;
-    const failedItems: string[] = [];
-
-    for (const item of checklist) {
-        const ok = await askConfirmation(`    ${item.question} [Y/n] `);
-        if (!ok) {
-            console.log(`      -> ${item.hint}`);
-            if (item.blocking) {
-                blocked = true;
-                failedItems.push(item.question);
-            }
-        }
-    }
-
-    if (blocked) {
-        console.log('');
-        console.log('  [!!!] Checklist anti-ban NON superata. Risolvi prima di procedere:');
-        for (const f of failedItems) {
-            console.log(`    - ${f}`);
-        }
+        console.log('  [!!!] Risolvi prima di procedere.');
         return false;
     }
 
-    // Tips finali (non bloccanti, solo promemoria)
-    console.log('');
-    console.log('  TIPS SESSIONE:');
-    console.log('    [i] Se appare un CAPTCHA: risolvilo manualmente, il bot riprende da solo');
-    if (isOutreach) {
-        console.log('    [i] Dopo la sessione: aspetta almeno 2h prima di usare LinkedIn');
-    } else {
-        console.log('    [i] Dopo la sessione: aspetta almeno 1h prima di usare LinkedIn');
+    // ── Domande context-aware (solo se i dati le richiedono) ─────────────────
+
+    // Sessione recente: chiedi solo se < minHours
+    if (recentSessionHours !== null && recentSessionHours < minHours) {
+        const minLeft = Math.ceil((minHours - recentSessionHours) * 60);
+        const proceedAnyway = await askConfirmation(`    [!] Ultima sessione ${recentSessionHours.toFixed(1)}h fa (consigliato ${minHours}h). Procedere comunque? [y/N] `);
+        if (!proceedAnyway) {
+            console.log(`      -> Attendi ~${minLeft} minuti prima della prossima sessione.`);
+            return false;
+        }
     }
+
+    // Pending ratio alto: offri di ritirare inviti vecchi
+    if (isOutreach && pendingRatio > 0.50 && pendingCount > 10) {
+        console.log(`    [!] Pending ratio: ${Math.round(pendingRatio * 100)}% (${pendingCount} inviti in attesa)`);
+        console.log(`        LinkedIn flagga account con pending ratio >65%.`);
+        console.log(`        Consiglio: ritira inviti vecchi con "bot.ps1 run check" prima di inviare nuovi.`);
+        console.log('');
+    }
+
+    // Dati obsoleti: suggerisci sync prima
+    if (lastSyncDaysAgo !== null && lastSyncDaysAgo > 7) {
+        console.log(`    [!] Ultimo sync: ${lastSyncDaysAgo} giorni fa — i dati potrebbero essere obsoleti.`);
+        console.log('        Consiglio: lancia "bot.ps1 sync-list" per aggiornare prima di procedere.');
+        console.log('');
+    }
+
+    // Lead incompleti: suggerisci enrichment
+    if (totalLeads > 10 && leadsWithoutEmail > totalLeads * 0.7) {
+        console.log(`    [i] ${leadsWithoutEmail}/${totalLeads} lead senza email — l'enrichment migliorerà la personalizzazione.`);
+        console.log('');
+    }
+
+    // Nessun lead pronto per il workflow specifico
+    if (workflowName === 'send-invites' && readyInvite === 0) {
+        console.log('    [!] 0 lead READY_INVITE — non ci sono lead pronti da invitare.');
+        console.log('        Lancia prima "bot.ps1 sync-search" o "bot.ps1 sync-list" con enrichment.');
+        console.log('');
+    }
+    if (workflowName === 'send-messages' && readyMessage === 0) {
+        console.log('    [!] 0 lead pronti per messaggi — attendi che qualcuno accetti i tuoi inviti.');
+        console.log('');
+    }
+
+    // ── Tips sessione ────────────────────────────────────────────────────────
+    console.log('  TIPS SESSIONE:');
+    console.log('    [i] CAPTCHA: il bot li risolve automaticamente (GPT-5.4 + Ollama fallback)');
+    if (isFirstSessionToday) {
+        console.log('    [i] Prima sessione oggi: il bot farà warmup (feed + notifiche) prima di agire');
+    }
+    console.log(`    [i] Dopo la sessione: aspetta almeno ${minHours}h prima di usare LinkedIn`);
     console.log('');
 
     return true;
@@ -492,13 +474,18 @@ export async function runPreflight(pfConfig: PreflightConfig): Promise<Preflight
     console.log(`  PRE-FLIGHT: ${pfConfig.workflowName.toUpperCase()}`);
     console.log('════════════════════════════════════════════════════════════════');
 
-    // ── Checklist anti-ban interattiva ─────────────────────────
-    const checklistPassed = await runAntiBanChecklist(pfConfig.workflowName);
+    // Collect stats PRIMA della checklist — le domande intelligenti usano questi dati
+    const earlyListFilter = pfConfig.cliOverrides?.['listName'] ?? pfConfig.listFilter;
+    const dbStats = await collectDbStats(earlyListFilter);
+    const configStatus = await collectConfigStatus();
+
+    // ── Checklist anti-ban interattiva (context-aware) ──────────
+    const checklistPassed = await runAntiBanChecklist(pfConfig.workflowName, dbStats, configStatus);
     if (!checklistPassed) {
         return {
             answers,
-            dbStats: await collectDbStats(pfConfig.listFilter),
-            configStatus: await collectConfigStatus(),
+            dbStats,
+            configStatus,
             warnings: [],
             confirmed: false,
             riskAssessment: { level: 'STOP', score: 100, factors: { checklist: 100 }, recommendation: 'Checklist anti-ban non superata' },
@@ -524,10 +511,8 @@ export async function runPreflight(pfConfig: PreflightConfig): Promise<Preflight
         }
     }
 
-    // Collect stats
-    const listFilter = answers['list'] ?? pfConfig.listFilter;
-    const dbStats = await collectDbStats(listFilter);
-    const configStatus = await collectConfigStatus();
+    // Aggiorna listFilter con eventuale risposta dell'utente
+    const listFilter = answers['list'] ?? answers['listName'] ?? earlyListFilter;
     const warnings = pfConfig.generateWarnings(dbStats, configStatus, answers);
 
     // Risk Assessment (5.1 wire)

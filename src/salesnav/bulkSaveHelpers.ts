@@ -16,15 +16,23 @@ import {
 } from '../browser/humanBehavior';
 import { visionClick, type VisionRegionClip } from './visionNavigator';
 
-/** When true, reInjectOverlays skips ensureInputBlock — user needs to interact with the browser. */
-let _inputBlockSuspended = false;
+/**
+ * Per-Page state: quando true per una data Page, reInjectOverlays skippa tutti gli overlay.
+ * WeakMap invece di variabile globale → isolamento per-Page, zero memory leak, multi-account safe.
+ */
+const _inputBlockSuspendedMap = new WeakMap<Page, boolean>();
 
-export function setInputBlockSuspended(value: boolean): void {
-    _inputBlockSuspended = value;
+export function setInputBlockSuspended(page: Page, value: boolean): void {
+    if (value) {
+        _inputBlockSuspendedMap.set(page, true);
+    } else {
+        _inputBlockSuspendedMap.delete(page);
+    }
 }
 
-export function isInputBlockSuspended(): boolean {
-    return _inputBlockSuspended;
+export function isInputBlockSuspended(page?: Page): boolean {
+    if (!page) return false;
+    return _inputBlockSuspendedMap.get(page) === true;
 }
 
 export function isPageClosedError(error: unknown): boolean {
@@ -113,10 +121,13 @@ export async function reInjectOverlays(page: Page): Promise<void> {
             w.__defProp = Object.defineProperty;
         }
     }).catch(() => null);
-    await ensureVisualCursorOverlay(page);
-    if (!_inputBlockSuspended) {
-        await ensureInputBlock(page);
+    // Quando suspended (login manuale in corso), NON iniettare nessun overlay —
+    // né il cursore visuale (cursor:none nasconde il mouse reale) né l'input block.
+    if (_inputBlockSuspendedMap.has(page)) {
+        return;
     }
+    await ensureVisualCursorOverlay(page);
+    await ensureInputBlock(page);
 }
 
 /**
@@ -131,6 +142,9 @@ export async function smartClick(
     await humanMouseMoveToCoords(page, targetX, targetY);
     await pulseVisualCursorOverlay(page);
     await pauseInputBlock(page);
+    // 30ms wait per garantire che il browser applichi pointer-events:none
+    // prima del click (race condition render loop → click intercettato dall'overlay)
+    await page.waitForTimeout(30);
     await page.mouse.click(targetX, targetY, { delay: 40 + Math.floor(Math.random() * 70) });
     await resumeInputBlock(page);
 }
@@ -157,45 +171,30 @@ export async function visionNavigationStep(
     stepName: string,
     prompt: string,
     verifyFn: () => Promise<boolean>,
-    domFallbackSelectors?: string[],
+    _domFallbackSelectors?: string[],
     dismissFn?: (p: Page) => Promise<void>,
 ): Promise<boolean> {
-    if (domFallbackSelectors) {
-        for (const sel of domFallbackSelectors) {
-            const el = page.locator(sel).first();
-            if ((await el.count().catch(() => 0)) > 0) {
-                const box = await locatorBoundingBox(el);
-                if (box) {
-                    console.log(`[AI-NAV] ${stepName}: trovato via DOM (${sel})`);
-                    await smartClick(page, box);
-                } else {
-                    await pauseInputBlock(page);
-                    await el.click({ timeout: 5_000 }).catch(() => null);
-                    await resumeInputBlock(page);
-                }
-                await page.waitForLoadState('domcontentloaded', { timeout: 15_000 }).catch(() => null);
-                await humanDelay(page, 800, 1_500);
-                if (await verifyFn()) return true;
-            }
-        }
-    }
+    // AI-first: prova Vision AI per prima (più umana, clicca dove vede).
+    // Aspetta 2s che la pagina si stabilizzi prima di fare lo screenshot.
+    await page.waitForLoadState('domcontentloaded', { timeout: 10_000 }).catch(() => null);
+    await humanDelay(page, 1_000, 2_000);
 
     for (let attempt = 1; attempt <= 2; attempt++) {
         try {
             console.log(`[AI-NAV] ${stepName}: analizzo screenshot (tentativo ${attempt})...`);
-            await visionClick(page, prompt, { retries: 2 });
+            await visionClick(page, prompt, { retries: 1 });
             await page.waitForLoadState('domcontentloaded', { timeout: 15_000 }).catch(() => null);
             await humanDelay(page, 1_000, 2_000);
             if (dismissFn) await dismissFn(page);
 
             if (await verifyFn()) {
-                console.log(`[AI-NAV] ${stepName}: completato con successo`);
+                console.log(`[AI-NAV] ${stepName}: completato con successo via AI`);
                 return true;
             }
-            console.log(`[AI-NAV] ${stepName}: click eseguito ma verifica fallita, riprovo...`);
+            console.log(`[AI-NAV] ${stepName}: click AI eseguito ma verifica fallita, riprovo...`);
         } catch (error) {
             const msg = error instanceof Error ? error.message : String(error);
-            console.log(`[AI-NAV] ${stepName}: tentativo ${attempt} fallito — ${msg}`);
+            console.log(`[AI-NAV] ${stepName}: tentativo AI ${attempt} fallito — ${msg}`);
         }
         await humanDelay(page, 500, 1_000);
     }

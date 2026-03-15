@@ -1,6 +1,7 @@
 import { WorkerContext } from './context';
 import { WorkerExecutionResult, workerResult } from './result';
 import { enrichLeadAuto } from '../integrations/leadEnricher';
+import { persistEnrichmentResult } from '../integrations/persistEnrichment';
 import { getDatabase } from '../db';
 import { logError, logInfo } from '../telemetry/logger';
 
@@ -43,51 +44,23 @@ export async function processEnrichmentJob(
     try {
         const result = await enrichLeadAuto(lead);
 
-        // Update core fields on leads table
-        await db.run(
-            `UPDATE leads SET
-                email = COALESCE(email, ?),
-                phone = COALESCE(phone, ?),
-                company_domain = COALESCE(company_domain, ?),
-                business_email = COALESCE(business_email, ?),
-                business_email_confidence = CASE
-                    WHEN business_email IS NOT NULL THEN business_email_confidence
-                    WHEN ? IS NOT NULL THEN ?
-                    ELSE business_email_confidence
-                END,
-                updated_at = CURRENT_TIMESTAMP
-             WHERE id = ?`,
-            [
-                result.email, result.phone, result.companyDomain,
-                result.businessEmail,
-                result.businessEmail, result.businessEmailConfidence,
-                payload.leadId,
-            ],
-        );
-
-        // Persist full enrichment result to lead_enrichment_data (prevents re-enrichment)
-        await db.run(
-            `INSERT OR REPLACE INTO lead_enrichment_data
-             (lead_id, company_json, phones_json, socials_json, seniority, department, data_points, confidence, sources_json, domain_source, enriched_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-            [
-                payload.leadId,
-                result.companyName || result.companyDomain || result.industry
-                    ? JSON.stringify({ name: result.companyName, domain: result.companyDomain, industry: result.industry })
-                    : null,
-                result.phone ? JSON.stringify([{ number: result.phone, type: 'work', source: result.source }]) : null,
-                result.deepEnrichment?.socialProfiles?.length
-                    ? JSON.stringify(result.deepEnrichment.socialProfiles)
-                    : null,
-                result.seniority,
-                result.deepEnrichment?.department ?? null,
-                [result.email, result.phone, result.jobTitle, result.companyName, result.location, result.seniority]
-                    .filter(Boolean).length,
-                result.emailConfidence,
-                JSON.stringify([result.source]),
-                result.domainSource ?? null,
-            ],
-        );
+        await persistEnrichmentResult({
+            leadId: payload.leadId,
+            email: result.email,
+            phone: result.phone,
+            companyDomain: result.companyDomain,
+            businessEmail: result.businessEmail,
+            businessEmailConfidence: result.businessEmailConfidence,
+            emailConfidence: result.emailConfidence,
+            companyName: result.companyName,
+            industry: result.industry,
+            seniority: result.seniority,
+            jobTitle: result.jobTitle,
+            location: result.location,
+            source: result.source,
+            domainSource: result.domainSource,
+            deepEnrichment: result.deepEnrichment,
+        });
 
         await logInfo('enrichment.worker.done', {
             leadId: payload.leadId,

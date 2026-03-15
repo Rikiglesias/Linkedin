@@ -554,10 +554,12 @@ describe('Legacy Core Domain Unit Tests', () => {
                     click: async () => {
                         clickAttempts.push(selector);
                     },
+                    boundingBox: async () => null,
                 }),
             }),
             waitForTimeout: async () => undefined,
             url: () => 'https://example.test/profile',
+            screenshot: async () => Buffer.from(''),
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any;
 
@@ -580,10 +582,12 @@ describe('Legacy Core Domain Unit Tests', () => {
                     click: async () => {
                         cacheAttempts.push(selector);
                     },
+                    boundingBox: async () => null,
                 }),
             }),
             waitForTimeout: async () => undefined,
             url: () => 'https://www.linkedin.com/in/cache-test-user/',
+            screenshot: async () => Buffer.from(''),
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any;
 

@@ -7,6 +7,7 @@ import { WorkerContext } from './context';
 import { ChallengeDetectedError, RetryableWorkerError } from './errors';
 import { attemptChallengeResolution } from './challengeHandler';
 import { isSalesNavigatorUrl, normalizeLinkedInUrl } from '../linkedinUrl';
+import { navigateToProfileForCheck } from '../browser/navigationContext';
 import { bridgeDailyStat, bridgeLeadStatus } from '../cloud/cloudBridge';
 import { Page } from 'playwright';
 import { recordOutcome } from '../ml/abBandit';
@@ -62,12 +63,12 @@ export async function processAcceptanceJob(
         return workerResult(1);
     }
 
-    await context.session.page.goto(lead.linkedin_url, { waitUntil: 'domcontentloaded' });
+    await navigateToProfileForCheck(context.session.page, lead.linkedin_url, context.accountId ?? 'default');
     await humanDelay(context.session.page, 2000, 4000);
     await contextualReadingPause(context.session.page);
 
     if (await detectChallenge(context.session.page)) {
-        const resolved = await attemptChallengeResolution(context.session.page);
+        const resolved = await attemptChallengeResolution(context.session.page).catch(() => false);
         if (!resolved) {
             throw new ChallengeDetectedError();
         }

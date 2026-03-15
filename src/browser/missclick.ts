@@ -25,6 +25,8 @@ export interface MissclickConfig {
     safeOffsetMaxPx: number;
     recoveryDelayMinMs: number;
     recoveryDelayMaxMs: number;
+    /** Funzione di movimento mouse iniettata dal caller (evita circular dep con humanBehavior). */
+    moveFn?: (page: Page, x: number, y: number) => Promise<void>;
 }
 
 const DEFAULT_CONFIG: MissclickConfig = {
@@ -159,13 +161,15 @@ export async function performMissclick(
     const missPoint = await computeSafeMissclickPoint(page, targetX, targetY, c);
     if (!missPoint) return false;
 
-    await page.mouse.move(missPoint.x, missPoint.y, { steps: 5 });
+    // Usa moveFn iniettata dal caller per movimenti Bezier (evita circular dep con humanBehavior)
+    const move = c.moveFn ?? ((p: Page, x: number, y: number) => p.mouse.move(x, y, { steps: 10 }));
+    await move(page, missPoint.x, missPoint.y);
     await page.mouse.click(missPoint.x, missPoint.y);
 
     const hesitation = randomBetween(c.recoveryDelayMinMs, c.recoveryDelayMaxMs);
     await page.waitForTimeout(hesitation);
 
-    await page.mouse.move(targetX, targetY, { steps: 8 });
+    await move(page, targetX, targetY);
 
     void logInfo('missclick.performed', {
         missX: Math.round(missPoint.x),

@@ -121,8 +121,21 @@ app.use((req, res, next) => {
 // ── Rate Limiting ────────────────────────────────────────────────────────────
 // keyGenerator: identifica il client per session token o API key, non solo IP.
 // Dietro NAT/proxy tutti condividono l'IP → il rate limit per IP è insufficiente.
+function normalizeIpForRateLimit(ip: string): string {
+    if (!ip) return 'unknown';
+    // IPv6-mapped IPv4 (::ffff:127.0.0.1 → 127.0.0.1)
+    if (ip.startsWith('::ffff:')) return ip.slice(7);
+    // Collapse IPv6 to /64 prefix to treat the same subnet equally
+    if (ip.includes(':')) {
+        const parts = ip.split(':').slice(0, 4);
+        return parts.join(':');
+    }
+    return ip;
+}
+
 function rateLimitKeyGenerator(req: Request): string {
-    const ip = req.ip ?? req.socket?.remoteAddress ?? 'unknown';
+    const rawIp = req.ip ?? req.socket?.remoteAddress ?? 'unknown';
+    const ip = normalizeIpForRateLimit(rawIp);
     const apiKey = (req.header('x-api-key') ?? '').trim();
     if (apiKey) return `apikey:${apiKey.slice(0, 8)}`;
     const sessionToken = parseCookieHeader(req)[DASHBOARD_SESSION_COOKIE];
@@ -137,6 +150,7 @@ const globalLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: rateLimitKeyGenerator,
+    validate: { keyGeneratorIpFallback: false },
     skip: (req) => {
         const path = req.path ?? '';
         const originalUrl = req.originalUrl ?? '';
@@ -153,6 +167,7 @@ const controlsLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: rateLimitKeyGenerator,
+    validate: { keyGeneratorIpFallback: false },
     message: { error: 'Troppe operazioni di controllo. Attendi prima di riprovare.' },
 });
 app.use('/api/controls/', controlsLimiter);

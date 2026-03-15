@@ -1,4 +1,4 @@
-import { getFailedJobs, markJobAsDeadLetter, recycleJob } from '../core/repositories';
+import { getDeadLetterJobs, markJobAsDeadLetter, recycleJob } from '../core/repositories';
 import { JobRecord } from '../types/domain';
 import { logInfo, logError, logWarn } from '../telemetry/logger';
 
@@ -67,8 +67,8 @@ export function isErrorRecoverable(errorMsg: string): boolean {
 }
 
 /**
- * Worker node that queries FAILED jobs, analyzes the errors, and decides their fate.
- * FAILED jobs are those that have exhausted all their attempts (`attempts >= max_attempts`).
+ * Worker node that queries DEAD_LETTER jobs, analyzes the errors, and decides their fate.
+ * DEAD_LETTER jobs are those that have exhausted all their attempts (`attempts >= max_attempts`).
  */
 export async function runDeadLetterWorker(options: DeadLetterOptions = {}): Promise<DeadLetterResult> {
     const batchSize = options.batchSize || 100;
@@ -84,41 +84,46 @@ export async function runDeadLetterWorker(options: DeadLetterOptions = {}): Prom
         let hasMore = true;
 
         while (hasMore) {
-            const failedJobs: JobRecord[] = await getFailedJobs(batchSize);
+            const dlqJobs: JobRecord[] = await getDeadLetterJobs(batchSize);
 
-            if (failedJobs.length === 0) {
+            if (dlqJobs.length === 0) {
                 hasMore = false;
                 break;
             }
 
-            for (const job of failedJobs) {
+            for (const job of dlqJobs) {
                 processed++;
                 const errorMsg = job.last_error || 'Unknown Error';
 
-                const recoverable = isErrorRecoverable(errorMsg);
+                // Recycle cap: se il job è già stato riciclato una volta, non riciclarlo di nuovo.
+                // Doppio segnale: (1) marker [DLQ_RECYCLED] nel last_error (sopravvive se il jobRunner
+                // non lo sovrascrive) e (2) priority >= 50 (recycleJob setta priority=50, i job normali
+                // hanno priority 10-30). Il check su priority è il segnale robusto perché il jobRunner
+                // NON modifica il campo priority durante retry/dead-letter.
+                const alreadyRecycled = errorMsg.includes('[DLQ_RECYCLED]') || job.priority >= 50;
+                const recoverable = !alreadyRecycled && isErrorRecoverable(errorMsg);
 
                 if (recoverable) {
-                    // Calculate a delay, perhaps adding jitter so they don't all run together
                     const jitter = Math.floor(Math.random() * 3600);
                     const delaySec = baseRecycleDelaySec + jitter;
 
                     // Priority 50 is lower than regular jobs (usually 10 for invites, 30 for checks)
-                    await recycleJob(job.id, delaySec, 50);
+                    await recycleJob(job.id, delaySec, 50, errorMsg.substring(0, 200));
                     recycled++;
                     await logInfo(
                         `Recycled Job ${job.id} (${job.type}) due to recoverable error: ${errorMsg.substring(0, 50)}`,
                     );
                 } else {
-                    await markJobAsDeadLetter(job.id, `Terminated. Original error: ${errorMsg}`);
+                    const reason = alreadyRecycled ? 'already_recycled_once' : 'terminal_error';
+                    await markJobAsDeadLetter(job.id, `[DLQ_TERMINATED:${reason}] ${errorMsg}`);
                     deadLettered++;
                     await logWarn(
-                        `Dead-Lettered Job ${job.id} (${job.type}) due to terminal error: ${errorMsg.substring(0, 50)}`,
+                        `Dead-Lettered Job ${job.id} (${job.type}) reason=${reason}: ${errorMsg.substring(0, 50)}`,
                     );
                 }
             }
 
-            // To avoid infinite loops, if the number of fetched jobs is less than batch size, we are done
-            if (failedJobs.length < batchSize) {
+            if (dlqJobs.length < batchSize) {
                 hasMore = false;
             }
         }

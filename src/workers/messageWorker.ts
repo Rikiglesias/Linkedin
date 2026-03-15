@@ -28,6 +28,7 @@ import { WorkerContext } from './context';
 import { ChallengeDetectedError, RetryableWorkerError } from './errors';
 import { attemptChallengeResolution } from './challengeHandler';
 import { isSalesNavigatorUrl } from '../linkedinUrl';
+import { isLoggedIn } from '../browser/auth';
 import { navigateToProfileForMessage } from '../browser/navigationContext';
 import { ensureViewportDwell } from '../browser/humanBehavior';
 import { buildPersonalizedFollowUpMessage } from '../ai/messagePersonalizer';
@@ -73,6 +74,7 @@ export async function processMessageJob(
     let messageModel: string | null = null;
 
     let lang: string | undefined;
+    let forceTemplate = false;
     if (payload.metadata_json) {
         try {
             const meta = JSON.parse(payload.metadata_json);
@@ -81,26 +83,35 @@ export async function processMessageJob(
                 messageSource = 'template';
             }
             if (meta.lang) lang = meta.lang;
+            if (meta.messageMode === 'template') forceTemplate = true;
         } catch {
             // ignore JSON parse error in metadata
         }
     }
 
     if (!message) {
-        // Cerca prima un messaggio pre-built (generato offline in batch — zero latenza AI)
-        const prebuilt = await getUnusedPrebuiltMessage(lead.id);
-        if (prebuilt) {
-            message = prebuilt.message;
-            messageSource = prebuilt.source as 'template' | 'ai';
-            messageModel = prebuilt.model;
-            await markPrebuiltMessageUsed(prebuilt.id);
-            await logInfo('message.used_prebuilt', { leadId: lead.id, prebuiltId: prebuilt.id });
+        if (forceTemplate) {
+            // L'utente ha scelto 'template' nel preflight — usa solo il template, niente AI
+            const { buildFollowUpMessage } = await import('../messages');
+            message = buildFollowUpMessage(lead);
+            messageSource = 'template';
+            messageModel = null;
         } else {
-            // Fallback: generazione on-the-fly (aggiunge ~2-5s di latenza AI)
-            const personalized = await buildPersonalizedFollowUpMessage(lead, lang);
-            message = personalized.message;
-            messageSource = personalized.source as 'template' | 'ai';
-            messageModel = personalized.model;
+            // Cerca prima un messaggio pre-built (generato offline in batch — zero latenza AI)
+            const prebuilt = await getUnusedPrebuiltMessage(lead.id);
+            if (prebuilt) {
+                message = prebuilt.message;
+                messageSource = prebuilt.source as 'template' | 'ai';
+                messageModel = prebuilt.model;
+                await markPrebuiltMessageUsed(prebuilt.id);
+                await logInfo('message.used_prebuilt', { leadId: lead.id, prebuiltId: prebuilt.id });
+            } else {
+                // Fallback: generazione on-the-fly (aggiunge ~2-5s di latenza AI)
+                const personalized = await buildPersonalizedFollowUpMessage(lead, lang);
+                message = personalized.message;
+                messageSource = personalized.source as 'template' | 'ai';
+                messageModel = personalized.model;
+            }
         }
     }
 
@@ -132,9 +143,22 @@ export async function processMessageJob(
     await contextualReadingPause(context.session.page);
 
     if (await detectChallenge(context.session.page)) {
-        const resolved = await attemptChallengeResolution(context.session.page);
+        const resolved = await attemptChallengeResolution(context.session.page).catch(() => false);
         if (!resolved) {
             throw new ChallengeDetectedError();
+        }
+    }
+
+    // Session validity check prima di azioni critiche (come inviteWorker).
+    // Se il cookie è scaduto mid-session, la pagina redirige al login.
+    // Detectare subito evita retry inutili su una pagina di login.
+    if (!context.dryRun) {
+        const stillLoggedIn = await isLoggedIn(context.session.page);
+        if (!stillLoggedIn) {
+            throw new RetryableWorkerError(
+                'Sessione LinkedIn scaduta durante il flusso message — aborto per evitare retry su login page',
+                'SESSION_EXPIRED',
+            );
         }
     }
 
@@ -144,6 +168,23 @@ export async function processMessageJob(
     // Viewport Dwell Time (3.3): assicura che il bottone Message sia nel viewport
     // da almeno 800-2000ms prima del click — previene segnale click-before-visible.
     await ensureViewportDwell(context.session.page, joinSelectors('messageButton'));
+
+    // Confidence check: verifica che il bottone contenga "Message"/"Messaggio" prima di cliccare
+    const msgBtn = context.session.page.locator(joinSelectors('messageButton')).first();
+    if ((await msgBtn.count()) > 0) {
+        const btnText = await msgBtn.innerText().catch(() => '');
+        if (!/message|messaggio|invia/i.test(btnText.trim())) {
+            await logInfo('message.confidence_check_failed', {
+                leadId: lead.id,
+                buttonText: btnText.trim().substring(0, 40),
+            });
+            await incrementDailyStat(context.localDate, 'selector_failures');
+            throw new RetryableWorkerError(
+                `Confidence check FAILED: bottone dice "${btnText.trim().substring(0, 40)}"`,
+                'MESSAGE_BUTTON_NOT_FOUND',
+            );
+        }
+    }
 
     await humanMouseMove(context.session.page, joinSelectors('messageButton'));
     await humanDelay(context.session.page, 120, 320);

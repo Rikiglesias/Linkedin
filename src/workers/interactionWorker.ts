@@ -11,6 +11,8 @@ import { WorkerContext } from './context';
 import { WorkerExecutionResult, workerResult } from './result';
 import { logError, logInfo, logWarn } from '../telemetry/logger';
 import { humanDelay, simulateHumanReading, humanMouseMove } from '../browser/humanBehavior';
+import { detectChallenge } from '../browser/auth';
+import { navigateToProfileForCheck } from '../browser/navigationContext';
 import { getDatabase } from '../db';
 import { ChallengeDetectedError } from './errors';
 import { config, getLocalDateString } from '../config';
@@ -31,22 +33,11 @@ async function getLeadLinkedinUrl(leadId: number): Promise<string | null> {
     return row?.linkedin_url ?? null;
 }
 
-function detectChallengeOnPage(page: Page): Promise<boolean> {
-    return page.evaluate(() => {
-        const body = document.body?.innerText ?? '';
-        return (
-            body.includes('checkpoint') ||
-            body.includes('verify') ||
-            body.includes('captcha') ||
-            body.includes('unusual activity')
-        );
-    });
-}
 
 // ─── VIEW PROFILE ───────────────────────────────────────────────────────────────
 
-async function performViewProfile(page: Page, linkedinUrl: string): Promise<void> {
-    await page.goto(linkedinUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 });
+async function performViewProfile(page: Page, linkedinUrl: string, accountId: string): Promise<void> {
+    await navigateToProfileForCheck(page, linkedinUrl, accountId);
     await humanDelay(page, 2000, 4000);
     await simulateHumanReading(page);
 
@@ -59,8 +50,9 @@ async function performViewProfile(page: Page, linkedinUrl: string): Promise<void
 
 // ─── LIKE POST ──────────────────────────────────────────────────────────────────
 
-async function performLikePost(page: Page, linkedinUrl: string): Promise<void> {
-    // Prima naviga sul profilo per trovare activity
+async function performLikePost(page: Page, linkedinUrl: string, accountId: string): Promise<void> {
+    // Naviga al profilo con context chain, poi vai alla pagina activity
+    await navigateToProfileForCheck(page, linkedinUrl, accountId);
     const activityUrl = linkedinUrl.replace(/\/$/, '') + '/recent-activity/all/';
     await page.goto(activityUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 });
     await humanDelay(page, 2500, 5000);
@@ -91,8 +83,8 @@ async function performLikePost(page: Page, linkedinUrl: string): Promise<void> {
 
 // ─── FOLLOW ─────────────────────────────────────────────────────────────────────
 
-async function performFollow(page: Page, linkedinUrl: string): Promise<void> {
-    await page.goto(linkedinUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 });
+async function performFollow(page: Page, linkedinUrl: string, accountId: string): Promise<void> {
+    await navigateToProfileForCheck(page, linkedinUrl, accountId);
     await humanDelay(page, 2000, 4000);
 
     const followSelectors = [
@@ -159,17 +151,18 @@ export async function processInteractionJob(
     const page = context.session.page;
 
     try {
+        const effectiveAccountId = context.accountId ?? 'default';
         switch (actionType) {
             case 'VIEW_PROFILE':
-                await performViewProfile(page, linkedinUrl);
+                await performViewProfile(page, linkedinUrl, effectiveAccountId);
                 await incrementDailyStat(getLocalDateString(), 'profile_views');
                 break;
             case 'LIKE_POST':
-                await performLikePost(page, linkedinUrl);
+                await performLikePost(page, linkedinUrl, effectiveAccountId);
                 await incrementDailyStat(getLocalDateString(), 'likes_given');
                 break;
             case 'FOLLOW':
-                await performFollow(page, linkedinUrl);
+                await performFollow(page, linkedinUrl, effectiveAccountId);
                 await incrementDailyStat(getLocalDateString(), 'follows_given');
                 break;
             default:
@@ -178,7 +171,7 @@ export async function processInteractionJob(
         }
 
         // Verifica challenge dopo l'azione
-        const isChallenged = await detectChallengeOnPage(page).catch(() => false);
+        const isChallenged = await detectChallenge(page).catch(() => false);
         if (isChallenged) {
             throw new ChallengeDetectedError(`Challenge rilevata dopo azione ${actionType} su ${linkedinUrl}`);
         }

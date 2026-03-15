@@ -98,30 +98,94 @@ export class OpenAIVisionProvider implements VisionProvider {
         description: string,
         viewportBounds?: { width: number; height: number },
     ): Promise<Coordinates | null> {
-        const prompt = `Analyze this UI screenshot carefully. Find the visible target: "${description}".
-Respond with valid JSON only and no extra text.
-If the target is visible, return {"x": number, "y": number} using the approximate center pixel.
-If the target is not visible, return {"x": null, "y": null}.`;
+        this.checkBudget();
 
-        const result = await this.analyzeImage(base64Image, prompt);
+        const imageData = this.redactScreenshots
+            ? await this.applyRedaction(base64Image)
+            : base64Image;
+
+        const maxW = viewportBounds?.width ?? 1920;
+        const maxH = viewportBounds?.height ?? 1080;
+
+        // Grid approach: GPT non sa dare coordinate pixel precise da screenshot raw.
+        // Dividiamo lo screenshot in una griglia 8x6 (48 celle) e chiediamo al modello
+        // in quale cella si trova l'elemento. Poi convertiamo cella → pixel.
+        const gridCols = 8;
+        const gridRows = 6;
+        const cellW = Math.floor(maxW / gridCols);
+        const cellH = Math.floor(maxH / gridRows);
+
+        // Genera descrizione griglia per il prompt
+        const gridDesc = `The screenshot is divided into a ${gridCols}x${gridRows} grid. Columns are labeled A-H (left to right), rows are labeled 1-${gridRows} (top to bottom). Each cell is approximately ${cellW}x${cellH} pixels. Example: "B2" means column B (second from left), row 2 (second from top).`;
+
+        const systemPrompt = `You are a UI element locator. You find elements in screenshots using a grid system. ${gridDesc} Respond with ONLY a JSON object.`;
+
+        const userPrompt = `Find this element: "${description}"
+
+Return the grid cell where the CENTER of the element is located.
+Format: {"col": "A-H", "row": 1-${gridRows}}
+If the element is NOT visible: {"col": null, "row": null}
+Return ONLY the JSON.`;
+
+        const messages: OpenAIMessage[] = [
+            { role: 'system', content: systemPrompt },
+            {
+                role: 'user',
+                content: [
+                    {
+                        type: 'image_url',
+                        image_url: { url: `data:image/png;base64,${imageData}`, detail: 'high' },
+                    },
+                    { type: 'text', text: userPrompt },
+                ],
+            },
+        ];
+
+        const responseText = await this.callApi(messages);
+        const cost = this.estimateCost(imageData.length);
+        this.sessionCostUsd += cost;
 
         try {
-            const jsonMatch = result.text.match(/\{[\s\S]*?\}/);
+            const jsonMatch = responseText.match(/\{[\s\S]*?\}/);
             if (jsonMatch) {
                 const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
-                if (parsed.x === null || parsed.y === null) return null;
-                if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
-                    const maxW = viewportBounds?.width ?? 1920;
-                    const maxH = viewportBounds?.height ?? 1080;
+                if (parsed.col === null || parsed.row === null) {
+                    void logInfo('vision.openai.coordinates_not_found', {
+                        description: description.substring(0, 80),
+                        rawResponse: responseText.substring(0, 100),
+                    });
+                    return null;
+                }
+
+                // Converti grid cell → pixel coordinates (centro della cella)
+                const colStr = String(parsed.col).toUpperCase();
+                const rowNum = Number(parsed.row);
+                const colIdx = colStr.charCodeAt(0) - 65; // A=0, B=1, ..., H=7
+
+                if (colIdx >= 0 && colIdx < gridCols && rowNum >= 1 && rowNum <= gridRows) {
+                    const x = Math.floor((colIdx + 0.5) * cellW);
+                    const y = Math.floor((rowNum - 0.5) * cellH);
+
+                    void logInfo('vision.openai.grid_coordinates', {
+                        description: description.substring(0, 60),
+                        gridCell: `${colStr}${rowNum}`,
+                        pixelX: x,
+                        pixelY: y,
+                    });
+
                     return {
-                        x: Math.max(0, Math.min(parsed.x, maxW)),
-                        y: Math.max(0, Math.min(parsed.y, maxH)),
+                        x: Math.max(0, Math.min(x, maxW)),
+                        y: Math.max(0, Math.min(y, maxH)),
                     };
                 }
             }
+            void logWarn('vision.openai.unexpected_response', {
+                description: description.substring(0, 80),
+                rawResponse: responseText.substring(0, 200),
+            });
         } catch (error: unknown) {
             void logError('vision.openai.json_parse_failed', {
-                rawResponse: result.text.substring(0, 200),
+                rawResponse: responseText.substring(0, 200),
                 error: error instanceof Error ? error.message : String(error),
             });
         }

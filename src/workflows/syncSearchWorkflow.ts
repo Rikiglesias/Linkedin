@@ -5,6 +5,7 @@
 import { config } from '../config';
 import { getAccountProfileById } from '../accountManager';
 import { launchBrowser, closeBrowser, checkLogin } from '../browser';
+import { awaitManualLogin, blockUserInput } from '../browser/humanBehavior';
 import { runSalesNavBulkSave } from '../salesnav/bulkSaveOrchestrator';
 import type { SalesNavBulkSaveReport } from '../salesnav/bulkSaveOrchestrator';
 import { runSalesNavigatorListSync, formatFinalReport } from '../core/salesNavigatorSync';
@@ -55,34 +56,27 @@ export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<vo
         questions: [
             {
                 id: 'searchName',
-                prompt: 'Ricerche salvate (vuoto = tutte, oppure nomi separati da virgola)',
+                prompt: 'Nome ricerca salvata (vuoto = tutte le ricerche, oppure separare con virgola per multi-ricerca)',
                 type: 'string',
                 defaultValue: opts.searchName ?? '',
             },
             {
-                id: 'list',
-                prompt: 'Nome della lista target dove aggiungere i nuovi lead',
+                id: 'listName',
+                prompt: 'Nome lista SalesNav target dove salvare i lead',
                 type: 'string',
-                defaultValue: opts.listName ?? config.salesNavSyncListName ?? '',
-                required: true,
+                defaultValue: opts.listName ?? config.salesNavSyncListName ?? 'default',
             },
             {
                 id: 'maxPages',
-                prompt: 'Pagine massime per ricerca?',
+                prompt: 'Quante pagine vuoi scorrere per ogni ricerca?',
                 type: 'number',
                 defaultValue: String(opts.maxPages ?? 10),
             },
             {
-                id: 'limit',
-                prompt: 'Limite lead da aggiungere?',
-                type: 'number',
-                defaultValue: String(opts.limit ?? 100),
-            },
-            {
                 id: 'enrichment',
-                prompt: 'Vuoi enrichment profondo?',
+                prompt: 'Eseguire enrichment dati dopo il sync? (Apollo/Hunter/OSINT/scoring/cloud)',
                 type: 'boolean',
-                defaultValue: opts.enrichment !== false ? 'true' : 'false',
+                defaultValue: opts.enrichment === false ? 'false' : 'true',
             },
         ],
         listFilter: opts.listName,
@@ -97,9 +91,10 @@ export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<vo
     }
 
     const searchName = preflight.answers['searchName'] || null;
-    const targetList = preflight.answers['list'];
+    const targetList = preflight.answers['listName'] || config.salesNavSyncListName || '';
     const maxPages = parseInt(preflight.answers['maxPages'] || '10', 10);
-    const limit = parseInt(preflight.answers['limit'] || '100', 10);
+    const enrichment = preflight.answers['enrichment'] !== 'false';
+    const limit = opts.limit ?? 100;
     const dryRun = opts.dryRun ?? false;
     const accountId = opts.accountId ?? config.salesNavSyncAccountId;
     const account = getAccountProfileById(accountId || undefined);
@@ -116,8 +111,12 @@ export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<vo
         return;
     }
 
+    // ── Stima tempo ─────────────────────────────────────────────────────────────
+    const estimatedMinutes = Math.ceil((90 + maxPages * 20) / 60); // ~90s warmup + ~20s/pagina
+    console.log(`\n  Tempo stimato: ~${estimatedMinutes} minuti per ${maxPages} pagine per ricerca\n`);
+
     // Step 1: Launch browser and run bulk save
-    console.log('\n  Avvio bulk save da ricerche salvate...\n');
+    console.log('  Avvio bulk save da ricerche salvate...\n');
 
     const session = await launchBrowser({
         headless: false,
@@ -129,15 +128,27 @@ export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<vo
 
     let bulkReport: SalesNavBulkSaveReport | null = null;
     try {
-        const loggedIn = await checkLogin(session.page);
+        let loggedIn = await checkLogin(session.page);
         if (!loggedIn) {
-            console.error('[ERRORE] Sessione non autenticata. Esegui prima "login".');
-            return;
+            loggedIn = await awaitManualLogin(session.page, 'sync-search');
+            if (!loggedIn) {
+                console.error('\n  [ERRORE] Login non completato.\n');
+                return;
+            }
         }
 
-        // Input block: NON bloccare qui — SalesNav può richiedere login manuale separato.
-        // Il blocco input viene attivato dentro bulkSaveOrchestrator.reInjectOverlays()
-        // DOPO che la navigazione SalesNav è completata e il login confermato.
+        // Warmup sessione: simula navigazione umana (feed, notifiche) prima del bulk save.
+        // Un umano reale non apre LinkedIn e va SUBITO su SalesNav — prima guarda il feed.
+        try {
+            const { warmupSession } = await import('../core/sessionWarmer');
+            console.log('  Warmup sessione in corso...\n');
+            await warmupSession(session.page);
+        } catch (warmupErr) {
+            console.warn(`  [WARN] Warmup fallito: ${warmupErr instanceof Error ? warmupErr.message : String(warmupErr)}`);
+        }
+
+        // Blocca input SUBITO dopo il warmup — l'utente può interagire solo durante login manuale
+        await blockUserInput(session.page);
 
         // Checkpoint/Resume (4.1): resume=true abilita il ripristino dall'ultimo
         // checkpoint se un run precedente è stato interrotto (crash, challenge, timeout).
@@ -174,6 +185,7 @@ export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<vo
                 dryRun: false,
                 accountId,
                 interactive: false,
+                skipEnrichment: !enrichment,
             });
             syncInserted = syncReport.inserted;
             syncUpdated = syncReport.updated;
@@ -212,6 +224,7 @@ export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<vo
         nextAction: syncPromoted > 0
             ? `Esegui 'send-invites --list "${targetList}"' per invitare i ${syncPromoted} lead pronti`
             : `Esegui 'send-invites --list "${targetList}"' per invitare i nuovi lead`,
+        riskAssessment: preflight.riskAssessment,
     };
 
     console.log(formatWorkflowReport(workflowReport));
@@ -220,10 +233,8 @@ export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<vo
 function buildCliOverrides(opts: SyncSearchOptions): Record<string, string> {
     const overrides: Record<string, string> = {};
     if (opts.searchName) overrides['searchName'] = opts.searchName;
-    if (opts.listName) overrides['list'] = opts.listName;
+    if (opts.listName) overrides['listName'] = opts.listName;
     if (opts.maxPages !== null && opts.maxPages !== undefined) overrides['maxPages'] = String(opts.maxPages);
-    if (opts.limit !== null && opts.limit !== undefined) overrides['limit'] = String(opts.limit);
-    if (opts.enrichment !== null && opts.enrichment !== undefined) overrides['enrichment'] = String(opts.enrichment);
-    if (opts.dryRun !== null && opts.dryRun !== undefined) overrides['dryRun'] = String(opts.dryRun);
+    if (opts.enrichment === false) overrides['enrichment'] = 'false';
     return overrides;
 }
