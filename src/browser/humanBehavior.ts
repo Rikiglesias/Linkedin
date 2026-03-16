@@ -467,20 +467,17 @@ export async function humanMouseMove(page: Page, targetSelector: string): Promis
         const finalX = Math.max(0, Math.min(viewport.width - 1, box.x + box.width / 2 + (Math.random() * 8 - 4)));
         const finalY = Math.max(0, Math.min(viewport.height - 1, box.y + box.height / 2 + (Math.random() * 8 - 4)));
 
-        // Movimento mouse con curva Bezier + micro-delay tra step.
-        // Delay proporzionale alla distanza: brevi (~100px) ~120ms, lunghi (~800px) ~350ms.
+        // Movimento mouse multi-fase: drift → approach → overshoot → correction.
+        // Un umano reale non va mai diretto al target — prima si muove nell'area generale.
         const startPt = pageMouseState.get(page) ?? getStartingPoint(page);
-        const distancePixels = Math.hypot(finalX - startPt.x, finalY - startPt.y);
-        const steps = Math.max(8, Math.min(15, Math.round(distancePixels / 50)));
-        // Tempo totale: 100-350ms proporzionale alla distanza (un umano muove ~400px in ~200ms)
-        const totalMoveMs = Math.max(100, Math.min(350, distancePixels * 0.4));
-        const baseStepDelay = totalMoveMs / steps;
+        const path = MouseGenerator.generateHumanPath(startPt, { x: finalX, y: finalY }, viewport);
+        // Delay per punto: ~12-20ms per punto, totale proporzionale al path length
+        const baseDelay = Math.max(8, Math.min(20, 300 / path.length));
 
-        const path = MouseGenerator.generatePath(startPt, { x: finalX, y: finalY }, steps);
         await withMouseTimeout(async () => {
             for (const point of path) {
                 await page.mouse.move(point.x, point.y);
-                const jitter = baseStepDelay * (0.6 + Math.random() * 0.8);
+                const jitter = baseDelay * (0.6 + Math.random() * 0.8);
                 await page.waitForTimeout(Math.round(jitter));
             }
         });
@@ -503,16 +500,14 @@ export async function humanMouseMoveToCoords(page: Page, targetX: number, target
     }
     try {
         const startPoint = getStartingPoint(page);
-        const distancePixels = Math.hypot(targetX - startPoint.x, targetY - startPoint.y);
-        const steps = Math.max(8, Math.min(15, Math.round(distancePixels / 50)));
-        const totalMoveMs = Math.max(100, Math.min(350, distancePixels * 0.4));
-        const baseStepDelay = totalMoveMs / steps;
+        const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
+        const path = MouseGenerator.generateHumanPath(startPoint, { x: targetX, y: targetY }, viewport);
+        const baseDelay = Math.max(8, Math.min(20, 300 / path.length));
 
-        const path = MouseGenerator.generatePath(startPoint, { x: targetX, y: targetY }, steps);
         await withMouseTimeout(async () => {
             for (const point of path) {
                 await page.mouse.move(point.x, point.y);
-                const jitter = baseStepDelay * (0.6 + Math.random() * 0.8);
+                const jitter = baseDelay * (0.6 + Math.random() * 0.8);
                 await page.waitForTimeout(Math.round(jitter));
             }
         });

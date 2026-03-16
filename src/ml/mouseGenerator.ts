@@ -13,94 +13,130 @@ const FRACTAL_OCTAVES: ReadonlyArray<{ freq: number; weight: number }> = [
 
 export class MouseGenerator {
     /**
-     * Genera una traiettoria curva naturale (cubic Bézier + fractal noise + micro-tremor)
-     * per simulare il movimento del mouse umano verso il target, evitando rette perfette.
-     *
-     * - Cubic Bézier with two control points for a smoother S-curve.
-     * - Multi-octave fractal noise replaces the single harmonic.
-     * - Micro-tremors (±1-3 px @ 8-12 Hz) emulate physiological EMG wrist tremor.
-     * - Fitts's-Law easing: decelerates near the target for realistic hesitation.
+     * Genera un singolo segmento curvo (cubic Bézier + fractal noise + micro-tremor).
+     * Usato internamente da generateHumanPath per ogni fase del movimento.
      */
     public static generatePath(start: Point, target: Point, steps: number = 20): Point[] {
         const path: Point[] = [];
         const dx = target.x - start.x;
         const dy = target.y - start.y;
-
-        // --- Cubic Bézier: two control points ---
         const dist = Math.sqrt(dx * dx + dy * dy);
         const curveSize = Math.max(20, dist * 0.4);
 
-        // cp1: offset from start (first third of the segment)
         const cp1: Point = {
             x: start.x + dx * (0.25 + Math.random() * 0.15) + (Math.random() - 0.5) * curveSize,
             y: start.y + dy * (0.25 + Math.random() * 0.15) + (Math.random() - 0.5) * curveSize,
         };
-
-        // cp2: offset from end (last third of the segment, smoother approach)
         const cp2: Point = {
             x: start.x + dx * (0.60 + Math.random() * 0.15) + (Math.random() - 0.5) * curveSize * 0.6,
             y: start.y + dy * (0.60 + Math.random() * 0.15) + (Math.random() - 0.5) * curveSize * 0.6,
         };
 
-        // Random phase offsets for noise reproducibility within a single path
         const noiseOffsetX = Math.random() * 1000;
         const noiseOffsetY = Math.random() * 1000;
-
-        // Micro-tremor parameters: frequency between 8-12 Hz, amplitude 1-3 px
-        const tremorFreq = 8 + Math.random() * 4;          // Hz
-        const tremorAmpX = 1 + Math.random() * 2;           // px
-        const tremorAmpY = 1 + Math.random() * 2;           // px
+        const tremorFreq = 8 + Math.random() * 4;
+        const tremorAmpX = 1 + Math.random() * 2;
+        const tremorAmpY = 1 + Math.random() * 2;
         const tremorPhaseX = Math.random() * Math.PI * 2;
         const tremorPhaseY = Math.random() * Math.PI * 2;
 
-        // Ease-in-out quint (6.2): profilo velocità a campana realistico.
-        // Un umano reale accelera all'inizio e decelera alla fine (bell curve).
         const fittsEase = (t: number): number =>
             t < 0.5 ? 16 * t * t * t * t * t : 1 - Math.pow(-2 * t + 2, 5) / 2;
 
         for (let i = 0; i <= steps; i++) {
             const rawT = i / steps;
             const t = fittsEase(rawT);
-
-            // --- Cubic Bézier interpolation ---
             const m1 = 1 - t;
-            const m1_2 = m1 * m1;
-            const m1_3 = m1_2 * m1;
-            const t2 = t * t;
-            const t3 = t2 * t;
-            const bx = m1_3 * start.x + 3 * m1_2 * t * cp1.x + 3 * m1 * t2 * cp2.x + t3 * target.x;
-            const by = m1_3 * start.y + 3 * m1_2 * t * cp1.y + 3 * m1 * t2 * cp2.y + t3 * target.y;
+            const bx = m1 * m1 * m1 * start.x + 3 * m1 * m1 * t * cp1.x + 3 * m1 * t * t * cp2.x + t * t * t * target.x;
+            const by = m1 * m1 * m1 * start.y + 3 * m1 * m1 * t * cp1.y + 3 * m1 * t * t * cp2.y + t * t * t * target.y;
 
-            // --- Multi-octave fractal noise ---
             let fractalX = 0;
             let fractalY = 0;
             for (const { freq, weight } of FRACTAL_OCTAVES) {
                 fractalX += Math.sin(noiseOffsetX + t / freq) * weight;
                 fractalY += Math.cos(noiseOffsetY + t / freq) * weight;
             }
-            // Scale to a comparable range (~3 px at peak)
             const fractalScale = 3 / FRACTAL_OCTAVES.reduce((s, o) => s + o.weight, 0);
             fractalX *= fractalScale;
             fractalY *= fractalScale;
 
-            // --- Micro-tremor overlay (EMG wrist tremor) ---
-            // Map rawT to a pseudo-time so tremor frequency is independent of step count
-            const pseudoTimeSec = rawT * (steps / 60); // assume ~60 steps/sec baseline
+            const pseudoTimeSec = rawT * (steps / 60);
             const tremorX = Math.sin(2 * Math.PI * tremorFreq * pseudoTimeSec + tremorPhaseX) * tremorAmpX;
             const tremorY = Math.sin(2 * Math.PI * tremorFreq * pseudoTimeSec + tremorPhaseY) * tremorAmpY;
 
-            // --- Dampening near endpoints for precision start/end ---
             const dampening = Math.sin(rawT * Math.PI);
-
             path.push({
                 x: bx + (fractalX + tremorX) * dampening,
                 y: by + (fractalY + tremorY) * dampening,
             });
         }
 
-        // Force exact landing on target
         path[path.length - 1] = { ...target };
-
         return path;
+    }
+
+    /**
+     * Genera un percorso mouse umano multi-fase realistico.
+     *
+     * Un umano reale NON va mai diretto dal punto A al punto B. Il percorso ha fasi:
+     *   1. DRIFT: movimento verso l'area generale del target (con offset laterale)
+     *   2. APPROACH: avvicinamento al target (ancora impreciso)
+     *   3. OVERSHOOT (40%): supera il target di qualche pixel
+     *   4. CORRECTION: micro-correzione verso il punto esatto
+     *
+     * Il risultato è un array piatto di punti da eseguire in sequenza.
+     * Per distanze brevi (<80px) usa un singolo segmento (non serve multi-fase).
+     */
+    public static generateHumanPath(start: Point, target: Point, viewport?: { width: number; height: number }): Point[] {
+        const dist = Math.sqrt((target.x - start.x) ** 2 + (target.y - start.y) ** 2);
+        const vw = viewport?.width ?? 1920;
+        const vh = viewport?.height ?? 1080;
+
+        // Distanze brevi: un singolo segmento Bézier è sufficiente
+        if (dist < 80) {
+            const steps = Math.max(5, Math.min(10, Math.round(dist / 10)));
+            return MouseGenerator.generatePath(start, target, steps);
+        }
+
+        const allPoints: Point[] = [];
+
+        // --- FASE 1: DRIFT verso area generale (non dritto al target) ---
+        // L'offset laterale simula il fatto che un umano muove il polso/braccio
+        // verso la zona giusta, non verso il pixel esatto.
+        const driftOffset = Math.min(60, dist * 0.15);
+        const driftAngle = Math.random() * Math.PI * 2;
+        const driftTarget: Point = {
+            x: Math.max(5, Math.min(vw - 5, target.x + Math.cos(driftAngle) * driftOffset + (Math.random() - 0.5) * 30)),
+            y: Math.max(5, Math.min(vh - 5, target.y + Math.sin(driftAngle) * driftOffset + (Math.random() - 0.5) * 20)),
+        };
+        const driftSteps = Math.max(6, Math.min(12, Math.round(dist / 80)));
+        const driftPath = MouseGenerator.generatePath(start, driftTarget, driftSteps);
+        allPoints.push(...driftPath);
+
+        // --- FASE 2: APPROACH verso il target (più preciso) ---
+        const approachSteps = Math.max(4, Math.min(8, Math.round(dist / 120)));
+        const approachPath = MouseGenerator.generatePath(driftTarget, target, approachSteps);
+        // Skip il primo punto (è uguale all'ultimo di driftPath)
+        allPoints.push(...approachPath.slice(1));
+
+        // --- FASE 3: OVERSHOOT (40% delle volte per distanze >200px) ---
+        if (dist > 200 && Math.random() < 0.40) {
+            const overshootDist = 5 + Math.random() * 15; // 5-20px oltre il target
+            const overshootAngle = Math.atan2(target.y - start.y, target.x - start.x) + (Math.random() - 0.5) * 0.5;
+            const overshootPoint: Point = {
+                x: Math.max(5, Math.min(vw - 5, target.x + Math.cos(overshootAngle) * overshootDist)),
+                y: Math.max(5, Math.min(vh - 5, target.y + Math.sin(overshootAngle) * overshootDist)),
+            };
+            const overshootPath = MouseGenerator.generatePath(target, overshootPoint, 3);
+            allPoints.push(...overshootPath.slice(1));
+
+            // --- FASE 4: CORRECTION (torna al target) ---
+            const correctionPath = MouseGenerator.generatePath(overshootPoint, target, 3);
+            allPoints.push(...correctionPath.slice(1));
+        }
+
+        // Forza atterraggio esatto
+        allPoints[allPoints.length - 1] = { ...target };
+        return allPoints;
     }
 }
