@@ -1278,23 +1278,19 @@ export async function scrollAndReadPage(page: Page, fast: boolean = false): Prom
         const countBefore = await collectVisibleLeads();
 
         if (fast) {
-            // FAST MODE: burst scroll rapidi — solo per caricare le card nel DOM.
-            // Un power user SalesNav che fa bulk save scorre veloce senza leggere.
+            // FAST MODE: scroll + collect per ogni burst.
+            // SalesNav usa un VIRTUAL SCROLLER: le card fuori viewport vengono distrutte dal DOM.
+            // Quindi raccogliamo i lead DOPO ogni singolo scroll, non alla fine del burst.
             const burstCount = 2 + Math.floor(Math.random() * 2);
             for (let b = 0; b < burstCount; b++) {
-                const delta = 450 + Math.floor(Math.random() * 300);
+                const delta = 350 + Math.floor(Math.random() * 250);
                 await doScroll(delta);
-                await page.waitForTimeout(40 + Math.floor(Math.random() * 40));
+                // Wait per rendering virtual scroller: le card appaiono 200-500ms dopo scroll
+                await page.waitForTimeout(300 + Math.floor(Math.random() * 200));
+                // Raccogli lead dal viewport corrente (prima che vengano distrutti dallo scroll successivo)
+                await collectVisibleLeads();
             }
-            // Attendi lazy-load: SalesNav rende le card 500-1000ms dopo lo scroll.
-            // Senza questo wait, il bot vede 0 nuovi lead ed esce troppo presto.
-            const prevCount = collectedLeadIds.size;
-            await page.waitForFunction(
-                (prev) => document.querySelectorAll('a[href*="/sales/lead/"], a[href*="/sales/people/"]').length > prev,
-                prevCount,
-                { timeout: 1_500 },
-            ).catch(() => null);
-            await page.waitForTimeout(80 + Math.floor(Math.random() * 100));
+            await page.waitForTimeout(200 + Math.floor(Math.random() * 150));
         } else {
             // ── Decide il "ritmo" di questo step ──
             const roll = Math.random();
@@ -1353,22 +1349,25 @@ export async function scrollAndReadPage(page: Page, fast: boolean = false): Prom
     }
 
     // Se in fast mode e abbiamo trovato meno di 20 lead (SalesNav mostra 25/pagina),
-    // prova un ultimo scroll-to-bottom + wait per lazy-load residuo.
+    // scroll-to-bottom + raccogli le card rimanenti. Il virtual scroller di SalesNav
+    // rende solo ~10 card alla volta nel viewport, serve scrollare fino in fondo.
     if (fast && collectedLeadIds.size < 20 && collectedLeadIds.size > 0) {
-        if (scrollContainerInfo.found) {
-            await page.evaluate((idx: number) => {
-                const el = document.querySelectorAll('div, main, section, [role="main"]')[idx] as HTMLElement | undefined;
-                if (el) el.scrollTop = el.scrollHeight;
-            }, containerIndex);
-        } else {
-            await page.mouse.wheel(0, 3000);
+        // Scroll incrementale fino in fondo con raccolta ad ogni step
+        for (let extra = 0; extra < 8; extra++) {
+            if (scrollContainerInfo.found) {
+                await page.evaluate((idx: number) => {
+                    const el = document.querySelectorAll('div, main, section, [role="main"]')[idx] as HTMLElement | undefined;
+                    if (el) el.scrollTop += 500;
+                }, containerIndex);
+            } else {
+                await page.mouse.wheel(0, 500);
+            }
+            await page.waitForTimeout(400 + Math.floor(Math.random() * 200));
+            const beforeExtra = collectedLeadIds.size;
+            await collectVisibleLeads();
+            if (collectedLeadIds.size >= 25) break; // Trovati tutti
+            if (collectedLeadIds.size === beforeExtra && extra > 2) break; // Nessun nuovo dopo 3 tentativi
         }
-        await page.waitForFunction(
-            (prev) => document.querySelectorAll('a[href*="/sales/lead/"], a[href*="/sales/people/"]').length > prev,
-            collectedLeadIds.size,
-            { timeout: 2_000 },
-        ).catch(() => null);
-        await collectVisibleLeads();
     }
 
     // Totale accumulato lato Node — nessun cleanup DOM necessario

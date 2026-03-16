@@ -396,7 +396,7 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                     sessionDir,
                     engine: 'camoufox',
                     geoip: config.camoufoxGeoip,
-                    humanize: config.camoufoxHumanize,
+                    humanize: false,
                     windowSize: cfxWindow ? `${cfxWindow[0]}x${cfxWindow[1]}` : 'default',
                 });
             } else if (config.cloakBrowserEnabled && !useFirefox) {

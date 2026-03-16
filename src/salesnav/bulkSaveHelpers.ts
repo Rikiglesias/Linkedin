@@ -232,13 +232,16 @@ export async function findVisibleClickTarget(
                 if (text.length > 0) entries.push({ el: htmlEl, text });
             }
 
-            for (let pass = 0; pass < (strict ? 2 : 3); pass++) {
+            for (let pass = 0; pass < (strict ? 3 : 4); pass++) {
                 for (const pattern of patterns) {
                     const lower = pattern.toLowerCase().replace(/\s+/g, ' ').trim();
                     for (const { el, text } of entries) {
                         if (pass === 0 && text !== lower) continue;
-                        if (pass === 1 && (!text.startsWith(lower) || text.length > lower.length + 30)) continue;
-                        if (pass === 2 && (!text.includes(lower) || text.length > lower.length * 8)) continue;
+                        // Pass 1: REVERSE starts-with — il nome completo inizia col testo troncato nel DOM.
+                        // Cattura: DOM="eventi eu da 1-50 fr, spa..." vs pattern="eventi eu da 1-50 fr, spa, paesi bassi"
+                        if (pass === 1 && (!lower.startsWith(text) || text.length < 10)) continue;
+                        if (pass === 2 && (!text.startsWith(lower) || text.length > lower.length + 30)) continue;
+                        if (pass === 3 && (!text.includes(lower) || text.length > lower.length * 8)) continue;
 
                         const rect = el.getBoundingClientRect();
                         if (el.tagName === 'INPUT') {

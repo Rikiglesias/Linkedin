@@ -268,6 +268,12 @@ export async function ensureInputBlock(page: Page): Promise<void> {
                     ].join(';');
                     document.documentElement.appendChild(overlay);
 
+                    // Nasconde il cursore nativo su TUTTO il documento (non solo sull'overlay).
+                    // Con Camoufox il visual cursor overlay è disabilitato ma il cursore nativo
+                    // dell'utente appare/scompare quando passa sopra il browser.
+                    document.documentElement.style.cursor = 'none';
+                    if (document.body) document.body.style.cursor = 'none';
+
                     // Blocca TUTTI gli eventi utente: scroll, keyboard, touch, mouse hover
                     const blockEvent = (e: Event) => { e.preventDefault(); e.stopPropagation(); };
                     const blockOpts = { capture: true, passive: false } as AddEventListenerOptions;
