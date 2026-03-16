@@ -270,8 +270,11 @@ async function navigateToSavedSearches(page: Page): Promise<void> {
     await dismissTransientUi(page);
     await humanDelay(page, 800, 1_500);
 
-    // Controlla se LinkedIn ha chiesto il login (SalesNav può richiedere auth separata)
-    const loggedIn = await isLoggedIn(page);
+    // Controlla se LinkedIn ha chiesto il login.
+    // IMPORTANTE: check URL PRIMA di isLoggedIn. La pagina /sales/login ha cookie
+    // LinkedIn validi (isLoggedIn → true) ma la sessione SalesNav è scaduta.
+    const onLoginPage = page.url().toLowerCase().includes('/sales/login');
+    const loggedIn = onLoginPage ? false : await isLoggedIn(page);
     if (!loggedIn) {
         await waitForManualLogin(page, 'AI-NAV');
     }
@@ -286,7 +289,8 @@ async function navigateToSavedSearches(page: Page): Promise<void> {
         await humanDelay(page, 800, 1_500);
 
         // Ri-controlla login anche dopo il secondo tentativo
-        if (!(await isLoggedIn(page))) {
+        const onLoginPage2 = page.url().toLowerCase().includes('/sales/login');
+        if (onLoginPage2 || !(await isLoggedIn(page))) {
             await waitForManualLogin(page, 'AI-NAV');
         }
 
