@@ -360,56 +360,17 @@ export async function resumeInputBlock(page: Page): Promise<void> {
 }
 
 /**
- * Confina il cursore reale dell'utente FUORI dalla finestra del browser.
- * Usa Windows API Cursor.Clip via PowerShell: il cursore OS non può entrare
- * nell'area del browser. Playwright CDP non è affetto (mouse virtuale).
- * Rilasciare con releaseMouseConfinement() prima del login manuale.
+ * Funzione di rilascio cursore (no-op dopo rimozione ClipCursor).
+ * Mantenuta per retrocompatibilità — chiamata da awaitManualLogin, closeBrowser, SIGINT.
  */
-let _mouseConfined = false;
-
-export function confineCursorOutsideBrowser(page: Page): void {
-    if (process.platform !== 'win32' || _mouseConfined) return;
-    try {
-        const viewport = page.viewportSize();
-        if (!viewport) return;
-        // Confina il cursore nell'area DESTRA dello schermo (fuori dal browser)
-        // Il browser Camoufox è tipicamente posizionato a sinistra
-        const { execSync } = require('child_process') as typeof import('child_process');
-        // Ottieni risoluzione schermo e confina il cursore nell'area sotto/destra
-        execSync(
-            `powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; $screen = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea; [System.Windows.Forms.Cursor]::Clip = [System.Drawing.Rectangle]::new(0, 0, 1, 1)"`,
-            { timeout: 3000, stdio: 'ignore' },
-        );
-        // Immediatamente dopo, sposta il cursore in un angolo sicuro e imposta clip reale
-        execSync(
-            `powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Cursor]::Position = [System.Drawing.Point]::new(0, 0); $screen = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea; [System.Windows.Forms.Cursor]::Clip = [System.Drawing.Rectangle]::new(0, 0, 50, 50)"`,
-            { timeout: 3000, stdio: 'ignore' },
-        );
-        _mouseConfined = true;
-    } catch {
-        // Best-effort: se PowerShell non è disponibile, l'overlay CSS è il fallback
-    }
-}
-
 export function releaseMouseConfinement(): void {
-    if (!_mouseConfined) return;
-    try {
-        const { execSync } = require('child_process') as typeof import('child_process');
-        execSync(
-            `powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Cursor]::Clip = [System.Drawing.Rectangle]::Empty"`,
-            { timeout: 3000, stdio: 'ignore' },
-        );
-        _mouseConfined = false;
-    } catch {
-        _mouseConfined = false;
-    }
+    // No-op: il confinamento ClipCursor è stato rimosso.
+    // L'isolamento mouse è gestito interamente via CSS overlay nel browser.
 }
 
 export async function blockUserInput(page: Page): Promise<void> {
     await enableVisualCursorOverlay(page);
     await ensureInputBlock(page);
-    // Confina il cursore reale dell'utente fuori dal browser (Windows API)
-    confineCursorOutsideBrowser(page);
     // Auto-dismiss overlay LinkedIn dopo navigazione
     await dismissKnownOverlays(page);
 }

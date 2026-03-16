@@ -1868,21 +1868,16 @@ async function preSyncListToDb(
             break;
         }
 
-        // Prossima pagina: prova bottone Next, fallback a navigazione URL diretta.
-        // Le liste SalesNav possono usare paginazione diversa dalle ricerche.
-        let movedToNext = false;
-        if (await hasNextPage(page)) {
-            movedToNext = await clickNextPage(page, false);
+        // Prossima pagina: usa solo il bottone Next DOM.
+        // NON usare page.goto(url?page=N) — causa redirect a /sales/login se sessione scaduta → crash.
+        if (!(await hasNextPage(page))) {
+            console.log(`[PRE-SYNC] Nessun bottone Next — fine paginazione dopo ${pageNum} pagine`);
+            break;
         }
-        if (!movedToNext) {
-            // Fallback: navigazione URL con parametro page=N
-            const currentUrl = new URL(page.url());
-            currentUrl.searchParams.set('page', String(pageNum + 1));
-            console.log(`[PRE-SYNC] Next button non trovato, navigazione URL: page=${pageNum + 1}`);
-            await page.goto(currentUrl.toString(), { waitUntil: 'domcontentloaded', timeout: 15_000 }).catch(() => null);
-            await humanDelay(page, 1_000, 2_000);
-            // Verifica che ci siano lead sulla nuova pagina
-            await page.waitForSelector('a[href*="/sales/lead/"], a[href*="/sales/people/"]', { timeout: 5_000 }).catch(() => null);
+        const moved = await clickNextPage(page, false);
+        if (!moved) {
+            console.log(`[PRE-SYNC] Click Next fallito — fine paginazione`);
+            break;
         }
 
         // Pausa umana tra le pagine
