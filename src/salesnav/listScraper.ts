@@ -81,55 +81,56 @@ async function lightListScroll(page: Page): Promise<void> {
     await page.waitForSelector(LEAD_ANCHOR_SELECTOR, { timeout: 10_000 }).catch(() => null);
     await humanDelay(page, 200, 500);
 
-    // Rileva se SalesNav usa un container interno scrollabile (comune)
-    // oppure il window scroll standard. Marca il container con data-lk-scroll.
-    await page.evaluate((leadSel: string) => {
+    // Rileva container scrollabile tramite INDICE (non attributo DOM — evita fingerprint).
+    // Stesso pattern di bulkSaveOrchestrator.scrollAndReadPage.
+    const scrollContainerIndex = await page.evaluate((leadSel: string) => {
         const bodyOverflow = document.body.scrollHeight - window.innerHeight;
-        if (bodyOverflow > 100) return; // Window scroll funziona — niente da fare
+        if (bodyOverflow > 100) return -1; // Window scroll funziona
 
-        // Window non scrollabile → cerca container interno con lead card
         const candidates = document.querySelectorAll('div, main, section, [role="main"]');
-        let best: HTMLElement | null = null;
+        let bestIndex = -1;
         let bestDiff = 0;
-        for (const el of candidates) {
-            const htmlEl = el as HTMLElement;
+        for (let idx = 0; idx < candidates.length; idx++) {
+            const htmlEl = candidates[idx] as HTMLElement;
             const diff = htmlEl.scrollHeight - htmlEl.clientHeight;
             if (diff > 100 && diff > bestDiff) {
                 if (htmlEl.querySelector(leadSel)) {
-                    best = htmlEl;
+                    bestIndex = idx;
                     bestDiff = diff;
                 }
             }
         }
-        if (best) {
-            best.setAttribute('data-lk-scroll', '1');
-        }
-    }, LEAD_ANCHOR_SELECTOR).catch(() => { });
+        return bestIndex;
+    }, LEAD_ANCHOR_SELECTOR).catch(() => -1);
 
-    // Helper: esegui scroll sul container corretto
+    // Helper: esegui scroll sul container corretto (via indice, no attributo DOM)
     const doScroll = async (dy: number) => {
-        await page.evaluate((delta: number) => {
-            const c = document.querySelector('[data-lk-scroll="1"]') as HTMLElement | null;
-            if (c) {
-                c.scrollTop += delta;
-            } else {
-                window.scrollBy({ top: delta, behavior: 'smooth' });
+        await page.evaluate(({ delta, idx }) => {
+            if (idx >= 0) {
+                const el = document.querySelectorAll('div, main, section, [role="main"]')[idx] as HTMLElement | undefined;
+                if (el) { el.scrollTop += delta; return; }
             }
-        }, dy);
+            window.scrollBy({ top: delta, behavior: 'smooth' });
+        }, { delta: dy, idx: scrollContainerIndex });
     };
 
     const getScrollPos = () =>
-        page.evaluate(() => {
-            const c = document.querySelector('[data-lk-scroll="1"]') as HTMLElement | null;
-            return c ? c.scrollTop : window.scrollY;
-        }).catch(() => 0);
+        page.evaluate((idx: number) => {
+            if (idx >= 0) {
+                const el = document.querySelectorAll('div, main, section, [role="main"]')[idx] as HTMLElement | undefined;
+                return el ? el.scrollTop : window.scrollY;
+            }
+            return window.scrollY;
+        }, scrollContainerIndex).catch(() => 0);
 
     const isAtBottom = () =>
-        page.evaluate(() => {
-            const c = document.querySelector('[data-lk-scroll="1"]') as HTMLElement | null;
-            if (c) return c.scrollTop + c.clientHeight >= c.scrollHeight - 100;
+        page.evaluate((idx: number) => {
+            if (idx >= 0) {
+                const el = document.querySelectorAll('div, main, section, [role="main"]')[idx] as HTMLElement | undefined;
+                if (el) return el.scrollTop + el.clientHeight >= el.scrollHeight - 100;
+            }
             return window.scrollY + window.innerHeight >= document.body.scrollHeight - 100;
-        }).catch(() => true);
+        }, scrollContainerIndex).catch(() => true);
 
     // Scroll fino in fondo con pattern humanizzati
     let noProgressCount = 0;
@@ -186,11 +187,6 @@ async function lightListScroll(page: Page): Promise<void> {
         }
     }
 
-    // Cleanup marker
-    await page.evaluate(() => {
-        const el = document.querySelector('[data-lk-scroll="1"]');
-        if (el) el.removeAttribute('data-lk-scroll');
-    }).catch(() => { });
 }
 
 /**
