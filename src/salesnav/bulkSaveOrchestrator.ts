@@ -1944,6 +1944,11 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
             }
         }
 
+        // Guard: se il browser è morto durante il PRE-SYNC, non proseguire
+        if (page.isClosed()) {
+            throw new Error('Browser chiuso durante PRE-SYNC — impossibile proseguire con le ricerche salvate');
+        }
+
         await navigateToSavedSearches(page);
         await ensureNoChallenge(page);
 
