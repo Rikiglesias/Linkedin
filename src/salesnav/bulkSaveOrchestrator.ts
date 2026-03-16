@@ -9,7 +9,7 @@ import {
 import { config } from '../config';
 import { cleanText } from '../utils/text';
 import { attemptChallengeResolution } from '../workers/challengeHandler';
-import { pauseInputBlock, resumeInputBlock, humanMouseMoveToCoords, removeAllOverlays } from '../browser/humanBehavior';
+import { pauseInputBlock, resumeInputBlock, humanMouseMoveToCoords, removeAllOverlays, releaseMouseConfinement } from '../browser/humanBehavior';
 import {
     isPageClosedError,
     getSafeMaxSearches,
@@ -90,6 +90,7 @@ async function waitForManualLogin(page: Page, context: string): Promise<void> {
     // removeAllOverlays conosce gli ID generati da crypto.randomBytes (a differenza di ID hardcoded).
     // Rimuove: stile cursor:none, classe root, cursore visuale, input block, toast.
     await removeAllOverlays(page);
+    releaseMouseConfinement();
 
     console.warn(`[${context}] Sessione scaduta — in attesa del login manuale nel browser...`);
     console.warn(`[${context}] URL: ${page.url()}`);

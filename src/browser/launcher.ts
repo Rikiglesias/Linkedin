@@ -689,6 +689,11 @@ async function humanWindDown(session: BrowserSession): Promise<void> {
 }
 
 export async function closeBrowser(session: BrowserSession): Promise<void> {
+    // Rilascia il cursore dell'utente PRIMA di chiudere il browser
+    try {
+        const { releaseMouseConfinement } = await import('./humanBehavior');
+        releaseMouseConfinement();
+    } catch { /* best-effort */ }
     await humanWindDown(session);
     activeBrowsers.delete(session.browser);
     await session.browser.close().catch(() => { });
