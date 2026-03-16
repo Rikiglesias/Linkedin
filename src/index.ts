@@ -95,7 +95,13 @@ async function performGracefulShutdown(reason: string): Promise<void> {
         await pluginRegistry.shutdown();
     } catch { /* best effort */ }
 
-    // 2. Chiudi browser aperti (con humanWindDown se possibile)
+    // 2a. Rilascia il cursore dell'utente PRIMA di tutto (non deve restare confinato)
+    try {
+        const { releaseMouseConfinement } = await import('./browser/humanBehavior');
+        releaseMouseConfinement();
+    } catch { /* best effort */ }
+
+    // 2b. Chiudi browser aperti (con humanWindDown se possibile)
     try {
         const { cleanupBrowsers } = await import('./browser/launcher');
         await cleanupBrowsers();
