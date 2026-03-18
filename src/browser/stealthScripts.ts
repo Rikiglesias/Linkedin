@@ -351,7 +351,8 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
                 const elapsedMinutes = (Date.now() - mockStartTime) / 60000;
                 const drain = (elapsedMinutes / 10) * 0.01;
                 const currentLevel = Math.max(0.05, startLevel - drain);
-                const charging = elapsedMinutes < 2 ? true : false; // simula "appena staccato dal caricatore" per i primi minuti
+                // Ciclo realistico: 60min charging + 30min discharging (ciclo 90min)
+                const charging = (elapsedMinutes % 90) < 60;
 
                 const batteryMock = {
                     charging: charging,
@@ -494,7 +495,7 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
             const originalCheck = document.fonts.check.bind(document.fonts);
             document.fonts.check = function(font, text) {
                 try {
-                    const fontFamily = font.replace(/^[\d.]+[a-z]+\s+/i, '').replace(/["']/g, '').trim();
+                    const fontFamily = font.replace(/^[\d.]+(?:px|pt|em|rem|%)\s+/i, '').replace(/["']/g, '').trim();
                     if (commonFonts.has(fontFamily)) return true;
                     return originalCheck(font, text);
                 } catch {
@@ -620,7 +621,8 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
                 // Inietta chrome nel contentWindow quando l'iframe viene aggiunto al DOM
                 setTimeout(() => {
                     try {
-                        if (el.contentWindow && !el.contentWindow.chrome) {
+                        if (!el.contentWindow) return;
+                        if (!el.contentWindow.chrome) {
                             el.contentWindow.chrome = window.chrome;
                         }
                     } catch {}

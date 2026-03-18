@@ -23,20 +23,35 @@ import { randomElement, randomInt } from '../utils/random';
 // L'uso di WeakMap assicura l'assenza di memory leak quando la Page viene chiusa.
 const pageMouseState = new WeakMap<Page, Point>();
 
+/** Inizializza la posizione mouse per una pagina nuova (centro viewport con varianza).
+ *  Evita il pattern rilevabile "mouse entra dal bordo" al primo movimento. */
+export function initializeMouseState(page: Page): void {
+    if (pageMouseState.has(page)) return;
+    const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
+    const initialX = viewport.width * (0.3 + Math.random() * 0.4);
+    const initialY = viewport.height * (0.15 + Math.random() * 0.25);
+    pageMouseState.set(page, { x: initialX, y: initialY });
+}
+
 /** Timeout globale per movimenti mouse: protegge da hang quando il mouse reale
  *  dell'utente interferisce con Camoufox humanize o il browser perde focus.
  *  Se scade, il movimento viene abortito e il bot prosegue. */
-const MOUSE_MOVE_TIMEOUT_MS = 3_000;
+const MOUSE_MOVE_TIMEOUT_MS = 8_000;
 
 async function withMouseTimeout<T>(fn: () => Promise<T>, timeoutMs: number = MOUSE_MOVE_TIMEOUT_MS): Promise<T | undefined> {
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let timedOut = false;
     try {
-        return await Promise.race([
+        const result = await Promise.race([
             fn(),
             new Promise<undefined>((resolve) => {
-                timer = setTimeout(() => resolve(undefined), timeoutMs);
+                timer = setTimeout(() => { timedOut = true; resolve(undefined); }, timeoutMs);
             }),
         ]);
+        if (timedOut) {
+            console.warn(`[MOUSE] Timeout ${timeoutMs}ms raggiunto — procedendo senza mouse move`);
+        }
+        return result;
     } finally {
         if (timer) clearTimeout(timer);
     }
@@ -269,30 +284,60 @@ export async function ensureInputBlock(page: Page): Promise<void> {
                     ].join(';');
                     document.documentElement.appendChild(overlay);
 
-                    // Nasconde il cursore nativo su TUTTO il documento (non solo sull'overlay).
-                    // Con Camoufox il visual cursor overlay è disabilitato ma il cursore nativo
-                    // dell'utente appare/scompare quando passa sopra il browser.
+                    // Nasconde il cursore nativo su TUTTO il documento e TUTTI gli elementi.
+                    // Un semplice cursor:none su body non basta — elementi con cursor:pointer
+                    // (link, bottoni) lo sovrascrivono. Lo style !important copre tutto.
+                    const cursorStyle = document.createElement('style');
+                    cursorStyle.id = overlayId + '-cursor';
+                    cursorStyle.textContent = '*, *::before, *::after { cursor: none !important; }';
+                    document.head.appendChild(cursorStyle);
                     document.documentElement.style.cursor = 'none';
                     if (document.body) document.body.style.cursor = 'none';
 
-                    // Blocca TUTTI gli eventi utente: scroll, keyboard, touch, mouse hover
-                    const blockEvent = (e: Event) => { e.preventDefault(); e.stopPropagation(); };
+                    // Blocca TUTTI gli eventi utente: scroll, keyboard, touch, click, mousemove
+                    const blockEvent = (e: Event) => {
+                        const ov = document.getElementById(overlayId);
+                        if (ov && ov.dataset.botClicking === 'true') return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                    };
+                    // mousemove: blocca quando l'utente muove il mouse fisico (no flag bot).
+                    // Quando il bot muove il mouse, setta dataset.botMoving='true' → handler lascia passare.
+                    // stopImmediatePropagation: blocca ANCHE listener registrati da LinkedIn sullo stesso nodo.
+                    const blockMouseMove = (e: Event) => {
+                        const ov = document.getElementById(overlayId);
+                        if (ov && (ov.dataset.botClicking === 'true' || ov.dataset.botMoving === 'true')) return;
+                        e.preventDefault();
+                        e.stopImmediatePropagation();
+                    };
                     const blockOpts = { capture: true, passive: false } as AddEventListenerOptions;
                     overlay.addEventListener('wheel', blockEvent, blockOpts);
                     overlay.addEventListener('touchmove', blockEvent, blockOpts);
                     overlay.addEventListener('keydown', blockEvent, blockOpts);
                     overlay.addEventListener('keyup', blockEvent, blockOpts);
                     overlay.addEventListener('keypress', blockEvent, blockOpts);
-                    // Blocca mouse hover utente: impedisce che il cursore reale triggeri
-                    // tooltip/dropdown/hover su elementi LinkedIn sotto l'overlay.
-                    // Senza questo, passare il mouse sopra il browser confonde il bot.
-                    overlay.addEventListener('mousemove', blockEvent, blockOpts);
-                    overlay.addEventListener('mouseenter', blockEvent, blockOpts);
-                    overlay.addEventListener('mouseover', blockEvent, blockOpts);
-                    overlay.addEventListener('mouseout', blockEvent, blockOpts);
-                    // Blocca scroll anche a livello document (wheel cattura lo scroll ovunque)
+                    // Blocca click utente (mousedown/up/click arrivano all'overlay via pointer-events:auto)
+                    overlay.addEventListener('mousedown', blockEvent, blockOpts);
+                    overlay.addEventListener('mouseup', blockEvent, blockOpts);
+                    overlay.addEventListener('click', blockEvent, blockOpts);
+                    overlay.addEventListener('dblclick', blockEvent, blockOpts);
+                    overlay.addEventListener('contextmenu', blockEvent, blockOpts);
+                    // Blocca mousemove/mouseover sull'overlay (impedisce che LinkedIn veda il mouse utente)
+                    overlay.addEventListener('mousemove', blockMouseMove, blockOpts);
+                    overlay.addEventListener('mouseover', blockMouseMove, blockOpts);
+                    overlay.addEventListener('mouseenter', blockMouseMove, blockOpts);
+                    // Document-level: blocca scroll + click + mousemove ovunque (cattura eventi che bypassano overlay)
                     document.addEventListener('wheel', blockEvent, blockOpts);
                     document.addEventListener('touchmove', blockEvent, blockOpts);
+                    document.addEventListener('mousedown', blockEvent, blockOpts);
+                    document.addEventListener('mouseup', blockEvent, blockOpts);
+                    document.addEventListener('click', blockEvent, blockOpts);
+                    document.addEventListener('dblclick', blockEvent, blockOpts);
+                    document.addEventListener('contextmenu', blockEvent, blockOpts);
+                    // Document-level mousemove: blocca il mouse dell'utente anche se bypassa l'overlay
+                    document.addEventListener('mousemove', blockMouseMove, blockOpts);
+                    document.addEventListener('mouseover', blockMouseMove, blockOpts);
+                    document.addEventListener('mouseenter', blockMouseMove, blockOpts);
                 }
 
                 // Toast notifica
@@ -333,7 +378,36 @@ export async function ensureInputBlock(page: Page): Promise<void> {
 }
 
 /**
- * Disabilita temporaneamente l'overlay di blocco input.
+ * Segnala che il bot sta muovendo il mouse (NO cambio pointer-events).
+ * I listener lasciano passare gli eventi CDP del bot ma bloccano il mouse fisico dell'utente.
+ * Chiamare PRIMA di humanMouseMove/humanMouseMoveToCoords.
+ */
+export async function pauseInputBlockForMove(page: Page): Promise<void> {
+    if (page.isClosed()) return;
+    try {
+        await page.evaluate((id) => {
+            const el = document.getElementById(id);
+            if (el) el.dataset.botMoving = 'true';
+        }, INPUT_BLOCK_OVERLAY_ID);
+    } catch { /* best effort */ }
+}
+
+/**
+ * Fine movimento mouse bot. Rimuove il flag botMoving.
+ */
+export async function resumeInputBlockForMove(page: Page): Promise<void> {
+    if (page.isClosed()) return;
+    try {
+        await page.evaluate((id) => {
+            const el = document.getElementById(id);
+            if (el) delete el.dataset.botMoving;
+        }, INPUT_BLOCK_OVERLAY_ID);
+    } catch { /* best effort */ }
+}
+
+/**
+ * Disabilita temporaneamente l'overlay di blocco input per CLICK.
+ * Breve finestra pointer-events:none (~150ms) per far arrivare il click al target LinkedIn.
  * Chiamare PRIMA di ogni click del bot (smartClick, visionClick).
  */
 export async function pauseInputBlock(page: Page): Promise<void> {
@@ -341,7 +415,17 @@ export async function pauseInputBlock(page: Page): Promise<void> {
     try {
         await page.evaluate((id) => {
             const el = document.getElementById(id);
-            if (el) el.style.pointerEvents = 'none';
+            if (el) {
+                el.style.pointerEvents = 'none';
+                el.dataset.botClicking = 'true';
+                const elRec = el as unknown as Record<string, unknown>;
+                const prev = elRec.__restoreTimer as ReturnType<typeof setTimeout> | undefined;
+                if (prev) clearTimeout(prev);
+                elRec.__restoreTimer = setTimeout(() => {
+                    el.style.pointerEvents = 'auto';
+                    delete el.dataset.botClicking;
+                }, 150);
+            }
         }, INPUT_BLOCK_OVERLAY_ID);
     } catch { /* best effort */ }
 }
@@ -354,7 +438,13 @@ export async function resumeInputBlock(page: Page): Promise<void> {
     try {
         await page.evaluate((id) => {
             const el = document.getElementById(id);
-            if (el) el.style.pointerEvents = 'auto';
+            if (el) {
+                const elRec = el as unknown as Record<string, unknown>;
+                const prev = elRec.__restoreTimer as ReturnType<typeof setTimeout> | undefined;
+                if (prev) clearTimeout(prev);
+                el.style.pointerEvents = 'auto';
+                delete el.dataset.botClicking;
+            }
         }, INPUT_BLOCK_OVERLAY_ID);
     } catch { /* best effort */ }
 }
@@ -369,6 +459,7 @@ export function releaseMouseConfinement(): void {
 }
 
 export async function blockUserInput(page: Page): Promise<void> {
+    initializeMouseState(page);
     await enableVisualCursorOverlay(page);
     await ensureInputBlock(page);
     // Auto-dismiss overlay LinkedIn dopo navigazione
@@ -473,6 +564,7 @@ export async function humanMouseMove(page: Page, targetSelector: string): Promis
         await humanSwipe(page, 'up');
         return;
     }
+    await pauseInputBlockForMove(page);
     try {
         // Chiudi overlay che potrebbero intercettare il click
         await dismissKnownOverlays(page);
@@ -501,6 +593,8 @@ export async function humanMouseMove(page: Page, targetSelector: string): Promis
         updateMouseState(page, { x: finalX, y: finalY });
     } catch {
         // Ignora silenziosamente
+    } finally {
+        await resumeInputBlockForMove(page);
     }
 }
 
@@ -514,6 +608,7 @@ export async function humanMouseMoveToCoords(page: Page, targetX: number, target
         await humanSwipe(page, 'up'); // fallback semantico per mobile
         return;
     }
+    await pauseInputBlockForMove(page);
     try {
         const startPoint = getStartingPoint(page);
         const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
@@ -531,6 +626,8 @@ export async function humanMouseMoveToCoords(page: Page, targetX: number, target
         updateMouseState(page, { x: targetX, y: targetY });
     } catch {
         // Best effort
+    } finally {
+        await resumeInputBlockForMove(page);
     }
 }
 
@@ -744,12 +841,10 @@ export async function humanType(page: Page, selector: string, text: string): Pro
         charIndex++;
         if (currentWordIdx < words.length) {
             const currentWordLen = words[currentWordIdx].length;
-            if (charIndex > currentWordLen) {
+            if (charIndex > currentWordLen && currentWordIdx < words.length - 1) {
                 charIndex = 1;
                 currentWordIdx++;
-                currentWordMultiplier = currentWordIdx < words.length
-                    ? getWordFlowMultiplier(words[currentWordIdx])
-                    : 1.0;
+                currentWordMultiplier = getWordFlowMultiplier(words[currentWordIdx]);
             }
         }
 
@@ -1141,8 +1236,12 @@ export async function performDecoyAction(page: Page): Promise<void> {
             await reInjectOverlay();
             await simulateHumanReading(page);
             // AD-02: Interviene sul Feed con una probabilità del 20%
-            const { interactWithFeed } = await import('./organicContent');
-            await interactWithFeed(page, 0.20);
+            try {
+                const { interactWithFeed } = await import('./organicContent');
+                await interactWithFeed(page, 0.20);
+            } catch {
+                // organicContent import/exec fallito — skip decoy interaction
+            }
         },
         async () => {
             await page.goto('https://www.linkedin.com/mynetwork/', { waitUntil: 'domcontentloaded' });
@@ -1178,7 +1277,10 @@ export async function performDecoyAction(page: Page): Promise<void> {
 
     try {
         const decoy = randomElement(actions);
-        await decoy();
+        await Promise.race([
+            decoy(),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Decoy timeout 15s')), 15_000)),
+        ]);
     } catch {
         // Ignora silenziosamente — è solo noise decoy
     }

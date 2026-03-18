@@ -66,9 +66,11 @@ Rispondi SOLO con JSON. Esempio:
             .trim();
         const parsed = JSON.parse(rawJsonText);
 
+        const rawConfidence = Number(parsed.confidenceScore);
+        const rawLead = Number(parsed.leadScore);
         return {
-            confidenceScore: Math.min(100, Math.max(0, Number(parsed.confidenceScore) || 50)),
-            leadScore: Math.min(100, Math.max(0, Number(parsed.leadScore) || 50)),
+            confidenceScore: Math.min(100, Math.max(0, Number.isFinite(rawConfidence) ? rawConfidence : 50)),
+            leadScore: Math.min(100, Math.max(0, Number.isFinite(rawLead) ? rawLead : 50)),
             reason: String(parsed.reason || 'UNKNOWN')
                 .toUpperCase()
                 .replace(/[^A-Z_]/g, ''),

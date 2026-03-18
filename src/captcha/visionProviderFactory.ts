@@ -106,13 +106,38 @@ class LocalFirstHybridVisionProvider implements VisionProvider {
     private primary: OllamaVisionProvider;
     private fallback: OpenAIVisionProvider;
     private primaryFailed = false;
+    private callsSincePrimaryFailed = 0;
+    private ollamaEndpoint: string;
 
-    constructor(primary: OllamaVisionProvider, fallback: OpenAIVisionProvider) {
+    constructor(primary: OllamaVisionProvider, fallback: OpenAIVisionProvider, ollamaEndpoint: string) {
         this.primary = primary;
         this.fallback = fallback;
+        this.ollamaEndpoint = ollamaEndpoint;
+    }
+
+    async warmUp(): Promise<void> {
+        try {
+            const resp = await fetch(
+                `${this.ollamaEndpoint}/api/tags`,
+                { signal: AbortSignal.timeout(3_000) },
+            );
+            if (!resp.ok) {
+                this.primaryFailed = true;
+            }
+        } catch {
+            void logWarn('vision.local_first.ollama_warmup_unavailable', {});
+            this.primaryFailed = true;
+        }
     }
 
     async analyzeImage(base64Image: string, prompt: string): Promise<VisionAnalysisResult> {
+        if (this.primaryFailed) {
+            this.callsSincePrimaryFailed++;
+            if (this.callsSincePrimaryFailed >= 50) {
+                this.callsSincePrimaryFailed = 0;
+                this.primaryFailed = false;
+            }
+        }
         if (!this.primaryFailed) {
             try {
                 return await this.primary.analyzeImage(base64Image, prompt);
@@ -121,6 +146,7 @@ class LocalFirstHybridVisionProvider implements VisionProvider {
                     error: error instanceof Error ? error.message : String(error),
                 });
                 this.primaryFailed = true;
+                this.callsSincePrimaryFailed = 0;
             }
         }
         return this.fallback.analyzeImage(base64Image, prompt);
@@ -241,7 +267,9 @@ export function createVisionProvider(overrideConfig?: Partial<VisionProviderConf
                     budgetMaxUsd: cfg.budgetMaxUsd,
                     redactScreenshots: cfg.redactScreenshots,
                 });
-                provider = new LocalFirstHybridVisionProvider(localPrimary, cloudFallback);
+                const localFirstProvider = new LocalFirstHybridVisionProvider(localPrimary, cloudFallback, cfg.ollamaEndpoint);
+                void localFirstProvider.warmUp();
+                provider = localFirstProvider;
             } else {
                 provider = localPrimary;
             }

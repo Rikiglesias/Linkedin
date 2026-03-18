@@ -1,4 +1,5 @@
 import type { Page } from 'playwright';
+import { createHash } from 'crypto';
 import {
     detectChallenge,
     dismissKnownOverlays,
@@ -620,59 +621,61 @@ async function openSaveToListDialog(page: Page, dryRun: boolean): Promise<void> 
 
     // Attendi che il bottone "Save to list" appaia (toolbar batch actions)
     await page.locator(SAVE_TO_LIST_SELECTOR).first()
-        .waitFor({ state: 'visible', timeout: 5_000 })
+        .waitFor({ state: 'visible', timeout: 8_000 })
         .catch(() => null);
 
     let clicked = false;
-    const saveTexts = ['save to list', "salva nell'elenco", 'salva in elenco', "aggiungi all'elenco"];
+    // Tutti i testi possibili EN + IT (compresi sinonimi e varianti SalesNav)
+    const saveTexts = [
+        'save to list', "salva nell'elenco", 'salva nella lista',
+        'salva in elenco', "aggiungi all'elenco", 'aggiungi alla lista', 'salva',
+    ];
 
-    // Strategia 1: Ricerca per testo visibile
-    const textBox = await findVisibleClickTarget(page, saveTexts);
+    // Strategia 1+2+3 in parallelo: testo visibile + locator CSS + getByRole
+    const btnLocator = page.getByRole('button', {
+        name: /save to list|salva nell.elenco|salva nella lista|salva in elenco|aggiungi all.elenco|aggiungi alla lista|^salva$/i,
+    }).first();
+    const [textBox, locatorBox, roleBox] = await Promise.all([
+        findVisibleClickTarget(page, saveTexts),
+        (async () => {
+            const locator = page.locator(SAVE_TO_LIST_SELECTOR).first();
+            return (await hasLocator(locator)) ? locatorBoundingBox(locator) : null;
+        })(),
+        (async () => {
+            return (await btnLocator.count()) > 0 ? locatorBoundingBox(btnLocator) : null;
+        })(),
+    ]);
+
     if (textBox) {
         console.log(`[SAVE TO LIST] Strategia 1 OK: testo trovato a (${Math.round(textBox.x)},${Math.round(textBox.y)})`);
         await smartClick(page, textBox);
         clicked = true;
-    }
-
-    // Strategia 2: Playwright locator
-    if (!clicked) {
-        const locator = page.locator(SAVE_TO_LIST_SELECTOR).first();
-        const box = (await hasLocator(locator)) ? await locatorBoundingBox(locator) : null;
-        if (box) {
-            console.log(`[SAVE TO LIST] Strategia 2 OK: locator CSS`);
-            await smartClick(page, box);
-            clicked = true;
+    } else if (locatorBox) {
+        console.log('[SAVE TO LIST] Strategia 2 OK: locator CSS');
+        await smartClick(page, locatorBox);
+        clicked = true;
+    } else if (roleBox) {
+        console.log('[SAVE TO LIST] Strategia 3 OK: getByRole button');
+        await smartClick(page, roleBox);
+        clicked = true;
+    } else if ((await btnLocator.count()) > 0) {
+        console.log('[SAVE TO LIST] Strategia 3: button hidden, force click');
+        const hiddenBox = await btnLocator.boundingBox().catch(() => null);
+        if (hiddenBox) {
+            await humanMouseMoveToCoords(page, hiddenBox.x + hiddenBox.width / 2, hiddenBox.y + hiddenBox.height / 2);
         }
+        await btnLocator.click({ force: true });
+        clicked = true;
     }
 
-    // Strategia 3: getByRole button
-    if (!clicked) {
-        const btn = page.getByRole('button', { name: /save to list|salva nell.elenco|aggiungi all.elenco/i }).first();
-        if ((await btn.count()) > 0) {
-            const box = await locatorBoundingBox(btn);
-            if (box) {
-                console.log('[SAVE TO LIST] Strategia 3 OK: getByRole button');
-                await smartClick(page, box);
-            } else {
-                console.log('[SAVE TO LIST] Strategia 3: button hidden, force click');
-                // Tentativo mouse move anche su elemento nascosto (best-effort)
-                const hiddenBox = await btn.boundingBox().catch(() => null);
-                if (hiddenBox) {
-                    await humanMouseMoveToCoords(page, hiddenBox.x + hiddenBox.width / 2, hiddenBox.y + hiddenBox.height / 2);
-                }
-                await btn.click({ force: true });
-            }
-            clicked = true;
-        }
-    }
-
-    // Strategia 4: Vision AI
+    // Strategia 4: Vision AI (chiede in entrambe le lingue)
     if (!clicked) {
         console.log('[SAVE TO LIST] Strategia 4: Vision AI...');
-        await safeVisionClick(page, 'button labeled "Save to list" or "Salva nell\'elenco"', {
-            retries: 3,
-            postClickDelayMs: 900,
-        });
+        await safeVisionClick(
+            page,
+            'button labeled "Save to list" or "Salva nell\'elenco" or "Salva nella lista" or "Aggiungi all\'elenco"',
+            { retries: 3, postClickDelayMs: 900 },
+        );
     }
 
     await humanDelay(page, 300, 600);
@@ -744,7 +747,34 @@ async function chooseTargetList(page: Page, targetListName: string, dryRun: bool
     // ── Fast path: se la lista è già stata usata in questa sessione, prova click diretto ──
     // Un umano esperto che fa bulk save ripetitivo NON riscrive il nome ogni volta.
     // La lista è in cima al dialog (recente) → click diretto.
+    // Se la lista ha già la checkbox selezionata (aria-checked/aria-selected), basta confermare.
     if (_bulkSaveListFoundInSession) {
+        // Check se la lista è GIÀ selezionata (checkbox checked) → nessun click necessario
+        const alreadySelected = await page.evaluate(({ container, name }: { container: string; name: string }) => {
+            const root = document.querySelector(container) ?? document;
+            const items = root.querySelectorAll('[aria-selected="true"], [aria-checked="true"], input:checked');
+            for (const item of items) {
+                const text = (item.closest('li, label, [role="option"]') ?? item).textContent?.toLowerCase().replace(/\s+/g, ' ').trim() ?? '';
+                if (text.includes(name.toLowerCase())) return true;
+            }
+            return false;
+        }, { container: dialogContainerSelector, name: targetListName }).catch(() => false);
+
+        if (alreadySelected) {
+            console.log('[CHOOSE LIST] Fast path: lista già selezionata — confermo');
+            const confirmBox = await findVisibleClickTarget(
+                page,
+                ['save', 'salva', 'done', 'fatto', 'confirm', 'conferma'],
+                dialogContainerSelector,
+            );
+            if (confirmBox) {
+                await smartClick(page, confirmBox);
+                await dialogLocator.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => null);
+                await verifyToast(page, targetListName);
+                return;
+            }
+        }
+
         const directBox = await findVisibleClickTarget(page, [targetListName], dialogContainerSelector, true, true);
         if (directBox) {
             console.log(`[CHOOSE LIST] Fast path OK: click diretto a (${Math.round(directBox.x)},${Math.round(directBox.y)})`);
@@ -1193,26 +1223,73 @@ async function clickNextPage(page: Page, dryRun: boolean): Promise<boolean> {
  *   - Burst scroll: occasionalmente 2-3 scroll rapidi consecutivi
  *
  * Garantisce il rendering lazy di SalesNav accumulando gli ID in un Set globale.
- * Restituisce il numero di lead card trovate nel DOM dopo lo scroll completo.
+ * Restituisce il numero di lead card trovate e i profili raccolti durante lo scroll.
+ * I profili sono raccolti DURANTE lo scroll per evitare che il virtual scroller
+ * distrugga le card dopo scroll-to-top (desync con extractProfileUrlsFromPage).
  */
-export async function scrollAndReadPage(page: Page, fast: boolean = false): Promise<number> {
+export interface ScrollCollectedProfile {
+    leadId: string;
+    firstName: string;
+    lastName: string;
+    linkedinUrl: string;
+    title?: string;
+    company?: string;
+    location?: string;
+}
+
+export interface ScrollResult {
+    count: number;
+    profiles: ScrollCollectedProfile[];
+}
+
+export async function scrollAndReadPage(page: Page, fast: boolean = false): Promise<ScrollResult> {
     const viewport = page.viewportSize() ?? { width: 1400, height: 900 };
 
-    // Accumula ID lead lato Node (NON lato browser — evita fingerprint window.__collectedLeadIds)
+    // Accumula profili lead lato Node (NON lato browser — evita fingerprint window.__collectedLeadIds)
     const collectedLeadIds = new Set<string>();
+    const collectedProfiles = new Map<string, ScrollCollectedProfile>();
 
     const collectVisibleLeads = async (): Promise<number> => {
-        const newIds = await page.evaluate(() => {
+        const profiles = await page.evaluate(() => {
+            const results: Array<{
+                leadId: string; firstName: string; lastName: string;
+                linkedinUrl: string; title?: string; company?: string; location?: string;
+            }> = [];
             const anchors = document.querySelectorAll('a[href*="/sales/lead/"], a[href*="/sales/people/"]');
-            const ids: string[] = [];
             for (const a of anchors) {
                 const href = a.getAttribute('href') ?? '';
                 const id = href.match(/\/(lead|people)\/([^,/?]+)/)?.[2];
-                if (id) ids.push(id);
+                if (!id) continue;
+                // Risali al container card per estrarre dati
+                const card = a.closest('li, article, [data-x--lead-card]') ?? a.parentElement;
+                const nameText = a.textContent?.trim() ?? '';
+                const parts = nameText.split(/\s+/);
+                const firstName = parts[0] ?? '';
+                const lastName = parts.slice(1).join(' ') ?? '';
+                // Title e company dai sibling/child span
+                const subtitleEl = card?.querySelector('[class*="subtitle"], [class*="body-text"]');
+                const subtitle = subtitleEl?.textContent?.trim() ?? '';
+                const [title, company] = subtitle.includes(' at ') ? subtitle.split(' at ') :
+                    subtitle.includes(' @ ') ? subtitle.split(' @ ') :
+                    subtitle.includes(' presso ') ? subtitle.split(' presso ') : [subtitle, ''];
+                const locationEl = card?.querySelector('[class*="location"], [class*="geo"]');
+                const location = locationEl?.textContent?.trim() ?? undefined;
+                results.push({
+                    leadId: id, firstName, lastName,
+                    linkedinUrl: href.startsWith('/') ? `https://www.linkedin.com${href.split('?')[0]}` : href,
+                    title: title?.trim() || undefined,
+                    company: company?.trim() || undefined,
+                    location,
+                });
             }
-            return ids;
+            return results;
         });
-        for (const id of newIds) collectedLeadIds.add(id);
+        for (const p of profiles) {
+            collectedLeadIds.add(p.leadId);
+            if (!collectedProfiles.has(p.leadId)) {
+                collectedProfiles.set(p.leadId, p);
+            }
+        }
         return collectedLeadIds.size;
     };
 
@@ -1263,7 +1340,7 @@ export async function scrollAndReadPage(page: Page, fast: boolean = false): Prom
     // ── Scroll con velocità variabile ──
     // fast=true: scroll veloce solo per caricare le card nel DOM (bulk save — l'utente NON legge i profili)
     // fast=false: scroll umano con pause di lettura (navigazione esplorativa)
-    const MAX_STEPS = fast ? 12 : 20;
+    const MAX_STEPS = fast ? 40 : 20;
     let noNewLeadsCount = 0;
 
     // Funzione di scroll singola (container via indice o wheel)
@@ -1279,23 +1356,48 @@ export async function scrollAndReadPage(page: Page, fast: boolean = false): Prom
         }
     };
 
+    // Helper: controlla se il container è scrollato fino in fondo (pattern da listScraper.ts)
+    const isAtBottom = async (): Promise<boolean> => {
+        if (!scrollContainerInfo.found) {
+            return page.evaluate(() =>
+                window.scrollY + window.innerHeight >= document.body.scrollHeight - 100
+            ).catch(() => true);
+        }
+        return page.evaluate((idx: number) => {
+            const el = document.querySelectorAll('div, main, section, [role="main"]')[idx] as HTMLElement | undefined;
+            return el ? el.scrollTop + el.clientHeight >= el.scrollHeight - 100 : true;
+        }, containerIndex).catch(() => true);
+    };
+
     for (let i = 0; i < MAX_STEPS; i++) {
         const countBefore = await collectVisibleLeads();
 
         if (fast) {
-            // FAST MODE: scroll + collect per ogni burst.
+            // FAST MODE: scroll + collect per ogni singolo scroll.
             // SalesNav usa un VIRTUAL SCROLLER: le card fuori viewport vengono distrutte dal DOM.
-            // Quindi raccogliamo i lead DOPO ogni singolo scroll, non alla fine del burst.
+            // CRITICO: scroll delta PICCOLO (~1 card = ~120px). Un delta troppo grande (500+px)
+            // salta card che il virtual scroller non fa in tempo a renderizzare → lead persi.
+            // Raccogliamo i lead DOPO ogni singolo scroll prima che vengano distrutti.
             const burstCount = 2 + Math.floor(Math.random() * 2);
             for (let b = 0; b < burstCount; b++) {
-                const delta = 350 + Math.floor(Math.random() * 250);
+                // Delta minimo: ~1-1.5 card alla volta (120-180px) per non saltare card nel virtual scroller
+                const delta = 120 + Math.floor(Math.random() * 60);
                 await doScroll(delta);
-                // Wait per rendering virtual scroller: le card appaiono 200-500ms dopo scroll
-                await page.waitForTimeout(300 + Math.floor(Math.random() * 200));
+                // Wait adattivo per virtual scroller: poll DOM per nuove lead card
+                const preCount = await page.evaluate(() =>
+                    document.querySelectorAll('a[href*="/sales/lead/"], a[href*="/sales/people/"]').length
+                );
+                await page.waitForFunction(
+                    (before: number) =>
+                        document.querySelectorAll('a[href*="/sales/lead/"], a[href*="/sales/people/"]').length !== before,
+                    preCount,
+                    { timeout: 1_500 },
+                ).catch(() => null);
+                await page.waitForTimeout(150 + Math.floor(Math.random() * 100));
                 // Raccogli lead dal viewport corrente (prima che vengano distrutti dallo scroll successivo)
                 await collectVisibleLeads();
             }
-            await page.waitForTimeout(200 + Math.floor(Math.random() * 150));
+            await page.waitForTimeout(150 + Math.floor(Math.random() * 100));
         } else {
             // ── Decide il "ritmo" di questo step ──
             const roll = Math.random();
@@ -1332,6 +1434,12 @@ export async function scrollAndReadPage(page: Page, fast: boolean = false): Prom
 
         const countAfter = await collectVisibleLeads();
 
+        // Early exit: SalesNav mostra 25 lead per pagina. Se li abbiamo tutti, stop.
+        if (fast && countAfter >= 25) {
+            console.log(`[SCROLL] Tutti i ${countAfter} lead raccolti — stop`);
+            break;
+        }
+
         if (countAfter > countBefore) {
             if (!fast) {
                 // Nuovi lead trovati — rallenta leggermente (come chi "nota" il contenuto)
@@ -1341,8 +1449,14 @@ export async function scrollAndReadPage(page: Page, fast: boolean = false): Prom
             noNewLeadsCount = 0;
         } else {
             noNewLeadsCount++;
-            // fast: 4 step senza nuovi lead (lazy-load può essere lento), normal: 3
-            if (noNewLeadsCount >= (fast ? 4 : 3)) break;
+            if (fast) {
+                // In fast mode, break SOLO se sia bottom raggiunto che nessun nuovo lead
+                const atBottom = await isAtBottom();
+                if (atBottom && noNewLeadsCount >= 3) break;
+                if (noNewLeadsCount >= 10) break; // safety cap assoluto
+            } else {
+                if (noNewLeadsCount >= 4) break;
+            }
         }
 
         // Micro-movimento mouse occasionale — skip in fast mode (un umano che fa bulk save non muove il mouse random)
@@ -1353,26 +1467,9 @@ export async function scrollAndReadPage(page: Page, fast: boolean = false): Prom
         }
     }
 
-    // Se in fast mode e abbiamo trovato meno di 20 lead (SalesNav mostra 25/pagina),
-    // scroll-to-bottom + raccogli le card rimanenti. Il virtual scroller di SalesNav
-    // rende solo ~10 card alla volta nel viewport, serve scrollare fino in fondo.
-    if (fast && collectedLeadIds.size < 20 && collectedLeadIds.size > 0) {
-        // Scroll incrementale fino in fondo con raccolta ad ogni step
-        for (let extra = 0; extra < 8; extra++) {
-            if (scrollContainerInfo.found) {
-                await page.evaluate((idx: number) => {
-                    const el = document.querySelectorAll('div, main, section, [role="main"]')[idx] as HTMLElement | undefined;
-                    if (el) el.scrollTop += 500;
-                }, containerIndex);
-            } else {
-                await page.mouse.wheel(0, 500);
-            }
-            await page.waitForTimeout(400 + Math.floor(Math.random() * 200));
-            const beforeExtra = collectedLeadIds.size;
-            await collectVisibleLeads();
-            if (collectedLeadIds.size >= 25) break; // Trovati tutti
-            if (collectedLeadIds.size === beforeExtra && extra > 2) break; // Nessun nuovo dopo 3 tentativi
-        }
+    // Warning se fast mode ha trovato pochi lead (safety net dopo scroll completo)
+    if (fast && collectedLeadIds.size < 15 && collectedLeadIds.size > 0) {
+        console.warn(`[SCROLL] Solo ${collectedLeadIds.size} lead trovati dopo scroll completo — possibile rendering incompleto`);
     }
 
     // Totale accumulato lato Node — nessun cleanup DOM necessario
@@ -1394,7 +1491,7 @@ export async function scrollAndReadPage(page: Page, fast: boolean = false): Prom
     }
     await page.waitForTimeout(200 + Math.floor(Math.random() * 200));
 
-    return leadCount;
+    return { count: leadCount, profiles: [...collectedProfiles.values()] };
 }
 
 async function prepareResultsPage(page: Page): Promise<void> {
@@ -2281,6 +2378,10 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
             );
 
             let consecutiveFailedPages = 0;
+            let consecutiveAllDuplicatePages = 0;
+            const MAX_CONSECUTIVE_DUPLICATE_PAGES = 3;
+            let consecutiveHealthCheckFailures = 0;
+            const MAX_HEALTH_CHECK_FAILURES = 2;
             for (let pageNumber = initialPageNumber; pageNumber <= searchMaxPages; pageNumber++) {
                 currentPageNumber = pageNumber;
                 searchReport.finalPage = pageNumber;
@@ -2304,14 +2405,24 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
 
                 // ── FASE 0: AI health check — ogni 8 pagine l'AI verifica che non ci siano segnali sospetti ──
                 // Ridotto da 3 a 8: un power user SalesNav non si ferma ogni 3 pagine.
-                if (pageNumber > 1 && (pageNumber - 1) % 8 === 0) {
-                    const healthCheck = await aiCheckPageHealth(page);
-                    if (!healthCheck.safe) {
-                        console.log(`[AI-WARN] Segnale sospetto rilevato: ${healthCheck.warning}`);
-                        console.log('[AI-WARN] Rallento e faccio pausa lunga per sicurezza...');
-                        await humanDelay(page, 8_000, 15_000);
-                        // Ricontrolla dopo la pausa
-                        await ensureNoChallenge(page);
+                // Circuit breaker: dopo MAX_HEALTH_CHECK_FAILURES fallimenti consecutivi, disabilita per la sessione.
+                if (pageNumber > 1 && (pageNumber - 1) % 8 === 0 &&
+                    consecutiveHealthCheckFailures < MAX_HEALTH_CHECK_FAILURES) {
+                    try {
+                        const healthCheck = await aiCheckPageHealth(page);
+                        consecutiveHealthCheckFailures = 0;
+                        if (!healthCheck.safe) {
+                            console.log(`[AI-WARN] Segnale sospetto rilevato: ${healthCheck.warning}`);
+                            console.log('[AI-WARN] Rallento e faccio pausa lunga per sicurezza...');
+                            await humanDelay(page, 8_000, 15_000);
+                            // Ricontrolla dopo la pausa
+                            await ensureNoChallenge(page);
+                        }
+                    } catch {
+                        consecutiveHealthCheckFailures++;
+                        if (consecutiveHealthCheckFailures >= MAX_HEALTH_CHECK_FAILURES) {
+                            console.warn('[AI-WARN] Health check Vision disabilitato per il resto della sessione (Ollama down)');
+                        }
                     }
                 }
 
@@ -2323,17 +2434,73 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
 
                 // ── FASE 2: Fast scroll — carica le card nel DOM (lazy rendering) ──
                 // fast=true: un power user SalesNav che fa bulk save scorre veloce senza leggere i profili
-                const leadsOnPage = await scrollAndReadPage(page, true);
+                // I profili vengono raccolti DURANTE lo scroll per evitare desync con virtual scroller.
+                const scrollResult = await scrollAndReadPage(page, true);
+                let leadsOnPage = scrollResult.count;
+
+                // Retry se pochi lead trovati (possibile rendering incompleto)
+                const isLikelyLastPage = remaining <= 0 || (paginationInfo?.current === paginationInfo?.total);
+                if (leadsOnPage < 15 && leadsOnPage > 0 && !isLikelyLastPage) {
+                    console.warn(`[RETRY] Solo ${leadsOnPage}/25 lead — scroll-to-top + re-scroll...`);
+                    await humanDelay(page, 800, 1500);
+                    await page.evaluate(() => window.scrollTo({ top: 0 }));
+                    await page.waitForTimeout(500 + Math.floor(Math.random() * 300));
+                    const retryResult = await scrollAndReadPage(page, true);
+                    if (retryResult.count > leadsOnPage) {
+                        console.log(`[RETRY] Migliorato: ${retryResult.count} lead (era ${leadsOnPage})`);
+                        leadsOnPage = retryResult.count;
+                        // Merge dei profili dal retry
+                        for (const p of retryResult.profiles) {
+                            if (!scrollResult.profiles.some(sp => sp.leadId === p.leadId)) {
+                                scrollResult.profiles.push(p);
+                            }
+                        }
+                    }
+                }
+
                 console.log(
                     `[PAGE] Pagina ${currentDisplayPage}/${totalPagesDetected}` +
                     ` — ${leadsOnPage} lead trovati dopo scroll` +
                     (remaining > 0 ? ` — ${remaining} pagine rimanenti` : ' — ultima pagina'),
                 );
 
-                // ── FASE 3: Estrai profili dal DOM e confronta col DB ──
-                const extractedProfiles = await extractProfileUrlsFromPage(page);
+                // ── FASE 3: Usa profili raccolti durante scroll, fallback a extractProfileUrlsFromPage ──
+                // I profili dallo scroll sono più affidabili: raccolti card per card durante lo scroll,
+                // non dopo scroll-to-top dove il virtual scroller ha distrutto card fuori viewport.
+                const extractedProfiles = scrollResult.profiles.length >= 15
+                    ? scrollResult.profiles.map(p => {
+                        const name = `${p.firstName} ${p.lastName}`.trim();
+                        const company = p.company ?? '';
+                        const nameCompanyHash = name.length > 0 && company.length > 0
+                            ? createHash('sha1').update(
+                                `${name.toLowerCase().trim().replace(/\s+/g, ' ')}|${company.toLowerCase().trim().replace(/\s+/g, ' ')}`
+                            ).digest('hex')
+                            : '';
+                        return {
+                            salesnavUrl: null,
+                            linkedinUrl: p.linkedinUrl || null,
+                            name,
+                            firstName: p.firstName,
+                            lastName: p.lastName,
+                            company,
+                            title: p.title ?? '',
+                            location: p.location ?? '',
+                            nameCompanyHash,
+                        };
+                    })
+                    : await extractProfileUrlsFromPage(page);
+
+                // Warning discrepanza scroll vs extract
+                if (extractedProfiles.length > 0 && extractedProfiles.length < leadsOnPage * 0.6) {
+                    console.warn(
+                        `[WARN] Discrepanza: ${leadsOnPage} lead IDs dallo scroll,` +
+                        ` ma solo ${extractedProfiles.length} profili estratti dal DOM (virtual scroller).`,
+                    );
+                }
+
                 const dedupResult = await checkDuplicates(options.targetListName, extractedProfiles);
-                const allSavedInDb = extractedProfiles.length > 0 && dedupResult.newProfiles === 0;
+                const trustworthy = extractedProfiles.length >= 15 || isLikelyLastPage;
+                const allSavedInDb = trustworthy && extractedProfiles.length > 0 && dedupResult.newProfiles === 0;
 
                 console.log(
                     `[ANALISI] ${extractedProfiles.length} profili estratti` +
@@ -2381,6 +2548,16 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                         allAlreadySaved: true,
                     });
 
+                    // Early-stop: se N pagine consecutive sono tutte duplicate, la ricerca è esaurita
+                    consecutiveAllDuplicatePages += 1;
+                    if (consecutiveAllDuplicatePages >= MAX_CONSECUTIVE_DUPLICATE_PAGES) {
+                        console.log(
+                            `[EARLY-STOP] ${MAX_CONSECUTIVE_DUPLICATE_PAGES} pagine consecutive con tutti duplicati` +
+                            ` — ricerca "${search.name}" probabilmente esaurita. Passo alla prossima.`,
+                        );
+                        break;
+                    }
+
                     // Determina se continuare o fermarsi
                     if (totalPagesDetected <= 1 || remaining <= 0) {
                         console.log(`[DONE] Ricerca "${search.name}" completata — tutte le ${totalPagesDetected} pagine controllate.`);
@@ -2400,6 +2577,11 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                     if (!movedSkip) {
                         console.log(`[DONE] Ricerca "${search.name}" completata — Next non cliccabile.`);
                         break;
+                    }
+                    // Anti-detection: delay variabile tra pagine skippate
+                    await humanDelay(page, 1_000, 3_000);
+                    if (Math.random() < 0.20) {
+                        await humanDelay(page, 2_000, 5_000);
                     }
                     continue;
                 }
@@ -2452,6 +2634,7 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                         errorMessage: null,
                     });
                     consecutiveFailedPages = 0;
+                    consecutiveAllDuplicatePages = 0;
 
                     if (run) {
                         run = await updateSyncRunProgress({

@@ -89,9 +89,14 @@ export async function buildPersonalizedFollowUpMessage(
 
             if (!candidate) continue;
 
-            if (await SemanticChecker.isTooSimilar(candidate, 0.85, lead.id)) {
-                await logWarn('ai.personalization.too_similar_retry', { leadId: lead.id, attempt });
-                continue;
+            try {
+                if (await SemanticChecker.isTooSimilar(candidate, 0.85, lead.id)) {
+                    await logWarn('ai.personalization.too_similar_retry', { leadId: lead.id, attempt });
+                    continue;
+                }
+            } catch {
+                await logWarn('ai.semantic_checker.error', { leadId: lead.id, attempt });
+                // Semantic checker down — use candidate as-is (better than no message)
             }
 
             finalMessage = candidate;

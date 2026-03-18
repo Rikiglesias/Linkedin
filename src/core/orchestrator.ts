@@ -1,5 +1,5 @@
 import { checkLogin, closeBrowser, launchBrowser, runSelectorCanaryDetailed } from '../browser';
-import { getRuntimeAccountProfiles } from '../accountManager';
+import { getRuntimeAccountProfiles, setOverrideAccountId } from '../accountManager';
 import { getSessionMaturity } from '../browser/sessionCookieMonitor';
 import { config, getLocalDateString, getWeekStartDate, isWorkingHour } from '../config';
 import { pauseAutomation, quarantineAccount } from '../risk/incidentManager';
@@ -46,6 +46,8 @@ export interface RunWorkflowOptions {
     lang?: string;
     /** Modalità messaggio: 'ai' (default) o 'template' (forza template senza AI) */
     messageMode?: 'ai' | 'template';
+    /** Account ID override (forza un account specifico per il workflow) */
+    accountId?: string;
 }
 
 function mapDailySnapshotToPredictiveSample(snapshot: {
@@ -73,6 +75,12 @@ function toFlagSafeToken(raw: string): string {
 async function runCanaryIfNeeded(workflow: WorkflowSelection): Promise<boolean> {
     const touchesUi = workflow === 'all' || workflow === 'invite' || workflow === 'message' || workflow === 'check';
     if (!config.selectorCanaryEnabled || !touchesUi) {
+        return true;
+    }
+
+    // Cache canary per 4 ore — evita sessioni browser extra inutili
+    const lastCanaryOk = await getRuntimeFlag('canary_last_ok_at').catch(() => null);
+    if (lastCanaryOk && Date.now() - Date.parse(lastCanaryOk) < 4 * 60 * 60 * 1000) {
         return true;
     }
 
@@ -164,6 +172,8 @@ async function runCanaryIfNeeded(workflow: WorkflowSelection): Promise<boolean> 
         }
     }
 
+    // Canary OK — salva timestamp per cache 4h
+    await setRuntimeFlag('canary_last_ok_at', new Date().toISOString()).catch(() => null);
     return true;
 }
 
@@ -314,6 +324,10 @@ async function evaluateComplianceHealthGuard(
 }
 
 export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
+    if (options.accountId) {
+        setOverrideAccountId(options.accountId);
+    }
+
     if (!options.dryRun) {
         const quarantine = (await getRuntimeFlag('account_quarantine')) === 'true';
         if (quarantine) {

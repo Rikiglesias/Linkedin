@@ -12,3 +12,4 @@ export * from './stealth';
 export * from './deviceProfile';
 export * from './overlayDismisser';
 export * from './navigationContext';
+export * from './windowInputBlock';

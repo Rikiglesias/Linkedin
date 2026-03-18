@@ -3,6 +3,7 @@ import { getAccountProfileById } from '../accountManager';
 import { cleanText } from '../utils/text';
 import { checkLogin, closeBrowser, humanDelay, humanMouseMove, launchBrowser } from '../browser';
 import { blockUserInput, pauseInputBlock, resumeInputBlock } from '../browser/humanBehavior';
+import { enableWindowClickThrough, disableWindowClickThrough } from '../browser/windowInputBlock';
 import { normalizeLinkedInUrl } from '../linkedinUrl';
 import { navigateToSavedLists, SalesNavSavedList } from './listScraper';
 
@@ -97,6 +98,7 @@ export async function createSalesNavList(listName: string, accountId?: string, e
         if (!loggedIn) {
             return { ok: false, accountId: account.id, message: 'Sessione non autenticata' };
         }
+        enableWindowClickThrough(page.context());
         await blockUserInput(page);
 
         await page.goto('https://www.linkedin.com/sales/lists/people/', { waitUntil: 'domcontentloaded', timeout: 60_000 });
@@ -143,7 +145,10 @@ export async function createSalesNavList(listName: string, accountId?: string, e
             message: `Lista creata (best-effort): ${normalizedListName}`,
         };
     } finally {
-        if (ownSession) await closeBrowser(ownSession);
+        if (ownSession) {
+            disableWindowClickThrough(ownSession.browser);
+            await closeBrowser(ownSession);
+        }
     }
 }
 
@@ -176,6 +181,7 @@ export async function addLeadToSalesNavList(
         if (!loggedIn) {
             return { ok: false, accountId: account.id, message: 'Sessione non autenticata' };
         }
+        enableWindowClickThrough(page.context());
         await blockUserInput(page);
 
         await page.goto(normalizedLeadUrl, { waitUntil: 'domcontentloaded' });
@@ -224,6 +230,9 @@ export async function addLeadToSalesNavList(
             message: `Lead aggiunto (best-effort) a lista: ${normalizedListName}`,
         };
     } finally {
-        if (ownSession) await closeBrowser(ownSession);
+        if (ownSession) {
+            disableWindowClickThrough(ownSession.browser);
+            await closeBrowser(ownSession);
+        }
     }
 }

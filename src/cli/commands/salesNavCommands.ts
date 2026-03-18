@@ -14,6 +14,7 @@ import {
     detectChallenge,
 } from '../../browser';
 import { blockUserInput } from '../../browser/humanBehavior';
+import { enableWindowClickThrough, disableWindowClickThrough } from '../../browser/windowInputBlock';
 import {
     getLeadById,
     getLeadsWithSalesNavigatorUrls,
@@ -313,6 +314,7 @@ async function ensureSalesNavSession(args: string[], opts?: { interactive?: bool
 
     // Blocca input utente dopo login — skip in interactive per mouse libero
     if (!opts?.interactive) {
+        enableWindowClickThrough(session.browser);
         await blockUserInput(session.page);
         console.log('[OK] Input bloccato. Avvio automazione...');
     } else {
@@ -598,6 +600,7 @@ export async function runSalesNavResolveCommand(args: string[]): Promise<void> {
             }
         }
     } finally {
+        disableWindowClickThrough(session.browser);
         await closeBrowserSession(session);
     }
 
@@ -674,6 +677,7 @@ export async function runSalesNavBulkSaveCommand(args: string[]): Promise<void> 
         console.log(`\nRun terminato. Chiusura browser tra ${closeDelaySec}s...`);
         await new Promise(resolve => setTimeout(resolve, closeDelaySec * 1000));
     } finally {
+        disableWindowClickThrough(session.browser);
         await closeBrowserSession(session);
     }
 }

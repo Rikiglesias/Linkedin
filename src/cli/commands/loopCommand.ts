@@ -283,6 +283,7 @@ interface LoopSubTaskBuildContext {
     lockOwnerId: string | null;
     lockTtlSeconds: number;
     profilesDiscoveredRef: { count: number };
+    accountOverride?: string | null;
 }
 
 function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
@@ -435,9 +436,11 @@ function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
         },
         execute: async () => {
             const { scrapeSsiScore } = await import('../../browser/ssiScraper');
+            const ssiAccounts = getRuntimeAccountProfiles();
+            const ssiAccount = ssiAccounts[0];
             let session;
             try {
-                session = await launchBrowser({ headless: config.headless, forceDesktop: true });
+                session = await launchBrowser({ headless: config.headless, forceDesktop: true, sessionDir: ssiAccount?.sessionDir, proxy: ssiAccount?.proxy });
                 const result = await scrapeSsiScore(session.page);
                 if (result.scraped && result.score !== null) {
                     await setRuntimeFlag(config.ssiStateKey, JSON.stringify({
@@ -617,7 +620,7 @@ function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
             Math.random() <= config.randomActivityProbability,
         execute: async (ctx) => {
             const report = await runRandomLinkedinActivity({
-                accountId: config.salesNavSyncAccountId || undefined,
+                accountId: buildCtx.accountOverride || config.salesNavSyncAccountId || undefined,
                 maxActions: config.randomActivityMaxActions,
                 dryRun: ctx.dryRun,
             });
@@ -792,6 +795,7 @@ export async function runLoopCommand(args: string[]): Promise<void> {
                 lockOwnerId,
                 lockTtlSeconds,
                 profilesDiscoveredRef,
+                accountOverride,
             });
 
             try {

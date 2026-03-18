@@ -212,6 +212,7 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
         launchPlan = [undefined];
     }
     let lastError: unknown = null;
+    let retriedProxy = false;
 
     for (let attempt = 0; attempt < launchPlan.length; attempt++) {
         const currentProxy = launchPlan[attempt];
@@ -603,6 +604,20 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             return { browser, page, deviceProfile, fingerprint, httpThrottler };
         } catch (error) {
             lastError = error;
+            const errMsg = error instanceof Error ? error.message : String(error);
+
+            // Retry same proxy once with backoff on transient errors
+            const isTransientError = errMsg.includes('NS_ERROR_PROXY_CONNECTION_REFUSED') ||
+                errMsg.includes('SSL_ERROR') || errMsg.includes('ERR_PROXY');
+            if (currentProxy && isTransientError && !retriedProxy) {
+                retriedProxy = true;
+                const backoffMs = 5_000 + Math.floor(Math.random() * 5_000);
+                console.warn(`[PROXY] Errore transiente — retry in ${Math.round(backoffMs / 1000)}s...`);
+                await new Promise(r => setTimeout(r, backoffMs));
+                attempt--; // Ripeti stesso tentativo
+                continue;
+            }
+
             if (currentProxy) {
                 markProxyFailed(currentProxy);
                 if (attempt < launchPlan.length - 1) {

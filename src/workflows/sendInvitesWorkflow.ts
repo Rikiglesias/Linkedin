@@ -21,6 +21,7 @@ export interface SendInvitesOptions {
     dryRun?: boolean;
     skipPreflight?: boolean;
     accountId?: string;
+    skipEnrichment?: boolean;
 }
 
 async function getScoreStats(): Promise<{ min: number; max: number; avg: number; count: number }> {
@@ -283,6 +284,7 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
             minScore: minScore > 0 ? minScore : undefined,
             sessionLimit: sessionLimit > 0 ? sessionLimit : undefined,
             noteMode,
+            accountId: opts.accountId,
         });
     } catch (err) {
         workflowError = err instanceof Error ? err.message : String(err);
@@ -374,5 +376,6 @@ function buildNextActionSuggestion(
 function buildCliOverrides(opts: SendInvitesOptions): Record<string, string> {
     const overrides: Record<string, string> = {};
     if (opts.limit !== null && opts.limit !== undefined) overrides['limit'] = String(opts.limit);
+    if (opts.skipEnrichment) overrides['enrichment'] = 'false';
     return overrides;
 }

@@ -17,16 +17,25 @@ export async function readLineFromStdin(prompt: string): Promise<string> {
         process.stdout.write(prompt);
         process.stdin.resume();
         process.stdin.setEncoding('utf8');
+        let resolved = false;
+        const cleanup = () => {
+            if (resolved) return;
+            resolved = true;
+            process.stdin.removeListener('data', onData);
+            process.stdin.pause();
+        };
         let buffer = '';
         const onData = (chunk: string) => {
             buffer += chunk;
             const newlineIndex = buffer.indexOf('\n');
             if (newlineIndex !== -1) {
-                process.stdin.removeListener('data', onData);
+                cleanup();
                 resolve(buffer.slice(0, newlineIndex).replace(/\r/g, '').trim());
             }
         };
         process.stdin.on('data', onData);
+        process.stdin.once('close', () => { cleanup(); resolve(''); });
+        process.stdin.once('error', () => { cleanup(); resolve(''); });
     });
 }
 

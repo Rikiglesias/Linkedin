@@ -19,6 +19,7 @@
 
 import { Page } from 'playwright';
 import { simulateHumanReading, humanType, humanDelay, dismissKnownOverlays } from '../browser';
+import { ensureInputBlock } from '../browser/humanBehavior';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { config } from '../config';
 
@@ -79,6 +80,7 @@ export async function warmupSession(page: Page): Promise<void> {
         });
         try {
             await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
+            await ensureInputBlock(page);
             await dismissKnownOverlays(page);
             await humanDelay(page, 2000, 4000);
             await simulateHumanReading(page);
@@ -98,6 +100,7 @@ export async function warmupSession(page: Page): Promise<void> {
         // Step 1: Feed — SEMPRE primo (90% lo visita, 10% skip raro es. clic diretto su notifica)
         if (Math.random() < 0.90) {
             await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
+            await ensureInputBlock(page);
             await dismissKnownOverlays(page);
             await humanDelay(page, 2000, 5000);
             await logInfo('session_warmer.feed_reading');
@@ -113,6 +116,7 @@ export async function warmupSession(page: Page): Promise<void> {
         if (Math.random() < 0.70) {
             await logInfo('session_warmer.notifications_check');
             await page.goto('https://www.linkedin.com/notifications/', { waitUntil: 'domcontentloaded' });
+            await ensureInputBlock(page);
             await dismissKnownOverlays(page);
             await humanDelay(page, 1500, 3000);
             await simulateHumanReading(page);
@@ -123,6 +127,7 @@ export async function warmupSession(page: Page): Promise<void> {
         if (sessionWindow === 'second' && Math.random() < 0.40) {
             await logInfo('session_warmer.messaging_check');
             await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'domcontentloaded' });
+            await ensureInputBlock(page);
             await dismissKnownOverlays(page);
             await humanDelay(page, 1200, 2500);
             stepsExecuted.push('messaging');
@@ -156,7 +161,22 @@ export async function warmupSession(page: Page): Promise<void> {
             }
         }
     } catch (e) {
-        await logWarn('session_warmer.interrupted', { error: e instanceof Error ? e.message : String(e) });
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg.includes('SSL_ERROR') || msg.includes('NS_ERROR')) {
+            await logWarn('session_warmer.ssl_error', { error: msg });
+            if (page.isClosed()) {
+                throw new Error('Page chiusa dopo errore SSL durante warmup');
+            }
+            // Navigazione minima per verificare che la connessione funzioni
+            try {
+                await page.goto('about:blank', { timeout: 5_000 });
+                await page.waitForTimeout(1_000);
+            } catch {
+                throw new Error('Connessione proxy non funzionante dopo errore SSL');
+            }
+        } else {
+            await logWarn('session_warmer.interrupted', { error: msg });
+        }
     } finally {
         await logInfo('session_warmer.done', { stepsExecuted });
         await humanDelay(page, 1000, 2000);

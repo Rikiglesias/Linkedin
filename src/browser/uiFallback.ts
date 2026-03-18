@@ -343,8 +343,9 @@ export async function clickWithFallback(
         const base64Image = screenshotBuffer.toString('base64');
         const solver = new VisionSolver();
         const coords = await solver.findObjectCoordinates(base64Image, label);
+        const viewport = page.viewportSize() ?? { width: 1920, height: 1080 };
 
-        if (coords) {
+        if (coords && coords.x > 0 && coords.y > 0 && coords.x <= viewport.width && coords.y <= viewport.height) {
             console.log(`[FALLBACK-VISION] Coordinate ottenute da LLaVA per "${label}": X:${coords.x}, Y:${coords.y}`);
             await humanMouseMoveToCoords(page, coords.x, coords.y);
             await page.mouse.click(coords.x, coords.y);
@@ -410,8 +411,9 @@ export async function waitForSelectorWithFallback(
         const base64Image = screenshotBuffer.toString('base64');
         const solver = new VisionSolver();
         const coords = await solver.findObjectCoordinates(base64Image, label);
+        const viewport = page.viewportSize() ?? { width: 1920, height: 1080 };
 
-        if (coords) {
+        if (coords && coords.x > 0 && coords.y > 0 && coords.x <= viewport.width && coords.y <= viewport.height) {
             console.log(
                 `[FALLBACK-VISION] Elemento trovato visivamente per "${label}" a (X:${coords.x}, Y:${coords.y})`,
             );
@@ -494,8 +496,9 @@ export async function typeWithFallback(
         const base64Image = screenshotBuffer.toString('base64');
         const solver = new VisionSolver();
         const coords = await solver.findObjectCoordinates(base64Image, label);
+        const viewport = page.viewportSize() ?? { width: 1920, height: 1080 };
 
-        if (coords) {
+        if (coords && coords.x > 0 && coords.y > 0 && coords.x <= viewport.width && coords.y <= viewport.height) {
             console.log(
                 `[FALLBACK-VISION] Coordinate ottenute da LLaVA per digitazione "${label}": X:${coords.x}, Y:${coords.y}`,
             );
@@ -540,13 +543,14 @@ export async function findInShadowDom(
     cssSelector: string,
 ): Promise<{ x: number; y: number; width: number; height: number } | null> {
     return page.evaluate((sel) => {
-        function deepQuerySelector(root: Document | ShadowRoot, selector: string): Element | null {
+        function deepQuerySelector(root: Document | ShadowRoot, selector: string, maxDepth = 10): Element | null {
+            if (maxDepth <= 0) return null;
             const found = root.querySelector(selector);
             if (found) return found;
             const allElements = root.querySelectorAll('*');
             for (const el of allElements) {
                 if (el.shadowRoot) {
-                    const inner = deepQuerySelector(el.shadowRoot, selector);
+                    const inner = deepQuerySelector(el.shadowRoot, selector, maxDepth - 1);
                     if (inner) return inner;
                 }
             }

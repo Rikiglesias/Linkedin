@@ -909,8 +909,8 @@ export async function scheduleJobs(
     }
 
     if (!dryRun && config.withdrawInvitesEnabled && workflow !== 'warmup') {
-        const accounts = getRuntimeAccountProfiles();
-        for (const acc of accounts) {
+        const hygieneAccounts = getRuntimeAccountProfiles();
+        for (const acc of hygieneAccounts) {
             await enqueueJob(
                 'HYGIENE',
                 { accountId: acc.id },
@@ -947,6 +947,8 @@ export async function scheduleJobs(
 
     // ─── Enrichment Scheduling ────────────────────────────────────────────
     if (!dryRun && (workflow === 'all' || workflow === 'invite') && riskSnapshot.action !== 'STOP') {
+        const enrichAccounts = getRuntimeAccountProfiles();
+        const primaryAccountId = enrichAccounts[0]?.id ?? 'default';
         const enrichCandidates = await getLeadsNeedingEnrichment(50);
         for (const lead of enrichCandidates) {
             await enqueueJob(
@@ -956,6 +958,7 @@ export async function scheduleJobs(
                 1,
                 2,
                 randomInt(300, 3600),
+                primaryAccountId,
             );
         }
     }

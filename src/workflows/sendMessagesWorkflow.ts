@@ -19,6 +19,7 @@ export interface SendMessagesOptions {
     dryRun?: boolean;
     skipPreflight?: boolean;
     accountId?: string;
+    skipEnrichment?: boolean;
 }
 
 function generateWarnings(
@@ -239,6 +240,7 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
             sessionLimit: sessionLimit > 0 ? sessionLimit : undefined,
             lang,
             messageMode: messageModeAnswer === 'template' ? 'template' : undefined,
+            accountId: opts.accountId,
         });
     } catch (err) {
         workflowError = err instanceof Error ? err.message : String(err);
@@ -299,5 +301,6 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
 function buildCliOverrides(opts: SendMessagesOptions): Record<string, string> {
     const overrides: Record<string, string> = {};
     if (opts.limit !== null && opts.limit !== undefined) overrides['limit'] = String(opts.limit);
+    if (opts.skipEnrichment) overrides['enrichment'] = 'false';
     return overrides;
 }

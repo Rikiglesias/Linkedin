@@ -10,6 +10,7 @@ import {
 } from '../browser';
 import { recordSuccessfulAuth, checkSessionFreshness, detectSessionCookieAnomaly } from '../browser/sessionCookieMonitor';
 import { blockUserInput } from '../browser/humanBehavior';
+import { enableWindowClickThrough, disableWindowClickThrough } from '../browser/windowInputBlock';
 import {
     updateAccountBackpressure,
     getAccountBackpressureLevel,
@@ -214,6 +215,7 @@ async function runQueuedJobsForAccount(
         // Blocca input utente per tutta la sessione automatica.
         // Previene click accidentali durante warmup, decoy, e inter-job delay.
         // I navigation context re-iniettano l'overlay dopo ogni page.goto.
+        enableWindowClickThrough(session.browser);
         await blockUserInput(session.page);
 
         // ── Session cookie anomaly detection ──────────────────────────────
@@ -1000,6 +1002,7 @@ async function runQueuedJobsForAccount(
             } catch { /* best-effort wind-down */ }
         }
         if (!sessionClosed) {
+            disableWindowClickThrough(session.browser);
             await closeBrowser(session);
         }
         await persistAccountHealth(account, options, accountHealthMetrics).catch(() => null);

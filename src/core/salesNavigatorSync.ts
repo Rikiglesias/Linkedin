@@ -2,9 +2,10 @@ import { getAccountProfileById } from '../accountManager';
 import { cleanText } from '../utils/text';
 import { cleanLeadDataWithAI } from '../ai/leadDataCleaner';
 import { scoreLeadProfile } from '../ai/leadScorer';
-import { checkLogin, closeBrowser, detectChallenge, humanDelay, launchBrowser } from '../browser';
+import { checkLogin, closeBrowser, detectChallenge, humanDelay, launchBrowser, type BrowserSession } from '../browser';
 import { attemptChallengeResolution } from '../workers/challengeHandler';
 import { awaitManualLogin, blockUserInput } from '../browser/humanBehavior';
+import { enableWindowClickThrough, disableWindowClickThrough } from '../browser/windowInputBlock';
 import { batchUpsertCloudLeads, syncSalesNavMembersToCloud } from '../cloud/supabaseDataClient';
 import { CloudLeadUpsert } from '../cloud/types';
 import { config } from '../config';
@@ -43,6 +44,8 @@ export interface SalesNavigatorSyncOptions {
     noProxy?: boolean;
     /** Se true, salta enrichment post-sync (Apollo/Hunter/OSINT/scoring/cloud) */
     skipEnrichment?: boolean;
+    /** Sessione browser esistente da riusare (evita apertura doppio browser) */
+    existingSession?: BrowserSession;
 }
 
 export interface SalesNavigatorSyncListReport {
@@ -111,9 +114,9 @@ export interface SalesNavigatorSyncReport {
 }
 
 function matchesListNameFilter(list: SalesNavSavedList, filter: string): boolean {
-    const normalizedFilter = filter.toLowerCase();
     const normalizedName = cleanText(list.name).toLowerCase();
-    return normalizedName === normalizedFilter || normalizedName.includes(normalizedFilter);
+    const filters = filter.split(',').map(f => f.trim().toLowerCase()).filter(Boolean);
+    return filters.some(f => normalizedName === f || normalizedName.includes(f));
 }
 
 function toSample(candidate: SalesNavLeadCandidate): SalesNavigatorSyncListReport['samples'][number] {
@@ -362,6 +365,7 @@ async function postSyncEnrichment(
             }
 
             // 2. Data enrichment (Apollo/Hunter/Clearbit + PersonDataFinder OSINT) — email, phone, job title, company, ecc.
+            let wasEnrichedThisRound = false;
             const needsEnrich = !lead.email || !lead.job_title || !lead.account_name;
             if (needsEnrich) {
                 // Prima prova API standard; se non trova email e il lead ha un dominio, attiva deep enrichment OSINT
@@ -410,6 +414,7 @@ async function postSyncEnrichment(
                         params.push(leadId);
                         await db.run(`UPDATE leads SET ${sets.join(', ')} WHERE id = ?`, params);
                         enrichReport.enriched += 1;
+                        wasEnrichedThisRound = true;
                         lead = (await getLeadById(leadId)) ?? lead;
 
                         const parts: string[] = [];
@@ -431,7 +436,7 @@ async function postSyncEnrichment(
 
             // 3. AI Scoring — solo se non ancora scorato, o ri-scora se arricchito con nuovi dati
             const needsScore = lead.lead_score === null || lead.lead_score === undefined;
-            const wasEnriched = enrichReport.enriched > 0 && (lead.job_title || lead.account_name);
+            const wasEnriched = wasEnrichedThisRound && (lead.job_title || lead.account_name);
             if (needsScore || wasEnriched) {
                 const scoreResult = await scoreLeadProfile(
                     lead.account_name ?? '',
@@ -562,9 +567,10 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
 
     const interactive = options.interactive === true;
     const noProxy = options.noProxy === true;
-    // Anti-detection completa SEMPRE — non solo interactive
-    const session = await launchBrowser({
-        headless: !interactive,
+    // Se una sessione esistente è fornita dall'esterno, riusala (evita doppio browser)
+    const ownsBrowser = !options.existingSession;
+    const session = options.existingSession ?? await launchBrowser({
+        headless: interactive ? false : config.headless,
         sessionDir: account.sessionDir,
         proxy: noProxy ? undefined : account.proxy,
         bypassProxy: noProxy,
@@ -600,6 +606,7 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
 
         // blockUserInput solo in modalità automatica — in interactive l'utente deve poter usare il mouse
         if (!interactive) {
+            enableWindowClickThrough(session.browser);
             await blockUserInput(session.page);
         }
         if (interactive) {
@@ -607,6 +614,7 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
         }
 
         let targetLists: SalesNavSavedList[] = [];
+        let allDiscoveredNames: string[] = [];
         if (explicitListUrl) {
             targetLists = [
                 {
@@ -619,6 +627,7 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
             // Re-inject overlay dopo navigazione (il DOM viene distrutto da page.goto)
             if (!interactive) await blockUserInput(session.page);
             report.listDiscoveryCount = discovered.length;
+            allDiscoveredNames = discovered.map((l) => l.name);
             if (listFilter) {
                 targetLists = discovered.filter((entry) => matchesListNameFilter(entry, listFilter));
             } else {
@@ -627,17 +636,16 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
         }
 
         if (targetLists.length === 0) {
-            const discoveredNames = (await navigateToSavedLists(session.page).catch(() => [] as SalesNavSavedList[]))
-                .map((l) => l.name);
-            const hint = discoveredNames.length > 0
-                ? ` Liste trovate: [${discoveredNames.join(', ')}]. Usa --list "NOME" o --url <url>.`
+            // Riusa i nomi già scoperti — evita una seconda navigazione alla pagina liste
+            const hint = allDiscoveredNames.length > 0
+                ? ` Liste trovate: [${allDiscoveredNames.join(', ')}]. Usa --list "NOME" o --url <url>.`
                 : ' Nessuna lista trovata nella pagina SalesNav.';
             throw new Error(`Sales Navigator sync: nessuna lista corrisponde al filtro "${listFilter || '(nessuno)'}".${hint}`);
         }
 
         // Checkpoint/Resume (4.1 fix): salva i NOMI delle liste già completate
         // (non l'indice numerico che è fragile se le liste cambiano ordine/quantità).
-        const checkpointKey = `sync_list_checkpoint:${options.listName ?? 'all'}`;
+        const checkpointKey = `sync_list_checkpoint:${account.id}:${options.listName ?? 'all'}`;
         const lastCheckpointRaw = await getRuntimeFlag(checkpointKey).catch(() => null);
         const completedListNames = new Set<string>(
             lastCheckpointRaw ? JSON.parse(lastCheckpointRaw) as string[] : [],
@@ -775,13 +783,15 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
         }
 
         // Reset checkpoint al termine del sync completo (tutte le liste processate)
-        if (!options.dryRun) {
+        if (!options.dryRun && completedListNames.size >= targetLists.length) {
             await setRuntimeFlag(checkpointKey, '[]').catch(() => null);
         }
 
         // Chiudi browser SUBITO dopo scraping (non serve piu per enrichment)
-        await closeBrowser(session);
-        browserClosed = true;
+        if (ownsBrowser) {
+            await closeBrowser(session);
+            browserClosed = true;
+        }
 
         if (options.skipEnrichment) {
             console.log('[OK] Browser chiuso. Enrichment saltato (--no-enrich).');
@@ -789,8 +799,15 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
             console.log('[OK] Browser chiuso. Avvio enrichment offline...');
 
             // Post-sync enrichment per tutti i lead estratti (no browser needed)
+            // Dedup: un lead che appare in 2+ liste viene arricchito una sola volta
+            const seenLeadIds = new Set<number>();
+            const uniqueSyncedLeads = allSyncedLeadIds.filter(entry => {
+                if (seenLeadIds.has(entry.id)) return false;
+                seenLeadIds.add(entry.id);
+                return true;
+            });
             const byList = new Map<string, number[]>();
-            for (const entry of allSyncedLeadIds) {
+            for (const entry of uniqueSyncedLeads) {
                 const arr = byList.get(entry.listName) ?? [];
                 arr.push(entry.id);
                 byList.set(entry.listName, arr);
@@ -812,7 +829,8 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
         report.durationMs = Date.now() - startTime;
         return report;
     } finally {
-        if (!browserClosed) {
+        if (ownsBrowser && !browserClosed) {
+            disableWindowClickThrough(session.browser);
             await closeBrowser(session);
         }
     }

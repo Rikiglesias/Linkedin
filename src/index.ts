@@ -649,6 +649,7 @@ main()
         process.exitCode = 1;
     })
     .finally(async () => {
+        if (shuttingDown) return;
         await pluginRegistry.shutdown().catch(() => { });
         await closeDatabase();
     });

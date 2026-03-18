@@ -2,10 +2,11 @@
  * Workflow 2: sync-search — Ricerche salvate SalesNav → lista → DB + enrichment
  */
 
-import { config } from '../config';
+import { config, isWorkingHour } from '../config';
 import { getAccountProfileById } from '../accountManager';
 import { launchBrowser, closeBrowser, checkLogin } from '../browser';
 import { awaitManualLogin, blockUserInput } from '../browser/humanBehavior';
+import { enableWindowClickThrough, disableWindowClickThrough, cleanupWindowClickThrough } from '../browser/windowInputBlock';
 import { runSalesNavBulkSave } from '../salesnav/bulkSaveOrchestrator';
 import type { SalesNavBulkSaveReport } from '../salesnav/bulkSaveOrchestrator';
 import { runSalesNavigatorListSync, formatFinalReport } from '../core/salesNavigatorSync';
@@ -111,6 +112,11 @@ export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<vo
         return;
     }
 
+    // ── Working hours warning ──────────────────────────────────────────────────
+    if (!isWorkingHour()) {
+        console.warn('  [WARN] Fuori orario lavorativo — procedere con cautela.\n');
+    }
+
     // ── Stima tempo ─────────────────────────────────────────────────────────────
     const estimatedMinutes = Math.ceil((90 + maxPages * 20) / 60); // ~90s warmup + ~20s/pagina
     console.log(`\n  Tempo stimato: ~${estimatedMinutes} minuti per ${maxPages} pagine per ricerca\n`);
@@ -119,7 +125,7 @@ export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<vo
     console.log('  Avvio bulk save da ricerche salvate...\n');
 
     const session = await launchBrowser({
-        headless: false,
+        headless: config.headless,
         sessionDir: account.sessionDir,
         proxy: opts.noProxy ? undefined : account.proxy,
         bypassProxy: opts.noProxy,
@@ -127,6 +133,12 @@ export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<vo
     });
 
     let bulkReport: SalesNavBulkSaveReport | null = null;
+    let syncInserted = 0;
+    let syncUpdated = 0;
+    let syncEnriched = 0;
+    let syncPromoted = 0;
+    let syncError: string | null = null;
+
     try {
         let loggedIn = await checkLogin(session.page);
         if (!loggedIn) {
@@ -137,18 +149,25 @@ export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<vo
             }
         }
 
+        // Blocca input SUBITO dopo il login — protegge anche il warmup da interferenze utente.
+        // Il mouse dell'utente non deve mai raggiungere il browser durante l'automazione.
+        // Livello 1 (OS): WS_EX_TRANSPARENT — finestra click-through, mouse passa sotto
+        // Livello 2 (JS): overlay DOM + listener capture — backup se Win32 fallisce
+        enableWindowClickThrough(session.browser);
+        process.on('exit', cleanupWindowClickThrough);
+        await blockUserInput(session.page);
+
         // Warmup sessione: simula navigazione umana (feed, notifiche) prima del bulk save.
         // Un umano reale non apre LinkedIn e va SUBITO su SalesNav — prima guarda il feed.
         try {
             const { warmupSession } = await import('../core/sessionWarmer');
             console.log('  Warmup sessione in corso...\n');
             await warmupSession(session.page);
+            // Re-inject overlay dopo warmup (page.goto distrugge il DOM)
+            await blockUserInput(session.page);
         } catch (warmupErr) {
             console.warn(`  [WARN] Warmup fallito: ${warmupErr instanceof Error ? warmupErr.message : String(warmupErr)}`);
         }
-
-        // Blocca input SUBITO dopo il warmup — l'utente può interagire solo durante login manuale
-        await blockUserInput(session.page);
 
         // Checkpoint/Resume (4.1): resume=true abilita il ripristino dall'ultimo
         // checkpoint se un run precedente è stato interrotto (crash, challenge, timeout).
@@ -164,39 +183,38 @@ export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<vo
         });
 
         console.log(`\n  Bulk save completato: ${bulkReport.searchesDiscovered} ricerche trovate`);
-    } finally {
-        await closeBrowser(session);
-    }
 
-    // Step 2: Sync the target list (enrichment + scoring + cloud)
-    let syncInserted = 0;
-    let syncUpdated = 0;
-    let syncEnriched = 0;
-    let syncPromoted = 0;
-    let syncError: string | null = null;
-    if (!dryRun && bulkReport && bulkReport.status !== 'FAILED') {
-        console.log(`\n  Avvio sync lista "${targetList}" per enrichment...\n`);
+        // Step 2: Sync the target list (enrichment + scoring + cloud)
+        // Riusa lo STESSO browser — un umano non chiude e riapre il browser tra un'operazione e l'altra
+        if (!dryRun && bulkReport && bulkReport.status !== 'FAILED') {
+            console.log(`\n  Avvio sync lista "${targetList}" per enrichment...\n`);
 
-        try {
-            const syncReport = await runSalesNavigatorListSync({
-                listName: targetList,
-                maxPages,
-                maxLeadsPerList: limit,
-                dryRun: false,
-                accountId,
-                interactive: false,
-                skipEnrichment: !enrichment,
-            });
-            syncInserted = syncReport.inserted;
-            syncUpdated = syncReport.updated;
-            syncEnriched = syncReport.enrichment.enriched;
-            syncPromoted = syncReport.enrichment.promoted;
+            try {
+                const syncReport = await runSalesNavigatorListSync({
+                    listName: targetList,
+                    maxPages,
+                    maxLeadsPerList: limit,
+                    dryRun: false,
+                    accountId,
+                    interactive: false,
+                    skipEnrichment: !enrichment,
+                    noProxy: opts.noProxy,
+                    existingSession: session,
+                });
+                syncInserted = syncReport.inserted;
+                syncUpdated = syncReport.updated;
+                syncEnriched = syncReport.enrichment.enriched;
+                syncPromoted = syncReport.enrichment.promoted;
 
-            console.log(formatFinalReport(syncReport));
-        } catch (err) {
-            syncError = err instanceof Error ? err.message : String(err);
-            console.error(`\n  [ERRORE] Sync lista fallito: ${syncError}\n`);
+                console.log(formatFinalReport(syncReport));
+            } catch (err) {
+                syncError = err instanceof Error ? err.message : String(err);
+                console.error(`\n  [ERRORE] Sync lista fallito: ${syncError}\n`);
+            }
         }
+    } finally {
+        disableWindowClickThrough(session.browser);
+        await closeBrowser(session);
     }
 
     // Report

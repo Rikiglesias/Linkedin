@@ -137,8 +137,12 @@ export async function smartClick(
     page: Page,
     box: { x: number; y: number; width: number; height: number },
 ): Promise<void> {
-    const targetX = box.x + box.width / 2 + (Math.random() * 4 - 2);
-    const targetY = box.y + box.height / 2 + (Math.random() * 3 - 1.5);
+    // Jitter proporzionale alla dimensione dell'elemento — mai più del 15% per asse.
+    // Elementi piccoli (list item nel dialog, h<40px): zero jitter Y per non cliccare fuori riga.
+    const maxJitterX = Math.min(3, box.width * 0.15);
+    const maxJitterY = box.height < 40 ? 0 : Math.min(2, box.height * 0.15);
+    const targetX = box.x + box.width / 2 + (Math.random() * maxJitterX * 2 - maxJitterX);
+    const targetY = box.y + box.height / 2 + (Math.random() * maxJitterY * 2 - maxJitterY);
     await humanMouseMoveToCoords(page, targetX, targetY);
     await pulseVisualCursorOverlay(page);
     await pauseInputBlock(page);

@@ -404,6 +404,7 @@ export async function runEnrichProfilesCommand(args: string[]): Promise<void> {
     const { enrichLeadAuto } = await import('../../integrations/leadEnricher');
     const { humanDelay, randomMouseMove, simulateHumanReading, performDecoyBurst } = await import('../../browser');
     const { simulateTabSwitch, blockUserInput } = await import('../../browser/humanBehavior');
+    const { enableWindowClickThrough, disableWindowClickThrough } = await import('../../browser/windowInputBlock');
     const { dismissKnownOverlays } = await import('../../browser/overlayDismisser');
     const { getSessionMaturity } = await import('../../browser/sessionCookieMonitor');
     const { getSessionHistory } = await import('../../risk/sessionMemory');
@@ -490,6 +491,7 @@ export async function runEnrichProfilesCommand(args: string[]): Promise<void> {
         }
 
         // ── Block user input durante automazione ──
+        enableWindowClickThrough(session.browser);
         await blockUserInput(session.page);
 
         // ── Decoy burst: 2-3 azioni casuali per riscaldare la sessione ──
@@ -633,6 +635,7 @@ export async function runEnrichProfilesCommand(args: string[]): Promise<void> {
             document.querySelector('#__bot_input_block')?.remove();
         }).catch(() => null);
     } finally {
+        disableWindowClickThrough(session.browser);
         await closeBrowserSession(session);
     }
 

@@ -23,7 +23,7 @@ export function formatWorkflowReport(report: WorkflowReport): string {
 
     for (const [key, value] of Object.entries(report.summary)) {
         const label = key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-        lines.push(`  ${label.padEnd(24)} ${value}`);
+        lines.push(`  ${label.padEnd(24)} ${value ?? 'N/A'}`);
     }
 
     if (report.errors.length > 0) {
@@ -43,7 +43,7 @@ export function formatWorkflowReport(report: WorkflowReport): string {
         lines.push('  PER-LISTA:');
         for (const lb of report.listBreakdown) {
             const flag = lb.flag === 'critical' ? ' [CRITICA]' : lb.flag === 'underperforming' ? ' [SOTTO]' : '';
-            lines.push(`    ${lb.listName.padEnd(20)} inv:${lb.invitesSent} msg:${lb.messagesSent} acc:${lb.acceptanceRatePct.toFixed(1)}%${flag}`);
+            lines.push(`    ${lb.listName.padEnd(20)} inv:${lb.invitesSent} msg:${lb.messagesSent} acc:${(isNaN(lb.acceptanceRatePct) ? 0 : lb.acceptanceRatePct).toFixed(1)}%${flag}`);
         }
     }
 
@@ -62,7 +62,7 @@ export function formatWorkflowReport(report: WorkflowReport): string {
     }
 
     lines.push('');
-    lines.push(`  Prossima azione: ${report.nextAction}`);
+    lines.push(`  Prossima azione: ${report.nextAction ?? 'N/A'}`);
     lines.push(SEP);
     lines.push('');
 
