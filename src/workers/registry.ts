@@ -91,6 +91,11 @@ const inboxCheckProcessor: WorkerProcessor = {
     },
 };
 
+// M47: Architettura registry — worker che processano job dalla coda DB.
+// Meta-worker (deadLetterWorker, followUpWorker) non sono qui perché non processano job singoli:
+// - deadLetterWorker: ricicla/archivia job falliti in batch (chiamato da loopCommand)
+// - followUpWorker: query + invio follow-up in batch (chiamato dal jobRunner post-session)
+// - inboxWorker: registrato qui (INBOX_CHECK) per supporto coda, ma anche chiamato direttamente
 export const workerRegistry: ReadonlyMap<JobType, WorkerProcessor> = new Map<JobType, WorkerProcessor>([
     ['INVITE', inviteProcessor],
     ['ACCEPTANCE_CHECK', acceptanceProcessor],

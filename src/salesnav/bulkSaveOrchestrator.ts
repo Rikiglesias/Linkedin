@@ -2423,7 +2423,9 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
 
             let consecutiveFailedPages = 0;
             let consecutiveAllDuplicatePages = 0;
-            const MAX_CONSECUTIVE_DUPLICATE_PAGES = 3;
+            // M03: Aumentato da 3 a 5 — con 3 pagine, early-stop scattava troppo presto
+            // su ricerche con molti risultati dove alcune pagine intermedie erano duplicate.
+            const MAX_CONSECUTIVE_DUPLICATE_PAGES = 5;
             let consecutiveHealthCheckFailures = 0;
             const MAX_HEALTH_CHECK_FAILURES = 2;
             for (let pageNumber = initialPageNumber; pageNumber <= searchMaxPages; pageNumber++) {

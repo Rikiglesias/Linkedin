@@ -235,6 +235,15 @@ async function runQueuedJobsForAccount(
                 });
                 return;
             }
+            // M24: COOKIE_CHANGED → pausa 15min + warning. LinkedIn potrebbe aver rigenerato
+            // la sessione server-side — proseguire potrebbe usare un cookie invalido.
+            if (cookieAnomaly.anomaly === 'COOKIE_CHANGED') {
+                await pauseAutomation('SESSION_COOKIE_CHANGED', {
+                    accountId: account.id,
+                    message: 'Cookie li_at cambiato senza rotazione esplicita — verifica in corso.',
+                }, 15);
+                return;
+            }
         }
 
         // ── LinkedIn API monitoring passivo: probe proattivo prima dei job ──

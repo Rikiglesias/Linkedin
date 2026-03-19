@@ -36,7 +36,8 @@ export function initializeMouseState(page: Page): void {
 /** Timeout globale per movimenti mouse: protegge da hang quando il mouse reale
  *  dell'utente interferisce con Camoufox humanize o il browser perde focus.
  *  Se scade, il movimento viene abortito e il bot prosegue. */
-const MOUSE_MOVE_TIMEOUT_MS = 8_000;
+// M32: Configurabile via env var — su browser virtuali o connessioni lente, 8s potrebbe non bastare.
+const MOUSE_MOVE_TIMEOUT_MS = Math.max(3_000, parseInt(process.env.MOUSE_MOVE_TIMEOUT_MS ?? '8000', 10) || 8_000);
 
 async function withMouseTimeout<T>(fn: () => Promise<T>, page?: Page, targetPoint?: Point, timeoutMs: number = MOUSE_MOVE_TIMEOUT_MS): Promise<T | undefined> {
     let timer: ReturnType<typeof setTimeout> | undefined;
