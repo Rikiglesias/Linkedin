@@ -185,6 +185,18 @@ class PostgresManager implements DatabaseManager {
             },
         );
 
+        // A21: STRFTIME → EXTRACT per PostgreSQL (STRFTIME è SQLite-only)
+        // CAST(STRFTIME('%H', col) AS INTEGER) → EXTRACT(HOUR FROM col)::integer
+        // CAST(STRFTIME('%w', col) AS INTEGER) → EXTRACT(DOW FROM col)::integer
+        normalized = normalized.replace(
+            /CAST\s*\(\s*STRFTIME\s*\(\s*'%H'\s*,\s*(\w+)\s*\)\s*AS\s+INTEGER\s*\)/gi,
+            'EXTRACT(HOUR FROM $1)::integer',
+        );
+        normalized = normalized.replace(
+            /CAST\s*\(\s*STRFTIME\s*\(\s*'%w'\s*,\s*(\w+)\s*\)\s*AS\s+INTEGER\s*\)/gi,
+            'EXTRACT(DOW FROM $1)::integer',
+        );
+
         const hadInsertOrIgnore = /\bINSERT\s+OR\s+IGNORE\s+INTO\b/i.test(normalized);
         normalized = normalized.replace(/\bINSERT\s+OR\s+IGNORE\s+INTO\b/gi, 'INSERT INTO');
         if (hadInsertOrIgnore && !/\bON\s+CONFLICT\b/i.test(normalized)) {
