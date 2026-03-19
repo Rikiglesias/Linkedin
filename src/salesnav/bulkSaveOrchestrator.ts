@@ -34,6 +34,8 @@ import {
     getSyncRunSummary,
     pauseSyncRun,
     updateSyncRunProgress,
+    getRuntimeFlag,
+    setRuntimeFlag,
 } from '../core/repositories';
 import type { SalesNavSyncRunRecord, SalesNavSyncRunSummary } from '../core/repositories.types';
 import {
@@ -1387,11 +1389,15 @@ export async function scrollAndReadPage(page: Page, fast: boolean = false): Prom
                 const preCount = await page.evaluate(() =>
                     document.querySelectorAll('a[href*="/sales/lead/"], a[href*="/sales/people/"]').length
                 );
+                // H04: Timeout adattivo — 1500ms base è troppo basso per proxy con latenza.
+                // Proxy residenziali aggiungono 200-800ms. Con 1500ms fisso, il waitForFunction
+                // va in timeout e i lead non vengono raccolti (virtual scroller non ha renderizzato).
+                const scrollWaitTimeout = 1_500 + Math.min((config.proxyHealthCheckTimeoutMs ?? 0) / 2, 3_000);
                 await page.waitForFunction(
                     (before: number) =>
                         document.querySelectorAll('a[href*="/sales/lead/"], a[href*="/sales/people/"]').length !== before,
                     preCount,
-                    { timeout: 1_500 },
+                    { timeout: scrollWaitTimeout },
                 ).catch(() => null);
                 await page.waitForTimeout(150 + Math.floor(Math.random() * 100));
                 // Raccogli lead dal viewport corrente (prima che vengano distrutti dallo scroll successivo)
@@ -2036,10 +2042,29 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
 
         // ── PRE-SYNC: scarica i membri attuali della lista target dal sito e salvali nel DB ──
         // Così il dedup funziona anche al primo run o se i lead sono stati aggiunti manualmente.
+        // H03: Skip se l'ultimo pre-sync è recente (< 2h) — evita full scan 80 pagine ogni volta.
         if (!dryRun) {
-            const preSync = await preSyncListToDb(page, options.targetListName);
+            let skipPreSync = false;
+            if (options.resume) {
+                try {
+                    const lastPreSyncRaw = await getRuntimeFlag(`presync_last_run:${options.targetListName}`);
+                    if (lastPreSyncRaw) {
+                        const elapsed = Date.now() - Date.parse(lastPreSyncRaw);
+                        const elapsedHours = elapsed / (1000 * 60 * 60);
+                        if (Number.isFinite(elapsedHours) && elapsedHours < 2) {
+                            console.log(`[PRE-SYNC] Skip: ultimo sync ${elapsedHours.toFixed(1)}h fa (< 2h). Usa --no-resume per forzare.`);
+                            skipPreSync = true;
+                        }
+                    }
+                } catch { /* best-effort: se il check fallisce, fai il pre-sync */ }
+            }
+            const preSync = skipPreSync
+                ? { synced: 0, total: 0, listUrl: null }
+                : await preSyncListToDb(page, options.targetListName);
             if (preSync.synced > 0) {
                 console.log(`[PRE-SYNC] DB aggiornato con ${preSync.synced} membri — il dedup è ora affidabile.\n`);
+                // H03: Salva timestamp per skip pre-sync nelle prossime 2h
+                await setRuntimeFlag(`presync_last_run:${options.targetListName}`, new Date().toISOString()).catch(() => null);
             } else if (preSync.listUrl === null) {
                 console.warn(`[PRE-SYNC] ATTENZIONE: lista "${options.targetListName}" non trovata su LinkedIn — dedup potrebbe essere incompleto.\n`);
             }

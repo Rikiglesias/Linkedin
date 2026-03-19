@@ -239,44 +239,53 @@ export async function checkDuplicates(
     let alreadySaved = 0;
     let fuzzyWarnings = 0;
 
+    // H05: Batch dedup — carica TUTTI i membri della lista in Set una volta sola.
+    // Prima: 3 query DB per profilo × 25 profili/pagina = 75 query SELECT per pagina.
+    // Ora: 3 query totali (una per LinkedIn URL, una per SalesNav URL, una per hash).
+    const existingLinkedinUrls = new Set<string>();
+    const existingSalesnavUrls = new Set<string>();
+    const existingHashes = new Map<string, string>(); // hash → profile_name
+
+    const linkedinRows = await db.query<{ linkedin_url: string }>(
+        'SELECT linkedin_url FROM salesnav_list_members WHERE list_name = ? AND linkedin_url IS NOT NULL',
+        [listName],
+    );
+    for (const row of linkedinRows) existingLinkedinUrls.add(row.linkedin_url);
+
+    const salesnavRows = await db.query<{ salesnav_url: string }>(
+        'SELECT salesnav_url FROM salesnav_list_members WHERE list_name = ? AND salesnav_url IS NOT NULL',
+        [listName],
+    );
+    for (const row of salesnavRows) existingSalesnavUrls.add(row.salesnav_url);
+
+    const hashRows = await db.query<{ name_company_hash: string; profile_name: string }>(
+        'SELECT name_company_hash, profile_name FROM salesnav_list_members WHERE list_name = ? AND name_company_hash IS NOT NULL AND name_company_hash != \'\'',
+        [listName],
+    );
+    for (const row of hashRows) existingHashes.set(row.name_company_hash, row.profile_name);
+
     for (const profile of profiles) {
-        // Level 1: LinkedIn URL match
-        if (profile.linkedinUrl) {
-            const existsByLinkedin = await db.get<{ id: number }>(
-                'SELECT id FROM salesnav_list_members WHERE list_name = ? AND linkedin_url = ?',
-                [listName, profile.linkedinUrl],
-            );
-            if (existsByLinkedin) {
-                alreadySaved++;
-                continue;
-            }
+        // Level 1: LinkedIn URL match (O(1) Set lookup)
+        if (profile.linkedinUrl && existingLinkedinUrls.has(profile.linkedinUrl)) {
+            alreadySaved++;
+            continue;
         }
 
-        // Level 2: SalesNav URL match
-        if (profile.salesnavUrl) {
-            const existsBySalesnav = await db.get<{ id: number }>(
-                'SELECT id FROM salesnav_list_members WHERE list_name = ? AND salesnav_url = ?',
-                [listName, profile.salesnavUrl],
-            );
-            if (existsBySalesnav) {
-                alreadySaved++;
-                continue;
-            }
+        // Level 2: SalesNav URL match (O(1) Set lookup)
+        if (profile.salesnavUrl && existingSalesnavUrls.has(profile.salesnavUrl)) {
+            alreadySaved++;
+            continue;
         }
 
         // Level 3: Fuzzy name+company hash (warning only, non blocco)
-        // Skip se hash vuoto (name o company mancanti — dedup fuzzy inaffidabile)
         if (profile.nameCompanyHash && profile.nameCompanyHash.length > 0) {
-            const fuzzyMatch = await db.get<{ id: number; profile_name: string }>(
-                'SELECT id, profile_name FROM salesnav_list_members WHERE list_name = ? AND name_company_hash = ?',
-                [listName, profile.nameCompanyHash],
-            );
-            if (fuzzyMatch) {
+            const existingName = existingHashes.get(profile.nameCompanyHash);
+            if (existingName) {
                 fuzzyWarnings++;
                 void logWarn('salesnav.dedup.fuzzy_match', {
                     listName,
                     newName: profile.name,
-                    existingName: fuzzyMatch.profile_name,
+                    existingName,
                     hash: profile.nameCompanyHash.substring(0, 8),
                 });
             }
