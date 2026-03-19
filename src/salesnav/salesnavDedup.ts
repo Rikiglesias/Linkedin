@@ -315,6 +315,12 @@ export async function saveExtractedProfiles(
     const db = await getDatabase();
     let inserted = 0;
 
+    // M08: Wrappa in transazione — se un INSERT fallisce a metà pagina,
+    // rollback tutta la pagina. Senza transazione, un errore a metà
+    // lascia dati parziali nel DB → al resume, il dedup vede i profili
+    // già inseriti ma non quelli mancanti → lead persi silenziosamente.
+    await db.withTransaction(async () => {
+
     for (const profile of profiles) {
         try {
             await db.run(
@@ -366,6 +372,8 @@ export async function saveExtractedProfiles(
             }
         }
     }
+
+    }); // M08: fine transazione DB per pagina
 
     void logInfo('salesnav.dedup.profiles_saved', {
         listName,
