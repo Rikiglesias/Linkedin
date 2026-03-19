@@ -9,7 +9,7 @@ import { config } from '../config';
 import { navigateToProfileForCheck } from '../browser/navigationContext';
 import { WorkerExecutionResult, workerResult } from './result';
 
-const HYGIENE_DAILY_WITHDRAW_CAP = 10;
+const HYGIENE_DAILY_WITHDRAW_CAP = Math.max(1, parseInt(process.env.HYGIENE_DAILY_WITHDRAW_CAP ?? '10', 10) || 10);
 
 /** Vision fallback is available when a non-default Ollama endpoint is configured. */
 function isVisionAvailable(): boolean {

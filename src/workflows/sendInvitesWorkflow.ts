@@ -184,7 +184,20 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
     }
 
     if (!row || row.cnt === 0) {
-        if (listFilter) {
+        // M22: Spiegare PERCHÉ 0 lead — potrebbe essere enrichment mancante, non "tutto inviato"
+        let totalInDb = 0;
+        let newCount = 0;
+        try {
+            const totalRow = await db.get<{cnt: number}>(`SELECT COUNT(*) as cnt FROM leads${listFilter ? ' WHERE list_name = ?' : ''}`, listFilter ? [listFilter] : []);
+            totalInDb = totalRow?.cnt ?? 0;
+            const newRow = await db.get<{cnt: number}>(`SELECT COUNT(*) as cnt FROM leads WHERE status = 'NEW'${listFilter ? ' AND list_name = ?' : ''}`, listFilter ? [listFilter] : []);
+            newCount = newRow?.cnt ?? 0;
+        } catch { /* best-effort */ }
+
+        if (newCount > 0) {
+            console.log(`\n  ⚠️ ${totalInDb} lead nel DB, ${newCount} in stato NEW (non ancora pronti per invito).`);
+            console.log(`  → Esegui prima: bot.ps1 enrich-fast per arricchire i lead, poi riprova.\n`);
+        } else if (listFilter) {
             console.log(`\n  ✅ Sono già state inviate tutte le connessioni per la lista "${listFilter}".\n`);
         } else {
             console.log(`\n  ✅ Sono già state inviate tutte le connessioni.\n`);
