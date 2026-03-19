@@ -597,6 +597,25 @@ async function clickSelectAll(page: Page, dryRun: boolean): Promise<void> {
 
     await humanDelay(page, 350, 700);
 
+    // H06: Verifica QUANTI lead sono stati selezionati dopo clickSelectAll.
+    // Virtual scroller potrebbe aver renderizzato solo 20 su 25 → alcuni lead non selezionati.
+    try {
+        const selectionCountText = await page.evaluate(() => {
+            // SalesNav mostra "(25)" o "25 selected" dopo Select All
+            const countEl = document.querySelector('[data-test-selection-count], .artdeco-pill__text, .search-results__selected-count');
+            if (countEl?.textContent) return countEl.textContent.trim();
+            // Fallback: cerca testo "N selected" nella toolbar
+            const toolbar = document.querySelector('.search-results__action-bar, [class*="action-bar"]');
+            return toolbar?.textContent?.match(/(\d+)\s*(selected|selezionat)/i)?.[1] ?? null;
+        });
+        if (selectionCountText) {
+            const selectedCount = parseInt(selectionCountText.replace(/\D/g, ''), 10);
+            if (Number.isFinite(selectedCount) && selectedCount > 0) {
+                console.log(`[SELECT ALL] Lead selezionati: ${selectedCount}`);
+            }
+        }
+    } catch { /* best-effort count check */ }
+
     // Verifica: il bottone "Save to list" dovrebbe apparire dopo Select All
     const saveVisible = await page.locator(SAVE_TO_LIST_SELECTOR).first()
         .waitFor({ state: 'visible', timeout: 5_000 })

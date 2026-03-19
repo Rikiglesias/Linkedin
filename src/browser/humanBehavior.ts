@@ -770,15 +770,13 @@ export async function simulateTabSwitch(page: Page, maxAwayTimeMs: number): Prom
     try {
         const jitter = () => Math.round((Math.random() - 0.5) * 20);
 
+        // H18: Usare solo eventi DOM (blur/focus/visibilitychange) SENZA override
+        // di document.visibilityState. Il mock via Object.defineProperty è rilevabile
+        // perché: 1) lascia tracce su window (__origVisDesc), 2) configurable:true
+        // non è il default del browser, 3) CDP può verificare lo stato reale del tab.
+        // I listener JavaScript di LinkedIn reagiscono agli EVENTI, non allo stato —
+        // quindi dispatching blur/focus/visibilitychange è sufficiente e non rilevabile.
         await page.evaluate((ts) => {
-            const origVis = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState')
-                ?? Object.getOwnPropertyDescriptor(document, 'visibilityState');
-            const origHid = Object.getOwnPropertyDescriptor(Document.prototype, 'hidden')
-                ?? Object.getOwnPropertyDescriptor(document, 'hidden');
-            (window as unknown as Record<string, unknown>).__origVisDesc = origVis;
-            (window as unknown as Record<string, unknown>).__origHidDesc = origHid;
-            Object.defineProperty(document, 'visibilityState', { get: () => 'hidden', configurable: true });
-            Object.defineProperty(document, 'hidden', { get: () => true, configurable: true });
             window.dispatchEvent(new Event('blur', { timeStamp: ts } as EventInit));
         }, Date.now() + jitter());
         await page.waitForTimeout(5 + Math.random() * 25);
@@ -790,21 +788,7 @@ export async function simulateTabSwitch(page: Page, maxAwayTimeMs: number): Prom
         await page.waitForTimeout(awayTime);
 
         await page.evaluate((ts) => {
-            const w = window as unknown as Record<string, unknown>;
-            const origVis = w.__origVisDesc as PropertyDescriptor | undefined;
-            const origHid = w.__origHidDesc as PropertyDescriptor | undefined;
-            if (origVis) {
-                Object.defineProperty(document, 'visibilityState', origVis);
-            } else {
-                Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true });
-            }
-            if (origHid) {
-                Object.defineProperty(document, 'hidden', origHid);
-            } else {
-                Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
-            }
-            delete w.__origVisDesc;
-            delete w.__origHidDesc;
+            document.dispatchEvent(new Event('visibilitychange', { timeStamp: ts } as EventInit));
             window.dispatchEvent(new Event('focus', { timeStamp: ts } as EventInit));
         }, Date.now() + jitter());
         await page.waitForTimeout(5 + Math.random() * 25);
