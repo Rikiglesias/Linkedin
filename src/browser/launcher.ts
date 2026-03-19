@@ -328,7 +328,7 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
         const contextOptions: Parameters<typeof chromium.launchPersistentContext>[1] = {
             headless,
             viewport,
-            locale: fingerprint.locale ?? 'it-IT',
+            locale: fingerprint.locale ?? config.browserLocale,
             timezoneId: fingerprint.timezone ?? config.timezone,
             userAgent: fingerprint.userAgent,
             handleSIGINT: true,
@@ -436,7 +436,7 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                     // Fallback: config.camoufoxGeoip (configurabile dall'utente).
                     geoip: await resolveProxyGeoip(currentProxy, config.camoufoxGeoip),
                     block_webrtc: config.camoufoxBlockWebrtc,
-                    locale: fingerprint.locale ?? 'it-IT',
+                    locale: fingerprint.locale ?? config.browserLocale,
                     window: cfxWindow,
                     proxy: cfxProxy,
                     firefox_user_prefs: {
@@ -590,10 +590,10 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             const coherentColorDepth = isMobileDevice ? 32 : 24;
 
             const stealthScript = buildStealthInitScript({
-                locale: fingerprint.locale ?? 'it-IT',
+                locale: fingerprint.locale ?? config.browserLocale,
                 languages: [
-                    fingerprint.locale ?? 'it-IT',
-                    (fingerprint.locale ?? 'it-IT').split('-')[0] ?? 'it',
+                    fingerprint.locale ?? config.browserLocale,
+                    (fingerprint.locale ?? config.browserLocale).split('-')[0] ?? 'it',
                     'en-US',
                     'en',
                 ],

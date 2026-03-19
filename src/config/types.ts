@@ -318,6 +318,7 @@ export interface AppConfig {
     cloakBrowserEnabled: boolean;
     stealthScriptsSkipIfCloak: string[];
     stealthSkipSections: string[];
+    browserLocale: string;
     camoufoxGeoip: boolean;
     camoufoxHumanize: boolean;
     camoufoxBlockWebrtc: boolean;

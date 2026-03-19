@@ -360,6 +360,9 @@ export function buildVisionDomainConfig() {
             return list.length > 0 ? list : ['canvas', 'webgl', 'hwconcurrency', 'plugins'];
         })(),
         stealthSkipSections: parseCsvEnv('STEALTH_SKIP_SECTIONS'),
+        // M28: Locale derivato da config — non più hardcoded 'it-IT'.
+        // Se il proxy è in Germania, l'utente imposta BROWSER_LOCALE=de-DE.
+        browserLocale: parseStringEnv('BROWSER_LOCALE', 'it-IT') || 'it-IT',
         camoufoxGeoip: parseBoolEnv('CAMOUFOX_GEOIP', true),
         camoufoxHumanize: parseBoolEnv('CAMOUFOX_HUMANIZE', true),
         camoufoxBlockWebrtc: parseBoolEnv('CAMOUFOX_BLOCK_WEBRTC', true),
