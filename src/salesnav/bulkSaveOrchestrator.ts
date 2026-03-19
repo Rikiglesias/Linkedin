@@ -267,9 +267,26 @@ async function navigateToSavedSearches(page: Page): Promise<void> {
     }
 
     // ── Step 0: Vai alla home di Sales Navigator ──
+    // M04: Tentare navigazione dalla navbar LinkedIn (più naturale di goto diretto).
+    // Un umano clicca "Sales Navigator" dal menu, non digita l'URL.
+    // Fallback a goto diretto se il link non è trovato nella navbar.
     const salesNavHome = 'https://www.linkedin.com/sales/home';
     console.log('[AI-NAV] Step 1/3: navigazione alla home Sales Navigator...');
-    await page.goto(salesNavHome, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    let navigatedViaNbar = false;
+    try {
+        // Cerca il link SalesNav nella navbar LinkedIn (icona compass o testo "Sales Nav")
+        const navLink = page.locator('a[href*="/sales"]').first();
+        if (await navLink.isVisible({ timeout: 2000 }).catch(() => false)) {
+            await humanDelay(page, 300, 800);
+            await navLink.click({ timeout: 5000 });
+            await page.waitForURL('**/sales/**', { timeout: 15_000 }).catch(() => null);
+            navigatedViaNbar = true;
+            console.log('[AI-NAV] Navigato a SalesNav dalla navbar LinkedIn.');
+        }
+    } catch { /* fallback a goto diretto */ }
+    if (!navigatedViaNbar) {
+        await page.goto(salesNavHome, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    }
     await dismissTransientUi(page);
     await humanDelay(page, 800, 1_500);
 
