@@ -88,3 +88,34 @@ Rispondi SOLO con JSON. Esempio:
         };
     }
 }
+
+/**
+ * M06: Batch scoring con concurrency controllata.
+ * Processa N lead in parallelo con max `concurrency` chiamate API simultanee.
+ * 200 lead con concurrency 5 → ~40 batch × ~2s = ~80s (vs 400s sequenziale).
+ */
+export async function scoreLeadsBatch(
+    leads: Array<{ accountName: string; fullName: string; headline: string | null }>,
+    options?: ScoreLeadOptions & { concurrency?: number },
+): Promise<LeadScoreResult[]> {
+    const concurrency = Math.max(1, Math.min(options?.concurrency ?? 5, 10));
+    const results: LeadScoreResult[] = new Array(leads.length);
+    let cursor = 0;
+
+    const worker = async (): Promise<void> => {
+        while (true) {
+            const idx = cursor++;
+            if (idx >= leads.length) return;
+            const lead = leads[idx];
+            results[idx] = await scoreLeadProfile(
+                lead.accountName,
+                lead.fullName,
+                lead.headline,
+                options,
+            );
+        }
+    };
+
+    await Promise.all(Array.from({ length: Math.min(concurrency, leads.length) }, () => worker()));
+    return results;
+}
