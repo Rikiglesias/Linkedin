@@ -235,15 +235,11 @@ async function runQueuedJobsForAccount(
                 });
                 return;
             }
-            // M24: COOKIE_CHANGED → pausa 15min + warning. LinkedIn potrebbe aver rigenerato
-            // la sessione server-side — proseguire potrebbe usare un cookie invalido.
-            if (cookieAnomaly.anomaly === 'COOKIE_CHANGED') {
-                await pauseAutomation('SESSION_COOKIE_CHANGED', {
-                    accountId: account.id,
-                    message: 'Cookie li_at cambiato senza rotazione esplicita — verifica in corso.',
-                }, 15);
-                return;
-            }
+            // M24: COOKIE_CHANGED → warning ma NON blocco.
+            // LinkedIn ruota li_at ogni ~2 settimane come comportamento normale.
+            // Bloccare per un cambio cookie legittimo causerebbe pause inutili.
+            // L'hash viene aggiornato in sessionCookieMonitor → non ri-alerta.
+            // Solo COOKIE_MISSING (sopra) è critico e blocca.
         }
 
         // ── LinkedIn API monitoring passivo: probe proattivo prima dei job ──
