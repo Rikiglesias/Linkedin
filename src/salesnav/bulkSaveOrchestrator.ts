@@ -732,9 +732,12 @@ async function verifyToast(page: Page, targetListName: string): Promise<void> {
         const toastLower = toastText.toLowerCase();
         const targetLower = targetListName.toLowerCase();
         if (toastLower.includes('saved') || toastLower.includes('salvat') || toastLower.includes('elenco') || toastLower.includes('list')) {
+            // M02: Verificare nome COMPLETO della lista, non solo ≥2 parole.
+            // Word overlap poteva confermare lista "Europa Team" con toast "Europa Marketing Team".
+            const fullNameMatch = toastLower.includes(targetLower);
             const targetWords = targetLower.split(/[\s,]+/).filter(w => w.length > 2);
             const matchedWords = targetWords.filter(w => toastLower.includes(w));
-            if (matchedWords.length >= Math.min(2, targetWords.length)) {
+            if (fullNameMatch || matchedWords.length >= Math.ceil(targetWords.length * 0.8)) {
                 console.log(`[CHOOSE LIST] ✓ Toast conferma: "${toastText}"`);
             } else {
                 console.error(`[CHOOSE LIST] ⚠️ TOAST MISMATCH: "${toastText}" — target era "${targetListName}"`);
