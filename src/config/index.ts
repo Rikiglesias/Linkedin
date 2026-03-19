@@ -61,14 +61,20 @@ export function getDayInTimezone(now: Date, timezone: string): number {
     return map[formatted] ?? now.getDay();
 }
 
-export function isWorkingHour(now: Date = new Date()): boolean {
+/**
+ * M18: Accetta timezone opzionale per-account. Se fornito, usa quello
+ * invece di config.timezone globale. Così account in timezone diverse
+ * operano negli orari lavorativi LOCALI del paese del proxy/account.
+ */
+export function isWorkingHour(now: Date = new Date(), accountTimezone?: string): boolean {
+    const tz = accountTimezone || config.timezone;
     if (config.weekendPolicyEnabled) {
-        const day = getDayInTimezone(now, config.timezone);
+        const day = getDayInTimezone(now, tz);
         if (day === 0 || day === 6) {
             return false;
         }
     }
-    const hour = getHourInTimezone(now, config.timezone);
+    const hour = getHourInTimezone(now, tz);
     return hour >= config.workingHoursStart && hour < config.workingHoursEnd;
 }
 

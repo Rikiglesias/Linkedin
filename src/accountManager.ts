@@ -6,6 +6,8 @@ export interface RuntimeAccountProfile {
     id: string;
     sessionDir: string;
     proxy?: ProxyConfig;
+    /** M18: Timezone IANA per account. Fallback a config.timezone globale se non specificato. */
+    timezone?: string;
     inviteWeight: number;
     messageWeight: number;
     warmupEnabled: boolean;
@@ -53,6 +55,8 @@ function toRuntimeProfile(profile: AccountProfileConfig): RuntimeAccountProfile 
         id: trimmedId || fallbackId,
         sessionDir: profile.sessionDir,
         proxy: parseProxyConfig(profile),
+        // M18: Timezone per account — se configurato, sovrascrive config.timezone globale
+        timezone: profile.timezone?.trim() || undefined,
         inviteWeight: Math.max(0.1, profile.inviteWeight || 1),
         messageWeight: Math.max(0.1, profile.messageWeight || 1),
         warmupEnabled: profile.warmupEnabled,

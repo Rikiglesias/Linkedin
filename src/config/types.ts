@@ -14,6 +14,8 @@ export interface AccountProfileConfig {
     warmupStartDate?: string;
     warmupMaxDays: number;
     warmupMinActions: number;
+    /** M18: Timezone IANA per account (es. 'Europe/Rome', 'Europe/Berlin'). Se vuoto, usa config.timezone globale. */
+    timezone?: string;
 }
 
 export interface AppConfig {
