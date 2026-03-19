@@ -168,6 +168,37 @@ function isSameProxy(a: ProxyConfig | undefined, b: ProxyConfig | undefined): bo
     );
 }
 
+/**
+ * GAP7-H30: Risolve l'IP del proxy per usarlo come geoip in Camoufox.
+ * Se il proxy è configurato, tenta DNS lookup dell'hostname.
+ * Fallback: config.camoufoxGeoip (configurabile dall'utente).
+ */
+async function resolveProxyGeoip(proxy: ProxyConfig | undefined, fallbackEnabled: boolean): Promise<boolean | string> {
+    if (!fallbackEnabled) return false;
+    if (!proxy?.server) return true; // geoip auto-detect (nessun proxy → IP locale)
+    try {
+        const url = new URL(proxy.server);
+        const hostname = url.hostname;
+        // Se l'hostname è già un IP, usalo direttamente come geoip
+        if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) {
+            return hostname;
+        }
+        // DNS lookup per risolvere hostname → IP
+        const dns = await import('node:dns');
+        const resolved = await new Promise<string>((resolve, reject) => {
+            dns.lookup(hostname, { family: 4 }, (err, address) => {
+                if (err) reject(err);
+                else resolve(address);
+            });
+        });
+        void logInfo('browser.geoip_resolved', { hostname, resolvedIp: resolved });
+        return resolved;
+    } catch {
+        // Fallback: se DNS lookup fallisce, usa geoip auto-detect (true)
+        return true;
+    }
+}
+
 export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise<BrowserSession> {
     const sessionDirRaw = options.sessionDir ?? config.sessionDir;
     const sessionDir = path.isAbsolute(sessionDirRaw) ? sessionDirRaw : path.resolve(process.cwd(), sessionDirRaw);
@@ -384,11 +415,10 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                     // causa freeze quando il mouse reale dell'utente compete con Playwright CDP
                     // (cfr. camoufox issue #139). Il nostro sistema è al 100% controllato da noi.
                     humanize: false,
-                    // H30: geoip deve corrispondere all'IP del proxy, NON a un IP italiano fisso.
-                    // Prima: hardcoded '93.63.96.1' (Telecom Italia) → se proxy in Germania, LinkedIn
-                    // vedeva browser "in Italia" ma IP tedesco → incoerenza rilevabile.
-                    // Ora: usa config.camoufoxGeoip (configurabile per proxy) come unica fonte.
-                    geoip: config.camoufoxGeoip,
+                    // H30+GAP7: geoip deve corrispondere all'IP del proxy.
+                    // Se proxy configurato → tenta DNS lookup dell'hostname del proxy per ottenere l'IP reale.
+                    // Fallback: config.camoufoxGeoip (configurabile dall'utente).
+                    geoip: await resolveProxyGeoip(currentProxy, config.camoufoxGeoip),
                     block_webrtc: config.camoufoxBlockWebrtc,
                     locale: fingerprint.locale ?? 'it-IT',
                     window: cfxWindow,

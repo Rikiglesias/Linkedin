@@ -7,6 +7,8 @@ import { WorkerContext } from './context';
 import { ChallengeDetectedError, RetryableWorkerError } from './errors';
 import { attemptChallengeResolution } from './challengeHandler';
 import { isSalesNavigatorUrl } from '../linkedinUrl';
+import { logWarn } from '../telemetry/logger';
+import { normalizeNameForComparison, jaroWinklerSimilarity } from '../utils/text';
 import { navigateToProfileForCheck } from '../browser/navigationContext';
 import { bridgeDailyStat, bridgeLeadStatus } from '../cloud/cloudBridge';
 import { recordOutcome } from '../ml/abBandit';
@@ -35,6 +37,31 @@ export async function processAcceptanceJob(
     await navigateToProfileForCheck(context.session.page, lead.linkedin_url, context.accountId ?? 'default');
     await humanDelay(context.session.page, 2000, 4000);
     await contextualReadingPause(context.session.page);
+
+    // GAP2-C04: Identity check — verifica che il profilo corrisponda al lead target.
+    try {
+        const h1Element = context.session.page.locator('h1').first();
+        const h1Text = await h1Element.textContent({ timeout: 3000 }).catch(() => null);
+        if (h1Text) {
+            const expectedName = normalizeNameForComparison(`${lead.first_name} ${lead.last_name}`);
+            const actualName = normalizeNameForComparison(h1Text);
+            if (expectedName && actualName) {
+                const similarity = jaroWinklerSimilarity(expectedName, actualName);
+                if (similarity < 0.75) {
+                    await logWarn('acceptance.identity_mismatch', {
+                        leadId: lead.id,
+                        expectedName,
+                        actualName,
+                        similarity: Number.parseFloat(similarity.toFixed(3)),
+                    });
+                    await transitionLead(lead.id, 'REVIEW_REQUIRED', 'identity_mismatch');
+                    return workerResult(1);
+                }
+            }
+        }
+    } catch {
+        // Identity check non bloccante
+    }
 
     if (await detectChallenge(context.session.page)) {
         const resolved = await attemptChallengeResolution(context.session.page).catch(() => false);

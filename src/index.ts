@@ -379,20 +379,29 @@ async function main(): Promise<void> {
     // con un timeout criptico invece di un messaggio chiaro.
     if (!isDryRunCommand && browserCommands.has(command ?? '')) {
         const accounts = getRuntimeAccountProfiles();
-        let proxyFailure = false;
+        const failedAccounts: string[] = [];
         for (const account of accounts) {
             if (account.proxy) {
                 const healthy = await checkProxyHealth(account.proxy);
                 if (!healthy) {
                     console.error(`[PREFLIGHT] ❌ Proxy ${account.proxy.server} NON raggiungibile (account: ${account.id}). Azione: verificare che il proxy sia attivo e raggiungibile.`);
-                    proxyFailure = true;
+                    failedAccounts.push(account.id);
                 } else {
                     console.log(`[PREFLIGHT] Proxy OK: ${account.proxy.server} (${account.id})`);
                 }
             }
         }
-        if (proxyFailure) {
-            console.error('[PREFLIGHT] Bloccato: uno o più proxy non raggiungibili. Il bot non può operare in sicurezza senza proxy funzionante.');
+        if (failedAccounts.length > 0) {
+            // GAP1-C02: Alert Telegram critico per proxy failure
+            try {
+                const { sendTelegramAlert } = await import('./telemetry/alerts');
+                await sendTelegramAlert(
+                    `🚨 **Proxy NON raggiungibile**\n\nAccount: ${failedAccounts.join(', ')}\n\nAzione richiesta:\n1. Verificare le credenziali proxy\n2. Testare il proxy manualmente\n3. Cambiare proxy nel .env\n4. Riavviare il bot`,
+                    'Proxy Failure',
+                    'critical',
+                ).catch(() => null);
+            } catch { /* best-effort alert */ }
+            console.error(`[PREFLIGHT] Bloccato: proxy non raggiungibile per account: ${failedAccounts.join(', ')}.`);
             process.exit(1);
         }
 

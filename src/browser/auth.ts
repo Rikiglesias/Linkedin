@@ -90,6 +90,22 @@ export async function checkLogin(page: Page): Promise<boolean> {
     ];
     if (verificationPatterns.some((p) => finalUrl.includes(p))) {
         console.error('[AUTH] ❌ LinkedIn richiede verifica 2FA/TOTP. Azione: completare la verifica manualmente, poi riprovare.');
+        // GAP6-H01: quarantineAccount + alert Telegram per visibilità immediata
+        try {
+            const { quarantineAccount } = await import('../risk/incidentManager');
+            await quarantineAccount('LOGIN_2FA_REQUIRED', {
+                message: 'LinkedIn richiede verifica 2FA/TOTP — intervento manuale necessario.',
+                url: finalUrl,
+            });
+        } catch { /* best-effort */ }
+        try {
+            const { sendTelegramAlert } = await import('../telemetry/alerts');
+            await sendTelegramAlert(
+                `🔐 **LinkedIn richiede verifica 2FA**\n\nURL: ${finalUrl}\n\nAzione richiesta:\n1. Aprire il browser manualmente\n2. Completare la verifica\n3. Eseguire \`bot.ps1 unquarantine\` per riprendere`,
+                'Login 2FA Required',
+                'critical',
+            ).catch(() => null);
+        } catch { /* best-effort */ }
         return false;
     }
     // Controlla anche lo status HTTP (429 = rate limited, 403 = bloccato)

@@ -148,6 +148,47 @@ async function processSingleFollowUp(
     }
     await humanDelay(context.session.page, 1200, 2200);
 
+    // GAP3-C06: Check in-browser — se l'ultimo messaggio nella chat NON è nostro,
+    // il lead ha già risposto. Skip follow-up per evitare spam gravissimo.
+    // Questo è il livello 1 (IMMEDIATO) del fix C06, complementare al filtro DB.
+    try {
+        const theirLastMsg = context.session.page
+            .locator('.msg-s-message-list__event:not([data-msg-s-message-event-is-me="true"]) .msg-s-event-listitem__body')
+            .last();
+        if (await theirLastMsg.isVisible({ timeout: 1500 }).catch(() => false)) {
+            const theirText = await theirLastMsg.innerText().catch(() => '');
+            if (theirText && theirText.trim().length > 0) {
+                // Verifica che il messaggio del lead sia PIÙ RECENTE dell'ultimo nostro
+                const ourLastMsg = context.session.page
+                    .locator('.msg-s-message-list__event[data-msg-s-message-event-is-me="true"] .msg-s-event-listitem__body')
+                    .last();
+                const ourText = await ourLastMsg.innerText().catch(() => '');
+                // Se il lead ha scritto E il suo messaggio è l'ultimo visibile → ha risposto
+                const theirMsgIndex = await theirLastMsg.evaluate((el) => {
+                    const parent = el.closest('.msg-s-message-list__event');
+                    return parent ? Array.from(parent.parentElement?.children ?? []).indexOf(parent) : -1;
+                }).catch(() => -1);
+                const ourMsgIndex = ourText ? await ourLastMsg.evaluate((el) => {
+                    const parent = el.closest('.msg-s-message-list__event');
+                    return parent ? Array.from(parent.parentElement?.children ?? []).indexOf(parent) : -1;
+                }).catch(() => -1) : -1;
+
+                if (theirMsgIndex > ourMsgIndex) {
+                    await logInfo('follow_up.reply_detected_in_chat', {
+                        leadId,
+                        textExcerpt: theirText.trim().substring(0, 50),
+                    });
+                    // Transiziona il lead a REPLIED — il follow-up non serve
+                    const { transitionLead } = await import('../core/leadStateService');
+                    await transitionLead(leadId, 'REPLIED', 'follow_up_reply_in_chat');
+                    return false;
+                }
+            }
+        }
+    } catch {
+        // Check non bloccante: se fallisce, procedi con il follow-up
+    }
+
     await typeWithFallback(context.session.page, SELECTORS.messageTextbox, message, 'messageTextbox').catch(
         async () => {
             await incrementDailyStat(context.localDate, 'selector_failures');

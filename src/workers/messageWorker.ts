@@ -33,7 +33,8 @@ import { navigateToProfileForMessage } from '../browser/navigationContext';
 import { ensureViewportDwell } from '../browser/humanBehavior';
 import { buildPersonalizedFollowUpMessage } from '../ai/messagePersonalizer';
 import { getUnusedPrebuiltMessage, markPrebuiltMessageUsed } from '../core/repositories/prebuiltMessages';
-import { logInfo } from '../telemetry/logger';
+import { logInfo, logWarn } from '../telemetry/logger';
+import { normalizeNameForComparison, jaroWinklerSimilarity } from '../utils/text';
 import { bridgeDailyStat, bridgeLeadStatus } from '../cloud/cloudBridge';
 import { WorkerExecutionResult, workerResult } from './result';
 import { inferLeadSegment } from '../ml/segments';
@@ -142,6 +143,31 @@ export async function processMessageJob(
     await humanDelay(context.session.page, 2500, 5000);
     await simulateHumanReading(context.session.page);
     await contextualReadingPause(context.session.page);
+
+    // GAP2-C04: Identity check — verifica che il profilo corrisponda al lead target.
+    try {
+        const h1Element = context.session.page.locator('h1').first();
+        const h1Text = await h1Element.textContent({ timeout: 3000 }).catch(() => null);
+        if (h1Text) {
+            const expectedName = normalizeNameForComparison(`${lead.first_name} ${lead.last_name}`);
+            const actualName = normalizeNameForComparison(h1Text);
+            if (expectedName && actualName) {
+                const similarity = jaroWinklerSimilarity(expectedName, actualName);
+                if (similarity < 0.75) {
+                    await logWarn('message.identity_mismatch', {
+                        leadId: lead.id,
+                        expectedName,
+                        actualName,
+                        similarity: Number.parseFloat(similarity.toFixed(3)),
+                    });
+                    await transitionLead(lead.id, 'REVIEW_REQUIRED', 'identity_mismatch');
+                    return workerResult(1);
+                }
+            }
+        }
+    } catch {
+        // Identity check non bloccante
+    }
 
     if (await detectChallenge(context.session.page)) {
         const resolved = await attemptChallengeResolution(context.session.page).catch(() => false);

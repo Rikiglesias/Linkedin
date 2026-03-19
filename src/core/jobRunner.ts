@@ -951,6 +951,35 @@ async function runQueuedJobsForAccount(
             }
         }
 
+        // ── GAP4-C09: Inbox Phase PRIMA del follow-up ─────────────────────
+        // Rileva risposte lead PRIMA che il follow-up invii. Senza questo,
+        // il follow-up potrebbe spammare chi ha già risposto.
+        // Gira nella stessa sessione browser — zero overhead di apertura browser.
+        if (!sessionClosed && !options.dryRun) {
+            try {
+                const { processInboxJob } = await import('../workers/inboxWorker');
+                const inboxResult = await processInboxJob({ accountId: account.id }, {
+                    session,
+                    dryRun: false,
+                    localDate: options.localDate,
+                    accountId: account.id,
+                });
+                if (inboxResult.processedCount > 0) {
+                    await logInfo('job_runner.inbox_phase_done', {
+                        accountId: account.id,
+                        processedCount: inboxResult.processedCount,
+                    });
+                }
+            } catch (inboxErr) {
+                await logWarn('job_runner.inbox_phase_error', {
+                    accountId: account.id,
+                    error: inboxErr instanceof Error ? inboxErr.message : String(inboxErr),
+                });
+                // Non bloccante: se inbox fallisce, follow-up procede comunque
+                // (ha il safety net DB via lead_intents + check in-browser)
+            }
+        }
+
         // ── Follow-up Phase ─────────────────────────────────────────────────
         // Eseguito una volta sola dopo i job normali, con la stessa sessione aperta.
         // Non bloccante: errori non propagano e non compromettono la run principale.
