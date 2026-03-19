@@ -87,3 +87,30 @@ export interface AccountBackpressureSnapshot {
     effectiveBatchSize: number;
 }
 
+// ─── M20: Worker-Type-Scoped Backpressure ────────────────────────────────────
+// Estende il sistema account-scoped per avere granularità per JobType.
+// Se inviti hanno alta failure rate ma messaggi no, solo il batch inviti viene ridotto.
+
+function workerTypeBackpressureKey(accountId: string, jobType: string): string {
+    return `backpressure.worker.${accountId}.${jobType}.level`;
+}
+
+export async function getWorkerTypeBackpressureLevel(accountId: string, jobType: string): Promise<number> {
+    const raw = await getRuntimeFlag(workerTypeBackpressureKey(accountId, jobType));
+    const parsed = raw ? Number.parseInt(raw, 10) : 1;
+    return clampBackpressureLevel(parsed);
+}
+
+export async function updateWorkerTypeBackpressure(
+    accountId: string,
+    jobType: string,
+    sample: Omit<BackpressureSample, 'currentLevel'>,
+): Promise<number> {
+    const currentLevel = await getWorkerTypeBackpressureLevel(accountId, jobType);
+    const nextLevel = computeNextBackpressureLevel({ currentLevel, ...sample });
+    if (nextLevel !== currentLevel) {
+        await setRuntimeFlag(workerTypeBackpressureKey(accountId, jobType), String(clampBackpressureLevel(nextLevel)));
+    }
+    return nextLevel;
+}
+
