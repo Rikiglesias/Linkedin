@@ -315,6 +315,44 @@ export async function navigateToProfileForCheck(
     return result;
 }
 
+/**
+ * R04: Funzione di navigazione UNIFICATA per tutti i worker.
+ * Sostituisce i 3 metodi separati (navigateToProfileWithContext, ForCheck, ForMessage)
+ * con un'unica funzione che sceglie la strategia in base a `purpose` e `sessionActionCount`.
+ *
+ * Purpose → Strategia:
+ *   - 'invite':    search organic (con decay) + feed + diretto (come navigateToProfileWithContext)
+ *   - 'message':   feed (60%) + notifiche (24%) + diretto (16%) — post-accettazione
+ *   - 'check':     feed (40%) + notifiche (30%) + diretto (30%) — verifica leggera
+ *   - 'follow_up': feed (50%) + notifiche (20%) + diretto (30%) — simile a message ma più cauto
+ *
+ * sessionActionCount abilita il decay (primi inviti → search organica, poi → sempre più diretto).
+ * Se non fornito, usa decay 0 (tutti i profili con stesse probabilità).
+ */
+export async function navigateToProfile(
+    page: Page,
+    profileUrl: string,
+    options: {
+        purpose: 'invite' | 'message' | 'check' | 'follow_up';
+        lead?: { name?: string | null; job_title?: string | null; company?: string | null };
+        accountId: string;
+        sessionActionCount?: number;
+    },
+): Promise<NavigationResult> {
+    const { purpose, lead, accountId, sessionActionCount = 0 } = options;
+
+    if (purpose === 'invite') {
+        return navigateToProfileWithContext(page, profileUrl, lead ?? {}, accountId, sessionActionCount);
+    }
+
+    if (purpose === 'check') {
+        return navigateToProfileForCheck(page, profileUrl, accountId);
+    }
+
+    // 'message' e 'follow_up' usano la stessa logica
+    return navigateToProfileForMessage(page, profileUrl, accountId);
+}
+
 export async function navigateToProfileForMessage(
     page: Page,
     profileUrl: string,
