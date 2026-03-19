@@ -83,6 +83,27 @@ async function expandPostText(page: Page): Promise<void> {
     }
 }
 
+// M17: Parole chiave che indicano contenuto politico, controverso o non-professionale.
+// Un professionista che fa outreach non mette like a post divisivi — riduce rischio reputazionale.
+const CONTROVERSIAL_KEYWORDS = [
+    'politic', 'election', 'voting', 'democrat', 'republican', 'liberal', 'conservative',
+    'abortion', 'gun control', 'immigration ban', 'death penalty', 'capital punishment',
+    'conspiracy', 'antivax', 'anti-vax', 'flat earth', 'qanon',
+    'religion', 'pray', 'church', 'mosque', 'bible', 'quran',
+    'racist', 'sexist', 'homophob', 'transphob', 'hate speech',
+    'guerra', 'elezioni', 'partito', 'destra', 'sinistra', 'fascis', 'comunis',
+    'razzis', 'sessist', 'omofob',
+] as const;
+
+/**
+ * M17: Verifica se il testo di un post contiene contenuto controverso/non-professionale.
+ * Ritorna true se il post è sicuro per interazione.
+ */
+function isPostSafeForInteraction(postText: string): boolean {
+    const lower = postText.toLowerCase();
+    return !CONTROVERSIAL_KEYWORDS.some(kw => lower.includes(kw));
+}
+
 /**
  * Tenta di lasciare una Reazione (Like, Celebrate, Insightful) su un post visibile.
  */
@@ -99,6 +120,19 @@ async function reactToPost(page: Page): Promise<void> {
         const locator = page.locator(selector).first();
         if (await locator.count() === 0) continue;
         if (!await locator.isVisible().catch(() => false)) continue;
+
+        // M17: Leggi il testo del post parent prima di reagire.
+        // Se contiene contenuto politico/controverso, skip — non mettere like.
+        try {
+            const postContainer = page.locator(selector).first().locator('xpath=ancestor::div[contains(@class,"feed-shared-update-v2")]').first();
+            const postText = await postContainer.textContent({ timeout: 2000 }).catch(() => '') ?? '';
+            if (!isPostSafeForInteraction(postText)) {
+                await logInfo('organicContent.skipped_controversial', { excerpt: postText.substring(0, 60) });
+                return; // Skip — non reagire a questo post
+            }
+        } catch {
+            // Se non riusciamo a leggere il post, prosegui (best-effort filter)
+        }
 
         const box = await locator.boundingBox();
         if (!box) continue;

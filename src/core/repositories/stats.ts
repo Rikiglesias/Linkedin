@@ -668,7 +668,12 @@ export async function checkAndIncrementDailyLimit(
 ): Promise<boolean> {
     const db = await getDatabase();
 
-    // Upsert atomico: INSERT o UPDATE solo se il valore corrente < hardCap
+    // Upsert atomico: INSERT o UPDATE solo se il valore corrente < hardCap.
+    // M43: Questo è atomico sia su SQLite (single-writer) che su PostgreSQL.
+    // Su PG, ON CONFLICT DO UPDATE prende un row-level lock PRIMA dell'UPDATE.
+    // La seconda transazione concorrente aspetta il lock, poi legge il valore
+    // già incrementato da T1 → il WHERE field < ? lo blocca correttamente.
+    // Advisory lock non necessario — testato con pg_advisory_xact_lock, nessun beneficio.
     const result = await db.run(
         `
         INSERT INTO daily_stats (date, account_id, ${field}) VALUES (?, ?, 1)
