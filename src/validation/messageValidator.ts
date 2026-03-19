@@ -4,6 +4,8 @@ import { MessageValidationResult } from '../types/domain';
 export interface MessageValidationContext {
     duplicateCountLast24h: number;
     maxLen?: number;
+    /** M11: Se fornito, il semantic checker verifica similarità con messaggi precedenti per questo lead */
+    leadId?: number;
 }
 
 export function extractUnresolvedPlaceholders(message: string): string[] {
@@ -38,4 +40,34 @@ export function validateMessageContent(message: string, context: MessageValidati
         valid: reasons.length === 0,
         reasons,
     };
+}
+
+/**
+ * M11: Validazione asincrona con semantic check — parafrasi dello stesso concetto vengono rilevate.
+ * Hash esatto cattura solo duplicati identici; il semantic check cattura anche riformulazioni.
+ * Usa questa funzione al posto di validateMessageContent quando il leadId è disponibile.
+ */
+export async function validateMessageContentAsync(
+    message: string,
+    context: MessageValidationContext,
+): Promise<MessageValidationResult> {
+    const syncResult = validateMessageContent(message, context);
+    if (!syncResult.valid) return syncResult;
+
+    if (context.leadId !== undefined && context.leadId !== null) {
+        try {
+            const { SemanticChecker } = await import('../ai/semanticChecker');
+            const tooSimilar = await SemanticChecker.isTooSimilar(message, 0.85, context.leadId);
+            if (tooSimilar) {
+                return {
+                    valid: false,
+                    reasons: [...syncResult.reasons, 'Messaggio troppo simile a uno già inviato a questo lead (semantic check).'],
+                };
+            }
+        } catch {
+            // Se il semantic checker non è disponibile, prosegui con validazione sincrona
+        }
+    }
+
+    return syncResult;
 }

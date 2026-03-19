@@ -312,12 +312,27 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
         when: (cfg) => cfg.hardInviteCap < 1,
     },
     {
+        message: '[CONFIG] HARD_INVITE_CAP > 50 è pericoloso — LinkedIn può bannare per volumi anomali',
+        when: (cfg) => cfg.hardInviteCap > 50,
+        severity: 'warn',
+    },
+    {
         message: '[CONFIG] SOFT_MSG_CAP deve essere >= 1 (valore 0 disabilita i messaggi senza warning)',
         when: (cfg) => cfg.softMsgCap < 1,
     },
     {
         message: '[CONFIG] HARD_MSG_CAP deve essere >= 1',
         when: (cfg) => cfg.hardMsgCap < 1,
+    },
+    {
+        message: '[CONFIG] HARD_MSG_CAP > 60 è pericoloso — LinkedIn può bannare per volumi anomali',
+        when: (cfg) => cfg.hardMsgCap > 60,
+        severity: 'warn',
+    },
+    {
+        message: '[CONFIG] WEEKLY_INVITE_LIMIT > 200 è pericoloso — LinkedIn può bannare per volumi settimanali anomali',
+        when: (cfg) => cfg.weeklyInviteLimit > 200,
+        severity: 'warn',
     },
     {
         message: '[CONFIG] SOFT_INVITE_CAP deve essere <= HARD_INVITE_CAP',

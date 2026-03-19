@@ -1164,7 +1164,7 @@ function shuffle<T>(items: T[]): T[] {
     return clone;
 }
 
-async function runDecoyStep(page: Page, step: DecoyStep): Promise<void> {
+async function runDecoyStep(page: Page, step: DecoyStep, contextTerms?: readonly string[]): Promise<void> {
     if (step === 'feed') {
         await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
         await ensureVisualCursorOverlay(page);
@@ -1189,7 +1189,9 @@ async function runDecoyStep(page: Page, step: DecoyStep): Promise<void> {
         return;
     }
     if (step === 'search') {
-        const term = randomElement(DECOY_SEARCH_TERMS);
+        // M15/M16: Se termini context-aware disponibili, usali (70%); altrimenti generici.
+        const useContext = contextTerms && contextTerms.length > 0 && Math.random() < 0.70;
+        const term = randomElement(useContext ? contextTerms : DECOY_SEARCH_TERMS);
         await page.goto(`https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(term)}`, {
             waitUntil: 'domcontentloaded',
         });
@@ -1205,11 +1207,11 @@ async function runDecoyStep(page: Page, step: DecoyStep): Promise<void> {
     await humanDelay(page, 800, 1600);
 }
 
-export async function performDecoyBurst(page: Page): Promise<void> {
+export async function performDecoyBurst(page: Page, contextTerms?: readonly string[]): Promise<void> {
     const baseSteps: DecoyStep[] = ['feed', 'notifications', 'network', 'search', 'back'];
     const steps = shuffle(baseSteps).slice(0, randomInt(2, 4));
     for (const step of steps) {
-        await runDecoyStep(page, step).catch(() => null);
+        await runDecoyStep(page, step, contextTerms).catch(() => null);
     }
 }
 
@@ -1245,8 +1247,11 @@ const DECOY_SEARCH_TERMS: readonly string[] = [
     'cloud architect', 'scrum master', 'ux researcher',
 ] as const;
 
-export async function performDecoyAction(page: Page): Promise<void> {
-    const terms = DECOY_SEARCH_TERMS;
+export async function performDecoyAction(page: Page, contextTerms?: readonly string[]): Promise<void> {
+    // M15/M16: Se termini context-aware forniti, mescola con generici (coerenza settore)
+    const terms = contextTerms && contextTerms.length > 0
+        ? [...contextTerms, ...Array.from(DECOY_SEARCH_TERMS).slice(0, 15)]
+        : DECOY_SEARCH_TERMS;
     const reInjectOverlay = async () => {
         await ensureVisualCursorOverlay(page);
         await ensureInputBlock(page);

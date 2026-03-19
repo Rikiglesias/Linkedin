@@ -384,6 +384,7 @@ async function runQueuedJobsForAccount(
         await setRuntimeFlag(`browser_session_started_at:${account.id}`, new Date(sessionStartedAtMs).toISOString()).catch(() => null);
         let processedThisRun = 0;
         let lastJa3CheckMs = Date.now(); // C03: periodic JA3 check mid-session
+        let lastBudgetRecalcAt = 0; // H24: track processed count at last budget recalc
 
         while (true) {
             if (processedThisRun >= maxJobsPerRun) {
@@ -621,6 +622,28 @@ async function runQueuedJobsForAccount(
                     } catch {
                         // best-effort: se anche failLeadCampaign fallisce, il log sopra traccia il problema
                     }
+                }
+
+                // H24: Budget recalc mid-session — ogni 10 job processati, rivaluta il budget.
+                // Se il risk score è salito (challenge, throttle), riduce maxJobsPerRun.
+                // Il throttler HTTP adatta i DELAY, ma non il VOLUME — questo fix chiude il gap.
+                if (processedThisRun - lastBudgetRecalcAt >= 10) {
+                    lastBudgetRecalcAt = processedThisRun;
+                    try {
+                        const currentThrottle = session.httpThrottler.getThrottleSignal();
+                        // Se il throttle ratio è > 1.5 (LinkedIn sta rallentando), riduci budget -20%
+                        if (currentThrottle.ratio > 1.5 && !batchReducedMidSession) {
+                            const newMax = Math.max(1, Math.floor(maxJobsPerRun * 0.8));
+                            await logInfo('job_runner.h24_budget_recalc.throttle_reduction', {
+                                accountId: account.id,
+                                oldMaxJobs: maxJobsPerRun,
+                                newMaxJobs: newMax,
+                                throttleRatio: currentThrottle.ratio,
+                                processedThisRun,
+                            });
+                            maxJobsPerRun = newMax;
+                        }
+                    } catch { /* best-effort budget recalc */ }
                 }
 
                 // Pausa umana tra un job e il successivo (anti-burst)

@@ -191,6 +191,25 @@ export async function advanceLeadCampaignState(
 }
 
 /**
+ * H14: Verifica se il lead ha una campagna drip attiva (campaigns.active = 1).
+ * Ritorna true se il lead NON ha campagne drip, o se tutte le sue campagne sono attive.
+ * Ritorna false se il lead ha almeno una campagna drip DISATTIVATA con stato ENROLLED/IN_PROGRESS.
+ */
+export async function isLeadCampaignActive(leadId: number): Promise<boolean> {
+    const db = await getDatabase();
+    const row = await db.get<{ cnt: number }>(
+        `SELECT COUNT(*) as cnt
+         FROM lead_campaign_state lcs
+         JOIN campaigns c ON lcs.campaign_id = c.id
+         WHERE lcs.lead_id = ?
+           AND lcs.status IN ('ENROLLED', 'IN_PROGRESS')
+           AND c.active = 0`,
+        [leadId],
+    );
+    return (row?.cnt ?? 0) === 0;
+}
+
+/**
  * Marca lo stato lead-campagna come ERROR.
  */
 export async function failLeadCampaignState(id: number, errorMessage: string): Promise<void> {

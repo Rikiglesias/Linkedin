@@ -32,6 +32,7 @@ import {
     incrementDailyStat,
     countRecentMessageHash,
     storeMessageHash,
+    isLeadCampaignActive,
 } from '../core/repositories';
 import { joinSelectors, SELECTORS } from '../selectors';
 import { hashMessage, validateMessageContent } from '../validation/messageValidator';
@@ -275,6 +276,14 @@ export async function runFollowUpWorker(context: WorkerContext, dailySentSoFar =
         if (sent + dailySentSoFar >= dailyCap) break;
 
         try {
+            // H14: Verifica che la campagna drip del lead sia attiva.
+            // Se l'utente ha disattivato la campagna, il follow-up non deve partire.
+            const campaignActive = await isLeadCampaignActive(lead.id);
+            if (!campaignActive) {
+                await logInfo('follow_up.skipped_campaign_inactive', { leadId: lead.id });
+                continue;
+            }
+
             const intentHint = await getLeadIntent(lead.id);
             const cadence = resolveFollowUpCadence(lead, intentHint);
             if (cadence.referenceDaysSince < cadence.requiredDelayDays) {
