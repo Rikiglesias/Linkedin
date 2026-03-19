@@ -38,7 +38,7 @@ export function initializeMouseState(page: Page): void {
  *  Se scade, il movimento viene abortito e il bot prosegue. */
 const MOUSE_MOVE_TIMEOUT_MS = 8_000;
 
-async function withMouseTimeout<T>(fn: () => Promise<T>, timeoutMs: number = MOUSE_MOVE_TIMEOUT_MS): Promise<T | undefined> {
+async function withMouseTimeout<T>(fn: () => Promise<T>, page?: Page, targetPoint?: Point, timeoutMs: number = MOUSE_MOVE_TIMEOUT_MS): Promise<T | undefined> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let timedOut = false;
     try {
@@ -49,7 +49,15 @@ async function withMouseTimeout<T>(fn: () => Promise<T>, timeoutMs: number = MOU
             }),
         ]);
         if (timedOut) {
-            console.warn(`[MOUSE] Timeout ${timeoutMs}ms raggiunto — procedendo senza mouse move`);
+            // M42: Dopo abort timeout, NON aggiornare pageMouseState al target — il mouse
+            // non ha raggiunto la destinazione. Logga warning per monitorare frequenza.
+            // Senza questo fix, la prossima azione assumeva che il mouse fosse al target
+            // → "teletrasporto" rilevabile.
+            console.warn(`[MOUSE] Timeout ${timeoutMs}ms raggiunto — mouse NON al target, procedendo dalla posizione attuale`);
+            // Non aggiornare pageMouseState — resta all'ultima posizione nota
+        } else if (page && targetPoint) {
+            // Movimento completato con successo: aggiorna posizione
+            pageMouseState.set(page, targetPoint);
         }
         return result;
     } finally {

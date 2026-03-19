@@ -1,6 +1,7 @@
 import { config } from '../config';
 import { closeDatabase, initDatabase } from '../db';
-import { getAiQualitySnapshot, runAiValidationPipeline } from '../core/repositories';
+// A22: import diretto per rompere circular dependency chain
+import { getAiQualitySnapshot, runAiValidationPipeline } from '../core/repositories/aiQuality';
 import { runSelectorLearner } from '../selectors/learner';
 import { getOptionValue } from '../cli/cliParser';
 

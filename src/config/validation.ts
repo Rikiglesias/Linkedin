@@ -382,8 +382,30 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
     },
     {
         message:
-            '[CONFIG] HARD_INVITE_CAP > 100 — valore pericolosamente alto, rischio ban LinkedIn',
-        when: (cfg) => cfg.hardInviteCap > 100,
+            '[CONFIG] HARD_INVITE_CAP > 50 — LinkedIn limita a ~100/settimana, un cap giornaliero > 50 è pericoloso',
+        when: (cfg) => cfg.hardInviteCap > 50,
+    },
+    {
+        message:
+            '[CONFIG] HARD_MSG_CAP > 100 — valore pericolosamente alto, rischio rate-limit LinkedIn',
+        when: (cfg) => cfg.hardMsgCap > 100,
+    },
+    {
+        message:
+            '[CONFIG] WEEKLY_INVITE_LIMIT > 200 — supera i limiti sicuri settimanali LinkedIn',
+        when: (cfg) => cfg.weeklyInviteLimit > 200,
+    },
+    {
+        message:
+            '[CONFIG] FOLLOW_UP_MAX > 5 — troppi follow-up sullo stesso lead aumentano il rischio segnalazione spam',
+        when: (cfg) => cfg.followUpMax > 5,
+        severity: 'warn',
+    },
+    {
+        message:
+            '[CONFIG] FOLLOW_UP_DAILY_CAP > 30 — troppi follow-up in un giorno sono un segnale di automazione',
+        when: (cfg) => cfg.followUpDailyCap > 30,
+        severity: 'warn',
     },
     {
         message:

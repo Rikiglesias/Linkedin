@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LinkedIn Automation Platform — System Overview</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+:root {
+  --bg: #fafafa; --bg2: #ffffff; --bg3: #f4f4f5; --bg4: #e4e4e7;
+  --text: #18181b; --text2: #3f3f46; --text3: #71717a; --text4: #a1a1aa;
+  --blue: #2563eb; --blue-bg: #eff6ff; --blue2: #1d4ed8;
+  --teal: #0d9488; --teal-bg: #f0fdfa;
+  --purple: #7c3aed; --purple-bg: #f5f3ff;
+  --amber: #d97706; --amber-bg: #fffbeb;
+  --green: #059669; --green-bg: #ecfdf5;
+  --coral: #e11d48; --coral-bg: #fff1f2;
+  --border: #e4e4e7; --border2: #d4d4d8;
+  --radius: 12px; --radius-sm: 8px;
+  --font: 'Inter', -apple-system, system-ui, sans-serif;
+  --shadow: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+  --shadow-lg: 0 4px 6px rgba(0,0,0,.04), 0 10px 15px rgba(0,0,0,.03);
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: var(--font); background: var(--bg); color: var(--text); line-height: 1.6; }
+
+/* Header */
+.header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 20px 40px; position: sticky; top: 0; z-index: 100; }
+.header-inner { max-width: 1200px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; }
+.logo { font-size: 20px; font-weight: 800; letter-spacing: -.5px; display: flex; align-items: center; gap: 10px; }
+.logo-icon { width: 32px; height: 32px; background: var(--blue); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 16px; font-weight: 800; }
+.header-stats { display: flex; gap: 24px; }
+.h-stat { text-align: center; }
+.h-stat-val { font-size: 20px; font-weight: 700; color: var(--blue); }
+.h-stat-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: .8px; }
+
+/* Navigation */
+.nav { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 0 40px; position: sticky; top: 66px; z-index: 99; }
+.nav-inner { max-width: 1200px; margin: 0 auto; display: flex; gap: 0; }
+.nav-tab { padding: 14px 20px; font-size: 13px; font-weight: 500; color: var(--text3); cursor: pointer; border-bottom: 2px solid transparent; transition: all .2s; }
+.nav-tab:hover { color: var(--text2); }
+.nav-tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+/* Main */
+.main { max-width: 1200px; margin: 0 auto; padding: 32px 40px; }
+.section { display: none; }
+.section.active { display: block; }
+.section-header { margin-bottom: 28px; }
+.section-title { font-size: 28px; font-weight: 800; letter-spacing: -.5px; margin-bottom: 4px; }
+.section-desc { font-size: 15px; color: var(--text3); }
+
+/* Cards */
+.card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow); transition: all .2s; }
+.card:hover { box-shadow: var(--shadow-lg); transform: translateY(-2px); }
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+.card-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; margin-bottom: 12px; }
+.card-title { font-size: 16px; font-weight: 700; margin-bottom: 6px; }
+.card-text { font-size: 13px; color: var(--text3); line-height: 1.7; }
+.card-items { margin-top: 12px; }
+.card-item { font-size: 12px; padding: 5px 0; color: var(--text2); display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--bg3); }
+.card-item:last-child { border: none; }
+.card-item::before { content: ''; width: 4px; height: 4px; border-radius: 50%; flex-shrink: 0; }
+
+/* Flow */
+.flow-section { margin-bottom: 32px; }
+.flow-title { font-size: 17px; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
+.flow-badge { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
+.flow-container { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; overflow-x: auto; box-shadow: var(--shadow); }
+.flow-steps { display: flex; align-items: stretch; gap: 0; min-width: max-content; }
+.flow-step { background: var(--bg3); border-radius: var(--radius-sm); padding: 14px 16px; min-width: 130px; max-width: 160px; text-align: center; position: relative; flex-shrink: 0; }
+.flow-step-num { font-size: 10px; font-weight: 700; color: var(--text4); margin-bottom: 4px; }
+.flow-step-name { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+.flow-step-detail { font-size: 10px; color: var(--text3); line-height: 1.4; }
+.flow-arrow { display: flex; align-items: center; padding: 0 8px; color: var(--text4); font-size: 18px; flex-shrink: 0; }
+
+/* Architecture */
+.arch-row { display: flex; gap: 12px; margin-bottom: 12px; align-items: stretch; }
+.arch-box { flex: 1; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 16px; }
+.arch-box-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; margin-bottom: 8px; }
+.arch-box-items { font-size: 12px; color: var(--text2); }
+.arch-box-item { padding: 3px 0; }
+.arch-connector { text-align: center; color: var(--text4); font-size: 20px; margin: 4px 0; }
+
+/* DB Schema */
+.db-table { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; margin-bottom: 12px; }
+.db-table-header { padding: 10px 14px; font-size: 13px; font-weight: 700; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+.db-table-count { font-size: 11px; font-weight: 500; color: var(--text3); }
+.db-table-cols { padding: 8px 14px; }
+.db-col { font-size: 11px; padding: 3px 0; font-family: 'SF Mono', 'Fira Code', monospace; color: var(--text2); display: flex; gap: 8px; }
+.db-col-type { color: var(--text4); }
+
+/* Stats row */
+.stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+.stat-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 16px; text-align: center; }
+.stat-big { font-size: 28px; font-weight: 800; }
+.stat-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: .5px; margin-top: 2px; }
+
+/* Colors */
+.c-blue .card-icon, .c-blue .flow-step { background: var(--blue-bg); color: var(--blue); }
+.c-blue .card-item::before { background: var(--blue); }
+.c-teal .card-icon, .c-teal .flow-step { background: var(--teal-bg); color: var(--teal); }
+.c-teal .card-item::before { background: var(--teal); }
+.c-purple .card-icon, .c-purple .flow-step { background: var(--purple-bg); color: var(--purple); }
+.c-purple .card-item::before { background: var(--purple); }
+.c-amber .card-icon, .c-amber .flow-step { background: var(--amber-bg); color: var(--amber); }
+.c-amber .card-item::before { background: var(--amber); }
+.c-green .card-icon, .c-green .flow-step { background: var(--green-bg); color: var(--green); }
+.c-green .card-item::before { background: var(--green); }
+.c-coral .card-icon, .c-coral .flow-step { background: var(--coral-bg); color: var(--coral); }
+.c-coral .card-item::before { background: var(--coral); }
+
+.fb-blue { background: var(--blue-bg); color: var(--blue); }
+.fb-teal { background: var(--teal-bg); color: var(--teal); }
+.fb-purple { background: var(--purple-bg); color: var(--purple); }
+.fb-amber { background: var(--amber-bg); color: var(--amber); }
+.fb-green { background: var(--green-bg); color: var(--green); }
+
+@media (max-width: 768px) {
+  .header, .nav, .main { padding-left: 16px; padding-right: 16px; }
+  .card-grid { grid-template-columns: 1fr; }
+  .stats-row { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-inner">
+    <div class="logo">
+      <div class="logo-icon">L</div>
+      LinkedIn Automation Platform
+    </div>
+    <div class="header-stats">
+      <div class="h-stat"><div class="h-stat-val">216</div><div class="h-stat-label">Moduli</div></div>
+      <div class="h-stat"><div class="h-stat-val">52</div><div class="h-stat-label">Migrazioni DB</div></div>
+      <div class="h-stat"><div class="h-stat-val">7</div><div class="h-stat-label">Worker</div></div>
+      <div class="h-stat"><div class="h-stat-val">8</div><div class="h-stat-label">Integrazioni AI</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="nav">
+  <div class="nav-inner">
+    <div class="nav-tab active" onclick="show('overview')">Panoramica</div>
+    <div class="nav-tab" onclick="show('architecture')">Architettura</div>
+    <div class="nav-tab" onclick="show('workflows')">Workflow</div>
+    <div class="nav-tab" onclick="show('ai')">AI Engine</div>
+    <div class="nav-tab" onclick="show('security')">Sicurezza</div>
+    <div class="nav-tab" onclick="show('database')">Database</div>
+    <div class="nav-tab" onclick="show('integrations')">Integrazioni</div>
+  </div>
+</div>
+
+<div class="main">
+
+<!-- OVERVIEW -->
+<div id="sec-overview" class="section active">
+  <div class="section-header">
+    <div class="section-title">Come funziona il sistema</div>
+    <div class="section-desc">Piattaforma completa per l'automazione intelligente dell'outreach B2B su LinkedIn</div>
+  </div>
+
+  <div class="stats-row">
+    <div class="stat-card"><div class="stat-big" style="color:var(--blue)">4</div><div class="stat-label">Workflow principali</div></div>
+    <div class="stat-card"><div class="stat-big" style="color:var(--teal)">6</div><div class="stat-label">Moduli Risk Engine</div></div>
+    <div class="stat-card"><div class="stat-big" style="color:var(--purple)">8</div><div class="stat-label">Moduli AI</div></div>
+    <div class="stat-card"><div class="stat-big" style="color:var(--amber)">8</div><div class="stat-label">Enrichment APIs</div></div>
+  </div>
+
+  <div class="card-grid">
+    <div class="card c-blue">
+      <div class="card-icon">&#9881;</div>
+      <div class="card-title">Orchestrator intelligente</div>
+      <div class="card-text">Ciclo principale che coordina scheduling, risk assessment, budget giornaliero, warmup sessione e distribuzione job ai worker. Gestisce multi-account con rotazione automatica.</div>
+    </div>
+    <div class="card c-teal">
+      <div class="card-icon">&#128270;</div>
+      <div class="card-title">Sales Navigator Integration</div>
+      <div class="card-text">Ricerca avanzata con bulk save, sincronizzazione liste, deduplicazione lead e scraping dati. Navigazione visiva con computer vision per elementi non accessibili via DOM.</div>
+    </div>
+    <div class="card c-purple">
+      <div class="card-icon">&#129302;</div>
+      <div class="card-title">AI Personalizzazione</div>
+      <div class="card-text">Messaggi e note invito personalizzati via LLM (OpenAI/Ollama). Lead scoring automatico, A/B testing multi-armed bandit, semantic similarity checker per evitare duplicati.</div>
+    </div>
+    <div class="card c-amber">
+      <div class="card-icon">&#128737;</div>
+      <div class="card-title">Risk Engine multi-livello</div>
+      <div class="card-text">6 moduli di protezione: risk scoring in tempo reale, session memory, strategy planner settimanale, HTTP throttler adattivo, incident manager e account behavior model.</div>
+    </div>
+    <div class="card c-green">
+      <div class="card-icon">&#128202;</div>
+      <div class="card-title">Telemetria e monitoring</div>
+      <div class="card-text">Endpoint Prometheus /metrics, alert Telegram rate-limited, health check multi-layer, daily reporter, correlation ID per tracciamento distribuito, live SSE events.</div>
+    </div>
+    <div class="card c-coral">
+      <div class="card-icon">&#127760;</div>
+      <div class="card-title">Browser stealth avanzato</div>
+      <div class="card-text">Playwright con fingerprint pool, JA3/TLS spoofing via CycleTLS, mouse Bezier, digitazione con typo, scroll naturale, decoy actions, coffee break simulati.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ARCHITECTURE -->
+<div id="sec-architecture" class="section">
+  <div class="section-header">
+    <div class="section-title">Architettura del sistema</div>
+    <div class="section-desc">Stack tecnologico e flusso dei dati dal CLI all'esecuzione</div>
+  </div>
+
+  <div class="arch-row">
+    <div class="arch-box" style="border-left:3px solid var(--blue)">
+      <div class="arch-box-title" style="color:var(--blue)">Entry Points</div>
+      <div class="arch-box-items">
+        <div class="arch-box-item">CLI interattivo (bot.ps1)</div>
+        <div class="arch-box-item">REST API (Express, 11 route groups)</div>
+        <div class="arch-box-item">Telegram Bot listener</div>
+        <div class="arch-box-item">Loop autopilot (PM2)</div>
+      </div>
+    </div>
+    <div class="arch-box" style="border-left:3px solid var(--purple)">
+      <div class="arch-box-title" style="color:var(--purple)">Core Engine</div>
+      <div class="arch-box-items">
+        <div class="arch-box-item">Orchestrator (coordinamento)</div>
+        <div class="arch-box-item">Scheduler (budget + cron)</div>
+        <div class="arch-box-item">JobRunner (esecuzione)</div>
+        <div class="arch-box-item">Worker Registry (7 processor)</div>
+      </div>
+    </div>
+    <div class="arch-box" style="border-left:3px solid var(--teal)">
+      <div class="arch-box-title" style="color:var(--teal)">Browser Layer</div>
+      <div class="arch-box-items">
+        <div class="arch-box-item">Playwright engine</div>
+        <div class="arch-box-item">Stealth + Fingerprint pool</div>
+        <div class="arch-box-item">Human behavior simulator</div>
+        <div class="arch-box-item">Captcha solver (Vision AI)</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arch-connector">&#8595;</div>
+
+  <div class="arch-row">
+    <div class="arch-box" style="border-left:3px solid var(--amber)">
+      <div class="arch-box-title" style="color:var(--amber)">Risk & Safety</div>
+      <div class="arch-box-items">
+        <div class="arch-box-item">Risk Engine (score 0-100)</div>
+        <div class="arch-box-item">HTTP Throttler adattivo</div>
+        <div class="arch-box-item">Incident Manager</div>
+        <div class="arch-box-item">Strategy Planner settimanale</div>
+        <div class="arch-box-item">Session Memory (cross-session)</div>
+        <div class="arch-box-item">Account Behavior Model</div>
+      </div>
+    </div>
+    <div class="arch-box" style="border-left:3px solid var(--green)">
+      <div class="arch-box-title" style="color:var(--green)">AI & ML</div>
+      <div class="arch-box-items">
+        <div class="arch-box-item">Message Personalizer (OpenAI)</div>
+        <div class="arch-box-item">Invite Note Personalizer</div>
+        <div class="arch-box-item">Lead Scorer</div>
+        <div class="arch-box-item">A/B Bandit (Thompson)</div>
+        <div class="arch-box-item">Timing Optimizer</div>
+        <div class="arch-box-item">Mouse Generator (Bezier ML)</div>
+      </div>
+    </div>
+    <div class="arch-box" style="border-left:3px solid var(--coral)">
+      <div class="arch-box-title" style="color:var(--coral)">Data & Sync</div>
+      <div class="arch-box-items">
+        <div class="arch-box-item">PostgreSQL / SQLite</div>
+        <div class="arch-box-item">52 migrazioni versioneate</div>
+        <div class="arch-box-item">Supabase cloud sync</div>
+        <div class="arch-box-item">Webhook outbox (event-driven)</div>
+        <div class="arch-box-item">n8n workflow connector</div>
+        <div class="arch-box-item">CRM Bridge</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- WORKFLOWS -->
+<div id="sec-workflows" class="section">
+  <div class="section-header">
+    <div class="section-title">Workflow operativi</div>
+    <div class="section-desc">4 workflow principali con flusso step-by-step dall'inizio all'esecuzione</div>
+  </div>
+
+  <!-- SYNC SEARCH -->
+  <div class="flow-section">
+    <div class="flow-title"><span class="flow-badge fb-blue">1</span> Sync Search — Ricerca e importazione lead</div>
+    <div class="flow-container">
+      <div class="flow-steps">
+        <div class="flow-step c-blue"><div class="flow-step-num">STEP 1</div><div class="flow-step-name">Config ricerca</div><div class="flow-step-detail">Parametri Sales Navigator, filtri, limiti pagine</div></div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-step c-blue"><div class="flow-step-num">STEP 2</div><div class="flow-step-name">Preflight check</div><div class="flow-step-detail">Proxy health, budget, session state, pausa attiva</div></div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-step c-blue"><div class="flow-step-num">STEP 3</div><div class="flow-step-name">Browser launch</div><div class="flow-step-detail">Playwright + fingerprint + proxy binding</div></div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-step c-blue"><div class="flow-step-num">STEP 4</div><div class="flow-step-name">Login check</div><div class="flow-step-detail">Verifica cookie li_at, navbar, challenge detection</div></div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-step c-teal"><div class="flow-step-num">STEP 5</div><div class="flow-step-name">SalesNav search</div><div class="flow-step-detail">Bulk save con vision navigator, dedup lead</div></div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-step c-teal"><div class="flow-step-num">STEP 6</div><div class="flow-step-name">List sync</div><div class="flow-step-detail">Sincronizza risultati nel DB locale</div></div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-step c-purple"><div class="flow-step-num">STEP 7</div><div class="flow-step-name">Enrichment</div><div class="flow-step-detail">8 fonti parallele: email, company, domain, web</div></div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-step c-green"><div class="flow-step-num">STEP 8</div><div class="flow-step-name">Lead scoring</div><div class="flow-step-detail">AI score 1-100 su ruolo, azienda, seniority</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SEND INVITES -->
+  <div class="flow-section">
+    <div class="flow-title"><span class="flow-badge fb-teal">2</span> Send Invites — Inviti connessione personalizzati</div>
+    <div class="flow-container">
+      <div class="flow-steps">
+        <div class="flow-step c-teal"><div class="flow-step-num">STEP 1</div><div class="flow-step-name">Preflight</div><div class="flow-step-detail">Budget inviti, weekly cap, risk score, proxy</div></div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-step c-teal"><div class="flow-step-num">STEP 2</div><div class="flow-step-name">Lead selection</div><div class="flow-step-detail">Filtra READY_INVITE, min score, blacklist check</div></div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-step c-amber"><div class="flow-step-num">STEP 3</div><div class="flow-step-name">Risk evaluation</div><div class="flow-step-detail">Risk engine score, dynamic budget, warmup factor</div></div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-step c-blue"><div class="flow-step-num">STEP 4</div><div class="flow-step-name">Job scheduling</div><div class="flow-step-detail">Enqueue INVITE jobs, timing per lead, timezone</div></div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-step c-purple"><div class="flow-step-num">STEP 5</div><div class="flow-step-name">Session warmup</div><div class="flow-step-detail">Feed scroll, random likes, profile visits</div></div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-step c-purple"><div class="flow-step-num">STEP 6</div><div class="flow-step-name">AI note generation</div><div class="flow-step-detail">A/B bandit variant, template o AI personalized</div></div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-step c-green"><div class="flow-step-num">STEP 7</div><div class="flow-step-name">Execute invite</div><div class="flow-step-detail">Click, type, send con delay umani e decoy</div></div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-step c-green"><div class="flow-step-num">STEP 8</div><div class="flow-step-name">Post-processing</div><div class="flow-step-detail">Stats update, outbox event, inter-job delay</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SEND MESSAGES -->
+  <div class="flow-section">
+    <div class="flow-title"><span class="flow-badge fb-purple">3</span> Send Messages — Messaggi personalizzati</div>
+    <div class="flow-container">
+      <div class="flow-steps">
+        <div class="flow-step c-purple"><div class="flow-step-num">STEP 1</div><div class="flow-step-name">Lead filter</div><div class="flow-step-detail">Lead ACCEPTED / READY_MESSAGE, non blacklisted</div></div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-step c-purple"><div class="flow-step-num">STEP 2</div><div class="flow-step-name">Enrichment check</div><div class="flow-step-detail">Arricchisci lead senza job_title o company</div></div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-step c-amber"><div class="flow-step-num">STEP 3</div><div class="flow-step-name">AI personalize</div><div class="flow-step-detail">Prompt con profilo lead, semantic similarity check</div></div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-step c-blue"><div class="flow-step-num">STEP 4</div><div class="flow-step-name">Validation</div><div class="flow-step-detail">Max chars, hash dedup, content safety check</div></div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-step c-green"><div class="flow-step-num">STEP 5</div><div class="flow-step-name">Send message</div><div class="flow-step-detail">Navigazione chat, typing umano, send</div></div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-step c-teal"><div class="flow-step-num">STEP 6</div><div class="flow-step-name">Follow-up queue</div><div class="flow-step-detail">Lead entra nella drip campaign se configurata</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ACCEPTANCE CHECK + FOLLOW-UP -->
+  <div class="flow-section">
+    <div class="flow-title"><span class="flow-badge fb-amber">4</span> Acceptance Check + Follow-up — Monitoraggio e drip</div>
+    <div class="flow-container">
+      <div class="flow-steps">
+        <div class="flow-step c-amber"><div class="flow-step-num">STEP 1</div><div class="flow-step-name">Check inviti</div><div class="flow-step-detail">Verifica lead PENDING se hanno accettato</div></div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-step c-amber"><div class="flow-step-num">STEP 2</div><div class="flow-step-name">State transition</div><div class="flow-step-detail">PENDING &#8594; ACCEPTED &#8594; READY_MESSAGE</div></div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-step c-purple"><div class="flow-step-num">STEP 3</div><div class="flow-step-name">Message trigger</div><div class="flow-step-detail">Auto-enqueue MESSAGE job per lead accettati</div></div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-step c-coral"><div class="flow-step-num">STEP 4</div><div class="flow-step-name">Follow-up check</div><div class="flow-step-detail">Lead MESSAGED &gt; N giorni senza risposta?</div></div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-step c-coral"><div class="flow-step-num">STEP 5</div><div class="flow-step-name">Reminder AI</div><div class="flow-step-detail">Genera follow-up breve, rispettoso, con context</div></div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-step c-green"><div class="flow-step-num">STEP 6</div><div class="flow-step-name">Send + track</div><div class="flow-step-detail">Invio, incremento counter, daily cap enforced</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- AI ENGINE -->
+<div id="sec-ai" class="section">
+  <div class="section-header">
+    <div class="section-title">AI e Machine Learning</div>
+    <div class="section-desc">8 moduli AI e 8 moduli ML per personalizzazione e ottimizzazione</div>
+  </div>
+  <div class="card-grid">
+    <div class="card c-purple">
+      <div class="card-icon">&#128172;</div>
+      <div class="card-title">Message Personalizer</div>
+      <div class="card-text">Genera messaggi B2B personalizzati via OpenAI. Retry con temperatura crescente, semantic similarity check per evitare ripetizioni, max chars enforced.</div>
+      <div class="card-items">
+        <div class="card-item">Supporto multilingua: IT, EN, FR, ES, NL</div>
+        <div class="card-item">Template fallback se AI non disponibile</div>
+        <div class="card-item">Semantic checker per deduplica</div>
+      </div>
+    </div>
+    <div class="card c-blue">
+      <div class="card-icon">&#9993;</div>
+      <div class="card-title">Invite Note Personalizer</div>
+      <div class="card-text">Note invito personalizzate con A/B testing multi-armed bandit (Thompson sampling). 8 template IT, 5 EN, 3 FR con varianti AI.</div>
+      <div class="card-items">
+        <div class="card-item">A/B bandit per selezione variante</div>
+        <div class="card-item">Segmentazione lead automatica</div>
+        <div class="card-item">Timing optimizer per orario invio</div>
+      </div>
+    </div>
+    <div class="card c-teal">
+      <div class="card-icon">&#127919;</div>
+      <div class="card-title">Lead Scorer</div>
+      <div class="card-text">Scoring automatico 1-100 basato su ruolo, seniority e azienda target. Due score: confidenceScore (lavora davvero li?) e leadScore (quanto vale?).</div>
+      <div class="card-items">
+        <div class="card-item">Criteri personalizzabili per lista</div>
+        <div class="card-item">Penalizzazione ex-dipendenti</div>
+        <div class="card-item">Output JSON strutturato con reason</div>
+      </div>
+    </div>
+    <div class="card c-amber">
+      <div class="card-icon">&#128200;</div>
+      <div class="card-title">Timing Optimizer</div>
+      <div class="card-text">ML model per ottimizzare l'orario di invio messaggi e inviti. Considera timezone del lead, storico risposte, giorno della settimana.</div>
+      <div class="card-items">
+        <div class="card-item">Timezone detection automatica</div>
+        <div class="card-item">Attribution tracking per conversioni</div>
+        <div class="card-item">Adaptive scheduling basato su dati</div>
+      </div>
+    </div>
+    <div class="card c-green">
+      <div class="card-icon">&#128433;</div>
+      <div class="card-title">Mouse Generator</div>
+      <div class="card-text">Generazione traiettorie mouse con curve Bezier realistiche. Ogni movimento ha velocita, accelerazione e micro-deviazioni umane.</div>
+      <div class="card-items">
+        <div class="card-item">Curve Bezier con control points casuali</div>
+        <div class="card-item">Offset click dal centro elemento</div>
+        <div class="card-item">Stato mouse persistente per pagina (WeakMap)</div>
+      </div>
+    </div>
+    <div class="card c-coral">
+      <div class="card-icon">&#128065;</div>
+      <div class="card-title">Vision Solver (Captcha)</div>
+      <div class="card-text">Computer vision via Ollama (LLaVA) o OpenAI per risolvere captcha e navigare UI non accessibili via selettori DOM standard.</div>
+      <div class="card-items">
+        <div class="card-item">Object coordinate detection</div>
+        <div class="card-item">Viewport bounds clamping</div>
+        <div class="card-item">Fallback factory (Ollama/OpenAI)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SECURITY -->
+<div id="sec-security" class="section">
+  <div class="section-header">
+    <div class="section-title">Sicurezza e anti-detection</div>
+    <div class="section-desc">Sistema multi-livello per protezione account e simulazione comportamento umano</div>
+  </div>
+  <div class="card-grid">
+    <div class="card c-amber">
+      <div class="card-icon">&#128200;</div>
+      <div class="card-title">Risk Engine (score 0-100)</div>
+      <div class="card-text">Scoring in tempo reale basato su: error rate (peso 40), selector failure rate (peso 20), pending ratio (peso 25), challenge count (peso 10), invite velocity (peso 15). Azioni: NORMAL, LOW_ACTIVITY, WARN, STOP.</div>
+    </div>
+    <div class="card c-blue">
+      <div class="card-icon">&#128274;</div>
+      <div class="card-title">Fingerprint Pool</div>
+      <div class="card-text">Pool di fingerprint desktop e mobile con selezione deterministica per account. Coerenza TLS: filtro automatico UA/browser engine per evitare mismatch rilevabili.</div>
+    </div>
+    <div class="card c-teal">
+      <div class="card-icon">&#128104;</div>
+      <div class="card-title">Human Behavior Simulator</div>
+      <div class="card-text">Delay log-normale, typing con typo, reading scroll, decoy actions (random like, profile visit), coffee break, wind-down a fine sessione, missclick accidentali.</div>
+    </div>
+    <div class="card c-purple">
+      <div class="card-icon">&#128338;</div>
+      <div class="card-title">Strategy Planner settimanale</div>
+      <div class="card-text">Profili attivita per giorno: lunedi alto inviti, giovedi focus messaggi, weekend zero. Multiplier per ogni giorno su inviteFactor e messageFactor.</div>
+    </div>
+    <div class="card c-green">
+      <div class="card-icon">&#128640;</div>
+      <div class="card-title">HTTP Throttler adattivo</div>
+      <div class="card-text">Monitora response time di LinkedIn in tempo reale. Se rallenta: prima slow (extra delay), poi 3 slow consecutivi = abort sessione. Smart batch sizing con riduzione -30%.</div>
+    </div>
+    <div class="card c-coral">
+      <div class="card-icon">&#128680;</div>
+      <div class="card-title">Incident Manager</div>
+      <div class="card-text">Gestione automatica di challenge, quarantena account, pausa automazione con timer, proxy failure escalation (3 failure = stop 7 giorni + alert Telegram critico).</div>
+    </div>
+  </div>
+</div>
+
+<!-- DATABASE -->
+<div id="sec-database" class="section">
+  <div class="section-header">
+    <div class="section-title">Database e persistenza</div>
+    <div class="section-desc">PostgreSQL / SQLite con 52 migrazioni versioneate e astrazione dual-engine</div>
+  </div>
+
+  <div class="stats-row">
+    <div class="stat-card"><div class="stat-big" style="color:var(--blue)">52</div><div class="stat-label">Migrazioni SQL</div></div>
+    <div class="stat-card"><div class="stat-big" style="color:var(--teal)">16</div><div class="stat-label">Repository</div></div>
+    <div class="stat-card"><div class="stat-big" style="color:var(--purple)">2</div><div class="stat-label">Engine (PG + SQLite)</div></div>
+    <div class="stat-card"><div class="stat-big" style="color:var(--amber)">15+</div><div class="stat-label">Tabelle principali</div></div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+    <div class="db-table" style="border-top:3px solid var(--blue)">
+      <div class="db-table-header">leads<span class="db-table-count">Core</span></div>
+      <div class="db-table-cols">
+        <div class="db-col">id <span class="db-col-type">SERIAL PK</span></div>
+        <div class="db-col">first_name, last_name <span class="db-col-type">TEXT</span></div>
+        <div class="db-col">job_title, account_name <span class="db-col-type">TEXT</span></div>
+        <div class="db-col">status <span class="db-col-type">TEXT (state machine)</span></div>
+        <div class="db-col">lead_score <span class="db-col-type">INTEGER 1-100</span></div>
+        <div class="db-col">list_name <span class="db-col-type">TEXT</span></div>
+        <div class="db-col">lead_metadata <span class="db-col-type">JSON</span></div>
+        <div class="db-col">consent_basis <span class="db-col-type">TEXT (GDPR)</span></div>
+      </div>
+    </div>
+    <div class="db-table" style="border-top:3px solid var(--teal)">
+      <div class="db-table-header">jobs<span class="db-table-count">Queue</span></div>
+      <div class="db-table-cols">
+        <div class="db-col">id <span class="db-col-type">SERIAL PK</span></div>
+        <div class="db-col">type <span class="db-col-type">INVITE|MESSAGE|...</span></div>
+        <div class="db-col">status <span class="db-col-type">QUEUED|RUNNING|...</span></div>
+        <div class="db-col">payload_json <span class="db-col-type">TEXT</span></div>
+        <div class="db-col">attempts, max_attempts <span class="db-col-type">INT</span></div>
+        <div class="db-col">account_id <span class="db-col-type">TEXT</span></div>
+        <div class="db-col">next_attempt_at <span class="db-col-type">TIMESTAMP</span></div>
+      </div>
+    </div>
+    <div class="db-table" style="border-top:3px solid var(--amber)">
+      <div class="db-table-header">daily_stats<span class="db-table-count">Metrics</span></div>
+      <div class="db-table-cols">
+        <div class="db-col">local_date <span class="db-col-type">TEXT (YYYY-MM-DD)</span></div>
+        <div class="db-col">invites_sent <span class="db-col-type">INTEGER</span></div>
+        <div class="db-col">messages_sent <span class="db-col-type">INTEGER</span></div>
+        <div class="db-col">acceptances <span class="db-col-type">INTEGER</span></div>
+        <div class="db-col">challenges_count <span class="db-col-type">INTEGER</span></div>
+        <div class="db-col">run_errors <span class="db-col-type">INTEGER</span></div>
+        <div class="db-col">profile_views <span class="db-col-type">INTEGER</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+    <div class="db-table" style="border-top:3px solid var(--purple)">
+      <div class="db-table-header">Key tables<span class="db-table-count">Altre tabelle</span></div>
+      <div class="db-table-cols">
+        <div class="db-col">lead_lists <span class="db-col-type">Liste con priority e cap</span></div>
+        <div class="db-col">campaign_runs <span class="db-col-type">Esecuzioni drip campaign</span></div>
+        <div class="db-col">lead_intents <span class="db-col-type">Intent detection AI</span></div>
+        <div class="db-col">ab_variant_stats <span class="db-col-type">A/B test results</span></div>
+        <div class="db-col">salesnav_sync_runs <span class="db-col-type">SalesNav sync tracking</span></div>
+        <div class="db-col">session_patterns <span class="db-col-type">Cross-session learning</span></div>
+        <div class="db-col">outbox_events <span class="db-col-type">Event-driven sync</span></div>
+        <div class="db-col">blacklist <span class="db-col-type">Esclusioni lead/aziende</span></div>
+      </div>
+    </div>
+    <div class="db-table" style="border-top:3px solid var(--green)">
+      <div class="db-table-header">Features<span class="db-table-count">Funzionalita DB</span></div>
+      <div class="db-table-cols">
+        <div class="db-col">Dual engine <span class="db-col-type">PostgreSQL + SQLite</span></div>
+        <div class="db-col">AsyncLocalStorage <span class="db-col-type">Transaction context</span></div>
+        <div class="db-col">Query profiling <span class="db-col-type">Threshold 50ms</span></div>
+        <div class="db-col">Migration rollback <span class="db-col-type">.down.sql support</span></div>
+        <div class="db-col">Docker secrets <span class="db-col-type">Secure credential resolution</span></div>
+        <div class="db-col">GDPR compliance <span class="db-col-type">Consent tracking + opt-out</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- INTEGRATIONS -->
+<div id="sec-integrations" class="section">
+  <div class="section-header">
+    <div class="section-title">Integrazioni esterne</div>
+    <div class="section-desc">Enrichment multi-fonte, cloud sync, alerting e workflow automation</div>
+  </div>
+  <div class="card-grid">
+    <div class="card c-teal">
+      <div class="card-icon">&#128269;</div>
+      <div class="card-title">Enrichment Pipeline (8 fonti)</div>
+      <div class="card-text">Arricchimento parallelo dei lead da fonti multiple con circuit breaker per API e retry policy integrata.</div>
+      <div class="card-items">
+        <div class="card-item">domainDiscovery — Scoperta dominio aziendale</div>
+        <div class="card-item">emailGuesser — Generazione email business</div>
+        <div class="card-item">personDataFinder — Dati persona da fonti web</div>
+        <div class="card-item">webSearchEnricher — Enrichment via ricerca web</div>
+        <div class="card-item">companyEnrichment — Dati aziendali completi</div>
+        <div class="card-item">leadEnricher — Orchestratore principale</div>
+        <div class="card-item">parallelEnricher — Esecuzione parallela</div>
+        <div class="card-item">persistEnrichment — Salvataggio risultati</div>
+      </div>
+    </div>
+    <div class="card c-blue">
+      <div class="card-icon">&#9729;</div>
+      <div class="card-title">Cloud e Sync</div>
+      <div class="card-text">Sincronizzazione dati con infrastruttura cloud e strumenti esterni.</div>
+      <div class="card-items">
+        <div class="card-item">Supabase — Cloud database sync</div>
+        <div class="card-item">Telegram — Bot listener + AI importer</div>
+        <div class="card-item">Webhook — Outbox event-driven sync</div>
+        <div class="card-item">n8n — Workflow automation (2 template)</div>
+        <div class="card-item">CRM Bridge — Integrazione CRM generica</div>
+      </div>
+    </div>
+    <div class="card c-purple">
+      <div class="card-icon">&#128266;</div>
+      <div class="card-title">Monitoring e Alerting</div>
+      <div class="card-text">Osservabilita completa con metriche, alert e dashboard.</div>
+      <div class="card-items">
+        <div class="card-item">Prometheus /metrics endpoint (30+ metriche)</div>
+        <div class="card-item">Telegram alerts (rate-limited, 3 severity)</div>
+        <div class="card-item">Health check /health + /health/deep</div>
+        <div class="card-item">SSE live events per frontend</div>
+        <div class="card-item">Daily reporter con statistiche</div>
+        <div class="card-item">Correlation ID per distributed tracing</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+function show(id) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('sec-' + id).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>
+</body>
+</html>

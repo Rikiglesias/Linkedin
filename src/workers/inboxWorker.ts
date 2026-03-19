@@ -4,12 +4,12 @@ import { resolveIntentAndDraft } from '../ai/intentResolver';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { sendTelegramAlert } from '../telemetry/alerts';
 import { WorkerExecutionResult, workerResult } from './result';
-import { appendLeadReplyDraft, countRecentMessageHash, getLeadByLinkedinUrl, storeLeadIntent, storeMessageHash } from '../core/repositories';
+import { appendLeadReplyDraft, countRecentMessageHash, getLeadByLinkedinUrl, storeLeadIntent, storeMessageHash, getDailyStat } from '../core/repositories';
 import { hashMessage } from '../validation/messageValidator';
 import { transitionLead } from '../core/leadStateService';
 import { isProfileUrl, normalizeLinkedInUrl } from '../linkedinUrl';
 import { recordOutcome } from '../ml/abBandit';
-import { config } from '../config';
+import { config, getLocalDateString } from '../config';
 import { SELECTORS, joinSelectors } from '../selectors';
 
 export interface InboxJobPayload {
@@ -142,13 +142,12 @@ export async function processInboxJob(
         return workerResult(0);
     }
 
-    for (let i = 0; i < Math.min(count, 5); i++) {
-        // AB-5: Defer probabilistico — 30% delle conversazioni vengono skippate
-        // e processate nel ciclo successivo. Simula "l'ho visto ma rispondo dopo".
-        if (Math.random() < 0.30) {
-            await logInfo('inbox.deferred', { accountId: payload.accountId, index: i });
-            continue;
-        }
+    // H26: Aumentato da 5 a 20 — con 10-20 messaggi/giorno, processare solo 5 lasciava conversazioni
+    // non lette per sempre. M30: Cap giornaliero auto-reply cross-esecuzioni.
+    const maxConversationsPerRun = 20;
+    const today = getLocalDateString();
+
+    for (let i = 0; i < Math.min(count, maxConversationsPerRun); i++) {
 
         const convo = unreadConversations.nth(i);
         await humanMouseMove(page, `${joinSelectors('inboxConversationItem')}:has(${joinSelectors('inboxUnreadBadge')})`);
@@ -157,21 +156,31 @@ export async function processInboxJob(
 
         await humanDelay(page, 1500, 3000); // Wait for chat to load
 
-        // Estrai l'ultimo messaggio visibile dell'interlocutore
-        const lastMessageLocator = page
-            .locator(
-                '.msg-s-message-list__event:not([data-msg-s-message-event-is-me="true"]) .msg-s-event-listitem__body',
-            )
-            .last();
+        // H27: Estrai ultimi 3 messaggi dell'interlocutore per contesto AI.
+        // Prima leggeva SOLO l'ultimo → se il lead mandava 3 messaggi, il contesto era perso.
+        // Ora l'AI riceve la conversazione recente per risposte più pertinenti.
+        const theirMessages = page.locator(
+            '.msg-s-message-list__event:not([data-msg-s-message-event-is-me="true"]) .msg-s-event-listitem__body',
+        );
+        const theirMsgCount = await theirMessages.count().catch(() => 0);
+        const lastN = Math.min(theirMsgCount, 3);
+        const conversationTexts: string[] = [];
+        for (let m = Math.max(0, theirMsgCount - lastN); m < theirMsgCount; m++) {
+            const txt = await theirMessages.nth(m).innerText().catch(() => '');
+            if (txt.trim()) conversationTexts.push(txt.trim());
+        }
 
-        if (await lastMessageLocator.isVisible()) {
-            const rawText = await lastMessageLocator.innerText();
+        if (conversationTexts.length > 0) {
+            const rawText = conversationTexts[conversationTexts.length - 1];
+            const fullContext = conversationTexts.length > 1
+                ? conversationTexts.join('\n---\n')
+                : rawText;
             if (rawText && rawText.trim().length > 0) {
                 try {
                     await simulateConversationReading(page, rawText.trim());
 
-                    // Analisi Sentiment (NLP)
-                    const resolution = await resolveIntentAndDraft(rawText.trim());
+                    // Analisi Sentiment (NLP) — passa il contesto completo (ultimi 3 messaggi)
+                    const resolution = await resolveIntentAndDraft(fullContext);
                     const profileUrl = await extractParticipantProfileUrl(page);
                     let leadId: number | null = null;
                     let autoReplySent = false;
@@ -206,10 +215,15 @@ export async function processInboxJob(
                             const replyHash = hashMessage(resolution.responseDraft);
                             const replyDuplicateCount = await countRecentMessageHash(replyHash, 24);
 
+                            // M30: Cap giornaliero auto-reply — le auto-reply sono messaggi e contano
+                            // nel budget giornaliero. Senza questo, N esecuzioni/giorno portano
+                            // a N×maxPerRun risposte senza limite globale.
+                            const dailyMessagesSent = await getDailyStat(today, 'messages_sent').catch(() => 0);
                             const canAutoReply =
                                 config.inboxAutoReplyEnabled &&
                                 !context.dryRun &&
                                 autoRepliesSent < config.inboxAutoReplyMaxPerRun &&
+                                dailyMessagesSent < config.hardMsgCap &&
                                 resolution.confidence >= config.inboxAutoReplyMinConfidence &&
                                 resolution.responseDraft.trim().length > 0 &&
                                 resolution.intent !== 'NOT_INTERESTED' &&

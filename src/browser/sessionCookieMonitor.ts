@@ -350,7 +350,8 @@ function applyProfileDrift(profile: BehavioralProfile): BehavioralProfile {
 /**
  * Ritorna il profilo comportamentale per una sessione.
  * Se non esiste, lo genera deterministicamente dall'accountId.
- * Se esiste, applica drift lento (~5%) e lo persiste.
+ * Se esiste, applica drift lento (~5%) e lo persiste — MA solo una volta al giorno.
+ * C12 fix: senza il cap giornaliero, 10 riavvii/giorno → drift 50% cumulativo.
  * Il caller usa questi valori per modulare delay, scroll speed, ordine warmup.
  */
 export function getBehavioralProfile(sessionDir: string, accountId: string): BehavioralProfile {
@@ -358,6 +359,16 @@ export function getBehavioralProfile(sessionDir: string, accountId: string): Beh
     const existing = meta?.behavioralProfile;
 
     if (existing && existing.profileVersion === BEHAVIORAL_PROFILE_VERSION) {
+        // C12: Drift max 1 volta al giorno — evita accumulo con riavvii frequenti.
+        // Controlla se il meta è stato scritto oggi; se sì, ritorna il profilo as-is.
+        const lastWrittenDate = meta?.lastVerifiedAt
+            ? new Date(meta.lastVerifiedAt).toISOString().slice(0, 10)
+            : null;
+        const today = new Date().toISOString().slice(0, 10);
+        if (lastWrittenDate === today) {
+            return existing; // Già driftato oggi — ritorna senza modifiche
+        }
+
         const drifted = applyProfileDrift(existing);
         if (meta) {
             writeMeta(sessionDir, { ...meta, behavioralProfile: drifted });

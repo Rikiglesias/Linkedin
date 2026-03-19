@@ -1013,6 +1013,11 @@ export async function getLeadsForFollowUp(
            AND messaged_at <= DATETIME('now', '-' || ? || ' days')
            AND (follow_up_sent_at IS NULL
                 OR follow_up_sent_at <= DATETIME('now', '-' || ? || ' days'))
+           AND NOT EXISTS (
+               SELECT 1 FROM lead_intents li
+               WHERE li.lead_id = leads.id
+                 AND li.analyzed_at > COALESCE(leads.follow_up_sent_at, leads.messaged_at)
+           )
          ORDER BY messaged_at ASC
          LIMIT ?`,
         [maxFollowUp, delayDays, delayDays, limit],
@@ -1076,6 +1081,12 @@ export async function getLeadsByStatusForList(
         params.push(minScore);
     }
     params.push(limit);
+    // H13: Per INVITED, filtra lead invitati da almeno 2 giorni.
+    // Controllare un lead invitato 1 ora fa è inutile (LinkedIn impiega 1-7 giorni per l'accettazione)
+    // e spreca budget visite profilo (ogni check = 1 profile view su LinkedIn).
+    const invitedAgeClause = normalized === 'INVITED'
+        ? "AND invited_at IS NOT NULL AND invited_at <= DATETIME('now', '-2 days')"
+        : '';
     const leads = await db.query<LeadRecord>(
         `
         SELECT ${LEAD_SELECT_COLUMNS}
@@ -1083,6 +1094,7 @@ export async function getLeadsByStatusForList(
         WHERE status = ?
           AND list_name = ?
           ${scoreClause}
+          ${invitedAgeClause}
           AND NOT EXISTS (
               SELECT 1
               FROM lead_campaign_state lcs

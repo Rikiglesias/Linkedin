@@ -116,7 +116,17 @@ async function navigateViaOrganicSearch(
         await humanDelay(page, 1000, 2500);
         stepsCompleted++;
 
-        // Step 4: Naviga al profilo target (come se l'avessimo trovato nei risultati)
+        // Step 4 (H02 fix): Torna al feed PRIMA di navigare al profilo.
+        // Senza questo step, il referrer sarebbe /search/ ma il profilo target
+        // NON era nei risultati — pattern più sospetto del goto diretto.
+        // Con il feed intermedio, il referrer diventa /feed/ (comportamento naturale:
+        // "ho cercato, non ho trovato, sono tornato al feed, poi sono andato al profilo").
+        await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 15_000 });
+        await reInjectOverlays(page);
+        await humanDelay(page, 800, 2000);
+        stepsCompleted++;
+
+        // Step 5: Naviga al profilo target (referrer ora è /feed/, non /search/)
         await page.goto(profileUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 });
         await reInjectOverlays(page);
         stepsCompleted++;

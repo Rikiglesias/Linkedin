@@ -6,47 +6,15 @@ import { AcceptanceJobPayload } from '../types/domain';
 import { WorkerContext } from './context';
 import { ChallengeDetectedError, RetryableWorkerError } from './errors';
 import { attemptChallengeResolution } from './challengeHandler';
-import { isSalesNavigatorUrl, normalizeLinkedInUrl } from '../linkedinUrl';
+import { isSalesNavigatorUrl } from '../linkedinUrl';
 import { navigateToProfileForCheck } from '../browser/navigationContext';
 import { bridgeDailyStat, bridgeLeadStatus } from '../cloud/cloudBridge';
-import { Page } from 'playwright';
 import { recordOutcome } from '../ml/abBandit';
 import { WorkerExecutionResult, workerResult } from './result';
 
 function isFirstDegreeBadge(text: string | null): boolean {
     if (!text || text.trim().length === 0) return false;
     return /1st|1°|1\b/i.test(text);
-}
-
-async function checkSentInvitations(page: Page, leadUrl: string): Promise<boolean> {
-    await page.goto('https://www.linkedin.com/mynetwork/invitation-manager/sent/', { waitUntil: 'domcontentloaded' });
-    await humanDelay(page, 2000, 3000);
-
-    const normalizedLeadUrl = normalizeLinkedInUrl(leadUrl);
-
-    // Scroll multi-page to load recent sent invites, with early-exit and deadline
-    const deadline = Date.now() + 15_000;
-    for (let i = 0; i < 3 && Date.now() < deadline; i++) {
-        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-        await humanDelay(page, 1000, 2000);
-
-        const showMoreBtn = page.locator(joinSelectors('showMoreButton')).first();
-        if (await showMoreBtn.isVisible().catch(() => false)) {
-            await showMoreBtn.click().catch(() => null);
-            await humanDelay(page, 1000, 2000);
-        }
-
-        // Early-exit: controlla se il lead è già visibile dopo ogni scroll
-        const sentLinks = await page.evaluate(() => {
-            const links = Array.from(document.querySelectorAll('a[href*="/in/"]'));
-            return links.map((a) => a.getAttribute('href') || '');
-        });
-        if (sentLinks.some((href) => normalizeLinkedInUrl(href) === normalizedLeadUrl)) {
-            return true;
-        }
-    }
-
-    return false;
 }
 
 export async function processAcceptanceJob(
@@ -58,8 +26,9 @@ export async function processAcceptanceJob(
         return workerResult(0);
     }
 
+    // C10: SalesNav URL → REVIEW_REQUIRED (era BLOCKED = dead-end irrecuperabile)
     if (isSalesNavigatorUrl(lead.linkedin_url)) {
-        await transitionLead(lead.id, 'BLOCKED', 'salesnav_url_requires_profile_check');
+        await transitionLead(lead.id, 'REVIEW_REQUIRED', 'salesnav_url_needs_resolution');
         return workerResult(1);
     }
 
@@ -94,15 +63,13 @@ export async function processAcceptanceJob(
         // Invite withdrawn or rejected
         accepted = false;
     } else if (connectedWithoutBadge) {
-        // Lagged UI: Has Message button but no 1st badge, and no Pending/Connect.
-        // Check Sent Invitations as the absolute Source of Truth.
-        // On network error/timeout, assume accepted (optimistic) — il lead ha già
-        // il bottone messaggio e nessun indicatore pending, quindi è molto probabilmente accettato.
-        const isStillPendingInManager = await checkSentInvitations(context.session.page, lead.linkedin_url)
-            .catch(() => false);
-        if (!isStillPendingInManager) {
-            accepted = true;
-        }
+        // H12: Euristica diretta — ha bottone Message + no Pending + no Connect = accettato.
+        // Prima navigava all'invitation manager (/mynetwork/invitation-manager/sent/) per verificare,
+        // ma questo rompeva il navigation context (siamo nell'invitation manager, non sul profilo)
+        // e creava un pattern automatico rilevabile (un umano non va all'invitation manager per ogni check).
+        // L'euristica connectedWithoutBadge è affidabile: se il bottone Message è visibile e non c'è
+        // né Pending né Connect, il lead ha accettato (badge "1st" può essere lento a caricare).
+        accepted = true;
     }
 
     if (!accepted) {

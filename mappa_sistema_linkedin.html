@@ -1,0 +1,1431 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🗺️ Mappa Sistema LinkedIn Automation</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;600;800&display=swap');
+
+:root {
+  --bg: #080c10;
+  --surface: #0d1117;
+  --border: #1e2a3a;
+  --text: #c9d1d9;
+  --dim: #58697a;
+
+  --browser: #00d4aa;
+  --proxy: #ff6b35;
+  --stealth: #9d4edd;
+  --workers: #f72585;
+  --orchestration: #4cc9f0;
+  --database: #ffd60a;
+  --ai: #06d6a0;
+  --risk: #ef233c;
+  --salesnav: #fb8500;
+  --api: #3a86ff;
+  --cloud: #8ecae6;
+  --ml: #b5179e;
+  --config: #90be6d;
+  --telemetry: #f3722c;
+  --frontend: #43aa8b;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  overflow-x: hidden;
+}
+
+/* ─── HEADER ─── */
+#header {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+#header h1 {
+  font-family: 'Syne', sans-serif;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  background: linear-gradient(90deg, #00d4aa, #4cc9f0, #9d4edd);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  white-space: nowrap;
+}
+
+#search {
+  flex: 1;
+  max-width: 320px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 12px;
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+}
+#search:focus { border-color: var(--browser); }
+
+.stat-badge {
+  font-size: 11px;
+  padding: 3px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--dim);
+  white-space: nowrap;
+}
+.stat-badge span { color: var(--text); }
+
+/* ─── LAYOUT ─── */
+#layout {
+  display: grid;
+  grid-template-columns: 260px 1fr 320px;
+  height: calc(100vh - 49px);
+  overflow: hidden;
+}
+
+/* ─── LEFT SIDEBAR ─── */
+#sidebar {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 12px 0;
+}
+
+.sidebar-section {
+  padding: 0 12px;
+  margin-bottom: 6px;
+}
+
+.group-btn {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 7px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text);
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+.group-btn:hover { background: var(--border); }
+.group-btn.active { background: var(--border); }
+
+.group-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.group-count {
+  margin-left: auto;
+  color: var(--dim);
+  font-size: 10px;
+}
+
+.sidebar-label {
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  color: var(--dim);
+  text-transform: uppercase;
+  padding: 12px 10px 4px;
+}
+
+/* ─── MAIN CANVAS ─── */
+#canvas {
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 20px;
+  background: var(--bg);
+}
+
+/* ─── GROUPS ─── */
+.group-section {
+  margin-bottom: 24px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: opacity 0.2s;
+}
+.group-section.hidden { display: none; }
+.group-section.dimmed { opacity: 0.25; }
+
+.group-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  font-family: 'Syne', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid var(--border);
+}
+
+.group-header .icon { font-size: 16px; }
+
+.group-header .toggle {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--dim);
+  transition: transform 0.2s;
+}
+.group-section.collapsed .toggle { transform: rotate(-90deg); }
+.group-section.collapsed .group-body { display: none; }
+
+.group-body {
+  padding: 14px 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+/* ─── NODE CARDS ─── */
+.node {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.1s, box-shadow 0.15s;
+  position: relative;
+}
+.node:hover {
+  border-color: var(--gcolor, #fff);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+.node.selected {
+  border-color: var(--gcolor, #fff);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--gcolor, #fff) 25%, transparent);
+}
+
+.node-name {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--gcolor, var(--text));
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.node-file {
+  font-size: 9px;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.node-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 6px;
+}
+
+.tag {
+  font-size: 8px;
+  padding: 1px 5px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--dim);
+  border-radius: 2px;
+}
+
+.node-status {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.status-ok { background: #3fb950; }
+.status-warn { background: #d29922; }
+.status-bug { background: #f85149; }
+
+/* ─── CONNECTIONS ─── */
+.connections-list {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.conn-tag {
+  font-size: 8px;
+  color: var(--dim);
+  margin-bottom: 2px;
+}
+.conn-item {
+  font-size: 9px;
+  color: var(--gcolor, var(--text));
+  opacity: 0.7;
+}
+
+/* ─── RIGHT PANEL ─── */
+#detail-panel {
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+#detail-panel .panel-header {
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+  font-family: 'Syne', sans-serif;
+}
+
+.panel-title {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 3px;
+}
+.panel-subtitle {
+  font-size: 10px;
+  color: var(--dim);
+}
+
+.panel-section {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-section-title {
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 8px;
+}
+
+.dep-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.dep-item {
+  font-size: 10px;
+  padding: 4px 8px;
+  background: var(--bg);
+  border-left: 2px solid var(--gcolor, var(--border));
+  color: var(--text);
+}
+
+.issue-item {
+  margin-bottom: 8px;
+  padding: 8px;
+  background: var(--bg);
+  border-radius: 4px;
+  border-left: 3px solid;
+}
+.issue-critical { border-color: #f85149; }
+.issue-high { border-color: #d29922; }
+.issue-medium { border-color: #3fb950; }
+
+.issue-severity {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 3px;
+}
+.issue-critical .issue-severity { color: #f85149; }
+.issue-high .issue-severity { color: #d29922; }
+.issue-medium .issue-severity { color: #3fb950; }
+
+.issue-text {
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.fix-text {
+  font-size: 10px;
+  color: var(--dim);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+/* ─── FLOW DIAGRAM ─── */
+#flow-section {
+  padding: 0 16px 16px;
+}
+
+.flow-chart {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+
+.flow-node {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 10px;
+  min-width: 200px;
+  position: relative;
+  cursor: pointer;
+}
+.flow-node:hover { border-color: #4cc9f0; }
+.flow-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+
+.flow-arrow {
+  width: 1px;
+  height: 14px;
+  background: var(--border);
+  margin-left: 22px;
+  position: relative;
+}
+.flow-arrow::after {
+  content: '▼';
+  position: absolute;
+  bottom: -8px;
+  left: -4px;
+  font-size: 8px;
+  color: var(--dim);
+}
+
+/* ─── BUG SECTION ─── */
+#bugs-overview {
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.bug-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.bug-card {
+  padding: 8px;
+  background: var(--bg);
+  border-radius: 4px;
+  text-align: center;
+}
+
+.bug-card .num {
+  font-family: 'Syne', sans-serif;
+  font-size: 20px;
+  font-weight: 800;
+}
+.bug-card .label {
+  font-size: 9px;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.bug-critical .num { color: #f85149; }
+.bug-high .num { color: #d29922; }
+.bug-medium .num { color: #3fb950; }
+
+/* ─── SCROLLBAR ─── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--dim); }
+
+/* ─── SEARCH HIGHLIGHT ─── */
+.node.search-match { border-color: #ffd60a !important; }
+.node.search-hidden { display: none; }
+
+.no-selection {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--dim);
+  gap: 8px;
+  text-align: center;
+  padding: 20px;
+}
+.no-selection .icon { font-size: 32px; }
+.no-selection .hint { font-size: 10px; line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div id="header">
+  <h1>LinkedIn Automation — System Map</h1>
+  <input id="search" type="text" placeholder="Cerca componente..." autocomplete="off">
+  <div class="stat-badge">File sorgente: <span>180+</span></div>
+  <div class="stat-badge">Workers: <span>16</span></div>
+  <div class="stat-badge">Migrations DB: <span>55</span></div>
+  <div class="stat-badge">Workflow: <span>6</span></div>
+</div>
+
+<!-- LAYOUT -->
+<div id="layout">
+
+  <!-- SIDEBAR -->
+  <div id="sidebar">
+    <div class="sidebar-label">Gruppi</div>
+    <div class="sidebar-section" id="group-nav"></div>
+    <div class="sidebar-label">Flusso Principale</div>
+    <div class="sidebar-section" id="flow-nav">
+      <div class="flow-chart" style="padding:8px 0">
+        <div class="flow-node" style="border-color:var(--orchestration)"><span class="flow-dot" style="background:var(--orchestration)"></span>orchestrator.ts</div>
+        <div class="flow-arrow"></div>
+        <div class="flow-node" style="border-color:var(--orchestration)"><span class="flow-dot" style="background:var(--orchestration)"></span>scheduler.ts</div>
+        <div class="flow-arrow"></div>
+        <div class="flow-node" style="border-color:var(--orchestration)"><span class="flow-dot" style="background:var(--orchestration)"></span>jobRunner.ts</div>
+        <div class="flow-arrow"></div>
+        <div class="flow-node" style="border-color:var(--workers)"><span class="flow-dot" style="background:var(--workers)"></span>workerRegistry.ts</div>
+        <div class="flow-arrow"></div>
+        <div class="flow-node" style="border-color:var(--workers)"><span class="flow-dot" style="background:var(--workers)"></span>workers/*</div>
+        <div class="flow-arrow"></div>
+        <div class="flow-node" style="border-color:var(--browser)"><span class="flow-dot" style="background:var(--browser)"></span>browser/* + stealth</div>
+        <div class="flow-arrow"></div>
+        <div class="flow-node" style="border-color:var(--database)"><span class="flow-dot" style="background:var(--database)"></span>repositories.ts</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN CANVAS -->
+  <div id="canvas">
+    <!-- Groups injected by JS -->
+  </div>
+
+  <!-- DETAIL PANEL -->
+  <div id="detail-panel">
+    <div class="no-selection" id="no-sel">
+      <div class="icon">🗺️</div>
+      <div class="hint">Clicca su un componente<br>per vedere dettagli,<br>dipendenze e bug</div>
+    </div>
+    <div id="detail-content" style="display:none; flex-direction:column; height:100%">
+      <!-- injected by JS -->
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+// DATA MODEL
+// ─────────────────────────────────────────────
+
+const GROUPS = [
+  {
+    id: 'browser',
+    label: '🌐 Browser & Ambiente',
+    color: 'var(--browser)',
+    colorHex: '#00d4aa',
+    nodes: [
+      { id: 'launcher', name: 'launcher.ts', file: 'src/browser/launcher.ts', tags: ['playwright','camoufox','chromium','firefox'], status: 'ok',
+        desc: 'Avvia browser con profilo persistente, proxy, stealth flags. Supporta Playwright e Camoufox.',
+        deps: ['stealth.ts','proxyManager.ts','deviceProfile.ts','config.ts'],
+        issues: [] },
+      { id: 'browser-index', name: 'browser/index.ts', file: 'src/browser/index.ts', tags: ['session','launch','gc'], status: 'ok',
+        desc: 'Punto di ingresso del modulo browser. Esporta BrowserSession, launchBrowser, closeBrowser, GC.',
+        deps: ['launcher.ts','humanBehavior.ts','stealth.ts'],
+        issues: [{ sev:'high', text:'closeBrowser non chiude sempre la page prima del browser, rischio memory leak su Playwright', fix:'Assicurare page.close() prima di browser.close() in tutti i percorsi' }] },
+      { id: 'humanBehavior', name: 'humanBehavior.ts', file: 'src/browser/humanBehavior.ts', tags: ['mouse','delay','bezier','typing'], status: 'ok',
+        desc: 'Simula comportamento umano: delay log-normale, mouse Bézier, typing con typo, scroll reading, decoy actions.',
+        deps: ['mouseGenerator.ts','timingModel.ts','typoGenerator.ts','missclick.ts','deviceProfile.ts'],
+        issues: [{ sev:'medium', text:'MOUSE_MOVE_TIMEOUT_MS=3000ms potrebbe essere troppo breve su connessioni lente o browser virtuali', fix:'Rendere configurabile via config o aumentare a 5000ms' }] },
+      { id: 'stealth', name: 'stealth.ts', file: 'src/browser/stealth.ts', tags: ['fingerprint','ja3','UA','anti-bot'], status: 'ok',
+        desc: 'Seleziona fingerprint browser coherente con engine TLS (Chrome↔Chromium, Firefox↔Firefox/Camoufox). Inietta script anti-bot.',
+        deps: ['fingerprint/pool.ts','ja3Validator.ts','config.ts'],
+        issues: [{ sev:'medium', text:'Il pool Firefox è ridotto rispetto al pool Chrome, minor randomizzazione', fix:'Espandere il pool Firefox con più fingerprint realistici' }] },
+      { id: 'stealthScripts', name: 'stealthScripts.ts', file: 'src/browser/stealthScripts.ts', tags: ['navigator','webdriver','canvas'], status: 'ok',
+        desc: 'Script iniettati nelle pagine per rimuovere tracce di automazione: webdriver, navigator.plugins, canvas noise.',
+        deps: ['noiseGenerator.ts'],
+        issues: [] },
+      { id: 'deviceProfile', name: 'deviceProfile.ts', file: 'src/browser/deviceProfile.ts', tags: ['viewport','mobile','desktop'], status: 'ok',
+        desc: 'Gestisce profilo dispositivo (mobile/desktop), viewport, touch, DPR.',
+        deps: ['config.ts'],
+        issues: [] },
+      { id: 'auth', name: 'auth.ts', file: 'src/browser/auth.ts', tags: ['login','2FA','TOTP','session'], status: 'warn',
+        desc: 'Gestisce login LinkedIn, TOTP, detection challenge, recupero sessione cookie.',
+        deps: ['totp.ts','challengeHandler.ts','humanBehavior.ts'],
+        issues: [{ sev:'high', text:'Se il TOTP fallisce non c\'è fallback automatico a login manuale, il bot si blocca', fix:'Aggiungere alert Telegram + pausa automatica con retry manuale' }] },
+      { id: 'sessionCookieMonitor', name: 'sessionCookieMonitor.ts', file: 'src/browser/sessionCookieMonitor.ts', tags: ['cookie','freshness','anomaly'], status: 'ok',
+        desc: 'Monitora scadenza cookie di sessione, detecta anomalie, registra maturità sessione.',
+        deps: ['repositories.ts'],
+        issues: [] },
+      { id: 'organicContent', name: 'organicContent.ts', file: 'src/browser/organicContent.ts', tags: ['feed','warm-up','decoy'], status: 'ok',
+        desc: 'Simula navigazione organica nel feed LinkedIn come warm-up/decoy.',
+        deps: ['humanBehavior.ts'],
+        issues: [] },
+      { id: 'overlayDismisser', name: 'overlayDismisser.ts', file: 'src/browser/overlayDismisser.ts', tags: ['modal','dismiss','popup'], status: 'ok',
+        desc: 'Chiude automaticamente modal/popup/overlay noti di LinkedIn.',
+        deps: ['humanBehavior.ts'],
+        issues: [] },
+      { id: 'missclick', name: 'missclick.ts', file: 'src/browser/missclick.ts', tags: ['accidental','navigation','humanize'], status: 'ok',
+        desc: 'Introduce navigazioni accidentali realistiche per simulare comportamento umano.',
+        deps: ['humanBehavior.ts'],
+        issues: [] },
+      { id: 'uiFallback', name: 'uiFallback.ts', file: 'src/browser/uiFallback.ts', tags: ['fallback','selector','self-heal'], status: 'warn',
+        desc: 'Fallback per selettori CSS rotti, usa self-healing via selector learner.',
+        deps: ['selectors/learner.ts'],
+        issues: [{ sev:'high', text:'uiFallback non registra mai il fallback riuscito nel DB per future ottimizzazioni', fix:'Chiamare selector learner recordSuccess dopo ogni fallback riuscito' }] },
+      { id: 'navContext', name: 'navigationContext.ts', file: 'src/browser/navigationContext.ts', tags: ['context','state','page'], status: 'ok',
+        desc: 'Mantiene il contesto di navigazione corrente (URL attuale, stato pagina).',
+        deps: [],
+        issues: [] },
+      { id: 'linkedinScraper', name: 'linkedinProfileScraper.ts', file: 'src/browser/linkedinProfileScraper.ts', tags: ['scrape','profile','data'], status: 'ok',
+        desc: 'Scraping dati profilo LinkedIn: nome, titolo, azienda, connessioni, post recenti.',
+        deps: ['humanBehavior.ts','selectors.ts'],
+        issues: [] },
+      { id: 'ssiScraper', name: 'ssiScraper.ts', file: 'src/browser/ssiScraper.ts', tags: ['SSI','score','LinkedIn'], status: 'ok',
+        desc: 'Estrae SSI (Social Selling Index) score dall\'account.',
+        deps: ['humanBehavior.ts'],
+        issues: [] },
+    ]
+  },
+  {
+    id: 'proxy',
+    label: '🔀 Proxy & Rete',
+    color: 'var(--proxy)',
+    colorHex: '#ff6b35',
+    nodes: [
+      { id: 'proxyManager', name: 'proxyManager.ts', file: 'src/proxyManager.ts', tags: ['rotation','pool','sticky','failover'], status: 'ok',
+        desc: 'Pool proxy con rotazione, sticky sessions, fallback, type detection (mobile/residential). Supporta proxy tipizzati con formato "type|server".',
+        deps: ['proxyQualityChecker.ts','ja3Validator.ts','config.ts'],
+        issues: [{ sev:'medium', text:'Il cooldown proxy dopo errore è fisso a 10min indipendentemente dal tipo di errore', fix:'Differenziare cooldown: ban IP → 2h, timeout → 5min, rifiuto connessione → 15min' }] },
+      { id: 'proxyQualityChecker', name: 'proxyQualityChecker.ts', file: 'src/proxy/proxyQualityChecker.ts', tags: ['quality','score','ASN','latency'], status: 'ok',
+        desc: 'Verifica qualità proxy: latenza, tipo IP (datacenter/residential/mobile), ASN, geolocalizzazione. Score composito per ranking.',
+        deps: ['proxyManager.ts'],
+        issues: [] },
+      { id: 'ja3Validator', name: 'ja3Validator.ts', file: 'src/proxy/ja3Validator.ts', tags: ['JA3','TLS','fingerprint','cycleTLS'], status: 'warn',
+        desc: 'Valida fingerprint TLS JA3 tramite CycleTLS. Detecta incoerenza UA↔TLS.',
+        deps: ['config.ts'],
+        issues: [{ sev:'high', text:'Se CycleTLS non è avviato il bot prosegue con JA3 di default senza warning visibile', fix:'Aggiungere alert Telegram + log critico se ja3Proxy è richiesto ma CycleTLS non risponde' }] },
+      { id: 'ipReputationChecker', name: 'ipReputationChecker.ts', file: 'src/proxy/ipReputationChecker.ts', tags: ['IP','reputation','blacklist'], status: 'ok',
+        desc: 'Controlla reputazione IP proxy: blocklist, spam history, qualità residenziale.',
+        deps: ['proxyManager.ts'],
+        issues: [] },
+      { id: 'startCycleTls', name: 'startCycleTls.ts', file: 'scripts/startCycleTls.ts', tags: ['cycleTLS','script','TLS'], status: 'ok',
+        desc: 'Script di avvio del proxy CycleTLS per fingerprinting TLS avanzato.',
+        deps: [],
+        issues: [] },
+    ]
+  },
+  {
+    id: 'stealth-layer',
+    label: '🛡️ Anti-Detection & Stealth',
+    color: 'var(--stealth)',
+    colorHex: '#9d4edd',
+    nodes: [
+      { id: 'fingerprintPool', name: 'fingerprint/pool.ts', file: 'src/fingerprint/pool.ts', tags: ['UA','fingerprint','pool','deterministic'], status: 'ok',
+        desc: 'Pool di fingerprint browser realistici. Selezione deterministica per accountId per evitare cambio UA ad ogni sessione.',
+        deps: [],
+        issues: [{ sev:'medium', text:'Il pool fingerprint non viene mai aggiornato automaticamente con nuovi UA Chrome/Firefox', fix:'Aggiungere auto-fetch mensile di UA reali da device stats oppure update manuale semplificato' }] },
+      { id: 'noiseGenerator', name: 'noiseGenerator.ts', file: 'src/fingerprint/noiseGenerator.ts', tags: ['canvas','webGL','noise'], status: 'ok',
+        desc: 'Genera rumore deterministico per canvas e WebGL fingerprinting.',
+        deps: [],
+        issues: [] },
+      { id: 'mouseGenerator', name: 'mouseGenerator.ts', file: 'src/ml/mouseGenerator.ts', tags: ['bezier','trajectory','human'], status: 'ok',
+        desc: 'Genera traiettorie mouse realistiche con curva Bézier cubica, varianza velocità e micro-tremori.',
+        deps: [],
+        issues: [] },
+      { id: 'typoGenerator', name: 'typoGenerator.ts', file: 'src/ai/typoGenerator.ts', tags: ['typing','typo','WPM','correction'], status: 'ok',
+        desc: 'Simula errori di digitazione umani: WPM variabile, typo casuali, correzioni con backspace.',
+        deps: ['config.ts'],
+        issues: [] },
+      { id: 'timingModel', name: 'timingModel.ts', file: 'src/ml/timingModel.ts', tags: ['delay','log-normal','contextual'], status: 'ok',
+        desc: 'Calcola delay contestuali log-normali basati su complessità azione e contesto (search, profile, message).',
+        deps: [],
+        issues: [] },
+      { id: 'captchaSolver', name: 'captcha/solver.ts', file: 'src/captcha/solver.ts', tags: ['CAPTCHA','vision','AI'], status: 'warn',
+        desc: 'Risolve CAPTCHA tramite vision AI (OpenAI GPT-4V o Ollama). Supporta multiple challenge types.',
+        deps: ['visionProvider.ts','openaiClient.ts'],
+        issues: [{ sev:'critical', text:'Il solver CAPTCHA non ha rate limiting: può fare centinaia di chiamate API in un loop di retry', fix:'Aggiungere max 3 tentativi per CAPTCHA con cooldown 30s tra i tentativi' }] },
+      { id: 'visionProvider', name: 'visionProvider.ts', file: 'src/captcha/visionProvider.ts', tags: ['OpenAI','Ollama','GPT-4V'], status: 'ok',
+        desc: 'Interfaccia astratta per vision AI provider: OpenAI GPT-4V e Ollama vision.',
+        deps: ['openaiClient.ts'],
+        issues: [] },
+    ]
+  },
+  {
+    id: 'workers',
+    label: '⚙️ Workers & Job Processing',
+    color: 'var(--workers)',
+    colorHex: '#f72585',
+    nodes: [
+      { id: 'registry', name: 'workers/registry.ts', file: 'src/workers/registry.ts', tags: ['registry','Map','dispatch'], status: 'ok',
+        desc: 'Registry centralizzato workers. Mappa JobType→WorkerProcessor. Sostituisce switch/case.',
+        deps: ['inviteWorker','messageWorker','acceptanceWorker','hygieneWorker','interactionWorker','enrichmentWorker','postCreatorWorker'],
+        issues: [] },
+      { id: 'inviteWorker', name: 'inviteWorker.ts', file: 'src/workers/inviteWorker.ts', tags: ['INVITE','connection','note'], status: 'ok',
+        desc: 'Invia inviti LinkedIn. Supporta note AI/template/none. Gestisce rate limiting e challenge detection.',
+        deps: ['humanBehavior.ts','ai/inviteNotePersonalizer.ts','repositories.ts'],
+        issues: [{ sev:'medium', text:'L\'invio nota non verifica mai se la nota supera 300 caratteri prima di cliccare Invia', fix:'Troncare/riformulare nota > 280 char (buffer sicurezza) prima dell\'invio' }] },
+      { id: 'messageWorker', name: 'messageWorker.ts', file: 'src/workers/messageWorker.ts', tags: ['MESSAGE','AI','template'], status: 'ok',
+        desc: 'Invia messaggi di follow-up. Personalizzazione AI o template. Verifica connessione prima.',
+        deps: ['humanBehavior.ts','ai/messagePersonalizer.ts','repositories.ts'],
+        issues: [] },
+      { id: 'acceptanceWorker', name: 'acceptanceWorker.ts', file: 'src/workers/acceptanceWorker.ts', tags: ['ACCEPTANCE','check','connected'], status: 'ok',
+        desc: 'Verifica se invito è stato accettato. Aggiorna stato lead. Pianifica messaggio follow-up.',
+        deps: ['humanBehavior.ts','repositories.ts'],
+        issues: [] },
+      { id: 'hygieneWorker', name: 'hygieneWorker.ts', file: 'src/workers/hygieneWorker.ts', tags: ['HYGIENE','cleanup','check'], status: 'ok',
+        desc: 'Pulizia account: verifica salute sessione, retract inviti vecchi, aggiorna metriche.',
+        deps: ['sessionCookieMonitor.ts','repositories.ts'],
+        issues: [] },
+      { id: 'interactionWorker', name: 'interactionWorker.ts', file: 'src/workers/interactionWorker.ts', tags: ['INTERACTION','like','comment'], status: 'ok',
+        desc: 'Like e commenti a post come warm-up/engagement booster.',
+        deps: ['humanBehavior.ts','repositories.ts'],
+        issues: [] },
+      { id: 'enrichmentWorker', name: 'enrichmentWorker.ts', file: 'src/workers/enrichmentWorker.ts', tags: ['ENRICHMENT','email','data'], status: 'ok',
+        desc: 'Arricchisce profilo lead con email, dati azienda, scoring AI.',
+        deps: ['integrations/leadEnricher.ts','ai/leadScorer.ts'],
+        issues: [] },
+      { id: 'postCreatorWorker', name: 'postCreatorWorker.ts', file: 'src/workers/postCreatorWorker.ts', tags: ['POST_CREATION','content','AI'], status: 'ok',
+        desc: 'Genera e pubblica post LinkedIn con AI (postContentGenerator). Supporta topic e tone.',
+        deps: ['ai/postContentGenerator.ts','humanBehavior.ts'],
+        issues: [] },
+      { id: 'followUpWorker', name: 'followUpWorker.ts', file: 'src/workers/followUpWorker.ts', tags: ['follow-up','drip','sequence'], status: 'warn',
+        desc: 'Gestisce sequenze drip follow-up: pianifica multi-step message sequences.',
+        deps: ['repositories.ts','messageWorker.ts'],
+        issues: [{ sev:'high', text:'followUpWorker non verifica se la campagna drip è ancora attiva prima di inviare step successivi', fix:'Controllare campaignState.active = true prima di ogni step drip' }] },
+      { id: 'inboxWorker', name: 'inboxWorker.ts', file: 'src/workers/inboxWorker.ts', tags: ['inbox','read','reply'], status: 'ok',
+        desc: 'Legge inbox LinkedIn, classifica intent risposte, aggiorna stato lead.',
+        deps: ['ai/intentResolver.ts','repositories.ts'],
+        issues: [] },
+      { id: 'challengeHandler', name: 'challengeHandler.ts', file: 'src/workers/challengeHandler.ts', tags: ['challenge','2FA','email'], status: 'ok',
+        desc: 'Gestisce challenge LinkedIn (email/SMS verification), CAPTCHA, checkpoint page.',
+        deps: ['captcha/solver.ts','auth.ts'],
+        issues: [] },
+      { id: 'messagePrebuildWorker', name: 'messagePrebuildWorker.ts', file: 'src/workers/messagePrebuildWorker.ts', tags: ['prebuild','cache','AI'], status: 'ok',
+        desc: 'Pre-genera messaggi AI in batch per ridurre latenza al momento dell\'invio.',
+        deps: ['ai/messagePersonalizer.ts','repositories/prebuiltMessages.ts'],
+        issues: [] },
+      { id: 'rampUpWorker', name: 'rampUpWorker.ts', file: 'src/workers/rampUpWorker.ts', tags: ['ramp-up','warm','gradual'], status: 'ok',
+        desc: 'Avvia processo di ramp-up account: aumenta gradualmente volume azioni secondo modello ML.',
+        deps: ['ml/rampModel.ts','risk/accountBehaviorModel.ts'],
+        issues: [] },
+      { id: 'randomActivityWorker', name: 'randomActivityWorker.ts', file: 'src/workers/randomActivityWorker.ts', tags: ['organic','random','decoy'], status: 'ok',
+        desc: 'Simula attività organica casuale: visite profilo, ricerche, scroll feed.',
+        deps: ['humanBehavior.ts','organicContent.ts'],
+        issues: [] },
+      { id: 'deadLetterWorker', name: 'deadLetterWorker.ts', file: 'src/workers/deadLetterWorker.ts', tags: ['DLQ','dead-letter','retry'], status: 'ok',
+        desc: 'Processa job in dead letter queue: retry con backoff, alert su echec persistenti.',
+        deps: ['repositories.ts','telemetry/alerts.ts'],
+        issues: [] },
+    ]
+  },
+  {
+    id: 'orchestration',
+    label: '🎯 Orchestrazione & Scheduling',
+    color: 'var(--orchestration)',
+    colorHex: '#4cc9f0',
+    nodes: [
+      { id: 'orchestrator', name: 'orchestrator.ts', file: 'src/core/orchestrator.ts', tags: ['main-loop','session','workflow'], status: 'ok',
+        desc: 'Cuore del sistema. Gestisce il ciclo principale: autenticazione, risk check, scheduling, esecuzione job, report.',
+        deps: ['scheduler.ts','jobRunner.ts','riskEngine.ts','browser/index.ts','accountManager.ts'],
+        issues: [] },
+      { id: 'jobRunner', name: 'jobRunner.ts', file: 'src/core/jobRunner.ts', tags: ['queue','execute','retry','DLQ'], status: 'ok',
+        desc: 'Esegue job dalla coda. Gestisce retry, dead letter, backpressure, multi-account, session health.',
+        deps: ['workerRegistry','repositories.ts','challengeHandler.ts','backpressure.ts'],
+        issues: [{ sev:'medium', text:'jobRunner.ts ha un doppio controllo challenge: una volta in jobRunner e una nel worker, può creare race condition', fix:'Centralizzare challenge detection solo in jobRunner, workers non rilevano challenge' }] },
+      { id: 'scheduler', name: 'scheduler.ts', file: 'src/core/scheduler.ts', tags: ['budget','timing','slots'], status: 'ok',
+        desc: 'Calcola budget giornaliero per tipo job, pianifica slot orari, considera risk score, ramp-up, multi-account.',
+        deps: ['riskEngine.ts','timingOptimizer.ts','locationTimezone.ts','strategyPlanner.ts','repositories.ts'],
+        issues: [] },
+      { id: 'campaignEngine', name: 'campaignEngine.ts', file: 'src/core/campaignEngine.ts', tags: ['campaign','state','advance'], status: 'ok',
+        desc: 'Gestisce avanzamento lead nella campagna: state machine per ogni lead.',
+        deps: ['leadStateService.ts','repositories/campaigns.ts'],
+        issues: [] },
+      { id: 'leadStateService', name: 'leadStateService.ts', file: 'src/core/leadStateService.ts', tags: ['state','FSM','transition'], status: 'ok',
+        desc: 'Finite State Machine per stato lead: PENDING→INVITE_SENT→CONNECTED→MESSAGED→REPLIED.',
+        deps: ['repositories/leads.ts'],
+        issues: [] },
+      { id: 'loopOrchestrator', name: 'loopOrchestrator.ts', file: 'src/core/loopOrchestrator.ts', tags: ['loop','CLI','continuous'], status: 'ok',
+        desc: 'Loop continuo per modalità daemon/CLI: ripete orchestrator a intervalli configurabili.',
+        deps: ['orchestrator.ts','config.ts'],
+        issues: [] },
+      { id: 'sessionWarmer', name: 'sessionWarmer.ts', file: 'src/core/sessionWarmer.ts', tags: ['warm-up','maturity','budget'], status: 'ok',
+        desc: 'Calcola fattore budget basato su maturità sessione account.',
+        deps: ['sessionCookieMonitor.ts'],
+        issues: [] },
+      { id: 'salesnavSync', name: 'salesNavigatorSync.ts', file: 'src/core/salesNavigatorSync.ts', tags: ['sales-nav','sync','lists'], status: 'ok',
+        desc: 'Sincronizza lead da Sales Navigator list verso DB locale.',
+        deps: ['salesnav/listScraper.ts','repositories/salesnavSync.ts'],
+        issues: [] },
+    ]
+  },
+  {
+    id: 'database',
+    label: '🗄️ Database & Repositories',
+    color: 'var(--database)',
+    colorHex: '#ffd60a',
+    nodes: [
+      { id: 'db', name: 'db.ts', file: 'src/db.ts', tags: ['SQLite','PostgreSQL','connection','pool'], status: 'ok',
+        desc: 'Gestione connessione DB (SQLite locale o PostgreSQL). Pool connessioni, migrations auto-run.',
+        deps: [],
+        issues: [{ sev:'medium', text:'La connessione PostgreSQL non usa connection pooling esplicito (es. pg-pool), risk di connection exhaustion ad alto carico', fix:'Aggiungere pg-pool con max: 10 connections per istanza' }] },
+      { id: 'migrations', name: 'migrations/ (055 file)', file: 'src/db/migrations/', tags: ['SQL','schema','versioned'], status: 'ok',
+        desc: '55 migrazioni versionate coprendo: leads, campagne, stats, AI quality, GDPR, enrichment, sicurezza, salesnav.',
+        deps: ['db.ts'],
+        issues: [] },
+      { id: 'repoLeads', name: 'repositories/leads.ts', file: 'src/core/repositories/leads.ts', tags: ['CRUD','leads','query'], status: 'ok',
+        desc: 'Repository principale leads: CRUD, query per stato, lista, scoring, blacklist check.',
+        deps: ['db.ts'],
+        issues: [] },
+      { id: 'repoLeadsCore', name: 'repositories/leadsCore.ts', file: 'src/core/repositories/leadsCore.ts', tags: ['core','insert','upsert'], status: 'ok',
+        desc: 'Operazioni core su leads: insert, upsert, status transition.',
+        deps: ['db.ts'],
+        issues: [] },
+      { id: 'repoCampaigns', name: 'repositories/campaigns.ts', file: 'src/core/repositories/campaigns.ts', tags: ['campaigns','config','targets'], status: 'ok',
+        desc: 'CRUD campagne, configurazione target, query performance.',
+        deps: ['db.ts'],
+        issues: [] },
+      { id: 'repoStats', name: 'repositories/stats.ts', file: 'src/core/repositories/stats.ts', tags: ['daily-stats','metrics','counts'], status: 'ok',
+        desc: 'Statistiche giornaliere: inviti inviati, accettati, messaggi, errori.',
+        deps: ['db.ts'],
+        issues: [] },
+      { id: 'repoJobs', name: 'repositories/jobs.ts', file: 'src/core/repositories/jobs.ts', tags: ['queue','lock','DLQ'], status: 'ok',
+        desc: 'Gestione coda job: lock atomico, enqueue, markSuccess, markRetry, dead letter.',
+        deps: ['db.ts'],
+        issues: [] },
+      { id: 'repoAiQuality', name: 'repositories/aiQuality.ts', file: 'src/core/repositories/aiQuality.ts', tags: ['AI','quality','eval'], status: 'ok',
+        desc: 'Traccia qualità risposte AI: score, feedback, varianti A/B.',
+        deps: ['db.ts'],
+        issues: [] },
+      { id: 'repoFeatureStore', name: 'repositories/featureStore.ts', file: 'src/core/repositories/featureStore.ts', tags: ['features','ML','KV'], status: 'ok',
+        desc: 'Feature store per ML: memorizza feature vector per ogni lead.',
+        deps: ['db.ts'],
+        issues: [] },
+      { id: 'repoShared', name: 'repositories/shared.ts', file: 'src/core/repositories/shared.ts', tags: ['shared','flags','runtime'], status: 'ok',
+        desc: 'Runtime flags, outbox events, pause state, sistema flags.',
+        deps: ['db.ts'],
+        issues: [] },
+    ]
+  },
+  {
+    id: 'ai',
+    label: '🤖 AI Layer',
+    color: 'var(--ai)',
+    colorHex: '#06d6a0',
+    nodes: [
+      { id: 'openaiClient', name: 'openaiClient.ts', file: 'src/ai/openaiClient.ts', tags: ['OpenAI','GPT-4','streaming','retry'], status: 'ok',
+        desc: 'Client OpenAI con retry, rate limit handling, streaming support, token tracking.',
+        deps: ['providerRegistry.ts'],
+        issues: [] },
+      { id: 'providerRegistry', name: 'providerRegistry.ts', file: 'src/ai/providerRegistry.ts', tags: ['multi-provider','OpenAI','Ollama','Anthropic'], status: 'ok',
+        desc: 'Registry multi-provider AI: OpenAI, Ollama, Anthropic. Fallback automatico.',
+        deps: ['openaiClient.ts','config.ts'],
+        issues: [{ sev:'medium', text:'Il fallback provider non ha circuit breaker: se OpenAI è down fa 10+ retry prima di switchare a Ollama', fix:'Aggiungere circuit breaker: dopo 3 fail consecutivi switch immediato al provider backup' }] },
+      { id: 'messagePersonalizer', name: 'messagePersonalizer.ts', file: 'src/ai/messagePersonalizer.ts', tags: ['GPT-4','personalize','context'], status: 'ok',
+        desc: 'Personalizza messaggi di follow-up basandosi su profilo lead, settore, post recenti.',
+        deps: ['openaiClient.ts','semanticChecker.ts'],
+        issues: [] },
+      { id: 'invitePersonalizer', name: 'inviteNotePersonalizer.ts', file: 'src/ai/inviteNotePersonalizer.ts', tags: ['invite','note','GPT'], status: 'ok',
+        desc: 'Genera note personalizzate per richieste di connessione.',
+        deps: ['openaiClient.ts'],
+        issues: [] },
+      { id: 'leadScorer', name: 'leadScorer.ts', file: 'src/ai/leadScorer.ts', tags: ['score','ICP','qualification'], status: 'ok',
+        desc: 'Score AI per qualifica lead: fit con ICP, segnali acquisto, engagement potenziale.',
+        deps: ['openaiClient.ts'],
+        issues: [] },
+      { id: 'guardian', name: 'guardian.ts', file: 'src/ai/guardian.ts', tags: ['safety','compliance','content'], status: 'ok',
+        desc: 'Guardian AI per compliance: verifica che i messaggi non violino policy LinkedIn o ToS.',
+        deps: ['openaiClient.ts','semanticChecker.ts'],
+        issues: [] },
+      { id: 'intentResolver', name: 'intentResolver.ts', file: 'src/ai/intentResolver.ts', tags: ['intent','classify','reply'], status: 'ok',
+        desc: 'Classifica intent delle risposte ricevute: interested, not interested, referral, question.',
+        deps: ['openaiClient.ts'],
+        issues: [] },
+      { id: 'sentimentAnalysis', name: 'sentimentAnalysis.ts', file: 'src/ai/sentimentAnalysis.ts', tags: ['sentiment','positive','negative'], status: 'ok',
+        desc: 'Analisi sentiment risposte lead per adattare follow-up strategy.',
+        deps: ['openaiClient.ts'],
+        issues: [] },
+      { id: 'semanticChecker', name: 'semanticChecker.ts', file: 'src/ai/semanticChecker.ts', tags: ['semantic','duplicate','quality'], status: 'ok',
+        desc: 'Verifica qualità semantica messaggi: no duplicate, no spam patterns, coerenza.',
+        deps: ['openaiClient.ts'],
+        issues: [] },
+      { id: 'postContentGenerator', name: 'postContentGenerator.ts', file: 'src/ai/postContentGenerator.ts', tags: ['content','post','LinkedIn'], status: 'ok',
+        desc: 'Genera contenuto post LinkedIn ottimizzato per engagement.',
+        deps: ['openaiClient.ts'],
+        issues: [] },
+      { id: 'leadDataCleaner', name: 'leadDataCleaner.ts', file: 'src/ai/leadDataCleaner.ts', tags: ['clean','normalize','data'], status: 'ok',
+        desc: 'Normalizza e pulisce dati lead: rimuove artefatti scraping, normalizza nomi/titoli.',
+        deps: ['openaiClient.ts'],
+        issues: [] },
+    ]
+  },
+  {
+    id: 'risk',
+    label: '⚠️ Risk & Safety',
+    color: 'var(--risk)',
+    colorHex: '#ef233c',
+    nodes: [
+      { id: 'riskEngine', name: 'riskEngine.ts', file: 'src/risk/riskEngine.ts', tags: ['ban-probability','budget','velocity'], status: 'ok',
+        desc: 'Motore risk principale: stima probabilità ban, calcola budget dinamico, compliance health score.',
+        deps: ['accountBehaviorModel.ts','sessionMemory.ts','repositories.ts'],
+        issues: [] },
+      { id: 'incidentManager', name: 'incidentManager.ts', file: 'src/risk/incidentManager.ts', tags: ['pause','quarantine','incident'], status: 'ok',
+        desc: 'Gestisce incidenti: pausa automazione, quarantina account, escalation Telegram.',
+        deps: ['telemetry/alerts.ts','repositories.ts'],
+        issues: [] },
+      { id: 'accountBehaviorModel', name: 'accountBehaviorModel.ts', file: 'src/risk/accountBehaviorModel.ts', tags: ['trust-score','growth','model'], status: 'ok',
+        desc: 'Modella comportamento account nel tempo: crescita trust score, fattori warmup.',
+        deps: ['riskEngine.ts'],
+        issues: [] },
+      { id: 'httpThrottler', name: 'httpThrottler.ts', file: 'src/risk/httpThrottler.ts', tags: ['rate-limit','throttle','429'], status: 'ok',
+        desc: 'Throttling HTTP requests basato su risposta LinkedIn (429, backoff exponential).',
+        deps: [],
+        issues: [] },
+      { id: 'sessionMemory', name: 'sessionMemory.ts', file: 'src/risk/sessionMemory.ts', tags: ['history','patterns','anomaly'], status: 'ok',
+        desc: 'Mantiene storico sessioni per rilevare pattern anomali e adattare comportamento.',
+        deps: ['repositories/system.ts'],
+        issues: [] },
+      { id: 'strategyPlanner', name: 'strategyPlanner.ts', file: 'src/risk/strategyPlanner.ts', tags: ['strategy','day-of-week','intensity'], status: 'ok',
+        desc: 'Pianifica strategia giornaliera: intensità basata su giorno settimana, meteo risk, obiettivi.',
+        deps: ['riskEngine.ts','repositories.ts'],
+        issues: [] },
+      { id: 'riskInputCalc', name: 'riskInputCalculator.ts', file: 'src/core/services/riskInputCalculator.ts', tags: ['inputs','metrics','calculate'], status: 'ok',
+        desc: 'Calcola input per risk engine: aggrega metriche recenti, normalizza su finestre temporali.',
+        deps: ['repositories.ts'],
+        issues: [] },
+    ]
+  },
+  {
+    id: 'salesnav',
+    label: '🔍 Sales Navigator',
+    color: 'var(--salesnav)',
+    colorHex: '#fb8500',
+    nodes: [
+      { id: 'listScraper', name: 'listScraper.ts', file: 'src/salesnav/listScraper.ts', tags: ['scrape','list','pagination'], status: 'ok',
+        desc: 'Scrapa lead da Sales Navigator list con paginazione, filtri, dedup automatico.',
+        deps: ['humanBehavior.ts','salesnav/selectors.ts'],
+        issues: [] },
+      { id: 'bulkSaveOrchestrator', name: 'bulkSaveOrchestrator.ts', file: 'src/salesnav/bulkSaveOrchestrator.ts', tags: ['bulk','save','list'], status: 'warn',
+        desc: 'Orchestra salvataggio bulk di lead da Sales Navigator in list LinkedIn.',
+        deps: ['bulkSaveHelpers.ts','listActions.ts','humanBehavior.ts'],
+        issues: [{ sev:'high', text:'bulkSaveOrchestrator non gestisce il limite di 2500 member/lista di LinkedIn', fix:'Aggiungere check pre-save: se lista >= 2400 member → creare nuova lista automaticamente' }] },
+      { id: 'listActions', name: 'listActions.ts', file: 'src/salesnav/listActions.ts', tags: ['create','manage','list'], status: 'ok',
+        desc: 'Azioni su liste Sales Navigator: crea, modifica, elimina, aggiungi membro.',
+        deps: ['humanBehavior.ts'],
+        issues: [] },
+      { id: 'visionNavigator', name: 'visionNavigator.ts', file: 'src/salesnav/visionNavigator.ts', tags: ['vision','AI','navigation'], status: 'warn',
+        desc: 'Navigazione tramite vision AI quando i selettori CSS falliscono.',
+        deps: ['captcha/visionProvider.ts','humanBehavior.ts'],
+        issues: [{ sev:'medium', text:'visionNavigator usa screenshot a piena pagina (+ slow), non ritaglio zona target', fix:'Usare screenshot clip area elemento target per ridurre token AI e velocizzare' }] },
+      { id: 'computerUse', name: 'computerUse.ts', file: 'src/salesnav/computerUse.ts', tags: ['Claude','computer-use','AI'], status: 'ok',
+        desc: 'Integrazione Claude Computer Use per navigazione complessa Sales Navigator.',
+        deps: ['openaiClient.ts'],
+        issues: [] },
+      { id: 'salesnavDedup', name: 'salesnavDedup.ts', file: 'src/salesnav/salesnavDedup.ts', tags: ['dedup','normalize','match'], status: 'ok',
+        desc: 'Deduplicazione lead Sales Navigator: normalizzazione URL, fuzzy match nomi.',
+        deps: ['repositories.ts'],
+        issues: [] },
+      { id: 'selectorLearner', name: 'selectors/learner.ts', file: 'src/selectors/learner.ts', tags: ['self-heal','CSS','ML'], status: 'ok',
+        desc: 'Self-healing selectors: apprende selettori CSS alternativi quando quelli primari falliscono.',
+        deps: ['repositories/system.ts'],
+        issues: [] },
+    ]
+  },
+  {
+    id: 'api',
+    label: '🔌 API & Backend',
+    color: 'var(--api)',
+    colorHex: '#3a86ff',
+    nodes: [
+      { id: 'apiServer', name: 'api/server.ts', file: 'src/api/server.ts', tags: ['Express','REST','SSE','auth'], status: 'ok',
+        desc: 'Server Express.js con rate limiting, CORS, autenticazione sessione, SSE per real-time.',
+        deps: ['api/routes/*','telemetry/broadcaster.ts'],
+        issues: [] },
+      { id: 'routesCampaigns', name: 'routes/campaigns.ts', file: 'src/api/routes/campaigns.ts', tags: ['CRUD','campaigns','REST'], status: 'ok',
+        desc: 'CRUD REST per campagne: lista, crea, modifica, elimina, avvia/pausa.',
+        deps: ['repositories/campaigns.ts'],
+        issues: [] },
+      { id: 'routesLeads', name: 'routes/leads.ts', file: 'src/api/routes/leads.ts', tags: ['leads','search','export'], status: 'ok',
+        desc: 'REST per leads: search, filter, detail, update stato, export CSV.',
+        deps: ['repositories/leads.ts'],
+        issues: [] },
+      { id: 'routesControls', name: 'routes/controls.ts', file: 'src/api/routes/controls.ts', tags: ['control','pause','resume'], status: 'ok',
+        desc: 'Controllo runtime: pausa/riprendi automazione, cambio workflow, clear queue.',
+        deps: ['api/helpers/controlActions.ts'],
+        issues: [] },
+      { id: 'routesAi', name: 'routes/ai.ts', file: 'src/api/routes/ai.ts', tags: ['AI','generate','test'], status: 'ok',
+        desc: 'Endpoint per test AI: generate message, score lead, test personalizer.',
+        deps: ['ai/*'],
+        issues: [] },
+      { id: 'routesStats', name: 'routes/stats.ts', file: 'src/api/routes/stats.ts', tags: ['stats','metrics','dashboard'], status: 'ok',
+        desc: 'Statistiche per dashboard: daily stats, weekly summaries, performance metrics.',
+        deps: ['repositories/stats.ts'],
+        issues: [] },
+      { id: 'routesSecurity', name: 'routes/security.ts', file: 'src/api/routes/security.ts', tags: ['auth','session','TOTP'], status: 'ok',
+        desc: 'Autenticazione dashboard: login, logout, sessione, TOTP.',
+        deps: ['security/totp.ts'],
+        issues: [] },
+      { id: 'v1Automation', name: 'routes/v1Automation.ts', file: 'src/api/routes/v1Automation.ts', tags: ['v1','backward-compat','REST'], status: 'warn',
+        desc: 'Endpoint legacy v1 per compatibilità con integrazioni esistenti.',
+        deps: ['repositories.ts'],
+        issues: [{ sev:'medium', text:'Le route v1 non hanno autenticazione JWT, solo session cookie', fix:'Aggiungere supporto API key per integrazioni machine-to-machine' }] },
+    ]
+  },
+  {
+    id: 'cloud',
+    label: '☁️ Cloud & Sync',
+    color: 'var(--cloud)',
+    colorHex: '#8ecae6',
+    nodes: [
+      { id: 'supabaseSync', name: 'supabaseSyncWorker.ts', file: 'src/sync/supabaseSyncWorker.ts', tags: ['Supabase','sync','realtime'], status: 'ok',
+        desc: 'Sincronizza eventi e dati verso Supabase (cloud). Outbox pattern per affidabilità.',
+        deps: ['cloud/supabaseDataClient.ts','sync/outboxUtils.ts'],
+        issues: [] },
+      { id: 'webhookSync', name: 'webhookSyncWorker.ts', file: 'src/sync/webhookSyncWorker.ts', tags: ['webhook','HTTP','event'], status: 'ok',
+        desc: 'Invia eventi via webhook a URL configurabili (CRM, Zapier, n8n).',
+        deps: ['sync/outboxUtils.ts'],
+        issues: [] },
+      { id: 'cloudBridge', name: 'cloudBridge.ts', file: 'src/cloud/cloudBridge.ts', tags: ['bridge','API','remote'], status: 'ok',
+        desc: 'Bridge verso cloud per multi-tenant e control plane remoto.',
+        deps: ['supabaseDataClient.ts'],
+        issues: [] },
+      { id: 'controlPlaneSync', name: 'controlPlaneSync.ts', file: 'src/cloud/controlPlaneSync.ts', tags: ['control-plane','remote','config'], status: 'ok',
+        desc: 'Sincronizza configurazione e comandi dal control plane cloud.',
+        deps: ['cloudBridge.ts'],
+        issues: [] },
+      { id: 'telegramListener', name: 'telegramListener.ts', file: 'src/cloud/telegramListener.ts', tags: ['Telegram','bot','commands'], status: 'ok',
+        desc: 'Bot Telegram per comandi remoti: start/stop, status, alert, report.',
+        deps: ['orchestrator.ts','telemetry/alerts.ts'],
+        issues: [] },
+      { id: 'telegramAiImporter', name: 'telegramAiImporter.ts', file: 'src/cloud/telegramAiImporter.ts', tags: ['import','Telegram','AI'], status: 'ok',
+        desc: 'Importa lead da canali Telegram con AI parsing e enrichment.',
+        deps: ['ai/leadDataCleaner.ts','repositories.ts'],
+        issues: [] },
+      { id: 'backpressure', name: 'sync/backpressure.ts', file: 'src/sync/backpressure.ts', tags: ['backpressure','sync','throttle'], status: 'ok',
+        desc: 'Gestisce backpressure della coda sync: evita overflow di eventi non processati.',
+        deps: ['repositories.ts'],
+        issues: [] },
+      { id: 'n8nWorkflows', name: 'n8n/workflows (2)', file: 'n8n/', tags: ['n8n','automation','external'], status: 'ok',
+        desc: 'Due workflow n8n: bot_events (webhook) e news_intel (intelligence gathering).',
+        deps: ['api/server.ts'],
+        issues: [] },
+    ]
+  },
+  {
+    id: 'integrations',
+    label: '🔗 Integrazioni & Enrichment',
+    color: 'var(--browser)',
+    colorHex: '#00d4aa',
+    nodes: [
+      { id: 'leadEnricher', name: 'leadEnricher.ts', file: 'src/integrations/leadEnricher.ts', tags: ['enrich','email','company'], status: 'ok',
+        desc: 'Orchestratore enrichment lead: combina più fonti (email guesser, domain discovery, person finder).',
+        deps: ['emailGuesser.ts','domainDiscovery.ts','personDataFinder.ts','parallelEnricher.ts'],
+        issues: [] },
+      { id: 'emailGuesser', name: 'emailGuesser.ts', file: 'src/integrations/emailGuesser.ts', tags: ['email','guess','validate'], status: 'ok',
+        desc: 'Indovina email business da nome/cognome/dominio azienda con pattern comuni.',
+        deps: ['domainDiscovery.ts'],
+        issues: [] },
+      { id: 'domainDiscovery', name: 'domainDiscovery.ts', file: 'src/integrations/domainDiscovery.ts', tags: ['domain','company','website'], status: 'ok',
+        desc: 'Trova dominio aziendale da nome azienda LinkedIn.',
+        deps: [],
+        issues: [] },
+      { id: 'crmBridge', name: 'crmBridge.ts', file: 'src/integrations/crmBridge.ts', tags: ['CRM','HubSpot','Salesforce'], status: 'ok',
+        desc: 'Bridge verso CRM esterni: push lead accettati, sync stato, aggiorna deal.',
+        deps: ['webhookSync.ts'],
+        issues: [] },
+      { id: 'parallelEnricher', name: 'parallelEnricher.ts', file: 'src/integrations/parallelEnricher.ts', tags: ['parallel','concurrent','enrichment'], status: 'ok',
+        desc: 'Esegue enrichment in parallelo da multiple fonti con Promise.allSettled.',
+        deps: ['leadEnricher.ts'],
+        issues: [] },
+      { id: 'webSearchEnricher', name: 'webSearchEnricher.ts', file: 'src/integrations/webSearchEnricher.ts', tags: ['web','search','news'], status: 'ok',
+        desc: 'Enrichment via web search: trova news recenti azienda, job listings, funding rounds.',
+        deps: [],
+        issues: [] },
+      { id: 'csvImporter', name: 'csvImporter.ts', file: 'src/csvImporter.ts', tags: ['CSV','import','bulk'], status: 'ok',
+        desc: 'Importa lead da file CSV con mapping configurabile e validazione.',
+        deps: ['repositories.ts'],
+        issues: [] },
+    ]
+  },
+  {
+    id: 'ml',
+    label: '🧠 ML & Algoritmi',
+    color: 'var(--ml)',
+    colorHex: '#b5179e',
+    nodes: [
+      { id: 'abBandit', name: 'abBandit.ts', file: 'src/ml/abBandit.ts', tags: ['A/B','MAB','epsilon-greedy'], status: 'ok',
+        desc: 'Multi-armed bandit per A/B test messaggi: epsilon-greedy con decay, aggiornamento online.',
+        deps: ['repositories/aiQuality.ts'],
+        issues: [] },
+      { id: 'timingOptimizer', name: 'timingOptimizer.ts', file: 'src/ml/timingOptimizer.ts', tags: ['timing','best-time','send'], status: 'ok',
+        desc: 'Ottimizza timing invio messaggi basandosi su timezone lead e storico acceptance rate.',
+        deps: ['locationTimezone.ts','repositories.ts'],
+        issues: [] },
+      { id: 'locationTimezone', name: 'locationTimezone.ts', file: 'src/ml/locationTimezone.ts', tags: ['timezone','delay','geo'], status: 'ok',
+        desc: 'Calcola delay ottimale basato su timezone del lead per massimizzare read rate.',
+        deps: [],
+        issues: [] },
+      { id: 'rampModel', name: 'rampModel.ts', file: 'src/ml/rampModel.ts', tags: ['ramp-up','growth','sigmoid'], status: 'ok',
+        desc: 'Modello sigmoid per crescita graduale volume azioni durante ramp-up account.',
+        deps: [],
+        issues: [] },
+      { id: 'segments', name: 'segments.ts', file: 'src/ml/segments.ts', tags: ['segment','cluster','ICP'], status: 'ok',
+        desc: 'Segmentazione lead per campagna: clustering per settore, ruolo, size azienda.',
+        deps: ['repositories.ts'],
+        issues: [] },
+      { id: 'significance', name: 'significance.ts', file: 'src/ml/significance.ts', tags: ['statistics','t-test','A/B'], status: 'ok',
+        desc: 'Test statistici per A/B: t-test, significatività, confidence interval.',
+        deps: [],
+        issues: [] },
+    ]
+  },
+  {
+    id: 'telemetry',
+    label: '📊 Telemetria & Monitoring',
+    color: 'var(--telemetry)',
+    colorHex: '#f3722c',
+    nodes: [
+      { id: 'logger', name: 'logger.ts', file: 'src/telemetry/logger.ts', tags: ['log','levels','structured'], status: 'ok',
+        desc: 'Logger strutturato con livelli (debug/info/warn/error), correlationId, JSON output.',
+        deps: [],
+        issues: [] },
+      { id: 'alerts', name: 'alerts.ts', file: 'src/telemetry/alerts.ts', tags: ['Telegram','email','alert'], status: 'ok',
+        desc: 'Sistema alert: Telegram bot notification per eventi critici (ban, challenge, errori).',
+        deps: ['telegramListener.ts'],
+        issues: [] },
+      { id: 'broadcaster', name: 'broadcaster.ts', file: 'src/telemetry/broadcaster.ts', tags: ['SSE','real-time','events'], status: 'ok',
+        desc: 'Broadcast eventi real-time al dashboard via Server-Sent Events.',
+        deps: ['api/server.ts'],
+        issues: [] },
+      { id: 'dailyReporter', name: 'dailyReporter.ts', file: 'src/telemetry/dailyReporter.ts', tags: ['report','daily','summary'], status: 'ok',
+        desc: 'Genera report giornaliero: inviti, accettazioni, messaggi, conversion rate.',
+        deps: ['repositories/stats.ts','alerts.ts'],
+        issues: [] },
+      { id: 'liveEvents', name: 'liveEvents.ts', file: 'src/telemetry/liveEvents.ts', tags: ['live','stream','timeline'], status: 'ok',
+        desc: 'Stream eventi live per timeline dashboard.',
+        deps: ['broadcaster.ts'],
+        issues: [] },
+      { id: 'correlation', name: 'correlation.ts', file: 'src/telemetry/correlation.ts', tags: ['correlationId','tracing','request'], status: 'ok',
+        desc: 'Generazione e propagazione correlation ID per tracing distribuito.',
+        deps: [],
+        issues: [] },
+    ]
+  },
+  {
+    id: 'frontend',
+    label: '🖥️ Frontend Dashboard',
+    color: 'var(--frontend)',
+    colorHex: '#43aa8b',
+    nodes: [
+      { id: 'frontMain', name: 'frontend/main.ts', file: 'src/frontend/main.ts', tags: ['init','SPA','routing'], status: 'ok',
+        desc: 'Entry point frontend dashboard: inizializza SPA, routing, event handlers.',
+        deps: ['apiClient.ts','charts.ts','renderers.ts'],
+        issues: [] },
+      { id: 'apiClient', name: 'frontend/apiClient.ts', file: 'src/frontend/apiClient.ts', tags: ['fetch','API','typed'], status: 'ok',
+        desc: 'Client HTTP typed per chiamate API backend: tutti gli endpoint con TypeScript.',
+        deps: ['api/server.ts'],
+        issues: [] },
+      { id: 'charts', name: 'frontend/charts.ts', file: 'src/frontend/charts.ts', tags: ['charts','stats','visualization'], status: 'ok',
+        desc: 'Grafici statistiche: acceptance rate, messaggi/giorno, conversion funnel.',
+        deps: [],
+        issues: [] },
+      { id: 'renderers', name: 'frontend/renderers.ts', file: 'src/frontend/renderers.ts', tags: ['render','leads','table'], status: 'ok',
+        desc: 'Renderer tabelle e card: leads list, campaign view, stats cards.',
+        deps: ['types.ts'],
+        issues: [] },
+      { id: 'realtime', name: 'frontend/realtime.ts', file: 'src/frontend/realtime.ts', tags: ['SSE','live','updates'], status: 'ok',
+        desc: 'Client SSE per aggiornamenti real-time: job completati, nuovi lead, alert.',
+        deps: ['broadcaster.ts'],
+        issues: [] },
+      { id: 'timeline', name: 'frontend/timeline.ts', file: 'src/frontend/timeline.ts', tags: ['timeline','events','history'], status: 'ok',
+        desc: 'Timeline visuale degli eventi di automazione in real-time.',
+        deps: ['liveEvents.ts'],
+        issues: [] },
+    ]
+  },
+  {
+    id: 'config',
+    label: '⚙️ Config & Security',
+    color: 'var(--config)',
+    colorHex: '#90be6d',
+    nodes: [
+      { id: 'config', name: 'config/index.ts', file: 'src/config/index.ts', tags: ['env','dotenv','validation'], status: 'ok',
+        desc: 'Config principale: carica .env, valida, esporta oggetto config tipizzato.',
+        deps: ['config/validation.ts','config/env.ts'],
+        issues: [] },
+      { id: 'configHotReload', name: 'config/hotReload.ts', file: 'src/config/hotReload.ts', tags: ['hot-reload','watch','change'], status: 'ok',
+        desc: 'Hot reload configurazione: aggiorna config senza restart.',
+        deps: ['config/index.ts'],
+        issues: [] },
+      { id: 'configProfiles', name: 'config/profiles.ts', file: 'src/config/profiles.ts', tags: ['profiles','multi-account','persona'], status: 'ok',
+        desc: 'Profili configurazione per multi-account con persona separata per account.',
+        deps: ['config/index.ts'],
+        issues: [] },
+      { id: 'totp', name: 'security/totp.ts', file: 'src/security/totp.ts', tags: ['2FA','TOTP','HMAC'], status: 'ok',
+        desc: 'Implementazione TOTP per 2FA autenticazione LinkedIn.',
+        deps: [],
+        issues: [] },
+      { id: 'redaction', name: 'security/redaction.ts', file: 'src/security/redaction.ts', tags: ['PII','redact','logs'], status: 'ok',
+        desc: 'Redaction PII nei log: maschera email, nomi, URL profilo sensibili.',
+        deps: [],
+        issues: [] },
+      { id: 'secretRotation', name: 'core/secretRotationWorker.ts', file: 'src/core/secretRotationWorker.ts', tags: ['secrets','rotate','credentials'], status: 'ok',
+        desc: 'Rotazione automatica credenziali e segreti: API key, password account.',
+        deps: ['repositories.ts'],
+        issues: [] },
+      { id: 'accountManager', name: 'accountManager.ts', file: 'src/accountManager.ts', tags: ['multi-account','profiles','balance'], status: 'ok',
+        desc: 'Gestisce multi-account runtime: selezione account per lead, bilanciamento carico.',
+        deps: ['config/profiles.ts'],
+        issues: [] },
+    ]
+  },
+  {
+    id: 'workflows',
+    label: '🔄 Workflows di Alto Livello',
+    color: 'var(--orchestration)',
+    colorHex: '#4cc9f0',
+    nodes: [
+      { id: 'wfInvites', name: 'sendInvitesWorkflow.ts', file: 'src/workflows/sendInvitesWorkflow.ts', tags: ['workflow','invites','batch'], status: 'ok',
+        desc: 'Workflow alto livello per campagna inviti: seleziona lead, pianifica, esegue batch.',
+        deps: ['scheduler.ts','inviteWorker.ts','repositories.ts'],
+        issues: [] },
+      { id: 'wfMessages', name: 'sendMessagesWorkflow.ts', file: 'src/workflows/sendMessagesWorkflow.ts', tags: ['workflow','messages','sequence'], status: 'ok',
+        desc: 'Workflow messaggi follow-up: selezione lead accepted, personalizzazione AI, invio.',
+        deps: ['scheduler.ts','messageWorker.ts'],
+        issues: [] },
+      { id: 'wfSyncList', name: 'syncListWorkflow.ts', file: 'src/workflows/syncListWorkflow.ts', tags: ['workflow','sync','sales-nav'], status: 'ok',
+        desc: 'Sincronizza lead da Sales Navigator list verso DB e coda automazione.',
+        deps: ['salesNavigatorSync.ts','bulkSaveOrchestrator.ts'],
+        issues: [] },
+      { id: 'wfSyncSearch', name: 'syncSearchWorkflow.ts', file: 'src/workflows/syncSearchWorkflow.ts', tags: ['workflow','search','harvest'], status: 'ok',
+        desc: 'Esegue ricerca Sales Navigator e importa risultati nel DB.',
+        deps: ['listScraper.ts','repositories.ts'],
+        issues: [] },
+      { id: 'preflight', name: 'workflows/preflight.ts', file: 'src/workflows/preflight.ts', tags: ['preflight','check','health'], status: 'ok',
+        desc: 'Check pre-avvio: verifica config, DB, proxy, sessione, account salute.',
+        deps: ['config.ts','db.ts','proxyManager.ts'],
+        issues: [] },
+      { id: 'reportFormatter', name: 'reportFormatter.ts', file: 'src/workflows/reportFormatter.ts', tags: ['report','format','markdown'], status: 'ok',
+        desc: 'Formatta report workflow in markdown/HTML per Telegram/email.',
+        deps: ['repositories/stats.ts'],
+        issues: [] },
+    ]
+  },
+];
+
+// ─────────────────────────────────────────────
+// ALL BUGS CONSOLIDATED
+// ─────────────────────────────────────────────
+const ALL_BUGS = [];
+GROUPS.forEach(g => g.nodes.forEach(n => n.issues.forEach(i => ALL_BUGS.push({ ...i, component: n.name, group: g.label }))));
+
+// ─────────────────────────────────────────────
+// RENDER
+// ─────────────────────────────────────────────
+
+const canvas = document.getElementById('canvas');
+const sidebar = document.getElementById('group-nav');
+const detailPanel = document.getElementById('detail-content');
+const noSel = document.getElementById('no-sel');
+
+let selectedNode = null;
+let activeFilter = null;
+
+// Build sidebar
+GROUPS.forEach(g => {
+  const btn = document.createElement('button');
+  btn.className = 'group-btn';
+  btn.dataset.gid = g.id;
+  btn.innerHTML = `
+    <span class="group-dot" style="background:${g.colorHex}"></span>
+    <span>${g.label.split(' ').slice(1).join(' ')}</span>
+    <span class="group-count">${g.nodes.length}</span>
+  `;
+  btn.addEventListener('click', () => filterByGroup(g.id, btn));
+  sidebar.appendChild(btn);
+});
+
+// Build groups
+GROUPS.forEach(g => {
+  const section = document.createElement('div');
+  section.className = 'group-section';
+  section.id = 'group-' + g.id;
+  section.innerHTML = `
+    <div class="group-header" style="background:color-mix(in srgb, ${g.colorHex} 8%, var(--surface))">
+      <span class="icon">${g.label.split(' ')[0]}</span>
+      <span style="color:${g.colorHex}">${g.label.split(' ').slice(1).join(' ')}</span>
+      <span style="color:var(--dim);font-size:10px;margin-left:4px">(${g.nodes.length})</span>
+      <span class="toggle">▼</span>
+    </div>
+    <div class="group-body" id="body-${g.id}"></div>
+  `;
+  section.querySelector('.group-header').addEventListener('click', () => {
+    section.classList.toggle('collapsed');
+  });
+  canvas.appendChild(section);
+
+  const body = section.querySelector('.group-body');
+  g.nodes.forEach(n => {
+    const card = document.createElement('div');
+    card.className = 'node';
+    card.id = 'node-' + n.id;
+    card.style.setProperty('--gcolor', g.colorHex);
+    card.dataset.nid = n.id;
+    card.dataset.gid = g.id;
+
+    const statusClass = n.status === 'ok' ? 'status-ok' : n.status === 'warn' ? 'status-warn' : 'status-bug';
+    const tags = n.tags.map(t => `<span class="tag">${t}</span>`).join('');
+    card.innerHTML = `
+      <div class="node-status ${statusClass}"></div>
+      <div class="node-name">${n.name}</div>
+      <div class="node-file">${n.file}</div>
+      <div class="node-tags">${tags}</div>
+    `;
+    card.addEventListener('click', () => selectNode(n, g, card));
+    body.appendChild(card);
+  });
+});
+
+// Select node
+function selectNode(n, g, cardEl) {
+  document.querySelectorAll('.node.selected').forEach(el => el.classList.remove('selected'));
+  cardEl.classList.add('selected');
+  selectedNode = n;
+  noSel.style.display = 'none';
+  detailPanel.style.display = 'flex';
+
+  let issuesHtml = '';
+  if (n.issues.length > 0) {
+    issuesHtml = n.issues.map(i => `
+      <div class="issue-item issue-${i.sev}">
+        <div class="issue-severity">⚠ ${i.sev.toUpperCase()}</div>
+        <div class="issue-text">${i.text}</div>
+        ${i.fix ? `<div class="fix-text">💡 ${i.fix}</div>` : ''}
+      </div>
+    `).join('');
+  } else {
+    issuesHtml = '<div style="font-size:10px;color:var(--dim)">✅ Nessun issue rilevato</div>';
+  }
+
+  const depsHtml = n.deps.map(d => `<div class="dep-item">${d}</div>`).join('') || '<div style="font-size:10px;color:var(--dim)">Nessuna dipendenza esplicita</div>';
+  const tagHtml = n.tags.map(t => `<span class="tag">${t}</span>`).join('');
+
+  detailPanel.innerHTML = `
+    <div class="panel-header">
+      <div class="panel-title" style="color:${g.colorHex}">${n.name}</div>
+      <div class="panel-subtitle">${n.file}</div>
+      <div class="node-tags" style="margin-top:6px">${tagHtml}</div>
+    </div>
+    <div class="panel-section">
+      <div class="panel-section-title">Descrizione</div>
+      <div style="font-size:11px;line-height:1.6;color:var(--text)">${n.desc}</div>
+    </div>
+    <div class="panel-section">
+      <div class="panel-section-title">Dipendenze (${n.deps.length})</div>
+      <div class="dep-list">${depsHtml}</div>
+    </div>
+    <div class="panel-section" style="flex:1">
+      <div class="panel-section-title">Bug & Miglioramenti (${n.issues.length})</div>
+      ${issuesHtml}
+    </div>
+    <div style="padding:12px 16px;border-top:1px solid var(--border)">
+      <div class="panel-section-title">Gruppo</div>
+      <span style="font-size:10px;color:${g.colorHex}">${g.label}</span>
+    </div>
+  `;
+}
+
+// Filter by group
+function filterByGroup(gid, btnEl) {
+  if (activeFilter === gid) {
+    activeFilter = null;
+    document.querySelectorAll('.group-section').forEach(s => s.classList.remove('dimmed', 'hidden'));
+    document.querySelectorAll('.group-btn').forEach(b => b.classList.remove('active'));
+  } else {
+    activeFilter = gid;
+    document.querySelectorAll('.group-section').forEach(s => {
+      if (s.id === 'group-' + gid) {
+        s.classList.remove('dimmed', 'hidden');
+        s.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else {
+        s.classList.add('dimmed');
+      }
+    });
+    document.querySelectorAll('.group-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.gid === gid);
+    });
+  }
+}
+
+// Search
+const searchInput = document.getElementById('search');
+searchInput.addEventListener('input', () => {
+  const q = searchInput.value.toLowerCase().trim();
+  document.querySelectorAll('.node').forEach(card => {
+    const text = card.textContent.toLowerCase();
+    if (!q) {
+      card.classList.remove('search-match', 'search-hidden');
+    } else if (text.includes(q)) {
+      card.classList.add('search-match');
+      card.classList.remove('search-hidden');
+    } else {
+      card.classList.add('search-hidden');
+      card.classList.remove('search-match');
+    }
+  });
+  // Show/hide groups that have no matches
+  document.querySelectorAll('.group-section').forEach(section => {
+    const visible = [...section.querySelectorAll('.node')].some(n => !n.classList.contains('search-hidden'));
+    section.classList.toggle('hidden', !!q && !visible);
+    section.classList.remove('dimmed');
+  });
+  if (!q) activeFilter = null;
+});
+
+// ─── INJECT BUG OVERVIEW INTO SIDEBAR ────────────────────────────────────────
+const bugLabel = document.createElement('div');
+bugLabel.className = 'sidebar-label';
+bugLabel.textContent = 'Bug Overview';
+sidebar.parentElement.insertBefore(bugLabel, document.getElementById('flow-nav'));
+
+const bugDiv = document.createElement('div');
+bugDiv.className = 'sidebar-section';
+const crit = ALL_BUGS.filter(b=>b.sev==='critical').length;
+const high = ALL_BUGS.filter(b=>b.sev==='high').length;
+const med = ALL_BUGS.filter(b=>b.sev==='medium').length;
+bugDiv.innerHTML = `
+  <div class="bug-grid">
+    <div class="bug-card bug-critical"><div class="num">${crit}</div><div class="label">Critical</div></div>
+    <div class="bug-card bug-high"><div class="num">${high}</div><div class="label">High</div></div>
+    <div class="bug-card bug-medium"><div class="num">${med}</div><div class="label">Medium</div></div>
+  </div>
+  <div style="margin-top:10px;font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:0.5px">Totale: ${ALL_BUGS.length} issue</div>
+`;
+sidebar.parentElement.insertBefore(bugDiv, document.getElementById('flow-nav'));
+
+// Print summary to console
+console.log(`📊 Sistema LinkedIn Automation
+════════════════════════════════
+• Gruppi: ${GROUPS.length}
+• Componenti: ${GROUPS.reduce((a,g)=>a+g.nodes.length,0)}
+• Bug totali: ${ALL_BUGS.length} (${crit} critical, ${high} high, ${med} medium)
+• Workers: 16
+• Migrazioni DB: 55
+• Workflow: 6`);
+</script>
+</body>
+</html>

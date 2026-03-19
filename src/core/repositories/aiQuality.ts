@@ -1,6 +1,6 @@
-import { buildPersonalizedInviteNote } from '../../ai/inviteNotePersonalizer';
-import { buildPersonalizedFollowUpMessage } from '../../ai/messagePersonalizer';
-import { analyzeIncomingMessage } from '../../ai/sentimentAnalysis';
+// A22: Lazy import per rompere circular dependency chain:
+// openaiClient → integrationPolicy → repositories → aiQuality → ai/*
+// Le funzioni AI vengono importate dinamicamente solo quando servono (nel validation pipeline).
 import { config, getLocalDateString } from '../../config';
 import { getDatabase } from '../../db';
 import type { LeadRecord } from '../../types/domain';
@@ -389,6 +389,7 @@ export async function runAiValidationPipeline(triggeredBy: string = 'manual'): P
         try {
             if (sample.task_type === 'sentiment') {
                 const messageText = normalizeText(input.text) || normalizeText(input.message) || '';
+                const { analyzeIncomingMessage } = await import('../../ai/sentimentAnalysis');
                 const predicted = await analyzeIncomingMessage(messageText);
                 predictedPayload = {
                     intent: predicted.intent,
@@ -410,6 +411,7 @@ export async function runAiValidationPipeline(triggeredBy: string = 'manual'): P
                 isMatch = sentimentScore.isMatch;
             } else if (sample.task_type === 'invite') {
                 const lead = makeSyntheticLead(input, sample.id);
+                const { buildPersonalizedInviteNote } = await import('../../ai/inviteNotePersonalizer');
                 const generated = await buildPersonalizedInviteNote(lead);
                 predictedPayload = {
                     text: generated.note,
@@ -422,6 +424,7 @@ export async function runAiValidationPipeline(triggeredBy: string = 'manual'): P
                 isMatch = scored.isMatch;
             } else {
                 const lead = makeSyntheticLead(input, sample.id);
+                const { buildPersonalizedFollowUpMessage } = await import('../../ai/messagePersonalizer');
                 const generated = await buildPersonalizedFollowUpMessage(lead);
                 predictedPayload = {
                     text: generated.message,

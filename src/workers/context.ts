@@ -63,4 +63,6 @@ export interface WorkerContext {
     windDownSpeedReduction?: number;
     /** Session Replay Breadcrumbs (6.7): ultimi 20 eventi navigazione per debugging challenge */
     breadcrumbs?: SessionBreadcrumb[];
+    /** Contatore azioni nella sessione corrente — usato per decay navigazione organica (C05) */
+    sessionActionCount?: number;
 }

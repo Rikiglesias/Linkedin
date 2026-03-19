@@ -40,6 +40,7 @@ import { LeadRecord } from '../types/domain';
 import { WorkerContext } from './context';
 import { ChallengeDetectedError, RetryableWorkerError } from './errors';
 import { WorkerExecutionResult, workerResult } from './result';
+import { navigateToProfileForMessage } from '../browser/navigationContext';
 
 /**
  * Calcola quanti giorni fa è avvenuto l'evento (dal timestamp ISO).
@@ -114,8 +115,9 @@ async function processSingleFollowUp(
         return false;
     }
 
-    // Navigazione al profilo
-    await context.session.page.goto(linkedinUrl, { waitUntil: 'domcontentloaded' });
+    // C11: Navigazione al profilo con catena organica (era goto diretto — segnale detection #1).
+    // navigateToProfileForMessage: 60% Feed→Profilo, 40% Diretto (con varianza notifiche).
+    await navigateToProfileForMessage(context.session.page, linkedinUrl, context.accountId);
     await humanDelay(context.session.page, 2500, 5000);
     await simulateHumanReading(context.session.page);
     await contextualReadingPause(context.session.page);

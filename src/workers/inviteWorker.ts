@@ -34,9 +34,8 @@ import { bridgeDailyStat, bridgeLeadStatus } from '../cloud/cloudBridge';
 import { recordSent, inferHourBucket } from '../ml/abBandit';
 import { WorkerExecutionResult, workerResult } from './result';
 import { inferLeadSegment } from '../ml/segments';
-import { enrichLeadAuto } from '../integrations/leadEnricher';
-import { isLeadAlreadyEnriched, persistEnrichmentResult } from '../integrations/persistEnrichment';
-import { logError, logInfo } from '../telemetry/logger';
+import { logInfo, logWarn } from '../telemetry/logger';
+import { normalizeNameForComparison, jaroWinklerSimilarity } from '../utils/text';
 
 // Parole attese nel bottone Connect per confidence check pre-click.
 // Previene click su bottone sbagliato se LinkedIn cambia il layout.
@@ -275,43 +274,19 @@ export async function processInviteJob(
         }
     }
 
+    // C10: SalesNav URL → REVIEW_REQUIRED (era BLOCKED = dead-end irrecuperabile).
+    // I lead SalesNav HANNO un profilo classico — l'URL /sales/lead/ può essere convertita in /in/.
+    // REVIEW_REQUIRED ha transizioni permesse → l'utente o il comando 'salesnav resolve' può fixare.
     if (isSalesNavigatorUrl(lead.linkedin_url)) {
-        await transitionLead(lead.id, 'BLOCKED', 'salesnav_url_requires_profile_invite');
+        await transitionLead(lead.id, 'REVIEW_REQUIRED', 'salesnav_url_needs_resolution');
         return workerResult(1);
     }
 
-    // ── Enrichment al volo: arricchisci il lead prima di navigare al profilo ──
-    // Guard: salta se il lead è già stato arricchito (evita doppio enrichment e spreco API)
-    try {
-        if (!(await isLeadAlreadyEnriched(payload.leadId))) {
-            await logInfo('invite.worker.enrichment_start', { leadId: payload.leadId });
-            const enrichResult = await enrichLeadAuto(lead);
-
-            await persistEnrichmentResult({
-                leadId: payload.leadId,
-                email: enrichResult.email,
-                phone: enrichResult.phone,
-                companyDomain: enrichResult.companyDomain,
-                businessEmail: enrichResult.businessEmail,
-                businessEmailConfidence: enrichResult.businessEmailConfidence,
-                emailConfidence: enrichResult.emailConfidence,
-                companyName: enrichResult.companyName,
-                industry: enrichResult.industry,
-                seniority: enrichResult.seniority,
-                jobTitle: enrichResult.jobTitle,
-                location: enrichResult.location,
-                source: enrichResult.source,
-                domainSource: enrichResult.domainSource,
-                deepEnrichment: enrichResult.deepEnrichment,
-            });
-            await logInfo('invite.worker.enrichment_done', { leadId: payload.leadId, emailFound: !!enrichResult.email });
-        } else {
-            await logInfo('invite.worker.enrichment_skipped', { leadId: payload.leadId, reason: 'already_enriched' });
-        }
-    } catch (enrichErr) {
-        // L'enrichment non deve MAI bloccare l'invio dell'invito
-        await logError('invite.worker.enrichment_failed', { leadId: payload.leadId, error: String(enrichErr) });
-    }
+    // H08: Enrichment RIMOSSO dalla sessione browser.
+    // Il pre-enrichment avviene OFFLINE nei workflow (sendInvitesWorkflow, enrich-fast, parallelEnricher).
+    // Fare API calls esterne (OSINT 7-fase, 30-60s/lead) con il browser aperto su LinkedIn
+    // crea un pattern sospetto: browser idle per 30-60s senza interazione → rilevabile.
+    // Se il lead non è ancora arricchito, procedi comunque — l'enrichment verrà fatto offline.
 
     // Skip profili già visitati oggi: evita duplicate profile view sullo stesso target
     const normalizedUrl = lead.linkedin_url.replace(/\/+$/, '').toLowerCase();
@@ -322,26 +297,61 @@ export async function processInviteJob(
 
     // Navigation Context Chain (1.2): catena di navigazione realistica
     // invece di goto diretto al profilo (segnale detection #1).
+    // C05: passa sessionActionCount per attivare il decay della navigazione organica
+    // (primi inviti: 45% search, dopo: sempre più diretto — simula umano che si stufa di cercare)
     await navigateToProfileWithContext(
         context.session.page,
         lead.linkedin_url,
         { name: `${lead.first_name} ${lead.last_name}`.trim(), job_title: lead.job_title, company: lead.account_name },
         context.accountId,
+        context.sessionActionCount ?? 0,
     );
     // Content-Aware Profile Reading (3.4 fix): funzione UNIFICATA scroll + dwell
     // in budget totale proporzionale alla ricchezza del profilo (4-20s).
     // Sostituisce simulateHumanReading + contextualReadingPause per i profili.
     await computeProfileDwellTime(context.session.page);
 
-    // Anti-pattern: 20% di probabilità di visitare la pagina attività recente del target
-    // prima di tornare al profilo e cliccare Connect. Un umano curioso guarda i post
-    // del target prima di decidere se connettersi — rende la visita più organica.
-    if (Math.random() < 0.20) {
+    // C04: Identity check — verifica che il profilo aperto corrisponda al lead target.
+    // Se l'h1 non corrisponde al nome del lead → REVIEW_REQUIRED (potremmo invitare la persona sbagliata).
+    try {
+        const h1Element = context.session.page.locator('h1').first();
+        const h1Text = await h1Element.textContent({ timeout: 3000 }).catch(() => null);
+        if (h1Text) {
+            const expectedName = normalizeNameForComparison(`${lead.first_name} ${lead.last_name}`);
+            const actualName = normalizeNameForComparison(h1Text);
+            if (expectedName && actualName) {
+                const similarity = jaroWinklerSimilarity(expectedName, actualName);
+                if (similarity < 0.75) {
+                    await logWarn('invite.identity_mismatch', {
+                        leadId: lead.id,
+                        expectedName,
+                        actualName,
+                        similarity: Number.parseFloat(similarity.toFixed(3)),
+                        linkedinUrl: lead.linkedin_url.substring(0, 60),
+                    });
+                    await transitionLead(lead.id, 'REVIEW_REQUIRED', 'identity_mismatch');
+                    return workerResult(1);
+                }
+            }
+        }
+    } catch {
+        // Identity check non bloccante: se fallisce (es. h1 non trovato), prosegui
+    }
+
+    // M10: Probabilità VARIABILE per sessione (10-30%) di visitare la pagina attività recente.
+    // Un umano curioso guarda i post del target prima di decidere se connettersi.
+    // Decay: più lead visitati nella sessione → meno curiosità (un umano si stanca).
+    const activityBaseProb = 0.10 + Math.random() * 0.20; // 10-30% per lead
+    const activityDecay = Math.max(0.05, activityBaseProb - (context.sessionActionCount ?? 0) * 0.02);
+    if (Math.random() < activityDecay) {
         const activityUrl = lead.linkedin_url.replace(/\/$/, '') + '/recent-activity/all/';
         await context.session.page.goto(activityUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 }).catch(() => null);
         await simulateHumanReading(context.session.page);
-        // Torna al profilo per procedere con il Connect
-        await context.session.page.goto(lead.linkedin_url, { waitUntil: 'domcontentloaded' });
+        // Torna al profilo con goBack (più naturale di goto diretto — il browser ha history)
+        await context.session.page.goBack({ waitUntil: 'domcontentloaded', timeout: 10_000 }).catch(async () => {
+            // Fallback: se goBack fallisce (es. pagina non in history), usa goto
+            await context.session.page.goto(lead.linkedin_url, { waitUntil: 'domcontentloaded' });
+        });
         await humanDelay(context.session.page, 500, 1500);
     }
 
@@ -447,13 +457,22 @@ export async function processInviteJob(
 
     await humanDelay(context.session.page, 900, 1800);
 
-    // Verifica post-azione: dopo click Connect, il modale invito deve apparire.
-    // Se non appare, il click potrebbe aver colpito un bottone sbagliato.
+    // H09: Verifica post-azione BLOCCANTE: dopo click Connect, il modale invito DEVE apparire.
+    // Se non appare, il click ha colpito un bottone sbagliato o LinkedIn ha cambiato il layout.
+    // Procedere senza modale → handleInviteModal cerca bottoni inesistenti → retry inutile.
+    // Il click Connect è già registrato da LinkedIn — non possiamo riprovare.
     const modalAppeared = await context.session.page.locator(
         joinSelectors('addNoteButton') + ', ' + joinSelectors('sendWithoutNote') + ', ' + joinSelectors('sendFallback'),
     ).first().isVisible({ timeout: 3000 }).catch(() => false);
     if (!modalAppeared) {
-        await logInfo('invite.post_action_verify_failed', { leadId: lead.id, message: 'Modale invito non apparso dopo click Connect' });
+        await logWarn('invite.post_action_verify_failed', { leadId: lead.id, message: 'Modale invito non apparso dopo click Connect — abort' });
+        // Escape per chiudere eventuali overlay residui
+        await context.session.page.keyboard.press('Escape').catch(() => {});
+        await humanDelay(context.session.page, 500, 1000);
+        // Compensazione: decrementa invites_sent (il click Connect non ha prodotto un invito reale)
+        if (!context.dryRun) await incrementDailyStat(context.localDate, 'invites_sent', -1).catch(() => {});
+        await incrementDailyStat(context.localDate, 'selector_failures');
+        throw new RetryableWorkerError('Modale invito non apparso dopo click Connect', 'INVITE_MODAL_NOT_FOUND');
     }
 
     inviteResult = await handleInviteModal(

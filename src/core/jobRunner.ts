@@ -285,7 +285,9 @@ async function runQueuedJobsForAccount(
         if (!options.dryRun) {
             try {
                 const { warmupSession } = await import('./sessionWarmer');
-                await warmupSession(session.page);
+                // H25: Passa timestamp ultima sessione per warmup condizionale
+                const lastSessionFlag = await getRuntimeFlag(`browser_session_started_at:${account.id}`).catch(() => null);
+                await warmupSession(session.page, lastSessionFlag);
                 await logInfo('job_runner.warmup_integrated', { accountId: account.id });
             } catch (warmupErr) {
                 await logWarn('job_runner.warmup_failed', {
@@ -539,6 +541,10 @@ async function runQueuedJobsForAccount(
                 await markJobSucceeded(job.id);
                 await createJobAttempt(job.id, true, null, null, null);
                 addBreadcrumb(workerContext, `job.ok:${job.type}`, `id=${job.id}`);
+                // C05: Incrementa sessionActionCount per decay navigazione organica
+                if (processedCurrentJob) {
+                    workerContext.sessionActionCount = (workerContext.sessionActionCount ?? 0) + 1;
+                }
                 await pushOutboxEvent(
                     hasWorkerWarnings ? 'job.succeeded_with_errors' : 'job.succeeded',
                     {
@@ -990,15 +996,16 @@ async function runQueuedJobsForAccount(
             }
         }
     } finally {
-        // Wind-down naturale (B.4): prima di chiudere il browser, simula un umano
-        // che torna al feed e scrolla un po' prima di uscire. Non chiude bruscamente
-        // dopo l'ultima azione operativa — un umano naviga un po' poi chiude.
+        // H15: Wind-down SEMPRE — un umano non chiude il browser dalla pagina profilo.
+        // Torna al feed, scrolla un po', poi chiude. Il 30% precedente lasciava il 70%
+        // delle sessioni chiuse bruscamente dall'ultima azione — pattern rilevabile.
         if (!sessionClosed && !options.dryRun) {
             try {
-                if (Math.random() < 0.30) {
-                    await session.page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 10_000 });
-                    await session.page.waitForTimeout(2000 + Math.floor(Math.random() * 3000));
-                }
+                await session.page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 10_000 });
+                await session.page.waitForTimeout(2000 + Math.floor(Math.random() * 4000));
+                // Scroll leggero del feed prima di chiudere (simula lettura rapida)
+                await session.page.evaluate(() => window.scrollBy({ top: 200 + Math.random() * 300, behavior: 'smooth' })).catch(() => null);
+                await session.page.waitForTimeout(1000 + Math.floor(Math.random() * 2000));
             } catch { /* best-effort wind-down */ }
         }
         if (!sessionClosed) {

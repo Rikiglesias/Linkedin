@@ -20,7 +20,8 @@ export type JobType =
     | 'HYGIENE'
     | 'INTERACTION'
     | 'ENRICHMENT'
-    | 'POST_CREATION';
+    | 'POST_CREATION'
+    | 'INBOX_CHECK';
 
 export type JobStatus = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'DEAD_LETTER' | 'PAUSED';
 

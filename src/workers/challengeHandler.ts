@@ -15,19 +15,11 @@ import { createVisionProvider } from '../captcha/visionProviderFactory';
 import type { VisionProvider } from '../captcha/visionProvider';
 import { humanDelay } from '../browser/humanBehavior';
 import { logInfo, logWarn, logError } from '../telemetry/logger';
+import { getDailyStat, incrementDailyStat } from '../core/repositories/stats';
+import { getLocalDateString } from '../config';
 
 const MAX_ATTEMPTS = 2;
 const MAX_AUTO_CHALLENGE_RESOLUTIONS_PER_DAY = 3;
-let challengeResolutionsToday = 0;
-let challengeCountDate = new Date().toISOString().slice(0, 10);
-
-function resetDailyCounterIfNeeded(): void {
-    const today = new Date().toISOString().slice(0, 10);
-    if (today !== challengeCountDate) {
-        challengeResolutionsToday = 0;
-        challengeCountDate = today;
-    }
-}
 
 /**
  * Tenta di risolvere un challenge/CAPTCHA sulla pagina corrente.
@@ -43,9 +35,10 @@ function resetDailyCounterIfNeeded(): void {
  * @returns true se il challenge è stato risolto, false altrimenti
  */
 export async function attemptChallengeResolution(page: Page): Promise<boolean> {
-    resetDailyCounterIfNeeded();
-    // Cap giornaliero: troppi CAPTCHA risolti automaticamente in un giorno
-    // sono più sospetti di non risolverli. Limita a 3/giorno (in-memory, reset a mezzanotte).
+    // Cap giornaliero persistente (DB): troppi CAPTCHA risolti automaticamente in un giorno
+    // sono più sospetti di non risolverli. Limita a 3/giorno, persistente cross-riavvii.
+    const today = getLocalDateString();
+    const challengeResolutionsToday = await getDailyStat(today, 'challenges_count');
     if (challengeResolutionsToday >= MAX_AUTO_CHALLENGE_RESOLUTIONS_PER_DAY) {
         await logWarn('challenge.daily_cap_reached', {
             todayResolutions: challengeResolutionsToday,
@@ -60,10 +53,11 @@ export async function attemptChallengeResolution(page: Page): Promise<boolean> {
         try {
             const stillPresent = await isStillOnChallengePage(page);
             if (!stillPresent) {
-                if (attempt > 1) challengeResolutionsToday += 1;
+                if (attempt > 1) await incrementDailyStat(today, 'challenges_count');
+                const dailyTotal = await getDailyStat(today, 'challenges_count');
                 await logInfo('challenge.resolved_before_screenshot', {
                     attempt,
-                    dailyTotal: challengeResolutionsToday,
+                    dailyTotal,
                 });
                 return true;
             }
@@ -125,8 +119,9 @@ export async function attemptChallengeResolution(page: Page): Promise<boolean> {
 
                 const stillChallenge = await isStillOnChallengePage(page);
                 if (!stillChallenge) {
-                    challengeResolutionsToday += 1;
-                    await logInfo('challenge.resolved', { attempt, provider: provider.name, dailyTotal: challengeResolutionsToday });
+                    await incrementDailyStat(today, 'challenges_count');
+                    const dailyTotal = await getDailyStat(today, 'challenges_count');
+                    await logInfo('challenge.resolved', { attempt, provider: provider.name, dailyTotal });
                     return true;
                 }
 

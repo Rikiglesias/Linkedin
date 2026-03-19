@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LinkedIn Automation System — Mappa v2.0</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --bg-primary: #0a0b0f;
+  --bg-secondary: #12131a;
+  --bg-card: #181920;
+  --bg-hover: #1e2029;
+  --bg-elevated: #22232e;
+  --text-primary: #e8e6e1;
+  --text-secondary: #8a8b95;
+  --text-muted: #55566a;
+  --border: #2a2b38;
+  --border-light: #1e1f2c;
+  --accent-blue: #4a9eff;
+  --accent-teal: #34d399;
+  --accent-amber: #f59e0b;
+  --accent-red: #ef4444;
+  --accent-purple: #a78bfa;
+  --accent-coral: #fb7185;
+  --accent-green: #22c55e;
+  --green-bg: rgba(34,197,94,.08);
+  --amber-bg: rgba(245,158,11,.08);
+  --red-bg: rgba(239,68,68,.08);
+  --blue-bg: rgba(74,158,255,.08);
+  --purple-bg: rgba(167,139,250,.08);
+  --teal-bg: rgba(52,211,153,.08);
+  --radius: 10px;
+  --radius-sm: 6px;
+  --radius-lg: 14px;
+  --font: 'Plus Jakarta Sans', -apple-system, sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+html { font-size: 14px; }
+body { font-family: var(--font); background: var(--bg-primary); color: var(--text-primary); overflow: hidden; height: 100vh; }
+
+/* Layout */
+.app { display: grid; grid-template-columns: 260px 1fr; grid-template-rows: 56px 1fr; height: 100vh; }
+.topbar { grid-column: 1 / -1; background: var(--bg-secondary); border-bottom: 1px solid var(--border-light); display: flex; align-items: center; padding: 0 24px; gap: 16px; z-index: 10; }
+.sidebar { background: var(--bg-secondary); border-right: 1px solid var(--border-light); padding: 16px 12px; overflow-y: auto; }
+.main { overflow-y: auto; padding: 24px; }
+
+/* Topbar */
+.logo { font-weight: 700; font-size: 15px; letter-spacing: -.3px; display: flex; align-items: center; gap: 10px; }
+.logo-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-blue); box-shadow: 0 0 12px rgba(74,158,255,.5); }
+.search-box { flex: 1; max-width: 400px; position: relative; }
+.search-box input { width: 100%; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 12px 8px 36px; color: var(--text-primary); font-family: var(--font); font-size: 13px; outline: none; transition: border-color .2s; }
+.search-box input:focus { border-color: var(--accent-blue); }
+.search-box svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
+.stats-bar { display: flex; gap: 20px; margin-left: auto; }
+.stat { text-align: center; }
+.stat-val { font-size: 16px; font-weight: 700; font-family: var(--mono); }
+.stat-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .8px; }
+
+/* Sidebar */
+.nav-section { margin-bottom: 20px; }
+.nav-title { font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-muted); padding: 8px 12px 6px; font-weight: 600; }
+.nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: var(--radius-sm); cursor: pointer; transition: all .15s; color: var(--text-secondary); font-size: 13px; font-weight: 500; }
+.nav-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+.nav-item.active { background: rgba(74,158,255,.1); color: var(--accent-blue); }
+.nav-icon { width: 18px; height: 18px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+.nav-badge { margin-left: auto; font-size: 11px; font-family: var(--mono); background: var(--bg-card); padding: 1px 7px; border-radius: 10px; color: var(--text-muted); }
+.filter-group { padding: 0 12px; margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px; }
+.filter-btn { font-size: 11px; padding: 4px 10px; border-radius: 20px; border: 1px solid var(--border); background: transparent; color: var(--text-secondary); cursor: pointer; font-family: var(--font); transition: all .15s; }
+.filter-btn:hover, .filter-btn.active { background: rgba(74,158,255,.12); border-color: var(--accent-blue); color: var(--accent-blue); }
+
+/* Cards */
+.section-title { font-size: 20px; font-weight: 700; margin-bottom: 4px; letter-spacing: -.3px; }
+.section-sub { font-size: 13px; color: var(--text-secondary); margin-bottom: 20px; }
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.card { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius); padding: 16px; cursor: pointer; transition: all .2s; position: relative; }
+.card:hover { border-color: var(--border); transform: translateY(-1px); }
+.card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 10px; }
+.card-name { font-weight: 600; font-size: 14px; }
+.card-desc { font-size: 12px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 10px; }
+.card-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.tag { font-size: 10px; padding: 2px 8px; border-radius: 20px; font-family: var(--mono); font-weight: 500; }
+.tag-green { background: var(--green-bg); color: var(--accent-green); }
+.tag-amber { background: var(--amber-bg); color: var(--accent-amber); }
+.tag-red { background: var(--red-bg); color: var(--accent-red); }
+.tag-blue { background: var(--blue-bg); color: var(--accent-blue); }
+.tag-purple { background: var(--purple-bg); color: var(--accent-purple); }
+.bug-badge { position: absolute; top: 12px; right: 12px; font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 10px; font-family: var(--mono); }
+.bug-critical { background: var(--red-bg); color: var(--accent-red); }
+.bug-high { background: var(--amber-bg); color: var(--accent-amber); }
+.bug-medium { background: var(--blue-bg); color: var(--accent-blue); }
+
+/* Detail Panel */
+.detail-panel { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius-lg); padding: 20px; margin-bottom: 24px; display: none; }
+.detail-panel.show { display: block; }
+.detail-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.detail-title { font-size: 17px; font-weight: 700; }
+.detail-close { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 18px; padding: 4px; }
+.detail-section { margin-bottom: 14px; }
+.detail-section-title { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600; }
+.detail-list { list-style: none; }
+.detail-list li { padding: 6px 0; border-bottom: 1px solid var(--border-light); font-size: 13px; display: flex; align-items: center; gap: 8px; }
+.detail-list li:last-child { border: none; }
+.dep-item { font-family: var(--mono); font-size: 12px; color: var(--accent-blue); }
+
+/* Workflow Section */
+.workflow-card { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius); padding: 18px; margin-bottom: 10px; transition: all .2s; }
+.workflow-card:hover { border-color: var(--border); }
+.wf-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.wf-name { font-weight: 600; font-size: 15px; }
+.wf-status { font-size: 11px; padding: 3px 10px; border-radius: 20px; font-weight: 600; }
+.wf-status-ready { background: var(--green-bg); color: var(--accent-green); }
+.wf-status-dev { background: var(--amber-bg); color: var(--accent-amber); }
+.wf-status-broken { background: var(--red-bg); color: var(--accent-red); }
+.wf-status-review { background: var(--purple-bg); color: var(--accent-purple); }
+.progress-bar { height: 6px; background: var(--bg-elevated); border-radius: 3px; overflow: hidden; margin: 10px 0; }
+.progress-fill { height: 100%; border-radius: 3px; transition: width .6s ease; }
+.wf-steps { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.wf-step { font-size: 11px; padding: 4px 10px; background: var(--bg-elevated); border-radius: var(--radius-sm); color: var(--text-secondary); font-family: var(--mono); display: flex; align-items: center; gap: 4px; }
+.wf-step-done { color: var(--accent-green); background: var(--green-bg); }
+.wf-step-wip { color: var(--accent-amber); background: var(--amber-bg); }
+.wf-step-todo { color: var(--text-muted); }
+.wf-deps { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+.wf-bugs { margin-top: 8px; }
+.wf-bug { font-size: 12px; padding: 4px 0; color: var(--accent-red); display: flex; align-items: center; gap: 6px; }
+
+/* Data Flow */
+.flow-container { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius-lg); padding: 20px; margin-bottom: 16px; overflow-x: auto; }
+.flow-chain { display: flex; align-items: center; gap: 0; padding: 12px 0; min-width: max-content; }
+.flow-node { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; min-width: 110px; text-align: center; cursor: pointer; transition: all .2s; flex-shrink: 0; }
+.flow-node:hover { border-color: var(--accent-blue); transform: scale(1.03); }
+.flow-node-name { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+.flow-node-type { font-size: 10px; color: var(--text-muted); font-family: var(--mono); }
+.flow-arrow { color: var(--text-muted); font-size: 16px; padding: 0 6px; flex-shrink: 0; display: flex; align-items: center; }
+.flow-arrow-data { font-size: 9px; color: var(--accent-blue); display: block; text-align: center; }
+.flow-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 10px; padding-left: 4px; }
+.flow-detail { background: var(--bg-elevated); border-radius: var(--radius); padding: 14px; margin-top: 12px; display: none; }
+.flow-detail.show { display: block; }
+.flow-detail table { width: 100%; font-size: 12px; border-collapse: collapse; }
+.flow-detail td { padding: 6px 8px; border-bottom: 1px solid var(--border-light); }
+.flow-detail td:first-child { color: var(--text-muted); width: 100px; font-weight: 500; }
+
+/* Security */
+.risk-meter { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.risk-bar-track { flex: 1; height: 8px; background: var(--bg-elevated); border-radius: 4px; overflow: hidden; }
+.risk-bar-fill { height: 100%; border-radius: 4px; }
+.risk-score { font-family: var(--mono); font-weight: 700; font-size: 18px; min-width: 40px; }
+.security-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+.sec-card { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius); padding: 14px; }
+.sec-title { font-size: 13px; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+.sec-items { list-style: none; }
+.sec-items li { font-size: 12px; padding: 4px 0; display: flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+.dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.dot-green { background: var(--accent-green); }
+.dot-amber { background: var(--accent-amber); }
+.dot-red { background: var(--accent-red); }
+.dot-blue { background: var(--accent-blue); }
+.limits-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.limits-table th { text-align: left; padding: 8px; color: var(--text-muted); font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: .8px; border-bottom: 1px solid var(--border); }
+.limits-table td { padding: 8px; border-bottom: 1px solid var(--border-light); }
+.limits-table .margin-safe { color: var(--accent-green); }
+.limits-table .margin-warn { color: var(--accent-amber); }
+.limits-table .margin-danger { color: var(--accent-red); }
+
+/* Radar */
+.radar-container { display: flex; align-items: center; justify-content: center; padding: 20px 0; }
+
+/* Performance */
+.perf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-bottom: 20px; }
+.perf-card { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius); padding: 14px; }
+.perf-label { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .5px; }
+.perf-value { font-size: 22px; font-weight: 700; font-family: var(--mono); }
+.perf-unit { font-size: 12px; color: var(--text-secondary); font-weight: 400; }
+.perf-bar { height: 4px; background: var(--bg-elevated); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+.perf-bar-fill { height: 100%; border-radius: 2px; }
+.scale-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 20px; }
+.scale-table th { text-align: left; padding: 10px; color: var(--text-muted); font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: .8px; border-bottom: 1px solid var(--border); }
+.scale-table td { padding: 10px; border-bottom: 1px solid var(--border-light); }
+.scale-highlight { color: var(--accent-blue); font-weight: 600; }
+
+/* Checklist */
+.checklist { list-style: none; }
+.checklist li { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border-light); font-size: 13px; cursor: pointer; user-select: none; }
+.checklist li:last-child { border: none; }
+.check-box { width: 18px; height: 18px; border: 1.5px solid var(--border); border-radius: 4px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all .15s; }
+.check-box.checked { background: var(--accent-blue); border-color: var(--accent-blue); }
+.check-box.checked::after { content: '✓'; color: white; font-size: 11px; font-weight: 700; }
+.checklist li.done { color: var(--text-muted); text-decoration: line-through; }
+.check-progress { font-size: 12px; color: var(--text-muted); margin-top: 8px; font-family: var(--mono); }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* Hidden */
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Topbar -->
+  <div class="topbar">
+    <div class="logo"><div class="logo-dot"></div>LinkedIn Automation System <span style="color:var(--text-muted);font-weight:400;font-size:12px;margin-left:4px;">v2.0</span></div>
+    <div class="search-box">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      <input type="text" id="search" placeholder="Cerca componenti, workflow, bug..." oninput="handleSearch(this.value)">
+    </div>
+    <div class="stats-bar">
+      <div class="stat"><div class="stat-val" style="color:var(--accent-blue)">180+</div><div class="stat-label">File</div></div>
+      <div class="stat"><div class="stat-val" style="color:var(--accent-teal)">16</div><div class="stat-label">Workers</div></div>
+      <div class="stat"><div class="stat-val" style="color:var(--accent-amber)">14</div><div class="stat-label">Bug</div></div>
+      <div class="stat"><div class="stat-val" style="color:var(--accent-red)">3</div><div class="stat-label">Critici</div></div>
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="nav-section">
+      <div class="nav-title">Sezioni</div>
+      <div class="nav-item active" onclick="showSection('components')" data-section="components">
+        <div class="nav-icon" style="background:var(--blue-bg);color:var(--accent-blue);">C</div>
+        Componenti <span class="nav-badge">14</span>
+      </div>
+      <div class="nav-item" onclick="showSection('workflows')" data-section="workflows">
+        <div class="nav-icon" style="background:var(--teal-bg);color:var(--accent-teal);">W</div>
+        Stato Workflow <span class="nav-badge">6</span>
+      </div>
+      <div class="nav-item" onclick="showSection('dataflow')" data-section="dataflow">
+        <div class="nav-icon" style="background:var(--purple-bg);color:var(--accent-purple);">D</div>
+        Flussi Dati
+      </div>
+      <div class="nav-item" onclick="showSection('security')" data-section="security">
+        <div class="nav-icon" style="background:var(--red-bg);color:var(--accent-red);">S</div>
+        Anti-Detection
+      </div>
+      <div class="nav-item" onclick="showSection('performance')" data-section="performance">
+        <div class="nav-icon" style="background:var(--amber-bg);color:var(--accent-amber);">P</div>
+        Performance
+      </div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-title">Filtri Bug</div>
+      <div class="filter-group">
+        <button class="filter-btn active" onclick="filterBug('all',this)">Tutti</button>
+        <button class="filter-btn" onclick="filterBug('critical',this)">Critici</button>
+        <button class="filter-btn" onclick="filterBug('high',this)">High</button>
+        <button class="filter-btn" onclick="filterBug('medium',this)">Medium</button>
+      </div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-title">Filtri Stato</div>
+      <div class="filter-group">
+        <button class="filter-btn active" onclick="filterStatus('all',this)">Tutti</button>
+        <button class="filter-btn" onclick="filterStatus('ready',this)">Ready</button>
+        <button class="filter-btn" onclick="filterStatus('dev',this)">In Dev</button>
+        <button class="filter-btn" onclick="filterStatus('broken',this)">Broken</button>
+      </div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-title">Legenda</div>
+      <div style="padding:0 12px;font-size:11px;color:var(--text-muted);line-height:2;">
+        <div><span style="color:var(--accent-green);">&#9679;</span> Funzionante</div>
+        <div><span style="color:var(--accent-amber);">&#9679;</span> Da verificare</div>
+        <div><span style="color:var(--accent-red);">&#9679;</span> Bug/Critico</div>
+        <div><span style="color:var(--accent-blue);">&#9679;</span> Nuovo da aggiungere</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <div class="main" id="main-content">
+
+    <!-- SECTION: Components -->
+    <div id="sec-components" class="section-content">
+      <div class="section-title">Componenti del Sistema</div>
+      <div class="section-sub">14 gruppi funzionali — 180+ file sorgente — 16 workers registrati</div>
+      <div id="detail-panel" class="detail-panel"></div>
+      <div class="card-grid" id="component-grid"></div>
+    </div>
+
+    <!-- SECTION: Workflows -->
+    <div id="sec-workflows" class="section-content hidden">
+      <div class="section-title">Stato Workflow</div>
+      <div class="section-sub">6 workflow principali — stato di completamento e dipendenze</div>
+      <div id="workflow-list"></div>
+    </div>
+
+    <!-- SECTION: Data Flow -->
+    <div id="sec-dataflow" class="section-content hidden">
+      <div class="section-title">Flussi Dati</div>
+      <div class="section-sub">Tracciamento dei dati attraverso ogni componente del sistema</div>
+      <div id="dataflow-content"></div>
+    </div>
+
+    <!-- SECTION: Security -->
+    <div id="sec-security" class="section-content hidden">
+      <div class="section-title">Sicurezza e Anti-Detection</div>
+      <div class="section-sub">Analisi completa dei meccanismi di protezione e risk scoring</div>
+      <div id="security-content"></div>
+    </div>
+
+    <!-- SECTION: Performance -->
+    <div id="sec-performance" class="section-content hidden">
+      <div class="section-title">Performance e Scaling</div>
+      <div class="section-sub">Metriche, bottleneck e proiezioni di scaling per la produzione</div>
+      <div id="performance-content"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ============================================================
+// DATA
+// ============================================================
+
+const components = [
+  {
+    id: 'browser', name: 'Browser e Ambiente', group: 'Infrastruttura',
+    files: 18, desc: 'Gestione del browser headless, profili, sessioni, cookie e fingerprint.',
+    deps: ['proxy','antidetect','auth'],
+    items: ['Playwright engine (headful/headless)','Profilo persistente con cookies','Session manager con auto-refresh','User Agent rotation','Launch config e flags Chrome'],
+    bugs: [{sev:'high',text:'browser/auth.ts: TOTP fallisce senza fallback, bot si blocca silenziosamente'}],
+    status: 'dev'
+  },
+  {
+    id: 'proxy', name: 'Proxy e Rete', group: 'Infrastruttura',
+    files: 12, desc: 'Gestione proxy, rotazione IP, session binding e JA3 fingerprint.',
+    deps: ['browser'],
+    items: ['Provider proxy residenziale','Rotazione IP per sessione','Session binding per account LinkedIn','JA3/TLS fingerprint via CycleTLS','DNS e WebRTC leak protection'],
+    bugs: [{sev:'high',text:'proxy/ja3Validator.ts: se CycleTLS non avviato il bot prosegue senza warning'}],
+    status: 'dev'
+  },
+  {
+    id: 'antidetect', name: 'Anti-Detection', group: 'Infrastruttura',
+    files: 15, desc: 'Fingerprint spoofing, comportamento umano simulato, evasion techniques.',
+    deps: ['browser','mouse'],
+    items: ['Canvas fingerprint randomization','WebGL spoofing','Font enumeration protection','Navigator properties override','Screen resolution variance'],
+    bugs: [],
+    status: 'review'
+  },
+  {
+    id: 'mouse', name: 'Mouse e Input', group: 'Infrastruttura',
+    files: 8, desc: 'Simulazione realistica di movimenti mouse, click, scroll e digitazione.',
+    deps: ['browser'],
+    items: ['Bezier curve mouse movement','Random click offset dal centro','Scroll con velocità variabile','Typing con delay naturale','Pause randomiche tra azioni'],
+    bugs: [],
+    status: 'ready'
+  },
+  {
+    id: 'auth', name: 'Autenticazione', group: 'Core',
+    files: 10, desc: 'Login LinkedIn, gestione TOTP/2FA, session refresh e cookie persistence.',
+    deps: ['browser','proxy'],
+    items: ['Login con credenziali','TOTP/2FA handler','Cookie persistence','Session validation','Auto-relogin su expiry'],
+    bugs: [{sev:'high',text:'auth.ts: TOTP senza fallback blocca il bot'}],
+    status: 'dev'
+  },
+  {
+    id: 'orchestrator', name: 'Orchestrator', group: 'Core',
+    files: 6, desc: 'Coordinamento centrale di tutti i job, scheduling e distribuzione lavoro.',
+    deps: ['scheduler','workerRegistry','db'],
+    items: ['Job queue management','Priority scheduling','Worker allocation','Concurrency control','Graceful shutdown handler'],
+    bugs: [],
+    status: 'ready'
+  },
+  {
+    id: 'scheduler', name: 'Scheduler', group: 'Core',
+    files: 5, desc: 'Pianificazione temporale dei job, cron-like scheduling e rate limiting globale.',
+    deps: ['orchestrator','db'],
+    items: ['Cron-based scheduling','Rate limit enforcement','Timezone-aware execution','Job retry logic','Queue prioritization'],
+    bugs: [],
+    status: 'ready'
+  },
+  {
+    id: 'workerRegistry', name: 'Worker Registry', group: 'Core',
+    files: 4, desc: 'Registro di tutti i 16 worker disponibili, discovery e health check.',
+    deps: ['orchestrator'],
+    items: ['Worker registration','Health monitoring','Auto-restart on failure','Worker capability map','Load balancing'],
+    bugs: [],
+    status: 'ready'
+  },
+  {
+    id: 'workers', name: 'Workers (16)', group: 'Workers',
+    files: 32, desc: '16 worker specializzati per ogni tipo di azione LinkedIn.',
+    deps: ['workerRegistry','browser','db','ai'],
+    items: ['connectionWorker','messageWorker','visitWorker','searchWorker','followUpWorker','endorseWorker','inviteWorker','profileScrapeWorker','salesNavWorker','enrichmentWorker','warmupWorker','cleanupWorker','exportWorker','campaignWorker','inMailWorker','bulkSaveWorker'],
+    bugs: [{sev:'high',text:'followUpWorker.ts: non verifica se campagna drip ancora attiva'},{sev:'medium',text:'bulkSaveWorker: retry non limita tentativi'}],
+    status: 'dev'
+  },
+  {
+    id: 'salesnav', name: 'Sales Navigator', group: 'Workers',
+    files: 14, desc: 'Integrazione Sales Navigator: ricerca avanzata, lead lists, bulk save.',
+    deps: ['browser','workers','db'],
+    items: ['Advanced search filters','Lead list management','Bulk save orchestrator','Account list sync','Search result parser'],
+    bugs: [{sev:'high',text:'bulkSaveOrchestrator.ts: non gestisce limite 2500 member/lista'}],
+    status: 'dev'
+  },
+  {
+    id: 'captcha', name: 'Captcha Solver', group: 'Workers',
+    files: 6, desc: 'Risoluzione automatica captcha tramite API esterne.',
+    deps: ['browser'],
+    items: ['Captcha detection','API solver integration','Result validation','Retry on failure','Cost tracking'],
+    bugs: [{sev:'critical',text:'captcha/solver.ts: nessun rate limiting, centinaia di call API in loop di retry'}],
+    status: 'broken'
+  },
+  {
+    id: 'ai', name: 'AI Module', group: 'Intelligence',
+    files: 12, desc: 'Integrazione LLM per personalizzazione messaggi, decisioni e analisi profili.',
+    deps: ['db'],
+    items: ['Prompt builder','LLM API connector','Response parser','Message personalization','Profile analysis engine','Decision engine'],
+    bugs: [],
+    status: 'review'
+  },
+  {
+    id: 'db', name: 'Database', group: 'Data',
+    files: 20, desc: '55 migrazioni, ORM, query builder, gestione connessioni e backup.',
+    deps: [],
+    items: ['PostgreSQL connection pool','55 migration files','ORM layer (Drizzle/Prisma)','Query builder','Transaction management','Connection pooling'],
+    bugs: [{sev:'medium',text:'Alcune query N+1 non ottimizzate nei worker di scraping'}],
+    status: 'review'
+  },
+  {
+    id: 'events', name: 'Event Bus', group: 'Data',
+    files: 8, desc: 'Sistema eventi interno per comunicazione asincrona tra componenti.',
+    deps: ['db'],
+    items: ['Event emitter','Subscriber registry','Event persistence','Dead letter queue','Event replay'],
+    bugs: [{sev:'medium',text:'Dead letter queue non implementata completamente'}],
+    status: 'dev'
+  }
+];
+
+const workflows = [
+  {
+    name: 'Prospecting', status: 'dev', progress: 70,
+    steps: [
+      {name:'Search config',done:true},{name:'Sales Nav query',done:true},{name:'Result parse',done:true},
+      {name:'Lead scoring',done:true},{name:'Bulk save',done:false},{name:'Enrichment',done:false},{name:'Export',done:true}
+    ],
+    deps: ['Sales Navigator bulk save deve funzionare prima'],
+    bugs: ['bulkSaveOrchestrator: limite 2500 non gestito'],
+    color: 'var(--accent-amber)'
+  },
+  {
+    name: 'Connection Request', status: 'review', progress: 85,
+    steps: [
+      {name:'Target select',done:true},{name:'Profile visit',done:true},{name:'Warm-up delay',done:true},
+      {name:'Send request',done:true},{name:'Note personalize',done:true},{name:'Rate check',done:false}
+    ],
+    deps: [],
+    bugs: ['Rate limiting da verificare su scala'],
+    color: 'var(--accent-purple)'
+  },
+  {
+    name: 'Drip / Follow-up', status: 'broken', progress: 45,
+    steps: [
+      {name:'Campaign setup',done:true},{name:'Trigger detect',done:true},{name:'Template select',done:false},
+      {name:'AI personalize',done:false},{name:'Send message',done:true},{name:'Track response',done:false}
+    ],
+    deps: ['AI Module deve essere stabile','Connection Request deve essere completato'],
+    bugs: ['followUpWorker: non verifica se campagna drip attiva','Template engine incompleto'],
+    color: 'var(--accent-red)'
+  },
+  {
+    name: 'Message / InMail', status: 'dev', progress: 60,
+    steps: [
+      {name:'Recipient select',done:true},{name:'Template load',done:true},{name:'AI personalize',done:false},
+      {name:'Send message',done:true},{name:'Track delivery',done:false},{name:'Follow-up queue',done:false}
+    ],
+    deps: ['AI Module per personalizzazione'],
+    bugs: [],
+    color: 'var(--accent-amber)'
+  },
+  {
+    name: 'Profile Enrichment', status: 'dev', progress: 55,
+    steps: [
+      {name:'Profile scrape',done:true},{name:'Data extract',done:true},{name:'External APIs',done:false},
+      {name:'Data merge',done:false},{name:'Score update',done:true},{name:'DB persist',done:true}
+    ],
+    deps: [],
+    bugs: ['API esterne non tutte integrate'],
+    color: 'var(--accent-amber)'
+  },
+  {
+    name: 'Warm-up Account', status: 'ready', progress: 95,
+    steps: [
+      {name:'Login cycle',done:true},{name:'Feed scroll',done:true},{name:'Random likes',done:true},
+      {name:'Profile visits',done:true},{name:'Gradual ramp',done:true},{name:'Metrics log',done:true}
+    ],
+    deps: [],
+    bugs: [],
+    color: 'var(--accent-green)'
+  }
+];
+
+const dataFlows = [
+  {
+    label: 'Catena principale — Job Execution',
+    nodes: [
+      {name:'Orchestrator',type:'coordinator',data:'job config'},
+      {name:'Scheduler',type:'timer',data:'cron trigger'},
+      {name:'JobRunner',type:'executor',data:'job payload'},
+      {name:'WorkerRegistry',type:'registry',data:'worker ref'},
+      {name:'Worker',type:'worker',data:'action params'},
+      {name:'Browser',type:'engine',data:'page context'},
+      {name:'LinkedIn',type:'external',data:'HTML response'},
+      {name:'Parser',type:'transform',data:'structured data'},
+      {name:'Database',type:'storage',data:'persisted record'}
+    ]
+  },
+  {
+    label: 'Catena AI — Message Personalization',
+    nodes: [
+      {name:'Profile Data',type:'storage',data:'lead info'},
+      {name:'AI Module',type:'intelligence',data:'prompt'},
+      {name:'Prompt Builder',type:'transform',data:'formatted prompt'},
+      {name:'LLM API',type:'external',data:'API response'},
+      {name:'Response Parser',type:'transform',data:'clean text'},
+      {name:'Decision Engine',type:'intelligence',data:'action'},
+      {name:'Worker',type:'worker',data:'execute action'}
+    ]
+  },
+  {
+    label: 'Error Flow — Propagazione Errori',
+    nodes: [
+      {name:'Worker Error',type:'error',data:'exception'},
+      {name:'Retry Logic',type:'transform',data:'retry count'},
+      {name:'Event Bus',type:'coordinator',data:'error event'},
+      {name:'Error Handler',type:'transform',data:'decision'},
+      {name:'Logger',type:'storage',data:'structured log'},
+      {name:'Alert System',type:'external',data:'notification'}
+    ]
+  }
+];
+
+const securityData = {
+  riskScores: [
+    {name:'Prospecting',score:45,color:'var(--accent-amber)'},
+    {name:'Connection Request',score:72,color:'var(--accent-red)'},
+    {name:'Drip / Follow-up',score:65,color:'var(--accent-red)'},
+    {name:'Message / InMail',score:68,color:'var(--accent-red)'},
+    {name:'Profile Enrichment',score:38,color:'var(--accent-amber)'},
+    {name:'Warm-up',score:25,color:'var(--accent-green)'}
+  ],
+  fingerprint: [
+    {name:'Canvas fingerprint',status:'amber',note:'Randomizzato ma pattern rilevabile'},
+    {name:'WebGL fingerprint',status:'green',note:'Spoofing attivo'},
+    {name:'Font enumeration',status:'amber',note:'Protezione parziale'},
+    {name:'Navigator properties',status:'green',note:'Override coerente'},
+    {name:'Screen resolution',status:'green',note:'Variazione attiva'},
+    {name:'Audio context',status:'red',note:'Non protetto'}
+  ],
+  proxy: [
+    {name:'Rotazione IP',status:'green',note:'Per sessione, provider residenziale'},
+    {name:'Session binding',status:'green',note:'IP fisso per account LinkedIn'},
+    {name:'JA3/TLS fingerprint',status:'red',note:'CycleTLS non sempre avviato'},
+    {name:'DNS leak protection',status:'amber',note:'Configurato ma non testato'},
+    {name:'WebRTC leak',status:'green',note:'Disabilitato in Playwright'}
+  ],
+  behavior: [
+    {name:'Velocita digitazione',status:'green',note:'Delay variabile gaussiano'},
+    {name:'Pattern scroll',status:'amber',note:'Lineare, va reso piu naturale'},
+    {name:'Pause tra azioni',status:'green',note:'Distribuzione randomica'},
+    {name:'Click pattern',status:'green',note:'Offset random dal centro'},
+    {name:'Orari attivita',status:'amber',note:'Timezone rispettata, orari da calibrare'}
+  ],
+  limits: [
+    {action:'Connection request',linkedin:'100/settimana',ours:'80/settimana',margin:'20%',safety:'safe'},
+    {action:'Profile visit',linkedin:'150/giorno',ours:'100/giorno',margin:'33%',safety:'safe'},
+    {action:'Message send',linkedin:'50/giorno',ours:'40/giorno',margin:'20%',safety:'safe'},
+    {action:'InMail',linkedin:'50/mese',ours:'40/mese',margin:'20%',safety:'safe'},
+    {action:'Search query',linkedin:'300/giorno',ours:'250/giorno',margin:'17%',safety:'warn'},
+    {action:'Bulk save (SN)',linkedin:'2500/lista',ours:'2500/lista',margin:'0%',safety:'danger'}
+  ]
+};
+
+const perfData = {
+  metrics: [
+    {label:'Connection request',value:'3.2',unit:'s/azione',pct:32,color:'var(--accent-teal)'},
+    {label:'Message send',value:'2.8',unit:'s/azione',pct:28,color:'var(--accent-blue)'},
+    {label:'Profile visit',value:'4.1',unit:'s/azione',pct:41,color:'var(--accent-amber)'},
+    {label:'Search query',value:'5.6',unit:'s/azione',pct:56,color:'var(--accent-red)'},
+    {label:'Browser boot',value:'8.4',unit:'s',pct:84,color:'var(--accent-coral)'},
+    {label:'AI response',value:'1.8',unit:'s',pct:18,color:'var(--accent-purple)'}
+  ],
+  bottlenecks: [
+    {component:'Captcha Solver',type:'API-bound',severity:'critical',note:'Loop senza rate limit brucia budget API e CPU'},
+    {component:'Browser boot',type:'IO-bound',severity:'high',note:'8.4s di boot, profilo pesante con cookie/storage'},
+    {component:'Sales Nav search',type:'Network-bound',severity:'high',note:'LinkedIn limita risultati, parsing lento su pagine pesanti'},
+    {component:'DB queries (scraping)',type:'IO-bound',severity:'medium',note:'Query N+1 nei worker di scraping, manca batch insert'},
+    {component:'AI personalization',type:'API-bound',severity:'medium',note:'Latenza LLM 1.8s, non parallelizzabile per singolo msg'}
+  ],
+  scaling: [
+    {tier:'1 account',ram:'512 MB',cpu:'0.5 vCPU',bw:'1 GB/mese',proxy:'1 IP resid.',cost:'~15 EUR/mese'},
+    {tier:'10 account',ram:'4 GB',cpu:'2 vCPU',bw:'10 GB/mese',proxy:'10 IP resid.',cost:'~120 EUR/mese'},
+    {tier:'50 account',ram:'16 GB',cpu:'4 vCPU',bw:'50 GB/mese',proxy:'50 IP pool',cost:'~500 EUR/mese'},
+    {tier:'100 account',ram:'32 GB',cpu:'8 vCPU',bw:'100 GB/mese',proxy:'100 IP pool',cost:'~900 EUR/mese'}
+  ],
+  checklist: [
+    {text:'Health check endpoint',done:false},
+    {text:'Metrics exporter (Prometheus/Grafana)',done:false},
+    {text:'Alerting su failure rate',done:false},
+    {text:'Graceful shutdown',done:true},
+    {text:'Auto-recovery dopo crash',done:false},
+    {text:'Log strutturati JSON con correlation ID',done:false},
+    {text:'Database backup automatico',done:false},
+    {text:'Rate limit dashboard real-time',done:false},
+    {text:'Error tracking centralizzato',done:false},
+    {text:'CI/CD pipeline',done:false},
+    {text:'Environment config (dev/staging/prod)',done:true},
+    {text:'Secret management',done:true}
+  ]
+};
+
+// ============================================================
+// RENDERING
+// ============================================================
+
+function renderComponents() {
+  const grid = document.getElementById('component-grid');
+  grid.innerHTML = '';
+  components.forEach(c => {
+    const bugHtml = c.bugs.length > 0 ? `<div class="bug-badge ${c.bugs[0].sev==='critical'?'bug-critical':c.bugs[0].sev==='high'?'bug-high':'bug-medium'}">${c.bugs[0].sev}</div>` : '';
+    const statusColor = c.status==='ready'?'green':c.status==='dev'?'amber':c.status==='broken'?'red':'purple';
+    grid.innerHTML += `
+      <div class="card" data-id="${c.id}" data-status="${c.status}" data-bug="${c.bugs.length>0?c.bugs[0].sev:'none'}" onclick="showDetail('${c.id}')">
+        ${bugHtml}
+        <div class="card-header">
+          <div class="card-name">${c.name}</div>
+        </div>
+        <div class="card-desc">${c.desc}</div>
+        <div class="card-tags">
+          <span class="tag tag-blue">${c.files} files</span>
+          <span class="tag tag-${statusColor}">${c.status}</span>
+          <span class="tag tag-purple">${c.group}</span>
+        </div>
+      </div>`;
+  });
+}
+
+function showDetail(id) {
+  const c = components.find(x=>x.id===id);
+  if(!c) return;
+  const panel = document.getElementById('detail-panel');
+  panel.classList.add('show');
+  const bugsHtml = c.bugs.map(b=>`<li><span class="dot dot-red"></span>${b.text}</li>`).join('');
+  const depsHtml = c.deps.map(d=>`<li><span class="dep-item">${d}</span></li>`).join('');
+  const itemsHtml = c.items.map(i=>`<li><span class="dot dot-blue"></span>${i}</li>`).join('');
+  panel.innerHTML = `
+    <div class="detail-header">
+      <div class="detail-title">${c.name}</div>
+      <button class="detail-close" onclick="document.getElementById('detail-panel').classList.remove('show')">&times;</button>
+    </div>
+    <div class="detail-section">
+      <div class="detail-section-title">Componenti (${c.items.length})</div>
+      <ul class="detail-list">${itemsHtml}</ul>
+    </div>
+    ${c.deps.length?`<div class="detail-section"><div class="detail-section-title">Dipendenze</div><ul class="detail-list">${depsHtml}</ul></div>`:''}
+    ${c.bugs.length?`<div class="detail-section"><div class="detail-section-title">Bug</div><ul class="detail-list">${bugsHtml}</ul></div>`:''}`;
+  panel.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function renderWorkflows() {
+  const el = document.getElementById('workflow-list');
+  el.innerHTML = '';
+  workflows.forEach(w => {
+    const statusClass = w.status==='ready'?'wf-status-ready':w.status==='dev'?'wf-status-dev':w.status==='broken'?'wf-status-broken':'wf-status-review';
+    const statusLabel = w.status==='ready'?'Production Ready':w.status==='dev'?'In Development':w.status==='broken'?'Broken':'Needs Review';
+    const stepsHtml = w.steps.map(s=>`<div class="wf-step ${s.done?'wf-step-done':'wf-step-todo'}">${s.done?'&#10003;':'&#9675;'} ${s.name}</div>`).join('');
+    const depsHtml = w.deps.length ? `<div class="wf-deps">Dipendenze: ${w.deps.join(' | ')}</div>` : '';
+    const bugsHtml = w.bugs.map(b=>`<div class="wf-bug"><span class="dot dot-red"></span>${b}</div>`).join('');
+    el.innerHTML += `
+      <div class="workflow-card" data-status="${w.status}">
+        <div class="wf-header">
+          <div class="wf-name">${w.name}</div>
+          <div class="wf-status ${statusClass}">${statusLabel}</div>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" style="width:${w.progress}%;background:${w.color}"></div></div>
+        <div style="font-size:12px;color:var(--text-muted);font-family:var(--mono);margin-bottom:8px;">${w.progress}% completato</div>
+        <div class="wf-steps">${stepsHtml}</div>
+        ${depsHtml}
+        ${bugsHtml?'<div class="wf-bugs">'+bugsHtml+'</div>':''}
+      </div>`;
+  });
+}
+
+function renderDataFlow() {
+  const el = document.getElementById('dataflow-content');
+  el.innerHTML = '';
+  dataFlows.forEach((flow,fi) => {
+    let nodesHtml = '';
+    flow.nodes.forEach((n,i) => {
+      const typeColor = {coordinator:'var(--accent-blue)',timer:'var(--accent-purple)',executor:'var(--accent-teal)',registry:'var(--accent-amber)',worker:'var(--accent-green)',engine:'var(--accent-coral)',external:'var(--accent-red)',transform:'var(--accent-purple)',storage:'var(--accent-blue)',intelligence:'var(--accent-purple)',error:'var(--accent-red)'}[n.type]||'var(--text-muted)';
+      nodesHtml += `<div class="flow-node" onclick="toggleFlowDetail('fd-${fi}-${i}')" style="border-left:3px solid ${typeColor}">
+        <div class="flow-node-name">${n.name}</div>
+        <div class="flow-node-type">${n.type}</div>
+      </div>`;
+      if(i < flow.nodes.length-1) {
+        nodesHtml += `<div class="flow-arrow"><div>&#8594;</div><div class="flow-arrow-data">${n.data}</div></div>`;
+      }
+    });
+    let detailsHtml = '';
+    flow.nodes.forEach((n,i) => {
+      detailsHtml += `<div id="fd-${fi}-${i}" class="flow-detail">
+        <table>
+          <tr><td>Nodo</td><td style="font-weight:600;">${n.name}</td></tr>
+          <tr><td>Tipo</td><td>${n.type}</td></tr>
+          <tr><td>Output</td><td style="font-family:var(--mono);color:var(--accent-blue)">${n.data}</td></tr>
+          <tr><td>Fallimento</td><td style="color:var(--accent-amber)">Retry 3x, poi event bus error</td></tr>
+        </table>
+      </div>`;
+    });
+    el.innerHTML += `
+      <div class="flow-container">
+        <div class="flow-label">${flow.label}</div>
+        <div class="flow-chain">${nodesHtml}</div>
+        ${detailsHtml}
+      </div>`;
+  });
+}
+
+function toggleFlowDetail(id) {
+  const el = document.getElementById(id);
+  if(el) el.classList.toggle('show');
+}
+
+function renderSecurity() {
+  const el = document.getElementById('security-content');
+
+  // Risk Scores
+  let riskHtml = '<div style="margin-bottom:24px;"><div style="font-size:15px;font-weight:600;margin-bottom:12px;">Risk Score per Workflow</div>';
+  securityData.riskScores.forEach(r => {
+    riskHtml += `<div class="risk-meter">
+      <div style="width:140px;font-size:13px;">${r.name}</div>
+      <div class="risk-bar-track"><div class="risk-bar-fill" style="width:${r.score}%;background:${r.color}"></div></div>
+      <div class="risk-score" style="color:${r.color}">${r.score}</div>
+    </div>`;
+  });
+  riskHtml += '</div>';
+
+  // Security Grid
+  const secGrid = (title, items) => {
+    let html = `<div class="sec-card"><div class="sec-title">${title}</div><ul class="sec-items">`;
+    items.forEach(i => {
+      html += `<li><span class="dot dot-${i.status}"></span><span style="min-width:140px;display:inline-block;">${i.name}</span><span style="color:var(--text-muted);font-size:11px;">${i.note}</span></li>`;
+    });
+    return html + '</ul></div>';
+  };
+
+  let gridHtml = '<div class="security-grid">';
+  gridHtml += secGrid('Browser Fingerprint', securityData.fingerprint);
+  gridHtml += secGrid('Proxy e Rete', securityData.proxy);
+  gridHtml += secGrid('Comportamento Umano', securityData.behavior);
+  gridHtml += '</div>';
+
+  // Radar Chart
+  let radarHtml = '<div style="margin-bottom:24px;"><div style="font-size:15px;font-weight:600;margin-bottom:12px;">Radar Protezione</div>';
+  radarHtml += '<div class="radar-container"><svg width="320" height="300" viewBox="0 0 320 300">';
+  const cx=160, cy=140, r=110;
+  const dims = ['Fingerprint','Proxy','Behavior','Rate Limit','Session','Recovery'];
+  const vals = [0.65, 0.72, 0.78, 0.60, 0.80, 0.40];
+  // Draw rings
+  [1,.75,.5,.25].forEach(s => {
+    let pts = [];
+    for(let i=0;i<6;i++){const a=Math.PI*2*i/6-Math.PI/2; pts.push(`${cx+r*s*Math.cos(a)},${cy+r*s*Math.sin(a)}`);}
+    radarHtml += `<polygon points="${pts.join(' ')}" fill="none" stroke="var(--border)" stroke-width="0.5"/>`;
+  });
+  // Draw axes
+  for(let i=0;i<6;i++){const a=Math.PI*2*i/6-Math.PI/2;radarHtml+=`<line x1="${cx}" y1="${cy}" x2="${cx+r*Math.cos(a)}" y2="${cy+r*Math.sin(a)}" stroke="var(--border-light)" stroke-width="0.5"/>`;}
+  // Draw data polygon
+  let dataPts = [];
+  for(let i=0;i<6;i++){const a=Math.PI*2*i/6-Math.PI/2;dataPts.push(`${cx+r*vals[i]*Math.cos(a)},${cy+r*vals[i]*Math.sin(a)}`);}
+  radarHtml += `<polygon points="${dataPts.join(' ')}" fill="rgba(74,158,255,.15)" stroke="var(--accent-blue)" stroke-width="1.5"/>`;
+  // Draw dots and labels
+  for(let i=0;i<6;i++){
+    const a=Math.PI*2*i/6-Math.PI/2;
+    const dx=cx+r*vals[i]*Math.cos(a), dy=cy+r*vals[i]*Math.sin(a);
+    radarHtml += `<circle cx="${dx}" cy="${dy}" r="3" fill="var(--accent-blue)"/>`;
+    const lx=cx+(r+20)*Math.cos(a), ly=cy+(r+20)*Math.sin(a);
+    const anchor = Math.abs(Math.cos(a))<0.1?'middle':Math.cos(a)>0?'start':'end';
+    radarHtml += `<text x="${lx}" y="${ly+4}" text-anchor="${anchor}" fill="var(--text-secondary)" font-size="11" font-family="var(--font)">${dims[i]}</text>`;
+    radarHtml += `<text x="${lx}" y="${ly+16}" text-anchor="${anchor}" fill="var(--text-muted)" font-size="10" font-family="var(--mono)">${Math.round(vals[i]*100)}%</text>`;
+  }
+  radarHtml += '</svg></div></div>';
+
+  // Limits Table
+  let limitsHtml = '<div style="margin-bottom:24px;"><div style="font-size:15px;font-weight:600;margin-bottom:12px;">Limiti LinkedIn vs Sistema</div>';
+  limitsHtml += '<div style="overflow-x:auto;"><table class="limits-table"><thead><tr><th>Azione</th><th>Limite LinkedIn</th><th>Nostro Limite</th><th>Margine</th></tr></thead><tbody>';
+  securityData.limits.forEach(l => {
+    const cls = l.safety==='safe'?'margin-safe':l.safety==='warn'?'margin-warn':'margin-danger';
+    limitsHtml += `<tr><td>${l.action}</td><td style="font-family:var(--mono)">${l.linkedin}</td><td style="font-family:var(--mono)">${l.ours}</td><td class="${cls}" style="font-family:var(--mono);font-weight:600">${l.margin}</td></tr>`;
+  });
+  limitsHtml += '</tbody></table></div></div>';
+
+  el.innerHTML = riskHtml + gridHtml + radarHtml + limitsHtml;
+}
+
+function renderPerformance() {
+  const el = document.getElementById('performance-content');
+
+  // Metrics
+  let metricsHtml = '<div style="font-size:15px;font-weight:600;margin-bottom:12px;">Tempi medi per azione</div><div class="perf-grid">';
+  perfData.metrics.forEach(m => {
+    metricsHtml += `<div class="perf-card">
+      <div class="perf-label">${m.label}</div>
+      <div class="perf-value">${m.value}<span class="perf-unit"> ${m.unit}</span></div>
+      <div class="perf-bar"><div class="perf-bar-fill" style="width:${m.pct}%;background:${m.color}"></div></div>
+    </div>`;
+  });
+  metricsHtml += '</div>';
+
+  // Bottlenecks
+  let bnHtml = '<div style="font-size:15px;font-weight:600;margin:20px 0 12px;">Bottleneck Analysis</div>';
+  perfData.bottlenecks.forEach(b => {
+    const sevColor = b.severity==='critical'?'var(--accent-red)':b.severity==='high'?'var(--accent-amber)':'var(--accent-blue)';
+    bnHtml += `<div style="background:var(--bg-card);border:1px solid var(--border-light);border-left:3px solid ${sevColor};border-radius:var(--radius);padding:12px;margin-bottom:8px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <span style="font-weight:600;font-size:13px;">${b.component}</span>
+        <span style="font-size:10px;font-family:var(--mono);color:${sevColor}">${b.severity.toUpperCase()} | ${b.type}</span>
+      </div>
+      <div style="font-size:12px;color:var(--text-secondary);">${b.note}</div>
+    </div>`;
+  });
+
+  // Scaling
+  let scaleHtml = '<div style="font-size:15px;font-weight:600;margin:20px 0 12px;">Proiezione Scaling</div>';
+  scaleHtml += '<div style="overflow-x:auto;"><table class="scale-table"><thead><tr><th>Tier</th><th>RAM</th><th>CPU</th><th>Bandwidth</th><th>Proxy</th><th>Costo stimato</th></tr></thead><tbody>';
+  perfData.scaling.forEach(s => {
+    scaleHtml += `<tr><td class="scale-highlight">${s.tier}</td><td>${s.ram}</td><td>${s.cpu}</td><td>${s.bw}</td><td>${s.proxy}</td><td style="font-weight:600;color:var(--accent-amber)">${s.cost}</td></tr>`;
+  });
+  scaleHtml += '</tbody></table></div>';
+
+  // Checklist
+  const doneCount = perfData.checklist.filter(c=>c.done).length;
+  let checkHtml = `<div style="font-size:15px;font-weight:600;margin:20px 0 4px;">Production Readiness Checklist</div>`;
+  checkHtml += `<div class="check-progress">${doneCount}/${perfData.checklist.length} completati</div>`;
+  checkHtml += `<div class="progress-bar" style="margin:8px 0 12px;"><div class="progress-fill" style="width:${Math.round(doneCount/perfData.checklist.length*100)}%;background:var(--accent-teal)"></div></div>`;
+  checkHtml += '<ul class="checklist">';
+  perfData.checklist.forEach((c,i) => {
+    checkHtml += `<li class="${c.done?'done':''}" onclick="toggleCheck(${i})">
+      <div class="check-box ${c.done?'checked':''}"></div>
+      ${c.text}
+    </li>`;
+  });
+  checkHtml += '</ul>';
+
+  el.innerHTML = metricsHtml + bnHtml + scaleHtml + checkHtml;
+}
+
+// ============================================================
+// NAVIGATION & FILTERING
+// ============================================================
+
+function showSection(name) {
+  document.querySelectorAll('.section-content').forEach(el=>el.classList.add('hidden'));
+  document.getElementById('sec-'+name).classList.remove('hidden');
+  document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
+  document.querySelector(`.nav-item[data-section="${name}"]`).classList.add('active');
+}
+
+function filterBug(level, btn) {
+  document.querySelectorAll('.filter-group:first-of-type .filter-btn').forEach(b=>b.classList.remove('active'));
+  // select correct filter group
+  btn.closest('.filter-group').querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('#component-grid .card').forEach(card => {
+    if(level==='all') { card.style.display=''; return; }
+    const bug = card.dataset.bug;
+    card.style.display = bug===level ? '' : 'none';
+  });
+}
+
+function filterStatus(status, btn) {
+  btn.closest('.filter-group').querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  // Filter components
+  document.querySelectorAll('#component-grid .card').forEach(card => {
+    if(status==='all') { card.style.display=''; return; }
+    card.style.display = card.dataset.status===status ? '' : 'none';
+  });
+  // Filter workflows
+  document.querySelectorAll('.workflow-card').forEach(card => {
+    if(status==='all') { card.style.display=''; return; }
+    card.style.display = card.dataset.status===status ? '' : 'none';
+  });
+}
+
+function handleSearch(query) {
+  const q = query.toLowerCase().trim();
+  // Search across all visible cards
+  document.querySelectorAll('.card, .workflow-card, .flow-container, .sec-card').forEach(el => {
+    if(!q) { el.style.display=''; return; }
+    el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+function toggleCheck(index) {
+  perfData.checklist[index].done = !perfData.checklist[index].done;
+  renderPerformance();
+}
+
+// ============================================================
+// INIT
+// ============================================================
+
+renderComponents();
+renderWorkflows();
+renderDataFlow();
+renderSecurity();
+renderPerformance();
+</script>
+</body>
+</html>

@@ -78,6 +78,20 @@ export async function checkLogin(page: Page): Promise<boolean> {
     if (finalUrl.includes('/login') || finalUrl.includes('/authwall') || finalUrl.includes('/uas/login')) {
         return false;
     }
+    // H01: Rileva pagina di verifica 2FA (TOTP, SMS, email).
+    // Se LinkedIn richiede 2FA, il bot resta sulla pagina di verifica senza errore esplicito.
+    // Ora: rileva subito e ritorna false con log chiaro per l'utente.
+    const verificationPatterns = [
+        '/checkpoint/challenge',
+        '/checkpoint/lg/login-submit',
+        '/uas/login-submit',
+        'two-step-verification',
+        'sessionPasswordChallenge',
+    ];
+    if (verificationPatterns.some((p) => finalUrl.includes(p))) {
+        console.error('[AUTH] ❌ LinkedIn richiede verifica 2FA/TOTP. Azione: completare la verifica manualmente, poi riprovare.');
+        return false;
+    }
     // Controlla anche lo status HTTP (429 = rate limited, 403 = bloccato)
     const status = response?.status() ?? 200;
     if (status === 429 || status === 403) {

@@ -64,8 +64,30 @@ export function getSessionBudgetFactor(): number {
     return window === 'first' ? 0.6 : 0.4;
 }
 
-export async function warmupSession(page: Page): Promise<void> {
+export async function warmupSession(page: Page, lastSessionEndedAt?: string | null): Promise<void> {
     const sessionWindow = getSessionWindow();
+
+    // H25: Se l'ultima sessione è finita da meno di 30 minuti, warmup RIDOTTO.
+    // Un umano che riapre LinkedIn dopo 5 minuti non riscorre feed + notifiche da capo.
+    // Al massimo dà un'occhiata veloce al feed.
+    if (lastSessionEndedAt) {
+        const elapsed = Date.now() - Date.parse(lastSessionEndedAt);
+        const elapsedMin = elapsed / 60_000;
+        if (Number.isFinite(elapsedMin) && elapsedMin < 30) {
+            await logInfo('session_warmer.recent_session_skip', {
+                elapsedMin: Math.round(elapsedMin),
+                reason: 'Ultima sessione < 30min fa — warmup ridotto (solo feed rapido)',
+            });
+            try {
+                await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
+                await ensureInputBlock(page);
+                await humanDelay(page, 1500, 3000);
+                await simulateHumanReading(page);
+            } catch { /* best-effort */ }
+            return;
+        }
+    }
+
     await logInfo('session_warmer.start', {
         twoSessionsMode: config.warmupTwoSessionsPerDay,
         sessionWindow,

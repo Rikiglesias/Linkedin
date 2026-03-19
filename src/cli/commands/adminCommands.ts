@@ -16,7 +16,6 @@ import {
     countCompanyTargets,
     getAccountAgeDays,
     getAutomationPauseState,
-    getAiQualitySnapshot,
     getComplianceHealthMetrics,
     getDailyStatsSnapshot,
     getFeatureDatasetRows,
@@ -38,13 +37,14 @@ import {
     listLeadCampaignConfigs,
     listOpenIncidents,
     resolveIncident,
-    runAiValidationPipeline,
     clearAutomationPause as clearPauseState,
     setAutomationPause,
     upsertSecretRotation,
     updateLeadCampaignConfig,
     computeFeatureDatasetSignature,
 } from '../../core/repositories';
+// A22: import diretto per rompere circular dependency chain
+import { getAiQualitySnapshot, runAiValidationPipeline } from '../../core/repositories/aiQuality';
 import { runSecretRotationWorker } from '../../core/secretRotationWorker';
 import { calculateDynamicWeeklyInviteLimit, evaluateComplianceHealthScore } from '../../risk/riskEngine';
 import { setQuarantine } from '../../risk/incidentManager';

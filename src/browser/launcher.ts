@@ -384,7 +384,11 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                     // causa freeze quando il mouse reale dell'utente compete con Playwright CDP
                     // (cfr. camoufox issue #139). Il nostro sistema è al 100% controllato da noi.
                     humanize: false,
-                    geoip: currentProxy ? '93.63.96.1' : config.camoufoxGeoip,
+                    // H30: geoip deve corrispondere all'IP del proxy, NON a un IP italiano fisso.
+                    // Prima: hardcoded '93.63.96.1' (Telecom Italia) → se proxy in Germania, LinkedIn
+                    // vedeva browser "in Italia" ma IP tedesco → incoerenza rilevabile.
+                    // Ora: usa config.camoufoxGeoip (configurabile per proxy) come unica fonte.
+                    geoip: config.camoufoxGeoip,
                     block_webrtc: config.camoufoxBlockWebrtc,
                     locale: fingerprint.locale ?? 'it-IT',
                     window: cfxWindow,
@@ -711,6 +715,13 @@ export async function closeBrowser(session: BrowserSession): Promise<void> {
     } catch { /* best-effort */ }
     await humanWindDown(session);
     activeBrowsers.delete(session.browser);
+    // H19: Chiudi SEMPRE la page prima del browser per evitare memory leak.
+    // browser.close() non garantisce la chiusura di tutte le page su tutti i percorsi.
+    try {
+        if (!session.page.isClosed()) {
+            await session.page.close().catch(() => { });
+        }
+    } catch { /* best-effort */ }
     await session.browser.close().catch(() => { });
 }
 

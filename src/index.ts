@@ -70,6 +70,7 @@ import {
 import { initPluginSystem, pluginRegistry } from './plugins/pluginLoader';
 import { getRuntimeAccountProfiles } from './accountManager';
 import { checkProxyHealth } from './proxyManager';
+import { validateJa3Configuration } from './proxy/ja3Validator';
 import { printCommandHelp } from './cli/commandHelp';
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
@@ -372,6 +373,48 @@ async function main(): Promise<void> {
         }
     }
 
+    // ── Pre-flight proxy + JA3 health check (C01/C02/C03) ─────────────────
+    // Proxy e JA3 DEVONO essere verificati PRIMA del doctor, perché il doctor
+    // apre browser con proxy configurato: se il proxy è morto, il doctor fallisce
+    // con un timeout criptico invece di un messaggio chiaro.
+    if (!isDryRunCommand && browserCommands.has(command ?? '')) {
+        const accounts = getRuntimeAccountProfiles();
+        let proxyFailure = false;
+        for (const account of accounts) {
+            if (account.proxy) {
+                const healthy = await checkProxyHealth(account.proxy);
+                if (!healthy) {
+                    console.error(`[PREFLIGHT] ❌ Proxy ${account.proxy.server} NON raggiungibile (account: ${account.id}). Azione: verificare che il proxy sia attivo e raggiungibile.`);
+                    proxyFailure = true;
+                } else {
+                    console.log(`[PREFLIGHT] Proxy OK: ${account.proxy.server} (${account.id})`);
+                }
+            }
+        }
+        if (proxyFailure) {
+            console.error('[PREFLIGHT] Bloccato: uno o più proxy non raggiungibili. Il bot non può operare in sicurezza senza proxy funzionante.');
+            process.exit(1);
+        }
+
+        // C03: JA3 coherence check — se USE_JA3_PROXY=true, CycleTLS deve essere attivo
+        if (config.useJa3Proxy) {
+            try {
+                const ja3Report = await validateJa3Configuration();
+                if (!ja3Report.cycleTlsActive) {
+                    console.error(`[PREFLIGHT] ❌ USE_JA3_PROXY=true ma CycleTLS non raggiungibile su porta ${ja3Report.cycleTlsPort}. Azione: avviare CycleTLS oppure impostare USE_JA3_PROXY=false.`);
+                    process.exit(1);
+                }
+                if (!ja3Report.uaJa3Coherent) {
+                    console.warn(`[PREFLIGHT] ⚠️ Incoerenza UA↔JA3: UA=${ja3Report.uaBrowserFamily} ma JA3=${ja3Report.ja3BrowserFamily}. Rischio: LinkedIn può rilevare mismatch TLS fingerprint.`);
+                }
+                console.log(`[PREFLIGHT] JA3 ${ja3Report.status}: ${ja3Report.recommendation}`);
+            } catch (ja3Error) {
+                console.error('[PREFLIGHT] ❌ Errore durante validazione JA3:', ja3Error);
+                process.exit(1);
+            }
+        }
+    }
+
     if (
         config.mandatoryPreflightEnabled &&
         !skipPreflight &&
@@ -402,21 +445,6 @@ async function main(): Promise<void> {
             process.exit(1);
         }
         console.log('[PREFLIGHT] OK');
-    }
-
-    // ── Pre-flight proxy health check ────────────────────────────────────────
-    if (!isDryRunCommand && browserCommands.has(command ?? '')) {
-        const accounts = getRuntimeAccountProfiles();
-        for (const account of accounts) {
-            if (account.proxy) {
-                const healthy = await checkProxyHealth(account.proxy);
-                if (!healthy) {
-                    console.error(`[PREFLIGHT] Proxy ${account.proxy.server} NON raggiungibile (account: ${account.id})`);
-                } else {
-                    console.log(`[PREFLIGHT] Proxy OK: ${account.proxy.server} (${account.id})`);
-                }
-            }
-        }
     }
 
     switch (command) {

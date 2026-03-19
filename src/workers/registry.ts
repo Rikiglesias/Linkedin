@@ -16,6 +16,7 @@ import { processHygieneJob } from './hygieneWorker';
 import { processInteractionJob, type InteractionJobPayload } from './interactionWorker';
 import { processEnrichmentJob } from './enrichmentWorker';
 import { createAndPublishPost, type PostCreatorOptions } from './postCreatorWorker';
+import { processInboxJob, type InboxJobPayload } from './inboxWorker';
 
 export interface WorkerProcessor {
     process(job: { payload_json: string }, context: WorkerContext): Promise<WorkerExecutionResult>;
@@ -83,6 +84,13 @@ const postCreationProcessor: WorkerProcessor = {
     },
 };
 
+const inboxCheckProcessor: WorkerProcessor = {
+    async process(job, context) {
+        const payload = parsePayload<InboxJobPayload>(job);
+        return processInboxJob(payload, context);
+    },
+};
+
 export const workerRegistry: ReadonlyMap<JobType, WorkerProcessor> = new Map<JobType, WorkerProcessor>([
     ['INVITE', inviteProcessor],
     ['ACCEPTANCE_CHECK', acceptanceProcessor],
@@ -91,4 +99,5 @@ export const workerRegistry: ReadonlyMap<JobType, WorkerProcessor> = new Map<Job
     ['INTERACTION', interactionProcessor],
     ['ENRICHMENT', enrichmentProcessor],
     ['POST_CREATION', postCreationProcessor],
+    ['INBOX_CHECK', inboxCheckProcessor],
 ]);

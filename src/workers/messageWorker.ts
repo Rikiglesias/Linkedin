@@ -55,8 +55,9 @@ export async function processMessageJob(
         return workerResult(0);
     }
 
+    // C10: SalesNav URL → REVIEW_REQUIRED (era BLOCKED = dead-end irrecuperabile)
     if (isSalesNavigatorUrl(lead.linkedin_url)) {
-        await transitionLead(lead.id, 'BLOCKED', 'salesnav_url_requires_profile_message');
+        await transitionLead(lead.id, 'REVIEW_REQUIRED', 'salesnav_url_needs_resolution');
         return workerResult(1);
     }
 
@@ -201,6 +202,28 @@ export async function processMessageJob(
         });
     await humanDelay(context.session.page, 1200, 2200);
 
+    // C07: Check se il lead ha GIÀ scritto nella chat prima di inviare il primo messaggio.
+    // Senza questo check, il bot potrebbe inviare un messaggio freddo a qualcuno che ci ha già contattato.
+    // Legge l'ultimo messaggio non-nostro nella conversazione aperta.
+    try {
+        const theirLastMsg = context.session.page
+            .locator('.msg-s-message-list__event:not([data-msg-s-message-event-is-me="true"]) .msg-s-event-listitem__body')
+            .last();
+        if (await theirLastMsg.isVisible({ timeout: 1500 }).catch(() => false)) {
+            const theirText = await theirLastMsg.innerText().catch(() => '');
+            if (theirText && theirText.trim().length > 0) {
+                await logInfo('message.existing_reply_detected', {
+                    leadId: lead.id,
+                    textExcerpt: theirText.trim().substring(0, 50),
+                });
+                await transitionLead(lead.id, 'REPLIED', 'existing_reply_in_chat');
+                return workerResult(1);
+            }
+        }
+    } catch {
+        // Check non bloccante: se fallisce, procedi con l'invio
+    }
+
     await typeWithFallback(context.session.page, SELECTORS.messageTextbox, message, 'messageTextbox', 5000).catch(
         async () => {
             await incrementDailyStat(context.localDate, 'selector_failures');
@@ -208,6 +231,31 @@ export async function processMessageJob(
         },
     );
     await humanDelay(context.session.page, 800, 1600);
+
+    // H11: Verifica che il contenuto digitato nel textbox corrisponda al messaggio atteso.
+    // Se typing in campo sbagliato o il testo è stato troncato, il contenuto è diverso o vuoto.
+    try {
+        const textboxContent = await context.session.page
+            .locator(joinSelectors('messageTextbox')).first()
+            .inputValue({ timeout: 2000 })
+            .catch(() => '');
+        const typed = textboxContent.trim();
+        const expected = message.trim();
+        if (typed.length < expected.length * 0.5) {
+            await logInfo('message.content_verification_failed', {
+                leadId: lead.id,
+                expectedLength: expected.length,
+                typedLength: typed.length,
+            });
+            throw new RetryableWorkerError(
+                `Contenuto textbox (${typed.length} chars) < 50% del messaggio atteso (${expected.length} chars)`,
+                'MESSAGE_CONTENT_MISMATCH',
+            );
+        }
+    } catch (verifyError) {
+        if (verifyError instanceof RetryableWorkerError) throw verifyError;
+        // Verifica non bloccante se fallisce per altri motivi (es. locator non trovato)
+    }
 
     if (!context.dryRun) {
         // Atomic daily cap check: incrementa solo se sotto il limite

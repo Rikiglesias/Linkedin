@@ -31,10 +31,14 @@ interface SmtpProbeResult {
 
 const SMTP_TIMEOUT_MS = 5_000;
 const SMTP_PORT = 25;
+const SMTP_SUBMISSION_PORT = 587;
 const EHLO_DOMAIN = 'mail-check.local';
 
 /** Cache MX per dominio — evita query DNS ripetute nella stessa sessione */
 const mxCache = new Map<string, string | null>();
+
+/** H29: Cache domini con porta 25 bloccata — evita 40s di timeout inutile per ogni lead dello stesso dominio */
+const port25BlockedCache = new Set<string>();
 
 // ─── Pattern Generation ──────────────────────────────────────────────────────
 
@@ -102,7 +106,7 @@ async function resolveMx(domain: string): Promise<string | null> {
 
 // ─── SMTP Probe ──────────────────────────────────────────────────────────────
 
-function smtpProbe(mxHost: string, emailAddress: string): Promise<SmtpProbeResult> {
+function smtpProbe(mxHost: string, emailAddress: string, port: number = SMTP_PORT): Promise<SmtpProbeResult> {
     return new Promise((resolve) => {
         const socket = new net.Socket();
         let phase: 'greeting' | 'ehlo' | 'mail_from' | 'rcpt_to' | 'done' = 'greeting';
@@ -184,8 +188,33 @@ function smtpProbe(mxHost: string, emailAddress: string): Promise<SmtpProbeResul
             }
         });
 
-        socket.connect(SMTP_PORT, mxHost);
+        socket.connect(port, mxHost);
     });
+}
+
+/**
+ * H29: SMTP probe con fallback porta 587 e cache "port blocked".
+ * Se porta 25 è bloccata (timeout/connection_error), prova 587 (submission).
+ * Caching: se porta 25 è già nota come bloccata per questo host, salta direttamente a 587.
+ */
+async function smtpProbeWithFallback(mxHost: string, emailAddress: string): Promise<SmtpProbeResult> {
+    // Se porta 25 è già nota come bloccata per questo host, prova solo 587
+    if (port25BlockedCache.has(mxHost)) {
+        return smtpProbe(mxHost, emailAddress, SMTP_SUBMISSION_PORT);
+    }
+
+    const result25 = await smtpProbe(mxHost, emailAddress, SMTP_PORT);
+    if (result25.accepted || (result25.code > 0 && result25.message !== 'timeout' && result25.message !== 'connection_error')) {
+        return result25; // Porta 25 funziona (risposta reale, anche se reject)
+    }
+
+    // Porta 25 bloccata — cache e prova 587
+    if (result25.message === 'timeout' || result25.message === 'connection_error') {
+        port25BlockedCache.add(mxHost);
+        return smtpProbe(mxHost, emailAddress, SMTP_SUBMISSION_PORT);
+    }
+
+    return result25;
 }
 
 // ─── Catch-All Detection ─────────────────────────────────────────────────────
@@ -193,7 +222,7 @@ function smtpProbe(mxHost: string, emailAddress: string): Promise<SmtpProbeResul
 async function isCatchAll(mxHost: string, domain: string): Promise<boolean> {
     // Probe con indirizzo impossibile — se il server accetta, è catch-all
     const fakeEmail = `zzz-probe-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@${domain}`;
-    const result = await smtpProbe(mxHost, fakeEmail);
+    const result = await smtpProbeWithFallback(mxHost, fakeEmail);
     return result.accepted;
 }
 
@@ -228,7 +257,7 @@ export async function guessBusinessEmail(
     // Step 3: SMTP probe per ogni candidato (in ordine di peso)
     for (const candidate of candidates) {
         try {
-            const probe = await smtpProbe(mxHost, candidate.email);
+            const probe = await smtpProbeWithFallback(mxHost, candidate.email);
 
             if (probe.accepted) {
                 let confidence = 20; // MX valido

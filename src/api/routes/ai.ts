@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import {
-    getAiQualitySnapshot,
     listCommentSuggestionsForReview,
     reviewCommentSuggestion,
-    runAiValidationPipeline,
 } from '../../core/repositories';
+// A22: import diretto per rompere circular dependency chain
+import { getAiQualitySnapshot, runAiValidationPipeline } from '../../core/repositories/aiQuality';
 import { handleApiError } from '../utils';
 import { resolveRequestIp } from '../helpers/requestIp';
 import { auditSecurityEvent } from '../helpers/audit';
