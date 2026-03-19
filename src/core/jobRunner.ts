@@ -212,6 +212,13 @@ async function runQueuedJobsForAccount(
 
         recordSuccessfulAuth(account.sessionDir, account.id);
 
+        // M25: Chiudi modali residui al boot (cookie consent, premium upsell, download app).
+        // Se un modale è aperto da una sessione precedente, blocca i click sui bottoni target.
+        try {
+            const { dismissKnownOverlays } = await import('../browser');
+            await dismissKnownOverlays(session.page);
+        } catch { /* best-effort */ }
+
         // Blocca input utente per tutta la sessione automatica.
         // Previene click accidentali durante warmup, decoy, e inter-job delay.
         // I navigation context re-iniettano l'overlay dopo ogni page.goto.
