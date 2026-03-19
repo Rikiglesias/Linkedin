@@ -865,12 +865,40 @@ export async function humanType(page: Page, selector: string, text: string): Pro
         await element.pressSequentially(typedChar, { delay: delayBase });
 
         if (isTypo) {
-            await page.waitForTimeout(280 + Math.random() * 420);
-            await element.press('Backspace');
-            await page.waitForTimeout(180 + Math.random() * 250);
-
-            // Per la correzione usiamo un delay di entità intermedia
-            await element.pressSequentially(originalChar, { delay: Math.floor(Math.random() * 80) + 60 });
+            // H17: Variare il pattern di correzione typo — un umano non corregge
+            // sempre allo stesso modo. Pattern fisso = fingerprint rilevabile.
+            const correctionStyle = Math.random();
+            if (correctionStyle < 0.55) {
+                // Stile 1 (55%): Backspace singolo + retype (classico)
+                await page.waitForTimeout(280 + Math.random() * 420);
+                await element.press('Backspace');
+                await page.waitForTimeout(180 + Math.random() * 250);
+                await element.pressSequentially(originalChar, { delay: Math.floor(Math.random() * 80) + 60 });
+            } else if (correctionStyle < 0.75) {
+                // Stile 2 (20%): Cancella 2-3 char + riscrive (ha visto l'errore tardi)
+                const charsBack = Math.min(i, 1 + Math.floor(Math.random() * 2));
+                await page.waitForTimeout(350 + Math.random() * 500);
+                for (let b = 0; b <= charsBack; b++) {
+                    await element.press('Backspace');
+                    await page.waitForTimeout(60 + Math.random() * 80);
+                }
+                await page.waitForTimeout(200 + Math.random() * 300);
+                const retypeFrom = Math.max(0, i - charsBack);
+                for (let r = retypeFrom; r <= i; r++) {
+                    await element.pressSequentially(text[r] ?? '', { delay: Math.floor(Math.random() * 70) + 50 });
+                }
+            } else if (correctionStyle < 0.90) {
+                // Stile 3 (15%): Ignora l'errore — un umano a volte non se ne accorge
+                // (il typo resta nel testo, verrà comunque capito)
+            } else {
+                // Stile 4 (10%): Seleziona char sbagliato + sovrascrive (Shift+Left → type)
+                await page.waitForTimeout(300 + Math.random() * 400);
+                await page.keyboard.down('Shift');
+                await element.press('ArrowLeft');
+                await page.keyboard.up('Shift');
+                await page.waitForTimeout(100 + Math.random() * 150);
+                await element.pressSequentially(originalChar, { delay: Math.floor(Math.random() * 80) + 60 });
+            }
         }
 
         if (Math.random() < 0.04) {

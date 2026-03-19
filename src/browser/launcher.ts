@@ -56,6 +56,22 @@ export const cleanupBrowsers = async (): Promise<void> => {
             const pages = browser.pages();
             const activePage = pages.find((p: import('playwright').Page) => !p.isClosed());
             if (activePage) {
+                // H16: Cleanup draft fantasma — se il crash avviene durante humanType(),
+                // LinkedIn salva il draft nella textbox. Puliamo prima di chiudere.
+                try {
+                    await activePage.evaluate(() => {
+                        const textboxes = document.querySelectorAll(
+                            '.msg-form__contenteditable, [role="textbox"][contenteditable="true"], .msg-s-message-group-sendbox__textarea',
+                        );
+                        for (const tb of textboxes) {
+                            if (tb instanceof HTMLElement && tb.textContent && tb.textContent.trim().length > 0) {
+                                tb.textContent = '';
+                                tb.dispatchEvent(new Event('input', { bubbles: true }));
+                            }
+                        }
+                    }).catch(() => null);
+                } catch { /* best-effort draft cleanup */ }
+
                 // Wind-down rapido (timeout stretto per non bloccare lo shutdown)
                 const isAutomationPage = activePage.url().includes('/sales/') || activePage.url().includes('/search/') || activePage.url().includes('/mynetwork/') || activePage.url().includes('/in/');
                 if (isAutomationPage) {
