@@ -207,7 +207,19 @@ export function calculateAccountTrustScore(inputs: AccountTrustInputs): AccountT
     );
 
     const clampedScore = Math.min(100, Math.max(0, score));
-    const budgetMultiplier = Math.max(0.3, Math.min(1.0, 0.3 + (clampedScore / 100) * 0.7));
+
+    // A11: Trust-based acceleration — account maturi con trust > 75 possono superare 1.0.
+    // Score 0-50: multiplier 0.3-0.8 (riduzione). Score 50-75: 0.8-1.0 (neutro).
+    // Score 75-100: 1.0-1.3 (accelerazione). Max +30% per account affidabili.
+    // Prerequisiti acceleration: challengesLast7d === 0 AND pendingRatio < 0.50 AND acceptanceRatePct > 25.
+    let budgetMultiplier: number;
+    if (clampedScore >= 75 && inputs.challengesLast7d === 0 && inputs.pendingRatio < 0.50 && inputs.acceptanceRatePct > 25) {
+        // Accelerazione: 1.0 + (score - 75) / 25 * 0.30 → da 1.0 a 1.30
+        budgetMultiplier = 1.0 + ((clampedScore - 75) / 25) * 0.30;
+    } else {
+        // Comportamento precedente: 0.3 → 1.0
+        budgetMultiplier = Math.max(0.3, Math.min(1.0, 0.3 + (clampedScore / 100) * 0.7));
+    }
 
     return {
         score: clampedScore,
