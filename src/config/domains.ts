@@ -381,9 +381,12 @@ export function buildBehaviorDomainConfig() {
         withdrawInvitesEnabled: parseBoolEnv('WITHDRAW_INVITES_ENABLED', true),
         pendingInviteMaxDays: Math.max(1, parseIntEnv('PENDING_INVITE_MAX_DAYS', 30)),
         inviteWithNote: parseBoolEnv('INVITE_WITH_NOTE', false),
-        inviteNoteMode: (parseStringEnv('INVITE_NOTE_MODE', 'template') === 'ai' ? 'ai' : 'template') as
-            | 'template'
-            | 'ai',
+        inviteNoteMode: (() => {
+            const raw = parseStringEnv('INVITE_NOTE_MODE', 'template').toLowerCase().trim();
+            if (raw === 'ai') return 'ai' as const;
+            if (raw === 'none') return 'none' as const;
+            return 'template' as const;
+        })(),
         salesNavSyncEnabled: parseBoolEnv('SALESNAV_SYNC_ENABLED', false),
         salesNavSyncListName: parseStringEnv('SALESNAV_SYNC_LIST_NAME', 'default'),
         salesNavSyncListUrl: parseStringEnv('SALESNAV_SYNC_LIST_URL'),

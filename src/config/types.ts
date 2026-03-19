@@ -248,7 +248,7 @@ export interface AppConfig {
     withdrawInvitesEnabled: boolean;
     pendingInviteMaxDays: number;
     inviteWithNote: boolean;
-    inviteNoteMode: 'template' | 'ai';
+    inviteNoteMode: 'template' | 'ai' | 'none';
     salesNavSyncEnabled: boolean;
     salesNavSyncListName: string;
     salesNavSyncListUrl: string;
