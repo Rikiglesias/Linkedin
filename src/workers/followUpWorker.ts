@@ -74,20 +74,6 @@ function seededUnit(seed: number): number {
     return x - Math.floor(x);
 }
 
-function deterministicGaussian(leadId: number, followUpCount: number, intent: string, subIntent: string): number {
-    const salt = `${leadId}|${followUpCount}|${intent}|${subIntent}`;
-    let hash = 2166136261;
-    for (let i = 0; i < salt.length; i++) {
-        hash ^= salt.charCodeAt(i);
-        hash = Math.imul(hash, 16777619);
-    }
-    const seedBase = Math.abs(hash >>> 0) + 1;
-    const u1 = Math.max(0.000001, seededUnit(seedBase + 17));
-    const u2 = Math.max(0.000001, seededUnit(seedBase + 97));
-    const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-    return Math.max(-2.5, Math.min(2.5, z));
-}
-
 /**
  * Tenta di inviare il follow-up a un singolo lead.
  * @returns true se inviato (o simulato in dry-run), false se saltato
@@ -374,29 +360,42 @@ function resolveIntentBaseDelayDays(
     return { baseDelayDays: config.followUpDelayDays, reason: 'intent_default' };
 }
 
+/**
+ * M29: Cadenza semplificata — delay lineare per follow-up number + jitter 0-1 giorno.
+ *
+ * Prima: baseDelay × escalationMultiplier + deterministicGaussian (FNV-1a + Box-Muller).
+ * Impossibile da debuggare — servivano 20 min per spiegare perché un follow-up non era partito.
+ *
+ * Ora: baseDelay (intent-based, invariato) + (followUpCount × followUpDelayDays) + jitter 0-1 giorno.
+ * Esempio con baseDelay=5, followUpDelayDays=5:
+ *   Follow-up #1: 5 + 0×5 + jitter = 5-6 giorni dopo il messaggio
+ *   Follow-up #2: 5 + 1×5 + jitter = 10-11 giorni dopo il follow-up #1
+ *   Follow-up #3: 5 + 2×5 + jitter = 15-16 giorni dopo il follow-up #2
+ *
+ * Il jitter è deterministico per leadId (stabile cross-riavvii) ma semplice:
+ * hash del leadId → 0.0-1.0 giorni.
+ */
 export function resolveFollowUpCadence(
     lead: Pick<LeadRecord, 'id' | 'messaged_at' | 'follow_up_sent_at' | 'follow_up_count'>,
     intentHint: LeadIntentHint | null,
 ): FollowUpCadence {
     const baseDelay = resolveIntentBaseDelayDays(intentHint?.intent, intentHint?.subIntent);
     const followUpCount = Math.max(0, lead.follow_up_count ?? 0);
-    const escalationMultiplier = 1 + followUpCount * config.followUpDelayEscalationFactor;
-    const escalatedDelay = Math.max(1, Math.round(baseDelay.baseDelayDays * escalationMultiplier));
 
-    const gaussian = deterministicGaussian(
-        lead.id,
-        followUpCount,
-        intentHint?.intent ?? 'UNKNOWN',
-        intentHint?.subIntent ?? 'NONE',
-    );
-    const jitterDays = Math.round(gaussian * config.followUpDelayStddevDays);
-    const requiredDelayDays = Math.max(1, escalatedDelay + jitterDays);
+    // Cadenza lineare: base + (count × step) — chiara, prevedibile, debuggabile
+    const stepDelay = followUpCount * config.followUpDelayDays;
+    const totalDelay = baseDelay.baseDelayDays + stepDelay;
+
+    // Jitter deterministico semplice: hash del leadId → 0.0-1.0 giorni
+    const jitterDays = Math.round(seededUnit(lead.id * 7 + followUpCount * 13));
+    const requiredDelayDays = Math.max(1, totalDelay + jitterDays);
+
     const referenceAt = lead.follow_up_sent_at ?? lead.messaged_at ?? null;
     const referenceDaysSince = daysSince(referenceAt);
 
     return {
         baseDelayDays: baseDelay.baseDelayDays,
-        escalationMultiplier,
+        escalationMultiplier: 1 + followUpCount, // per retrocompatibilità log
         jitterDays,
         requiredDelayDays,
         referenceDaysSince,

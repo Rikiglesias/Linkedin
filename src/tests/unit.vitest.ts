@@ -681,7 +681,8 @@ describe('Legacy Core Domain Unit Tests', () => {
                 },
             );
             assert.equal(cadenceNotInterested.baseDelayDays, 60);
-            assert.equal(cadenceNotInterested.requiredDelayDays, 60);
+            // M29: requiredDelayDays = baseDelay(60) + stepDelay(0) + jitter(seededUnit(102*7)=1) = 61
+            assert.equal(cadenceNotInterested.requiredDelayDays, 61);
             assert.equal(cadenceNotInterested.reason, 'intent_not_interested');
 
             const cadenceEscalated = resolveFollowUpCadence(
