@@ -1127,12 +1127,16 @@ async function runQueuedJobsForAccount(
             disableWindowClickThrough(session.browser);
             await closeBrowser(session);
         }
-        await persistAccountHealth(account, options, accountHealthMetrics).catch(() => null);
+        await persistAccountHealth(account, options, accountHealthMetrics).catch((e) => {
+            void logWarn('job_runner.persist_health_failed', { accountId: account.id, error: e instanceof Error ? e.message : String(e) });
+        });
         await updateAccountBackpressure(account.id, {
             sent: accountHealthMetrics.processed,
             failed: accountHealthMetrics.failed,
             permanentFailures: accountHealthMetrics.deadLetters,
-        }).catch(() => null);
+        }).catch((e) => {
+            void logWarn('job_runner.update_backpressure_failed', { accountId: account.id, error: e instanceof Error ? e.message : String(e) });
+        });
 
         // Record session pattern for cross-session pacing factor learning.
         // Senza questo, getSessionHistory() ritorna sempre vuoto e il pacing
@@ -1147,7 +1151,9 @@ async function runQueuedJobsForAccount(
                 messageCount: accountHealthMetrics.messageSuccesses,
                 checkCount: accountHealthMetrics.checkSuccesses,
                 challenges: accountHealthMetrics.challenges,
-            }).catch(() => null);
+            }).catch((e) => {
+                void logWarn('job_runner.record_session_pattern_failed', { accountId: account.id, error: e instanceof Error ? e.message : String(e) });
+            });
         }
     }
 }
