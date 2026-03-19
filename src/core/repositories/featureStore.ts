@@ -1,3 +1,17 @@
+/**
+ * M45: Feature Store — infrastruttura ML pronta per modelli futuri.
+ *
+ * Stato attuale: buildFeatureDatasetVersion() estrae features (segment, timing, scores, intent)
+ * e le divide in train/validation/test. Nessun modello nella codebase le consuma ancora.
+ *
+ * Uso futuro previsto:
+ * - Modello di scoring lead basato su features (sostituzione scoring AI sequenziale — M06)
+ * - Modello di timing ottimale per inviti/messaggi (complemento a timingOptimizer.ts)
+ * - Analisi segment-level per A/B testing avanzato
+ *
+ * Per consumare le features: importare buildFeatureDatasetVersion(), chiamare con opzioni
+ * (minSample, testRatio, validationRatio), iterare sulle righe del dataset.
+ */
 import { createHash } from 'crypto';
 import { getDatabase } from '../../db';
 import { inferLeadSegment } from '../../ml/segments';
