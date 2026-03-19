@@ -458,6 +458,11 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
     // Chromium espone performance.memory (non-standard) — un browser headless
     // fresco ha un heap piccolo e costante. Un browser reale con tab aperte
     // ha un heap che cresce nel tempo. Simuliamo crescita progressiva.
+    // M41: In Firefox, performance.memory e' ASSENTE by design (non-standard W3C).
+    // Il check !performance.memory e' true in Firefox, quindi il mock viene creato.
+    // Se Camoufox/CloakBrowser patcha performance.memory a livello C++,
+    // il nostro mock JS viene saltato (il check e' false). Questo e' corretto:
+    // il browser engine lo gestisce meglio di noi. Nessuna azione necessaria per Firefox.
     try {
         if (typeof performance !== 'undefined' && !performance.memory) {
             const startHeap = 18_000_000 + Math.floor(Math.random() * 12_000_000);
