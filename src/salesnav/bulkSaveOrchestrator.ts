@@ -604,9 +604,13 @@ async function clickSelectAll(page: Page, dryRun: boolean): Promise<void> {
     // Strategia 4: Vision AI — ultimo resort
     if (!clicked) {
         console.log('[SELECT ALL] Strategia 4: invoco Vision AI (GPT-4o)...');
+        // M38: Clip area alla toolbar superiore (top 200px) — riduce dimensione screenshot
+        // e token AI del ~70%. La checkbox Select All è sempre nella toolbar, non nel body.
+        const vp = page.viewportSize() ?? { width: 1280, height: 800 };
         await safeVisionClick(page, 'the checkbox or control to select all leads on this page. Look for a small checkbox at the top of the results list, usually labeled "Select all" or showing a count like "(25)"', {
             retries: 3,
             postClickDelayMs: 850,
+            clip: { x: 0, y: 0, width: vp.width, height: Math.min(250, vp.height) },
         });
         clicked = true;
         console.log('[SELECT ALL] Strategia 4 OK: Vision AI click eseguito');
