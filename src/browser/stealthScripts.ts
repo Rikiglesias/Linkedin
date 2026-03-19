@@ -462,11 +462,25 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
         if (typeof performance !== 'undefined' && !performance.memory) {
             const startHeap = 18_000_000 + Math.floor(Math.random() * 12_000_000);
             const pageStartTime = Date.now();
+            let lastGcDropAt = 0;
+            let accumulatedSpike = 0;
             Object.defineProperty(performance, 'memory', {
                 get: () => {
                     const elapsedMin = (Date.now() - pageStartTime) / 60000;
-                    const growth = Math.floor(elapsedMin * 800_000 * (0.8 + Math.random() * 0.4));
-                    const used = startHeap + growth;
+                    // M31: Crescita NON lineare — un browser reale ha picchi e GC drops.
+                    // Prima: crescita costante 800KB/min → pattern rilevabile.
+                    const baseGrowth = Math.floor(elapsedMin * 800_000 * (0.8 + Math.random() * 0.4));
+                    // 8% probabilità di picco (+2-5MB) — apertura tab, caricamento pagina pesante
+                    if (Math.random() < 0.08) {
+                        accumulatedSpike += 2_000_000 + Math.floor(Math.random() * 3_000_000);
+                    }
+                    // 5% probabilità di GC drop (-15-35%) — garbage collector
+                    const now = Date.now();
+                    if (Math.random() < 0.05 && now - lastGcDropAt > 30_000) {
+                        accumulatedSpike = Math.floor(accumulatedSpike * (0.65 + Math.random() * 0.20));
+                        lastGcDropAt = now;
+                    }
+                    const used = startHeap + baseGrowth + accumulatedSpike;
                     return {
                         jsHeapSizeLimit: 2_197_815_296,
                         totalJSHeapSize: used + 4_000_000 + Math.floor(Math.random() * 2_000_000),
