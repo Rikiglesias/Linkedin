@@ -1203,12 +1203,32 @@ export async function appendLeadEvent(
     metadata: Record<string, unknown>,
 ): Promise<void> {
     const db = await getDatabase();
+    // M23: Calcola duration_seconds — quanto tempo il lead è stato nello stato precedente.
+    // Legge il timestamp dell'ultimo evento per questo lead e calcola la differenza.
+    let durationSeconds: number | null = null;
+    try {
+        const lastEvent = await db.get<{ created_at: string }>(
+            `SELECT created_at FROM lead_events WHERE lead_id = ? ORDER BY id DESC LIMIT 1`,
+            [leadId],
+        );
+        if (lastEvent?.created_at) {
+            const elapsed = Date.now() - new Date(lastEvent.created_at).getTime();
+            if (Number.isFinite(elapsed) && elapsed > 0) {
+                durationSeconds = Math.round(elapsed / 1000);
+            }
+        }
+    } catch { /* best-effort */ }
+
+    const enrichedMetadata = durationSeconds !== null
+        ? { ...metadata, duration_seconds: durationSeconds }
+        : metadata;
+
     await db.run(
         `
         INSERT INTO lead_events (lead_id, from_status, to_status, reason, metadata_json)
         VALUES (?, ?, ?, ?, ?)
     `,
-        [leadId, normalizeLegacyStatus(fromStatus), normalizeLegacyStatus(toStatus), reason, JSON.stringify(metadata)],
+        [leadId, normalizeLegacyStatus(fromStatus), normalizeLegacyStatus(toStatus), reason, JSON.stringify(enrichedMetadata)],
     );
 }
 
