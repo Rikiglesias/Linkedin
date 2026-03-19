@@ -116,20 +116,61 @@ async function navigateViaOrganicSearch(
         await humanDelay(page, 1000, 2500);
         stepsCompleted++;
 
-        // Step 4 (H02 fix): Torna al feed PRIMA di navigare al profilo.
-        // Senza questo step, il referrer sarebbe /search/ ma il profilo target
-        // NON era nei risultati — pattern più sospetto del goto diretto.
-        // Con il feed intermedio, il referrer diventa /feed/ (comportamento naturale:
-        // "ho cercato, non ho trovato, sono tornato al feed, poi sono andato al profilo").
-        await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 15_000 });
-        await reInjectOverlays(page);
-        await humanDelay(page, 800, 2000);
-        stepsCompleted++;
+        // R08: Tenta di cliccare un risultato REALE nella lista di ricerca.
+        // Se il profilo target è nei risultati → click diretto (referrer /search/ coerente).
+        // Se non trovato → click un risultato qualsiasi (simula curiosità) → poi naviga al target.
+        // Fallback: torna al feed e poi goto diretto (H02 fix originale).
+        let clickedSearchResult = false;
+        try {
+            // Estrai lo slug dal profileUrl (es. /in/mario-rossi/ → mario-rossi)
+            const slugMatch = profileUrl.match(/\/in\/([^/?#]+)/);
+            const targetSlug = slugMatch?.[1]?.toLowerCase();
 
-        // Step 5: Naviga al profilo target (referrer ora è /feed/, non /search/)
-        await page.goto(profileUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 });
-        await reInjectOverlays(page);
-        stepsCompleted++;
+            // Cerca il profilo target nei risultati
+            if (targetSlug) {
+                const targetLink = page.locator(`a[href*="/in/${targetSlug}"]`).first();
+                if (await targetLink.isVisible({ timeout: 2000 }).catch(() => false)) {
+                    await humanDelay(page, 400, 1200);
+                    await targetLink.click({ timeout: 5000 });
+                    await page.waitForURL('**/in/**', { timeout: 10_000 }).catch(() => null);
+                    await reInjectOverlays(page);
+                    clickedSearchResult = true;
+                    stepsCompleted++;
+                    await logInfo('navigation_context.r08_clicked_target_in_results', {
+                        targetSlug,
+                    });
+                }
+            }
+
+            // Se target non trovato, click un risultato random (30% — simula curiosità umana)
+            if (!clickedSearchResult && Math.random() < 0.30) {
+                const anyResult = page.locator('a[href*="/in/"]').nth(randomInt(0, 4));
+                if (await anyResult.isVisible({ timeout: 1500 }).catch(() => false)) {
+                    await humanDelay(page, 600, 1500);
+                    await anyResult.click({ timeout: 5000 });
+                    await page.waitForTimeout(2000 + Math.floor(Math.random() * 3000));
+                    await reInjectOverlays(page);
+                    // Dopo aver visitato un profilo random, torna indietro e poi vai al target
+                    await page.goBack({ waitUntil: 'domcontentloaded', timeout: 10_000 }).catch(() => null);
+                    await humanDelay(page, 500, 1500);
+                    stepsCompleted++;
+                }
+            }
+        } catch {
+            // Best-effort R08 — fallback al comportamento H02
+        }
+
+        if (!clickedSearchResult) {
+            // H02 fallback: torna al feed → poi goto profilo (referrer = /feed/)
+            await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 15_000 });
+            await reInjectOverlays(page);
+            await humanDelay(page, 800, 2000);
+            stepsCompleted++;
+
+            await page.goto(profileUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 });
+            await reInjectOverlays(page);
+            stepsCompleted++;
+        }
 
         return { strategy: 'organic_search', success: true, stepsCompleted };
     } catch {
