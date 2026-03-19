@@ -36,6 +36,19 @@ export async function processAcceptanceJob(
 
     await navigateToProfileForCheck(context.session.page, lead.linkedin_url, context.accountId ?? 'default');
     await humanDelay(context.session.page, 2000, 4000);
+
+    // M13: Rileva profilo eliminato/URL cambiato — "This page doesn't exist" o redirect a 404.
+    try {
+        const pageText = await context.session.page.textContent('body', { timeout: 2000 }).catch(() => '') ?? '';
+        const isDeleted = /this page doesn.t exist|page not found|pagina non trovata|profilo non disponibile/i.test(pageText);
+        const is404 = context.session.page.url().includes('/404') || context.session.page.url().includes('/error');
+        if (isDeleted || is404) {
+            await logWarn('acceptance.profile_deleted', { leadId: lead.id, url: lead.linkedin_url });
+            await transitionLead(lead.id, 'DEAD', 'profile_deleted_or_404');
+            return workerResult(1);
+        }
+    } catch { /* best-effort */ }
+
     await contextualReadingPause(context.session.page);
 
     // GAP2-C04: Identity check — verifica che il profilo corrisponda al lead target.

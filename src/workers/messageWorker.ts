@@ -228,6 +228,20 @@ export async function processMessageJob(
         });
     await humanDelay(context.session.page, 1200, 2200);
 
+    // M12: Pulisci draft residuo nella textbox prima di digitare.
+    // Se LinkedIn ha salvato un draft (es. crash precedente, navigazione interrotta),
+    // il nuovo messaggio verrebbe CONCATENATO al draft → messaggio corrotto.
+    try {
+        const textbox = context.session.page.locator(joinSelectors('messageTextbox')).first();
+        const existingContent = await textbox.inputValue({ timeout: 1000 }).catch(() => '');
+        if (existingContent.trim().length > 0) {
+            await textbox.click();
+            await context.session.page.keyboard.press('Control+A');
+            await context.session.page.keyboard.press('Delete');
+            await humanDelay(context.session.page, 200, 400);
+        }
+    } catch { /* best-effort draft cleanup */ }
+
     // C07: Check se il lead ha GIÀ scritto nella chat prima di inviare il primo messaggio.
     // Senza questo check, il bot potrebbe inviare un messaggio freddo a qualcuno che ci ha già contattato.
     // Legge l'ultimo messaggio non-nostro nella conversazione aperta.

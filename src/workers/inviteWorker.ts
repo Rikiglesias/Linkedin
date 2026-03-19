@@ -173,6 +173,13 @@ async function handleInviteModal(
         // una stringa vuota — invia senza nota. Una nota vuota su LinkedIn è peggio
         // di nessuna nota: sembra un errore e riduce l'acceptance rate.
         if (!generatedNote.note || generatedNote.note.trim().length === 0) {
+            // M09: Log PERCHÉ la nota è vuota — senza questo, "invio senza nota" è inspiegabile
+            await logInfo('invite.empty_note_reason', {
+                leadId: lead.id,
+                source: generatedNote.source,
+                reason: !generatedNote.note ? 'note_null' : 'note_empty_after_trim',
+                variant: generatedNote.variant,
+            });
             // Chiudi il modale nota e ricadi su invio senza nota
             await page.keyboard.press('Escape').catch(() => null);
             await humanDelay(page, 300, 600);
@@ -184,6 +191,18 @@ async function handleInviteModal(
                 return { sentWithNote: false, noteSource: null, variant: null };
             }
             // Se anche sendWithoutNote non c'è, prova sendFallback sotto
+        }
+
+        // M39: LinkedIn ha limite 300 char per nota invito. Tronca a 280 (buffer sicurezza)
+        // per evitare che LinkedIn rifiuti silenziosamente la nota o tagli a metà parola.
+        if (generatedNote.note.length > 280) {
+            const truncated = generatedNote.note.substring(0, 277) + '...';
+            await logInfo('invite.note_truncated', {
+                leadId: lead.id,
+                originalLength: generatedNote.note.length,
+                truncatedLength: truncated.length,
+            });
+            generatedNote.note = truncated;
         }
 
         try {
