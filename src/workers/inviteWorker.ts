@@ -353,6 +353,33 @@ export async function processInviteJob(
                 }
             }
         }
+        // M07: Reconciliazione dati SalesNav vs profilo reale.
+        // Se il job_title o company sulla pagina sono diversi dal DB, aggiorna.
+        // Questo mantiene i dati freschi senza enrichment aggiuntivo.
+        try {
+            const headlineEl = context.session.page.locator('.text-body-medium').first();
+            const headlineText = await headlineEl.textContent({ timeout: 2000 }).catch(() => null);
+            if (headlineText) {
+                const trimmedHeadline = headlineText.trim();
+                const dbTitle = (lead.job_title ?? '').trim();
+                if (trimmedHeadline && trimmedHeadline !== dbTitle && trimmedHeadline.length > 3) {
+                    const { getDatabase } = await import('../db');
+                    const db = await getDatabase();
+                    await db.run(
+                        'UPDATE leads SET job_title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND (job_title IS NULL OR job_title != ?)',
+                        [trimmedHeadline.substring(0, 255), lead.id, trimmedHeadline.substring(0, 255)],
+                    );
+                    await logInfo('invite.profile_reconciliation', {
+                        leadId: lead.id,
+                        field: 'job_title',
+                        oldValue: dbTitle.substring(0, 40),
+                        newValue: trimmedHeadline.substring(0, 40),
+                    });
+                }
+            }
+        } catch {
+            // Best-effort reconciliation — non blocca il flusso
+        }
     } catch {
         // Identity check non bloccante: se fallisce (es. h1 non trovato), prosegui
     }
