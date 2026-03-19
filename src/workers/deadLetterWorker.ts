@@ -132,6 +132,23 @@ export async function runDeadLetterWorker(options: DeadLetterOptions = {}): Prom
             `Dead Letter Worker completed. Processed: ${processed}, Recycled: ${recycled}, Dead-Lettered: ${deadLettered}`,
         );
 
+        // M21: Alert Telegram aggregato — se ci sono job terminali, notifica l'utente.
+        // Non serve alert per job riciclati (verranno ritentati automaticamente).
+        if (deadLettered > 0) {
+            try {
+                const { sendTelegramAlert } = await import('../telemetry/alerts');
+                await sendTelegramAlert(
+                    `🗑️ **Dead Letter Queue**\n\n` +
+                    `Processati: ${processed}\n` +
+                    `Riciclati: ${recycled} (verranno ritentati)\n` +
+                    `**Terminati: ${deadLettered}** (errori non recuperabili)\n\n` +
+                    `Azione: controlla i log per dettagli o usa \`bot dead-letter --retry\` per forzare il retry.`,
+                    'Dead Letter Summary',
+                    deadLettered >= 5 ? 'critical' : 'warn',
+                ).catch(() => null);
+            } catch { /* best-effort alert */ }
+        }
+
         return { processed, recycled, deadLettered };
     } catch (e) {
         await logError('Error in Dead Letter Worker loop:', { error: e instanceof Error ? e.message : String(e) });
