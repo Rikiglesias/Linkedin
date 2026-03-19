@@ -385,6 +385,8 @@ async function runQueuedJobsForAccount(
         let processedThisRun = 0;
         let lastJa3CheckMs = Date.now(); // C03: periodic JA3 check mid-session
         let lastBudgetRecalcAt = 0; // H24: track processed count at last budget recalc
+        let totalActionMs = 0; // A10/A20: delay creep tracking
+        let totalDelayMs = 0; // A10/A20: delay creep tracking
 
         while (true) {
             if (processedThisRun >= maxJobsPerRun) {
@@ -543,7 +545,9 @@ async function runQueuedJobsForAccount(
                         'UNKNOWN_JOB_TYPE',
                     );
                 }
+                const actionStartMs = Date.now(); // A10/A20
                 const executionResult = await processor.process(job, workerContext);
+                totalActionMs += Date.now() - actionStartMs; // A10/A20
 
                 // CC-5: Solo job con processedCount > 0 contano come "processed".
                 // workerResult(0) con success=true indica skip (blacklist, validazione, etc.)
@@ -655,6 +659,7 @@ async function runQueuedJobsForAccount(
                     ? sessionPacingFactor / config.sessionWindDownDelayMultiplier
                     : sessionPacingFactor;
                 const throttleSignal = session.httpThrottler.getThrottleSignal();
+                const delayStartMs = Date.now(); // A10/A20
                 await Promise.allSettled([
                     interJobDelay(session.page, throttleSignal, effectivePacingFactor),
                     (async () => {
@@ -664,6 +669,7 @@ async function runQueuedJobsForAccount(
                         } catch { /* enrichment best-effort, never blocks job flow */ }
                     })(),
                 ]);
+                totalDelayMs += Date.now() - delayStartMs; // A10/A20
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
                 const attempts = job.attempts + 1;
@@ -1083,6 +1089,26 @@ async function runQueuedJobsForAccount(
                     error: err instanceof Error ? err.message : String(err),
                 });
             }
+        }
+
+        // A10/A20: Log delay creep ratio a fine sessione.
+        // Se delay > 60% del tempo totale → il bot passa più tempo in attesa che in azione.
+        const totalSessionMs = Date.now() - sessionStartedAtMs;
+        if (totalSessionMs > 0 && accountHealthMetrics.processed > 0) {
+            const delayPct = Math.round((totalDelayMs / totalSessionMs) * 100);
+            const actionPct = Math.round((totalActionMs / totalSessionMs) * 100);
+            const overheadPct = Math.max(0, 100 - delayPct - actionPct);
+            await logInfo('job_runner.session_performance', {
+                accountId: account.id,
+                totalSessionMs,
+                totalActionMs,
+                totalDelayMs,
+                delayPct,
+                actionPct,
+                overheadPct,
+                processed: accountHealthMetrics.processed,
+                delayCreepAlert: delayPct > 60,
+            });
         }
     } finally {
         // H15: Wind-down SEMPRE — un umano non chiude il browser dalla pagina profilo.
