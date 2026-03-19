@@ -401,8 +401,15 @@ async function main(): Promise<void> {
                     'critical',
                 ).catch(() => null);
             } catch { /* best-effort alert */ }
-            console.error(`[PREFLIGHT] Bloccato: proxy non raggiungibile per account: ${failedAccounts.join(', ')}.`);
-            process.exit(1);
+            // L4 multi-account: se TUTTI gli account con proxy hanno fallito → exit.
+            // Se almeno uno funziona → warning e procedi con quelli sani.
+            const accountsWithProxy = accounts.filter(a => !!a.proxy);
+            if (failedAccounts.length >= accountsWithProxy.length) {
+                console.error(`[PREFLIGHT] Bloccato: TUTTI i proxy non raggiungibili (${failedAccounts.join(', ')}). Impossibile procedere.`);
+                process.exit(1);
+            } else {
+                console.warn(`[PREFLIGHT] ⚠️ Proxy falliti per: ${failedAccounts.join(', ')}. Procedo con gli account funzionanti.`);
+            }
         }
 
         // C03: JA3 coherence check — se USE_JA3_PROXY=true, CycleTLS deve essere attivo
