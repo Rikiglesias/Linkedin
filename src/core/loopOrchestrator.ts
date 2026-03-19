@@ -48,7 +48,9 @@ export async function runLoopCycle(
         aborted: false,
     };
 
-    for (const task of tasks) {
+    const totalTasks = tasks.length;
+    for (let i = 0; i < tasks.length; i++) {
+        const task = tasks[i];
         try {
             const shouldRun = await task.shouldRun(ctx);
             if (!shouldRun) {
@@ -56,6 +58,8 @@ export async function runLoopCycle(
                 continue;
             }
 
+            // C14: Logging fasi numerate — l'utente vede esattamente dove è il ciclo.
+            console.log(`[LOOP] Fase ${i + 1}/${totalTasks}: ${task.name}`);
             await task.execute(ctx);
             result.tasksRun.push(task.name);
         } catch (error) {

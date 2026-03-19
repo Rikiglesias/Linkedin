@@ -371,6 +371,7 @@ async function runQueuedJobsForAccount(
         let sessionStartedAtMs = Date.now();
         await setRuntimeFlag(`browser_session_started_at:${account.id}`, new Date(sessionStartedAtMs).toISOString()).catch(() => null);
         let processedThisRun = 0;
+        let lastJa3CheckMs = Date.now(); // C03: periodic JA3 check mid-session
 
         while (true) {
             if (processedThisRun >= maxJobsPerRun) {
@@ -471,6 +472,30 @@ async function runQueuedJobsForAccount(
             } else {
                 // Reset counter se il throttle non è più attivo
                 consecutiveSlowResponses = 0;
+            }
+
+            // C03: Periodic JA3 check mid-session — se CycleTLS crasha durante la sessione,
+            // il bot continua a navigare con fingerprint TLS nativo (rilevabile da LinkedIn).
+            // Check ogni 10 minuti, non bloccante: se JA3 non è più attivo → pausa + alert.
+            if (config.useJa3Proxy && Date.now() - lastJa3CheckMs >= 10 * 60 * 1000) {
+                lastJa3CheckMs = Date.now();
+                try {
+                    const { validateJa3Configuration } = await import('../proxy/ja3Validator');
+                    const ja3Report = await validateJa3Configuration();
+                    if (!ja3Report.cycleTlsActive) {
+                        await logWarn('job_runner.ja3_mid_session_failed', {
+                            accountId: account.id,
+                            port: ja3Report.cycleTlsPort,
+                        });
+                        await pauseAutomation('JA3_PROXY_DEAD_MID_SESSION', {
+                            accountId: account.id,
+                            message: 'CycleTLS non raggiungibile durante la sessione — fingerprint TLS esposto.',
+                        }, 30);
+                        break;
+                    }
+                } catch {
+                    // Best-effort: se il check fallisce, procedi
+                }
             }
 
             const job = await lockNextQueuedJob(options.allowedTypes, account.id, includeLegacyDefaultQueue);

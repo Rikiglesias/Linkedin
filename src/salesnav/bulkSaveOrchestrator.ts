@@ -2611,6 +2611,27 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                     continue;
                 }
 
+                // ── C08: Check limite 2500 membri/lista SalesNav PRIMA di salvare ──
+                // LinkedIn ha hard limit 2500 lead/lista. Superato → fail silenzioso o errore UI.
+                try {
+                    const { getDatabase: getDb } = await import('../db');
+                    const memberCountRow = await getDb().then(db => db.get<{ cnt: number }>(
+                        'SELECT COUNT(*) as cnt FROM salesnav_list_members WHERE list_name = ?',
+                        [options.targetListName],
+                    ));
+                    const currentMembers = memberCountRow?.cnt ?? 0;
+                    if (currentMembers + dedupResult.newProfiles > 2400) {
+                        console.warn(`[SAVE] ⚠️ Lista "${options.targetListName}" ha ${currentMembers} membri + ${dedupResult.newProfiles} nuovi = ${currentMembers + dedupResult.newProfiles} — vicino al limite 2500. Rischio fallimento salvataggio LinkedIn.`);
+                        if (currentMembers >= 2450) {
+                            console.error(`[SAVE] ❌ Lista "${options.targetListName}" ha ${currentMembers} membri — troppo vicino al limite 2500. Skip salvataggio per evitare errore LinkedIn.`);
+                            if (run) {
+                                await addSyncItem({ runId: run.id, searchIndex: absoluteIndex, pageNumber, leadsOnPage, status: 'SKIPPED' }).catch(() => null);
+                            }
+                            continue;
+                        }
+                    }
+                } catch { /* best-effort check — se fallisce, procedi comunque */ }
+
                 // ── FASE 5: Ci sono lead nuovi — seleziona tutto e salva nella lista ──
                 console.log(
                     `[SAVE] Pagina ${currentDisplayPage}: ${dedupResult.newProfiles} lead nuovi da salvare nella lista "${options.targetListName}"`,
