@@ -33,21 +33,111 @@ type SeedSample = {
     tags: string[];
 };
 
+// M44: Espanso da 4 a 20 campioni — 5+ per intent type × lingue × edge case.
+// Con 4 campioni, anche un 100% match rate non era statisticamente significativo.
 const DEFAULT_AI_VALIDATION_SAMPLES: SeedSample[] = [
+    // ── Sentiment: POSITIVE (5 campioni) ──
     {
         taskType: 'sentiment',
         label: 'positive-call-request',
         input: { text: 'Ciao, grazie del messaggio. Possiamo sentirci in call martedi?' },
         expected: { intent: 'POSITIVE', subIntent: 'CALL_REQUESTED', minConfidence: 0.55 },
-        tags: ['positive', 'call'],
+        tags: ['positive', 'call', 'it'],
     },
+    {
+        taskType: 'sentiment',
+        label: 'positive-meeting-en',
+        input: { text: 'Thanks for reaching out! I would love to schedule a meeting next week.' },
+        expected: { intent: 'POSITIVE', subIntent: 'CALL_REQUESTED', minConfidence: 0.55 },
+        tags: ['positive', 'call', 'en'],
+    },
+    {
+        taskType: 'sentiment',
+        label: 'positive-referral',
+        input: { text: 'Non sono la persona giusta, ma ti metto in contatto con il nostro responsabile.' },
+        expected: { intent: 'POSITIVE', subIntent: 'REFERRAL', minConfidence: 0.50 },
+        tags: ['positive', 'referral', 'it'],
+    },
+    {
+        taskType: 'sentiment',
+        label: 'positive-interest-en',
+        input: { text: 'This sounds interesting. Can you send me more details about your program?' },
+        expected: { intent: 'POSITIVE', subIntent: 'NONE', minConfidence: 0.55 },
+        tags: ['positive', 'interest', 'en'],
+    },
+    {
+        taskType: 'sentiment',
+        label: 'positive-brief-emoji',
+        input: { text: 'Sure! 👍 Let me know when works for you' },
+        expected: { intent: 'POSITIVE', subIntent: 'NONE', minConfidence: 0.50 },
+        tags: ['positive', 'emoji', 'en'],
+    },
+    // ── Sentiment: QUESTIONS (4 campioni) ──
     {
         taskType: 'sentiment',
         label: 'price-question',
         input: { text: 'Interessante, ma qual e il prezzo e come funziona il piano?' },
         expected: { intent: 'QUESTIONS', subIntent: 'PRICE_INQUIRY', minConfidence: 0.55 },
-        tags: ['questions', 'price'],
+        tags: ['questions', 'price', 'it'],
     },
+    {
+        taskType: 'sentiment',
+        label: 'questions-how-it-works-en',
+        input: { text: 'How exactly does your platform work? Do you have a free trial?' },
+        expected: { intent: 'QUESTIONS', subIntent: 'NONE', minConfidence: 0.50 },
+        tags: ['questions', 'en'],
+    },
+    {
+        taskType: 'sentiment',
+        label: 'questions-timeline',
+        input: { text: 'Quanto tempo serve per implementarlo? Abbiamo una deadline a marzo.' },
+        expected: { intent: 'QUESTIONS', subIntent: 'NONE', minConfidence: 0.50 },
+        tags: ['questions', 'timeline', 'it'],
+    },
+    {
+        taskType: 'sentiment',
+        label: 'questions-ambiguous',
+        input: { text: 'ok tell me more' },
+        expected: { intent: 'QUESTIONS', subIntent: 'NONE', minConfidence: 0.40 },
+        tags: ['questions', 'ambiguous', 'en'],
+    },
+    // ── Sentiment: NEGATIVE / NOT_INTERESTED (5 campioni) ──
+    {
+        taskType: 'sentiment',
+        label: 'negative-not-interested-it',
+        input: { text: 'Grazie ma non ci interessa al momento. Buona fortuna.' },
+        expected: { intent: 'NOT_INTERESTED', subIntent: 'NONE', minConfidence: 0.60 },
+        tags: ['not_interested', 'it'],
+    },
+    {
+        taskType: 'sentiment',
+        label: 'negative-stop-en',
+        input: { text: 'Please stop messaging me. I am not interested.' },
+        expected: { intent: 'NEGATIVE', subIntent: 'NONE', minConfidence: 0.70 },
+        tags: ['negative', 'stop', 'en'],
+    },
+    {
+        taskType: 'sentiment',
+        label: 'negative-objection-budget',
+        input: { text: 'The idea is nice but we simply do not have the budget right now.' },
+        expected: { intent: 'NEGATIVE', subIntent: 'OBJECTION_HANDLING', minConfidence: 0.50 },
+        tags: ['negative', 'objection', 'en'],
+    },
+    {
+        taskType: 'sentiment',
+        label: 'negative-competitor',
+        input: { text: 'Usiamo gia un prodotto simile e siamo soddisfatti, grazie.' },
+        expected: { intent: 'NOT_INTERESTED', subIntent: 'NONE', minConfidence: 0.55 },
+        tags: ['not_interested', 'competitor', 'it'],
+    },
+    {
+        taskType: 'sentiment',
+        label: 'negative-curt-en',
+        input: { text: 'No thanks' },
+        expected: { intent: 'NOT_INTERESTED', subIntent: 'NONE', minConfidence: 0.50 },
+        tags: ['not_interested', 'curt', 'en'],
+    },
+    // ── Invite note (3 campioni) ──
     {
         taskType: 'invite',
         label: 'invite-short-professional',
@@ -55,6 +145,21 @@ const DEFAULT_AI_VALIDATION_SAMPLES: SeedSample[] = [
         expected: { requiredKeywords: ['marco'], maxChars: 300, forbiddenKeywords: ['http://', 'https://'] },
         tags: ['invite', 'short'],
     },
+    {
+        taskType: 'invite',
+        label: 'invite-en-ceo',
+        input: { firstName: 'Sarah', company: 'TechCorp', role: 'CEO' },
+        expected: { requiredKeywords: ['sarah'], maxChars: 300, forbiddenKeywords: ['http://', 'https://', 'buy'] },
+        tags: ['invite', 'en', 'ceo'],
+    },
+    {
+        taskType: 'invite',
+        label: 'invite-unicode-name',
+        input: { firstName: 'José', company: 'Innovación SA', role: 'Director' },
+        expected: { requiredKeywords: ['josé'], maxChars: 300, forbiddenKeywords: ['http://', 'https://'] },
+        tags: ['invite', 'unicode'],
+    },
+    // ── Message (3 campioni) ──
     {
         taskType: 'message',
         label: 'message-no-link-no-emoji',
@@ -65,6 +170,28 @@ const DEFAULT_AI_VALIDATION_SAMPLES: SeedSample[] = [
             forbiddenKeywords: ['http://', 'https://', '😀', '🚀'],
         },
         tags: ['message', 'style'],
+    },
+    {
+        taskType: 'message',
+        label: 'message-en-professional',
+        input: { firstName: 'James', company: 'GlobalTech', role: 'VP Engineering' },
+        expected: {
+            requiredKeywords: ['james'],
+            maxChars: 450,
+            forbiddenKeywords: ['http://', 'https://', 'buy now', 'limited offer'],
+        },
+        tags: ['message', 'en', 'professional'],
+    },
+    {
+        taskType: 'message',
+        label: 'message-followup-context',
+        input: { firstName: 'Anna', company: 'StartupXYZ', role: 'COO' },
+        expected: {
+            requiredKeywords: ['anna'],
+            maxChars: 450,
+            forbiddenKeywords: ['http://', 'dear sir'],
+        },
+        tags: ['message', 'followup'],
     },
 ];
 
