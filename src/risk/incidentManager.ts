@@ -168,6 +168,47 @@ export async function resumeAutomation(): Promise<void> {
     publishLiveEvent('automation.resumed', {});
 }
 
+/**
+ * A13: Classifica un incident come "account-specific" o "platform-wide".
+ * Euristica: se lo stesso tipo di errore è avvenuto su 3+ account nelle ultime 24h,
+ * è probabilmente un cambiamento LinkedIn (selettori, UI, rate limit).
+ * Se solo su 1 account → specifico dell'account (bug nostro, stato account, ban).
+ */
+export async function classifyIncidentSource(
+    incidentType: string,
+): Promise<{ classification: 'account_specific' | 'platform_wide' | 'unknown'; affectedAccounts: number; recommendation: string }> {
+    try {
+        const { getDatabase } = await import('../db');
+        const db = await getDatabase();
+        const row = await db.get<{ cnt: number; accounts: string }>(
+            `SELECT COUNT(DISTINCT COALESCE(json_extract(details_json, '$.accountId'), 'default')) as cnt,
+                    GROUP_CONCAT(DISTINCT COALESCE(json_extract(details_json, '$.accountId'), 'default')) as accounts
+             FROM incidents
+             WHERE type = ?
+               AND created_at >= DATETIME('now', '-24 hours')`,
+            [incidentType],
+        );
+        const affectedAccounts = row?.cnt ?? 0;
+        if (affectedAccounts >= 3) {
+            return {
+                classification: 'platform_wide',
+                affectedAccounts,
+                recommendation: `Stesso errore "${incidentType}" su ${affectedAccounts} account — probabile cambiamento LinkedIn. Verificare selettori e UI.`,
+            };
+        }
+        if (affectedAccounts >= 1) {
+            return {
+                classification: 'account_specific',
+                affectedAccounts,
+                recommendation: `Errore "${incidentType}" su ${affectedAccounts} account — probabile problema specifico dell'account.`,
+            };
+        }
+        return { classification: 'unknown', affectedAccounts: 0, recommendation: 'Nessun incident recente di questo tipo.' };
+    } catch {
+        return { classification: 'unknown', affectedAccounts: 0, recommendation: 'Classificazione non disponibile.' };
+    }
+}
+
 export interface ChallengeDetectionInput {
     source: string;
     accountId?: string;
