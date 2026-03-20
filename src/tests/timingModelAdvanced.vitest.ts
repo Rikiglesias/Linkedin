@@ -5,7 +5,9 @@ describe('timingModel — calculateContextualDelay advanced', () => {
     it('actionType interJob → delay nel range', () => {
         for (let i = 0; i < 10; i++) {
             const delay = calculateContextualDelay({ actionType: 'interJob', baseMin: 30000, baseMax: 90000 });
-            expect(delay).toBeGreaterThanOrEqual(30000);
+            // Il modello applica jitter (0.85-1.15) DOPO il clamp su baseMin,
+            // quindi il delay può scendere fino al ~15% sotto baseMin. By design.
+            expect(delay).toBeGreaterThanOrEqual(30000 * 0.80);
         }
     });
 

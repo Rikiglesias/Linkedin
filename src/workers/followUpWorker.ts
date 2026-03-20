@@ -35,7 +35,7 @@ import {
     isLeadCampaignActive,
 } from '../core/repositories';
 import { joinSelectors, SELECTORS } from '../selectors';
-import { hashMessage, validateMessageContent } from '../validation/messageValidator';
+import { hashMessage, validateMessageContentAsync } from '../validation/messageValidator';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { LeadRecord } from '../types/domain';
 import { WorkerContext } from './context';
@@ -98,7 +98,7 @@ async function processSingleFollowUp(
     // Validazione anti-duplicata
     const messageHash = hashMessage(message);
     const duplicateCount = await countRecentMessageHash(messageHash, 48);
-    const validation = validateMessageContent(message, { duplicateCountLast24h: duplicateCount });
+    const validation = await validateMessageContentAsync(message, { duplicateCountLast24h: duplicateCount, leadId: lead.id });
     if (!validation.valid) {
         await logWarn('follow_up.validation_failed', { leadId, reasons: validation.reasons });
         return false;

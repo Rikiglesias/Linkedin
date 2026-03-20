@@ -23,7 +23,7 @@ import {
 import { config } from '../config';
 import { joinSelectors, SELECTORS } from '../selectors';
 import { MessageJobPayload } from '../types/domain';
-import { hashMessage, validateMessageContent } from '../validation/messageValidator';
+import { hashMessage, validateMessageContentAsync } from '../validation/messageValidator';
 import { WorkerContext } from './context';
 import { ChallengeDetectedError, RetryableWorkerError } from './errors';
 import { attemptChallengeResolution } from './challengeHandler';
@@ -121,7 +121,7 @@ export async function processMessageJob(
 
     const messageHash = hashMessage(message);
     const duplicateCount = await countRecentMessageHash(messageHash, 24);
-    const validation = validateMessageContent(message, { duplicateCountLast24h: duplicateCount });
+    const validation = await validateMessageContentAsync(message, { duplicateCountLast24h: duplicateCount, leadId: lead.id });
     if (!validation.valid) {
         await transitionLead(lead.id, 'BLOCKED', 'message_validation_failed', {
             reasons: validation.reasons,
