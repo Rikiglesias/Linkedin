@@ -388,6 +388,33 @@ async function runQueuedJobsForAccount(
         let totalActionMs = 0; // A10/A20: delay creep tracking
         let totalDelayMs = 0; // A10/A20: delay creep tracking
 
+        // ── R06: Context-aware decoy terms ──────────────────────────────
+        // All'inizio della sessione, genera termini di ricerca coerenti col
+        // settore dei lead target. Se AI configurata → termini intelligenti,
+        // altrimenti fallback meccanico da job_title/account_name.
+        // Best-effort: se fallisce, performDecoyBurst usa la lista hardcoded.
+        let sessionDecoyTerms: readonly string[] | undefined;
+        try {
+            const { getDatabase } = await import('../db');
+            const db = await getDatabase();
+            const leadSamples = await db.query<{ job_title: string | null; account_name: string | null }>(
+                `SELECT DISTINCT job_title, account_name FROM leads
+                 WHERE status IN ('READY_INVITE', 'INVITED', 'ACCEPTED', 'MESSAGE_SENT')
+                   AND (job_title IS NOT NULL AND job_title != '')
+                 ORDER BY updated_at DESC
+                 LIMIT 50`,
+                [],
+            );
+            if (leadSamples.length > 0) {
+                const { generateContextualDecoyTerms } = await import('../ai/decoyTermsGenerator');
+                sessionDecoyTerms = await generateContextualDecoyTerms(
+                    leadSamples.map((r: { job_title: string | null; account_name: string | null }) => ({ jobTitle: r.job_title, company: r.account_name })),
+                );
+            }
+        } catch {
+            // Best-effort: decoy terms generation failure is non-blocking
+        }
+
         while (true) {
             if (processedThisRun >= maxJobsPerRun) {
                 await logInfo('job_runner.account.fairness_quota_reached', {
@@ -522,7 +549,7 @@ async function runQueuedJobsForAccount(
                     jobsSinceDecoy,
                     nextDecoyAt,
                 });
-                await performDecoyBurst(session.page);
+                await performDecoyBurst(session.page, sessionDecoyTerms);
                 jobsSinceDecoy = 0;
                 nextDecoyAt = randomInt(config.behaviorDecoyMinIntervalJobs, config.behaviorDecoyMaxIntervalJobs);
             }
