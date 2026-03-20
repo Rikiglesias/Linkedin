@@ -36,6 +36,8 @@ import { getUnusedPrebuiltMessage, markPrebuiltMessageUsed } from '../core/repos
 import { logInfo, logWarn } from '../telemetry/logger';
 import { normalizeNameForComparison, jaroWinklerSimilarity } from '../utils/text';
 import { bridgeDailyStat, bridgeLeadStatus } from '../cloud/cloudBridge';
+import { observePageContext, logObservation } from '../browser/observePageContext';
+import { aiDecide } from '../ai/aiDecisionEngine';
 import { WorkerExecutionResult, workerResult } from './result';
 import { inferLeadSegment } from '../ml/segments';
 
@@ -143,6 +145,53 @@ export async function processMessageJob(
     await humanDelay(context.session.page, 2500, 5000);
     await simulateHumanReading(context.session.page);
     await contextualReadingPause(context.session.page);
+
+    // R01+R02: OBSERVE page context + AI DECIDE prima dell'azione critica.
+    // Il bot "guarda" la pagina (R01) e l'AI "decide" se procedere (R02).
+    // Se AI non configurata → fallback meccanico PROCEED (zero regressione).
+    const pageObs = await observePageContext(context.session.page);
+    await logObservation(pageObs, { leadId: lead.id, purpose: 'pre_message' });
+
+    // Gate bloccante: profilo eliminato/404 → skip senza sprecare azioni
+    if (pageObs.isProfileDeleted) {
+        await logWarn('message.profile_deleted_observed', { leadId: lead.id, url: pageObs.currentUrl });
+        await transitionLead(lead.id, 'REVIEW_REQUIRED', 'profile_deleted_observed');
+        return workerResult(1);
+    }
+
+    // AI Decision: l'AI decide SE inviare il messaggio
+    const aiDecision = await aiDecide({
+        point: 'pre_message',
+        lead: {
+            id: lead.id,
+            name: `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim() || undefined,
+            title: lead.job_title ?? undefined,
+            company: lead.account_name ?? undefined,
+        },
+        pageObservation: pageObs,
+    });
+
+    if (aiDecision.action === 'SKIP') {
+        await logInfo('message.ai_skip', {
+            leadId: lead.id,
+            reason: aiDecision.reason.substring(0, 80),
+            confidence: aiDecision.confidence,
+        });
+        return workerResult(0);
+    }
+    if (aiDecision.action === 'NOTIFY_HUMAN') {
+        await logInfo('message.ai_notify_human', { leadId: lead.id, reason: aiDecision.reason.substring(0, 80) });
+        await transitionLead(lead.id, 'REVIEW_REQUIRED', 'ai_notify_human');
+        return workerResult(1);
+    }
+    if (aiDecision.action === 'DEFER') {
+        await logInfo('message.ai_defer', { leadId: lead.id, reason: aiDecision.reason.substring(0, 80) });
+        return workerResult(0);
+    }
+    // PROCEED: delay suggerito dall'AI
+    if (aiDecision.suggestedDelaySec && aiDecision.suggestedDelaySec > 0) {
+        await humanDelay(context.session.page, aiDecision.suggestedDelaySec * 1000, (aiDecision.suggestedDelaySec + 2) * 1000);
+    }
 
     // GAP2-C04: Identity check — verifica che il profilo corrisponda al lead target.
     try {

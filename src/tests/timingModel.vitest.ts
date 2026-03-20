@@ -62,9 +62,23 @@ describe('ml/timingModel — calculateContextualDelay', () => {
     });
 
     it('contentLength influenza delay per actionType read', () => {
-        const short = calculateContextualDelay({ actionType: 'read', baseMin: 500, baseMax: 2000, contentLength: 10 });
-        // Non possiamo garantire long > short per un singolo campione (stocastico),
-        // ma il delay deve essere > baseMin
-        expect(short).toBeGreaterThanOrEqual(500);
+        // contentLength basso → contentMultiplier ~0.6 (min clamp) → delay ridotto sotto baseMin
+        // Questo è corretto: poco contenuto = meno tempo di lettura
+        const delays: number[] = [];
+        for (let i = 0; i < 30; i++) {
+            delays.push(calculateContextualDelay({ actionType: 'read', baseMin: 500, baseMax: 2000, contentLength: 10 }));
+        }
+        const avgShort = delays.reduce((a, b) => a + b, 0) / delays.length;
+
+        const delaysLong: number[] = [];
+        for (let i = 0; i < 30; i++) {
+            delaysLong.push(calculateContextualDelay({ actionType: 'read', baseMin: 500, baseMax: 2000, contentLength: 5000 }));
+        }
+        const avgLong = delaysLong.reduce((a, b) => a + b, 0) / delaysLong.length;
+
+        // contentLength alto deve produrre delay mediamente maggiore
+        expect(avgLong).toBeGreaterThan(avgShort);
+        // delay deve essere sempre > 0
+        expect(Math.min(...delays)).toBeGreaterThan(0);
     });
 });

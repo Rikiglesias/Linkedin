@@ -36,6 +36,8 @@ import { WorkerExecutionResult, workerResult } from './result';
 import { inferLeadSegment } from '../ml/segments';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { normalizeNameForComparison, jaroWinklerSimilarity } from '../utils/text';
+import { observePageContext, logObservation } from '../browser/observePageContext';
+import { aiDecide } from '../ai/aiDecisionEngine';
 
 // Parole attese nel bottone Connect per confidence check pre-click.
 // Previene click su bottone sbagliato se LinkedIn cambia il layout.
@@ -329,6 +331,63 @@ export async function processInviteJob(
     // in budget totale proporzionale alla ricchezza del profilo (4-20s).
     // Sostituisce simulateHumanReading + contextualReadingPause per i profili.
     await computeProfileDwellTime(context.session.page);
+
+    // R01+R02: OBSERVE page context + AI DECIDE prima dell'azione critica.
+    // Il bot "guarda" la pagina (R01) e l'AI "decide" se procedere (R02).
+    // Se AI non configurata → fallback meccanico PROCEED (zero regressione).
+    const pageObs = await observePageContext(context.session.page);
+    await logObservation(pageObs, { leadId: lead.id, purpose: 'pre_invite' });
+
+    // Gate bloccante: profilo eliminato/404 → skip senza sprecare azioni
+    if (pageObs.isProfileDeleted) {
+        await logWarn('invite.profile_deleted_observed', { leadId: lead.id, url: pageObs.currentUrl });
+        await transitionLead(lead.id, 'REVIEW_REQUIRED', 'profile_deleted_observed');
+        return workerResult(1);
+    }
+
+    // AI Decision: l'AI decide SE invitare basandosi su contesto pagina + dati lead
+    const aiDecision = await aiDecide({
+        point: 'pre_invite',
+        lead: {
+            id: lead.id,
+            name: `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim() || undefined,
+            title: lead.job_title ?? undefined,
+            company: lead.account_name ?? undefined,
+            score: lead.lead_score ?? undefined,
+            about: lead.about ?? undefined,
+        },
+        pageObservation: pageObs,
+        session: context.sessionActionCount !== undefined ? {
+            invitesSent: context.sessionActionCount,
+            messagesSent: 0,
+            riskScore: 0,
+            pendingRatio: 0,
+            duration: 0,
+            challengeCount: 0,
+        } : undefined,
+    });
+
+    if (aiDecision.action === 'SKIP') {
+        await logInfo('invite.ai_skip', {
+            leadId: lead.id,
+            reason: aiDecision.reason.substring(0, 80),
+            confidence: aiDecision.confidence,
+        });
+        return workerResult(0);
+    }
+    if (aiDecision.action === 'NOTIFY_HUMAN') {
+        await logInfo('invite.ai_notify_human', { leadId: lead.id, reason: aiDecision.reason.substring(0, 80) });
+        await transitionLead(lead.id, 'REVIEW_REQUIRED', 'ai_notify_human');
+        return workerResult(1);
+    }
+    if (aiDecision.action === 'DEFER') {
+        await logInfo('invite.ai_defer', { leadId: lead.id, reason: aiDecision.reason.substring(0, 80) });
+        return workerResult(0);
+    }
+    // PROCEED: se l'AI suggerisce un delay aggiuntivo, applicalo
+    if (aiDecision.suggestedDelaySec && aiDecision.suggestedDelaySec > 0) {
+        await humanDelay(context.session.page, aiDecision.suggestedDelaySec * 1000, (aiDecision.suggestedDelaySec + 2) * 1000);
+    }
 
     // C04: Identity check — verifica che il profilo aperto corrisponda al lead target.
     // Se l'h1 non corrisponde al nome del lead → REVIEW_REQUIRED (potremmo invitare la persona sbagliata).

@@ -42,6 +42,8 @@ import { WorkerContext } from './context';
 import { ChallengeDetectedError, RetryableWorkerError } from './errors';
 import { WorkerExecutionResult, workerResult } from './result';
 import { navigateToProfileForMessage } from '../browser/navigationContext';
+import { observePageContext, logObservation } from '../browser/observePageContext';
+import { aiDecide } from '../ai/aiDecisionEngine';
 
 /**
  * Calcola quanti giorni fa è avvenuto l'evento (dal timestamp ISO).
@@ -108,6 +110,55 @@ async function processSingleFollowUp(
     await humanDelay(context.session.page, 2500, 5000);
     await simulateHumanReading(context.session.page);
     await contextualReadingPause(context.session.page);
+
+    // R01+R02: OBSERVE page context + AI DECIDE prima dell'azione critica.
+    // Il bot "guarda" la pagina (R01) e l'AI "decide" se procedere (R02).
+    // Se AI non configurata → fallback meccanico PROCEED (zero regressione).
+    const pageObs = await observePageContext(context.session.page);
+    await logObservation(pageObs, { leadId, purpose: 'pre_follow_up' });
+
+    // Gate bloccante: profilo eliminato/404 → skip follow-up
+    if (pageObs.isProfileDeleted) {
+        await logWarn('follow_up.profile_deleted_observed', { leadId, url: pageObs.currentUrl });
+        const { transitionLead } = await import('../core/leadStateService');
+        await transitionLead(leadId, 'REVIEW_REQUIRED', 'profile_deleted_observed');
+        return false;
+    }
+
+    // AI Decision: l'AI decide SE inviare il follow-up
+    const aiDecision = await aiDecide({
+        point: 'pre_follow_up',
+        lead: {
+            id: leadId,
+            name: `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim() || undefined,
+            title: lead.job_title ?? undefined,
+            company: lead.account_name ?? undefined,
+        },
+        pageObservation: pageObs,
+    });
+
+    if (aiDecision.action === 'SKIP') {
+        await logInfo('follow_up.ai_skip', {
+            leadId,
+            reason: aiDecision.reason.substring(0, 80),
+            confidence: aiDecision.confidence,
+        });
+        return false;
+    }
+    if (aiDecision.action === 'NOTIFY_HUMAN') {
+        await logInfo('follow_up.ai_notify_human', { leadId, reason: aiDecision.reason.substring(0, 80) });
+        const { transitionLead } = await import('../core/leadStateService');
+        await transitionLead(leadId, 'REVIEW_REQUIRED', 'ai_notify_human');
+        return false;
+    }
+    if (aiDecision.action === 'DEFER') {
+        await logInfo('follow_up.ai_defer', { leadId, reason: aiDecision.reason.substring(0, 80) });
+        return false;
+    }
+    // PROCEED: delay suggerito dall'AI
+    if (aiDecision.suggestedDelaySec && aiDecision.suggestedDelaySec > 0) {
+        await humanDelay(context.session.page, aiDecision.suggestedDelaySec * 1000, (aiDecision.suggestedDelaySec + 2) * 1000);
+    }
 
     if (await detectChallenge(context.session.page)) {
         throw new ChallengeDetectedError();
