@@ -734,11 +734,13 @@ export async function scheduleJobs(
                 if (options.noteMode) {
                     invitePayload.metadata_json = JSON.stringify({ noteMode: options.noteMode });
                 }
+                // R07: priorità 30 — gli inviti sono ULTIMI tra i job outreach.
+                // Ordine: HYGIENE(5) → ACCEPTANCE_CHECK(10) → MESSAGE(20) → INVITE(30)
                 const inserted = await enqueueJob(
                     'INVITE',
                     invitePayload,
                     buildInviteKey(lead.id, localDate),
-                    10,
+                    30,
                     config.retryMaxAttempts,
                     initialDelaySec,
                     accountId,
@@ -771,11 +773,13 @@ export async function scheduleJobs(
             for (const lead of invitedLeads) {
                 const initialDelaySec = noBurstPlanner ? noBurstPlanner.nextDelaySec() : 0;
                 const accountId = pickAccountIdForLead(lead.id);
+                // R07: priorità 10 — acceptance check PRIMA di message e invite.
+                // Scopre chi ha accettato → abilita MESSAGE ai lead appena accettati.
                 const inserted = await enqueueJob(
                     'ACCEPTANCE_CHECK',
                     { leadId: lead.id },
                     buildCheckKey(lead.id, localDate),
-                    30,
+                    10,
                     config.retryMaxAttempts,
                     initialDelaySec,
                     accountId,
