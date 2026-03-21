@@ -83,7 +83,12 @@ export async function warmupSession(page: Page, lastSessionEndedAt?: string | nu
                 await ensureInputBlock(page);
                 await humanDelay(page, 1500, 3000);
                 await simulateHumanReading(page);
-            } catch { /* best-effort */ }
+            } catch (warmupErr) {
+                // A04: warmup ridotto fallito — non bloccante ma tracciato
+                await logWarn('session_warmer.a04.reduced_warmup_failed', {
+                    error: warmupErr instanceof Error ? warmupErr.message : String(warmupErr),
+                });
+            }
             return;
         }
     }

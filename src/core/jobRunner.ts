@@ -32,6 +32,7 @@ import { ChallengeDetectedError, isProxyConnectionError, resolveWorkerRetryPolic
 import { runFollowUpWorker } from '../workers/followUpWorker';
 import { workerRegistry } from '../workers/registry';
 import { transitionLead } from './leadStateService';
+import { SessionPerformanceTracker } from './sessionPerformanceTracker';
 import { advanceLeadCampaign, failLeadCampaign } from './campaignEngine';
 import {
     createJobAttempt,
@@ -180,6 +181,7 @@ async function runQueuedJobsForAccount(
         forceDesktop: true,
     });
     let sessionClosed = false;
+    const perfTracker = new SessionPerformanceTracker(); // A20: tracking granulare per fase
     try {
         const loggedIn = await checkLogin(session.page);
         if (!loggedIn) {
@@ -296,10 +298,12 @@ async function runQueuedJobsForAccount(
         // per scrollare, lo chiude, ne apre un altro per lavorare.
         if (!options.dryRun) {
             try {
+                const warmupMarkId = perfTracker.markStart('warmup'); // A20
                 const { warmupSession } = await import('./sessionWarmer');
                 // H25: Passa timestamp ultima sessione per warmup condizionale
                 const lastSessionFlag = await getRuntimeFlag(`browser_session_started_at:${account.id}`).catch(() => null);
                 await warmupSession(session.page, lastSessionFlag);
+                perfTracker.endMark(warmupMarkId); // A20
                 await logInfo('job_runner.warmup_integrated', { accountId: account.id });
             } catch (warmupErr) {
                 await logWarn('job_runner.warmup_failed', {
@@ -311,7 +315,12 @@ async function runQueuedJobsForAccount(
         }
 
         // C.1: Reset proxy failure counter — il proxy funziona in questo ciclo
-        await setRuntimeFlag(`proxy_failure_count:${account.id}`, '0').catch(() => null);
+        // A12 SHOULD: se fallisce, il contatore stale potrebbe triggerare falso allarme
+        await setRuntimeFlag(`proxy_failure_count:${account.id}`, '0').catch((e) => {
+            void logWarn('job_runner.a12_should.proxy_counter_reset_failed', {
+                accountId: account.id, error: e instanceof Error ? e.message : String(e),
+            });
+        });
 
         // Proxy quality check pre-batch (non bloccante)
         if (config.proxyQualityCheckEnabled) {
@@ -381,12 +390,17 @@ async function runQueuedJobsForAccount(
         let consecutiveSlowResponses = 0;
         let batchReducedMidSession = false;
         let sessionStartedAtMs = Date.now();
-        await setRuntimeFlag(`browser_session_started_at:${account.id}`, new Date(sessionStartedAtMs).toISOString()).catch(() => null);
+        // A12 SHOULD: timestamp sessione per warmup condizionale — non bloccante ma tracciato
+        await setRuntimeFlag(`browser_session_started_at:${account.id}`, new Date(sessionStartedAtMs).toISOString()).catch((e) => {
+            void logWarn('job_runner.a12_should.session_timestamp_failed', {
+                accountId: account.id, error: e instanceof Error ? e.message : String(e),
+            });
+        });
         let processedThisRun = 0;
         let lastJa3CheckMs = Date.now(); // C03: periodic JA3 check mid-session
         let lastBudgetRecalcAt = 0; // H24: track processed count at last budget recalc
-        let totalActionMs = 0; // A10/A20: delay creep tracking
-        let totalDelayMs = 0; // A10/A20: delay creep tracking
+        let totalActionMs = 0; // A10/A20: delay creep tracking (legacy, mantenuto per compatibilità log)
+        let totalDelayMs = 0; // A10/A20: delay creep tracking (legacy)
 
         // ── R06: Context-aware decoy terms ──────────────────────────────
         // All'inizio della sessione, genera termini di ricerca coerenti col
@@ -574,7 +588,9 @@ async function runQueuedJobsForAccount(
                 }
                 const actionStartMs = Date.now(); // A10/A20
                 const executionResult = await processor.process(job, workerContext);
-                totalActionMs += Date.now() - actionStartMs; // A10/A20
+                const actionDurationMs = Date.now() - actionStartMs;
+                totalActionMs += actionDurationMs; // A10/A20
+                perfTracker.addDuration('action', actionDurationMs); // A20: granulare
 
                 // CC-5: Solo job con processedCount > 0 contano come "processed".
                 // workerResult(0) con success=true indica skip (blacklist, validazione, etc.)
@@ -674,7 +690,12 @@ async function runQueuedJobsForAccount(
                             });
                             maxJobsPerRun = newMax;
                         }
-                    } catch { /* best-effort budget recalc */ }
+                    } catch (budgetErr) {
+                        // A04: budget recalc failure → il bot potrebbe superare il budget
+                        void logWarn('job_runner.a04.budget_recalc_failed', {
+                            accountId: account.id, error: budgetErr instanceof Error ? budgetErr.message : String(budgetErr),
+                        });
+                    }
                 }
 
                 // Pausa umana tra un job e il successivo (anti-burst)
@@ -687,16 +708,20 @@ async function runQueuedJobsForAccount(
                     : sessionPacingFactor;
                 const throttleSignal = session.httpThrottler.getThrottleSignal();
                 const delayStartMs = Date.now(); // A10/A20
+                const enrichStartMs = Date.now();
                 await Promise.allSettled([
                     interJobDelay(session.page, throttleSignal, effectivePacingFactor),
                     (async () => {
                         try {
                             const { enrichLeadsParallel } = await import('../integrations/parallelEnricher');
                             await enrichLeadsParallel({ limit: 2, concurrency: 1 });
+                            perfTracker.addDuration('enrichment', Date.now() - enrichStartMs); // A20
                         } catch { /* enrichment best-effort, never blocks job flow */ }
                     })(),
                 ]);
-                totalDelayMs += Date.now() - delayStartMs; // A10/A20
+                const delayDurationMs = Date.now() - delayStartMs;
+                totalDelayMs += delayDurationMs; // A10/A20
+                perfTracker.addDuration('delay', delayDurationMs); // A20: granulare
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
                 const attempts = job.attempts + 1;
@@ -765,7 +790,12 @@ async function runQueuedJobsForAccount(
                     const cbKey = `proxy_failure_count:${account.id}`;
                     const prevCount = parseInt(await getRuntimeFlag(cbKey).catch(() => '0') ?? '0', 10);
                     const failCount = (Number.isFinite(prevCount) ? prevCount : 0) + 1;
-                    await setRuntimeFlag(cbKey, String(failCount)).catch(() => null);
+                    // A12 MUST: contatore failure proxy critico per CB — non può essere perso silenziosamente
+                    try { await setRuntimeFlag(cbKey, String(failCount)); } catch (ffErr) {
+                        await logWarn('job_runner.a12_must.proxy_failure_count_lost', {
+                            accountId: account.id, failCount, error: ffErr instanceof Error ? ffErr.message : String(ffErr),
+                        });
+                    }
 
                     await logWarn('job_runner.proxy_failure.session_abort', {
                         jobId: job.id,
@@ -786,7 +816,12 @@ async function runQueuedJobsForAccount(
                             `🚨 Proxy MORTO per account ${account.id}.\n${failCount} fallimenti consecutivi.\n\nAzione richiesta:\n1. Verificare le credenziali proxy\n2. Testare il proxy manualmente\n3. Cambiare proxy nel .env\n4. Eseguire 'bot.ps1 resume' per riprendere`,
                             'Proxy Morto',
                             'critical',
-                        ).catch(() => null);
+                        // A12 SHOULD: alert critico — l'utente deve sapere
+                        ).catch((e) => {
+                            void logWarn('job_runner.a12_should.telegram_proxy_dead_failed', {
+                                accountId: account.id, error: e instanceof Error ? e.message : String(e),
+                            });
+                        });
                     } else {
                         await pauseAutomation(
                             'PROXY_CONNECTION_FAILED',
@@ -878,13 +913,26 @@ async function runQueuedJobsForAccount(
                                             `Circuit Breaker attivato per lista "${cbLead.list_name}".\n${newCount} dead letters in questa sessione.\nLista sospesa fino a ${expiresAt}.\nVerifica selettori e lead di questa lista.`,
                                             'Circuit Breaker Lista',
                                             'warn',
-                                        ).catch(() => null);
+                                        // A12 SHOULD: alert circuit breaker lista — l'utente deve sapere
+                                        ).catch((e) => {
+                                            void logWarn('job_runner.a12_should.telegram_cb_lista_failed', {
+                                                accountId: account.id, error: e instanceof Error ? e.message : String(e),
+                                            });
+                                        });
                                     }
                                 }
-                            } catch { /* best-effort CB tracking */ }
+                            } catch (cbTrackErr) {
+                                // A04: CB tracking failure → lista problematica non viene sospesa
+                                void logWarn('job_runner.a04.cb_tracking_failed', {
+                                    accountId: account.id, error: cbTrackErr instanceof Error ? cbTrackErr.message : String(cbTrackErr),
+                                });
+                            }
                         }
-                    } catch {
-                        // ignore if payload cannot be parsed
+                    } catch (parseErr) {
+                        // A04: payload corrotto — potrebbe indicare dati DB inconsistenti
+                        void logWarn('job_runner.a04.payload_parse_failed', {
+                            accountId: account.id, jobId: job.id, error: parseErr instanceof Error ? parseErr.message : String(parseErr),
+                        });
                     }
                 }
 
@@ -928,7 +976,12 @@ async function runQueuedJobsForAccount(
                         session = rotated;
                         processedOnCurrentSession = 0;
                         sessionStartedAtMs = Date.now();
-                        await setRuntimeFlag(`browser_session_started_at:${account.id}`, new Date(sessionStartedAtMs).toISOString()).catch(() => null);
+                        // A12 SHOULD: timestamp sessione dopo rotazione CB
+                        await setRuntimeFlag(`browser_session_started_at:${account.id}`, new Date(sessionStartedAtMs).toISOString()).catch((e) => {
+                            void logWarn('job_runner.a12_should.session_timestamp_failed', {
+                                accountId: account.id, error: e instanceof Error ? e.message : String(e),
+                            });
+                        });
                     }
 
                     await pauseAutomation(
@@ -975,7 +1028,7 @@ async function runQueuedJobsForAccount(
                 const bar = `[${'█'.repeat(Math.min(20, Math.floor((processedThisRun / maxJobsPerRun) * 20)))}${'░'.repeat(Math.max(0, 20 - Math.floor((processedThisRun / maxJobsPerRun) * 20)))}]`;
                 process.stdout.write(`\r  ${bar} ${processedThisRun}/${maxJobsPerRun} | I:${accountHealthMetrics.inviteSuccesses} M:${accountHealthMetrics.messageSuccesses} C:${accountHealthMetrics.checkSuccesses} | ETA ${etaStr}   `);
 
-                // Telegram progress: notifica ogni 5 job completati (non bloccante)
+                // A12 NICE: telegram progress — pura informazione, perdita non critica
                 if (processedThisRun > 0 && processedThisRun % 5 === 0) {
                     void sendTelegramAlert(
                         `Progresso: ${processedThisRun}/${maxJobsPerRun} job completati\n` +
@@ -1037,7 +1090,12 @@ async function runQueuedJobsForAccount(
                 session = rotated;
                 processedOnCurrentSession = 0;
                 sessionStartedAtMs = Date.now();
-                await setRuntimeFlag(`browser_session_started_at:${account.id}`, new Date(sessionStartedAtMs).toISOString()).catch(() => null);
+                // A12 SHOULD: timestamp sessione dopo rotazione periodica
+                await setRuntimeFlag(`browser_session_started_at:${account.id}`, new Date(sessionStartedAtMs).toISOString()).catch((e) => {
+                    void logWarn('job_runner.a12_should.session_timestamp_failed', {
+                        accountId: account.id, error: e instanceof Error ? e.message : String(e),
+                    });
+                });
             } else if (processedOnCurrentSession > 0 && processedOnCurrentSession % 10 === 0) {
                 // Collect garbage proactively to prevent browser bloating
                 await performBrowserGC(session);
@@ -1050,6 +1108,7 @@ async function runQueuedJobsForAccount(
         // Gira nella stessa sessione browser — zero overhead di apertura browser.
         if (!sessionClosed && !options.dryRun) {
             try {
+                const inboxMarkId = perfTracker.markStart('inbox'); // A20
                 const { processInboxJob } = await import('../workers/inboxWorker');
                 const inboxResult = await processInboxJob({ accountId: account.id }, {
                     session,
@@ -1057,6 +1116,7 @@ async function runQueuedJobsForAccount(
                     localDate: options.localDate,
                     accountId: account.id,
                 });
+                perfTracker.endMark(inboxMarkId); // A20
                 if (inboxResult.processedCount > 0) {
                     await logInfo('job_runner.inbox_phase_done', {
                         accountId: account.id,
@@ -1122,6 +1182,8 @@ async function runQueuedJobsForAccount(
         // Se delay > 60% del tempo totale → il bot passa più tempo in attesa che in azione.
         const totalSessionMs = Date.now() - sessionStartedAtMs;
         if (totalSessionMs > 0 && accountHealthMetrics.processed > 0) {
+            // A20: Report granulare con breakdown per fase
+            const perfReport = perfTracker.toLogPayload(account.id);
             const delayPct = Math.round((totalDelayMs / totalSessionMs) * 100);
             const actionPct = Math.round((totalActionMs / totalSessionMs) * 100);
             const overheadPct = Math.max(0, 100 - delayPct - actionPct);
@@ -1135,6 +1197,7 @@ async function runQueuedJobsForAccount(
                 overheadPct,
                 processed: accountHealthMetrics.processed,
                 delayCreepAlert: delayPct > 60,
+                ...perfReport, // A20: breakdown granulare per fase
             });
         }
     } finally {
@@ -1143,11 +1206,13 @@ async function runQueuedJobsForAccount(
         // delle sessioni chiuse bruscamente dall'ultima azione — pattern rilevabile.
         if (!sessionClosed && !options.dryRun) {
             try {
+                const windDownMarkId = perfTracker.markStart('wind_down'); // A20
                 await session.page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 10_000 });
                 await session.page.waitForTimeout(2000 + Math.floor(Math.random() * 4000));
                 // Scroll leggero del feed prima di chiudere (simula lettura rapida)
                 await session.page.evaluate(() => window.scrollBy({ top: 200 + Math.random() * 300, behavior: 'smooth' })).catch(() => null);
                 await session.page.waitForTimeout(1000 + Math.floor(Math.random() * 2000));
+                perfTracker.endMark(windDownMarkId); // A20
             } catch { /* best-effort wind-down */ }
         }
         if (!sessionClosed) {

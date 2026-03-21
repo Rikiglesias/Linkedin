@@ -635,7 +635,10 @@ async function clickSelectAll(page: Page, dryRun: boolean): Promise<void> {
                 console.log(`[SELECT ALL] Lead selezionati: ${selectedCount}`);
             }
         }
-    } catch { /* best-effort count check */ }
+    } catch (countErr) {
+        // A04: count check fallito — non bloccante ma tracciato
+        console.warn(`[A04] Select all count check failed: ${countErr instanceof Error ? countErr.message : String(countErr)}`);
+    }
 
     // Verifica: il bottone "Save to list" dovrebbe apparire dopo Select All
     const saveVisible = await page.locator(SAVE_TO_LIST_SELECTOR).first()
@@ -2059,7 +2062,10 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
         if (zombieResult.changes && zombieResult.changes > 0) {
             console.log(`[CLEANUP] ${zombieResult.changes} run zombie marcati come FAILED`);
         }
-    } catch { /* best-effort cleanup */ }
+    } catch (cleanupErr) {
+        // A04: zombie cleanup fallito — run zombie resteranno in stato RUNNING
+        console.warn(`[A04] Zombie run cleanup failed: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`);
+    }
 
     const report = buildInitialReport(options);
     const dryRun = options.dryRun === true;
@@ -2099,7 +2105,10 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                             skipPreSync = true;
                         }
                     }
-                } catch { /* best-effort: se il check fallisce, fai il pre-sync */ }
+                } catch (preSyncErr) {
+                    // A04: pre-sync check fallito — procedi con pre-sync (comportamento safe)
+                    console.warn(`[A04] Pre-sync elapsed check failed: ${preSyncErr instanceof Error ? preSyncErr.message : String(preSyncErr)}`);
+                }
             }
             const preSync = skipPreSync
                 ? { synced: 0, total: 0, listUrl: null }
@@ -2675,7 +2684,10 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                             continue;
                         }
                     }
-                } catch { /* best-effort check — se fallisce, procedi comunque */ }
+                } catch (limitErr) {
+                    // A04: member limit check fallito — procedi comunque (meglio che bloccare)
+                    console.warn(`[A04] List member limit check failed: ${limitErr instanceof Error ? limitErr.message : String(limitErr)}`);
+                }
 
                 // ── FASE 5: Ci sono lead nuovi — seleziona tutto e salva nella lista ──
                 console.log(

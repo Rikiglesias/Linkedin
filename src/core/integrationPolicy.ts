@@ -8,6 +8,7 @@ import {
     type ProxyConfig,
 } from '../proxyManager';
 import { getRuntimeFlag, setRuntimeFlag } from './repositories';
+import { logWarn } from '../telemetry/logger';
 
 export type RetryClassification = 'transient' | 'terminal';
 export type CircuitBreakerStatus = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
@@ -64,7 +65,10 @@ function persistCircuitStateAsync(circuitKey: string, state: CircuitState): void
         lastError: state.lastError,
         lastTransitionAtMs: state.lastTransitionAtMs,
     };
-    setRuntimeFlag(`${CB_FLAG_PREFIX}${circuitKey}`, JSON.stringify(payload)).catch(() => {});
+    setRuntimeFlag(`${CB_FLAG_PREFIX}${circuitKey}`, JSON.stringify(payload)).catch((e) => {
+        // A04/A07: persist CB failure — lo stato DB potrebbe essere stale al prossimo restart
+        void logWarn('circuit_breaker.persist_failed', { circuitKey, error: e instanceof Error ? e.message : String(e) });
+    });
 }
 
 async function loadCircuitStateFromDb(circuitKey: string): Promise<CircuitState | null> {
@@ -254,7 +258,10 @@ function ensureCircuitState(circuitKey: string): CircuitState {
             const current = circuitStates.get(circuitKey);
             if (!current || current.lastTransitionAtMs > 0) return;
             Object.assign(current, persisted);
-        }).catch(() => {});
+        }).catch((e) => {
+            // A04/A07: load CB da DB fallito — si parte da stato fresh (CLOSED)
+            void logWarn('circuit_breaker.load_from_db_failed', { circuitKey, error: e instanceof Error ? e.message : String(e) });
+        });
     }
     return created;
 }
@@ -551,6 +558,21 @@ export function getCircuitBreakerSnapshot(): CircuitBreakerSnapshotRow[] {
         });
     }
     return rows.sort((a, b) => a.key.localeCompare(b.key));
+}
+
+/**
+ * H28: Verifica se il circuit breaker per un dato circuitKey è attualmente OPEN.
+ * Usato da providerRegistry per switch dinamico: se il CB di OpenAI è aperto,
+ * il sistema può fallback automaticamente a Ollama senza attendere il retry.
+ */
+export function isCircuitOpenForKey(circuitKey: string): boolean {
+    const state = circuitStates.get(circuitKey);
+    if (!state) return false;
+    // OPEN e non ancora scaduto → il circuito è effettivamente aperto
+    if (state.status === 'OPEN' && Date.now() < state.openUntilMs) return true;
+    // HALF_OPEN con probe in flight → trattalo come aperto per i consumer esterni
+    if (state.status === 'HALF_OPEN' && state.halfOpenProbeInFlight) return true;
+    return false;
 }
 
 export function resetCircuitBreakersForTests(): void {

@@ -146,7 +146,12 @@ export async function runDeadLetterWorker(options: DeadLetterOptions = {}): Prom
                     'Dead Letter Summary',
                     deadLettered >= 5 ? 'critical' : 'warn',
                 ).catch(() => null);
-            } catch { /* best-effort alert */ }
+            } catch (alertErr) {
+                // A04: dead letter alert failure — tracciare
+                void logWarn('dead_letter_worker.a04.alert_failed', {
+                    error: alertErr instanceof Error ? alertErr.message : String(alertErr),
+                });
+            }
         }
 
         return { processed, recycled, deadLettered };

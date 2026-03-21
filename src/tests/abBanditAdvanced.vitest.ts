@@ -23,8 +23,8 @@ describe('abBandit — selectVariant', () => {
         for (let i = 0; i < 20; i++) {
             results.add(await selectVariant(variants));
         }
-        // Con Thompson sampling senza dati, dovrebbe esplorare
-        expect(results.size).toBeGreaterThanOrEqual(1);
+        // Con 3 varianti e nessun dato, Thompson sampling dovrebbe esplorare (P(tutte uguali) ≈ 5.8e-10)
+        expect(results.size).toBeGreaterThanOrEqual(2);
     });
 
     it('accetta context opzionale', async () => {

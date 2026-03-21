@@ -522,8 +522,9 @@ async function postSyncEnrichment(
                     );
                 }
                 console.log(`  [CLOUD-SYNC] ${cloudLeads.length} lead salvati in outbox per retry.`);
-            } catch {
-                // outbox push best-effort
+            } catch (outboxErr) {
+                // A04: outbox push fallito — lead cloud sync persi per questo batch
+                console.warn(`[A04] Outbox push failed: ${outboxErr instanceof Error ? outboxErr.message : String(outboxErr)}`);
             }
         }
     }

@@ -192,7 +192,10 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
             totalInDb = totalRow?.cnt ?? 0;
             const newRow = await db.get<{cnt: number}>(`SELECT COUNT(*) as cnt FROM leads WHERE status = 'NEW'${listFilter ? ' AND list_name = ?' : ''}`, listFilter ? [listFilter] : []);
             newCount = newRow?.cnt ?? 0;
-        } catch { /* best-effort */ }
+        } catch (countErr) {
+            // A04: count query fallita — non bloccante, il workflow prosegue
+            console.warn(`[A04] Lead count query failed: ${countErr instanceof Error ? countErr.message : String(countErr)}`);
+        }
 
         if (newCount > 0) {
             console.log(`\n  ⚠️ ${totalInDb} lead nel DB, ${newCount} in stato NEW (non ancora pronti per invito).`);
@@ -330,7 +333,10 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
                 flag,
             });
         }
-    } catch { /* best-effort list breakdown */ }
+    } catch (breakdownErr) {
+        // A04: list breakdown fallito — il report non includerà i dati per lista
+        console.warn(`[A04] List breakdown failed: ${breakdownErr instanceof Error ? breakdownErr.message : String(breakdownErr)}`);
+    }
 
     // Report
     const workflowReport: WorkflowReport = {

@@ -273,7 +273,10 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
                 flag,
             });
         }
-    } catch { /* best-effort list breakdown */ }
+    } catch (breakdownErr) {
+        // A04: list breakdown fallito — il report non includerà i dati per lista
+        console.warn(`[A04] List breakdown failed: ${breakdownErr instanceof Error ? breakdownErr.message : String(breakdownErr)}`);
+    }
 
     // Report
     const workflowReport: WorkflowReport = {

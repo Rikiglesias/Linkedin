@@ -160,6 +160,7 @@ export interface AppConfig {
     openaiBaseUrl: string;
     aiModel: string;
     aiEmbeddingModel: string;
+    ollamaFallbackUrl: string;
     aiAllowRemoteEndpoint: boolean;
     aiRequestTimeoutMs: number;
     aiPersonalizationEnabled: boolean;

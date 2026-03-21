@@ -232,6 +232,7 @@ export function buildAiDomainConfig() {
         openaiBaseUrl: parseStringEnv('OPENAI_BASE_URL', 'http://127.0.0.1:11434/v1'),
         aiModel: parseStringEnv('AI_MODEL', 'llama3.1:8b'),
         aiEmbeddingModel: parseStringEnv('AI_EMBEDDING_MODEL', 'nomic-embed-text'),
+        ollamaFallbackUrl: parseStringEnv('OLLAMA_FALLBACK_URL', ''),
         aiAllowRemoteEndpoint: parseBoolEnv('AI_ALLOW_REMOTE_ENDPOINT', false),
         aiRequestTimeoutMs: Math.max(1000, parseIntEnv('AI_REQUEST_TIMEOUT_MS', 12000)),
         aiPersonalizationEnabled: parseBoolEnv('AI_PERSONALIZATION_ENABLED', false),

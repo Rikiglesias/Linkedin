@@ -48,10 +48,10 @@ describe('clientReport — advanced edge cases', () => {
             weeklyReplies: 12, weeklyFollowUpsSent: 5, pendingRatio: 0.2,
             riskScore: 10, hotLeadsCount: 0, expiredInvitesCount: 0, accountHealth: 'GREEN',
         });
-        if (report.overallGrade === 'A' && report.suggestions.length === 0) {
-            const text = formatClientReportText(report);
-            expect(text).toContain('Tutto procede bene');
-        }
+        expect(report.overallGrade).toBe('A');
+        expect(report.suggestions.length).toBe(0);
+        const text = formatClientReportText(report);
+        expect(text).toContain('Tutto procede bene');
     });
 
     it('acceptance rate eccellente → benchmark note positiva', () => {

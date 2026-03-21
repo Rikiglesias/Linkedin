@@ -1,4 +1,5 @@
 import { getDatabase } from '../../db';
+import { logWarn } from '../../telemetry/logger';
 import { LeadRecord, LeadStatus } from '../../types/domain';
 import { normalizeLinkedInUrl } from '../../linkedinUrl';
 import {
@@ -1217,7 +1218,12 @@ export async function appendLeadEvent(
                 durationSeconds = Math.round(elapsed / 1000);
             }
         }
-    } catch { /* best-effort */ }
+    } catch (durErr) {
+        // A04: calcolo durata fallito — non bloccante ma utile per debug
+        void logWarn('leads_core.a04.duration_calc_failed', {
+            error: durErr instanceof Error ? durErr.message : String(durErr),
+        });
+    }
 
     const enrichedMetadata = durationSeconds !== null
         ? { ...metadata, duration_seconds: durationSeconds }

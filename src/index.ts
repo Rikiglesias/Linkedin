@@ -400,7 +400,10 @@ async function main(): Promise<void> {
                     'Proxy Failure',
                     'critical',
                 ).catch(() => null);
-            } catch { /* best-effort alert */ }
+            } catch (alertErr) {
+                // A04: alert telegram proxy failure — tracciare il fallimento
+                console.error(`[A04] Telegram proxy alert failed: ${alertErr instanceof Error ? alertErr.message : String(alertErr)}`);
+            }
             // L4 multi-account: se TUTTI gli account con proxy hanno fallito → exit.
             // Se almeno uno funziona → warning e procedi con quelli sani.
             const accountsWithProxy = accounts.filter(a => !!a.proxy);
