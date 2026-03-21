@@ -16,6 +16,7 @@
 
 import { config } from '../config';
 import { logError, logWarn } from './logger';
+import { sanitizeForLogs } from '../security/redaction';
 import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -44,8 +45,9 @@ async function sendToDiscord(payload: BroadcastPayload): Promise<void> {
     if (!url) return; // Channel not configured
 
     const emoji = LEVEL_EMOJI[payload.level];
-    const metaBlock = payload.metadata
-        ? '\n```json\n' + JSON.stringify(payload.metadata, null, 2).substring(0, 800) + '\n```'
+    const safeMetadata = payload.metadata ? sanitizeForLogs(payload.metadata) : undefined;
+    const metaBlock = safeMetadata
+        ? '\n```json\n' + JSON.stringify(safeMetadata, null, 2).substring(0, 800) + '\n```'
         : '';
 
     const discordBody = {
@@ -87,8 +89,9 @@ async function sendToSlack(payload: BroadcastPayload): Promise<void> {
     if (!url) return; // Channel not configured
 
     const emoji = LEVEL_EMOJI[payload.level];
-    const metaText = payload.metadata
-        ? '\n```' + JSON.stringify(payload.metadata, null, 2).substring(0, 600) + '```'
+    const safeMetadata = payload.metadata ? sanitizeForLogs(payload.metadata) : undefined;
+    const metaText = safeMetadata
+        ? '\n```' + JSON.stringify(safeMetadata, null, 2).substring(0, 600) + '```'
         : '';
 
     const slackBody = {
@@ -123,9 +126,10 @@ async function sendToTelegram(payload: BroadcastPayload): Promise<void> {
     if (!botToken || !chatId) return; // Channel not configured
 
     const emoji = LEVEL_EMOJI[payload.level];
-    const metaText = payload.metadata
+    const safeMetadata = payload.metadata ? sanitizeForLogs(payload.metadata) : undefined;
+    const metaText = safeMetadata
         ? '\n<pre>' +
-          JSON.stringify(payload.metadata, null, 2).substring(0, 600).replace(/</g, '&lt;').replace(/>/g, '&gt;') +
+          JSON.stringify(safeMetadata, null, 2).substring(0, 600).replace(/</g, '&lt;').replace(/>/g, '&gt;') +
           '</pre>'
         : '';
 

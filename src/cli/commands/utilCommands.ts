@@ -6,6 +6,7 @@
  */
 
 import { config } from '../../config';
+import { maskEmail, maskPhone } from '../../security/redaction';
 import { launchBrowser, closeBrowser as closeBrowserSession, checkLogin, isLoggedIn, detectChallenge } from '../../browser';
 import { importLeadsFromCSV } from '../../csvImporter';
 import { buildFunnelReport, runSiteCheck } from '../../core/audit';
@@ -594,7 +595,7 @@ export async function runEnrichProfilesCommand(args: string[]): Promise<void> {
                             }
 
                             enriched++;
-                            console.log(`    [ENRICHED] email=${enrichResult.email || '-'} phone=${enrichResult.phone || '-'} domain=${enrichResult.companyDomain || '-'}`);
+                            console.log(`    [ENRICHED] email=${maskEmail(enrichResult.email)} phone=${maskPhone(enrichResult.phone)} domain=${enrichResult.companyDomain || '-'}`);
                         }
                     } catch (err) {
                         console.log(`    [ENRICH-ERR] ${err instanceof Error ? err.message : String(err)}`);

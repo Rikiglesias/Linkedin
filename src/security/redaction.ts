@@ -66,6 +66,49 @@ function sanitizeObject(input: Record<string, unknown>, depth: number): Record<s
     return output;
 }
 
+/**
+ * Mascheramento PII leggibile per log CLI di progresso.
+ * Mantiene abbastanza contesto per l'operatore senza esporre dati completi.
+ */
+export function maskName(name: string | null | undefined): string {
+    if (!name) return '(unknown)';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 0) return '(unknown)';
+    if (parts.length === 1) return parts[0].charAt(0) + '***';
+    return parts[0].charAt(0) + '.' + parts[parts.length - 1].charAt(0) + '.';
+}
+
+export function maskEmail(email: string | null | undefined): string {
+    if (!email) return '-';
+    const atIndex = email.indexOf('@');
+    if (atIndex <= 0) return '***@***';
+    const local = email.slice(0, atIndex);
+    const domain = email.slice(atIndex + 1);
+    const maskedLocal = local.charAt(0) + '***';
+    const domainParts = domain.split('.');
+    const tld = domainParts.length > 1 ? '.' + domainParts[domainParts.length - 1] : '';
+    return `${maskedLocal}@***${tld}`;
+}
+
+export function maskPhone(phone: string | null | undefined): string {
+    if (!phone) return '-';
+    const digits = phone.replace(/\D/g, '');
+    if (digits.length < 4) return '***';
+    return '***' + digits.slice(-3);
+}
+
+export function maskUrl(url: string | null | undefined): string {
+    if (!url) return '-';
+    try {
+        const parsed = new URL(url);
+        // Rimuove credenziali dall'URL, mantiene host:port
+        return `${parsed.protocol}//${parsed.hostname}${parsed.port ? ':' + parsed.port : ''}`;
+    } catch {
+        // Non è un URL valido — maschera tutto
+        return '***';
+    }
+}
+
 export function sanitizeForLogs<T>(value: T, depth: number = 0): T {
     if (value === null || value === undefined) {
         return value;

@@ -23,6 +23,12 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
     },
     {
         message:
+            '[CONFIG] WEBHOOK_SYNC_URL usa HTTP non criptato — i dati PII dei lead verranno inviati in chiaro. Usare HTTPS.',
+        when: (cfg) => cfg.webhookSyncEnabled && !!cfg.webhookSyncUrl && cfg.webhookSyncUrl.startsWith('http://'),
+        severity: 'warn',
+    },
+    {
+        message:
             '[CONFIG] DASHBOARD_AUTH_ENABLED=true ma nessuna credenziale configurata (DASHBOARD_API_KEY o DASHBOARD_BASIC_USER/PASSWORD)',
         when: (cfg) =>
             cfg.dashboardAuthEnabled && !cfg.dashboardApiKey && !(cfg.dashboardBasicUser && cfg.dashboardBasicPassword),

@@ -1,4 +1,5 @@
 import { sendTelegramAlert } from './alerts';
+import { maskName } from '../security/redaction';
 import { getDailyStatsSnapshot, getOperationalObservabilitySnapshot, getRiskInputs } from '../core/repositories';
 import { evaluateRisk } from '../risk/riskEngine';
 import { getDatabase } from '../db';
@@ -142,7 +143,7 @@ export async function generateAndSendDailyReport(targetDate?: string): Promise<b
         ? [
             `\n*🔥 Hot Leads (intent positivo oggi)*`,
             ...hotLeads.map((hl) => {
-                const name = `${hl.first_name || ''} ${hl.last_name || ''}`.trim() || 'Lead';
+                const name = maskName(`${hl.first_name || ''} ${hl.last_name || ''}`.trim() || null);
                 const company = hl.account_name ? ` (${hl.account_name})` : '';
                 return `• ${name}${company} — ${hl.intent} ${Math.round(hl.confidence * 100)}%`;
             }),

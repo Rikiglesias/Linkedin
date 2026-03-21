@@ -1,4 +1,5 @@
 import { getAccountProfileById } from '../accountManager';
+import { maskName, maskEmail, maskPhone } from '../security/redaction';
 import { cleanText } from '../utils/text';
 import { cleanLeadDataWithAI } from '../ai/leadDataCleaner';
 import { scoreLeadProfile } from '../ai/leadScorer';
@@ -359,7 +360,7 @@ async function postSyncEnrichment(
                     params.push(leadId);
                     await db.run(`UPDATE leads SET ${sets.join(', ')} WHERE id = ?`, params);
                     enrichReport.dataCleaned += 1;
-                    console.log(`  ${progress} [CLEAN] ${fullName}: title=${cleanResult.jobTitle ?? '(null)'} company=${cleanResult.accountName ?? '(null)'}${cleanResult.inferredEmail ? ` email=${cleanResult.inferredEmail}` : ''}`);
+                    console.log(`  ${progress} [CLEAN] ${maskName(fullName)}: title=${cleanResult.jobTitle ?? '(null)'} company=${cleanResult.accountName ?? '(null)'}${cleanResult.inferredEmail ? ` email=${maskEmail(cleanResult.inferredEmail)}` : ''}`);
                     lead = (await getLeadById(leadId)) ?? lead;
                 }
             }
@@ -418,13 +419,13 @@ async function postSyncEnrichment(
                         lead = (await getLeadById(leadId)) ?? lead;
 
                         const parts: string[] = [];
-                        if (enrichResult.email) parts.push(`email=${enrichResult.email}`);
+                        if (enrichResult.email) parts.push(`email=${maskEmail(enrichResult.email)}`);
                         if (enrichResult.jobTitle) parts.push(`title=${enrichResult.jobTitle}`);
                         if (enrichResult.companyName) parts.push(`company=${enrichResult.companyName}`);
-                        if (enrichResult.phone) parts.push(`phone=${enrichResult.phone}`);
+                        if (enrichResult.phone) parts.push(`phone=${maskPhone(enrichResult.phone)}`);
                         if (enrichResult.location) parts.push(`loc=${enrichResult.location}`);
                         if (enrichResult.industry) parts.push(`industry=${enrichResult.industry}`);
-                        console.log(`  ${progress} [ENRICH] ${fullName}: ${parts.join(' | ')} (${enrichResult.source})`);
+                        console.log(`  ${progress} [ENRICH] ${maskName(fullName)}: ${parts.join(' | ')} (${enrichResult.source})`);
                     }
                 }
 
@@ -448,14 +449,14 @@ async function postSyncEnrichment(
                 lead.lead_score = scoreResult.leadScore;
                 enrichReport.scored += 1;
                 const label = wasEnriched && !needsScore ? 'RE-SCORE' : 'SCORE';
-                console.log(`  ${progress} [${label}] ${fullName}: score=${scoreResult.leadScore} confidence=${scoreResult.confidenceScore} (${scoreResult.reason})`);
+                console.log(`  ${progress} [${label}] ${maskName(fullName)}: score=${scoreResult.leadScore} confidence=${scoreResult.confidenceScore} (${scoreResult.reason})`);
             }
 
             // 4. Promozione NEW → READY_INVITE se ha score sufficiente
             if (lead.status === 'NEW' && lead.lead_score !== null && lead.lead_score >= 30) {
                 await setLeadStatus(leadId, 'READY_INVITE');
                 enrichReport.promoted += 1;
-                console.log(`  ${progress} [PROMOTE] ${fullName}: NEW → READY_INVITE (score=${lead.lead_score})`);
+                console.log(`  ${progress} [PROMOTE] ${maskName(fullName)}: NEW → READY_INVITE (score=${lead.lead_score})`);
             }
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);

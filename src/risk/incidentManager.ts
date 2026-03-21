@@ -8,6 +8,7 @@ import {
     setRuntimeFlag,
 } from '../core/repositories';
 import { sendTelegramAlert } from '../telemetry/alerts';
+import { sanitizeForLogs } from '../security/redaction';
 import { broadcastCritical, broadcastWarning } from '../telemetry/broadcaster';
 import { bridgeAccountHealth } from '../cloud/cloudBridge';
 import { publishLiveEvent } from '../telemetry/liveEvents';
@@ -54,7 +55,7 @@ export async function quarantineAccount(type: string, details: Record<string, un
         `incident.opened:${incidentId}`,
     );
     await sendTelegramAlert(
-        `Dettagli:\n\`\`\`json\n${JSON.stringify(details, null, 2)}\n\`\`\``,
+        `Dettagli:\n\`\`\`json\n${JSON.stringify(sanitizeForLogs(details), null, 2)}\n\`\`\``,
         `CRITICAL incident #${incidentId}: ${type}`,
         'critical',
     );
@@ -134,7 +135,7 @@ export async function pauseAutomation(
         `automation.paused:${incidentId}`,
     );
     await sendTelegramAlert(
-        `Automazione in pausa fino a ${pausedUntil ?? 'manual resume'}\n\nDettagli:\n\`\`\`json\n${JSON.stringify(details, null, 2)}\n\`\`\``,
+        `Automazione in pausa fino a ${pausedUntil ?? 'manual resume'}\n\nDettagli:\n\`\`\`json\n${JSON.stringify(sanitizeForLogs(details), null, 2)}\n\`\`\``,
         `WARN incident #${incidentId}: ${type}`,
         'warn',
     );

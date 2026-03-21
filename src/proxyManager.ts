@@ -3,6 +3,7 @@ import path from 'path';
 import * as net from 'net';
 import { config, ProxyType } from './config';
 import { logInfo, logWarn } from './telemetry/logger';
+import { maskUrl } from './security/redaction';
 import {
     checkAllProxiesQuality,
     shouldRunQualityCheck,
@@ -342,7 +343,7 @@ export async function fetchFallbackProxyFromProvider(): Promise<boolean> {
             const auth = json.username ? `${json.username}:${json.password}@` : '';
             newProxyRaw = `http://${auth}${json.ip}:${json.port}`;
         } else {
-            console.warn(`[PROXY] Payload API sconosciuto:`, json);
+            console.warn(`[PROXY] Payload API sconosciuto: keys=${Object.keys(json as Record<string, unknown>).join(',')}`);
             return false;
         }
 
@@ -403,7 +404,7 @@ export async function getProxyFailoverChainAsync(options: GetProxyChainOptions =
         const torParsed = parseProxyEntry(config.proxyTorSocks5Url);
         if (torParsed) {
             console.warn(
-                `[PROXY] Pool esaurito e API provider non disp. Fallback su rete Tor: ${config.proxyTorSocks5Url}`,
+                `[PROXY] Pool esaurito e API provider non disp. Fallback su rete Tor: ${maskUrl(config.proxyTorSocks5Url)}`,
             );
             return [torParsed].concat(prioritizeProxyPool(rotated, options));
         }
@@ -442,7 +443,7 @@ export async function getIntegrationProxyFailoverChainAsync(
         const torParsed = parseProxyEntry(config.proxyTorSocks5Url);
         if (torParsed) {
             console.warn(
-                `[PROXY-INT] Pool esaurito e API provider non disp. Fallback su rete Tor: ${config.proxyTorSocks5Url}`,
+                `[PROXY-INT] Pool esaurito e API provider non disp. Fallback su rete Tor: ${maskUrl(config.proxyTorSocks5Url)}`,
             );
             return [torParsed].concat(prioritizeProxyPool(rotated, options));
         }
