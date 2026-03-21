@@ -85,7 +85,8 @@ export async function warmupSession(page: Page, lastSessionEndedAt?: string | nu
                 await simulateHumanReading(page);
             } catch (warmupErr) {
                 // A04: warmup ridotto fallito — non bloccante ma tracciato
-                await logWarn('session_warmer.a04.reduced_warmup_failed', {
+                // L3: void (non await) per evitare propagazione eccezione dal catch handler
+                void logWarn('session_warmer.a04.reduced_warmup_failed', {
                     error: warmupErr instanceof Error ? warmupErr.message : String(warmupErr),
                 });
             }

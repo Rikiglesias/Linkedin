@@ -1183,7 +1183,7 @@ async function runQueuedJobsForAccount(
         const totalSessionMs = Date.now() - sessionStartedAtMs;
         if (totalSessionMs > 0 && accountHealthMetrics.processed > 0) {
             // A20: Report granulare con breakdown per fase
-            const perfReport = perfTracker.toLogPayload(account.id);
+            const perfReport = perfTracker.toLogPayload();
             const delayPct = Math.round((totalDelayMs / totalSessionMs) * 100);
             const actionPct = Math.round((totalActionMs / totalSessionMs) * 100);
             const overheadPct = Math.max(0, 100 - delayPct - actionPct);

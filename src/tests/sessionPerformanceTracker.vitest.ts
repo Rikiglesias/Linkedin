@@ -66,17 +66,16 @@ describe('SessionPerformanceTracker — A20', () => {
         tracker.addDuration('enrichment', 50);
         tracker.addDuration('inbox', 30);
         tracker.addDuration('wind_down', 80);
-        const payload = tracker.toLogPayload('acc-1');
-        expect(payload.accountId).toBe('acc-1');
-        expect(payload.actionMs).toBe(100);
-        expect(payload.actionCount).toBe(1);
-        expect(payload.delayMs).toBe(200);
-        expect(payload.enrichmentMs).toBe(50);
-        expect(payload.inboxMs).toBe(30);
-        expect(payload.windDownMs).toBe(80);
-        expect(typeof payload.totalSessionMs).toBe('number');
-        expect(typeof payload.overheadMs).toBe('number');
-        expect(typeof payload.overheadPct).toBe('number');
+        const payload = tracker.toLogPayload();
+        expect(payload.perfActionMs).toBe(100);
+        expect(payload.perfActionCount).toBe(1);
+        expect(payload.perfDelayMs).toBe(200);
+        expect(payload.perfEnrichmentMs).toBe(50);
+        expect(payload.perfInboxMs).toBe(30);
+        expect(payload.perfWindDownMs).toBe(80);
+        expect(typeof payload.perfOverheadMs).toBe('number');
+        expect(typeof payload.perfOverheadPct).toBe('number');
+        expect(typeof payload.perfDominantPhase).toBe('string');
     });
 
     it('min/max tracking per fase', () => {
@@ -89,6 +88,17 @@ describe('SessionPerformanceTracker — A20', () => {
         expect(report.phases.action.maxMs).toBe(200);
         expect(report.phases.action.count).toBe(3);
         expect(report.phases.action.totalMs).toBe(350);
+    });
+
+    it('addDuration ignora NaN, Infinity e valori negativi (L3 guardia)', () => {
+        const tracker = new SessionPerformanceTracker();
+        tracker.addDuration('action', NaN);
+        tracker.addDuration('action', Infinity);
+        tracker.addDuration('action', -100);
+        tracker.addDuration('action', 50); // unico valido
+        const report = tracker.getReport();
+        expect(report.breakdown.action.ms).toBe(50);
+        expect(report.breakdown.action.count).toBe(1);
     });
 
     it('dominantPhase identifica la fase più lunga', () => {

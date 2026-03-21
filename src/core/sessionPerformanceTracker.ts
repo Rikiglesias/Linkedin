@@ -91,6 +91,8 @@ export class SessionPerformanceTracker {
     addDuration(phase: SessionPhase, durationMs: number): void {
         const acc = this.phases.get(phase);
         if (!acc) return;
+        // L3: guardia NaN/negativo — previene corruzione del report
+        if (!Number.isFinite(durationMs) || durationMs < 0) return;
         acc.totalMs += durationMs;
         acc.count += 1;
         if (durationMs > acc.maxMs) acc.maxMs = durationMs;
@@ -145,25 +147,23 @@ export class SessionPerformanceTracker {
     /**
      * Serializza il report in formato compatto per log/DB.
      */
-    toLogPayload(accountId: string): Record<string, unknown> {
+    toLogPayload(): Record<string, unknown> {
         const report = this.getReport();
         return {
-            accountId,
-            totalSessionMs: report.totalSessionMs,
-            delayCreepAlert: report.delayCreepAlert,
-            dominantPhase: report.dominantPhase,
-            warmupMs: report.breakdown.warmup.ms,
-            navigateMs: report.breakdown.navigate.ms,
-            navigateCount: report.breakdown.navigate.count,
-            actionMs: report.breakdown.action.ms,
-            actionCount: report.breakdown.action.count,
-            delayMs: report.breakdown.delay.ms,
-            delayPct: report.breakdown.delay.pct,
-            enrichmentMs: report.breakdown.enrichment.ms,
-            inboxMs: report.breakdown.inbox.ms,
-            windDownMs: report.breakdown.wind_down.ms,
-            overheadMs: report.breakdown.overhead.ms,
-            overheadPct: report.breakdown.overhead.pct,
+            perfDominantPhase: report.dominantPhase,
+            perfDelayCreepAlert: report.delayCreepAlert,
+            perfWarmupMs: report.breakdown.warmup.ms,
+            perfNavigateMs: report.breakdown.navigate.ms,
+            perfNavigateCount: report.breakdown.navigate.count,
+            perfActionMs: report.breakdown.action.ms,
+            perfActionCount: report.breakdown.action.count,
+            perfDelayMs: report.breakdown.delay.ms,
+            perfDelayPct: report.breakdown.delay.pct,
+            perfEnrichmentMs: report.breakdown.enrichment.ms,
+            perfInboxMs: report.breakdown.inbox.ms,
+            perfWindDownMs: report.breakdown.wind_down.ms,
+            perfOverheadMs: report.breakdown.overhead.ms,
+            perfOverheadPct: report.breakdown.overhead.pct,
         };
     }
 }
