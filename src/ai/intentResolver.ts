@@ -28,19 +28,22 @@ Regole:
 - se QUESTIONS: rispondi sintetico e proponi una domanda di chiarimento
 - se POSITIVE/CALL_REQUESTED: proponi un prossimo passo pratico.`;
 
-function clampConfidence(value: unknown, fallback: number): number {
+/** @internal */
+export function clampConfidence(value: unknown, fallback: number): number {
     const parsed = typeof value === 'number' ? value : Number.parseFloat(String(value ?? ''));
     if (!Number.isFinite(parsed)) return fallback;
     return Math.max(0, Math.min(1, parsed));
 }
 
-function normalizeIntent(value: unknown): MessageIntent {
+/** @internal */
+export function normalizeIntent(value: unknown): MessageIntent {
     const normalized = String(value ?? 'UNKNOWN').toUpperCase();
     const allowed: MessageIntent[] = ['POSITIVE', 'NEGATIVE', 'NEUTRAL', 'QUESTIONS', 'NOT_INTERESTED', 'UNKNOWN'];
     return allowed.includes(normalized as MessageIntent) ? (normalized as MessageIntent) : 'UNKNOWN';
 }
 
-function normalizeSubIntent(value: unknown): MessageSubIntent {
+/** @internal */
+export function normalizeSubIntent(value: unknown): MessageSubIntent {
     const normalized = String(value ?? 'NONE').toUpperCase();
     const allowed: MessageSubIntent[] = [
         'CALL_REQUESTED',
@@ -53,7 +56,8 @@ function normalizeSubIntent(value: unknown): MessageSubIntent {
     return allowed.includes(normalized as MessageSubIntent) ? (normalized as MessageSubIntent) : 'NONE';
 }
 
-function buildFallbackDraft(intent: MessageIntent, text: string): string {
+/** @internal */
+export function buildFallbackDraft(intent: MessageIntent, text: string): string {
     const snippet = text.replace(/\s+/g, ' ').trim().slice(0, 110);
     if (intent === 'NOT_INTERESTED' || intent === 'NEGATIVE') {
         return 'Grazie della trasparenza. Nessun problema, non ti disturbo oltre. Se in futuro ti fosse utile confrontarti, resto volentieri a disposizione.';

@@ -95,24 +95,29 @@ export function workflowToJobTypes(workflow: WorkflowSelection): JobType[] {
     return ['MESSAGE', 'HYGIENE'];
 }
 
-function buildInviteKey(leadId: number, localDate: string): string {
+/** @internal — exported for testing */
+export function buildInviteKey(leadId: number, localDate: string): string {
     return `invite:${leadId}:${localDate}`;
 }
 
-function buildMessageKey(leadId: number, acceptedAtDate: string): string {
+/** @internal */
+export function buildMessageKey(leadId: number, acceptedAtDate: string): string {
     return `message:${leadId}:${acceptedAtDate}`;
 }
 
-function buildCheckKey(leadId: number, localDate: string): string {
+/** @internal */
+export function buildCheckKey(leadId: number, localDate: string): string {
     return `check:${leadId}:${localDate}`;
 }
 
-function computeListBudget(globalRemaining: number, listCap: number | null, alreadyConsumed: number): number {
+/** @internal */
+export function computeListBudget(globalRemaining: number, listCap: number | null, alreadyConsumed: number): number {
     const listRemaining = listCap === null ? globalRemaining : Math.max(0, listCap - alreadyConsumed);
     return Math.max(0, Math.min(globalRemaining, listRemaining));
 }
 
-function computeAccountBudgetShares(
+/** @internal */
+export function computeAccountBudgetShares(
     accounts: ReturnType<typeof getRuntimeAccountProfiles>,
     totalBudget: number,
     channel: 'invite' | 'message',
@@ -180,16 +185,19 @@ interface NoBurstPlanner {
     nextDelaySec: () => number;
 }
 
-function toNonNegativeInt(value: number): number {
+/** @internal */
+export function toNonNegativeInt(value: number): number {
     return Math.max(0, Math.floor(value));
 }
 
-function clamp01(value: number): number {
+/** @internal */
+export function clamp01(value: number): number {
     return Math.min(1, Math.max(0, value));
 }
 
 
-function applyAdaptiveFactor(rawBudget: number, factor: number): number {
+/** @internal */
+export function applyAdaptiveFactor(rawBudget: number, factor: number): number {
     if (rawBudget <= 0 || factor <= 0) {
         return 0;
     }
@@ -200,11 +208,13 @@ function applyAdaptiveFactor(rawBudget: number, factor: number): number {
     return Math.min(rawBudget, computed);
 }
 
-function clampInt(value: number, min: number, max: number): number {
+/** @internal */
+export function clampInt(value: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, Math.round(value)));
 }
 
-function parseSsiScore(rawValue: string | null, fallback: number): number {
+/** @internal */
+export function parseSsiScore(rawValue: string | null, fallback: number): number {
     if (!rawValue) return clampInt(fallback, 0, 100);
 
     const direct = Number.parseFloat(rawValue);
@@ -225,7 +235,8 @@ function parseSsiScore(rawValue: string | null, fallback: number): number {
     return clampInt(fallback, 0, 100);
 }
 
-function capFromSsi(score: number, minCap: number, maxCap: number): number {
+/** @internal */
+export function capFromSsi(score: number, minCap: number, maxCap: number): number {
     const low = Math.max(1, Math.min(minCap, maxCap));
     const high = Math.max(1, Math.max(minCap, maxCap));
     const ratio = Math.max(0, Math.min(1, score / 100));
@@ -233,13 +244,15 @@ function capFromSsi(score: number, minCap: number, maxCap: number): number {
     return clampInt(cap, low, high);
 }
 
-function resolveCapPair(staticSoft: number, staticHard: number, dynamicCap: number): { soft: number; hard: number } {
+/** @internal */
+export function resolveCapPair(staticSoft: number, staticHard: number, dynamicCap: number): { soft: number; hard: number } {
     const hard = Math.max(1, Math.min(staticHard, dynamicCap));
     const soft = Math.max(1, Math.min(staticSoft, hard));
     return { soft, hard };
 }
 
-function applyHourIntensityToBudget(budget: number, intensity: number): number {
+/** @internal */
+export function applyHourIntensityToBudget(budget: number, intensity: number): number {
     if (budget <= 0) return 0;
     if (intensity >= 0.999) return budget;
     if (intensity <= 0) return 0;
@@ -248,7 +261,8 @@ function applyHourIntensityToBudget(budget: number, intensity: number): number {
     return Math.min(budget, scaled);
 }
 
-function evaluateAdaptiveBudgetContext(
+/** @internal */
+export function evaluateAdaptiveBudgetContext(
     statusCounts: Record<string, number>,
     riskAction: RiskSnapshot['action'],
 ): AdaptiveBudgetContext {
@@ -314,7 +328,8 @@ function evaluateAdaptiveBudgetContext(
     };
 }
 
-function createNoBurstPlanner(): NoBurstPlanner {
+/** @internal */
+export function createNoBurstPlanner(): NoBurstPlanner {
     const minDelay = toNonNegativeInt(config.noBurstMinDelaySec);
     const maxDelay = toNonNegativeInt(config.noBurstMaxDelaySec);
     const longBreakEvery = toNonNegativeInt(config.noBurstLongBreakEvery);

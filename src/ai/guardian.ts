@@ -40,7 +40,8 @@ const SEVERITY_RANK: Record<AiGuardianSeverity, number> = {
  * - heuristic watch     → AI cannot lower below watch
  * - heuristic normal    → AI can raise freely
  */
-function enforceHeuristicFloor(
+/** @internal */
+export function enforceHeuristicFloor(
     aiDecision: ParsedAiGuardianPayload,
     heuristicSeverity: AiGuardianSeverity,
 ): ParsedAiGuardianPayload {
@@ -50,13 +51,15 @@ function enforceHeuristicFloor(
     return aiDecision;
 }
 
-function clampPauseMinutes(value: number): number {
+/** @internal */
+export function clampPauseMinutes(value: number): number {
     const parsed = Number.isFinite(value) ? Math.floor(value) : 0;
     if (parsed <= 0) return 0;
     return Math.min(24 * 60, parsed);
 }
 
-function heuristics(schedule: ScheduleResult): AiGuardianDecision {
+/** @internal */
+export function heuristics(schedule: ScheduleResult): AiGuardianDecision {
     const criticalList = schedule.listBreakdown.find((list) => list.pendingRatio >= 0.78 || list.blockedRatio >= 0.35);
 
     if (schedule.riskSnapshot.action === 'STOP' || criticalList) {
@@ -100,7 +103,8 @@ function heuristics(schedule: ScheduleResult): AiGuardianDecision {
     };
 }
 
-function tryExtractJsonBlock(raw: string): string | null {
+/** @internal */
+export function tryExtractJsonBlock(raw: string): string | null {
     // Strip markdown code fences if present (```json ... ``` or ``` ... ```)
     const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
     const source = fenceMatch ? (fenceMatch[1] ?? raw) : raw;
@@ -120,7 +124,8 @@ function tryExtractJsonBlock(raw: string): string | null {
     return null;
 }
 
-function parseAiDecision(raw: string): ParsedAiGuardianPayload | null {
+/** @internal */
+export function parseAiDecision(raw: string): ParsedAiGuardianPayload | null {
     const jsonBlock = tryExtractJsonBlock(raw);
     if (!jsonBlock) return null;
 
