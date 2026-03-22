@@ -111,6 +111,11 @@ export async function aiDecide(request: AIDecisionRequest): Promise<AIDecisionRe
             confidence: parsed.confidence,
             reason: parsed.reason.substring(0, 80),
         });
+        // Feedback loop: registra la decisione per correlazione con outcome futuro
+        if (request.lead?.id) {
+            const { recordDecision } = await import('./decisionFeedback');
+            recordDecision(request.lead.id, request.point, parsed).catch(() => {});
+        }
         return parsed;
     } catch (err) {
         await logWarn('ai_decision_engine.fallback', {

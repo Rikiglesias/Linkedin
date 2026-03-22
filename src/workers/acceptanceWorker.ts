@@ -10,6 +10,7 @@ import { isSalesNavigatorUrl } from '../linkedinUrl';
 import { logWarn } from '../telemetry/logger';
 import { normalizeNameForComparison, jaroWinklerSimilarity } from '../utils/text';
 import { navigateToProfileForCheck } from '../browser/navigationContext';
+import { isLoggedIn } from '../browser/auth';
 import { bridgeDailyStat, bridgeLeadStatus } from '../cloud/cloudBridge';
 import { recordOutcome } from '../ml/abBandit';
 import { WorkerExecutionResult, workerResult } from './result';
@@ -32,6 +33,18 @@ export async function processAcceptanceJob(
     if (isSalesNavigatorUrl(lead.linkedin_url)) {
         await transitionLead(lead.id, 'REVIEW_REQUIRED', 'salesnav_url_needs_resolution');
         return workerResult(1);
+    }
+
+    // Session validity check: se il cookie è scaduto, il profilo potrebbe
+    // mostrare la pagina di login → false negative sull'acceptance.
+    if (!context.dryRun) {
+        const stillLoggedIn = await isLoggedIn(context.session.page);
+        if (!stillLoggedIn) {
+            throw new RetryableWorkerError(
+                'Sessione LinkedIn scaduta durante acceptance check — aborto per evitare false negative',
+                'SESSION_EXPIRED',
+            );
+        }
     }
 
     await navigateToProfileForCheck(context.session.page, lead.linkedin_url, context.accountId ?? 'default');

@@ -78,6 +78,32 @@ export async function transitionLead(
         metadata,
     });
 
+    // AI Decision Feedback: registra outcome per correlazione con decisioni AI.
+    // Mappa stato → outcome per il feedback loop.
+    const outcomeMap: Partial<Record<LeadStatus, string>> = {
+        ACCEPTED: 'accepted',
+        READY_MESSAGE: 'accepted',
+        REPLIED: 'replied',
+        CONNECTED: 'connected',
+        WITHDRAWN: 'withdrawn',
+        BLOCKED: 'blocked',
+        DEAD: 'dead',
+    };
+    const feedbackOutcome = outcomeMap[targetStatus];
+    if (feedbackOutcome) {
+        // Registra outcome per tutti i decision point rilevanti del lead
+        import('../ai/decisionFeedback').then(({ recordDecisionOutcome }) => {
+            const points = targetStatus === 'ACCEPTED' || targetStatus === 'READY_MESSAGE'
+                ? ['pre_invite']
+                : targetStatus === 'REPLIED'
+                    ? ['pre_message', 'pre_follow_up']
+                    : ['pre_invite', 'pre_message', 'pre_follow_up'];
+            for (const point of points) {
+                recordDecisionOutcome(leadId, point, feedbackOutcome).catch(() => {});
+            }
+        }).catch(() => {});
+    }
+
     if (targetStatus === 'ACCEPTED' && fromStatus !== 'ACCEPTED') {
         const name = `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'Lead Sconosciuto';
         void sendTelegramAlert(

@@ -11,6 +11,8 @@ import { isProfileUrl, normalizeLinkedInUrl } from '../linkedinUrl';
 import { recordOutcome } from '../ml/abBandit';
 import { config, getLocalDateString } from '../config';
 import { SELECTORS, joinSelectors } from '../selectors';
+import { isLoggedIn } from '../browser/auth';
+import { RetryableWorkerError } from './errors';
 
 export interface InboxJobPayload {
     accountId: string;
@@ -83,6 +85,19 @@ export async function processInboxJob(
     const errors: Array<{ message: string }> = [];
     let processedCount = 0;
     let autoRepliesSent = 0;
+    // Session validity check prima di navigare alla inbox.
+    // Se il cookie è scaduto, LinkedIn redirige al login e il warning detection
+    // potrebbe produrre falsi positivi (testo login page ≠ warning reale).
+    if (!context.dryRun) {
+        const stillLoggedIn = await isLoggedIn(page);
+        if (!stillLoggedIn) {
+            throw new RetryableWorkerError(
+                'Sessione LinkedIn scaduta prima di inbox scan — aborto',
+                'SESSION_EXPIRED',
+            );
+        }
+    }
+
     await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'domcontentloaded' });
     await simulateHumanReading(page);
 
