@@ -90,6 +90,88 @@ Rispondi SOLO con JSON. Esempio:
 }
 
 /**
+ * GAP 2: Re-scoring periodico per lead stale.
+ * Lead INVITED da >30 giorni che non hanno accettato → il punteggio potrebbe essere obsoleto.
+ * Ricalcola il score e aggiorna nel DB. Chiamato dal scheduler o come job periodico.
+ */
+export async function rescoreStaleLeads(options?: ScoreLeadOptions & {
+    maxAgeDays?: number;
+    limit?: number;
+    concurrency?: number;
+}): Promise<{ rescored: number; updated: number }> {
+    const maxAgeDays = options?.maxAgeDays ?? 30;
+    const limit = options?.limit ?? 50;
+
+    try {
+        const { getDatabase } = await import('../db');
+        const db = await getDatabase();
+
+        const staleLeads = await db.query<{
+            id: number;
+            account_name: string;
+            first_name: string;
+            last_name: string;
+            job_title: string | null;
+            lead_score: number | null;
+        }>(
+            `SELECT id, account_name, first_name, last_name, job_title, lead_score
+             FROM leads
+             WHERE status = 'INVITED'
+               AND invited_at < datetime('now', '-' || ? || ' days')
+               AND (lead_score_updated_at IS NULL OR lead_score_updated_at < datetime('now', '-' || ? || ' days'))
+             ORDER BY invited_at ASC
+             LIMIT ?`,
+            [maxAgeDays, maxAgeDays, limit],
+        );
+
+        if (staleLeads.length === 0) return { rescored: 0, updated: 0 };
+
+        const batchInput = staleLeads.map((l) => ({
+            accountName: l.account_name ?? '',
+            fullName: `${l.first_name ?? ''} ${l.last_name ?? ''}`.trim(),
+            headline: l.job_title,
+        }));
+
+        const results = await scoreLeadsBatch(batchInput, {
+            concurrency: options?.concurrency ?? 3,
+            scoringCriteria: options?.scoringCriteria,
+        });
+
+        let updated = 0;
+        for (let i = 0; i < staleLeads.length; i++) {
+            const lead = staleLeads[i];
+            const result = results[i];
+            if (!lead || !result) continue;
+
+            const oldScore = lead.lead_score ?? 0;
+            const newScore = result.leadScore;
+
+            // Aggiorna solo se il score è cambiato significativamente (±10 punti)
+            if (Math.abs(newScore - oldScore) >= 10) {
+                await db.run(
+                    `UPDATE leads SET lead_score = ?, lead_score_updated_at = datetime('now') WHERE id = ?`,
+                    [newScore, lead.id],
+                );
+                updated++;
+            } else {
+                // Marca come ri-valutato anche se non cambiato (evita re-processing)
+                await db.run(
+                    `UPDATE leads SET lead_score_updated_at = datetime('now') WHERE id = ?`,
+                    [lead.id],
+                );
+            }
+        }
+
+        return { rescored: staleLeads.length, updated };
+    } catch (err) {
+        await logWarn('lead_scorer.rescore_stale_failed', {
+            error: err instanceof Error ? err.message : String(err),
+        });
+        return { rescored: 0, updated: 0 };
+    }
+}
+
+/**
  * M06: Batch scoring con concurrency controllata.
  * Processa N lead in parallelo con max `concurrency` chiamate API simultanee.
  * 200 lead con concurrency 5 → ~40 batch × ~2s = ~80s (vs 400s sequenziale).
