@@ -113,8 +113,17 @@ export async function processAcceptanceJob(
     } else if (pendingInvite) {
         accepted = false;
     } else if (canConnect) {
-        // Invite withdrawn or rejected
-        accepted = false;
+        // Il bottone Connect è visibile → l'invito è stato rifiutato o ritirato dal lead.
+        // NON è "non ancora accettato" — ritentare è inutile e spreca azioni LinkedIn.
+        // Transizione a WITHDRAWN: il lead potrà essere re-invitato in futuro se necessario.
+        await logWarn('acceptance.invite_rejected_or_withdrawn', {
+            leadId: lead.id,
+            url: lead.linkedin_url,
+            hasMessageButton,
+            pendingInvite,
+        });
+        await transitionLead(lead.id, 'WITHDRAWN', 'invite_rejected_connect_visible');
+        return workerResult(1);
     } else if (connectedWithoutBadge) {
         // H12: Euristica diretta — ha bottone Message + no Pending + no Connect = accettato.
         // Prima navigava all'invitation manager (/mynetwork/invitation-manager/sent/) per verificare,

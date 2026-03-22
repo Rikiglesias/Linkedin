@@ -270,8 +270,8 @@ STEP 6: INVIO + REGISTRAZIONE
 
 ## 4. Workflow FOLLOW-UP
 
-**File:** `src/workers/followUpWorker.ts` (457 righe)
-**Stato lead:** `MESSAGED` → `FOLLOWED_UP`
+**File:** `src/workers/followUpWorker.ts` (475 righe)
+**Stato lead:** `MESSAGED` (resta MESSAGED — incrementa `follow_up_count`, nessuna transizione di stato)
 
 ### Passo-passo dettagliato:
 
@@ -319,10 +319,11 @@ STEP 4: INVIO
 └── 4.8 Compensazione se fallisce
 
 STEP 5: REGISTRAZIONE
-├── 5.1 Transizione: MESSAGED → FOLLOWED_UP
+├── 5.1 recordFollowUpSent() → incrementa follow_up_count + follow_up_sent_at
 ├── 5.2 storeMessageHash()
-├── 5.3 Stat incremento
-└── 5.4 Cloud sync
+├── 5.3 Stat incremento (follow_ups_sent)
+└── 5.4 Log dettagliato (source, daysSince, messageLength)
+NOTA: il lead resta in stato MESSAGED — non esiste lo stato FOLLOWED_UP
 ```
 
 ---
@@ -352,10 +353,11 @@ STEP 3: DETERMINAZIONE STATO CONNESSIONE
 ├── 3.2 Cerca indicatore "Pending" → invito ancora in attesa
 ├── 3.3 Cerca bottone "Connect" → invito rifiutato/ritirato
 ├── 3.4 Logica decisionale:
-│   ├── Message presente + no Pending + no Connect → ACCEPTED ✓
-│   ├── Pending presente → ancora in attesa → nessun cambio
-│   ├── Connect presente → invito non più attivo → REVIEW_REQUIRED
-│   └── Nessun segnale chiaro → skip (nessun cambio)
+│   ├── Badge 1st degree → ACCEPTED ✓
+│   ├── Pending presente → ancora in attesa → retry
+│   ├── Connect presente → invito rifiutato → WITHDRAWN (re-invitabile)
+│   ├── Message + no Pending + no Connect → ACCEPTED ✓ (badge lento)
+│   └── Nessun segnale chiaro → RetryableWorkerError (retry)
 └── 3.5 Se accettato:
     ├── Transizione: INVITED → READY_MESSAGE
     ├── Record accepted_at timestamp
@@ -757,17 +759,21 @@ Decay: `sessionActionCount × 0.02` riduce probabilità organic → simula stanc
 NEW
  └→ READY_INVITE
      ├→ INVITED
-     │   ├→ READY_MESSAGE (accepted)
-     │   │   ├→ MESSAGED
-     │   │   │   ├→ FOLLOWED_UP
-     │   │   │   │   └→ REPLIED / CONNECTED
+     │   ├→ ACCEPTED → READY_MESSAGE (transizione atomica)
+     │   │   ├→ MESSAGED (follow_up_count++ per follow-up, resta MESSAGED)
      │   │   │   └→ REPLIED / CONNECTED
      │   │   └→ REPLIED / CONNECTED
-     │   ├→ WITHDRAWN (hygiene, 21 giorni)
+     │   ├→ WITHDRAWN (hygiene 21gg / invito rifiutato)
+     │   │   └→ READY_INVITE (re-invitabile)
      │   └→ REVIEW_REQUIRED (problemi)
      ├→ SKIPPED (connect not found)
      └→ REVIEW_REQUIRED (salesnav, identity mismatch, etc.)
  └→ BLOCKED (validation failed)
+
+NOTE:
+- FOLLOWED_UP non esiste come stato — i follow-up incrementano follow_up_count
+- ACCEPTED è transitorio — transitionLeadAtomic fa INVITED→ACCEPTED→READY_MESSAGE
+- WITHDRAWN permette re-invito futuro (WITHDRAWN→READY_INVITE)
 ```
 
 ---
