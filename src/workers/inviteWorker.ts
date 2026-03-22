@@ -388,6 +388,12 @@ export async function processInviteJob(
     if (aiDecision.suggestedDelaySec && aiDecision.suggestedDelaySec > 0) {
         await humanDelay(context.session.page, aiDecision.suggestedDelaySec * 1000, (aiDecision.suggestedDelaySec + 2) * 1000);
     }
+    // GAP 3: Confidence-based caution — se PROCEED con bassa confidence, delay extra.
+    // Un PROCEED con confidence 0.51 non è affidabile come uno con 0.95.
+    if (aiDecision.confidence < 0.6 && aiDecision.confidence > 0) {
+        await logInfo('invite.ai_low_confidence_delay', { leadId: lead.id, confidence: aiDecision.confidence });
+        await humanDelay(context.session.page, 2000, 4000);
+    }
 
     // C04: Identity check — verifica che il profilo aperto corrisponda al lead target.
     // Se l'h1 non corrisponde al nome del lead → REVIEW_REQUIRED (potremmo invitare la persona sbagliata).

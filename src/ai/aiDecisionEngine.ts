@@ -81,7 +81,8 @@ export async function aiDecide(request: AIDecisionRequest): Promise<AIDecisionRe
     }
 
     try {
-        const prompt = buildDecisionPrompt(request);
+        const accuracyCtx = await getAccuracyContext();
+        const prompt = buildDecisionPrompt(request) + accuracyCtx;
         const { requestOpenAIText } = await import('./openaiClient');
 
         // Timeout reale con Promise.race: se l'AI non risponde entro DECISION_TIMEOUT_MS,
@@ -137,6 +138,39 @@ function mechanicalFallback(_request: AIDecisionRequest, reason: string): AIDeci
         confidence: 0.5,
         reason: `Mechanical fallback: ${reason}`,
     };
+}
+
+// GAP 1: Carica accuracy storica per calibrare il prompt.
+// Cache 1h per evitare query DB ad ogni decisione.
+let _accuracyCacheAt = 0;
+let _accuracyCache: string | null = null;
+const ACCURACY_CACHE_TTL_MS = 60 * 60 * 1000;
+
+async function getAccuracyContext(): Promise<string> {
+    if (_accuracyCache && Date.now() - _accuracyCacheAt < ACCURACY_CACHE_TTL_MS) {
+        return _accuracyCache;
+    }
+    try {
+        const { getDecisionAccuracy } = await import('./decisionFeedback');
+        const stats = await getDecisionAccuracy(14);
+        if (stats.length === 0) {
+            _accuracyCache = '';
+            _accuracyCacheAt = Date.now();
+            return '';
+        }
+        const lines = stats
+            .filter((s) => s.withOutcome >= 5)
+            .map((s) => `${s.point}/${s.action}: ${s.withOutcome} outcomes, ${Math.round(s.accuracyRate * 100)}% positive (avg confidence ${s.avgConfidence})`)
+            .slice(0, 5);
+        _accuracyCache = lines.length > 0
+            ? `\nYour recent decision accuracy (last 14 days):\n${lines.join('\n')}\nAdjust your threshold accordingly — if PROCEED accuracy is low, be more selective.`
+            : '';
+        _accuracyCacheAt = Date.now();
+    } catch {
+        _accuracyCache = '';
+        _accuracyCacheAt = Date.now();
+    }
+    return _accuracyCache ?? '';
 }
 
 function buildDecisionPrompt(request: AIDecisionRequest): string {
