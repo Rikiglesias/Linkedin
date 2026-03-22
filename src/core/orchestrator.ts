@@ -334,6 +334,22 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
         await runPreventiveGuards();
     }
 
+    // K: Varianza sessioni giornaliere — un umano reale non fa sempre lo stesso volume.
+    // Check PRIMA dello scheduling per evitare lavoro inutile se oggi è "giorno libero".
+    // 5% probabilità di skip totale, deterministico per data+account (FNV-1a).
+    if (!options.dryRun) {
+        const accounts = getRuntimeAccountProfiles();
+        const primaryAccount = accounts[0]?.id ?? 'default';
+        const varianceFactor = getSessionVarianceFactor(primaryAccount);
+        if (varianceFactor === 0) {
+            await logInfo('workflow.session_variance.skip_day', {
+                workflow: options.workflow,
+                accountId: primaryAccount,
+            });
+            return;
+        }
+    }
+
     if (!options.dryRun) {
         const quarantine = (await getRuntimeFlag('account_quarantine')) === 'true';
         if (quarantine) {
@@ -709,32 +725,6 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
                     });
                 }
             }
-        }
-    }
-
-    // K: Varianza sessioni giornaliere — un umano reale non fa sempre lo stesso volume.
-    // Il fattore è deterministico per data+account (FNV-1a), così il bot non cambia
-    // comportamento se riavvia lo stesso giorno.
-    if (!options.dryRun) {
-        const accounts = getRuntimeAccountProfiles();
-        const primaryAccount = accounts[0]?.id ?? 'default';
-        const varianceFactor = getSessionVarianceFactor(primaryAccount);
-        if (varianceFactor === 0) {
-            await logInfo('workflow.session_variance.skip_day', {
-                workflow: options.workflow,
-                localDate: schedule.localDate,
-                accountId: primaryAccount,
-                factor: varianceFactor,
-            });
-            return; // "Giorno libero imprevisto" — skip totale
-        }
-        if (varianceFactor !== 1.0) {
-            await logInfo('workflow.session_variance.applied', {
-                workflow: options.workflow,
-                localDate: schedule.localDate,
-                accountId: primaryAccount,
-                factor: varianceFactor,
-            });
         }
     }
 

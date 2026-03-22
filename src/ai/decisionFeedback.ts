@@ -16,7 +16,15 @@
 
 import { getDatabase } from '../db';
 import { logInfo, logWarn } from '../telemetry/logger';
-import type { AIDecisionResponse } from './aiDecisionEngine';
+
+// Interfaccia inline per evitare circular dependency con aiDecisionEngine.ts.
+// aiDecisionEngine importa dinamicamente decisionFeedback → se decisionFeedback
+// importa aiDecisionEngine → ciclo. Definiamo il tipo necessario qui.
+interface AIDecisionResponseSlim {
+    action: string;
+    confidence: number;
+    reason: string;
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -78,7 +86,7 @@ async function ensureTable(): Promise<void> {
 export async function recordDecision(
     leadId: number,
     point: string,
-    decision: AIDecisionResponse,
+    decision: AIDecisionResponseSlim,
 ): Promise<void> {
     try {
         await ensureTable();

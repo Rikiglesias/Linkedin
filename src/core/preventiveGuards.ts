@@ -77,7 +77,7 @@ export async function backupDbIfDue(): Promise<void> {
             if (elapsed < BACKUP_INTERVAL_MS) return;
         }
 
-        const dbPath = path.resolve(config.dbPath || 'data/linkedin.db');
+        const dbPath = path.resolve(config.dbPath || 'data/linkedin_bot.sqlite');
         if (!fs.existsSync(dbPath)) return;
 
         const backupDir = path.join(path.dirname(dbPath), 'backups');
@@ -123,8 +123,9 @@ export async function alertCircuitBreakerStatus(): Promise<void> {
         const db = await getDatabase();
 
         // I circuit breaker sono persistiti in runtime_flags con chiave 'cb:*'
+        // Il prefisso circuit breaker in integrationPolicy.ts è 'cb::' (doppio due punti)
         const rows = await db.query<{ key: string; value: string }>(
-            `SELECT key, value FROM runtime_flags WHERE key LIKE 'cb:%' AND value LIKE '%OPEN%'`,
+            `SELECT key, value FROM runtime_flags WHERE key LIKE 'cb::%' AND value LIKE '%OPEN%'`,
         );
 
         if (rows.length === 0) return;
@@ -132,9 +133,9 @@ export async function alertCircuitBreakerStatus(): Promise<void> {
         const openBreakers = rows.map((r) => {
             try {
                 const parsed = JSON.parse(r.value) as { state?: string; openedAt?: string };
-                return { key: r.key.replace('cb:', ''), state: parsed.state ?? 'OPEN', openedAt: parsed.openedAt };
+                return { key: r.key.replace('cb::', ''), state: parsed.state ?? 'OPEN', openedAt: parsed.openedAt };
             } catch {
-                return { key: r.key.replace('cb:', ''), state: 'OPEN', openedAt: undefined };
+                return { key: r.key.replace('cb::', ''), state: 'OPEN', openedAt: undefined };
             }
         });
 
