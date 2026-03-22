@@ -37,7 +37,7 @@ import {
     getRuntimeFlag,
     setRuntimeFlag,
 } from '../core/repositories';
-import type { SalesNavSyncRunRecord, SalesNavSyncRunSummary } from '../core/repositories.types';
+import type { SalesNavSyncRunRecord } from '../core/repositories.types';
 import {
     visionRead,
     visionReadTotalResults,
@@ -46,13 +46,19 @@ import {
 } from './visionNavigator';
 import { checkDuplicates, extractProfileUrlsFromPage, saveExtractedProfiles } from './salesnavDedup';
 import { computerUseSelectList, computerUseTask } from './computerUse';
-// listScraper: navigateToSavedLists/scrapeLeadsFromSalesNavList non piu' usati — pre-sync usa vision-guided navigation
 import {
     SALESNAV_NEXT_PAGE_SELECTOR as NEXT_PAGE_SELECTOR,
     SALESNAV_SELECT_ALL_SELECTOR as SELECT_ALL_SELECTOR,
     SALESNAV_SAVE_TO_LIST_SELECTOR as SAVE_TO_LIST_SELECTOR,
     SALESNAV_DIALOG_SELECTOR as DIALOG_SELECTOR,
 } from './selectors';
+import type {
+    SalesNavBulkSaveOptions,
+    SalesNavBulkSaveSearchReport,
+    SalesNavBulkSaveReport,
+    SavedSearchDescriptor,
+} from './bulkSaveTypes';
+import { BulkSaveChallengeDetectedError } from './bulkSaveTypes';
 
 export const SEARCHES_URL = 'https://www.linkedin.com/sales/search/saved-searches';
 
@@ -156,74 +162,17 @@ async function waitForSearchResultsReady(page: Page, timeoutMs: number = 18_000)
     }
 }
 
-export interface SalesNavBulkSaveOptions {
-    accountId: string;
-    targetListName: string;
-    maxPages: number;
-    maxSearches?: number | null;
-    searchName?: string | null;
-    resume?: boolean;
-    dryRun?: boolean;
-    sessionLimit?: number | null;
-}
+// Tipi e ChallengeDetectedError estratti in bulkSaveTypes.ts (A17: split file >1000 righe)
+// Re-export per backward compatibility con consumer esterni
+export type {
+    SalesNavBulkSaveOptions,
+    SalesNavBulkSavePageReport,
+    SalesNavBulkSaveSearchReport,
+    SalesNavBulkSaveReport,
+    SavedSearchDescriptor,
+} from './bulkSaveTypes';
 
-export interface SalesNavBulkSavePageReport {
-    pageNumber: number;
-    leadsOnPage: number;
-    status: 'SUCCESS' | 'FAILED' | 'SKIPPED' | 'SKIPPED_ALL_SAVED';
-    errorMessage: string | null;
-    allAlreadySaved?: boolean;
-}
-
-export interface SalesNavBulkSaveSearchReport {
-    searchIndex: number;
-    searchName: string;
-    startedPage: number;
-    finalPage: number;
-    processedPages: number;
-    pagesSkippedAllSaved: number;
-    leadsSaved: number;
-    totalResultsDetected: number | null;
-    status: 'SUCCESS' | 'SKIPPED_AFTER_FAILURES' | 'FAILED_TO_OPEN' | 'DRY_RUN';
-    errors: string[];
-    pages: SalesNavBulkSavePageReport[];
-}
-
-export interface SalesNavBulkSaveReport {
-    runId: number | null;
-    accountId: string;
-    targetListName: string;
-    dryRun: boolean;
-    resumeRequested: boolean;
-    resumedFromRunId: number | null;
-    status: 'SUCCESS' | 'FAILED' | 'PAUSED' | 'DRY_RUN';
-    challengeDetected: boolean;
-    sessionLimitHit: boolean;
-    searchesDiscovered: number;
-    searchesPlanned: number;
-    searchesProcessed: number;
-    pagesProcessed: number;
-    pagesSkippedAllSaved: number;
-    totalLeadsSaved: number;
-    lastError: string | null;
-    startedAt: string;
-    finishedAt: string | null;
-    searches: SalesNavBulkSaveSearchReport[];
-    dbSummary: SalesNavSyncRunSummary | null;
-}
-
-export interface SavedSearchDescriptor {
-    index: number;
-    name: string;
-    buttonText: string;
-}
-
-class ChallengeDetectedError extends Error {
-    constructor(message: string = 'Challenge rilevato durante Sales Navigator bulk save') {
-        super(message);
-        this.name = 'ChallengeDetectedError';
-    }
-}
+const ChallengeDetectedError = BulkSaveChallengeDetectedError;
 
 
 function normalizeSearchName(value: string | null | undefined): string {
