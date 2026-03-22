@@ -7,7 +7,6 @@ import {
     setAutomationPause,
     setRuntimeFlag,
 } from '../core/repositories';
-import { sendTelegramAlert } from '../telemetry/alerts';
 import { sanitizeForLogs } from '../security/redaction';
 import { broadcastCritical, broadcastWarning } from '../telemetry/broadcaster';
 import { bridgeAccountHealth } from '../cloud/cloudBridge';
@@ -54,15 +53,13 @@ export async function quarantineAccount(type: string, details: Record<string, un
         },
         `incident.opened:${incidentId}`,
     );
-    await sendTelegramAlert(
-        `Dettagli:\n\`\`\`json\n${JSON.stringify(sanitizeForLogs(details), null, 2)}\n\`\`\``,
+    // Multi-channel broadcast (include Telegram via broadcaster.ts → sendToTelegram).
+    // Prima c'era anche sendTelegramAlert diretto → doppio messaggio Telegram per ogni evento.
+    broadcastCritical(
         `CRITICAL incident #${incidentId}: ${type}`,
-        'critical',
-    );
-    // Multi-channel broadcast
-    broadcastCritical(`CRITICAL incident #${incidentId}: ${type}`, `Account messo in quarantena.`, details).catch(
-        () => {},
-    );
+        `Account messo in quarantena.\n\nDettagli:\n${JSON.stringify(sanitizeForLogs(details), null, 2).substring(0, 600)}`,
+        details,
+    ).catch(() => {});
     // Replica cloud: aggiorna health account a RED (non-bloccante)
     bridgeAccountHealth(resolveAccountId(details), 'RED', type);
     publishLiveEvent('incident.opened', {
@@ -134,15 +131,11 @@ export async function pauseAutomation(
         },
         `automation.paused:${incidentId}`,
     );
-    await sendTelegramAlert(
-        `Automazione in pausa fino a ${pausedUntil ?? 'manual resume'}\n\nDettagli:\n\`\`\`json\n${JSON.stringify(sanitizeForLogs(details), null, 2)}\n\`\`\``,
-        `WARN incident #${incidentId}: ${type}`,
-        'warn',
-    );
-    // Multi-channel broadcast
+    // Multi-channel broadcast (include Telegram via broadcaster.ts → sendToTelegram).
+    // Prima c'era anche sendTelegramAlert diretto → doppio messaggio Telegram per ogni evento.
     broadcastWarning(
         `WARN incident #${incidentId}: ${type}`,
-        `Automazione in pausa fino a ${pausedUntil ?? 'manual resume'}.`,
+        `Automazione in pausa fino a ${pausedUntil ?? 'manual resume'}.\n\nDettagli:\n${JSON.stringify(sanitizeForLogs(details), null, 2).substring(0, 600)}`,
         details,
     ).catch(() => {});
     // Replica cloud: aggiorna health account a YELLOW (non-bloccante)

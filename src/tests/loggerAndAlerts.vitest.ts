@@ -1,6 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { logInfo, logWarn, logError } from '../telemetry/logger';
 import { sendTelegramAlert } from '../telemetry/alerts';
+
+// Mock fetchWithRetryPolicy per evitare chiamate HTTP reali a Telegram durante i test.
+// Senza questo mock, i test inviano 4 messaggi reali al bot Telegram ad ogni esecuzione.
+vi.mock('../core/integrationPolicy', () => ({
+    fetchWithRetryPolicy: vi.fn().mockResolvedValue({ ok: true, status: 200, text: () => Promise.resolve('') }),
+}));
 
 describe('telemetry/logger', () => {
     it('logInfo non lancia', async () => {
@@ -22,7 +28,6 @@ describe('telemetry/logger', () => {
 
 describe('telemetry/alerts — sendTelegramAlert', () => {
     it('non lancia senza config Telegram', async () => {
-        // Senza TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID, ritorna silenziosamente
         await expect(sendTelegramAlert('Test alert', 'Test', 'info')).resolves.not.toThrow();
     });
 
