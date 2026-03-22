@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import * as net from 'net';
 import { config, ProxyType } from './config';
+import type { ProxyConfig, GetProxyChainOptions } from './proxy/types';
 import { logInfo, logWarn } from './telemetry/logger';
 import { maskUrl } from './security/redaction';
 import {
@@ -12,12 +13,8 @@ import {
 } from './proxy/proxyQualityChecker';
 import { validateJa3Configuration, getLastJa3Report, type Ja3ValidationReport } from './proxy/ja3Validator';
 
-export interface ProxyConfig {
-    server: string;
-    username?: string;
-    password?: string;
-    type?: ProxyType;
-}
+// ProxyConfig importato da proxy/types.ts (circular dep fix)
+export type { ProxyConfig, GetProxyChainOptions } from './proxy/types';
 
 interface ProxyPoolCache {
     proxies: ProxyConfig[];
@@ -35,10 +32,7 @@ export interface ProxyPoolStatus {
     rotationCursor: number;
 }
 
-export interface GetProxyChainOptions {
-    preferredType?: ProxyType;
-    forceMobile?: boolean;
-}
+// GetProxyChainOptions rimosso — ora in proxy/types.ts (re-export sopra)
 
 const proxyFailureUntil = new Map<string, number>();
 const integrationProxyFailureUntil = new Map<string, number>();

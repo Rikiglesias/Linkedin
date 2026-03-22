@@ -1,6 +1,6 @@
 import { config } from '../config';
 import { logInfo, logWarn } from '../telemetry/logger';
-import type { ProxyConfig } from '../proxyManager';
+import type { ProxyConfig } from './types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
