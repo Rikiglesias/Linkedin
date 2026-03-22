@@ -30,6 +30,7 @@ import {
 import { evaluateAiGuardian } from '../ai/guardian';
 import { runRandomLinkedinActivity } from '../workers/randomActivityWorker';
 import { sendTelegramAlert } from '../telemetry/alerts';
+import { runPreventiveGuards, getSessionVarianceFactor } from './preventiveGuards';
 
 export interface RunWorkflowOptions {
     workflow: WorkflowSelection;
@@ -326,6 +327,11 @@ async function evaluateComplianceHealthGuard(
 export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
     if (options.accountId) {
         setOverrideAccountId(options.accountId);
+    }
+
+    // Guardie preventive non-bloccanti: heartbeat, backup DB, circuit breaker alert
+    if (!options.dryRun) {
+        await runPreventiveGuards();
     }
 
     if (!options.dryRun) {
@@ -703,6 +709,32 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
                     });
                 }
             }
+        }
+    }
+
+    // K: Varianza sessioni giornaliere — un umano reale non fa sempre lo stesso volume.
+    // Il fattore è deterministico per data+account (FNV-1a), così il bot non cambia
+    // comportamento se riavvia lo stesso giorno.
+    if (!options.dryRun) {
+        const accounts = getRuntimeAccountProfiles();
+        const primaryAccount = accounts[0]?.id ?? 'default';
+        const varianceFactor = getSessionVarianceFactor(primaryAccount);
+        if (varianceFactor === 0) {
+            await logInfo('workflow.session_variance.skip_day', {
+                workflow: options.workflow,
+                localDate: schedule.localDate,
+                accountId: primaryAccount,
+                factor: varianceFactor,
+            });
+            return; // "Giorno libero imprevisto" — skip totale
+        }
+        if (varianceFactor !== 1.0) {
+            await logInfo('workflow.session_variance.applied', {
+                workflow: options.workflow,
+                localDate: schedule.localDate,
+                accountId: primaryAccount,
+                factor: varianceFactor,
+            });
         }
     }
 
