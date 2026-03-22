@@ -32,6 +32,7 @@ import { statsRouter } from './routes/stats';
 import { aiRouter } from './routes/ai';
 import { securityRouter } from './routes/security';
 import { healthRouter } from './routes/health';
+import { linkedinChangeAlertRouter } from './routes/linkedinChangeAlert';
 import { handleApiError } from './utils';
 import v1AutomationRouter from './routes/v1Automation';
 import metricsRouter from './routes/metrics';
@@ -686,6 +687,10 @@ app.use(express.static(publicDir));
 
 // ── Health — routes/health.ts ────────────────────────────────────────────────
 app.use('/api/health', healthRouter);
+
+// ── LinkedIn Change Alert — routes/linkedinChangeAlert.ts ────────────────────
+// Webhook per ricevere alert dal workflow n8n di monitoring cambiamenti LinkedIn
+app.use('/api/linkedin-change-alert', linkedinChangeAlertRouter);
 
 // ── Prometheus Metrics — routes/metrics.ts ──────────────────────────────────
 app.use('/metrics', metricsRouter);
