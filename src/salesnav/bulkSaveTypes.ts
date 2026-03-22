@@ -67,9 +67,14 @@ export interface SavedSearchDescriptor {
     buttonText: string;
 }
 
-export interface ScrollResult {
-    leads: Map<string, { leadId: string; firstName: string; lastName: string; linkedinUrl: string; title: string; company: string; location: string }>;
-    totalFound: number;
+export interface ScrollCollectedProfile {
+    leadId: string;
+    firstName: string;
+    lastName: string;
+    linkedinUrl: string;
+    title?: string;
+    company?: string;
+    location?: string;
 }
 
 export class BulkSaveChallengeDetectedError extends Error {
