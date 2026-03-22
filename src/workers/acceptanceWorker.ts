@@ -60,7 +60,10 @@ export async function processAcceptanceJob(
             await transitionLead(lead.id, 'DEAD', 'profile_deleted_or_404');
             return workerResult(1);
         }
-    } catch { /* best-effort */ }
+    } catch (profileCheckErr) {
+        // A04: best-effort ma tracciato per debug
+        void logWarn('acceptance.a04.profile_check_failed', { leadId: lead.id, error: profileCheckErr instanceof Error ? profileCheckErr.message : String(profileCheckErr) });
+    }
 
     await contextualReadingPause(context.session.page);
 
@@ -85,8 +88,9 @@ export async function processAcceptanceJob(
                 }
             }
         }
-    } catch {
-        // Identity check non bloccante
+    } catch (identityErr) {
+        // Identity check non bloccante — ma tracciamo per debug
+        void logWarn('acceptance.a04.identity_check_failed', { leadId: lead.id, error: identityErr instanceof Error ? identityErr.message : String(identityErr) });
     }
 
     if (await detectChallenge(context.session.page)) {

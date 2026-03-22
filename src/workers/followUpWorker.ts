@@ -246,8 +246,9 @@ async function processSingleFollowUp(
                 }
             }
         }
-    } catch {
-        // Check non bloccante: se fallisce, procedi con il follow-up
+    } catch (replyCheckErr) {
+        // A04: reply check tracciato per debug
+        void logWarn('follow_up.a04.reply_check_failed', { leadId, error: replyCheckErr instanceof Error ? replyCheckErr.message : String(replyCheckErr) });
     }
 
     await typeWithFallback(context.session.page, SELECTORS.messageTextbox, message, 'messageTextbox').catch(

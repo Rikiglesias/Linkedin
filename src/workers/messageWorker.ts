@@ -88,8 +88,9 @@ export async function processMessageJob(
             }
             if (meta.lang) lang = meta.lang;
             if (meta.messageMode === 'template') forceTemplate = true;
-        } catch {
-            // ignore JSON parse error in metadata
+        } catch (metaErr) {
+            // A04: metadata parse tracciato
+            void logWarn('message.a04.metadata_parse_failed', { leadId: lead.id, error: metaErr instanceof Error ? metaErr.message : String(metaErr) });
         }
     }
 
@@ -219,8 +220,9 @@ export async function processMessageJob(
                 }
             }
         }
-    } catch {
-        // Identity check non bloccante
+    } catch (identityErr) {
+        // A04: Identity check non bloccante ma tracciato
+        void logWarn('message.a04.identity_check_failed', { leadId: lead.id, error: identityErr instanceof Error ? identityErr.message : String(identityErr) });
     }
 
     if (await detectChallenge(context.session.page)) {
@@ -294,7 +296,10 @@ export async function processMessageJob(
             await context.session.page.keyboard.press('Delete');
             await humanDelay(context.session.page, 200, 400);
         }
-    } catch { /* best-effort draft cleanup */ }
+    } catch (draftErr) {
+        // A04: draft cleanup tracciato
+        void logWarn('message.a04.draft_cleanup_failed', { leadId: lead.id, error: draftErr instanceof Error ? draftErr.message : String(draftErr) });
+    }
 
     // C07: Check se il lead ha GIÀ scritto nella chat prima di inviare il primo messaggio.
     // Senza questo check, il bot potrebbe inviare un messaggio freddo a qualcuno che ci ha già contattato.
@@ -314,8 +319,9 @@ export async function processMessageJob(
                 return workerResult(1);
             }
         }
-    } catch {
-        // Check non bloccante: se fallisce, procedi con l'invio
+    } catch (replyCheckErr) {
+        // A04: reply check tracciato
+        void logWarn('message.a04.reply_check_failed', { leadId: lead.id, error: replyCheckErr instanceof Error ? replyCheckErr.message : String(replyCheckErr) });
     }
 
     await typeWithFallback(context.session.page, SELECTORS.messageTextbox, message, 'messageTextbox', 5000).catch(

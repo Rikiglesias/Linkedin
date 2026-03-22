@@ -290,8 +290,9 @@ export async function processInviteJob(
             if (meta.noteMode === 'ai' || meta.noteMode === 'template' || meta.noteMode === 'none') {
                 noteMode = meta.noteMode;
             }
-        } catch {
-            // ignore JSON parse error in metadata
+        } catch (metaErr) {
+            // A04: metadata parse error tracciato
+            void logWarn('invite.a04.metadata_parse_failed', { leadId: lead.id, error: metaErr instanceof Error ? metaErr.message : String(metaErr) });
         }
     }
 
@@ -445,8 +446,9 @@ export async function processInviteJob(
         } catch {
             // Best-effort reconciliation — non blocca il flusso
         }
-    } catch {
-        // Identity check non bloccante: se fallisce (es. h1 non trovato), prosegui
+    } catch (identityErr) {
+        // A04: Identity check non bloccante ma tracciato
+        void logWarn('invite.a04.identity_check_failed', { leadId: lead.id, error: identityErr instanceof Error ? identityErr.message : String(identityErr) });
     }
 
     // M10: Probabilità VARIABILE per sessione (10-30%) di visitare la pagina attività recente.
