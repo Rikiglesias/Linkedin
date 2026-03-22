@@ -192,6 +192,11 @@ export async function processMessageJob(
     if (aiDecision.suggestedDelaySec && aiDecision.suggestedDelaySec > 0) {
         await humanDelay(context.session.page, aiDecision.suggestedDelaySec * 1000, (aiDecision.suggestedDelaySec + 2) * 1000);
     }
+    // GAP 3: Confidence-based caution — delay extra se PROCEED con bassa confidence.
+    if (aiDecision.confidence < 0.6 && aiDecision.confidence > 0) {
+        await logInfo('message.ai_low_confidence_delay', { leadId: lead.id, confidence: aiDecision.confidence });
+        await humanDelay(context.session.page, 2000, 4000);
+    }
 
     // GAP2-C04: Identity check — verifica che il profilo corrisponda al lead target.
     try {

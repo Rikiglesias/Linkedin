@@ -212,10 +212,38 @@ function fnv1aHash(input: string): number {
  * Chiamato dall'orchestratore all'inizio di ogni ciclo.
  * Non-blocking: nessuna guardia può bloccare il workflow.
  */
+/**
+ * GAP 2: Re-scoring lead stale come parte delle guardie preventive.
+ * Ricalcola il score per lead INVITED da >30 giorni (max 20 per ciclo).
+ * Non-blocking: se AI down o DB errore, skip silenzioso.
+ */
+async function rescoreStaleLeadsIfDue(): Promise<void> {
+    try {
+        const lastRaw = await getRuntimeFlag('rescore_last_at');
+        // Max 1 volta ogni 12 ore
+        if (lastRaw && Date.now() - Date.parse(lastRaw) < 12 * 60 * 60 * 1000) return;
+
+        const { rescoreStaleLeads } = await import('../ai/leadScorer');
+        const result = await rescoreStaleLeads({ maxAgeDays: 30, limit: 20, concurrency: 3 });
+        if (result.rescored > 0) {
+            await logInfo('preventive.rescore_stale_done', {
+                rescored: result.rescored,
+                updated: result.updated,
+            });
+        }
+        await setRuntimeFlag('rescore_last_at', new Date().toISOString());
+    } catch (err) {
+        await logWarn('preventive.rescore_stale_failed', {
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+}
+
 export async function runPreventiveGuards(): Promise<void> {
     await Promise.allSettled([
         sendHeartbeatIfDue(),
         backupDbIfDue(),
         alertCircuitBreakerStatus(),
+        rescoreStaleLeadsIfDue(),
     ]);
 }

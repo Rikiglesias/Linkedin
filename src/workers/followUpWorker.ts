@@ -161,6 +161,11 @@ async function processSingleFollowUp(
     if (aiDecision.suggestedDelaySec && aiDecision.suggestedDelaySec > 0) {
         await humanDelay(context.session.page, aiDecision.suggestedDelaySec * 1000, (aiDecision.suggestedDelaySec + 2) * 1000);
     }
+    // GAP 3: Confidence-based caution — delay extra se PROCEED con bassa confidence.
+    if (aiDecision.confidence < 0.6 && aiDecision.confidence > 0) {
+        await logInfo('follow_up.ai_low_confidence_delay', { leadId, confidence: aiDecision.confidence });
+        await humanDelay(context.session.page, 2000, 4000);
+    }
 
     if (await detectChallenge(context.session.page)) {
         throw new ChallengeDetectedError();
