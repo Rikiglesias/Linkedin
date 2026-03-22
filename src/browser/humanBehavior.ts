@@ -14,7 +14,8 @@ import { MouseGenerator, Point } from '../ml/mouseGenerator';
 import { calculateContextualDelay } from '../ml/timingModel';
 import { computeSessionTypoRate, determineNextKeystroke, getWordFlowMultiplier } from '../ai/typoGenerator';
 import { shouldAccidentalNav, performAccidentalNavigation } from './missclick';
-import { dismissKnownOverlays } from './overlayDismisser';
+// dismissKnownOverlays importato dinamicamente per rompere circular dep
+// humanBehavior → overlayDismisser → humanBehavior (humanMouseMoveToCoords)
 import { randomElement, randomInt } from '../utils/random';
 
 // ─── Stato Memoria Mouse ─────────────────────────────────────────────────────
@@ -471,7 +472,8 @@ export async function blockUserInput(page: Page): Promise<void> {
     initializeMouseState(page);
     await enableVisualCursorOverlay(page);
     await ensureInputBlock(page);
-    // Auto-dismiss overlay LinkedIn dopo navigazione
+    // Auto-dismiss overlay LinkedIn dopo navigazione (dynamic import per circular dep fix)
+    const { dismissKnownOverlays } = await import('./overlayDismisser');
     await dismissKnownOverlays(page);
 }
 
@@ -575,7 +577,8 @@ export async function humanMouseMove(page: Page, targetSelector: string): Promis
     }
     await pauseInputBlockForMove(page);
     try {
-        // Chiudi overlay che potrebbero intercettare il click
+        // Chiudi overlay che potrebbero intercettare il click (dynamic import per circular dep fix)
+        const { dismissKnownOverlays } = await import('./overlayDismisser');
         await dismissKnownOverlays(page);
         const box = await page.locator(targetSelector).first().boundingBox();
         if (!box) return;

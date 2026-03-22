@@ -7,7 +7,6 @@
 
 import { Page } from 'playwright';
 import { joinSelectors } from '../selectors';
-import { humanDelay } from './humanBehavior';
 
 /** Verifica la presenza del cookie `li_at` (sessione LinkedIn valida). */
 async function hasLinkedinAuthCookie(page: Page): Promise<boolean> {
@@ -71,7 +70,10 @@ export async function isLoggedIn(page: Page): Promise<boolean> {
 /** Naviga al feed (endpoint protetto, redirect a login se sessione scaduta) e verifica il login. */
 export async function checkLogin(page: Page): Promise<boolean> {
     const response = await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 45_000 });
-    await humanDelay(page, 2000, 4000);
+    // Delay semplice post-navigazione (non serve humanDelay con distribuzione log-normale qui —
+    // checkLogin è un check tecnico, non un'azione visibile da LinkedIn).
+    // Rimosso import humanDelay per rompere circular dep auth↔humanBehavior.
+    await page.waitForTimeout(2000 + Math.floor(Math.random() * 2000));
     // Se LinkedIn ha fatto redirect a login, la risposta HTTP originale è 302
     // ma dopo il redirect siamo su /login → isLoggedIn lo rileva via URL
     const finalUrl = page.url().toLowerCase();
