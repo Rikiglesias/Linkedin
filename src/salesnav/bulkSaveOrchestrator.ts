@@ -67,14 +67,9 @@ import {
     aiCheckPageHealth,
     runAntiDetectionNoise,
 } from './bulkSavePagination';
+import { isListFoundInSession, setListFoundInSession } from './bulkSaveState';
 
 export const SEARCHES_URL = 'https://www.linkedin.com/sales/search/saved-searches';
-
-// _inputBlockSuspended state managed by bulkSaveHelpers.ts (setInputBlockSuspended/isInputBlockSuspended)
-
-// Traccia se la lista target è già stata usata in questa sessione di bulk save.
-// Dopo il primo save riuscito, skip digitazione nome lista → click diretto (come un umano esperto).
-let _bulkSaveListFoundInSession = false;
 
 // Guard: evita registrazione multipla del page.on('load') handler sulla stessa Page.
 // Senza questo, ogni chiamata a runSalesNavBulkSave accumula handler → N re-inject per load.
@@ -747,13 +742,13 @@ async function chooseTargetList(page: Page, targetListName: string, dryRun: bool
     }
 
     const dialogContainerSelector = DIALOG_SELECTOR.split(', ')[0];
-    console.log(`[CHOOSE LIST] Cerco "${targetListName}" nel dialog...${_bulkSaveListFoundInSession ? ' (fast path: lista già usata)' : ''}`);
+    console.log(`[CHOOSE LIST] Cerco "${targetListName}" nel dialog...${isListFoundInSession() ? ' (fast path: lista già usata)' : ''}`);
 
     // ── Fast path: se la lista è già stata usata in questa sessione, prova click diretto ──
     // Un umano esperto che fa bulk save ripetitivo NON riscrive il nome ogni volta.
     // La lista è in cima al dialog (recente) → click diretto.
     // Se la lista ha già la checkbox selezionata (aria-checked/aria-selected), basta confermare.
-    if (_bulkSaveListFoundInSession) {
+    if (isListFoundInSession()) {
         // Check se la lista è GIÀ selezionata (checkbox checked) → nessun click necessario
         const alreadySelected = await page.evaluate(({ container, name }: { container: string; name: string }) => {
             const root = document.querySelector(container) ?? document;
@@ -1086,7 +1081,7 @@ async function chooseTargetList(page: Page, targetListName: string, dryRun: bool
         await verifyToast(page, targetListName);
 
         // Segna la lista come usata — dalla prossima pagina usa fast path (click diretto)
-        _bulkSaveListFoundInSession = true;
+        setListFoundInSession(true);
 
         // Success — exit the attempt loop
         break;
@@ -1474,7 +1469,7 @@ async function preSyncListToDb(
 
 export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveOptions): Promise<SalesNavBulkSaveReport> {
     // Reset cache lista — ogni sessione parte da zero
-    _bulkSaveListFoundInSession = false;
+    setListFoundInSession(false);
 
     // Cleanup run zombie: marca come FAILED tutti i run RUNNING più vecchi di 30 minuti.
     // Un run RUNNING che non è stato aggiornato da 30+ minuti è un crash/SIGINT non gestito.
