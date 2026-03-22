@@ -17,6 +17,7 @@
 
 import { Page } from 'playwright';
 import { logInfo, logWarn } from '../telemetry/logger';
+import { joinSelectors } from '../selectors';
 
 export interface PageObservation {
     /** Nome dalla h1 del profilo (null se non trovato) */
@@ -87,11 +88,11 @@ export async function observePageContext(page: Page): Promise<PageObservation> {
         observation.hasChallenge =
             /unusual activity|restricted|verify your identity|temporarily limited|captcha|checkpoint|attività insolita|account limitato/i.test(bodyLower);
 
-        // Bottoni e indicatori (parallelo)
+        // Bottoni e indicatori (parallelo) — selettori centralizzati da selectors.ts
         const [connectCount, messageCount, pendingCount, modalCount, degreeText] = await Promise.allSettled([
-            page.locator('button:has-text("Connect"), button:has-text("Collegati"), button[aria-label*="Connect"]').count(),
-            page.locator('button:has-text("Message"), button:has-text("Messaggio"), button[aria-label^="Message"]').count(),
-            page.locator('button:has-text("Pending"), button:has-text("In attesa")').count(),
+            page.locator(joinSelectors('connectButtonPrimary')).count(),
+            page.locator(joinSelectors('messageButton')).count(),
+            page.locator(joinSelectors('invitePendingIndicators')).count(),
             page.locator('div[role="dialog"], div[role="alertdialog"], .artdeco-modal').count(),
             page.locator('.dist-value, .distance-badge, span:has-text("1st"), span:has-text("2nd"), span:has-text("3rd")').first().textContent({ timeout: 1500 }),
         ]);

@@ -7,6 +7,7 @@ import { clickWithFallback } from '../browser/uiFallback';
 import { visionClick, OllamaDownError } from '../salesnav/visionNavigator';
 import { config } from '../config';
 import { navigateToProfileForCheck } from '../browser/navigationContext';
+import { isLoggedIn } from '../browser/auth';
 import { WorkerExecutionResult, workerResult } from './result';
 
 const HYGIENE_DAILY_WITHDRAW_CAP = Math.max(1, parseInt(process.env.HYGIENE_DAILY_WITHDRAW_CAP ?? '10', 10) || 10);
@@ -47,6 +48,14 @@ export async function processHygieneJob(
         }
 
         try {
+            // Session validity check prima di azioni critiche.
+            // Se il cookie è scaduto mid-session, evita click su pagina di login.
+            const stillLoggedIn = await isLoggedIn(page);
+            if (!stillLoggedIn) {
+                await logWarn('hygiene.session_expired', { leadId: lead.id });
+                break; // Esce dal loop — sessione non più valida
+            }
+
             await navigateToProfileForCheck(page, lead.linkedin_url, payload.accountId);
             await humanDelay(page, 2000, 4000);
 

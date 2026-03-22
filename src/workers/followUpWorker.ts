@@ -42,6 +42,8 @@ import { WorkerContext } from './context';
 import { ChallengeDetectedError, RetryableWorkerError } from './errors';
 import { WorkerExecutionResult, workerResult } from './result';
 import { navigateToProfileForMessage } from '../browser/navigationContext';
+import { ensureViewportDwell } from '../browser/humanBehavior';
+import { isLoggedIn } from '../browser/auth';
 import { observePageContext, logObservation } from '../browser/observePageContext';
 import { aiDecide } from '../ai/aiDecisionEngine';
 
@@ -164,8 +166,24 @@ async function processSingleFollowUp(
         throw new ChallengeDetectedError();
     }
 
+    // Session validity check prima di azioni critiche (come inviteWorker/messageWorker).
+    // Se il cookie è scaduto mid-session, evita retry inutili su una pagina di login.
+    if (!context.dryRun) {
+        const stillLoggedIn = await isLoggedIn(context.session.page);
+        if (!stillLoggedIn) {
+            throw new RetryableWorkerError(
+                'Sessione LinkedIn scaduta durante il flusso follow-up — aborto per evitare retry su login page',
+                'SESSION_EXPIRED',
+            );
+        }
+    }
+
     // Chiudi overlay LinkedIn prima di cercare il bottone messaggio
     await dismissKnownOverlays(context.session.page);
+
+    // Viewport Dwell Time: assicura che il bottone Message sia nel viewport
+    // da almeno 800-2000ms prima del click — previene segnale click-before-visible.
+    await ensureViewportDwell(context.session.page, joinSelectors('messageButton'));
 
     // Cerca bottone messaggio
     await humanMouseMove(context.session.page, joinSelectors('messageButton'));
@@ -243,19 +261,27 @@ async function processSingleFollowUp(
             return false;
         }
 
-        const sendBtn = context.session.page.locator(joinSelectors('messageSendButton')).first();
-        if ((await sendBtn.count()) === 0 || (await sendBtn.isDisabled())) {
-            await incrementDailyStat(context.localDate, 'selector_failures');
-            throw new RetryableWorkerError('Bottone invio follow-up non disponibile', 'SEND_NOT_AVAILABLE');
-        }
-        await humanMouseMove(context.session.page, joinSelectors('messageSendButton'));
-        await humanDelay(context.session.page, 100, 300);
-        await clickWithFallback(context.session.page, SELECTORS.messageSendButton, 'messageSendButton').catch(
-            async () => {
+        // Compensazione phantom increment: se il click Send fallisce DOPO l'incremento atomico,
+        // decrementiamo follow_ups_sent per evitare di gonfiare il budget (stessa logica di messageWorker).
+        try {
+            const sendBtn = context.session.page.locator(joinSelectors('messageSendButton')).first();
+            if ((await sendBtn.count()) === 0 || (await sendBtn.isDisabled())) {
                 await incrementDailyStat(context.localDate, 'selector_failures');
                 throw new RetryableWorkerError('Bottone invio follow-up non disponibile', 'SEND_NOT_AVAILABLE');
-            },
-        );
+            }
+            await humanMouseMove(context.session.page, joinSelectors('messageSendButton'));
+            await humanDelay(context.session.page, 100, 300);
+            await clickWithFallback(context.session.page, SELECTORS.messageSendButton, 'messageSendButton').catch(
+                async () => {
+                    await incrementDailyStat(context.localDate, 'selector_failures');
+                    throw new RetryableWorkerError('Bottone invio follow-up non disponibile', 'SEND_NOT_AVAILABLE');
+                },
+            );
+        } catch (sendError) {
+            // Compensazione: decrementa follow_ups_sent perché il follow-up NON è stato inviato
+            await incrementDailyStat(context.localDate, 'follow_ups_sent', -1).catch(() => {});
+            throw sendError;
+        }
 
         // Persisti l'invio nel DB
         await recordFollowUpSent(leadId);

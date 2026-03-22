@@ -184,9 +184,14 @@ export async function buildPersonalizedInviteNote(lead: LeadRecord, lang?: strin
 
             if (!candidate) continue;
 
-            if (await SemanticChecker.isTooSimilar(candidate, 0.85, lead.id)) {
-                await logWarn('ai.invite_note.too_similar_retry', { leadId: lead.id, attempt });
-                continue;
+            try {
+                if (await SemanticChecker.isTooSimilar(candidate, 0.85, lead.id)) {
+                    await logWarn('ai.invite_note.too_similar_retry', { leadId: lead.id, attempt });
+                    continue;
+                }
+            } catch {
+                await logWarn('ai.invite_note.semantic_checker_error', { leadId: lead.id, attempt });
+                // Semantic checker down — use candidate as-is (better than losing a valid AI note)
             }
 
             finalNote = candidate;

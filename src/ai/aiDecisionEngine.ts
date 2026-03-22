@@ -84,34 +84,34 @@ export async function aiDecide(request: AIDecisionRequest): Promise<AIDecisionRe
         const prompt = buildDecisionPrompt(request);
         const { requestOpenAIText } = await import('./openaiClient');
 
-        const timeoutId = setTimeout(() => { /* timeout safety net */ }, DECISION_TIMEOUT_MS);
+        // Timeout reale con Promise.race: se l'AI non risponde entro DECISION_TIMEOUT_MS,
+        // fallback meccanico. Il timeout di fetchWithRetryPolicy (config.aiRequestTimeoutMs)
+        // potrebbe essere più lungo — questo è il cap specifico per le decisioni.
+        const aiPromise = requestOpenAIText({
+            system: 'You are a LinkedIn outreach decision engine. Respond ONLY with valid JSON.',
+            user: prompt,
+            maxOutputTokens: 200,
+            temperature: 0.3,
+        });
+        const timeoutPromise = new Promise<null>((resolve) =>
+            setTimeout(() => resolve(null), DECISION_TIMEOUT_MS),
+        );
 
-        try {
-            const response = await requestOpenAIText({
-                system: 'You are a LinkedIn outreach decision engine. Respond ONLY with valid JSON.',
-                user: prompt,
-                maxOutputTokens: 200,
-                temperature: 0.3,
-            });
+        const response = await Promise.race([aiPromise, timeoutPromise]);
 
-            clearTimeout(timeoutId);
-
-            if (!response) {
-                return mechanicalFallback(request, 'empty_ai_response');
-            }
-
-            const parsed = parseDecisionResponse(response, request);
-            await logInfo('ai_decision_engine.decided', {
-                point: request.point,
-                leadId: request.lead?.id,
-                action: parsed.action,
-                confidence: parsed.confidence,
-                reason: parsed.reason.substring(0, 80),
-            });
-            return parsed;
-        } finally {
-            clearTimeout(timeoutId);
+        if (!response) {
+            return mechanicalFallback(request, response === null ? 'timeout' : 'empty_ai_response');
         }
+
+        const parsed = parseDecisionResponse(response, request);
+        await logInfo('ai_decision_engine.decided', {
+            point: request.point,
+            leadId: request.lead?.id,
+            action: parsed.action,
+            confidence: parsed.confidence,
+            reason: parsed.reason.substring(0, 80),
+        });
+        return parsed;
     } catch (err) {
         await logWarn('ai_decision_engine.fallback', {
             point: request.point,
@@ -147,6 +147,7 @@ function buildDecisionPrompt(request: AIDecisionRequest): string {
             if (request.lead) {
                 parts.push(`Lead: ${request.lead.name ?? 'Unknown'}, ${request.lead.title ?? 'Unknown title'} at ${request.lead.company ?? 'Unknown company'}`);
                 if (request.lead.score) parts.push(`Lead score: ${request.lead.score}/100`);
+                if (request.lead.about) parts.push(`About: ${request.lead.about.substring(0, 200)}`);
             }
             if (request.pageObservation) {
                 parts.push(`Profile page: name="${request.pageObservation.profileName}", headline="${request.pageObservation.profileHeadline}"`);
