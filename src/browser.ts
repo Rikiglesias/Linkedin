@@ -22,10 +22,12 @@ export {
     interJobDelay,
     performDecoyAction,
     performDecoyBurst,
+} from './browser/humanBehavior';
+export {
     runSelectorCanaryDetailed,
     runSelectorCanary,
-} from './browser/humanBehavior';
-export type { SelectorCanaryStepResult, SelectorCanaryReport } from './browser/humanBehavior';
+} from './browser/selectorCanary';
+export type { SelectorCanaryStepResult, SelectorCanaryReport } from './browser/selectorCanary';
 
 export { clickWithFallback, waitForSelectorWithFallback, typeWithFallback } from './browser/uiFallback';
 
