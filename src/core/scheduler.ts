@@ -704,7 +704,24 @@ export async function scheduleJobs(
                 continue;
             }
 
-            const inviteCandidates = await getLeadsByStatusForList('READY_INVITE', listName, listBudget, options.minScore);
+            const rawCandidates = await getLeadsByStatusForList('READY_INVITE', listName, listBudget, options.minScore);
+
+            // Acceptance Probability Model: riordina i candidati per P(acceptance) composito
+            // invece del semplice lead_score. Lead con alta probabilità di accettazione → prima.
+            // Riduce il pending ratio alla fonte (prevenzione, non cura).
+            let inviteCandidates = rawCandidates;
+            try {
+                const { predictAcceptanceBatch } = await import('../ml/acceptanceProbability');
+                const predictions = await predictAcceptanceBatch(rawCandidates);
+                const predMap = new Map(predictions.map((p) => [p.leadId, p.compositeScore]));
+                inviteCandidates = [...rawCandidates].sort((a, b) => {
+                    const scoreA = predMap.get(a.id) ?? (a.lead_score ?? 0);
+                    const scoreB = predMap.get(b.id) ?? (b.lead_score ?? 0);
+                    return scoreB - scoreA;
+                });
+            } catch {
+                // Fallback: usa ordine originale (lead_score DESC) se il modello fallisce
+            }
 
             let insertedForList = 0;
             for (const lead of inviteCandidates) {
