@@ -12,7 +12,7 @@ import type { SalesNavBulkSaveReport } from '../salesnav/bulkSaveOrchestrator';
 import { runSalesNavigatorListSync, formatFinalReport } from '../core/salesNavigatorSync';
 import { getAutomationPauseState, getRuntimeFlag } from '../core/repositories';
 import { runPreflight, appendProxyReputationWarning } from './preflight';
-import { formatWorkflowReport } from './reportFormatter';
+import { formatWorkflowReport, sendWorkflowTelegramReport } from './reportFormatter';
 import type { PreflightDbStats, PreflightConfigStatus, PreflightWarning, WorkflowReport } from './types';
 
 export interface SyncSearchOptions {
@@ -51,39 +51,46 @@ function generateWarnings(
 export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<void> {
     const startedAt = new Date();
 
-    // Pre-flight
+    // Pre-flight (6 livelli di controllo)
     const preflight = await runPreflight({
         workflowName: 'sync-search',
         questions: [
             {
                 id: 'searchName',
-                prompt: 'Nome ricerca salvata (vuoto = tutte le ricerche, oppure separare con virgola per multi-ricerca)',
+                prompt: 'Nome della ricerca salvata (lascia vuoto per tutte le ricerche)?',
                 type: 'string',
                 defaultValue: opts.searchName ?? '',
             },
             {
                 id: 'listName',
-                prompt: 'Nome lista SalesNav target dove salvare i lead',
+                prompt: 'In quale lista vuoi salvare i risultati?',
                 type: 'string',
-                defaultValue: opts.listName ?? config.salesNavSyncListName ?? 'default',
+                defaultValue: opts.listName ?? config.salesNavSyncListName ?? 'Default',
+                required: true,
             },
             {
                 id: 'maxPages',
-                prompt: 'Quante pagine vuoi scorrere per ogni ricerca?',
+                prompt: 'Quante pagine di ricerca scorrere (max)?',
                 type: 'number',
-                defaultValue: String(opts.maxPages ?? 10),
+                defaultValue: String(opts.maxPages ?? config.salesNavSyncMaxPages),
+            },
+            {
+                id: 'limit',
+                prompt: 'Limite lead da salvare in totale?',
+                type: 'number',
+                defaultValue: String(opts.limit ?? config.salesNavSyncLimit),
             },
             {
                 id: 'enrichment',
-                prompt: 'Eseguire enrichment dati dopo il sync? (Apollo/Hunter/OSINT/scoring/cloud)',
+                prompt: 'Eseguire enrichment e scoring (Apollo/Hunter/AI) alla fine?',
                 type: 'boolean',
                 defaultValue: opts.enrichment === false ? 'false' : 'true',
             },
         ],
-        listFilter: opts.listName,
         generateWarnings,
         skipPreflight: opts.skipPreflight,
         cliOverrides: buildCliOverrides(opts),
+        cliAccountId: opts.accountId,
     });
 
     if (!preflight.confirmed) {
@@ -91,13 +98,13 @@ export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<vo
         return;
     }
 
-    const searchName = preflight.answers['searchName'] || null;
-    const targetList = preflight.answers['listName'] || config.salesNavSyncListName || '';
+    const searchName = preflight.answers['searchName'] || undefined;
+    const targetList = preflight.answers['listName'];
     const maxPages = parseInt(preflight.answers['maxPages'] || '10', 10);
+    const limit = parseInt(preflight.answers['limit'] || '100', 10);
     const enrichment = preflight.answers['enrichment'] !== 'false';
-    const limit = opts.limit ?? 100;
     const dryRun = opts.dryRun ?? false;
-    const accountId = opts.accountId ?? config.salesNavSyncAccountId;
+    const accountId = preflight.selectedAccountId ?? opts.accountId ?? config.salesNavSyncAccountId;
     const account = getAccountProfileById(accountId || undefined);
 
     // ── Guard: quarantina e pausa ─────────────────────────────────────────────
@@ -246,6 +253,7 @@ export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<vo
     };
 
     console.log(formatWorkflowReport(workflowReport));
+    await sendWorkflowTelegramReport(workflowReport);
 }
 
 function buildCliOverrides(opts: SyncSearchOptions): Record<string, string> {

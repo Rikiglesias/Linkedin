@@ -48,23 +48,41 @@ export async function askConfirmation(prompt: string = 'Procedo? [Y/n] '): Promi
 }
 
 /**
- * Chiede un valore numerico con default.
+ * Chiede un valore numerico con default. Valida l'input e ri-chiede se non è un numero.
  */
-export async function askNumber(prompt: string, defaultValue: number): Promise<number> {
-    const raw = await readLineFromStdin(`${prompt} (default: ${defaultValue}): `);
-    if (!raw) return defaultValue;
-    const parsed = parseInt(raw, 10);
-    return Number.isFinite(parsed) && parsed >= 0 ? parsed : defaultValue;
+export async function askNumber(prompt: string, defaultValue?: number): Promise<number> {
+    const defaultText = defaultValue !== undefined ? ` (default: ${defaultValue})` : '';
+    while (true) {
+        const raw = await readLineFromStdin(`${prompt}${defaultText}: `);
+        if (!raw && defaultValue !== undefined) return defaultValue;
+        if (!raw && defaultValue === undefined) {
+            console.log('  [!] Inserisci un numero valido.');
+            continue;
+        }
+        const parsed = parseInt(raw, 10);
+        if (Number.isFinite(parsed) && parsed >= 0) {
+            return parsed;
+        }
+        console.log('  [!] Errore: inserisci un numero valido (intero >= 0).');
+    }
 }
 
 /**
- * Chiede una scelta tra opzioni.
+ * Chiede una scelta tra opzioni con validazione hard.
  */
-export async function askChoice<T extends string>(prompt: string, choices: T[], defaultChoice: T): Promise<T> {
-    const raw = await readLineFromStdin(`${prompt} [${choices.join('/')}] (default: ${defaultChoice}): `);
-    if (!raw) return defaultChoice;
-    const match = choices.find((c) => c.toLowerCase() === raw.toLowerCase());
-    return match ?? defaultChoice;
+export async function askChoice<T extends string>(prompt: string, choices: T[], defaultChoice?: T): Promise<T> {
+    const defaultText = defaultChoice !== undefined ? ` (default: ${defaultChoice})` : '';
+    while (true) {
+        const raw = await readLineFromStdin(`${prompt} [${choices.join('/')}]${defaultText}: `);
+        if (!raw && defaultChoice !== undefined) return defaultChoice;
+        if (!raw && defaultChoice === undefined) {
+            console.log(`  [!] Scegli una delle opzioni: ${choices.join(', ')}`);
+            continue;
+        }
+        const match = choices.find((c) => c.toLowerCase() === raw.toLowerCase());
+        if (match) return match;
+        console.log(`  [!] Errore: scelta non valida. Opzioni consentite: ${choices.join(', ')}`);
+    }
 }
 
 /**

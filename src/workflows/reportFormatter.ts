@@ -1,8 +1,10 @@
 /**
  * Formattazione report condivisa per tutti i workflow.
+ * Include sia formato console che formato Telegram (HTML).
  */
 
 import type { WorkflowReport } from './types';
+import type { AlertSeverity } from '../telemetry/alerts';
 
 const BOX_WIDTH = 64;
 const SEP = '─'.repeat(BOX_WIDTH);
@@ -67,6 +69,49 @@ export function formatWorkflowReport(report: WorkflowReport): string {
     lines.push('');
 
     return lines.join('\n');
+}
+
+/**
+ * Formatta il report workflow per Telegram (HTML compatto).
+ * Invia automaticamente se Telegram e' configurato.
+ */
+export async function sendWorkflowTelegramReport(report: WorkflowReport): Promise<void> {
+    try {
+        const { sendTelegramAlert } = await import('../telemetry/alerts');
+
+        const elapsed = Math.round((report.finishedAt.getTime() - report.startedAt.getTime()) / 1000);
+        const minutes = Math.floor(elapsed / 60);
+        const seconds = elapsed % 60;
+        const status = report.success ? 'COMPLETATO' : 'FALLITO';
+
+        const summaryLines = Object.entries(report.summary)
+            .map(([k, v]) => `${k.replace(/_/g, ' ')}: <b>${v ?? 'N/A'}</b>`)
+            .join('\n');
+
+        const errorSection = report.errors.length > 0
+            ? `\n\nErrori:\n${report.errors.slice(0, 3).map(e => `- ${e}`).join('\n')}`
+            : '';
+
+        const listSection = report.listBreakdown && report.listBreakdown.length > 0
+            ? `\n\nPer lista:\n${report.listBreakdown.map(lb => {
+                const flag = lb.flag === 'critical' ? ' [!!!]' : lb.flag === 'underperforming' ? ' [!]' : '';
+                return `${lb.listName}: inv=${lb.invitesSent} msg=${lb.messagesSent} acc=${lb.acceptanceRatePct.toFixed(0)}%${flag}`;
+            }).join('\n')}`
+            : '';
+
+        const riskSection = report.riskAssessment
+            ? `\nRisk: ${report.riskAssessment.level} (${report.riskAssessment.score}/100)`
+            : '';
+
+        const message = `Status: <b>${status}</b>\nDurata: ${minutes}m ${seconds}s\n\n${summaryLines}${errorSection}${listSection}${riskSection}\n\nProssima: ${report.nextAction ?? 'N/A'}`;
+
+        const severity: AlertSeverity = !report.success ? 'critical' : report.riskAssessment?.level === 'CAUTION' ? 'warn' : 'info';
+        const title = `Workflow ${report.workflow.toUpperCase()} — ${status}`;
+
+        await sendTelegramAlert(message, title, severity);
+    } catch {
+        // Telegram report e' best-effort — non deve mai bloccare il workflow
+    }
 }
 
 export function formatPreflightSection(title: string, entries: Array<[string, string]>): string {

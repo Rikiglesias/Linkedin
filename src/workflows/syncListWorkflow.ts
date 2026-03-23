@@ -6,7 +6,7 @@ import { config } from '../config';
 import { runSalesNavigatorListSync, formatFinalReport } from '../core/salesNavigatorSync';
 import { getAutomationPauseState, getRuntimeFlag } from '../core/repositories';
 import { runPreflight, appendProxyReputationWarning } from './preflight';
-import { formatWorkflowReport } from './reportFormatter';
+import { formatWorkflowReport, sendWorkflowTelegramReport } from './reportFormatter';
 import type { PreflightDbStats, PreflightConfigStatus, PreflightWarning, WorkflowReport } from './types';
 
 export interface SyncListOptions {
@@ -50,15 +50,34 @@ function generateWarnings(
 export async function runSyncListWorkflow(opts: SyncListOptions): Promise<void> {
     const startedAt = new Date();
 
-    // Pre-flight
+    // Pre-flight (6 livelli di controllo)
     const preflight = await runPreflight({
         workflowName: 'sync-list',
         questions: [
+            {
+                id: 'listName',
+                prompt: 'Nome della lista SalesNav da sincronizzare?',
+                type: 'string',
+                defaultValue: opts.listName ?? config.salesNavSyncListName ?? 'Default',
+                required: true,
+            },
+            {
+                id: 'listUrl',
+                prompt: 'URL della lista SalesNav (opzionale, premi INVIO per skippare)?',
+                type: 'string',
+                defaultValue: opts.listUrl ?? '',
+            },
             {
                 id: 'maxPages',
                 prompt: 'Quante pagine vuoi scorrere?',
                 type: 'number',
                 defaultValue: String(opts.maxPages ?? config.salesNavSyncMaxPages),
+            },
+            {
+                id: 'maxLeads',
+                prompt: 'Limite massimo di lead da sincronizzare?',
+                type: 'number',
+                defaultValue: String(opts.maxLeads ?? config.salesNavSyncLimit),
             },
             {
                 id: 'enrichment',
@@ -71,6 +90,7 @@ export async function runSyncListWorkflow(opts: SyncListOptions): Promise<void> 
         generateWarnings,
         skipPreflight: opts.skipPreflight,
         cliOverrides: buildCliOverrides(opts),
+        cliAccountId: opts.accountId,
     });
 
     if (!preflight.confirmed) {
@@ -78,11 +98,11 @@ export async function runSyncListWorkflow(opts: SyncListOptions): Promise<void> 
         return;
     }
 
-    const listName = opts.listName ?? config.salesNavSyncListName ?? '';
-    const listUrl = opts.listUrl;
+    const listName = preflight.answers['listName'];
+    const listUrl = preflight.answers['listUrl'] || undefined;
     const maxPages = parseInt(preflight.answers['maxPages'] || '10', 10);
+    const maxLeads = parseInt(preflight.answers['maxLeads'] || '500', 10);
     const enrichment = preflight.answers['enrichment'] !== 'false';
-    const maxLeads = opts.maxLeads ?? config.salesNavSyncLimit;
 
     // ── Guard: quarantina e pausa ─────────────────────────────────────────────
     const quarantine = (await getRuntimeFlag('account_quarantine')) === 'true';
@@ -112,7 +132,7 @@ export async function runSyncListWorkflow(opts: SyncListOptions): Promise<void> 
             maxPages,
             maxLeadsPerList: maxLeads,
             dryRun: opts.dryRun ?? false,
-            accountId: opts.accountId,
+            accountId: preflight.selectedAccountId ?? opts.accountId,
             interactive: opts.interactive ?? false,
             noProxy: opts.noProxy ?? false,
             skipEnrichment: !enrichment,
@@ -155,6 +175,7 @@ export async function runSyncListWorkflow(opts: SyncListOptions): Promise<void> 
     };
 
     console.log(formatWorkflowReport(workflowReport));
+    await sendWorkflowTelegramReport(workflowReport);
 }
 
 function buildCliOverrides(opts: SyncListOptions): Record<string, string> {

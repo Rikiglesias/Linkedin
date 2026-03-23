@@ -1,5 +1,13 @@
 /**
  * Tipi condivisi per i 4 workflow production-ready.
+ *
+ * 6 LIVELLI DI CONTROLLO PRE-FLIGHT:
+ *   L1: Account Selection — menu interattivo se >1 account configurato
+ *   L2: DB Analysis       — scansione database, stats, data quality
+ *   L3: Config Validation  — verifica API keys, proxy, budget residuo
+ *   L4: Risk Assessment    — score 0-100 a 6 fattori ponderati
+ *   L5: AI Advisor         — AI analizza L2+L3+L4 e raccomanda azione
+ *   L6: Anti-Ban Checklist — checklist interattiva finale context-aware
  */
 
 export interface PreflightQuestion {
@@ -65,6 +73,14 @@ export interface SessionRiskAssessment {
     recommendation: string;
 }
 
+/** Risultato dell'AI Advisor (L5). */
+export interface AiAdvisorResult {
+    available: boolean;
+    recommendation: 'PROCEED' | 'PROCEED_CAUTION' | 'ABORT';
+    reasoning: string;
+    suggestedActions: string[];
+}
+
 export interface PreflightResult {
     answers: Record<string, string>;
     dbStats: PreflightDbStats;
@@ -72,6 +88,10 @@ export interface PreflightResult {
     warnings: PreflightWarning[];
     confirmed: boolean;
     riskAssessment?: SessionRiskAssessment;
+    /** L1: Account selezionato (null se single-account o non interattivo). */
+    selectedAccountId?: string;
+    /** L5: Consiglio AI pre-flight. */
+    aiAdvice?: AiAdvisorResult;
 }
 
 export interface WorkflowReportListBreakdown {

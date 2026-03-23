@@ -1,6 +1,15 @@
 /**
  * Motore pre-flight interattivo riusabile per tutti i workflow.
- * Raccoglie domande, mostra stats DB, config, warning, chiede conferma.
+ *
+ * 6 LIVELLI DI CONTROLLO (eseguiti in ordine):
+ *   L1: Account Selection  — se >1 account, menu interattivo scelta account
+ *   L2: DB Analysis         — raccolta stats DB, status breakdown, data quality
+ *   L3: Config Validation   — verifica API keys, proxy, budget, cookie freshness
+ *   L4: Risk Assessment     — score 0-100 ponderato su 6 fattori
+ *   L5: AI Advisor          — AI analizza L2+L3+L4 e suggerisce azione/parametri
+ *   L6: Anti-Ban Checklist  — checklist interattiva finale context-aware
+ *
+ * Ogni livello puo' bloccare l'esecuzione (STOP) o proseguire con warning.
  */
 
 import { config, getLocalDateString, getWeekStartDate } from '../config';
@@ -10,9 +19,54 @@ import { getRuntimeAccountProfiles } from '../accountManager';
 import { checkSessionFreshness } from '../browser/sessionCookieMonitor';
 import { readLineFromStdin, askConfirmation, askNumber, askChoice, isInteractiveTTY } from '../cli/stdinHelper';
 import { formatPreflightSection } from './reportFormatter';
-import type { PreflightQuestion, PreflightDbStats, PreflightConfigStatus, PreflightWarning, PreflightResult, SessionRiskAssessment } from './types';
+import type {
+    PreflightQuestion,
+    PreflightDbStats,
+    PreflightConfigStatus,
+    PreflightWarning,
+    PreflightResult,
+    SessionRiskAssessment,
+    AiAdvisorResult,
+} from './types';
 
-// ─── DB Stats Collection ─────────────────────────────────────────────────────
+// ─── L1: Account Selection ──────────────────────────────────────────────────
+
+/**
+ * L1: Se sono configurati piu' account, mostra menu interattivo.
+ * Ritorna l'accountId selezionato, o undefined se single-account.
+ */
+async function selectAccount(cliAccountId?: string): Promise<string | undefined> {
+    // Se l'utente ha specificato --account da CLI, usa quello
+    if (cliAccountId) return cliAccountId;
+
+    const accounts = getRuntimeAccountProfiles();
+    if (accounts.length <= 1) return undefined;
+
+    if (!isInteractiveTTY()) return undefined; // non-interattivo: usa default
+
+    console.log('');
+    console.log('  L1: SELEZIONE ACCOUNT');
+    console.log('');
+    console.log('  Account configurati:');
+    for (let i = 0; i < accounts.length; i++) {
+        const acc = accounts[i];
+        const proxyLabel = acc.proxy ? `proxy: ${acc.proxy.server}` : 'no proxy';
+        const warmupLabel = acc.warmupEnabled ? ' [warmup]' : '';
+        console.log(`    ${i + 1}. ${acc.id} (${proxyLabel}${warmupLabel})`);
+    }
+    console.log('');
+
+    const accountIds = accounts.map(a => a.id);
+    const selected = await askChoice(
+        '  Quale account vuoi utilizzare?',
+        accountIds,
+        accountIds[0],
+    );
+    console.log(`  -> Account selezionato: ${selected}`);
+    return selected;
+}
+
+// ─── L2: DB Stats Collection ────────────────────────────────────────────────
 
 export async function collectDbStats(listFilter?: string): Promise<PreflightDbStats> {
     const db = await getDatabase();
@@ -77,7 +131,7 @@ export async function collectDbStats(listFilter?: string): Promise<PreflightDbSt
     };
 }
 
-// ─── Config Status Collection ────────────────────────────────────────────────
+// ─── L3: Config Status Collection ───────────────────────────────────────────
 
 export async function collectConfigStatus(): Promise<PreflightConfigStatus> {
     const localDate = getLocalDateString();
@@ -104,7 +158,7 @@ export async function collectConfigStatus(): Promise<PreflightConfigStatus> {
         }
     }
 
-    // Cookie freshness check per ogni account — sessioni vecchie = rischio ban
+    // Cookie freshness check per ogni account
     const staleAccounts: string[] = [];
     const noLoginAccounts: string[] = [];
     const accounts = getRuntimeAccountProfiles();
@@ -142,7 +196,7 @@ export async function collectConfigStatus(): Promise<PreflightConfigStatus> {
 }
 
 /**
- * Helper per tutti i workflow: aggiunge warning se il proxy è blacklisted.
+ * Helper per tutti i workflow: aggiunge warning se il proxy e' blacklisted.
  * Chiamare dentro generateWarnings() di ogni workflow.
  */
 export function appendProxyReputationWarning(warnings: PreflightWarning[], cfgStatus: PreflightConfigStatus): void {
@@ -166,16 +220,16 @@ export function appendProxyReputationWarning(warnings: PreflightWarning[], cfgSt
     }
 }
 
-// ─── Session Risk Assessment (5.1) ──────────────────────────────────────────
+// ─── L4: Session Risk Assessment ────────────────────────────────────────────
 
 /**
  * Calcola il livello di rischio della sessione prima di procedere.
- * Combina 5 segnali con pesi diversi per produrre un score 0-100.
+ * Combina 6 segnali con pesi diversi per produrre un score 0-100.
  *
- * Score → Livello:
- *   0-30  → GO (procedere normalmente)
- *   31-60 → CAUTION (procedere con budget ridotto)
- *   61+   → STOP (non procedere, rischio ban alto)
+ * Score -> Livello:
+ *   0-30  -> GO (procedere normalmente)
+ *   31-60 -> CAUTION (procedere con budget ridotto)
+ *   61+   -> STOP (non procedere, rischio ban alto)
  */
 export async function computeSessionRiskLevel(
     cfgStatus: PreflightConfigStatus,
@@ -189,7 +243,7 @@ export async function computeSessionRiskLevel(
         FROM daily_stats WHERE date >= DATE('now', '-7 days')
     `);
     const challengesLast7d = challengeRow?.total ?? 0;
-    const challengeFactor = Math.min(30, challengesLast7d * 15); // 1 challenge = 15, 2+ = 30 (cap)
+    const challengeFactor = Math.min(30, challengesLast7d * 15);
 
     // Factor 2: Pending ratio — peso 25
     const pendingRow = await db.get<{ pending: number; total: number }>(`
@@ -202,7 +256,7 @@ export async function computeSessionRiskLevel(
     const pendingRatio = pendingTotal > 0
         ? (pendingRow?.pending ?? 0) / pendingTotal
         : 0;
-    const pendingFactor = Math.min(25, Math.floor(pendingRatio * 40)); // 65% → 26 (capped at 25)
+    const pendingFactor = Math.min(25, Math.floor(pendingRatio * 40));
 
     // Factor 3: Error rate oggi — peso 20
     const errorsToday = await getDailyStat(localDate, 'run_errors');
@@ -215,9 +269,7 @@ export async function computeSessionRiskLevel(
         ? Math.min(15, Math.floor(cfgStatus.proxyIpReputation.abuseScore / 7))
         : 0;
 
-    // Factor 5: Tempo dall'ultimo run — peso 10 (run troppo frequenti = rischio)
-    // Usa browser_session_started_at (timestamp ISO preciso) invece di daily_stats.date
-    // (YYYY-MM-DD → mezzanotte, impreciso per calcoli intra-giorno).
+    // Factor 5: Tempo dall'ultimo run — peso 10
     const riskAccounts = getRuntimeAccountProfiles();
     let frequencyFactor = 0;
     for (const acc of riskAccounts) {
@@ -232,7 +284,7 @@ export async function computeSessionRiskLevel(
         }
     }
 
-    // Factor 6: Disk space (C.2) — peso 15
+    // Factor 6: Disk space — peso 15
     const diskStatus = checkDiskSpace();
     const diskFactor = diskStatus.level === 'critical' ? 15 : diskStatus.level === 'warn' ? 5 : 0;
 
@@ -263,7 +315,121 @@ export async function computeSessionRiskLevel(
     return { level, score, factors, recommendation };
 }
 
-// ─── Display Functions ───────────────────────────────────────────────────────
+// ─── L5: AI Advisor ─────────────────────────────────────────────────────────
+
+/**
+ * L5: Chiede all'AI di analizzare lo stato del sistema e consigliare
+ * se procedere, con cautela, o abortire. Usa i dati raccolti da L2+L3+L4.
+ *
+ * Best-effort: se l'AI non e' configurata o la chiamata fallisce,
+ * ritorna { available: false } e il workflow prosegue normalmente.
+ */
+async function runAiAdvisor(
+    workflowName: string,
+    dbStats: PreflightDbStats,
+    cfgStatus: PreflightConfigStatus,
+    riskAssessment: SessionRiskAssessment,
+    warnings: PreflightWarning[],
+): Promise<AiAdvisorResult> {
+    // Se AI non configurata, skip silenziosamente
+    if (!cfgStatus.aiConfigured) {
+        return { available: false, recommendation: 'PROCEED', reasoning: '', suggestedActions: [] };
+    }
+
+    try {
+        const { isOpenAIConfigured, requestOpenAIText } = await import('../ai/openaiClient');
+        if (!isOpenAIConfigured()) {
+            return { available: false, recommendation: 'PROCEED', reasoning: '', suggestedActions: [] };
+        }
+
+        const statusBreakdown = Object.entries(dbStats.byStatus)
+            .map(([s, c]) => `${s}: ${c}`)
+            .join(', ');
+        const listBreakdown = Object.entries(dbStats.byList)
+            .slice(0, 10)
+            .map(([l, c]) => `"${l}": ${c}`)
+            .join(', ');
+        const warningsSummary = warnings.length > 0
+            ? warnings.map(w => `[${w.level}] ${w.message}`).join('\n')
+            : 'Nessun warning';
+        const riskFactors = Object.entries(riskAssessment.factors)
+            .filter(([, v]) => v > 0)
+            .map(([k, v]) => `${k}=${v}`)
+            .join(', ');
+
+        const prompt = `Sei l'AI advisor di un sistema di automazione LinkedIn. Analizza lo stato del sistema e decidi se il workflow "${workflowName}" deve procedere.
+
+STATO DATABASE (L2):
+- Lead totali: ${dbStats.totalLeads}
+- Per status: ${statusBreakdown || 'nessuno'}
+- Per lista: ${listBreakdown || 'nessuna'}
+- Con email: ${dbStats.withEmail}/${dbStats.totalLeads} (${dbStats.totalLeads > 0 ? Math.round(dbStats.withEmail / dbStats.totalLeads * 100) : 0}%)
+- Con job_title: ${dbStats.withJobTitle}/${dbStats.totalLeads}
+- Con score: ${dbStats.withScore}/${dbStats.totalLeads}
+- Ultimo sync: ${dbStats.lastSyncAt || 'mai'}
+
+CONFIGURAZIONE (L3):
+- Proxy: ${cfgStatus.proxyConfigured ? 'OK' : 'MANCANTE'}${cfgStatus.proxyIpReputation ? ` (abuse score: ${cfgStatus.proxyIpReputation.abuseScore}/100)` : ''}
+- Budget inviti: ${cfgStatus.invitesSentToday}/${cfgStatus.budgetInvites} oggi, ${cfgStatus.weeklyInvitesSent}/${cfgStatus.weeklyInviteLimit} settimana
+- Budget messaggi: ${cfgStatus.messagesSentToday}/${cfgStatus.budgetMessages} oggi
+- API enrichment: Apollo=${cfgStatus.apolloConfigured}, Hunter=${cfgStatus.hunterConfigured}, Clearbit=${cfgStatus.clearbitConfigured}
+- Warmup: ${cfgStatus.warmupEnabled ? 'ATTIVO' : 'disabilitato'}
+- Cookie scaduti: ${cfgStatus.staleAccounts.length > 0 ? cfgStatus.staleAccounts.join(', ') : 'nessuno'}
+
+RISK ASSESSMENT (L4):
+- Score: ${riskAssessment.score}/100 (${riskAssessment.level})
+- Fattori attivi: ${riskFactors || 'nessuno'}
+
+WARNING ATTIVI:
+${warningsSummary}
+
+Rispondi SOLO in formato JSON con questa struttura:
+{
+  "recommendation": "PROCEED" | "PROCEED_CAUTION" | "ABORT",
+  "reasoning": "spiegazione breve (1-2 frasi) in italiano",
+  "suggestedActions": ["azione 1", "azione 2"]
+}
+
+Regole:
+- ABORT solo se ci sono condizioni critiche che rischiano ban (proxy blacklisted, pending ratio >60%, budget esaurito)
+- PROCEED_CAUTION se ci sono warning importanti ma non bloccanti
+- PROCEED se tutto e' in ordine
+- suggestedActions: max 3 suggerimenti concreti e brevi`;
+
+        const response = await requestOpenAIText({
+            system: 'Sei un esperto di automazione LinkedIn e anti-detection. Rispondi solo in JSON valido.',
+            user: prompt,
+            maxOutputTokens: 300,
+            temperature: 0.3,
+            responseFormat: 'json_object',
+        });
+
+        const parsed = JSON.parse(response) as {
+            recommendation?: string;
+            reasoning?: string;
+            suggestedActions?: string[];
+        };
+
+        const rec = parsed.recommendation?.toUpperCase();
+        const recommendation = rec === 'ABORT' ? 'ABORT'
+            : rec === 'PROCEED_CAUTION' ? 'PROCEED_CAUTION'
+            : 'PROCEED';
+
+        return {
+            available: true,
+            recommendation,
+            reasoning: parsed.reasoning ?? '',
+            suggestedActions: Array.isArray(parsed.suggestedActions)
+                ? parsed.suggestedActions.slice(0, 3)
+                : [],
+        };
+    } catch {
+        // AI advisor e' best-effort: se fallisce, non blocca il workflow
+        return { available: false, recommendation: 'PROCEED', reasoning: '', suggestedActions: [] };
+    }
+}
+
+// ─── L6: Anti-Ban Checklist ─────────────────────────────────────────────────
 
 function checkMark(ok: boolean): string {
     return ok ? '[OK]' : '[--]';
@@ -291,13 +457,12 @@ function displayDbStats(stats: PreflightDbStats, listFilter?: string): void {
         entries.push(['Ultimo sync lista:', stats.lastSyncAt]);
     }
 
-    // Status breakdown
     const statusLine = Object.entries(stats.byStatus)
         .map(([s, c]) => `${s}=${c}`)
         .join(', ');
     entries.push(['Lead per status:', statusLine || '(nessuno)']);
 
-    console.log(formatPreflightSection('STATO DATABASE ATTUALE', entries));
+    console.log(formatPreflightSection('L2: STATO DATABASE', entries));
 }
 
 function displayConfigStatus(cs: PreflightConfigStatus): void {
@@ -318,7 +483,7 @@ function displayConfigStatus(cs: PreflightConfigStatus): void {
         ['Budget messaggi:', `${cs.messagesSentToday}/${cs.budgetMessages} oggi`],
     ];
 
-    console.log(formatPreflightSection('CONFIG ATTIVA', entries));
+    console.log(formatPreflightSection('L3: CONFIG ATTIVA', entries));
 }
 
 function displayWarnings(warnings: PreflightWarning[]): void {
@@ -332,13 +497,42 @@ function displayWarnings(warnings: PreflightWarning[]): void {
     }
 }
 
-// ─── Anti-Ban Checklist Interattiva ──────────────────────────────────────────
+function displayAiAdvice(advice: AiAdvisorResult): void {
+    if (!advice.available) return;
 
-async function runAntiBanChecklist(workflowName: string, dbStats?: PreflightDbStats, _cfgStatus?: PreflightConfigStatus): Promise<boolean> {
+    const icon = advice.recommendation === 'PROCEED' ? '[OK]'
+        : advice.recommendation === 'PROCEED_CAUTION' ? '[!]'
+        : '[!!!]';
+    const label = advice.recommendation === 'PROCEED' ? 'PROCEDERE'
+        : advice.recommendation === 'PROCEED_CAUTION' ? 'PROCEDERE CON CAUTELA'
+        : 'NON PROCEDERE';
+
+    console.log('');
+    console.log(`  L5: AI ADVISOR — ${icon} ${label}`);
+    if (advice.reasoning) {
+        console.log(`      ${advice.reasoning}`);
+    }
+    if (advice.suggestedActions.length > 0) {
+        console.log('      Azioni suggerite:');
+        for (const action of advice.suggestedActions) {
+            console.log(`        - ${action}`);
+        }
+    }
+}
+
+/**
+ * L6: Checklist anti-ban interattiva context-aware.
+ * Le domande dipendono dai dati raccolti in L2/L3/L4.
+ */
+async function runAntiBanChecklist(
+    workflowName: string,
+    dbStats?: PreflightDbStats,
+    _cfgStatus?: PreflightConfigStatus,
+): Promise<boolean> {
     const isOutreach = workflowName === 'send-invites' || workflowName === 'send-messages';
     const minHours = isOutreach ? 2 : 1;
 
-    // ── Raccolta dati per domande intelligenti ──────────────────────────────
+    // Raccolta dati per domande intelligenti
     const accounts = getRuntimeAccountProfiles();
     let recentSessionHours: number | null = null;
     for (const acc of accounts) {
@@ -365,10 +559,10 @@ async function runAntiBanChecklist(workflowName: string, dbStats?: PreflightDbSt
     const isFirstSessionToday = recentSessionHours === null || recentSessionHours > 12;
 
     console.log('');
-    console.log('  CHECKLIST ANTI-BAN:');
+    console.log('  L6: CHECKLIST ANTI-BAN');
     console.log('');
 
-    // ── Domanda 1: SEMPRE — rapida, unica domanda bloccante ─────────────────
+    // Domanda 1: SEMPRE — rapida, unica domanda bloccante
     const tabOk = await askConfirmation('    Tab LinkedIn chiusi e browser pronto? [Y/n] ');
     if (!tabOk) {
         console.log('      -> Chiudi TUTTI i tab LinkedIn. Per fermare: Ctrl+C (mai chiudere la finestra).');
@@ -377,7 +571,7 @@ async function runAntiBanChecklist(workflowName: string, dbStats?: PreflightDbSt
         return false;
     }
 
-    // ── Domande context-aware (solo se i dati le richiedono) ─────────────────
+    // Domande context-aware (solo se i dati le richiedono)
 
     // Sessione recente: chiedi solo se < minHours
     if (recentSessionHours !== null && recentSessionHours < minHours) {
@@ -406,7 +600,7 @@ async function runAntiBanChecklist(workflowName: string, dbStats?: PreflightDbSt
 
     // Lead incompleti: suggerisci enrichment
     if (totalLeads > 10 && leadsWithoutEmail > totalLeads * 0.7) {
-        console.log(`    [i] ${leadsWithoutEmail}/${totalLeads} lead senza email — l'enrichment migliorerà la personalizzazione.`);
+        console.log(`    [i] ${leadsWithoutEmail}/${totalLeads} lead senza email — l'enrichment migliorera' la personalizzazione.`);
         console.log('');
     }
 
@@ -421,11 +615,11 @@ async function runAntiBanChecklist(workflowName: string, dbStats?: PreflightDbSt
         console.log('');
     }
 
-    // ── Tips sessione ────────────────────────────────────────────────────────
+    // Tips sessione
     console.log('  TIPS SESSIONE:');
     console.log('    [i] CAPTCHA: il bot li risolve automaticamente (GPT-5.4 + Ollama fallback)');
     if (isFirstSessionToday) {
-        console.log('    [i] Prima sessione oggi: il bot farà warmup (feed + notifiche) prima di agire');
+        console.log('    [i] Prima sessione oggi: il bot fara\' warmup (feed + notifiche) prima di agire');
     }
     console.log(`    [i] Dopo la sessione: aspetta almeno ${minHours}h prima di usare LinkedIn`);
     console.log('');
@@ -433,7 +627,7 @@ async function runAntiBanChecklist(workflowName: string, dbStats?: PreflightDbSt
     return true;
 }
 
-// ─── Main Pre-flight Runner ──────────────────────────────────────────────────
+// ─── Main Pre-flight Runner ─────────────────────────────────────────────────
 
 export interface PreflightConfig {
     workflowName: string;
@@ -442,12 +636,14 @@ export interface PreflightConfig {
     generateWarnings: (stats: PreflightDbStats, config: PreflightConfigStatus, answers: Record<string, string>) => PreflightWarning[];
     skipPreflight?: boolean;
     cliOverrides?: Record<string, string>;
+    /** L1: accountId da CLI --account flag. */
+    cliAccountId?: string;
 }
 
 export async function runPreflight(pfConfig: PreflightConfig): Promise<PreflightResult> {
     const answers: Record<string, string> = { ...pfConfig.cliOverrides };
 
-    // Se --skip-preflight o non-TTY, usa defaults
+    // Se --skip-preflight o non-TTY, usa defaults (livelli L2+L3+L4 still run)
     if (pfConfig.skipPreflight || !isInteractiveTTY()) {
         const dbStats = await collectDbStats(pfConfig.listFilter);
         const configStatus = await collectConfigStatus();
@@ -461,7 +657,7 @@ export async function runPreflight(pfConfig: PreflightConfig): Promise<Preflight
             }
         }
 
-        // STOP blocca anche in modalità non-interattiva
+        // STOP blocca anche in modalita' non-interattiva
         if (riskAssessment.level === 'STOP') {
             return { answers, dbStats, configStatus, warnings, confirmed: false, riskAssessment };
         }
@@ -470,16 +666,24 @@ export async function runPreflight(pfConfig: PreflightConfig): Promise<Preflight
     }
 
     console.log('');
-    console.log('════════════════════════════════════════════════════════════════');
-    console.log(`  PRE-FLIGHT: ${pfConfig.workflowName.toUpperCase()}`);
-    console.log('════════════════════════════════════════════════════════════════');
+    console.log('================================================================');
+    console.log(`  PRE-FLIGHT: ${pfConfig.workflowName.toUpperCase()} (6 LIVELLI DI CONTROLLO)`);
+    console.log('================================================================');
 
-    // Collect stats PRIMA della checklist — le domande intelligenti usano questi dati
+    // ── L1: Account Selection ────────────────────────────────────────────────
+    const selectedAccountId = await selectAccount(pfConfig.cliAccountId);
+    if (selectedAccountId) {
+        answers['_accountId'] = selectedAccountId;
+    }
+
+    // ── L2: DB Analysis ──────────────────────────────────────────────────────
     const earlyListFilter = pfConfig.cliOverrides?.['listName'] ?? pfConfig.listFilter;
     const dbStats = await collectDbStats(earlyListFilter);
+
+    // ── L3: Config Validation ────────────────────────────────────────────────
     const configStatus = await collectConfigStatus();
 
-    // ── Checklist anti-ban interattiva (context-aware) ──────────
+    // ── L6: Anti-Ban Checklist (eseguita prima delle domande per bloccare subito) ──
     const checklistPassed = await runAntiBanChecklist(pfConfig.workflowName, dbStats, configStatus);
     if (!checklistPassed) {
         return {
@@ -489,10 +693,11 @@ export async function runPreflight(pfConfig: PreflightConfig): Promise<Preflight
             warnings: [],
             confirmed: false,
             riskAssessment: { level: 'STOP', score: 100, factors: { checklist: 100 }, recommendation: 'Checklist anti-ban non superata' },
+            selectedAccountId,
         };
     }
 
-    // Ask questions (skip if already answered via CLI flags)
+    // ── Domande interattive (workflow-specific) ──────────────────────────────
     for (const q of pfConfig.questions) {
         if (q.id in answers) continue;
 
@@ -515,20 +720,20 @@ export async function runPreflight(pfConfig: PreflightConfig): Promise<Preflight
     const listFilter = answers['list'] ?? answers['listName'] ?? earlyListFilter;
     const warnings = pfConfig.generateWarnings(dbStats, configStatus, answers);
 
-    // Risk Assessment (5.1 wire)
+    // ── L4: Risk Assessment ──────────────────────────────────────────────────
     const riskAssessment = await computeSessionRiskLevel(configStatus);
 
-    // Display
+    // ── Display L2 + L3 ──────────────────────────────────────────────────────
     console.log('');
     displayDbStats(dbStats, listFilter);
     console.log('');
     displayConfigStatus(configStatus);
     displayWarnings(warnings);
 
-    // Mostra risk assessment all'utente
+    // ── Display L4 ───────────────────────────────────────────────────────────
     console.log('');
     const riskIcon = riskAssessment.level === 'GO' ? '[OK]' : riskAssessment.level === 'CAUTION' ? '[!]' : '[!!!]';
-    console.log(`  ${riskIcon} Risk Assessment: ${riskAssessment.level} (score: ${riskAssessment.score}/100)`);
+    console.log(`  L4: RISK ASSESSMENT — ${riskIcon} ${riskAssessment.level} (score: ${riskAssessment.score}/100)`);
     console.log(`      ${riskAssessment.recommendation}`);
     if (riskAssessment.score > 30) {
         const factorDetails = Object.entries(riskAssessment.factors)
@@ -537,25 +742,50 @@ export async function runPreflight(pfConfig: PreflightConfig): Promise<Preflight
             .join(', ');
         if (factorDetails) console.log(`      Fattori: ${factorDetails}`);
     }
+
+    // ── L5: AI Advisor ───────────────────────────────────────────────────────
+    let aiAdvice: AiAdvisorResult | undefined;
+    if (configStatus.aiConfigured) {
+        console.log('');
+        console.log('  L5: AI Advisor in analisi...');
+        aiAdvice = await runAiAdvisor(
+            pfConfig.workflowName,
+            dbStats,
+            configStatus,
+            riskAssessment,
+            warnings,
+        );
+        displayAiAdvice(aiAdvice);
+
+        // AI dice ABORT: blocca (ma l'utente puo' forzare)
+        if (aiAdvice.available && aiAdvice.recommendation === 'ABORT') {
+            console.log('');
+            const forceOverride = await askConfirmation('  [!!!] L\'AI consiglia di NON procedere. Vuoi forzare comunque? [y/N] ');
+            if (!forceOverride) {
+                return { answers, dbStats, configStatus, warnings, confirmed: false, riskAssessment, selectedAccountId, aiAdvice };
+            }
+            console.log('  -> Override utente: si procede nonostante il consiglio AI.');
+        }
+    }
     console.log('');
 
     // STOP blocca l'esecuzione
     if (riskAssessment.level === 'STOP') {
         console.log('  [!!!] Risk level STOP — sessione NON sicura. Risolvere prima di procedere.');
-        return { answers, dbStats, configStatus, warnings, confirmed: false, riskAssessment };
+        return { answers, dbStats, configStatus, warnings, confirmed: false, riskAssessment, selectedAccountId, aiAdvice };
     }
 
     // Critical warnings block execution
     const hasCritical = warnings.some((w) => w.level === 'critical');
     if (hasCritical) {
         console.log('  [!!!] Condizioni critiche rilevate. Risolvere prima di procedere.');
-        return { answers, dbStats, configStatus, warnings, confirmed: false, riskAssessment };
+        return { answers, dbStats, configStatus, warnings, confirmed: false, riskAssessment, selectedAccountId, aiAdvice };
     }
 
     const confirmed = await askConfirmation('  Procedo? [Y/n] ');
 
-    // Rilascia stdin dopo le domande per evitare che il processo resti appeso
+    // Rilascia stdin dopo le domande
     process.stdin.pause();
 
-    return { answers, dbStats, configStatus, warnings, confirmed, riskAssessment };
+    return { answers, dbStats, configStatus, warnings, confirmed, riskAssessment, selectedAccountId, aiAdvice };
 }

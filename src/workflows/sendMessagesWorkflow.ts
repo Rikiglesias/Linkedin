@@ -8,7 +8,7 @@ import { computeListPerformanceMultiplier, getAutomationPauseState, getDailyStat
 import { enrichLeadsParallel } from '../integrations/parallelEnricher';
 import { getDatabase } from '../db';
 import { runPreflight, appendProxyReputationWarning } from './preflight';
-import { formatWorkflowReport } from './reportFormatter';
+import { formatWorkflowReport, sendWorkflowTelegramReport } from './reportFormatter';
 import type { PreflightDbStats, PreflightConfigStatus, PreflightWarning, WorkflowReport, WorkflowReportListBreakdown } from './types';
 
 export interface SendMessagesOptions {
@@ -78,10 +78,16 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
     // Capture pre-run stats
     const msgBefore = await getDailyStat(localDate, 'messages_sent').catch(() => 0);
 
-    // Pre-flight
+    // Pre-flight (6 livelli di controllo)
     const preflight = await runPreflight({
         workflowName: 'send-messages',
         questions: [
+            {
+                id: 'listName',
+                prompt: 'Quale lista vuoi targettare (lascia vuoto per targettare tutte)?',
+                type: 'string',
+                defaultValue: opts.listName ?? '',
+            },
             {
                 id: 'limit',
                 prompt: 'Quanti messaggi vuoi inviare al massimo?',
@@ -106,6 +112,7 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
         generateWarnings,
         skipPreflight: opts.skipPreflight,
         cliOverrides: buildCliOverrides(opts),
+        cliAccountId: opts.accountId,
     });
 
     if (!preflight.confirmed) {
@@ -114,9 +121,10 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
     }
 
     const dryRun = opts.dryRun ?? false;
-    const listFilter = opts.listName || null;
+    const listFilter = preflight.answers['listName'] || null;
     const sessionLimit = parseInt(preflight.answers['limit'] || '0', 10);
     const lang = opts.lang || undefined;
+    const doEnrichment = preflight.answers['enrichment'] !== 'false';
 
     // Preview primi 5 lead che verranno messaggiati
     const readyCount = (preflight.dbStats.byStatus['ACCEPTED'] ?? 0) + (preflight.dbStats.byStatus['READY_MESSAGE'] ?? 0);
@@ -191,7 +199,6 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
 
     // ── Pre-enrichment parallelo (zero browser, solo API) ──
     let enrichmentDegraded = false;
-    const doEnrichment = preflight.answers['enrichment'] !== 'false';
     if (!dryRun && effectiveLimit > 0 && doEnrichment) {
         console.log('\n  Pre-enrichment parallelo dei lead (senza browser)...');
         try {
@@ -240,7 +247,7 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
             sessionLimit: sessionLimit > 0 ? sessionLimit : undefined,
             lang,
             messageMode: messageModeAnswer === 'template' ? 'template' : undefined,
-            accountId: opts.accountId,
+            accountId: preflight.selectedAccountId ?? opts.accountId,
         });
     } catch (err) {
         workflowError = err instanceof Error ? err.message : String(err);
@@ -299,6 +306,7 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
     };
 
     console.log(formatWorkflowReport(workflowReport));
+    await sendWorkflowTelegramReport(workflowReport);
 }
 
 function buildCliOverrides(opts: SendMessagesOptions): Record<string, string> {

@@ -166,11 +166,11 @@ function printHelp(): void {
     console.log('Sviluppo: npm run start:dev -- <comando> -- [opzioni]');
     console.log('');
     console.log('Production Workflows (pre-flight interattivo + enrichment + report):');
-    console.log('  sync-list     [--list "X"] [--url <url>] [--max-pages N] [--max-leads N] [--dry-run] [--interactive]');
-    console.log('  sync-search   [--search-name "X"] [--list "X"] [--max-pages N] [--limit N] [--dry-run]');
-    console.log('  send-messages [--list "X"] [--template "X"] [--lang it|en] [--limit N] [--dry-run]');
-    console.log('  send-invites  [--list "X"] [--note ai|template|none] [--min-score N] [--limit N] [--dry-run]');
-    console.log('  Opzioni comuni: --skip-preflight  --no-proxy  --account <id>  --no-enrich');
+    console.log('  sync-list     (Sincronizza lista SalesNav)');
+    console.log('  sync-search   (Sincronizza ricerca salvata SalesNav)');
+    console.log('  send-messages (Invia messaggi ai lead connessi)');
+    console.log('  send-invites  (Invia inviti ai lead estratti)');
+    console.log('  Opzioni comuni (opzionali): --dry-run --skip-preflight --no-proxy --account <id>');
     console.log('');
     console.log('Comandi principali (job queue — processa job dalla coda):');
     console.log('  import --file <file.csv> --list <nome_lista>');

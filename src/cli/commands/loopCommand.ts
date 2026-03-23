@@ -905,14 +905,95 @@ export async function runLoopCommand(args: string[]): Promise<void> {
 
 export async function runAutopilotCommand(args: string[]): Promise<void> {
     const positional = getPositionalArgs(args);
-    const intervalRaw = getOptionValue(args, '--interval-sec') ?? positional[0];
-    const cyclesRaw = getOptionValue(args, '--cycles') ?? positional[1];
-    const intervalArg = intervalRaw ?? String(Math.floor(config.workflowLoopIntervalMs / 1000));
-    const forwarded = ['all', intervalArg];
-    if (cyclesRaw && /^\d+$/.test(cyclesRaw)) {
-        forwarded.push('--cycles', cyclesRaw);
+    const isDryRun = hasOption(args, '--dry-run') || positional.includes('dry') || positional.includes('dry-run');
+
+    // ── Autopilot Wizard: mini-intervista interattiva ─────────────────────
+    // Se lo stdin e' TTY e non c'e' --skip-preflight, chiedi all'utente
+    // cosa vuole fare prima di lanciare il loop.
+    const skipWizard = hasOption(args, '--skip-preflight') || hasOption(args, '--no-wizard');
+    let wizardWorkflow = 'all';
+    let wizardIntervalSec: string | undefined;
+    let wizardCycles: string | undefined;
+    let wizardBudgetReduced = false;
+
+    const { isInteractiveTTY, askConfirmation, askChoice, askNumber } = await import('../stdinHelper');
+
+    if (!skipWizard && isInteractiveTTY()) {
+        console.log('');
+        console.log('================================================================');
+        console.log('  AUTOPILOT WIZARD');
+        console.log('================================================================');
+        console.log('');
+
+        // 1. Quali workflow attivare?
+        wizardWorkflow = await askChoice(
+            '  Quali workflow vuoi eseguire?',
+            ['all', 'invite', 'message', 'check'],
+            'all',
+        );
+
+        // 2. Budget ridotto?
+        wizardBudgetReduced = await askConfirmation('  Budget ridotto per oggi? (dimezza inviti e messaggi) [y/N] ');
+
+        // 3. Intervallo personalizzato?
+        const defaultIntervalSec = Math.floor(config.workflowLoopIntervalMs / 1000);
+        const customInterval = await askNumber(
+            '  Intervallo tra cicli (secondi)?',
+            defaultIntervalSec,
+        );
+        wizardIntervalSec = String(customInterval);
+
+        // 4. Numero cicli?
+        const customCycles = await askNumber(
+            '  Quanti cicli eseguire? (0 = infinito)',
+            0,
+        );
+        if (customCycles > 0) {
+            wizardCycles = String(customCycles);
+        }
+
+        // Riepilogo
+        console.log('');
+        console.log('  RIEPILOGO AUTOPILOT:');
+        console.log(`    Workflow:   ${wizardWorkflow}`);
+        console.log(`    Intervallo: ${wizardIntervalSec}s`);
+        console.log(`    Cicli:      ${wizardCycles ?? 'infinito'}`);
+        console.log(`    Budget:     ${wizardBudgetReduced ? 'RIDOTTO (50%)' : 'standard'}`);
+        console.log(`    Dry-run:    ${isDryRun ? 'SI' : 'no'}`);
+        console.log('');
+
+        const proceed = await askConfirmation('  Avviare autopilot? [Y/n] ');
+        if (!proceed) {
+            console.log('\n  Autopilot annullato.\n');
+            return;
+        }
+
+        // Rilascia stdin per il loop
+        process.stdin.pause();
+    } else {
+        // Modalita' non-interattiva: usa parametri CLI come prima
+        wizardIntervalSec = getOptionValue(args, '--interval-sec') ?? positional[0];
+        wizardCycles = getOptionValue(args, '--cycles') ?? positional[1];
     }
-    if (hasOption(args, '--dry-run') || positional.includes('dry') || positional.includes('dry-run')) {
+
+    // ── Budget ridotto: dimezza temporaneamente i cap ────────────────────
+    if (wizardBudgetReduced) {
+        const originalInviteCap = config.hardInviteCap;
+        const originalMsgCap = config.hardMsgCap;
+        const reducedInviteCap = Math.max(1, Math.floor(originalInviteCap / 2));
+        const reducedMsgCap = Math.max(1, Math.floor(originalMsgCap / 2));
+        // Mutazione runtime temporanea (non persiste nel .env)
+        (config as unknown as Record<string, unknown>).hardInviteCap = reducedInviteCap;
+        (config as unknown as Record<string, unknown>).hardMsgCap = reducedMsgCap;
+        console.log(`  [WIZARD] Budget ridotto: inviti ${originalInviteCap} -> ${reducedInviteCap}, messaggi ${originalMsgCap} -> ${reducedMsgCap}`);
+    }
+
+    const intervalArg = wizardIntervalSec ?? String(Math.floor(config.workflowLoopIntervalMs / 1000));
+    const forwarded = [wizardWorkflow, intervalArg];
+    if (wizardCycles && /^\d+$/.test(wizardCycles)) {
+        forwarded.push('--cycles', wizardCycles);
+    }
+    if (isDryRun) {
         forwarded.push('--dry-run');
     }
     await runLoopCommand(forwarded);

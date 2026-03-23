@@ -6,7 +6,7 @@ import { config, getLocalDateString } from '../config';
 import { runWorkflow } from '../core/orchestrator';
 import { computeListPerformanceMultiplier, getAutomationPauseState, getDailyStat, getListDailyStatsBatch, getRuntimeFlag } from '../core/repositories';
 import { runPreflight, appendProxyReputationWarning } from './preflight';
-import { formatWorkflowReport } from './reportFormatter';
+import { formatWorkflowReport, sendWorkflowTelegramReport } from './reportFormatter';
 import type { PreflightDbStats, PreflightConfigStatus, PreflightWarning, WorkflowReport, WorkflowReportListBreakdown } from './types';
 import { getDatabase } from '../db';
 import { runSyncSearchWorkflow } from './syncSearchWorkflow';
@@ -110,10 +110,16 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
     // Score stats for display
     const scoreStats = await getScoreStats();
 
-    // Pre-flight
+    // Pre-flight (6 livelli di controllo)
     const preflight = await runPreflight({
         workflowName: 'send-invites',
         questions: [
+            {
+                id: 'listName',
+                prompt: 'Quale lista vuoi targettare (lascia vuoto per targettare tutte)?',
+                type: 'string',
+                defaultValue: opts.listName ?? '',
+            },
             {
                 id: 'limit',
                 prompt: 'Quanti inviti vuoi inviare al massimo?',
@@ -138,6 +144,7 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
         generateWarnings,
         skipPreflight: opts.skipPreflight,
         cliOverrides: buildCliOverrides(opts),
+        cliAccountId: opts.accountId,
     });
 
     if (!preflight.confirmed) {
@@ -145,13 +152,16 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
         return;
     }
 
+    // Estrai parametri dal preflight
+    const listFilter = preflight.answers['listName'] || null;
+    const sessionLimit = parseInt(preflight.answers['limit'] || String(config.hardInviteCap), 10);
+    const dryRun = opts.dryRun ?? false;
+    const minScore = opts.minScore ?? 0;
+
     // Show score stats if available
     if (scoreStats.count > 0) {
         console.log(`\n  Score READY_INVITE: min=${scoreStats.min} avg=${scoreStats.avg} max=${scoreStats.max} (${scoreStats.count} con score)`);
     }
-
-    const dryRun = opts.dryRun ?? false;
-    const listFilter = opts.listName || null;
 
     const db = await getDatabase();
     let query = `SELECT COUNT(*) as cnt FROM leads WHERE status = 'READY_INVITE'`;
@@ -220,16 +230,13 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
                     listName: targetList || listFilter || config.salesNavSyncListName || 'default',
                     enrichment: true,
                     dryRun: false,
-                    accountId: opts.accountId,
+                    accountId: preflight.selectedAccountId ?? opts.accountId,
                     skipPreflight: true,
                 });
             }
         }
         return;
     }
-
-    const minScore = opts.minScore ?? 30;
-    const sessionLimit = parseInt(preflight.answers['limit'] || '0', 10);
 
     // ── Guard: quarantina e pausa (sempre attivi, anche in dry-run) ──────────
     const quarantine = (await getRuntimeFlag('account_quarantine')) === 'true';
@@ -300,7 +307,7 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
             minScore: minScore > 0 ? minScore : undefined,
             sessionLimit: sessionLimit > 0 ? sessionLimit : undefined,
             noteMode,
-            accountId: opts.accountId,
+            accountId: preflight.selectedAccountId ?? opts.accountId,
         });
     } catch (err) {
         workflowError = err instanceof Error ? err.message : String(err);
@@ -359,6 +366,7 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
     };
 
     console.log(formatWorkflowReport(workflowReport));
+    await sendWorkflowTelegramReport(workflowReport);
 }
 
 function buildNextActionSuggestion(
