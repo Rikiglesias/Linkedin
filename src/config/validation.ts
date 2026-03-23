@@ -24,7 +24,7 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
     {
         message:
             '[CONFIG] WEBHOOK_SYNC_URL usa HTTP non criptato — i dati PII dei lead verranno inviati in chiaro. Usare HTTPS.',
-        when: (cfg) => cfg.webhookSyncEnabled && !!cfg.webhookSyncUrl && cfg.webhookSyncUrl.startsWith('http://'),
+        when: (cfg) => cfg.webhookSyncEnabled && !!cfg.webhookSyncUrl && cfg.webhookSyncUrl.startsWith('http://') && !cfg.webhookSyncUrl.startsWith('http://127.0.0.1') && !cfg.webhookSyncUrl.startsWith('http://localhost'),
         severity: 'warn',
     },
     {
