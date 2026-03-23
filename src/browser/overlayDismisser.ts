@@ -10,7 +10,6 @@
  */
 
 import { Page } from 'playwright';
-import { humanMouseMoveToCoords } from './humanBehavior';
 
 // ─── Selectors noti per overlay LinkedIn ─────────────────────────────────────
 
@@ -133,7 +132,8 @@ export async function dismissKnownOverlays(page: Page): Promise<number> {
                     // Mouse move umano prima del click di chiusura overlay
                     const btnBox = await dismissBtn.boundingBox().catch(() => null);
                     if (btnBox) {
-                        await humanMouseMoveToCoords(page, btnBox.x + btnBox.width / 2, btnBox.y + btnBox.height / 2).catch(() => null);
+                        const { callMouseMove } = await import('./overlayBridge');
+                        await callMouseMove(page, btnBox.x + btnBox.width / 2, btnBox.y + btnBox.height / 2).catch(() => null);
                     }
                     await dismissBtn.click({ timeout: 1500 }).catch(() => null);
                     dismissed++;
@@ -150,7 +150,8 @@ export async function dismissKnownOverlays(page: Page): Promise<number> {
                 if (isVisible) {
                     const standaloneBox = await standaloneDismiss.boundingBox().catch(() => null);
                     if (standaloneBox) {
-                        await humanMouseMoveToCoords(page, standaloneBox.x + standaloneBox.width / 2, standaloneBox.y + standaloneBox.height / 2).catch(() => null);
+                        const { callMouseMove } = await import('./overlayBridge');
+                        await callMouseMove(page, standaloneBox.x + standaloneBox.width / 2, standaloneBox.y + standaloneBox.height / 2).catch(() => null);
                     }
                     await standaloneDismiss.click({ timeout: 1500 }).catch(() => null);
                     dismissed++;

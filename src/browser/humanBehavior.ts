@@ -472,9 +472,9 @@ export async function blockUserInput(page: Page): Promise<void> {
     initializeMouseState(page);
     await enableVisualCursorOverlay(page);
     await ensureInputBlock(page);
-    // Auto-dismiss overlay LinkedIn dopo navigazione (dynamic import per circular dep fix)
-    const { dismissKnownOverlays } = await import('./overlayDismisser');
-    await dismissKnownOverlays(page);
+    // Auto-dismiss overlay LinkedIn dopo navigazione (via bridge per zero circular dep)
+    const { callDismissOverlays } = await import('./overlayBridge');
+    await callDismissOverlays(page);
 }
 
 export async function pulseVisualCursorOverlay(page: Page): Promise<void> {
@@ -577,9 +577,9 @@ export async function humanMouseMove(page: Page, targetSelector: string): Promis
     }
     await pauseInputBlockForMove(page);
     try {
-        // Chiudi overlay che potrebbero intercettare il click (dynamic import per circular dep fix)
-        const { dismissKnownOverlays } = await import('./overlayDismisser');
-        await dismissKnownOverlays(page);
+        // Chiudi overlay che potrebbero intercettare il click (via bridge per zero circular dep)
+        const { callDismissOverlays } = await import('./overlayBridge');
+        await callDismissOverlays(page);
         const box = await page.locator(targetSelector).first().boundingBox();
         if (!box) return;
 
@@ -1266,8 +1266,8 @@ export async function performDecoyAction(page: Page, contextTerms?: readonly str
             await simulateHumanReading(page);
             // AD-02: Interviene sul Feed con una probabilità del 20%
             try {
-                const { interactWithFeed } = await import('./organicContent');
-                await interactWithFeed(page, 0.20);
+                const { callInteractWithFeed } = await import('./overlayBridge');
+                await callInteractWithFeed(page, 0.20);
             } catch {
                 // organicContent import/exec fallito — skip decoy interaction
             }

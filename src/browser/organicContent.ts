@@ -1,5 +1,7 @@
 import { Page } from 'playwright';
-import { humanDelay, humanMouseMoveToCoords, simulateHumanReading } from './humanBehavior';
+// Dynamic import per rompere circular dep humanBehavior↔organicContent
+// Le funzioni vengono caricate lazy quando servono (mai al boot)
+async function _hb() { return import('./humanBehavior'); }
 import { logInfo, logWarn } from '../telemetry/logger';
 import { randomInt, randomElement } from '../utils/random';
 
@@ -21,7 +23,7 @@ export async function interactWithFeed(page: Page, probability: number = 0.20): 
         await logInfo('organicContent.start', {});
 
         // Scroll iniziale per popolare potenziali post
-        await simulateHumanReading(page);
+        await (await _hb()).simulateHumanReading(page);
 
         // Seleziona un post a caso o un bottone di reazione / "See more"
         const actions = [
@@ -67,16 +69,16 @@ async function expandPostText(page: Page): Promise<void> {
                 // Muove human-like sul bottone
                 const targetX = box.x + box.width / 2;
                 const targetY = box.y + box.height / 2;
-                await humanMouseMoveToCoords(page, targetX, targetY);
+                await (await _hb()).humanMouseMoveToCoords(page, targetX, targetY);
 
                 // Pausa pre-click (Hover ratio decoy - AD-03 partial overlap)
-                await humanDelay(page, 300, 800);
+                await (await _hb()).humanDelay(page, 300, 800);
 
                 await targetBtn.click({ delay: randomInt(30, 80) });
                 await logInfo('organicContent.expandPost', {});
 
                 // Legge il post espanso
-                await humanDelay(page, 1500, 4000);
+                await (await _hb()).humanDelay(page, 1500, 4000);
                 return; // Fatto
             }
         }
@@ -139,16 +141,16 @@ async function reactToPost(page: Page): Promise<void> {
 
         const targetX = box.x + box.width / 2;
         const targetY = box.y + box.height / 2;
-        await humanMouseMoveToCoords(page, targetX, targetY);
+        await (await _hb()).humanMouseMoveToCoords(page, targetX, targetY);
 
         // Pausa pre-click
-        await humanDelay(page, 300, 600);
+        await (await _hb()).humanDelay(page, 300, 600);
 
         // Scelta: Simple click (Like) o Hovering (React Selector)
         if (Math.random() > 0.6) {
             // Hover via locator per aprire il popover CSS delle reactions
             await locator.hover();
-            await humanDelay(page, 800, 1200);
+            await (await _hb()).humanDelay(page, 800, 1200);
 
             // Cerca il menu reactions
             const reactionLocator = page.locator('.reactions-menu__reaction');
@@ -158,11 +160,11 @@ async function reactToPost(page: Page): Promise<void> {
                 const specificReaction = reactionLocator.nth(reactionIndex);
                 const rBox = await specificReaction.boundingBox();
                 if (rBox) {
-                    await humanMouseMoveToCoords(page, rBox.x + rBox.width / 2, rBox.y + rBox.height / 2);
-                    await humanDelay(page, 200, 500);
+                    await (await _hb()).humanMouseMoveToCoords(page, rBox.x + rBox.width / 2, rBox.y + rBox.height / 2);
+                    await (await _hb()).humanDelay(page, 200, 500);
                     await specificReaction.click({ delay: randomInt(40, 90) });
                     // NEW-12: Dwell time post-reaction (osserva conteggio reazioni)
-                    await humanDelay(page, 500, 2000);
+                    await (await _hb()).humanDelay(page, 500, 2000);
                     await logInfo('organicContent.specificReaction', {});
                     return;
                 }
@@ -172,8 +174,9 @@ async function reactToPost(page: Page): Promise<void> {
         // Fallback a un semplice Like / React Toggle
         await locator.click({ delay: randomInt(40, 100) });
         // NEW-12: Dwell time post-like (osserva animazione contatore)
-        await humanDelay(page, 500, 1800);
+        await (await _hb()).humanDelay(page, 500, 1800);
         await logInfo('organicContent.genericLike', {});
         return;
     }
 }
+
