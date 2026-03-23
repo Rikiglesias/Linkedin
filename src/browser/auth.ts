@@ -69,7 +69,24 @@ export async function isLoggedIn(page: Page): Promise<boolean> {
 
 /** Naviga al feed (endpoint protetto, redirect a login se sessione scaduta) e verifica il login. */
 export async function checkLogin(page: Page): Promise<boolean> {
-    const response = await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 45_000 });
+    // Timeout 90s: i proxy mobili (Oxylabs sticky) possono avere latenza 10-30s sul primo goto.
+    // Se fallisce al primo tentativo, riproviamo una volta con timeout più lungo.
+    let response: Awaited<ReturnType<Page['goto']>> = null;
+    for (const attempt of [1, 2]) {
+        try {
+            response = await page.goto('https://www.linkedin.com/feed/', {
+                waitUntil: 'domcontentloaded',
+                timeout: attempt === 1 ? 60_000 : 90_000,
+            });
+            break;
+        } catch (err) {
+            if (attempt === 2) {
+                console.error(`[AUTH] Timeout navigazione al feed dopo 2 tentativi — proxy lento o LinkedIn irraggiungibile.`);
+                return false;
+            }
+            console.warn(`[AUTH] Timeout navigazione (tentativo ${attempt}/2) — riprovo...`);
+        }
+    }
     // Delay semplice post-navigazione (non serve humanDelay con distribuzione log-normale qui —
     // checkLogin è un check tecnico, non un'azione visibile da LinkedIn).
     // Rimosso import humanDelay per rompere circular dep auth↔humanBehavior.
