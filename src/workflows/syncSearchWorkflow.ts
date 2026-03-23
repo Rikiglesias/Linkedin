@@ -247,8 +247,10 @@ export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<vo
         },
         errors,
         nextAction: syncPromoted > 0
-            ? `Esegui 'send-invites --list "${targetList}"' per invitare i ${syncPromoted} lead pronti`
-            : `Esegui 'send-invites --list "${targetList}"' per invitare i nuovi lead`,
+            ? `Step 3/4: esegui 'send-invites --list "${targetList}"' per invitare i ${syncPromoted} lead pronti`
+            : syncInserted > 0
+                ? `Step 3/4: esegui 'send-invites --list "${targetList}"' per invitare i nuovi lead`
+                : `Nessun lead nuovo. Prova una ricerca diversa o attendi nuovi risultati`,
         riskAssessment: preflight.riskAssessment,
     };
 

@@ -169,8 +169,8 @@ export async function runSyncListWorkflow(opts: SyncListOptions): Promise<void> 
             ...(report?.challengeDetected ? ['Challenge LinkedIn rilevato durante sync'] : []),
         ],
         nextAction: report && report.enrichment.promoted > 0
-            ? `Esegui 'send-invites --list "${listName}"' per invitare i lead pronti`
-            : 'Attendi enrichment o abbassa la soglia score',
+            ? `Step 3/4: esegui 'send-invites --list "${listName}"' per invitare i ${report.enrichment.promoted} lead pronti`
+            : 'Nessun lead promosso. Attendi enrichment o abbassa la soglia score',
         riskAssessment: preflight.riskAssessment,
     };
 

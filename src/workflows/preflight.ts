@@ -670,6 +670,21 @@ export async function runPreflight(pfConfig: PreflightConfig): Promise<Preflight
     console.log(`  PRE-FLIGHT: ${pfConfig.workflowName.toUpperCase()} (6 LIVELLI DI CONTROLLO)`);
     console.log('================================================================');
 
+    // Mostra posizione nel funnel
+    const funnelSteps = [
+        { cmd: 'sync-search', label: 'Ricerca → Lista SalesNav' },
+        { cmd: 'sync-list', label: 'Lista SalesNav → DB' },
+        { cmd: 'send-invites', label: 'Invita lead pronti' },
+        { cmd: 'send-messages', label: 'Messaggia chi ha accettato' },
+    ];
+    const currentStep = funnelSteps.findIndex(s => s.cmd === pfConfig.workflowName);
+    if (currentStep >= 0) {
+        console.log('');
+        console.log('  FUNNEL: ' + funnelSteps.map((s, i) =>
+            i === currentStep ? `[${i + 1}. ${s.label}]` : `${i + 1}. ${s.label}`,
+        ).join(' → '));
+    }
+
     // ── L1: Account Selection ────────────────────────────────────────────────
     const selectedAccountId = await selectAccount(pfConfig.cliAccountId);
     if (selectedAccountId) {

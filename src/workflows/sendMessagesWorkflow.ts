@@ -299,8 +299,8 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
         },
         errors: workflowError ? [workflowError] : [],
         nextAction: msgAfter >= config.hardMsgCap
-            ? 'Budget messaggi esaurito — riprendi domani'
-            : `Budget rimanente: ${config.hardMsgCap - msgAfter} messaggi`,
+            ? 'Budget messaggi esaurito — riprendi domani. Ciclo completo: sync-search → sync-list → send-invites → send-messages'
+            : `Budget rimanente: ${config.hardMsgCap - msgAfter} messaggi. Prossimo ciclo: sync-search per nuovi lead`,
         listBreakdown,
         riskAssessment: preflight.riskAssessment,
     };
