@@ -20,6 +20,10 @@ import { getLocalDateString } from '../config';
 
 const MAX_ATTEMPTS = 2;
 const MAX_AUTO_CHALLENGE_RESOLUTIONS_PER_DAY = 3;
+const CAPTCHA_COOLDOWN_MS = 10_000; // 10s minimo tra un tentativo e l'altro
+
+/** Timestamp dell'ultimo tentativo di risoluzione (in-process, non DB). */
+let _lastResolutionAttemptMs = 0;
 
 /**
  * Tenta di risolvere un challenge/CAPTCHA sulla pagina corrente.
@@ -46,6 +50,16 @@ export async function attemptChallengeResolution(page: Page): Promise<boolean> {
         });
         return false;
     }
+
+    // Cooldown: un umano non risolve 2 CAPTCHA in 10 secondi.
+    // Se LinkedIn manda challenge ravvicinati, aspettiamo prima di rispondere.
+    const msSinceLastAttempt = Date.now() - _lastResolutionAttemptMs;
+    if (_lastResolutionAttemptMs > 0 && msSinceLastAttempt < CAPTCHA_COOLDOWN_MS) {
+        const waitMs = CAPTCHA_COOLDOWN_MS - msSinceLastAttempt;
+        await logInfo('challenge.cooldown_wait', { waitMs, cooldownMs: CAPTCHA_COOLDOWN_MS });
+        await humanDelay(page, waitMs, waitMs + 2000);
+    }
+    _lastResolutionAttemptMs = Date.now();
 
     const provider: VisionProvider = createVisionProvider();
 
@@ -126,6 +140,10 @@ export async function attemptChallengeResolution(page: Page): Promise<boolean> {
                 }
 
                 await logWarn('challenge.still_present_after_attempt', { attempt });
+                // Cooldown tra tentativi: un umano si ferma a pensare prima di riprovare
+                if (attempt < MAX_ATTEMPTS) {
+                    await humanDelay(page, CAPTCHA_COOLDOWN_MS, CAPTCHA_COOLDOWN_MS + 3000);
+                }
                 continue;
             }
 
