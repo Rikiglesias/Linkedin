@@ -5,7 +5,7 @@
 
 UPDATE leads
 SET status = 'REVIEW_REQUIRED',
-    reason = REPLACE(reason, 'salesnav_url_requires_profile_invite', 'salesnav_url_needs_resolution'),
+    blocked_reason = REPLACE(blocked_reason, 'salesnav_url_requires_profile_invite', 'salesnav_url_needs_resolution'),
     updated_at = CURRENT_TIMESTAMP
 WHERE status = 'BLOCKED'
-  AND reason LIKE 'salesnav_url%';
+  AND blocked_reason LIKE 'salesnav_url%';
