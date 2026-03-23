@@ -14,7 +14,7 @@
 
 import { config, getLocalDateString, getWeekStartDate } from '../config';
 import { checkDiskSpace, getDatabase } from '../db';
-import { countWeeklyInvites, getDailyStat, getRuntimeFlag } from '../core/repositories';
+import { countWeeklyInvites, getDailyStat, getRuntimeFlag, setRuntimeFlag } from '../core/repositories';
 import { getRuntimeAccountProfiles } from '../accountManager';
 import { checkSessionFreshness } from '../browser/sessionCookieMonitor';
 import { readLineFromStdin, askConfirmation, askNumber, askChoice, isInteractiveTTY } from '../cli/stdinHelper';
@@ -117,6 +117,37 @@ export async function collectDbStats(listFilter?: string): Promise<PreflightDbSt
     const total = totalRow?.total ?? 0;
     const withEmail = emailRow?.total ?? 0;
 
+    // Trend vs ieri: confronta stats di ieri con oggi per mostrare la direzione
+    let trend: PreflightDbStats['trend'] = null;
+    try {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yStr = yesterday.toISOString().slice(0, 10);
+        const yRow = await db.get<{
+            invites_sent: number; messages_sent: number;
+            acceptances: number; challenges_count: number;
+        }>(`SELECT COALESCE(SUM(invites_sent),0) as invites_sent, COALESCE(SUM(messages_sent),0) as messages_sent,
+            COALESCE(SUM(acceptances),0) as acceptances, COALESCE(SUM(challenges_count),0) as challenges_count
+            FROM daily_stats WHERE date = ?`, [yStr]);
+        if (yRow && (yRow.invites_sent > 0 || yRow.messages_sent > 0 || yRow.acceptances > 0)) {
+            // Lead delta: quanti lead sono stati creati oggi vs ieri
+            const todayStr = getLocalDateString();
+            const createdToday = await db.get<{ cnt: number }>(
+                `SELECT COUNT(*) as cnt FROM leads WHERE DATE(created_at) = ?`, [todayStr],
+            );
+            const createdYesterday = await db.get<{ cnt: number }>(
+                `SELECT COUNT(*) as cnt FROM leads WHERE DATE(created_at) = ?`, [yStr],
+            );
+            trend = {
+                invitesYesterday: yRow.invites_sent,
+                messagesYesterday: yRow.messages_sent,
+                acceptancesYesterday: yRow.acceptances,
+                challengesYesterday: yRow.challenges_count,
+                leadsDelta: (createdToday?.cnt ?? 0) - (createdYesterday?.cnt ?? 0),
+            };
+        }
+    } catch { /* trend is best-effort */ }
+
     return {
         totalLeads: total,
         byStatus,
@@ -128,6 +159,7 @@ export async function collectDbStats(listFilter?: string): Promise<PreflightDbSt
         withPhone: phoneRow?.total ?? 0,
         withLocation: locationRow?.total ?? 0,
         lastSyncAt,
+        trend,
     };
 }
 
@@ -312,6 +344,23 @@ export async function computeSessionRiskLevel(
         recommendation = 'Rischio alto — NON procedere. Attendere, verificare account health e proxy';
     }
 
+    // Persist risk score history (rolling last 10 entries) for trend detection
+    try {
+        const historyRaw = await getRuntimeFlag('risk_score_history');
+        const history: Array<{ date: string; score: number }> = historyRaw ? JSON.parse(historyRaw) : [];
+        const today = getLocalDateString();
+        // Replace today's entry if exists, otherwise push
+        const existingIdx = history.findIndex(h => h.date === today);
+        if (existingIdx >= 0) {
+            history[existingIdx].score = score;
+        } else {
+            history.push({ date: today, score });
+        }
+        // Keep last 10 entries
+        const trimmed = history.slice(-10);
+        await setRuntimeFlag('risk_score_history', JSON.stringify(trimmed));
+    } catch { /* best-effort */ }
+
     return { level, score, factors, recommendation };
 }
 
@@ -357,6 +406,23 @@ async function runAiAdvisor(
             .map(([k, v]) => `${k}=${v}`)
             .join(', ');
 
+        // Trend data for AI context
+        const trendSection = dbStats.trend
+            ? `\nTREND vs IERI:\n- Inviti ieri: ${dbStats.trend.invitesYesterday}\n- Messaggi ieri: ${dbStats.trend.messagesYesterday}\n- Accettazioni ieri: ${dbStats.trend.acceptancesYesterday}\n- Challenge ieri: ${dbStats.trend.challengesYesterday}\n- Lead nuovi (delta): ${dbStats.trend.leadsDelta ?? 'N/A'}`
+            : '';
+
+        // Risk history for trend
+        let riskTrendSection = '';
+        try {
+            const historyRaw = await getRuntimeFlag('risk_score_history');
+            if (historyRaw) {
+                const history: Array<{ date: string; score: number }> = JSON.parse(historyRaw);
+                if (history.length >= 2) {
+                    riskTrendSection = `\n- Storico risk: ${history.slice(-5).map(h => `${h.date}=${h.score}`).join(', ')}`;
+                }
+            }
+        } catch { /* best-effort */ }
+
         const prompt = `Sei l'AI advisor di un sistema di automazione LinkedIn. Analizza lo stato del sistema e decidi se il workflow "${workflowName}" deve procedere.
 
 STATO DATABASE (L2):
@@ -367,6 +433,7 @@ STATO DATABASE (L2):
 - Con job_title: ${dbStats.withJobTitle}/${dbStats.totalLeads}
 - Con score: ${dbStats.withScore}/${dbStats.totalLeads}
 - Ultimo sync: ${dbStats.lastSyncAt || 'mai'}
+${trendSection}
 
 CONFIGURAZIONE (L3):
 - Proxy: ${cfgStatus.proxyConfigured ? 'OK' : 'MANCANTE'}${cfgStatus.proxyIpReputation ? ` (abuse score: ${cfgStatus.proxyIpReputation.abuseScore}/100)` : ''}
@@ -378,23 +445,34 @@ CONFIGURAZIONE (L3):
 
 RISK ASSESSMENT (L4):
 - Score: ${riskAssessment.score}/100 (${riskAssessment.level})
-- Fattori attivi: ${riskFactors || 'nessuno'}
+- Fattori attivi: ${riskFactors || 'nessuno'}${riskTrendSection}
 
 WARNING ATTIVI:
 ${warningsSummary}
+
+PARAMETRI ATTUALI DEL WORKFLOW:
+- Budget inviti giornaliero: ${cfgStatus.budgetInvites}
+- Budget messaggi giornaliero: ${cfgStatus.budgetMessages}
+- Budget inviti settimanale: ${cfgStatus.weeklyInviteLimit}
 
 Rispondi SOLO in formato JSON con questa struttura:
 {
   "recommendation": "PROCEED" | "PROCEED_CAUTION" | "ABORT",
   "reasoning": "spiegazione breve (1-2 frasi) in italiano",
-  "suggestedActions": ["azione 1", "azione 2"]
+  "suggestedActions": ["azione 1", "azione 2"],
+  "suggestedParams": {
+    "limit": null | number,
+    "budgetInvites": null | number,
+    "budgetMessages": null | number
+  }
 }
 
 Regole:
 - ABORT solo se ci sono condizioni critiche che rischiano ban (proxy blacklisted, pending ratio >60%, budget esaurito)
 - PROCEED_CAUTION se ci sono warning importanti ma non bloccanti
 - PROCEED se tutto e' in ordine
-- suggestedActions: max 3 suggerimenti concreti e brevi`;
+- suggestedActions: max 3 suggerimenti concreti e brevi
+- suggestedParams: suggerisci valori concreti SOLO se pensi che i parametri attuali siano troppo aggressivi. null = non modificare. Se risk score > 40, riduci il budget. Se pending ratio > 40%, riduci il limit.`;
 
         const response = await requestOpenAIText({
             system: 'Sei un esperto di automazione LinkedIn e anti-detection. Rispondi solo in JSON valido.',
@@ -408,12 +486,33 @@ Regole:
             recommendation?: string;
             reasoning?: string;
             suggestedActions?: string[];
+            suggestedParams?: {
+                limit?: number | null;
+                budgetInvites?: number | null;
+                budgetMessages?: number | null;
+            };
         };
 
         const rec = parsed.recommendation?.toUpperCase();
         const recommendation = rec === 'ABORT' ? 'ABORT'
             : rec === 'PROCEED_CAUTION' ? 'PROCEED_CAUTION'
             : 'PROCEED';
+
+        // Parse suggestedParams — only include valid numeric values
+        let suggestedParams: AiAdvisorResult['suggestedParams'];
+        if (parsed.suggestedParams && typeof parsed.suggestedParams === 'object') {
+            const sp = parsed.suggestedParams;
+            const hasAny = (typeof sp.limit === 'number') ||
+                (typeof sp.budgetInvites === 'number') ||
+                (typeof sp.budgetMessages === 'number');
+            if (hasAny) {
+                suggestedParams = {
+                    limit: typeof sp.limit === 'number' && sp.limit > 0 ? sp.limit : null,
+                    budgetInvites: typeof sp.budgetInvites === 'number' && sp.budgetInvites > 0 ? sp.budgetInvites : null,
+                    budgetMessages: typeof sp.budgetMessages === 'number' && sp.budgetMessages > 0 ? sp.budgetMessages : null,
+                };
+            }
+        }
 
         return {
             available: true,
@@ -422,6 +521,7 @@ Regole:
             suggestedActions: Array.isArray(parsed.suggestedActions)
                 ? parsed.suggestedActions.slice(0, 3)
                 : [],
+            suggestedParams,
         };
     } catch {
         // AI advisor e' best-effort: se fallisce, non blocca il workflow
@@ -461,6 +561,21 @@ function displayDbStats(stats: PreflightDbStats, listFilter?: string): void {
         .map(([s, c]) => `${s}=${c}`)
         .join(', ');
     entries.push(['Lead per status:', statusLine || '(nessuno)']);
+
+    // Trend vs ieri
+    if (stats.trend) {
+        const t = stats.trend;
+        const arrow = (v: number | null) => v === null ? '' : v > 0 ? ` (+${v})` : v < 0 ? ` (${v})` : ' (=)';
+        entries.push(['', '']);
+        entries.push(['TREND vs IERI:', '']);
+        entries.push(['  Inviti ieri:', `${t.invitesYesterday}`]);
+        entries.push(['  Messaggi ieri:', `${t.messagesYesterday}`]);
+        entries.push(['  Accettazioni ieri:', `${t.acceptancesYesterday}`]);
+        if (t.challengesYesterday > 0) {
+            entries.push(['  Challenge ieri:', `${t.challengesYesterday} [!]`]);
+        }
+        entries.push(['  Lead nuovi oggi vs ieri:', arrow(t.leadsDelta)]);
+    }
 
     console.log(formatPreflightSection('L2: STATO DATABASE', entries));
 }
@@ -516,6 +631,16 @@ function displayAiAdvice(advice: AiAdvisorResult): void {
         console.log('      Azioni suggerite:');
         for (const action of advice.suggestedActions) {
             console.log(`        - ${action}`);
+        }
+    }
+    if (advice.suggestedParams) {
+        const sp = advice.suggestedParams;
+        const parts: string[] = [];
+        if (sp.limit != null) parts.push(`limit=${sp.limit}`);
+        if (sp.budgetInvites != null) parts.push(`budgetInvites=${sp.budgetInvites}`);
+        if (sp.budgetMessages != null) parts.push(`budgetMessages=${sp.budgetMessages}`);
+        if (parts.length > 0) {
+            console.log(`      Parametri suggeriti: ${parts.join(', ')}`);
         }
     }
 }
@@ -757,6 +882,19 @@ export async function runPreflight(pfConfig: PreflightConfig): Promise<Preflight
             .join(', ');
         if (factorDetails) console.log(`      Fattori: ${factorDetails}`);
     }
+    // Risk trend from history
+    try {
+        const historyRaw = await getRuntimeFlag('risk_score_history');
+        if (historyRaw) {
+            const history: Array<{ date: string; score: number }> = JSON.parse(historyRaw);
+            if (history.length >= 2) {
+                const prev = history[history.length - 2];
+                const delta = riskAssessment.score - prev.score;
+                const trendArrow = delta > 5 ? 'IN SALITA [!]' : delta < -5 ? 'in discesa [OK]' : 'stabile';
+                console.log(`      Trend: ${trendArrow} (${prev.date}: ${prev.score} → oggi: ${riskAssessment.score})`);
+            }
+        }
+    } catch { /* best-effort */ }
 
     // ── L5: AI Advisor ───────────────────────────────────────────────────────
     let aiAdvice: AiAdvisorResult | undefined;

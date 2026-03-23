@@ -30,6 +30,14 @@ export interface PreflightDbStats {
     withPhone: number;
     withLocation: number;
     lastSyncAt: string | null;
+    /** Trend vs ieri (da daily_stats). Null se non ci sono dati di ieri. */
+    trend: {
+        invitesYesterday: number;
+        messagesYesterday: number;
+        acceptancesYesterday: number;
+        challengesYesterday: number;
+        leadsDelta: number | null;
+    } | null;
 }
 
 export interface PreflightConfigStatus {
@@ -79,6 +87,11 @@ export interface AiAdvisorResult {
     recommendation: 'PROCEED' | 'PROCEED_CAUTION' | 'ABORT';
     reasoning: string;
     suggestedActions: string[];
+    suggestedParams?: {
+        limit?: number | null;
+        budgetInvites?: number | null;
+        budgetMessages?: number | null;
+    };
 }
 
 export interface PreflightResult {
