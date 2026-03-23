@@ -193,6 +193,7 @@ export function buildLimitsAndRiskDomainConfig() {
         riskPredictiveAlertsEnabled: parseBoolEnv('RISK_PREDICTIVE_ALERTS_ENABLED', true),
         riskPredictiveLookbackDays: Math.max(3, parseIntEnv('RISK_PREDICTIVE_LOOKBACK_DAYS', 7)),
         riskPredictiveSigma: Math.max(0.5, parseFloatEnv('RISK_PREDICTIVE_SIGMA', 2)),
+        engagementBeforeMessageEnabled: parseBoolEnv('ENGAGEMENT_BEFORE_MESSAGE_ENABLED', true),
         postCreationEnabled: parseBoolEnv('POST_CREATION_ENABLED', false),
         postCreationMaxPerDay: Math.max(0, parseIntEnv('POST_CREATION_MAX_PER_DAY', 1)),
         postCreationDefaultTone: (() => {

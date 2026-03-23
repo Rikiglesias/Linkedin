@@ -871,6 +871,26 @@ export async function scheduleJobs(
             const accepted = await getLeadsByStatusForList('ACCEPTED', listName, Math.max(50, listBudget));
             for (const lead of accepted) {
                 await transitionLead(lead.id, 'READY_MESSAGE', 'scheduler_promote_to_ready_message');
+
+                // Engagement-Before-Message: schedula LIKE_POST prima del messaggio.
+                // Un umano che ha appena accettato un invito spesso vede i post della persona
+                // nei giorni successivi. Like 1-2 post crea "pre-riscaldamento relazionale".
+                if (!dryRun && config.engagementBeforeMessageEnabled !== false) {
+                    try {
+                        const engagementDelaySec = randomInt(12 * 3600, 36 * 3600); // 12-36h dopo acceptance
+                        await enqueueJob(
+                            'INTERACTION',
+                            { leadId: lead.id, actionType: 'LIKE_POST' },
+                            `engagement_pre_msg:${lead.id}:${localDate}`,
+                            15, // priorità tra check (10) e message (20)
+                            1,  // 1 solo tentativo — best-effort
+                            engagementDelaySec,
+                            pickAccountIdForLead(lead.id),
+                        );
+                    } catch {
+                        // Best-effort: se enqueue fallisce, il messaggio parte comunque
+                    }
+                }
             }
             const readyToMessage = await getLeadsByStatusForList('READY_MESSAGE', listName, listBudget);
 

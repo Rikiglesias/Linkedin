@@ -309,6 +309,7 @@ export interface AppConfig {
     riskPredictiveAlertsEnabled: boolean;
     riskPredictiveLookbackDays: number;
     riskPredictiveSigma: number;
+    engagementBeforeMessageEnabled: boolean;
     postCreationEnabled: boolean;
     postCreationMaxPerDay: number;
     postCreationDefaultTone: 'professional' | 'casual' | 'inspirational' | 'educational' | 'storytelling';
