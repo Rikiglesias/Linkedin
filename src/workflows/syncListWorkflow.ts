@@ -69,13 +69,13 @@ export async function runSyncListWorkflow(opts: SyncListOptions): Promise<void> 
             },
             {
                 id: 'maxPages',
-                prompt: 'Quante pagine vuoi scorrere?',
+                prompt: 'Quante pagine vuoi scorrere? (0 = tutte)',
                 type: 'number',
                 defaultValue: String(opts.maxPages ?? config.salesNavSyncMaxPages),
             },
             {
                 id: 'maxLeads',
-                prompt: 'Limite massimo di lead da sincronizzare?',
+                prompt: 'Limite massimo di lead da sincronizzare? (0 = tutti)',
                 type: 'number',
                 defaultValue: String(opts.maxLeads ?? config.salesNavSyncLimit),
             },
@@ -100,8 +100,11 @@ export async function runSyncListWorkflow(opts: SyncListOptions): Promise<void> 
 
     const listName = preflight.answers['listName'];
     const listUrl = preflight.answers['listUrl'] || undefined;
-    const maxPages = parseInt(preflight.answers['maxPages'] || '10', 10);
-    const maxLeads = parseInt(preflight.answers['maxLeads'] || '500', 10);
+    const rawMaxPages = parseInt(preflight.answers['maxPages'] || '10', 10);
+    const rawMaxLeads = parseInt(preflight.answers['maxLeads'] || '500', 10);
+    // 0 = nessun limite → valore alto (SalesNav ha max ~100 pagine, ~2500 lead per lista)
+    const maxPages = rawMaxPages <= 0 ? 999 : rawMaxPages;
+    const maxLeads = rawMaxLeads <= 0 ? 99999 : rawMaxLeads;
     const enrichment = preflight.answers['enrichment'] !== 'false';
 
     // ── Guard: quarantina e pausa ─────────────────────────────────────────────

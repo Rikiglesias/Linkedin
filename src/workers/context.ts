@@ -65,4 +65,6 @@ export interface WorkerContext {
     breadcrumbs?: SessionBreadcrumb[];
     /** Contatore azioni nella sessione corrente — usato per decay navigazione organica (C05) */
     sessionActionCount?: number;
+    /** Timestamp (ms) inizio sessione — usato per AI session duration */
+    sessionStartedAtMs?: number;
 }

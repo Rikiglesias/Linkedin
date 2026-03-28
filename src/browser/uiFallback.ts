@@ -320,9 +320,11 @@ export async function clickWithFallback(
             await trackSelectorSuccess(page, label, sel);
             rememberSelectorForContext(resolution.contextKey, sel);
             if (i > 0) {
+                // H20: Log fallback success so it's observable (DB record is also persisted via trackSelectorSuccess)
                 console.warn(
                     `[FALLBACK] clickWithFallback("${label}"): usato selettore livello ${i} (score=${candidate.score.toFixed(2)}) -> "${sel.substring(0, 80)}"`,
                 );
+                console.info(`[FALLBACK] ui_fallback.success label="${label}" selector="${sel.substring(0, 80)}" fallbackLevel=${i}`);
             }
             return;
         } catch (error) {

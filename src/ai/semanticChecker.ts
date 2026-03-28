@@ -58,12 +58,32 @@ export class SemanticChecker {
     }
 
     /**
+     * Carica testi da DB per un lead se non presenti in memoria (persistenza cross-restart).
+     */
+    private static async loadFromDbIfNeeded(leadId: number): Promise<void> {
+        if (this.memory.has(leadId)) return;
+        try {
+            const { getRecentMessageTexts } = await import('../core/repositories/leadsLearning');
+            const texts = await getRecentMessageTexts(leadId, MAX_MEMORY_PER_LEAD);
+            if (texts.length > 0) {
+                this.memory.set(leadId, texts.map(t => ({ text: t })));
+            }
+        } catch {
+            // DB non disponibile — procedi con memoria vuota
+        }
+    }
+
+    /**
      * Verifica se il nuovo testo è troppo simile ad uno degli ultimi messaggi inviati.
+     * Carica da DB al primo check per persistenza cross-restart.
      * @param text Testo da verificare.
      * @param threshold Soglia (es. 0.8 per 80% di similarità).
      * @returns True se è troppo simile a qualcosa in memoria.
      */
     public static async isTooSimilar(text: string, threshold: number = 0.8, leadId?: number): Promise<boolean> {
+        if (leadId !== undefined) {
+            await this.loadFromDbIfNeeded(leadId);
+        }
         const entries = leadId !== undefined ? this.memory.get(leadId) ?? [] : [];
 
         let queryEmbedding: number[] | undefined;

@@ -22,8 +22,40 @@ const MAX_ATTEMPTS = 2;
 const MAX_AUTO_CHALLENGE_RESOLUTIONS_PER_DAY = 3;
 const CAPTCHA_COOLDOWN_MS = 10_000; // 10s minimo tra un tentativo e l'altro
 
-/** Timestamp dell'ultimo tentativo di risoluzione (in-process, non DB). */
+/** Timestamp dell'ultimo tentativo di risoluzione — in-memory fast-path cache.
+ * M26: Persisted to runtime_flags on every attempt and loaded lazily on first use. */
 let _lastResolutionAttemptMs = 0;
+let _lastAttemptLoaded = false;
+
+const RUNTIME_FLAG_LAST_ATTEMPT = 'captcha::last_attempt';
+
+/** M26: Load the persisted last-attempt timestamp from DB on first use. */
+async function loadLastAttemptMs(): Promise<void> {
+    if (_lastAttemptLoaded) return;
+    _lastAttemptLoaded = true;
+    try {
+        const { getRuntimeFlag } = await import('../core/repositories');
+        const stored = await getRuntimeFlag(RUNTIME_FLAG_LAST_ATTEMPT).catch(() => null);
+        if (stored) {
+            const parsed = parseInt(stored, 10);
+            if (Number.isFinite(parsed) && parsed > 0) {
+                _lastResolutionAttemptMs = parsed;
+            }
+        }
+    } catch {
+        // Non-blocking: fallback to in-memory 0 on DB error
+    }
+}
+
+/** M26: Persist the last-attempt timestamp to DB. */
+async function persistLastAttemptMs(timestampMs: number): Promise<void> {
+    try {
+        const { setRuntimeFlag } = await import('../core/repositories');
+        await setRuntimeFlag(RUNTIME_FLAG_LAST_ATTEMPT, String(timestampMs));
+    } catch {
+        // Non-blocking: in-memory cache is still valid for this process
+    }
+}
 
 /**
  * Tenta di risolvere un challenge/CAPTCHA sulla pagina corrente.
@@ -51,6 +83,10 @@ export async function attemptChallengeResolution(page: Page): Promise<boolean> {
         return false;
     }
 
+    // M26: Load persisted last-attempt timestamp from DB on first use.
+    // This ensures the cooldown survives process restarts.
+    await loadLastAttemptMs();
+
     // Cooldown: un umano non risolve 2 CAPTCHA in 10 secondi.
     // Se LinkedIn manda challenge ravvicinati, aspettiamo prima di rispondere.
     const msSinceLastAttempt = Date.now() - _lastResolutionAttemptMs;
@@ -60,6 +96,8 @@ export async function attemptChallengeResolution(page: Page): Promise<boolean> {
         await humanDelay(page, waitMs, waitMs + 2000);
     }
     _lastResolutionAttemptMs = Date.now();
+    // M26: Persist updated timestamp immediately so restarts respect the cooldown
+    void persistLastAttemptMs(_lastResolutionAttemptMs);
 
     const provider: VisionProvider = createVisionProvider();
 

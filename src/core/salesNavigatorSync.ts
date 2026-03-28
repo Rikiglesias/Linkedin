@@ -20,7 +20,6 @@ import {
     getRuntimeFlag,
     linkLeadToSalesNavList,
     markSalesNavListSynced,
-    setLeadStatus,
     setRuntimeFlag,
     updateLeadScores,
     upsertSalesNavList,
@@ -454,7 +453,11 @@ async function postSyncEnrichment(
 
             // 4. Promozione NEW → READY_INVITE se ha score sufficiente
             if (lead.status === 'NEW' && lead.lead_score !== null && lead.lead_score >= 30) {
-                await setLeadStatus(leadId, 'READY_INVITE');
+                const { transitionLead } = await import('./leadStateService');
+                await transitionLead(leadId, 'READY_INVITE', 'enrichment_score_threshold', {
+                    score: lead.lead_score,
+                    listName,
+                });
                 enrichReport.promoted += 1;
                 console.log(`  ${progress} [PROMOTE] ${maskName(fullName)}: NEW → READY_INVITE (score=${lead.lead_score})`);
             }
@@ -584,12 +587,18 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
 
     try {
         let loggedIn = await checkLogin(session.page);
-        if (!loggedIn && interactive) {
-            const currentUrl = session.page.url().toLowerCase();
-            if (!currentUrl.includes('/login')) {
-                await session.page.goto('https://www.linkedin.com/login', { waitUntil: 'domcontentloaded', timeout: 15_000 }).catch(() => null);
+        if (!loggedIn) {
+            // Cookie scaduti: se c'è un utente davanti al terminale, aspetta il login manuale.
+            // Non serve il flag --interactive — basta che sia un TTY.
+            const { isInteractiveTTY } = await import('../cli/stdinHelper');
+            if (interactive || isInteractiveTTY()) {
+                const currentUrl = session.page.url().toLowerCase();
+                if (!currentUrl.includes('/login')) {
+                    await session.page.goto('https://www.linkedin.com/login', { waitUntil: 'domcontentloaded', timeout: 15_000 }).catch(() => null);
+                }
+                console.log('\n  [LOGIN] Cookie scaduti. Fai login nel browser — hai 5 minuti.\n');
+                loggedIn = await awaitManualLogin(session.page, 'salesnav-sync', { timeoutMs: 5 * 60 * 1000 });
             }
-            loggedIn = await awaitManualLogin(session.page, 'salesnav-sync', { timeoutMs: 5 * 60 * 1000 });
         }
         if (!loggedIn) {
             throw new Error(`Sales Navigator sync: sessione non autenticata (account=${account.id}).`);
@@ -600,7 +609,8 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
         if (!interactive) {
             try {
                 const { warmupSession } = await import('./sessionWarmer');
-                await warmupSession(session.page);
+                const lastSessionEndedAt = await getRuntimeFlag(`browser_session_ended_at:${account.id}`).catch(() => null);
+                await warmupSession(session.page, lastSessionEndedAt);
             } catch (warmupErr) {
                 console.warn(`[WARN] Warmup fallito: ${warmupErr instanceof Error ? warmupErr.message : String(warmupErr)}`);
             }
@@ -625,7 +635,25 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
                 },
             ];
         } else {
-            const discovered = await navigateToSavedLists(session.page);
+            let discovered: SalesNavSavedList[];
+            try {
+                discovered = await navigateToSavedLists(session.page);
+            } catch (navErr) {
+                const isSalesNavLogin = navErr instanceof Error && navErr.message.includes('SALESNAV_LOGIN_REQUIRED');
+                if (!isSalesNavLogin) throw navErr;
+
+                // Sessione SalesNav scaduta — disabilita click-through per login manuale
+                console.warn('[SYNC] Sessione SalesNav scaduta — in attesa del login manuale...');
+                if (!interactive) disableWindowClickThrough(session.browser);
+                const relogged = await awaitManualLogin(session.page, 'salesnav-list-sync', { timeoutMs: 3 * 60 * 1000 });
+                if (!relogged) throw navErr;
+                if (!interactive) {
+                    enableWindowClickThrough(session.browser);
+                    await blockUserInput(session.page);
+                }
+                // Retry dopo login manuale
+                discovered = await navigateToSavedLists(session.page);
+            }
             // Re-inject overlay dopo navigazione (il DOM viene distrutto da page.goto)
             if (!interactive) await blockUserInput(session.page);
             report.listDiscoveryCount = discovered.length;
@@ -675,12 +703,35 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
                 samples: [],
             };
 
-            const scraped = await scrapeLeadsFromSalesNavList(session.page, {
-                listUrl,
-                maxPages,
-                leadLimit: maxLeadsPerList,
-                interactive,
-            });
+            let scraped: Awaited<ReturnType<typeof scrapeLeadsFromSalesNavList>>;
+            try {
+                scraped = await scrapeLeadsFromSalesNavList(session.page, {
+                    listUrl,
+                    maxPages,
+                    leadLimit: maxLeadsPerList,
+                    interactive,
+                });
+            } catch (scrapeErr) {
+                const isSalesNavLogin = scrapeErr instanceof Error && scrapeErr.message.includes('SALESNAV_LOGIN_REQUIRED');
+                if (!isSalesNavLogin) throw scrapeErr;
+
+                // Sessione SalesNav scaduta durante scraping lista — attendi login manuale
+                console.warn(`[SYNC] Sessione SalesNav scaduta su lista "${listName}" — in attesa del login manuale...`);
+                if (!interactive) disableWindowClickThrough(session.browser);
+                const relogged = await awaitManualLogin(session.page, 'salesnav-list-scrape', { timeoutMs: 3 * 60 * 1000 });
+                if (!relogged) throw scrapeErr;
+                if (!interactive) {
+                    enableWindowClickThrough(session.browser);
+                    await blockUserInput(session.page);
+                }
+                // Retry dopo login manuale
+                scraped = await scrapeLeadsFromSalesNavList(session.page, {
+                    listUrl,
+                    maxPages,
+                    leadLimit: maxLeadsPerList,
+                    interactive,
+                });
+            }
             listReport.pagesVisited = scraped.pagesVisited;
             listReport.candidatesDiscovered = scraped.candidatesDiscovered;
             listReport.uniqueCandidates = scraped.uniqueCandidates;
@@ -793,6 +844,7 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
         if (ownsBrowser) {
             await closeBrowser(session);
             browserClosed = true;
+            await setRuntimeFlag(`browser_session_ended_at:${account.id}`, new Date().toISOString()).catch(() => null);
         }
 
         if (options.skipEnrichment) {
@@ -834,6 +886,7 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
         if (ownsBrowser && !browserClosed) {
             disableWindowClickThrough(session.browser);
             await closeBrowser(session);
+            await setRuntimeFlag(`browser_session_ended_at:${account.id}`, new Date().toISOString()).catch(() => null);
         }
     }
 }

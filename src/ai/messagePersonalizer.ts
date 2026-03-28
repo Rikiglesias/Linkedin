@@ -45,6 +45,7 @@ const LANG_LABELS: Record<string, string> = {
 export async function buildPersonalizedFollowUpMessage(
     lead: LeadRecord,
     lang?: string,
+    aiContext?: string,
 ): Promise<PersonalizedMessageResult> {
     const template = buildFollowUpMessage(lead);
     if (!config.aiPersonalizationEnabled || !isOpenAIConfigured()) {
@@ -71,6 +72,7 @@ export async function buildPersonalizedFollowUpMessage(
         role: lead.job_title,
         website: lead.website,
         fallbackTemplate: template,
+        ...(aiContext ? { aiSuggestedApproach: aiContext } : {}),
     });
 
     let finalMessage = '';
@@ -138,6 +140,7 @@ export async function buildFollowUpReminderMessage(
     lead: LeadRecord,
     daysSince: number,
     hint?: FollowUpContextHint,
+    aiContext?: string,
 ): Promise<PersonalizedMessageResult> {
     const FOLLOW_UP_MAX_CHARS = 300;
 
@@ -181,6 +184,7 @@ export async function buildFollowUpReminderMessage(
         subIntentHint: subIntent || null,
         entitiesHint: entities,
         fallback: fallbackTrimmed,
+        ...(aiContext ? { aiSuggestedApproach: aiContext } : {}),
     });
 
     try {

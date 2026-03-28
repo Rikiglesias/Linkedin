@@ -159,6 +159,11 @@ async function rotateSessionWithLoginCheck(
     return rotated;
 }
 
+// M36: Mutex flag per-account to prevent concurrent challenge checks.
+// Without this, two concurrent async paths (main job loop + follow-up worker)
+// could both detect a challenge and call handleChallengeDetected concurrently.
+const _challengeCheckInProgress = new Map<string, boolean>();
+
 async function runQueuedJobsForAccount(
     options: RunJobsOptions,
     account: RuntimeAccountProfile,
@@ -355,6 +360,7 @@ async function runQueuedJobsForAccount(
             accountId: account.id,
             behavioralProfile,
             visitedProfilesToday,
+            sessionStartedAtMs: Date.now(),
         };
         let consecutiveFailures = 0;
         let processedOnCurrentSession = 0;
@@ -427,6 +433,28 @@ async function runQueuedJobsForAccount(
             }
         } catch {
             // Best-effort: decoy terms generation failure is non-blocking
+        }
+
+        // P6: Batch acceptance check — visita invitation manager UNA volta per scoprire
+        // chi ha accettato, invece di 100 visite profilo individuali.
+        if (!options.dryRun) {
+            try {
+                const { runBatchAcceptanceCheck } = await import('../workers/batchAcceptanceChecker');
+                const batchResult = await runBatchAcceptanceCheck(session.page, account.id);
+                await logInfo('job_runner.batch_acceptance_check', {
+                    accountId: account.id,
+                    totalInvited: batchResult.totalInvited,
+                    pendingFound: batchResult.pendingFound,
+                    probablyAccepted: batchResult.probablyAccepted,
+                    durationMs: batchResult.durationMs,
+                });
+            } catch (batchErr) {
+                // Non-blocking: se fallisce, i check individuali funzionano comunque.
+                await logWarn('job_runner.batch_acceptance_check_failed', {
+                    accountId: account.id,
+                    error: batchErr instanceof Error ? batchErr.message : String(batchErr),
+                });
+            }
         }
 
         while (true) {
@@ -757,18 +785,31 @@ async function runQueuedJobsForAccount(
                         }
                     }
                     addBreadcrumb(workerContext, 'CHALLENGE_DETECTED', message.substring(0, 100));
-                    await handleChallengeDetected({
-                        source: 'job_runner',
-                        accountId: account.id,
-                        leadId: challengeLeadId,
-                        jobId: job.id,
-                        jobType: job.type,
-                        message,
-                        extra: {
-                            statusBeforeFailure: job.status,
-                            breadcrumbs: formatBreadcrumbs(workerContext),
-                        },
-                    });
+                    // M36: Prevent race condition — skip duplicate challenge handling if already in progress
+                    if (!_challengeCheckInProgress.get(account.id)) {
+                        _challengeCheckInProgress.set(account.id, true);
+                        try {
+                            await handleChallengeDetected({
+                                source: 'job_runner',
+                                accountId: account.id,
+                                leadId: challengeLeadId,
+                                jobId: job.id,
+                                jobType: job.type,
+                                message,
+                                extra: {
+                                    statusBeforeFailure: job.status,
+                                    breadcrumbs: formatBreadcrumbs(workerContext),
+                                },
+                            });
+                        } finally {
+                            _challengeCheckInProgress.delete(account.id);
+                        }
+                    } else {
+                        await logWarn('job_runner.m36_challenge_check_skipped_concurrent', {
+                            accountId: account.id,
+                            jobId: job.id,
+                        });
+                    }
                     await markJobRetryOrDeadLetter(job.id, attempts, attempts, 0, message);
                     await logError('job.challenge_detected', {
                         jobId: job.id,
@@ -1142,6 +1183,7 @@ async function runQueuedJobsForAccount(
                 dryRun: options.dryRun,
                 localDate: options.localDate,
                 accountId: account.id,
+                sessionStartedAtMs: workerContext.sessionStartedAtMs,
             };
             try {
                 const followUpsSentSoFar = await getDailyStat(options.localDate, 'follow_ups_sent');
@@ -1157,14 +1199,26 @@ async function runQueuedJobsForAccount(
                 if (err instanceof ChallengeDetectedError) {
                     accountHealthMetrics.challenges += 1;
                     await incrementDailyStat(options.localDate, 'challenges_count');
-                    await handleChallengeDetected({
-                        source: 'follow_up_worker',
-                        accountId: account.id,
-                        message: err.message,
-                        extra: {
-                            phase: 'follow_up',
-                        },
-                    });
+                    // M36: Mutex — prevent duplicate challenge handling if main loop already handled it
+                    if (!_challengeCheckInProgress.get(account.id)) {
+                        _challengeCheckInProgress.set(account.id, true);
+                        try {
+                            await handleChallengeDetected({
+                                source: 'follow_up_worker',
+                                accountId: account.id,
+                                message: err.message,
+                                extra: {
+                                    phase: 'follow_up',
+                                },
+                            });
+                        } finally {
+                            _challengeCheckInProgress.delete(account.id);
+                        }
+                    } else {
+                        await logWarn('job_runner.m36_follow_up_challenge_check_skipped_concurrent', {
+                            accountId: account.id,
+                        });
+                    }
                     await logWarn('job_runner.follow_up_phase_challenge', {
                         accountId: account.id,
                         error: err.message,

@@ -8,7 +8,7 @@ import {
     simulateHumanReading,
     typeWithFallback,
 } from '../browser';
-import { transitionLead } from '../core/leadStateService';
+import { isValidLeadTransition, transitionLead } from '../core/leadStateService';
 import { isBlacklisted } from '../core/repositories/blacklist';
 import {
     checkAndIncrementDailyLimit,
@@ -50,6 +50,14 @@ export async function processMessageJob(
     const isCampaignDriven = !!payload.campaignStateId;
     if (!lead || (!isCampaignDriven && lead.status !== 'READY_MESSAGE')) {
         return workerResult(0);
+    }
+
+    // Guard: linkedin_url null/empty → REVIEW_REQUIRED (DB può avere NULL nonostante il tipo TS)
+    if (!lead.linkedin_url || lead.linkedin_url.trim().length === 0) {
+        if (isValidLeadTransition(lead.status, 'REVIEW_REQUIRED')) {
+            await transitionLead(lead.id, 'REVIEW_REQUIRED', 'missing_linkedin_url');
+        }
+        return workerResult(1);
     }
 
     // Check blacklist runtime: il lead potrebbe essere stato aggiunto alla blacklist
@@ -94,6 +102,7 @@ export async function processMessageJob(
         }
     }
 
+    let needsLiveGeneration = false;
     if (!message) {
         if (forceTemplate) {
             // L'utente ha scelto 'template' nel preflight — usa solo il template, niente AI
@@ -111,29 +120,32 @@ export async function processMessageJob(
                 await markPrebuiltMessageUsed(prebuilt.id);
                 await logInfo('message.used_prebuilt', { leadId: lead.id, prebuiltId: prebuilt.id });
             } else {
-                // Fallback: generazione on-the-fly (aggiunge ~2-5s di latenza AI)
-                const personalized = await buildPersonalizedFollowUpMessage(lead, lang);
-                message = personalized.message;
-                messageSource = personalized.source as 'template' | 'ai';
-                messageModel = personalized.model;
+                // Generazione on-the-fly spostata DOPO aiDecide per usare messageContext
+                // e per evitare di sprecare una chiamata OpenAI se l'AI decide SKIP/DEFER.
+                needsLiveGeneration = true;
             }
         }
     }
 
-    const messageHash = hashMessage(message);
-    const duplicateCount = await countRecentMessageHash(messageHash, 24);
-    const validation = await validateMessageContentAsync(message, { duplicateCountLast24h: duplicateCount, leadId: lead.id });
-    if (!validation.valid) {
-        await transitionLead(lead.id, 'BLOCKED', 'message_validation_failed', {
-            reasons: validation.reasons,
-            source: messageSource,
-        });
-        return workerResult(1, [
-            {
-                leadId: lead.id,
-                message: `message_validation_failed:${validation.reasons.join(',')}`,
-            },
-        ]);
+    // Validazione messaggio: solo se il messaggio e' gia' pronto (prebuilt/template/campaign).
+    // Se needsLiveGeneration, il messaggio viene generato dopo aiDecide e validato la'.
+    let messageHash = '';
+    if (!needsLiveGeneration) {
+        messageHash = hashMessage(message);
+        const duplicateCount = await countRecentMessageHash(messageHash, 24);
+        const validation = await validateMessageContentAsync(message, { duplicateCountLast24h: duplicateCount, leadId: lead.id });
+        if (!validation.valid) {
+            await transitionLead(lead.id, 'BLOCKED', 'message_validation_failed', {
+                reasons: validation.reasons,
+                source: messageSource,
+            });
+            return workerResult(1, [
+                {
+                    leadId: lead.id,
+                    message: `message_validation_failed:${validation.reasons.join(',')}`,
+                },
+            ]);
+        }
     }
 
     // Navigation Context Chain (1.2): catena di navigazione realistica
@@ -160,7 +172,13 @@ export async function processMessageJob(
         return workerResult(1);
     }
 
-    // AI Decision: l'AI decide SE inviare il messaggio
+    // AI Decision: l'AI decide SE inviare il messaggio — con dati session REALI + enrichment
+    const { buildSessionSnapshot } = await import('./sessionDataHelper');
+    const { getLeadEnrichmentSummary } = await import('../core/repositories');
+    const [sessionData, enrichment] = await Promise.all([
+        buildSessionSnapshot(context),
+        getLeadEnrichmentSummary(lead.id).catch(() => null),
+    ]);
     const aiDecision = await aiDecide({
         point: 'pre_message',
         lead: {
@@ -168,8 +186,17 @@ export async function processMessageJob(
             name: `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim() || undefined,
             title: lead.job_title ?? undefined,
             company: lead.account_name ?? undefined,
+            score: lead.lead_score ?? undefined,
+            about: lead.about ?? undefined,
+            email: lead.email ?? undefined,
+            businessEmail: lead.business_email ?? undefined,
+            phone: lead.phone ?? undefined,
+            location: lead.location ?? undefined,
+            seniority: enrichment?.seniority ?? undefined,
+            industry: enrichment?.industry ?? undefined,
         },
         pageObservation: pageObs,
+        session: sessionData,
     });
 
     if (aiDecision.action === 'SKIP') {
@@ -198,6 +225,9 @@ export async function processMessageJob(
         await logInfo('message.ai_low_confidence_delay', { leadId: lead.id, confidence: aiDecision.confidence });
         await humanDelay(context.session.page, 2000, 4000);
     }
+
+    // Generazione on-the-fly spostata DOPO apertura chat per avere chatMessages come contesto.
+    // Se needsLiveGeneration, il messaggio viene generato dopo il click su Message button.
 
     // GAP2-C04: Identity check — verifica che il profilo corrisponda al lead target.
     try {
@@ -284,6 +314,10 @@ export async function processMessageJob(
         });
     await humanDelay(context.session.page, 1200, 2200);
 
+    // Estrai ultimi messaggi dalla chat aperta — usati per reply check + contesto AI generazione
+    const { extractRecentChatMessages } = await import('./chatMessageExtractor');
+    const chatMessages = await extractRecentChatMessages(context.session.page, 5);
+
     // M12: Pulisci draft residuo nella textbox prima di digitare.
     // Se LinkedIn ha salvato un draft (es. crash precedente, navigazione interrotta),
     // il nuovo messaggio verrebbe CONCATENATO al draft → messaggio corrotto.
@@ -302,26 +336,68 @@ export async function processMessageJob(
     }
 
     // C07: Check se il lead ha GIÀ scritto nella chat prima di inviare il primo messaggio.
-    // Senza questo check, il bot potrebbe inviare un messaggio freddo a qualcuno che ci ha già contattato.
-    // Legge l'ultimo messaggio non-nostro nella conversazione aperta.
-    try {
-        const theirLastMsg = context.session.page
-            .locator('.msg-s-message-list__event:not([data-msg-s-message-event-is-me="true"]) .msg-s-event-listitem__body')
-            .last();
-        if (await theirLastMsg.isVisible({ timeout: 1500 }).catch(() => false)) {
-            const theirText = await theirLastMsg.innerText().catch(() => '');
-            if (theirText && theirText.trim().length > 0) {
-                await logInfo('message.existing_reply_detected', {
-                    leadId: lead.id,
-                    textExcerpt: theirText.trim().substring(0, 50),
-                });
-                await transitionLead(lead.id, 'REPLIED', 'existing_reply_in_chat');
-                return workerResult(1);
+    // Usa chatMessages estratti (se disponibili) o fallback al selettore DOM diretto.
+    const hasTheirReply = chatMessages.length > 0
+        ? chatMessages.some(m => m.startsWith('THEM:'))
+        : false;
+    if (hasTheirReply) {
+        const lastTheirMsg = chatMessages.filter(m => m.startsWith('THEM:')).pop() ?? '';
+        await logInfo('message.existing_reply_detected', {
+            leadId: lead.id,
+            textExcerpt: lastTheirMsg.substring(0, 55),
+            source: 'chat_extractor',
+        });
+        await transitionLead(lead.id, 'REPLIED', 'existing_reply_in_chat');
+        return workerResult(1);
+    }
+    // Fallback: se chatMessageExtractor non ha trovato nulla, prova il selettore diretto (C07 originale)
+    if (chatMessages.length === 0) {
+        try {
+            const theirLastMsg = context.session.page
+                .locator('.msg-s-message-list__event:not([data-msg-s-message-event-is-me="true"]) .msg-s-event-listitem__body')
+                .last();
+            if (await theirLastMsg.isVisible({ timeout: 1500 }).catch(() => false)) {
+                const theirText = await theirLastMsg.innerText().catch(() => '');
+                if (theirText && theirText.trim().length > 0) {
+                    await logInfo('message.existing_reply_detected', {
+                        leadId: lead.id,
+                        textExcerpt: theirText.trim().substring(0, 50),
+                        source: 'dom_fallback',
+                    });
+                    await transitionLead(lead.id, 'REPLIED', 'existing_reply_in_chat');
+                    return workerResult(1);
+                }
             }
+        } catch (replyCheckErr) {
+            void logWarn('message.a04.reply_check_failed', { leadId: lead.id, error: replyCheckErr instanceof Error ? replyCheckErr.message : String(replyCheckErr) });
         }
-    } catch (replyCheckErr) {
-        // A04: reply check tracciato
-        void logWarn('message.a04.reply_check_failed', { leadId: lead.id, error: replyCheckErr instanceof Error ? replyCheckErr.message : String(replyCheckErr) });
+    }
+
+    // Generazione on-the-fly DOPO apertura chat: ora abbiamo chatMessages come contesto.
+    // Se l'AI ha detto SKIP/DEFER sopra, questa sezione non viene mai raggiunta (risparmio API).
+    if (needsLiveGeneration) {
+        // Combina messageContext dell'AI + chatMessages estratti come contesto per la generazione
+        const chatContextStr = chatMessages.length > 0
+            ? `Recent chat: ${chatMessages.join(' | ')}`
+            : '';
+        const fullAiContext = [aiDecision.messageContext, chatContextStr].filter(Boolean).join('\n') || undefined;
+
+        const personalized = await buildPersonalizedFollowUpMessage(lead, lang, fullAiContext);
+        message = personalized.message;
+        messageSource = personalized.source as 'template' | 'ai';
+        messageModel = personalized.model;
+
+        // Validazione post-generazione on-the-fly
+        messageHash = hashMessage(message);
+        const liveDupCount = await countRecentMessageHash(messageHash, 24);
+        const liveValidation = await validateMessageContentAsync(message, { duplicateCountLast24h: liveDupCount, leadId: lead.id });
+        if (!liveValidation.valid) {
+            await transitionLead(lead.id, 'BLOCKED', 'message_validation_failed', {
+                reasons: liveValidation.reasons,
+                source: messageSource,
+            });
+            return workerResult(1, [{ leadId: lead.id, message: `message_validation_failed:${liveValidation.reasons.join(',')}` }]);
+        }
     }
 
     await typeWithFallback(context.session.page, SELECTORS.messageTextbox, message, 'messageTextbox', 5000).catch(
@@ -409,7 +485,7 @@ export async function processMessageJob(
         messageLength: message.length,
         isCampaignDriven,
     });
-    await storeMessageHash(lead.id, messageHash);
+    await storeMessageHash(lead.id, messageHash, message);
     // messages_sent already incremented atomically by checkAndIncrementDailyLimit (non dry-run)
     if (context.dryRun) {
         await incrementDailyStat(context.localDate, 'messages_sent');

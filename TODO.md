@@ -22,6 +22,18 @@
 
 ---
 
+## 📊 STATO IMPLEMENTAZIONE (aggiornato marzo 2026)
+
+| Categoria | Done | Open | Note |
+|-----------|------|------|------|
+| 🔴 CRITICAL (C01-C14) | **14/14** | 0 | Tutti implementati ✅ |
+| 🟠 HIGH (H01-H30) | **30/30** ✅ | 0 | Tutti completati |
+| 🟡 MEDIUM (M01-M49) | **49/49** ✅ | 0 | Tutti completati |
+| 🏗️ ARCHITETTURA | ~18/22 | ~4 | Circular deps ✅, integration.ts rimosso ✅ |
+| 📋 PROD READINESS | 3/12 | 9 | Graceful shutdown ✅, env config ✅, secrets ✅ |
+
+---
+
 ## ⚙️ WORKFLOW OBBLIGATORIO PER OGNI FIX — 6 Livelli di Controllo
 
 > **OGNI singolo fix di questa lista DEVE passare tutti e 6 i livelli prima di essere considerato completato.**
@@ -1000,18 +1012,18 @@ AIDecisionResponse {
 
 ### Pulizia da fare
 
-- [ ] **Risolvere le 8 circular dependencies** — priorità ALTA per le 4 della catena AI
+- [x] **Risolvere le 8 circular dependencies** — ZERO circular deps (commit 05e1588 + 7c68e61 + 15b825d)
 - [ ] **Verificare file potenzialmente inutilizzati** — grep + conferma utente
-- [ ] **Verificare se `listScraper.ts` (586 righe) è codice morto** — il commento dice "non più usato"
-- [ ] **Unificare i 4 metodi di navigazione** dei worker in una funzione comune
-- [ ] **Rimuovere `src/tests/integration.ts`** se sostituito da `integration.vitest.ts`
-- [ ] **Verificare stato frontend/** — se non usato, documentare o rimuovere
+- [ ] **Verificare se `listScraper.ts` (586 righe) è codice morto** — NON è morto: importato da `salesNavigatorSync.ts` e `listActions.ts`
+- [x] **Unificare i 4 metodi di navigazione** — `navigateToProfileWithContext` + `navigateToProfileForMessage` in `navigationContext.ts`
+- [x] **Rimuovere `src/tests/integration.ts`** — rimosso (commit 30b6f18, 1636 righe)
+- [ ] **Verificare stato frontend/** — cartella esiste (apiClient.ts, charts.ts, etc.) — chiedere all'utente se è deployata
 
 ---
 
 ## 🔴 CRITICAL — Fixare prima di usare il bot
 
-### C01 — Doctor apre browser PRIMA del proxy health check → IP server esposto
+### C01 ✅ — Doctor apre browser PRIMA del proxy health check → IP server esposto
 - **File diretti**: `src/index.ts:375-420`
 - **File indiretti**: `src/core/doctor.ts:297` (chiama `launchBrowser`), `src/browser/launcher.ts` (apre browser), `src/proxyManager.ts:504-549` (health check), `src/proxy/ja3Validator.ts:105-165` (JA3 validation), `src/accountManager.ts` (account profiles)
 - **Problema**: Ordine boot: config → DB → doctor (LANCIA BROWSER alla riga 297 di doctor.ts) → proxy check (riga 407 di index.ts). Se il proxy è giù, il browser del doctor va su LinkedIn con l'IP reale del server. Il doctor chiama `launchBrowser()` per OGNI account per verificare il login.
@@ -1019,7 +1031,7 @@ AIDecisionResponse {
 - **Fix**: In `index.ts`, spostare il blocco proxy check (righe 407-420) PRIMA del blocco doctor (righe 375-405). Aggiungere check CycleTLS nello stesso blocco. Se proxy morto → `process.exit(1)`.
 - **Scenario L4**: E se il proxy è OK al check ma muore 2 secondi dopo durante il doctor? → Aggiungere `proxy` option a `launchBrowser` in doctor.ts (già presente, ma verificare che sia usata).
 
-### C02 — Proxy fail NON blocca il workflow → il bot parte senza protezione
+### C02 ✅ — Proxy fail NON blocca il workflow → il bot parte senza protezione
 - **File diretti**: `src/index.ts:407-420`
 - **File indiretti**: `src/proxyManager.ts:504-549` (checkProxyHealth), `src/proxy/ipReputationChecker.ts` (reputation check), `src/accountManager.ts:getRuntimeAccountProfiles()`
 - **Problema**: Riga 414: `console.error(...)` ma nessun `process.exit(1)`. Il workflow parte lo stesso. L'utente potrebbe non vedere il warning nella console (output abbondante).
@@ -1027,7 +1039,7 @@ AIDecisionResponse {
 - **Fix**: Dopo il loop degli account, se QUALSIASI proxy ha fallito → `process.exit(1)` con messaggio chiaro. Telegram alert critico.
 - **Scenario L4**: E se un account ha proxy e l'altro no (multi-account)? → Bloccare solo l'account senza proxy, non l'intero processo.
 
-### C03 — Nessun check CycleTLS al boot → JA3 spoofing potenzialmente OFF
+### C03 ✅ — Nessun check CycleTLS al boot → JA3 spoofing potenzialmente OFF
 - **File diretti**: `src/index.ts` (manca il check), `scripts/startCycleTls.ts`
 - **File indiretti**: `src/proxy/ja3Validator.ts:105-165` (la funzione `validateJa3Configuration()` ESISTE ma non è chiamata), `src/browser/stealth.ts` (filtra pool assumendo CycleTLS attivo), `src/fingerprint/pool.ts` (selezione fingerprint), `src/config/index.ts` (config.useJa3Proxy)
 - **Problema**: `validateJa3Configuration()` è chiamata SOLO nei comandi `doctor` e `proxy-status` (riga 513 di index.ts), MAI nel boot dei workflow operativi (send-invites, send-messages, sync-search, etc).
@@ -1035,7 +1047,7 @@ AIDecisionResponse {
 - **Fix**: In `index.ts`, nel blocco proxy check (dopo aver spostato prima del doctor per C01): aggiungere `if (config.useJa3Proxy) { const report = await validateJa3Configuration(); if (!report.cycleTlsActive) process.exit(1); }`.
 - **Scenario L4**: E se CycleTLS crasha mid-session? → Aggiungere periodic health check (ogni 10 min) durante la sessione.
 
-### C04 — Nessuna verifica identità: il bot potrebbe invitare la persona SBAGLIATA
+### C04 ✅ — Nessuna verifica identità: il bot potrebbe invitare la persona SBAGLIATA
 - **File diretti**: `src/workers/inviteWorker.ts:325-446`
 - **File indiretti**: `src/browser/navigationContext.ts:180-245` (navigazione), `src/selectors.ts:connectButtonPrimary` (bottone Connect), `src/core/leadStateService.ts` (transizione), `src/core/repositories/leadsCore.ts:getLeadById()` (dati lead)
 - **Problema**: Tra la navigazione al profilo (riga 325) e il click Connect (riga 439), il codice NON verifica mai che `h1` della pagina corrisponda a `lead.first_name + lead.last_name`.
@@ -1043,14 +1055,14 @@ AIDecisionResponse {
 - **Fix**: Dopo riga 334 (computeProfileDwellTime), aggiungere: lettura `h1`, confronto Jaro-Winkler con lead name, se < 0.75 → `transitionLead(REVIEW_REQUIRED, 'identity_mismatch')`.
 - **Scenario L3**: Edge case: nomi con accenti (Mario → Mário), nomi composti (Maria Elena), profili in lingue diverse (名前). Usare normalizzazione Unicode prima del confronto.
 
-### C05 — sessionInviteCount MAI passato → decay navigazione organica rotto
+### C05 ✅ — sessionInviteCount MAI passato → decay navigazione organica rotto
 - **File diretti**: `src/workers/inviteWorker.ts:325-330`, `src/browser/navigationContext.ts:180-186`
 - **File indiretti**: `src/workers/context.ts` (WorkerContext — deve avere campo inviteCount), `src/core/jobRunner.ts` (deve incrementare il contatore)
 - **Problema**: `navigateToProfileWithContext()` accetta `sessionInviteCount` come 5° parametro (default 0). inviteWorker.ts riga 325 chiama con solo 4 argomenti. Il decay (45% → 25% → 10% organic) non si attiva MAI.
 - **Fix**: `inviteWorker.ts:325` → aggiungere 5° argomento. In `workers/context.ts` → aggiungere `inviteCount` al tipo WorkerContext. In `jobRunner.ts` → incrementare dopo ogni invite job.
 - **Scenario L2**: Il parametro è opzionale (default 0) → retrocompatibile. Ma verificare che `context.session` abbia il campo disponibile.
 
-### C06 — Follow-up NON verifica se il lead ha già risposto → rischio spam gravissimo
+### C06 ✅ — Follow-up NON verifica se il lead ha già risposto → rischio spam gravissimo
 - **File diretti**: `src/workers/followUpWorker.ts` (il worker che invia), `src/workers/inboxWorker.ts` (il worker che rileva risposte)
 - **File indiretti**: `src/workers/registry.ts` (inboxWorker NON registrato), `src/core/jobRunner.ts` (esegue follow-up alla fine della sessione), `src/core/repositories.ts:getLeadsForFollowUp()` (query senza check risposta), `src/selectors.ts:inboxLastMessage,inboxProfileLink` (selettori chat), `src/core/leadStateService.ts` (transizione REPLIED)
 - **Problema**: followUpWorker query `WHERE status='MESSAGED' AND follow_up_count < MAX`. NON controlla se il lead ha risposto. L'inboxWorker (unico modo per rilevare risposte) NON è nel ciclo standard.
@@ -1061,56 +1073,56 @@ AIDecisionResponse {
   3. DB: in `getLeadsForFollowUp()` → aggiungere LEFT JOIN con ultimi messaggi per filtrare.
 - **Scenario L4**: E se la chat è vuota (lead ha cancellato il messaggio)? E se il lead ha risposto con un'immagine (non testo)? E se il selettore `inboxLastMessage` cambia?
 
-### C07 — Non controlla se il lead ha GIÀ scritto nella chat prima del primo messaggio
+### C07 ✅ — Non controlla se il lead ha GIÀ scritto nella chat prima del primo messaggio
 - **File diretti**: `src/workers/messageWorker.ts:134-210`
 - **File indiretti**: `src/selectors.ts:messageButton,messageTextbox,inboxLastMessage` (selettori), `src/browser/navigationContext.ts:navigateToProfileForMessage()`, `src/core/leadStateService.ts`
 - **Problema**: Tra navigazione al profilo (riga 136) e click Message (riga 191), il codice NON apre la chat per verificare messaggi esistenti. Il lead potrebbe aver già scritto.
 - **Fix**: Dopo click Message (riga 191), prima di `typeWithFallback` (riga 204): leggere `inboxLastMessage`, verificare se è nostro o del lead. Se del lead → `transitionLead(REPLIED)` e return.
 - **Scenario L4**: E se la textbox ha già un draft? (→ **M12** collegato). E se il chat widget mostra messaggi di sistema LinkedIn?
 
-### C08 — Limite 2500 membri/lista SalesNav MAI verificato
+### C08 ✅ — Limite 2500 membri/lista SalesNav MAI verificato
 - **File diretti**: `src/salesnav/bulkSaveOrchestrator.ts`
 - **File indiretti**: `src/salesnav/listActions.ts` (gestione liste), `src/salesnav/salesnavDedup.ts` (dedup), `src/core/repositories.ts` (conteggio DB), `src/salesnav/visionNavigator.ts` (click UI)
 - **Problema**: LinkedIn ha hard limit 2500 lead/lista. Il codice non verifica il conteggio attuale prima di salvare. Superato il limite → fail silenzioso o errore UI non catturato.
 - **Fix**: Pre-save: query conteggio membri lista dal DOM o dal DB. Se >= 2400 → creare nuova lista via `listActions.ts:createSalesNavList()` con suffix incrementale. Aggiornare sync run con nuovo listId.
 - **Scenario L4**: E se la creazione della nuova lista fallisce? E se il conteggio nel DOM non corrisponde al DB? E se due sync concurrent creano liste duplicate?
 
-### C09 — InboxWorker NON è nel workerRegistry → deve essere eseguito manualmente
+### C09 ✅ — InboxWorker NON è nel workerRegistry → deve essere eseguito manualmente
 - **File diretti**: `src/workers/registry.ts`, `src/workers/inboxWorker.ts`
 - **File indiretti**: `src/core/jobRunner.ts` (esecuzione job), `src/core/scheduler.ts` (enqueue), `src/core/orchestrator.ts` (coordinamento), `src/cli/commands/loopCommand.ts` (autopilot)
 - **Problema**: 7 worker registrati nel registry. inboxWorker NON è nella Map. Il loop/autopilot non lo chiama mai.
 - **Fix**: In `registry.ts`: aggiungere `workerRegistry.set('INBOX_CHECK', inboxProcessor)`. In `scheduler.ts`: enqueue 1 INBOX_CHECK per sessione PRIMA dei follow-up. In `loopCommand.ts`: includere INBOX_CHECK nel ciclo autopilot.
 - **Scenario L2**: Aggiungere il tipo `INBOX_CHECK` nel enum `JobType` in `types/domain.ts`. Verificare che `jobRunner.ts` gestisca il nuovo tipo senza breaking change.
 
-### C10 — Lead SalesNav bloccati permanentemente in BLOCKED — dead-end irrecuperabile
+### C10 ✅ — Lead SalesNav bloccati permanentemente in BLOCKED — dead-end irrecuperabile
 - **File diretti**: `src/workers/inviteWorker.ts:278-281`, `src/workers/messageWorker.ts:58-61`, `src/workers/acceptanceWorker.ts`
 - **File indiretti**: `src/core/leadStateService.ts` (state machine: BLOCKED = []), `src/linkedinUrl.ts:isSalesNavigatorUrl()`, `src/salesnav/bulkSaveOrchestrator.ts` (importazione lead con URL SalesNav)
 - **Problema**: Tutti e 3 i worker: `if (isSalesNavigatorUrl) → transitionLead(BLOCKED)`. BLOCKED ha zero transizioni permesse nella state machine. I lead SalesNav HANNO un profilo classico — l'URL `/sales/lead/` può essere convertita in `/in/`.
 - **Fix**: Sostituire `BLOCKED` con `REVIEW_REQUIRED` (ha transizioni). In `bulkSaveOrchestrator.ts`: estrarre URL profilo classico durante il save. Aggiungere comando `salesnav resolve` per risolvere URL in batch.
 - **Scenario L6**: Migrazione DB: aggiornare lead esistenti in BLOCKED con reason 'salesnav_url*' → REVIEW_REQUIRED. Reversibile?
 
-### C11 — Follow-up usa page.goto() diretto — ZERO navigation context
+### C11 ✅ — Follow-up usa page.goto() diretto — ZERO navigation context
 - **File diretti**: `src/workers/followUpWorker.ts:118`
 - **File indiretti**: `src/browser/navigationContext.ts:navigateToProfileForMessage()` (la funzione che DOVREBBE usare), `src/browser/humanBehavior.ts` (delay, scroll)
 - **Problema**: `await context.session.page.goto(linkedinUrl, { waitUntil: 'domcontentloaded' })` — goto diretto senza catena organica. Il file `navigationContext.ts` dice esplicitamente che questo è "il segnale detection #1".
 - **Fix**: Sostituire con `await navigateToProfileForMessage(context.session.page, linkedinUrl, context.accountId)`.
 - **Scenario L2**: Verificare che `navigateToProfileForMessage` sia importabile senza circular dependency.
 
-### C12 — Behavioral profile drift si accumula troppo con riavvii frequenti
+### C12 ✅ — Behavioral profile drift si accumula troppo con riavvii frequenti
 - **File diretti**: `src/browser/sessionCookieMonitor.ts:getBehavioralProfile()`
 - **File indiretti**: `src/browser/sessionCookieMonitor.ts:applyProfileDrift()`, `src/core/jobRunner.ts` (chiama getBehavioralProfile ad ogni sessione), `src/browser/humanBehavior.ts` (usa il profilo per delay/scroll speed)
 - **Problema**: `applyProfileDrift()` aggiunge ±5% ad OGNI lettura. 10 riavvii/giorno → drift 50%.
 - **Fix**: Aggiungere campo `lastDriftDate` nei metadata. Se `meta.lastDriftDate === today` → return profilo esistente senza drift.
 - **Scenario L6**: Il campo `lastDriftDate` va persistito nel file metadata della sessione. Verificare formato e retrocompatibilità con sessioni esistenti.
 
-### C13 — Captcha solver senza rate limiter → loop brucia budget API
+### C13 ✅ — Captcha solver senza rate limiter → loop brucia budget API
 - **File diretti**: `src/captcha/solver.ts`
 - **File indiretti**: `src/captcha/visionProvider.ts` (API call), `src/workers/challengeHandler.ts` (chiama il solver in loop), `src/ai/openaiClient.ts` (se usa OpenAI), `src/core/integrationPolicy.ts` (circuit breaker generico)
 - **Problema**: Il solver viene chiamato dal challengeHandler senza cooldown. Il circuit breaker di `integrationPolicy.ts` si apre dopo N failure ma NON limita la frequenza tra tentativi.
 - **Fix**: In `solver.ts`: aggiungere `CAPTCHA_COOLDOWN_MS = 10_000`, `MAX_CAPTCHA_PER_SESSION = 3`. Counter persistito in daily_stats (non in-memory, per sopravvivere ai riavvii).
 - **Scenario L4**: E se il CAPTCHA appare in loop infinito? → Dopo MAX_CAPTCHA_PER_SESSION → pauseAutomation() + alert Telegram critico.
 
-### C14 — Ciclo completo richiede 6 comandi separati — gap critico nel funnel
+### C14 ✅ — Ciclo completo richiede 6 comandi separati — gap critico nel funnel
 - **File diretti**: `src/cli/commands/loopCommand.ts`, `src/cli/commands/workflowCommands.ts`
 - **File indiretti**: `src/core/orchestrator.ts`, `src/workers/registry.ts` (manca inboxWorker), `src/workflows/syncSearchWorkflow.ts`, `src/workflows/sendInvitesWorkflow.ts`, `src/workflows/sendMessagesWorkflow.ts`
 - **Problema**: Ciclo: sync-search → enrich-fast → send-invites → (giorni) → run check → send-messages → inbox check. L'autopilot gestisce solo 3/4/5. Inbox check è manuale. L'utente dimentica SEMPRE inbox check → follow-up a chi ha già risposto.
@@ -1121,152 +1133,152 @@ AIDecisionResponse {
 
 ## 🟠 HIGH — Rischio ban o perdita dati
 
-### H01 — TOTP failure ha zero fallback → bot si blocca silenziosamente
+### H01 ✅ — TOTP failure ha zero fallback → bot si blocca silenziosamente
 - **File**: `src/browser/auth.ts`, `src/security/totp.ts`
 - **Problema**: Se il TOTP fallisce (orologio sfasato, secret errato), il bot resta sulla pagina di verifica senza errore esplicito. Nessun alert, nessun timeout.
 - **Fix**: Aggiungere timeout 30s sull'auth flow. Se scade → quarantineAccount + alert Telegram.
 
-### H02 — navigateViaOrganicSearch: fa search poi goto DIRETTO al profilo
+### H02 ✅ — navigateViaOrganicSearch: fa search poi goto DIRETTO al profilo
 - **File**: `src/browser/navigationContext.ts:navigateViaOrganicSearch()`
 - **Problema**: La catena "organica": Feed → Search → `page.goto(profileUrl)`. Il profilo target NON è nei risultati di ricerca. LinkedIn vede referrer=/search/ ma profilo non nei risultati. Pattern più sospetto del goto diretto.
 - **Fix**: Cliccare un risultato reale nelle ricerche oppure andare direttamente al profilo senza finta ricerca.
 
-### H03 — PRE-SYNC: full scan della lista OGNI volta anche se DB aggiornato 5 min fa
+### H03 ✅ — PRE-SYNC: full scan della lista OGNI volta anche se DB aggiornato 5 min fa
 - **File**: `src/salesnav/bulkSaveOrchestrator.ts:preSyncListToDb()`
 - **Problema**: Prima di cercare lead nuovi, scarica TUTTI i membri della lista (2000 = 80 pagine). Non controlla se il DB ha già dati recenti. Con --resume dopo crash, rifa il full sync.
 - **Fix**: Check età ultimo pre-sync. Se < 2h → skip.
 
-### H04 — Scroll fast: timeout 1500ms troppo basso per rete lenta
+### H04 ✅ — Scroll fast: timeout 1500ms troppo basso per rete lenta
 - **File**: `src/salesnav/bulkSaveOrchestrator.ts:scrollAndReadPage()`
 - **Problema**: Timeout 1500ms per rendering card. Se proxy aggiunge latenza → lead non raccolti.
 - **Fix**: Timeout adattivo: `baseTimeout + Math.min(proxyLatency * 2, 3000)`.
 
-### H05 — Dedup fa 3 query DB per profilo in un for loop → 75 query/pagina
+### H05 ✅ — Dedup fa 3 query DB per profilo in un for loop → 75 query/pagina
 - **File**: `src/salesnav/salesnavDedup.ts:checkDuplicates()`
 - **Problema**: Per ogni profilo: query LinkedIn URL, query SalesNav URL, query name+company hash. 25 lead/pagina = 75 query SELECT.
 - **Fix**: Batch: caricare tutti i membri della lista in un Set una volta sola.
 
-### H06 — Select All non verifica QUANTI lead sono stati selezionati
+### H06 ✅ — Select All non verifica QUANTI lead sono stati selezionati
 - **File**: `src/salesnav/bulkSaveOrchestrator.ts:clickSelectAll()`
 - **Problema**: Dopo click, verifica solo se "Save to list" appare, NON se il conteggio selezionato = lead sulla pagina. Virtual scroller potrebbe aver renderizzato 20 su 25.
 - **Fix**: Leggere contatore dal DOM dopo clickSelectAll. Se < 80% expected → warning.
 
-### H07 — Vision navigator è SPOF — se Ollama è giù, zero risultati salvati
+### H07 ✅ — Vision navigator è SPOF — se Ollama è giù, zero risultati salvati
 - **File**: `src/salesnav/visionNavigator.ts`
 - **Problema**: Quando i bottoni SalesNav non hanno selettori DOM standard, il sistema ricade sulla Vision AI. Se Ollama offline → funzioni falliscono → pagina saltata.
 - **Fix**: Graceful skip + tracking lead non salvati. Fallback a coordinate fisse per bottoni noti.
 
-### H08 — Enrichment duplicato: pre-workflow + dentro il worker
+### H08 ✅ — Enrichment duplicato: pre-workflow + dentro il worker
 - **File**: `src/workflows/sendInvitesWorkflow.ts`, `src/workers/inviteWorker.ts:283-314`
 - **Problema**: sendInvitesWorkflow fa enrichment PRIMA del browser. Ma inviteWorker fa un SECONDO enrichment per lead DURANTE la sessione browser (2-5s extra di API calls per lead).
 - **Fix**: Rimuovere enrichment dal worker. Fidarsi del pre-enrichment. MAI fare API calls esterne mentre il browser è aperto.
 
-### H09 — Se modale invito non appare dopo click Connect, logga e basta
+### H09 ✅ — Se modale invito non appare dopo click Connect, logga e basta
 - **File**: `src/workers/inviteWorker.ts:453-458`
 - **Problema**: `isVisible({ timeout: 3000 })` fallisce → logga → continua con `handleInviteModal()` che cerca bottoni inesistenti → retry. Ma il click Connect è già stato registrato da LinkedIn.
 - **Fix**: Se modale non appare → Escape, decrementa stat, throw RetryableWorkerError. NON procedere.
 
-### H10 — Cap check messaggi DOPO aver generato AI + navigato + digitato
+### H10 ✅ — Cap check messaggi DOPO aver generato AI + navigato + digitato
 - **File**: `src/workers/messageWorker.ts:140-170`
 - **Problema**: Ordine: genera AI (~2-5s) → naviga (~5s) → digita (~3s) → SOLO ORA `checkAndIncrementDailyLimit`. Se cap raggiunto, tutto sprecato. inviteWorker fa il cap check PRIMA.
 - **Fix**: Spostare cap check SUBITO dopo generazione messaggio, PRIMA della navigazione.
 
-### H11 — Nessuna verifica del contenuto digitato prima di Send
+### H11 ✅ — Nessuna verifica del contenuto digitato prima di Send
 - **File**: `src/workers/messageWorker.ts:173-185`
 - **Problema**: Dopo typeWithFallback, il bot clicca Send senza verificare che il testo nel campo sia quello generato. Se typing in campo sbagliato → contenuto diverso o vuoto.
 - **Fix**: Leggere `inputValue()` del textbox. Se < 50% del messaggio atteso → throw error.
 
-### H12 — checkSentInvitations() naviga all'invitation manager → rompe contesto
+### H12 ✅ — checkSentInvitations() naviga all'invitation manager → rompe contesto
 - **File**: `src/workers/acceptanceWorker.ts:22-52`
 - **Problema**: Se il profilo non ha badge "1st" né "Pending", il bot va su `/mynetwork/invitation-manager/sent/`. Dopo: siamo nell'invitation manager, non sul profilo. Navigation context rotto. Pattern automatico rilevabile.
 - **Fix**: Usare euristica connectedWithoutBadge (ha bottone Messaggio + no Pending = accettato). Rimuovere navigazione all'invitation manager.
 
-### H13 — Controlla TUTTI i lead INVITED — anche quelli invitati 1 ora fa
+### H13 ✅ — Controlla TUTTI i lead INVITED — anche quelli invitati 1 ora fa
 - **File**: `src/workers/acceptanceWorker.ts`
 - **Problema**: Nessun filtro per età dell'invito. Con 50 lead INVITED, visita tutti anche se invitati ieri.
 - **Fix**: `WHERE status='INVITED' AND invited_at < datetime('now', '-2 days')`.
 
-### H14 — Non verifica che la campagna drip sia ancora attiva
+### H14 ✅ — Non verifica che la campagna drip sia ancora attiva
 - **File**: `src/workers/followUpWorker.ts`
 - **Problema**: Se l'utente ha disattivato la campagna, il follow-up worker continua a inviare.
 - **Fix**: Check `campaignState.status === 'ACTIVE'` prima di ogni step drip.
 
-### H15 — Wind-down solo nel 30% delle sessioni → 70% chiude di colpo
+### H15 ✅ — Wind-down solo nel 30% delle sessioni → 70% chiude di colpo
 - **File**: `src/core/jobRunner.ts:999-1005`
 - **Problema**: `if (Math.random() < 0.30)` → torna al feed prima di chiudere. Il 70% chiude direttamente dal profilo/SalesNav. Un umano chiude dal feed.
 - **Fix**: Wind-down SEMPRE: torna al feed, scroll leggero, pausa, poi chiudi.
 
-### H16 — Crash durante typing → draft fantasma nella textbox LinkedIn
+### H16 ✅ — Crash durante typing → draft fantasma nella textbox LinkedIn
 - **File**: `src/workers/messageWorker.ts`, `src/browser/launcher.ts:cleanupBrowsers()`
 - **Problema**: Se crash durante `humanType()`, LinkedIn salva il draft. La prossima volta l'utente umano vede "Ciao Mario, ho visto il tu" come draft.
 - **Fix**: Al prossimo boot, check se ci sono modali/draft aperti. Cleanup textbox.
 
-### H17 — humanType: pattern correzione typo sempre uguale → fingerprint-abile
+### H17 ✅ — humanType: pattern correzione typo sempre uguale → fingerprint-abile
 - **File**: `src/browser/humanBehavior.ts:humanType()`
 - **Problema**: Typo → 280-420ms pausa → Backspace → retype. Sempre. Un umano usa Ctrl+Z, seleziona e sovrascrive, cancella più caratteri.
 - **Fix**: Variare il pattern di correzione (Ctrl+Z, selezione, cancellazione multipla, ignorare errore).
 
-### H18 — simulateTabSwitch: mock programmatico Visibility API → rilevabile
+### H18 ✅ — simulateTabSwitch: mock programmatico Visibility API → rilevabile
 - **File**: `src/browser/humanBehavior.ts:simulateTabSwitch()`
 - **Problema**: Modifica `document.visibilityState` via JS. Chrome DevTools Protocol può rilevare che il tab non è realmente in background.
 - **Fix**: Valutare se necessario. Se sì, usare CDP per minimizzare/ripristinare realmente la finestra.
 
-### H19 — closeBrowser non chiude sempre page prima di browser → memory leak
+### H19 ✅ — closeBrowser non chiude sempre page prima di browser → memory leak
 - **File**: `src/browser/index.ts`
 - **Problema**: `closeBrowser` non chiude sempre la page prima del browser su tutti i percorsi.
 - **Fix**: Assicurare `page.close()` prima di `browser.close()` in tutti i percorsi.
 
-### H20 — uiFallback non registra mai il fallback riuscito nel DB
+### H20 ✅ — uiFallback non registra mai il fallback riuscito nel DB
 - **File**: `src/browser/uiFallback.ts`
 - **Problema**: Il fallback funziona ma non registra il successo per future ottimizzazioni.
 - **Fix**: Chiamare selector learner `recordSuccess()` dopo ogni fallback riuscito.
 
-### H21 — Audio context fingerprint NON protetto
+### H21 ✅ — Audio context fingerprint NON protetto
 - **File**: `src/browser/stealth.ts`, `src/browser/stealthScripts.ts`
 - **Problema**: Fingerprint pool gestisce Canvas, WebGL, fonts, screen, navigator — ma NON AudioContext. Playwright ha un profilo audio deterministico. Spoofing parziale è PEGGIORE dell'assenza (hash non corrisponde a nessun browser reale). Mancano: `createOscillator()` + `createDynamicsCompressor()`, `getByteFrequencyData()`, `OfflineAudioContext.startRendering()`.
 - **Fix**: Completare spoofing AudioContext con tutte le API.
 
-### H22 — Font enumeration defense troppo permissiva
+### H22 ✅ — Font enumeration defense troppo permissiva
 - **File**: `src/browser/stealthScripts.ts:sezione 14`
 - **Problema**: Mock di `document.fonts.check()` non cambia come i glifi vengono renderizzati → fingerprint canvas-based rimane uguale.
 - **Fix**: Aggiungere noise al rendering glyph, non solo al check fonts.
 
-### H23 — CDP leak detection: lista statica, non intercetta nuovi artefatti
+### H23 ✅ — CDP leak detection: lista statica, non intercetta nuovi artefatti
 - **File**: `src/browser/stealthScripts.ts:sezione 17`
 - **Problema**: Rimuove 20+ proprietà note (__playwright, __webdriver_evaluate) ma la lista è statica. `Error.prepareStackTrace` override è esso stesso rilevabile.
 - **Fix**: Aggiornare la lista ad ogni release Playwright. Rendere override meno rilevabile.
 
-### H24 — Budget calcolato una volta al boot → non ricalcolato mid-session
+### H24 ✅ — Budget calcolato una volta al boot → non ricalcolato mid-session
 - **File**: `src/core/scheduler.ts`, `src/core/jobRunner.ts`
 - **Problema**: Se al job 10 il risk score sale (challenge), i job 11-50 usano il budget vecchio.
 - **Fix**: Ricalcolare budget dopo challenge o ogni N job.
 
-### H25 — Warmup sempre uguale indipendentemente dal tempo dall'ultima sessione
+### H25 ✅ — Warmup sempre uguale indipendentemente dal tempo dall'ultima sessione
 - **File**: `src/core/sessionWarmer.ts`
 - **Problema**: Se login 5 min fa, il bot rifà feed scroll + random likes. Un umano non riscorre il feed dopo 5 minuti.
 - **Fix**: Controllare tempo dall'ultima sessione. Se < 30min → skip warmup o warmup ridotto.
 
-### H26 — InboxWorker: processa max 5 conversazioni, 30% skip probabilistico
+### H26 ✅ — InboxWorker: processa max 5 conversazioni, 30% skip probabilistico
 - **File**: `src/workers/inboxWorker.ts`
 - **Problema**: Hardcoded a 5 per run. Con 10-20 messaggi/giorno, conversazioni oltre le prime 5 non processate MAI. Il 30% "defer" non viene tracciato → conversazione potrebbe non essere MAI processata.
 - **Fix**: Aumentare limit. Tracciare conversazioni skippate. Processarle nel run successivo.
 
-### H27 — InboxWorker legge SOLO l'ultimo messaggio → contesto perso
+### H27 ✅ — InboxWorker legge SOLO l'ultimo messaggio → contesto perso
 - **File**: `src/workers/inboxWorker.ts`
 - **Problema**: Se il lead ha mandato 3 messaggi, il contesto dei primi 2 è perso. Auto-reply potrebbe essere fuori tema.
 - **Fix**: Leggere ultimi 3-5 messaggi della conversazione per contesto AI.
 
-### H28 — Provider registry AI: fallback senza circuit breaker
+### H28 ✅ — Provider registry AI: fallback senza circuit breaker
 - **File**: `src/ai/providerRegistry.ts`
 - **Problema**: Se OpenAI è down, fa 10+ retry prima di switchare a Ollama.
 - **Fix**: Circuit breaker: dopo 3 fail consecutivi → switch immediato al backup.
 
-### H29 — emailGuesser: SMTP probe su porta 25 bloccata da molti firewall aziendali
+### H29 ✅ — emailGuesser: SMTP probe su porta 25 bloccata da molti firewall aziendali
 - **File**: `src/integrations/emailGuesser.ts:105-189`
 - **Problema**: `smtpProbe()` si connette su porta 25 (SMTP relay). Molti firewall aziendali e cloud provider (AWS, GCP, Azure) bloccano outbound porta 25. Il probe fallisce silenziosamente → `guessBusinessEmail()` ritorna null anche per email valide. Timeout 5s per ogni tentativo × 8 pattern = 40s di attesa inutile.
 - **Fix**: 1) Tentare porta 587 (submission) come fallback se porta 25 fallisce. 2) Cache risultato "port 25 blocked" per dominio per evitare retry. 3) Log warning se tutti i probe falliscono per timeout (indica porta bloccata, non email invalida).
 
-### H30 — Camoufox geoip hardcoded IP italiano quando proxy è configurato
+### H30 ✅ — Camoufox geoip hardcoded IP italiano quando proxy è configurato
 - **File**: `src/browser/launcher.ts:387`
 - **Problema**: `geoip: currentProxy ? '93.63.96.1' : config.camoufoxGeoip` — quando un proxy è configurato, il geoip è forzato a un IP italiano fisso (93.63.96.1 = Telecom Italia). Se il proxy è in Germania/USA/NL, il browser dice "sono in Italia" ma l'IP dice "sono in Germania" → incoerenza rilevabile da LinkedIn.
 - **Fix**: Risolvere l'IP reale del proxy con un DNS lookup e usare quello per il geoip. Oppure rendere `CAMOUFOX_GEOIP_PROXY` configurabile. Se proxy è in NL → geoip deve essere un IP olandese.

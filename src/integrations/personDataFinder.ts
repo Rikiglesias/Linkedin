@@ -1128,47 +1128,7 @@ export async function findPersonData(input: PersonDataFinderInput): Promise<Pers
         }
     }
 
-    // ── Fase 3: Team Page Person Matching ──
-    let teamMatch: TeamMember | null = null;
-    if (companyResult?.teamPageUrls.length) {
-        teamMatch = await findPersonOnTeamPages(companyResult.teamPageUrls, firstName, lastName);
-        if (teamMatch) {
-            sources.push('team_page_match');
-            // Merge data from team page
-            if (teamMatch.title && !result.jobTitle) result.jobTitle = teamMatch.title;
-            if (teamMatch.bio && !result.headline) result.headline = teamMatch.bio.slice(0, 200);
-            if (teamMatch.email) {
-                const teamEmail = teamMatch.email.toLowerCase();
-                const alreadyHas = result.emails.some(
-                    (e) => e.address.toLowerCase() === teamEmail,
-                );
-                if (!alreadyHas) {
-                    result.emails.push({
-                        address: teamMatch.email,
-                        confidence: teamMatch.matchScore >= 80 ? 85 : 65,
-                        source: 'team_page_correlated',
-                    });
-                }
-            }
-            if (teamMatch.phone) {
-                const parsed = parsePhoneNumberFromString(teamMatch.phone, 'IT');
-                if (parsed?.isValid()) {
-                    const alreadyHas = result.phones.some(
-                        (p) => p.number === parsed.formatInternational(),
-                    );
-                    if (!alreadyHas) {
-                        result.phones.push({
-                            number: parsed.formatInternational(),
-                            type: classifyPhoneType(parsed),
-                            source: 'team_page_correlated',
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    // ── Fase 4: Email Discovery from Web Pages ──
+    // ── Fase 4: Email Discovery from Web Pages (sync — usa dati già scaricati in Fase 1) ──
     if (companyResult?.homepage) {
         const pageEmails = extractEmailsFromPage(companyResult.homepage.$, firstName, lastName);
         // Merge (dedup by address)
@@ -1182,7 +1142,7 @@ export async function findPersonData(input: PersonDataFinderInput): Promise<Pers
         if (pageEmails.length > 0) sources.push('web_email_discovery');
     }
 
-    // DNS SOA email hint
+    // DNS SOA email hint (sync)
     if (dnsIntel?.soaHostmaster && domain) {
         const soaEmail = soaToEmailHint(dnsIntel.soaHostmaster, domain);
         if (soaEmail) {
@@ -1199,37 +1159,83 @@ export async function findPersonData(input: PersonDataFinderInput): Promise<Pers
         }
     }
 
-    // ── Fase 5: Phone Discovery ──
-    if (domain) {
-        const phones = await discoverPhones(
-            companyResult?.homepage ?? null,
-            companyResult?.contactPageUrls ?? [],
-            companyResult?.teamPageUrls ?? [],
+    // M48: Fasi 3, 5, 6 in parallelo — sono indipendenti tra loro.
+    // Prima (sequenziale): fase3 + fase5 + fase6 = fino a 90s worst case.
+    // Ora (parallelo): max(fase3, fase5, fase6) = fino a ~50s worst, ~12-20s caso medio.
+    const emailForSocial = existingEmail ?? result.emails[0]?.address ?? null;
+    const [teamMatch, discoveredPhones, socialProfiles] = await Promise.all([
+        // Fase 3: Team Page Person Matching
+        companyResult?.teamPageUrls.length
+            ? findPersonOnTeamPages(companyResult.teamPageUrls, firstName, lastName)
+            : Promise.resolve(null),
+        // Fase 5: Phone Discovery
+        domain
+            ? discoverPhones(
+                  companyResult?.homepage ?? null,
+                  companyResult?.contactPageUrls ?? [],
+                  companyResult?.teamPageUrls ?? [],
+                  firstName,
+                  lastName,
+              )
+            : Promise.resolve([] as PersonDataPhone[]),
+        // Fase 6: Social Profile Aggregation
+        aggregateSocialProfiles(
             firstName,
             lastName,
-        );
-        if (phones.length > 0) {
-            // Merge (dedup by number)
-            const existingNumbers = new Set(result.phones.map((p) => p.number));
-            for (const phone of phones) {
-                if (!existingNumbers.has(phone.number)) {
-                    result.phones.push(phone);
-                    existingNumbers.add(phone.number);
+            emailForSocial,
+            companyResult?.company.socialLinks ?? {},
+            companyName,
+        ),
+    ]);
+
+    // ── Fase 3 result merge ──
+    if (teamMatch) {
+        sources.push('team_page_match');
+        if (teamMatch.title && !result.jobTitle) result.jobTitle = teamMatch.title;
+        if (teamMatch.bio && !result.headline) result.headline = teamMatch.bio.slice(0, 200);
+        if (teamMatch.email) {
+            const teamEmail = teamMatch.email.toLowerCase();
+            const alreadyHas = result.emails.some(
+                (e) => e.address.toLowerCase() === teamEmail,
+            );
+            if (!alreadyHas) {
+                result.emails.push({
+                    address: teamMatch.email,
+                    confidence: teamMatch.matchScore >= 80 ? 85 : 65,
+                    source: 'team_page_correlated',
+                });
+            }
+        }
+        if (teamMatch.phone) {
+            const parsed = parsePhoneNumberFromString(teamMatch.phone, 'IT');
+            if (parsed?.isValid()) {
+                const alreadyHas = result.phones.some(
+                    (p) => p.number === parsed.formatInternational(),
+                );
+                if (!alreadyHas) {
+                    result.phones.push({
+                        number: parsed.formatInternational(),
+                        type: classifyPhoneType(parsed),
+                        source: 'team_page_correlated',
+                    });
                 }
             }
-            sources.push('phone_discovery');
         }
     }
 
-    // ── Fase 6: Social Profile Aggregation ──
-    const socialProfiles = await aggregateSocialProfiles(
-        firstName,
-        lastName,
-        existingEmail ?? result.emails[0]?.address ?? null,
-        companyResult?.company.socialLinks ?? {},
-        companyName,
-    );
-    // Merge (dedup by platform+url)
+    // ── Fase 5 result merge ──
+    if (discoveredPhones.length > 0) {
+        const existingNumbers = new Set(result.phones.map((p) => p.number));
+        for (const phone of discoveredPhones) {
+            if (!existingNumbers.has(phone.number)) {
+                result.phones.push(phone);
+                existingNumbers.add(phone.number);
+            }
+        }
+        sources.push('phone_discovery');
+    }
+
+    // ── Fase 6 result merge ──
     const existingSocials = new Set(result.socialProfiles.map((s) => `${s.platform}:${s.url}`));
     for (const profile of socialProfiles) {
         const key = `${profile.platform}:${profile.url}`;

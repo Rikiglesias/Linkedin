@@ -19,7 +19,7 @@ import {
 } from '../core/repositories';
 import { getLeadById } from '../core/repositories/leadsCore';
 import { isBlacklisted } from '../core/repositories/blacklist';
-import { transitionLead } from '../core/leadStateService';
+import { isValidLeadTransition, transitionLead } from '../core/leadStateService';
 import { joinSelectors } from '../selectors';
 import { InviteJobPayload, LeadRecord } from '../types/domain';
 import { WorkerContext } from './context';
@@ -261,6 +261,14 @@ export async function processInviteJob(
         throw new RetryableWorkerError(`Lead ${payload.leadId} non trovato`, 'LEAD_NOT_FOUND');
     }
 
+    // Guard: linkedin_url null/empty → REVIEW_REQUIRED (DB può avere NULL nonostante il tipo TS)
+    if (!lead.linkedin_url || lead.linkedin_url.trim().length === 0) {
+        if (isValidLeadTransition(lead.status, 'REVIEW_REQUIRED')) {
+            await transitionLead(lead.id, 'REVIEW_REQUIRED', 'missing_linkedin_url');
+        }
+        return workerResult(1);
+    }
+
     // Check blacklist runtime: il lead potrebbe essere stato aggiunto alla blacklist
     // DOPO la creazione del job nello scheduler (ore/giorni prima).
     if (await isBlacklisted(lead.linkedin_url, lead.company_domain)) {
@@ -346,7 +354,13 @@ export async function processInviteJob(
         return workerResult(1);
     }
 
-    // AI Decision: l'AI decide SE invitare basandosi su contesto pagina + dati lead
+    // AI Decision: l'AI decide SE invitare basandosi su contesto pagina + dati lead + session REALI + enrichment
+    const { buildSessionSnapshot } = await import('./sessionDataHelper');
+    const { getLeadEnrichmentSummary } = await import('../core/repositories');
+    const [sessionData, enrichment] = await Promise.all([
+        buildSessionSnapshot(context),
+        getLeadEnrichmentSummary(lead.id).catch(() => null),
+    ]);
     const aiDecision = await aiDecide({
         point: 'pre_invite',
         lead: {
@@ -356,16 +370,15 @@ export async function processInviteJob(
             company: lead.account_name ?? undefined,
             score: lead.lead_score ?? undefined,
             about: lead.about ?? undefined,
+            email: lead.email ?? undefined,
+            businessEmail: lead.business_email ?? undefined,
+            phone: lead.phone ?? undefined,
+            location: lead.location ?? undefined,
+            seniority: enrichment?.seniority ?? undefined,
+            industry: enrichment?.industry ?? undefined,
         },
         pageObservation: pageObs,
-        session: context.sessionActionCount !== undefined ? {
-            invitesSent: context.sessionActionCount,
-            messagesSent: 0,
-            riskScore: 0,
-            pendingRatio: 0,
-            duration: 0,
-            challengeCount: 0,
-        } : undefined,
+        session: sessionData,
     });
 
     if (aiDecision.action === 'SKIP') {

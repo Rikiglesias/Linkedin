@@ -79,7 +79,7 @@ export async function checkLogin(page: Page): Promise<boolean> {
                 timeout: attempt === 1 ? 60_000 : 90_000,
             });
             break;
-        } catch (err) {
+        } catch {
             if (attempt === 2) {
                 console.error(`[AUTH] Timeout navigazione al feed dopo 2 tentativi — proxy lento o LinkedIn irraggiungibile.`);
                 return false;

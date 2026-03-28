@@ -2,6 +2,7 @@ import { config } from '../config';
 import { ScheduleResult, WorkflowSelection } from '../core/scheduler';
 import { getRuntimeFlag, setRuntimeFlag } from '../core/repositories';
 import { isOpenAIConfigured, requestOpenAIText } from './openaiClient';
+import { logWarn as guardianLogWarn } from '../telemetry/logger';
 
 const AI_GUARDIAN_LAST_RUN_AT_KEY = 'ai_guardian.last_run_at';
 
@@ -152,7 +153,10 @@ export function parseAiDecision(raw: string): ParsedAiGuardianPayload | null {
             recommendations: recommendations.length > 0 ? recommendations : ['Verificare manualmente trend rischio.'],
             pauseMinutes: clampPauseMinutes(pauseMinutesRaw),
         };
-    } catch {
+    } catch (e) {
+        void guardianLogWarn('ai_guardian.parse_json_failed', {
+            error: e instanceof Error ? e.message : String(e),
+        });
         return null;
     }
 }

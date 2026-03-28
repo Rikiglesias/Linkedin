@@ -429,6 +429,24 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
                     }
                 };
             }
+            // H21: Patch getByteFrequencyData (Uint8Array version) — same PRNG approach.
+            // Without this patch, the inconsistency between Float32 (noisy) and Uint8 (clean)
+            // versions is detectable by fingerprinting libraries.
+            if (typeof AnalyserNode !== 'undefined' && AnalyserNode.prototype.getByteFrequencyData) {
+                const originalGetByteFrequencyData = AnalyserNode.prototype.getByteFrequencyData;
+                AnalyserNode.prototype.getByteFrequencyData = function(array) {
+                    originalGetByteFrequencyData.apply(this, arguments);
+                    _audioSeed = Math.abs((baseNoise * 1e9 | 0) + array.length * 13337) || 1;
+                    for (let i = 0; i < array.length; i++) {
+                        if (audioRng() < 0.12) {
+                            // Byte values are 0-255; noise ±2 clamped to [0, 255]
+                            const sign = audioRng() < 0.5 ? 1 : -1;
+                            const noised = array[i] + sign * (1 + Math.floor(audioRng() * 2));
+                            array[i] = Math.max(0, Math.min(255, noised));
+                        }
+                    }
+                };
+            }
         }
     } catch {}
 
@@ -524,6 +542,35 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
         }
     } catch {}
 
+    // H22: Canvas-based font enumeration defense — measureText noise.
+    // FingerprintJS and similar libraries measure glyph dimensions via canvas to enumerate fonts.
+    // Adds ±0.5px deterministic noise to TextMetrics.width using Mulberry32 PRNG seeded
+    // with the font string. Consistent with the existing canvas fingerprint noise approach.
+    try {
+        if (typeof CanvasRenderingContext2D !== 'undefined') {
+            const originalMeasureText = CanvasRenderingContext2D.prototype.measureText;
+            CanvasRenderingContext2D.prototype.measureText = function(text) {
+                const metrics = originalMeasureText.call(this, text);
+                try {
+                    // Seed PRNG with canvas font string for determinism across calls
+                    const fontStr = this.font || '';
+                    let seed = 0;
+                    for (let c = 0; c < fontStr.length; c++) {
+                        seed = (seed * 31 + fontStr.charCodeAt(c)) | 0;
+                    }
+                    seed = Math.abs(seed) || 1;
+                    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+                    let t2 = Math.imul(seed ^ seed >>> 15, 1 | seed);
+                    t2 = t2 + Math.imul(t2 ^ t2 >>> 7, 61 | t2) ^ t2;
+                    const noise = (((t2 ^ t2 >>> 14) >>> 0) / 4294967296) * 1.0 - 0.5; // ±0.5px
+                    const noisedWidth = metrics.width + noise;
+                    Object.defineProperty(metrics, 'width', { value: noisedWidth, configurable: true, enumerable: true });
+                } catch {}
+                return metrics;
+            };
+        }
+    } catch {}
+
     // ─── 15. getHasLiedOs bypass ──────────────────────────────────────────────
     // LinkedIn (via FingerprintJS) chiama getHasLiedOs: controlla che userAgent,
     // navigator.platform e navigator.oscpu siano coerenti con lo stesso OS.
@@ -582,8 +629,11 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
     // - Debugger.scriptParsed artifacts nel prototype di Error
     try {
         // Pulisci artefatti CDP noti
+        // H23: Updated artifact list with newer Playwright properties
         const cdpArtifacts = [
             '__playwright', '__pw_manual', '__pwresult', '__pw_d',
+            '__pw_fetch_hook', '__pw_page_binding', '__PW_inspect',
+            'cdc_adoQpoasnfa76pfcZLmcfl_Array', 'cdc_adoQpoasnfa76pfcZLmcfl_Promise', 'cdc_adoQpoasnfa76pfcZLmcfl_Symbol',
             '__webdriver_evaluate', '__selenium_evaluate',
             '__webdriver_script_function', '__webdriver_script_func',
             '__driver_evaluate', '__webdriver_unwrap',
@@ -604,22 +654,34 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
             }
         }
 
-        // Maschera stack trace CDP in Error.prepareStackTrace
+        // H23: Maschera stack trace CDP in Error.prepareStackTrace.
+        // Wrap in try so the override itself doesn't throw. Filters __pw_fetch_hook and pptr: patterns.
         const originalPrepareStackTrace = Error.prepareStackTrace;
-        Error.prepareStackTrace = function(error, structuredStackTrace) {
-            const filtered = structuredStackTrace.filter(frame => {
-                const fn = frame.getFunctionName() || '';
-                const file = frame.getFileName() || '';
-                return !fn.includes('__puppeteer') &&
-                       !fn.includes('__playwright') &&
-                       !file.includes('pptr:') &&
-                       !file.includes('__playwright');
-            });
-            if (originalPrepareStackTrace) {
-                return originalPrepareStackTrace(error, filtered);
-            }
-            return filtered.map(f => '    at ' + f.toString()).join('\\n');
-        };
+        try {
+            Error.prepareStackTrace = function(error, structuredStackTrace) {
+                try {
+                    const filtered = structuredStackTrace.filter(frame => {
+                        try {
+                            const fn = frame.getFunctionName() || '';
+                            const file = frame.getFileName() || '';
+                            return !fn.includes('__puppeteer') &&
+                                   !fn.includes('__playwright') &&
+                                   !fn.includes('__pw_fetch_hook') &&
+                                   !file.includes('pptr:') &&
+                                   !file.includes('__playwright') &&
+                                   !file.includes('pptr:');
+                        } catch { return true; }
+                    });
+                    if (originalPrepareStackTrace) {
+                        return originalPrepareStackTrace(error, filtered);
+                    }
+                    return filtered.map(f => '    at ' + f.toString()).join('\\n');
+                } catch {
+                    if (originalPrepareStackTrace) return originalPrepareStackTrace(error, structuredStackTrace);
+                    return '';
+                }
+            };
+        } catch {}
     } catch {}
 
     // ─── 18. [RIMOSSO] WebGL renderer consistency ─────────────────────────────

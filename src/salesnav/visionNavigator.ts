@@ -115,6 +115,27 @@ export class OllamaDownError extends Error {
     }
 }
 
+// H07: Track how many vision calls were skipped due to Ollama/Vision being offline.
+// Reset per process — useful for observability in long-running sessions.
+let _visionOfflineSkipCount = 0;
+
+/** Returns the number of vision calls skipped due to Vision AI being offline this session. */
+export function getVisionOfflineSkipCount(): number {
+    return _visionOfflineSkipCount;
+}
+
+/**
+ * H07: Fixed-coordinate fallbacks for common SalesNav buttons.
+ * Used as last resort when Vision AI is offline.
+ * Coordinates are viewport-relative approximations for a 1280x800 viewport.
+ */
+const VISION_FIXED_FALLBACKS: Record<string, { x: number; y: number }> = {
+    'Save to list': { x: 640, y: 120 },
+    'Select All': { x: 80, y: 160 },
+    'save to list': { x: 640, y: 120 },
+    'select all': { x: 80, y: 160 },
+};
+
 export class VisionParseError extends Error {
     constructor(message: string) {
         super(message);
@@ -330,6 +351,34 @@ export async function visionClick(
                 region: capture.region,
             };
         } catch (error) {
+            // H07: If Vision AI is offline (connection/timeout error), log warning and attempt
+            // fixed coordinate fallback before giving up — avoids full page skip on SPOF.
+            if (error instanceof OllamaDownError || classifyVisionError(error) instanceof OllamaDownError) {
+                _visionOfflineSkipCount += 1;
+                const descLower = description.toLowerCase();
+                const fallback = VISION_FIXED_FALLBACKS[description] ?? VISION_FIXED_FALLBACKS[descLower];
+                if (fallback) {
+                    console.warn(
+                        `[VISION-H07] Vision AI offline (skip #${_visionOfflineSkipCount}). Usando coordinate fisse per "${description}": (${fallback.x}, ${fallback.y})`,
+                    );
+                    const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
+                    const fx = clampNumber(fallback.x, 0, viewport.width - 1);
+                    const fy = clampNumber(fallback.y, 0, viewport.height - 1);
+                    await page.mouse.click(fx, fy, { delay: 40 + Math.floor(Math.random() * 80) });
+                    await page.waitForTimeout(Math.max(80, options?.postClickDelayMs ?? 700));
+                    return {
+                        x: fx,
+                        y: fy,
+                        attempt,
+                        region: { x: 0, y: 0, width: viewport.width, height: viewport.height },
+                    };
+                }
+                // No fixed fallback available — log and rethrow
+                console.warn(
+                    `[VISION-H07] Vision AI offline (skip #${_visionOfflineSkipCount}). Nessun fallback fisso per "${description}" — skip.`,
+                );
+                throw error;
+            }
             if (attempt >= retries) {
                 throw classifyVisionError(error);
             }

@@ -1379,3 +1379,30 @@ export async function getLeadsNeedingEnrichment(limit: number): Promise<Array<{ 
         [safeLimit],
     );
 }
+
+/**
+ * Ritorna un sommario enrichment per AI decision context.
+ * Single indexed query su PK lead_enrichment_data.lead_id (~<1ms).
+ */
+export async function getLeadEnrichmentSummary(leadId: number): Promise<{
+    seniority: string | null;
+    department: string | null;
+    industry: string | null;
+} | null> {
+    const db = await getDatabase();
+    const row = await db.get<{ seniority: string | null; department: string | null; company_json: string | null }>(
+        `SELECT seniority, department, company_json FROM lead_enrichment_data WHERE lead_id = ?`,
+        [leadId],
+    );
+    if (!row) return null;
+    let industry: string | null = null;
+    if (row.company_json) {
+        try {
+            const company = JSON.parse(row.company_json) as Record<string, unknown>;
+            industry = typeof company.industry === 'string' ? company.industry : null;
+        } catch {
+            // malformed JSON — skip
+        }
+    }
+    return { seniority: row.seniority, department: row.department, industry };
+}

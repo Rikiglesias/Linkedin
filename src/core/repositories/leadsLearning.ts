@@ -1,15 +1,30 @@
 import { getDatabase } from '../../db';
 import type { SelectorLearningRollbackSnapshotEntry, SelectorLearningRunRecord } from '../repositories.types';
 
-export async function storeMessageHash(leadId: number, contentHash: string): Promise<void> {
+export async function storeMessageHash(leadId: number, contentHash: string, messageText?: string): Promise<void> {
     const db = await getDatabase();
     await db.run(
         `
-        INSERT INTO message_history (lead_id, content_hash)
-        VALUES (?, ?)
+        INSERT INTO message_history (lead_id, content_hash, message_text)
+        VALUES (?, ?, ?)
     `,
-        [leadId, contentHash],
+        [leadId, contentHash, messageText ?? null],
     );
+}
+
+/**
+ * Carica gli ultimi N testi di messaggio inviati a un lead (per semantic dedup persistente).
+ * Ritorna solo i record che hanno message_text non-null.
+ */
+export async function getRecentMessageTexts(leadId: number, limit: number = 10): Promise<string[]> {
+    const db = await getDatabase();
+    const rows = await db.query<{ message_text: string }>(
+        `SELECT message_text FROM message_history
+         WHERE lead_id = ? AND message_text IS NOT NULL
+         ORDER BY sent_at DESC LIMIT ?`,
+        [leadId, limit],
+    );
+    return rows.map(r => r.message_text);
 }
 
 export async function countRecentMessageHash(contentHash: string, hoursWindow: number): Promise<number> {

@@ -1,0 +1,147 @@
+---
+description: QA zero tolleranza, metodologia, comunicazione e regole per codebase grande (Linkedin bot)
+alwaysApply: true
+---
+
+# Ambito (evitare duplicati)
+
+Questo file è l’**unica** policy del progetto sotto `.cursor/rules/`. **Non** ripetere gli stessi obblighi in altre rule, in skill di progetto o in subagent: più copie = istruzioni conflittuali e contesto più confuso. Skill **globali** Cursor/Codex (es. openai-docs): ok se servono, senza reincollare qui il contenuto.
+
+# Quality assurance — zero tolleranza
+
+- **Prima di modificare:** `npm run pre-modifiche` — **blocco** se errori, warning o test falliti.
+- **Dopo le modifiche:** `npm run post-modifiche` — **blocco** se restano problemi.
+- **Prima del commit:** `npm run conta-problemi` = **zero problemi** (TypeScript + ESLint + Vitest, come in `package.json`).
+- Exit code ≠ 0 → **non procedere** come se fosse ok.
+- `npm run helper-manuali` è un **promemoria** nello script: le verifiche manuali vanno fatte davvero, non si assume che il comando le sostituisca.
+- **Flusso:** pre-modifiche → correzioni → sviluppo → post-modifiche → commit.
+
+# Qualità del lavoro
+
+- Con **dubbi rilevanti** (sicurezza, dati, comportamento incerto): **fermati**, verifica nel repo o **chiedi**; non inventare requisiti.
+- Dopo modifiche significative, **aggiorna la TODO** se la sessione ne usa una.
+- **Niente workaround** come soluzione finale: correggere alla fonte; non nascondere errori noti.
+
+# Metodologia (contesto prima di modificare)
+
+- Esplora il repo (**codebase search**, grep, lettura file): **no** patch isolate senza capire impatto.
+- Task ampio: **1–3 righe** obiettivo + vincoli *prima* delle patch; **step piccoli** e verificabili; niente refactor trasversale in un colpo solo salvo richiesta esplicita.
+- **Patch:** solo il **minimo necessario**; evita diff allargati “tanto che ci sono”; se servono più file, giustifica ogni tocco.
+- **Compilazione ≠ comportamento:** una patch che **typechecka** può comunque **cambiare semantica** (default, ordine di esecuzione, branch, race, contratti verso chiamanti). Esplicita **cosa cambia nel runtime**; dove possibile verifica con test o percorsi d’uso reali — non dare per scontato “build ok = ok”.
+- **2–3 approcci** solo se la scelta **non è banale** (architettura, trade-off); per typo o fix triviali basta l’approccio diretto — non riempire la risposta di opzioni inutili.
+- **Double check** su sicurezza, concorrenza, **API pubbliche** e persistenza dati.
+- Visione d’insieme quando serve: dipendenze, moduli collegati, test, compatibilità, edge case (operativo: sotto).
+
+## Dipendenze
+
+- Traccia **import/export** e **chiamanti**; **config**, **env**, **CLI**, **worker**, **repository** sullo stesso contratto.
+- **DB:** migrazioni, query e tipi sulle stesse tabelle/colonne.
+- Se non puoi tracciare tutto, **dichiaralo** e **restringi lo scope**.
+
+## Cosa non deve perdersi
+
+1. **Vincoli e scope** dell’utente (off-limits); se ambiguo → **chiedi** (non duplicare domande già risolte nel thread).
+2. **Cosa non è stato verificato:** file toccati, comandi eseguiti (build/test/lint), lacune (altri chiamanti, prod, edge case).
+
+## Chiusura (interventi rilevanti)
+
+- Elenco **file modificati**; **rischi** plausibili.
+- Se **non** hai eseguito test/build del progetto, **scrivilo esplicitamente**.
+
+# Comunicazione
+
+- **Italiano** sempre.
+- **Assertivo:** se la richiesta è debole o rischiosa sul piano tecnico, dillo.
+- **Spiega il ragionamento** prima di azioni importanti.
+- **Criticità:** non dare ragione per convenienza se l’argomentazione non regge.
+
+---
+
+## PRIORITÀ ASSOLUTA: ANTI-BAN E ANTI-DETECT
+
+Ogni modifica alla codebase DEVE essere valutata PRIMA DI TUTTO dal punto di vista anti-ban. La domanda zero è sempre: "Questa modifica può farci bannare o rilevare da LinkedIn?"
+
+### Prima di scrivere codice, chiedersi:
+1. Questa modifica cambia il comportamento del browser su LinkedIn? Se sì → massima attenzione
+2. Questa modifica cambia timing, delay, ordine delle azioni? Se sì → verificare che la varianza resti
+3. Questa modifica tocca fingerprint, stealth, cookie, session? Se sì → verificare coerenza e test
+4. Questa modifica aggiunge un’azione nuova su LinkedIn (click, navigazione, typing)? Se sì → deve sembrare umana
+5. Questa modifica cambia volumi (budget, cap, limiti)? Se sì → verificare che il pending ratio non salga
+
+### Principi anti-ban non negoziabili
+- **VARIANZA SU TUTTO**: un umano reale non fa mai la stessa cosa allo stesso modo. Login a orari diversi (jitter 0-30min), budget diverso ogni giorno (mood factor ±20%), ratio invite/message variabile (±15%), ordine job shufflato (±60s), typing speed variabile per lunghezza testo
+- **SESSIONI CORTE**: 2 sessioni da ~25 min è meglio di 1 da ~50 min. Max delay 180s tra job. Pausa pranzo 2h. Weekend zero attività
+- **PENDING RATIO SOTTO CONTROLLO**: è il KPI #1. Se supera 65% → red flag LinkedIn. Ritirare inviti dopo 21 giorni, targeting per score (lead migliori prima), warm-touch pre-invito (+30-50% acceptance)
+- **FINGERPRINT COERENTE**: deterministico per account+settimana (FNV-1a), canvas noise PRNG Mulberry32, WebGL pool 12 valori realistici. 19 mock stealth. Test regressione (16+14 test). MAI fake cookies GA/Facebook, MAI doppia patch stessa API, MAI pattern fissi nel noise
+- **AZIONI SICURE**: confidence check pre-click (verifica testo bottone), post-action verify (modale apparso?), cap challenge 3/giorno, blacklist check runtime in TUTTI i worker, cookie anomaly detection, circuit breaker dopo N fallimenti
+- **NAVIGAZIONE UMANA**: organic visit 20% recent-activity prima di Connect, warmup sessione (feed/notifiche/search), humanDelay realistici, humanType con velocità variabile, humanMouseMove naturale, humanWindDown variato
+- **MONITORING ATTIVO**: probe LinkedIn prima di ogni batch, inbox scan per keywords ban ("unusual activity", "restricted"), daily report Telegram con pending ratio + risk score, alert immediato per cookie anomaly e hot lead
+
+### Cosa NON fare MAI
+- Inviare inviti senza varianza nei tempi
+- Fare login alla stessa ora ogni giorno
+- Tenere il browser aperto più di 45 minuti di fila
+- Risolvere più di 3 challenge automaticamente in un giorno
+- Ignorare un pending ratio > 65%
+- Usare fake localStorage cookies (GA, Facebook Pixel)
+- Fare doppia patch sulla stessa Web API
+- Navigare con pattern fissi prevedibili
+- Digitare alla stessa velocità su testi di lunghezze diverse
+- Aggiungere azioni su LinkedIn senza humanDelay
+
+---
+
+## WORKFLOW OBBLIGATORIO PER OGNI MODIFICA
+1. `npm run pre-modifiche` PRIMA di iniziare
+2. Valutare impatto anti-ban (la priorità #0 sopra)
+3. Implementare la modifica
+4. `npm run conta-problemi` DOPO (DEVE essere exit code 0 — zero tolleranza)
+5. Verifica L2→L3→L4→L5→L6 specifici per il contesto
+6. Commit con messaggio dettagliato
+7. Se qualsiasi livello trova un problema → STOP e fixare
+
+## L1 — Compilazione e test (BLOCCANTE)
+- `npm run conta-problemi`: typecheck 0, lint 0, tutti i test passano. Se exit code 1 → BLOCCO TOTALE
+- `npm run build` se modifica frontend
+- Circular dependency check (`npx madge --circular`) se modifica moduli core. **Deve restare a 0** — verificare dopo ogni modifica che tocca core/AI/browser
+- Dead code: grep che nessun file importa funzioni rimosse
+- Test coverage: logica critica (risk, scheduler, auth, stealth) deve essere coperta
+
+## L2 — Catene dirette
+- Import→export→chiamata per ogni file toccato
+- Parametri aggiunti devono essere opzionali per retrocompatibilità
+- Barrel file (`browser/index.ts`, `repositories/index.ts`) propagano a tutti i consumatori
+- Cambio union type → aggiornare TUTTI switch/case e type guard
+
+## L3 — Runtime profondo
+- Edge case: NaN, null, undefined, array vuoti, stringhe vuote, numeri negativi
+- Performance: costo per iterazione nel loop?
+- Sicurezza: XSS, SQL injection, path traversal, OWASP per nuovi input utente
+- Ordine esecuzione garantito (auth middleware PRIMA dei router)
+- Per browser: memory leak closure? Listener rimossi? Timeout propaga?
+- Per DB: transazione? Crash consistency? busy_timeout?
+- Per stealth: PRNG uniforme? Pattern rilevabile?
+
+## L4 — Ragionamento preventivo
+- "E se null/undefined?" per ogni input
+- "E se fallisce a metà?" per ogni flusso multi-step
+- "E se chiamata 2 volte?" per ogni side-effect
+- "E se devo fare rollback?" — git revert pulito? Migration reversibile?
+- Scenari: multi-giorno (Set cresce?), recovery (DB corrotto?), interazione utente (pause durante invito?), aggiornamento LinkedIn (selettori cambiano?)
+
+## L5 — Visione prodotto
+- Refactoring: utente NON nota differenze
+- Feature: accessibile dall’UI, non solo API
+- Trasparenza: utente capisce cosa succede (log, Telegram con istruzioni, daily report)
+- Alert: dicono COSA FARE, non solo cosa è successo
+
+## L6 — Coerenza sistema e osservabilità
+- Catena logica: moduli logicamente collegati ancora coerenti?
+- Dati end-to-end: dato prodotto arriva fino all’utente (migration→repository→API→frontend→report)?
+- Reversibilità: rollback senza data loss?
+- Osservabilità: log/alert conferma che funziona in produzione?
+- Config: nuova var .env documentata in .env.example, parsata, validata?
+- Migration DB: DEFAULT value, dati pre-esistenti compatibili, idempotente?
+
+## REGOLA D’ORO
+Anti-ban viene PRIMA di tutto. I 6 livelli vengono applicati per CONTESTO — solo i sottopunti rilevanti per la modifica specifica. Ma i BASE di ogni livello vanno SEMPRE verificati.

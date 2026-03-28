@@ -472,6 +472,13 @@ export async function blockUserInput(page: Page): Promise<void> {
     initializeMouseState(page);
     await enableVisualCursorOverlay(page);
     await ensureInputBlock(page);
+    // Riapplica WS_EX_TRANSPARENT a TUTTE le finestre del processo browser.
+    // Dopo ogni page.goto il browser può creare nuove finestre child che non
+    // ereditano il flag — senza questo, il mouse dell'utente le raggiunge.
+    try {
+        const { reapplyWindowClickThrough } = await import('./windowInputBlock');
+        reapplyWindowClickThrough();
+    } catch { /* best-effort — non blocca se fallisce */ }
     // Auto-dismiss overlay LinkedIn dopo navigazione (via bridge per zero circular dep)
     const { callDismissOverlays } = await import('./overlayBridge');
     await callDismissOverlays(page);

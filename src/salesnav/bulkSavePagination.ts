@@ -422,7 +422,9 @@ export async function scrollAndReadPage(page: Page, fast: boolean = false): Prom
                 const preCount = await page.evaluate(() =>
                     document.querySelectorAll('a[href*="/sales/lead/"], a[href*="/sales/people/"]').length
                 );
-                const scrollWaitTimeout = 1_500 + Math.min((config.proxyHealthCheckTimeoutMs ?? 0) / 2, 3_000);
+                // H04: Adaptive scroll timeout — base 2500ms (safer for slow proxies).
+                // Adds half of proxy health check timeout as proxy-latency estimate.
+                const scrollWaitTimeout = 2_500 + Math.min((config.proxyHealthCheckTimeoutMs ?? 0) / 2, 3_000);
                 await page.waitForFunction(
                     (before: number) =>
                         document.querySelectorAll('a[href*="/sales/lead/"], a[href*="/sales/people/"]').length !== before,

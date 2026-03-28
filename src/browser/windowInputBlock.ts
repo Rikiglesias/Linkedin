@@ -22,16 +22,52 @@ let _clickThroughActive = false;
 let _lastPid: number | null = null;
 
 /**
+ * WeakMap per PID override — usato da Camoufox che non espone browser.process().
+ * Il PID viene registrato da launcher.ts subito dopo il lancio.
+ */
+const _pidOverrides = new WeakMap<BrowserContext, number>();
+
+/**
+ * Registra manualmente il PID del browser per un BrowserContext.
+ * Usato per Camoufox dove browser.process() non è disponibile.
+ */
+export function registerBrowserPid(ctx: BrowserContext, pid: number): void {
+    _pidOverrides.set(ctx, pid);
+}
+
+/**
+ * Ottiene i PID di tutti i processi il cui nome contiene 'firefox' o 'camoufox'.
+ * Usato per snapshot pre/post lancio Camoufox → il PID nuovo è quello di Camoufox.
+ */
+export function getFirefoxLikePids(): number[] {
+    if (process.platform !== 'win32') return [];
+    try {
+        const result = execSync(
+            'powershell -NoProfile -NonInteractive -Command "(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -match \'firefox|camoufox\' }).Id -join \',\'"',
+            { timeout: 5_000, encoding: 'utf-8', windowsHide: true },
+        ).trim();
+        if (!result) return [];
+        return result.split(',').map(s => parseInt(s.trim(), 10)).filter(n => n > 0);
+    } catch {
+        return [];
+    }
+}
+
+/**
  * PowerShell script template per settare/rimuovere WS_EX_TRANSPARENT sulla finestra del browser.
  * - WS_EX_LAYERED (0x80000): prerequisito per WS_EX_TRANSPARENT su top-level window
  * - WS_EX_TRANSPARENT (0x20): rende la finestra invisibile al mouse (click-through)
  * - SetLayeredWindowAttributes con alpha=255: finestra resta 100% visibile
+ *
+ * IMPORTANTE: Applica a TUTTE le finestre visibili del processo (EnumThreadWindows),
+ * non solo a MainWindowHandle. Firefox/Camoufox ha finestre child separate
+ * (content area, chrome) che ricevono eventi mouse indipendentemente.
  */
 function buildPowerShellScript(pid: number, enable: boolean): string {
-    // Escapare per embedding in PowerShell command
     return `
 Add-Type -TypeDefinition @"
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
 public class WinInputBlock {
@@ -41,28 +77,48 @@ public class WinInputBlock {
     public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
     [DllImport("user32.dll", SetLastError=true)]
     public static extern bool SetLayeredWindowAttributes(IntPtr hWnd, uint crKey, byte bAlpha, uint dwFlags);
+    [DllImport("user32.dll")]
+    public static extern bool EnumThreadWindows(int dwThreadId, EnumWinProc lpfn, IntPtr lParam);
+    [DllImport("user32.dll")]
+    public static extern bool IsWindowVisible(IntPtr hWnd);
+    public delegate bool EnumWinProc(IntPtr hWnd, IntPtr lParam);
 
     private const int GWL_EXSTYLE = -20;
     private const int WS_EX_TRANSPARENT = 0x20;
     private const int WS_EX_LAYERED = 0x80000;
     private const uint LWA_ALPHA = 0x2;
 
-    public static bool SetClickThrough(int pid, bool enable) {
+    private static void ApplyStyle(IntPtr hwnd, bool enable) {
+        int style = GetWindowLong(hwnd, GWL_EXSTYLE);
+        if (enable) {
+            style |= WS_EX_LAYERED | WS_EX_TRANSPARENT;
+            SetWindowLong(hwnd, GWL_EXSTYLE, style);
+            SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
+        } else {
+            style &= ~(WS_EX_LAYERED | WS_EX_TRANSPARENT);
+            SetWindowLong(hwnd, GWL_EXSTYLE, style);
+        }
+    }
+
+    public static int SetClickThrough(int pid, bool enable) {
         try {
             Process proc = Process.GetProcessById(pid);
-            IntPtr hwnd = proc.MainWindowHandle;
-            if (hwnd == IntPtr.Zero) return false;
-            int style = GetWindowLong(hwnd, GWL_EXSTYLE);
-            if (enable) {
-                style |= WS_EX_LAYERED | WS_EX_TRANSPARENT;
-                SetWindowLong(hwnd, GWL_EXSTYLE, style);
-                SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
-            } else {
-                style &= ~(WS_EX_LAYERED | WS_EX_TRANSPARENT);
-                SetWindowLong(hwnd, GWL_EXSTYLE, style);
+            int count = 0;
+            if (proc.MainWindowHandle != IntPtr.Zero) {
+                ApplyStyle(proc.MainWindowHandle, enable);
+                count++;
             }
-            return true;
-        } catch { return false; }
+            foreach (ProcessThread t in proc.Threads) {
+                EnumThreadWindows(t.Id, (hwnd, lp) => {
+                    if (IsWindowVisible(hwnd)) {
+                        ApplyStyle(hwnd, enable);
+                        count++;
+                    }
+                    return true;
+                }, IntPtr.Zero);
+            }
+            return count;
+        } catch { return 0; }
     }
 }
 "@ -Language CSharp
@@ -72,9 +128,18 @@ public class WinInputBlock {
 
 /**
  * Ottiene il PID del processo browser da un BrowserContext Playwright.
- * Funziona con Camoufox, Firefox e Chromium.
+ * Supporta Camoufox (via WeakMap override), Firefox e Chromium.
+ *
+ * Ordine di priorità:
+ * 1. PID registrato manualmente (WeakMap — per Camoufox)
+ * 2. Playwright standard (browser.process().pid — per Chromium/Firefox diretto)
  */
 function getBrowserPid(browserContext: BrowserContext): number | null {
+    // 1. Override registrato (Camoufox non espone browser.process())
+    const override = _pidOverrides.get(browserContext);
+    if (override) return override;
+
+    // 2. Playwright standard
     try {
         const browser = browserContext.browser();
         if (!browser) return null;
@@ -95,7 +160,6 @@ function getBrowserPid(browserContext: BrowserContext): number | null {
  */
 export function enableWindowClickThrough(browserContext: BrowserContext): boolean {
     if (process.platform !== 'win32') {
-        // Su Linux/Mac non serve — si usa virtual display (Xvfb) o non è un problema
         return false;
     }
 
@@ -105,27 +169,41 @@ export function enableWindowClickThrough(browserContext: BrowserContext): boolea
         return false;
     }
 
-    if (_clickThroughActive && _lastPid === pid) {
-        return true; // Già attivo
-    }
+    return _applyClickThrough(pid, true);
+}
 
+/**
+ * Riapplica click-through usando l'ultimo PID noto.
+ * Chiamato da blockUserInput dopo ogni navigazione — il browser crea nuove
+ * finestre child durante page.goto e queste non ereditano WS_EX_TRANSPARENT.
+ */
+export function reapplyWindowClickThrough(): void {
+    if (process.platform !== 'win32') return;
+    if (!_lastPid) return;
+    _applyClickThrough(_lastPid, true);
+}
+
+function _applyClickThrough(pid: number, enable: boolean): boolean {
     try {
-        const script = buildPowerShellScript(pid, true);
+        const script = buildPowerShellScript(pid, enable);
         const result = execSync(
             `powershell -NoProfile -NonInteractive -Command "${script.replace(/"/g, '\\"')}"`,
-            { timeout: 8_000, encoding: 'utf-8', windowsHide: true },
+            { timeout: 10_000, encoding: 'utf-8', windowsHide: true },
         ).trim();
 
-        if (result === 'True') {
-            _clickThroughActive = true;
+        const windowCount = parseInt(result, 10);
+        if (windowCount > 0) {
+            _clickThroughActive = enable;
             _lastPid = pid;
-            console.log(`[WINDOW-BLOCK] ✓ Click-through attivato (PID ${pid}) — mouse utente bloccato`);
+            if (enable) {
+                console.log(`[WINDOW-BLOCK] ✓ Click-through attivato (PID ${pid}, ${windowCount} finestre) — mouse utente bloccato`);
+            }
             return true;
         }
-        console.warn(`[WINDOW-BLOCK] PowerShell ha restituito: ${result}`);
+        console.warn(`[WINDOW-BLOCK] Nessuna finestra trovata per PID ${pid} (risultato: ${result})`);
         return false;
     } catch (err) {
-        console.warn(`[WINDOW-BLOCK] Errore attivazione: ${err instanceof Error ? err.message : String(err)}`);
+        console.warn(`[WINDOW-BLOCK] Errore: ${err instanceof Error ? err.message : String(err)}`);
         return false;
     }
 }
@@ -142,22 +220,15 @@ export function disableWindowClickThrough(browserContext?: BrowserContext): bool
     const pid = browserContext ? getBrowserPid(browserContext) : _lastPid;
     if (!pid) return false;
 
-    if (!_clickThroughActive) return true; // Già disattivato
+    if (!_clickThroughActive) return true;
 
-    try {
-        const script = buildPowerShellScript(pid, false);
-        execSync(
-            `powershell -NoProfile -NonInteractive -Command "${script.replace(/"/g, '\\"')}"`,
-            { timeout: 8_000, encoding: 'utf-8', windowsHide: true },
-        );
+    const ok = _applyClickThrough(pid, false);
+    if (ok) {
         _clickThroughActive = false;
         _lastPid = null;
         console.log(`[WINDOW-BLOCK] ✓ Click-through disattivato (PID ${pid}) — mouse utente sbloccato`);
-        return true;
-    } catch (err) {
-        console.warn(`[WINDOW-BLOCK] Errore disattivazione: ${err instanceof Error ? err.message : String(err)}`);
-        return false;
     }
+    return ok;
 }
 
 /**

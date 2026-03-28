@@ -91,20 +91,6 @@ async function processSingleFollowUp(
     context: WorkerContext,
 ): Promise<boolean> {
     const days = daysSince(messagedAt);
-    const { message, source } = await buildFollowUpReminderMessage(lead, days, {
-        intent: intentHint?.intent ?? null,
-        subIntent: intentHint?.subIntent ?? null,
-        entities: intentHint?.entities ?? [],
-    });
-
-    // Validazione anti-duplicata
-    const messageHash = hashMessage(message);
-    const duplicateCount = await countRecentMessageHash(messageHash, 48);
-    const validation = await validateMessageContentAsync(message, { duplicateCountLast24h: duplicateCount, leadId: lead.id });
-    if (!validation.valid) {
-        await logWarn('follow_up.validation_failed', { leadId, reasons: validation.reasons });
-        return false;
-    }
 
     // C11: Navigazione al profilo con catena organica (era goto diretto — segnale detection #1).
     // navigateToProfileForMessage: 60% Feed→Profilo, 40% Diretto (con varianza notifiche).
@@ -114,8 +100,6 @@ async function processSingleFollowUp(
     await contextualReadingPause(context.session.page);
 
     // R01+R02: OBSERVE page context + AI DECIDE prima dell'azione critica.
-    // Il bot "guarda" la pagina (R01) e l'AI "decide" se procedere (R02).
-    // Se AI non configurata → fallback meccanico PROCEED (zero regressione).
     const pageObs = await observePageContext(context.session.page);
     await logObservation(pageObs, { leadId, purpose: 'pre_follow_up' });
 
@@ -127,7 +111,13 @@ async function processSingleFollowUp(
         return false;
     }
 
-    // AI Decision: l'AI decide SE inviare il follow-up
+    // AI Decision: l'AI decide SE inviare il follow-up — con dati session REALI + enrichment
+    const { buildSessionSnapshot } = await import('./sessionDataHelper');
+    const { getLeadEnrichmentSummary } = await import('../core/repositories');
+    const [sessionData, enrichment] = await Promise.all([
+        buildSessionSnapshot(context),
+        getLeadEnrichmentSummary(leadId).catch(() => null),
+    ]);
     const aiDecision = await aiDecide({
         point: 'pre_follow_up',
         lead: {
@@ -135,8 +125,17 @@ async function processSingleFollowUp(
             name: `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim() || undefined,
             title: lead.job_title ?? undefined,
             company: lead.account_name ?? undefined,
+            score: lead.lead_score ?? undefined,
+            about: lead.about ?? undefined,
+            email: lead.email ?? undefined,
+            businessEmail: lead.business_email ?? undefined,
+            phone: lead.phone ?? undefined,
+            location: lead.location ?? undefined,
+            seniority: enrichment?.seniority ?? undefined,
+            industry: enrichment?.industry ?? undefined,
         },
         pageObservation: pageObs,
+        session: sessionData,
     });
 
     if (aiDecision.action === 'SKIP') {
@@ -166,6 +165,8 @@ async function processSingleFollowUp(
         await logInfo('follow_up.ai_low_confidence_delay', { leadId, confidence: aiDecision.confidence });
         await humanDelay(context.session.page, 2000, 4000);
     }
+
+    // Generazione messaggio spostata DOPO apertura chat per avere chatMessages come contesto.
 
     if (await detectChallenge(context.session.page)) {
         throw new ChallengeDetectedError();
@@ -209,46 +210,81 @@ async function processSingleFollowUp(
     }
     await humanDelay(context.session.page, 1200, 2200);
 
+    // Estrai ultimi messaggi dalla chat aperta — usati per reply check + contesto AI generazione
+    const { extractRecentChatMessages } = await import('./chatMessageExtractor');
+    const chatMessages = await extractRecentChatMessages(context.session.page, 5);
+
     // GAP3-C06: Check in-browser — se l'ultimo messaggio nella chat NON è nostro,
     // il lead ha già risposto. Skip follow-up per evitare spam gravissimo.
-    // Questo è il livello 1 (IMMEDIATO) del fix C06, complementare al filtro DB.
-    try {
-        const theirLastMsg = context.session.page
-            .locator('.msg-s-message-list__event:not([data-msg-s-message-event-is-me="true"]) .msg-s-event-listitem__body')
-            .last();
-        if (await theirLastMsg.isVisible({ timeout: 1500 }).catch(() => false)) {
-            const theirText = await theirLastMsg.innerText().catch(() => '');
-            if (theirText && theirText.trim().length > 0) {
-                // Verifica che il messaggio del lead sia PIÙ RECENTE dell'ultimo nostro
-                const ourLastMsg = context.session.page
-                    .locator('.msg-s-message-list__event[data-msg-s-message-event-is-me="true"] .msg-s-event-listitem__body')
-                    .last();
-                const ourText = await ourLastMsg.innerText().catch(() => '');
-                // Se il lead ha scritto E il suo messaggio è l'ultimo visibile → ha risposto
-                const theirMsgIndex = await theirLastMsg.evaluate((el) => {
-                    const parent = el.closest('.msg-s-message-list__event');
-                    return parent ? Array.from(parent.parentElement?.children ?? []).indexOf(parent) : -1;
-                }).catch(() => -1);
-                const ourMsgIndex = ourText ? await ourLastMsg.evaluate((el) => {
-                    const parent = el.closest('.msg-s-message-list__event');
-                    return parent ? Array.from(parent.parentElement?.children ?? []).indexOf(parent) : -1;
-                }).catch(() => -1) : -1;
+    // Usa chatMessages (strutturati) con fallback al check DOM diretto.
+    const lastMsg = chatMessages.length > 0 ? chatMessages[chatMessages.length - 1] : null;
+    if (lastMsg && lastMsg.startsWith('THEM:')) {
+        await logInfo('follow_up.reply_detected_in_chat', {
+            leadId,
+            textExcerpt: lastMsg.substring(0, 55),
+            source: 'chat_extractor',
+        });
+        const { transitionLead } = await import('../core/leadStateService');
+        await transitionLead(leadId, 'REPLIED', 'follow_up_reply_in_chat');
+        return false;
+    }
+    // Fallback: se chatMessageExtractor non ha trovato nulla, prova il check DOM diretto (C06 originale)
+    if (chatMessages.length === 0) {
+        try {
+            const theirLastMsg = context.session.page
+                .locator('.msg-s-message-list__event:not([data-msg-s-message-event-is-me="true"]) .msg-s-event-listitem__body')
+                .last();
+            if (await theirLastMsg.isVisible({ timeout: 1500 }).catch(() => false)) {
+                const theirText = await theirLastMsg.innerText().catch(() => '');
+                if (theirText && theirText.trim().length > 0) {
+                    const ourLastMsg = context.session.page
+                        .locator('.msg-s-message-list__event[data-msg-s-message-event-is-me="true"] .msg-s-event-listitem__body')
+                        .last();
+                    const ourText = await ourLastMsg.innerText().catch(() => '');
+                    const theirMsgIndex = await theirLastMsg.evaluate((el) => {
+                        const parent = el.closest('.msg-s-message-list__event');
+                        return parent ? Array.from(parent.parentElement?.children ?? []).indexOf(parent) : -1;
+                    }).catch(() => -1);
+                    const ourMsgIndex = ourText ? await ourLastMsg.evaluate((el) => {
+                        const parent = el.closest('.msg-s-message-list__event');
+                        return parent ? Array.from(parent.parentElement?.children ?? []).indexOf(parent) : -1;
+                    }).catch(() => -1) : -1;
 
-                if (theirMsgIndex > ourMsgIndex) {
-                    await logInfo('follow_up.reply_detected_in_chat', {
-                        leadId,
-                        textExcerpt: theirText.trim().substring(0, 50),
-                    });
-                    // Transiziona il lead a REPLIED — il follow-up non serve
-                    const { transitionLead } = await import('../core/leadStateService');
-                    await transitionLead(leadId, 'REPLIED', 'follow_up_reply_in_chat');
-                    return false;
+                    if (theirMsgIndex > ourMsgIndex) {
+                        await logInfo('follow_up.reply_detected_in_chat', {
+                            leadId,
+                            textExcerpt: theirText.trim().substring(0, 50),
+                            source: 'dom_fallback',
+                        });
+                        const { transitionLead } = await import('../core/leadStateService');
+                        await transitionLead(leadId, 'REPLIED', 'follow_up_reply_in_chat');
+                        return false;
+                    }
                 }
             }
+        } catch (replyCheckErr) {
+            void logWarn('follow_up.a04.reply_check_failed', { leadId, error: replyCheckErr instanceof Error ? replyCheckErr.message : String(replyCheckErr) });
         }
-    } catch (replyCheckErr) {
-        // A04: reply check tracciato per debug
-        void logWarn('follow_up.a04.reply_check_failed', { leadId, error: replyCheckErr instanceof Error ? replyCheckErr.message : String(replyCheckErr) });
+    }
+
+    // Generazione messaggio DOPO apertura chat: ora abbiamo chatMessages come contesto AI.
+    const chatContextStr = chatMessages.length > 0
+        ? `Recent chat: ${chatMessages.join(' | ')}`
+        : '';
+    const fullAiContext = [aiDecision.messageContext, chatContextStr].filter(Boolean).join('\n') || undefined;
+    const { message, source } = await buildFollowUpReminderMessage(lead, days, {
+        intent: intentHint?.intent ?? null,
+        subIntent: intentHint?.subIntent ?? null,
+        entities: intentHint?.entities ?? [],
+    }, fullAiContext);
+
+    // Validazione anti-duplicata
+    const messageHash = hashMessage(message);
+    const duplicateCount = await countRecentMessageHash(messageHash, 48);
+    const validation = await validateMessageContentAsync(message, { duplicateCountLast24h: duplicateCount, leadId: lead.id });
+    if (!validation.valid) {
+        await logWarn('follow_up.validation_failed', { leadId, reasons: validation.reasons });
+        return false;
     }
 
     await typeWithFallback(context.session.page, SELECTORS.messageTextbox, message, 'messageTextbox').catch(
@@ -291,7 +327,7 @@ async function processSingleFollowUp(
 
         // Persisti l'invio nel DB
         await recordFollowUpSent(leadId);
-        await storeMessageHash(leadId, messageHash);
+        await storeMessageHash(leadId, messageHash, message);
         // follow_ups_sent already incremented atomically by checkAndIncrementDailyLimit
 
         await logInfo('follow_up.sent', { leadId, source, daysSince: days, messageLength: message.length });
@@ -371,6 +407,16 @@ export async function runFollowUpWorker(context: WorkerContext, dailySentSoFar =
                 });
                 continue;
             }
+            // Guard: linkedin_url null/empty → REVIEW_REQUIRED (DB può avere NULL nonostante il tipo TS)
+            if (!lead.linkedin_url || lead.linkedin_url.trim().length === 0) {
+                await logWarn('follow_up.missing_linkedin_url', { leadId: lead.id });
+                const { isValidLeadTransition, transitionLead } = await import('../core/leadStateService');
+                if (isValidLeadTransition(lead.status, 'REVIEW_REQUIRED')) {
+                    await transitionLead(lead.id, 'REVIEW_REQUIRED', 'missing_linkedin_url');
+                }
+                continue;
+            }
+
             attempted += 1;
             const ok = await processSingleFollowUp(
                 lead.id,

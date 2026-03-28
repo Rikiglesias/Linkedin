@@ -636,9 +636,9 @@ function displayAiAdvice(advice: AiAdvisorResult): void {
     if (advice.suggestedParams) {
         const sp = advice.suggestedParams;
         const parts: string[] = [];
-        if (sp.limit != null) parts.push(`limit=${sp.limit}`);
-        if (sp.budgetInvites != null) parts.push(`budgetInvites=${sp.budgetInvites}`);
-        if (sp.budgetMessages != null) parts.push(`budgetMessages=${sp.budgetMessages}`);
+        if (sp.limit !== null && sp.limit !== undefined) parts.push(`limit=${sp.limit}`);
+        if (sp.budgetInvites !== null && sp.budgetInvites !== undefined) parts.push(`budgetInvites=${sp.budgetInvites}`);
+        if (sp.budgetMessages !== null && sp.budgetMessages !== undefined) parts.push(`budgetMessages=${sp.budgetMessages}`);
         if (parts.length > 0) {
             console.log(`      Parametri suggeriti: ${parts.join(', ')}`);
         }

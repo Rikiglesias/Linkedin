@@ -1005,7 +1005,19 @@ export async function scheduleJobs(
     if (!dryRun && (workflow === 'all' || workflow === 'invite') && riskSnapshot.action !== 'STOP') {
         const enrichAccounts = getRuntimeAccountProfiles();
         const primaryAccountId = enrichAccounts[0]?.id ?? 'default';
-        const enrichCandidates = await getLeadsNeedingEnrichment(50);
+
+        // M19: Search query rate limit — enforce 30% safety margin.
+        // LinkedIn allows ~300 search/enrichment queries per day. At 17% margin (250/day),
+        // there is little buffer. Increase to 30% margin → cap at 200/day.
+        // Dynamic: if risk score is elevated (>40), reduce further to 140/day (~53% margin).
+        const ENRICHMENT_DAILY_HARD_CAP = riskSnapshot.score > 40 ? 140 : 200;
+        const enrichmentCountKey = `enrichment_count:${localDate}`;
+        const enrichmentDoneRaw = await getRuntimeFlag(enrichmentCountKey).catch(() => '0');
+        const enrichmentDoneToday = parseInt(enrichmentDoneRaw ?? '0', 10) || 0;
+        const enrichmentRemaining = Math.max(0, ENRICHMENT_DAILY_HARD_CAP - enrichmentDoneToday);
+
+        // Per-run limit: 50 candidates max, further bounded by remaining daily quota
+        const enrichCandidates = await getLeadsNeedingEnrichment(Math.min(50, enrichmentRemaining));
         for (const lead of enrichCandidates) {
             await enqueueJob(
                 'ENRICHMENT',

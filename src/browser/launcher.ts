@@ -388,6 +388,13 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                 // Usa Camoufox() con user_data_dir per sessioni persistenti (cookie/localStorage).
                 const { Camoufox } = await import('camoufox-js');
 
+                // Snapshot PID Firefox pre-lancio per trovare il PID di Camoufox dopo.
+                // Camoufox non espone browser.process() → usiamo diff pre/post per il PID.
+                const windowBlock = process.platform === 'win32'
+                    ? await import('./windowInputBlock') : null;
+                const preLaunchPids = windowBlock
+                    ? new Set(windowBlock.getFirefoxLikePids()) : undefined;
+
                 // Dimensioni finestra: legge la risoluzione schermo dall'OS per adattarsi
                 // a qualsiasi monitor. window.resizeTo non funziona in Firefox (security).
                 let cfxWindow: [number, number] | undefined;
@@ -443,6 +450,24 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                         'dom.webdriver.enabled': false,
                     },
                 });
+                // Registra PID Camoufox per enableWindowClickThrough (WS_EX_TRANSPARENT).
+                // Diff pre/post lancio: il PID nuovo è quello di Camoufox.
+                if (windowBlock && preLaunchPids) {
+                    try {
+                        const postPids = windowBlock.getFirefoxLikePids();
+                        const newPid = postPids.find(p => !preLaunchPids.has(p));
+                        if (newPid) {
+                            windowBlock.registerBrowserPid(browser, newPid);
+                            void logInfo('browser.camoufox_pid_registered', { pid: newPid });
+                        } else {
+                            void logInfo('browser.camoufox_pid_not_found', {
+                                preLaunchCount: preLaunchPids.size,
+                                postLaunchCount: postPids.length,
+                            });
+                        }
+                    } catch { /* best-effort PID registration */ }
+                }
+
                 void logInfo('browser.camoufox_launched', {
                     sessionDir,
                     engine: 'camoufox',

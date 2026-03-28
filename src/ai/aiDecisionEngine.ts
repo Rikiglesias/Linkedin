@@ -32,6 +32,13 @@ export interface AIDecisionRequest {
         company?: string;
         score?: number;
         about?: string;
+        /** Enrichment data (P4) */
+        email?: string;
+        businessEmail?: string;
+        phone?: string;
+        location?: string;
+        seniority?: string;
+        industry?: string;
     };
     /** Stato sessione corrente */
     session?: {
@@ -115,7 +122,13 @@ export async function aiDecide(request: AIDecisionRequest): Promise<AIDecisionRe
         // Feedback loop: registra la decisione per correlazione con outcome futuro
         if (request.lead?.id) {
             const { recordDecision } = await import('./decisionFeedback');
-            recordDecision(request.lead.id, request.point, parsed).catch(() => {});
+            recordDecision(request.lead.id, request.point, parsed).catch((e) =>
+                logWarn('ai_decision_engine.record_failed', {
+                    leadId: request.lead!.id,
+                    point: request.point,
+                    error: e instanceof Error ? e.message : String(e),
+                }),
+            );
         }
         return parsed;
     } catch (err) {
@@ -179,6 +192,19 @@ function buildDecisionPrompt(request: AIDecisionRequest): string {
         'Respond with a JSON object: { "action": "PROCEED"|"SKIP"|"DEFER"|"NOTIFY_HUMAN", "confidence": 0.0-1.0, "reason": "brief explanation" }',
         '',
     ];
+
+    // Enrichment context condiviso tra tutti i decision point
+    if (request.lead) {
+        const enrichParts: string[] = [];
+        if (request.lead.seniority) enrichParts.push(`Seniority: ${request.lead.seniority}`);
+        if (request.lead.industry) enrichParts.push(`Industry: ${request.lead.industry}`);
+        if (request.lead.location) enrichParts.push(`Location: ${request.lead.location}`);
+        if (request.lead.email || request.lead.businessEmail) enrichParts.push('Has verified email');
+        if (request.lead.phone) enrichParts.push('Has phone');
+        if (enrichParts.length > 0) {
+            parts.push(`Enrichment: ${enrichParts.join(', ')}`);
+        }
+    }
 
     switch (request.point) {
         case 'pre_invite':

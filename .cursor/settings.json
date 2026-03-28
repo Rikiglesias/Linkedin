@@ -1,0 +1,19 @@
+{
+  "plugins": {
+    "huggingface-skills": {
+      "enabled": true
+    },
+    "vercel": {
+      "enabled": true
+    },
+    "figma": {
+      "enabled": true
+    },
+    "supabase": {
+      "enabled": true
+    },
+    "parallel": {
+      "enabled": true
+    }
+  }
+}

@@ -511,9 +511,9 @@ async function clickShowMoreIfPresent(page: Page): Promise<boolean> {
     if (disabled) {
         return false;
     }
-    await pauseInputBlock(page);
     await humanMouseMove(page, SHOW_MORE_SELECTOR);
     await humanDelay(page, 180, 450);
+    await pauseInputBlock(page);
     await button.click();
     await resumeInputBlock(page);
     await humanDelay(page, 1200, 2200);
@@ -533,9 +533,9 @@ async function goToNextPage(page: Page): Promise<boolean> {
         return false;
     }
 
-    await pauseInputBlock(page);
     await humanMouseMove(page, NEXT_PAGE_SELECTOR);
     await humanDelay(page, 180, 420);
+    await pauseInputBlock(page);
     await nextButton.click();
     await resumeInputBlock(page);
     // Attendi caricamento AJAX della nuova pagina (SalesNav non fa page reload)
@@ -549,6 +549,17 @@ async function goToNextPage(page: Page): Promise<boolean> {
 export async function navigateToSavedLists(page: Page): Promise<SalesNavSavedList[]> {
     await page.goto(SALESNAV_LISTS_URL, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     await humanDelay(page, 1800, 3200);
+
+    // Check login SalesNav: se la pagina è stata reindirizzata a /sales/login o /login,
+    // la sessione SalesNav è scaduta anche se quella LinkedIn era valida.
+    const navUrl = page.url().toLowerCase();
+    if (navUrl.includes('/sales/login') || navUrl.includes('/login') || navUrl.includes('/authwall')) {
+        throw new Error(
+            'SALESNAV_LOGIN_REQUIRED: Sessione Sales Navigator scaduta. ' +
+            `La pagina è stata reindirizzata a: ${page.url()}. ` +
+            'Effettua il login manuale nel browser.',
+        );
+    }
 
     // CC-33: Detection paywall/subscription SalesNav
     const pageText = await page.textContent('body').catch(() => '') ?? '';
@@ -580,6 +591,17 @@ export async function scrapeLeadsFromSalesNavList(
 
     await page.goto(options.listUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     await humanDelay(page, 1500, 2800);
+
+    // Check login SalesNav: se il goto alla lista è stato reindirizzato a login,
+    // la sessione SalesNav è scaduta. Segnala al chiamante per gestione login manuale.
+    const scrapeUrl = page.url().toLowerCase();
+    if (scrapeUrl.includes('/sales/login') || scrapeUrl.includes('/login') || scrapeUrl.includes('/authwall')) {
+        throw new Error(
+            'SALESNAV_LOGIN_REQUIRED: Sessione Sales Navigator scaduta durante navigazione alla lista. ' +
+            `URL attuale: ${page.url()}. Effettua il login manuale nel browser.`,
+        );
+    }
+
     // Re-inject overlay dopo navigazione (DOM distrutto da page.goto) — skip in interactive
     if (!options.interactive) await blockUserInput(page);
     // Attendi che almeno una lead card appaia prima di iniziare
