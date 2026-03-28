@@ -116,7 +116,9 @@ export async function checkLogin(page: Page): Promise<boolean> {
                 message: 'LinkedIn richiede verifica 2FA/TOTP — intervento manuale necessario.',
                 url: finalUrl,
             });
-        } catch { /* best-effort */ }
+        } catch (quarantineErr) {
+            console.error('[AUTH] ⚠️ quarantineAccount fallito — account NON in quarantena:', quarantineErr instanceof Error ? quarantineErr.message : String(quarantineErr));
+        }
         try {
             const { sendTelegramAlert } = await import('../telemetry/alerts');
             await sendTelegramAlert(

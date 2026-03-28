@@ -8,6 +8,9 @@ process.on('uncaughtException', (error) => {
     void performGracefulShutdown('Uncaught Exception').catch(() => process.exit(1));
 });
 
+import { initSentry, flushSentry } from './telemetry/sentry';
+initSentry();
+
 import { closeDatabase, initDatabase } from './db';
 import { config, validateConfigFull } from './config';
 import { runDoctor } from './core/doctor';
@@ -120,6 +123,9 @@ async function performGracefulShutdown(reason: string): Promise<void> {
         await closeDatabase();
         console.log('[SHUTDOWN] Database chiuso');
     } catch { /* best effort */ }
+
+    // 5. Flush Sentry (best-effort, 2s timeout)
+    await flushSentry().catch(() => null);
 
     clearTimeout(forceExitTimer);
     process.exit(0);

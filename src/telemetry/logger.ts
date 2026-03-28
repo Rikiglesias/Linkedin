@@ -2,6 +2,7 @@ import { recordRunLog } from '../core/repositories/system';
 import { sanitizeForLogs } from '../security/redaction';
 import { publishLiveEvent } from './liveEvents';
 import { getCorrelationId } from './correlation';
+import { captureError } from './sentry';
 
 function enrichWithCorrelation(payload: Record<string, unknown>): Record<string, unknown> {
     if (typeof payload.correlationId === 'string' && payload.correlationId.trim().length > 0) {
@@ -40,5 +41,6 @@ export async function logWarn(event: string, payload: Record<string, unknown> = 
 }
 
 export async function logError(event: string, payload: Record<string, unknown> = {}): Promise<void> {
+    captureError(event, payload);
     return log('ERROR', event, payload);
 }

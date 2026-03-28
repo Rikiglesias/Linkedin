@@ -123,8 +123,12 @@ export async function runBatchAcceptanceCheck(
                         [lead.id],
                     );
                     result.probablyAccepted++;
-                } catch {
+                } catch (updateErr) {
                     result.errors++;
+                    void logWarn('batch_acceptance.update_failed', {
+                        leadId: lead.id,
+                        error: updateErr instanceof Error ? updateErr.message : String(updateErr),
+                    });
                 }
             } else {
                 result.pendingFound++;

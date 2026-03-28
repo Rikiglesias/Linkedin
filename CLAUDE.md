@@ -1,6 +1,20 @@
 # CLAUDE.md — Policy operativa per Claude Code (LinkedIn Bot)
 
-> Questo file è la **singola policy** del progetto per Claude Code. Caricato automaticamente ad ogni conversazione. Non duplicare queste regole in altri file di configurazione.
+> Regole specifiche per questo progetto. Le regole globali (skill, Agent Teams, metodologia, comunicazione) sono in `~/.claude/CLAUDE.md` e si applicano automaticamente.
+
+---
+
+# Skill specifiche di questo progetto
+
+In aggiunta alla tabella globale, per questo progetto:
+
+| Tipo di task | Skill da invocare |
+|-------------|------------------|
+| Messaggi LinkedIn, outreach B2B | `/cold-email`, `/copywriting`, `/marketing-psychology` |
+| Anti-ban review (modifica bot) | `/antiban-review` |
+| Stato produzione / deploy | `/deploy-check` |
+| Report lead LinkedIn | `/lead-report` |
+| Audit task aperti | `/audit` |
 
 ---
 
@@ -12,67 +26,6 @@
 - Exit code ≠ 0 → **non procedere** come se fosse ok.
 - `npm run helper-manuali` è un **promemoria** nello script: le verifiche manuali vanno fatte davvero, non si assume che il comando le sostituisca.
 - **Flusso:** pre-modifiche → correzioni → sviluppo → post-modifiche → commit.
-
-# Qualità del lavoro
-
-- Con **dubbi rilevanti** (sicurezza, dati, comportamento incerto): **fermati**, verifica nel repo o **chiedi**; non inventare requisiti.
-- Dopo modifiche significative, **aggiorna la TODO** se la sessione ne usa una.
-- **Niente workaround** come soluzione finale: correggere alla fonte; non nascondere errori noti.
-
-# Metodologia (contesto prima di modificare)
-
-- Esplora il repo (**codebase search**, grep, lettura file): **no** patch isolate senza capire impatto.
-- Task ampio: **1–3 righe** obiettivo + vincoli *prima* delle patch; **step piccoli** e verificabili; niente refactor trasversale in un colpo solo salvo richiesta esplicita.
-- **Patch:** solo il **minimo necessario**; evita diff allargati "tanto che ci sono"; se servono più file, giustifica ogni tocco.
-- **Compilazione ≠ comportamento:** una patch che **typechecka** può comunque **cambiare semantica** (default, ordine di esecuzione, branch, race, contratti verso chiamanti). Esplicita **cosa cambia nel runtime**; dove possibile verifica con test o percorsi d'uso reali — non dare per scontato "build ok = ok".
-- **2–3 approcci** solo se la scelta **non è banale** (architettura, trade-off); per typo o fix triviali basta l'approccio diretto — non riempire la risposta di opzioni inutili.
-- **Double check** su sicurezza, concorrenza, **API pubbliche** e persistenza dati.
-- Visione d'insieme quando serve: dipendenze, moduli collegati, test, compatibilità, edge case (operativo: sotto).
-
-## Dipendenze
-
-- Traccia **import/export** e **chiamanti**; **config**, **env**, **CLI**, **worker**, **repository** sullo stesso contratto.
-- **DB:** migrazioni, query e tipi sulle stesse tabelle/colonne.
-- Se non puoi tracciare tutto, **dichiaralo** e **restringi lo scope**.
-
-## Cosa non deve perdersi
-
-1. **Vincoli e scope** dell'utente (off-limits); se ambiguo → **chiedi** (non duplicare domande già risolte nel thread).
-2. **Cosa non è stato verificato:** file toccati, comandi eseguiti (build/test/lint), lacune (altri chiamanti, prod, edge case).
-
-## Chiusura (interventi rilevanti)
-
-- Elenco **file modificati**; **rischi** plausibili.
-- Se **non** hai eseguito test/build del progetto, **scrivilo esplicitamente**.
-
-# Comunicazione
-
-- **Italiano** sempre.
-- **Assertivo:** se la richiesta è debole o rischiosa sul piano tecnico, dillo.
-- **Spiega il ragionamento** prima di azioni importanti.
-- **Criticità:** non dare ragione per convenienza se l'argomentazione non regge.
-
-# Memoria (auto-memory)
-
-La memoria è in `~/.claude/projects/.../memory/`. Va tenuta **lean e aggiornata** — memorie stantie sono peggio di nessuna memoria.
-
-**Cosa salvare:**
-- Decisioni motivazionali non derivabili dal codice (perché X e non Y)
-- Preferenze e feedback dell'utente su come lavorare insieme
-- Stato di lavori aperti non ancora in codice
-- Riferimenti a sistemi esterni (GitLab, Supabase, Telegram)
-
-**Cosa NON salvare:**
-- Codice, pattern, architettura, file path → derivabili leggendo il repo
-- Git history → `git log` è autoritativo
-- Dettagli implementativi di fix già chiusi → i commenti nel codice sono la fonte
-- Contenuto già presente in questo CLAUDE.md → non duplicare
-
-**Quando aggiornare:**
-- Se una memoria traccia uno stato (es. "X aperto") e lo stato cambia → aggiornarla subito
-- Se una memoria è diventata irrilevante → eliminarla
-- Se il contenuto è già derivabile dal codice → eliminarla
-- Dopo ogni sessione significativa: verificare che `MEMORY.md` rifletta la realtà attuale
 
 ---
 
@@ -110,57 +63,25 @@ Ogni modifica alla codebase DEVE essere valutata PRIMA DI TUTTO dal punto di vis
 
 ---
 
-## WORKFLOW OBBLIGATORIO PER OGNI MODIFICA
+## WORKFLOW OBBLIGATORIO PER QUESTO PROGETTO
 1. `npm run pre-modifiche` PRIMA di iniziare
-2. Valutare impatto anti-ban (la priorità #0 sopra)
+2. Valutare impatto anti-ban (priorità #0)
 3. Implementare la modifica
-4. `npm run conta-problemi` DOPO (DEVE essere exit code 0 — zero tolleranza)
-5. Verifica L2→L3→L4→L5→L6 specifici per il contesto
+4. `npm run conta-problemi` DOPO — exit code 0 obbligatorio
+5. Verifica L1-L6 globali + estensioni LinkedIn sotto
 6. Commit con messaggio dettagliato
-7. Se qualsiasi livello trova un problema → STOP e fixare
 
-## L1 — Compilazione e test (BLOCCANTE)
-- `npm run conta-problemi`: typecheck 0, lint 0, tutti i test passano. Se exit code 1 → BLOCCO TOTALE
-- `npm run build` se modifica frontend
-- Circular dependency check (`npx madge --circular`) se modifica moduli core. **Deve restare a 0** — verificare dopo ogni modifica che tocca core/AI/browser
-- Dead code: grep che nessun file importa funzioni rimosse
-- Test coverage: logica critica (risk, scheduler, auth, stealth) deve essere coperta
+## Estensioni LinkedIn ai livelli globali
 
-## L2 — Catene dirette
-- Import→export→chiamata per ogni file toccato
-- Parametri aggiunti devono essere opzionali per retrocompatibilità
-- Barrel file (`browser/index.ts`, `repositories/index.ts`) propagano a tutti i consumatori
-- Cambio union type → aggiornare TUTTI switch/case e type guard
+**L1 aggiuntivo:** `npm run build` se modifica frontend. `npx madge --circular` se tocchi moduli core — deve restare a 0. Coverage su risk, scheduler, auth, stealth.
 
-## L3 — Runtime profondo
-- Edge case: NaN, null, undefined, array vuoti, stringhe vuote, numeri negativi
-- Performance: costo per iterazione nel loop?
-- Sicurezza: XSS, SQL injection, path traversal, OWASP per nuovi input utente
-- Ordine esecuzione garantito (auth middleware PRIMA dei router)
-- Per browser: memory leak closure? Listener rimossi? Timeout propaga?
-- Per DB: transazione? Crash consistency? busy_timeout?
-- Per stealth: PRNG uniforme? Pattern rilevabile?
+**L3 aggiuntivo:** Per browser: memory leak closure? Listener rimossi? Timeout propagato? Per stealth: PRNG uniforme? Pattern rilevabile? busy_timeout sul DB?
 
-## L4 — Ragionamento preventivo
-- "E se null/undefined?" per ogni input
-- "E se fallisce a metà?" per ogni flusso multi-step
-- "E se chiamata 2 volte?" per ogni side-effect
-- "E se devo fare rollback?" — git revert pulito? Migration reversibile?
-- Scenari: multi-giorno (Set cresce?), recovery (DB corrotto?), interazione utente (pause durante invito?), aggiornamento LinkedIn (selettori cambiano?)
+**L4 aggiuntivo:** Scenari LinkedIn: multi-giorno (Set cresce?), recovery (DB corrotto?), pause durante invito, aggiornamento selettori LinkedIn.
 
-## L5 — Visione prodotto
-- Refactoring: utente NON nota differenze
-- Feature: accessibile dall'UI, non solo API
-- Trasparenza: utente capisce cosa succede (log, Telegram con istruzioni, daily report)
-- Alert: dicono COSA FARE, non solo cosa è successo
+**L5 aggiuntivo:** Telegram con istruzioni chiare, daily report con pending ratio + risk score.
 
-## L6 — Coerenza sistema e osservabilità
-- Catena logica: moduli logicamente collegati ancora coerenti?
-- Dati end-to-end: dato prodotto arriva fino all'utente (migration→repository→API→frontend→report)?
-- Reversibilità: rollback senza data loss?
-- Osservabilità: log/alert conferma che funziona in produzione?
-- Config: nuova var .env documentata in .env.example, parsata, validata?
-- Migration DB: DEFAULT value, dati pre-esistenti compatibili, idempotente?
+**L6 aggiuntivo:** migration→repository→API→frontend→report: dato arriva fino all'utente?
 
 ## REGOLA D'ORO
-Anti-ban viene PRIMA di tutto. I 6 livelli vengono applicati per CONTESTO — solo i sottopunti rilevanti per la modifica specifica. Ma i BASE di ogni livello vanno SEMPRE verificati.
+Anti-ban viene PRIMA di tutto. I livelli si applicano per contesto — solo i punti rilevanti. Ma i BASE vanno sempre verificati.

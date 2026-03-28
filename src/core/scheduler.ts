@@ -719,8 +719,9 @@ export async function scheduleJobs(
                     const scoreB = predMap.get(b.id) ?? (b.lead_score ?? 0);
                     return scoreB - scoreA;
                 });
-            } catch {
+            } catch (mlErr) {
                 // Fallback: usa ordine originale (lead_score DESC) se il modello fallisce
+                console.warn('[SCHEDULER] ML predictAcceptanceBatch fallito, fallback a lead_score:', mlErr instanceof Error ? mlErr.message : String(mlErr));
             }
 
             let insertedForList = 0;

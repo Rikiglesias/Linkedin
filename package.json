@@ -51,6 +51,7 @@
   "license": "UNLICENSED",
   "type": "commonjs",
   "dependencies": {
+    "@sentry/node": "^10.46.0",
     "@supabase/supabase-js": "^2.97.0",
     "camoufox-js": "^0.9.1",
     "chart.js": "^4.5.1",
