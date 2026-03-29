@@ -83,11 +83,7 @@ async function ensureTable(): Promise<void> {
  * Registra una decisione AI nel DB. Upsert: se lo stesso lead+point esiste già,
  * aggiorna (un lead può avere una sola decisione per point).
  */
-export async function recordDecision(
-    leadId: number,
-    point: string,
-    decision: AIDecisionResponseSlim,
-): Promise<void> {
+export async function recordDecision(leadId: number, point: string, decision: AIDecisionResponseSlim): Promise<void> {
     try {
         await ensureTable();
         const db = await getDatabase();
@@ -117,11 +113,7 @@ export async function recordDecision(
  * Outcomes positivi: 'accepted', 'replied', 'connected'
  * Outcomes negativi: 'ignored', 'withdrawn', 'blocked'
  */
-export async function recordDecisionOutcome(
-    leadId: number,
-    point: string,
-    outcome: string,
-): Promise<void> {
+export async function recordDecisionOutcome(leadId: number, point: string, outcome: string): Promise<void> {
     try {
         await ensureTable();
         const db = await getDatabase();
@@ -153,9 +145,7 @@ const NEGATIVE_OUTCOMES = new Set(['ignored', 'withdrawn', 'blocked', 'dead']);
  * Calcola l'accuracy delle decisioni AI per ogni point+action.
  * Accuracy = positive outcomes / total outcomes (esclude decisioni senza outcome).
  */
-export async function getDecisionAccuracy(
-    lookbackDays: number = 30,
-): Promise<DecisionAccuracyStats[]> {
+export async function getDecisionAccuracy(lookbackDays: number = 30): Promise<DecisionAccuracyStats[]> {
     try {
         await ensureTable();
         const db = await getDatabase();
@@ -206,9 +196,7 @@ export async function getDecisionAccuracy(
 /**
  * Sommario compatto per il daily report e diagnostica.
  */
-export async function getDecisionFeedbackSummary(
-    lookbackDays: number = 7,
-): Promise<{
+export async function getDecisionFeedbackSummary(lookbackDays: number = 7): Promise<{
     totalDecisions: number;
     withOutcome: number;
     overallAccuracy: number;

@@ -60,13 +60,7 @@ export async function runMessagePrebuild(limit: number = 10): Promise<MessagePre
             }
 
             const msgHash = hashMessage(result.message);
-            await savePrebuiltMessage(
-                leadId,
-                result.message,
-                msgHash,
-                result.source,
-                result.model,
-            );
+            await savePrebuiltMessage(leadId, result.message, msgHash, result.source, result.model);
             report.generated++;
         } catch (error) {
             report.failed++;

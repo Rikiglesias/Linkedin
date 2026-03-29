@@ -9,10 +9,7 @@ import { logWarn } from '../telemetry/logger';
  * Legge gli ultimi messaggi da una chat LinkedIn aperta.
  * @returns Array di stringhe "THEM: ..." / "ME: ..." oppure [] se fallisce.
  */
-export async function extractRecentChatMessages(
-    page: Page,
-    maxMessages: number = 5,
-): Promise<string[]> {
+export async function extractRecentChatMessages(page: Page, maxMessages: number = 5): Promise<string[]> {
     try {
         // LinkedIn messaging: ogni messaggio e' in un list item con classe msg-s-event-listitem
         const msgItems = page.locator('.msg-s-message-list-content .msg-s-event-listitem');
@@ -30,8 +27,12 @@ export async function extractRecentChatMessages(
 
             // LinkedIn aggiunge una classe specifica ai messaggi inviati da noi
             const classList = await item.getAttribute('class').catch(() => '');
-            const isMe = classList?.includes('msg-s-message-list__event--last-outgoing')
-                || (await item.locator('.msg-s-message-group--outgoing').count().catch(() => 0)) > 0;
+            const isMe =
+                classList?.includes('msg-s-message-list__event--last-outgoing') ||
+                (await item
+                    .locator('.msg-s-message-group--outgoing')
+                    .count()
+                    .catch(() => 0)) > 0;
 
             const prefix = isMe ? 'ME' : 'THEM';
             messages.push(`${prefix}: ${text.substring(0, 200)}`);

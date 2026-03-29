@@ -12,9 +12,7 @@
  */
 
 import type { Page } from 'playwright';
-import {
-    humanDelay,
-} from '../browser';
+import { humanDelay } from '../browser';
 import { config } from '../config';
 import {
     hasLocator,
@@ -25,10 +23,7 @@ import {
     findVisibleClickTarget,
 } from './bulkSaveHelpers';
 import { humanMouseMoveToCoords } from '../browser/humanBehavior';
-import {
-    visionVerify,
-    visionWaitFor,
-} from './visionNavigator';
+import { visionVerify, visionWaitFor } from './visionNavigator';
 import { computerUseSelectList } from './computerUse';
 import {
     SALESNAV_SELECT_ALL_SELECTOR as SELECT_ALL_SELECTOR,
@@ -50,7 +45,9 @@ export async function clickSelectAll(page: Page, dryRun: boolean): Promise<void>
     const selectAllTexts = ['select all', 'seleziona tutto', 'seleziona tutti'];
     const textBox = await findVisibleClickTarget(page, selectAllTexts);
     if (textBox) {
-        console.log(`[SELECT ALL] Strategia 1 OK: testo trovato a (${Math.round(textBox.x)},${Math.round(textBox.y)}) ${Math.round(textBox.width)}x${Math.round(textBox.height)}`);
+        console.log(
+            `[SELECT ALL] Strategia 1 OK: testo trovato a (${Math.round(textBox.x)},${Math.round(textBox.y)}) ${Math.round(textBox.width)}x${Math.round(textBox.height)}`,
+        );
         await smartClick(page, textBox);
         clicked = true;
     } else {
@@ -63,11 +60,15 @@ export async function clickSelectAll(page: Page, dryRun: boolean): Promise<void>
         const found = await hasLocator(locator);
         const box = found ? await locatorBoundingBox(locator) : null;
         if (box && box.width > 3 && box.height > 3) {
-            console.log(`[SELECT ALL] Strategia 2 OK: locator CSS a (${Math.round(box.x)},${Math.round(box.y)}) ${Math.round(box.width)}x${Math.round(box.height)}`);
+            console.log(
+                `[SELECT ALL] Strategia 2 OK: locator CSS a (${Math.round(box.x)},${Math.round(box.y)}) ${Math.round(box.width)}x${Math.round(box.height)}`,
+            );
             await smartClick(page, box);
             clicked = true;
         } else {
-            console.log(`[SELECT ALL] Strategia 2 SKIP: locator trovato=${found}, box=${box ? `${Math.round(box.width)}x${Math.round(box.height)}` : 'null'}`);
+            console.log(
+                `[SELECT ALL] Strategia 2 SKIP: locator trovato=${found}, box=${box ? `${Math.round(box.width)}x${Math.round(box.height)}` : 'null'}`,
+            );
         }
     }
 
@@ -78,7 +79,9 @@ export async function clickSelectAll(page: Page, dryRun: boolean): Promise<void>
         if (count > 0) {
             const box = await locatorBoundingBox(checkbox);
             if (box && box.width > 3) {
-                console.log(`[SELECT ALL] Strategia 3 OK: getByRole checkbox a (${Math.round(box.x)},${Math.round(box.y)})`);
+                console.log(
+                    `[SELECT ALL] Strategia 3 OK: getByRole checkbox a (${Math.round(box.x)},${Math.round(box.y)})`,
+                );
                 await smartClick(page, box);
             } else {
                 console.log('[SELECT ALL] Strategia 3: checkbox hidden, force click');
@@ -96,11 +99,15 @@ export async function clickSelectAll(page: Page, dryRun: boolean): Promise<void>
         // M38: Clip area alla toolbar superiore (top 200px) — riduce dimensione screenshot
         // e token AI del ~70%. La checkbox Select All è sempre nella toolbar, non nel body.
         const vp = page.viewportSize() ?? { width: 1280, height: 800 };
-        await safeVisionClick(page, 'the checkbox or control to select all leads on this page. Look for a small checkbox at the top of the results list, usually labeled "Select all" or showing a count like "(25)"', {
-            retries: 3,
-            postClickDelayMs: 850,
-            clip: { x: 0, y: 0, width: vp.width, height: Math.min(250, vp.height) },
-        });
+        await safeVisionClick(
+            page,
+            'the checkbox or control to select all leads on this page. Look for a small checkbox at the top of the results list, usually labeled "Select all" or showing a count like "(25)"',
+            {
+                retries: 3,
+                postClickDelayMs: 850,
+                clip: { x: 0, y: 0, width: vp.width, height: Math.min(250, vp.height) },
+            },
+        );
         clicked = true;
         console.log('[SELECT ALL] Strategia 4 OK: Vision AI click eseguito');
     }
@@ -112,7 +119,9 @@ export async function clickSelectAll(page: Page, dryRun: boolean): Promise<void>
     try {
         const selectionCountText = await page.evaluate(() => {
             // SalesNav mostra "(25)" o "25 selected" dopo Select All
-            const countEl = document.querySelector('[data-test-selection-count], .artdeco-pill__text, .search-results__selected-count');
+            const countEl = document.querySelector(
+                '[data-test-selection-count], .artdeco-pill__text, .search-results__selected-count',
+            );
             if (countEl?.textContent) return countEl.textContent.trim();
             // Fallback: cerca testo "N selected" nella toolbar
             const toolbar = document.querySelector('.search-results__action-bar, [class*="action-bar"]');
@@ -126,13 +135,20 @@ export async function clickSelectAll(page: Page, dryRun: boolean): Promise<void>
         }
     } catch (countErr) {
         // A04: count check fallito — non bloccante ma tracciato
-        console.warn(`[A04] Select all count check failed: ${countErr instanceof Error ? countErr.message : String(countErr)}`);
+        console.warn(
+            `[A04] Select all count check failed: ${countErr instanceof Error ? countErr.message : String(countErr)}`,
+        );
     }
 
     // Verifica: il bottone "Save to list" dovrebbe apparire dopo Select All
-    const saveVisible = await page.locator(SAVE_TO_LIST_SELECTOR).first()
+    const saveVisible = await page
+        .locator(SAVE_TO_LIST_SELECTOR)
+        .first()
         .waitFor({ state: 'visible', timeout: 5_000 })
-        .then(() => true, () => false);
+        .then(
+            () => true,
+            () => false,
+        );
     if (!saveVisible) {
         const saveBox = await findVisibleClickTarget(page, ['save to list', "salva nell'elenco"]);
         if (!saveBox) {
@@ -154,21 +170,30 @@ export async function openSaveToListDialog(page: Page, dryRun: boolean): Promise
     if (dryRun) return;
 
     // Attendi che il bottone "Save to list" appaia (toolbar batch actions)
-    await page.locator(SAVE_TO_LIST_SELECTOR).first()
+    await page
+        .locator(SAVE_TO_LIST_SELECTOR)
+        .first()
         .waitFor({ state: 'visible', timeout: 8_000 })
         .catch(() => null);
 
     let clicked = false;
     // Tutti i testi possibili EN + IT (compresi sinonimi e varianti SalesNav)
     const saveTexts = [
-        'save to list', "salva nell'elenco", 'salva nella lista',
-        'salva in elenco', "aggiungi all'elenco", 'aggiungi alla lista', 'salva',
+        'save to list',
+        "salva nell'elenco",
+        'salva nella lista',
+        'salva in elenco',
+        "aggiungi all'elenco",
+        'aggiungi alla lista',
+        'salva',
     ];
 
     // Strategia 1+2+3 in parallelo: testo visibile + locator CSS + getByRole
-    const btnLocator = page.getByRole('button', {
-        name: /save to list|salva nell.elenco|salva nella lista|salva in elenco|aggiungi all.elenco|aggiungi alla lista|^salva$/i,
-    }).first();
+    const btnLocator = page
+        .getByRole('button', {
+            name: /save to list|salva nell.elenco|salva nella lista|salva in elenco|aggiungi all.elenco|aggiungi alla lista|^salva$/i,
+        })
+        .first();
     const [textBox, locatorBox, roleBox] = await Promise.all([
         findVisibleClickTarget(page, saveTexts),
         (async () => {
@@ -181,7 +206,9 @@ export async function openSaveToListDialog(page: Page, dryRun: boolean): Promise
     ]);
 
     if (textBox) {
-        console.log(`[SAVE TO LIST] Strategia 1 OK: testo trovato a (${Math.round(textBox.x)},${Math.round(textBox.y)})`);
+        console.log(
+            `[SAVE TO LIST] Strategia 1 OK: testo trovato a (${Math.round(textBox.x)},${Math.round(textBox.y)})`,
+        );
         await smartClick(page, textBox);
         clicked = true;
     } else if (locatorBox) {
@@ -234,27 +261,36 @@ export async function openSaveToListDialog(page: Page, dryRun: boolean): Promise
 /** Verifica il toast LinkedIn post-save: controlla che menzioni la lista target. */
 export async function verifyToast(page: Page, targetListName: string): Promise<void> {
     await humanDelay(page, 500, 800);
-    const toastText = await page.evaluate(() => {
-        const toast = document.querySelector(
-            '.artdeco-toast-item, [class*="toast"], [role="alert"], [class*="notification"]',
-        );
-        return toast ? (toast as HTMLElement).innerText.trim() : '';
-    }).catch(() => '');
+    const toastText = await page
+        .evaluate(() => {
+            const toast = document.querySelector(
+                '.artdeco-toast-item, [class*="toast"], [role="alert"], [class*="notification"]',
+            );
+            return toast ? (toast as HTMLElement).innerText.trim() : '';
+        })
+        .catch(() => '');
 
     if (toastText) {
         const toastLower = toastText.toLowerCase();
         const targetLower = targetListName.toLowerCase();
-        if (toastLower.includes('saved') || toastLower.includes('salvat') || toastLower.includes('elenco') || toastLower.includes('list')) {
+        if (
+            toastLower.includes('saved') ||
+            toastLower.includes('salvat') ||
+            toastLower.includes('elenco') ||
+            toastLower.includes('list')
+        ) {
             // M02: Verificare nome COMPLETO della lista, non solo ≥2 parole.
             // Word overlap poteva confermare lista "Europa Team" con toast "Europa Marketing Team".
             const fullNameMatch = toastLower.includes(targetLower);
-            const targetWords = targetLower.split(/[\s,]+/).filter(w => w.length > 2);
-            const matchedWords = targetWords.filter(w => toastLower.includes(w));
+            const targetWords = targetLower.split(/[\s,]+/).filter((w) => w.length > 2);
+            const matchedWords = targetWords.filter((w) => toastLower.includes(w));
             if (fullNameMatch || matchedWords.length >= Math.ceil(targetWords.length * 0.8)) {
                 console.log(`[CHOOSE LIST] ✓ Toast conferma: "${toastText}"`);
             } else {
                 console.error(`[CHOOSE LIST] ⚠️ TOAST MISMATCH: "${toastText}" — target era "${targetListName}"`);
-                console.error(`[CHOOSE LIST] ⚠️ Parole matchate: [${matchedWords.join(', ')}] su [${targetWords.join(', ')}]`);
+                console.error(
+                    `[CHOOSE LIST] ⚠️ Parole matchate: [${matchedWords.join(', ')}] su [${targetWords.join(', ')}]`,
+                );
             }
         }
     }
@@ -279,7 +315,9 @@ export async function chooseTargetList(page: Page, targetListName: string, dryRu
     }
 
     const dialogContainerSelector = DIALOG_SELECTOR.split(', ')[0];
-    console.log(`[CHOOSE LIST] Cerco "${targetListName}" nel dialog...${isListFoundInSession() ? ' (fast path: lista già usata)' : ''}`);
+    console.log(
+        `[CHOOSE LIST] Cerco "${targetListName}" nel dialog...${isListFoundInSession() ? ' (fast path: lista già usata)' : ''}`,
+    );
 
     // ── Fast path: se la lista è già stata usata in questa sessione, prova click diretto ──
     // Un umano esperto che fa bulk save ripetitivo NON riscrive il nome ogni volta.
@@ -287,15 +325,24 @@ export async function chooseTargetList(page: Page, targetListName: string, dryRu
     // Se la lista ha già la checkbox selezionata (aria-checked/aria-selected), basta confermare.
     if (isListFoundInSession()) {
         // Check se la lista è GIÀ selezionata (checkbox checked) → nessun click necessario
-        const alreadySelected = await page.evaluate(({ container, name }: { container: string; name: string }) => {
-            const root = document.querySelector(container) ?? document;
-            const items = root.querySelectorAll('[aria-selected="true"], [aria-checked="true"], input:checked');
-            for (const item of items) {
-                const text = (item.closest('li, label, [role="option"]') ?? item).textContent?.toLowerCase().replace(/\s+/g, ' ').trim() ?? '';
-                if (text.includes(name.toLowerCase())) return true;
-            }
-            return false;
-        }, { container: dialogContainerSelector, name: targetListName }).catch(() => false);
+        const alreadySelected = await page
+            .evaluate(
+                ({ container, name }: { container: string; name: string }) => {
+                    const root = document.querySelector(container) ?? document;
+                    const items = root.querySelectorAll('[aria-selected="true"], [aria-checked="true"], input:checked');
+                    for (const item of items) {
+                        const text =
+                            (item.closest('li, label, [role="option"]') ?? item).textContent
+                                ?.toLowerCase()
+                                .replace(/\s+/g, ' ')
+                                .trim() ?? '';
+                        if (text.includes(name.toLowerCase())) return true;
+                    }
+                    return false;
+                },
+                { container: dialogContainerSelector, name: targetListName },
+            )
+            .catch(() => false);
 
         if (alreadySelected) {
             console.log('[CHOOSE LIST] Fast path: lista già selezionata — confermo');
@@ -314,7 +361,9 @@ export async function chooseTargetList(page: Page, targetListName: string, dryRu
 
         const directBox = await findVisibleClickTarget(page, [targetListName], dialogContainerSelector, true, true);
         if (directBox) {
-            console.log(`[CHOOSE LIST] Fast path OK: click diretto a (${Math.round(directBox.x)},${Math.round(directBox.y)})`);
+            console.log(
+                `[CHOOSE LIST] Fast path OK: click diretto a (${Math.round(directBox.x)},${Math.round(directBox.y)})`,
+            );
             await smartClick(page, directBox);
             await humanDelay(page, 300, 600);
 
@@ -380,33 +429,37 @@ export async function chooseTargetList(page: Page, targetListName: string, dryRu
                 return;
             }
         } else {
-            console.warn(`[CHOOSE LIST] Computer Use fallito: ${cuResult.error ?? 'sconosciuto'} — fallback a DOM strategies`);
+            console.warn(
+                `[CHOOSE LIST] Computer Use fallito: ${cuResult.error ?? 'sconosciuto'} — fallback a DOM strategies`,
+            );
         }
     }
 
     // ── Helper: legge il testo dell'elemento evidenziato/selezionato nel dialog ──
     async function readSelectedListText(): Promise<string> {
-        return page.evaluate((containerSel: string) => {
-            const root = document.querySelector(containerSel) ?? document;
-            // Look for highlighted/selected/active list items
-            const selectors = [
-                '[aria-selected="true"]',
-                '[aria-checked="true"]',
-                '.artdeco-entity-lockup--active',
-                '.active',
-                '.selected',
-                '[class*="highlight"]',
-                '[class*="selected"]',
-                'li[class*="active"]',
-            ];
-            for (const sel of selectors) {
-                const el = root.querySelector(sel);
-                if (el) {
-                    return (el as HTMLElement).innerText.replace(/\s+/g, ' ').trim();
+        return page
+            .evaluate((containerSel: string) => {
+                const root = document.querySelector(containerSel) ?? document;
+                // Look for highlighted/selected/active list items
+                const selectors = [
+                    '[aria-selected="true"]',
+                    '[aria-checked="true"]',
+                    '.artdeco-entity-lockup--active',
+                    '.active',
+                    '.selected',
+                    '[class*="highlight"]',
+                    '[class*="selected"]',
+                    'li[class*="active"]',
+                ];
+                for (const sel of selectors) {
+                    const el = root.querySelector(sel);
+                    if (el) {
+                        return (el as HTMLElement).innerText.replace(/\s+/g, ' ').trim();
+                    }
                 }
-            }
-            return '';
-        }, dialogContainerSelector).catch(() => '');
+                return '';
+            }, dialogContainerSelector)
+            .catch(() => '');
     }
 
     // ── Helper: verifica con Vision AI che la lista clickata sia quella giusta ──
@@ -429,13 +482,21 @@ export async function chooseTargetList(page: Page, targetListName: string, dryRu
         let clicked = false;
 
         // Strategia 1 (PRIORITARIA): digita il nome COMPLETO nel campo ricerca per filtrare
-        const searchInput = dialogLocator.locator('input[type="text"], input[type="search"], input[placeholder*="Search"], input[placeholder*="Cerca"]').first();
+        const searchInput = dialogLocator
+            .locator(
+                'input[type="text"], input[type="search"], input[placeholder*="Search"], input[placeholder*="Cerca"]',
+            )
+            .first();
         if ((await searchInput.count()) > 0) {
             console.log('[CHOOSE LIST] Strategia 1: filtro via campo ricerca (STRICT match)...');
             // Mouse move umano sull'input prima di digitare
             const inputBox = await searchInput.boundingBox().catch(() => null);
             if (inputBox) {
-                await humanMouseMoveToCoords(page, inputBox.x + inputBox.width / 2 + (Math.random() * 6 - 3), inputBox.y + inputBox.height / 2 + (Math.random() * 4 - 2));
+                await humanMouseMoveToCoords(
+                    page,
+                    inputBox.x + inputBox.width / 2 + (Math.random() * 6 - 3),
+                    inputBox.y + inputBox.height / 2 + (Math.random() * 4 - 2),
+                );
             }
             await searchInput.click();
             await humanDelay(page, 150, 300);
@@ -456,7 +517,11 @@ export async function chooseTargetList(page: Page, targetListName: string, dryRu
                 // Mouse move umano sull'input per il retry parziale
                 const retryBox = await searchInput.boundingBox().catch(() => null);
                 if (retryBox) {
-                    await humanMouseMoveToCoords(page, retryBox.x + retryBox.width / 2 + (Math.random() * 6 - 3), retryBox.y + retryBox.height / 2 + (Math.random() * 4 - 2));
+                    await humanMouseMoveToCoords(
+                        page,
+                        retryBox.x + retryBox.width / 2 + (Math.random() * 6 - 3),
+                        retryBox.y + retryBox.height / 2 + (Math.random() * 4 - 2),
+                    );
                 }
                 await searchInput.click();
                 await humanDelay(page, 100, 200);
@@ -489,7 +554,8 @@ export async function chooseTargetList(page: Page, targetListName: string, dryRu
             await page.evaluate((selector: string) => {
                 const dialog = document.querySelector(selector);
                 if (!dialog) return;
-                const scrollable = dialog.querySelector('.artdeco-modal__content, [style*="overflow"], [class*="scroll"]') ?? dialog;
+                const scrollable =
+                    dialog.querySelector('.artdeco-modal__content, [style*="overflow"], [class*="scroll"]') ?? dialog;
                 (scrollable as HTMLElement).scrollTop = 0;
             }, dialogContainerSelector);
             await humanDelay(page, 150, 300);
@@ -497,7 +563,9 @@ export async function chooseTargetList(page: Page, targetListName: string, dryRu
             for (let scroll = 0; scroll < 15 && !clicked; scroll++) {
                 const box = await findVisibleClickTarget(page, [targetListName], dialogContainerSelector, true, true);
                 if (box) {
-                    console.log(`[CHOOSE LIST] Strategia 3 STRICT OK (scroll ${scroll}) a (${Math.round(box.x)},${Math.round(box.y)})`);
+                    console.log(
+                        `[CHOOSE LIST] Strategia 3 STRICT OK (scroll ${scroll}) a (${Math.round(box.x)},${Math.round(box.y)})`,
+                    );
                     await smartClick(page, box);
                     clicked = true;
                     break;
@@ -505,7 +573,9 @@ export async function chooseTargetList(page: Page, targetListName: string, dryRu
                 await page.evaluate((selector: string) => {
                     const dialog = document.querySelector(selector);
                     if (!dialog) return;
-                    const scrollable = dialog.querySelector('.artdeco-modal__content, [style*="overflow"], [class*="scroll"]') ?? dialog;
+                    const scrollable =
+                        dialog.querySelector('.artdeco-modal__content, [style*="overflow"], [class*="scroll"]') ??
+                        dialog;
                     (scrollable as HTMLElement).scrollTop += 250;
                 }, dialogContainerSelector);
                 await humanDelay(page, 150, 250);
@@ -541,7 +611,9 @@ export async function chooseTargetList(page: Page, targetListName: string, dryRu
             if (selLower.includes(tgtLower) || tgtLower.includes(selLower.substring(0, 20))) {
                 console.log(`[CHOOSE LIST] ✓ Verifica DOM OK: selezionato "${selectedText}"`);
             } else {
-                console.error(`[CHOOSE LIST] ✗ Verifica DOM FALLITA: selezionato "${selectedText}" ma target era "${targetListName}"`);
+                console.error(
+                    `[CHOOSE LIST] ✗ Verifica DOM FALLITA: selezionato "${selectedText}" ma target era "${targetListName}"`,
+                );
                 if (attempt < MAX_ATTEMPTS) {
                     console.warn('[CHOOSE LIST] ABORT — chiudo dialog e riprovo...');
                     await page.keyboard.press('Escape');
@@ -551,7 +623,7 @@ export async function chooseTargetList(page: Page, targetListName: string, dryRu
                     if (await hasLocator(saveBtn)) {
                         const box = await locatorBoundingBox(saveBtn);
                         if (box) await smartClick(page, box);
-                        await dialogLocator.waitFor({ state: 'visible', timeout: 8_000 }).catch(() => { });
+                        await dialogLocator.waitFor({ state: 'visible', timeout: 8_000 }).catch(() => {});
                         await humanDelay(page, 300, 500);
                     }
                     continue; // Retry
@@ -572,7 +644,7 @@ export async function chooseTargetList(page: Page, targetListName: string, dryRu
                     if (await hasLocator(saveBtn)) {
                         const box = await locatorBoundingBox(saveBtn);
                         if (box) await smartClick(page, box);
-                        await dialogLocator.waitFor({ state: 'visible', timeout: 8_000 }).catch(() => { });
+                        await dialogLocator.waitFor({ state: 'visible', timeout: 8_000 }).catch(() => {});
                         await humanDelay(page, 300, 500);
                     }
                     continue; // Retry
@@ -624,7 +696,3 @@ export async function chooseTargetList(page: Page, targetListName: string, dryRu
         break;
     }
 }
-
-
-
-

@@ -3,7 +3,17 @@ import { configCapSchema, configTimingSchema, configRiskSchema } from '../config
 
 describe('configCapSchema — Zod parse vs safeParse', () => {
     it('parse valido → ritorna oggetto', () => {
-        const valid = { softInviteCap: 10, hardInviteCap: 25, weeklyInviteLimit: 100, softMsgCap: 10, hardMsgCap: 35, weeklyMessageLimit: 150, followUpDailyCap: 10, followUpMax: 3, profileViewDailyCap: 80 };
+        const valid = {
+            softInviteCap: 10,
+            hardInviteCap: 25,
+            weeklyInviteLimit: 100,
+            softMsgCap: 10,
+            hardMsgCap: 35,
+            weeklyMessageLimit: 150,
+            followUpDailyCap: 10,
+            followUpMax: 3,
+            profileViewDailyCap: 80,
+        };
         const result = configCapSchema.parse(valid);
         expect(result.hardInviteCap).toBe(25);
     });
@@ -23,7 +33,13 @@ describe('configCapSchema — Zod parse vs safeParse', () => {
 
 describe('configTimingSchema — Zod parse', () => {
     it('parse valido → ritorna oggetto', () => {
-        const valid = { interJobMinDelaySec: 30, interJobMaxDelaySec: 90, workingHoursStart: 8, workingHoursEnd: 19, challengePauseMinutes: 180 };
+        const valid = {
+            interJobMinDelaySec: 30,
+            interJobMaxDelaySec: 90,
+            workingHoursStart: 8,
+            workingHoursEnd: 19,
+            challengePauseMinutes: 180,
+        };
         const result = configTimingSchema.parse(valid);
         expect(result.workingHoursStart).toBe(8);
     });

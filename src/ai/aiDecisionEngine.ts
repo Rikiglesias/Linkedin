@@ -101,9 +101,7 @@ export async function aiDecide(request: AIDecisionRequest): Promise<AIDecisionRe
             maxOutputTokens: 200,
             temperature: 0.3,
         });
-        const timeoutPromise = new Promise<null>((resolve) =>
-            setTimeout(() => resolve(null), DECISION_TIMEOUT_MS),
-        );
+        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), DECISION_TIMEOUT_MS));
 
         const response = await Promise.race([aiPromise, timeoutPromise]);
 
@@ -174,11 +172,15 @@ async function getAccuracyContext(): Promise<string> {
         }
         const lines = stats
             .filter((s) => s.withOutcome >= 5)
-            .map((s) => `${s.point}/${s.action}: ${s.withOutcome} outcomes, ${Math.round(s.accuracyRate * 100)}% positive (avg confidence ${s.avgConfidence})`)
+            .map(
+                (s) =>
+                    `${s.point}/${s.action}: ${s.withOutcome} outcomes, ${Math.round(s.accuracyRate * 100)}% positive (avg confidence ${s.avgConfidence})`,
+            )
             .slice(0, 5);
-        _accuracyCache = lines.length > 0
-            ? `\nYour recent decision accuracy (last 14 days):\n${lines.join('\n')}\nAdjust your threshold accordingly — if PROCEED accuracy is low, be more selective.`
-            : '';
+        _accuracyCache =
+            lines.length > 0
+                ? `\nYour recent decision accuracy (last 14 days):\n${lines.join('\n')}\nAdjust your threshold accordingly — if PROCEED accuracy is low, be more selective.`
+                : '';
         _accuracyCacheAt = Date.now();
     } catch {
         _accuracyCache = '';
@@ -211,29 +213,43 @@ function buildDecisionPrompt(request: AIDecisionRequest): string {
         case 'pre_invite':
             parts.push('DECISION: Should we send a connection invite to this person?');
             if (request.lead) {
-                parts.push(`Lead: ${request.lead.name ?? 'Unknown'}, ${request.lead.title ?? 'Unknown title'} at ${request.lead.company ?? 'Unknown company'}`);
+                parts.push(
+                    `Lead: ${request.lead.name ?? 'Unknown'}, ${request.lead.title ?? 'Unknown title'} at ${request.lead.company ?? 'Unknown company'}`,
+                );
                 if (request.lead.score) parts.push(`Lead score: ${request.lead.score}/100`);
                 if (request.lead.about) parts.push(`About: ${request.lead.about.substring(0, 200)}`);
             }
             if (request.pageObservation) {
-                parts.push(`Profile page: name="${request.pageObservation.profileName}", headline="${request.pageObservation.profileHeadline}"`);
-                parts.push(`Connection: ${request.pageObservation.connectionDegree ?? 'unknown'}, Connect button: ${request.pageObservation.hasConnectButton}`);
+                parts.push(
+                    `Profile page: name="${request.pageObservation.profileName}", headline="${request.pageObservation.profileHeadline}"`,
+                );
+                parts.push(
+                    `Connection: ${request.pageObservation.connectionDegree ?? 'unknown'}, Connect button: ${request.pageObservation.hasConnectButton}`,
+                );
             }
             if (request.session) {
-                parts.push(`Session: ${request.session.invitesSent} invites sent, risk=${request.session.riskScore}/100, pending=${(request.session.pendingRatio * 100).toFixed(0)}%`);
+                parts.push(
+                    `Session: ${request.session.invitesSent} invites sent, risk=${request.session.riskScore}/100, pending=${(request.session.pendingRatio * 100).toFixed(0)}%`,
+                );
             }
-            parts.push('SKIP if: profile seems irrelevant, risk is high, or pending ratio > 60%. PROCEED if: good fit.');
+            parts.push(
+                'SKIP if: profile seems irrelevant, risk is high, or pending ratio > 60%. PROCEED if: good fit.',
+            );
             break;
 
         case 'pre_message':
             parts.push('DECISION: Should we send a message to this person? What context should we use?');
             if (request.lead) {
-                parts.push(`Lead: ${request.lead.name ?? 'Unknown'}, ${request.lead.title ?? 'Unknown title'} at ${request.lead.company ?? 'Unknown company'}`);
+                parts.push(
+                    `Lead: ${request.lead.name ?? 'Unknown'}, ${request.lead.title ?? 'Unknown title'} at ${request.lead.company ?? 'Unknown company'}`,
+                );
             }
             if (request.chatMessages && request.chatMessages.length > 0) {
                 parts.push(`Recent chat messages: ${request.chatMessages.slice(-3).join(' | ')}`);
             }
-            parts.push('If they already replied → SKIP (they started a conversation). Add "messageContext" with suggested approach.');
+            parts.push(
+                'If they already replied → SKIP (they started a conversation). Add "messageContext" with suggested approach.',
+            );
             break;
 
         case 'pre_follow_up':
@@ -252,7 +268,9 @@ function buildDecisionPrompt(request: AIDecisionRequest): string {
             if (request.chatMessages && request.chatMessages.length > 0) {
                 parts.push(`Full conversation: ${request.chatMessages.join(' | ')}`);
             }
-            parts.push('PROCEED for positive/questions intent. NOTIFY_HUMAN for complex situations. SKIP for spam/irrelevant.');
+            parts.push(
+                'PROCEED for positive/questions intent. NOTIFY_HUMAN for complex situations. SKIP for spam/irrelevant.',
+            );
             break;
 
         case 'navigation':
@@ -280,16 +298,18 @@ function parseDecisionResponse(raw: string, _request: AIDecisionRequest): AIDeci
         const validActions = ['PROCEED', 'SKIP', 'DEFER', 'NOTIFY_HUMAN'];
 
         return {
-            action: validActions.includes(action) ? action as AIDecisionResponse['action'] : 'PROCEED',
+            action: validActions.includes(action) ? (action as AIDecisionResponse['action']) : 'PROCEED',
             confidence: Math.max(0, Math.min(1, Number(parsed.confidence) || 0.5)),
             reason: String(parsed.reason ?? 'AI decision'),
             messageContext: typeof parsed.messageContext === 'string' ? parsed.messageContext : undefined,
-            navigationStrategy: typeof parsed.navigationStrategy === 'string'
-                ? parsed.navigationStrategy as AIDecisionResponse['navigationStrategy']
-                : undefined,
-            suggestedDelaySec: typeof parsed.suggestedDelaySec === 'number'
-                ? Math.max(0, Math.min(60, parsed.suggestedDelaySec))
-                : undefined,
+            navigationStrategy:
+                typeof parsed.navigationStrategy === 'string'
+                    ? (parsed.navigationStrategy as AIDecisionResponse['navigationStrategy'])
+                    : undefined,
+            suggestedDelaySec:
+                typeof parsed.suggestedDelaySec === 'number'
+                    ? Math.max(0, Math.min(60, parsed.suggestedDelaySec))
+                    : undefined,
         };
     } catch {
         return { action: 'PROCEED', confidence: 0.5, reason: 'Mechanical fallback: json_parse_error' };

@@ -103,19 +103,21 @@ export function bridgeDailyStat(
         | 'run_errors',
     amount: number = 1,
 ): void {
-    void incrementCloudDailyStat({ local_date: localDate, account_id: accountId, field, amount }).catch(async (err: unknown) => {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        void logWarn('cloud_bridge.daily_stat_failed', { field, error: errMsg });
-        try {
-            await pushOutboxEvent(
-                'cloud.daily_stat',
-                { localDate, accountId, field, amount, error: errMsg },
-                `cloud.daily_stat:${accountId}:${localDate}:${field}:${Date.now()}`,
-            );
-        } catch {
-            // outbox push best-effort
-        }
-    });
+    void incrementCloudDailyStat({ local_date: localDate, account_id: accountId, field, amount }).catch(
+        async (err: unknown) => {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            void logWarn('cloud_bridge.daily_stat_failed', { field, error: errMsg });
+            try {
+                await pushOutboxEvent(
+                    'cloud.daily_stat',
+                    { localDate, accountId, field, amount, error: errMsg },
+                    `cloud.daily_stat:${accountId}:${localDate}:${field}:${Date.now()}`,
+                );
+            } catch {
+                // outbox push best-effort
+            }
+        },
+    );
 }
 
 // ──────────────────────────────────────────────────────────────

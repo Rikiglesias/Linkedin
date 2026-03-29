@@ -14,7 +14,14 @@ import fs from 'fs';
 import path from 'path';
 import { createHash } from 'crypto';
 import { splitCsv } from '../utils/text';
-import type { IPlugin, PluginLeadSnapshot, PluginDailyStats, PluginIdleEvent, PluginMessageEvent, PluginLoopSubTask } from './IPlugin';
+import type {
+    IPlugin,
+    PluginLeadSnapshot,
+    PluginDailyStats,
+    PluginIdleEvent,
+    PluginMessageEvent,
+    PluginLoopSubTask,
+} from './IPlugin';
 import { logInfo, logWarn } from '../telemetry/logger';
 
 type PluginHookName =
@@ -97,8 +104,7 @@ function parsePluginManifest(filePath: string): ManifestParseResult {
             return { manifest: null, error: '"integritySha256" deve essere string' };
 
         const allowedHooks = normalizeManifestHooks(parsed.allowedHooks);
-        if (allowedHooks === null)
-            return { manifest: null, error: '"allowedHooks" contiene valori non validi' };
+        if (allowedHooks === null) return { manifest: null, error: '"allowedHooks" contiene valori non validi' };
 
         return {
             manifest: {

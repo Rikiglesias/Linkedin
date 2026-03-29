@@ -47,15 +47,15 @@ async function captureScreenshotViaCdp(page: Page, clip?: VisionRegionClip): Pro
         try {
             const payload = clip
                 ? {
-                    format: 'png' as const,
-                    clip: {
-                        x: clip.x,
-                        y: clip.y,
-                        width: clip.width,
-                        height: clip.height,
-                        scale: 1,
-                    },
-                }
+                      format: 'png' as const,
+                      clip: {
+                          x: clip.x,
+                          y: clip.y,
+                          width: clip.width,
+                          height: clip.height,
+                          scale: 1,
+                      },
+                  }
                 : { format: 'png' as const };
             const result = (await cdp.send('Page.captureScreenshot', payload)) as { data: string };
             return Buffer.from(result.data, 'base64');
@@ -148,11 +148,12 @@ function classifyVisionError(error: unknown): Error {
     // Lazy-import to avoid circular dependency
     const { config: appConfig } = require('../config') as typeof import('../config');
     const provider = appConfig.visionProvider;
-    const hint = provider === 'openai'
-        ? 'Verifica che OPENAI_API_KEY sia valida e che il servizio sia raggiungibile.'
-        : provider === 'ollama'
-            ? `Verifica che Ollama sia attivo su ${appConfig.ollamaEndpoint} e che il modello ${appConfig.visionModelOllama} sia disponibile.`
-            : `Verifica OPENAI_API_KEY o che Ollama sia attivo su ${appConfig.ollamaEndpoint} con modello ${appConfig.visionModelOllama}.`;
+    const hint =
+        provider === 'openai'
+            ? 'Verifica che OPENAI_API_KEY sia valida e che il servizio sia raggiungibile.'
+            : provider === 'ollama'
+              ? `Verifica che Ollama sia attivo su ${appConfig.ollamaEndpoint} e che il modello ${appConfig.visionModelOllama} sia disponibile.`
+              : `Verifica OPENAI_API_KEY o che Ollama sia attivo su ${appConfig.ollamaEndpoint} con modello ${appConfig.visionModelOllama}.`;
 
     if (/ECONNREFUSED|ENOTFOUND|ETIMEDOUT|circuit.?open|fetch failed|socket hang up/i.test(message)) {
         return new OllamaDownError(`${message}. ${hint}`);
@@ -237,11 +238,7 @@ async function captureVisionRegion(page: Page, options?: VisionInteractionOption
     };
 }
 
-export async function visionRead(
-    page: Page,
-    prompt: string,
-    options?: VisionInteractionOptions,
-): Promise<string> {
+export async function visionRead(page: Page, prompt: string, options?: VisionInteractionOptions): Promise<string> {
     const provider = getProvider(options);
     try {
         const capture = await captureVisionRegion(page, options);
@@ -252,11 +249,7 @@ export async function visionRead(
     }
 }
 
-export async function visionVerify(
-    page: Page,
-    question: string,
-    options?: VisionInteractionOptions,
-): Promise<boolean> {
+export async function visionVerify(page: Page, question: string, options?: VisionInteractionOptions): Promise<boolean> {
     const response = await visionRead(
         page,
         `Analyze this UI screenshot carefully. Answer with exactly one word: YES or NO. If unsure, answer NO. Question: ${question}`,
@@ -291,10 +284,7 @@ export async function visionWaitFor(
     return false;
 }
 
-export async function visionReadTotalResults(
-    page: Page,
-    options?: VisionInteractionOptions,
-): Promise<number | null> {
+export async function visionReadTotalResults(page: Page, options?: VisionInteractionOptions): Promise<number | null> {
     try {
         const response = await visionRead(
             page,

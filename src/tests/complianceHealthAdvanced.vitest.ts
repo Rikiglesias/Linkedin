@@ -51,10 +51,15 @@ describe('evaluateComplianceHealthScore — advanced', () => {
 
     it('tutti a zero → score basso', () => {
         const result = evaluateComplianceHealthScore({
-            acceptanceRatePct: 0, engagementRatePct: 0, pendingRatio: 0,
-            invitesSentToday: 0, messagesSentToday: 0,
-            dailyInviteLimit: 25, dailyMessageLimit: 35,
-            weeklyInvitesSent: 0, weeklyInviteLimit: 100,
+            acceptanceRatePct: 0,
+            engagementRatePct: 0,
+            pendingRatio: 0,
+            invitesSentToday: 0,
+            messagesSentToday: 0,
+            dailyInviteLimit: 25,
+            dailyMessageLimit: 35,
+            weeklyInvitesSent: 0,
+            weeklyInviteLimit: 100,
             pendingWarnThreshold: 0.5,
         });
         expect(result.score).toBeLessThanOrEqual(10);

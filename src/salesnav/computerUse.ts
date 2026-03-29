@@ -15,7 +15,12 @@ import type { Page } from 'playwright';
 import { config } from '../config';
 import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 import { logInfo, logWarn } from '../telemetry/logger';
-import { humanMouseMoveToCoords, pulseVisualCursorOverlay, pauseInputBlock, resumeInputBlock } from '../browser/humanBehavior';
+import {
+    humanMouseMoveToCoords,
+    pulseVisualCursorOverlay,
+    pauseInputBlock,
+    resumeInputBlock,
+} from '../browser/humanBehavior';
 import { humanDelay } from '../browser';
 
 // ── Types ──────────────────────────────────────────────────────
@@ -153,14 +158,14 @@ async function callResponsesApi(body: Record<string, unknown>): Promise<Response
     if (response.status === 404) {
         const errorText = await response.text().catch(() => '');
         if (errorText.includes('model_not_found') || errorText.includes('does not exist')) {
-            throw new Error(
-                `Computer Use API error: HTTP 404 Not Found — ${errorText.substring(0, 200)}`
-            );
+            throw new Error(`Computer Use API error: HTTP 404 Not Found — ${errorText.substring(0, 200)}`);
         }
     }
     if (!response.ok) {
         const errorText = await response.text().catch(() => '');
-        throw new Error(`Computer Use API error: HTTP ${response.status} ${response.statusText} — ${errorText.substring(0, 300)}`);
+        throw new Error(
+            `Computer Use API error: HTTP ${response.status} ${response.statusText} — ${errorText.substring(0, 300)}`,
+        );
     }
 
     return (await response.json()) as ResponsesApiResponse;
@@ -219,11 +224,29 @@ async function executeAction(page: Page, action: ComputerAction): Promise<void> 
             if (action.keys && action.keys.length > 0) {
                 // GPT-5.4 usa nomi UPPERCASE (TAB, ENTER, ESCAPE) ma Playwright vuole PascalCase (Tab, Enter, Escape)
                 const KEY_MAP: Record<string, string> = {
-                    TAB: 'Tab', ENTER: 'Enter', ESCAPE: 'Escape', BACKSPACE: 'Backspace',
-                    DELETE: 'Delete', SPACE: 'Space', ARROWUP: 'ArrowUp', ARROWDOWN: 'ArrowDown',
-                    ARROWLEFT: 'ArrowLeft', ARROWRIGHT: 'ArrowRight', HOME: 'Home', END: 'End',
-                    PAGEUP: 'PageUp', PAGEDOWN: 'PageDown', SHIFT: 'Shift', CONTROL: 'Control',
-                    ALT: 'Alt', META: 'Meta', F1: 'F1', F2: 'F2', F3: 'F3', F4: 'F4', F5: 'F5',
+                    TAB: 'Tab',
+                    ENTER: 'Enter',
+                    ESCAPE: 'Escape',
+                    BACKSPACE: 'Backspace',
+                    DELETE: 'Delete',
+                    SPACE: 'Space',
+                    ARROWUP: 'ArrowUp',
+                    ARROWDOWN: 'ArrowDown',
+                    ARROWLEFT: 'ArrowLeft',
+                    ARROWRIGHT: 'ArrowRight',
+                    HOME: 'Home',
+                    END: 'End',
+                    PAGEUP: 'PageUp',
+                    PAGEDOWN: 'PageDown',
+                    SHIFT: 'Shift',
+                    CONTROL: 'Control',
+                    ALT: 'Alt',
+                    META: 'Meta',
+                    F1: 'F1',
+                    F2: 'F2',
+                    F3: 'F3',
+                    F4: 'F4',
+                    F5: 'F5',
                 };
                 await pauseInputBlock(page);
                 for (const rawKey of action.keys) {
@@ -303,10 +326,11 @@ export async function computerUseTask(
     let previousResponseId: string | null = null;
     let lastResponseText: string | undefined;
 
-    const systemPrompt = options?.systemPrompt ??
+    const systemPrompt =
+        options?.systemPrompt ??
         `You are controlling a browser showing LinkedIn Sales Navigator. ` +
-        `The viewport is ${viewport.width}x${viewport.height}. ` +
-        `Execute the task precisely. If you see an error or unexpected state, stop and explain.`;
+            `The viewport is ${viewport.width}x${viewport.height}. ` +
+            `Execute the task precisely. If you see an error or unexpected state, stop and explain.`;
 
     console.log(`[COMPUTER USE] Task: "${task.substring(0, 80)}..." (max ${maxTurns} turns)`);
 
@@ -350,7 +374,11 @@ export async function computerUseTask(
                 turn: 0,
                 inputTokens: response.usage.input_tokens,
                 outputTokens: response.usage.output_tokens,
-                cumulative: { input: _cuStats.totalInputTokens, output: _cuStats.totalOutputTokens, calls: _cuStats.totalCalls },
+                cumulative: {
+                    input: _cuStats.totalInputTokens,
+                    output: _cuStats.totalOutputTokens,
+                    calls: _cuStats.totalCalls,
+                },
             });
         }
 
@@ -365,13 +393,11 @@ export async function computerUseTask(
 
             // If no computer_call, check for text message (task complete or error)
             if (!computerCall) {
-                const message = response.output.find(
-                    (item): item is ResponseMessage => item.type === 'message',
-                );
+                const message = response.output.find((item): item is ResponseMessage => item.type === 'message');
                 if (message) {
                     lastResponseText = message.content
-                        .filter(c => c.type === 'output_text' && c.text)
-                        .map(c => c.text ?? '')
+                        .filter((c) => c.type === 'output_text' && c.text)
+                        .map((c) => c.text ?? '')
                         .join('\n');
                     console.log(`[COMPUTER USE] Modello risponde: "${lastResponseText.substring(0, 120)}"`);
                 }
@@ -383,11 +409,16 @@ export async function computerUseTask(
             console.log(`[COMPUTER USE] Turn ${turn}: ${computerCall.actions.length} azioni`);
             for (let i = 0; i < computerCall.actions.length; i++) {
                 const action = computerCall.actions[i];
-                const actionDesc = action.type === 'click' ? `click(${action.x},${action.y})`
-                    : action.type === 'type' ? `type("${action.text?.substring(0, 30)}")`
-                        : action.type === 'scroll' ? `scroll(${action.scroll_x},${action.scroll_y})`
-                            : action.type === 'keypress' ? `keypress(${action.keys?.join('+')})`
-                                : action.type;
+                const actionDesc =
+                    action.type === 'click'
+                        ? `click(${action.x},${action.y})`
+                        : action.type === 'type'
+                          ? `type("${action.text?.substring(0, 30)}")`
+                          : action.type === 'scroll'
+                            ? `scroll(${action.scroll_x},${action.scroll_y})`
+                            : action.type === 'keypress'
+                              ? `keypress(${action.keys?.join('+')})`
+                              : action.type;
                 console.log(`  [${i + 1}/${computerCall.actions.length}] ${actionDesc}`);
 
                 options?.onAction?.(action, i);
@@ -431,7 +462,11 @@ export async function computerUseTask(
                     turn,
                     inputTokens: response.usage.input_tokens,
                     outputTokens: response.usage.output_tokens,
-                    cumulative: { input: _cuStats.totalInputTokens, output: _cuStats.totalOutputTokens, calls: _cuStats.totalCalls },
+                    cumulative: {
+                        input: _cuStats.totalInputTokens,
+                        output: _cuStats.totalOutputTokens,
+                        calls: _cuStats.totalCalls,
+                    },
                 });
             }
         }
@@ -465,18 +500,15 @@ export async function computerUseTask(
  * Convenience: use Computer Use to select a specific list in the "Save to list" dialog.
  * This is the primary strategy — GPT-5.4 sees the dialog and clicks the right list.
  */
-export async function computerUseSelectList(
-    page: Page,
-    targetListName: string,
-): Promise<ComputerUseResult> {
+export async function computerUseSelectList(page: Page, targetListName: string): Promise<ComputerUseResult> {
     return computerUseTask(
         page,
         `You are looking at a LinkedIn Sales Navigator "Save to list" dialog. ` +
-        `Find and click EXACTLY on the list named "${targetListName}". ` +
-        `If you see a search field in the dialog, first type the list name to filter results. ` +
-        `After clicking the correct list, if there is a "Save" or "Salva" confirmation button, click it. ` +
-        `IMPORTANT: Do NOT click any other list. The exact name is: "${targetListName}". ` +
-        `If you cannot find this exact list name, stop and explain what lists you see instead.`,
+            `Find and click EXACTLY on the list named "${targetListName}". ` +
+            `If you see a search field in the dialog, first type the list name to filter results. ` +
+            `After clicking the correct list, if there is a "Save" or "Salva" confirmation button, click it. ` +
+            `IMPORTANT: Do NOT click any other list. The exact name is: "${targetListName}". ` +
+            `If you cannot find this exact list name, stop and explain what lists you see instead.`,
         {
             maxTurns: 8,
             systemPrompt:

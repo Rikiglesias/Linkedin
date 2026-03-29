@@ -26,12 +26,12 @@ const QWERTY_ADJACENT: Record<string, string[]> = {
     n: ['b', 'h', 'j', 'm'],
     m: ['n', 'j', 'k'],
     // Italian accented characters (IT QWERTY layout)
-    'à': ['a', 'l', 'ò'],
-    'è': ['e', 'p', '+'],
-    'é': ['e', 'è'],
-    'ì': ['i', '='],
-    'ò': ['o', 'à', 'l'],
-    'ù': ['u', '['],
+    à: ['a', 'l', 'ò'],
+    è: ['e', 'p', '+'],
+    é: ['e', 'è'],
+    ì: ['i', '='],
+    ò: ['o', 'à', 'l'],
+    ù: ['u', '['],
 };
 
 type TypoKind = 'adjacent' | 'double' | 'missing' | 'transposition';
@@ -72,8 +72,10 @@ export function computeSessionTypoRate(): number {
     // 2. Time-of-day factor: more typos early morning and late evening
     const hour = new Date().getHours();
     let todFactor = 0;
-    if (hour < 8) todFactor = 0.008 + (8 - hour) * 0.002; // 6am = +0.012
-    else if (hour > 21) todFactor = 0.005 + (hour - 21) * 0.003; // 11pm = +0.011
+    if (hour < 8)
+        todFactor = 0.008 + (8 - hour) * 0.002; // 6am = +0.012
+    else if (hour > 21)
+        todFactor = 0.005 + (hour - 21) * 0.003; // 11pm = +0.011
     else if (hour >= 12 && hour <= 14) todFactor = 0.003; // post-lunch dip
 
     // 3. Session fatigue: +0.5% every 30min of uptime (max +2%)
@@ -95,16 +97,86 @@ export function resetSessionTypoRate(): void {
 
 // Parole comuni — digitate in "flow state" (più veloci)
 const COMMON_WORDS = new Set([
-    'the', 'and', 'for', 'that', 'with', 'this', 'from', 'your', 'have', 'been',
-    'will', 'are', 'was', 'not', 'but', 'all', 'can', 'had', 'her', 'one',
-    'our', 'out', 'you', 'day', 'get', 'has', 'him', 'his', 'how', 'its',
-    'may', 'new', 'now', 'old', 'see', 'way', 'who', 'did', 'let', 'say',
+    'the',
+    'and',
+    'for',
+    'that',
+    'with',
+    'this',
+    'from',
+    'your',
+    'have',
+    'been',
+    'will',
+    'are',
+    'was',
+    'not',
+    'but',
+    'all',
+    'can',
+    'had',
+    'her',
+    'one',
+    'our',
+    'out',
+    'you',
+    'day',
+    'get',
+    'has',
+    'him',
+    'his',
+    'how',
+    'its',
+    'may',
+    'new',
+    'now',
+    'old',
+    'see',
+    'way',
+    'who',
+    'did',
+    'let',
+    'say',
     // Italian common words
-    'che', 'per', 'con', 'una', 'sono', 'del', 'non', 'come', 'alla', 'anche',
-    'più', 'nel', 'hai', 'era', 'dal', 'suo', 'molto', 'dopo', 'dove', 'solo',
+    'che',
+    'per',
+    'con',
+    'una',
+    'sono',
+    'del',
+    'non',
+    'come',
+    'alla',
+    'anche',
+    'più',
+    'nel',
+    'hai',
+    'era',
+    'dal',
+    'suo',
+    'molto',
+    'dopo',
+    'dove',
+    'solo',
     // Business common words
-    'team', 'work', 'would', 'like', 'about', 'great', 'time', 'look', 'help',
-    'know', 'just', 'make', 'think', 'good', 'need', 'well', 'back', 'want',
+    'team',
+    'work',
+    'would',
+    'like',
+    'about',
+    'great',
+    'time',
+    'look',
+    'help',
+    'know',
+    'just',
+    'make',
+    'think',
+    'good',
+    'need',
+    'well',
+    'back',
+    'want',
 ]);
 
 /**
@@ -117,8 +189,8 @@ export function getWordFlowMultiplier(word: string): number {
     const lower = word.toLowerCase().trim();
     if (!lower || lower.length <= 1) return 1.0;
     if (COMMON_WORDS.has(lower)) return 0.7;
-    if (lower.length > 10) return 1.4;  // Parole lunghe = rare
-    if (/[0-9@#$%]/.test(lower)) return 1.3;  // Numeri/simboli = pensiero
+    if (lower.length > 10) return 1.4; // Parole lunghe = rare
+    if (/[0-9@#$%]/.test(lower)) return 1.3; // Numeri/simboli = pensiero
     return 1.0;
 }
 
@@ -131,8 +203,8 @@ export function determineNextKeystroke(char: string, baseTypoProb: number = 0.03
         // Choose typo type with realistic distribution
         const roll = Math.random();
         let typoKind: TypoKind;
-        if (roll < 0.50) typoKind = 'adjacent';
-        else if (roll < 0.70) typoKind = 'double';
+        if (roll < 0.5) typoKind = 'adjacent';
+        else if (roll < 0.7) typoKind = 'double';
         else if (roll < 0.85) typoKind = 'transposition';
         else typoKind = 'missing';
 

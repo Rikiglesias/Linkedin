@@ -90,7 +90,8 @@ export async function backupDbIfDue(): Promise<void> {
         fs.copyFileSync(dbPath, backupPath);
 
         // Pulizia vecchi backup: mantieni solo MAX_BACKUPS
-        const backups = fs.readdirSync(backupDir)
+        const backups = fs
+            .readdirSync(backupDir)
             .filter((f) => f.startsWith('linkedin_') && f.endsWith('.db'))
             .sort()
             .reverse();
@@ -189,11 +190,11 @@ export function getSessionVarianceFactor(accountId: string): number {
     const seed = fnv1aHash(`${accountId}:${today}:session_variance`);
     const roll = (seed % 100) / 100; // 0.00 - 0.99
 
-    if (roll < 0.05) return 0.0;  // 5%: skip
-    if (roll < 0.20) return 0.7;  // 15%: ridotta
-    if (roll < 0.80) return 1.0;  // 60%: normale
-    if (roll < 0.95) return 1.2;  // 15%: extra
-    return 1.5;                    // 5%: raro extra
+    if (roll < 0.05) return 0.0; // 5%: skip
+    if (roll < 0.2) return 0.7; // 15%: ridotta
+    if (roll < 0.8) return 1.0; // 60%: normale
+    if (roll < 0.95) return 1.2; // 15%: extra
+    return 1.5; // 5%: raro extra
 }
 
 function fnv1aHash(input: string): number {

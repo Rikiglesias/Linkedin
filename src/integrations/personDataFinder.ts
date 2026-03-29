@@ -150,7 +150,8 @@ async function fetchPage(url: string): Promise<ScrapedPage | null> {
             {
                 method: 'GET',
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                    'User-Agent':
+                        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
                     Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                     'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
                 },
@@ -180,18 +181,22 @@ const EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
 const PHONE_REGEX = /(?:\+?\d{1,4}[\s.-]?)?(?:\(?\d{1,5}\)?[\s.-]?)?\d{2,5}[\s.-]?\d{2,5}[\s.-]?\d{0,5}/g;
 
 function normalizeNameForMatch(name: string): string {
-    return name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    return name
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
 }
 
 // ─── Fase 1: Company Intelligence ────────────────────────────────────────────
 
-const TEAM_PAGE_PATTERNS = /\/(about|team|chi-siamo|leadership|our-team|people|staff|who-we-are|equipe|kontakt|kontakte|ueber-uns|unser-team|notre-equipe|nosotros)/i;
-const CONTACT_PAGE_PATTERNS = /\/(contact|contatti|contacts|kontakt|contacto|contattaci|get-in-touch|reach-us|write-us|scrivici)/i;
+const TEAM_PAGE_PATTERNS =
+    /\/(about|team|chi-siamo|leadership|our-team|people|staff|who-we-are|equipe|kontakt|kontakte|ueber-uns|unser-team|notre-equipe|nosotros)/i;
+const CONTACT_PAGE_PATTERNS =
+    /\/(contact|contatti|contacts|kontakt|contacto|contattaci|get-in-touch|reach-us|write-us|scrivici)/i;
 
 /** Discover relevant pages from sitemap.xml */
-async function discoverPagesFromSitemap(
-    domain: string,
-): Promise<{ team: string[]; contact: string[] }> {
+async function discoverPagesFromSitemap(domain: string): Promise<{ team: string[]; contact: string[] }> {
     const result = { team: [] as string[], contact: [] as string[] };
     try {
         const sitemapPage = await fetchPage(`https://${domain}/sitemap.xml`);
@@ -214,18 +219,23 @@ async function discoverPagesFromSitemap(
             if (TEAM_PAGE_PATTERNS.test(url) && result.team.length < 3) result.team.push(url);
             else if (CONTACT_PAGE_PATTERNS.test(url) && result.contact.length < 2) result.contact.push(url);
         }
-    } catch { /* sitemap not available */ }
+    } catch {
+        /* sitemap not available */
+    }
     return result;
 }
 
-async function scrapeCompanyIntelligence(
-    domain: string,
-    companyName?: string,
-): Promise<CompanyScrapeResult | null> {
+async function scrapeCompanyIntelligence(domain: string, companyName?: string): Promise<CompanyScrapeResult | null> {
     if (companyCache.has(domain)) {
         const cached = companyCache.get(domain);
         return cached
-            ? { company: cached, homepage: null as unknown as ScrapedPage, teamPageUrls: [], contactPageUrls: [], address: null }
+            ? {
+                  company: cached,
+                  homepage: null as unknown as ScrapedPage,
+                  teamPageUrls: [],
+                  contactPageUrls: [],
+                  address: null,
+              }
             : null;
     }
 
@@ -266,7 +276,9 @@ async function scrapeCompanyIntelligence(
                     if (parts.length > 0) schemaAddress = parts.join(', ');
                 }
             }
-        } catch { /* skip malformed JSON-LD */ }
+        } catch {
+            /* skip malformed JSON-LD */
+        }
     });
 
     // ── Social links (expanded: 7 platforms) ──
@@ -313,9 +325,7 @@ async function scrapeCompanyIntelligence(
     $('a[href]').each((_, el) => {
         const href = ($(el).attr('href') ?? '').trim();
         if (!href || href === '#' || href.startsWith('mailto:') || href.startsWith('tel:')) return;
-        const fullUrl = href.startsWith('http')
-            ? href
-            : `${homepageUrl}${href.startsWith('/') ? '' : '/'}${href}`;
+        const fullUrl = href.startsWith('http') ? href : `${homepageUrl}${href.startsWith('/') ? '' : '/'}${href}`;
         // Avoid external links
         try {
             if (new URL(fullUrl).hostname.replace(/^www\./, '') !== domain) return;
@@ -423,7 +433,9 @@ function parseTeamMembers($: CheerioAPI): TeamMember[] {
                     matchScore: 0,
                 });
             }
-        } catch { /* skip */ }
+        } catch {
+            /* skip */
+        }
     });
 
     // Strategy 2: Common team card CSS patterns
@@ -444,9 +456,7 @@ function parseTeamMembers($: CheerioAPI): TeamMember[] {
     for (const selector of cardSelectors) {
         $(selector).each((_, el) => {
             const card = $(el);
-            const name = cleanText(
-                card.find('h2, h3, h4, .name, .member-name, [class*="name"]').first().text(),
-            );
+            const name = cleanText(card.find('h2, h3, h4, .name, .member-name, [class*="name"]').first().text());
             if (!name || name.length > 60) return;
 
             const title =
@@ -495,11 +505,7 @@ function parseTeamMembers($: CheerioAPI): TeamMember[] {
     return members;
 }
 
-function matchPersonToTeamMembers(
-    members: TeamMember[],
-    firstName: string,
-    lastName: string,
-): TeamMember | null {
+function matchPersonToTeamMembers(members: TeamMember[], firstName: string, lastName: string): TeamMember | null {
     const firstNorm = normalizeNameForMatch(firstName);
     const lastNorm = normalizeNameForMatch(lastName);
     const fullNorm = `${firstNorm} ${lastNorm}`;
@@ -517,7 +523,12 @@ function matchPersonToTeamMembers(
             score = 85;
         } else if (memberNorm.includes(firstNorm) && memberNorm.includes(lastNorm)) {
             score = 80;
-        } else if (memberNorm.includes(lastNorm) && lastNorm.length >= 4 && firstNorm[0] && memberNorm.startsWith(firstNorm[0])) {
+        } else if (
+            memberNorm.includes(lastNorm) &&
+            lastNorm.length >= 4 &&
+            firstNorm[0] &&
+            memberNorm.startsWith(firstNorm[0])
+        ) {
             score = 60;
         } else if (memberNorm.includes(lastNorm) && lastNorm.length >= 4) {
             score = 40;
@@ -554,11 +565,7 @@ async function findPersonOnTeamPages(
 
 // ─── Fase 4: Email Discovery from Web Pages ─────────────────────────────────
 
-function extractEmailsFromPage(
-    $: CheerioAPI,
-    firstName: string,
-    lastName: string,
-): PersonDataEmail[] {
+function extractEmailsFromPage($: CheerioAPI, firstName: string, lastName: string): PersonDataEmail[] {
     const emails: PersonDataEmail[] = [];
     const seen = new Set<string>();
     const firstLower = firstName.toLowerCase();
@@ -566,9 +573,12 @@ function extractEmailsFromPage(
 
     // 1. mailto: links
     $('a[href^="mailto:"]').each((_, el) => {
-        const email = ($(el).attr('href') ?? '')
-            .replace(/^mailto:/i, '')
-            .split('?')[0]?.trim().toLowerCase() ?? '';
+        const email =
+            ($(el).attr('href') ?? '')
+                .replace(/^mailto:/i, '')
+                .split('?')[0]
+                ?.trim()
+                .toLowerCase() ?? '';
         if (!email || seen.has(email) || !EMAIL_REGEX.test(email)) return;
         // Reset regex lastIndex since it's global
         EMAIL_REGEX.lastIndex = 0;
@@ -596,7 +606,9 @@ function extractEmailsFromPage(
                     source: 'schema_org_email',
                 });
             }
-        } catch { /* skip */ }
+        } catch {
+            /* skip */
+        }
     });
 
     // 3. Regex on visible text (only name-correlated — uncorrelated is too noisy)
@@ -669,7 +681,9 @@ function extractPhoneNumbers(html: string, $?: CheerioAPI): PhoneCandidate[] {
                         candidates.push({ raw: tel, parsed, context: 'schema.org telephone' });
                     }
                 }
-            } catch { /* skip */ }
+            } catch {
+                /* skip */
+            }
         });
     }
 
@@ -698,11 +712,7 @@ function classifyPhoneType(phone: PhoneNumber): PhoneType {
     return 'unknown';
 }
 
-function correlatePhoneToName(
-    candidates: PhoneCandidate[],
-    firstName: string,
-    lastName: string,
-): PersonDataPhone[] {
+function correlatePhoneToName(candidates: PhoneCandidate[], firstName: string, lastName: string): PersonDataPhone[] {
     const firstLower = firstName.toLowerCase();
     const lastLower = lastName.toLowerCase();
 
@@ -767,10 +777,7 @@ async function discoverPhones(
 
 // ─── Fase 6: Social Profile Aggregation ──────────────────────────────────────
 
-async function searchGitHub(
-    fullName: string,
-    companyName?: string,
-): Promise<PersonDataSocial | null> {
+async function searchGitHub(fullName: string, companyName?: string): Promise<PersonDataSocial | null> {
     try {
         const query = companyName ? `${fullName} ${companyName}` : fullName;
         const res = await fetchWithRetryPolicy(
@@ -931,7 +938,11 @@ async function aggregateSocialProfiles(
 // ─── Fase 7: Data Fusion & Scoring ───────────────────────────────────────────
 
 const SENIORITY_PATTERNS: Array<{ pattern: RegExp; level: Seniority }> = [
-    { pattern: /\b(ceo|cto|cfo|coo|cmo|founder|co-founder|chief|presidente|amministratore\s+delegato|managing\s+director)\b/i, level: 'c-level' },
+    {
+        pattern:
+            /\b(ceo|cto|cfo|coo|cmo|founder|co-founder|chief|presidente|amministratore\s+delegato|managing\s+director)\b/i,
+        level: 'c-level',
+    },
     { pattern: /\b(vp|vice\s*president|vice\s*presidente|svp|evp)\b/i, level: 'vp' },
     { pattern: /\b(director|direttore|head\s+of|country\s+manager)\b/i, level: 'director' },
     { pattern: /\b(manager|responsabile|team\s+lead|group\s+lead|coordinat)\b/i, level: 'manager' },
@@ -948,16 +959,32 @@ function inferSeniority(title: string | null): Seniority {
 }
 
 const DEPARTMENT_PATTERNS: Array<{ pattern: RegExp; dept: string }> = [
-    { pattern: /\b(engineer|developer|software|tech|it|devops|sre|infrastructure|backend|frontend|fullstack|architect|programmer|data\s+scientist)\b/i, dept: 'Engineering' },
-    { pattern: /\b(sales|vendite|account\s*executive|business\s*development|bdr|sdr|revenue|commercial)\b/i, dept: 'Sales' },
-    { pattern: /\b(marketing|growth|seo|sem|content|brand|comunicazione|demand\s+gen|digital\s+marketing)\b/i, dept: 'Marketing' },
-    { pattern: /\b(hr|human\s*resources|talent|recruiting|risorse\s*umane|people\s+ops|people\s+operations)\b/i, dept: 'HR' },
+    {
+        pattern:
+            /\b(engineer|developer|software|tech|it|devops|sre|infrastructure|backend|frontend|fullstack|architect|programmer|data\s+scientist)\b/i,
+        dept: 'Engineering',
+    },
+    {
+        pattern: /\b(sales|vendite|account\s*executive|business\s*development|bdr|sdr|revenue|commercial)\b/i,
+        dept: 'Sales',
+    },
+    {
+        pattern: /\b(marketing|growth|seo|sem|content|brand|comunicazione|demand\s+gen|digital\s+marketing)\b/i,
+        dept: 'Marketing',
+    },
+    {
+        pattern: /\b(hr|human\s*resources|talent|recruiting|risorse\s*umane|people\s+ops|people\s+operations)\b/i,
+        dept: 'HR',
+    },
     { pattern: /\b(finance|accounting|contabilit|cfo|financial|controller|treasury)\b/i, dept: 'Finance' },
     { pattern: /\b(legal|legale|compliance|privacy|counsel|attorney)\b/i, dept: 'Legal' },
     { pattern: /\b(design|ux|ui|product\s*design|graphic|creative\s+director)\b/i, dept: 'Design' },
     { pattern: /\b(operations|ops|supply\s*chain|logistics|logistica|procurement)\b/i, dept: 'Operations' },
     { pattern: /\b(product\s+manag|product\s+own|pm\b)/i, dept: 'Product' },
-    { pattern: /\b(customer\s+success|cs\s+manager|support|assistenza|customer\s+service)\b/i, dept: 'Customer Success' },
+    {
+        pattern: /\b(customer\s+success|cs\s+manager|support|assistenza|customer\s+service)\b/i,
+        dept: 'Customer Success',
+    },
 ];
 
 function inferDepartment(title: string | null): string | null {
@@ -988,11 +1015,9 @@ function computeOverallConfidence(result: PersonDataResult): number {
 
     // Company intelligence (weighted by completeness)
     if (result.company) {
-        const filledFields = [
-            result.company.industry,
-            result.company.size,
-            result.company.description,
-        ].filter(Boolean).length;
+        const filledFields = [result.company.industry, result.company.size, result.company.description].filter(
+            Boolean,
+        ).length;
         weightedScore += (40 + filledFields * 10) * 2;
         totalWeight += 2;
     }
@@ -1146,9 +1171,7 @@ export async function findPersonData(input: PersonDataFinderInput): Promise<Pers
     if (dnsIntel?.soaHostmaster && domain) {
         const soaEmail = soaToEmailHint(dnsIntel.soaHostmaster, domain);
         if (soaEmail) {
-            const alreadyHas = result.emails.some(
-                (e) => e.address.toLowerCase() === soaEmail.toLowerCase(),
-            );
+            const alreadyHas = result.emails.some((e) => e.address.toLowerCase() === soaEmail.toLowerCase());
             if (!alreadyHas) {
                 result.emails.push({
                     address: soaEmail,
@@ -1195,9 +1218,7 @@ export async function findPersonData(input: PersonDataFinderInput): Promise<Pers
         if (teamMatch.bio && !result.headline) result.headline = teamMatch.bio.slice(0, 200);
         if (teamMatch.email) {
             const teamEmail = teamMatch.email.toLowerCase();
-            const alreadyHas = result.emails.some(
-                (e) => e.address.toLowerCase() === teamEmail,
-            );
+            const alreadyHas = result.emails.some((e) => e.address.toLowerCase() === teamEmail);
             if (!alreadyHas) {
                 result.emails.push({
                     address: teamMatch.email,
@@ -1209,9 +1230,7 @@ export async function findPersonData(input: PersonDataFinderInput): Promise<Pers
         if (teamMatch.phone) {
             const parsed = parsePhoneNumberFromString(teamMatch.phone, 'IT');
             if (parsed?.isValid()) {
-                const alreadyHas = result.phones.some(
-                    (p) => p.number === parsed.formatInternational(),
-                );
+                const alreadyHas = result.phones.some((p) => p.number === parsed.formatInternational());
                 if (!alreadyHas) {
                     result.phones.push({
                         number: parsed.formatInternational(),
@@ -1280,4 +1299,3 @@ export async function findPersonData(input: PersonDataFinderInput): Promise<Pers
 
     return result;
 }
-

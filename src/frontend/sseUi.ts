@@ -132,7 +132,9 @@ export function fireDesktopNotification(eventType: string, rawData: string): voi
             title = 'Challenge rilevato';
             body = 'Un lead richiede review manuale';
         }
-    } catch { /* use defaults */ }
+    } catch {
+        /* use defaults */
+    }
 
     try {
         new Notification(title, {
@@ -140,5 +142,7 @@ export function fireDesktopNotification(eventType: string, rawData: string): voi
             icon: '/favicon.ico',
             tag: `lkbot-${eventType}`,
         });
-    } catch { /* notification blocked or unavailable */ }
+    } catch {
+        /* notification blocked or unavailable */
+    }
 }

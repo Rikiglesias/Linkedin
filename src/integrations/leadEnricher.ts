@@ -57,15 +57,55 @@ export interface EnrichmentResult {
 // ─── Personal Email Detection ────────────────────────────────────────────────
 
 const PERSONAL_EMAIL_DOMAINS = new Set([
-    'gmail.com', 'googlemail.com', 'outlook.com', 'hotmail.com', 'hotmail.it',
-    'live.com', 'live.it', 'msn.com', 'yahoo.com', 'yahoo.it', 'yahoo.fr',
-    'yahoo.co.uk', 'ymail.com', 'aol.com', 'icloud.com', 'me.com', 'mac.com',
-    'protonmail.com', 'proton.me', 'pm.me', 'tutanota.com', 'tutamail.com',
-    'mail.com', 'zoho.com', 'gmx.com', 'gmx.it', 'gmx.de', 'gmx.net',
-    'fastmail.com', 'libero.it', 'virgilio.it', 'alice.it', 'tin.it',
-    'tiscali.it', 'email.it', 'pec.it', 'aruba.it', 'posteo.de', 'web.de',
-    'freenet.de', 'laposte.net', 'orange.fr', 'sfr.fr', 'free.fr',
-    'wanadoo.fr', 'ziggo.nl', 'kpnmail.nl', 'xs4all.nl', 'hetnet.nl',
+    'gmail.com',
+    'googlemail.com',
+    'outlook.com',
+    'hotmail.com',
+    'hotmail.it',
+    'live.com',
+    'live.it',
+    'msn.com',
+    'yahoo.com',
+    'yahoo.it',
+    'yahoo.fr',
+    'yahoo.co.uk',
+    'ymail.com',
+    'aol.com',
+    'icloud.com',
+    'me.com',
+    'mac.com',
+    'protonmail.com',
+    'proton.me',
+    'pm.me',
+    'tutanota.com',
+    'tutamail.com',
+    'mail.com',
+    'zoho.com',
+    'gmx.com',
+    'gmx.it',
+    'gmx.de',
+    'gmx.net',
+    'fastmail.com',
+    'libero.it',
+    'virgilio.it',
+    'alice.it',
+    'tin.it',
+    'tiscali.it',
+    'email.it',
+    'pec.it',
+    'aruba.it',
+    'posteo.de',
+    'web.de',
+    'freenet.de',
+    'laposte.net',
+    'orange.fr',
+    'sfr.fr',
+    'free.fr',
+    'wanadoo.fr',
+    'ziggo.nl',
+    'kpnmail.nl',
+    'xs4all.nl',
+    'hetnet.nl',
 ]);
 
 /** Ritorna true se l'email è personale (gmail, outlook, etc.) */
@@ -168,7 +208,8 @@ async function enrichViaApollo(
         return {
             email,
             emailConfidence: p.email_status === 'verified' ? 95 : p.email_status === 'guessed' ? 60 : 0,
-            businessEmail: null, businessEmailConfidence: 0, // classificato dopo in enrichLead
+            businessEmail: null,
+            businessEmailConfidence: 0, // classificato dopo in enrichLead
             phone,
             jobTitle: p.title || null,
             companyName: org?.name || null,
@@ -216,7 +257,8 @@ async function enrichViaHunter(firstName: string, lastName: string, domain: stri
         return {
             email,
             emailConfidence: data.data?.confidence ?? 0,
-            businessEmail: null, businessEmailConfidence: 0,
+            businessEmail: null,
+            businessEmailConfidence: 0,
             phone: null,
             jobTitle: data.data?.position ?? null,
             companyName: null,
@@ -272,7 +314,8 @@ async function enrichViaClearbit(
         return {
             email,
             emailConfidence: 75, // Clearbit non espone confidence esplicita
-            businessEmail: null, businessEmailConfidence: 0,
+            businessEmail: null,
+            businessEmailConfidence: 0,
             phone: data.phone || null,
             jobTitle: data.title || null,
             companyName: null,
@@ -362,7 +405,8 @@ export async function enrichLead(
             result = {
                 email: guess.email,
                 emailConfidence: guess.confidence,
-                businessEmail: null, businessEmailConfidence: 0,
+                businessEmail: null,
+                businessEmailConfidence: 0,
                 phone: null,
                 jobTitle: null,
                 companyName: null,
@@ -408,7 +452,7 @@ export async function enrichLead(
 
             // Merge email from PersonDataFinder if not already found
             if (!result.email && personData.emails.length > 0) {
-                const bestEmail = personData.emails.reduce((a, b) => a.confidence > b.confidence ? a : b);
+                const bestEmail = personData.emails.reduce((a, b) => (a.confidence > b.confidence ? a : b));
                 result.email = bestEmail.address;
                 result.emailConfidence = bestEmail.confidence;
                 result.source = 'person_data_finder';
@@ -532,16 +576,19 @@ export async function enrichLead(
  *   2. Se ha un company_domain già scoperto → riusa
  *   3. Se ha un account_name → Domain Discovery (Clearbit + DNS + heuristic)
  */
-export async function enrichLeadAuto(lead: {
-    id: number;
-    first_name?: string | null;
-    last_name?: string | null;
-    website?: string | null;
-    account_name?: string | null;
-    linkedin_url?: string | null;
-    company_domain?: string | null;
-    location?: string | null;
-}, opts?: { deep?: boolean }): Promise<EnrichmentResult> {
+export async function enrichLeadAuto(
+    lead: {
+        id: number;
+        first_name?: string | null;
+        last_name?: string | null;
+        website?: string | null;
+        account_name?: string | null;
+        linkedin_url?: string | null;
+        company_domain?: string | null;
+        location?: string | null;
+    },
+    opts?: { deep?: boolean },
+): Promise<EnrichmentResult> {
     const firstName = (lead.first_name || '').trim();
     const lastName = (lead.last_name || '').trim();
     if (!firstName) return EMPTY_RESULT;

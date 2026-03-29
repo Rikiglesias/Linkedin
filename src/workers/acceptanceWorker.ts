@@ -52,8 +52,10 @@ export async function processAcceptanceJob(
 
     // M13: Rileva profilo eliminato/URL cambiato — "This page doesn't exist" o redirect a 404.
     try {
-        const pageText = await context.session.page.textContent('body', { timeout: 2000 }).catch(() => '') ?? '';
-        const isDeleted = /this page doesn.t exist|page not found|pagina non trovata|profilo non disponibile/i.test(pageText);
+        const pageText = (await context.session.page.textContent('body', { timeout: 2000 }).catch(() => '')) ?? '';
+        const isDeleted = /this page doesn.t exist|page not found|pagina non trovata|profilo non disponibile/i.test(
+            pageText,
+        );
         const is404 = context.session.page.url().includes('/404') || context.session.page.url().includes('/error');
         if (isDeleted || is404) {
             await logWarn('acceptance.profile_deleted', { leadId: lead.id, url: lead.linkedin_url });
@@ -62,7 +64,10 @@ export async function processAcceptanceJob(
         }
     } catch (profileCheckErr) {
         // A04: best-effort ma tracciato per debug
-        void logWarn('acceptance.a04.profile_check_failed', { leadId: lead.id, error: profileCheckErr instanceof Error ? profileCheckErr.message : String(profileCheckErr) });
+        void logWarn('acceptance.a04.profile_check_failed', {
+            leadId: lead.id,
+            error: profileCheckErr instanceof Error ? profileCheckErr.message : String(profileCheckErr),
+        });
     }
 
     await contextualReadingPause(context.session.page);
@@ -90,7 +95,10 @@ export async function processAcceptanceJob(
         }
     } catch (identityErr) {
         // Identity check non bloccante — ma tracciamo per debug
-        void logWarn('acceptance.a04.identity_check_failed', { leadId: lead.id, error: identityErr instanceof Error ? identityErr.message : String(identityErr) });
+        void logWarn('acceptance.a04.identity_check_failed', {
+            leadId: lead.id,
+            error: identityErr instanceof Error ? identityErr.message : String(identityErr),
+        });
     }
 
     if (await detectChallenge(context.session.page)) {

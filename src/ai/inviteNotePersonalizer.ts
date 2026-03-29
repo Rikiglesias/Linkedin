@@ -25,34 +25,98 @@ export interface PersonalizedInviteNoteResult {
 type NoteTemplate = { variant: string; render: (firstName: string) => string };
 
 const NOTE_TEMPLATES_IT: ReadonlyArray<NoteTemplate> = [
-    { variant: 'TPL_CASUAL_INTEREST', render: (n) => `Ciao ${n}, ho trovato il tuo profilo interessante e mi piacerebbe aggiungerti alla mia rete. A presto!` },
-    { variant: 'TPL_PROFESSIONAL_FOLLOW', render: (n) => `Ciao ${n}, seguo il tuo lavoro con interesse. Sarebbe un piacere connetterci!` },
-    { variant: 'TPL_COMMON_INTERESTS', render: (n) => `Salve ${n}, ho visto il tuo profilo e penso potremmo avere interessi in comune. Ti aggiungo volentieri!` },
-    { variant: 'TPL_NETWORK_EXPANSION', render: (n) => `Ciao ${n}, mi piacerebbe connettermi con te per ampliare la mia rete professionale. Buona giornata!` },
-    { variant: 'TPL_BACKGROUND_APPRECIATION', render: (n) => `Ciao ${n}, ho apprezzato il tuo background professionale. Sarebbe bello entrare in contatto!` },
-    { variant: 'TPL_ATTENTION_GRABBER', render: (n) => `Salve ${n}, il tuo profilo ha attirato la mia attenzione. Ti propongo di connetterci!` },
-    { variant: 'TPL_MUTUAL_BENEFIT', render: (n) => `Ciao ${n}, credo che possiamo trarre reciproco beneficio da questa connessione. A presto!` },
-    { variant: 'TPL_LIKE_MINDED', render: (n) => `Ciao ${n}, mi farebbe piacere allargare la mia rete con professionisti come te. Collegati con me!` },
+    {
+        variant: 'TPL_CASUAL_INTEREST',
+        render: (n) =>
+            `Ciao ${n}, ho trovato il tuo profilo interessante e mi piacerebbe aggiungerti alla mia rete. A presto!`,
+    },
+    {
+        variant: 'TPL_PROFESSIONAL_FOLLOW',
+        render: (n) => `Ciao ${n}, seguo il tuo lavoro con interesse. Sarebbe un piacere connetterci!`,
+    },
+    {
+        variant: 'TPL_COMMON_INTERESTS',
+        render: (n) =>
+            `Salve ${n}, ho visto il tuo profilo e penso potremmo avere interessi in comune. Ti aggiungo volentieri!`,
+    },
+    {
+        variant: 'TPL_NETWORK_EXPANSION',
+        render: (n) =>
+            `Ciao ${n}, mi piacerebbe connettermi con te per ampliare la mia rete professionale. Buona giornata!`,
+    },
+    {
+        variant: 'TPL_BACKGROUND_APPRECIATION',
+        render: (n) => `Ciao ${n}, ho apprezzato il tuo background professionale. Sarebbe bello entrare in contatto!`,
+    },
+    {
+        variant: 'TPL_ATTENTION_GRABBER',
+        render: (n) => `Salve ${n}, il tuo profilo ha attirato la mia attenzione. Ti propongo di connetterci!`,
+    },
+    {
+        variant: 'TPL_MUTUAL_BENEFIT',
+        render: (n) => `Ciao ${n}, credo che possiamo trarre reciproco beneficio da questa connessione. A presto!`,
+    },
+    {
+        variant: 'TPL_LIKE_MINDED',
+        render: (n) =>
+            `Ciao ${n}, mi farebbe piacere allargare la mia rete con professionisti come te. Collegati con me!`,
+    },
 ];
 
 const NOTE_TEMPLATES_EN: ReadonlyArray<NoteTemplate> = [
-    { variant: 'TPL_CASUAL_INTEREST', render: (n) => `Hi ${n}, I found your profile interesting and would love to add you to my network. Looking forward to connecting!` },
-    { variant: 'TPL_PROFESSIONAL_FOLLOW', render: (n) => `Hi ${n}, I've been following your work with interest. It would be great to connect!` },
-    { variant: 'TPL_COMMON_INTERESTS', render: (n) => `Hello ${n}, I came across your profile and think we may share common interests. Happy to connect!` },
-    { variant: 'TPL_NETWORK_EXPANSION', render: (n) => `Hi ${n}, I'd like to connect with you to expand my professional network. Have a great day!` },
-    { variant: 'TPL_BACKGROUND_APPRECIATION', render: (n) => `Hi ${n}, I appreciated your professional background. It would be great to be in touch!` },
+    {
+        variant: 'TPL_CASUAL_INTEREST',
+        render: (n) =>
+            `Hi ${n}, I found your profile interesting and would love to add you to my network. Looking forward to connecting!`,
+    },
+    {
+        variant: 'TPL_PROFESSIONAL_FOLLOW',
+        render: (n) => `Hi ${n}, I've been following your work with interest. It would be great to connect!`,
+    },
+    {
+        variant: 'TPL_COMMON_INTERESTS',
+        render: (n) =>
+            `Hello ${n}, I came across your profile and think we may share common interests. Happy to connect!`,
+    },
+    {
+        variant: 'TPL_NETWORK_EXPANSION',
+        render: (n) => `Hi ${n}, I'd like to connect with you to expand my professional network. Have a great day!`,
+    },
+    {
+        variant: 'TPL_BACKGROUND_APPRECIATION',
+        render: (n) => `Hi ${n}, I appreciated your professional background. It would be great to be in touch!`,
+    },
 ];
 
 const NOTE_TEMPLATES_FR: ReadonlyArray<NoteTemplate> = [
-    { variant: 'TPL_CASUAL_INTEREST', render: (n) => `Bonjour ${n}, votre profil m'a intéressé et j'aimerais vous ajouter à mon réseau. Au plaisir !` },
-    { variant: 'TPL_PROFESSIONAL_FOLLOW', render: (n) => `Bonjour ${n}, je suis votre travail avec intérêt. Ce serait un plaisir de nous connecter !` },
-    { variant: 'TPL_NETWORK_EXPANSION', render: (n) => `Bonjour ${n}, j'aimerais élargir mon réseau professionnel avec des profils comme le vôtre. Bonne journée !` },
+    {
+        variant: 'TPL_CASUAL_INTEREST',
+        render: (n) => `Bonjour ${n}, votre profil m'a intéressé et j'aimerais vous ajouter à mon réseau. Au plaisir !`,
+    },
+    {
+        variant: 'TPL_PROFESSIONAL_FOLLOW',
+        render: (n) => `Bonjour ${n}, je suis votre travail avec intérêt. Ce serait un plaisir de nous connecter !`,
+    },
+    {
+        variant: 'TPL_NETWORK_EXPANSION',
+        render: (n) =>
+            `Bonjour ${n}, j'aimerais élargir mon réseau professionnel avec des profils comme le vôtre. Bonne journée !`,
+    },
 ];
 
 const NOTE_TEMPLATES_ES: ReadonlyArray<NoteTemplate> = [
-    { variant: 'TPL_CASUAL_INTEREST', render: (n) => `Hola ${n}, encontré tu perfil interesante y me gustaría agregarte a mi red. ¡Un saludo!` },
-    { variant: 'TPL_PROFESSIONAL_FOLLOW', render: (n) => `Hola ${n}, sigo tu trabajo con interés. ¡Sería un placer conectar!` },
-    { variant: 'TPL_NETWORK_EXPANSION', render: (n) => `Hola ${n}, me gustaría conectar contigo para ampliar mi red profesional. ¡Buen día!` },
+    {
+        variant: 'TPL_CASUAL_INTEREST',
+        render: (n) => `Hola ${n}, encontré tu perfil interesante y me gustaría agregarte a mi red. ¡Un saludo!`,
+    },
+    {
+        variant: 'TPL_PROFESSIONAL_FOLLOW',
+        render: (n) => `Hola ${n}, sigo tu trabajo con interés. ¡Sería un placer conectar!`,
+    },
+    {
+        variant: 'TPL_NETWORK_EXPANSION',
+        render: (n) => `Hola ${n}, me gustaría conectar contigo para ampliar mi red profesional. ¡Buen día!`,
+    },
 ];
 
 const NOTE_TEMPLATES_BY_LANG: Record<string, ReadonlyArray<NoteTemplate>> = {
@@ -75,7 +139,8 @@ function getNoteTemplatesForLang(lang?: string): ReadonlyArray<NoteTemplate> {
  */
 export function generateInviteNote(firstName: string, lang?: string): TemplateNoteResult {
     const fallbackGreeting = lang === 'en' ? 'Hi' : lang === 'fr' ? 'Bonjour' : lang === 'es' ? 'Hola' : 'Ciao';
-    const fallbackName = lang === 'en' ? 'colleague' : lang === 'fr' ? 'collègue' : lang === 'es' ? 'colega' : 'collega';
+    const fallbackName =
+        lang === 'en' ? 'colleague' : lang === 'fr' ? 'collègue' : lang === 'es' ? 'colega' : 'collega';
     const name = firstName.trim() || fallbackName;
     const pool = getNoteTemplatesForLang(lang);
     const index = Math.floor(Math.random() * pool.length);
@@ -85,7 +150,8 @@ export function generateInviteNote(firstName: string, lang?: string): TemplateNo
 }
 
 function generateInviteNoteByVariant(firstName: string, variant: string, lang?: string): TemplateNoteResult {
-    const fallbackName = lang === 'en' ? 'colleague' : lang === 'fr' ? 'collègue' : lang === 'es' ? 'colega' : 'collega';
+    const fallbackName =
+        lang === 'en' ? 'colleague' : lang === 'fr' ? 'collègue' : lang === 'es' ? 'colega' : 'collega';
     const name = firstName.trim() || fallbackName;
     const pool = getNoteTemplatesForLang(lang);
     const selected = pool.find((item) => item.variant === variant) ?? pool[0];
@@ -110,7 +176,10 @@ function safeFirstName(lead: LeadRecord, lang?: string): string {
     return lang === 'en' ? 'colleague' : lang === 'fr' ? 'collègue' : lang === 'es' ? 'colega' : 'collega';
 }
 
-export async function buildPersonalizedInviteNote(lead: LeadRecord, lang?: string): Promise<PersonalizedInviteNoteResult> {
+export async function buildPersonalizedInviteNote(
+    lead: LeadRecord,
+    lang?: string,
+): Promise<PersonalizedInviteNoteResult> {
     const segmentKey = inferLeadSegment(lead.job_title);
     const pool = getNoteTemplatesForLang(lang);
     const templateVariants = pool.map((template) => template.variant);
@@ -131,8 +200,8 @@ export async function buildPersonalizedInviteNote(lead: LeadRecord, lang?: strin
     }
 
     // Varianti Prompt A/B Testing
-    const variantId = await selectVariant(['AI_VAR_A_DIRECT', 'AI_VAR_B_VALUE'], { segmentKey, hourBucket }).catch(() =>
-        Math.random() > 0.5 ? 'AI_VAR_B_VALUE' : 'AI_VAR_A_DIRECT',
+    const variantId = await selectVariant(['AI_VAR_A_DIRECT', 'AI_VAR_B_VALUE'], { segmentKey, hourBucket }).catch(
+        () => (Math.random() > 0.5 ? 'AI_VAR_B_VALUE' : 'AI_VAR_A_DIRECT'),
     );
     const isVariantB = variantId === 'AI_VAR_B_VALUE';
 

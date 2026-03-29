@@ -112,12 +112,14 @@ describe('TimingModel — calculateContextualDelay', () => {
     test('delay tipo read con contenuto lungo > delay base medio', () => {
         const delays: number[] = [];
         for (let i = 0; i < 100; i++) {
-            delays.push(calculateContextualDelay({
-                actionType: 'read',
-                baseMin: 1000,
-                baseMax: 3000,
-                contentLength: 5000, // 5x la base di 1000
-            }));
+            delays.push(
+                calculateContextualDelay({
+                    actionType: 'read',
+                    baseMin: 1000,
+                    baseMax: 3000,
+                    contentLength: 5000, // 5x la base di 1000
+                }),
+            );
         }
         const avgDelay = delays.reduce((a, b) => a + b, 0) / delays.length;
         // Con contentMultiplier = 5000/1000 = 2.5 (capped), dovrebbe essere significativamente sopra il minimo
@@ -192,7 +194,7 @@ describe('TypoGenerator — determineNextKeystroke', () => {
             if (result.isTypo) typoCount++;
         }
         // ~85% typo (transposition fa fall-through se non c'è contesto di char successivo)
-        expect(typoCount / 200).toBeGreaterThan(0.70);
+        expect(typoCount / 200).toBeGreaterThan(0.7);
     });
 
     test('typo adjacent per "a" genera tasti vicini QWERTY', () => {

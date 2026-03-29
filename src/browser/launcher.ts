@@ -38,13 +38,13 @@ const activeBrowsers = new Set<BrowserContext>();
 // NON iniettare JS per queste — doppia patch = marker di bot.
 // Elenca SOLO le sezioni con guard `_skip.has()` in stealthScripts.ts.
 const CAMOUFOX_NATIVE_SECTIONS = new Set([
-    'webrtc',       // protocol-level IP spoofing
-    'plugins',      // N/A Firefox
-    'hwconcurrency',// C++ level
-    'audio',        // C++ level
-    'battery',      // C++ level
-    'canvas',       // C++ rendering level
-    'webgl',        // C++ webgl_config
+    'webrtc', // protocol-level IP spoofing
+    'plugins', // N/A Firefox
+    'hwconcurrency', // C++ level
+    'audio', // C++ level
+    'battery', // C++ level
+    'canvas', // C++ rendering level
+    'webgl', // C++ webgl_config
 ]);
 
 export const cleanupBrowsers = async (): Promise<void> => {
@@ -59,24 +59,36 @@ export const cleanupBrowsers = async (): Promise<void> => {
                 // H16: Cleanup draft fantasma — se il crash avviene durante humanType(),
                 // LinkedIn salva il draft nella textbox. Puliamo prima di chiudere.
                 try {
-                    await activePage.evaluate(() => {
-                        const textboxes = document.querySelectorAll(
-                            '.msg-form__contenteditable, [role="textbox"][contenteditable="true"], .msg-s-message-group-sendbox__textarea',
-                        );
-                        for (const tb of textboxes) {
-                            if (tb instanceof HTMLElement && tb.textContent && tb.textContent.trim().length > 0) {
-                                tb.textContent = '';
-                                tb.dispatchEvent(new Event('input', { bubbles: true }));
+                    await activePage
+                        .evaluate(() => {
+                            const textboxes = document.querySelectorAll(
+                                '.msg-form__contenteditable, [role="textbox"][contenteditable="true"], .msg-s-message-group-sendbox__textarea',
+                            );
+                            for (const tb of textboxes) {
+                                if (tb instanceof HTMLElement && tb.textContent && tb.textContent.trim().length > 0) {
+                                    tb.textContent = '';
+                                    tb.dispatchEvent(new Event('input', { bubbles: true }));
+                                }
                             }
-                        }
-                    }).catch(() => null);
-                } catch { /* best-effort draft cleanup */ }
+                        })
+                        .catch(() => null);
+                } catch {
+                    /* best-effort draft cleanup */
+                }
 
                 // Wind-down rapido (timeout stretto per non bloccare lo shutdown)
-                const isAutomationPage = activePage.url().includes('/sales/') || activePage.url().includes('/search/') || activePage.url().includes('/mynetwork/') || activePage.url().includes('/in/');
+                const isAutomationPage =
+                    activePage.url().includes('/sales/') ||
+                    activePage.url().includes('/search/') ||
+                    activePage.url().includes('/mynetwork/') ||
+                    activePage.url().includes('/in/');
                 if (isAutomationPage) {
-                    await activePage.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 3000 }).catch(() => null);
-                    await activePage.evaluate(() => window.scrollBy({ top: 100 + Math.random() * 200, behavior: 'smooth' })).catch(() => null);
+                    await activePage
+                        .goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 3000 })
+                        .catch(() => null);
+                    await activePage
+                        .evaluate(() => window.scrollBy({ top: 100 + Math.random() * 200, behavior: 'smooth' }))
+                        .catch(() => null);
                     await activePage.waitForTimeout(1000 + Math.random() * 1000).catch(() => null);
                 }
                 // Naviga via per chiudere la sessione LinkedIn in modo organico (trigger unload events)
@@ -109,7 +121,9 @@ function validateFingerprintConsistency(fp: BrowserFingerprint): void {
 
     // Device scale factor: mobile typically 2-3, desktop typically 1
     if (isMobile && fp.deviceScaleFactor !== undefined && fp.deviceScaleFactor < 1.5) {
-        console.warn(`[FINGERPRINT] Inconsistency: isMobile=true but deviceScaleFactor=${fp.deviceScaleFactor} (id=${fp.id})`);
+        console.warn(
+            `[FINGERPRINT] Inconsistency: isMobile=true but deviceScaleFactor=${fp.deviceScaleFactor} (id=${fp.id})`,
+        );
     }
 }
 
@@ -233,7 +247,9 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
         forceMobile: options.forceMobileProxy,
     };
     const stickyProxy =
-        !explicitProxy && managedProxyEnabled ? await getStickyProxy(sessionDir, proxySelection, sessionDir) : undefined;
+        !explicitProxy && managedProxyEnabled
+            ? await getStickyProxy(sessionDir, proxySelection, sessionDir)
+            : undefined;
 
     let launchPlan: Array<ProxyConfig | undefined> = [];
     let mobileEscalationAppended = false;
@@ -334,9 +350,7 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             handleSIGINT: true,
             handleSIGTERM: true,
             handleSIGHUP: true,
-            ...(useFirefox
-                ? { firefoxUserPrefs }
-                : { args: chromiumArgs }),
+            ...(useFirefox ? { firefoxUserPrefs } : { args: chromiumArgs }),
         };
         // Proxy provider HTTPS handling: ignoreHTTPSErrors SOLO per domini proxy noti.
         // NON usa --ignore-certificate-errors (flag Chrome rilevabile dai bot detector).
@@ -390,10 +404,8 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
 
                 // Snapshot PID Firefox pre-lancio per trovare il PID di Camoufox dopo.
                 // Camoufox non espone browser.process() → usiamo diff pre/post per il PID.
-                const windowBlock = process.platform === 'win32'
-                    ? await import('./windowInputBlock') : null;
-                const preLaunchPids = windowBlock
-                    ? new Set(windowBlock.getFirefoxLikePids()) : undefined;
+                const windowBlock = process.platform === 'win32' ? await import('./windowInputBlock') : null;
+                const preLaunchPids = windowBlock ? new Set(windowBlock.getFirefoxLikePids()) : undefined;
 
                 // Dimensioni finestra: legge la risoluzione schermo dall'OS per adattarsi
                 // a qualsiasi monitor. window.resizeTo non funziona in Firefox (security).
@@ -417,11 +429,13 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                     }
                 }
 
-                const cfxProxy = currentProxy ? {
-                    server: currentProxy.server,
-                    username: currentProxy.username,
-                    password: currentProxy.password,
-                } : undefined;
+                const cfxProxy = currentProxy
+                    ? {
+                          server: currentProxy.server,
+                          username: currentProxy.username,
+                          password: currentProxy.password,
+                      }
+                    : undefined;
                 if (cfxProxy) {
                     void logInfo('browser.camoufox_proxy_config', {
                         server: cfxProxy.server,
@@ -455,7 +469,7 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                 if (windowBlock && preLaunchPids) {
                     try {
                         const postPids = windowBlock.getFirefoxLikePids();
-                        const newPid = postPids.find(p => !preLaunchPids.has(p));
+                        const newPid = postPids.find((p) => !preLaunchPids.has(p));
                         if (newPid) {
                             windowBlock.registerBrowserPid(browser, newPid);
                             void logInfo('browser.camoufox_pid_registered', { pid: newPid });
@@ -465,7 +479,9 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                                 postLaunchCount: postPids.length,
                             });
                         }
-                    } catch { /* best-effort PID registration */ }
+                    } catch {
+                        /* best-effort PID registration */
+                    }
                 }
 
                 void logInfo('browser.camoufox_launched', {
@@ -481,7 +497,10 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                     browser = await cloakbrowser.launch(sessionDir, contextOptions);
                     void logInfo('browser.cloakbrowser_launched', { sessionDir });
                 } catch (cloakErr) {
-                    console.warn('[BROWSER] CloakBrowser non disponibile, fallback a Playwright standard:', cloakErr instanceof Error ? cloakErr.message : String(cloakErr));
+                    console.warn(
+                        '[BROWSER] CloakBrowser non disponibile, fallback a Playwright standard:',
+                        cloakErr instanceof Error ? cloakErr.message : String(cloakErr),
+                    );
                     browser = await chromium.launchPersistentContext(sessionDir, contextOptions);
                 }
             } else if (useFirefox) {
@@ -667,7 +686,7 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                             'HTTP_429_RATE_LIMIT',
                             { url },
                             config.autoPauseMinutesOnFailureBurst ?? 60,
-                        ).catch(() => { });
+                        ).catch(() => {});
                     }
                 }
             });
@@ -682,13 +701,15 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             const errMsg = error instanceof Error ? error.message : String(error);
 
             // Retry same proxy once with backoff on transient errors
-            const isTransientError = errMsg.includes('NS_ERROR_PROXY_CONNECTION_REFUSED') ||
-                errMsg.includes('SSL_ERROR') || errMsg.includes('ERR_PROXY');
+            const isTransientError =
+                errMsg.includes('NS_ERROR_PROXY_CONNECTION_REFUSED') ||
+                errMsg.includes('SSL_ERROR') ||
+                errMsg.includes('ERR_PROXY');
             if (currentProxy && isTransientError && !retriedProxy) {
                 retriedProxy = true;
                 const backoffMs = 5_000 + Math.floor(Math.random() * 5_000);
                 console.warn(`[PROXY] Errore transiente — retry in ${Math.round(backoffMs / 1000)}s...`);
-                await new Promise(r => setTimeout(r, backoffMs));
+                await new Promise((r) => setTimeout(r, backoffMs));
                 attempt--; // Ripeti stesso tentativo
                 continue;
             }
@@ -751,9 +772,9 @@ async function humanWindDown(session: BrowserSession): Promise<void> {
             // Distribuzione pesata: feed 40%, notifiche 20%, homepage 15%, restare 25%
             const roll = Math.random();
             let windDownUrl: string | null = null;
-            if (roll < 0.40) {
+            if (roll < 0.4) {
                 windDownUrl = 'https://www.linkedin.com/feed/';
-            } else if (roll < 0.60) {
+            } else if (roll < 0.6) {
                 windDownUrl = 'https://www.linkedin.com/notifications/';
             } else if (roll < 0.75) {
                 windDownUrl = 'https://www.linkedin.com/';
@@ -761,13 +782,17 @@ async function humanWindDown(session: BrowserSession): Promise<void> {
             // roll >= 0.75: resta sulla pagina corrente (25%)
 
             if (windDownUrl) {
-                await page.goto(windDownUrl, {
-                    waitUntil: 'domcontentloaded',
-                    timeout: 10_000,
-                }).catch(() => null);
+                await page
+                    .goto(windDownUrl, {
+                        waitUntil: 'domcontentloaded',
+                        timeout: 10_000,
+                    })
+                    .catch(() => null);
             }
             // Breve scroll come lettura casuale
-            await page.evaluate(() => window.scrollBy({ top: 150 + Math.random() * 300, behavior: 'smooth' })).catch(() => null);
+            await page
+                .evaluate(() => window.scrollBy({ top: 150 + Math.random() * 300, behavior: 'smooth' }))
+                .catch(() => null);
             await page.waitForTimeout(1_500 + Math.floor(Math.random() * 2_000)).catch(() => null);
         } else {
             // Su altre pagine, pausa breve prima di chiudere
@@ -783,17 +808,21 @@ export async function closeBrowser(session: BrowserSession): Promise<void> {
     try {
         const { releaseMouseConfinement } = await import('./humanBehavior');
         releaseMouseConfinement();
-    } catch { /* best-effort */ }
+    } catch {
+        /* best-effort */
+    }
     await humanWindDown(session);
     activeBrowsers.delete(session.browser);
     // H19: Chiudi SEMPRE la page prima del browser per evitare memory leak.
     // browser.close() non garantisce la chiusura di tutte le page su tutti i percorsi.
     try {
         if (!session.page.isClosed()) {
-            await session.page.close().catch(() => { });
+            await session.page.close().catch(() => {});
         }
-    } catch { /* best-effort */ }
-    await session.browser.close().catch(() => { });
+    } catch {
+        /* best-effort */
+    }
+    await session.browser.close().catch(() => {});
 }
 
 export async function performBrowserGC(session: BrowserSession): Promise<void> {
@@ -801,15 +830,15 @@ export async function performBrowserGC(session: BrowserSession): Promise<void> {
         const pages = session.browser.pages();
         for (const p of pages) {
             if (p !== session.page && !p.isClosed()) {
-                await p.close().catch(() => { });
+                await p.close().catch(() => {});
             }
         }
         // CDP GC e' Chromium-only — Firefox/Camoufox usano Juggler
         if (config.browserEngine === 'chromium') {
             const client = await session.page.context().newCDPSession(session.page);
-            await client.send('HeapProfiler.enable').catch(() => { });
-            await client.send('HeapProfiler.collectGarbage').catch(() => { });
-            await client.detach().catch(() => { });
+            await client.send('HeapProfiler.enable').catch(() => {});
+            await client.send('HeapProfiler.collectGarbage').catch(() => {});
+            await client.detach().catch(() => {});
         }
     } catch {
         // ignore GC errors

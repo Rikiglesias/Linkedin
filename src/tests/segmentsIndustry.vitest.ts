@@ -2,9 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { inferLeadIndustry, inferCompanySize, inferLeadSegment } from '../ml/segments';
 
 describe('ml/segments — industry inference', () => {
-    it('software/tech keyword → tech', () => expect(inferLeadIndustry('Tech Startup', 'Software Developer')).toBe('tech'));
-    it('healthcare keyword → healthcare', () => expect(inferLeadIndustry('Health Systems', 'Healthcare Manager')).toBe('healthcare'));
-    it('finance keyword → finance', () => expect(inferLeadIndustry('Finance Corp', 'Financial Analyst')).toBe('finance'));
+    it('software/tech keyword → tech', () =>
+        expect(inferLeadIndustry('Tech Startup', 'Software Developer')).toBe('tech'));
+    it('healthcare keyword → healthcare', () =>
+        expect(inferLeadIndustry('Health Systems', 'Healthcare Manager')).toBe('healthcare'));
+    it('finance keyword → finance', () =>
+        expect(inferLeadIndustry('Finance Corp', 'Financial Analyst')).toBe('finance'));
     it('consulting keyword → consulting or other', () => {
         const result = inferLeadIndustry('Consulting Group', 'Management Consultant');
         expect(['consulting', 'other']).toContain(result);

@@ -6,7 +6,11 @@ import { config, isWorkingHour } from '../config';
 import { getAccountProfileById } from '../accountManager';
 import { launchBrowser, closeBrowser, checkLogin } from '../browser';
 import { awaitManualLogin, blockUserInput } from '../browser/humanBehavior';
-import { enableWindowClickThrough, disableWindowClickThrough, cleanupWindowClickThrough } from '../browser/windowInputBlock';
+import {
+    enableWindowClickThrough,
+    disableWindowClickThrough,
+    cleanupWindowClickThrough,
+} from '../browser/windowInputBlock';
 import { runSalesNavBulkSave } from '../salesnav/bulkSaveOrchestrator';
 import type { SalesNavBulkSaveReport } from '../salesnav/bulkSaveOrchestrator';
 import { runSalesNavigatorListSync, formatFinalReport } from '../core/salesNavigatorSync';
@@ -39,10 +43,16 @@ function generateWarnings(
     const targetList = answers['list'];
 
     if (!cfgStatus.proxyConfigured) {
-        warnings.push({ level: 'critical', message: 'Nessun proxy configurato — connessione diretta su SalesNav (rischio detection ALTO)' });
+        warnings.push({
+            level: 'critical',
+            message: 'Nessun proxy configurato — connessione diretta su SalesNav (rischio detection ALTO)',
+        });
     }
     if (targetList && stats.byList[targetList]) {
-        warnings.push({ level: 'info', message: `Lista "${targetList}" ha gia\' ${stats.byList[targetList]} lead — i duplicati saranno skippati` });
+        warnings.push({
+            level: 'info',
+            message: `Lista "${targetList}" ha gia\' ${stats.byList[targetList]} lead — i duplicati saranno skippati`,
+        });
     }
 
     return warnings;
@@ -110,12 +120,16 @@ export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<vo
     // ── Guard: quarantina e pausa ─────────────────────────────────────────────
     const quarantine = (await getRuntimeFlag('account_quarantine')) === 'true';
     if (quarantine) {
-        console.error('\n  [BLOCCATO] Account in quarantina — operazione annullata. Esegui "bot unquarantine" dopo aver risolto il problema.\n');
+        console.error(
+            '\n  [BLOCCATO] Account in quarantina — operazione annullata. Esegui "bot unquarantine" dopo aver risolto il problema.\n',
+        );
         return;
     }
     const pauseState = await getAutomationPauseState();
     if (pauseState.paused) {
-        console.error(`\n  [BLOCCATO] Automazione in pausa: ${pauseState.reason ?? 'motivo sconosciuto'}. Riprendi con "bot resume".\n`);
+        console.error(
+            `\n  [BLOCCATO] Automazione in pausa: ${pauseState.reason ?? 'motivo sconosciuto'}. Riprendi con "bot resume".\n`,
+        );
         return;
     }
 
@@ -173,7 +187,9 @@ export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<vo
             // Re-inject overlay dopo warmup (page.goto distrugge il DOM)
             await blockUserInput(session.page);
         } catch (warmupErr) {
-            console.warn(`  [WARN] Warmup fallito: ${warmupErr instanceof Error ? warmupErr.message : String(warmupErr)}`);
+            console.warn(
+                `  [WARN] Warmup fallito: ${warmupErr instanceof Error ? warmupErr.message : String(warmupErr)}`,
+            );
         }
 
         // Checkpoint/Resume (4.1): resume=true abilita il ripristino dall'ultimo
@@ -246,11 +262,12 @@ export async function runSyncSearchWorkflow(opts: SyncSearchOptions): Promise<vo
             dry_run: dryRun ? 'SI' : 'no',
         },
         errors,
-        nextAction: syncPromoted > 0
-            ? `Step 3/4: esegui 'send-invites --list "${targetList}"' per invitare i ${syncPromoted} lead pronti`
-            : syncInserted > 0
-                ? `Step 3/4: esegui 'send-invites --list "${targetList}"' per invitare i nuovi lead`
-                : `Nessun lead nuovo. Prova una ricerca diversa o attendi nuovi risultati`,
+        nextAction:
+            syncPromoted > 0
+                ? `Step 3/4: esegui 'send-invites --list "${targetList}"' per invitare i ${syncPromoted} lead pronti`
+                : syncInserted > 0
+                  ? `Step 3/4: esegui 'send-invites --list "${targetList}"' per invitare i nuovi lead`
+                  : `Nessun lead nuovo. Prova una ricerca diversa o attendi nuovi risultati`,
         riskAssessment: preflight.riskAssessment,
     };
 

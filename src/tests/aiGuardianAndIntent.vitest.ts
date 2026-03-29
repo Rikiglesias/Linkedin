@@ -6,12 +6,7 @@ import {
     enforceHeuristicFloor,
     clampPauseMinutes,
 } from '../ai/guardian';
-import {
-    clampConfidence,
-    normalizeIntent,
-    normalizeSubIntent,
-    buildFallbackDraft,
-} from '../ai/intentResolver';
+import { clampConfidence, normalizeIntent, normalizeSubIntent, buildFallbackDraft } from '../ai/intentResolver';
 import type { ScheduleResult } from '../core/scheduler';
 import type { RiskSnapshot } from '../types/domain';
 
@@ -23,12 +18,14 @@ beforeAll(async () => {
 
 // ─── Helper: minimal ScheduleResult builder ──────────────────────────────────
 
-function makeSchedule(overrides: Partial<ScheduleResult> & {
-    riskAction?: RiskSnapshot['action'];
-    pendingRatio?: number;
-    errorRate?: number;
-    listOverrides?: Partial<ScheduleResult['listBreakdown'][0]>[];
-} = {}): ScheduleResult {
+function makeSchedule(
+    overrides: Partial<ScheduleResult> & {
+        riskAction?: RiskSnapshot['action'];
+        pendingRatio?: number;
+        errorRate?: number;
+        listOverrides?: Partial<ScheduleResult['listBreakdown'][0]>[];
+    } = {},
+): ScheduleResult {
     const { riskAction, pendingRatio, errorRate, listOverrides, ...rest } = overrides;
     return {
         localDate: '2026-03-21',
@@ -123,12 +120,12 @@ describe('guardian — heuristics', () => {
     });
 
     it('lista con pendingRatio >= 0.78 → critical', () => {
-        const d = heuristics(makeSchedule({ listOverrides: [{ pendingRatio: 0.80 }] }));
+        const d = heuristics(makeSchedule({ listOverrides: [{ pendingRatio: 0.8 }] }));
         expect(d.severity).toBe('critical');
     });
 
     it('lista con blockedRatio >= 0.35 → critical', () => {
-        const d = heuristics(makeSchedule({ listOverrides: [{ blockedRatio: 0.40 }] }));
+        const d = heuristics(makeSchedule({ listOverrides: [{ blockedRatio: 0.4 }] }));
         expect(d.severity).toBe('critical');
     });
 
@@ -203,21 +200,30 @@ describe('guardian — parseAiDecision', () => {
     it('severity sconosciuta → default watch', () => {
         const raw = JSON.stringify({ severity: 'extreme', summary: 'Test' });
         const result = parseAiDecision(raw);
-        if (!result) { expect(result).not.toBeNull(); return; }
+        if (!result) {
+            expect(result).not.toBeNull();
+            return;
+        }
         expect(result.severity).toBe('watch');
     });
 
     it('pauseMinutes > 24h → clamp a 1440', () => {
         const raw = JSON.stringify({ severity: 'critical', pauseMinutes: 9999 });
         const result = parseAiDecision(raw);
-        if (!result) { expect(result).not.toBeNull(); return; }
+        if (!result) {
+            expect(result).not.toBeNull();
+            return;
+        }
         expect(result.pauseMinutes).toBe(1440);
     });
 
     it('pauseMinutes negativo → 0', () => {
         const raw = JSON.stringify({ severity: 'normal', pauseMinutes: -10 });
         const result = parseAiDecision(raw);
-        if (!result) { expect(result).not.toBeNull(); return; }
+        if (!result) {
+            expect(result).not.toBeNull();
+            return;
+        }
         expect(result.pauseMinutes).toBe(0);
     });
 
@@ -227,7 +233,10 @@ describe('guardian — parseAiDecision', () => {
             recommendations: ['a', 'b', 'c', 'd', 'e', 'f', 'g'],
         });
         const result = parseAiDecision(raw);
-        if (!result) { expect(result).not.toBeNull(); return; }
+        if (!result) {
+            expect(result).not.toBeNull();
+            return;
+        }
         expect(result.recommendations.length).toBeLessThanOrEqual(5);
     });
 
@@ -242,7 +251,10 @@ describe('guardian — parseAiDecision', () => {
     it('summary vuoto → fallback default', () => {
         const raw = JSON.stringify({ severity: 'normal', summary: '' });
         const result = parseAiDecision(raw);
-        if (!result) { expect(result).not.toBeNull(); return; }
+        if (!result) {
+            expect(result).not.toBeNull();
+            return;
+        }
         expect(result.summary.length).toBeGreaterThan(0);
     });
 });
@@ -348,7 +360,14 @@ describe('intentResolver — normalizeSubIntent', () => {
     });
 
     it('tutti i valori validi', () => {
-        const valid = ['CALL_REQUESTED', 'PRICE_INQUIRY', 'OBJECTION_HANDLING', 'COMPETITOR_MENTION', 'REFERRAL', 'NONE'];
+        const valid = [
+            'CALL_REQUESTED',
+            'PRICE_INQUIRY',
+            'OBJECTION_HANDLING',
+            'COMPETITOR_MENTION',
+            'REFERRAL',
+            'NONE',
+        ];
         for (const v of valid) {
             expect(normalizeSubIntent(v)).toBe(v);
         }

@@ -14,12 +14,7 @@
  */
 
 import { Page } from 'playwright';
-import {
-    ensureVisualCursorOverlay,
-    ensureInputBlock,
-    humanDelay,
-    simulateHumanReading,
-} from './humanBehavior';
+import { ensureVisualCursorOverlay, ensureInputBlock, humanDelay, simulateHumanReading } from './humanBehavior';
 import { isInputBlockSuspended } from '../salesnav/bulkSaveHelpers';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { randomInt } from '../utils/random';
@@ -39,24 +34,42 @@ interface NavigationResult {
 // Termini generici di settore — usati al 50% al posto delle keywords del lead
 // per evitare correlazione diretta search→profilo visitato (pattern detectable).
 const GENERIC_SEARCH_TERMS = [
-    'marketing manager', 'software engineer', 'sales director', 'product manager',
-    'ceo startup', 'business development', 'account executive', 'data analyst',
-    'hr manager', 'operations director', 'cto', 'growth hacker', 'consultant',
-    'project manager', 'designer', 'recruiter', 'founder', 'vp sales',
+    'marketing manager',
+    'software engineer',
+    'sales director',
+    'product manager',
+    'ceo startup',
+    'business development',
+    'account executive',
+    'data analyst',
+    'hr manager',
+    'operations director',
+    'cto',
+    'growth hacker',
+    'consultant',
+    'project manager',
+    'designer',
+    'recruiter',
+    'founder',
+    'vp sales',
 ];
 
 /**
  * Costruisce keywords di ricerca per la catena organica.
- * 
+ *
  * 50% usa keywords generiche del settore (NON correlate al lead specifico)
  * 50% usa solo il job_title generico (MAI company — troppo specifico)
- * 
+ *
  * Razionale: un umano non cerca sempre "Marketing Manager Accenture" e poi
  * clicca esattamente quel profilo. A volte naviga risultati generici.
  */
-function buildSearchKeywords(lead: { name?: string | null; job_title?: string | null; company?: string | null }): string {
+function buildSearchKeywords(lead: {
+    name?: string | null;
+    job_title?: string | null;
+    company?: string | null;
+}): string {
     // 50% termini generici — decorrela search da profilo visitato
-    if (Math.random() < 0.50) {
+    if (Math.random() < 0.5) {
         return GENERIC_SEARCH_TERMS[randomInt(0, GENERIC_SEARCH_TERMS.length - 1)];
     }
 
@@ -143,7 +156,7 @@ async function navigateViaOrganicSearch(
             }
 
             // Se target non trovato, click un risultato random (30% — simula curiosità umana)
-            if (!clickedSearchResult && Math.random() < 0.30) {
+            if (!clickedSearchResult && Math.random() < 0.3) {
                 const anyResult = page.locator('a[href*="/in/"]').nth(randomInt(0, 4));
                 if (await anyResult.isVisible({ timeout: 1500 }).catch(() => false)) {
                     await humanDelay(page, 600, 1500);
@@ -185,10 +198,7 @@ async function navigateViaOrganicSearch(
  * Simula: Feed → Scroll → Click sul profilo.
  * Variante più leggera della catena search.
  */
-async function navigateViaOrganicFeed(
-    page: Page,
-    profileUrl: string,
-): Promise<NavigationResult> {
+async function navigateViaOrganicFeed(page: Page, profileUrl: string): Promise<NavigationResult> {
     let stepsCompleted = 0;
 
     try {
@@ -243,10 +253,10 @@ export async function navigateToProfileWithContext(
         feedProb = 0.25;
     } else if (sessionInviteCount < 15) {
         searchProb = 0.25;
-        feedProb = 0.20;
+        feedProb = 0.2;
     } else {
-        searchProb = 0.10;
-        feedProb = 0.10;
+        searchProb = 0.1;
+        feedProb = 0.1;
     }
 
     const roll = Math.random();
@@ -314,7 +324,7 @@ export async function navigateToProfileForCheck(
     const roll = Math.random();
     let result: NavigationResult;
 
-    if (roll < 0.40) {
+    if (roll < 0.4) {
         try {
             await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 15_000 });
             await reInjectOverlays(page);
@@ -328,9 +338,12 @@ export async function navigateToProfileForCheck(
             await reInjectOverlays(page);
             result = { strategy: 'direct', success: true, stepsCompleted: 1 };
         }
-    } else if (roll < 0.70) {
+    } else if (roll < 0.7) {
         try {
-            await page.goto('https://www.linkedin.com/notifications/', { waitUntil: 'domcontentloaded', timeout: 10_000 });
+            await page.goto('https://www.linkedin.com/notifications/', {
+                waitUntil: 'domcontentloaded',
+                timeout: 10_000,
+            });
             await reInjectOverlays(page);
             await humanDelay(page, 1500, 3000);
             await page.goto(profileUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 });
@@ -402,7 +415,7 @@ export async function navigateToProfileForMessage(
     const roll = Math.random();
     let result: NavigationResult;
 
-    if (roll < 0.60) {
+    if (roll < 0.6) {
         // 60%: Feed → Profilo (simula "ho visto che ha accettato, vado a scrivergli")
         try {
             await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 15_000 });
@@ -410,8 +423,11 @@ export async function navigateToProfileForMessage(
             await humanDelay(page, 1200, 2800);
 
             // 40% di probabilità: check notifiche prima (umano vede notifica di accettazione)
-            if (Math.random() < 0.40) {
-                await page.goto('https://www.linkedin.com/notifications/', { waitUntil: 'domcontentloaded', timeout: 10_000 });
+            if (Math.random() < 0.4) {
+                await page.goto('https://www.linkedin.com/notifications/', {
+                    waitUntil: 'domcontentloaded',
+                    timeout: 10_000,
+                });
                 await reInjectOverlays(page);
                 await humanDelay(page, 1500, 3000);
             }

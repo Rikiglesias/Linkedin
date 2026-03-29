@@ -6,8 +6,20 @@ import { isValidLeadTransition } from '../core/leadStateService';
 
 describe('Milestone 900 — cross-module integration sanity', () => {
     it('risk score 0 + trust score alto → bot può operare', () => {
-        const risk = evaluateRisk({ errorRate: 0, selectorFailureRate: 0, pendingRatio: 0, challengeCount: 0, inviteVelocityRatio: 0 });
-        const trust = calculateAccountTrustScore({ ssiScore: 90, ageDays: 500, acceptanceRatePct: 45, challengesLast7d: 0, pendingRatio: 0.2 });
+        const risk = evaluateRisk({
+            errorRate: 0,
+            selectorFailureRate: 0,
+            pendingRatio: 0,
+            challengeCount: 0,
+            inviteVelocityRatio: 0,
+        });
+        const trust = calculateAccountTrustScore({
+            ssiScore: 90,
+            ageDays: 500,
+            acceptanceRatePct: 45,
+            challengesLast7d: 0,
+            pendingRatio: 0.2,
+        });
         expect(risk.action).toBe('NORMAL');
         expect(trust.budgetMultiplier).toBeGreaterThan(1.0);
     });

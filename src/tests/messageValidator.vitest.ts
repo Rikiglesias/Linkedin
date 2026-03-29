@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-    validateMessageContent,
-    extractUnresolvedPlaceholders,
-    hashMessage,
-} from '../validation/messageValidator';
+import { validateMessageContent, extractUnresolvedPlaceholders, hashMessage } from '../validation/messageValidator';
 
 describe('messageValidator', () => {
     describe('validateMessageContent', () => {

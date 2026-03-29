@@ -2,11 +2,27 @@ import { describe, it, expect } from 'vitest';
 import { isValidLeadTransition } from '../core/leadStateService';
 import type { LeadStatus } from '../types/domain';
 
-const ALL: LeadStatus[] = ['NEW','READY_INVITE','INVITED','ACCEPTED','CONNECTED','READY_MESSAGE','MESSAGED','REPLIED','SKIPPED','BLOCKED','DEAD','REVIEW_REQUIRED','WITHDRAWN'];
+const ALL: LeadStatus[] = [
+    'NEW',
+    'READY_INVITE',
+    'INVITED',
+    'ACCEPTED',
+    'CONNECTED',
+    'READY_MESSAGE',
+    'MESSAGED',
+    'REPLIED',
+    'SKIPPED',
+    'BLOCKED',
+    'DEAD',
+    'REVIEW_REQUIRED',
+    'WITHDRAWN',
+];
 
 describe('leadState — complete transition matrix', () => {
-    it('REVIEW_REQUIRED → WITHDRAWN è valida', () => expect(isValidLeadTransition('REVIEW_REQUIRED', 'WITHDRAWN')).toBe(true));
-    it('REVIEW_REQUIRED → INVITED è valida', () => expect(isValidLeadTransition('REVIEW_REQUIRED', 'INVITED')).toBe(true));
+    it('REVIEW_REQUIRED → WITHDRAWN è valida', () =>
+        expect(isValidLeadTransition('REVIEW_REQUIRED', 'WITHDRAWN')).toBe(true));
+    it('REVIEW_REQUIRED → INVITED è valida', () =>
+        expect(isValidLeadTransition('REVIEW_REQUIRED', 'INVITED')).toBe(true));
     it('REVIEW_REQUIRED → DEAD è valida', () => expect(isValidLeadTransition('REVIEW_REQUIRED', 'DEAD')).toBe(true));
     it('INVITED → WITHDRAWN è valida', () => expect(isValidLeadTransition('INVITED', 'WITHDRAWN')).toBe(true));
     it('INVITED → CONNECTED è valida', () => expect(isValidLeadTransition('INVITED', 'CONNECTED')).toBe(true));
@@ -19,7 +35,8 @@ describe('leadState — complete transition matrix', () => {
     it('ACCEPTED → DEAD è valida', () => expect(isValidLeadTransition('ACCEPTED', 'DEAD')).toBe(true));
     it('CONNECTED → DEAD è valida', () => expect(isValidLeadTransition('CONNECTED', 'DEAD')).toBe(true));
     it('READY_MESSAGE → DEAD è valida', () => expect(isValidLeadTransition('READY_MESSAGE', 'DEAD')).toBe(true));
-    it('SKIPPED → REVIEW_REQUIRED è valida', () => expect(isValidLeadTransition('SKIPPED', 'REVIEW_REQUIRED')).toBe(true));
+    it('SKIPPED → REVIEW_REQUIRED è valida', () =>
+        expect(isValidLeadTransition('SKIPPED', 'REVIEW_REQUIRED')).toBe(true));
 
     it('conteggio transizioni totali nel sistema', () => {
         let valid = 0;

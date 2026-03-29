@@ -48,11 +48,14 @@ router.post('/trigger-run', async (req, res) => {
             res.status(400).json({ success: false, error: `Workflow non valido: ${workflow}` });
             return;
         }
-        await setRuntimeFlag('ui_trigger_run', JSON.stringify({
-            workflow,
-            requestedAt: new Date().toISOString(),
-            source: 'dashboard',
-        }));
+        await setRuntimeFlag(
+            'ui_trigger_run',
+            JSON.stringify({
+                workflow,
+                requestedAt: new Date().toISOString(),
+                source: 'dashboard',
+            }),
+        );
         void recordSecurityAuditEvent({
             category: 'runtime_control',
             action: 'trigger_run',

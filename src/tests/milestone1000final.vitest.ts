@@ -4,7 +4,13 @@ import { isValidLeadTransition } from '../core/leadStateService';
 
 describe('MILESTONE 1000 — final 2 tests', () => {
     it('test 999: risk engine con tutti zero → NORMAL score 0', () => {
-        const r = evaluateRisk({ errorRate: 0, selectorFailureRate: 0, pendingRatio: 0, challengeCount: 0, inviteVelocityRatio: 0 });
+        const r = evaluateRisk({
+            errorRate: 0,
+            selectorFailureRate: 0,
+            pendingRatio: 0,
+            challengeCount: 0,
+            inviteVelocityRatio: 0,
+        });
         expect(r.score).toBe(0);
         expect(r.action).toBe('NORMAL');
     });

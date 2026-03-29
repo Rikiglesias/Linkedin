@@ -1,4 +1,11 @@
-import { adjustLeadScore, appendLeadEvent, getLeadById, pushOutboxEvent, setLeadStatus, recordSecurityAuditEvent } from './repositories';
+import {
+    adjustLeadScore,
+    appendLeadEvent,
+    getLeadById,
+    pushOutboxEvent,
+    setLeadStatus,
+    recordSecurityAuditEvent,
+} from './repositories';
 import { getDatabase } from '../db';
 import { withTransaction } from './repositories/shared';
 import { LeadStatus } from '../types/domain';
@@ -92,26 +99,32 @@ export async function transitionLead(
     const feedbackOutcome = outcomeMap[targetStatus];
     if (feedbackOutcome) {
         // Registra outcome per tutti i decision point rilevanti del lead
-        import('../ai/decisionFeedback').then(({ recordDecisionOutcome }) => {
-            const points = targetStatus === 'ACCEPTED' || targetStatus === 'READY_MESSAGE'
-                ? ['pre_invite']
-                : targetStatus === 'REPLIED'
-                    ? ['pre_message', 'pre_follow_up']
-                    : ['pre_invite', 'pre_message', 'pre_follow_up'];
-            for (const point of points) {
-                recordDecisionOutcome(leadId, point, feedbackOutcome).catch((e) =>
-                    logWarn('lead_state.feedback_record_failed', {
-                        leadId, point, outcome: feedbackOutcome,
-                        error: e instanceof Error ? e.message : String(e),
-                    }),
-                );
-            }
-        }).catch((e) =>
-            logWarn('lead_state.feedback_import_failed', {
-                leadId, targetStatus: targetStatus as string,
-                error: e instanceof Error ? e.message : String(e),
-            }),
-        );
+        import('../ai/decisionFeedback')
+            .then(({ recordDecisionOutcome }) => {
+                const points =
+                    targetStatus === 'ACCEPTED' || targetStatus === 'READY_MESSAGE'
+                        ? ['pre_invite']
+                        : targetStatus === 'REPLIED'
+                          ? ['pre_message', 'pre_follow_up']
+                          : ['pre_invite', 'pre_message', 'pre_follow_up'];
+                for (const point of points) {
+                    recordDecisionOutcome(leadId, point, feedbackOutcome).catch((e) =>
+                        logWarn('lead_state.feedback_record_failed', {
+                            leadId,
+                            point,
+                            outcome: feedbackOutcome,
+                            error: e instanceof Error ? e.message : String(e),
+                        }),
+                    );
+                }
+            })
+            .catch((e) =>
+                logWarn('lead_state.feedback_import_failed', {
+                    leadId,
+                    targetStatus: targetStatus as string,
+                    error: e instanceof Error ? e.message : String(e),
+                }),
+            );
     }
 
     if (targetStatus === 'ACCEPTED' && fromStatus !== 'ACCEPTED') {
@@ -120,21 +133,51 @@ export async function transitionLead(
             `🤝 **${name}** ha accettato l'invito!\nLinkedIn: ${lead.linkedin_url || 'N/A'}\n_Aggiunto in coda messaggi intro._`,
             'Lead Accettato',
             'info',
-        ).catch((e) => logWarn('lead_state.telegram_alert_failed', { leadId, event: 'accepted', error: e instanceof Error ? e.message : String(e) }));
+        ).catch((e) =>
+            logWarn('lead_state.telegram_alert_failed', {
+                leadId,
+                event: 'accepted',
+                error: e instanceof Error ? e.message : String(e),
+            }),
+        );
         // Engagement score boost: accettazione = segnale positivo → score +10 (cap 100)
-        void adjustLeadScore(leadId, 10).catch((e) => logWarn('lead_state.score_adjust_failed', { leadId, delta: 10, error: e instanceof Error ? e.message : String(e) }));
+        void adjustLeadScore(leadId, 10).catch((e) =>
+            logWarn('lead_state.score_adjust_failed', {
+                leadId,
+                delta: 10,
+                error: e instanceof Error ? e.message : String(e),
+            }),
+        );
     } else if (targetStatus === 'REPLIED' && fromStatus !== 'REPLIED') {
         const name = `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'Lead Sconosciuto';
         void sendTelegramAlert(
             `💬 **${name}** ti ha risposto organicamente!\nControlla i messaggi: ${lead.linkedin_url || 'N/A'}`,
             'Nuova Risposta',
             'warn',
-        ).catch((e) => logWarn('lead_state.telegram_alert_failed', { leadId, event: 'replied', error: e instanceof Error ? e.message : String(e) }));
+        ).catch((e) =>
+            logWarn('lead_state.telegram_alert_failed', {
+                leadId,
+                event: 'replied',
+                error: e instanceof Error ? e.message : String(e),
+            }),
+        );
         // Engagement score boost: risposta = segnale molto positivo → score +15 (cap 100)
-        void adjustLeadScore(leadId, 15).catch((e) => logWarn('lead_state.score_adjust_failed', { leadId, delta: 15, error: e instanceof Error ? e.message : String(e) }));
+        void adjustLeadScore(leadId, 15).catch((e) =>
+            logWarn('lead_state.score_adjust_failed', {
+                leadId,
+                delta: 15,
+                error: e instanceof Error ? e.message : String(e),
+            }),
+        );
     } else if (targetStatus === 'WITHDRAWN') {
         // Engagement score penalty: invito ritirato (non accettato) = segnale negativo → score -10 (floor 0)
-        void adjustLeadScore(leadId, -10).catch((e) => logWarn('lead_state.score_adjust_failed', { leadId, delta: -10, error: e instanceof Error ? e.message : String(e) }));
+        void adjustLeadScore(leadId, -10).catch((e) =>
+            logWarn('lead_state.score_adjust_failed', {
+                leadId,
+                delta: -10,
+                error: e instanceof Error ? e.message : String(e),
+            }),
+        );
     }
 }
 
@@ -190,26 +233,32 @@ export async function transitionLeadAtomic(
         };
         const feedbackOutcome = outcomeMap[finalStatus];
         if (feedbackOutcome) {
-            import('../ai/decisionFeedback').then(({ recordDecisionOutcome }) => {
-                const points = finalStatus === 'ACCEPTED' || finalStatus === 'READY_MESSAGE'
-                    ? ['pre_invite']
-                    : finalStatus === 'REPLIED'
-                        ? ['pre_message', 'pre_follow_up']
-                        : ['pre_invite', 'pre_message', 'pre_follow_up'];
-                for (const point of points) {
-                    recordDecisionOutcome(leadId, point, feedbackOutcome).catch((e) =>
-                        logWarn('lead_state.feedback_record_failed', {
-                            leadId, point, outcome: feedbackOutcome,
-                            error: e instanceof Error ? e.message : String(e),
-                        }),
-                    );
-                }
-            }).catch((e) =>
-                logWarn('lead_state.feedback_import_failed', {
-                    leadId, targetStatus: finalStatus as string,
-                    error: e instanceof Error ? e.message : String(e),
-                }),
-            );
+            import('../ai/decisionFeedback')
+                .then(({ recordDecisionOutcome }) => {
+                    const points =
+                        finalStatus === 'ACCEPTED' || finalStatus === 'READY_MESSAGE'
+                            ? ['pre_invite']
+                            : finalStatus === 'REPLIED'
+                              ? ['pre_message', 'pre_follow_up']
+                              : ['pre_invite', 'pre_message', 'pre_follow_up'];
+                    for (const point of points) {
+                        recordDecisionOutcome(leadId, point, feedbackOutcome).catch((e) =>
+                            logWarn('lead_state.feedback_record_failed', {
+                                leadId,
+                                point,
+                                outcome: feedbackOutcome,
+                                error: e instanceof Error ? e.message : String(e),
+                            }),
+                        );
+                    }
+                })
+                .catch((e) =>
+                    logWarn('lead_state.feedback_import_failed', {
+                        leadId,
+                        targetStatus: finalStatus as string,
+                        error: e instanceof Error ? e.message : String(e),
+                    }),
+                );
         }
 
         if (finalStatus === 'ACCEPTED') {
@@ -218,8 +267,20 @@ export async function transitionLeadAtomic(
                 `🤝 **${name}** ha accettato l'invito!\nLinkedIn: ${lead.linkedin_url || 'N/A'}\n_Aggiunto in coda messaggi intro._`,
                 'Lead Accettato',
                 'info',
-            ).catch((e) => logWarn('lead_state.telegram_alert_failed', { leadId, event: 'accepted_atomic', error: e instanceof Error ? e.message : String(e) }));
-            void adjustLeadScore(leadId, 10).catch((e) => logWarn('lead_state.score_adjust_failed', { leadId, delta: 10, error: e instanceof Error ? e.message : String(e) }));
+            ).catch((e) =>
+                logWarn('lead_state.telegram_alert_failed', {
+                    leadId,
+                    event: 'accepted_atomic',
+                    error: e instanceof Error ? e.message : String(e),
+                }),
+            );
+            void adjustLeadScore(leadId, 10).catch((e) =>
+                logWarn('lead_state.score_adjust_failed', {
+                    leadId,
+                    delta: 10,
+                    error: e instanceof Error ? e.message : String(e),
+                }),
+            );
         }
     }
 }

@@ -115,13 +115,17 @@ export async function pullFromHubSpot(): Promise<number> {
 
         for (let page = 0; page < MAX_PAGES; page++) {
             const searchBody: Record<string, unknown> = {
-                filterGroups: [{
-                    filters: [{
-                        propertyName: 'lastmodifieddate',
-                        operator: 'GTE',
-                        value: String(since),
-                    }],
-                }],
+                filterGroups: [
+                    {
+                        filters: [
+                            {
+                                propertyName: 'lastmodifieddate',
+                                operator: 'GTE',
+                                value: String(since),
+                            },
+                        ],
+                    },
+                ],
                 properties: ['linkedin_url', 'firstname', 'lastname', 'company'],
                 limit: 100,
             };

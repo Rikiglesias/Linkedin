@@ -200,7 +200,8 @@ export async function detectSessionCookieAnomaly(
             await logWarn('session_cookie.anomaly.missing', {
                 sessionDir,
                 previousHash,
-                message: 'Cookie li_at scomparso — possibile invalidazione server-side. Verifica manualmente il login su LinkedIn. Se funziona, il cookie verrà rigenerato al prossimo avvio.',
+                message:
+                    'Cookie li_at scomparso — possibile invalidazione server-side. Verifica manualmente il login su LinkedIn. Se funziona, il cookie verrà rigenerato al prossimo avvio.',
             });
             return { anomaly: 'COOKIE_MISSING', previous: previousHash, current: null };
         }
@@ -265,9 +266,7 @@ export function getSessionMaturity(sessionDir: string): SessionMaturityResult {
     }
 
     const createdMs = new Date(meta.createdAt).getTime();
-    const ageDays = Number.isFinite(createdMs)
-        ? (Date.now() - createdMs) / (24 * 60 * 60 * 1000)
-        : 0;
+    const ageDays = Number.isFinite(createdMs) ? (Date.now() - createdMs) / (24 * 60 * 60 * 1000) : 0;
 
     if (ageDays < 2) {
         return {
@@ -315,7 +314,9 @@ function generateInitialProfile(accountId: string): BehavioralProfile {
     const h = hash >>> 0;
 
     const warmupOrders: BehavioralProfile['preferredWarmupOrder'][] = [
-        'feed-first', 'notifications-first', 'search-first',
+        'feed-first',
+        'notifications-first',
+        'search-first',
     ];
 
     return {
@@ -361,9 +362,7 @@ export function getBehavioralProfile(sessionDir: string, accountId: string): Beh
     if (existing && existing.profileVersion === BEHAVIORAL_PROFILE_VERSION) {
         // C12: Drift max 1 volta al giorno — evita accumulo con riavvii frequenti.
         // Controlla se il meta è stato scritto oggi; se sì, ritorna il profilo as-is.
-        const lastWrittenDate = meta?.lastVerifiedAt
-            ? new Date(meta.lastVerifiedAt).toISOString().slice(0, 10)
-            : null;
+        const lastWrittenDate = meta?.lastVerifiedAt ? new Date(meta.lastVerifiedAt).toISOString().slice(0, 10) : null;
         const today = new Date().toISOString().slice(0, 10);
         if (lastWrittenDate === today) {
             return existing; // Già driftato oggi — ritorna senza modifiche

@@ -1,8 +1,18 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { parseIntEnv, parseFloatEnv, parseBoolEnv, parseStringEnv, parseCsvEnv, isAiRequestConfigured, isLocalAiEndpoint } from '../config/env';
+import {
+    parseIntEnv,
+    parseFloatEnv,
+    parseBoolEnv,
+    parseStringEnv,
+    parseCsvEnv,
+    isAiRequestConfigured,
+    isLocalAiEndpoint,
+} from '../config/env';
 
 const orig = { ...process.env };
-afterEach(() => { process.env = { ...orig }; });
+afterEach(() => {
+    process.env = { ...orig };
+});
 
 describe('config/env — comprehensive', () => {
     it('parseIntEnv Infinity → fallback', () => {

@@ -28,13 +28,15 @@ describe('accountBehaviorModel — advanced', () => {
         });
 
         it('NaN in input → non lancia', () => {
-            expect(() => calculateAccountTrustScore({
-                ssiScore: NaN,
-                ageDays: NaN,
-                acceptanceRatePct: NaN,
-                challengesLast7d: NaN,
-                pendingRatio: NaN,
-            })).not.toThrow();
+            expect(() =>
+                calculateAccountTrustScore({
+                    ssiScore: NaN,
+                    ageDays: NaN,
+                    acceptanceRatePct: NaN,
+                    challengesLast7d: NaN,
+                    pendingRatio: NaN,
+                }),
+            ).not.toThrow();
         });
 
         it('factors sono presenti nel risultato', () => {

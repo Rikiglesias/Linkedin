@@ -50,9 +50,9 @@ export async function isLoggedIn(page: Page): Promise<boolean> {
     }
 
     // Sales Navigator ha una navbar diversa da LinkedIn standard
-    const salesNavNav = await page.locator(
-        '.global-nav, [data-test-global-nav], .nav-main, #global-nav, .search-global-typeahead',
-    ).count();
+    const salesNavNav = await page
+        .locator('.global-nav, [data-test-global-nav], .nav-main, #global-nav, .search-global-typeahead')
+        .count();
     if (salesNavNav > 0) {
         return true;
     }
@@ -81,7 +81,9 @@ export async function checkLogin(page: Page): Promise<boolean> {
             break;
         } catch {
             if (attempt === 2) {
-                console.error(`[AUTH] Timeout navigazione al feed dopo 2 tentativi — proxy lento o LinkedIn irraggiungibile.`);
+                console.error(
+                    `[AUTH] Timeout navigazione al feed dopo 2 tentativi — proxy lento o LinkedIn irraggiungibile.`,
+                );
                 return false;
             }
             console.warn(`[AUTH] Timeout navigazione (tentativo ${attempt}/2) — riprovo...`);
@@ -108,7 +110,9 @@ export async function checkLogin(page: Page): Promise<boolean> {
         'sessionPasswordChallenge',
     ];
     if (verificationPatterns.some((p) => finalUrl.includes(p))) {
-        console.error('[AUTH] ❌ LinkedIn richiede verifica 2FA/TOTP. Azione: completare la verifica manualmente, poi riprovare.');
+        console.error(
+            '[AUTH] ❌ LinkedIn richiede verifica 2FA/TOTP. Azione: completare la verifica manualmente, poi riprovare.',
+        );
         // GAP6-H01: quarantineAccount + alert Telegram per visibilità immediata
         try {
             const { quarantineAccount } = await import('../risk/incidentManager');
@@ -117,7 +121,10 @@ export async function checkLogin(page: Page): Promise<boolean> {
                 url: finalUrl,
             });
         } catch (quarantineErr) {
-            console.error('[AUTH] ⚠️ quarantineAccount fallito — account NON in quarantena:', quarantineErr instanceof Error ? quarantineErr.message : String(quarantineErr));
+            console.error(
+                '[AUTH] ⚠️ quarantineAccount fallito — account NON in quarantena:',
+                quarantineErr instanceof Error ? quarantineErr.message : String(quarantineErr),
+            );
         }
         try {
             const { sendTelegramAlert } = await import('../telemetry/alerts');
@@ -126,7 +133,9 @@ export async function checkLogin(page: Page): Promise<boolean> {
                 'Login 2FA Required',
                 'critical',
             ).catch(() => null);
-        } catch { /* best-effort */ }
+        } catch {
+            /* best-effort */
+        }
         return false;
     }
     // Controlla anche lo status HTTP (429 = rate limited, 403 = bloccato)
@@ -161,7 +170,13 @@ export async function probeLinkedInStatus(page: Page): Promise<LinkedInProbeResu
         const httpStatus = response?.status() ?? 0;
 
         if (httpStatus === 429) {
-            return { ok: false, loggedIn: false, challengeDetected: false, responseTimeMs, reason: 'HTTP_429_RATE_LIMITED' };
+            return {
+                ok: false,
+                loggedIn: false,
+                challengeDetected: false,
+                responseTimeMs,
+                reason: 'HTTP_429_RATE_LIMITED',
+            };
         }
 
         const loggedIn = await isLoggedIn(page);
@@ -182,7 +197,13 @@ export async function probeLinkedInStatus(page: Page): Promise<LinkedInProbeResu
     } catch (error) {
         const responseTimeMs = Date.now() - startMs;
         const message = error instanceof Error ? error.message : String(error);
-        return { ok: false, loggedIn: false, challengeDetected: false, responseTimeMs, reason: `PROBE_ERROR: ${message}` };
+        return {
+            ok: false,
+            loggedIn: false,
+            challengeDetected: false,
+            responseTimeMs,
+            reason: `PROBE_ERROR: ${message}`,
+        };
     }
 }
 

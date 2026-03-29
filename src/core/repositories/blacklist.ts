@@ -61,12 +61,7 @@ export async function addToBlacklist(
     const result = await db.run(
         `INSERT OR IGNORE INTO blacklist (linkedin_url, company_domain, reason, added_by)
          VALUES (?, ?, ?, ?)`,
-        [
-            normalizeBlacklistUrl(linkedinUrl) ?? null,
-            normalizeBlacklistDomain(companyDomain) ?? null,
-            reason,
-            addedBy,
-        ],
+        [normalizeBlacklistUrl(linkedinUrl) ?? null, normalizeBlacklistDomain(companyDomain) ?? null, reason, addedBy],
     );
     return result.lastID ?? 0;
 }
@@ -117,5 +112,8 @@ function normalizeBlacklistDomain(domain: string | null | undefined): string | n
     const trimmed = domain.trim().toLowerCase();
     if (!trimmed) return null;
     // Rimuovi protocollo e www per matching coerente
-    return trimmed.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/+$/, '');
+    return trimmed
+        .replace(/^https?:\/\//, '')
+        .replace(/^www\./, '')
+        .replace(/\/+$/, '');
 }

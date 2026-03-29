@@ -41,10 +41,7 @@ export async function getUnusedPrebuiltMessage(leadId: number): Promise<Prebuilt
  */
 export async function markPrebuiltMessageUsed(messageId: number): Promise<void> {
     const db = await getDatabase();
-    await db.run(
-        `UPDATE prebuilt_messages SET used_at = DATETIME('now') WHERE id = ?`,
-        [messageId],
-    );
+    await db.run(`UPDATE prebuilt_messages SET used_at = DATETIME('now') WHERE id = ?`, [messageId]);
 }
 
 /**

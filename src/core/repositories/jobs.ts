@@ -61,7 +61,7 @@ export async function lockNextQueuedJob(
             `
             SELECT ${JOB_SELECT_COLUMNS} FROM jobs
             WHERE ${whereClauses.join('\n              AND ')}
-            ORDER BY priority ASC, ${db.isPostgres ? 'next_run_at + (random() * interval \'60 seconds\')' : 'next_run_at + (ABS(RANDOM()) % 60)'} ASC
+            ORDER BY priority ASC, ${db.isPostgres ? "next_run_at + (random() * interval '60 seconds')" : 'next_run_at + (ABS(RANDOM()) % 60)'} ASC
             LIMIT 1${db.isPostgres ? ' FOR UPDATE SKIP LOCKED' : ''}
         `,
             params,
@@ -290,7 +290,12 @@ export async function cancelExcessQueuedJobs(jobType: JobType, maxToKeep: number
     return result.changes ?? 0;
 }
 
-export async function recycleJob(jobId: number, newDelaySec: number, newPriority: number, recycleReason?: string): Promise<void> {
+export async function recycleJob(
+    jobId: number,
+    newDelaySec: number,
+    newPriority: number,
+    recycleReason?: string,
+): Promise<void> {
     const db = await getDatabase();
     const now = new Date();
     const nextRun = new Date(now.getTime() + newDelaySec * 1000).toISOString();

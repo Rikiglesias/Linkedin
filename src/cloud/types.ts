@@ -92,7 +92,7 @@ export interface CloudCampaignConfig {
 }
 
 export interface CloudEnrichmentData {
-    lead_id: number;       // Supabase leads.id (cloud)
+    lead_id: number; // Supabase leads.id (cloud)
     local_lead_id?: number | null; // SQLite leads.id (local)
     company_json?: Record<string, unknown> | null;
     phones_json?: Array<Record<string, unknown>> | null;

@@ -38,12 +38,8 @@ const BENCHMARK_ACCEPTANCE_RATE = { low: 15, average: 25, good: 35, excellent: 4
 const BENCHMARK_RESPONSE_RATE = { low: 10, average: 20, good: 30, excellent: 40 };
 
 export function generateClientReport(input: ClientReportInput): ClientReport {
-    const acceptanceRate = input.weeklyInvitesSent > 0
-        ? (input.weeklyAcceptances / input.weeklyInvitesSent) * 100
-        : 0;
-    const responseRate = input.weeklyMessagesSent > 0
-        ? (input.weeklyReplies / input.weeklyMessagesSent) * 100
-        : 0;
+    const acceptanceRate = input.weeklyInvitesSent > 0 ? (input.weeklyAcceptances / input.weeklyInvitesSent) * 100 : 0;
+    const responseRate = input.weeklyMessagesSent > 0 ? (input.weeklyReplies / input.weeklyMessagesSent) * 100 : 0;
 
     const suggestions: string[] = [];
     const benchmarkNotes: string[] = [];
@@ -56,9 +52,13 @@ export function generateClientReport(input: ClientReportInput): ClientReport {
     } else if (acceptanceRate >= BENCHMARK_ACCEPTANCE_RATE.average) {
         benchmarkNotes.push(`Acceptance rate ${acceptanceRate.toFixed(1)}% — nella media (25-35%)`);
     } else if (acceptanceRate >= BENCHMARK_ACCEPTANCE_RATE.low) {
-        benchmarkNotes.push(`Acceptance rate ${acceptanceRate.toFixed(1)}% — sotto la media. Suggerimento: migliora il profilo o il targeting.`);
+        benchmarkNotes.push(
+            `Acceptance rate ${acceptanceRate.toFixed(1)}% — sotto la media. Suggerimento: migliora il profilo o il targeting.`,
+        );
     } else if (input.weeklyInvitesSent > 0) {
-        benchmarkNotes.push(`Acceptance rate ${acceptanceRate.toFixed(1)}% — basso. Azione: rivedi il targeting dei lead.`);
+        benchmarkNotes.push(
+            `Acceptance rate ${acceptanceRate.toFixed(1)}% — basso. Azione: rivedi il targeting dei lead.`,
+        );
     }
 
     // ── Benchmark response rate ──
@@ -67,18 +67,24 @@ export function generateClientReport(input: ClientReportInput): ClientReport {
     } else if (responseRate >= BENCHMARK_RESPONSE_RATE.average) {
         benchmarkNotes.push(`Response rate ${responseRate.toFixed(1)}% — nella media`);
     } else if (input.weeklyMessagesSent > 0) {
-        benchmarkNotes.push(`Response rate ${responseRate.toFixed(1)}% — sotto la media. Suggerimento: personalizza i messaggi.`);
+        benchmarkNotes.push(
+            `Response rate ${responseRate.toFixed(1)}% — sotto la media. Suggerimento: personalizza i messaggi.`,
+        );
     }
 
     // ── Suggerimenti actionable ──
     if (input.pendingRatio > 0.55) {
-        suggestions.push(`Pending ratio alto (${(input.pendingRatio * 100).toFixed(0)}%) — ritira gli inviti vecchi per migliorare.`);
+        suggestions.push(
+            `Pending ratio alto (${(input.pendingRatio * 100).toFixed(0)}%) — ritira gli inviti vecchi per migliorare.`,
+        );
     }
     if (input.expiredInvitesCount > 10) {
         suggestions.push(`${input.expiredInvitesCount} inviti scaduti (>21 giorni) — il ritiro automatico li pulisce.`);
     }
     if (input.hotLeadsCount > 0) {
-        suggestions.push(`${input.hotLeadsCount} lead caldi questa settimana — rispondi entro 24h per massimizzare la conversione.`);
+        suggestions.push(
+            `${input.hotLeadsCount} lead caldi questa settimana — rispondi entro 24h per massimizzare la conversione.`,
+        );
     }
     if (input.riskScore > 50) {
         suggestions.push('Risk score alto — il sistema sta automaticamente rallentando per proteggere gli account.');
@@ -96,13 +102,19 @@ export function generateClientReport(input: ClientReportInput): ClientReport {
         const best = sorted[0];
         const worst = sorted[sorted.length - 1];
         if (best && worst && best.acceptanceRate > worst.acceptanceRate * 2) {
-            suggestions.push(`La lista "${best.name}" performa 2x meglio di "${worst.name}" — concentra il budget sulla migliore.`);
+            suggestions.push(
+                `La lista "${best.name}" performa 2x meglio di "${worst.name}" — concentra il budget sulla migliore.`,
+            );
         }
     }
 
     // ── Grade complessivo ──
     let grade: ClientReport['overallGrade'] = 'B';
-    if (acceptanceRate >= BENCHMARK_ACCEPTANCE_RATE.good && responseRate >= BENCHMARK_RESPONSE_RATE.average && input.riskScore < 30) {
+    if (
+        acceptanceRate >= BENCHMARK_ACCEPTANCE_RATE.good &&
+        responseRate >= BENCHMARK_RESPONSE_RATE.average &&
+        input.riskScore < 30
+    ) {
         grade = 'A';
     } else if (acceptanceRate >= BENCHMARK_ACCEPTANCE_RATE.average && input.riskScore < 50) {
         grade = 'B';

@@ -56,12 +56,8 @@ async function selectAccount(cliAccountId?: string): Promise<string | undefined>
     }
     console.log('');
 
-    const accountIds = accounts.map(a => a.id);
-    const selected = await askChoice(
-        '  Quale account vuoi utilizzare?',
-        accountIds,
-        accountIds[0],
-    );
+    const accountIds = accounts.map((a) => a.id);
+    const selected = await askChoice('  Quale account vuoi utilizzare?', accountIds, accountIds[0]);
     console.log(`  -> Account selezionato: ${selected}`);
     return selected;
 }
@@ -124,19 +120,26 @@ export async function collectDbStats(listFilter?: string): Promise<PreflightDbSt
         yesterday.setDate(yesterday.getDate() - 1);
         const yStr = yesterday.toISOString().slice(0, 10);
         const yRow = await db.get<{
-            invites_sent: number; messages_sent: number;
-            acceptances: number; challenges_count: number;
-        }>(`SELECT COALESCE(SUM(invites_sent),0) as invites_sent, COALESCE(SUM(messages_sent),0) as messages_sent,
+            invites_sent: number;
+            messages_sent: number;
+            acceptances: number;
+            challenges_count: number;
+        }>(
+            `SELECT COALESCE(SUM(invites_sent),0) as invites_sent, COALESCE(SUM(messages_sent),0) as messages_sent,
             COALESCE(SUM(acceptances),0) as acceptances, COALESCE(SUM(challenges_count),0) as challenges_count
-            FROM daily_stats WHERE date = ?`, [yStr]);
+            FROM daily_stats WHERE date = ?`,
+            [yStr],
+        );
         if (yRow && (yRow.invites_sent > 0 || yRow.messages_sent > 0 || yRow.acceptances > 0)) {
             // Lead delta: quanti lead sono stati creati oggi vs ieri
             const todayStr = getLocalDateString();
             const createdToday = await db.get<{ cnt: number }>(
-                `SELECT COUNT(*) as cnt FROM leads WHERE DATE(created_at) = ?`, [todayStr],
+                `SELECT COUNT(*) as cnt FROM leads WHERE DATE(created_at) = ?`,
+                [todayStr],
             );
             const createdYesterday = await db.get<{ cnt: number }>(
-                `SELECT COUNT(*) as cnt FROM leads WHERE DATE(created_at) = ?`, [yStr],
+                `SELECT COUNT(*) as cnt FROM leads WHERE DATE(created_at) = ?`,
+                [yStr],
             );
             trend = {
                 invitesYesterday: yRow.invites_sent,
@@ -146,7 +149,9 @@ export async function collectDbStats(listFilter?: string): Promise<PreflightDbSt
                 leadsDelta: (createdToday?.cnt ?? 0) - (createdYesterday?.cnt ?? 0),
             };
         }
-    } catch { /* trend is best-effort */ }
+    } catch {
+        /* trend is best-effort */
+    }
 
     return {
         totalLeads: total,
@@ -263,9 +268,7 @@ export function appendProxyReputationWarning(warnings: PreflightWarning[], cfgSt
  *   31-60 -> CAUTION (procedere con budget ridotto)
  *   61+   -> STOP (non procedere, rischio ban alto)
  */
-export async function computeSessionRiskLevel(
-    cfgStatus: PreflightConfigStatus,
-): Promise<SessionRiskAssessment> {
+export async function computeSessionRiskLevel(cfgStatus: PreflightConfigStatus): Promise<SessionRiskAssessment> {
     const localDate = getLocalDateString();
     const db = await getDatabase();
 
@@ -285,9 +288,7 @@ export async function computeSessionRiskLevel(
         FROM leads
     `);
     const pendingTotal = pendingRow?.total ?? 0;
-    const pendingRatio = pendingTotal > 0
-        ? (pendingRow?.pending ?? 0) / pendingTotal
-        : 0;
+    const pendingRatio = pendingTotal > 0 ? (pendingRow?.pending ?? 0) / pendingTotal : 0;
     const pendingFactor = Math.min(25, Math.floor(pendingRatio * 40));
 
     // Factor 3: Error rate oggi — peso 20
@@ -297,9 +298,10 @@ export async function computeSessionRiskLevel(
     const errorFactor = Math.min(20, Math.floor(errorRate * 50));
 
     // Factor 4: Proxy reputation — peso 15
-    const proxyFactor = cfgStatus.proxyIpReputation && !cfgStatus.proxyIpReputation.isSafe
-        ? Math.min(15, Math.floor(cfgStatus.proxyIpReputation.abuseScore / 7))
-        : 0;
+    const proxyFactor =
+        cfgStatus.proxyIpReputation && !cfgStatus.proxyIpReputation.isSafe
+            ? Math.min(15, Math.floor(cfgStatus.proxyIpReputation.abuseScore / 7))
+            : 0;
 
     // Factor 5: Tempo dall'ultimo run — peso 10
     const riskAccounts = getRuntimeAccountProfiles();
@@ -310,8 +312,12 @@ export async function computeSessionRiskLevel(
             const parsedMs = Date.parse(lastSessionTs);
             if (Number.isFinite(parsedMs)) {
                 const hoursSince = (Date.now() - parsedMs) / 3600000;
-                if (hoursSince < 2) { frequencyFactor = 10; break; }
-                else if (hoursSince < 6 && frequencyFactor < 5) { frequencyFactor = 5; }
+                if (hoursSince < 2) {
+                    frequencyFactor = 10;
+                    break;
+                } else if (hoursSince < 6 && frequencyFactor < 5) {
+                    frequencyFactor = 5;
+                }
             }
         }
     }
@@ -329,7 +335,10 @@ export async function computeSessionRiskLevel(
         diskSpace: diskFactor,
     };
 
-    const score = Math.min(100, challengeFactor + pendingFactor + errorFactor + proxyFactor + frequencyFactor + diskFactor);
+    const score = Math.min(
+        100,
+        challengeFactor + pendingFactor + errorFactor + proxyFactor + frequencyFactor + diskFactor,
+    );
 
     let level: 'GO' | 'CAUTION' | 'STOP';
     let recommendation: string;
@@ -350,7 +359,7 @@ export async function computeSessionRiskLevel(
         const history: Array<{ date: string; score: number }> = historyRaw ? JSON.parse(historyRaw) : [];
         const today = getLocalDateString();
         // Replace today's entry if exists, otherwise push
-        const existingIdx = history.findIndex(h => h.date === today);
+        const existingIdx = history.findIndex((h) => h.date === today);
         if (existingIdx >= 0) {
             history[existingIdx].score = score;
         } else {
@@ -359,7 +368,9 @@ export async function computeSessionRiskLevel(
         // Keep last 10 entries
         const trimmed = history.slice(-10);
         await setRuntimeFlag('risk_score_history', JSON.stringify(trimmed));
-    } catch { /* best-effort */ }
+    } catch {
+        /* best-effort */
+    }
 
     return { level, score, factors, recommendation };
 }
@@ -398,9 +409,8 @@ async function runAiAdvisor(
             .slice(0, 10)
             .map(([l, c]) => `"${l}": ${c}`)
             .join(', ');
-        const warningsSummary = warnings.length > 0
-            ? warnings.map(w => `[${w.level}] ${w.message}`).join('\n')
-            : 'Nessun warning';
+        const warningsSummary =
+            warnings.length > 0 ? warnings.map((w) => `[${w.level}] ${w.message}`).join('\n') : 'Nessun warning';
         const riskFactors = Object.entries(riskAssessment.factors)
             .filter(([, v]) => v > 0)
             .map(([k, v]) => `${k}=${v}`)
@@ -418,10 +428,15 @@ async function runAiAdvisor(
             if (historyRaw) {
                 const history: Array<{ date: string; score: number }> = JSON.parse(historyRaw);
                 if (history.length >= 2) {
-                    riskTrendSection = `\n- Storico risk: ${history.slice(-5).map(h => `${h.date}=${h.score}`).join(', ')}`;
+                    riskTrendSection = `\n- Storico risk: ${history
+                        .slice(-5)
+                        .map((h) => `${h.date}=${h.score}`)
+                        .join(', ')}`;
                 }
             }
-        } catch { /* best-effort */ }
+        } catch {
+            /* best-effort */
+        }
 
         const prompt = `Sei l'AI advisor di un sistema di automazione LinkedIn. Analizza lo stato del sistema e decidi se il workflow "${workflowName}" deve procedere.
 
@@ -429,7 +444,7 @@ STATO DATABASE (L2):
 - Lead totali: ${dbStats.totalLeads}
 - Per status: ${statusBreakdown || 'nessuno'}
 - Per lista: ${listBreakdown || 'nessuna'}
-- Con email: ${dbStats.withEmail}/${dbStats.totalLeads} (${dbStats.totalLeads > 0 ? Math.round(dbStats.withEmail / dbStats.totalLeads * 100) : 0}%)
+- Con email: ${dbStats.withEmail}/${dbStats.totalLeads} (${dbStats.totalLeads > 0 ? Math.round((dbStats.withEmail / dbStats.totalLeads) * 100) : 0}%)
 - Con job_title: ${dbStats.withJobTitle}/${dbStats.totalLeads}
 - Con score: ${dbStats.withScore}/${dbStats.totalLeads}
 - Ultimo sync: ${dbStats.lastSyncAt || 'mai'}
@@ -494,22 +509,23 @@ Regole:
         };
 
         const rec = parsed.recommendation?.toUpperCase();
-        const recommendation = rec === 'ABORT' ? 'ABORT'
-            : rec === 'PROCEED_CAUTION' ? 'PROCEED_CAUTION'
-            : 'PROCEED';
+        const recommendation = rec === 'ABORT' ? 'ABORT' : rec === 'PROCEED_CAUTION' ? 'PROCEED_CAUTION' : 'PROCEED';
 
         // Parse suggestedParams — only include valid numeric values
         let suggestedParams: AiAdvisorResult['suggestedParams'];
         if (parsed.suggestedParams && typeof parsed.suggestedParams === 'object') {
             const sp = parsed.suggestedParams;
-            const hasAny = (typeof sp.limit === 'number') ||
-                (typeof sp.budgetInvites === 'number') ||
-                (typeof sp.budgetMessages === 'number');
+            const hasAny =
+                typeof sp.limit === 'number' ||
+                typeof sp.budgetInvites === 'number' ||
+                typeof sp.budgetMessages === 'number';
             if (hasAny) {
                 suggestedParams = {
                     limit: typeof sp.limit === 'number' && sp.limit > 0 ? sp.limit : null,
-                    budgetInvites: typeof sp.budgetInvites === 'number' && sp.budgetInvites > 0 ? sp.budgetInvites : null,
-                    budgetMessages: typeof sp.budgetMessages === 'number' && sp.budgetMessages > 0 ? sp.budgetMessages : null,
+                    budgetInvites:
+                        typeof sp.budgetInvites === 'number' && sp.budgetInvites > 0 ? sp.budgetInvites : null,
+                    budgetMessages:
+                        typeof sp.budgetMessages === 'number' && sp.budgetMessages > 0 ? sp.budgetMessages : null,
                 };
             }
         }
@@ -518,9 +534,7 @@ Regole:
             available: true,
             recommendation,
             reasoning: parsed.reasoning ?? '',
-            suggestedActions: Array.isArray(parsed.suggestedActions)
-                ? parsed.suggestedActions.slice(0, 3)
-                : [],
+            suggestedActions: Array.isArray(parsed.suggestedActions) ? parsed.suggestedActions.slice(0, 3) : [],
             suggestedParams,
         };
     } catch {
@@ -536,9 +550,7 @@ function checkMark(ok: boolean): string {
 }
 
 function displayDbStats(stats: PreflightDbStats, listFilter?: string): void {
-    const entries: Array<[string, string]> = [
-        ['Lead totali nel DB:', String(stats.totalLeads)],
-    ];
+    const entries: Array<[string, string]> = [['Lead totali nel DB:', String(stats.totalLeads)]];
 
     if (listFilter && stats.byList[listFilter] !== undefined && stats.byList[listFilter] !== null) {
         entries.push([`Di cui in "${listFilter}":`, String(stats.byList[listFilter])]);
@@ -565,7 +577,7 @@ function displayDbStats(stats: PreflightDbStats, listFilter?: string): void {
     // Trend vs ieri
     if (stats.trend) {
         const t = stats.trend;
-        const arrow = (v: number | null) => v === null ? '' : v > 0 ? ` (+${v})` : v < 0 ? ` (${v})` : ' (=)';
+        const arrow = (v: number | null) => (v === null ? '' : v > 0 ? ` (+${v})` : v < 0 ? ` (${v})` : ' (=)');
         entries.push(['', '']);
         entries.push(['TREND vs IERI:', '']);
         entries.push(['  Inviti ieri:', `${t.invitesYesterday}`]);
@@ -583,16 +595,37 @@ function displayDbStats(stats: PreflightDbStats, listFilter?: string): void {
 function displayConfigStatus(cs: PreflightConfigStatus): void {
     const entries: Array<[string, string]> = [
         ['Apollo API:', checkMark(cs.apolloConfigured) + ' ' + (cs.apolloConfigured ? 'configurato' : 'mancante')],
-        ['Hunter API:', checkMark(cs.hunterConfigured) + ' ' + (cs.hunterConfigured ? 'configurato' : 'mancante (fallback disabilitato)')],
-        ['Clearbit API:', checkMark(cs.clearbitConfigured) + ' ' + (cs.clearbitConfigured ? 'configurato' : 'mancante')],
+        [
+            'Hunter API:',
+            checkMark(cs.hunterConfigured) +
+                ' ' +
+                (cs.hunterConfigured ? 'configurato' : 'mancante (fallback disabilitato)'),
+        ],
+        [
+            'Clearbit API:',
+            checkMark(cs.clearbitConfigured) + ' ' + (cs.clearbitConfigured ? 'configurato' : 'mancante'),
+        ],
         ['AI Personalization:', checkMark(cs.aiConfigured) + ' ' + (cs.aiConfigured ? 'attivo' : 'mancante')],
-        ['Supabase Cloud:', checkMark(cs.supabaseConfigured) + ' ' + (cs.supabaseConfigured ? 'attivo' : 'non configurato')],
+        [
+            'Supabase Cloud:',
+            checkMark(cs.supabaseConfigured) + ' ' + (cs.supabaseConfigured ? 'attivo' : 'non configurato'),
+        ],
         ['Proxy:', checkMark(cs.proxyConfigured) + ' ' + (cs.proxyConfigured ? 'configurato' : 'diretto (no proxy)')],
-        ...(cs.proxyIpReputation ? [['Proxy IP Reputation:', cs.proxyIpReputation.isSafe
-            ? `${checkMark(true)} ${cs.proxyIpReputation.ip} — score ${cs.proxyIpReputation.abuseScore}/100 (${cs.proxyIpReputation.isp}, ${cs.proxyIpReputation.country})`
-            : `${checkMark(false)} ${cs.proxyIpReputation.ip} — BLACKLISTED score ${cs.proxyIpReputation.abuseScore}/100 (${cs.proxyIpReputation.isp})`] as [string, string]] : []),
+        ...(cs.proxyIpReputation
+            ? [
+                  [
+                      'Proxy IP Reputation:',
+                      cs.proxyIpReputation.isSafe
+                          ? `${checkMark(true)} ${cs.proxyIpReputation.ip} — score ${cs.proxyIpReputation.abuseScore}/100 (${cs.proxyIpReputation.isp}, ${cs.proxyIpReputation.country})`
+                          : `${checkMark(false)} ${cs.proxyIpReputation.ip} — BLACKLISTED score ${cs.proxyIpReputation.abuseScore}/100 (${cs.proxyIpReputation.isp})`,
+                  ] as [string, string],
+              ]
+            : []),
         ['Growth Model:', checkMark(cs.growthModelEnabled) + ' ' + (cs.growthModelEnabled ? 'attivo' : 'disabilitato')],
-        ['Weekly Strategy:', checkMark(cs.weeklyStrategyEnabled) + ' ' + (cs.weeklyStrategyEnabled ? 'attivo' : 'disabilitato')],
+        [
+            'Weekly Strategy:',
+            checkMark(cs.weeklyStrategyEnabled) + ' ' + (cs.weeklyStrategyEnabled ? 'attivo' : 'disabilitato'),
+        ],
         ['Budget inviti:', `${cs.invitesSentToday}/${cs.budgetInvites} oggi`],
         ['Budget inviti sett.:', `${cs.weeklyInvitesSent}/${cs.weeklyInviteLimit} questa settimana`],
         ['Budget messaggi:', `${cs.messagesSentToday}/${cs.budgetMessages} oggi`],
@@ -615,12 +648,14 @@ function displayWarnings(warnings: PreflightWarning[]): void {
 function displayAiAdvice(advice: AiAdvisorResult): void {
     if (!advice.available) return;
 
-    const icon = advice.recommendation === 'PROCEED' ? '[OK]'
-        : advice.recommendation === 'PROCEED_CAUTION' ? '[!]'
-        : '[!!!]';
-    const label = advice.recommendation === 'PROCEED' ? 'PROCEDERE'
-        : advice.recommendation === 'PROCEED_CAUTION' ? 'PROCEDERE CON CAUTELA'
-        : 'NON PROCEDERE';
+    const icon =
+        advice.recommendation === 'PROCEED' ? '[OK]' : advice.recommendation === 'PROCEED_CAUTION' ? '[!]' : '[!!!]';
+    const label =
+        advice.recommendation === 'PROCEED'
+            ? 'PROCEDERE'
+            : advice.recommendation === 'PROCEED_CAUTION'
+              ? 'PROCEDERE CON CAUTELA'
+              : 'NON PROCEDERE';
 
     console.log('');
     console.log(`  L5: AI ADVISOR — ${icon} ${label}`);
@@ -637,8 +672,10 @@ function displayAiAdvice(advice: AiAdvisorResult): void {
         const sp = advice.suggestedParams;
         const parts: string[] = [];
         if (sp.limit !== null && sp.limit !== undefined) parts.push(`limit=${sp.limit}`);
-        if (sp.budgetInvites !== null && sp.budgetInvites !== undefined) parts.push(`budgetInvites=${sp.budgetInvites}`);
-        if (sp.budgetMessages !== null && sp.budgetMessages !== undefined) parts.push(`budgetMessages=${sp.budgetMessages}`);
+        if (sp.budgetInvites !== null && sp.budgetInvites !== undefined)
+            parts.push(`budgetInvites=${sp.budgetInvites}`);
+        if (sp.budgetMessages !== null && sp.budgetMessages !== undefined)
+            parts.push(`budgetMessages=${sp.budgetMessages}`);
         if (parts.length > 0) {
             console.log(`      Parametri suggeriti: ${parts.join(', ')}`);
         }
@@ -701,7 +738,9 @@ async function runAntiBanChecklist(
     // Sessione recente: chiedi solo se < minHours
     if (recentSessionHours !== null && recentSessionHours < minHours) {
         const minLeft = Math.ceil((minHours - recentSessionHours) * 60);
-        const proceedAnyway = await askConfirmation(`    [!] Ultima sessione ${recentSessionHours.toFixed(1)}h fa (consigliato ${minHours}h). Procedere comunque? [y/N] `);
+        const proceedAnyway = await askConfirmation(
+            `    [!] Ultima sessione ${recentSessionHours.toFixed(1)}h fa (consigliato ${minHours}h). Procedere comunque? [y/N] `,
+        );
         if (!proceedAnyway) {
             console.log(`      -> Attendi ~${minLeft} minuti prima della prossima sessione.`);
             return false;
@@ -709,7 +748,7 @@ async function runAntiBanChecklist(
     }
 
     // Pending ratio alto: offri di ritirare inviti vecchi
-    if (isOutreach && pendingRatio > 0.50 && pendingCount > 10) {
+    if (isOutreach && pendingRatio > 0.5 && pendingCount > 10) {
         console.log(`    [!] Pending ratio: ${Math.round(pendingRatio * 100)}% (${pendingCount} inviti in attesa)`);
         console.log(`        LinkedIn flagga account con pending ratio >65%.`);
         console.log(`        Consiglio: ritira inviti vecchi con "bot.ps1 run check" prima di inviare nuovi.`);
@@ -725,7 +764,9 @@ async function runAntiBanChecklist(
 
     // Lead incompleti: suggerisci enrichment
     if (totalLeads > 10 && leadsWithoutEmail > totalLeads * 0.7) {
-        console.log(`    [i] ${leadsWithoutEmail}/${totalLeads} lead senza email — l'enrichment migliorera' la personalizzazione.`);
+        console.log(
+            `    [i] ${leadsWithoutEmail}/${totalLeads} lead senza email — l'enrichment migliorera' la personalizzazione.`,
+        );
         console.log('');
     }
 
@@ -744,7 +785,7 @@ async function runAntiBanChecklist(
     console.log('  TIPS SESSIONE:');
     console.log('    [i] CAPTCHA: il bot li risolve automaticamente (GPT-5.4 + Ollama fallback)');
     if (isFirstSessionToday) {
-        console.log('    [i] Prima sessione oggi: il bot fara\' warmup (feed + notifiche) prima di agire');
+        console.log("    [i] Prima sessione oggi: il bot fara' warmup (feed + notifiche) prima di agire");
     }
     console.log(`    [i] Dopo la sessione: aspetta almeno ${minHours}h prima di usare LinkedIn`);
     console.log('');
@@ -758,7 +799,11 @@ export interface PreflightConfig {
     workflowName: string;
     questions: PreflightQuestion[];
     listFilter?: string;
-    generateWarnings: (stats: PreflightDbStats, config: PreflightConfigStatus, answers: Record<string, string>) => PreflightWarning[];
+    generateWarnings: (
+        stats: PreflightDbStats,
+        config: PreflightConfigStatus,
+        answers: Record<string, string>,
+    ) => PreflightWarning[];
     skipPreflight?: boolean;
     cliOverrides?: Record<string, string>;
     /** L1: accountId da CLI --account flag. */
@@ -802,12 +847,15 @@ export async function runPreflight(pfConfig: PreflightConfig): Promise<Preflight
         { cmd: 'send-invites', label: 'Invita lead pronti' },
         { cmd: 'send-messages', label: 'Messaggia chi ha accettato' },
     ];
-    const currentStep = funnelSteps.findIndex(s => s.cmd === pfConfig.workflowName);
+    const currentStep = funnelSteps.findIndex((s) => s.cmd === pfConfig.workflowName);
     if (currentStep >= 0) {
         console.log('');
-        console.log('  FUNNEL: ' + funnelSteps.map((s, i) =>
-            i === currentStep ? `[${i + 1}. ${s.label}]` : `${i + 1}. ${s.label}`,
-        ).join(' → '));
+        console.log(
+            '  FUNNEL: ' +
+                funnelSteps
+                    .map((s, i) => (i === currentStep ? `[${i + 1}. ${s.label}]` : `${i + 1}. ${s.label}`))
+                    .join(' → '),
+        );
     }
 
     // ── L1: Account Selection ────────────────────────────────────────────────
@@ -832,7 +880,12 @@ export async function runPreflight(pfConfig: PreflightConfig): Promise<Preflight
             configStatus,
             warnings: [],
             confirmed: false,
-            riskAssessment: { level: 'STOP', score: 100, factors: { checklist: 100 }, recommendation: 'Checklist anti-ban non superata' },
+            riskAssessment: {
+                level: 'STOP',
+                score: 100,
+                factors: { checklist: 100 },
+                recommendation: 'Checklist anti-ban non superata',
+            },
             selectedAccountId,
         };
     }
@@ -851,7 +904,9 @@ export async function runPreflight(pfConfig: PreflightConfig): Promise<Preflight
             const choice = await askChoice(`  ${q.prompt}`, q.choices, q.defaultValue ?? q.choices[0]);
             answers[q.id] = choice;
         } else {
-            const raw = await readLineFromStdin(`  ${q.prompt}${q.defaultValue ? ` (default: ${q.defaultValue})` : ''}: `);
+            const raw = await readLineFromStdin(
+                `  ${q.prompt}${q.defaultValue ? ` (default: ${q.defaultValue})` : ''}: `,
+            );
             answers[q.id] = raw || q.defaultValue || '';
         }
     }
@@ -894,28 +949,35 @@ export async function runPreflight(pfConfig: PreflightConfig): Promise<Preflight
                 console.log(`      Trend: ${trendArrow} (${prev.date}: ${prev.score} → oggi: ${riskAssessment.score})`);
             }
         }
-    } catch { /* best-effort */ }
+    } catch {
+        /* best-effort */
+    }
 
     // ── L5: AI Advisor ───────────────────────────────────────────────────────
     let aiAdvice: AiAdvisorResult | undefined;
     if (configStatus.aiConfigured) {
         console.log('');
         console.log('  L5: AI Advisor in analisi...');
-        aiAdvice = await runAiAdvisor(
-            pfConfig.workflowName,
-            dbStats,
-            configStatus,
-            riskAssessment,
-            warnings,
-        );
+        aiAdvice = await runAiAdvisor(pfConfig.workflowName, dbStats, configStatus, riskAssessment, warnings);
         displayAiAdvice(aiAdvice);
 
         // AI dice ABORT: blocca (ma l'utente puo' forzare)
         if (aiAdvice.available && aiAdvice.recommendation === 'ABORT') {
             console.log('');
-            const forceOverride = await askConfirmation('  [!!!] L\'AI consiglia di NON procedere. Vuoi forzare comunque? [y/N] ');
+            const forceOverride = await askConfirmation(
+                "  [!!!] L'AI consiglia di NON procedere. Vuoi forzare comunque? [y/N] ",
+            );
             if (!forceOverride) {
-                return { answers, dbStats, configStatus, warnings, confirmed: false, riskAssessment, selectedAccountId, aiAdvice };
+                return {
+                    answers,
+                    dbStats,
+                    configStatus,
+                    warnings,
+                    confirmed: false,
+                    riskAssessment,
+                    selectedAccountId,
+                    aiAdvice,
+                };
             }
             console.log('  -> Override utente: si procede nonostante il consiglio AI.');
         }
@@ -925,14 +987,32 @@ export async function runPreflight(pfConfig: PreflightConfig): Promise<Preflight
     // STOP blocca l'esecuzione
     if (riskAssessment.level === 'STOP') {
         console.log('  [!!!] Risk level STOP — sessione NON sicura. Risolvere prima di procedere.');
-        return { answers, dbStats, configStatus, warnings, confirmed: false, riskAssessment, selectedAccountId, aiAdvice };
+        return {
+            answers,
+            dbStats,
+            configStatus,
+            warnings,
+            confirmed: false,
+            riskAssessment,
+            selectedAccountId,
+            aiAdvice,
+        };
     }
 
     // Critical warnings block execution
     const hasCritical = warnings.some((w) => w.level === 'critical');
     if (hasCritical) {
         console.log('  [!!!] Condizioni critiche rilevate. Risolvere prima di procedere.');
-        return { answers, dbStats, configStatus, warnings, confirmed: false, riskAssessment, selectedAccountId, aiAdvice };
+        return {
+            answers,
+            dbStats,
+            configStatus,
+            warnings,
+            confirmed: false,
+            riskAssessment,
+            selectedAccountId,
+            aiAdvice,
+        };
     }
 
     const confirmed = await askConfirmation('  Procedo? [Y/n] ');

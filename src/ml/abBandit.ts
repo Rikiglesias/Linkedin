@@ -136,7 +136,6 @@ export function computeBayesianBanditScore(sent: number, accepted: number, total
     return computePosteriorStats(sent, accepted, totalSent).bayesScore;
 }
 
-
 function buildStatsMap(rows: BanditDecisionInputRow[]): Map<string, BanditDecisionInputRow> {
     return new Map(rows.map((row) => [row.variantId, row]));
 }

@@ -37,10 +37,7 @@ export interface LoopCycleResult {
  * - `skip`: logga l'errore e continua con il task successivo
  * - `abort`: logga l'errore e interrompe il ciclo
  */
-export async function runLoopCycle(
-    tasks: readonly LoopSubTask[],
-    ctx: LoopCycleContext,
-): Promise<LoopCycleResult> {
+export async function runLoopCycle(tasks: readonly LoopSubTask[], ctx: LoopCycleContext): Promise<LoopCycleResult> {
     const result: LoopCycleResult = {
         tasksRun: [],
         tasksSkipped: [],

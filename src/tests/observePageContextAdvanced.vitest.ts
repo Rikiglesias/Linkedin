@@ -40,6 +40,8 @@ describe('observePageContext — hasBlockingIssue advanced', () => {
     });
 
     it('URL /404 → bloccante (profilo eliminato)', () => {
-        expect(hasBlockingIssue({ ...base, currentUrl: 'https://www.linkedin.com/404', isProfileDeleted: true }).blocked).toBe(true);
+        expect(
+            hasBlockingIssue({ ...base, currentUrl: 'https://www.linkedin.com/404', isProfileDeleted: true }).blocked,
+        ).toBe(true);
     });
 });

@@ -8,10 +8,21 @@
 
 const TIMEZONE_MAP: ReadonlyArray<{ patterns: RegExp; offsetHours: number }> = [
     // Nord America
-    { patterns: /\b(new york|boston|miami|washington|philadelphia|atlanta|charlotte|orlando|tampa|detroit|pittsburgh|cleveland|cincinnati|nashville|est\b)/i, offsetHours: -5 },
-    { patterns: /\b(chicago|houston|dallas|austin|san antonio|minneapolis|milwaukee|st\.? louis|kansas city|memphis|new orleans|cst\b)/i, offsetHours: -6 },
+    {
+        patterns:
+            /\b(new york|boston|miami|washington|philadelphia|atlanta|charlotte|orlando|tampa|detroit|pittsburgh|cleveland|cincinnati|nashville|est\b)/i,
+        offsetHours: -5,
+    },
+    {
+        patterns:
+            /\b(chicago|houston|dallas|austin|san antonio|minneapolis|milwaukee|st\.? louis|kansas city|memphis|new orleans|cst\b)/i,
+        offsetHours: -6,
+    },
     { patterns: /\b(denver|phoenix|salt lake|albuquerque|el paso|mst\b)/i, offsetHours: -7 },
-    { patterns: /\b(los angeles|san francisco|seattle|portland|san diego|las vegas|sacramento|pst\b)/i, offsetHours: -8 },
+    {
+        patterns: /\b(los angeles|san francisco|seattle|portland|san diego|las vegas|sacramento|pst\b)/i,
+        offsetHours: -8,
+    },
     { patterns: /\b(anchorage|alaska)/i, offsetHours: -9 },
     { patterns: /\b(honolulu|hawaii)/i, offsetHours: -10 },
     { patterns: /\b(toronto|montreal|ottawa|quebec)/i, offsetHours: -5 },
@@ -24,9 +35,20 @@ const TIMEZONE_MAP: ReadonlyArray<{ patterns: RegExp; offsetHours: number }> = [
     { patterns: /\b(lima|per[uú])/i, offsetHours: -5 },
 
     // Europa Occidentale (UTC+1 CET)
-    { patterns: /\b(milan|rome|roma|naples|napoli|turin|torino|florence|firenze|bologna|genova|palermo|catania|bari|padova|brescia|verona|italia|italy)/i, offsetHours: 1 },
-    { patterns: /\b(paris|lyon|marseille|toulouse|nice|nantes|bordeaux|lille|strasbourg|france|francia)/i, offsetHours: 1 },
-    { patterns: /\b(berlin|munich|m[uü]nchen|hamburg|frankfurt|cologne|k[oö]ln|düsseldorf|stuttgart|dortmund|essen|germany|deutschland|germania)/i, offsetHours: 1 },
+    {
+        patterns:
+            /\b(milan|rome|roma|naples|napoli|turin|torino|florence|firenze|bologna|genova|palermo|catania|bari|padova|brescia|verona|italia|italy)/i,
+        offsetHours: 1,
+    },
+    {
+        patterns: /\b(paris|lyon|marseille|toulouse|nice|nantes|bordeaux|lille|strasbourg|france|francia)/i,
+        offsetHours: 1,
+    },
+    {
+        patterns:
+            /\b(berlin|munich|m[uü]nchen|hamburg|frankfurt|cologne|k[oö]ln|düsseldorf|stuttgart|dortmund|essen|germany|deutschland|germania)/i,
+        offsetHours: 1,
+    },
     { patterns: /\b(madrid|barcelona|valencia|sevilla|bilbao|malaga|spain|españa|spagna)/i, offsetHours: 1 },
     { patterns: /\b(amsterdam|rotterdam|den haag|utrecht|netherlands|nederland|olanda|paesi bassi)/i, offsetHours: 1 },
     { patterns: /\b(brussels|bruxelles|antwerp|belgium|belgio|belgique)/i, offsetHours: 1 },
@@ -42,7 +64,11 @@ const TIMEZONE_MAP: ReadonlyArray<{ patterns: RegExp; offsetHours: number }> = [
     { patterns: /\b(prague|praga|czech|repubblica ceca)/i, offsetHours: 1 },
 
     // UK + Irlanda (UTC+0)
-    { patterns: /\b(london|manchester|birmingham|leeds|glasgow|edinburgh|bristol|liverpool|uk|united kingdom|england|scotland|wales)/i, offsetHours: 0 },
+    {
+        patterns:
+            /\b(london|manchester|birmingham|leeds|glasgow|edinburgh|bristol|liverpool|uk|united kingdom|england|scotland|wales)/i,
+        offsetHours: 0,
+    },
     { patterns: /\b(dublin|cork|ireland|irlanda)/i, offsetHours: 0 },
 
     // Medio Oriente
@@ -106,7 +132,7 @@ export function computeTimezoneDelaySec(location: string | null | undefined): nu
 
     const now = new Date();
     const utcHour = now.getUTCHours() + now.getUTCMinutes() / 60;
-    const leadLocalHour = ((utcHour + offset) % 24 + 24) % 24;
+    const leadLocalHour = (((utcHour + offset) % 24) + 24) % 24;
 
     const workStart = 9;
     const workEnd = 17;
@@ -120,7 +146,7 @@ export function computeTimezoneDelaySec(location: string | null | undefined): nu
     if (leadLocalHour < workStart) {
         hoursUntilWorkStart = workStart - leadLocalHour;
     } else {
-        hoursUntilWorkStart = (24 - leadLocalHour) + workStart;
+        hoursUntilWorkStart = 24 - leadLocalHour + workStart;
     }
 
     // Jitter ±30 minuti per non inviare tutti alle 9:00:00 esatte

@@ -2,9 +2,16 @@ import { describe, it, expect } from 'vitest';
 import { generateClientReport } from '../telemetry/clientReport';
 
 const base = {
-    weeklyInvitesSent: 40, weeklyAcceptances: 15, weeklyMessagesSent: 25,
-    weeklyReplies: 8, weeklyFollowUpsSent: 5, pendingRatio: 0.3,
-    riskScore: 20, hotLeadsCount: 0, expiredInvitesCount: 0, accountHealth: 'GREEN' as const,
+    weeklyInvitesSent: 40,
+    weeklyAcceptances: 15,
+    weeklyMessagesSent: 25,
+    weeklyReplies: 8,
+    weeklyFollowUpsSent: 5,
+    pendingRatio: 0.3,
+    riskScore: 20,
+    hotLeadsCount: 0,
+    expiredInvitesCount: 0,
+    accountHealth: 'GREEN' as const,
 };
 
 describe('clientReport — grade calculation', () => {
@@ -24,12 +31,24 @@ describe('clientReport — grade calculation', () => {
     });
 
     it('acceptance 5% → D', () => {
-        const r = generateClientReport({ ...base, weeklyInvitesSent: 100, weeklyAcceptances: 5, weeklyReplies: 1, riskScore: 70 });
+        const r = generateClientReport({
+            ...base,
+            weeklyInvitesSent: 100,
+            weeklyAcceptances: 5,
+            weeklyReplies: 1,
+            riskScore: 70,
+        });
         expect(r.overallGrade).toBe('D');
     });
 
     it('zero inviti → D (nessun dato)', () => {
-        const r = generateClientReport({ ...base, weeklyInvitesSent: 0, weeklyAcceptances: 0, weeklyMessagesSent: 0, weeklyReplies: 0 });
+        const r = generateClientReport({
+            ...base,
+            weeklyInvitesSent: 0,
+            weeklyAcceptances: 0,
+            weeklyMessagesSent: 0,
+            weeklyReplies: 0,
+        });
         expect(r.overallGrade).toBe('D');
     });
 
@@ -52,6 +71,6 @@ describe('clientReport — grade calculation', () => {
             ...base,
             listBreakdown: [{ name: 'Unica', invitesSent: 40, acceptanceRate: 30 }],
         });
-        expect(r.suggestions.every(s => !s.includes('performa 2x'))).toBe(true);
+        expect(r.suggestions.every((s) => !s.includes('performa 2x'))).toBe(true);
     });
 });

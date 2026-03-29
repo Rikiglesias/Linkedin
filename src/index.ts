@@ -14,7 +14,13 @@ initSentry();
 import { closeDatabase, initDatabase } from './db';
 import { config, validateConfigFull } from './config';
 import { runDoctor } from './core/doctor';
-import { getGlobalKPIData, listOpenIncidents, recoverStuckJobs, recoverStuckAcceptedLeads, recoverStuckPublishingPosts } from './core/repositories';
+import {
+    getGlobalKPIData,
+    listOpenIncidents,
+    recoverStuckJobs,
+    recoverStuckAcceptedLeads,
+    recoverStuckPublishingPosts,
+} from './core/repositories';
 import { getEventSyncStatus, runEventSyncOnce } from './sync/eventSync';
 import { generateAndSendDailyReport } from './telemetry/dailyReporter';
 import { startServer } from './api/server';
@@ -37,9 +43,7 @@ import {
     runCreateProfileCommand,
     runTestConnectionCommand,
 } from './cli/commands/utilCommands';
-import {
-    runSalesNavUnifiedCommand,
-} from './cli/commands/salesNavCommands';
+import { runSalesNavUnifiedCommand } from './cli/commands/salesNavCommands';
 import {
     runSyncListCommand,
     runSyncSearchCommand,
@@ -97,32 +101,42 @@ async function performGracefulShutdown(reason: string): Promise<void> {
     // 1. Plugin shutdown
     try {
         await pluginRegistry.shutdown();
-    } catch { /* best effort */ }
+    } catch {
+        /* best effort */
+    }
 
     // 2a. Rilascia il cursore dell'utente PRIMA di tutto (non deve restare confinato)
     try {
         const { releaseMouseConfinement } = await import('./browser/humanBehavior');
         releaseMouseConfinement();
-    } catch { /* best effort */ }
+    } catch {
+        /* best effort */
+    }
 
     // 2b. Chiudi browser aperti (con humanWindDown se possibile)
     try {
         const { cleanupBrowsers } = await import('./browser/launcher');
         await cleanupBrowsers();
         console.log('[SHUTDOWN] Browser chiusi');
-    } catch { /* best effort */ }
+    } catch {
+        /* best effort */
+    }
 
     // 3. Recupera job rimasti in RUNNING → PENDING per il prossimo avvio
     try {
         const recovered = await recoverStuckJobs(0);
         if (recovered > 0) console.log(`[SHUTDOWN] ${recovered} job RUNNING → PENDING`);
-    } catch { /* DB potrebbe essere già chiuso */ }
+    } catch {
+        /* DB potrebbe essere già chiuso */
+    }
 
     // 4. Chiudi DB
     try {
         await closeDatabase();
         console.log('[SHUTDOWN] Database chiuso');
-    } catch { /* best effort */ }
+    } catch {
+        /* best effort */
+    }
 
     // 5. Flush Sentry (best-effort, 2s timeout)
     await flushSentry().catch(() => null);
@@ -301,9 +315,9 @@ async function main(): Promise<void> {
 
     // ── Deprecation handling ─────────────────────────────────────────────────
     const DEPRECATED_ALIASES: Record<string, string> = {
-        'connect': 'run invite',
-        'check': 'run check',
-        'message': 'run message',
+        connect: 'run invite',
+        check: 'run check',
+        message: 'run message',
         'salesnav-sync': 'salesnav sync',
         'salesnav-bulk-save': 'salesnav save',
         'salesnav-resolve': 'salesnav resolve',
@@ -319,7 +333,9 @@ async function main(): Promise<void> {
             console.error(`[STRICT] Comando deprecato "${command}" rifiutato. Usa "${replacement}" al suo posto.`);
             process.exit(1);
         }
-        console.warn(`[DEPRECATED] "${command}" è deprecato e verrà rimosso in v2.0. Usa "${replacement}" al suo posto.`);
+        console.warn(
+            `[DEPRECATED] "${command}" è deprecato e verrà rimosso in v2.0. Usa "${replacement}" al suo posto.`,
+        );
     }
     const browserCommands = new Set([
         'run',
@@ -391,7 +407,9 @@ async function main(): Promise<void> {
             if (account.proxy) {
                 const healthy = await checkProxyHealth(account.proxy);
                 if (!healthy) {
-                    console.error(`[PREFLIGHT] ❌ Proxy ${account.proxy.server} NON raggiungibile (account: ${account.id}). Azione: verificare che il proxy sia attivo e raggiungibile.`);
+                    console.error(
+                        `[PREFLIGHT] ❌ Proxy ${account.proxy.server} NON raggiungibile (account: ${account.id}). Azione: verificare che il proxy sia attivo e raggiungibile.`,
+                    );
                     failedAccounts.push(account.id);
                 } else {
                     console.log(`[PREFLIGHT] Proxy OK: ${account.proxy.server} (${account.id})`);
@@ -409,16 +427,22 @@ async function main(): Promise<void> {
                 ).catch(() => null);
             } catch (alertErr) {
                 // A04: alert telegram proxy failure — tracciare il fallimento
-                console.error(`[A04] Telegram proxy alert failed: ${alertErr instanceof Error ? alertErr.message : String(alertErr)}`);
+                console.error(
+                    `[A04] Telegram proxy alert failed: ${alertErr instanceof Error ? alertErr.message : String(alertErr)}`,
+                );
             }
             // L4 multi-account: se TUTTI gli account con proxy hanno fallito → exit.
             // Se almeno uno funziona → warning e procedi con quelli sani.
-            const accountsWithProxy = accounts.filter(a => !!a.proxy);
+            const accountsWithProxy = accounts.filter((a) => !!a.proxy);
             if (failedAccounts.length >= accountsWithProxy.length) {
-                console.error(`[PREFLIGHT] Bloccato: TUTTI i proxy non raggiungibili (${failedAccounts.join(', ')}). Impossibile procedere.`);
+                console.error(
+                    `[PREFLIGHT] Bloccato: TUTTI i proxy non raggiungibili (${failedAccounts.join(', ')}). Impossibile procedere.`,
+                );
                 process.exit(1);
             } else {
-                console.warn(`[PREFLIGHT] ⚠️ Proxy falliti per: ${failedAccounts.join(', ')}. Procedo con gli account funzionanti.`);
+                console.warn(
+                    `[PREFLIGHT] ⚠️ Proxy falliti per: ${failedAccounts.join(', ')}. Procedo con gli account funzionanti.`,
+                );
             }
         }
 
@@ -427,11 +451,15 @@ async function main(): Promise<void> {
             try {
                 const ja3Report = await validateJa3Configuration();
                 if (!ja3Report.cycleTlsActive) {
-                    console.error(`[PREFLIGHT] ❌ USE_JA3_PROXY=true ma CycleTLS non raggiungibile su porta ${ja3Report.cycleTlsPort}. Azione: avviare CycleTLS oppure impostare USE_JA3_PROXY=false.`);
+                    console.error(
+                        `[PREFLIGHT] ❌ USE_JA3_PROXY=true ma CycleTLS non raggiungibile su porta ${ja3Report.cycleTlsPort}. Azione: avviare CycleTLS oppure impostare USE_JA3_PROXY=false.`,
+                    );
                     process.exit(1);
                 }
                 if (!ja3Report.uaJa3Coherent) {
-                    console.warn(`[PREFLIGHT] ⚠️ Incoerenza UA↔JA3: UA=${ja3Report.uaBrowserFamily} ma JA3=${ja3Report.ja3BrowserFamily}. Rischio: LinkedIn può rilevare mismatch TLS fingerprint.`);
+                    console.warn(
+                        `[PREFLIGHT] ⚠️ Incoerenza UA↔JA3: UA=${ja3Report.uaBrowserFamily} ma JA3=${ja3Report.ja3BrowserFamily}. Rischio: LinkedIn può rilevare mismatch TLS fingerprint.`,
+                    );
                 }
                 console.log(`[PREFLIGHT] JA3 ${ja3Report.status}: ${ja3Report.recommendation}`);
             } catch (ja3Error) {
@@ -656,7 +684,7 @@ async function main(): Promise<void> {
         case 'connect':
             await runWorkflowCommand('invite', false);
             break;
-        case 'check':  // deprecated → run check
+        case 'check': // deprecated → run check
             await runWorkflowCommand('check', false);
             break;
         case 'message': // deprecated → run message
@@ -671,7 +699,7 @@ async function main(): Promise<void> {
         case 'dashboard':
             startServer(3000);
             console.log('Premi Ctrl+C per fermare la Dashboard e spegnere il database.');
-            await new Promise(() => { });
+            await new Promise(() => {});
             break;
         case 'repl':
             await runReplCommand();
@@ -704,6 +732,6 @@ main()
     })
     .finally(async () => {
         if (shuttingDown) return;
-        await pluginRegistry.shutdown().catch(() => { });
+        await pluginRegistry.shutdown().catch(() => {});
         await closeDatabase();
     });

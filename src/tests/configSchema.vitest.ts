@@ -110,8 +110,12 @@ describe('Config Zod Schema (A18)', () => {
         });
 
         it('conservative ha cap più bassi di aggressive', () => {
-            expect(CONFIG_PROFILES.conservative.caps.hardInviteCap).toBeLessThan(CONFIG_PROFILES.aggressive.caps.hardInviteCap);
-            expect(CONFIG_PROFILES.conservative.caps.hardMsgCap).toBeLessThan(CONFIG_PROFILES.aggressive.caps.hardMsgCap);
+            expect(CONFIG_PROFILES.conservative.caps.hardInviteCap).toBeLessThan(
+                CONFIG_PROFILES.aggressive.caps.hardInviteCap,
+            );
+            expect(CONFIG_PROFILES.conservative.caps.hardMsgCap).toBeLessThan(
+                CONFIG_PROFILES.aggressive.caps.hardMsgCap,
+            );
         });
     });
 });

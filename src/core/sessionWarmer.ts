@@ -126,7 +126,7 @@ export async function warmupSession(page: Page, lastSessionEndedAt?: string | nu
 
     try {
         // Step 1: Feed — SEMPRE primo (90% lo visita, 10% skip raro es. clic diretto su notifica)
-        if (Math.random() < 0.90) {
+        if (Math.random() < 0.9) {
             await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
             await ensureInputBlock(page);
             await dismissKnownOverlays(page);
@@ -141,7 +141,7 @@ export async function warmupSession(page: Page, lastSessionEndedAt?: string | nu
         }
 
         // Step 2: Notifiche — 70% (secondo passo naturale dopo feed)
-        if (Math.random() < 0.70) {
+        if (Math.random() < 0.7) {
             await logInfo('session_warmer.notifications_check');
             await page.goto('https://www.linkedin.com/notifications/', { waitUntil: 'domcontentloaded' });
             await ensureInputBlock(page);
@@ -152,7 +152,7 @@ export async function warmupSession(page: Page, lastSessionEndedAt?: string | nu
         }
 
         // Step 3: Messaging — 40% (solo sessione 2: "torno a controllare risposte")
-        if (sessionWindow === 'second' && Math.random() < 0.40) {
+        if (sessionWindow === 'second' && Math.random() < 0.4) {
             await logInfo('session_warmer.messaging_check');
             await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'domcontentloaded' });
             await ensureInputBlock(page);
@@ -162,7 +162,7 @@ export async function warmupSession(page: Page, lastSessionEndedAt?: string | nu
         }
 
         // Step 4: Search — raro (20%), mai primo. Simula curiosità.
-        if (stepsExecuted.length > 0 && Math.random() < 0.20) {
+        if (stepsExecuted.length > 0 && Math.random() < 0.2) {
             await logInfo('session_warmer.search_simulation');
             const searchInput = await page.$('input.search-global-typeahead__input');
             if (searchInput) {

@@ -61,10 +61,7 @@ export interface SessionHistorySummary {
 /**
  * Load the last `lookbackDays` of session patterns for an account.
  */
-export async function getSessionHistory(
-    accountId: string,
-    lookbackDays = 7,
-): Promise<SessionHistorySummary> {
+export async function getSessionHistory(accountId: string, lookbackDays = 7): Promise<SessionHistorySummary> {
     const db = await getDatabase();
     const safeDays = Math.max(1, Math.min(30, Math.floor(lookbackDays)));
 
@@ -121,8 +118,12 @@ export async function getSessionHistory(
             ? Math.round(intervalsWithData.reduce((s, r) => s + (r.avg_interval_ms ?? 0), 0) / intervalsWithData.length)
             : null;
 
-    const typicalLoginHour = computeMode(activeDays.map((r) => r.login_hour).filter((h): h is number => h !== null && h !== undefined));
-    const typicalLogoutHour = computeMode(activeDays.map((r) => r.logout_hour).filter((h): h is number => h !== null && h !== undefined));
+    const typicalLoginHour = computeMode(
+        activeDays.map((r) => r.login_hour).filter((h): h is number => h !== null && h !== undefined),
+    );
+    const typicalLogoutHour = computeMode(
+        activeDays.map((r) => r.logout_hour).filter((h): h is number => h !== null && h !== undefined),
+    );
 
     // Pacing factor: conservative if challenges exist, slightly aggressive if quiet
     let pacingFactor = 1.0;

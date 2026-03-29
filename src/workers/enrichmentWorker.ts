@@ -32,9 +32,7 @@ export async function processEnrichmentJob(
 
     if (!lead) {
         await logError('enrichment.worker.missing_lead', { leadId: payload.leadId });
-        return workerResult(0, [
-            { leadId: payload.leadId, message: 'Lead non trovato in database' },
-        ]);
+        return workerResult(0, [{ leadId: payload.leadId, message: 'Lead non trovato in database' }]);
     }
 
     if (context.dryRun) {

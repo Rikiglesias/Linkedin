@@ -18,10 +18,7 @@ import path from 'path';
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import rateLimit from 'express-rate-limit';
 import type { NextFunction, Request, Response } from 'express';
-import {
-    getABTestingStats,
-    recordSecurityAuditEvent,
-} from '../core/repositories';
+import { getABTestingStats, recordSecurityAuditEvent } from '../core/repositories';
 import { getDatabase } from '../db';
 import campaignsRouter from './routes/campaigns';
 import exportRouter from './routes/export';
@@ -38,11 +35,7 @@ import v1AutomationRouter from './routes/v1Automation';
 import metricsRouter from './routes/metrics';
 import { isTotpEnabled, validateTotpCode } from '../security/totp';
 import { config } from '../config';
-import {
-    subscribeLiveEvents,
-    getLiveEventSubscribersCount,
-    type LiveEventMessage,
-} from '../telemetry/liveEvents';
+import { subscribeLiveEvents, getLiveEventSubscribersCount, type LiveEventMessage } from '../telemetry/liveEvents';
 import { resolveCorrelationId, runWithCorrelationId } from '../telemetry/correlation';
 import { WebSocketServer, WebSocket } from 'ws';
 
@@ -287,7 +280,7 @@ function hashDashboardSessionToken(token: string): string {
 }
 
 function buildDashboardSessionCookie(token: string, maxAgeSec: number, req?: Request): string {
-    const isSecure = req ? (req.secure || req.headers['x-forwarded-proto'] === 'https') : Boolean(config.databaseUrl);
+    const isSecure = req ? req.secure || req.headers['x-forwarded-proto'] === 'https' : Boolean(config.databaseUrl);
     const secureFlag = isSecure ? '; Secure' : '';
     return `${DASHBOARD_SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/api; HttpOnly; SameSite=Strict; Max-Age=${maxAgeSec}${secureFlag}`;
 }
@@ -377,10 +370,10 @@ async function createDashboardSessionCookie(req: Request, res: Response): Promis
     if (activeSessions.length >= MAX_ACTIVE_DASHBOARD_SESSIONS) {
         const toRevoke = activeSessions.slice(0, activeSessions.length - MAX_ACTIVE_DASHBOARD_SESSIONS + 1);
         for (const session of toRevoke) {
-            await db.run(
-                `UPDATE dashboard_sessions SET revoked_at = ? WHERE token_hash = ?`,
-                [nowIso, session.token_hash],
-            );
+            await db.run(`UPDATE dashboard_sessions SET revoked_at = ? WHERE token_hash = ?`, [
+                nowIso,
+                session.token_hash,
+            ]);
         }
     }
 
@@ -649,7 +642,7 @@ async function apiV1AuthMiddleware(req: Request, res: Response, next: NextFuncti
         res.status(503).json({ error: 'API v1 auth enabled but no credentials configured.' });
         return;
     }
-    if (isApiKeyAuthValid(req) || isBasicAuthValid(req) || await hasValidDashboardSession(req)) {
+    if (isApiKeyAuthValid(req) || isBasicAuthValid(req) || (await hasValidDashboardSession(req))) {
         auditSecurityEvent({
             category: 'api_v1_auth',
             action: 'auth_credentials_valid',
@@ -679,7 +672,6 @@ async function apiV1AuthMiddleware(req: Request, res: Response, next: NextFuncti
 
 app.use('/api/v1', apiV1AuthMiddleware);
 app.use('/api/v1/campaigns', campaignsRouter);
-
 
 // ── Static (Dashboard UI) ────────────────────────────────────────────────────
 const publicDir = path.resolve(__dirname, '../../public');
@@ -750,7 +742,11 @@ app.post('/api/auth/session', async (req, res) => {
                 totpVerified: isTotpEnabled(),
             },
         });
-        res.json({ success: true, ttlSeconds: Math.floor(DASHBOARD_SESSION_TTL_MS / 1000), totpVerified: isTotpEnabled() });
+        res.json({
+            success: true,
+            ttlSeconds: Math.floor(DASHBOARD_SESSION_TTL_MS / 1000),
+            totpVerified: isTotpEnabled(),
+        });
     } catch (err: unknown) {
         handleApiError(res, err, 'api.auth.session');
     }
@@ -884,7 +880,7 @@ const exportLimiter = rateLimit({
     max: 5,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { error: 'Troppe richieste export. Riprova tra un\'ora.' },
+    message: { error: "Troppe richieste export. Riprova tra un'ora." },
 });
 app.use('/api/v1/export', apiV1AuthMiddleware, exportLimiter, exportRouter);
 app.use('/api/export', apiV1AuthMiddleware, exportLimiter, exportRouter);
@@ -926,19 +922,23 @@ export function startServer(port: number = 3000) {
         };
         const unsubscribe = subscribeLiveEvents(onEvent);
 
-        ws.send(JSON.stringify({
-            type: 'connected',
-            payload: { subscribers: getLiveEventSubscribersCount() },
-            timestamp: new Date().toISOString(),
-        }));
+        ws.send(
+            JSON.stringify({
+                type: 'connected',
+                payload: { subscribers: getLiveEventSubscribersCount() },
+                timestamp: new Date().toISOString(),
+            }),
+        );
 
         const heartbeat = setInterval(() => {
             if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                    type: 'heartbeat',
-                    payload: {},
-                    timestamp: new Date().toISOString(),
-                }));
+                ws.send(
+                    JSON.stringify({
+                        type: 'heartbeat',
+                        payload: {},
+                        timestamp: new Date().toISOString(),
+                    }),
+                );
             }
         }, 20_000);
 

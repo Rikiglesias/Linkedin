@@ -61,9 +61,7 @@ export class OpenAIVisionProvider implements VisionProvider {
     async analyzeImage(base64Image: string, prompt: string): Promise<VisionAnalysisResult> {
         this.checkBudget();
 
-        const imageData = this.redactScreenshots
-            ? await this.applyRedaction(base64Image)
-            : base64Image;
+        const imageData = this.redactScreenshots ? await this.applyRedaction(base64Image) : base64Image;
 
         const messages: OpenAIMessage[] = [
             { role: 'system', content: ANOMALY_DETECTION_SYSTEM_PROMPT },
@@ -100,9 +98,7 @@ export class OpenAIVisionProvider implements VisionProvider {
     ): Promise<Coordinates | null> {
         this.checkBudget();
 
-        const imageData = this.redactScreenshots
-            ? await this.applyRedaction(base64Image)
-            : base64Image;
+        const imageData = this.redactScreenshots ? await this.applyRedaction(base64Image) : base64Image;
 
         const maxW = viewportBounds?.width ?? 1920;
         const maxH = viewportBounds?.height ?? 1080;
@@ -211,11 +207,7 @@ Return ONLY the JSON.`;
      * Invece di screenshot → coordinate → click cieco, il modello
      * ispeziona il DOM, scrive selettori e verifica il risultato.
      */
-    async generatePlaywrightCode(
-        base64Image: string,
-        task: string,
-        domSnippet?: string,
-    ): Promise<string> {
+    async generatePlaywrightCode(base64Image: string, task: string, domSnippet?: string): Promise<string> {
         const contextParts = [
             `Task: ${task}`,
             'Generate a single Playwright TypeScript code snippet to accomplish this task.',
@@ -327,7 +319,9 @@ Respond with ONLY a single integer number of milliseconds between 1000 and 12000
 
         if (!response.ok) {
             const errorBody = await response.text().catch(() => '');
-            throw new Error(`OpenAI Vision API error: HTTP ${response.status} ${response.statusText} — ${errorBody.substring(0, 200)}`);
+            throw new Error(
+                `OpenAI Vision API error: HTTP ${response.status} ${response.statusText} — ${errorBody.substring(0, 200)}`,
+            );
         }
 
         const data = (await response.json()) as {
@@ -349,11 +343,11 @@ Respond with ONLY a single integer number of milliseconds between 1000 and 12000
 
         // Extract text from Responses API output
         if (data.output_text) return data.output_text.trim();
-        const msg = data.output?.find(o => o.type === 'message');
+        const msg = data.output?.find((o) => o.type === 'message');
         if (msg?.content) {
             const text = msg.content
-                .filter(c => c.type === 'output_text' && c.text)
-                .map(c => c.text ?? '')
+                .filter((c) => c.type === 'output_text' && c.text)
+                .map((c) => c.text ?? '')
                 .join('\n');
             return text.trim();
         }

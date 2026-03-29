@@ -3,7 +3,9 @@ import { parseStringEnv, parseCsvEnv, parseIntEnv } from '../config/env';
 
 describe('config/env — advanced parsing', () => {
     const origEnv = { ...process.env };
-    afterEach(() => { process.env = { ...origEnv }; });
+    afterEach(() => {
+        process.env = { ...origEnv };
+    });
 
     describe('parseStringEnv', () => {
         it('ritorna valore se definito', () => {

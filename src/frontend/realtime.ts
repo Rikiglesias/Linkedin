@@ -67,13 +67,17 @@ function connectWebSocket(): boolean {
                 if (msg.type && msg.type !== 'heartbeat' && TRACKED_EVENTS.includes(msg.type)) {
                     _onRealtimeEvent(msg.type, evt.data as string);
                 }
-            } catch { /* ignore */ }
+            } catch {
+                /* ignore */
+            }
         };
         ws.onclose = () => {
             wsConnection = null;
             scheduleReconnect();
         };
-        ws.onerror = () => { ws.close(); };
+        ws.onerror = () => {
+            ws.close();
+        };
         return true;
     } catch {
         return false;
@@ -99,16 +103,36 @@ function connectSseFallback(): void {
 }
 
 export function connectEventStream(): void {
-    if (wsConnection) { wsConnection.close(); wsConnection = null; }
-    if (eventSource) { eventSource.close(); eventSource = null; }
-    if (reconnectTimer) { window.clearTimeout(reconnectTimer); reconnectTimer = null; }
-    if (!connectWebSocket()) { connectSseFallback(); }
+    if (wsConnection) {
+        wsConnection.close();
+        wsConnection = null;
+    }
+    if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+    }
+    if (reconnectTimer) {
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+    }
+    if (!connectWebSocket()) {
+        connectSseFallback();
+    }
 }
 
 export function disconnectEventStream(): void {
-    if (wsConnection) { wsConnection.close(); wsConnection = null; }
-    if (eventSource) { eventSource.close(); eventSource = null; }
-    if (reconnectTimer) { window.clearTimeout(reconnectTimer); reconnectTimer = null; }
+    if (wsConnection) {
+        wsConnection.close();
+        wsConnection = null;
+    }
+    if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+    }
+    if (reconnectTimer) {
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+    }
     _onStateChange('UNKNOWN');
 }
 

@@ -170,11 +170,7 @@ export async function getLeadCampaignStateById(id: number): Promise<LeadCampaign
 /**
  * Avanza lo stato lead-campagna al prossimo step con delay calcolato.
  */
-export async function advanceLeadCampaignState(
-    id: number,
-    nextStepId: number,
-    delaySeconds: number,
-): Promise<void> {
+export async function advanceLeadCampaignState(id: number, nextStepId: number, delaySeconds: number): Promise<void> {
     const db = await getDatabase();
     await db.run(
         `

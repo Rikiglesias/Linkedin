@@ -74,11 +74,7 @@ describe('MouseGenerator', () => {
     });
 
     it('generatePath statico produce almeno N punti', () => {
-        const path = MouseGenerator.generatePath(
-            { x: 0, y: 0 },
-            { x: 100, y: 100 },
-            10,
-        );
+        const path = MouseGenerator.generatePath({ x: 0, y: 0 }, { x: 100, y: 100 }, 10);
         expect(path.length).toBeGreaterThanOrEqual(10);
     });
 

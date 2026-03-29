@@ -28,8 +28,8 @@ export class MouseGenerator {
             y: start.y + dy * (0.25 + Math.random() * 0.15) + (Math.random() - 0.5) * curveSize,
         };
         const cp2: Point = {
-            x: start.x + dx * (0.60 + Math.random() * 0.15) + (Math.random() - 0.5) * curveSize * 0.6,
-            y: start.y + dy * (0.60 + Math.random() * 0.15) + (Math.random() - 0.5) * curveSize * 0.6,
+            x: start.x + dx * (0.6 + Math.random() * 0.15) + (Math.random() - 0.5) * curveSize * 0.6,
+            y: start.y + dy * (0.6 + Math.random() * 0.15) + (Math.random() - 0.5) * curveSize * 0.6,
         };
 
         const noiseOffsetX = Math.random() * 1000;
@@ -40,8 +40,7 @@ export class MouseGenerator {
         const tremorPhaseX = Math.random() * Math.PI * 2;
         const tremorPhaseY = Math.random() * Math.PI * 2;
 
-        const fittsEase = (t: number): number =>
-            t < 0.5 ? 16 * t * t * t * t * t : 1 - Math.pow(-2 * t + 2, 5) / 2;
+        const fittsEase = (t: number): number => (t < 0.5 ? 16 * t * t * t * t * t : 1 - Math.pow(-2 * t + 2, 5) / 2);
 
         for (let i = 0; i <= steps; i++) {
             const rawT = i / steps;
@@ -87,7 +86,11 @@ export class MouseGenerator {
      * Il risultato è un array piatto di punti da eseguire in sequenza.
      * Per distanze brevi (<80px) usa un singolo segmento (non serve multi-fase).
      */
-    public static generateHumanPath(start: Point, target: Point, viewport?: { width: number; height: number }): Point[] {
+    public static generateHumanPath(
+        start: Point,
+        target: Point,
+        viewport?: { width: number; height: number },
+    ): Point[] {
         const dist = Math.sqrt((target.x - start.x) ** 2 + (target.y - start.y) ** 2);
         const vw = viewport?.width ?? 1920;
         const vh = viewport?.height ?? 1080;
@@ -106,8 +109,14 @@ export class MouseGenerator {
         const driftOffset = Math.min(60, dist * 0.15);
         const driftAngle = Math.random() * Math.PI * 2;
         const driftTarget: Point = {
-            x: Math.max(5, Math.min(vw - 5, target.x + Math.cos(driftAngle) * driftOffset + (Math.random() - 0.5) * 30)),
-            y: Math.max(5, Math.min(vh - 5, target.y + Math.sin(driftAngle) * driftOffset + (Math.random() - 0.5) * 20)),
+            x: Math.max(
+                5,
+                Math.min(vw - 5, target.x + Math.cos(driftAngle) * driftOffset + (Math.random() - 0.5) * 30),
+            ),
+            y: Math.max(
+                5,
+                Math.min(vh - 5, target.y + Math.sin(driftAngle) * driftOffset + (Math.random() - 0.5) * 20),
+            ),
         };
         const driftSteps = Math.max(6, Math.min(12, Math.round(dist / 80)));
         const driftPath = MouseGenerator.generatePath(start, driftTarget, driftSteps);
@@ -120,7 +129,7 @@ export class MouseGenerator {
         allPoints.push(...approachPath.slice(1));
 
         // --- FASE 3: OVERSHOOT (40% delle volte per distanze >200px) ---
-        if (dist > 200 && Math.random() < 0.40) {
+        if (dist > 200 && Math.random() < 0.4) {
             const overshootDist = 5 + Math.random() * 15; // 5-20px oltre il target
             const overshootAngle = Math.atan2(target.y - start.y, target.x - start.x) + (Math.random() - 0.5) * 0.5;
             const overshootPoint: Point = {

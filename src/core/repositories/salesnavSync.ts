@@ -112,9 +112,7 @@ export async function createSyncRun(input: CreateSalesNavSyncRunInput): Promise<
     return run;
 }
 
-export async function updateSyncRunProgress(
-    input: UpdateSalesNavSyncRunProgressInput,
-): Promise<SalesNavSyncRunRecord> {
+export async function updateSyncRunProgress(input: UpdateSalesNavSyncRunProgressInput): Promise<SalesNavSyncRunRecord> {
     const setParts: string[] = ['updated_at = CURRENT_TIMESTAMP'];
     const params: unknown[] = [];
 

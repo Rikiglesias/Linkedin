@@ -16,11 +16,7 @@ const MAX_BREADCRUMBS = 20;
  * Aggiunge un breadcrumb alla lista circolare nel context.
  * Ultimi 20 eventi — su challenge/errore vengono dumpati nel record incidente.
  */
-export function addBreadcrumb(
-    context: WorkerContext,
-    action: string,
-    detail?: string,
-): void {
+export function addBreadcrumb(context: WorkerContext, action: string, detail?: string): void {
     if (!context.breadcrumbs) context.breadcrumbs = [];
     context.breadcrumbs.push({
         timestamp: Date.now(),
@@ -40,7 +36,7 @@ export function addBreadcrumb(
 export function formatBreadcrumbs(context: WorkerContext): string {
     if (!context.breadcrumbs || context.breadcrumbs.length === 0) return '(nessun breadcrumb)';
     return context.breadcrumbs
-        .map(b => {
+        .map((b) => {
             const time = new Date(b.timestamp).toISOString().substring(11, 19);
             const urlShort = b.url ? ` [${b.url.substring(0, 50)}]` : '';
             return `${time} ${b.action}${urlShort}${b.detail ? ` — ${b.detail}` : ''}`;

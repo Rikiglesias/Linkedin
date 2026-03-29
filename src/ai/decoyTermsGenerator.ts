@@ -17,17 +17,83 @@ const GENERATION_TIMEOUT_MS = 10_000;
 
 // ── Stopwords da filtrare nel fallback meccanico ───────────────────────
 const STOPWORDS = new Set([
-    'the', 'a', 'an', 'and', 'or', 'of', 'at', 'in', 'for', 'to', 'on',
-    'with', 'by', 'is', 'it', 'as', 'from', 'that', 'this', 'was', 'are',
-    'be', 'has', 'had', 'have', 'do', 'does', 'did', 'will', 'would',
-    'could', 'should', 'may', 'might', 'can', 'shall', 'not', 'no',
-    'but', 'if', 'so', 'up', 'out', 'about', 'into', 'over', 'after',
+    'the',
+    'a',
+    'an',
+    'and',
+    'or',
+    'of',
+    'at',
+    'in',
+    'for',
+    'to',
+    'on',
+    'with',
+    'by',
+    'is',
+    'it',
+    'as',
+    'from',
+    'that',
+    'this',
+    'was',
+    'are',
+    'be',
+    'has',
+    'had',
+    'have',
+    'do',
+    'does',
+    'did',
+    'will',
+    'would',
+    'could',
+    'should',
+    'may',
+    'might',
+    'can',
+    'shall',
+    'not',
+    'no',
+    'but',
+    'if',
+    'so',
+    'up',
+    'out',
+    'about',
+    'into',
+    'over',
+    'after',
     // Common filler words in LinkedIn titles
-    'senior', 'junior', 'lead', 'staff', 'principal', 'associate',
-    'assistant', 'intern', 'trainee', 'freelance', 'self-employed',
-    'retired', 'looking', 'seeking', 'open', 'new', 'former', 'ex',
-    'current', 'acting', 'interim', 'deputy', 'chief', 'head',
-    'global', 'regional', 'local', 'national', 'international',
+    'senior',
+    'junior',
+    'lead',
+    'staff',
+    'principal',
+    'associate',
+    'assistant',
+    'intern',
+    'trainee',
+    'freelance',
+    'self-employed',
+    'retired',
+    'looking',
+    'seeking',
+    'open',
+    'new',
+    'former',
+    'ex',
+    'current',
+    'acting',
+    'interim',
+    'deputy',
+    'chief',
+    'head',
+    'global',
+    'regional',
+    'local',
+    'national',
+    'international',
 ]);
 
 /**
@@ -44,17 +110,13 @@ export async function generateContextualDecoyTerms(
     }
 
     // Deduplicazione e pulizia input
-    const titles = [...new Set(
-        leadSamples
-            .map(s => s.jobTitle?.trim())
-            .filter((t): t is string => !!t && t.length > 2),
-    )].slice(0, 30);
+    const titles = [
+        ...new Set(leadSamples.map((s) => s.jobTitle?.trim()).filter((t): t is string => !!t && t.length > 2)),
+    ].slice(0, 30);
 
-    const companies = [...new Set(
-        leadSamples
-            .map(s => s.company?.trim())
-            .filter((c): c is string => !!c && c.length > 1),
-    )].slice(0, 20);
+    const companies = [
+        ...new Set(leadSamples.map((s) => s.company?.trim()).filter((c): c is string => !!c && c.length > 1)),
+    ].slice(0, 20);
 
     if (titles.length === 0 && companies.length === 0) {
         return undefined;
@@ -93,10 +155,7 @@ export async function generateContextualDecoyTerms(
 
 // ── AI Generation ──────────────────────────────────────────────────────
 
-async function generateWithAI(
-    titles: string[],
-    companies: string[],
-): Promise<readonly string[] | undefined> {
+async function generateWithAI(titles: string[], companies: string[]): Promise<readonly string[] | undefined> {
     const titlesBlock = titles.slice(0, 15).join(', ');
     const companiesBlock = companies.slice(0, 10).join(', ');
 
@@ -130,7 +189,7 @@ Generate 12-15 search terms coherent with this sector.`;
         if (Array.isArray(parsed)) {
             terms = parsed;
         } else if (parsed && typeof parsed === 'object') {
-            const firstArrayValue = Object.values(parsed).find(v => Array.isArray(v));
+            const firstArrayValue = Object.values(parsed).find((v) => Array.isArray(v));
             terms = Array.isArray(firstArrayValue) ? firstArrayValue : [];
         } else {
             return undefined;
@@ -138,7 +197,7 @@ Generate 12-15 search terms coherent with this sector.`;
 
         return terms
             .filter((t): t is string => typeof t === 'string' && t.trim().length >= 2)
-            .map(t => t.trim().toLowerCase())
+            .map((t) => t.trim().toLowerCase())
             .slice(0, 15);
     } catch {
         return undefined;
@@ -147,10 +206,7 @@ Generate 12-15 search terms coherent with this sector.`;
 
 // ── Mechanical Fallback ────────────────────────────────────────────────
 
-function generateMechanical(
-    titles: string[],
-    companies: string[],
-): readonly string[] {
+function generateMechanical(titles: string[], companies: string[]): readonly string[] {
     const termSet = new Set<string>();
 
     // Estrai keyword significative dai titoli
@@ -159,7 +215,7 @@ function generateMechanical(
             .toLowerCase()
             .replace(/[^a-z0-9\s-]/g, ' ')
             .split(/\s+/)
-            .filter(w => w.length > 2 && !STOPWORDS.has(w));
+            .filter((w) => w.length > 2 && !STOPWORDS.has(w));
 
         // Singole parole significative
         for (const word of words) {
@@ -186,9 +242,7 @@ function generateMechanical(
     }
 
     // Filtra termini troppo generici o troppo corti
-    const filtered = [...termSet]
-        .filter(t => t.length >= 3 && t.length <= 50)
-        .slice(0, 15);
+    const filtered = [...termSet].filter((t) => t.length >= 3 && t.length <= 50).slice(0, 15);
 
     return filtered;
 }

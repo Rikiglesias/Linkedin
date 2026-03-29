@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { clampBackpressureLevel, computeBackpressureBatchSize, computeNextBackpressureLevel } from '../sync/backpressure';
+import {
+    clampBackpressureLevel,
+    computeBackpressureBatchSize,
+    computeNextBackpressureLevel,
+} from '../sync/backpressure';
 
 describe('backpressure — edge cases finali', () => {
     it('Infinity → clamped a 1 (NaN path)', () => {

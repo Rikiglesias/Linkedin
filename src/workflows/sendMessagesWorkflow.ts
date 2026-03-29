@@ -4,12 +4,24 @@
 
 import { config, getLocalDateString } from '../config';
 import { runWorkflow } from '../core/orchestrator';
-import { computeListPerformanceMultiplier, getAutomationPauseState, getDailyStat, getListDailyStatsBatch, getRuntimeFlag } from '../core/repositories';
+import {
+    computeListPerformanceMultiplier,
+    getAutomationPauseState,
+    getDailyStat,
+    getListDailyStatsBatch,
+    getRuntimeFlag,
+} from '../core/repositories';
 import { enrichLeadsParallel } from '../integrations/parallelEnricher';
 import { getDatabase } from '../db';
 import { runPreflight, appendProxyReputationWarning } from './preflight';
 import { formatWorkflowReport, sendWorkflowTelegramReport } from './reportFormatter';
-import type { PreflightDbStats, PreflightConfigStatus, PreflightWarning, WorkflowReport, WorkflowReportListBreakdown } from './types';
+import type {
+    PreflightDbStats,
+    PreflightConfigStatus,
+    PreflightWarning,
+    WorkflowReport,
+    WorkflowReportListBreakdown,
+} from './types';
 
 export interface SendMessagesOptions {
     listName?: string;
@@ -33,13 +45,21 @@ function generateWarnings(
 
     const accepted = (stats.byStatus['ACCEPTED'] ?? 0) + (stats.byStatus['READY_MESSAGE'] ?? 0);
     if (accepted === 0) {
-        const listNote = answers['list'] ? ` (conteggio globale — la lista "${answers['list']}" potrebbe avere lead messaggiabili)` : '';
-        warnings.push({ level: 'critical', message: `Nessun lead ACCEPTED/READY_MESSAGE trovato${listNote} — nulla da messaggiare` });
+        const listNote = answers['list']
+            ? ` (conteggio globale — la lista "${answers['list']}" potrebbe avere lead messaggiabili)`
+            : '';
+        warnings.push({
+            level: 'critical',
+            message: `Nessun lead ACCEPTED/READY_MESSAGE trovato${listNote} — nulla da messaggiare`,
+        });
     }
 
     const remaining = cfgStatus.budgetMessages - cfgStatus.messagesSentToday;
     if (remaining <= 0) {
-        warnings.push({ level: 'critical', message: `Budget messaggi esaurito oggi (${cfgStatus.messagesSentToday}/${cfgStatus.budgetMessages})` });
+        warnings.push({
+            level: 'critical',
+            message: `Budget messaggi esaurito oggi (${cfgStatus.messagesSentToday}/${cfgStatus.budgetMessages})`,
+        });
     } else if (remaining < 5) {
         warnings.push({ level: 'warn', message: `Budget messaggi quasi esaurito: ${remaining} rimanenti` });
     }
@@ -52,7 +72,10 @@ function generateWarnings(
     if (withoutJobTitle > 0 && accepted > 0) {
         const pct = Math.round((withoutJobTitle / stats.totalLeads) * 100);
         if (pct > 30) {
-            warnings.push({ level: 'info', message: `${withoutJobTitle} lead senza job_title (${pct}%) — messaggio generico per questi` });
+            warnings.push({
+                level: 'info',
+                message: `${withoutJobTitle} lead senza job_title (${pct}%) — messaggio generico per questi`,
+            });
         }
     }
 
@@ -103,7 +126,7 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
             },
             {
                 id: 'enrichment',
-                prompt: 'Eseguire pre-enrichment dei lead prima dell\'invio? (Apollo/Hunter/OSINT)',
+                prompt: "Eseguire pre-enrichment dei lead prima dell'invio? (Apollo/Hunter/OSINT)",
                 type: 'boolean',
                 defaultValue: 'true',
             },
@@ -127,7 +150,8 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
     const doEnrichment = preflight.answers['enrichment'] !== 'false';
 
     // Preview primi 5 lead che verranno messaggiati
-    const readyCount = (preflight.dbStats.byStatus['ACCEPTED'] ?? 0) + (preflight.dbStats.byStatus['READY_MESSAGE'] ?? 0);
+    const readyCount =
+        (preflight.dbStats.byStatus['ACCEPTED'] ?? 0) + (preflight.dbStats.byStatus['READY_MESSAGE'] ?? 0);
     if (readyCount > 0) {
         const db = await getDatabase();
         let previewQuery = `SELECT first_name, last_name, job_title, accepted_at FROM leads WHERE status IN ('ACCEPTED','READY_MESSAGE')`;
@@ -137,7 +161,12 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
             previewParams.push(listFilter);
         }
         previewQuery += ` ORDER BY accepted_at ASC LIMIT 5`;
-        const previewLeads = await db.query<{ first_name: string; last_name: string; job_title: string | null; accepted_at: string | null }>(previewQuery, previewParams);
+        const previewLeads = await db.query<{
+            first_name: string;
+            last_name: string;
+            job_title: string | null;
+            accepted_at: string | null;
+        }>(previewQuery, previewParams);
         if (previewLeads.length > 0) {
             console.log(`\n  Prossimi lead da messaggiare (${previewLeads.length} su ${readyCount}):`);
             for (const lead of previewLeads) {
@@ -180,12 +209,16 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
     // ── Guard: quarantina e pausa (sempre attivi, anche in dry-run) ──────────
     const quarantine = (await getRuntimeFlag('account_quarantine')) === 'true';
     if (quarantine) {
-        console.error('\n  [BLOCCATO] Account in quarantina — operazione annullata. Esegui "bot unquarantine" dopo aver risolto il problema.\n');
+        console.error(
+            '\n  [BLOCCATO] Account in quarantina — operazione annullata. Esegui "bot unquarantine" dopo aver risolto il problema.\n',
+        );
         return;
     }
     const pauseState = await getAutomationPauseState();
     if (pauseState.paused) {
-        console.error(`\n  [BLOCCATO] Automazione in pausa: ${pauseState.reason ?? 'motivo sconosciuto'}. Riprendi con "bot resume".\n`);
+        console.error(
+            `\n  [BLOCCATO] Automazione in pausa: ${pauseState.reason ?? 'motivo sconosciuto'}. Riprendi con "bot resume".\n`,
+        );
         return;
     }
 
@@ -211,7 +244,9 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
                 },
             });
             if (enrichReport.total > 0) {
-                console.log(`\n  ✅ Enrichment completato: ${enrichReport.enriched}/${enrichReport.total} arricchiti (${enrichReport.emailsFound} email) in ${Math.round(enrichReport.durationMs / 1000)}s\n`);
+                console.log(
+                    `\n  ✅ Enrichment completato: ${enrichReport.enriched}/${enrichReport.total} arricchiti (${enrichReport.emailsFound} email) in ${Math.round(enrichReport.durationMs / 1000)}s\n`,
+                );
             } else {
                 console.log('  ✅ Tutti i lead sono già arricchiti.\n');
             }
@@ -221,10 +256,14 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
             // A differenza di send-invites (che downgrade nota ai→template), qui
             // il messaggio AI usa comunque nome/company/role dal DB. Ma l'utente
             // deve sapere che la qualità è ridotta.
-            if (enrichReport.total > 5 && enrichReport.enriched / enrichReport.total < 0.20) {
+            if (enrichReport.total > 5 && enrichReport.enriched / enrichReport.total < 0.2) {
                 enrichmentDegraded = true;
-                console.warn('\n  ⚠️  DEGRADATION: Enrichment fallito per >80% dei lead. API probabilmente down o rate-limited.');
-                console.warn('  ⚠️  I messaggi AI saranno meno personalizzati (solo dati base dal profilo LinkedIn).\n');
+                console.warn(
+                    '\n  ⚠️  DEGRADATION: Enrichment fallito per >80% dei lead. API probabilmente down o rate-limited.',
+                );
+                console.warn(
+                    '  ⚠️  I messaggi AI saranno meno personalizzati (solo dati base dal profilo LinkedIn).\n',
+                );
             }
         } catch {
             console.warn('  ⚠️  Pre-enrichment fallito (non bloccante, proseguo).\n');
@@ -258,7 +297,9 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
     let msgAfter = msgBefore;
     try {
         msgAfter = await getDailyStat(localDate, 'messages_sent');
-    } catch { /* fallback a msgBefore se DB non raggiungibile */ }
+    } catch {
+        /* fallback a msgBefore se DB non raggiungibile */
+    }
     const messagesSent = msgAfter - msgBefore;
 
     // Per-List Performance Breakdown
@@ -282,7 +323,9 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
         }
     } catch (breakdownErr) {
         // A04: list breakdown fallito — il report non includerà i dati per lista
-        console.warn(`[A04] List breakdown failed: ${breakdownErr instanceof Error ? breakdownErr.message : String(breakdownErr)}`);
+        console.warn(
+            `[A04] List breakdown failed: ${breakdownErr instanceof Error ? breakdownErr.message : String(breakdownErr)}`,
+        );
     }
 
     // Report
@@ -298,9 +341,10 @@ export async function runSendMessagesWorkflow(opts: SendMessagesOptions): Promis
             dry_run: dryRun ? 'SI' : 'no',
         },
         errors: workflowError ? [workflowError] : [],
-        nextAction: msgAfter >= config.hardMsgCap
-            ? 'Budget messaggi esaurito — riprendi domani. Ciclo completo: sync-search → sync-list → send-invites → send-messages'
-            : `Budget rimanente: ${config.hardMsgCap - msgAfter} messaggi. Prossimo ciclo: sync-search per nuovi lead`,
+        nextAction:
+            msgAfter >= config.hardMsgCap
+                ? 'Budget messaggi esaurito — riprendi domani. Ciclo completo: sync-search → sync-list → send-invites → send-messages'
+                : `Budget rimanente: ${config.hardMsgCap - msgAfter} messaggi. Prossimo ciclo: sync-search per nuovi lead`,
         listBreakdown,
         riskAssessment: preflight.riskAssessment,
     };

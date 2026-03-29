@@ -66,7 +66,10 @@ export class SemanticChecker {
             const { getRecentMessageTexts } = await import('../core/repositories/leadsLearning');
             const texts = await getRecentMessageTexts(leadId, MAX_MEMORY_PER_LEAD);
             if (texts.length > 0) {
-                this.memory.set(leadId, texts.map(t => ({ text: t })));
+                this.memory.set(
+                    leadId,
+                    texts.map((t) => ({ text: t })),
+                );
             }
         } catch {
             // DB non disponibile — procedi con memoria vuota
@@ -84,7 +87,7 @@ export class SemanticChecker {
         if (leadId !== undefined) {
             await this.loadFromDbIfNeeded(leadId);
         }
-        const entries = leadId !== undefined ? this.memory.get(leadId) ?? [] : [];
+        const entries = leadId !== undefined ? (this.memory.get(leadId) ?? []) : [];
 
         let queryEmbedding: number[] | undefined;
 

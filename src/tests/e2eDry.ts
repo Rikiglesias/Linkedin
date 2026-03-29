@@ -73,7 +73,10 @@ async function run(): Promise<void> {
     // 2.1: List Performance Multiplier
     const listPerf = await computeListPerformanceMultiplier('dry-list', 30);
     assert.equal(typeof listPerf.multiplier, 'number');
-    assert.ok(listPerf.multiplier >= 0.25 && listPerf.multiplier <= 1.15, `multiplier ${listPerf.multiplier} fuori range`);
+    assert.ok(
+        listPerf.multiplier >= 0.25 && listPerf.multiplier <= 1.15,
+        `multiplier ${listPerf.multiplier} fuori range`,
+    );
 
     // 5.1: Session Risk Level
     const { computeSessionRiskLevel, collectConfigStatus } = await import('../workflows/preflight');
@@ -90,7 +93,12 @@ async function run(): Promise<void> {
 
     // 6.7: Breadcrumbs
     const { addBreadcrumb, formatBreadcrumbs } = await import('../workers/context');
-    const fakeContext = { session: null as unknown, dryRun: true, localDate: '', accountId: 'test' } as import('../workers/context').WorkerContext;
+    const fakeContext = {
+        session: null as unknown,
+        dryRun: true,
+        localDate: '',
+        accountId: 'test',
+    } as import('../workers/context').WorkerContext;
     addBreadcrumb(fakeContext, 'test_action', 'test_detail');
     assert.ok(fakeContext.breadcrumbs?.length === 1);
     const formatted = formatBreadcrumbs(fakeContext);

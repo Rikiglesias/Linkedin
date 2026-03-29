@@ -21,7 +21,9 @@ describe('parseOutboxPayload — advanced', () => {
 
     it('oggetto profondamente nested', () => {
         const r = parseOutboxPayload('{"a":{"b":{"c":{"d":"deep"}}}}');
-        expect((((r.a as Record<string, unknown>).b as Record<string, unknown>).c as Record<string, unknown>).d).toBe('deep');
+        expect((((r.a as Record<string, unknown>).b as Record<string, unknown>).c as Record<string, unknown>).d).toBe(
+            'deep',
+        );
     });
 
     it('stringa JSON number → fallback {raw}', () => {

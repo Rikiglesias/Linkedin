@@ -90,9 +90,7 @@ async function sendToSlack(payload: BroadcastPayload): Promise<void> {
 
     const emoji = LEVEL_EMOJI[payload.level];
     const safeMetadata = payload.metadata ? sanitizeForLogs(payload.metadata) : undefined;
-    const metaText = safeMetadata
-        ? '\n```' + JSON.stringify(safeMetadata, null, 2).substring(0, 600) + '```'
-        : '';
+    const metaText = safeMetadata ? '\n```' + JSON.stringify(safeMetadata, null, 2).substring(0, 600) + '```' : '';
 
     const slackBody = {
         text: `${emoji} *[${payload.level}] ${payload.title}*\n${payload.body}${metaText}`,
@@ -195,4 +193,3 @@ export function broadcastCritical(title: string, body: string, metadata?: Record
 export function broadcastWarning(title: string, body: string, metadata?: Record<string, unknown>): Promise<void> {
     return broadcast({ level: 'WARNING', title, body, metadata });
 }
-

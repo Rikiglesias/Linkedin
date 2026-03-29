@@ -183,7 +183,7 @@ export async function incrementCloudDailyStat(opts: CloudDailyStatIncrement): Pr
             );
             if (!upsertErr) break;
             if (attempt < MAX_RETRIES) {
-                await new Promise(r => setTimeout(r, 50 + Math.random() * 150));
+                await new Promise((r) => setTimeout(r, 50 + Math.random() * 150));
             }
         }
     }
@@ -278,9 +278,9 @@ export async function batchUpsertCloudSalesNavMembers(members: CloudSalesNavMemb
  * Legge dal DB locale i record con synced_at IS NULL o più vecchi di lastSyncAt.
  * Ritorna il numero di record sincronizzati.
  */
-export async function syncSalesNavMembersToCloud(
-    localDb: { query: (sql: string, params?: unknown[]) => Promise<Array<Record<string, unknown>>> },
-): Promise<number> {
+export async function syncSalesNavMembersToCloud(localDb: {
+    query: (sql: string, params?: unknown[]) => Promise<Array<Record<string, unknown>>>;
+}): Promise<number> {
     if (!isConfigured()) return 0;
 
     const rows = await localDb.query(
@@ -345,10 +345,7 @@ export async function upsertCloudEnrichmentData(data: CloudEnrichmentData): Prom
 
     const { error } = await sb
         .from('lead_enrichment_data')
-        .upsert(
-            { ...data, updated_at: new Date().toISOString() },
-            { onConflict: 'lead_id' },
-        );
+        .upsert({ ...data, updated_at: new Date().toISOString() }, { onConflict: 'lead_id' });
     if (error) {
         await logWarn('cloud.enrichment.upsert.error', { leadId: data.lead_id, error: error.message });
     }
@@ -358,9 +355,9 @@ export async function upsertCloudEnrichmentData(data: CloudEnrichmentData): Prom
  * Sync batch di enrichment data dal DB locale a Supabase.
  * Risolve il mapping local_lead_id → cloud lead_id tramite linkedin_url.
  */
-export async function syncEnrichmentDataToCloud(
-    localDb: { query: (sql: string, params?: unknown[]) => Promise<Array<Record<string, unknown>>> },
-): Promise<number> {
+export async function syncEnrichmentDataToCloud(localDb: {
+    query: (sql: string, params?: unknown[]) => Promise<Array<Record<string, unknown>>>;
+}): Promise<number> {
     if (!isConfigured()) return 0;
     const sb = getClient();
     if (!sb) return 0;
@@ -382,10 +379,7 @@ export async function syncEnrichmentDataToCloud(
 
     // Risolve linkedin_url → cloud lead_id
     const urls = rows.map((r) => r.linkedin_url as string).filter(Boolean);
-    const { data: cloudLeads } = await sb
-        .from('leads')
-        .select('id, linkedin_url')
-        .in('linkedin_url', urls);
+    const { data: cloudLeads } = await sb.from('leads').select('id, linkedin_url').in('linkedin_url', urls);
 
     const urlToCloudId = new Map<string, number>();
     for (const cl of cloudLeads ?? []) {

@@ -305,28 +305,26 @@ function resolvePostgresBackupPath(backupFile?: string): string | null {
 function pgExec(sql: string, databaseUrl?: string): string {
     const connStr = databaseUrl ?? config.databaseUrl;
     if (connStr.includes('@db:')) {
-        return execFileSync('docker', [
-            'exec', '-i', 'linkedin-pg', 'psql', '-U', 'bot_user', '-d', 'linkedin_bot',
-            '-c', sql,
-        ], { encoding: 'utf8', timeout: 30_000 });
+        return execFileSync(
+            'docker',
+            ['exec', '-i', 'linkedin-pg', 'psql', '-U', 'bot_user', '-d', 'linkedin_bot', '-c', sql],
+            { encoding: 'utf8', timeout: 30_000 },
+        );
     }
-    return execFileSync('psql', [
-        '--dbname', connStr, '-c', sql,
-    ], { encoding: 'utf8', timeout: 30_000 });
+    return execFileSync('psql', ['--dbname', connStr, '-c', sql], { encoding: 'utf8', timeout: 30_000 });
 }
 
 function pgExecOnDb(sql: string, dbName: string): string {
     if (config.databaseUrl.includes('@db:')) {
-        return execFileSync('docker', [
-            'exec', '-i', 'linkedin-pg', 'psql', '-U', 'bot_user', '-d', dbName,
-            '-c', sql,
-        ], { encoding: 'utf8', timeout: 30_000 });
+        return execFileSync(
+            'docker',
+            ['exec', '-i', 'linkedin-pg', 'psql', '-U', 'bot_user', '-d', dbName, '-c', sql],
+            { encoding: 'utf8', timeout: 30_000 },
+        );
     }
     const url = new URL(config.databaseUrl);
     url.pathname = `/${dbName}`;
-    return execFileSync('psql', [
-        '--dbname', url.toString(), '-c', sql,
-    ], { encoding: 'utf8', timeout: 30_000 });
+    return execFileSync('psql', ['--dbname', url.toString(), '-c', sql], { encoding: 'utf8', timeout: 30_000 });
 }
 
 function pgRestoreToDb(backupPath: string, dbName: string): void {
@@ -348,7 +346,9 @@ function pgRestoreToDb(backupPath: string, dbName: string): void {
 
 async function runPostgresRestoreDrill(
     options: RestoreDrillOptions,
-    finalize: (partial: Omit<RestoreDrillReport, 'startedAt' | 'finishedAt' | 'durationMs' | 'triggeredBy'>) => Promise<RestoreDrillReport>,
+    finalize: (
+        partial: Omit<RestoreDrillReport, 'startedAt' | 'finishedAt' | 'durationMs' | 'triggeredBy'>,
+    ) => Promise<RestoreDrillReport>,
 ): Promise<RestoreDrillReport> {
     const backupPath = resolvePostgresBackupPath(options.backupFile);
     if (!backupPath) {
@@ -379,10 +379,7 @@ async function runPostgresRestoreDrill(
 
         for (const tableName of candidateTables) {
             try {
-                const output = pgExecOnDb(
-                    `SELECT COUNT(*) as total FROM ${tableName}`,
-                    drillDbName,
-                );
+                const output = pgExecOnDb(`SELECT COUNT(*) as total FROM ${tableName}`, drillDbName);
                 const match = output.match(/(\d+)/);
                 const rowCount = match ? parseInt(match[1], 10) : 0;
                 tableChecks.push({ table: tableName, exists: true, rowCount });
@@ -409,9 +406,7 @@ async function runPostgresRestoreDrill(
             integrityCheck: 'n/a_postgres',
             tableChecks,
             reportPath: null,
-            errorMessage: success
-                ? null
-                : `requiredTablesPresent=${requiredTablesPresent}`,
+            errorMessage: success ? null : `requiredTablesPresent=${requiredTablesPresent}`,
         });
     } catch (error) {
         // Cleanup on failure

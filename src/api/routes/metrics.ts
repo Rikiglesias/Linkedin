@@ -22,8 +22,16 @@ router.get('/', async (_req, res) => {
         const { getDailyStat, getRiskInputs } = await import('../../core/repositories');
 
         const [
-            invitesSent, messagesSent, runErrors, challenges, selectorFailures,
-            acceptances, followUpsSent, profileViews, likesGiven, followsGiven,
+            invitesSent,
+            messagesSent,
+            runErrors,
+            challenges,
+            selectorFailures,
+            acceptances,
+            followUpsSent,
+            profileViews,
+            likesGiven,
+            followsGiven,
             riskInputs,
         ] = await Promise.all([
             getDailyStat(localDate, 'invites_sent'),

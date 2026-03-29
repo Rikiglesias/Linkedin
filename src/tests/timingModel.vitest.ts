@@ -14,23 +14,27 @@ describe('ml/timingModel — calculateContextualDelay', () => {
     it('delay con profileMultiplier alto → più lungo in media', () => {
         const delaysHigh: number[] = [];
         for (let i = 0; i < 50; i++) {
-            delaysHigh.push(calculateContextualDelay({
-                actionType: 'click',
-                baseMin: 1000,
-                baseMax: 3000,
-                profileMultiplier: 2.0,
-            }));
+            delaysHigh.push(
+                calculateContextualDelay({
+                    actionType: 'click',
+                    baseMin: 1000,
+                    baseMax: 3000,
+                    profileMultiplier: 2.0,
+                }),
+            );
         }
         const avgHigh = delaysHigh.reduce((a, b) => a + b, 0) / delaysHigh.length;
 
         const delaysLow: number[] = [];
         for (let i = 0; i < 50; i++) {
-            delaysLow.push(calculateContextualDelay({
-                actionType: 'click',
-                baseMin: 1000,
-                baseMax: 3000,
-                profileMultiplier: 0.5,
-            }));
+            delaysLow.push(
+                calculateContextualDelay({
+                    actionType: 'click',
+                    baseMin: 1000,
+                    baseMax: 3000,
+                    profileMultiplier: 0.5,
+                }),
+            );
         }
         const avgLow = delaysLow.reduce((a, b) => a + b, 0) / delaysLow.length;
         expect(avgHigh).toBeGreaterThanOrEqual(avgLow * 0.7);
@@ -50,11 +54,13 @@ describe('ml/timingModel — calculateContextualDelay', () => {
     it('baseMin=baseMax → delay vicino a quel valore', () => {
         const delays: number[] = [];
         for (let i = 0; i < 20; i++) {
-            delays.push(calculateContextualDelay({
-                actionType: 'type',
-                baseMin: 2000,
-                baseMax: 2000,
-            }));
+            delays.push(
+                calculateContextualDelay({
+                    actionType: 'type',
+                    baseMin: 2000,
+                    baseMax: 2000,
+                }),
+            );
         }
         const avg = delays.reduce((a, b) => a + b, 0) / delays.length;
         expect(avg).toBeGreaterThan(1500);
@@ -66,13 +72,17 @@ describe('ml/timingModel — calculateContextualDelay', () => {
         // Questo è corretto: poco contenuto = meno tempo di lettura
         const delays: number[] = [];
         for (let i = 0; i < 30; i++) {
-            delays.push(calculateContextualDelay({ actionType: 'read', baseMin: 500, baseMax: 2000, contentLength: 10 }));
+            delays.push(
+                calculateContextualDelay({ actionType: 'read', baseMin: 500, baseMax: 2000, contentLength: 10 }),
+            );
         }
         const avgShort = delays.reduce((a, b) => a + b, 0) / delays.length;
 
         const delaysLong: number[] = [];
         for (let i = 0; i < 30; i++) {
-            delaysLong.push(calculateContextualDelay({ actionType: 'read', baseMin: 500, baseMax: 2000, contentLength: 5000 }));
+            delaysLong.push(
+                calculateContextualDelay({ actionType: 'read', baseMin: 500, baseMax: 2000, contentLength: 5000 }),
+            );
         }
         const avgLong = delaysLong.reduce((a, b) => a + b, 0) / delaysLong.length;
 

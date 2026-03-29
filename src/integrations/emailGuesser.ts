@@ -64,11 +64,15 @@ function sanitizeName(name: string): string {
         .toLowerCase()
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '') // rimuovi accenti (è→e, ñ→n)
-        .replace(/[^a-z0-9]/g, '')       // solo alfanumerici
+        .replace(/[^a-z0-9]/g, '') // solo alfanumerici
         .trim();
 }
 
-function generateCandidates(firstName: string, lastName: string, domain: string): Array<{ email: string; pattern: string; weight: number }> {
+function generateCandidates(
+    firstName: string,
+    lastName: string,
+    domain: string,
+): Array<{ email: string; pattern: string; weight: number }> {
     const first = sanitizeName(firstName);
     const last = sanitizeName(lastName);
     if (!first || !last) return [];
@@ -119,7 +123,9 @@ function smtpProbe(mxHost: string, emailAddress: string, port: number = SMTP_POR
             try {
                 socket.write('QUIT\r\n');
                 socket.end();
-            } catch { /* ignore */ }
+            } catch {
+                /* ignore */
+            }
             resolve(result);
         };
 
@@ -204,7 +210,10 @@ async function smtpProbeWithFallback(mxHost: string, emailAddress: string): Prom
     }
 
     const result25 = await smtpProbe(mxHost, emailAddress, SMTP_PORT);
-    if (result25.accepted || (result25.code > 0 && result25.message !== 'timeout' && result25.message !== 'connection_error')) {
+    if (
+        result25.accepted ||
+        (result25.code > 0 && result25.message !== 'timeout' && result25.message !== 'connection_error')
+    ) {
         return result25; // Porta 25 funziona (risposta reale, anche se reject)
     }
 

@@ -296,7 +296,8 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
     }
 
     // ─── 7. Anti-headless guards (condizionali) ──────────────────────────────
-    ${opts.isHeadless
+    ${
+        opts.isHeadless
             ? `
     // In headless mode: normalizza le dimensioni della finestra per sembrare reale
     try {
@@ -326,7 +327,7 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
     }
     `
             : '// Headless disabled — no extra guards needed.'
-        }
+    }
 
     // ─── 8. navigator.hardwareConcurrency normalization ──────────────────────
     // Headless/Playwright può avere valori anomali (1 o 2).

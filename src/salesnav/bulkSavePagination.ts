@@ -15,25 +15,12 @@
  */
 
 import type { Page } from 'playwright';
-import {
-    humanDelay,
-    randomMouseMove,
-} from '../browser';
+import { humanDelay, randomMouseMove } from '../browser';
 import { config } from '../config';
-import {
-    hasLocator,
-    locatorBoundingBox,
-    buildClipAroundLocator,
-    smartClick,
-    safeVisionClick,
-} from './bulkSaveHelpers';
+import { hasLocator, locatorBoundingBox, buildClipAroundLocator, smartClick, safeVisionClick } from './bulkSaveHelpers';
 import { pauseInputBlock, resumeInputBlock, humanMouseMoveToCoords } from '../browser/humanBehavior';
-import {
-    visionRead,
-} from './visionNavigator';
-import {
-    SALESNAV_NEXT_PAGE_SELECTOR as NEXT_PAGE_SELECTOR,
-} from './selectors';
+import { visionRead } from './visionNavigator';
+import { SALESNAV_NEXT_PAGE_SELECTOR as NEXT_PAGE_SELECTOR } from './selectors';
 import type { ScrollCollectedProfile } from './bulkSaveTypes';
 
 export interface ScrollResult {
@@ -58,13 +45,10 @@ export async function readPaginationInfo(page: Page): Promise<{ current: number;
                         'button[aria-label], li[data-test-pagination-page-btn]',
                     ),
                 );
-                const activeBtn =
-                    paginationContainer.querySelector<HTMLButtonElement>(
-                        'button[aria-current="true"], button.active, li.active button, li.selected button',
-                    );
-                const currentFromActive = activeBtn
-                    ? parseInt((activeBtn.textContent ?? '').trim(), 10)
-                    : NaN;
+                const activeBtn = paginationContainer.querySelector<HTMLButtonElement>(
+                    'button[aria-current="true"], button.active, li.active button, li.selected button',
+                );
+                const currentFromActive = activeBtn ? parseInt((activeBtn.textContent ?? '').trim(), 10) : NaN;
 
                 // Collect all visible page numbers
                 const pageNumbers: number[] = [];
@@ -87,7 +71,9 @@ export async function readPaginationInfo(page: Page): Promise<{ current: number;
             }
 
             // Strategy 3: "X–Y of Z results" → derive page count (25 per page)
-            const rangeMatch = bodyText.match(/(\d+)\s*[–\-]\s*(\d+)\s+(?:of|di|su)\s+(\d[\d,.]*)\s*(?:results|risultat)/i);
+            const rangeMatch = bodyText.match(
+                /(\d+)\s*[–\-]\s*(\d+)\s+(?:of|di|su)\s+(\d[\d,.]*)\s*(?:results|risultat)/i,
+            );
             if (rangeMatch) {
                 const start = parseInt(rangeMatch[1], 10);
                 const totalResults = parseInt(rangeMatch[3].replace(/[,.\s]/g, ''), 10);
@@ -129,7 +115,7 @@ export async function clickNextPage(page: Page, dryRun: boolean): Promise<boolea
     const pageBefore = await readPaginationInfo(page);
 
     // Scrolla il bottone Next nel viewport — la paginazione è in fondo al container
-    await nextButton.scrollIntoViewIfNeeded().catch(() => { });
+    await nextButton.scrollIntoViewIfNeeded().catch(() => {});
     await humanDelay(page, 300, 500);
 
     const clip =
@@ -151,17 +137,21 @@ export async function clickNextPage(page: Page, dryRun: boolean): Promise<boolea
     // Verifica che la pagina sia effettivamente cambiata
     const pageAfter = await readPaginationInfo(page);
     if (pageBefore && pageAfter && pageAfter.current <= pageBefore.current) {
-        console.warn(`[WARN] Click Next non ha cambiato pagina (prima: ${pageBefore.current}, dopo: ${pageAfter.current}). Riprovo con click diretto...`);
+        console.warn(
+            `[WARN] Click Next non ha cambiato pagina (prima: ${pageBefore.current}, dopo: ${pageAfter.current}). Riprovo con click diretto...`,
+        );
         // Fallback: click diretto con force
-        await nextButton.click({ force: true }).catch(() => { });
+        await nextButton.click({ force: true }).catch(() => {});
         // domcontentloaded (non networkidle — SalesNav ha WebSocket permanente)
-        await page.waitForLoadState('domcontentloaded', { timeout: 10_000 }).catch(() => { });
+        await page.waitForLoadState('domcontentloaded', { timeout: 10_000 }).catch(() => {});
         await humanDelay(page, 600, 1_200);
     }
 
     // Attendi che le card lead appaiano nel DOM (lazy rendering post-navigazione).
     // Senza questo, scrollAndReadPage inizia prima che le card siano renderizzate.
-    await page.waitForSelector('a[href*="/sales/lead/"], a[href*="/sales/people/"]', { timeout: 8_000 }).catch(() => null);
+    await page
+        .waitForSelector('a[href*="/sales/lead/"], a[href*="/sales/people/"]', { timeout: 8_000 })
+        .catch(() => null);
 
     return true;
 }
@@ -210,7 +200,11 @@ export async function dismissTransientUi(page: Page): Promise<void> {
     await page.waitForTimeout(200).catch(() => null);
 
     // Dismiss "Continua nel browser" / mobile app prompt (se presente)
-    const continueBtn = page.locator('a:has-text("Continua nel browser"), a:has-text("Continue in browser"), button:has-text("Continua nel browser"), button:has-text("Continue in browser")').first();
+    const continueBtn = page
+        .locator(
+            'a:has-text("Continua nel browser"), a:has-text("Continue in browser"), button:has-text("Continua nel browser"), button:has-text("Continue in browser")',
+        )
+        .first();
     if ((await continueBtn.count().catch(() => 0)) > 0) {
         console.log('[UI] Dismissing mobile app prompt...');
         await pauseInputBlock(page);
@@ -229,12 +223,22 @@ export async function aiCheckPageHealth(page: Page): Promise<{ safe: boolean; wa
         const suspiciousText = await page.evaluate(() => {
             const body = (document.body.innerText || '').toLowerCase();
             const patterns = [
-                'unusual activity', 'attività insolita',
-                'restricted', 'limitato', 'sospeso', 'suspended',
-                'too fast', 'troppo veloce', 'slow down', 'rallenta',
-                'security verification', 'verifica di sicurezza',
-                'something went wrong', 'qualcosa è andato storto',
-                'captcha', 'robot',
+                'unusual activity',
+                'attività insolita',
+                'restricted',
+                'limitato',
+                'sospeso',
+                'suspended',
+                'too fast',
+                'troppo veloce',
+                'slow down',
+                'rallenta',
+                'security verification',
+                'verifica di sicurezza',
+                'something went wrong',
+                'qualcosa è andato storto',
+                'captcha',
+                'robot',
             ];
             for (const p of patterns) {
                 if (body.includes(p)) return p;
@@ -303,8 +307,13 @@ export async function scrollAndReadPage(page: Page, fast: boolean = false): Prom
     const collectVisibleLeads = async (): Promise<number> => {
         const profiles = await page.evaluate(() => {
             const results: Array<{
-                leadId: string; firstName: string; lastName: string;
-                linkedinUrl: string; title?: string; company?: string; location?: string;
+                leadId: string;
+                firstName: string;
+                lastName: string;
+                linkedinUrl: string;
+                title?: string;
+                company?: string;
+                location?: string;
             }> = [];
             const anchors = document.querySelectorAll('a[href*="/sales/lead/"], a[href*="/sales/people/"]');
             for (const a of anchors) {
@@ -318,13 +327,19 @@ export async function scrollAndReadPage(page: Page, fast: boolean = false): Prom
                 const lastName = parts.slice(1).join(' ') ?? '';
                 const subtitleEl = card?.querySelector('[class*="subtitle"], [class*="body-text"]');
                 const subtitle = subtitleEl?.textContent?.trim() ?? '';
-                const [title, company] = subtitle.includes(' at ') ? subtitle.split(' at ') :
-                    subtitle.includes(' @ ') ? subtitle.split(' @ ') :
-                    subtitle.includes(' presso ') ? subtitle.split(' presso ') : [subtitle, ''];
+                const [title, company] = subtitle.includes(' at ')
+                    ? subtitle.split(' at ')
+                    : subtitle.includes(' @ ')
+                      ? subtitle.split(' @ ')
+                      : subtitle.includes(' presso ')
+                        ? subtitle.split(' presso ')
+                        : [subtitle, ''];
                 const locationEl = card?.querySelector('[class*="location"], [class*="geo"]');
                 const location = locationEl?.textContent?.trim() ?? undefined;
                 results.push({
-                    leadId: id, firstName, lastName,
+                    leadId: id,
+                    firstName,
+                    lastName,
                     linkedinUrl: href.startsWith('/') ? `https://www.linkedin.com${href.split('?')[0]}` : href,
                     title: title?.trim() || undefined,
                     company: company?.trim() || undefined,
@@ -381,7 +396,7 @@ export async function scrollAndReadPage(page: Page, fast: boolean = false): Prom
 
     console.log(
         `[SCROLL${fast ? ' FAST' : ''}] Container: ${scrollContainerInfo.found ? 'OK' : 'body'}` +
-        ` | overflow=${scrollContainerInfo.overflow}px | Lead iniziali: ${initialCount}`,
+            ` | overflow=${scrollContainerInfo.overflow}px | Lead iniziali: ${initialCount}`,
     );
 
     const MAX_STEPS = fast ? 40 : 20;
@@ -390,10 +405,15 @@ export async function scrollAndReadPage(page: Page, fast: boolean = false): Prom
     const containerIndex = scrollContainerInfo.index;
     const doScroll = async (delta: number): Promise<void> => {
         if (scrollContainerInfo.found) {
-            await page.evaluate(({ d, idx }) => {
-                const el = document.querySelectorAll('div, main, section, [role="main"]')[idx] as HTMLElement | undefined;
-                if (el) el.scrollTop += d;
-            }, { d: delta, idx: containerIndex });
+            await page.evaluate(
+                ({ d, idx }) => {
+                    const el = document.querySelectorAll('div, main, section, [role="main"]')[idx] as
+                        | HTMLElement
+                        | undefined;
+                    if (el) el.scrollTop += d;
+                },
+                { d: delta, idx: containerIndex },
+            );
         } else {
             await page.mouse.wheel(0, delta);
         }
@@ -401,14 +421,18 @@ export async function scrollAndReadPage(page: Page, fast: boolean = false): Prom
 
     const isAtBottom = async (): Promise<boolean> => {
         if (!scrollContainerInfo.found) {
-            return page.evaluate(() =>
-                window.scrollY + window.innerHeight >= document.body.scrollHeight - 100
-            ).catch(() => true);
+            return page
+                .evaluate(() => window.scrollY + window.innerHeight >= document.body.scrollHeight - 100)
+                .catch(() => true);
         }
-        return page.evaluate((idx: number) => {
-            const el = document.querySelectorAll('div, main, section, [role="main"]')[idx] as HTMLElement | undefined;
-            return el ? el.scrollTop + el.clientHeight >= el.scrollHeight - 100 : true;
-        }, containerIndex).catch(() => true);
+        return page
+            .evaluate((idx: number) => {
+                const el = document.querySelectorAll('div, main, section, [role="main"]')[idx] as
+                    | HTMLElement
+                    | undefined;
+                return el ? el.scrollTop + el.clientHeight >= el.scrollHeight - 100 : true;
+            }, containerIndex)
+            .catch(() => true);
     };
 
     for (let i = 0; i < MAX_STEPS; i++) {
@@ -419,18 +443,21 @@ export async function scrollAndReadPage(page: Page, fast: boolean = false): Prom
             for (let b = 0; b < burstCount; b++) {
                 const delta = 120 + Math.floor(Math.random() * 60);
                 await doScroll(delta);
-                const preCount = await page.evaluate(() =>
-                    document.querySelectorAll('a[href*="/sales/lead/"], a[href*="/sales/people/"]').length
+                const preCount = await page.evaluate(
+                    () => document.querySelectorAll('a[href*="/sales/lead/"], a[href*="/sales/people/"]').length,
                 );
                 // H04: Adaptive scroll timeout — base 2500ms (safer for slow proxies).
                 // Adds half of proxy health check timeout as proxy-latency estimate.
                 const scrollWaitTimeout = 2_500 + Math.min((config.proxyHealthCheckTimeoutMs ?? 0) / 2, 3_000);
-                await page.waitForFunction(
-                    (before: number) =>
-                        document.querySelectorAll('a[href*="/sales/lead/"], a[href*="/sales/people/"]').length !== before,
-                    preCount,
-                    { timeout: scrollWaitTimeout },
-                ).catch(() => null);
+                await page
+                    .waitForFunction(
+                        (before: number) =>
+                            document.querySelectorAll('a[href*="/sales/lead/"], a[href*="/sales/people/"]').length !==
+                            before,
+                        preCount,
+                        { timeout: scrollWaitTimeout },
+                    )
+                    .catch(() => null);
                 await page.waitForTimeout(150 + Math.floor(Math.random() * 100));
                 await collectVisibleLeads();
             }
@@ -457,10 +484,12 @@ export async function scrollAndReadPage(page: Page, fast: boolean = false): Prom
         }
 
         if (i % 4 === 3) {
-            await page.waitForFunction(
-                () => !document.querySelector('.artdeco-loader, [class*="skeleton"], [class*="ghost"]'),
-                { timeout: 1_500 },
-            ).catch(() => { });
+            await page
+                .waitForFunction(
+                    () => !document.querySelector('.artdeco-loader, [class*="skeleton"], [class*="ghost"]'),
+                    { timeout: 1_500 },
+                )
+                .catch(() => {});
         }
 
         const countAfter = await collectVisibleLeads();
@@ -487,7 +516,7 @@ export async function scrollAndReadPage(page: Page, fast: boolean = false): Prom
             }
         }
 
-        if (!fast && Math.random() < 0.20) {
+        if (!fast && Math.random() < 0.2) {
             const jitterX = mouseX + Math.floor(Math.random() * 80 - 40);
             const jitterY = mouseY + Math.floor(Math.random() * 50 - 25);
             await humanMouseMoveToCoords(page, jitterX, jitterY);
@@ -495,7 +524,9 @@ export async function scrollAndReadPage(page: Page, fast: boolean = false): Prom
     }
 
     if (fast && collectedLeadIds.size < 15 && collectedLeadIds.size > 0) {
-        console.warn(`[SCROLL] Solo ${collectedLeadIds.size} lead trovati dopo scroll completo — possibile rendering incompleto`);
+        console.warn(
+            `[SCROLL] Solo ${collectedLeadIds.size} lead trovati dopo scroll completo — possibile rendering incompleto`,
+        );
     }
 
     const leadCount = collectedLeadIds.size;

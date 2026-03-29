@@ -32,11 +32,7 @@ export function retryDelayMs(attempt: number, baseDelayMs: number, jitterMaxMs: 
  * @param fallback - Valore di ritorno in caso di errore (default: undefined)
  * @param label - Etichetta per il log (opzionale, aiuta il debugging)
  */
-export async function safeAsync<T>(
-    fn: () => Promise<T>,
-    fallback?: T,
-    label?: string,
-): Promise<T | undefined> {
+export async function safeAsync<T>(fn: () => Promise<T>, fallback?: T, label?: string): Promise<T | undefined> {
     try {
         return await fn();
     } catch (err: unknown) {

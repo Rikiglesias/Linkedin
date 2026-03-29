@@ -34,15 +34,15 @@ export const SALESNAV_SELECT_ALL_SELECTOR = [
 
 export const SALESNAV_SAVE_TO_LIST_SELECTOR = [
     'button:has-text("Save to list")',
-    "button:has-text(\"Salva nell'elenco\")",
+    'button:has-text("Salva nell\'elenco")',
     'button:has-text("Salva nella lista")',
     'button:has-text("Salva in elenco")',
     'button[title="Save to list"]',
-    "button[title=\"Salva nell'elenco\"]",
+    'button[title="Salva nell\'elenco"]',
     'button[title="Salva nella lista"]',
     // Aria-label variants (SalesNav sometimes uses aria-label instead of visible text)
     'button[aria-label="Save to list"]',
-    "button[aria-label=\"Salva nell'elenco\"]",
+    'button[aria-label="Salva nell\'elenco"]',
     'button[aria-label="Salva nella lista"]',
     // Variante breve (SalesNav a volte mostra solo "Salva" senza target)
     'button[aria-label="Salva"]',

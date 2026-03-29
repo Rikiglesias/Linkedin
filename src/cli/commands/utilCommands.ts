@@ -7,7 +7,13 @@
 
 import { config } from '../../config';
 import { maskEmail, maskPhone } from '../../security/redaction';
-import { launchBrowser, closeBrowser as closeBrowserSession, checkLogin, isLoggedIn, detectChallenge } from '../../browser';
+import {
+    launchBrowser,
+    closeBrowser as closeBrowserSession,
+    checkLogin,
+    isLoggedIn,
+    detectChallenge,
+} from '../../browser';
 import { importLeadsFromCSV } from '../../csvImporter';
 import { buildFunnelReport, runSiteCheck } from '../../core/audit';
 import { runCompanyEnrichmentBatch } from '../../core/companyEnrichment';
@@ -223,13 +229,17 @@ function inferDomainFromLead(lead: LeadRecord): string {
         try {
             const parsed = raw.startsWith('http') ? new URL(raw) : new URL(`https://${raw}`);
             return parsed.hostname.replace(/^www\./i, '').toLowerCase();
-        } catch { /* ignore */ }
+        } catch {
+            /* ignore */
+        }
     }
     const company = ((lead.account_name as string) ?? '').trim();
     if (company) {
-        const slug = company.toLowerCase()
+        const slug = company
+            .toLowerCase()
             .replace(/\b(srl|spa|inc|ltd|corp|group|italia|italy)\b/g, '')
-            .replace(/[^a-z0-9]/g, '').trim();
+            .replace(/[^a-z0-9]/g, '')
+            .trim();
         return slug ? `${slug}.com` : '';
     }
     return '';
@@ -361,8 +371,8 @@ export async function runEnrichDeepCommand(args: string[]): Promise<void> {
 
             console.log(
                 `  [OK] Lead ${lead.id} (${firstName} ${lastName}): ` +
-                `${result.dataPoints} data points, confidence ${result.overallConfidence}%, ` +
-                `${result.phones.length} phone(s), ${result.socialProfiles.length} social(s)`,
+                    `${result.dataPoints} data points, confidence ${result.overallConfidence}%, ` +
+                    `${result.phones.length} phone(s), ${result.socialProfiles.length} social(s)`,
             );
             enriched++;
         } catch (error) {
@@ -372,7 +382,9 @@ export async function runEnrichDeepCommand(args: string[]): Promise<void> {
         }
     }
 
-    console.log(`\n[ENRICH-DEEP] Completato: ${enriched} arricchiti, ${failed} errori, ${leads.length - enriched - failed} skippati`);
+    console.log(
+        `\n[ENRICH-DEEP] Completato: ${enriched} arricchiti, ${failed} errori, ${leads.length - enriched - failed} skippati`,
+    );
 
     // Sync enrichment data to Supabase cloud
     if (!dryRun && enriched > 0) {
@@ -432,7 +444,9 @@ export async function runEnrichProfilesCommand(args: string[]): Promise<void> {
     const limit = Math.max(1, Math.floor(rawLimit * maturityFactor));
 
     if (maturityFactor < 1) {
-        console.log(`[ANTI-DETECT] Session maturity: ${maturity.maturity} — budget ridotto a ${Math.round(maturityFactor * 100)}% (${limit} lead)`);
+        console.log(
+            `[ANTI-DETECT] Session maturity: ${maturity.maturity} — budget ridotto a ${Math.round(maturityFactor * 100)}% (${limit} lead)`,
+        );
     }
 
     // ── Session pacing check ──
@@ -442,7 +456,9 @@ export async function runEnrichProfilesCommand(args: string[]): Promise<void> {
     const basePauseMs = pacingFactor < 0.8 ? 12_000 : pacingFactor < 1.0 ? 8_000 : 6_000;
 
     if (pacingFactor < 1) {
-        console.log(`[ANTI-DETECT] Pacing factor: ${pacingFactor.toFixed(2)} — pause piu\' lunghe (${Math.round(basePauseMs / 1000)}s base)`);
+        console.log(
+            `[ANTI-DETECT] Pacing factor: ${pacingFactor.toFixed(2)} — pause piu\' lunghe (${Math.round(basePauseMs / 1000)}s base)`,
+        );
     }
 
     // Query leads missing company/title data
@@ -458,7 +474,7 @@ export async function runEnrichProfilesCommand(args: string[]): Promise<void> {
     );
 
     if (leads.length === 0) {
-        console.log('[ENRICH-PROFILES] Nessun lead da arricchire (tutti hanno gia\' company/title).');
+        console.log("[ENRICH-PROFILES] Nessun lead da arricchire (tutti hanno gia' company/title).");
         return;
     }
 
@@ -496,7 +512,7 @@ export async function runEnrichProfilesCommand(args: string[]): Promise<void> {
         await blockUserInput(session.page);
 
         // ── Decoy burst: 2-3 azioni casuali per riscaldare la sessione ──
-        console.log('  [ANTI-DETECT] Warm-up con attivita\' casuale...');
+        console.log("  [ANTI-DETECT] Warm-up con attivita' casuale...");
         await performDecoyBurst(session.page);
 
         for (let i = 0; i < leads.length; i++) {
@@ -567,26 +583,50 @@ export async function runEnrichProfilesCommand(args: string[]): Promise<void> {
                 // Run enrichment pipeline if we now have a company name
                 if (company) {
                     try {
-                        const enrichResult = await enrichLeadAuto({
-                            id: lead.id,
-                            first_name: lead.first_name,
-                            last_name: lead.last_name,
-                            website: lead.website,
-                            account_name: company,
-                            linkedin_url: publicUrl || lead.linkedin_url,
-                            location,
-                        }, { deep: true });
+                        const enrichResult = await enrichLeadAuto(
+                            {
+                                id: lead.id,
+                                first_name: lead.first_name,
+                                last_name: lead.last_name,
+                                website: lead.website,
+                                account_name: company,
+                                linkedin_url: publicUrl || lead.linkedin_url,
+                                location,
+                            },
+                            { deep: true },
+                        );
 
                         if (enrichResult.email || enrichResult.phone || enrichResult.companyDomain) {
                             const eCols: string[] = [];
                             const eParams: (string | number | null)[] = [];
-                            if (enrichResult.email) { eCols.push('email = ?'); eParams.push(enrichResult.email); }
-                            if (enrichResult.phone) { eCols.push('phone = ?'); eParams.push(enrichResult.phone); }
-                            if (enrichResult.companyDomain) { eCols.push('company_domain = ?'); eParams.push(enrichResult.companyDomain); }
-                            if (enrichResult.businessEmail) { eCols.push('business_email = ?'); eParams.push(enrichResult.businessEmail); }
-                            if (enrichResult.businessEmailConfidence > 0) { eCols.push('business_email_confidence = ?'); eParams.push(enrichResult.businessEmailConfidence); }
-                            if (enrichResult.enrichmentSources) { eCols.push('enrichment_sources = ?'); eParams.push(JSON.stringify(enrichResult.enrichmentSources)); }
-                            if (enrichResult.jobTitle && !title) { eCols.push('job_title = ?'); eParams.push(enrichResult.jobTitle); }
+                            if (enrichResult.email) {
+                                eCols.push('email = ?');
+                                eParams.push(enrichResult.email);
+                            }
+                            if (enrichResult.phone) {
+                                eCols.push('phone = ?');
+                                eParams.push(enrichResult.phone);
+                            }
+                            if (enrichResult.companyDomain) {
+                                eCols.push('company_domain = ?');
+                                eParams.push(enrichResult.companyDomain);
+                            }
+                            if (enrichResult.businessEmail) {
+                                eCols.push('business_email = ?');
+                                eParams.push(enrichResult.businessEmail);
+                            }
+                            if (enrichResult.businessEmailConfidence > 0) {
+                                eCols.push('business_email_confidence = ?');
+                                eParams.push(enrichResult.businessEmailConfidence);
+                            }
+                            if (enrichResult.enrichmentSources) {
+                                eCols.push('enrichment_sources = ?');
+                                eParams.push(JSON.stringify(enrichResult.enrichmentSources));
+                            }
+                            if (enrichResult.jobTitle && !title) {
+                                eCols.push('job_title = ?');
+                                eParams.push(enrichResult.jobTitle);
+                            }
 
                             if (eCols.length > 0) {
                                 eCols.push('updated_at = CURRENT_TIMESTAMP');
@@ -595,7 +635,9 @@ export async function runEnrichProfilesCommand(args: string[]): Promise<void> {
                             }
 
                             enriched++;
-                            console.log(`    [ENRICHED] email=${maskEmail(enrichResult.email)} phone=${maskPhone(enrichResult.phone)} domain=${enrichResult.companyDomain || '-'}`);
+                            console.log(
+                                `    [ENRICHED] email=${maskEmail(enrichResult.email)} phone=${maskPhone(enrichResult.phone)} domain=${enrichResult.companyDomain || '-'}`,
+                            );
                         }
                     } catch (err) {
                         console.log(`    [ENRICH-ERR] ${err instanceof Error ? err.message : String(err)}`);
@@ -621,7 +663,7 @@ export async function runEnrichProfilesCommand(args: string[]): Promise<void> {
 
                     // Ogni 5 profili: decoy action (visita feed/notifiche)
                     if ((i + 1) % 5 === 0 && i < leads.length - 1) {
-                        console.log('    [ANTI-DETECT] Pausa con attivita\' casuale...');
+                        console.log("    [ANTI-DETECT] Pausa con attivita' casuale...");
                         await performDecoyBurst(session.page);
                     }
                 }
@@ -632,15 +674,19 @@ export async function runEnrichProfilesCommand(args: string[]): Promise<void> {
         }
 
         // ── Rimuovi input block ──
-        await session.page.evaluate(() => {
-            document.querySelector('#__bot_input_block')?.remove();
-        }).catch(() => null);
+        await session.page
+            .evaluate(() => {
+                document.querySelector('#__bot_input_block')?.remove();
+            })
+            .catch(() => null);
     } finally {
         disableWindowClickThrough(session.browser);
         await closeBrowserSession(session);
     }
 
-    console.log(`\n[ENRICH-PROFILES] Completato: ${scraped} profili scrappati, ${enriched} arricchiti, ${failed} errori`);
+    console.log(
+        `\n[ENRICH-PROFILES] Completato: ${scraped} profili scrappati, ${enriched} arricchiti, ${failed} errori`,
+    );
 
     // Sync to Supabase
     if (enriched > 0 || scraped > 0) {
@@ -664,7 +710,9 @@ export async function runEnrichFastCommand(args: string[]): Promise<void> {
     const limit = limitRaw ? Math.max(1, parseIntStrict(limitRaw, '--limit')) : 50;
     const concurrency = concurrencyRaw ? Math.max(1, Math.min(20, parseIntStrict(concurrencyRaw, '--concurrency'))) : 5;
 
-    console.log(`[ENRICH-FAST] Avvio enrichment parallelo: limit=${limit}, concurrency=${concurrency}${listName ? `, list=${listName}` : ''}`);
+    console.log(
+        `[ENRICH-FAST] Avvio enrichment parallelo: limit=${limit}, concurrency=${concurrency}${listName ? `, list=${listName}` : ''}`,
+    );
     console.log(`[ENRICH-FAST] Fonti: Domain Discovery + EmailGuesser + PersonDataFinder + WebSearch (zero LinkedIn)`);
 
     const report = await enrichLeadsParallel({
@@ -776,7 +824,7 @@ export async function runTestConnectionCommand(args: string[]): Promise<void> {
         report.errors.push(msg);
     } finally {
         if (session) {
-            await closeBrowserSession(session).catch(() => { });
+            await closeBrowserSession(session).catch(() => {});
         }
     }
 

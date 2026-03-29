@@ -101,8 +101,13 @@ statsRouter.get('/stats/trend', async (req, res) => {
         const currentRiskInputs = await getRiskInputs(localDate, config.hardInviteCap);
         const pendingRatioReference = currentRiskInputs.pendingRatio;
         const trend: Array<{
-            date: string; invitesSent: number; messagesSent: number;
-            acceptances: number; runErrors: number; challenges: number; estimatedRiskScore: number;
+            date: string;
+            invitesSent: number;
+            messagesSent: number;
+            acceptances: number;
+            runErrors: number;
+            challenges: number;
+            estimatedRiskScore: number;
         }> = [];
         for (let i = days - 1; i >= 0; i--) {
             const d = new Date(today);
@@ -123,7 +128,15 @@ statsRouter.get('/stats/trend', async (req, res) => {
                 challengeCount: challenges,
                 inviteVelocityRatio: invites / Math.max(1, config.hardInviteCap),
             });
-            trend.push({ date: dateStr, invitesSent: invites, messagesSent: messages, acceptances, runErrors, challenges, estimatedRiskScore: estimatedRisk.score });
+            trend.push({
+                date: dateStr,
+                invitesSent: invites,
+                messagesSent: messages,
+                acceptances,
+                runErrors,
+                challenges,
+                estimatedRiskScore: estimatedRisk.score,
+            });
         }
         res.json({ days, rows: trend });
     } catch (err: unknown) {
@@ -191,17 +204,20 @@ statsRouter.post('/risk/what-if', async (req, res) => {
         const localDate = getLocalDateString();
         const currentInputs = await getRiskInputs(localDate, config.hardInviteCap);
 
-        const body = req.body as Record<string, unknown> ?? {};
-        const hypotheticalHardInviteCap = typeof body.hardInviteCap === 'number' ? body.hardInviteCap : config.hardInviteCap;
-        const hypotheticalSoftInviteCap = typeof body.softInviteCap === 'number' ? body.softInviteCap : config.softInviteCap;
+        const body = (req.body as Record<string, unknown>) ?? {};
+        const hypotheticalHardInviteCap =
+            typeof body.hardInviteCap === 'number' ? body.hardInviteCap : config.hardInviteCap;
+        const hypotheticalSoftInviteCap =
+            typeof body.softInviteCap === 'number' ? body.softInviteCap : config.softInviteCap;
         const hypotheticalHardMsgCap = typeof body.hardMsgCap === 'number' ? body.hardMsgCap : config.hardMsgCap;
         const hypotheticalSoftMsgCap = typeof body.softMsgCap === 'number' ? body.softMsgCap : config.softMsgCap;
 
         const hypotheticalInputs: typeof currentInputs = {
             ...currentInputs,
-            inviteVelocityRatio: hypotheticalHardInviteCap > 0
-                ? (currentInputs.inviteVelocityRatio * config.hardInviteCap) / hypotheticalHardInviteCap
-                : currentInputs.inviteVelocityRatio,
+            inviteVelocityRatio:
+                hypotheticalHardInviteCap > 0
+                    ? (currentInputs.inviteVelocityRatio * config.hardInviteCap) / hypotheticalHardInviteCap
+                    : currentInputs.inviteVelocityRatio,
         };
 
         const currentRisk = evaluateRisk(currentInputs);
@@ -211,10 +227,30 @@ statsRouter.post('/risk/what-if', async (req, res) => {
         const invitesSentToday = await getDailyStat(localDate, 'invites_sent');
         const messagesSentToday = await getDailyStat(localDate, 'messages_sent');
 
-        const currentInviteBudget = calculateDynamicBudget(config.softInviteCap, config.hardInviteCap, invitesSentToday, currentRisk.action);
-        const hypotheticalInviteBudget = calculateDynamicBudget(hypotheticalSoftInviteCap, hypotheticalHardInviteCap, invitesSentToday, hypotheticalRisk.action);
-        const currentMsgBudget = calculateDynamicBudget(config.softMsgCap, config.hardMsgCap, messagesSentToday, currentRisk.action);
-        const hypotheticalMsgBudget = calculateDynamicBudget(hypotheticalSoftMsgCap, hypotheticalHardMsgCap, messagesSentToday, hypotheticalRisk.action);
+        const currentInviteBudget = calculateDynamicBudget(
+            config.softInviteCap,
+            config.hardInviteCap,
+            invitesSentToday,
+            currentRisk.action,
+        );
+        const hypotheticalInviteBudget = calculateDynamicBudget(
+            hypotheticalSoftInviteCap,
+            hypotheticalHardInviteCap,
+            invitesSentToday,
+            hypotheticalRisk.action,
+        );
+        const currentMsgBudget = calculateDynamicBudget(
+            config.softMsgCap,
+            config.hardMsgCap,
+            messagesSentToday,
+            currentRisk.action,
+        );
+        const hypotheticalMsgBudget = calculateDynamicBudget(
+            hypotheticalSoftMsgCap,
+            hypotheticalHardMsgCap,
+            messagesSentToday,
+            hypotheticalRisk.action,
+        );
 
         res.json({
             current: {
@@ -222,14 +258,24 @@ statsRouter.post('/risk/what-if', async (req, res) => {
                 riskAction: currentRisk.action,
                 inviteBudgetRemaining: currentInviteBudget,
                 messageBudgetRemaining: currentMsgBudget,
-                caps: { softInvite: config.softInviteCap, hardInvite: config.hardInviteCap, softMsg: config.softMsgCap, hardMsg: config.hardMsgCap },
+                caps: {
+                    softInvite: config.softInviteCap,
+                    hardInvite: config.hardInviteCap,
+                    softMsg: config.softMsgCap,
+                    hardMsg: config.hardMsgCap,
+                },
             },
             hypothetical: {
                 riskScore: hypotheticalRisk.score,
                 riskAction: hypotheticalRisk.action,
                 inviteBudgetRemaining: hypotheticalInviteBudget,
                 messageBudgetRemaining: hypotheticalMsgBudget,
-                caps: { softInvite: hypotheticalSoftInviteCap, hardInvite: hypotheticalHardInviteCap, softMsg: hypotheticalSoftMsgCap, hardMsg: hypotheticalHardMsgCap },
+                caps: {
+                    softInvite: hypotheticalSoftInviteCap,
+                    hardInvite: hypotheticalHardInviteCap,
+                    softMsg: hypotheticalSoftMsgCap,
+                    hardMsg: hypotheticalHardMsgCap,
+                },
             },
             delta: {
                 riskScore: hypotheticalRisk.score - currentRisk.score,
@@ -249,7 +295,10 @@ statsRouter.get('/risk/predictive', async (_req, res) => {
         const lookbackDays = config.riskPredictiveLookbackDays;
         const rows = await getRecentDailyStats(lookbackDays + 1);
         const todayRow = rows.find((row) => row.date === localDate) ?? null;
-        const historySamples = rows.filter((row) => row.date !== localDate).slice(0, lookbackDays).map(mapDailyToPredictiveSample);
+        const historySamples = rows
+            .filter((row) => row.date !== localDate)
+            .slice(0, lookbackDays)
+            .map(mapDailyToPredictiveSample);
         const currentRiskInputs = await getRiskInputs(localDate, config.hardInviteCap);
         const currentSample = {
             errorRate: currentRiskInputs.errorRate,

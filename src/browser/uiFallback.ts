@@ -303,11 +303,20 @@ export async function clickWithFallback(
         try {
             const loc = sel.startsWith('//') ? page.locator(`xpath=${sel}`) : page.locator(sel);
             // Mouse move umano prima del click per evitare pattern bot
-            const box = await loc.first().boundingBox().catch(() => null);
+            const box = await loc
+                .first()
+                .boundingBox()
+                .catch(() => null);
             if (box) {
-                await humanMouseMoveToCoords(page, box.x + box.width / 2 + (Math.random() * 6 - 3), box.y + box.height / 2 + (Math.random() * 6 - 3));
+                await humanMouseMoveToCoords(
+                    page,
+                    box.x + box.width / 2 + (Math.random() * 6 - 3),
+                    box.y + box.height / 2 + (Math.random() * 6 - 3),
+                );
             }
-            await loc.first().click({ timeout: options.timeoutPerSelector, delay: 20 + Math.floor(Math.random() * 60) });
+            await loc
+                .first()
+                .click({ timeout: options.timeoutPerSelector, delay: 20 + Math.floor(Math.random() * 60) });
             if (options.postClickDelayMs > 0) {
                 await page.waitForTimeout(options.postClickDelayMs);
             }
@@ -324,7 +333,9 @@ export async function clickWithFallback(
                 console.warn(
                     `[FALLBACK] clickWithFallback("${label}"): usato selettore livello ${i} (score=${candidate.score.toFixed(2)}) -> "${sel.substring(0, 80)}"`,
                 );
-                console.info(`[FALLBACK] ui_fallback.success label="${label}" selector="${sel.substring(0, 80)}" fallbackLevel=${i}`);
+                console.info(
+                    `[FALLBACK] ui_fallback.success label="${label}" selector="${sel.substring(0, 80)}" fallbackLevel=${i}`,
+                );
             }
             return;
         } catch (error) {
@@ -456,9 +467,16 @@ export async function typeWithFallback(
             const loc = page.locator(playwrightSel);
             await loc.first().waitFor({ state: 'visible', timeout: timeoutPerSelector });
             // Mouse move umano prima del click su input
-            const inputBox = await loc.first().boundingBox().catch(() => null);
+            const inputBox = await loc
+                .first()
+                .boundingBox()
+                .catch(() => null);
             if (inputBox) {
-                await humanMouseMoveToCoords(page, inputBox.x + inputBox.width / 2 + (Math.random() * 6 - 3), inputBox.y + inputBox.height / 2 + (Math.random() * 6 - 3));
+                await humanMouseMoveToCoords(
+                    page,
+                    inputBox.x + inputBox.width / 2 + (Math.random() * 6 - 3),
+                    inputBox.y + inputBox.height / 2 + (Math.random() * 6 - 3),
+                );
             }
             await loc.first().click();
             await humanDelay(page, 200, 500);
@@ -581,7 +599,9 @@ export async function clickWithShadowFallback(
         for (const sel of selectors) {
             const coords = await findInShadowDom(page, sel);
             if (coords) {
-                console.warn(`[FALLBACK-SHADOW] clickWithShadowFallback("${label}"): trovato in Shadow DOM via "${sel.substring(0, 60)}"`);
+                console.warn(
+                    `[FALLBACK-SHADOW] clickWithShadowFallback("${label}"): trovato in Shadow DOM via "${sel.substring(0, 60)}"`,
+                );
                 await humanMouseMoveToCoords(page, coords.x, coords.y);
                 await page.mouse.click(coords.x, coords.y);
                 await trackSelectorSuccess(page, label, `shadow:${sel}`);

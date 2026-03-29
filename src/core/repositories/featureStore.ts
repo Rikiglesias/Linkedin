@@ -445,7 +445,7 @@ export async function buildFeatureDatasetVersion(
         for (let offset = 0; offset < sourceRows.length; offset += BATCH_SIZE) {
             const batch = sourceRows.slice(offset, offset + BATCH_SIZE);
             const placeholders = batch.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
-            const params = batch.flatMap(row => [
+            const params = batch.flatMap((row) => [
                 datasetName,
                 datasetVersion,
                 row.sampleKey,

@@ -1053,30 +1053,38 @@ export async function runConfigValidateCommand(): Promise<void> {
     let proxyDiag: Awaited<ReturnType<typeof runFullProxyDiagnostic>> | null = null;
     try {
         proxyDiag = await runFullProxyDiagnostic();
-    } catch { /* best effort */ }
+    } catch {
+        /* best effort */
+    }
 
     const report = {
         timestamp: new Date().toISOString(),
         valid: configResult.errors.length === 0,
         errors: configResult.errors,
         warnings: configResult.warnings,
-        proxy: proxyDiag ? {
-            pool: proxyDiag.pool,
-            quality: proxyDiag.quality ? {
-                overallScore: proxyDiag.quality.overallScore,
-                degraded: proxyDiag.quality.degraded,
-                datacenterCount: proxyDiag.quality.datacenterCount,
-                residentialCount: proxyDiag.quality.residentialCount,
-                mobileCount: proxyDiag.quality.mobileCount,
-                totalProxies: proxyDiag.quality.proxies.length,
-            } : null,
-            ja3: proxyDiag.ja3 ? {
-                status: proxyDiag.ja3.status,
-                cycleTlsActive: proxyDiag.ja3.cycleTlsActive,
-                uaJa3Coherent: proxyDiag.ja3.uaJa3Coherent,
-                recommendation: proxyDiag.ja3.recommendation,
-            } : null,
-        } : null,
+        proxy: proxyDiag
+            ? {
+                  pool: proxyDiag.pool,
+                  quality: proxyDiag.quality
+                      ? {
+                            overallScore: proxyDiag.quality.overallScore,
+                            degraded: proxyDiag.quality.degraded,
+                            datacenterCount: proxyDiag.quality.datacenterCount,
+                            residentialCount: proxyDiag.quality.residentialCount,
+                            mobileCount: proxyDiag.quality.mobileCount,
+                            totalProxies: proxyDiag.quality.proxies.length,
+                        }
+                      : null,
+                  ja3: proxyDiag.ja3
+                      ? {
+                            status: proxyDiag.ja3.status,
+                            cycleTlsActive: proxyDiag.ja3.cycleTlsActive,
+                            uaJa3Coherent: proxyDiag.ja3.uaJa3Coherent,
+                            recommendation: proxyDiag.ja3.recommendation,
+                        }
+                      : null,
+              }
+            : null,
         summary: {
             errorCount: configResult.errors.length,
             warningCount: configResult.warnings.length,

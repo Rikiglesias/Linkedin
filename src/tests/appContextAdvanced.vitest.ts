@@ -16,7 +16,11 @@ describe('appContext — advanced', () => {
     });
 
     it('db override funziona', () => {
-        const mockDb = { query: async () => [], get: async () => undefined, run: async () => ({ changes: 0 }) } as never;
+        const mockDb = {
+            query: async () => [],
+            get: async () => undefined,
+            run: async () => ({ changes: 0 }),
+        } as never;
         const ctx = createTestAppContext({ db: mockDb });
         expect(ctx.db).toBe(mockDb);
     });
@@ -24,7 +28,13 @@ describe('appContext — advanced', () => {
     it('logger override funziona', () => {
         let logged = false;
         const ctx = createTestAppContext({
-            logger: { info: async () => { logged = true; }, warn: async () => {}, error: async () => {} },
+            logger: {
+                info: async () => {
+                    logged = true;
+                },
+                warn: async () => {},
+                error: async () => {},
+            },
         });
         void ctx.logger.info('test');
         expect(logged).toBe(true);

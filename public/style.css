@@ -38,7 +38,7 @@
 }
 
 /* ─── Dark Mode ───────────────────────────────────────────────── */
-[data-theme="dark"] {
+[data-theme='dark'] {
     --bg-page: #0f1419;
     --bg-panel: #1a2332;
     --bg-panel-alt: #1e2b3a;
@@ -65,7 +65,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
+    :root:not([data-theme='light']) {
         --bg-page: #0f1419;
         --bg-panel: #1a2332;
         --bg-panel-alt: #1e2b3a;
@@ -114,8 +114,8 @@ body {
     line-height: 1.45;
 }
 
-[data-theme="dark"] body,
-:root:not([data-theme="light"]) body {
+[data-theme='dark'] body,
+:root:not([data-theme='light']) body {
     background: var(--bg-page);
 }
 
@@ -223,8 +223,13 @@ body {
 }
 
 @keyframes pulse-dot {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.4;
+    }
 }
 
 .sse-disconnected {
@@ -864,7 +869,6 @@ dialog::backdrop {
         flex: 1 1 calc(50% - var(--space-2));
     }
 
-
     .chart-container {
         height: 180px;
     }
@@ -1130,7 +1134,9 @@ dialog::backdrop {
     line-height: 1.4;
     color: var(--ink-strong);
     animation: toast-in 0.3s ease-out;
-    transition: opacity 0.25s ease, transform 0.25s ease;
+    transition:
+        opacity 0.25s ease,
+        transform 0.25s ease;
 }
 
 .toast.toast-removing {
@@ -1151,21 +1157,43 @@ dialog::backdrop {
     word-break: break-word;
 }
 
-.toast--success { border-left: 3px solid var(--success); }
-.toast--success .toast-icon { color: var(--success); }
+.toast--success {
+    border-left: 3px solid var(--success);
+}
+.toast--success .toast-icon {
+    color: var(--success);
+}
 
-.toast--error { border-left: 3px solid var(--danger); }
-.toast--error .toast-icon { color: var(--danger); }
+.toast--error {
+    border-left: 3px solid var(--danger);
+}
+.toast--error .toast-icon {
+    color: var(--danger);
+}
 
-.toast--warning { border-left: 3px solid var(--warning); }
-.toast--warning .toast-icon { color: var(--warning); }
+.toast--warning {
+    border-left: 3px solid var(--warning);
+}
+.toast--warning .toast-icon {
+    color: var(--warning);
+}
 
-.toast--info { border-left: 3px solid var(--info); }
-.toast--info .toast-icon { color: var(--info); }
+.toast--info {
+    border-left: 3px solid var(--info);
+}
+.toast--info .toast-icon {
+    color: var(--info);
+}
 
 @keyframes toast-in {
-    from { opacity: 0; transform: translateY(12px) scale(0.96); }
-    to   { opacity: 1; transform: translateY(0) scale(1); }
+    from {
+        opacity: 0;
+        transform: translateY(12px) scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
 }
 
 /* ─── Shimmer / Loading State ──────────────────────────────────────────────── */
@@ -1180,18 +1208,22 @@ dialog::backdrop {
     content: '';
     position: absolute;
     inset: 0;
-    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.15) 50%, transparent 100%);
+    background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.15) 50%, transparent 100%);
     animation: shimmer-slide 1.4s ease-in-out infinite;
     border-radius: inherit;
 }
 
-[data-theme="dark"] .shimmer::after {
-    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.06) 50%, transparent 100%);
+[data-theme='dark'] .shimmer::after {
+    background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.06) 50%, transparent 100%);
 }
 
 @keyframes shimmer-slide {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(100%); }
+    0% {
+        transform: translateX(-100%);
+    }
+    100% {
+        transform: translateX(100%);
+    }
 }
 
 #fetch-state-indicator {
@@ -1204,14 +1236,28 @@ dialog::backdrop {
     transition: background-color 0.3s ease;
 }
 
-#fetch-state-indicator.fetch-idle { background-color: var(--muted); }
-#fetch-state-indicator.fetch-loading { background-color: var(--warning); animation: pulse-dot 1s ease-in-out infinite; }
-#fetch-state-indicator.fetch-success { background-color: var(--success); }
-#fetch-state-indicator.fetch-error { background-color: var(--danger); }
+#fetch-state-indicator.fetch-idle {
+    background-color: var(--muted);
+}
+#fetch-state-indicator.fetch-loading {
+    background-color: var(--warning);
+    animation: pulse-dot 1s ease-in-out infinite;
+}
+#fetch-state-indicator.fetch-success {
+    background-color: var(--success);
+}
+#fetch-state-indicator.fetch-error {
+    background-color: var(--danger);
+}
 
 @keyframes pulse-dot {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.4;
+    }
 }
 
 #session-timer.session-timer-warning {

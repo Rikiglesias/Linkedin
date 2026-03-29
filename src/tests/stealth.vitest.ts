@@ -137,7 +137,16 @@ describe('Stealth Runtime Execution Tests', () => {
             deviceMemory: 8,
             platform: 'Win32',
             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-            permissions: { query: () => Promise.resolve({ state: 'prompt', onchange: null, addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: () => true }) },
+            permissions: {
+                query: () =>
+                    Promise.resolve({
+                        state: 'prompt',
+                        onchange: null,
+                        addEventListener: () => {},
+                        removeEventListener: () => {},
+                        dispatchEvent: () => true,
+                    }),
+            },
             getBattery: undefined,
             connection: undefined,
         };

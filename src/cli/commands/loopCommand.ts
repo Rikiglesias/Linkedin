@@ -59,7 +59,9 @@ import { onConfigReload, startConfigWatcher, stopConfigWatcher } from '../../con
 // ─── Costanti lock ────────────────────────────────────────────────────────────
 
 let _workflowRunnerLockKey = 'workflow.runner';
-function getWorkflowRunnerLockKey(): string { return _workflowRunnerLockKey; }
+function getWorkflowRunnerLockKey(): string {
+    return _workflowRunnerLockKey;
+}
 const WORKFLOW_RUNNER_MIN_TTL_SECONDS = 120;
 const WORKFLOW_RUNNER_HEARTBEAT_MS = 30_000;
 const AUTO_SITE_CHECK_LAST_RUN_KEY = 'site_check.last_run_at';
@@ -440,14 +442,22 @@ function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
             const ssiAccount = ssiAccounts[0];
             let session;
             try {
-                session = await launchBrowser({ headless: config.headless, forceDesktop: true, sessionDir: ssiAccount?.sessionDir, proxy: ssiAccount?.proxy });
+                session = await launchBrowser({
+                    headless: config.headless,
+                    forceDesktop: true,
+                    sessionDir: ssiAccount?.sessionDir,
+                    proxy: ssiAccount?.proxy,
+                });
                 const result = await scrapeSsiScore(session.page);
                 if (result.scraped && result.score !== null) {
-                    await setRuntimeFlag(config.ssiStateKey, JSON.stringify({
-                        score: result.score,
-                        ...result.breakdown,
-                        scrapedAt: new Date().toISOString(),
-                    }));
+                    await setRuntimeFlag(
+                        config.ssiStateKey,
+                        JSON.stringify({
+                            score: result.score,
+                            ...result.breakdown,
+                            scrapedAt: new Date().toISOString(),
+                        }),
+                    );
                     console.log(`[LOOP] SSI score aggiornato: ${result.score}`);
                 } else {
                     console.log(`[LOOP] SSI scrape fallito: ${result.error ?? 'unknown'}`);
@@ -471,7 +481,9 @@ function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
         execute: async () => {
             const result = await runDeadLetterWorker({ batchSize: 200, recycleDelaySec: 43200 });
             await setRuntimeFlag('dlq.last_run_at', new Date().toISOString());
-            console.log(`[LOOP] DLQ: processati=${result.processed} riciclati=${result.recycled} archiviati=${result.deadLettered}`);
+            console.log(
+                `[LOOP] DLQ: processati=${result.processed} riciclati=${result.recycled} archiviati=${result.deadLettered}`,
+            );
         },
         onError: 'skip',
     });
@@ -520,8 +532,7 @@ function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
     tasks.push({
         name: 'company_enrichment',
         shouldRun: () =>
-            config.companyEnrichmentEnabled &&
-            (buildCtx.workflow === 'all' || buildCtx.workflow === 'invite'),
+            config.companyEnrichmentEnabled && (buildCtx.workflow === 'all' || buildCtx.workflow === 'invite'),
         execute: async (ctx) => {
             const enrichment = await runCompanyEnrichmentBatch({
                 limit: config.companyEnrichmentBatch,
@@ -626,10 +637,15 @@ function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
                     };
                     const result = await processInboxJob({ accountId: account.id }, inboxContext);
                     if (result.processedCount > 0) {
-                        console.log(`[LOOP] inbox-check: ${result.processedCount} conversazioni processate (account: ${account.id})`);
+                        console.log(
+                            `[LOOP] inbox-check: ${result.processedCount} conversazioni processate (account: ${account.id})`,
+                        );
                     }
                 } catch (inboxErr) {
-                    console.warn(`[LOOP] inbox-check fallito (account: ${account.id}):`, inboxErr instanceof Error ? inboxErr.message : inboxErr);
+                    console.warn(
+                        `[LOOP] inbox-check fallito (account: ${account.id}):`,
+                        inboxErr instanceof Error ? inboxErr.message : inboxErr,
+                    );
                 } finally {
                     if (inboxSession) await closeBrowserSession(inboxSession);
                 }
@@ -645,7 +661,10 @@ function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
         execute: async (ctx) => {
             const cycleCorrelationId = resolveCorrelationId(`loop-${ctx.workflow}-${ctx.cycle}-${randomUUID()}`);
             await runWithCorrelationId(cycleCorrelationId, async () => {
-                await runWorkflow({ workflow: ctx.workflow as import('../../core/scheduler').WorkflowSelection, dryRun: ctx.dryRun });
+                await runWorkflow({
+                    workflow: ctx.workflow as import('../../core/scheduler').WorkflowSelection,
+                    dryRun: ctx.dryRun,
+                });
             });
         },
         onError: 'abort',
@@ -739,7 +758,9 @@ export async function runLoopCommand(args: string[]): Promise<void> {
 
     const SAFE_MIN_INTERVAL_MS = 300_000; // 5 minuti — anti-ban: cicli più rapidi sono rischiosi
     if (!dryRun && intervalMs < SAFE_MIN_INTERVAL_MS) {
-        console.warn(`[LOOP] Intervallo ${Math.floor(intervalMs / 1000)}s troppo breve — alzato a ${SAFE_MIN_INTERVAL_MS / 1000}s per sicurezza anti-ban`);
+        console.warn(
+            `[LOOP] Intervallo ${Math.floor(intervalMs / 1000)}s troppo breve — alzato a ${SAFE_MIN_INTERVAL_MS / 1000}s per sicurezza anti-ban`,
+        );
         intervalMs = SAFE_MIN_INTERVAL_MS;
     }
 
@@ -752,35 +773,46 @@ export async function runLoopCommand(args: string[]): Promise<void> {
         await startTelegramListener().catch((e) => console.error('[TELEGRAM] Errore listener background', e));
         startConfigWatcher();
         // CC-24: Quando un cap diminuisce via hot-reload, cancella job in coda in eccesso
-        onConfigReload((changedKeys) => { void (async () => {
-            if (changedKeys.includes('hardInviteCap') || changedKeys.includes('hardMsgCap')) {
-                try {
-                    const { cancelExcessQueuedJobs } = await import('../../core/repositories/jobs');
-                    const { config: liveConfig } = await import('../../config');
-                    if (changedKeys.includes('hardInviteCap')) {
-                        const cancelled = await cancelExcessQueuedJobs('INVITE', liveConfig.hardInviteCap);
-                        if (cancelled > 0) console.log(`[CONFIG] Cancelled ${cancelled} excess INVITE jobs (new cap: ${liveConfig.hardInviteCap})`);
+        onConfigReload((changedKeys) => {
+            void (async () => {
+                if (changedKeys.includes('hardInviteCap') || changedKeys.includes('hardMsgCap')) {
+                    try {
+                        const { cancelExcessQueuedJobs } = await import('../../core/repositories/jobs');
+                        const { config: liveConfig } = await import('../../config');
+                        if (changedKeys.includes('hardInviteCap')) {
+                            const cancelled = await cancelExcessQueuedJobs('INVITE', liveConfig.hardInviteCap);
+                            if (cancelled > 0)
+                                console.log(
+                                    `[CONFIG] Cancelled ${cancelled} excess INVITE jobs (new cap: ${liveConfig.hardInviteCap})`,
+                                );
+                        }
+                        if (changedKeys.includes('hardMsgCap')) {
+                            const cancelled = await cancelExcessQueuedJobs('MESSAGE', liveConfig.hardMsgCap);
+                            if (cancelled > 0)
+                                console.log(
+                                    `[CONFIG] Cancelled ${cancelled} excess MESSAGE jobs (new cap: ${liveConfig.hardMsgCap})`,
+                                );
+                        }
+                    } catch (e) {
+                        console.warn(
+                            '[CONFIG] Failed to cancel excess jobs after cap decrease:',
+                            e instanceof Error ? e.message : e,
+                        );
                     }
-                    if (changedKeys.includes('hardMsgCap')) {
-                        const cancelled = await cancelExcessQueuedJobs('MESSAGE', liveConfig.hardMsgCap);
-                        if (cancelled > 0) console.log(`[CONFIG] Cancelled ${cancelled} excess MESSAGE jobs (new cap: ${liveConfig.hardMsgCap})`);
-                    }
-                } catch (e) {
-                    console.warn('[CONFIG] Failed to cancel excess jobs after cap decrease:', e instanceof Error ? e.message : e);
                 }
-            }
-        })(); });
+            })();
+        });
     }
 
     const lockTtlSeconds = computeWorkflowLockTtlSeconds(getEffectiveLoopIntervalMs(intervalMs));
     const lockOwnerId = dryRun
         ? null
         : await acquireWorkflowRunnerLock('run-loop', lockTtlSeconds, {
-            workflow,
-            dryRun,
-            intervalMs,
-            startedAt: new Date().toISOString(),
-        });
+              workflow,
+              dryRun,
+              intervalMs,
+              startedAt: new Date().toISOString(),
+          });
 
     // ── Login jitter: delay random 0-30 min prima del primo ciclo ──────────
     // Evita pattern "login alle 09:00:00 ogni giorno" — un umano varia.
@@ -795,7 +827,11 @@ export async function runLoopCommand(args: string[]): Promise<void> {
 
     // B.3: Alert Telegram avvio bot
     if (!dryRun) {
-        const localTime = new Intl.DateTimeFormat('it-IT', { timeZone: config.timezone, hour: '2-digit', minute: '2-digit' }).format(new Date());
+        const localTime = new Intl.DateTimeFormat('it-IT', {
+            timeZone: config.timezone,
+            hour: '2-digit',
+            minute: '2-digit',
+        }).format(new Date());
         await sendTelegramAlert(
             `Bot avviato.\nWorkflow: ${workflow}\nOra: ${localTime} (${config.timezone})`,
             'Bot Avviato',
@@ -846,9 +882,13 @@ export async function runLoopCommand(args: string[]): Promise<void> {
 
                 if (!cycleResult.aborted) {
                     runStatus = 'SUCCESS';
-                    console.log(`[LOOP] cycle=${cycle} completed tasks=${cycleResult.tasksRun.length} skipped=${cycleResult.tasksSkipped.length} errors=${cycleResult.tasksErrored.length}`);
+                    console.log(
+                        `[LOOP] cycle=${cycle} completed tasks=${cycleResult.tasksRun.length} skipped=${cycleResult.tasksSkipped.length} errors=${cycleResult.tasksErrored.length}`,
+                    );
                 } else {
-                    console.warn(`[LOOP] cycle=${cycle} aborted at task: ${cycleResult.tasksErrored[cycleResult.tasksErrored.length - 1]?.name}`);
+                    console.warn(
+                        `[LOOP] cycle=${cycle} aborted at task: ${cycleResult.tasksErrored[cycleResult.tasksErrored.length - 1]?.name}`,
+                    );
                 }
             } catch (error) {
                 console.error(`[LOOP] cycle = ${cycle} failed`, error);
@@ -889,7 +929,11 @@ export async function runLoopCommand(args: string[]): Promise<void> {
         stopConfigWatcher();
         // B.3: Alert Telegram spegnimento bot
         if (!dryRun) {
-            const stopTime = new Intl.DateTimeFormat('it-IT', { timeZone: config.timezone, hour: '2-digit', minute: '2-digit' }).format(new Date());
+            const stopTime = new Intl.DateTimeFormat('it-IT', {
+                timeZone: config.timezone,
+                hour: '2-digit',
+                minute: '2-digit',
+            }).format(new Date());
             await sendTelegramAlert(
                 `Bot spento dopo ${cycle} cicli.\nOra: ${stopTime} (${config.timezone})`,
                 'Bot Spento',
@@ -937,17 +981,11 @@ export async function runAutopilotCommand(args: string[]): Promise<void> {
 
         // 3. Intervallo personalizzato?
         const defaultIntervalSec = Math.floor(config.workflowLoopIntervalMs / 1000);
-        const customInterval = await askNumber(
-            '  Intervallo tra cicli (secondi)?',
-            defaultIntervalSec,
-        );
+        const customInterval = await askNumber('  Intervallo tra cicli (secondi)?', defaultIntervalSec);
         wizardIntervalSec = String(customInterval);
 
         // 4. Numero cicli?
-        const customCycles = await askNumber(
-            '  Quanti cicli eseguire? (0 = infinito)',
-            0,
-        );
+        const customCycles = await askNumber('  Quanti cicli eseguire? (0 = infinito)', 0);
         if (customCycles > 0) {
             wizardCycles = String(customCycles);
         }
@@ -985,7 +1023,9 @@ export async function runAutopilotCommand(args: string[]): Promise<void> {
         // Mutazione runtime temporanea (non persiste nel .env)
         (config as unknown as Record<string, unknown>).hardInviteCap = reducedInviteCap;
         (config as unknown as Record<string, unknown>).hardMsgCap = reducedMsgCap;
-        console.log(`  [WIZARD] Budget ridotto: inviti ${originalInviteCap} -> ${reducedInviteCap}, messaggi ${originalMsgCap} -> ${reducedMsgCap}`);
+        console.log(
+            `  [WIZARD] Budget ridotto: inviti ${originalInviteCap} -> ${reducedInviteCap}, messaggi ${originalMsgCap} -> ${reducedMsgCap}`,
+        );
     }
 
     const intervalArg = wizardIntervalSec ?? String(Math.floor(config.workflowLoopIntervalMs / 1000));

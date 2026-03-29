@@ -16,7 +16,6 @@ function clampPercentage(value: number): number {
     return Math.max(0, Math.min(100, value));
 }
 
-
 export function evaluateRisk(inputs: RiskInputs): RiskSnapshot {
     const errorRate = clampRatio(inputs.errorRate);
     const selectorFailureRate = clampRatio(inputs.selectorFailureRate);
@@ -87,18 +86,55 @@ export function explainRisk(inputs: RiskInputs): RiskExplanation {
     const velocityContrib = clampRatio(inputs.inviteVelocityRatio) * 15;
 
     const factors = [
-        { name: 'errorRate', rawValue: inputs.errorRate, weight: 40, contribution: Math.round(errorContrib * 100) / 100, threshold: `score += errorRate × 40` },
-        { name: 'selectorFailureRate', rawValue: inputs.selectorFailureRate, weight: 20, contribution: Math.round(selectorContrib * 100) / 100, threshold: `score += selectorFailureRate × 20` },
-        { name: 'pendingRatio', rawValue: inputs.pendingRatio, weight: 25, contribution: Math.round(pendingContrib * 100) / 100, threshold: `WARN ≥ ${config.pendingRatioWarn}, STOP ≥ ${config.pendingRatioStop}` },
-        { name: 'challengeCount', rawValue: inputs.challengeCount, weight: 10, contribution: Math.round(challengeContrib * 100) / 100, threshold: `any challenge > 0 → STOP` },
-        { name: 'inviteVelocityRatio', rawValue: inputs.inviteVelocityRatio, weight: 15, contribution: Math.round(velocityContrib * 100) / 100, threshold: `score += velocity × 15` },
+        {
+            name: 'errorRate',
+            rawValue: inputs.errorRate,
+            weight: 40,
+            contribution: Math.round(errorContrib * 100) / 100,
+            threshold: `score += errorRate × 40`,
+        },
+        {
+            name: 'selectorFailureRate',
+            rawValue: inputs.selectorFailureRate,
+            weight: 20,
+            contribution: Math.round(selectorContrib * 100) / 100,
+            threshold: `score += selectorFailureRate × 20`,
+        },
+        {
+            name: 'pendingRatio',
+            rawValue: inputs.pendingRatio,
+            weight: 25,
+            contribution: Math.round(pendingContrib * 100) / 100,
+            threshold: `WARN ≥ ${config.pendingRatioWarn}, STOP ≥ ${config.pendingRatioStop}`,
+        },
+        {
+            name: 'challengeCount',
+            rawValue: inputs.challengeCount,
+            weight: 10,
+            contribution: Math.round(challengeContrib * 100) / 100,
+            threshold: `any challenge > 0 → STOP`,
+        },
+        {
+            name: 'inviteVelocityRatio',
+            rawValue: inputs.inviteVelocityRatio,
+            weight: 15,
+            contribution: Math.round(velocityContrib * 100) / 100,
+            threshold: `score += velocity × 15`,
+        },
     ];
 
     const triggers: string[] = [];
     if (inputs.challengeCount > 0) triggers.push(`challengeCount=${inputs.challengeCount} > 0 → STOP`);
-    if (inputs.pendingRatio >= config.pendingRatioStop) triggers.push(`pendingRatio=${(inputs.pendingRatio * 100).toFixed(1)}% ≥ ${(config.pendingRatioStop * 100).toFixed(0)}% → STOP`);
-    if (snapshot.score >= config.riskStopThreshold) triggers.push(`score=${snapshot.score} ≥ ${config.riskStopThreshold} → STOP`);
-    if (snapshot.action === 'WARN') triggers.push(`score=${snapshot.score} ≥ ${config.riskWarnThreshold} or pendingRatio ≥ ${(config.pendingRatioWarn * 100).toFixed(0)}% → WARN`);
+    if (inputs.pendingRatio >= config.pendingRatioStop)
+        triggers.push(
+            `pendingRatio=${(inputs.pendingRatio * 100).toFixed(1)}% ≥ ${(config.pendingRatioStop * 100).toFixed(0)}% → STOP`,
+        );
+    if (snapshot.score >= config.riskStopThreshold)
+        triggers.push(`score=${snapshot.score} ≥ ${config.riskStopThreshold} → STOP`);
+    if (snapshot.action === 'WARN')
+        triggers.push(
+            `score=${snapshot.score} ≥ ${config.riskWarnThreshold} or pendingRatio ≥ ${(config.pendingRatioWarn * 100).toFixed(0)}% → WARN`,
+        );
 
     return {
         score: snapshot.score,
@@ -361,14 +397,13 @@ export function estimateBanProbability(
     pendingRatio: number,
 ): BanProbabilityResult {
     // Factor 1: Z-score anomalie attive — peso 30
-    const maxZScore = alerts.length > 0 ? Math.max(...alerts.map(a => a.zScore)) : 0;
+    const maxZScore = alerts.length > 0 ? Math.max(...alerts.map((a) => a.zScore)) : 0;
     const anomalyFactor = Math.min(30, Math.floor(Math.min(maxZScore, 5) * 6));
 
     // Factor 2: Trend acceptance — peso 25
     // acceptance >40% = 0 punti, <40% = crescente fino a 25
-    const acceptanceFactor = acceptanceRatePct >= 40
-        ? 0
-        : Math.min(25, Math.floor((40 - Math.max(0, acceptanceRatePct)) * 0.625));
+    const acceptanceFactor =
+        acceptanceRatePct >= 40 ? 0 : Math.min(25, Math.floor((40 - Math.max(0, acceptanceRatePct)) * 0.625));
 
     // Factor 3: Frequenza challenge — peso 25
     // 0 challenge = 0, 1 = 12, 2 = 25 (cap)
@@ -376,9 +411,7 @@ export function estimateBanProbability(
 
     // Factor 4: Pending ratio — peso 20
     // <30% = 0, 30-65% = crescente, >65% = 20 (red flag LinkedIn)
-    const pendingFactor = pendingRatio < 0.30
-        ? 0
-        : Math.min(20, Math.floor((pendingRatio - 0.30) * 57));
+    const pendingFactor = pendingRatio < 0.3 ? 0 : Math.min(20, Math.floor((pendingRatio - 0.3) * 57));
 
     const factors: Record<string, number> = {
         anomalyZScore: Math.round(anomalyFactor * 100) / 100,
@@ -402,7 +435,8 @@ export function estimateBanProbability(
         recommendation = 'Rischio alto — ridurre budget del 50%, considerare pausa 24h';
     } else {
         level = 'CRITICAL';
-        recommendation = 'Rischio critico — STOP immediato. Verificare account, ritirare inviti pending, cambiare proxy';
+        recommendation =
+            'Rischio critico — STOP immediato. Verificare account, ritirare inviti pending, cambiare proxy';
     }
 
     return { score, level, factors, recommendation };

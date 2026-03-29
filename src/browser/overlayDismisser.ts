@@ -47,14 +47,17 @@ const OVERLAY_RULES: readonly OverlayRule[] = [
     // ─── Cookie consent banner — RIFIUTA sempre (non accettare tracking)
     {
         id: 'cookie_consent',
-        containerSelector: '.artdeco-global-alert--COOKIE_CONSENT, [data-test-id="cookie-consent"], #artdeco-global-alert-container',
-        dismissSelector: 'button[action-type="DENY"], button:has-text("Reject"), button:has-text("Rifiuta"), button:has-text("Decline"), button:has-text("Rifiuta tutti"), button:has-text("Reject all"), button:has-text("Only required"), button:has-text("Solo necessari")',
+        containerSelector:
+            '.artdeco-global-alert--COOKIE_CONSENT, [data-test-id="cookie-consent"], #artdeco-global-alert-container',
+        dismissSelector:
+            'button[action-type="DENY"], button:has-text("Reject"), button:has-text("Rifiuta"), button:has-text("Decline"), button:has-text("Rifiuta tutti"), button:has-text("Reject all"), button:has-text("Only required"), button:has-text("Solo necessari")',
     },
     // ─── "Continua nel browser" / mobile app redirect prompt
     {
         id: 'continue_in_browser',
         containerSelector: '[class*="app-aware-link"], [class*="browser-prompt"]',
-        dismissSelector: 'a:has-text("Continua nel browser"), a:has-text("Continue in browser"), button:has-text("Continue")',
+        dismissSelector:
+            'a:has-text("Continua nel browser"), a:has-text("Continue in browser"), button:has-text("Continue")',
     },
     // ─── Premium upsell modal
     {
@@ -67,7 +70,8 @@ const OVERLAY_RULES: readonly OverlayRule[] = [
     {
         id: 'session_timeout',
         containerSelector: '[role="dialog"][class*="session"], [role="alertdialog"]',
-        dismissSelector: 'button:has-text("Yes"), button:has-text("Sì"), button:has-text("Continue"), button:has-text("Continua")',
+        dismissSelector:
+            'button:has-text("Yes"), button:has-text("Sì"), button:has-text("Continue"), button:has-text("Continua")',
         escFallback: true,
     },
     // ─── GDPR / privacy policy banner
@@ -86,7 +90,8 @@ const OVERLAY_RULES: readonly OverlayRule[] = [
     {
         id: 'download_mobile_app',
         containerSelector: '.download-mobile-app-prompt__overlay',
-        dismissSelector: 'button[aria-label="Dismiss"], button[aria-label="Chiudi"], .download-mobile-app-prompt__content button',
+        dismissSelector:
+            'button[aria-label="Dismiss"], button[aria-label="Chiudi"], .download-mobile-app-prompt__content button',
         escFallback: true,
     },
 ] as const;
@@ -133,7 +138,9 @@ export async function dismissKnownOverlays(page: Page): Promise<number> {
                     const btnBox = await dismissBtn.boundingBox().catch(() => null);
                     if (btnBox) {
                         const { callMouseMove } = await import('./overlayBridge');
-                        await callMouseMove(page, btnBox.x + btnBox.width / 2, btnBox.y + btnBox.height / 2).catch(() => null);
+                        await callMouseMove(page, btnBox.x + btnBox.width / 2, btnBox.y + btnBox.height / 2).catch(
+                            () => null,
+                        );
                     }
                     await dismissBtn.click({ timeout: 1500 }).catch(() => null);
                     dismissed++;
@@ -151,7 +158,11 @@ export async function dismissKnownOverlays(page: Page): Promise<number> {
                     const standaloneBox = await standaloneDismiss.boundingBox().catch(() => null);
                     if (standaloneBox) {
                         const { callMouseMove } = await import('./overlayBridge');
-                        await callMouseMove(page, standaloneBox.x + standaloneBox.width / 2, standaloneBox.y + standaloneBox.height / 2).catch(() => null);
+                        await callMouseMove(
+                            page,
+                            standaloneBox.x + standaloneBox.width / 2,
+                            standaloneBox.y + standaloneBox.height / 2,
+                        ).catch(() => null);
                     }
                     await standaloneDismiss.click({ timeout: 1500 }).catch(() => null);
                     dismissed++;
@@ -175,11 +186,16 @@ export async function dismissKnownOverlays(page: Page): Promise<number> {
             // Nuclear fallback: rimuovi l'overlay via JS (per full-screen blockers)
             const nuclearCount = await page.locator(rule.containerSelector).count();
             if (nuclearCount > 0) {
-                const removed = await page.evaluate((sel: string) => {
-                    const el = document.querySelector(sel);
-                    if (el) { el.remove(); return true; }
-                    return false;
-                }, rule.containerSelector).catch(() => false);
+                const removed = await page
+                    .evaluate((sel: string) => {
+                        const el = document.querySelector(sel);
+                        if (el) {
+                            el.remove();
+                            return true;
+                        }
+                        return false;
+                    }, rule.containerSelector)
+                    .catch(() => false);
                 if (removed) {
                     dismissed++;
                     await page.waitForTimeout(100).catch(() => null);
@@ -202,8 +218,7 @@ export async function hasBlockingOverlay(page: Page): Promise<boolean> {
 
     try {
         // Controlla solo i selettori bloccanti (modali, dialog)
-        const blockingSelectors = OVERLAY_RULES
-            .filter((r) => r.escFallback) // Solo quelli che richiedono Escape = bloccanti
+        const blockingSelectors = OVERLAY_RULES.filter((r) => r.escFallback) // Solo quelli che richiedono Escape = bloccanti
             .map((r) => r.containerSelector);
 
         if (blockingSelectors.length === 0) return false;

@@ -37,12 +37,7 @@ router.post('/', async (req, res) => {
             res.status(400).json({ error: 'Il campo reason è obbligatorio.' });
             return;
         }
-        const id = await addToBlacklist(
-            linkedin_url ?? null,
-            company_domain ?? null,
-            reason,
-            added_by ?? 'dashboard',
-        );
+        const id = await addToBlacklist(linkedin_url ?? null, company_domain ?? null, reason, added_by ?? 'dashboard');
         res.status(201).json({ id, message: 'Aggiunto alla blacklist.' });
     } catch (err: unknown) {
         handleApiError(res, err, 'api.blacklist.add');

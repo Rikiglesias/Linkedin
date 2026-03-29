@@ -32,7 +32,10 @@ function generateWarnings(
     appendProxyReputationWarning(warnings, cfgStatus);
 
     if (!cfgStatus.proxyConfigured) {
-        warnings.push({ level: 'critical', message: 'Nessun proxy configurato — connessione diretta su SalesNav (rischio detection ALTO)' });
+        warnings.push({
+            level: 'critical',
+            message: 'Nessun proxy configurato — connessione diretta su SalesNav (rischio detection ALTO)',
+        });
     }
     if (!cfgStatus.apolloConfigured && !cfgStatus.hunterConfigured) {
         warnings.push({ level: 'info', message: 'Nessun API enrichment configurato (Apollo/Hunter) — solo OSINT' });
@@ -110,12 +113,16 @@ export async function runSyncListWorkflow(opts: SyncListOptions): Promise<void> 
     // ── Guard: quarantina e pausa ─────────────────────────────────────────────
     const quarantine = (await getRuntimeFlag('account_quarantine')) === 'true';
     if (quarantine) {
-        console.error('\n  [BLOCCATO] Account in quarantina — operazione annullata. Esegui "bot unquarantine" dopo aver risolto il problema.\n');
+        console.error(
+            '\n  [BLOCCATO] Account in quarantina — operazione annullata. Esegui "bot unquarantine" dopo aver risolto il problema.\n',
+        );
         return;
     }
     const pauseState = await getAutomationPauseState();
     if (pauseState.paused) {
-        console.error(`\n  [BLOCCATO] Automazione in pausa: ${pauseState.reason ?? 'motivo sconosciuto'}. Riprendi con "bot resume".\n`);
+        console.error(
+            `\n  [BLOCCATO] Automazione in pausa: ${pauseState.reason ?? 'motivo sconosciuto'}. Riprendi con "bot resume".\n`,
+        );
         return;
     }
 
@@ -171,9 +178,10 @@ export async function runSyncListWorkflow(opts: SyncListOptions): Promise<void> 
             ...(syncError ? [syncError] : []),
             ...(report?.challengeDetected ? ['Challenge LinkedIn rilevato durante sync'] : []),
         ],
-        nextAction: report && report.enrichment.promoted > 0
-            ? `Step 3/4: esegui 'send-invites --list "${listName}"' per invitare i ${report.enrichment.promoted} lead pronti`
-            : 'Nessun lead promosso. Attendi enrichment o abbassa la soglia score',
+        nextAction:
+            report && report.enrichment.promoted > 0
+                ? `Step 3/4: esegui 'send-invites --list "${listName}"' per invitare i ${report.enrichment.promoted} lead pronti`
+                : 'Nessun lead promosso. Attendi enrichment o abbassa la soglia score',
         riskAssessment: preflight.riskAssessment,
     };
 

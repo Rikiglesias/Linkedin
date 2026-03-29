@@ -91,56 +91,64 @@ export const desktopFingerprintPool: Fingerprint[] = [
     {
         id: 'desktop_chrome_win_3',
         ja3: JA3_CHROME,
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+        userAgent:
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
         viewport: { width: 1680, height: 1050 },
         locale: 'en-US',
     },
     {
         id: 'desktop_chrome_win_4',
         ja3: JA3_CHROME,
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+        userAgent:
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
         viewport: { width: 2560, height: 1440 },
         locale: 'en-GB',
     },
     {
         id: 'desktop_chrome_mac_2',
         ja3: JA3_CHROME,
-        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+        userAgent:
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
         viewport: { width: 1512, height: 982 },
         locale: 'en-US',
     },
     {
         id: 'desktop_chrome_mac_3',
         ja3: JA3_CHROME,
-        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        userAgent:
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
         viewport: { width: 1440, height: 900 },
         locale: 'de-DE',
     },
     {
         id: 'desktop_edge_win_2',
         ja3: JA3_EDGE,
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0',
+        userAgent:
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0',
         viewport: { width: 1920, height: 1080 },
         locale: 'en-US',
     },
     {
         id: 'desktop_edge_win_3',
         ja3: JA3_EDGE,
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36 Edg/133.0.0.0',
+        userAgent:
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36 Edg/133.0.0.0',
         viewport: { width: 1366, height: 768 },
         locale: 'fr-FR',
     },
     {
         id: 'desktop_safari_mac_1',
         ja3: JA3_SAFARI,
-        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_2) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15',
+        userAgent:
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_2) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15',
         viewport: { width: 1440, height: 900 },
         locale: 'en-US',
     },
     {
         id: 'desktop_safari_mac_2',
         ja3: JA3_SAFARI,
-        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_2) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15',
+        userAgent:
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_2) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15',
         viewport: { width: 1680, height: 1050 },
         locale: 'it-IT',
     },
@@ -183,14 +191,16 @@ export const desktopFingerprintPool: Fingerprint[] = [
     {
         id: 'desktop_chrome_win_5',
         ja3: JA3_CHROME,
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
+        userAgent:
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
         viewport: { width: 1440, height: 900 },
         locale: 'nl-NL',
     },
     {
         id: 'desktop_chrome_linux_2',
         ja3: JA3_CHROME,
-        userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+        userAgent:
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
         viewport: { width: 1920, height: 1200 },
         locale: 'en-US',
     },
@@ -269,16 +279,15 @@ export const mobileFingerprintPool: Fingerprint[] = [
  * Lo stesso account ottiene lo stesso fingerprint per ~1 settimana, poi cambia
  * (simula aggiornamento browser naturale). Usa FNV-1a come hash veloce.
  */
-export function pickDeterministicFingerprint(
-    pool: ReadonlyArray<Fingerprint>,
-    accountId: string,
-): Fingerprint {
+export function pickDeterministicFingerprint(pool: ReadonlyArray<Fingerprint>, accountId: string): Fingerprint {
     const safePool = pool.length > 0 ? pool : desktopFingerprintPool;
     if (safePool.length === 1) return safePool[0] as Fingerprint;
 
     // Week number: cambia ogni ~7 giorni → il fingerprint ruota settimanalmente
     const now = new Date();
-    const weekNumber = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000));
+    const weekNumber = Math.floor(
+        (now.getTime() - new Date(now.getFullYear(), 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000),
+    );
     const seed = `${accountId}:week${weekNumber}`;
 
     // FNV-1a 32-bit hash per determinismo veloce senza dipendenze crypto

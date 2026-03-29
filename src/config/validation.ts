@@ -24,7 +24,12 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
     {
         message:
             '[CONFIG] WEBHOOK_SYNC_URL usa HTTP non criptato — i dati PII dei lead verranno inviati in chiaro. Usare HTTPS.',
-        when: (cfg) => cfg.webhookSyncEnabled && !!cfg.webhookSyncUrl && cfg.webhookSyncUrl.startsWith('http://') && !cfg.webhookSyncUrl.startsWith('http://127.0.0.1') && !cfg.webhookSyncUrl.startsWith('http://localhost'),
+        when: (cfg) =>
+            cfg.webhookSyncEnabled &&
+            !!cfg.webhookSyncUrl &&
+            cfg.webhookSyncUrl.startsWith('http://') &&
+            !cfg.webhookSyncUrl.startsWith('http://127.0.0.1') &&
+            !cfg.webhookSyncUrl.startsWith('http://localhost'),
         severity: 'warn',
     },
     {
@@ -324,7 +329,8 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
     },
     // M01: Strict range checks — values above the safe range should block startup
     {
-        message: '[CONFIG] HARD_INVITE_CAP > 200 — valore assurdo, probabilmente un errore di configurazione (safe range: 1-50)',
+        message:
+            '[CONFIG] HARD_INVITE_CAP > 200 — valore assurdo, probabilmente un errore di configurazione (safe range: 1-50)',
         when: (cfg) => cfg.hardInviteCap > 200,
     },
     {
@@ -342,7 +348,8 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
     },
     // M01: Strict range checks for messages
     {
-        message: '[CONFIG] HARD_MSG_CAP > 200 — valore assurdo, probabilmente un errore di configurazione (safe range: 1-30)',
+        message:
+            '[CONFIG] HARD_MSG_CAP > 200 — valore assurdo, probabilmente un errore di configurazione (safe range: 1-30)',
         when: (cfg) => cfg.hardMsgCap > 200,
     },
     // M01: followUpMax strict range — values > 5 risk spam reports, already warn; values > 20 are clearly wrong
@@ -351,7 +358,8 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
         when: (cfg) => cfg.followUpMax > 20,
     },
     {
-        message: '[CONFIG] WEEKLY_INVITE_LIMIT > 200 è pericoloso — LinkedIn può bannare per volumi settimanali anomali',
+        message:
+            '[CONFIG] WEEKLY_INVITE_LIMIT > 200 è pericoloso — LinkedIn può bannare per volumi settimanali anomali',
         when: (cfg) => cfg.weeklyInviteLimit > 200,
         severity: 'warn',
     },
@@ -404,7 +412,9 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
         message:
             '[CONFIG] GROWTH_MODEL_ENABLED=true ma nessun account ha warmupEnabled — consigliato per fasi di crescita più precise (il growth model usa comunque ageDays dal DB)',
         when: (cfg) =>
-            cfg.growthModelEnabled && cfg.accountProfiles.length > 0 && !cfg.accountProfiles.some((a) => a.warmupEnabled),
+            cfg.growthModelEnabled &&
+            cfg.accountProfiles.length > 0 &&
+            !cfg.accountProfiles.some((a) => a.warmupEnabled),
         severity: 'warn',
     },
     {
@@ -412,8 +422,7 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
         when: (cfg) => cfg.randomActivityProbability < 0 || cfg.randomActivityProbability > 1,
     },
     {
-        message:
-            '[CONFIG] NO_BURST_MIN_DELAY_SEC > NO_BURST_MAX_DELAY_SEC — i limiti sono invertiti',
+        message: '[CONFIG] NO_BURST_MIN_DELAY_SEC > NO_BURST_MAX_DELAY_SEC — i limiti sono invertiti',
         when: (cfg) => cfg.noBurstMinDelaySec > cfg.noBurstMaxDelaySec,
     },
     {
@@ -422,13 +431,11 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
         when: (cfg) => cfg.hardInviteCap > 50,
     },
     {
-        message:
-            '[CONFIG] HARD_MSG_CAP > 100 — valore pericolosamente alto, rischio rate-limit LinkedIn',
+        message: '[CONFIG] HARD_MSG_CAP > 100 — valore pericolosamente alto, rischio rate-limit LinkedIn',
         when: (cfg) => cfg.hardMsgCap > 100,
     },
     {
-        message:
-            '[CONFIG] WEEKLY_INVITE_LIMIT > 200 — supera i limiti sicuri settimanali LinkedIn',
+        message: '[CONFIG] WEEKLY_INVITE_LIMIT > 200 — supera i limiti sicuri settimanali LinkedIn',
         when: (cfg) => cfg.weeklyInviteLimit > 200,
     },
     {
@@ -438,14 +445,12 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
         severity: 'warn',
     },
     {
-        message:
-            '[CONFIG] FOLLOW_UP_DAILY_CAP > 30 — troppi follow-up in un giorno sono un segnale di automazione',
+        message: '[CONFIG] FOLLOW_UP_DAILY_CAP > 30 — troppi follow-up in un giorno sono un segnale di automazione',
         when: (cfg) => cfg.followUpDailyCap > 30,
         severity: 'warn',
     },
     {
-        message:
-            '[CONFIG] PROXY_QUALITY_CHECK_ENABLED=true ma nessun proxy configurato (PROXY_URL e PROXY_LIST vuoti)',
+        message: '[CONFIG] PROXY_QUALITY_CHECK_ENABLED=true ma nessun proxy configurato (PROXY_URL e PROXY_LIST vuoti)',
         when: (cfg) => cfg.proxyQualityCheckEnabled && !cfg.proxyUrl && !cfg.proxyListPath,
         severity: 'warn',
     },
@@ -462,8 +467,7 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
         severity: 'warn',
     },
     {
-        message:
-            '[CONFIG] BROWSER_ENGINE=camoufox e CLOAKBROWSER_ENABLED=true — conflitto: usare uno solo dei due',
+        message: '[CONFIG] BROWSER_ENGINE=camoufox e CLOAKBROWSER_ENABLED=true — conflitto: usare uno solo dei due',
         when: (cfg) => cfg.browserEngine === 'camoufox' && cfg.cloakBrowserEnabled,
         severity: 'warn',
     },
@@ -485,7 +489,10 @@ export function validateConfigSchema(config: AppConfig, nodeEnv: string = proces
     return errors;
 }
 
-export function validateConfigFull(cfg: AppConfig, nodeEnv: string = process.env.NODE_ENV ?? ''): ConfigValidationResult {
+export function validateConfigFull(
+    cfg: AppConfig,
+    nodeEnv: string = process.env.NODE_ENV ?? '',
+): ConfigValidationResult {
     const errors: string[] = [];
     const warnings: string[] = [];
     for (const rule of CONFIG_VALIDATION_RULES) {

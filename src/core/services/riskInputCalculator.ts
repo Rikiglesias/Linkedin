@@ -25,20 +25,14 @@ export interface RiskRawData {
  * Funzione pura — nessun DB, nessun side-effect, testabile.
  */
 export function calculateRiskInputs(raw: RiskRawData): RiskInputs {
-    const pendingRatio = raw.invitedTotal > 0
-        ? raw.pendingInvites / raw.invitedTotal
-        : 0;
+    const pendingRatio = raw.invitedTotal > 0 ? raw.pendingInvites / raw.invitedTotal : 0;
 
-    const errorRate = raw.totalAttempts24h > 0
-        ? raw.failedAttempts24h / raw.totalAttempts24h
-        : 0;
+    const errorRate = raw.totalAttempts24h > 0 ? raw.failedAttempts24h / raw.totalAttempts24h : 0;
 
     const denominator = Math.max(1, raw.totalAttempts24h);
     const selectorFailureRate = raw.selectorFailuresToday / denominator;
 
-    const inviteVelocityRatio = raw.hardInviteCap > 0
-        ? raw.invitesSentToday / raw.hardInviteCap
-        : 0;
+    const inviteVelocityRatio = raw.hardInviteCap > 0 ? raw.invitesSentToday / raw.hardInviteCap : 0;
 
     return {
         pendingRatio,

@@ -126,8 +126,16 @@ export async function generateAndSendDailyReport(targetDate?: string): Promise<b
     ].join('\n');
 
     // F-3: Hot leads — top 3 lead con intent POSITIVE/QUESTIONS oggi
-    const hotLeads = await db.query<{ first_name: string; last_name: string; account_name: string; linkedin_url: string; confidence: number; intent: string }>(
-        `SELECT l.first_name, l.last_name, l.account_name, l.linkedin_url, 
+    const hotLeads = await db
+        .query<{
+            first_name: string;
+            last_name: string;
+            account_name: string;
+            linkedin_url: string;
+            confidence: number;
+            intent: string;
+        }>(
+            `SELECT l.first_name, l.last_name, l.account_name, l.linkedin_url, 
                 li.confidence, li.intent
          FROM lead_intents li
          JOIN leads l ON l.id = li.lead_id
@@ -136,43 +144,68 @@ export async function generateAndSendDailyReport(targetDate?: string): Promise<b
            AND li.detected_at LIKE ? || '%'
          ORDER BY li.confidence DESC
          LIMIT 3`,
-        [localDate],
-    ).catch(() => [] as Array<{ first_name: string; last_name: string; account_name: string; linkedin_url: string; confidence: number; intent: string }>);
+            [localDate],
+        )
+        .catch(
+            () =>
+                [] as Array<{
+                    first_name: string;
+                    last_name: string;
+                    account_name: string;
+                    linkedin_url: string;
+                    confidence: number;
+                    intent: string;
+                }>,
+        );
 
-    const hotLeadsSection = hotLeads.length > 0
-        ? [
-            `\n*🔥 Hot Leads (intent positivo oggi)*`,
-            ...hotLeads.map((hl) => {
-                const name = maskName(`${hl.first_name || ''} ${hl.last_name || ''}`.trim() || null);
-                const company = hl.account_name ? ` (${hl.account_name})` : '';
-                return `• ${name}${company} — ${hl.intent} ${Math.round(hl.confidence * 100)}%`;
-            }),
-        ].join('\n')
-        : '';
+    const hotLeadsSection =
+        hotLeads.length > 0
+            ? [
+                  `\n*🔥 Hot Leads (intent positivo oggi)*`,
+                  ...hotLeads.map((hl) => {
+                      const name = maskName(`${hl.first_name || ''} ${hl.last_name || ''}`.trim() || null);
+                      const company = hl.account_name ? ` (${hl.account_name})` : '';
+                      return `• ${name}${company} — ${hl.intent} ${Math.round(hl.confidence * 100)}%`;
+                  }),
+              ].join('\n')
+            : '';
 
     // F-3: Pending ratio trend — confronto vs ieri e media 7 giorni
     const yesterdayDate = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
     const yesterdayRiskInputs = await getRiskInputs(yesterdayDate, config.hardInviteCap).catch(() => null);
     const yesterdayPendingRatio = yesterdayRiskInputs ? yesterdayRiskInputs.pendingRatio : null;
-    const pendingTrend = yesterdayPendingRatio !== null
-        ? riskSnapshot.pendingRatio > yesterdayPendingRatio ? '📈 in salita' : riskSnapshot.pendingRatio < yesterdayPendingRatio ? '📉 in discesa' : '➡️ stabile'
-        : '';
-    const pendingTrendText = yesterdayPendingRatio !== null
-        ? ` (ieri: ${(yesterdayPendingRatio * 100).toFixed(1)}% ${pendingTrend})`
-        : '';
+    const pendingTrend =
+        yesterdayPendingRatio !== null
+            ? riskSnapshot.pendingRatio > yesterdayPendingRatio
+                ? '📈 in salita'
+                : riskSnapshot.pendingRatio < yesterdayPendingRatio
+                  ? '📉 in discesa'
+                  : '➡️ stabile'
+            : '';
+    const pendingTrendText =
+        yesterdayPendingRatio !== null ? ` (ieri: ${(yesterdayPendingRatio * 100).toFixed(1)}% ${pendingTrend})` : '';
 
     // F-3: Suggestion automatica — ritiro inviti pending
-    const expiredInvitesRow = await db.get<{ count: number }>(
-        `SELECT COUNT(*) as count FROM leads WHERE status = 'INVITED' AND invited_at < DATETIME('now', '-21 days')`,
-    ).catch(() => null);
+    const expiredInvitesRow = await db
+        .get<{
+            count: number;
+        }>(`SELECT COUNT(*) as count FROM leads WHERE status = 'INVITED' AND invited_at < DATETIME('now', '-21 days')`)
+        .catch(() => null);
     const expiredInvites = expiredInvitesRow?.count ?? 0;
-    const suggestionSection = (riskSnapshot.pendingRatio > 0.5 || expiredInvites > 5)
-        ? [
-            `\n*💡 Suggerimenti*`,
-            ...(expiredInvites > 5 ? [`• Ritira ${expiredInvites} inviti pending >21gg per abbassare il pending ratio`] : []),
-            ...(riskSnapshot.pendingRatio > 0.5 ? [`• Pending ratio ${(riskSnapshot.pendingRatio * 100).toFixed(0)}% — considera di ridurre il budget inviti o migliorare il targeting`] : []),
-        ].join('\n')
-        : '';
+    const suggestionSection =
+        riskSnapshot.pendingRatio > 0.5 || expiredInvites > 5
+            ? [
+                  `\n*💡 Suggerimenti*`,
+                  ...(expiredInvites > 5
+                      ? [`• Ritira ${expiredInvites} inviti pending >21gg per abbassare il pending ratio`]
+                      : []),
+                  ...(riskSnapshot.pendingRatio > 0.5
+                      ? [
+                            `• Pending ratio ${(riskSnapshot.pendingRatio * 100).toFixed(0)}% — considera di ridurre il budget inviti o migliorare il targeting`,
+                        ]
+                      : []),
+              ].join('\n')
+            : '';
 
     // Format Report Markdown per Telegram
     const reportText = [
@@ -211,14 +244,21 @@ export async function generateAndSendDailyReport(targetDate?: string): Promise<b
     return true;
 }
 
-async function buildBanProbabilitySection(riskSnapshot: { pendingRatio: number; challengeCount: number }): Promise<string> {
+async function buildBanProbabilitySection(riskSnapshot: {
+    pendingRatio: number;
+    challengeCount: number;
+}): Promise<string> {
     try {
         const { estimateBanProbability } = await import('../risk/riskEngine');
-        const acceptanceApprox = riskSnapshot.pendingRatio > 0
-            ? (1 - riskSnapshot.pendingRatio) * 100
-            : 50;
-        const banProb = estimateBanProbability([], acceptanceApprox, riskSnapshot.challengeCount, riskSnapshot.pendingRatio);
-        const icon = banProb.level === 'LOW' ? '🟢' : banProb.level === 'MEDIUM' ? '🟡' : banProb.level === 'HIGH' ? '🟠' : '🔴';
+        const acceptanceApprox = riskSnapshot.pendingRatio > 0 ? (1 - riskSnapshot.pendingRatio) * 100 : 50;
+        const banProb = estimateBanProbability(
+            [],
+            acceptanceApprox,
+            riskSnapshot.challengeCount,
+            riskSnapshot.pendingRatio,
+        );
+        const icon =
+            banProb.level === 'LOW' ? '🟢' : banProb.level === 'MEDIUM' ? '🟡' : banProb.level === 'HIGH' ? '🟠' : '🔴';
         return `• Ban Probability: ${icon} *${banProb.score}/100* (${banProb.level})`;
     } catch {
         return '';

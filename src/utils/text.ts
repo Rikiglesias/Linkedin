@@ -35,7 +35,7 @@ export function normalizeNameForComparison(name: string | null | undefined): str
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '') // rimuove accenti
         .toLowerCase()
-        .replace(/[^a-z0-9\s]/g, ' ')   // non-alfanumerici → spazio
+        .replace(/[^a-z0-9\s]/g, ' ') // non-alfanumerici → spazio
         .replace(/\s+/g, ' ')
         .trim();
 }

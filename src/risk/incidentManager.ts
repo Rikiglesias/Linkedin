@@ -168,9 +168,11 @@ export async function resumeAutomation(): Promise<void> {
  * è probabilmente un cambiamento LinkedIn (selettori, UI, rate limit).
  * Se solo su 1 account → specifico dell'account (bug nostro, stato account, ban).
  */
-export async function classifyIncidentSource(
-    incidentType: string,
-): Promise<{ classification: 'account_specific' | 'platform_wide' | 'unknown'; affectedAccounts: number; recommendation: string }> {
+export async function classifyIncidentSource(incidentType: string): Promise<{
+    classification: 'account_specific' | 'platform_wide' | 'unknown';
+    affectedAccounts: number;
+    recommendation: string;
+}> {
     try {
         const { getDatabase } = await import('../db');
         const db = await getDatabase();
@@ -197,7 +199,11 @@ export async function classifyIncidentSource(
                 recommendation: `Errore "${incidentType}" su ${affectedAccounts} account — probabile problema specifico dell'account.`,
             };
         }
-        return { classification: 'unknown', affectedAccounts: 0, recommendation: 'Nessun incident recente di questo tipo.' };
+        return {
+            classification: 'unknown',
+            affectedAccounts: 0,
+            recommendation: 'Nessun incident recente di questo tipo.',
+        };
     } catch {
         return { classification: 'unknown', affectedAccounts: 0, recommendation: 'Classificazione non disponibile.' };
     }

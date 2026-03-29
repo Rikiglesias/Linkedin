@@ -38,9 +38,8 @@ export async function handlePauseAction(
     source: string,
     defaultMinutes?: number,
 ): Promise<{ success: boolean; minutes: number }> {
-    const payload = defaultMinutes !== undefined && req.body?.minutes === undefined
-        ? { minutes: defaultMinutes }
-        : req.body;
+    const payload =
+        defaultMinutes !== undefined && req.body?.minutes === undefined ? { minutes: defaultMinutes } : req.body;
     const parsed = PauseSchema.safeParse(payload);
     if (!parsed.success) throw parsed.error;
     const minutes = parsed.data.minutes;

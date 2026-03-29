@@ -33,7 +33,6 @@ async function getLeadLinkedinUrl(leadId: number): Promise<string | null> {
     return row?.linkedin_url ?? null;
 }
 
-
 // ─── VIEW PROFILE ───────────────────────────────────────────────────────────────
 
 async function performViewProfile(page: Page, linkedinUrl: string, accountId: string): Promise<void> {
@@ -139,7 +138,9 @@ export async function processInteractionJob(
         const dailyViews = await getDailyStat(localDate, 'profile_views');
         if (dailyViews >= config.profileViewDailyCap) {
             await logWarn('interaction.profile_view_cap_reached', { dailyViews, cap: config.profileViewDailyCap });
-            return workerResult(0, [{ leadId, message: `Profile view daily cap raggiunto (${dailyViews}/${config.profileViewDailyCap})` }]);
+            return workerResult(0, [
+                { leadId, message: `Profile view daily cap raggiunto (${dailyViews}/${config.profileViewDailyCap})` },
+            ]);
         }
     }
 

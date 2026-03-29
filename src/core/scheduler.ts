@@ -195,7 +195,6 @@ export function clamp01(value: number): number {
     return Math.min(1, Math.max(0, value));
 }
 
-
 /** @internal */
 export function applyAdaptiveFactor(rawBudget: number, factor: number): number {
     if (rawBudget <= 0 || factor <= 0) {
@@ -245,7 +244,11 @@ export function capFromSsi(score: number, minCap: number, maxCap: number): numbe
 }
 
 /** @internal */
-export function resolveCapPair(staticSoft: number, staticHard: number, dynamicCap: number): { soft: number; hard: number } {
+export function resolveCapPair(
+    staticSoft: number,
+    staticHard: number,
+    dynamicCap: number,
+): { soft: number; hard: number } {
     const hard = Math.max(1, Math.min(staticHard, dynamicCap));
     const soft = Math.max(1, Math.min(staticSoft, hard));
     return { soft, hard };
@@ -281,10 +284,7 @@ export function evaluateAdaptiveBudgetContext(
     // Tutti i lead che hanno ricevuto un invito (allineato con stats.ts getRiskInputs
     // che usa `invited_at IS NOT NULL` come denominatore globale — CC-4 fix).
     const everInvitedOutcome =
-        acceptedLike +
-        (statusCounts.REPLIED ?? 0) +
-        (statusCounts.CONNECTED ?? 0) +
-        (statusCounts.WITHDRAWN ?? 0);
+        acceptedLike + (statusCounts.REPLIED ?? 0) + (statusCounts.CONNECTED ?? 0) + (statusCounts.WITHDRAWN ?? 0);
     const blockedSkipped = (statusCounts.BLOCKED ?? 0) + (statusCounts.SKIPPED ?? 0);
 
     const pendingRatioDenominator = Math.max(1, invited + everInvitedOutcome);
@@ -400,11 +400,11 @@ export async function scheduleJobs(
     const dbAccountAgeDays = await getAccountAgeDays();
     const weeklyInviteLimitEffective = config.complianceDynamicWeeklyLimitEnabled
         ? calculateDynamicWeeklyInviteLimit(
-            dbAccountAgeDays,
-            config.complianceDynamicWeeklyMinInvites,
-            Math.min(config.complianceDynamicWeeklyMaxInvites, config.weeklyInviteLimit),
-            config.complianceDynamicWeeklyWarmupDays,
-        )
+              dbAccountAgeDays,
+              config.complianceDynamicWeeklyMinInvites,
+              Math.min(config.complianceDynamicWeeklyMaxInvites, config.weeklyInviteLimit),
+              config.complianceDynamicWeeklyWarmupDays,
+          )
         : config.weeklyInviteLimit;
     const weeklyRemaining = Math.max(0, weeklyInviteLimitEffective - weeklyInvitesSent);
     const ssiRaw = config.ssiDynamicLimitsEnabled ? await getRuntimeFlag(config.ssiStateKey) : null;
@@ -683,7 +683,12 @@ export async function scheduleJobs(
             if (listBudget <= 0) continue;
 
             if (dryRun) {
-                const readyCandidates = await getLeadsByStatusForList('READY_INVITE', listName, listBudget, options.minScore);
+                const readyCandidates = await getLeadsByStatusForList(
+                    'READY_INVITE',
+                    listName,
+                    listBudget,
+                    options.minScore,
+                );
                 const newCandidates = await getLeadsByStatusForList('NEW', listName, listBudget);
                 const orderedCandidates = [...readyCandidates, ...newCandidates];
                 const seenLeadIds = new Set<number>();
@@ -715,13 +720,16 @@ export async function scheduleJobs(
                 const predictions = await predictAcceptanceBatch(rawCandidates);
                 const predMap = new Map(predictions.map((p) => [p.leadId, p.compositeScore]));
                 inviteCandidates = [...rawCandidates].sort((a, b) => {
-                    const scoreA = predMap.get(a.id) ?? (a.lead_score ?? 0);
-                    const scoreB = predMap.get(b.id) ?? (b.lead_score ?? 0);
+                    const scoreA = predMap.get(a.id) ?? a.lead_score ?? 0;
+                    const scoreB = predMap.get(b.id) ?? b.lead_score ?? 0;
                     return scoreB - scoreA;
                 });
             } catch (mlErr) {
                 // Fallback: usa ordine originale (lead_score DESC) se il modello fallisce
-                console.warn('[SCHEDULER] ML predictAcceptanceBatch fallito, fallback a lead_score:', mlErr instanceof Error ? mlErr.message : String(mlErr));
+                console.warn(
+                    '[SCHEDULER] ML predictAcceptanceBatch fallito, fallback a lead_score:',
+                    mlErr instanceof Error ? mlErr.message : String(mlErr),
+                );
             }
 
             let insertedForList = 0;
@@ -884,7 +892,7 @@ export async function scheduleJobs(
                             { leadId: lead.id, actionType: 'LIKE_POST' },
                             `engagement_pre_msg:${lead.id}:${localDate}`,
                             15, // priorità tra check (10) e message (20)
-                            1,  // 1 solo tentativo — best-effort
+                            1, // 1 solo tentativo — best-effort
                             engagementDelaySec,
                             pickAccountIdForLead(lead.id),
                         );

@@ -31,8 +31,14 @@ describe('leadStateService — isValidLeadTransition', () => {
     // ── Transizioni sicurezza (REVIEW_REQUIRED, BLOCKED, DEAD) ──
     it('qualsiasi stato → REVIEW_REQUIRED è valida (tranne BLOCKED e DEAD)', () => {
         const statesWithReview: LeadStatus[] = [
-            'NEW', 'READY_INVITE', 'INVITED', 'ACCEPTED', 'CONNECTED',
-            'READY_MESSAGE', 'MESSAGED', 'REPLIED',
+            'NEW',
+            'READY_INVITE',
+            'INVITED',
+            'ACCEPTED',
+            'CONNECTED',
+            'READY_MESSAGE',
+            'MESSAGED',
+            'REPLIED',
         ];
         for (const from of statesWithReview) {
             expect(isValidLeadTransition(from, 'REVIEW_REQUIRED')).toBe(true);
@@ -54,9 +60,19 @@ describe('leadStateService — isValidLeadTransition', () => {
     // ── Transizioni NON valide ──
     it('BLOCKED → qualsiasi è invalida (dead-end)', () => {
         const allStatuses: LeadStatus[] = [
-            'NEW', 'READY_INVITE', 'INVITED', 'ACCEPTED', 'CONNECTED',
-            'READY_MESSAGE', 'MESSAGED', 'REPLIED', 'SKIPPED', 'BLOCKED',
-            'DEAD', 'REVIEW_REQUIRED', 'WITHDRAWN',
+            'NEW',
+            'READY_INVITE',
+            'INVITED',
+            'ACCEPTED',
+            'CONNECTED',
+            'READY_MESSAGE',
+            'MESSAGED',
+            'REPLIED',
+            'SKIPPED',
+            'BLOCKED',
+            'DEAD',
+            'REVIEW_REQUIRED',
+            'WITHDRAWN',
         ];
         for (const to of allStatuses) {
             expect(isValidLeadTransition('BLOCKED', to)).toBe(false);

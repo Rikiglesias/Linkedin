@@ -19,12 +19,7 @@ import {
 } from './renderers';
 import { TimelineStore } from './timeline';
 import { TimelineFilter, TrendRow } from './types';
-import {
-    initRealtime,
-    connectEventStream,
-    disconnectEventStream,
-    isNotificationEvent,
-} from './realtime';
+import { initRealtime, connectEventStream, disconnectEventStream, isNotificationEvent } from './realtime';
 import { updateSseIndicator, requestNotificationPermission, fireDesktopNotification } from './sseUi';
 import { bindLeadSearch, bindBlacklist } from './leadSearch';
 
@@ -86,7 +81,9 @@ function loadUiPrefs(): UiPrefs {
                 theme: parsed.theme ?? 'auto',
             };
         }
-    } catch { /* ignore corrupt data */ }
+    } catch {
+        /* ignore corrupt data */
+    }
     return { filter: { type: 'all', accountId: 'all', listName: 'all' }, theme: 'auto' };
 }
 
@@ -109,7 +106,9 @@ function cycleTheme(current: ThemePreference): ThemePreference {
 function saveUiPrefs(prefs: UiPrefs): void {
     try {
         localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
-    } catch { /* quota exceeded or private browsing */ }
+    } catch {
+        /* quota exceeded or private browsing */
+    }
 }
 
 const initialPrefs = loadUiPrefs();
@@ -118,7 +117,6 @@ let currentTheme: ThemePreference = initialPrefs.theme;
 
 // Apply saved theme immediately (before DOM renders charts)
 applyTheme(currentTheme);
-
 
 // ─── Scheduling ──────────────────────────────────────────────────────────────
 
@@ -223,7 +221,6 @@ function setStatusMessage(message: string): void {
     setText('action-feedback', message);
 }
 
-
 async function resolveSelectedIncidents(): Promise<{ resolved: number; total: number }> {
     const total = selectedIncidentIds.size;
     if (total === 0) {
@@ -318,7 +315,6 @@ function toggleShortcutHelp(): void {
     document.body.appendChild(overlay);
 }
 
-
 function bindControls(): void {
     byId<HTMLButtonElement>('btn-refresh').addEventListener('click', () => {
         api.forceRefresh();
@@ -384,43 +380,54 @@ function bindControls(): void {
         }
         input.setCustomValidity('');
 
-        void api.pause(minutes).then((ok) => {
-            if (ok) {
-                showToast(`Pausa attivata per ${minutes} minuti`, 'success');
-                byId<HTMLDialogElement>('pause-modal').close();
-                void refreshDashboard();
-            } else {
-                showToast('Errore durante la pausa', 'error');
-            }
-        }).catch(() => showToast('Errore di rete durante la pausa', 'error'));
+        void api
+            .pause(minutes)
+            .then((ok) => {
+                if (ok) {
+                    showToast(`Pausa attivata per ${minutes} minuti`, 'success');
+                    byId<HTMLDialogElement>('pause-modal').close();
+                    void refreshDashboard();
+                } else {
+                    showToast('Errore durante la pausa', 'error');
+                }
+            })
+            .catch(() => showToast('Errore di rete durante la pausa', 'error'));
     });
 
     byId<HTMLButtonElement>('btn-resume').addEventListener('click', () => {
-        void api.resume().then((ok) => {
-            if (ok) {
-                showToast('Automazione ripresa', 'success');
-                void refreshDashboard();
-            } else {
-                showToast('Errore durante la ripresa', 'error');
-            }
-        }).catch(() => showToast('Errore di rete durante la ripresa', 'error'));
+        void api
+            .resume()
+            .then((ok) => {
+                if (ok) {
+                    showToast('Automazione ripresa', 'success');
+                    void refreshDashboard();
+                } else {
+                    showToast('Errore durante la ripresa', 'error');
+                }
+            })
+            .catch(() => showToast('Errore di rete durante la ripresa', 'error'));
     });
 
     document.getElementById('btn-trigger-run')?.addEventListener('click', () => {
-        void api.triggerRun('all').then((ok) => {
-            showToast(ok ? 'Run workflow "all" schedulato' : 'Errore trigger run', ok ? 'success' : 'error');
-        }).catch(() => showToast('Errore di rete trigger run', 'error'));
+        void api
+            .triggerRun('all')
+            .then((ok) => {
+                showToast(ok ? 'Run workflow "all" schedulato' : 'Errore trigger run', ok ? 'success' : 'error');
+            })
+            .catch(() => showToast('Errore di rete trigger run', 'error'));
     });
 
     byId<HTMLButtonElement>('btn-resolve-selected').addEventListener('click', () => {
-        void resolveSelectedIncidents().then((report) => {
-            if (report.total === 0) {
-                showToast('Nessun incidente selezionato', 'warning');
-                return;
-            }
-            showToast(`Incidenti risolti: ${report.resolved}/${report.total}`, 'success');
-            void refreshDashboard();
-        }).catch(() => showToast('Errore di rete durante la risoluzione', 'error'));
+        void resolveSelectedIncidents()
+            .then((report) => {
+                if (report.total === 0) {
+                    showToast('Nessun incidente selezionato', 'warning');
+                    return;
+                }
+                showToast(`Incidenti risolti: ${report.resolved}/${report.total}`, 'success');
+                void refreshDashboard();
+            })
+            .catch(() => showToast('Errore di rete durante la risoluzione', 'error'));
     });
 
     byId<HTMLTableSectionElement>('incidents-tbody').addEventListener('change', (event) => {
@@ -447,15 +454,18 @@ function bindControls(): void {
         if (!Number.isFinite(id)) return;
 
         if (!confirm(`Risolvere incidente #${id}? Questa azione non è reversibile.`)) return;
-        void api.resolveIncident(id).then((ok) => {
-            if (ok) {
-                showToast(`Incidente #${id} risolto`, 'success');
-                selectedIncidentIds.delete(id);
-                void refreshDashboard();
-            } else {
-                showToast(`Errore risoluzione #${id}`, 'error');
-            }
-        }).catch(() => showToast(`Errore di rete risoluzione #${id}`, 'error'));
+        void api
+            .resolveIncident(id)
+            .then((ok) => {
+                if (ok) {
+                    showToast(`Incidente #${id} risolto`, 'success');
+                    selectedIncidentIds.delete(id);
+                    void refreshDashboard();
+                } else {
+                    showToast(`Errore risoluzione #${id}`, 'error');
+                }
+            })
+            .catch(() => showToast(`Errore di rete risoluzione #${id}`, 'error'));
     });
 
     byId<HTMLTableSectionElement>('comment-suggestions-tbody').addEventListener('click', (event) => {
@@ -473,22 +483,34 @@ function bindControls(): void {
             const row = target.closest('tr');
             const editor = row?.querySelector<HTMLTextAreaElement>('textarea.comment-suggestion-editor');
             const comment = editor?.value ?? '';
-            void api.approveCommentSuggestion(leadId, suggestionIndex, comment).then((ok) => {
-                showToast(ok ? `Bozza approvata (lead #${leadId})` : `Errore approvazione bozza (lead #${leadId})`, ok ? 'success' : 'error');
-                if (ok) {
-                    void refreshDashboard();
-                }
-            }).catch(() => showToast(`Errore di rete approvazione bozza (lead #${leadId})`, 'error'));
+            void api
+                .approveCommentSuggestion(leadId, suggestionIndex, comment)
+                .then((ok) => {
+                    showToast(
+                        ok ? `Bozza approvata (lead #${leadId})` : `Errore approvazione bozza (lead #${leadId})`,
+                        ok ? 'success' : 'error',
+                    );
+                    if (ok) {
+                        void refreshDashboard();
+                    }
+                })
+                .catch(() => showToast(`Errore di rete approvazione bozza (lead #${leadId})`, 'error'));
             return;
         }
 
         if (target.classList.contains('comment-suggestion-reject')) {
-            void api.rejectCommentSuggestion(leadId, suggestionIndex).then((ok) => {
-                showToast(ok ? `Bozza rifiutata (lead #${leadId})` : `Errore rifiuto bozza (lead #${leadId})`, ok ? 'success' : 'error');
-                if (ok) {
-                    void refreshDashboard();
-                }
-            }).catch(() => showToast(`Errore di rete rifiuto bozza (lead #${leadId})`, 'error'));
+            void api
+                .rejectCommentSuggestion(leadId, suggestionIndex)
+                .then((ok) => {
+                    showToast(
+                        ok ? `Bozza rifiutata (lead #${leadId})` : `Errore rifiuto bozza (lead #${leadId})`,
+                        ok ? 'success' : 'error',
+                    );
+                    if (ok) {
+                        void refreshDashboard();
+                    }
+                })
+                .catch(() => showToast(`Errore di rete rifiuto bozza (lead #${leadId})`, 'error'));
         }
     });
 
@@ -522,47 +544,51 @@ function bindWhatIf(): void {
         const slider = document.getElementById(id) as HTMLInputElement | null;
         const valEl = document.getElementById(`${id}-val`);
         if (slider && valEl) {
-            slider.addEventListener('input', () => { valEl.textContent = slider.value; });
+            slider.addEventListener('input', () => {
+                valEl.textContent = slider.value;
+            });
         }
     }
 
     const btn = document.getElementById('btn-whatif-simulate');
     if (!btn) return;
-    btn.addEventListener('click', () => { void (async () => {
-        const softInvite = Number((document.getElementById('whatif-soft-invite') as HTMLInputElement)?.value ?? 15);
-        const hardInvite = Number((document.getElementById('whatif-hard-invite') as HTMLInputElement)?.value ?? 20);
-        const softMsg = Number((document.getElementById('whatif-soft-msg') as HTMLInputElement)?.value ?? 8);
-        const hardMsg = Number((document.getElementById('whatif-hard-msg') as HTMLInputElement)?.value ?? 10);
+    btn.addEventListener('click', () => {
+        void (async () => {
+            const softInvite = Number((document.getElementById('whatif-soft-invite') as HTMLInputElement)?.value ?? 15);
+            const hardInvite = Number((document.getElementById('whatif-hard-invite') as HTMLInputElement)?.value ?? 20);
+            const softMsg = Number((document.getElementById('whatif-soft-msg') as HTMLInputElement)?.value ?? 8);
+            const hardMsg = Number((document.getElementById('whatif-hard-msg') as HTMLInputElement)?.value ?? 10);
 
-        const result = await api.simulateWhatIf({
-            softInviteCap: softInvite,
-            hardInviteCap: hardInvite,
-            softMsgCap: softMsg,
-            hardMsgCap: hardMsg,
-        });
+            const result = await api.simulateWhatIf({
+                softInviteCap: softInvite,
+                hardInviteCap: hardInvite,
+                softMsgCap: softMsg,
+                hardMsgCap: hardMsg,
+            });
 
-        const resultEl = document.getElementById('whatif-result');
-        if (!resultEl) return;
-        resultEl.hidden = false;
+            const resultEl = document.getElementById('whatif-result');
+            if (!resultEl) return;
+            resultEl.hidden = false;
 
-        const data = result.data as Record<string, unknown> | undefined;
-        const current = (data?.current ?? {}) as Record<string, unknown>;
-        const hypo = (data?.hypothetical ?? {}) as Record<string, unknown>;
-        const delta = (data?.delta ?? {}) as Record<string, unknown>;
+            const data = result.data as Record<string, unknown> | undefined;
+            const current = (data?.current ?? {}) as Record<string, unknown>;
+            const hypo = (data?.hypothetical ?? {}) as Record<string, unknown>;
+            const delta = (data?.delta ?? {}) as Record<string, unknown>;
 
-        const setText = (id: string, val: unknown) => {
-            const el = document.getElementById(id);
-            if (el) el.textContent = String(val ?? '—');
-        };
+            const setText = (id: string, val: unknown) => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = String(val ?? '—');
+            };
 
-        setText('whatif-risk-current', current.riskScore ?? '—');
-        setText('whatif-risk-hypo', hypo.riskScore ?? '—');
-        setText('whatif-invite-current', current.inviteBudget ?? '—');
-        setText('whatif-invite-hypo', hypo.inviteBudget ?? '—');
-        setText('whatif-msg-current', current.messageBudget ?? '—');
-        setText('whatif-msg-hypo', hypo.messageBudget ?? '—');
-        setText('whatif-action-changed', delta.riskActionChanged ? '⚠️ Cambiato' : '✅ Invariato');
-    })(); });
+            setText('whatif-risk-current', current.riskScore ?? '—');
+            setText('whatif-risk-hypo', hypo.riskScore ?? '—');
+            setText('whatif-invite-current', current.inviteBudget ?? '—');
+            setText('whatif-invite-hypo', hypo.inviteBudget ?? '—');
+            setText('whatif-msg-current', current.messageBudget ?? '—');
+            setText('whatif-msg-hypo', hypo.messageBudget ?? '—');
+            setText('whatif-action-changed', delta.riskActionChanged ? '⚠️ Cambiato' : '✅ Invariato');
+        })();
+    });
 }
 
 function restoreFilterSelects(): void {
@@ -605,41 +631,43 @@ function bindLoginForm(): void {
         apiKeyInput.type = apiKeyInput.type === 'password' ? 'text' : 'password';
     });
 
-    form.addEventListener('submit', (e) => { void (async () => {
-        e.preventDefault();
-        const apiKey = apiKeyInput.value.trim();
-        if (!apiKey) return;
-        const totpCode = totpInput?.value.trim() || undefined;
+    form.addEventListener('submit', (e) => {
+        void (async () => {
+            e.preventDefault();
+            const apiKey = apiKeyInput.value.trim();
+            if (!apiKey) return;
+            const totpCode = totpInput?.value.trim() || undefined;
 
-        if (submitBtn) submitBtn.disabled = true;
-        if (errorEl) errorEl.hidden = true;
+            if (submitBtn) submitBtn.disabled = true;
+            if (errorEl) errorEl.hidden = true;
 
-        const result = await api.loginWithCredentials(apiKey, totpCode);
+            const result = await api.loginWithCredentials(apiKey, totpCode);
 
-        if (result.success) {
-            sessionStorage.setItem('lkbot_api_key', apiKey);
-            modal.close();
-            apiKeyInput.value = '';
-            if (totpInput) totpInput.value = '';
-            await refreshDashboard();
-            restoreFilterSelects();
-            renderTimelineSection();
-            startPolling();
-            connectEventStream();
-            return;
-        }
+            if (result.success) {
+                sessionStorage.setItem('lkbot_api_key', apiKey);
+                modal.close();
+                apiKeyInput.value = '';
+                if (totpInput) totpInput.value = '';
+                await refreshDashboard();
+                restoreFilterSelects();
+                renderTimelineSection();
+                startPolling();
+                connectEventStream();
+                return;
+            }
 
-        if (result.totpRequired && totpInput) {
-            totpInput.parentElement?.querySelector('label')?.classList.add('required');
-            totpInput.focus();
-        }
+            if (result.totpRequired && totpInput) {
+                totpInput.parentElement?.querySelector('label')?.classList.add('required');
+                totpInput.focus();
+            }
 
-        if (errorEl && result.error) {
-            errorEl.textContent = result.error;
-            errorEl.hidden = false;
-        }
-        if (submitBtn) submitBtn.disabled = false;
-    })(); });
+            if (errorEl && result.error) {
+                errorEl.textContent = result.error;
+                errorEl.hidden = false;
+            }
+            if (submitBtn) submitBtn.disabled = false;
+        })();
+    });
 }
 
 async function bootstrap(): Promise<void> {

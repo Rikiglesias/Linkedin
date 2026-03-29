@@ -21,30 +21,30 @@ describe('Fingerprint Pool (M27/M33)', () => {
     });
 
     it('id unici nel pool desktop', () => {
-        const ids = desktopFingerprintPool.map(fp => fp.id);
+        const ids = desktopFingerprintPool.map((fp) => fp.id);
         expect(new Set(ids).size).toBe(ids.length);
     });
 
     it('id unici nel pool mobile', () => {
-        const ids = mobileFingerprintPool.map(fp => fp.id);
+        const ids = mobileFingerprintPool.map((fp) => fp.id);
         expect(new Set(ids).size).toBe(ids.length);
     });
 
     it('locale diversificato (non solo it-IT)', () => {
-        const locales = new Set(desktopFingerprintPool.map(fp => fp.locale).filter(Boolean));
+        const locales = new Set(desktopFingerprintPool.map((fp) => fp.locale).filter(Boolean));
         expect(locales.size).toBeGreaterThan(1);
     });
 
     it('browser diversificati (Chrome, Firefox, Edge, Safari)', () => {
-        const uas = desktopFingerprintPool.map(fp => fp.userAgent);
-        expect(uas.some(ua => ua.includes('Chrome'))).toBe(true);
-        expect(uas.some(ua => ua.includes('Firefox'))).toBe(true);
-        expect(uas.some(ua => ua.includes('Edg'))).toBe(true);
-        expect(uas.some(ua => ua.includes('Safari') && !ua.includes('Chrome'))).toBe(true);
+        const uas = desktopFingerprintPool.map((fp) => fp.userAgent);
+        expect(uas.some((ua) => ua.includes('Chrome'))).toBe(true);
+        expect(uas.some((ua) => ua.includes('Firefox'))).toBe(true);
+        expect(uas.some((ua) => ua.includes('Edg'))).toBe(true);
+        expect(uas.some((ua) => ua.includes('Safari') && !ua.includes('Chrome'))).toBe(true);
     });
 
     it('viewport diversificati', () => {
-        const viewports = new Set(desktopFingerprintPool.map(fp => `${fp.viewport.width}x${fp.viewport.height}`));
+        const viewports = new Set(desktopFingerprintPool.map((fp) => `${fp.viewport.width}x${fp.viewport.height}`));
         expect(viewports.size).toBeGreaterThan(5);
     });
 
@@ -71,7 +71,7 @@ describe('Fingerprint Pool (M27/M33)', () => {
         });
 
         it('pool con 1 elemento → ritorna sempre quello', () => {
-            const single = [desktopFingerprintPool[0] as typeof desktopFingerprintPool[number]];
+            const single = [desktopFingerprintPool[0] as (typeof desktopFingerprintPool)[number]];
             const fp = pickDeterministicFingerprint(single, 'any-account');
             expect(fp.id).toBe(single[0].id);
         });

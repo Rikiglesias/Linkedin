@@ -1,7 +1,9 @@
 import { Page } from 'playwright';
 // Dynamic import per rompere circular dep humanBehavior↔organicContent
 // Le funzioni vengono caricate lazy quando servono (mai al boot)
-async function _hb() { return import('./humanBehavior'); }
+async function _hb() {
+    return import('./humanBehavior');
+}
 import { logInfo, logWarn } from '../telemetry/logger';
 import { randomInt, randomElement } from '../utils/random';
 
@@ -13,7 +15,7 @@ import { randomInt, randomElement } from '../utils/random';
  * @param page Oggetto Page di Playwright
  * @param probability Probabilità di eseguire un'interazione (es. 0.20 per 20%)
  */
-export async function interactWithFeed(page: Page, probability: number = 0.20): Promise<void> {
+export async function interactWithFeed(page: Page, probability: number = 0.2): Promise<void> {
     try {
         // Valuta la threshold di esecuzione
         if (Math.random() > probability) {
@@ -26,10 +28,7 @@ export async function interactWithFeed(page: Page, probability: number = 0.20): 
         await (await _hb()).simulateHumanReading(page);
 
         // Seleziona un post a caso o un bottone di reazione / "See more"
-        const actions = [
-            async () => reactToPost(page),
-            async () => expandPostText(page)
-        ];
+        const actions = [async () => reactToPost(page), async () => expandPostText(page)];
 
         const action = randomElement(actions);
         await action();
@@ -48,7 +47,7 @@ async function expandPostText(page: Page): Promise<void> {
     const seeMoreSelectors = [
         'button.feed-shared-inline-show-more-text__see-more-less-toggle',
         'button:has-text("See more")',
-        'button:has-text("Vedi altro")'
+        'button:has-text("Vedi altro")',
     ];
 
     for (const selector of seeMoreSelectors) {
@@ -88,13 +87,44 @@ async function expandPostText(page: Page): Promise<void> {
 // M17: Parole chiave che indicano contenuto politico, controverso o non-professionale.
 // Un professionista che fa outreach non mette like a post divisivi — riduce rischio reputazionale.
 const CONTROVERSIAL_KEYWORDS = [
-    'politic', 'election', 'voting', 'democrat', 'republican', 'liberal', 'conservative',
-    'abortion', 'gun control', 'immigration ban', 'death penalty', 'capital punishment',
-    'conspiracy', 'antivax', 'anti-vax', 'flat earth', 'qanon',
-    'religion', 'pray', 'church', 'mosque', 'bible', 'quran',
-    'racist', 'sexist', 'homophob', 'transphob', 'hate speech',
-    'guerra', 'elezioni', 'partito', 'destra', 'sinistra', 'fascis', 'comunis',
-    'razzis', 'sessist', 'omofob',
+    'politic',
+    'election',
+    'voting',
+    'democrat',
+    'republican',
+    'liberal',
+    'conservative',
+    'abortion',
+    'gun control',
+    'immigration ban',
+    'death penalty',
+    'capital punishment',
+    'conspiracy',
+    'antivax',
+    'anti-vax',
+    'flat earth',
+    'qanon',
+    'religion',
+    'pray',
+    'church',
+    'mosque',
+    'bible',
+    'quran',
+    'racist',
+    'sexist',
+    'homophob',
+    'transphob',
+    'hate speech',
+    'guerra',
+    'elezioni',
+    'partito',
+    'destra',
+    'sinistra',
+    'fascis',
+    'comunis',
+    'razzis',
+    'sessist',
+    'omofob',
 ] as const;
 
 /**
@@ -103,7 +133,7 @@ const CONTROVERSIAL_KEYWORDS = [
  */
 function isPostSafeForInteraction(postText: string): boolean {
     const lower = postText.toLowerCase();
-    return !CONTROVERSIAL_KEYWORDS.some(kw => lower.includes(kw));
+    return !CONTROVERSIAL_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
 /**
@@ -115,19 +145,23 @@ async function reactToPost(page: Page): Promise<void> {
         'button.react-button__trigger',
         'button[aria-label^="React"]',
         'button[aria-label^="Reagisci"]',
-        'button[data-control-name="like_toggle"]'
+        'button[data-control-name="like_toggle"]',
     ];
 
     for (const selector of reactionSelectors) {
         const locator = page.locator(selector).first();
-        if (await locator.count() === 0) continue;
-        if (!await locator.isVisible().catch(() => false)) continue;
+        if ((await locator.count()) === 0) continue;
+        if (!(await locator.isVisible().catch(() => false))) continue;
 
         // M17: Leggi il testo del post parent prima di reagire.
         // Se contiene contenuto politico/controverso, skip — non mettere like.
         try {
-            const postContainer = page.locator(selector).first().locator('xpath=ancestor::div[contains(@class,"feed-shared-update-v2")]').first();
-            const postText = await postContainer.textContent({ timeout: 2000 }).catch(() => '') ?? '';
+            const postContainer = page
+                .locator(selector)
+                .first()
+                .locator('xpath=ancestor::div[contains(@class,"feed-shared-update-v2")]')
+                .first();
+            const postText = (await postContainer.textContent({ timeout: 2000 }).catch(() => '')) ?? '';
             if (!isPostSafeForInteraction(postText)) {
                 await logInfo('organicContent.skipped_controversial', { excerpt: postText.substring(0, 60) });
                 return; // Skip — non reagire a questo post
@@ -179,4 +213,3 @@ async function reactToPost(page: Page): Promise<void> {
         return;
     }
 }
-

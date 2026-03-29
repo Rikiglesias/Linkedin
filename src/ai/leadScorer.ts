@@ -94,11 +94,13 @@ Rispondi SOLO con JSON. Esempio:
  * Lead INVITED da >30 giorni che non hanno accettato → il punteggio potrebbe essere obsoleto.
  * Ricalcola il score e aggiorna nel DB. Chiamato dal scheduler o come job periodico.
  */
-export async function rescoreStaleLeads(options?: ScoreLeadOptions & {
-    maxAgeDays?: number;
-    limit?: number;
-    concurrency?: number;
-}): Promise<{ rescored: number; updated: number }> {
+export async function rescoreStaleLeads(
+    options?: ScoreLeadOptions & {
+        maxAgeDays?: number;
+        limit?: number;
+        concurrency?: number;
+    },
+): Promise<{ rescored: number; updated: number }> {
     const maxAgeDays = options?.maxAgeDays ?? 30;
     const limit = options?.limit ?? 50;
 
@@ -148,17 +150,14 @@ export async function rescoreStaleLeads(options?: ScoreLeadOptions & {
 
             // Aggiorna solo se il score è cambiato significativamente (±10 punti)
             if (Math.abs(newScore - oldScore) >= 10) {
-                await db.run(
-                    `UPDATE leads SET lead_score = ?, lead_score_updated_at = datetime('now') WHERE id = ?`,
-                    [newScore, lead.id],
-                );
+                await db.run(`UPDATE leads SET lead_score = ?, lead_score_updated_at = datetime('now') WHERE id = ?`, [
+                    newScore,
+                    lead.id,
+                ]);
                 updated++;
             } else {
                 // Marca come ri-valutato anche se non cambiato (evita re-processing)
-                await db.run(
-                    `UPDATE leads SET lead_score_updated_at = datetime('now') WHERE id = ?`,
-                    [lead.id],
-                );
+                await db.run(`UPDATE leads SET lead_score_updated_at = datetime('now') WHERE id = ?`, [lead.id]);
             }
         }
 
@@ -189,12 +188,7 @@ export async function scoreLeadsBatch(
             const idx = cursor++;
             if (idx >= leads.length) return;
             const lead = leads[idx];
-            results[idx] = await scoreLeadProfile(
-                lead.accountName,
-                lead.fullName,
-                lead.headline,
-                options,
-            );
+            results[idx] = await scoreLeadProfile(lead.accountName, lead.fullName, lead.headline, options);
         }
     };
 

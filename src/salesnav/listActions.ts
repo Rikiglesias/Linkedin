@@ -49,7 +49,6 @@ const ADD_TO_LIST_CONFIRM_SELECTOR = [
     'button:has-text("Fatto")',
 ].join(', ');
 
-
 function normalizeListName(value: string): string {
     return cleanText(value).toLowerCase();
 }
@@ -78,19 +77,25 @@ async function resolveSavedListUrl(page: import('playwright').Page, listName: st
     }
 }
 
-export async function createSalesNavList(listName: string, accountId?: string, externalPage?: Page): Promise<SalesNavActionResult> {
+export async function createSalesNavList(
+    listName: string,
+    accountId?: string,
+    externalPage?: Page,
+): Promise<SalesNavActionResult> {
     const account = getAccountProfileById(accountId);
     const normalizedListName = cleanText(listName);
     if (!normalizedListName) {
         return { ok: false, accountId: account.id, message: 'Nome lista non valido' };
     }
 
-    const ownSession = externalPage ? null : await launchBrowser({
-        headless: false,
-        sessionDir: account.sessionDir,
-        proxy: account.proxy,
-        forceDesktop: true,
-    });
+    const ownSession = externalPage
+        ? null
+        : await launchBrowser({
+              headless: false,
+              sessionDir: account.sessionDir,
+              proxy: account.proxy,
+              forceDesktop: true,
+          });
     const page = externalPage ?? ownSession?.page;
     if (!page) return { ok: false, accountId: account.id, message: 'Nessuna pagina disponibile' };
     try {
@@ -101,7 +106,10 @@ export async function createSalesNavList(listName: string, accountId?: string, e
         enableWindowClickThrough(page.context());
         await blockUserInput(page);
 
-        await page.goto('https://www.linkedin.com/sales/lists/people/', { waitUntil: 'domcontentloaded', timeout: 60_000 });
+        await page.goto('https://www.linkedin.com/sales/lists/people/', {
+            waitUntil: 'domcontentloaded',
+            timeout: 60_000,
+        });
         await blockUserInput(page);
         await humanDelay(page, 1400, 2600);
 
@@ -168,12 +176,14 @@ export async function addLeadToSalesNavList(
         return { ok: false, accountId: account.id, message: 'URL lead non valido' };
     }
 
-    const ownSession = externalPage ? null : await launchBrowser({
-        headless: false,
-        sessionDir: account.sessionDir,
-        proxy: account.proxy,
-        forceDesktop: true,
-    });
+    const ownSession = externalPage
+        ? null
+        : await launchBrowser({
+              headless: false,
+              sessionDir: account.sessionDir,
+              proxy: account.proxy,
+              forceDesktop: true,
+          });
     const page = externalPage ?? ownSession?.page;
     if (!page) return { ok: false, accountId: account.id, message: 'Nessuna pagina disponibile' };
     try {

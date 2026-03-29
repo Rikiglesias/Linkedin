@@ -2,10 +2,16 @@ import { describe, it, expect } from 'vitest';
 import { evaluateComplianceHealthScore } from '../risk/riskEngine';
 
 const base = {
-    acceptanceRatePct: 30, engagementRatePct: 20, pendingRatio: 0.3,
-    invitesSentToday: 10, messagesSentToday: 5,
-    dailyInviteLimit: 25, dailyMessageLimit: 35,
-    weeklyInvitesSent: 40, weeklyInviteLimit: 100, pendingWarnThreshold: 0.5,
+    acceptanceRatePct: 30,
+    engagementRatePct: 20,
+    pendingRatio: 0.3,
+    invitesSentToday: 10,
+    messagesSentToday: 5,
+    dailyInviteLimit: 25,
+    dailyMessageLimit: 35,
+    weeklyInvitesSent: 40,
+    weeklyInviteLimit: 100,
+    pendingWarnThreshold: 0.5,
 };
 
 describe('evaluateComplianceHealthScore — boundary', () => {

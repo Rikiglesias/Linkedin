@@ -62,13 +62,16 @@ export async function checkIpReputation(proxyServer: string): Promise<IpReputati
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 5000);
 
-        const response = await fetch(`https://api.abuseipdb.com/api/v2/check?ipAddress=${encodeURIComponent(ip)}&maxAgeInDays=90`, {
-            headers: {
-                'Key': config.ipReputationApiKey,
-                'Accept': 'application/json',
+        const response = await fetch(
+            `https://api.abuseipdb.com/api/v2/check?ipAddress=${encodeURIComponent(ip)}&maxAgeInDays=90`,
+            {
+                headers: {
+                    Key: config.ipReputationApiKey,
+                    Accept: 'application/json',
+                },
+                signal: controller.signal,
             },
-            signal: controller.signal,
-        });
+        );
         clearTimeout(timeout);
 
         if (!response.ok) {
@@ -76,7 +79,7 @@ export async function checkIpReputation(proxyServer: string): Promise<IpReputati
             return null;
         }
 
-        const body = await response.json() as {
+        const body = (await response.json()) as {
             data?: {
                 abuseConfidenceScore?: number;
                 countryCode?: string;

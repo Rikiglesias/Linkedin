@@ -33,10 +33,9 @@ export interface EnrichmentPersistInput {
  */
 export async function isLeadAlreadyEnriched(leadId: number): Promise<boolean> {
     const db = await getDatabase();
-    const row = await db.get<{ lead_id: number }>(
-        `SELECT lead_id FROM lead_enrichment_data WHERE lead_id = ?`,
-        [leadId],
-    );
+    const row = await db.get<{ lead_id: number }>(`SELECT lead_id FROM lead_enrichment_data WHERE lead_id = ?`, [
+        leadId,
+    ]);
     return !!row;
 }
 
@@ -80,13 +79,12 @@ export async function persistEnrichmentResult(input: EnrichmentPersistInput): Pr
                 ? JSON.stringify({ name: input.companyName, domain: input.companyDomain, industry: input.industry })
                 : null,
             input.phone ? JSON.stringify([{ number: input.phone, type: 'work', source: input.source }]) : null,
-            input.deepEnrichment?.socialProfiles?.length
-                ? JSON.stringify(input.deepEnrichment.socialProfiles)
-                : null,
+            input.deepEnrichment?.socialProfiles?.length ? JSON.stringify(input.deepEnrichment.socialProfiles) : null,
             input.seniority ?? null,
             input.deepEnrichment?.department ?? null,
-            [input.email, input.phone, input.jobTitle, input.companyName, input.location, input.seniority]
-                .filter(Boolean).length,
+            [input.email, input.phone, input.jobTitle, input.companyName, input.location, input.seniority].filter(
+                Boolean,
+            ).length,
             input.emailConfidence ?? null,
             JSON.stringify([input.source ?? 'unknown']),
             input.domainSource ?? null,

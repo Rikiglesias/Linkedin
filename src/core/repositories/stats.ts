@@ -117,7 +117,10 @@ export async function getComplianceHealthMetrics(
     };
 }
 
-export async function getDailyStatsSnapshot(dateString: string, accountId: string = 'default'): Promise<DailyStatsSnapshot> {
+export async function getDailyStatsSnapshot(
+    dateString: string,
+    accountId: string = 'default',
+): Promise<DailyStatsSnapshot> {
     const db = await getDatabase();
     const row = await db.get<{
         invites_sent: number;
@@ -791,7 +794,8 @@ export async function computeListPerformanceMultiplier(
     // sufficiente all'acceptance check. Lead invitati ieri con accepted_at NULL
     // NON significa rifiuto — significa che il check non è ancora stato eseguito.
     // Senza questo filtro, le liste verrebbero falsamente penalizzate.
-    const row = await db.get<{ invites: number; acceptances: number }>(`
+    const row = await db.get<{ invites: number; acceptances: number }>(
+        `
         SELECT
             COUNT(*) AS invites,
             COUNT(CASE WHEN accepted_at IS NOT NULL THEN 1 END) AS acceptances
@@ -800,7 +804,9 @@ export async function computeListPerformanceMultiplier(
           AND invited_at IS NOT NULL
           AND invited_at >= DATETIME('now', '-' || ? || ' days')
           AND invited_at <= DATETIME('now', '-7 days')
-    `, [listName, safeLookbackDays]);
+    `,
+        [listName, safeLookbackDays],
+    );
 
     const invites = row?.invites ?? 0;
     const acceptances = row?.acceptances ?? 0;
@@ -845,10 +851,7 @@ export interface AccountTrustQueryInputs {
  * Usata dallo scheduler dopo applyGrowthModel() per modulare il budget
  * in base al livello di trust dell'account.
  */
-export async function getAccountTrustInputs(
-    ssiScore: number,
-    ageDays: number,
-): Promise<AccountTrustQueryInputs> {
+export async function getAccountTrustInputs(ssiScore: number, ageDays: number): Promise<AccountTrustQueryInputs> {
     const db = await getDatabase();
 
     // Acceptance rate ultimi 30 giorni

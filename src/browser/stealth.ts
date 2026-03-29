@@ -6,7 +6,12 @@
 
 import crypto from 'node:crypto';
 import { config } from '../config';
-import { Fingerprint, desktopFingerprintPool, mobileFingerprintPool, pickDeterministicFingerprint } from '../fingerprint/pool';
+import {
+    Fingerprint,
+    desktopFingerprintPool,
+    mobileFingerprintPool,
+    pickDeterministicFingerprint,
+} from '../fingerprint/pool';
 import { detectBrowserFamily } from '../proxy/ja3Validator';
 
 // Filtra il pool fingerprint per coerenza con il browser engine effettivo.
@@ -44,7 +49,11 @@ export interface BrowserFingerprint extends Fingerprint {}
 function normalizeCloudFingerprint(input: CloudFingerprint, isMobile: boolean, accountId: string): BrowserFingerprint {
     const defaultPool = isMobile ? mobileFingerprintPool : desktopFingerprintPool;
     const base = pickDeterministicFingerprint(defaultPool, accountId);
-    const id = crypto.createHash('sha256').update(accountId + FINGERPRINT_VERSION).digest('hex').slice(0, 16);
+    const id = crypto
+        .createHash('sha256')
+        .update(accountId + FINGERPRINT_VERSION)
+        .digest('hex')
+        .slice(0, 16);
     return {
         id,
         ja3: input.ja3 ?? config.ja3Fingerprint,
@@ -76,7 +85,9 @@ export function pickBrowserFingerprint(
     if (cloudPool.length > 0) {
         // Selezione deterministica anche dal cloud pool: stesso account → stesso fingerprint per ~1 settimana
         const now = new Date();
-        const weekNumber = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000));
+        const weekNumber = Math.floor(
+            (now.getTime() - new Date(now.getFullYear(), 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000),
+        );
         const seed = `${accountId}:cloud:week${weekNumber}`;
         let hash = 0x811c9dc5;
         for (let i = 0; i < seed.length; i++) {
@@ -106,7 +117,9 @@ export function pickFingerprintMode(accountId?: string): boolean {
     if (config.mobileProbability >= 1) return true;
     // Deterministico per account+settimana: lo stesso account è sempre mobile o desktop per tutta la settimana
     const now = new Date();
-    const weekNumber = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000));
+    const weekNumber = Math.floor(
+        (now.getTime() - new Date(now.getFullYear(), 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000),
+    );
     const seed = `${accountId}:mode:week${weekNumber}`;
     let hash = 0x811c9dc5;
     for (let i = 0; i < seed.length; i++) {
@@ -114,10 +127,13 @@ export function pickFingerprintMode(accountId?: string): boolean {
         hash = Math.imul(hash, 0x01000193);
     }
     // Normalizza hash a [0,1) e confronta con la probabilità
-    return ((hash >>> 0) / 0xFFFFFFFF) < config.mobileProbability;
+    return (hash >>> 0) / 0xffffffff < config.mobileProbability;
 }
 
-export function pickMobileFingerprint(cloudFingerprints: ReadonlyArray<CloudFingerprint>, accountId: string): BrowserFingerprint {
+export function pickMobileFingerprint(
+    cloudFingerprints: ReadonlyArray<CloudFingerprint>,
+    accountId: string,
+): BrowserFingerprint {
     const mobileOnly = cloudFingerprints.filter((fp) => fp.isMobile === true);
     if (mobileOnly.length > 0) {
         return pickBrowserFingerprint(mobileOnly, true, accountId);
@@ -126,6 +142,9 @@ export function pickMobileFingerprint(cloudFingerprints: ReadonlyArray<CloudFing
     return pickBrowserFingerprint([], true, accountId);
 }
 
-export function pickDesktopFingerprint(cloudFingerprints: ReadonlyArray<CloudFingerprint>, accountId: string): BrowserFingerprint {
+export function pickDesktopFingerprint(
+    cloudFingerprints: ReadonlyArray<CloudFingerprint>,
+    accountId: string,
+): BrowserFingerprint {
     return pickBrowserFingerprint(cloudFingerprints, false, accountId);
 }

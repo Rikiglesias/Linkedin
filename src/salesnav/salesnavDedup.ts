@@ -97,7 +97,8 @@ export async function extractProfileUrlsFromPage(page: Page): Promise<ExtractedP
             const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
 
             // Pattern "grado di connessione" che inquinano company/title
-            const connectionDegreeRe = /^[1-4]°$|collegamento di \d+° grado|\d+(?:st|nd|rd|th) degree|degree connection/i;
+            const connectionDegreeRe =
+                /^[1-4]°$|collegamento di \d+° grado|\d+(?:st|nd|rd|th) degree|degree connection/i;
 
             // ── Company: prova selettori specifici, poi fallback testo card ──
             const companyEl =
@@ -141,15 +142,18 @@ export async function extractProfileUrlsFromPage(page: Page): Promise<ExtractedP
                     .map((l: string) => l.replace(/\s+/g, ' ').trim())
                     .filter((l: string) => l.length > 1)
                     // Rimuovi righe di navigazione/pulsanti
-                    .filter((l: string) => !/^(select|save|view|message|connect|inmail|more|seleziona|salva|visualizza|messaggio|collegati|altro)$/i.test(l))
+                    .filter(
+                        (l: string) =>
+                            !/^(select|save|view|message|connect|inmail|more|seleziona|salva|visualizza|messaggio|collegati|altro)$/i.test(
+                                l,
+                            ),
+                    )
                     // Rimuovi la riga del nome (già estratto)
                     .filter((l: string) => l !== name);
 
                 // La riga "titolo at/presso azienda" contiene " at " o " presso "
                 if (!company || !title) {
-                    const titleCompanyLine = lines.find(
-                        (l: string) => / (?:at|presso|@|bei|chez|en) /i.test(l),
-                    );
+                    const titleCompanyLine = lines.find((l: string) => / (?:at|presso|@|bei|chez|en) /i.test(l));
                     if (titleCompanyLine) {
                         const parts = titleCompanyLine.split(/ (?:at|presso|@|bei|chez|en) /i);
                         if (!title && parts[0]) title = parts[0].trim();
@@ -178,9 +182,7 @@ export async function extractProfileUrlsFromPage(page: Page): Promise<ExtractedP
             }
 
             // Cerca anche il link LinkedIn classico (se visibile)
-            const linkedinLink = card?.querySelector<HTMLAnchorElement>(
-                'a[href*="linkedin.com/in/"]',
-            );
+            const linkedinLink = card?.querySelector<HTMLAnchorElement>('a[href*="linkedin.com/in/"]');
             const linkedinUrl = linkedinLink
                 ? (linkedinLink.getAttribute('href')?.match(/linkedin\.com\/in\/[^/?]+/)?.[0] ?? null)
                 : null;
@@ -221,9 +223,7 @@ export async function extractProfileUrlsFromPage(page: Page): Promise<ExtractedP
 
     return validProfiles.map((p) => ({
         ...p,
-        nameCompanyHash: p.name.length > 0 && p.company.length > 0
-            ? computeNameCompanyHash(p.name, p.company)
-            : '',
+        nameCompanyHash: p.name.length > 0 && p.company.length > 0 ? computeNameCompanyHash(p.name, p.company) : '',
     })) as ExtractedProfile[];
 }
 
@@ -231,10 +231,7 @@ export async function extractProfileUrlsFromPage(page: Page): Promise<ExtractedP
  * Controlla quanti profili estratti sono già presenti in salesnav_list_members.
  * Restituisce un DedupResult con conteggi utili per il report.
  */
-export async function checkDuplicates(
-    listName: string,
-    profiles: ExtractedProfile[],
-): Promise<DedupResult> {
+export async function checkDuplicates(listName: string, profiles: ExtractedProfile[]): Promise<DedupResult> {
     const db = await getDatabase();
     let alreadySaved = 0;
     let fuzzyWarnings = 0;
@@ -259,7 +256,7 @@ export async function checkDuplicates(
     for (const row of salesnavRows) existingSalesnavUrls.add(row.salesnav_url);
 
     const hashRows = await db.query<{ name_company_hash: string; profile_name: string }>(
-        'SELECT name_company_hash, profile_name FROM salesnav_list_members WHERE list_name = ? AND name_company_hash IS NOT NULL AND name_company_hash != \'\'',
+        "SELECT name_company_hash, profile_name FROM salesnav_list_members WHERE list_name = ? AND name_company_hash IS NOT NULL AND name_company_hash != ''",
         [listName],
     );
     for (const row of hashRows) existingHashes.set(row.name_company_hash, row.profile_name);
@@ -320,59 +317,77 @@ export async function saveExtractedProfiles(
     // lascia dati parziali nel DB → al resume, il dedup vede i profili
     // già inseriti ma non quelli mancanti → lead persi silenziosamente.
     await db.withTransaction(async () => {
-
-    for (const profile of profiles) {
-        try {
-            await db.run(
-                `INSERT OR IGNORE INTO salesnav_list_members
+        for (const profile of profiles) {
+            try {
+                await db.run(
+                    `INSERT OR IGNORE INTO salesnav_list_members
                  (list_name, linkedin_url, salesnav_url, profile_name, first_name, last_name, company, title, location, name_company_hash, run_id, search_index, page_number)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [
-                    listName,
-                    profile.linkedinUrl,
-                    profile.salesnavUrl,
-                    profile.name || null,
-                    profile.firstName || null,
-                    profile.lastName || null,
-                    profile.company || null,
-                    profile.title || null,
-                    profile.location || null,
-                    profile.nameCompanyHash || null,
-                    runId,
-                    searchIndex,
-                    pageNumber,
-                ],
-            );
-            inserted++;
-        } catch {
-            // UNIQUE constraint violation — profilo già presente, ignora
-        }
+                    [
+                        listName,
+                        profile.linkedinUrl,
+                        profile.salesnavUrl,
+                        profile.name || null,
+                        profile.firstName || null,
+                        profile.lastName || null,
+                        profile.company || null,
+                        profile.title || null,
+                        profile.location || null,
+                        profile.nameCompanyHash || null,
+                        runId,
+                        searchIndex,
+                        pageNumber,
+                    ],
+                );
+                inserted++;
+            } catch {
+                // UNIQUE constraint violation — profilo già presente, ignora
+            }
 
-        // Arricchisci record esistenti: aggiorna campi NULL con dati nuovi
-        if (profile.salesnavUrl) {
-            const updates: string[] = [];
-            const values: unknown[] = [];
-            if (profile.firstName) { updates.push('first_name = ?'); values.push(profile.firstName); }
-            if (profile.lastName) { updates.push('last_name = ?'); values.push(profile.lastName); }
-            if (profile.company) { updates.push('company = ?'); values.push(profile.company); }
-            if (profile.title) { updates.push('title = ?'); values.push(profile.title); }
-            if (profile.location) { updates.push('location = ?'); values.push(profile.location); }
-            if (profile.nameCompanyHash) { updates.push('name_company_hash = ?'); values.push(profile.nameCompanyHash); }
-            if (updates.length > 0) {
-                // Aggiorna solo campi ancora NULL (non sovrascrivere dati esistenti)
-                const setClauses = updates.map(u => {
-                    const col = u.split(' = ')[0];
-                    return `${col} = COALESCE(${col}, ?)`;
-                });
-                values.push(listName, profile.salesnavUrl);
-                await db.run(
-                    `UPDATE salesnav_list_members SET ${setClauses.join(', ')} WHERE list_name = ? AND salesnav_url = ?`,
-                    values,
-                ).catch(() => {});
+            // Arricchisci record esistenti: aggiorna campi NULL con dati nuovi
+            if (profile.salesnavUrl) {
+                const updates: string[] = [];
+                const values: unknown[] = [];
+                if (profile.firstName) {
+                    updates.push('first_name = ?');
+                    values.push(profile.firstName);
+                }
+                if (profile.lastName) {
+                    updates.push('last_name = ?');
+                    values.push(profile.lastName);
+                }
+                if (profile.company) {
+                    updates.push('company = ?');
+                    values.push(profile.company);
+                }
+                if (profile.title) {
+                    updates.push('title = ?');
+                    values.push(profile.title);
+                }
+                if (profile.location) {
+                    updates.push('location = ?');
+                    values.push(profile.location);
+                }
+                if (profile.nameCompanyHash) {
+                    updates.push('name_company_hash = ?');
+                    values.push(profile.nameCompanyHash);
+                }
+                if (updates.length > 0) {
+                    // Aggiorna solo campi ancora NULL (non sovrascrivere dati esistenti)
+                    const setClauses = updates.map((u) => {
+                        const col = u.split(' = ')[0];
+                        return `${col} = COALESCE(${col}, ?)`;
+                    });
+                    values.push(listName, profile.salesnavUrl);
+                    await db
+                        .run(
+                            `UPDATE salesnav_list_members SET ${setClauses.join(', ')} WHERE list_name = ? AND salesnav_url = ?`,
+                            values,
+                        )
+                        .catch(() => {});
+                }
             }
         }
-    }
-
     }); // M08: fine transazione DB per pagina
 
     void logInfo('salesnav.dedup.profiles_saved', {

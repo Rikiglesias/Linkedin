@@ -7,12 +7,17 @@ describe('timingModel — calculateContextualDelay advanced', () => {
             const delay = calculateContextualDelay({ actionType: 'interJob', baseMin: 30000, baseMax: 90000 });
             // Il modello applica jitter (0.85-1.15) DOPO il clamp su baseMin,
             // quindi il delay può scendere fino al ~15% sotto baseMin. By design.
-            expect(delay).toBeGreaterThanOrEqual(30000 * 0.80);
+            expect(delay).toBeGreaterThanOrEqual(30000 * 0.8);
         }
     });
 
     it('profileMultiplier basso → delay ridotto', () => {
-        const delay = calculateContextualDelay({ actionType: 'click', baseMin: 500, baseMax: 2000, profileMultiplier: 0.01 });
+        const delay = calculateContextualDelay({
+            actionType: 'click',
+            baseMin: 500,
+            baseMax: 2000,
+            profileMultiplier: 0.01,
+        });
         expect(delay).toBeGreaterThanOrEqual(0);
     });
 
@@ -20,8 +25,12 @@ describe('timingModel — calculateContextualDelay advanced', () => {
         const shortDelays: number[] = [];
         const longDelays: number[] = [];
         for (let i = 0; i < 30; i++) {
-            shortDelays.push(calculateContextualDelay({ actionType: 'read', baseMin: 500, baseMax: 3000, contentLength: 10 }));
-            longDelays.push(calculateContextualDelay({ actionType: 'read', baseMin: 500, baseMax: 3000, contentLength: 1000 }));
+            shortDelays.push(
+                calculateContextualDelay({ actionType: 'read', baseMin: 500, baseMax: 3000, contentLength: 10 }),
+            );
+            longDelays.push(
+                calculateContextualDelay({ actionType: 'read', baseMin: 500, baseMax: 3000, contentLength: 1000 }),
+            );
         }
         const avgShort = shortDelays.reduce((a, b) => a + b, 0) / shortDelays.length;
         const avgLong = longDelays.reduce((a, b) => a + b, 0) / longDelays.length;
@@ -30,7 +39,13 @@ describe('timingModel — calculateContextualDelay advanced', () => {
     });
 
     it('tutti i actionType producono delay finito', () => {
-        const types: Array<'read' | 'click' | 'type' | 'scroll' | 'interJob'> = ['read', 'click', 'type', 'scroll', 'interJob'];
+        const types: Array<'read' | 'click' | 'type' | 'scroll' | 'interJob'> = [
+            'read',
+            'click',
+            'type',
+            'scroll',
+            'interJob',
+        ];
         for (const t of types) {
             const delay = calculateContextualDelay({ actionType: t, baseMin: 100, baseMax: 500 });
             expect(Number.isFinite(delay)).toBe(true);

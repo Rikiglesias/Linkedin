@@ -69,14 +69,24 @@ export function resolveAiProvider(): AiProviderResolution {
 
     if (isGreenModeWindow()) {
         if (ollamaAvailable) {
-            return { provider: 'ollama', reason: 'green_mode_local', endpoint: config.openaiBaseUrl, model: config.aiModel };
+            return {
+                provider: 'ollama',
+                reason: 'green_mode_local',
+                endpoint: config.openaiBaseUrl,
+                model: config.aiModel,
+            };
         }
         return { provider: 'template', reason: 'green_mode_no_ollama', endpoint: null, model: null };
     }
 
     if (!config.aiAllowRemoteEndpoint) {
         if (ollamaAvailable) {
-            return { provider: 'ollama', reason: 'remote_disabled_local_only', endpoint: config.openaiBaseUrl, model: config.aiModel };
+            return {
+                provider: 'ollama',
+                reason: 'remote_disabled_local_only',
+                endpoint: config.openaiBaseUrl,
+                model: config.aiModel,
+            };
         }
         return { provider: 'template', reason: 'remote_disabled_no_ollama', endpoint: null, model: null };
     }
@@ -96,11 +106,21 @@ export function resolveAiProvider(): AiProviderResolution {
             // Nessun Ollama fallback → degrade a template (meglio che bloccare)
             return { provider: 'template', reason: 'openai_circuit_open_no_fallback', endpoint: null, model: null };
         }
-        return { provider: 'openai', reason: 'cloud_configured', endpoint: config.openaiBaseUrl, model: config.aiModel };
+        return {
+            provider: 'openai',
+            reason: 'cloud_configured',
+            endpoint: config.openaiBaseUrl,
+            model: config.aiModel,
+        };
     }
 
     if (ollamaAvailable) {
-        return { provider: 'ollama', reason: 'cloud_unavailable_local_fallback', endpoint: config.openaiBaseUrl, model: config.aiModel };
+        return {
+            provider: 'ollama',
+            reason: 'cloud_unavailable_local_fallback',
+            endpoint: config.openaiBaseUrl,
+            model: config.aiModel,
+        };
     }
 
     return { provider: 'template', reason: 'no_ai_provider_available', endpoint: null, model: null };

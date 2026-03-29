@@ -54,7 +54,9 @@ async function clickConnectOnProfile(page: Page): Promise<boolean> {
         // Confidence check: il testo del bottone contiene "Connect"/"Collegati"?
         const btnText = await primaryBtn.innerText().catch(() => '');
         if (!textContainsConnectKeyword(btnText)) {
-            console.warn(`[INVITE] Confidence check FAILED: bottone primario dice "${btnText.trim().substring(0, 40)}" — skip`);
+            console.warn(
+                `[INVITE] Confidence check FAILED: bottone primario dice "${btnText.trim().substring(0, 40)}" — skip`,
+            );
             return false;
         }
         await humanMouseMove(page, joinSelectors('connectButtonPrimary'));
@@ -73,7 +75,9 @@ async function clickConnectOnProfile(page: Page): Promise<boolean> {
         if ((await connectInMenu.count()) > 0) {
             const menuText = await connectInMenu.innerText().catch(() => '');
             if (!textContainsConnectKeyword(menuText)) {
-                console.warn(`[INVITE] Confidence check FAILED: menu item dice "${menuText.trim().substring(0, 40)}" — skip`);
+                console.warn(
+                    `[INVITE] Confidence check FAILED: menu item dice "${menuText.trim().substring(0, 40)}" — skip`,
+                );
                 return false;
             }
             await humanMouseMove(page, joinSelectors('connectInMoreMenu'));
@@ -134,7 +138,8 @@ async function handleInviteModal(
     if (dryRun) return { sentWithNote: false, noteSource: null, variant: null };
 
     // noteMode='none' forza invito senza nota, indipendentemente da config
-    const wantsNote = noteMode === 'none' ? false : ((noteMode !== null && noteMode !== undefined) || config.inviteWithNote);
+    const wantsNote =
+        noteMode === 'none' ? false : (noteMode !== null && noteMode !== undefined) || config.inviteWithNote;
 
     // Controlla se c'è il bottone "Add a note" (con retry breve se il modale sta caricando)
     let canAddNote = (await page.locator(joinSelectors('addNoteButton')).first().count()) > 0;
@@ -300,7 +305,10 @@ export async function processInviteJob(
             }
         } catch (metaErr) {
             // A04: metadata parse error tracciato
-            void logWarn('invite.a04.metadata_parse_failed', { leadId: lead.id, error: metaErr instanceof Error ? metaErr.message : String(metaErr) });
+            void logWarn('invite.a04.metadata_parse_failed', {
+                leadId: lead.id,
+                error: metaErr instanceof Error ? metaErr.message : String(metaErr),
+            });
         }
     }
 
@@ -400,7 +408,11 @@ export async function processInviteJob(
     }
     // PROCEED: se l'AI suggerisce un delay aggiuntivo, applicalo
     if (aiDecision.suggestedDelaySec && aiDecision.suggestedDelaySec > 0) {
-        await humanDelay(context.session.page, aiDecision.suggestedDelaySec * 1000, (aiDecision.suggestedDelaySec + 2) * 1000);
+        await humanDelay(
+            context.session.page,
+            aiDecision.suggestedDelaySec * 1000,
+            (aiDecision.suggestedDelaySec + 2) * 1000,
+        );
     }
     // GAP 3: Confidence-based caution — se PROCEED con bassa confidence, delay extra.
     // Un PROCEED con confidence 0.51 non è affidabile come uno con 0.95.
@@ -461,17 +473,22 @@ export async function processInviteJob(
         }
     } catch (identityErr) {
         // A04: Identity check non bloccante ma tracciato
-        void logWarn('invite.a04.identity_check_failed', { leadId: lead.id, error: identityErr instanceof Error ? identityErr.message : String(identityErr) });
+        void logWarn('invite.a04.identity_check_failed', {
+            leadId: lead.id,
+            error: identityErr instanceof Error ? identityErr.message : String(identityErr),
+        });
     }
 
     // M10: Probabilità VARIABILE per sessione (10-30%) di visitare la pagina attività recente.
     // Un umano curioso guarda i post del target prima di decidere se connettersi.
     // Decay: più lead visitati nella sessione → meno curiosità (un umano si stanca).
-    const activityBaseProb = 0.10 + Math.random() * 0.20; // 10-30% per lead
+    const activityBaseProb = 0.1 + Math.random() * 0.2; // 10-30% per lead
     const activityDecay = Math.max(0.05, activityBaseProb - (context.sessionActionCount ?? 0) * 0.02);
     if (Math.random() < activityDecay) {
         const activityUrl = lead.linkedin_url.replace(/\/$/, '') + '/recent-activity/all/';
-        await context.session.page.goto(activityUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 }).catch(() => null);
+        await context.session.page
+            .goto(activityUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 })
+            .catch(() => null);
         await simulateHumanReading(context.session.page);
         // Torna al profilo con goBack (più naturale di goto diretto — il browser ha history)
         await context.session.page.goBack({ waitUntil: 'domcontentloaded', timeout: 10_000 }).catch(async () => {
@@ -533,128 +550,140 @@ export async function processInviteJob(
     // decrementiamo invites_sent per evitare di gonfiare il budget (stessa logica di messageWorker).
     let inviteResult: { sentWithNote: boolean; noteSource: 'template' | 'ai' | null; variant?: string | null };
     try {
-
-    // Pre-click: check weekly invite limit before sending (prevents wasted invites)
-    if (!context.dryRun) {
-        const preClickLimitReached = await detectWeeklyInviteLimit(context.session.page);
-        if (preClickLimitReached) {
-            await pauseAutomation(
-                'WEEKLY_INVITE_LIMIT_REACHED',
-                {
-                    leadId: lead.id,
-                    linkedinUrl: lead.linkedin_url,
-                    accountId: context.accountId,
-                    phase: 'pre_click',
-                },
-                7 * 24 * 60,
-            );
-            throw new RetryableWorkerError('Limite settimanale inviti raggiunto (pre-click)', 'WEEKLY_LIMIT_REACHED');
+        // Pre-click: check weekly invite limit before sending (prevents wasted invites)
+        if (!context.dryRun) {
+            const preClickLimitReached = await detectWeeklyInviteLimit(context.session.page);
+            if (preClickLimitReached) {
+                await pauseAutomation(
+                    'WEEKLY_INVITE_LIMIT_REACHED',
+                    {
+                        leadId: lead.id,
+                        linkedinUrl: lead.linkedin_url,
+                        accountId: context.accountId,
+                        phase: 'pre_click',
+                    },
+                    7 * 24 * 60,
+                );
+                throw new RetryableWorkerError(
+                    'Limite settimanale inviti raggiunto (pre-click)',
+                    'WEEKLY_LIMIT_REACHED',
+                );
+            }
         }
-    }
 
-    // CC-18: Session validity check prima di azioni critiche.
-    // Se il cookie è scaduto mid-session, la pagina redirige al login.
-    // Detectare subito evita retry inutili su una pagina di login.
-    if (!context.dryRun) {
-        const stillLoggedIn = await isLoggedIn(context.session.page);
-        if (!stillLoggedIn) {
-            throw new RetryableWorkerError(
-                'Sessione LinkedIn scaduta durante il flusso invite — aborto per evitare retry su login page',
-                'SESSION_EXPIRED',
-            );
+        // CC-18: Session validity check prima di azioni critiche.
+        // Se il cookie è scaduto mid-session, la pagina redirige al login.
+        // Detectare subito evita retry inutili su una pagina di login.
+        if (!context.dryRun) {
+            const stillLoggedIn = await isLoggedIn(context.session.page);
+            if (!stillLoggedIn) {
+                throw new RetryableWorkerError(
+                    'Sessione LinkedIn scaduta durante il flusso invite — aborto per evitare retry su login page',
+                    'SESSION_EXPIRED',
+                );
+            }
         }
-    }
 
-    // Chiudi overlay LinkedIn prima di cercare il bottone Connect
-    await dismissKnownOverlays(context.session.page);
+        // Chiudi overlay LinkedIn prima di cercare il bottone Connect
+        await dismissKnownOverlays(context.session.page);
 
-    // Viewport Dwell Time (3.3): assicura che il bottone Connect sia nel viewport
-    // da almeno 800-2000ms prima del click — previene segnale click-before-visible.
-    await ensureViewportDwell(context.session.page, joinSelectors('connectButtonPrimary'));
+        // Viewport Dwell Time (3.3): assicura che il bottone Connect sia nel viewport
+        // da almeno 800-2000ms prima del click — previene segnale click-before-visible.
+        await ensureViewportDwell(context.session.page, joinSelectors('connectButtonPrimary'));
 
-    const connectClicked = await clickConnectOnProfile(context.session.page);
-    if (!connectClicked) {
-        await incrementDailyStat(context.localDate, 'selector_failures');
-        await transitionLead(lead.id, 'SKIPPED', 'connect_not_found');
-        // Compensazione: invito NON inviato ma invites_sent già incrementato
-        if (!context.dryRun) await incrementDailyStat(context.localDate, 'invites_sent', -1).catch(() => {});
-        return workerResult(1);
-    }
-
-    await humanDelay(context.session.page, 900, 1800);
-
-    // H09: Verifica post-azione BLOCCANTE: dopo click Connect, il modale invito DEVE apparire.
-    // Se non appare, il click ha colpito un bottone sbagliato o LinkedIn ha cambiato il layout.
-    // Procedere senza modale → handleInviteModal cerca bottoni inesistenti → retry inutile.
-    // Il click Connect è già registrato da LinkedIn — non possiamo riprovare.
-    const modalAppeared = await context.session.page.locator(
-        joinSelectors('addNoteButton') + ', ' + joinSelectors('sendWithoutNote') + ', ' + joinSelectors('sendFallback'),
-    ).first().isVisible({ timeout: 3000 }).catch(() => false);
-    if (!modalAppeared) {
-        await logWarn('invite.post_action_verify_failed', { leadId: lead.id, message: 'Modale invito non apparso dopo click Connect — abort' });
-        // Escape per chiudere eventuali overlay residui
-        await context.session.page.keyboard.press('Escape').catch(() => {});
-        await humanDelay(context.session.page, 500, 1000);
-        // Compensazione: decrementa invites_sent (il click Connect non ha prodotto un invito reale)
-        if (!context.dryRun) await incrementDailyStat(context.localDate, 'invites_sent', -1).catch(() => {});
-        await incrementDailyStat(context.localDate, 'selector_failures');
-        throw new RetryableWorkerError('Modale invito non apparso dopo click Connect', 'INVITE_MODAL_NOT_FOUND');
-    }
-
-    inviteResult = await handleInviteModal(
-        context.session.page,
-        lead,
-        context.dryRun,
-        context.localDate,
-        campaignOverrideNote,
-        noteMode,
-    );
-
-    // Post-click: verify no weekly limit error was triggered by our action
-    if (!context.dryRun) {
-        const weeklyLimitReached = await detectWeeklyInviteLimit(context.session.page);
-        if (weeklyLimitReached) {
-            await pauseAutomation(
-                'WEEKLY_INVITE_LIMIT_REACHED',
-                {
-                    leadId: lead.id,
-                    linkedinUrl: lead.linkedin_url,
-                    accountId: context.accountId,
-                    phase: 'post_click',
-                },
-                7 * 24 * 60,
-            );
-            throw new RetryableWorkerError('Limite settimanale inviti raggiunto', 'WEEKLY_LIMIT_REACHED');
-        }
-    }
-
-    // Post-Action Verification (2.2): delay realistico 2-5s prima di verificare
-    // che l'invito sia stato effettivamente inviato. Un umano aspetta di vedere
-    // il feedback visivo prima di procedere.
-    await humanDelay(context.session.page, 2000, 5000);
-    const proofOfSend = context.dryRun
-        ? true
-        : await Promise.race([
-            detectInviteProof(context.session.page),
-            new Promise<false>((resolve) => setTimeout(() => resolve(false), 5000)),
-        ]);
-    if (!proofOfSend) {
-        // NEW-9: Prima di ritentare, verifica se il lead è già INVITED nel DB.
-        // Se sì, l'invito è stato inviato ma il proof-of-send ha fatto timeout (rete lenta).
-        // Ritentare causerebbe un invito duplicato.
-        const freshLead = await getLeadById(lead.id);
-        if (freshLead?.status === 'INVITED') {
-            await logInfo('invite.proof_timeout_already_invited', { leadId: lead.id });
+        const connectClicked = await clickConnectOnProfile(context.session.page);
+        if (!connectClicked) {
+            await incrementDailyStat(context.localDate, 'selector_failures');
+            await transitionLead(lead.id, 'SKIPPED', 'connect_not_found');
+            // Compensazione: invito NON inviato ma invites_sent già incrementato
+            if (!context.dryRun) await incrementDailyStat(context.localDate, 'invites_sent', -1).catch(() => {});
             return workerResult(1);
         }
-        await logInfo('invite.not_confirmed', {
-            leadId: lead.id,
-            linkedinUrl: lead.linkedin_url.substring(0, 60),
-            message: 'Bottone non diventato Pending/Sent dopo invio',
-        });
-        throw new RetryableWorkerError('Invito non confermato: proof-of-send non rilevato', 'INVITE_NOT_CONFIRMED');
-    }
 
+        await humanDelay(context.session.page, 900, 1800);
+
+        // H09: Verifica post-azione BLOCCANTE: dopo click Connect, il modale invito DEVE apparire.
+        // Se non appare, il click ha colpito un bottone sbagliato o LinkedIn ha cambiato il layout.
+        // Procedere senza modale → handleInviteModal cerca bottoni inesistenti → retry inutile.
+        // Il click Connect è già registrato da LinkedIn — non possiamo riprovare.
+        const modalAppeared = await context.session.page
+            .locator(
+                joinSelectors('addNoteButton') +
+                    ', ' +
+                    joinSelectors('sendWithoutNote') +
+                    ', ' +
+                    joinSelectors('sendFallback'),
+            )
+            .first()
+            .isVisible({ timeout: 3000 })
+            .catch(() => false);
+        if (!modalAppeared) {
+            await logWarn('invite.post_action_verify_failed', {
+                leadId: lead.id,
+                message: 'Modale invito non apparso dopo click Connect — abort',
+            });
+            // Escape per chiudere eventuali overlay residui
+            await context.session.page.keyboard.press('Escape').catch(() => {});
+            await humanDelay(context.session.page, 500, 1000);
+            // Compensazione: decrementa invites_sent (il click Connect non ha prodotto un invito reale)
+            if (!context.dryRun) await incrementDailyStat(context.localDate, 'invites_sent', -1).catch(() => {});
+            await incrementDailyStat(context.localDate, 'selector_failures');
+            throw new RetryableWorkerError('Modale invito non apparso dopo click Connect', 'INVITE_MODAL_NOT_FOUND');
+        }
+
+        inviteResult = await handleInviteModal(
+            context.session.page,
+            lead,
+            context.dryRun,
+            context.localDate,
+            campaignOverrideNote,
+            noteMode,
+        );
+
+        // Post-click: verify no weekly limit error was triggered by our action
+        if (!context.dryRun) {
+            const weeklyLimitReached = await detectWeeklyInviteLimit(context.session.page);
+            if (weeklyLimitReached) {
+                await pauseAutomation(
+                    'WEEKLY_INVITE_LIMIT_REACHED',
+                    {
+                        leadId: lead.id,
+                        linkedinUrl: lead.linkedin_url,
+                        accountId: context.accountId,
+                        phase: 'post_click',
+                    },
+                    7 * 24 * 60,
+                );
+                throw new RetryableWorkerError('Limite settimanale inviti raggiunto', 'WEEKLY_LIMIT_REACHED');
+            }
+        }
+
+        // Post-Action Verification (2.2): delay realistico 2-5s prima di verificare
+        // che l'invito sia stato effettivamente inviato. Un umano aspetta di vedere
+        // il feedback visivo prima di procedere.
+        await humanDelay(context.session.page, 2000, 5000);
+        const proofOfSend = context.dryRun
+            ? true
+            : await Promise.race([
+                  detectInviteProof(context.session.page),
+                  new Promise<false>((resolve) => setTimeout(() => resolve(false), 5000)),
+              ]);
+        if (!proofOfSend) {
+            // NEW-9: Prima di ritentare, verifica se il lead è già INVITED nel DB.
+            // Se sì, l'invito è stato inviato ma il proof-of-send ha fatto timeout (rete lenta).
+            // Ritentare causerebbe un invito duplicato.
+            const freshLead = await getLeadById(lead.id);
+            if (freshLead?.status === 'INVITED') {
+                await logInfo('invite.proof_timeout_already_invited', { leadId: lead.id });
+                return workerResult(1);
+            }
+            await logInfo('invite.not_confirmed', {
+                leadId: lead.id,
+                linkedinUrl: lead.linkedin_url.substring(0, 60),
+                message: 'Bottone non diventato Pending/Sent dopo invio',
+            });
+            throw new RetryableWorkerError('Invito non confermato: proof-of-send non rilevato', 'INVITE_NOT_CONFIRMED');
+        }
     } catch (inviteError) {
         // Compensazione: decrementa invites_sent perché l'invito NON è stato inviato
         if (!context.dryRun) await incrementDailyStat(context.localDate, 'invites_sent', -1).catch(() => {});
@@ -689,7 +718,7 @@ export async function processInviteJob(
         const abVariant = inviteResult.variant || (inviteResult.sentWithNote ? 'UNKNOWN_NOTE' : 'NO_NOTE');
         const segmentKey = inferLeadSegment(lead.job_title);
         const hourBucket = inferHourBucket(new Date().getHours());
-        await recordSent(abVariant, { segmentKey, hourBucket }).catch(() => { });
+        await recordSent(abVariant, { segmentKey, hourBucket }).catch(() => {});
     }
     // invites_sent already incremented atomically by checkAndIncrementDailyLimit (pre-send)
     await incrementListDailyStat(context.localDate, lead.list_name, 'invites_sent');

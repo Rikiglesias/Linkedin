@@ -4,7 +4,14 @@ import { resolveIntentAndDraft } from '../ai/intentResolver';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { sendTelegramAlert } from '../telemetry/alerts';
 import { WorkerExecutionResult, workerResult } from './result';
-import { appendLeadReplyDraft, countRecentMessageHash, getLeadByLinkedinUrl, storeLeadIntent, storeMessageHash, getDailyStat } from '../core/repositories';
+import {
+    appendLeadReplyDraft,
+    countRecentMessageHash,
+    getLeadByLinkedinUrl,
+    storeLeadIntent,
+    storeMessageHash,
+    getDailyStat,
+} from '../core/repositories';
 import { hashMessage } from '../validation/messageValidator';
 import { transitionLead } from '../core/leadStateService';
 import { isProfileUrl, normalizeLinkedInUrl } from '../linkedinUrl';
@@ -91,10 +98,7 @@ export async function processInboxJob(
     if (!context.dryRun) {
         const stillLoggedIn = await isLoggedIn(page);
         if (!stillLoggedIn) {
-            throw new RetryableWorkerError(
-                'Sessione LinkedIn scaduta prima di inbox scan — aborto',
-                'SESSION_EXPIRED',
-            );
+            throw new RetryableWorkerError('Sessione LinkedIn scaduta prima di inbox scan — aborto', 'SESSION_EXPIRED');
         }
     }
 
@@ -118,14 +122,20 @@ export async function processInboxJob(
         const allConvos = page.locator(joinSelectors('inboxConversationItem'));
         const convoCount = await allConvos.count();
         for (let c = 0; c < Math.min(convoCount, 8); c++) {
-            const previewText = await allConvos.nth(c).innerText().catch(() => '');
+            const previewText = await allConvos
+                .nth(c)
+                .innerText()
+                .catch(() => '');
             const lower = previewText.toLowerCase();
             const isLinkedInSystemWarning =
                 (lower.includes('linkedin') || lower.includes('security')) &&
-                (lower.includes('unusual activity') || lower.includes('restricted') ||
-                 lower.includes('verify your identity') || lower.includes('temporarily limited') ||
-                 lower.includes('attività insolita') || lower.includes('account limitato') ||
-                 lower.includes('verifica la tua identità'));
+                (lower.includes('unusual activity') ||
+                    lower.includes('restricted') ||
+                    lower.includes('verify your identity') ||
+                    lower.includes('temporarily limited') ||
+                    lower.includes('attività insolita') ||
+                    lower.includes('account limitato') ||
+                    lower.includes('verifica la tua identità'));
             if (isLinkedInSystemWarning) {
                 await logWarn('inbox.linkedin_system_warning_detected', {
                     accountId: payload.accountId,
@@ -146,7 +156,9 @@ export async function processInboxJob(
         // Best effort — non bloccare l'inbox processing se il check fallisce
     }
 
-    const unreadConversations = page.locator(`${joinSelectors('inboxConversationItem')}:has(${joinSelectors('inboxUnreadBadge')})`);
+    const unreadConversations = page.locator(
+        `${joinSelectors('inboxConversationItem')}:has(${joinSelectors('inboxUnreadBadge')})`,
+    );
     const count = await unreadConversations.count();
 
     if (count === 0) {
@@ -163,9 +175,11 @@ export async function processInboxJob(
     const today = getLocalDateString();
 
     for (let i = 0; i < Math.min(count, maxConversationsPerRun); i++) {
-
         const convo = unreadConversations.nth(i);
-        await humanMouseMove(page, `${joinSelectors('inboxConversationItem')}:has(${joinSelectors('inboxUnreadBadge')})`);
+        await humanMouseMove(
+            page,
+            `${joinSelectors('inboxConversationItem')}:has(${joinSelectors('inboxUnreadBadge')})`,
+        );
         await humanDelay(page, 200, 600);
         await convo.click();
 
@@ -181,15 +195,16 @@ export async function processInboxJob(
         const lastN = Math.min(theirMsgCount, 3);
         const conversationTexts: string[] = [];
         for (let m = Math.max(0, theirMsgCount - lastN); m < theirMsgCount; m++) {
-            const txt = await theirMessages.nth(m).innerText().catch(() => '');
+            const txt = await theirMessages
+                .nth(m)
+                .innerText()
+                .catch(() => '');
             if (txt.trim()) conversationTexts.push(txt.trim());
         }
 
         if (conversationTexts.length > 0) {
             const rawText = conversationTexts[conversationTexts.length - 1];
-            const fullContext = conversationTexts.length > 1
-                ? conversationTexts.join('\n---\n')
-                : rawText;
+            const fullContext = conversationTexts.length > 1 ? conversationTexts.join('\n---\n') : rawText;
             if (rawText && rawText.trim().length > 0) {
                 try {
                     await simulateConversationReading(page, rawText.trim());
@@ -258,12 +273,9 @@ export async function processInboxJob(
                                         5000,
                                     );
                                     await humanDelay(page, 350, 900);
-                                    await clickWithFallback(
-                                        page,
-                                        SELECTORS.messageSendButton,
-                                        'messageSendButton',
-                                        { timeoutPerSelector: 5000 },
-                                    );
+                                    await clickWithFallback(page, SELECTORS.messageSendButton, 'messageSendButton', {
+                                        timeoutPerSelector: 5000,
+                                    });
                                     autoReplySent = true;
                                     autoRepliesSent += 1;
                                     await storeMessageHash(lead.id, replyHash);
@@ -301,10 +313,10 @@ export async function processInboxJob(
                                 const company = lead.account_name || '';
                                 void sendTelegramAlert(
                                     `🔥 **Lead caldo: ${name}${company ? ` di ${company}` : ''}**\n` +
-                                    `Intent: ${resolution.intent} (${Math.round(resolution.confidence * 100)}%)\n` +
-                                    `Email: ${lead.email || lead.business_email || 'N/A'}\n` +
-                                    `LinkedIn: ${lead.linkedin_url || 'N/A'}\n` +
-                                    `Messaggio: "${rawText.trim().substring(0, 100)}${rawText.trim().length > 100 ? '...' : ''}"`,
+                                        `Intent: ${resolution.intent} (${Math.round(resolution.confidence * 100)}%)\n` +
+                                        `Email: ${lead.email || lead.business_email || 'N/A'}\n` +
+                                        `LinkedIn: ${lead.linkedin_url || 'N/A'}\n` +
+                                        `Messaggio: "${rawText.trim().substring(0, 100)}${rawText.trim().length > 100 ? '...' : ''}"`,
                                     'Lead Hot',
                                     'info',
                                 ).catch(() => {});

@@ -4,10 +4,22 @@
 
 import { config, getLocalDateString } from '../config';
 import { runWorkflow } from '../core/orchestrator';
-import { computeListPerformanceMultiplier, getAutomationPauseState, getDailyStat, getListDailyStatsBatch, getRuntimeFlag } from '../core/repositories';
+import {
+    computeListPerformanceMultiplier,
+    getAutomationPauseState,
+    getDailyStat,
+    getListDailyStatsBatch,
+    getRuntimeFlag,
+} from '../core/repositories';
 import { runPreflight, appendProxyReputationWarning } from './preflight';
 import { formatWorkflowReport, sendWorkflowTelegramReport } from './reportFormatter';
-import type { PreflightDbStats, PreflightConfigStatus, PreflightWarning, WorkflowReport, WorkflowReportListBreakdown } from './types';
+import type {
+    PreflightDbStats,
+    PreflightConfigStatus,
+    PreflightWarning,
+    WorkflowReport,
+    WorkflowReportListBreakdown,
+} from './types';
 import { getDatabase } from '../db';
 import { runSyncSearchWorkflow } from './syncSearchWorkflow';
 import { enrichLeadsParallel } from '../integrations/parallelEnricher';
@@ -49,21 +61,33 @@ function generateWarnings(
 
     const readyInvite = stats.byStatus['READY_INVITE'] ?? 0;
     if (readyInvite === 0) {
-        warnings.push({ level: 'critical', message: 'Nessun lead READY_INVITE — esegui prima sync-list con enrichment' });
+        warnings.push({
+            level: 'critical',
+            message: 'Nessun lead READY_INVITE — esegui prima sync-list con enrichment',
+        });
     }
 
     const remaining = cfgStatus.budgetInvites - cfgStatus.invitesSentToday;
     if (remaining <= 0) {
-        warnings.push({ level: 'critical', message: `Budget inviti esaurito oggi (${cfgStatus.invitesSentToday}/${cfgStatus.budgetInvites})` });
+        warnings.push({
+            level: 'critical',
+            message: `Budget inviti esaurito oggi (${cfgStatus.invitesSentToday}/${cfgStatus.budgetInvites})`,
+        });
     } else if (remaining < 5) {
         warnings.push({ level: 'warn', message: `Budget inviti quasi esaurito: ${remaining} rimanenti` });
     }
 
     const weeklyRemaining = cfgStatus.weeklyInviteLimit - cfgStatus.weeklyInvitesSent;
     if (weeklyRemaining <= 0) {
-        warnings.push({ level: 'critical', message: `Budget inviti SETTIMANALE esaurito (${cfgStatus.weeklyInvitesSent}/${cfgStatus.weeklyInviteLimit})` });
+        warnings.push({
+            level: 'critical',
+            message: `Budget inviti SETTIMANALE esaurito (${cfgStatus.weeklyInvitesSent}/${cfgStatus.weeklyInviteLimit})`,
+        });
     } else if (weeklyRemaining < 10) {
-        warnings.push({ level: 'warn', message: `Budget inviti settimanale quasi esaurito: ${weeklyRemaining} rimanenti su ${cfgStatus.weeklyInviteLimit}` });
+        warnings.push({
+            level: 'warn',
+            message: `Budget inviti settimanale quasi esaurito: ${weeklyRemaining} rimanenti su ${cfgStatus.weeklyInviteLimit}`,
+        });
     }
 
     if (cfgStatus.warmupEnabled) {
@@ -76,7 +100,10 @@ function generateWarnings(
 
     const withoutCompany = stats.totalLeads - stats.withJobTitle;
     if (withoutCompany > 5) {
-        warnings.push({ level: 'info', message: `${withoutCompany} lead senza company/job_title — nota generica per questi` });
+        warnings.push({
+            level: 'info',
+            message: `${withoutCompany} lead senza company/job_title — nota generica per questi`,
+        });
     }
 
     // Stale Data Warning (5.3): lead non sincronizzati da >7 giorni = obsoleti
@@ -135,7 +162,7 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
             },
             {
                 id: 'enrichment',
-                prompt: 'Eseguire pre-enrichment dei lead prima dell\'invio? (Apollo/Hunter/OSINT)',
+                prompt: "Eseguire pre-enrichment dei lead prima dell'invio? (Apollo/Hunter/OSINT)",
                 type: 'boolean',
                 defaultValue: 'true',
             },
@@ -160,7 +187,9 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
 
     // Show score stats if available
     if (scoreStats.count > 0) {
-        console.log(`\n  Score READY_INVITE: min=${scoreStats.min} avg=${scoreStats.avg} max=${scoreStats.max} (${scoreStats.count} con score)`);
+        console.log(
+            `\n  Score READY_INVITE: min=${scoreStats.min} avg=${scoreStats.avg} max=${scoreStats.max} (${scoreStats.count} con score)`,
+        );
     }
 
     const db = await getDatabase();
@@ -170,7 +199,7 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
         query += ` AND list_name = ?`;
         params.push(listFilter);
     }
-    const row = await db.get<{cnt: number}>(query, params);
+    const row = await db.get<{ cnt: number }>(query, params);
 
     // Preview primi 5 lead che verranno processati
     if (row && row.cnt > 0) {
@@ -181,7 +210,12 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
             previewParams.push(listFilter);
         }
         previewQuery += ` ORDER BY lead_score DESC NULLS LAST LIMIT 5`;
-        const previewLeads = await db.query<{ first_name: string; last_name: string; job_title: string | null; lead_score: number | null }>(previewQuery, previewParams);
+        const previewLeads = await db.query<{
+            first_name: string;
+            last_name: string;
+            job_title: string | null;
+            lead_score: number | null;
+        }>(previewQuery, previewParams);
         if (previewLeads.length > 0) {
             console.log(`\n  Prossimi lead da invitare (top ${previewLeads.length} su ${row.cnt}):`);
             for (const lead of previewLeads) {
@@ -198,13 +232,21 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
         let totalInDb = 0;
         let newCount = 0;
         try {
-            const totalRow = await db.get<{cnt: number}>(`SELECT COUNT(*) as cnt FROM leads${listFilter ? ' WHERE list_name = ?' : ''}`, listFilter ? [listFilter] : []);
+            const totalRow = await db.get<{ cnt: number }>(
+                `SELECT COUNT(*) as cnt FROM leads${listFilter ? ' WHERE list_name = ?' : ''}`,
+                listFilter ? [listFilter] : [],
+            );
             totalInDb = totalRow?.cnt ?? 0;
-            const newRow = await db.get<{cnt: number}>(`SELECT COUNT(*) as cnt FROM leads WHERE status = 'NEW'${listFilter ? ' AND list_name = ?' : ''}`, listFilter ? [listFilter] : []);
+            const newRow = await db.get<{ cnt: number }>(
+                `SELECT COUNT(*) as cnt FROM leads WHERE status = 'NEW'${listFilter ? ' AND list_name = ?' : ''}`,
+                listFilter ? [listFilter] : [],
+            );
             newCount = newRow?.cnt ?? 0;
         } catch (countErr) {
             // A04: count query fallita — non bloccante, il workflow prosegue
-            console.warn(`[A04] Lead count query failed: ${countErr instanceof Error ? countErr.message : String(countErr)}`);
+            console.warn(
+                `[A04] Lead count query failed: ${countErr instanceof Error ? countErr.message : String(countErr)}`,
+            );
         }
 
         if (newCount > 0) {
@@ -218,11 +260,17 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
 
         // Fallback: Chiedi all'utente se vuole rimpinguare la lista tramite SalesNav Search
         if (!dryRun && isInteractiveTTY()) {
-            const wantSync = await askConfirmation('  Non ci sono lead READY_INVITE disponibili. Vuoi estrarre nuovi lead da una ricerca salvata di Sales Navigator? [Y/n] ');
+            const wantSync = await askConfirmation(
+                '  Non ci sono lead READY_INVITE disponibili. Vuoi estrarre nuovi lead da una ricerca salvata di Sales Navigator? [Y/n] ',
+            );
 
             if (wantSync) {
-                const searchName = await readLineFromStdin('  Nome della ricerca salvata (lascia vuoto per farle tutte): ');
-                const targetList = await readLineFromStdin(`  Nome della lista in cui aggiungere i nuovi lead (default: ${listFilter || config.salesNavSyncListName || 'default'}): `);
+                const searchName = await readLineFromStdin(
+                    '  Nome della ricerca salvata (lascia vuoto per farle tutte): ',
+                );
+                const targetList = await readLineFromStdin(
+                    `  Nome della lista in cui aggiungere i nuovi lead (default: ${listFilter || config.salesNavSyncListName || 'default'}): `,
+                );
 
                 console.log(`\n  Passaggio automatico al flow sync-search...\n`);
                 await runSyncSearchWorkflow({
@@ -241,12 +289,16 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
     // ── Guard: quarantina e pausa (sempre attivi, anche in dry-run) ──────────
     const quarantine = (await getRuntimeFlag('account_quarantine')) === 'true';
     if (quarantine) {
-        console.error('\n  [BLOCCATO] Account in quarantina — operazione annullata. Esegui "bot unquarantine" dopo aver risolto il problema.\n');
+        console.error(
+            '\n  [BLOCCATO] Account in quarantina — operazione annullata. Esegui "bot unquarantine" dopo aver risolto il problema.\n',
+        );
         return;
     }
     const pauseState = await getAutomationPauseState();
     if (pauseState.paused) {
-        console.error(`\n  [BLOCCATO] Automazione in pausa: ${pauseState.reason ?? 'motivo sconosciuto'}. Riprendi con "bot resume".\n`);
+        console.error(
+            `\n  [BLOCCATO] Automazione in pausa: ${pauseState.reason ?? 'motivo sconosciuto'}. Riprendi con "bot resume".\n`,
+        );
         return;
     }
 
@@ -261,7 +313,8 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
     const doEnrichment = preflight.answers['enrichment'] !== 'false';
     let enrichmentDegraded = false;
     const noteModeAnswer = preflight.answers['noteMode'] ?? opts.noteMode ?? 'none';
-    let noteMode: 'ai' | 'template' | 'none' = (noteModeAnswer === 'ai' || noteModeAnswer === 'template') ? noteModeAnswer : 'none';
+    let noteMode: 'ai' | 'template' | 'none' =
+        noteModeAnswer === 'ai' || noteModeAnswer === 'template' ? noteModeAnswer : 'none';
     if (!dryRun && doEnrichment) {
         console.log('\n  Pre-enrichment parallelo dei lead (senza browser)...');
         const enrichReport = await enrichLeadsParallel({
@@ -273,7 +326,9 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
             },
         });
         if (enrichReport.total > 0) {
-            console.log(`\n  ✅ Enrichment completato: ${enrichReport.enriched}/${enrichReport.total} arricchiti (${enrichReport.emailsFound} email, ${enrichReport.phonesFound} tel) in ${Math.round(enrichReport.durationMs / 1000)}s\n`);
+            console.log(
+                `\n  ✅ Enrichment completato: ${enrichReport.enriched}/${enrichReport.total} arricchiti (${enrichReport.emailsFound} email, ${enrichReport.phonesFound} tel) in ${Math.round(enrichReport.durationMs / 1000)}s\n`,
+            );
         } else {
             console.log('  ✅ Tutti i lead sono già arricchiti.\n');
         }
@@ -281,9 +336,11 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
         // Graceful Degradation (6.5): se enrichment fallisce per >80% dei lead
         // e noteMode è 'ai', auto-downgrade a 'template' con warning.
         // Nota AI senza dati arricchiti = nota generica vuota → basso acceptance → rischio ban.
-        if (enrichReport.total > 5 && enrichReport.enriched / enrichReport.total < 0.20) {
+        if (enrichReport.total > 5 && enrichReport.enriched / enrichReport.total < 0.2) {
             enrichmentDegraded = true;
-            console.warn('\n  ⚠️  DEGRADATION: Enrichment fallito per >80% dei lead. API probabilmente down o rate-limited.');
+            console.warn(
+                '\n  ⚠️  DEGRADATION: Enrichment fallito per >80% dei lead. API probabilmente down o rate-limited.',
+            );
             if (noteMode === 'ai') {
                 console.warn('  ⚠️  Auto-downgrade nota: ai → template (nota AI senza dati = vuota/generica).\n');
             }
@@ -318,7 +375,9 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
     let invitesAfter = invitesBefore;
     try {
         invitesAfter = await getDailyStat(localDate, 'invites_sent');
-    } catch { /* fallback a invitesBefore se DB non raggiungibile */ }
+    } catch {
+        /* fallback a invitesBefore se DB non raggiungibile */
+    }
     const invitesSent = invitesAfter - invitesBefore;
 
     // Per-List Performance Breakdown (5.2 wire)
@@ -342,7 +401,9 @@ export async function runSendInvitesWorkflow(opts: SendInvitesOptions): Promise<
         }
     } catch (breakdownErr) {
         // A04: list breakdown fallito — il report non includerà i dati per lista
-        console.warn(`[A04] List breakdown failed: ${breakdownErr instanceof Error ? breakdownErr.message : String(breakdownErr)}`);
+        console.warn(
+            `[A04] List breakdown failed: ${breakdownErr instanceof Error ? breakdownErr.message : String(breakdownErr)}`,
+        );
     }
 
     // Report
@@ -389,13 +450,15 @@ function buildNextActionSuggestion(
     }
 
     if (invitesSent === 0) {
-        steps.push('ATTENZIONE: 0 inviti inviati. Verifica: lead READY_INVITE disponibili? Sessione LinkedIn valida? Challenge in corso?');
+        steps.push(
+            'ATTENZIONE: 0 inviti inviati. Verifica: lead READY_INVITE disponibili? Sessione LinkedIn valida? Challenge in corso?',
+        );
     } else if (invitesSent < 5) {
         steps.push(`Solo ${invitesSent} inviti inviati — possibile sessione breve o challenge. Controlla i log.`);
     }
 
     steps.push("Prossimo step: esegui 'send-messages' per i lead che hanno accettato.");
-    steps.push("Monitora il pending ratio nel daily report — se > 50% considera di ritirare inviti vecchi.");
+    steps.push('Monitora il pending ratio nel daily report — se > 50% considera di ritirare inviti vecchi.');
 
     return steps.join(' ');
 }

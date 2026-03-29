@@ -20,13 +20,15 @@ describe('Config Schema — profile cross-validation', () => {
     });
 
     it('conservative ha delay più lunghi di aggressive', () => {
-        expect(CONFIG_PROFILES.conservative.timing.interJobMinDelaySec)
-            .toBeGreaterThan(CONFIG_PROFILES.aggressive.timing.interJobMinDelaySec);
+        expect(CONFIG_PROFILES.conservative.timing.interJobMinDelaySec).toBeGreaterThan(
+            CONFIG_PROFILES.aggressive.timing.interJobMinDelaySec,
+        );
     });
 
     it('conservative ha risk threshold più bassi di aggressive', () => {
-        expect(CONFIG_PROFILES.conservative.risk.riskStopThreshold)
-            .toBeLessThan(CONFIG_PROFILES.aggressive.risk.riskStopThreshold);
+        expect(CONFIG_PROFILES.conservative.risk.riskStopThreshold).toBeLessThan(
+            CONFIG_PROFILES.aggressive.risk.riskStopThreshold,
+        );
     });
 
     it('suggestConfigProfile boundary: 90 giorni, 500 connessioni → conservative', () => {

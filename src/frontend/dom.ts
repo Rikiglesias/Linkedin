@@ -57,10 +57,7 @@ export function readString(record: Record<string, unknown>, ...keys: string[]): 
 /**
  * Export an array of row objects to a CSV file and trigger download.
  */
-export function exportToCSV(
-    rows: Record<string, string | number>[],
-    filename: string,
-): void {
+export function exportToCSV(rows: Record<string, string | number>[], filename: string): void {
     if (rows.length === 0) return;
     const headers = Object.keys(rows[0]);
     const csvLines = [headers.join(',')];
@@ -114,19 +111,17 @@ function downloadBlob(blob: Blob, filename: string): void {
 export type ToastSeverity = 'success' | 'error' | 'warning' | 'info';
 
 const TOAST_ICONS: Record<ToastSeverity, string> = {
-    success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>',
+    success:
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>',
     error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>',
-    warning: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>',
+    warning:
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>',
     info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>',
 };
 
 const MAX_TOASTS = 5;
 
-export function showToast(
-    message: string,
-    severity: ToastSeverity = 'info',
-    durationMs: number = 4000,
-): void {
+export function showToast(message: string, severity: ToastSeverity = 'info', durationMs: number = 4000): void {
     const stack = document.getElementById('toast-stack');
     if (!stack) return;
 

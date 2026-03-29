@@ -17,7 +17,8 @@ router.get('/search', async (req, res) => {
         const status = typeof req.query.status === 'string' ? req.query.status : undefined;
         const listName = typeof req.query.list === 'string' ? req.query.list : undefined;
         const page = typeof req.query.page === 'string' ? Math.max(1, parseInt(req.query.page, 10) || 1) : 1;
-        const pageSize = typeof req.query.pageSize === 'string' ? Math.min(100, parseInt(req.query.pageSize, 10) || 25) : 25;
+        const pageSize =
+            typeof req.query.pageSize === 'string' ? Math.min(100, parseInt(req.query.pageSize, 10) || 25) : 25;
 
         const result = await searchLeads({
             query: query || undefined,

@@ -24,8 +24,8 @@ export type GrowthPhaseLabel = 'browse_only' | 'soft_outreach' | 'moderate_growt
 
 export interface GrowthPhase {
     label: GrowthPhaseLabel;
-    endDay: number;           // exclusive upper bound (Infinity for last phase)
-    inviteMaxPerDay: number;  // 0 = no invites allowed, Infinity = no model limit
+    endDay: number; // exclusive upper bound (Infinity for last phase)
+    inviteMaxPerDay: number; // 0 = no invites allowed, Infinity = no model limit
     messageMaxPerDay: number; // 0 = no messages allowed, Infinity = no model limit
 }
 
@@ -110,13 +110,9 @@ export function getAccountGrowthBudget(ageDays: number): AccountGrowthBudget {
     const phases = buildGrowthPhases();
     const phaseIndex = phases.findIndex((p) => p.label === phase.label);
     const totalGrowthDays = phases[phases.length - 2].endDay; // end of moderate_growth
-    const growthFactor = totalGrowthDays > 0
-        ? Math.min(1.0, safeAge / totalGrowthDays)
-        : 1.0;
+    const growthFactor = totalGrowthDays > 0 ? Math.min(1.0, safeAge / totalGrowthDays) : 1.0;
 
-    const daysToNextPhase = phase.endDay === Infinity
-        ? 0
-        : Math.max(0, Math.ceil(phase.endDay - safeAge));
+    const daysToNextPhase = phase.endDay === Infinity ? 0 : Math.max(0, Math.ceil(phase.endDay - safeAge));
 
     // Intra-phase ramp: within soft_outreach and moderate_growth, ramp up gradually
     let inviteMax = phase.inviteMaxPerDay;
@@ -199,11 +195,7 @@ export function calculateAccountTrustScore(inputs: AccountTrustInputs): AccountT
     };
 
     const score = Math.round(
-        ssiNorm * 0.30 +
-        ageNorm * 0.25 +
-        acceptanceNorm * 0.25 +
-        challengeNorm * 0.10 +
-        pendingNorm * 0.10,
+        ssiNorm * 0.3 + ageNorm * 0.25 + acceptanceNorm * 0.25 + challengeNorm * 0.1 + pendingNorm * 0.1,
     );
 
     const clampedScore = Math.min(100, Math.max(0, score));
@@ -213,9 +205,14 @@ export function calculateAccountTrustScore(inputs: AccountTrustInputs): AccountT
     // Score 75-100: 1.0-1.3 (accelerazione). Max +30% per account affidabili.
     // Prerequisiti acceleration: challengesLast7d === 0 AND pendingRatio < 0.50 AND acceptanceRatePct > 25.
     let budgetMultiplier: number;
-    if (clampedScore >= 75 && inputs.challengesLast7d === 0 && inputs.pendingRatio < 0.50 && inputs.acceptanceRatePct > 25) {
+    if (
+        clampedScore >= 75 &&
+        inputs.challengesLast7d === 0 &&
+        inputs.pendingRatio < 0.5 &&
+        inputs.acceptanceRatePct > 25
+    ) {
         // Accelerazione: 1.0 + (score - 75) / 25 * 0.30 → da 1.0 a 1.30
-        budgetMultiplier = 1.0 + ((clampedScore - 75) / 25) * 0.30;
+        budgetMultiplier = 1.0 + ((clampedScore - 75) / 25) * 0.3;
     } else {
         // Comportamento precedente: 0.3 → 1.0
         budgetMultiplier = Math.max(0.3, Math.min(1.0, 0.3 + (clampedScore / 100) * 0.7));

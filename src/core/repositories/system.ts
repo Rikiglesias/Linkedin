@@ -908,9 +908,10 @@ export async function cleanupPrivacyData(retentionDays: number): Promise<Privacy
             `DELETE FROM job_attempts WHERE started_at < DATETIME('now', '-' || ? || ' days')`,
             [daysParam],
         );
-        const leadEvents = await db.run(`DELETE FROM lead_events WHERE created_at < DATETIME('now', '-' || ? || ' days')`, [
-            daysParam,
-        ]);
+        const leadEvents = await db.run(
+            `DELETE FROM lead_events WHERE created_at < DATETIME('now', '-' || ? || ' days')`,
+            [daysParam],
+        );
         const messageHistory = await db.run(
             `DELETE FROM message_history WHERE sent_at < DATETIME('now', '-' || ? || ' days')`,
             [daysParam],
@@ -940,9 +941,10 @@ export async function cleanupPrivacyData(retentionDays: number): Promise<Privacy
         const staleLeadEvents = await db.run(`DELETE FROM lead_events WHERE lead_id IN (${staleLeadsSubquery})`, [
             daysParam,
         ]);
-        const staleMessageHistory = await db.run(`DELETE FROM message_history WHERE lead_id IN (${staleLeadsSubquery})`, [
-            daysParam,
-        ]);
+        const staleMessageHistory = await db.run(
+            `DELETE FROM message_history WHERE lead_id IN (${staleLeadsSubquery})`,
+            [daysParam],
+        );
         const staleLeads = await db.run(`DELETE FROM leads WHERE id IN (${staleLeadsSubquery})`, [daysParam]);
 
         return {

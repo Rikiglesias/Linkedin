@@ -220,9 +220,11 @@ export function renderProxyHealth(pool: ProxyPoolSnapshot | undefined): void {
     el.innerHTML = '';
     const pill = statusPill(`${healthPct}%`, statusClass);
     el.appendChild(pill);
-    el.appendChild(document.createTextNode(
-        ` Proxy: ${pool.ready}/${pool.total} pronti, ${pool.cooling} in cooldown, ${failed < 0 ? 0 : failed} falliti (mobile: ${pool.mobile}, residential: ${pool.residential})`,
-    ));
+    el.appendChild(
+        document.createTextNode(
+            ` Proxy: ${pool.ready}/${pool.total} pronti, ${pool.cooling} in cooldown, ${failed < 0 ? 0 : failed} falliti (mobile: ${pool.mobile}, residential: ${pool.residential})`,
+        ),
+    );
 }
 
 export function renderSessionTimer(startedAt: string | null | undefined): void {
@@ -285,8 +287,8 @@ export function renderIncidents(incidents: IncidentRecord[], selectedIds: Set<nu
             incident.severity === 'CRITICAL'
                 ? 'pill-danger'
                 : incident.severity === 'WARN'
-                    ? 'pill-warning'
-                    : 'pill-info';
+                  ? 'pill-warning'
+                  : 'pill-info';
         severityCell.appendChild(statusPill(incident.severity, severityClass));
 
         const detailsCell = document.createElement('td');
@@ -644,7 +646,9 @@ export function renderLeadSearchResults(
         tr.appendChild(statusTd);
 
         tr.appendChild(createCell(lead.list_name ?? '—'));
-        tr.appendChild(createCell(lead.lead_score !== null && lead.lead_score !== undefined ? String(lead.lead_score) : '—'));
+        tr.appendChild(
+            createCell(lead.lead_score !== null && lead.lead_score !== undefined ? String(lead.lead_score) : '—'),
+        );
         tr.appendChild(createCell(lead.updated_at ? formatDate(lead.updated_at) : '—'));
         tbody.appendChild(tr);
     }
@@ -671,10 +675,7 @@ export function renderLeadSearchResults(
     }
 }
 
-export function renderLeadDetail(
-    lead: LeadSearchRecord,
-    timeline: LeadTimelineEvent[],
-): void {
+export function renderLeadDetail(lead: LeadSearchRecord, timeline: LeadTimelineEvent[]): void {
     const container = byId<HTMLElement>('lead-detail-content');
     clearChildren(container);
 

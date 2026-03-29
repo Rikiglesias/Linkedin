@@ -25,7 +25,7 @@ function getTimezoneHourOffset(now: Date = new Date()): number {
  * Convert a UTC hour (0-23) to the configured local timezone hour.
  */
 function utcHourToLocal(utcHour: number): number {
-    return ((utcHour + getTimezoneHourOffset()) % 24 + 24) % 24;
+    return (((utcHour + getTimezoneHourOffset()) % 24) + 24) % 24;
 }
 
 export type TimingAction = 'invite' | 'message';

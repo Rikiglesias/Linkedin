@@ -139,8 +139,14 @@ router.post('/:id/enroll', async (req: Request, res: Response): Promise<void> =>
         const parsedDate = new Date(nextExecAt);
         const oneHourAgo = Date.now() - 60 * 60 * 1000;
         const oneYearFromNow = Date.now() + 365 * 24 * 60 * 60 * 1000;
-        if (!Number.isFinite(parsedDate.getTime()) || parsedDate.getTime() < oneHourAgo || parsedDate.getTime() > oneYearFromNow) {
-            res.status(400).json({ error: 'nextExecutionAt deve essere una data valida, non oltre 1 anno nel futuro.' });
+        if (
+            !Number.isFinite(parsedDate.getTime()) ||
+            parsedDate.getTime() < oneHourAgo ||
+            parsedDate.getTime() > oneYearFromNow
+        ) {
+            res.status(400).json({
+                error: 'nextExecutionAt deve essere una data valida, non oltre 1 anno nel futuro.',
+            });
             return;
         }
 

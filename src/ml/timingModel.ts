@@ -13,7 +13,9 @@ export interface TimingContext {
 // Box-Muller transform: genera un numero da distribuzione normale standard N(0,1).
 function normalRandom(): number {
     let u1: number;
-    do { u1 = Math.random(); } while (u1 === 0); // evita log(0)
+    do {
+        u1 = Math.random();
+    } while (u1 === 0); // evita log(0)
     const u2 = Math.random();
     return Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
 }

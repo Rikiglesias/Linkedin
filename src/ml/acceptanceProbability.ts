@@ -25,13 +25,13 @@ import { inferLeadSegment } from './segments';
 
 export interface AcceptancePrediction {
     leadId: number;
-    probability: number;       // 0.0-1.0
-    compositeScore: number;    // 0-100: combina P(acceptance) + lead_score
+    probability: number; // 0.0-1.0
+    compositeScore: number; // 0-100: combina P(acceptance) + lead_score
     factors: {
-        segmentRate: number;   // acceptance rate storico per segmento
-        listRate: number;      // acceptance rate storico per lista
-        dataRichness: number;  // 0-1: quanto è arricchito il profilo
-        leadScore: number;     // 0-100: score originale
+        segmentRate: number; // acceptance rate storico per segmento
+        listRate: number; // acceptance rate storico per lista
+        dataRichness: number; // 0-1: quanto è arricchito il profilo
+        leadScore: number; // 0-100: score originale
     };
 }
 
@@ -77,7 +77,7 @@ async function loadSegmentStats(): Promise<Map<string, SegmentStats>> {
     }
 
     // Calcola rate con Bayesian smoothing (prior: 30% acceptance, peso 10)
-    const PRIOR_RATE = 0.30;
+    const PRIOR_RATE = 0.3;
     const PRIOR_WEIGHT = 10;
     for (const stats of map.values()) {
         stats.rate = (stats.accepted + PRIOR_RATE * PRIOR_WEIGHT) / (stats.invited + PRIOR_WEIGHT);
@@ -99,7 +99,7 @@ async function loadListStats(): Promise<Map<string, ListStats>> {
     );
 
     const map = new Map<string, ListStats>();
-    const PRIOR_RATE = 0.30;
+    const PRIOR_RATE = 0.3;
     const PRIOR_WEIGHT = 10;
     for (const row of rows) {
         map.set(row.list_name, {
@@ -141,10 +141,10 @@ export async function predictAcceptance(lead: {
 
     const segment = inferLeadSegment(lead.job_title);
     const segmentStats = _segmentCache?.get(segment);
-    const segmentRate = segmentStats?.rate ?? 0.30; // prior se nessun dato
+    const segmentRate = segmentStats?.rate ?? 0.3; // prior se nessun dato
 
     const listStats = lead.list_name ? _listCache?.get(lead.list_name) : null;
-    const listRate = listStats?.rate ?? 0.30;
+    const listRate = listStats?.rate ?? 0.3;
 
     // Data richness: lead con più dati arricchiti → nota AI migliore → più acceptance
     let dataRichness = 0;
@@ -157,12 +157,10 @@ export async function predictAcceptance(lead: {
 
     // P(acceptance) = media pesata dei fattori
     // segmentRate e listRate sono i più predittivi (dati storici reali)
-    const probability = Math.min(1, Math.max(0,
-        segmentRate * 0.40 +
-        listRate * 0.30 +
-        dataRichness * 0.15 +
-        (leadScore / 100) * 0.15
-    ));
+    const probability = Math.min(
+        1,
+        Math.max(0, segmentRate * 0.4 + listRate * 0.3 + dataRichness * 0.15 + (leadScore / 100) * 0.15),
+    );
 
     // Composite score: bilancia P(acceptance) con qualità lead
     const compositeScore = Math.round(probability * 60 + (leadScore / 100) * 40);
@@ -183,15 +181,17 @@ export async function predictAcceptance(lead: {
 /**
  * Batch prediction per N lead — usato dallo scheduler per ordinare i candidati.
  */
-export async function predictAcceptanceBatch(leads: Array<{
-    id: number;
-    job_title: string | null;
-    list_name: string | null;
-    lead_score: number | null;
-    about: string | null;
-    experience: string | null;
-    email?: string | null;
-}>): Promise<AcceptancePrediction[]> {
+export async function predictAcceptanceBatch(
+    leads: Array<{
+        id: number;
+        job_title: string | null;
+        list_name: string | null;
+        lead_score: number | null;
+        about: string | null;
+        experience: string | null;
+        email?: string | null;
+    }>,
+): Promise<AcceptancePrediction[]> {
     await ensureCache();
     const predictions: AcceptancePrediction[] = [];
     for (const lead of leads) {
@@ -200,12 +200,14 @@ export async function predictAcceptanceBatch(leads: Array<{
 
     await logInfo('acceptance_probability.batch', {
         count: predictions.length,
-        avgProbability: predictions.length > 0
-            ? Math.round(predictions.reduce((s, p) => s + p.probability, 0) / predictions.length * 1000) / 1000
-            : 0,
-        avgComposite: predictions.length > 0
-            ? Math.round(predictions.reduce((s, p) => s + p.compositeScore, 0) / predictions.length)
-            : 0,
+        avgProbability:
+            predictions.length > 0
+                ? Math.round((predictions.reduce((s, p) => s + p.probability, 0) / predictions.length) * 1000) / 1000
+                : 0,
+        avgComposite:
+            predictions.length > 0
+                ? Math.round(predictions.reduce((s, p) => s + p.compositeScore, 0) / predictions.length)
+                : 0,
     });
 
     return predictions;

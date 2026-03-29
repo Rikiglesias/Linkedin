@@ -1,5 +1,15 @@
 export type LeadSegment = 'c_level' | 'founder' | 'director' | 'manager' | 'individual' | 'unknown';
-export type LeadIndustry = 'tech' | 'finance' | 'healthcare' | 'education' | 'manufacturing' | 'retail' | 'consulting' | 'nonprofit' | 'other' | 'unknown';
+export type LeadIndustry =
+    | 'tech'
+    | 'finance'
+    | 'healthcare'
+    | 'education'
+    | 'manufacturing'
+    | 'retail'
+    | 'consulting'
+    | 'nonprofit'
+    | 'other'
+    | 'unknown';
 export type LeadCompanySize = 'startup' | 'smb' | 'enterprise' | 'unknown';
 
 export function inferLeadSegment(jobTitle: string | null | undefined): LeadSegment {
@@ -13,7 +23,10 @@ export function inferLeadSegment(jobTitle: string | null | undefined): LeadSegme
     return 'individual';
 }
 
-export function inferLeadIndustry(companyName: string | null | undefined, jobTitle: string | null | undefined): LeadIndustry {
+export function inferLeadIndustry(
+    companyName: string | null | undefined,
+    jobTitle: string | null | undefined,
+): LeadIndustry {
     const combined = `${companyName ?? ''} ${jobTitle ?? ''}`.toLowerCase().trim();
     if (!combined) return 'unknown';
 

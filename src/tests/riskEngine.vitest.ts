@@ -183,7 +183,12 @@ describe('Account Trust Score (A11)', () => {
 describe('Follow-up Cadence (M29)', () => {
     it('cadenza base per intent default', () => {
         const cadence = resolveFollowUpCadence(
-            { id: 1, messaged_at: new Date(Date.now() - 10 * 86400000).toISOString(), follow_up_sent_at: null, follow_up_count: 0 },
+            {
+                id: 1,
+                messaged_at: new Date(Date.now() - 10 * 86400000).toISOString(),
+                follow_up_sent_at: null,
+                follow_up_count: 0,
+            },
             null,
         );
         expect(cadence.baseDelayDays).toBeGreaterThanOrEqual(1);
@@ -192,7 +197,12 @@ describe('Follow-up Cadence (M29)', () => {
 
     it('cadenza lunga per NOT_INTERESTED', () => {
         const cadence = resolveFollowUpCadence(
-            { id: 2, messaged_at: new Date(Date.now() - 90 * 86400000).toISOString(), follow_up_sent_at: null, follow_up_count: 0 },
+            {
+                id: 2,
+                messaged_at: new Date(Date.now() - 90 * 86400000).toISOString(),
+                follow_up_sent_at: null,
+                follow_up_count: 0,
+            },
             { intent: 'NOT_INTERESTED', subIntent: 'NONE', confidence: 0.9, entities: [] },
         );
         expect(cadence.baseDelayDays).toBeGreaterThanOrEqual(30);
@@ -216,7 +226,12 @@ describe('Follow-up Cadence (M29)', () => {
             null,
         );
         const fc2 = resolveFollowUpCadence(
-            { id: 10, messaged_at: '2025-01-01T00:00:00Z', follow_up_sent_at: '2025-01-10T00:00:00Z', follow_up_count: 2 },
+            {
+                id: 10,
+                messaged_at: '2025-01-01T00:00:00Z',
+                follow_up_sent_at: '2025-01-10T00:00:00Z',
+                follow_up_count: 2,
+            },
             null,
         );
         expect(fc2.requiredDelayDays).toBeGreaterThan(fc0.requiredDelayDays);

@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { getRuntimeAccountProfiles, pickAccountIdForLead, getSchedulingAccountIds, getAccountProfileById } from '../accountManager';
+import {
+    getRuntimeAccountProfiles,
+    pickAccountIdForLead,
+    getSchedulingAccountIds,
+    getAccountProfileById,
+} from '../accountManager';
 
 describe('accountManager — advanced', () => {
     it('pickAccountIdForLead distribuzione per leadId diversi', () => {

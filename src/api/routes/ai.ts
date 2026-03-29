@@ -1,8 +1,5 @@
 import { Router } from 'express';
-import {
-    listCommentSuggestionsForReview,
-    reviewCommentSuggestion,
-} from '../../core/repositories';
+import { listCommentSuggestionsForReview, reviewCommentSuggestion } from '../../core/repositories';
 // A22: import diretto per rompere circular dependency chain
 import { getAiQualitySnapshot, runAiValidationPipeline } from '../../core/repositories/aiQuality';
 import { handleApiError } from '../utils';
@@ -69,11 +66,17 @@ aiRouter.post('/ai/comment-suggestions/:leadId/:suggestionIndex/approve', async 
     try {
         const comment = typeof req.body?.comment === 'string' ? req.body.comment.trim() : undefined;
         const result = await reviewCommentSuggestion({
-            leadId, suggestionIndex, action: 'approve', reviewer: resolveRequestIp(req), comment,
+            leadId,
+            suggestionIndex,
+            action: 'approve',
+            reviewer: resolveRequestIp(req),
+            comment,
         });
         auditSecurityEvent({
-            category: 'ai_quality', action: 'comment_suggestion_approve',
-            actor: resolveRequestIp(req), result: 'ALLOW',
+            category: 'ai_quality',
+            action: 'comment_suggestion_approve',
+            actor: resolveRequestIp(req),
+            result: 'ALLOW',
             metadata: { leadId, suggestionIndex },
         });
         res.json(result);
@@ -96,11 +99,16 @@ aiRouter.post('/ai/comment-suggestions/:leadId/:suggestionIndex/reject', async (
     }
     try {
         const result = await reviewCommentSuggestion({
-            leadId, suggestionIndex, action: 'reject', reviewer: resolveRequestIp(req),
+            leadId,
+            suggestionIndex,
+            action: 'reject',
+            reviewer: resolveRequestIp(req),
         });
         auditSecurityEvent({
-            category: 'ai_quality', action: 'comment_suggestion_reject',
-            actor: resolveRequestIp(req), result: 'ALLOW',
+            category: 'ai_quality',
+            action: 'comment_suggestion_reject',
+            actor: resolveRequestIp(req),
+            result: 'ALLOW',
             metadata: { leadId, suggestionIndex },
         });
         res.json(result);

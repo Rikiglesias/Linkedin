@@ -139,10 +139,10 @@ export async function runDeadLetterWorker(options: DeadLetterOptions = {}): Prom
                 const { sendTelegramAlert } = await import('../telemetry/alerts');
                 await sendTelegramAlert(
                     `🗑️ **Dead Letter Queue**\n\n` +
-                    `Processati: ${processed}\n` +
-                    `Riciclati: ${recycled} (verranno ritentati)\n` +
-                    `**Terminati: ${deadLettered}** (errori non recuperabili)\n\n` +
-                    `Azione: controlla i log per dettagli o usa \`bot dead-letter --retry\` per forzare il retry.`,
+                        `Processati: ${processed}\n` +
+                        `Riciclati: ${recycled} (verranno ritentati)\n` +
+                        `**Terminati: ${deadLettered}** (errori non recuperabili)\n\n` +
+                        `Azione: controlla i log per dettagli o usa \`bot dead-letter --retry\` per forzare il retry.`,
                     'Dead Letter Summary',
                     deadLettered >= 5 ? 'critical' : 'warn',
                 ).catch(() => null);

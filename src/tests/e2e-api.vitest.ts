@@ -48,9 +48,7 @@ describe('E2E API — Metriche Prometheus', () => {
 describe('E2E API — Session auth bootstrap', () => {
     test('POST /api/auth/session senza credenziali ritorna 401 o 200 in base alla config auth', async () => {
         if (!app) return;
-        const res = await request(app)
-            .post('/api/auth/session')
-            .send({});
+        const res = await request(app).post('/api/auth/session').send({});
         // Se auth è abilitata nel config cachato → 401 (credenziali richieste)
         // Se auth è disabilitata → 200 (sessione creata, backward-compatible)
         // 429 possibile se rate limiter ha budget esaurito da run precedenti
@@ -72,9 +70,7 @@ describe('E2E API — Session auth bootstrap', () => {
         try {
             // Questo test è significativo solo se auth è abilitata E le credenziali sono valide
             // Altrimenti il flusso si ferma prima (401 o 200 senza TOTP)
-            const res = await request(app)
-                .post('/api/auth/session')
-                .send({});
+            const res = await request(app).post('/api/auth/session').send({});
             // Se auth disabilitata: arriva al TOTP check → 403
             // Se auth abilitata senza credenziali: 401 (non arriva al TOTP)
             if (res.status === 403) {

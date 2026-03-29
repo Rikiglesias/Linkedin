@@ -67,7 +67,10 @@ function persistCircuitStateAsync(circuitKey: string, state: CircuitState): void
     };
     setRuntimeFlag(`${CB_FLAG_PREFIX}${circuitKey}`, JSON.stringify(payload)).catch((e) => {
         // A04/A07: persist CB failure — lo stato DB potrebbe essere stale al prossimo restart
-        void logWarn('circuit_breaker.persist_failed', { circuitKey, error: e instanceof Error ? e.message : String(e) });
+        void logWarn('circuit_breaker.persist_failed', {
+            circuitKey,
+            error: e instanceof Error ? e.message : String(e),
+        });
     });
 }
 
@@ -253,15 +256,20 @@ function ensureCircuitState(circuitKey: string): CircuitState {
     circuitStates.set(circuitKey, created);
     if (!circuitLoadedFromDb.has(circuitKey)) {
         circuitLoadedFromDb.add(circuitKey);
-        loadCircuitStateFromDb(circuitKey).then((persisted) => {
-            if (!persisted) return;
-            const current = circuitStates.get(circuitKey);
-            if (!current || current.lastTransitionAtMs > 0) return;
-            Object.assign(current, persisted);
-        }).catch((e) => {
-            // A04/A07: load CB da DB fallito — si parte da stato fresh (CLOSED)
-            void logWarn('circuit_breaker.load_from_db_failed', { circuitKey, error: e instanceof Error ? e.message : String(e) });
-        });
+        loadCircuitStateFromDb(circuitKey)
+            .then((persisted) => {
+                if (!persisted) return;
+                const current = circuitStates.get(circuitKey);
+                if (!current || current.lastTransitionAtMs > 0) return;
+                Object.assign(current, persisted);
+            })
+            .catch((e) => {
+                // A04/A07: load CB da DB fallito — si parte da stato fresh (CLOSED)
+                void logWarn('circuit_breaker.load_from_db_failed', {
+                    circuitKey,
+                    error: e instanceof Error ? e.message : String(e),
+                });
+            });
     }
     return created;
 }
@@ -531,7 +539,8 @@ export async function fetchWithRetryPolicy(
         },
         {
             ...options,
-            classifyError: options.classifyError ?? ((error) => (isLikelyTransientError(error) ? 'transient' : 'terminal')),
+            classifyError:
+                options.classifyError ?? ((error) => (isLikelyTransientError(error) ? 'transient' : 'terminal')),
         },
     );
 }

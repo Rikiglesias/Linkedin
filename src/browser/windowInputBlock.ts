@@ -43,11 +43,14 @@ export function getFirefoxLikePids(): number[] {
     if (process.platform !== 'win32') return [];
     try {
         const result = execSync(
-            'powershell -NoProfile -NonInteractive -Command "(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -match \'firefox|camoufox\' }).Id -join \',\'"',
+            "powershell -NoProfile -NonInteractive -Command \"(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -match 'firefox|camoufox' }).Id -join ','\"",
             { timeout: 5_000, encoding: 'utf-8', windowsHide: true },
         ).trim();
         if (!result) return [];
-        return result.split(',').map(s => parseInt(s.trim(), 10)).filter(n => n > 0);
+        return result
+            .split(',')
+            .map((s) => parseInt(s.trim(), 10))
+            .filter((n) => n > 0);
     } catch {
         return [];
     }
@@ -186,17 +189,20 @@ export function reapplyWindowClickThrough(): void {
 function _applyClickThrough(pid: number, enable: boolean): boolean {
     try {
         const script = buildPowerShellScript(pid, enable);
-        const result = execSync(
-            `powershell -NoProfile -NonInteractive -Command "${script.replace(/"/g, '\\"')}"`,
-            { timeout: 10_000, encoding: 'utf-8', windowsHide: true },
-        ).trim();
+        const result = execSync(`powershell -NoProfile -NonInteractive -Command "${script.replace(/"/g, '\\"')}"`, {
+            timeout: 10_000,
+            encoding: 'utf-8',
+            windowsHide: true,
+        }).trim();
 
         const windowCount = parseInt(result, 10);
         if (windowCount > 0) {
             _clickThroughActive = enable;
             _lastPid = pid;
             if (enable) {
-                console.log(`[WINDOW-BLOCK] ✓ Click-through attivato (PID ${pid}, ${windowCount} finestre) — mouse utente bloccato`);
+                console.log(
+                    `[WINDOW-BLOCK] ✓ Click-through attivato (PID ${pid}, ${windowCount} finestre) — mouse utente bloccato`,
+                );
             }
             return true;
         }

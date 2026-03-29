@@ -5,7 +5,9 @@ import { isErrorRecoverable } from '../workers/deadLetterWorker';
 describe('linkedinUrl', () => {
     describe('normalizeLinkedInUrl', () => {
         it('canonicalizza a /in/slug/ con trailing slash', () => {
-            expect(normalizeLinkedInUrl('https://www.linkedin.com/in/marco-rossi')).toBe('https://www.linkedin.com/in/marco-rossi/');
+            expect(normalizeLinkedInUrl('https://www.linkedin.com/in/marco-rossi')).toBe(
+                'https://www.linkedin.com/in/marco-rossi/',
+            );
         });
 
         it('rimuove parametri query', () => {

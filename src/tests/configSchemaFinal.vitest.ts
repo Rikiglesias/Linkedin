@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { configCapSchema, configTimingSchema, configRiskSchema, CONFIG_PROFILES, validateConfigCaps, suggestConfigProfile } from '../config/schema';
+import {
+    configCapSchema,
+    configTimingSchema,
+    configRiskSchema,
+    CONFIG_PROFILES,
+    validateConfigCaps,
+    suggestConfigProfile,
+} from '../config/schema';
 
 describe('configSchema — final comprehensive', () => {
     it('tutti i profili hanno weeklyMessageLimit >= hardMsgCap * 3', () => {
@@ -34,10 +41,25 @@ describe('configSchema — final comprehensive', () => {
     });
 
     it('configTimingSchema accepts boundary values', () => {
-        expect(configTimingSchema.safeParse({ interJobMinDelaySec: 5, interJobMaxDelaySec: 10, workingHoursStart: 0, workingHoursEnd: 1, challengePauseMinutes: 5 }).success).toBe(true);
+        expect(
+            configTimingSchema.safeParse({
+                interJobMinDelaySec: 5,
+                interJobMaxDelaySec: 10,
+                workingHoursStart: 0,
+                workingHoursEnd: 1,
+                challengePauseMinutes: 5,
+            }).success,
+        ).toBe(true);
     });
 
     it('configRiskSchema accepts boundary values', () => {
-        expect(configRiskSchema.safeParse({ riskWarnThreshold: 10, riskStopThreshold: 20, pendingRatioWarn: 0.1, pendingRatioStop: 0.2 }).success).toBe(true);
+        expect(
+            configRiskSchema.safeParse({
+                riskWarnThreshold: 10,
+                riskStopThreshold: 20,
+                pendingRatioWarn: 0.1,
+                pendingRatioStop: 0.2,
+            }).success,
+        ).toBe(true);
     });
 });

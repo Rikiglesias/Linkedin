@@ -27,9 +27,7 @@ import {
 } from '../../core/repositories';
 import { reconcileLeadStatus } from '../../core/leadStateService';
 import { runSalesNavigatorListSync, formatFinalReport } from '../../core/salesNavigatorSync';
-import {
-    runSalesNavBulkSave,
-} from '../../salesnav/bulkSaveOrchestrator';
+import { runSalesNavBulkSave } from '../../salesnav/bulkSaveOrchestrator';
 import { addLeadToSalesNavList, createSalesNavList } from '../../salesnav/listActions';
 // searchExtractor.ts rimosso — logica legacy sostituita da bulkSaveOrchestrator
 import { isProfileUrl, isSalesNavigatorUrl, normalizeLinkedInUrl } from '../../linkedinUrl';
@@ -130,10 +128,7 @@ async function extractSalesNavProfileData(page: Page): Promise<SalesNavProfileDa
             text('.profile-topcard-person-entity__name')?.split(/\s+/)[0] ??
             null;
 
-        const fullName =
-            text('[data-anonymize="person-name"]') ??
-            text('.profile-topcard-person-entity__name') ??
-            null;
+        const fullName = text('[data-anonymize="person-name"]') ?? text('.profile-topcard-person-entity__name') ?? null;
         const lastName = fullName ? fullName.split(/\s+/).slice(1).join(' ') || null : null;
 
         const headline =
@@ -215,10 +210,12 @@ async function askUserToChooseList(): Promise<string> {
 
     while (true) {
         const input = await readLineFromStdin(
-            lists.length > 0 ? `Scegli elenco (1-${lists.length}) o digita nome nuovo: ` : 'Digita il nome dell\'elenco: ',
+            lists.length > 0
+                ? `Scegli elenco (1-${lists.length}) o digita nome nuovo: `
+                : "Digita il nome dell'elenco: ",
         );
         if (!input) {
-            console.log('  Il nome dell\'elenco non può essere vuoto.');
+            console.log("  Il nome dell'elenco non può essere vuoto.");
             continue;
         }
         const num = parseInt(input, 10);
@@ -299,11 +296,13 @@ async function ensureSalesNavSession(args: string[], opts?: { interactive?: bool
     // Auto-detect login
     const alreadyLoggedIn = await checkLogin(session.page);
     if (alreadyLoggedIn) {
-        console.log('[OK] Sessione LinkedIn gia\' attiva.');
+        console.log("[OK] Sessione LinkedIn gia' attiva.");
     } else {
         const currentUrl = session.page.url().toLowerCase();
         if (!currentUrl.includes('/login')) {
-            await session.page.goto('https://www.linkedin.com/login', { waitUntil: 'domcontentloaded' }).catch(() => null);
+            await session.page
+                .goto('https://www.linkedin.com/login', { waitUntil: 'domcontentloaded' })
+                .catch(() => null);
         }
         console.log('\n──────────────────────────────────────────────────────────────');
         console.log('  SalesNav pronto. Completa il LOGIN nel browser.');
@@ -661,9 +660,7 @@ export async function runSalesNavBulkSaveCommand(args: string[]): Promise<void> 
             `🔍 Ricerche: ${report.searchesProcessed}/${report.searchesPlanned}`,
             `📄 Pagine processate: ${report.pagesProcessed}`,
             `👤 Lead salvati: ${report.totalLeadsSaved}`,
-            report.pagesSkippedAllSaved > 0
-                ? `⏭️ Pagine skippate (già salvate): ${report.pagesSkippedAllSaved}`
-                : '',
+            report.pagesSkippedAllSaved > 0 ? `⏭️ Pagine skippate (già salvate): ${report.pagesSkippedAllSaved}` : '',
             report.challengeDetected ? `\n⚠️ Challenge LinkedIn rilevato` : '',
             report.lastError ? `\n❗ Ultimo errore: ${report.lastError}` : '',
         ]
@@ -675,7 +672,7 @@ export async function runSalesNavBulkSaveCommand(args: string[]): Promise<void> 
 
         const closeDelaySec = 3 + Math.floor(Math.random() * 3);
         console.log(`\nRun terminato. Chiusura browser tra ${closeDelaySec}s...`);
-        await new Promise(resolve => setTimeout(resolve, closeDelaySec * 1000));
+        await new Promise((resolve) => setTimeout(resolve, closeDelaySec * 1000));
     } finally {
         disableWindowClickThrough(session.browser);
         await closeBrowserSession(session);
@@ -724,4 +721,3 @@ export async function runSalesNavUnifiedCommand(args: string[]): Promise<void> {
         await runSalesNavBulkSaveCommand(args);
     }
 }
-

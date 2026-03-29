@@ -112,15 +112,17 @@ export async function buildClipAroundLocator(
 }
 
 export async function reInjectOverlays(page: Page): Promise<void> {
-    await page.evaluate(() => {
-        const w = window as unknown as Record<string, unknown>;
-        if (typeof w.__name === 'undefined') {
-            w.__name = (target: unknown, _value: unknown) => target;
-        }
-        if (typeof w.__defProp === 'undefined') {
-            w.__defProp = Object.defineProperty;
-        }
-    }).catch(() => null);
+    await page
+        .evaluate(() => {
+            const w = window as unknown as Record<string, unknown>;
+            if (typeof w.__name === 'undefined') {
+                w.__name = (target: unknown, _value: unknown) => target;
+            }
+            if (typeof w.__defProp === 'undefined') {
+                w.__defProp = Object.defineProperty;
+            }
+        })
+        .catch(() => null);
     // Quando suspended (login manuale in corso), NON iniettare nessun overlay —
     // né il cursore visuale (cursor:none nasconde il mouse reale) né l'input block.
     if (_inputBlockSuspendedMap.has(page)) {
@@ -218,9 +220,7 @@ export async function findVisibleClickTarget(
 ): Promise<{ x: number; y: number; width: number; height: number } | null> {
     return page.evaluate(
         ({ patterns, container, includeGeneric, strict }) => {
-            const root = container
-                ? (document.querySelector(container) ?? document)
-                : document;
+            const root = container ? (document.querySelector(container) ?? document) : document;
             const interactiveSelector =
                 'button, a, label, input, [role="button"], [role="checkbox"], [role="menuitem"], [role="option"]';
             const genericSelector = interactiveSelector + ', span, div, li';
@@ -229,10 +229,7 @@ export async function findVisibleClickTarget(
             const entries: Array<{ el: HTMLElement; text: string }> = [];
             for (const el of candidates) {
                 const htmlEl = el as HTMLElement;
-                const text = (htmlEl.innerText || htmlEl.textContent || '')
-                    .replace(/\s+/g, ' ')
-                    .trim()
-                    .toLowerCase();
+                const text = (htmlEl.innerText || htmlEl.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
                 if (text.length > 0) entries.push({ el: htmlEl, text });
             }
 
@@ -268,6 +265,11 @@ export async function findVisibleClickTarget(
             }
             return null;
         },
-        { patterns: textPatterns, container: containerSelector ?? null, includeGeneric: includeGenericElements, strict: strictMatch },
+        {
+            patterns: textPatterns,
+            container: containerSelector ?? null,
+            includeGeneric: includeGenericElements,
+            strict: strictMatch,
+        },
     );
 }

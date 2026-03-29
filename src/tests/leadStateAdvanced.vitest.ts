@@ -3,16 +3,26 @@ import { isValidLeadTransition } from '../core/leadStateService';
 import type { LeadStatus } from '../types/domain';
 
 const ALL_STATUSES: LeadStatus[] = [
-    'NEW', 'READY_INVITE', 'INVITED', 'ACCEPTED', 'CONNECTED',
-    'READY_MESSAGE', 'MESSAGED', 'REPLIED', 'SKIPPED', 'BLOCKED',
-    'DEAD', 'REVIEW_REQUIRED', 'WITHDRAWN',
+    'NEW',
+    'READY_INVITE',
+    'INVITED',
+    'ACCEPTED',
+    'CONNECTED',
+    'READY_MESSAGE',
+    'MESSAGED',
+    'REPLIED',
+    'SKIPPED',
+    'BLOCKED',
+    'DEAD',
+    'REVIEW_REQUIRED',
+    'WITHDRAWN',
 ];
 
 describe('leadStateService — exhaustive transition matrix', () => {
     it('ogni stato ha almeno una transizione valida (tranne BLOCKED e DEAD)', () => {
         for (const from of ALL_STATUSES) {
             if (from === 'BLOCKED' || from === 'DEAD') continue;
-            const hasValidTransition = ALL_STATUSES.some(to => isValidLeadTransition(from, to));
+            const hasValidTransition = ALL_STATUSES.some((to) => isValidLeadTransition(from, to));
             expect(hasValidTransition, `${from} non ha transizioni valide`).toBe(true);
         }
     });
@@ -32,7 +42,7 @@ describe('leadStateService — exhaustive transition matrix', () => {
     });
 
     it('REVIEW_REQUIRED può transitare a molti stati (recovery)', () => {
-        const validTargets = ALL_STATUSES.filter(to => isValidLeadTransition('REVIEW_REQUIRED', to));
+        const validTargets = ALL_STATUSES.filter((to) => isValidLeadTransition('REVIEW_REQUIRED', to));
         expect(validTargets.length).toBeGreaterThanOrEqual(4);
     });
 

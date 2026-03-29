@@ -164,9 +164,7 @@ describe('leadScorer — scoreLeadsBatch', () => {
     });
 
     it('batch singolo → un risultato', async () => {
-        const results = await scoreLeadsBatch([
-            { accountName: 'Acme', fullName: 'Mario', headline: null },
-        ]);
+        const results = await scoreLeadsBatch([{ accountName: 'Acme', fullName: 'Mario', headline: null }]);
         expect(results).toHaveLength(1);
         expect(results[0].reason).toBe('MISSING_HEADLINE_OR_ROLE');
     });

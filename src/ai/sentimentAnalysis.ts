@@ -100,7 +100,14 @@ export async function analyzeIncomingMessage(messageText: string): Promise<Senti
                   .slice(0, 12)
             : [];
 
-        const validIntents: MessageIntent[] = ['POSITIVE', 'NEGATIVE', 'NEUTRAL', 'QUESTIONS', 'NOT_INTERESTED', 'UNKNOWN'];
+        const validIntents: MessageIntent[] = [
+            'POSITIVE',
+            'NEGATIVE',
+            'NEUTRAL',
+            'QUESTIONS',
+            'NOT_INTERESTED',
+            'UNKNOWN',
+        ];
         const rawIntent = String(parsed.intent ?? 'UNKNOWN').toUpperCase() as MessageIntent;
         const intent: MessageIntent = validIntents.includes(rawIntent) ? rawIntent : 'UNKNOWN';
 
@@ -109,7 +116,10 @@ export async function analyzeIncomingMessage(messageText: string): Promise<Senti
             subIntent,
             entities,
             confidence: typeof parsed.confidence === 'number' ? Math.max(0, Math.min(1, parsed.confidence)) : 0,
-            reasoning: typeof parsed.reasoning === 'string' ? parsed.reasoning.slice(0, 300) : 'Parsing riuscito ma campi mancanti.',
+            reasoning:
+                typeof parsed.reasoning === 'string'
+                    ? parsed.reasoning.slice(0, 300)
+                    : 'Parsing riuscito ma campi mancanti.',
         };
     } catch (error) {
         await logWarn('ai.sentiment_analysis.failed', {

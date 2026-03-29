@@ -65,20 +65,20 @@ export async function listLeadCampaignConfigs(onlyActive: boolean = false): Prom
     const db = await getDatabase();
     const rows = onlyActive
         ? await db.query<LeadListRow>(
-            `
+              `
             SELECT name, source, is_active, priority, daily_invite_cap, daily_message_cap, scoring_criteria, created_at
             FROM lead_lists
             WHERE is_active = 1
             ORDER BY priority ASC, created_at ASC, name ASC
         `,
-        )
+          )
         : await db.query<LeadListRow>(
-            `
+              `
             SELECT name, source, is_active, priority, daily_invite_cap, daily_message_cap, scoring_criteria, created_at
             FROM lead_lists
             ORDER BY is_active DESC, priority ASC, created_at ASC, name ASC
         `,
-        );
+          );
 
     return rows.map(normalizeLeadListRow);
 }
@@ -446,7 +446,17 @@ export async function upsertSalesNavigatorLead(
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
                 `,
-                    [nextAccountName, nextFirstName, nextLastName, nextJobTitle, nextWebsite, nextListName, nextLocation || null, nextSalesnavUrl || null, leadId],
+                    [
+                        nextAccountName,
+                        nextFirstName,
+                        nextLastName,
+                        nextJobTitle,
+                        nextWebsite,
+                        nextListName,
+                        nextLocation || null,
+                        nextSalesnavUrl || null,
+                        leadId,
+                    ],
                 );
                 action = 'updated';
             }
@@ -508,8 +518,8 @@ export async function countCompanyTargets(listName?: string): Promise<number> {
     const db = await getDatabase();
     const row = listName
         ? await db.get<{ total: number }>(`SELECT COUNT(*) as total FROM company_targets WHERE list_name = ?`, [
-            listName,
-        ])
+              listName,
+          ])
         : await db.get<{ total: number }>(`SELECT COUNT(*) as total FROM company_targets`);
     return row?.total ?? 0;
 }
@@ -657,28 +667,25 @@ export interface UpdateLeadProfileDataInput {
     about?: string | null;
 }
 
-export async function updateLeadProfileData(
-    leadId: number,
-    data: UpdateLeadProfileDataInput,
-): Promise<boolean> {
+export async function updateLeadProfileData(leadId: number, data: UpdateLeadProfileDataInput): Promise<boolean> {
     const db = await getDatabase();
     const sets: string[] = [];
     const params: unknown[] = [];
 
     if (data.firstName !== undefined) {
-        sets.push('first_name = COALESCE(NULLIF(first_name, \'\'), ?)');
+        sets.push("first_name = COALESCE(NULLIF(first_name, ''), ?)");
         params.push(data.firstName);
     }
     if (data.lastName !== undefined) {
-        sets.push('last_name = COALESCE(NULLIF(last_name, \'\'), ?)');
+        sets.push("last_name = COALESCE(NULLIF(last_name, ''), ?)");
         params.push(data.lastName);
     }
     if (data.jobTitle !== undefined) {
-        sets.push('job_title = COALESCE(NULLIF(job_title, \'\'), ?)');
+        sets.push("job_title = COALESCE(NULLIF(job_title, ''), ?)");
         params.push(data.jobTitle);
     }
     if (data.about !== undefined) {
-        sets.push('about = COALESCE(NULLIF(about, \'\'), ?)');
+        sets.push("about = COALESCE(NULLIF(about, ''), ?)");
         params.push(data.about);
     }
 
@@ -687,10 +694,7 @@ export async function updateLeadProfileData(
     sets.push('updated_at = CURRENT_TIMESTAMP');
     params.push(leadId);
 
-    const result = await db.run(
-        `UPDATE leads SET ${sets.join(', ')} WHERE id = ?`,
-        params,
-    );
+    const result = await db.run(`UPDATE leads SET ${sets.join(', ')} WHERE id = ?`, params);
     return (result.changes ?? 0) > 0;
 }
 
@@ -1085,9 +1089,8 @@ export async function getLeadsByStatusForList(
     // H13: Per INVITED, filtra lead invitati da almeno 2 giorni.
     // Controllare un lead invitato 1 ora fa è inutile (LinkedIn impiega 1-7 giorni per l'accettazione)
     // e spreca budget visite profilo (ogni check = 1 profile view su LinkedIn).
-    const invitedAgeClause = normalized === 'INVITED'
-        ? "AND invited_at IS NOT NULL AND invited_at <= DATETIME('now', '-2 days')"
-        : '';
+    const invitedAgeClause =
+        normalized === 'INVITED' ? "AND invited_at IS NOT NULL AND invited_at <= DATETIME('now', '-2 days')" : '';
     const leads = await db.query<LeadRecord>(
         `
         SELECT ${LEAD_SELECT_COLUMNS}
@@ -1169,10 +1172,10 @@ export async function setLeadStatus(
         normalized === 'INVITED'
             ? 'invited_at'
             : normalized === 'ACCEPTED'
-                ? 'accepted_at'
-                : normalized === 'MESSAGED'
-                    ? 'messaged_at'
-                    : null;
+              ? 'accepted_at'
+              : normalized === 'MESSAGED'
+                ? 'messaged_at'
+                : null;
 
     if (timestampColumn) {
         await db.run(
@@ -1225,16 +1228,20 @@ export async function appendLeadEvent(
         });
     }
 
-    const enrichedMetadata = durationSeconds !== null
-        ? { ...metadata, duration_seconds: durationSeconds }
-        : metadata;
+    const enrichedMetadata = durationSeconds !== null ? { ...metadata, duration_seconds: durationSeconds } : metadata;
 
     await db.run(
         `
         INSERT INTO lead_events (lead_id, from_status, to_status, reason, metadata_json)
         VALUES (?, ?, ?, ?, ?)
     `,
-        [leadId, normalizeLegacyStatus(fromStatus), normalizeLegacyStatus(toStatus), reason, JSON.stringify(enrichedMetadata)],
+        [
+            leadId,
+            normalizeLegacyStatus(fromStatus),
+            normalizeLegacyStatus(toStatus),
+            reason,
+            JSON.stringify(enrichedMetadata),
+        ],
     );
 }
 
@@ -1280,10 +1287,7 @@ export async function searchLeads(opts: SearchLeadsOptions): Promise<SearchLeads
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    const countRow = await db.get<{ total: number }>(
-        `SELECT COUNT(*) as total FROM leads ${whereClause}`,
-        params,
-    );
+    const countRow = await db.get<{ total: number }>(`SELECT COUNT(*) as total FROM leads ${whereClause}`, params);
     const total = countRow?.total ?? 0;
 
     const leads = await db.query<LeadRecord>(
@@ -1298,13 +1302,15 @@ export async function searchLeads(opts: SearchLeadsOptions): Promise<SearchLeads
     return { leads, total, page, pageSize };
 }
 
-export async function getLeadTimeline(leadId: number): Promise<Array<{
-    from_status: string;
-    to_status: string;
-    reason: string;
-    metadata_json: string;
-    created_at: string;
-}>> {
+export async function getLeadTimeline(leadId: number): Promise<
+    Array<{
+        from_status: string;
+        to_status: string;
+        reason: string;
+        metadata_json: string;
+        created_at: string;
+    }>
+> {
     const db = await getDatabase();
     return db.query(
         `SELECT from_status, to_status, reason, metadata_json, created_at
@@ -1339,7 +1345,8 @@ export async function hasOtherAccountTargeted(
 
     // Approccio efficiente senza JSON_EXTRACT: cerco il lead per URL, poi
     // verifico se ha job INVITE da un account diverso. Usa indice su linkedin_url.
-    const row = await db.get<{ cnt: number }>(`
+    const row = await db.get<{ cnt: number }>(
+        `
         SELECT COUNT(*) as cnt
         FROM leads l
         WHERE l.linkedin_url = ?
@@ -1353,7 +1360,9 @@ export async function hasOtherAccountTargeted(
               AND j.created_at >= DATETIME('now', '-' || ? || ' days')
               AND j.payload_json LIKE '%"leadId":' || l.id || '%'
           )
-    `, [normalizedUrl, safeLookbackDays, excludeAccountId, safeLookbackDays]);
+    `,
+        [normalizedUrl, safeLookbackDays, excludeAccountId, safeLookbackDays],
+    );
 
     return (row?.cnt ?? 0) > 0;
 }

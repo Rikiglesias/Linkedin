@@ -115,7 +115,8 @@ Rispondi SOLO con JSON:
             jobTitle: typeof parsed.jobTitle === 'string' ? parsed.jobTitle.trim() || null : null,
             accountName: typeof parsed.accountName === 'string' ? parsed.accountName.trim() || null : null,
             inferredEmail: typeof parsed.inferredEmail === 'string' ? parsed.inferredEmail.trim() || null : null,
-            linkedinHeadline: typeof parsed.linkedinHeadline === 'string' ? parsed.linkedinHeadline.trim() || null : null,
+            linkedinHeadline:
+                typeof parsed.linkedinHeadline === 'string' ? parsed.linkedinHeadline.trim() || null : null,
             location: typeof parsed.location === 'string' ? parsed.location.trim() || null : null,
             industry: typeof parsed.industry === 'string' ? parsed.industry.trim() || null : null,
             cleaned: true,

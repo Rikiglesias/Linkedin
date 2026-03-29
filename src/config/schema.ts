@@ -76,7 +76,7 @@ export const CONFIG_PROFILES: Record<string, ConfigProfile> = {
         risk: {
             riskWarnThreshold: 25,
             riskStopThreshold: 45,
-            pendingRatioWarn: 0.40,
+            pendingRatioWarn: 0.4,
             pendingRatioStop: 0.55,
         },
     },
@@ -104,7 +104,7 @@ export const CONFIG_PROFILES: Record<string, ConfigProfile> = {
         risk: {
             riskWarnThreshold: 35,
             riskStopThreshold: 60,
-            pendingRatioWarn: 0.50,
+            pendingRatioWarn: 0.5,
             pendingRatioStop: 0.65,
         },
     },
@@ -133,7 +133,7 @@ export const CONFIG_PROFILES: Record<string, ConfigProfile> = {
             riskWarnThreshold: 40,
             riskStopThreshold: 70,
             pendingRatioWarn: 0.55,
-            pendingRatioStop: 0.70,
+            pendingRatioStop: 0.7,
         },
     },
 };
@@ -147,7 +147,7 @@ export function validateConfigCaps(cfg: Partial<ConfigCapValues>): { valid: bool
     if (result.success) return { valid: true, errors: [] };
     return {
         valid: false,
-        errors: result.error.issues.map(i => `${i.path.join('.')}: ${i.message}`),
+        errors: result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`),
     };
 }
 

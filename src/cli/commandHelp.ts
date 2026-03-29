@@ -23,22 +23,20 @@ const COMMAND_HELP: Record<string, CommandHelp> = {
         usage: 'run [invite|check|message|warmup|all] [--dry-run]',
         description: 'Esegue un singolo ciclo del workflow specificato.',
         options: [
-            { flag: '--workflow <name>', description: 'Workflow da eseguire (invite, check, message, warmup, all)', default: 'all' },
+            {
+                flag: '--workflow <name>',
+                description: 'Workflow da eseguire (invite, check, message, warmup, all)',
+                default: 'all',
+            },
             { flag: '--dry-run', description: 'Simula senza inviare' },
             { flag: '--skip-preflight', description: 'Salta il doctor preflight' },
         ],
-        examples: [
-            'bot run invite',
-            'bot run message --dry-run',
-            'bot run all --skip-preflight',
-        ],
+        examples: ['bot run invite', 'bot run message --dry-run', 'bot run all --skip-preflight'],
     },
     'dry-run': {
         usage: 'dry-run [invite|check|message|warmup|all]',
         description: 'Simula un ciclo del workflow senza azioni reali.',
-        options: [
-            { flag: '--workflow <name>', description: 'Workflow da simulare', default: 'all' },
-        ],
+        options: [{ flag: '--workflow <name>', description: 'Workflow da simulare', default: 'all' }],
         examples: ['bot dry-run invite', 'bot dry-run all'],
     },
     'run-loop': {
@@ -49,11 +47,7 @@ const COMMAND_HELP: Record<string, CommandHelp> = {
             { flag: '--dry-run', description: 'Simula senza inviare' },
             { flag: '--skip-preflight', description: 'Salta il doctor preflight' },
         ],
-        examples: [
-            'bot run-loop all 900',
-            'bot run-loop invite 600 --cycles 5',
-            'bot run-loop --dry-run',
-        ],
+        examples: ['bot run-loop all 900', 'bot run-loop invite 600 --cycles 5', 'bot run-loop --dry-run'],
     },
     autopilot: {
         usage: 'autopilot [intervalSec] [--cycles <n>] [--dry-run]',
@@ -136,13 +130,14 @@ const COMMAND_HELP: Record<string, CommandHelp> = {
     },
     'config-validate': {
         usage: 'config-validate',
-        description: 'Valida la configurazione completa e restituisce un report JSON con errori, warning, stato proxy e JA3.',
+        description:
+            'Valida la configurazione completa e restituisce un report JSON con errori, warning, stato proxy e JA3.',
         options: [],
         examples: ['bot config-validate', 'bot config-validate | jq .summary'],
     },
     pause: {
         usage: 'pause [minutes|indefinite] [reason]',
-        description: 'Mette in pausa l\'automazione per N minuti.',
+        description: "Mette in pausa l'automazione per N minuti.",
         options: [
             { flag: 'minutes', description: 'Durata della pausa (o "indefinite")' },
             { flag: 'reason', description: 'Motivo della pausa' },
@@ -151,7 +146,7 @@ const COMMAND_HELP: Record<string, CommandHelp> = {
     },
     resume: {
         usage: 'resume',
-        description: 'Riprende l\'automazione dalla pausa.',
+        description: "Riprende l'automazione dalla pausa.",
         options: [],
         examples: ['bot resume'],
     },
@@ -212,9 +207,7 @@ const COMMAND_HELP: Record<string, CommandHelp> = {
     warmup: {
         usage: 'warmup [--account <id>]',
         description: 'Esegue un singolo ciclo di warmup sessione (feed, notifiche, ricerca).',
-        options: [
-            { flag: '--account <id>', description: 'ID account da scaldare' },
-        ],
+        options: [{ flag: '--account <id>', description: 'ID account da scaldare' }],
         examples: ['bot warmup', 'bot warmup --account main'],
     },
 };

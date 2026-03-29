@@ -32,9 +32,28 @@ import { getAccountGrowthBudget } from '../risk/accountBehaviorModel';
 import { computeNonLinearRampCap } from '../ml/rampModel';
 
 describe('Integration Sanity — every module callable', () => {
-    it('risk engine', () => expect(evaluateRisk({ errorRate: 0, selectorFailureRate: 0, pendingRatio: 0, challengeCount: 0, inviteVelocityRatio: 0 }).score).toBe(0));
-    it('trust score', () => expect(calculateAccountTrustScore({ ssiScore: 50, ageDays: 100, acceptanceRatePct: 25, challengesLast7d: 0, pendingRatio: 0.3 }).score).toBeGreaterThan(0));
-    it('message validation', () => expect(validateMessageContent('test', { duplicateCountLast24h: 0 }).valid).toBe(true));
+    it('risk engine', () =>
+        expect(
+            evaluateRisk({
+                errorRate: 0,
+                selectorFailureRate: 0,
+                pendingRatio: 0,
+                challengeCount: 0,
+                inviteVelocityRatio: 0,
+            }).score,
+        ).toBe(0));
+    it('trust score', () =>
+        expect(
+            calculateAccountTrustScore({
+                ssiScore: 50,
+                ageDays: 100,
+                acceptanceRatePct: 25,
+                challengesLast7d: 0,
+                pendingRatio: 0.3,
+            }).score,
+        ).toBeGreaterThan(0));
+    it('message validation', () =>
+        expect(validateMessageContent('test', { duplicateCountLast24h: 0 }).valid).toBe(true));
     it('lead state', () => expect(isValidLeadTransition('NEW', 'READY_INVITE')).toBe(true));
     it('linkedin url', () => expect(normalizeLinkedInUrl('https://www.linkedin.com/in/test/')).toContain('/in/test/'));
     it('salesnav url', () => expect(isSalesNavigatorUrl('https://www.linkedin.com/sales/lead/X')).toBe(true));
@@ -48,26 +67,90 @@ describe('Integration Sanity — every module callable', () => {
     it('timezone delay', () => expect(computeTimezoneDelaySec('Milan, Italy')).toBeGreaterThanOrEqual(0));
     it('typo rate', () => expect(computeSessionTypoRate()).toBeGreaterThanOrEqual(0));
     it('hour bucket', () => expect(inferHourBucket(12)).toBe('afternoon'));
-    it('follow-up cadence', () => expect(resolveFollowUpCadence({ id: 1, messaged_at: '2025-01-01', follow_up_sent_at: null, follow_up_count: 0 }, null).requiredDelayDays).toBeGreaterThanOrEqual(1));
+    it('follow-up cadence', () =>
+        expect(
+            resolveFollowUpCadence(
+                { id: 1, messaged_at: '2025-01-01', follow_up_sent_at: null, follow_up_count: 0 },
+                null,
+            ).requiredDelayDays,
+        ).toBeGreaterThanOrEqual(1));
     it('dead letter', () => expect(isErrorRecoverable('timeout')).toBe(true));
     it('proxy failed', () => expect(() => markProxyFailed({ server: 'http://test:8080' })).not.toThrow());
     it('worker result', () => expect(workerResult(1).success).toBe(true));
     it('retryable error', () => expect(new RetryableWorkerError('test').message).toBe('test'));
     it('challenge error', () => expect(new ChallengeDetectedError() instanceof Error).toBe(true));
-    it('page observation', () => expect(hasBlockingIssue({ profileName: null, profileHeadline: null, connectionDegree: null, isProfileDeleted: false, hasModalOpen: false, hasChallenge: false, currentUrl: '', hasConnectButton: false, hasMessageButton: false, hasPendingIndicator: false }).blocked).toBe(false));
+    it('page observation', () =>
+        expect(
+            hasBlockingIssue({
+                profileName: null,
+                profileHeadline: null,
+                connectionDegree: null,
+                isProfileDeleted: false,
+                hasModalOpen: false,
+                hasChallenge: false,
+                currentUrl: '',
+                hasConnectButton: false,
+                hasMessageButton: false,
+                hasPendingIndicator: false,
+            }).blocked,
+        ).toBe(false));
     it('sanitize logs', () => expect(sanitizeForLogs({ name: 'test' }).name).toBe('test'));
     it('correlation id', () => expect(resolveCorrelationId('test')).toBe('test'));
-    it('mouse path', () => expect(MouseGenerator.generateHumanPath({ x: 0, y: 0 }, { x: 100, y: 100 }, { width: 1280, height: 800 }).length).toBeGreaterThan(0));
-    it('contextual delay', () => expect(calculateContextualDelay({ actionType: 'click', baseMin: 100, baseMax: 500 })).toBeGreaterThanOrEqual(0));
+    it('mouse path', () =>
+        expect(
+            MouseGenerator.generateHumanPath({ x: 0, y: 0 }, { x: 100, y: 100 }, { width: 1280, height: 800 }).length,
+        ).toBeGreaterThan(0));
+    it('contextual delay', () =>
+        expect(calculateContextualDelay({ actionType: 'click', baseMin: 100, baseMax: 500 })).toBeGreaterThanOrEqual(
+            0,
+        ));
     it('significance', () => expect(computeTwoProportionSignificance(10, 100, 20, 100, 0.05).pValue).not.toBeNull());
     it('totp', () => expect(generateTotpSecret().secret).toBeTruthy());
-    it('client report', () => expect(generateClientReport({ weeklyInvitesSent: 10, weeklyAcceptances: 3, weeklyMessagesSent: 5, weeklyReplies: 2, weeklyFollowUpsSent: 1, pendingRatio: 0.3, riskScore: 20, hotLeadsCount: 0, expiredInvitesCount: 0, accountHealth: 'GREEN' }).overallGrade).toBeTruthy());
+    it('client report', () =>
+        expect(
+            generateClientReport({
+                weeklyInvitesSent: 10,
+                weeklyAcceptances: 3,
+                weeklyMessagesSent: 5,
+                weeklyReplies: 2,
+                weeklyFollowUpsSent: 1,
+                pendingRatio: 0.3,
+                riskScore: 20,
+                hotLeadsCount: 0,
+                expiredInvitesCount: 0,
+                accountHealth: 'GREEN',
+            }).overallGrade,
+        ).toBeTruthy());
     it('config caps', () => expect(validateConfigCaps(CONFIG_PROFILES.moderate.caps).valid).toBe(true));
     it('suggest profile', () => expect(suggestConfigProfile(365, 5000)).toBe('aggressive'));
     it('account profiles', () => expect(getRuntimeAccountProfiles().length).toBeGreaterThanOrEqual(0));
     it('pick account', () => expect(pickAccountIdForLead(42)).toBeTruthy());
-    it('breadcrumbs', () => { const ctx = { session: {} as WorkerContext['session'], dryRun: false, localDate: '2025-01-01', accountId: 'test' }; addBreadcrumb(ctx, 'test'); expect(formatBreadcrumbs(ctx)).toContain('test'); });
+    it('breadcrumbs', () => {
+        const ctx = {
+            session: {} as WorkerContext['session'],
+            dryRun: false,
+            localDate: '2025-01-01',
+            accountId: 'test',
+        };
+        addBreadcrumb(ctx, 'test');
+        expect(formatBreadcrumbs(ctx)).toContain('test');
+    });
     it('outbox parse', () => expect(parseOutboxPayload('{"a":1}').a).toBe(1));
     it('growth budget', () => expect(getAccountGrowthBudget(90).phase).toBeTruthy());
-    it('ramp cap', () => expect(computeNonLinearRampCap({ currentCap: 10, hardMaxCap: 25, accountAgeDays: 60, warmupDays: 60, channel: 'invite', riskAction: 'NORMAL', riskScore: 20, pendingRatio: 0.3, errorRate: 0.05, healthScore: 80, baseDailyIncrease: 1 }).nextCap).toBeGreaterThanOrEqual(1));
+    it('ramp cap', () =>
+        expect(
+            computeNonLinearRampCap({
+                currentCap: 10,
+                hardMaxCap: 25,
+                accountAgeDays: 60,
+                warmupDays: 60,
+                channel: 'invite',
+                riskAction: 'NORMAL',
+                riskScore: 20,
+                pendingRatio: 0.3,
+                errorRate: 0.05,
+                healthScore: 80,
+                baseDailyIncrease: 1,
+            }).nextCap,
+        ).toBeGreaterThanOrEqual(1));
 });

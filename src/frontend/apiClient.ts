@@ -127,12 +127,15 @@ export class DashboardApi {
      * Login via form POST — non espone la API key nella URL.
      * Ritorna: { success, totpRequired, error? }
      */
-    async loginWithCredentials(apiKey: string, totpCode?: string): Promise<{ success: boolean; totpRequired: boolean; error?: string }> {
+    async loginWithCredentials(
+        apiKey: string,
+        totpCode?: string,
+    ): Promise<{ success: boolean; totpRequired: boolean; error?: string }> {
         try {
             const headers = new Headers({ 'Content-Type': 'application/json', 'x-api-key': apiKey });
             const body = totpCode ? JSON.stringify({ totp_code: totpCode }) : '{}';
             const resp = await fetch('/api/auth/session', { method: 'POST', headers, body });
-            const data = await resp.json().catch(() => ({})) as Record<string, unknown>;
+            const data = (await resp.json().catch(() => ({}))) as Record<string, unknown>;
 
             if (resp.ok) {
                 return { success: true, totpRequired: false };
@@ -196,7 +199,11 @@ export class DashboardApi {
                     continue;
                 }
 
-                const err: ApiError = { status: resp.status, message: `HTTP ${resp.status} on ${path}`, retryable: false };
+                const err: ApiError = {
+                    status: resp.status,
+                    message: `HTTP ${resp.status} on ${path}`,
+                    retryable: false,
+                };
                 this._lastError = err;
                 this.setFetchState('error');
                 return fallback;
@@ -275,10 +282,12 @@ export class DashboardApi {
         if (list) params.set('list', list);
         params.set('page', String(page));
         params.set('pageSize', '25');
-        return this.readJson<LeadSearchResponse>(
-            `/api/leads/search?${params.toString()}`,
-            { leads: [], total: 0, page: 1, pageSize: 25 },
-        );
+        return this.readJson<LeadSearchResponse>(`/api/leads/search?${params.toString()}`, {
+            leads: [],
+            total: 0,
+            page: 1,
+            pageSize: 25,
+        });
     }
 
     async getLeadDetail(id: number): Promise<LeadDetailResponse | null> {
@@ -287,7 +296,12 @@ export class DashboardApi {
         return (await resp.json()) as LeadDetailResponse;
     }
 
-    async simulateWhatIf(params: { softInviteCap: number; hardInviteCap: number; softMsgCap: number; hardMsgCap: number }): Promise<Record<string, unknown>> {
+    async simulateWhatIf(params: {
+        softInviteCap: number;
+        hardInviteCap: number;
+        softMsgCap: number;
+        hardMsgCap: number;
+    }): Promise<Record<string, unknown>> {
         try {
             const resp = await this.apiFetch('/api/risk/what-if', {
                 method: 'POST',
@@ -361,10 +375,18 @@ export class DashboardApi {
         };
     }
 
-    async getBlacklist(): Promise<Array<{ id: number; linkedin_url: string | null; company_domain: string | null; reason: string | null; created_at: string }>> {
+    async getBlacklist(): Promise<
+        Array<{
+            id: number;
+            linkedin_url: string | null;
+            company_domain: string | null;
+            reason: string | null;
+            created_at: string;
+        }>
+    > {
         const resp = await this.apiFetch('/api/blacklist');
         if (!resp.ok) return [];
-        const data = await resp.json() as { entries?: unknown[] };
+        const data = (await resp.json()) as { entries?: unknown[] };
         return ensureArray(data.entries ?? data);
     }
 

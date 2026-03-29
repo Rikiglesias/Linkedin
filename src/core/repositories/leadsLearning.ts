@@ -24,7 +24,7 @@ export async function getRecentMessageTexts(leadId: number, limit: number = 10):
          ORDER BY sent_at DESC LIMIT ?`,
         [leadId, limit],
     );
-    return rows.map(r => r.message_text);
+    return rows.map((r) => r.message_text);
 }
 
 export async function countRecentMessageHash(contentHash: string, hoursWindow: number): Promise<number> {

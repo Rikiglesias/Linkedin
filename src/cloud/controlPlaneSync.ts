@@ -10,7 +10,12 @@ import {
 } from '../core/repositories';
 import { getDatabase } from '../db';
 import { logInfo, logWarn } from '../telemetry/logger';
-import { fetchCloudCampaignConfigs, fetchCloudAccountsUpdates, fetchCloudLeadsUpdates, syncSalesNavMembersToCloud } from './supabaseDataClient';
+import {
+    fetchCloudCampaignConfigs,
+    fetchCloudAccountsUpdates,
+    fetchCloudLeadsUpdates,
+    syncSalesNavMembersToCloud,
+} from './supabaseDataClient';
 
 const CONTROL_PLANE_LAST_RUN_KEY = 'control_plane.campaigns.last_run_at';
 const CONTROL_PLANE_LAST_HASH_KEY = 'control_plane.campaigns.last_hash';

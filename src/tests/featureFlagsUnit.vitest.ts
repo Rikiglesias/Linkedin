@@ -18,18 +18,30 @@ describe('abBandit — inferHourBucket boundaries', () => {
 describe('configSchema — validateConfigCaps edge cases', () => {
     it('tutti i cap al minimo (1) → valido', () => {
         const result = validateConfigCaps({
-            softInviteCap: 1, hardInviteCap: 1, weeklyInviteLimit: 1,
-            softMsgCap: 1, hardMsgCap: 1, weeklyMessageLimit: 1,
-            followUpDailyCap: 1, followUpMax: 1, profileViewDailyCap: 1,
+            softInviteCap: 1,
+            hardInviteCap: 1,
+            weeklyInviteLimit: 1,
+            softMsgCap: 1,
+            hardMsgCap: 1,
+            weeklyMessageLimit: 1,
+            followUpDailyCap: 1,
+            followUpMax: 1,
+            profileViewDailyCap: 1,
         });
         expect(result.valid).toBe(true);
     });
 
     it('tutti i cap al massimo → valido', () => {
         const result = validateConfigCaps({
-            softInviteCap: 50, hardInviteCap: 80, weeklyInviteLimit: 300,
-            softMsgCap: 60, hardMsgCap: 100, weeklyMessageLimit: 500,
-            followUpDailyCap: 30, followUpMax: 10, profileViewDailyCap: 150,
+            softInviteCap: 50,
+            hardInviteCap: 80,
+            weeklyInviteLimit: 300,
+            softMsgCap: 60,
+            hardMsgCap: 100,
+            weeklyMessageLimit: 500,
+            followUpDailyCap: 30,
+            followUpMax: 10,
+            profileViewDailyCap: 150,
         });
         expect(result.valid).toBe(true);
     });

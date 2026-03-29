@@ -34,7 +34,12 @@ export async function processHygieneJob(
     }
 
     const cappedExpired = expired.slice(0, HYGIENE_DAILY_WITHDRAW_CAP);
-    await logInfo('hygiene.found_expired_invites', { count: expired.length, capped: cappedExpired.length, cap: HYGIENE_DAILY_WITHDRAW_CAP, accountId: payload.accountId });
+    await logInfo('hygiene.found_expired_invites', {
+        count: expired.length,
+        capped: cappedExpired.length,
+        cap: HYGIENE_DAILY_WITHDRAW_CAP,
+        accountId: payload.accountId,
+    });
     const page = context.session.page;
     const errors: Array<{ leadId: number; message: string }> = [];
     let processedCount = 0;
@@ -80,10 +85,14 @@ export async function processHygieneJob(
                 visionUsed = true;
                 await logWarn('hygiene.vision_fallback.pending', { leadId: lead.id });
                 try {
-                    await visionClick(page, 'Find and click the "Pending" or "In attesa" button on this LinkedIn profile page', {
-                        retries: 2,
-                        postClickDelayMs: 1000,
-                    });
+                    await visionClick(
+                        page,
+                        'Find and click the "Pending" or "In attesa" button on this LinkedIn profile page',
+                        {
+                            retries: 2,
+                            postClickDelayMs: 1000,
+                        },
+                    );
                 } catch (visionError) {
                     if (visionError instanceof OllamaDownError) throw cssError;
                     throw cssError;
@@ -110,10 +119,14 @@ export async function processHygieneJob(
                 visionUsed = true;
                 await logWarn('hygiene.vision_fallback.withdraw_dropdown', { leadId: lead.id });
                 try {
-                    await visionClick(page, 'Find and click the "Withdraw" or "Ritira" option in the open dropdown menu', {
-                        retries: 2,
-                        postClickDelayMs: 1200,
-                    });
+                    await visionClick(
+                        page,
+                        'Find and click the "Withdraw" or "Ritira" option in the open dropdown menu',
+                        {
+                            retries: 2,
+                            postClickDelayMs: 1200,
+                        },
+                    );
                 } catch (visionError) {
                     if (visionError instanceof OllamaDownError) throw cssError;
                     throw cssError;
@@ -138,10 +151,14 @@ export async function processHygieneJob(
                 visionUsed = true;
                 await logWarn('hygiene.vision_fallback.confirm_modal', { leadId: lead.id });
                 try {
-                    await visionClick(page, 'Find and click the primary "Withdraw" or "Ritira" confirmation button in the modal dialog', {
-                        retries: 2,
-                        postClickDelayMs: 1500,
-                    });
+                    await visionClick(
+                        page,
+                        'Find and click the primary "Withdraw" or "Ritira" confirmation button in the modal dialog',
+                        {
+                            retries: 2,
+                            postClickDelayMs: 1500,
+                        },
+                    );
                 } catch (visionError) {
                     if (visionError instanceof OllamaDownError) throw cssError;
                     throw cssError;

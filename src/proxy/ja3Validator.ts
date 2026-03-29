@@ -134,10 +134,12 @@ export async function validateJa3Configuration(): Promise<Ja3ValidationReport> {
         recommendation = `USE_JA3_PROXY=true ma CycleTLS non raggiungibile su porta ${ja3Port}. Avviare CycleTLS o disabilitare USE_JA3_PROXY`;
     } else if (hasProxy && !useJa3Proxy) {
         status = 'GAP';
-        recommendation = 'Proxy configurato ma JA3 spoofing disabilitato — LinkedIn può rilevare incoerenza UA↔TLS fingerprint. Configurare CycleTLS e abilitare USE_JA3_PROXY';
+        recommendation =
+            'Proxy configurato ma JA3 spoofing disabilitato — LinkedIn può rilevare incoerenza UA↔TLS fingerprint. Configurare CycleTLS e abilitare USE_JA3_PROXY';
     } else {
         status = 'DIRECT';
-        recommendation = 'Connessione diretta senza proxy — JA3 spoofing non applicabile. Configurare proxy residenziali per anti-ban';
+        recommendation =
+            'Connessione diretta senza proxy — JA3 spoofing non applicabile. Configurare proxy residenziali per anti-ban';
     }
 
     const report: Ja3ValidationReport = {

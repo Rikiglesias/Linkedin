@@ -36,7 +36,7 @@ export async function isFeatureEnabled(flagName: string): Promise<boolean> {
     const dbValue = await getRuntimeFlag(`ff:${flagName}`).catch(() => null);
     if (dbValue === 'true') return true;
     if (dbValue === 'false') return false;
-    const definition = FEATURE_FLAGS.find(f => f.name === flagName);
+    const definition = FEATURE_FLAGS.find((f) => f.name === flagName);
     return definition?.defaultEnabled ?? false;
 }
 

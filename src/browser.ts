@@ -23,10 +23,7 @@ export {
     performDecoyAction,
     performDecoyBurst,
 } from './browser/humanBehavior';
-export {
-    runSelectorCanaryDetailed,
-    runSelectorCanary,
-} from './browser/selectorCanary';
+export { runSelectorCanaryDetailed, runSelectorCanary } from './browser/selectorCanary';
 export type { SelectorCanaryStepResult, SelectorCanaryReport } from './browser/selectorCanary';
 
 export { clickWithFallback, waitForSelectorWithFallback, typeWithFallback } from './browser/uiFallback';

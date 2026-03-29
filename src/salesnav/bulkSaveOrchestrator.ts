@@ -1,15 +1,15 @@
 import type { Page } from 'playwright';
 import { createHash } from 'crypto';
-import {
-    detectChallenge,
-    dismissKnownOverlays,
-    humanDelay,
-    isLoggedIn,
-} from '../browser';
+import { detectChallenge, dismissKnownOverlays, humanDelay, isLoggedIn } from '../browser';
 import { config } from '../config';
 import { cleanText } from '../utils/text';
 import { attemptChallengeResolution } from '../workers/challengeHandler';
-import { pauseInputBlock, resumeInputBlock, removeAllOverlays, releaseMouseConfinement } from '../browser/humanBehavior';
+import {
+    pauseInputBlock,
+    resumeInputBlock,
+    removeAllOverlays,
+    releaseMouseConfinement,
+} from '../browser/humanBehavior';
 import {
     isPageClosedError,
     getSafeMaxSearches,
@@ -35,10 +35,7 @@ import {
     setRuntimeFlag,
 } from '../core/repositories';
 import type { SalesNavSyncRunRecord } from '../core/repositories.types';
-import {
-    visionReadTotalResults,
-    visionVerify,
-} from './visionNavigator';
+import { visionReadTotalResults, visionVerify } from './visionNavigator';
 import { checkDuplicates, extractProfileUrlsFromPage, saveExtractedProfiles } from './salesnavDedup';
 import { computerUseTask } from './computerUse';
 import {
@@ -64,11 +61,7 @@ import {
     runAntiDetectionNoise,
 } from './bulkSavePagination';
 import { setListFoundInSession } from './bulkSaveState';
-import {
-    clickSelectAll,
-    openSaveToListDialog,
-    chooseTargetList,
-} from './bulkSavePageActions';
+import { clickSelectAll, openSaveToListDialog, chooseTargetList } from './bulkSavePageActions';
 
 export const SEARCHES_URL = 'https://www.linkedin.com/sales/search/saved-searches';
 
@@ -127,14 +120,12 @@ async function waitForManualLogin(page: Page, context: string): Promise<void> {
             console.log(`[${context}] Ancora in attesa del login... (${remaining}s rimanenti)`);
         }
 
-        throw new Error(
-            `Timeout: login manuale non completato entro 3 minuti. URL: ${page.url()}`,
-        );
+        throw new Error(`Timeout: login manuale non completato entro 3 minuti. URL: ${page.url()}`);
     } finally {
         setInputBlockSuspended(page, false);
         // Re-inject overlays COMPLETAMENTE — la pagina è cambiata durante il login
-        await reInjectOverlays(page).catch(() => { });
-        await dismissKnownOverlays(page).catch(() => { });
+        await reInjectOverlays(page).catch(() => {});
+        await dismissKnownOverlays(page).catch(() => {});
         console.log(`[${context}] Overlay e input-block riattivati.`);
     }
 }
@@ -157,7 +148,10 @@ async function waitForSearchResultsReady(page: Page, timeoutMs: number = 18_000)
             return true;
         } catch {
             // Fallback 2: ci sono link a profili SalesNav (pagina caricata, UI diversa)
-            const leadLinks = await page.locator('a[href*="/sales/lead/"], a[href*="/sales/people/"]').count().catch(() => 0);
+            const leadLinks = await page
+                .locator('a[href*="/sales/lead/"], a[href*="/sales/people/"]')
+                .count()
+                .catch(() => 0);
             if (leadLinks > 0) return true;
             // Fallback 3: cerca testo "Select all" o "Seleziona tutto" nel DOM
             const hasText = await findVisibleClickTarget(page, ['select all', 'seleziona tutto']);
@@ -178,7 +172,6 @@ export type {
 
 const ChallengeDetectedError = BulkSaveChallengeDetectedError;
 
-
 function normalizeSearchName(value: string | null | undefined): string {
     return cleanText(value).toLowerCase();
 }
@@ -188,7 +181,6 @@ function normalizeSearchName(value: string | null | undefined): string {
 // getViewButtonLocator, hasLocator, locatorBoundingBox, buildClipFromBox,
 // buildClipAroundLocator, reInjectOverlays, findVisibleClickTarget,
 // smartClick, safeVisionClick, visionNavigationStep
-
 
 async function navigateToSavedSearches(page: Page): Promise<void> {
     // Helper: siamo nell'area Sales Navigator? (URL deve contenere /sales/)
@@ -202,7 +194,10 @@ async function navigateToSavedSearches(page: Page): Promise<void> {
         if (url.includes('/saved-searches') || url.includes('/saved_searches')) return true;
         // Solo su /sales/search* i bottoni View indicano ricerche salvate (non sulla home)
         if (!url.includes('/sales/search')) return false;
-        const viewCount = await page.locator(VIEW_SAVED_SEARCH_SELECTOR).count().catch(() => 0);
+        const viewCount = await page
+            .locator(VIEW_SAVED_SEARCH_SELECTOR)
+            .count()
+            .catch(() => 0);
         return viewCount > 0;
     };
 
@@ -236,7 +231,9 @@ async function navigateToSavedSearches(page: Page): Promise<void> {
             navigatedViaNbar = true;
             console.log('[AI-NAV] Navigato a SalesNav dalla navbar LinkedIn.');
         }
-    } catch { /* fallback a goto diretto */ }
+    } catch {
+        /* fallback a goto diretto */
+    }
     if (!navigatedViaNbar) {
         await page.goto(salesNavHome, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     }
@@ -270,8 +267,8 @@ async function navigateToSavedSearches(page: Page): Promise<void> {
         if (!isOnSalesNav()) {
             throw new Error(
                 'Impossibile accedere a Sales Navigator. ' +
-                'Verifica che la sessione LinkedIn sia attiva e che l\'account abbia una licenza Sales Navigator. ' +
-                `URL attuale: ${page.url()}`,
+                    "Verifica che la sessione LinkedIn sia attiva e che l'account abbia una licenza Sales Navigator. " +
+                    `URL attuale: ${page.url()}`,
             );
         }
     }
@@ -366,9 +363,14 @@ async function navigateToSavedSearches(page: Page): Promise<void> {
     }
 
     // ── Step 3: Verifica finale — aspetta i bottoni View/Visualizza ──
-    const viewReady = await page.locator(VIEW_SAVED_SEARCH_SELECTOR).first()
+    const viewReady = await page
+        .locator(VIEW_SAVED_SEARCH_SELECTOR)
+        .first()
         .waitFor({ state: 'visible', timeout: 15_000 })
-        .then(() => true, () => false);
+        .then(
+            () => true,
+            () => false,
+        );
 
     if (!viewReady) {
         await page.waitForLoadState('domcontentloaded', { timeout: 10_000 }).catch(() => null);
@@ -385,7 +387,9 @@ export async function extractSavedSearches(page: Page): Promise<SavedSearchDescr
     // NOTE: No named const/function inside page.evaluate — tsx keepNames adds __name which breaks browser context
     const rows = await page.evaluate(() => {
         const viewControlRe = /^(view|view results|visualizza)$/i;
-        const controls = Array.from(document.querySelectorAll('button, a')) as Array<HTMLButtonElement | HTMLAnchorElement>;
+        const controls = Array.from(document.querySelectorAll('button, a')) as Array<
+            HTMLButtonElement | HTMLAnchorElement
+        >;
         return controls
             .filter((control) => viewControlRe.test((control.innerText || control.textContent || '').trim()))
             .map((control, index) => {
@@ -413,8 +417,6 @@ export async function extractSavedSearches(page: Page): Promise<SavedSearchDescr
     }));
 }
 
-
-
 async function ensureNoChallenge(page: Page): Promise<void> {
     if (page.isClosed()) {
         throw new Error('La pagina o il browser si sono chiusi durante Sales Navigator bulk save');
@@ -434,10 +436,24 @@ async function ensureNoChallenge(page: Page): Promise<void> {
 
 async function verifyVisionSurface(page: Page): Promise<void> {
     const currentUrl = page.url().toLowerCase();
-    const bodyText = ((await page.locator('body').textContent().catch(() => '')) ?? '').toLowerCase();
-    const viewButtons = await page.locator(VIEW_SAVED_SEARCH_SELECTOR).count().catch(() => 0);
-    const selectAllControls = await page.locator(SELECT_ALL_SELECTOR).count().catch(() => 0);
-    const saveToListControls = await page.locator(SAVE_TO_LIST_SELECTOR).count().catch(() => 0);
+    const bodyText = (
+        (await page
+            .locator('body')
+            .textContent()
+            .catch(() => '')) ?? ''
+    ).toLowerCase();
+    const viewButtons = await page
+        .locator(VIEW_SAVED_SEARCH_SELECTOR)
+        .count()
+        .catch(() => 0);
+    const selectAllControls = await page
+        .locator(SELECT_ALL_SELECTOR)
+        .count()
+        .catch(() => 0);
+    const saveToListControls = await page
+        .locator(SAVE_TO_LIST_SELECTOR)
+        .count()
+        .catch(() => 0);
 
     const savedSearchesDomReady =
         currentUrl.includes('/sales/search/saved-searches') &&
@@ -490,7 +506,10 @@ async function clickSavedSearchView(page: Page, search: SavedSearchDescriptor, d
 
     await humanDelay(page, 800, 1_400);
     await page.waitForLoadState('domcontentloaded', { timeout: 15_000 }).catch((err) => {
-        console.warn('[WARN] domcontentloaded timeout dopo click ricerca salvata:', err instanceof Error ? err.message : String(err));
+        console.warn(
+            '[WARN] domcontentloaded timeout dopo click ricerca salvata:',
+            err instanceof Error ? err.message : String(err),
+        );
     });
     // Overlays auto-injected via 'load' event
 
@@ -500,10 +519,8 @@ async function clickSavedSearchView(page: Page, search: SavedSearchDescriptor, d
     }
 }
 
-
 // Azioni pagina (clickSelectAll, openSaveToListDialog, verifyToast, chooseTargetList, etc.)
 // estratte in bulkSavePageActions.ts (A17)
-
 
 /**
  * Reads current page number and total pages from the SalesNav pagination bar.
@@ -730,9 +747,9 @@ async function preSyncListToDb(
         const cuResult = await computerUseTask(
             page,
             `You are on a LinkedIn Sales Navigator page showing a list of Lead Lists. ` +
-            `Find the list named "${targetListName}" and click on it to OPEN it. ` +
-            `Click directly on the list name text link. If not visible, scroll down. ` +
-            `The current URL is: ${page.url()}. After opening, the URL should change to include a list ID.`,
+                `Find the list named "${targetListName}" and click on it to OPEN it. ` +
+                `Click directly on the list name text link. If not visible, scroll down. ` +
+                `The current URL is: ${page.url()}. After opening, the URL should change to include a list ID.`,
             { maxTurns: 6 },
         );
         if (cuResult.success) {
@@ -753,7 +770,10 @@ async function preSyncListToDb(
 
     // Wait for list page to load
     await page.waitForLoadState('domcontentloaded', { timeout: 15_000 }).catch((err) => {
-        console.warn('[WARN] domcontentloaded timeout dopo click lista:', err instanceof Error ? err.message : String(err));
+        console.warn(
+            '[WARN] domcontentloaded timeout dopo click lista:',
+            err instanceof Error ? err.message : String(err),
+        );
     });
     await humanDelay(page, 1_500, 2_500);
     await dismissTransientUi(page);
@@ -778,11 +798,21 @@ async function preSyncListToDb(
         const nameVariantsRetry = [targetListName];
         if (targetListName.length > 25) nameVariantsRetry.push(targetListName.substring(0, 25));
         for (let i = 0; i < retryCount; i++) {
-            const text = ((await retryAnchor.nth(i).textContent({ timeout: 3_000 }).catch(() => '')) ?? '').trim().toLowerCase();
+            const text = (
+                (await retryAnchor
+                    .nth(i)
+                    .textContent({ timeout: 3_000 })
+                    .catch(() => '')) ?? ''
+            )
+                .trim()
+                .toLowerCase();
             if (nameVariantsRetry.some((v) => text.includes(v.toLowerCase()))) {
                 await pauseInputBlock(page);
                 try {
-                    await retryAnchor.nth(i).scrollIntoViewIfNeeded({ timeout: 3_000 }).catch(() => null);
+                    await retryAnchor
+                        .nth(i)
+                        .scrollIntoViewIfNeeded({ timeout: 3_000 })
+                        .catch(() => null);
                     await humanDelay(page, 300, 600);
                     await retryAnchor.nth(i).click({ timeout: 5_000, force: true });
                 } finally {
@@ -839,20 +869,16 @@ async function preSyncListToDb(
         const inserted = await saveExtractedProfiles(
             targetListName,
             profiles,
-            0,         // runId = 0 per pre-sync
-            0,         // searchIndex = 0
+            0, // runId = 0 per pre-sync
+            0, // searchIndex = 0
             pageNum,
         );
         totalInserted += inserted;
 
         // Log progress con paginazione
         const paginationInfo = await readPaginationInfo(page);
-        const pageLabel = paginationInfo
-            ? `${paginationInfo.current}/${paginationInfo.total}`
-            : `${pageNum}`;
-        console.log(
-            `[PRE-SYNC] Pagina ${pageLabel}: ${profiles.length} profili estratti, ${inserted} nuovi nel DB`,
-        );
+        const pageLabel = paginationInfo ? `${paginationInfo.current}/${paginationInfo.total}` : `${pageNum}`;
+        console.log(`[PRE-SYNC] Pagina ${pageLabel}: ${profiles.length} profili estratti, ${inserted} nuovi nel DB`);
 
         // Ultima pagina?
         if (paginationInfo && paginationInfo.current >= paginationInfo.total) {
@@ -877,14 +903,16 @@ async function preSyncListToDb(
     }
 
     console.log(
-        `\n[PRE-SYNC] Completato: ${totalInserted} nuovi membri nel DB` +
-        ` su ${totalExtracted} totali estratti\n`,
+        `\n[PRE-SYNC] Completato: ${totalInserted} nuovi membri nel DB` + ` su ${totalExtracted} totali estratti\n`,
     );
 
     return { synced: totalInserted, total: totalExtracted, listUrl };
 }
 
-export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveOptions): Promise<SalesNavBulkSaveReport> {
+export async function runSalesNavBulkSave(
+    page: Page,
+    options: SalesNavBulkSaveOptions,
+): Promise<SalesNavBulkSaveReport> {
     // Reset cache lista — ogni sessione parte da zero
     setListFoundInSession(false);
 
@@ -902,7 +930,9 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
         }
     } catch (cleanupErr) {
         // A04: zombie cleanup fallito — run zombie resteranno in stato RUNNING
-        console.warn(`[A04] Zombie run cleanup failed: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`);
+        console.warn(
+            `[A04] Zombie run cleanup failed: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`,
+        );
     }
 
     const report = buildInitialReport(options);
@@ -924,7 +954,11 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
         // Guard: registra il handler una sola volta per Page (evita accumulo se chiamato 2x)
         if (!_loadHandlerRegistered.has(page)) {
             _loadHandlerRegistered.add(page);
-            page.on('load', () => { void reInjectOverlays(page).then(() => dismissKnownOverlays(page)).catch(() => null); });
+            page.on('load', () => {
+                void reInjectOverlays(page)
+                    .then(() => dismissKnownOverlays(page))
+                    .catch(() => null);
+            });
         }
 
         // ── PRE-SYNC: scarica i membri attuali della lista target dal sito e salvali nel DB ──
@@ -939,13 +973,17 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                         const elapsed = Date.now() - Date.parse(lastPreSyncRaw);
                         const elapsedHours = elapsed / (1000 * 60 * 60);
                         if (Number.isFinite(elapsedHours) && elapsedHours < 2) {
-                            console.log(`[PRE-SYNC] Skip: ultimo sync ${elapsedHours.toFixed(1)}h fa (< 2h). Usa --no-resume per forzare.`);
+                            console.log(
+                                `[PRE-SYNC] Skip: ultimo sync ${elapsedHours.toFixed(1)}h fa (< 2h). Usa --no-resume per forzare.`,
+                            );
                             skipPreSync = true;
                         }
                     }
                 } catch (preSyncErr) {
                     // A04: pre-sync check fallito — procedi con pre-sync (comportamento safe)
-                    console.warn(`[A04] Pre-sync elapsed check failed: ${preSyncErr instanceof Error ? preSyncErr.message : String(preSyncErr)}`);
+                    console.warn(
+                        `[A04] Pre-sync elapsed check failed: ${preSyncErr instanceof Error ? preSyncErr.message : String(preSyncErr)}`,
+                    );
                 }
             }
             const preSync = skipPreSync
@@ -954,9 +992,13 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
             if (preSync.synced > 0) {
                 console.log(`[PRE-SYNC] DB aggiornato con ${preSync.synced} membri — il dedup è ora affidabile.\n`);
                 // H03: Salva timestamp per skip pre-sync nelle prossime 2h
-                await setRuntimeFlag(`presync_last_run:${options.targetListName}`, new Date().toISOString()).catch(() => null);
+                await setRuntimeFlag(`presync_last_run:${options.targetListName}`, new Date().toISOString()).catch(
+                    () => null,
+                );
             } else if (preSync.listUrl === null) {
-                console.warn(`[PRE-SYNC] ATTENZIONE: lista "${options.targetListName}" non trovata su LinkedIn — dedup potrebbe essere incompleto.\n`);
+                console.warn(
+                    `[PRE-SYNC] ATTENZIONE: lista "${options.targetListName}" non trovata su LinkedIn — dedup potrebbe essere incompleto.\n`,
+                );
             }
         }
 
@@ -982,11 +1024,15 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
 
         if (discoveredSearches.length === 0) {
             const currentUrl = page.url().toLowerCase();
-            const bodyText = ((await page.locator('body').textContent().catch(() => '')) ?? '').toLowerCase();
+            const bodyText = (
+                (await page
+                    .locator('body')
+                    .textContent()
+                    .catch(() => '')) ?? ''
+            ).toLowerCase();
             console.log(`[SEARCH] Page body sample: "${bodyText.substring(0, 200)}"`);
             const isSavedSearchesPage =
-                currentUrl.includes('/sales/search/saved-searches') &&
-                /saved searches|ricerche salvate/.test(bodyText);
+                currentUrl.includes('/sales/search/saved-searches') && /saved searches|ricerche salvate/.test(bodyText);
 
             if (isSavedSearchesPage) {
                 throw new Error(
@@ -1009,7 +1055,8 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
             );
             if (filteredSearches.length === 0) {
                 filteredSearches = discoveredSearches.filter(
-                    (search) => normalizeSearchName(search.name).includes(normalizedRequestedSearchName) ||
+                    (search) =>
+                        normalizeSearchName(search.name).includes(normalizedRequestedSearchName) ||
                         normalizedRequestedSearchName.includes(normalizeSearchName(search.name)),
                 );
             }
@@ -1040,8 +1087,8 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                         }
                         // Fuzzy solo se il frammento è lungo abbastanza (>10 char)
                         if (reqName.length > 10) {
-                            const fuzzy = discoveredSearches.filter(
-                                (search) => normalizeSearchName(search.name).includes(reqName),
+                            const fuzzy = discoveredSearches.filter((search) =>
+                                normalizeSearchName(search.name).includes(reqName),
                             );
                             filteredSearches.push(...fuzzy);
                         }
@@ -1054,7 +1101,9 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                         return true;
                     });
                     if (filteredSearches.length > 0) {
-                        console.log(`[SEARCH] Ricerche selezionate per multi-match (${filteredSearches.length}/${discoveredSearches.length}):`);
+                        console.log(
+                            `[SEARCH] Ricerche selezionate per multi-match (${filteredSearches.length}/${discoveredSearches.length}):`,
+                        );
                         for (const s of filteredSearches) {
                             console.log(`  → "${s.name}"`);
                         }
@@ -1071,8 +1120,8 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                 );
                 // 2. Fuzzy: il nome della ricerca contiene la query
                 if (filteredSearches.length === 0) {
-                    filteredSearches = discoveredSearches.filter(
-                        (search) => normalizeSearchName(search.name).includes(normalizedRequestedSearchName),
+                    filteredSearches = discoveredSearches.filter((search) =>
+                        normalizeSearchName(search.name).includes(normalizedRequestedSearchName),
                     );
                     if (filteredSearches.length > 0) {
                         console.log(`[SEARCH] Match fuzzy (contiene "${options.searchName}"):`);
@@ -1083,8 +1132,8 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                 }
                 // 3. Fuzzy: la query contiene il nome della ricerca
                 if (filteredSearches.length === 0) {
-                    filteredSearches = discoveredSearches.filter(
-                        (search) => normalizedRequestedSearchName.includes(normalizeSearchName(search.name)),
+                    filteredSearches = discoveredSearches.filter((search) =>
+                        normalizedRequestedSearchName.includes(normalizeSearchName(search.name)),
                     );
                     if (filteredSearches.length > 0) {
                         console.log(`[SEARCH] Match fuzzy (contenuto in "${options.searchName}"):`);
@@ -1101,7 +1150,7 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
         if (normalizedRequestedSearchName.length > 0 && filteredSearches.length === 0) {
             throw new Error(
                 `Ricerca salvata non trovata: "${options.searchName}". ` +
-                `Ricerche disponibili: ${discoveredSearches.map((s) => `"${s.name}"`).join(', ')}`,
+                    `Ricerche disponibili: ${discoveredSearches.map((s) => `"${s.name}"`).join(', ')}`,
             );
         }
 
@@ -1282,14 +1331,15 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                     : safeMaxPages;
 
             // Log di contesto: piano di lavoro per questa ricerca
-            const totalResultsLabel = searchReport.totalResultsDetected !== null
-                ? `${searchReport.totalResultsDetected} risultati (≈${Math.ceil(searchReport.totalResultsDetected / 25)} pagine)`
-                : `pagine stimate: max ${searchMaxPages}`;
+            const totalResultsLabel =
+                searchReport.totalResultsDetected !== null
+                    ? `${searchReport.totalResultsDetected} risultati (≈${Math.ceil(searchReport.totalResultsDetected / 25)} pagine)`
+                    : `pagine stimate: max ${searchMaxPages}`;
             console.log(
                 `\n[RICERCA] "${search.name}" — ${totalResultsLabel}` +
-                ` — partenza da pagina ${initialPageNumber}` +
-                ` — limite: ${searchMaxPages} pagine` +
-                ` — lista target: "${options.targetListName}"`,
+                    ` — partenza da pagina ${initialPageNumber}` +
+                    ` — limite: ${searchMaxPages} pagine` +
+                    ` — lista target: "${options.targetListName}"`,
             );
 
             let consecutiveFailedPages = 0;
@@ -1323,8 +1373,11 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                 // ── FASE 0: AI health check — ogni 8 pagine l'AI verifica che non ci siano segnali sospetti ──
                 // Ridotto da 3 a 8: un power user SalesNav non si ferma ogni 3 pagine.
                 // Circuit breaker: dopo MAX_HEALTH_CHECK_FAILURES fallimenti consecutivi, disabilita per la sessione.
-                if (pageNumber > 1 && (pageNumber - 1) % 8 === 0 &&
-                    consecutiveHealthCheckFailures < MAX_HEALTH_CHECK_FAILURES) {
+                if (
+                    pageNumber > 1 &&
+                    (pageNumber - 1) % 8 === 0 &&
+                    consecutiveHealthCheckFailures < MAX_HEALTH_CHECK_FAILURES
+                ) {
                     try {
                         const healthCheck = await aiCheckPageHealth(page);
                         consecutiveHealthCheckFailures = 0;
@@ -1338,7 +1391,9 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                     } catch {
                         consecutiveHealthCheckFailures++;
                         if (consecutiveHealthCheckFailures >= MAX_HEALTH_CHECK_FAILURES) {
-                            console.warn('[AI-WARN] Health check Vision disabilitato per il resto della sessione (Ollama down)');
+                            console.warn(
+                                '[AI-WARN] Health check Vision disabilitato per il resto della sessione (Ollama down)',
+                            );
                         }
                     }
                 }
@@ -1356,7 +1411,7 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                 let leadsOnPage = scrollResult.count;
 
                 // Retry se pochi lead trovati (possibile rendering incompleto)
-                const isLikelyLastPage = remaining <= 0 || (paginationInfo?.current === paginationInfo?.total);
+                const isLikelyLastPage = remaining <= 0 || paginationInfo?.current === paginationInfo?.total;
                 if (leadsOnPage < 15 && leadsOnPage > 0 && !isLikelyLastPage) {
                     console.warn(`[RETRY] Solo ${leadsOnPage}/25 lead — scroll-to-top + re-scroll...`);
                     await humanDelay(page, 800, 1500);
@@ -1368,7 +1423,7 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                         leadsOnPage = retryResult.count;
                         // Merge dei profili dal retry
                         for (const p of retryResult.profiles) {
-                            if (!scrollResult.profiles.some(sp => sp.leadId === p.leadId)) {
+                            if (!scrollResult.profiles.some((sp) => sp.leadId === p.leadId)) {
                                 scrollResult.profiles.push(p);
                             }
                         }
@@ -1377,41 +1432,45 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
 
                 console.log(
                     `[PAGE] Pagina ${currentDisplayPage}/${totalPagesDetected}` +
-                    ` — ${leadsOnPage} lead trovati dopo scroll` +
-                    (remaining > 0 ? ` — ${remaining} pagine rimanenti` : ' — ultima pagina'),
+                        ` — ${leadsOnPage} lead trovati dopo scroll` +
+                        (remaining > 0 ? ` — ${remaining} pagine rimanenti` : ' — ultima pagina'),
                 );
 
                 // ── FASE 3: Usa profili raccolti durante scroll, fallback a extractProfileUrlsFromPage ──
                 // I profili dallo scroll sono più affidabili: raccolti card per card durante lo scroll,
                 // non dopo scroll-to-top dove il virtual scroller ha distrutto card fuori viewport.
-                const extractedProfiles = scrollResult.profiles.length >= 15
-                    ? scrollResult.profiles.map(p => {
-                        const name = `${p.firstName} ${p.lastName}`.trim();
-                        const company = p.company ?? '';
-                        const nameCompanyHash = name.length > 0 && company.length > 0
-                            ? createHash('sha1').update(
-                                `${name.toLowerCase().trim().replace(/\s+/g, ' ')}|${company.toLowerCase().trim().replace(/\s+/g, ' ')}`
-                            ).digest('hex')
-                            : '';
-                        return {
-                            salesnavUrl: null,
-                            linkedinUrl: p.linkedinUrl || null,
-                            name,
-                            firstName: p.firstName,
-                            lastName: p.lastName,
-                            company,
-                            title: p.title ?? '',
-                            location: p.location ?? '',
-                            nameCompanyHash,
-                        };
-                    })
-                    : await extractProfileUrlsFromPage(page);
+                const extractedProfiles =
+                    scrollResult.profiles.length >= 15
+                        ? scrollResult.profiles.map((p) => {
+                              const name = `${p.firstName} ${p.lastName}`.trim();
+                              const company = p.company ?? '';
+                              const nameCompanyHash =
+                                  name.length > 0 && company.length > 0
+                                      ? createHash('sha1')
+                                            .update(
+                                                `${name.toLowerCase().trim().replace(/\s+/g, ' ')}|${company.toLowerCase().trim().replace(/\s+/g, ' ')}`,
+                                            )
+                                            .digest('hex')
+                                      : '';
+                              return {
+                                  salesnavUrl: null,
+                                  linkedinUrl: p.linkedinUrl || null,
+                                  name,
+                                  firstName: p.firstName,
+                                  lastName: p.lastName,
+                                  company,
+                                  title: p.title ?? '',
+                                  location: p.location ?? '',
+                                  nameCompanyHash,
+                              };
+                          })
+                        : await extractProfileUrlsFromPage(page);
 
                 // Warning discrepanza scroll vs extract
                 if (extractedProfiles.length > 0 && extractedProfiles.length < leadsOnPage * 0.6) {
                     console.warn(
                         `[WARN] Discrepanza: ${leadsOnPage} lead IDs dallo scroll,` +
-                        ` ma solo ${extractedProfiles.length} profili estratti dal DOM (virtual scroller).`,
+                            ` ma solo ${extractedProfiles.length} profili estratti dal DOM (virtual scroller).`,
                     );
                 }
 
@@ -1421,8 +1480,8 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
 
                 console.log(
                     `[ANALISI] ${extractedProfiles.length} profili estratti` +
-                    ` — ${dedupResult.newProfiles} nuovi, ${dedupResult.alreadySaved} già nel DB` +
-                    (dedupResult.fuzzyWarnings > 0 ? `, ${dedupResult.fuzzyWarnings} fuzzy match` : ''),
+                        ` — ${dedupResult.newProfiles} nuovi, ${dedupResult.alreadySaved} già nel DB` +
+                        (dedupResult.fuzzyWarnings > 0 ? `, ${dedupResult.fuzzyWarnings} fuzzy match` : ''),
                 );
 
                 // Log dettagliato dei primi profili estratti (max 5)
@@ -1431,10 +1490,10 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                     const p = extractedProfiles[pi];
                     console.log(
                         `  [${pi + 1}] ${p.firstName} ${p.lastName}` +
-                        (p.title ? ` | ${p.title}` : '') +
-                        (p.company ? ` @ ${p.company}` : '') +
-                        (p.location ? ` | ${p.location}` : '') +
-                        (p.linkedinUrl ? ` | ${p.linkedinUrl}` : ''),
+                            (p.title ? ` | ${p.title}` : '') +
+                            (p.company ? ` @ ${p.company}` : '') +
+                            (p.location ? ` | ${p.location}` : '') +
+                            (p.linkedinUrl ? ` | ${p.linkedinUrl}` : ''),
                     );
                 }
                 if (extractedProfiles.length > sampleSize) {
@@ -1470,24 +1529,30 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                     if (consecutiveAllDuplicatePages >= MAX_CONSECUTIVE_DUPLICATE_PAGES) {
                         console.log(
                             `[EARLY-STOP] ${MAX_CONSECUTIVE_DUPLICATE_PAGES} pagine consecutive con tutti duplicati` +
-                            ` — ricerca "${search.name}" probabilmente esaurita. Passo alla prossima.`,
+                                ` — ricerca "${search.name}" probabilmente esaurita. Passo alla prossima.`,
                         );
                         break;
                     }
 
                     // Determina se continuare o fermarsi
                     if (totalPagesDetected <= 1 || remaining <= 0) {
-                        console.log(`[DONE] Ricerca "${search.name}" completata — tutte le ${totalPagesDetected} pagine controllate.`);
+                        console.log(
+                            `[DONE] Ricerca "${search.name}" completata — tutte le ${totalPagesDetected} pagine controllate.`,
+                        );
                         break;
                     }
                     if (pageNumber >= searchMaxPages) {
-                        console.log(`[DONE] Ricerca "${search.name}" — raggiunto limite max pagine (${searchMaxPages}).`);
+                        console.log(
+                            `[DONE] Ricerca "${search.name}" — raggiunto limite max pagine (${searchMaxPages}).`,
+                        );
                         break;
                     }
                     // Verifica che esista un bottone Next prima di cliccare
                     const nextAvailable = await hasNextPage(page);
                     if (!nextAvailable) {
-                        console.log(`[DONE] Ricerca "${search.name}" completata — nessun bottone Next (${totalPagesDetected} pagine totali).`);
+                        console.log(
+                            `[DONE] Ricerca "${search.name}" completata — nessun bottone Next (${totalPagesDetected} pagine totali).`,
+                        );
                         break;
                     }
                     const movedSkip = await clickNextPage(page, false);
@@ -1497,7 +1562,7 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                     }
                     // Anti-detection: delay variabile tra pagine skippate
                     await humanDelay(page, 1_000, 3_000);
-                    if (Math.random() < 0.20) {
+                    if (Math.random() < 0.2) {
                         await humanDelay(page, 2_000, 5_000);
                     }
                     continue;
@@ -1507,24 +1572,38 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                 // LinkedIn ha hard limit 2500 lead/lista. Superato → fail silenzioso o errore UI.
                 try {
                     const { getDatabase: getDb } = await import('../db');
-                    const memberCountRow = await getDb().then(db => db.get<{ cnt: number }>(
-                        'SELECT COUNT(*) as cnt FROM salesnav_list_members WHERE list_name = ?',
-                        [options.targetListName],
-                    ));
+                    const memberCountRow = await getDb().then((db) =>
+                        db.get<{ cnt: number }>(
+                            'SELECT COUNT(*) as cnt FROM salesnav_list_members WHERE list_name = ?',
+                            [options.targetListName],
+                        ),
+                    );
                     const currentMembers = memberCountRow?.cnt ?? 0;
                     if (currentMembers + dedupResult.newProfiles > 2400) {
-                        console.warn(`[SAVE] ⚠️ Lista "${options.targetListName}" ha ${currentMembers} membri + ${dedupResult.newProfiles} nuovi = ${currentMembers + dedupResult.newProfiles} — vicino al limite 2500. Rischio fallimento salvataggio LinkedIn.`);
+                        console.warn(
+                            `[SAVE] ⚠️ Lista "${options.targetListName}" ha ${currentMembers} membri + ${dedupResult.newProfiles} nuovi = ${currentMembers + dedupResult.newProfiles} — vicino al limite 2500. Rischio fallimento salvataggio LinkedIn.`,
+                        );
                         if (currentMembers >= 2450) {
-                            console.error(`[SAVE] ❌ Lista "${options.targetListName}" ha ${currentMembers} membri — troppo vicino al limite 2500. Skip salvataggio per evitare errore LinkedIn.`);
+                            console.error(
+                                `[SAVE] ❌ Lista "${options.targetListName}" ha ${currentMembers} membri — troppo vicino al limite 2500. Skip salvataggio per evitare errore LinkedIn.`,
+                            );
                             if (run) {
-                                await addSyncItem({ runId: run.id, searchIndex: absoluteIndex, pageNumber, leadsOnPage, status: 'SKIPPED' }).catch(() => null);
+                                await addSyncItem({
+                                    runId: run.id,
+                                    searchIndex: absoluteIndex,
+                                    pageNumber,
+                                    leadsOnPage,
+                                    status: 'SKIPPED',
+                                }).catch(() => null);
                             }
                             continue;
                         }
                     }
                 } catch (limitErr) {
                     // A04: member limit check fallito — procedi comunque (meglio che bloccare)
-                    console.warn(`[A04] List member limit check failed: ${limitErr instanceof Error ? limitErr.message : String(limitErr)}`);
+                    console.warn(
+                        `[A04] List member limit check failed: ${limitErr instanceof Error ? limitErr.message : String(limitErr)}`,
+                    );
                 }
 
                 // ── FASE 5: Ci sono lead nuovi — seleziona tutto e salva nella lista ──
@@ -1598,7 +1677,9 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
                         break;
                     }
                     if (pageNumber >= searchMaxPages) {
-                        console.log(`[DONE] Ricerca "${search.name}" completata — raggiunto limite max pagine (${searchMaxPages}).`);
+                        console.log(
+                            `[DONE] Ricerca "${search.name}" completata — raggiunto limite max pagine (${searchMaxPages}).`,
+                        );
                         break;
                     }
                     const moved = await clickNextPage(page, false);
@@ -1762,14 +1843,13 @@ export async function runSalesNavBulkSave(page: Page, options: SalesNavBulkSaveO
         // Final summary log
         console.log(
             `\n[SUMMARY] Stato: ${report.status}` +
-            ` | Ricerche: ${report.searchesProcessed}/${report.searchesPlanned}` +
-            ` | Pagine processate: ${report.pagesProcessed}` +
-            ` | Pagine skippate (già nel DB): ${report.pagesSkippedAllSaved}` +
-            ` | Lead salvati: ${report.totalLeadsSaved}` +
-            (report.lastError ? ` | Errore: ${report.lastError.substring(0, 120)}` : ''),
+                ` | Ricerche: ${report.searchesProcessed}/${report.searchesPlanned}` +
+                ` | Pagine processate: ${report.pagesProcessed}` +
+                ` | Pagine skippate (già nel DB): ${report.pagesSkippedAllSaved}` +
+                ` | Lead salvati: ${report.totalLeadsSaved}` +
+                (report.lastError ? ` | Errore: ${report.lastError.substring(0, 120)}` : ''),
         );
     }
 
     return report;
 }
-

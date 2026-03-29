@@ -172,7 +172,10 @@ async function extractDataFromPage(
 
         // ── Emails from mailto: links ──
         $('a[href^="mailto:"]').each((_, el) => {
-            const mailto = ($(el).attr('href') || '').replace(/^mailto:/i, '').split('?')[0]?.trim();
+            const mailto = ($(el).attr('href') || '')
+                .replace(/^mailto:/i, '')
+                .split('?')[0]
+                ?.trim();
             if (mailto && mailto.includes('@')) {
                 const domain = mailto.split('@')[1]?.toLowerCase() || '';
                 if (!PERSONAL_DOMAINS.has(domain)) {

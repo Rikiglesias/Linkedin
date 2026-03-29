@@ -52,7 +52,7 @@ healthRouter.get('/deep', async (_req, res) => {
     // 4. Queue depth
     try {
         const db = await getDatabase();
-        const row = await db.get<{ total: number }>('SELECT COUNT(*) as total FROM jobs WHERE status = \'QUEUED\'');
+        const row = await db.get<{ total: number }>("SELECT COUNT(*) as total FROM jobs WHERE status = 'QUEUED'");
         const queueDepth = row ? Number(row.total) : 0;
         checks.queue = { ok: true, detail: `${queueDepth} queued jobs` };
     } catch {

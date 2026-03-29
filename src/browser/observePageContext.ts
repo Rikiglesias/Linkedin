@@ -86,7 +86,9 @@ export async function observePageContext(page: Page): Promise<PageObservation> {
 
         // Challenge detection
         observation.hasChallenge =
-            /unusual activity|restricted|verify your identity|temporarily limited|captcha|checkpoint|attività insolita|account limitato/i.test(bodyLower);
+            /unusual activity|restricted|verify your identity|temporarily limited|captcha|checkpoint|attività insolita|account limitato/i.test(
+                bodyLower,
+            );
 
         // Bottoni e indicatori (parallelo) — selettori centralizzati da selectors.ts
         const [connectCount, messageCount, pendingCount, modalCount, degreeText] = await Promise.allSettled([
@@ -94,7 +96,12 @@ export async function observePageContext(page: Page): Promise<PageObservation> {
             page.locator(joinSelectors('messageButton')).count(),
             page.locator(joinSelectors('invitePendingIndicators')).count(),
             page.locator('div[role="dialog"], div[role="alertdialog"], .artdeco-modal').count(),
-            page.locator('.dist-value, .distance-badge, span:has-text("1st"), span:has-text("2nd"), span:has-text("3rd")').first().textContent({ timeout: 1500 }),
+            page
+                .locator(
+                    '.dist-value, .distance-badge, span:has-text("1st"), span:has-text("2nd"), span:has-text("3rd")',
+                )
+                .first()
+                .textContent({ timeout: 1500 }),
         ]);
 
         observation.hasConnectButton = connectCount.status === 'fulfilled' && (connectCount.value ?? 0) > 0;
@@ -135,7 +142,10 @@ export function hasBlockingIssue(obs: PageObservation): { blocked: boolean; reas
 /**
  * Log strutturato dell'osservazione per debug e audit.
  */
-export async function logObservation(obs: PageObservation, context: { leadId?: number; purpose?: string }): Promise<void> {
+export async function logObservation(
+    obs: PageObservation,
+    context: { leadId?: number; purpose?: string },
+): Promise<void> {
     await logInfo('observe_page_context.result', {
         leadId: context.leadId,
         purpose: context.purpose,

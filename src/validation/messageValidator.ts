@@ -61,7 +61,10 @@ export async function validateMessageContentAsync(
             if (tooSimilar) {
                 return {
                     valid: false,
-                    reasons: [...syncResult.reasons, 'Messaggio troppo simile a uno già inviato a questo lead (semantic check).'],
+                    reasons: [
+                        ...syncResult.reasons,
+                        'Messaggio troppo simile a uno già inviato a questo lead (semantic check).',
+                    ],
                 };
             }
         } catch {

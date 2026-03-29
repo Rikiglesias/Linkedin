@@ -31,7 +31,8 @@ const mxCache = new Map<string, string | null>();
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const COMPANY_SUFFIXES = /\b(srl|s\.r\.l|spa|s\.p\.a|inc|ltd|llc|corp|group|gmbh|bv|b\.v|sa|s\.a|ag|plc|co|pty|pvt|italia|italy|consulting|solutions|services|technologies|tech)\b/gi;
+const COMPANY_SUFFIXES =
+    /\b(srl|s\.r\.l|spa|s\.p\.a|inc|ltd|llc|corp|group|gmbh|bv|b\.v|sa|s\.a|ag|plc|co|pty|pvt|italia|italy|consulting|solutions|services|technologies|tech)\b/gi;
 
 function slugify(name: string): string {
     return name
@@ -137,7 +138,8 @@ async function discoverViaClearbit(companyName: string): Promise<DomainDiscovery
             const score = similarity(normalizedInput, normalizedName);
 
             // Bonus se il nome contiene l'input come sottostringa
-            const containsBonus = normalizedName.includes(normalizedInput) || normalizedInput.includes(normalizedName) ? 0.15 : 0;
+            const containsBonus =
+                normalizedName.includes(normalizedInput) || normalizedInput.includes(normalizedName) ? 0.15 : 0;
             const total = score + containsBonus;
 
             if (total > bestScore) {
@@ -182,16 +184,33 @@ function generateDomainCandidates(companyName: string, location?: string): strin
         const loc = location.toLowerCase();
         if (loc.includes('ital') || loc.includes('roma') || loc.includes('milan')) {
             const idx = tlds.indexOf('.it');
-            if (idx > 0) { tlds.splice(idx, 1); tlds.unshift('.it'); }
-        } else if (loc.includes('german') || loc.includes('deutsch') || loc.includes('berlin') || loc.includes('munich')) {
+            if (idx > 0) {
+                tlds.splice(idx, 1);
+                tlds.unshift('.it');
+            }
+        } else if (
+            loc.includes('german') ||
+            loc.includes('deutsch') ||
+            loc.includes('berlin') ||
+            loc.includes('munich')
+        ) {
             const idx = tlds.indexOf('.de');
-            if (idx > 0) { tlds.splice(idx, 1); tlds.unshift('.de'); }
+            if (idx > 0) {
+                tlds.splice(idx, 1);
+                tlds.unshift('.de');
+            }
         } else if (loc.includes('franc') || loc.includes('paris')) {
             const idx = tlds.indexOf('.fr');
-            if (idx > 0) { tlds.splice(idx, 1); tlds.unshift('.fr'); }
+            if (idx > 0) {
+                tlds.splice(idx, 1);
+                tlds.unshift('.fr');
+            }
         } else if (loc.includes('netherlands') || loc.includes('dutch') || loc.includes('amsterdam')) {
             const idx = tlds.indexOf('.nl');
-            if (idx > 0) { tlds.splice(idx, 1); tlds.unshift('.nl'); }
+            if (idx > 0) {
+                tlds.splice(idx, 1);
+                tlds.unshift('.nl');
+            }
         }
     }
 
@@ -294,4 +313,3 @@ export async function discoverCompanyDomain(
     domainCache.set(key, result);
     return result;
 }
-

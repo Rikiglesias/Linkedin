@@ -121,9 +121,9 @@ describe('Legacy Core Domain Unit Tests', () => {
         });
         assert.equal(
             risk.action === 'NORMAL' ||
-            risk.action === 'WARN' ||
-            risk.action === 'LOW_ACTIVITY' ||
-            risk.action === 'STOP',
+                risk.action === 'WARN' ||
+                risk.action === 'LOW_ACTIVITY' ||
+                risk.action === 'STOP',
             true,
         );
 

@@ -24,10 +24,7 @@ export interface LinkedinProfileData {
 
 // ─── Public Profile Scraper (/in/) ──────────────────────────────────────────────
 
-export async function scrapeLinkedinProfile(
-    page: Page,
-    profileUrl: string,
-): Promise<LinkedinProfileData | null> {
+export async function scrapeLinkedinProfile(page: Page, profileUrl: string): Promise<LinkedinProfileData | null> {
     if (!profileUrl || !profileUrl.includes('/in/')) return null;
 
     try {
@@ -42,10 +39,7 @@ export async function scrapeLinkedinProfile(
                 return text || null;
             };
 
-            const headline =
-                getText('.text-body-medium.break-words') ||
-                getText('div.text-body-medium') ||
-                null;
+            const headline = getText('.text-body-medium.break-words') || getText('div.text-body-medium') || null;
 
             const location =
                 getText('.text-body-small.inline.t-black--light.break-words') ||
@@ -71,9 +65,7 @@ export async function scrapeLinkedinProfile(
                         );
                         currentTitle = titleEl?.textContent?.trim() || null;
 
-                        const subtitleEl = firstExp.querySelector(
-                            '.t-14.t-normal span[aria-hidden="true"]',
-                        );
+                        const subtitleEl = firstExp.querySelector('.t-14.t-normal span[aria-hidden="true"]');
                         let company = subtitleEl?.textContent?.trim() || null;
                         if (company) {
                             company = company.split('·')[0]?.trim() || company;
@@ -110,10 +102,7 @@ export async function scrapeLinkedinProfile(
  * These pages show headline, current role, company, location, and a link
  * to the public profile (/in/ URL).
  */
-export async function scrapeSalesNavProfile(
-    page: Page,
-    salesNavUrl: string,
-): Promise<LinkedinProfileData | null> {
+export async function scrapeSalesNavProfile(page: Page, salesNavUrl: string): Promise<LinkedinProfileData | null> {
     if (!salesNavUrl || !salesNavUrl.includes('/sales/lead/')) return null;
 
     try {
@@ -168,10 +157,7 @@ export async function scrapeSalesNavProfile(
                 null;
 
             // About/summary
-            const about =
-                getText('.profile-topcard__summary-text') ||
-                getText('[data-x--lead--summary]') ||
-                null;
+            const about = getText('.profile-topcard__summary-text') || getText('[data-x--lead--summary]') || null;
 
             // Public /in/ URL link — SalesNav has a "View LinkedIn profile" link
             let publicProfileUrl: string | null = null;

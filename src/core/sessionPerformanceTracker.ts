@@ -9,9 +9,7 @@
  * fallback a Date.now() altrimenti.
  */
 
-const now = typeof performance !== 'undefined' && performance.now
-    ? () => performance.now()
-    : () => Date.now();
+const now = typeof performance !== 'undefined' && performance.now ? () => performance.now() : () => Date.now();
 
 export type SessionPhase =
     | 'warmup'
@@ -38,7 +36,16 @@ export interface SessionPerformanceReport {
     dominantPhase: SessionPhase;
 }
 
-const PHASES: SessionPhase[] = ['warmup', 'navigate', 'action', 'delay', 'enrichment', 'inbox', 'wind_down', 'overhead'];
+const PHASES: SessionPhase[] = [
+    'warmup',
+    'navigate',
+    'action',
+    'delay',
+    'enrichment',
+    'inbox',
+    'wind_down',
+    'overhead',
+];
 
 function emptyAccumulator(): PhaseAccumulator {
     return { totalMs: 0, count: 0, maxMs: 0, minMs: Infinity };
@@ -125,9 +132,8 @@ export class SessionPerformanceTracker {
         const untrackedMs = Math.max(0, Math.round(totalSessionMs) - trackedMs);
         if (untrackedMs > 0) {
             breakdown.overhead.ms += untrackedMs;
-            breakdown.overhead.pct = totalSessionMs > 0
-                ? Math.round((breakdown.overhead.ms / totalSessionMs) * 100)
-                : 0;
+            breakdown.overhead.pct =
+                totalSessionMs > 0 ? Math.round((breakdown.overhead.ms / totalSessionMs) * 100) : 0;
             if (breakdown.overhead.ms > dominantMs) {
                 dominantPhase = 'overhead';
             }

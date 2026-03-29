@@ -31,21 +31,50 @@ describe('calculateAccountTrustScore — boundary values', () => {
 
     it('A11: acceleration solo con zero challenge + pending basso + acceptance alto', () => {
         // Con challenge → no acceleration
-        const withChallenge = calculateAccountTrustScore({ ssiScore: 95, ageDays: 730, acceptanceRatePct: 50, challengesLast7d: 1, pendingRatio: 0.2 });
+        const withChallenge = calculateAccountTrustScore({
+            ssiScore: 95,
+            ageDays: 730,
+            acceptanceRatePct: 50,
+            challengesLast7d: 1,
+            pendingRatio: 0.2,
+        });
         expect(withChallenge.budgetMultiplier).toBeLessThanOrEqual(1.0);
 
         // Con pending alto → no acceleration
-        const highPending = calculateAccountTrustScore({ ssiScore: 95, ageDays: 730, acceptanceRatePct: 50, challengesLast7d: 0, pendingRatio: 0.6 });
+        const highPending = calculateAccountTrustScore({
+            ssiScore: 95,
+            ageDays: 730,
+            acceptanceRatePct: 50,
+            challengesLast7d: 0,
+            pendingRatio: 0.6,
+        });
         expect(highPending.budgetMultiplier).toBeLessThanOrEqual(1.0);
 
         // Con acceptance basso → no acceleration
-        const lowAcceptance = calculateAccountTrustScore({ ssiScore: 95, ageDays: 730, acceptanceRatePct: 20, challengesLast7d: 0, pendingRatio: 0.2 });
+        const lowAcceptance = calculateAccountTrustScore({
+            ssiScore: 95,
+            ageDays: 730,
+            acceptanceRatePct: 20,
+            challengesLast7d: 0,
+            pendingRatio: 0.2,
+        });
         expect(lowAcceptance.budgetMultiplier).toBeLessThanOrEqual(1.0);
     });
 
     it('factors sommano approssimativamente al score', () => {
-        const r = calculateAccountTrustScore({ ssiScore: 80, ageDays: 365, acceptanceRatePct: 40, challengesLast7d: 0, pendingRatio: 0.3 });
-        const factorSum = r.factors.ssi * 0.30 + r.factors.age * 0.25 + r.factors.acceptance * 0.25 + r.factors.challengeHistory * 0.10 + r.factors.pendingRatio * 0.10;
+        const r = calculateAccountTrustScore({
+            ssiScore: 80,
+            ageDays: 365,
+            acceptanceRatePct: 40,
+            challengesLast7d: 0,
+            pendingRatio: 0.3,
+        });
+        const factorSum =
+            r.factors.ssi * 0.3 +
+            r.factors.age * 0.25 +
+            r.factors.acceptance * 0.25 +
+            r.factors.challengeHistory * 0.1 +
+            r.factors.pendingRatio * 0.1;
         expect(Math.abs(r.score - Math.round(factorSum))).toBeLessThanOrEqual(1);
     });
 });

@@ -3,7 +3,7 @@ import { getAccountGrowthBudget } from '../risk/accountBehaviorModel';
 
 describe('getAccountGrowthBudget — phase transitions', () => {
     it('fasi sono ordinate cronologicamente', () => {
-        const phases = [0, 7, 14, 15, 30, 31, 60, 61, 90, 365].map(d => ({
+        const phases = [0, 7, 14, 15, 30, 31, 60, 61, 90, 365].map((d) => ({
             days: d,
             phase: getAccountGrowthBudget(d).phase,
             inviteMax: getAccountGrowthBudget(d).inviteMaxPerDay,

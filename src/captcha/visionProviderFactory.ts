@@ -13,12 +13,7 @@
 import { logInfo, logWarn } from '../telemetry/logger';
 import { OllamaVisionProvider } from './ollamaVisionProvider';
 import { BudgetExceededError, OpenAIVisionProvider } from './openaiVisionProvider';
-import type {
-    Coordinates,
-    VisionAnalysisResult,
-    VisionProvider,
-    VisionProviderConfig,
-} from './visionProvider';
+import type { Coordinates, VisionAnalysisResult, VisionProvider, VisionProviderConfig } from './visionProvider';
 
 /**
  * Provider ibrido che implementa il fallback automatico:
@@ -117,10 +112,7 @@ class LocalFirstHybridVisionProvider implements VisionProvider {
 
     async warmUp(): Promise<void> {
         try {
-            const resp = await fetch(
-                `${this.ollamaEndpoint}/api/tags`,
-                { signal: AbortSignal.timeout(3_000) },
-            );
+            const resp = await fetch(`${this.ollamaEndpoint}/api/tags`, { signal: AbortSignal.timeout(3_000) });
             if (!resp.ok) {
                 this.primaryFailed = true;
             }
@@ -267,7 +259,11 @@ export function createVisionProvider(overrideConfig?: Partial<VisionProviderConf
                     budgetMaxUsd: cfg.budgetMaxUsd,
                     redactScreenshots: cfg.redactScreenshots,
                 });
-                const localFirstProvider = new LocalFirstHybridVisionProvider(localPrimary, cloudFallback, cfg.ollamaEndpoint);
+                const localFirstProvider = new LocalFirstHybridVisionProvider(
+                    localPrimary,
+                    cloudFallback,
+                    cfg.ollamaEndpoint,
+                );
                 void localFirstProvider.warmUp();
                 provider = localFirstProvider;
             } else {
@@ -302,14 +298,14 @@ export function createVisionProvider(overrideConfig?: Partial<VisionProviderConf
         }
     }
 
-    const primaryModel = cfg.provider === 'ollama' || cfg.provider === 'local-first'
-        ? cfg.ollamaModel
-        : cfg.openaiModel;
+    const primaryModel =
+        cfg.provider === 'ollama' || cfg.provider === 'local-first' ? cfg.ollamaModel : cfg.openaiModel;
     void logInfo('vision.factory.provider_created', {
         type: cfg.provider,
         actualProvider: provider.name,
         model: primaryModel,
-        fallbackModel: cfg.provider === 'local-first' ? cfg.openaiModel : cfg.provider === 'auto' ? cfg.ollamaModel : undefined,
+        fallbackModel:
+            cfg.provider === 'local-first' ? cfg.openaiModel : cfg.provider === 'auto' ? cfg.ollamaModel : undefined,
         budgetMaxUsd: cfg.budgetMaxUsd,
         redact: cfg.redactScreenshots,
     });

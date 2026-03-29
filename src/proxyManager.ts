@@ -337,7 +337,9 @@ export async function fetchFallbackProxyFromProvider(): Promise<boolean> {
             const auth = json.username ? `${json.username}:${json.password}@` : '';
             newProxyRaw = `http://${auth}${json.ip}:${json.port}`;
         } else {
-            console.warn(`[PROXY] Payload API sconosciuto: keys=${Object.keys(json as Record<string, unknown>).join(',')}`);
+            console.warn(
+                `[PROXY] Payload API sconosciuto: keys=${Object.keys(json as Record<string, unknown>).join(',')}`,
+            );
             return false;
         }
 
@@ -606,13 +608,17 @@ function loadPersistedStickyProxy(sessionDir: string | undefined): { proxy: Prox
         const metaPath = path.join(sessionDir, '.session-meta.json');
         if (!fs.existsSync(metaPath)) return null;
         const raw = JSON.parse(fs.readFileSync(metaPath, 'utf8')) as Record<string, unknown>;
-        const sp = raw.stickyProxy as { server?: string; username?: string; password?: string; type?: string; weekNumber?: number } | undefined;
+        const sp = raw.stickyProxy as
+            | { server?: string; username?: string; password?: string; type?: string; weekNumber?: number }
+            | undefined;
         if (!sp?.server || typeof sp.weekNumber !== 'number') return null;
         return {
             proxy: { server: sp.server, username: sp.username, password: sp.password, type: sp.type as ProxyType },
             weekNumber: sp.weekNumber,
         };
-    } catch { return null; }
+    } catch {
+        return null;
+    }
 }
 
 function persistStickyProxy(sessionDir: string | undefined, proxy: ProxyConfig, weekNumber: number): void {
@@ -623,9 +629,17 @@ function persistStickyProxy(sessionDir: string | undefined, proxy: ProxyConfig, 
         if (fs.existsSync(metaPath)) {
             meta = JSON.parse(fs.readFileSync(metaPath, 'utf8')) as Record<string, unknown>;
         }
-        meta.stickyProxy = { server: proxy.server, username: proxy.username, password: proxy.password, type: proxy.type, weekNumber };
+        meta.stickyProxy = {
+            server: proxy.server,
+            username: proxy.username,
+            password: proxy.password,
+            type: proxy.type,
+            weekNumber,
+        };
         fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf8');
-    } catch { /* best effort */ }
+    } catch {
+        /* best effort */
+    }
 }
 
 export async function getStickyProxy(
@@ -641,7 +655,7 @@ export async function getStickyProxy(
         if (persisted && persisted.weekNumber === week) {
             // Verifica che il proxy persistito sia ancora nel pool
             const pool = loadProxyPool();
-            const stillInPool = pool.some(p => p.server === persisted.proxy.server);
+            const stillInPool = pool.some((p) => p.server === persisted.proxy.server);
             if (stillInPool) {
                 stickyProxySessions.set(sessionId, persisted.proxy);
             }
@@ -683,7 +697,10 @@ export function releaseStickyProxy(sessionId: string): void {
     stickyProxySessions.delete(sessionId);
 }
 
-export function markProxyFailed(proxy: ProxyConfig, errorType?: 'timeout' | 'connection_refused' | 'ban' | 'unknown'): void {
+export function markProxyFailed(
+    proxy: ProxyConfig,
+    errorType?: 'timeout' | 'connection_refused' | 'ban' | 'unknown',
+): void {
     // M34: Cooldown differenziato per tipo di errore.
     // Prima: 10min fissi per qualsiasi errore. Ban IP e timeout hanno gravità molto diverse.
     let cooldownMs: number;
@@ -716,10 +733,7 @@ export function markIntegrationProxyHealthy(proxy: ProxyConfig): void {
     integrationProxyFailureUntil.delete(proxyKey(proxy));
 }
 
-function getPoolStatusInternal(
-    cooldownRegistry: Map<string, number>,
-    cursor: number,
-): ProxyPoolStatus {
+function getPoolStatusInternal(cooldownRegistry: Map<string, number>, cursor: number): ProxyPoolStatus {
     const pool = loadProxyPool();
     if (pool.length === 0) {
         return {

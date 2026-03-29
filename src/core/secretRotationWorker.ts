@@ -327,7 +327,8 @@ export async function runSecretRotationWorker(
         // Retention: keep max 5 backup files
         const dir = path.dirname(envFilePath);
         const base = path.basename(envFilePath);
-        const backups = fs.readdirSync(dir)
+        const backups = fs
+            .readdirSync(dir)
             .filter((f) => f.startsWith(`${base}.backup.`))
             .sort()
             .reverse();

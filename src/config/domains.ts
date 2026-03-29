@@ -199,7 +199,9 @@ export function buildLimitsAndRiskDomainConfig() {
         postCreationDefaultTone: (() => {
             const VALID_TONES = ['professional', 'casual', 'inspirational', 'educational', 'storytelling'] as const;
             const raw = parseStringEnv('POST_CREATION_DEFAULT_TONE');
-            return (VALID_TONES as readonly string[]).includes(raw) ? raw as typeof VALID_TONES[number] : 'professional';
+            return (VALID_TONES as readonly string[]).includes(raw)
+                ? (raw as (typeof VALID_TONES)[number])
+                : 'professional';
         })(),
     };
 }
@@ -423,7 +425,10 @@ export function buildBehaviorDomainConfig() {
         sessionMemoryProtectionMaxMinutes: Math.max(15, parseIntEnv('SESSION_MEMORY_PROTECTION_MAX_MINUTES', 70)),
         sessionWindDownPct: Math.min(0.5, Math.max(0.05, parseFloatEnv('SESSION_WIND_DOWN_PCT', 0.15))),
         sessionWindDownDelayMultiplier: Math.max(1, parseFloatEnv('SESSION_WIND_DOWN_DELAY_MULTIPLIER', 1.5)),
-        sessionWindDownSpeedReduction: Math.min(0.8, Math.max(0, parseFloatEnv('SESSION_WIND_DOWN_SPEED_REDUCTION', 0.3))),
+        sessionWindDownSpeedReduction: Math.min(
+            0.8,
+            Math.max(0, parseFloatEnv('SESSION_WIND_DOWN_SPEED_REDUCTION', 0.3)),
+        ),
         mondayLowActivityFactor: Math.min(1, Math.max(0.1, parseFloatEnv('MONDAY_LOW_ACTIVITY_FACTOR', 0.7))),
         mondayLowActivityStartHour: Math.max(0, parseIntEnv('MONDAY_LOW_ACTIVITY_START_HOUR', 9)),
         mondayLowActivityEndHour: Math.max(0, parseIntEnv('MONDAY_LOW_ACTIVITY_END_HOUR', 12)),

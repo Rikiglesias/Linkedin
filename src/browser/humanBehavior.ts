@@ -40,14 +40,22 @@ export function initializeMouseState(page: Page): void {
 // M32: Configurabile via env var — su browser virtuali o connessioni lente, 8s potrebbe non bastare.
 const MOUSE_MOVE_TIMEOUT_MS = Math.max(3_000, parseInt(process.env.MOUSE_MOVE_TIMEOUT_MS ?? '8000', 10) || 8_000);
 
-async function withMouseTimeout<T>(fn: () => Promise<T>, page?: Page, targetPoint?: Point, timeoutMs: number = MOUSE_MOVE_TIMEOUT_MS): Promise<T | undefined> {
+async function withMouseTimeout<T>(
+    fn: () => Promise<T>,
+    page?: Page,
+    targetPoint?: Point,
+    timeoutMs: number = MOUSE_MOVE_TIMEOUT_MS,
+): Promise<T | undefined> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let timedOut = false;
     try {
         const result = await Promise.race([
             fn(),
             new Promise<undefined>((resolve) => {
-                timer = setTimeout(() => { timedOut = true; resolve(undefined); }, timeoutMs);
+                timer = setTimeout(() => {
+                    timedOut = true;
+                    resolve(undefined);
+                }, timeoutMs);
             }),
         ]);
         if (timedOut) {
@@ -55,7 +63,9 @@ async function withMouseTimeout<T>(fn: () => Promise<T>, page?: Page, targetPoin
             // non ha raggiunto la destinazione. Logga warning per monitorare frequenza.
             // Senza questo fix, la prossima azione assumeva che il mouse fosse al target
             // → "teletrasporto" rilevabile.
-            console.warn(`[MOUSE] Timeout ${timeoutMs}ms raggiunto — mouse NON al target, procedendo dalla posizione attuale`);
+            console.warn(
+                `[MOUSE] Timeout ${timeoutMs}ms raggiunto — mouse NON al target, procedendo dalla posizione attuale`,
+            );
             // Non aggiornare pageMouseState — resta all'ultima posizione nota
         } else if (page && targetPoint) {
             // Movimento completato con successo: aggiorna posizione
@@ -286,7 +296,10 @@ export async function ensureInputBlock(page: Page): Promise<void> {
                     overlay.id = overlayId;
                     overlay.style.cssText = [
                         'position: fixed',
-                        'top: 0', 'left: 0', 'right: 0', 'bottom: 0',
+                        'top: 0',
+                        'left: 0',
+                        'right: 0',
+                        'bottom: 0',
                         'z-index: 2147483645',
                         'background: transparent',
                         'pointer-events: auto',
@@ -373,11 +386,17 @@ export async function ensureInputBlock(page: Page): Promise<void> {
                     document.documentElement.appendChild(toast);
 
                     let hideTimer: ReturnType<typeof setTimeout> | null = null;
-                    document.addEventListener('mousedown', () => {
-                        toast.style.opacity = '1';
-                        if (hideTimer) clearTimeout(hideTimer);
-                        hideTimer = setTimeout(() => { toast.style.opacity = '0'; }, 2500);
-                    }, true);
+                    document.addEventListener(
+                        'mousedown',
+                        () => {
+                            toast.style.opacity = '1';
+                            if (hideTimer) clearTimeout(hideTimer);
+                            hideTimer = setTimeout(() => {
+                                toast.style.opacity = '0';
+                            }, 2500);
+                        },
+                        true,
+                    );
                 }
             },
             { toastId: INPUT_BLOCK_TOAST_ID, overlayId: INPUT_BLOCK_OVERLAY_ID },
@@ -399,7 +418,9 @@ export async function pauseInputBlockForMove(page: Page): Promise<void> {
             const el = document.getElementById(id);
             if (el) el.dataset.botMoving = 'true';
         }, INPUT_BLOCK_OVERLAY_ID);
-    } catch { /* best effort */ }
+    } catch {
+        /* best effort */
+    }
 }
 
 /**
@@ -412,7 +433,9 @@ export async function resumeInputBlockForMove(page: Page): Promise<void> {
             const el = document.getElementById(id);
             if (el) delete el.dataset.botMoving;
         }, INPUT_BLOCK_OVERLAY_ID);
-    } catch { /* best effort */ }
+    } catch {
+        /* best effort */
+    }
 }
 
 /**
@@ -437,7 +460,9 @@ export async function pauseInputBlock(page: Page): Promise<void> {
                 }, 150);
             }
         }, INPUT_BLOCK_OVERLAY_ID);
-    } catch { /* best effort */ }
+    } catch {
+        /* best effort */
+    }
 }
 
 /**
@@ -456,7 +481,9 @@ export async function resumeInputBlock(page: Page): Promise<void> {
                 delete el.dataset.botClicking;
             }
         }, INPUT_BLOCK_OVERLAY_ID);
-    } catch { /* best effort */ }
+    } catch {
+        /* best effort */
+    }
 }
 
 /**
@@ -478,7 +505,9 @@ export async function blockUserInput(page: Page): Promise<void> {
     try {
         const { reapplyWindowClickThrough } = await import('./windowInputBlock');
         reapplyWindowClickThrough();
-    } catch { /* best-effort — non blocca se fallisce */ }
+    } catch {
+        /* best-effort — non blocca se fallisce */
+    }
     // Auto-dismiss overlay LinkedIn dopo navigazione (via bridge per zero circular dep)
     const { callDismissOverlays } = await import('./overlayBridge');
     await callDismissOverlays(page);
@@ -696,21 +725,30 @@ export async function humanSwipe(page: Page, direction: 'up' | 'down' = 'up'): P
             await page.touchscreen.tap(startX, startY);
             await page.waitForTimeout(50 + Math.random() * 50);
             // Simulate drag via evaluate (touch move sequence)
-            await page.evaluate(([sx, sy, ex, ey]) => {
-                const target = document.elementFromPoint(sx, sy) ?? document.body;
-                target.dispatchEvent(new TouchEvent('touchstart', {
-                    touches: [new Touch({ identifier: 1, target, clientX: sx, clientY: sy })],
-                    bubbles: true,
-                }));
-                target.dispatchEvent(new TouchEvent('touchmove', {
-                    touches: [new Touch({ identifier: 1, target, clientX: ex, clientY: ey })],
-                    bubbles: true,
-                }));
-                target.dispatchEvent(new TouchEvent('touchend', {
-                    changedTouches: [new Touch({ identifier: 1, target, clientX: ex, clientY: ey })],
-                    bubbles: true,
-                }));
-            }, [startX, startY, endX, endY] as [number, number, number, number]);
+            await page.evaluate(
+                ([sx, sy, ex, ey]) => {
+                    const target = document.elementFromPoint(sx, sy) ?? document.body;
+                    target.dispatchEvent(
+                        new TouchEvent('touchstart', {
+                            touches: [new Touch({ identifier: 1, target, clientX: sx, clientY: sy })],
+                            bubbles: true,
+                        }),
+                    );
+                    target.dispatchEvent(
+                        new TouchEvent('touchmove', {
+                            touches: [new Touch({ identifier: 1, target, clientX: ex, clientY: ey })],
+                            bubbles: true,
+                        }),
+                    );
+                    target.dispatchEvent(
+                        new TouchEvent('touchend', {
+                            changedTouches: [new Touch({ identifier: 1, target, clientX: ex, clientY: ey })],
+                            bubbles: true,
+                        }),
+                    );
+                },
+                [startX, startY, endX, endY] as [number, number, number, number],
+            );
         } else {
             await page.mouse.move(startX, startY, { steps: 4 });
             await syncVisualCursorOverlay(page, { x: startX, y: startY });
@@ -824,10 +862,7 @@ export async function humanType(page: Page, selector: string, text: string): Pro
 
     // Context-aware WPM: testi lunghi → ritmo più lento (affaticamento naturale).
     // Testi brevi (< 30 char): veloce. Medi (30-150): normale. Lunghi (> 150): lento.
-    const lengthSlowFactor = text.length <= 30 ? 0.85
-        : text.length <= 150 ? 1.0
-        : text.length <= 400 ? 1.15
-        : 1.3;
+    const lengthSlowFactor = text.length <= 30 ? 0.85 : text.length <= 150 ? 1.0 : text.length <= 400 ? 1.15 : 1.3;
 
     // Typing Flow State (6.3): pre-calcola le parole e i loro flow multiplier.
     // Parole comuni → 0.7x delay (flow state), parole rare → 1.4x delay (pensiero).
@@ -854,7 +889,9 @@ export async function humanType(page: Page, selector: string, text: string): Pro
         // AD-11: Implementazione Delay Bimodale + context-aware per lunghezza testo
         // + Typing Flow State (6.3): parole comuni più veloci, parole rare più lente
         const isSpaceOrPunctuation = /[\s.,!?-]/.test(typedChar);
-        const rawDelay = isSpaceOrPunctuation ? Math.floor(Math.random() * 150) + 150 : Math.floor(Math.random() * 50) + 40;
+        const rawDelay = isSpaceOrPunctuation
+            ? Math.floor(Math.random() * 150) + 150
+            : Math.floor(Math.random() * 50) + 40;
         const delayBase = Math.round(rawDelay * lengthSlowFactor * currentWordMultiplier);
 
         await element.pressSequentially(typedChar, { delay: delayBase });
@@ -882,7 +919,7 @@ export async function humanType(page: Page, selector: string, text: string): Pro
                 for (let r = retypeFrom; r <= i; r++) {
                     await element.pressSequentially(text[r] ?? '', { delay: Math.floor(Math.random() * 70) + 50 });
                 }
-            } else if (correctionStyle < 0.90) {
+            } else if (correctionStyle < 0.9) {
                 // Stile 3 (15%): Ignora l'errore — un umano a volte non se ne accorge
                 // (il typo resta nel testo, verrà comunque capito)
             } else {
@@ -958,17 +995,17 @@ export async function simulateHumanReading(page: Page): Promise<void> {
         } else {
             switch (phase) {
                 case 'orientation':
-                    deltaY = 400 + Math.random() * 200;  // 400-600px
+                    deltaY = 400 + Math.random() * 200; // 400-600px
                     delayMin = 300;
                     delayMax = 800;
                     break;
                 case 'reading':
-                    deltaY = 100 + Math.random() * 150;  // 100-250px
+                    deltaY = 100 + Math.random() * 150; // 100-250px
                     delayMin = 500;
                     delayMax = 2000;
                     break;
                 case 'skip':
-                    deltaY = 500 + Math.random() * 300;  // 500-800px
+                    deltaY = 500 + Math.random() * 300; // 500-800px
                     delayMin = 200;
                     delayMax = 500;
                     break;
@@ -986,13 +1023,13 @@ export async function simulateHumanReading(page: Page): Promise<void> {
             const roll = Math.random();
             switch (phase) {
                 case 'orientation':
-                    phase = roll < 0.60 ? 'reading' : 'orientation';
+                    phase = roll < 0.6 ? 'reading' : 'orientation';
                     break;
                 case 'reading':
-                    phase = roll < 0.40 ? 'skip' : 'reading';
+                    phase = roll < 0.4 ? 'skip' : 'reading';
                     break;
                 case 'skip':
-                    phase = roll < 0.30 ? 'reading' : 'skip';
+                    phase = roll < 0.3 ? 'reading' : 'skip';
                     break;
             }
         }
@@ -1051,7 +1088,7 @@ export async function interJobDelay(
     }
 
     // AD-04: 40% di chance di "cambiare tab" per distrarsi durante job delay lunghi.
-    const willSwitchTab = Math.random() < 0.40;
+    const willSwitchTab = Math.random() < 0.4;
 
     const split = Math.floor(totalDelay * (0.4 + Math.random() * 0.2));
     await page.waitForTimeout(Math.max(0, split));
@@ -1067,7 +1104,7 @@ export async function interJobDelay(
     // GAP #2: Micro-azione organica interleavata — 20% di probabilità.
     // LinkedIn analizza la diversità di azioni nella sessione.
     // Solo inviti consecutivi = segnale bot. Azioni organiche in mezzo = umano.
-    if (Math.random() < 0.20) {
+    if (Math.random() < 0.2) {
         await performDecoyAction(page);
     }
 
@@ -1105,21 +1142,24 @@ export async function computeProfileDwellTime(page: Page): Promise<void> {
         const aboutScore = Math.min(1, profileRichness.aboutText / 500);
         const expScore = Math.min(1, profileRichness.experienceItems / 5);
         const textScore = Math.min(1, profileRichness.totalText / 3000);
-        const richness = aboutScore * 0.35 + expScore * 0.35 + textScore * 0.30;
+        const richness = aboutScore * 0.35 + expScore * 0.35 + textScore * 0.3;
 
         // Budget totale: sparse 4-8s, medio 7-14s, ricco 12-20s
         const budgetMs = 4000 + Math.floor(richness * 12_000) + Math.floor(Math.random() * 4000);
         const startMs = Date.now();
 
         // Fase 1: scroll veloce (orientation) — 30-40% del budget
-        const isScrollable = await page.evaluate(() => document.body.scrollHeight > window.innerHeight).catch(() => false);
+        const isScrollable = await page
+            .evaluate(() => document.body.scrollHeight > window.innerHeight)
+            .catch(() => false);
         if (isScrollable) {
             const scrollSteps = mobile ? randomInt(1, 3) : randomInt(2, 4);
             for (let i = 0; i < scrollSteps; i++) {
                 if (Date.now() - startMs > budgetMs * 0.7) break; // Non sforare il budget
-                const deltaY = richness > 0.5
-                    ? 100 + Math.random() * 200  // Profilo ricco: scroll lento per leggere
-                    : 300 + Math.random() * 300;  // Profilo sparse: scroll veloce
+                const deltaY =
+                    richness > 0.5
+                        ? 100 + Math.random() * 200 // Profilo ricco: scroll lento per leggere
+                        : 300 + Math.random() * 300; // Profilo sparse: scroll veloce
                 await page.mouse.wheel(0, deltaY);
                 if (mobile && Math.random() < 0.3) await humanSwipe(page, 'up');
                 // Pausa tra scroll proporzionale a richness
@@ -1134,7 +1174,7 @@ export async function computeProfileDwellTime(page: Page): Promise<void> {
         await page.waitForTimeout(remainingMs);
 
         // 10% tab switch durante lettura profilo
-        if (Math.random() < 0.10) {
+        if (Math.random() < 0.1) {
             await simulateTabSwitch(page, 2000 + Math.random() * 5000);
         }
     } catch {
@@ -1200,7 +1240,7 @@ async function runDecoyStep(page: Page, step: DecoyStep, contextTerms?: readonly
     }
     if (step === 'search') {
         // M15/M16: Se termini context-aware disponibili, usali (70%); altrimenti generici.
-        const useContext = contextTerms && contextTerms.length > 0 && Math.random() < 0.70;
+        const useContext = contextTerms && contextTerms.length > 0 && Math.random() < 0.7;
         const term = randomElement(useContext ? contextTerms : DECOY_SEARCH_TERMS);
         await page.goto(`https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(term)}`, {
             waitUntil: 'domcontentloaded',
@@ -1232,36 +1272,93 @@ export async function performDecoyBurst(page: Page, contextTerms?: readonly stri
  */
 const DECOY_SEARCH_TERMS: readonly string[] = [
     // Business roles
-    'ceo', 'cto', 'cfo', 'coo', 'cmo', 'vp sales', 'vp engineering',
-    'head of marketing', 'head of product', 'head of operations',
-    'director of sales', 'director of engineering', 'director of hr',
-    'product manager', 'program manager', 'account executive',
-    'business development', 'chief of staff', 'general manager',
+    'ceo',
+    'cto',
+    'cfo',
+    'coo',
+    'cmo',
+    'vp sales',
+    'vp engineering',
+    'head of marketing',
+    'head of product',
+    'head of operations',
+    'director of sales',
+    'director of engineering',
+    'director of hr',
+    'product manager',
+    'program manager',
+    'account executive',
+    'business development',
+    'chief of staff',
+    'general manager',
     // Industries
-    'fintech', 'saas', 'edtech', 'healthtech', 'biotech', 'cleantech',
-    'proptech', 'insurtech', 'agritech', 'legaltech', 'martech',
-    'e-commerce', 'cybersecurity', 'artificial intelligence', 'blockchain',
-    'renewable energy', 'logistics', 'telecommunications', 'media',
+    'fintech',
+    'saas',
+    'edtech',
+    'healthtech',
+    'biotech',
+    'cleantech',
+    'proptech',
+    'insurtech',
+    'agritech',
+    'legaltech',
+    'martech',
+    'e-commerce',
+    'cybersecurity',
+    'artificial intelligence',
+    'blockchain',
+    'renewable energy',
+    'logistics',
+    'telecommunications',
+    'media',
     // Skills
-    'project management', 'data analysis', 'cloud computing',
-    'machine learning', 'digital marketing', 'ux design', 'ui design',
-    'full stack developer', 'devops engineer', 'data scientist',
-    'product design', 'agile methodology', 'business intelligence',
-    'supply chain management', 'financial analysis', 'content strategy',
-    'software architecture', 'sales operations', 'customer success',
+    'project management',
+    'data analysis',
+    'cloud computing',
+    'machine learning',
+    'digital marketing',
+    'ux design',
+    'ui design',
+    'full stack developer',
+    'devops engineer',
+    'data scientist',
+    'product design',
+    'agile methodology',
+    'business intelligence',
+    'supply chain management',
+    'financial analysis',
+    'content strategy',
+    'software architecture',
+    'sales operations',
+    'customer success',
     // General professional terms
-    'marketing', 'developer', 'sales', 'hr', 'tech', 'design',
-    'consultant', 'entrepreneur', 'startup', 'venture capital',
-    'growth hacking', 'talent acquisition', 'brand strategy',
-    'operations manager', 'frontend developer', 'backend engineer',
-    'cloud architect', 'scrum master', 'ux researcher',
+    'marketing',
+    'developer',
+    'sales',
+    'hr',
+    'tech',
+    'design',
+    'consultant',
+    'entrepreneur',
+    'startup',
+    'venture capital',
+    'growth hacking',
+    'talent acquisition',
+    'brand strategy',
+    'operations manager',
+    'frontend developer',
+    'backend engineer',
+    'cloud architect',
+    'scrum master',
+    'ux researcher',
 ] as const;
 
 export async function performDecoyAction(page: Page, contextTerms?: readonly string[]): Promise<void> {
     // M15/M16: Se termini context-aware forniti, mescola con generici (coerenza settore)
-    const terms = contextTerms && contextTerms.length > 0
-        ? [...contextTerms, ...Array.from(DECOY_SEARCH_TERMS).slice(0, 15)]
-        : DECOY_SEARCH_TERMS;
+    const terms =
+        contextTerms && contextTerms.length > 0
+            ? [...contextTerms, ...Array.from(DECOY_SEARCH_TERMS).slice(0, 15)]
+            : DECOY_SEARCH_TERMS;
     const reInjectOverlay = async () => {
         await ensureVisualCursorOverlay(page);
         await ensureInputBlock(page);
@@ -1274,7 +1371,7 @@ export async function performDecoyAction(page: Page, contextTerms?: readonly str
             // AD-02: Interviene sul Feed con una probabilità del 20%
             try {
                 const { callInteractWithFeed } = await import('./overlayBridge');
-                await callInteractWithFeed(page, 0.20);
+                await callInteractWithFeed(page, 0.2);
             } catch {
                 // organicContent import/exec fallito — skip decoy interaction
             }
@@ -1321,7 +1418,6 @@ export async function performDecoyAction(page: Page, contextTerms?: readonly str
         // Ignora silenziosamente — è solo noise decoy
     }
 }
-
 
 // Selector canary (buildSelectorCanaryPlan, evaluateCanaryStep, runSelectorCanaryDetailed, runSelectorCanary)
 // estratto in browser/selectorCanary.ts (A17: split file >1000 righe)

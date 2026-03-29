@@ -115,8 +115,11 @@ export interface SalesNavigatorSyncReport {
 
 function matchesListNameFilter(list: SalesNavSavedList, filter: string): boolean {
     const normalizedName = cleanText(list.name).toLowerCase();
-    const filters = filter.split(',').map(f => f.trim().toLowerCase()).filter(Boolean);
-    return filters.some(f => normalizedName === f || normalizedName.includes(f));
+    const filters = filter
+        .split(',')
+        .map((f) => f.trim().toLowerCase())
+        .filter(Boolean);
+    return filters.some((f) => normalizedName === f || normalizedName.includes(f));
 }
 
 function toSample(candidate: SalesNavLeadCandidate): SalesNavigatorSyncListReport['samples'][number] {
@@ -225,7 +228,9 @@ export function formatFinalReport(report: SalesNavigatorSyncReport): string {
         lines.push(`  Lead sincronizzati:   ${e.cloudSynced}`);
         lines.push(`  Errori cloud:         ${e.cloudErrors}`);
     } else {
-        lines.push(`  Stato:                ${config.supabaseSyncEnabled ? 'Nessun lead da sincronizzare' : 'DISABILITATO'}`);
+        lines.push(
+            `  Stato:                ${config.supabaseSyncEnabled ? 'Nessun lead da sincronizzare' : 'DISABILITATO'}`,
+        );
     }
     lines.push('');
 
@@ -261,11 +266,15 @@ export function formatFinalReport(report: SalesNavigatorSyncReport): string {
         lines.push('─── DETTAGLIO PER LISTA ──────────────────────────────────────');
         for (const list of report.lists) {
             lines.push(`  ▸ ${list.listName}`);
-            lines.push(`    Pagine: ${list.pagesVisited}  Candidati: ${list.candidatesDiscovered}  Unici: ${list.uniqueCandidates}`);
+            lines.push(
+                `    Pagine: ${list.pagesVisited}  Candidati: ${list.candidatesDiscovered}  Unici: ${list.uniqueCandidates}`,
+            );
             if (report.dryRun) {
                 lines.push(`    Inserimento: ${list.wouldInsert}  Aggiornamento: ${list.wouldUpdate}`);
             } else {
-                lines.push(`    Inseriti: ${list.inserted}  Aggiornati: ${list.updated}  Invariati: ${list.unchanged}  Errori: ${list.errors}`);
+                lines.push(
+                    `    Inseriti: ${list.inserted}  Aggiornati: ${list.updated}  Invariati: ${list.unchanged}  Errori: ${list.errors}`,
+                );
             }
             if (list.samples.length > 0) {
                 lines.push(`    Top campioni:`);
@@ -359,7 +368,9 @@ async function postSyncEnrichment(
                     params.push(leadId);
                     await db.run(`UPDATE leads SET ${sets.join(', ')} WHERE id = ?`, params);
                     enrichReport.dataCleaned += 1;
-                    console.log(`  ${progress} [CLEAN] ${maskName(fullName)}: title=${cleanResult.jobTitle ?? '(null)'} company=${cleanResult.accountName ?? '(null)'}${cleanResult.inferredEmail ? ` email=${maskEmail(cleanResult.inferredEmail)}` : ''}`);
+                    console.log(
+                        `  ${progress} [CLEAN] ${maskName(fullName)}: title=${cleanResult.jobTitle ?? '(null)'} company=${cleanResult.accountName ?? '(null)'}${cleanResult.inferredEmail ? ` email=${maskEmail(cleanResult.inferredEmail)}` : ''}`,
+                    );
                     lead = (await getLeadById(leadId)) ?? lead;
                 }
             }
@@ -370,42 +381,54 @@ async function postSyncEnrichment(
             if (needsEnrich) {
                 // Prima prova API standard; se non trova email e il lead ha un dominio, attiva deep enrichment OSINT
                 const hasWebsite = !!(lead.website || lead.account_name);
-                const enrichResult = await enrichLeadAuto({
-                    id: leadId,
-                    first_name: lead.first_name,
-                    last_name: lead.last_name,
-                    website: lead.website,
-                    account_name: lead.account_name,
-                    linkedin_url: lead.linkedin_url,
-                    company_domain: lead.company_domain,
-                    location: lead.location,
-                }, { deep: hasWebsite });
+                const enrichResult = await enrichLeadAuto(
+                    {
+                        id: leadId,
+                        first_name: lead.first_name,
+                        last_name: lead.last_name,
+                        website: lead.website,
+                        account_name: lead.account_name,
+                        linkedin_url: lead.linkedin_url,
+                        company_domain: lead.company_domain,
+                        location: lead.location,
+                    },
+                    { deep: hasWebsite },
+                );
 
                 if (enrichResult.source !== 'none') {
                     const sets: string[] = [];
                     const params: unknown[] = [];
 
                     if (enrichResult.email && !lead.email) {
-                        sets.push('email = ?'); params.push(enrichResult.email);
+                        sets.push('email = ?');
+                        params.push(enrichResult.email);
                     }
                     if (enrichResult.phone && !lead.phone) {
-                        sets.push('phone = ?'); params.push(enrichResult.phone);
+                        sets.push('phone = ?');
+                        params.push(enrichResult.phone);
                     }
                     if (enrichResult.jobTitle && !lead.job_title) {
-                        sets.push('job_title = ?'); params.push(enrichResult.jobTitle);
+                        sets.push('job_title = ?');
+                        params.push(enrichResult.jobTitle);
                     }
                     if (enrichResult.companyName && !lead.account_name) {
-                        sets.push('account_name = ?'); params.push(enrichResult.companyName);
+                        sets.push('account_name = ?');
+                        params.push(enrichResult.companyName);
                     }
                     if (enrichResult.companyDomain && !lead.website) {
-                        sets.push('website = ?'); params.push(enrichResult.companyDomain);
+                        sets.push('website = ?');
+                        params.push(enrichResult.companyDomain);
                     }
                     if (enrichResult.companyDomain) {
-                        sets.push('company_domain = COALESCE(company_domain, ?)'); params.push(enrichResult.companyDomain);
+                        sets.push('company_domain = COALESCE(company_domain, ?)');
+                        params.push(enrichResult.companyDomain);
                     }
                     if (enrichResult.businessEmail) {
-                        sets.push('business_email = COALESCE(business_email, ?)'); params.push(enrichResult.businessEmail);
-                        sets.push('business_email_confidence = CASE WHEN business_email IS NOT NULL THEN business_email_confidence ELSE ? END');
+                        sets.push('business_email = COALESCE(business_email, ?)');
+                        params.push(enrichResult.businessEmail);
+                        sets.push(
+                            'business_email_confidence = CASE WHEN business_email IS NOT NULL THEN business_email_confidence ELSE ? END',
+                        );
                         params.push(enrichResult.businessEmailConfidence);
                     }
 
@@ -424,13 +447,15 @@ async function postSyncEnrichment(
                         if (enrichResult.phone) parts.push(`phone=${maskPhone(enrichResult.phone)}`);
                         if (enrichResult.location) parts.push(`loc=${enrichResult.location}`);
                         if (enrichResult.industry) parts.push(`industry=${enrichResult.industry}`);
-                        console.log(`  ${progress} [ENRICH] ${maskName(fullName)}: ${parts.join(' | ')} (${enrichResult.source})`);
+                        console.log(
+                            `  ${progress} [ENRICH] ${maskName(fullName)}: ${parts.join(' | ')} (${enrichResult.source})`,
+                        );
                     }
                 }
 
                 // Rate limiting: pausa tra chiamate API per evitare ban
                 if (i < total - 1) {
-                    await new Promise(r => setTimeout(r, 200 + Math.floor(Math.random() * 300)));
+                    await new Promise((r) => setTimeout(r, 200 + Math.floor(Math.random() * 300)));
                 }
             }
 
@@ -448,7 +473,9 @@ async function postSyncEnrichment(
                 lead.lead_score = scoreResult.leadScore;
                 enrichReport.scored += 1;
                 const label = wasEnriched && !needsScore ? 'RE-SCORE' : 'SCORE';
-                console.log(`  ${progress} [${label}] ${maskName(fullName)}: score=${scoreResult.leadScore} confidence=${scoreResult.confidenceScore} (${scoreResult.reason})`);
+                console.log(
+                    `  ${progress} [${label}] ${maskName(fullName)}: score=${scoreResult.leadScore} confidence=${scoreResult.confidenceScore} (${scoreResult.reason})`,
+                );
             }
 
             // 4. Promozione NEW → READY_INVITE se ha score sufficiente
@@ -459,7 +486,9 @@ async function postSyncEnrichment(
                     listName,
                 });
                 enrichReport.promoted += 1;
-                console.log(`  ${progress} [PROMOTE] ${maskName(fullName)}: NEW → READY_INVITE (score=${lead.lead_score})`);
+                console.log(
+                    `  ${progress} [PROMOTE] ${maskName(fullName)}: NEW → READY_INVITE (score=${lead.lead_score})`,
+                );
             }
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
@@ -468,7 +497,9 @@ async function postSyncEnrichment(
         }
     }
 
-    console.log(`[POST-SYNC] Completato: cleaned=${enrichReport.dataCleaned} enriched=${enrichReport.enriched} scored=${enrichReport.scored} promoted=${enrichReport.promoted} errors=${enrichReport.errors}`);
+    console.log(
+        `[POST-SYNC] Completato: cleaned=${enrichReport.dataCleaned} enriched=${enrichReport.enriched} scored=${enrichReport.scored} promoted=${enrichReport.promoted} errors=${enrichReport.errors}`,
+    );
 
     // 5. Cloud sync → Supabase (non-bloccante: errori loggati ma non propagati)
     if (config.supabaseSyncEnabled) {
@@ -528,7 +559,9 @@ async function postSyncEnrichment(
                 console.log(`  [CLOUD-SYNC] ${cloudLeads.length} lead salvati in outbox per retry.`);
             } catch (outboxErr) {
                 // A04: outbox push fallito — lead cloud sync persi per questo batch
-                console.warn(`[A04] Outbox push failed: ${outboxErr instanceof Error ? outboxErr.message : String(outboxErr)}`);
+                console.warn(
+                    `[A04] Outbox push failed: ${outboxErr instanceof Error ? outboxErr.message : String(outboxErr)}`,
+                );
             }
         }
     }
@@ -561,7 +594,16 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
         errors: 0,
         challengeDetected: false,
         lists: [],
-        enrichment: { leadsProcessed: 0, dataCleaned: 0, scored: 0, enriched: 0, promoted: 0, errors: 0, cloudSynced: 0, cloudErrors: 0 },
+        enrichment: {
+            leadsProcessed: 0,
+            dataCleaned: 0,
+            scored: 0,
+            enriched: 0,
+            promoted: 0,
+            errors: 0,
+            cloudSynced: 0,
+            cloudErrors: 0,
+        },
         dbBefore: null,
         dbAfter: null,
         durationMs: 0,
@@ -574,13 +616,15 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
     const noProxy = options.noProxy === true;
     // Se una sessione esistente è fornita dall'esterno, riusala (evita doppio browser)
     const ownsBrowser = !options.existingSession;
-    const session = options.existingSession ?? await launchBrowser({
-        headless: interactive ? false : config.headless,
-        sessionDir: account.sessionDir,
-        proxy: noProxy ? undefined : account.proxy,
-        bypassProxy: noProxy,
-        forceDesktop: true,
-    });
+    const session =
+        options.existingSession ??
+        (await launchBrowser({
+            headless: interactive ? false : config.headless,
+            sessionDir: account.sessionDir,
+            proxy: noProxy ? undefined : account.proxy,
+            bypassProxy: noProxy,
+            forceDesktop: true,
+        }));
 
     let browserClosed = false;
     const allSyncedLeadIds: Array<{ id: number; listName: string }> = [];
@@ -594,7 +638,9 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
             if (interactive || isInteractiveTTY()) {
                 const currentUrl = session.page.url().toLowerCase();
                 if (!currentUrl.includes('/login')) {
-                    await session.page.goto('https://www.linkedin.com/login', { waitUntil: 'domcontentloaded', timeout: 15_000 }).catch(() => null);
+                    await session.page
+                        .goto('https://www.linkedin.com/login', { waitUntil: 'domcontentloaded', timeout: 15_000 })
+                        .catch(() => null);
                 }
                 console.log('\n  [LOGIN] Cookie scaduti. Fai login nel browser — hai 5 minuti.\n');
                 loggedIn = await awaitManualLogin(session.page, 'salesnav-sync', { timeoutMs: 5 * 60 * 1000 });
@@ -609,10 +655,14 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
         if (!interactive) {
             try {
                 const { warmupSession } = await import('./sessionWarmer');
-                const lastSessionEndedAt = await getRuntimeFlag(`browser_session_ended_at:${account.id}`).catch(() => null);
+                const lastSessionEndedAt = await getRuntimeFlag(`browser_session_ended_at:${account.id}`).catch(
+                    () => null,
+                );
                 await warmupSession(session.page, lastSessionEndedAt);
             } catch (warmupErr) {
-                console.warn(`[WARN] Warmup fallito: ${warmupErr instanceof Error ? warmupErr.message : String(warmupErr)}`);
+                console.warn(
+                    `[WARN] Warmup fallito: ${warmupErr instanceof Error ? warmupErr.message : String(warmupErr)}`,
+                );
             }
         }
 
@@ -645,7 +695,9 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
                 // Sessione SalesNav scaduta — disabilita click-through per login manuale
                 console.warn('[SYNC] Sessione SalesNav scaduta — in attesa del login manuale...');
                 if (!interactive) disableWindowClickThrough(session.browser);
-                const relogged = await awaitManualLogin(session.page, 'salesnav-list-sync', { timeoutMs: 3 * 60 * 1000 });
+                const relogged = await awaitManualLogin(session.page, 'salesnav-list-sync', {
+                    timeoutMs: 3 * 60 * 1000,
+                });
                 if (!relogged) throw navErr;
                 if (!interactive) {
                     enableWindowClickThrough(session.browser);
@@ -667,10 +719,13 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
 
         if (targetLists.length === 0) {
             // Riusa i nomi già scoperti — evita una seconda navigazione alla pagina liste
-            const hint = allDiscoveredNames.length > 0
-                ? ` Liste trovate: [${allDiscoveredNames.join(', ')}]. Usa --list "NOME" o --url <url>.`
-                : ' Nessuna lista trovata nella pagina SalesNav.';
-            throw new Error(`Sales Navigator sync: nessuna lista corrisponde al filtro "${listFilter || '(nessuno)'}".${hint}`);
+            const hint =
+                allDiscoveredNames.length > 0
+                    ? ` Liste trovate: [${allDiscoveredNames.join(', ')}]. Usa --list "NOME" o --url <url>.`
+                    : ' Nessuna lista trovata nella pagina SalesNav.';
+            throw new Error(
+                `Sales Navigator sync: nessuna lista corrisponde al filtro "${listFilter || '(nessuno)'}".${hint}`,
+            );
         }
 
         // Checkpoint/Resume (4.1 fix): salva i NOMI delle liste già completate
@@ -678,7 +733,7 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
         const checkpointKey = `sync_list_checkpoint:${account.id}:${options.listName ?? 'all'}`;
         const lastCheckpointRaw = await getRuntimeFlag(checkpointKey).catch(() => null);
         const completedListNames = new Set<string>(
-            lastCheckpointRaw ? JSON.parse(lastCheckpointRaw) as string[] : [],
+            lastCheckpointRaw ? (JSON.parse(lastCheckpointRaw) as string[]) : [],
         );
 
         for (let listIdx = 0; listIdx < targetLists.length; listIdx++) {
@@ -712,13 +767,18 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
                     interactive,
                 });
             } catch (scrapeErr) {
-                const isSalesNavLogin = scrapeErr instanceof Error && scrapeErr.message.includes('SALESNAV_LOGIN_REQUIRED');
+                const isSalesNavLogin =
+                    scrapeErr instanceof Error && scrapeErr.message.includes('SALESNAV_LOGIN_REQUIRED');
                 if (!isSalesNavLogin) throw scrapeErr;
 
                 // Sessione SalesNav scaduta durante scraping lista — attendi login manuale
-                console.warn(`[SYNC] Sessione SalesNav scaduta su lista "${listName}" — in attesa del login manuale...`);
+                console.warn(
+                    `[SYNC] Sessione SalesNav scaduta su lista "${listName}" — in attesa del login manuale...`,
+                );
                 if (!interactive) disableWindowClickThrough(session.browser);
-                const relogged = await awaitManualLogin(session.page, 'salesnav-list-scrape', { timeoutMs: 3 * 60 * 1000 });
+                const relogged = await awaitManualLogin(session.page, 'salesnav-list-scrape', {
+                    timeoutMs: 3 * 60 * 1000,
+                });
                 if (!relogged) throw scrapeErr;
                 if (!interactive) {
                     enableWindowClickThrough(session.browser);
@@ -826,7 +886,7 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
             }
 
             report.lists.push(listReport);
-            allSyncedLeadIds.push(...syncedLeadIds.map(id => ({ id, listName })));
+            allSyncedLeadIds.push(...syncedLeadIds.map((id) => ({ id, listName })));
 
             // Checkpoint (4.1 fix): persisti nomi liste completate
             if (!options.dryRun) {
@@ -855,7 +915,7 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
             // Post-sync enrichment per tutti i lead estratti (no browser needed)
             // Dedup: un lead che appare in 2+ liste viene arricchito una sola volta
             const seenLeadIds = new Set<number>();
-            const uniqueSyncedLeads = allSyncedLeadIds.filter(entry => {
+            const uniqueSyncedLeads = allSyncedLeadIds.filter((entry) => {
                 if (seenLeadIds.has(entry.id)) return false;
                 seenLeadIds.add(entry.id);
                 return true;

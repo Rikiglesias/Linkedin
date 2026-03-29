@@ -21,7 +21,10 @@ export interface DBRunResult {
 
 // ─── Query Profiling ─────────────────────────────────────────────────────────
 const QUERY_PROFILING_ENABLED = process.env.DB_QUERY_PROFILING === 'true';
-const QUERY_PROFILING_THRESHOLD_MS = Math.max(1, Number.parseInt(process.env.DB_QUERY_PROFILING_THRESHOLD_MS ?? '50', 10) || 50);
+const QUERY_PROFILING_THRESHOLD_MS = Math.max(
+    1,
+    Number.parseInt(process.env.DB_QUERY_PROFILING_THRESHOLD_MS ?? '50', 10) || 50,
+);
 
 async function profileQuery<T>(label: string, sql: string, fn: () => Promise<T>): Promise<T> {
     if (!QUERY_PROFILING_ENABLED) return fn();
@@ -588,9 +591,7 @@ export async function rollbackMigration(migrationName: string): Promise<boolean>
  */
 export async function listAppliedMigrations(): Promise<Array<{ name: string; applied_at: string }>> {
     const db = await getDatabase();
-    return db.query<{ name: string; applied_at: string }>(
-        `SELECT name, applied_at FROM _migrations ORDER BY name`,
-    );
+    return db.query<{ name: string; applied_at: string }>(`SELECT name, applied_at FROM _migrations ORDER BY name`);
 }
 
 export async function getDatabase(): Promise<DatabaseManager> {
@@ -695,7 +696,12 @@ export function checkDiskSpace(): DiskSpaceStatus {
         }
         return { ok: true, level: 'ok', freeMb, message: `Spazio disco OK: ${freeMb}MB liberi` };
     } catch {
-        return { ok: true, level: 'ok', freeMb: -1, message: 'Impossibile verificare spazio disco (statfsSync non disponibile)' };
+        return {
+            ok: true,
+            level: 'ok',
+            freeMb: -1,
+            message: 'Impossibile verificare spazio disco (statfsSync non disponibile)',
+        };
     }
 }
 
@@ -740,16 +746,24 @@ export async function backupDatabase(): Promise<string> {
         const backupPath = path.join(backupsDir, `pg_backup_${dateStr}.sql`);
         try {
             await new Promise<void>((resolve, reject) => {
-                execFile('pg_dump', [
-                    '--dbname', config.databaseUrl,
-                    '--format', 'plain',
-                    '--no-owner',
-                    '--no-privileges',
-                    '--file', backupPath,
-                ], { timeout: 120_000 }, (error) => {
-                    if (error) reject(error);
-                    else resolve();
-                });
+                execFile(
+                    'pg_dump',
+                    [
+                        '--dbname',
+                        config.databaseUrl,
+                        '--format',
+                        'plain',
+                        '--no-owner',
+                        '--no-privileges',
+                        '--file',
+                        backupPath,
+                    ],
+                    { timeout: 120_000 },
+                    (error) => {
+                        if (error) reject(error);
+                        else resolve();
+                    },
+                );
             });
             ensureFilePrivate(backupPath);
             return backupPath;
@@ -757,7 +771,9 @@ export async function backupDatabase(): Promise<string> {
             const msg = error instanceof Error ? error.message : String(error);
             const safeMsg = msg.replace(/postgres:\/\/[^\s]+/g, 'postgres://***');
             if (safeMsg.includes('ENOENT') || safeMsg.includes('not found') || safeMsg.includes('not recognized')) {
-                console.warn('[BACKUP] pg_dump non trovato. Installare postgresql-client o delegare il backup all\'infrastruttura.');
+                console.warn(
+                    "[BACKUP] pg_dump non trovato. Installare postgresql-client o delegare il backup all'infrastruttura.",
+                );
                 return 'pg_dump not available — install postgresql-client for automated backups';
             }
             throw new Error(`pg_dump failed: ${safeMsg}`);

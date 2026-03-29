@@ -7,8 +7,20 @@ import { normalizeLinkedInUrl } from '../linkedinUrl';
 
 describe('Milestone 1100 — final integration', () => {
     it('sistema produce risultati coerenti per account maturo sano', () => {
-        const risk = evaluateRisk({ errorRate: 0.05, selectorFailureRate: 0.02, pendingRatio: 0.25, challengeCount: 0, inviteVelocityRatio: 0.15 });
-        const trust = calculateAccountTrustScore({ ssiScore: 75, ageDays: 400, acceptanceRatePct: 35, challengesLast7d: 0, pendingRatio: 0.25 });
+        const risk = evaluateRisk({
+            errorRate: 0.05,
+            selectorFailureRate: 0.02,
+            pendingRatio: 0.25,
+            challengeCount: 0,
+            inviteVelocityRatio: 0.15,
+        });
+        const trust = calculateAccountTrustScore({
+            ssiScore: 75,
+            ageDays: 400,
+            acceptanceRatePct: 35,
+            challengesLast7d: 0,
+            pendingRatio: 0.25,
+        });
         expect(risk.action).toBe('NORMAL');
         expect(trust.budgetMultiplier).toBeGreaterThanOrEqual(0.8);
     });

@@ -137,20 +137,26 @@ describe('computeAccountBudgetShares', () => {
     });
 
     it('singolo account → prende tutto il budget', () => {
-        const accounts = [makeAccount('a1', 1, 1)] as ReturnType<typeof import('../accountManager').getRuntimeAccountProfiles>;
+        const accounts = [makeAccount('a1', 1, 1)] as ReturnType<
+            typeof import('../accountManager').getRuntimeAccountProfiles
+        >;
         const shares = computeAccountBudgetShares(accounts, 10, 'invite');
         expect(shares.get('a1')).toBe(10);
     });
 
     it('due account peso uguale → split equo', () => {
-        const accounts = [makeAccount('a1', 1, 1), makeAccount('a2', 1, 1)] as ReturnType<typeof import('../accountManager').getRuntimeAccountProfiles>;
+        const accounts = [makeAccount('a1', 1, 1), makeAccount('a2', 1, 1)] as ReturnType<
+            typeof import('../accountManager').getRuntimeAccountProfiles
+        >;
         const shares = computeAccountBudgetShares(accounts, 10, 'invite');
         expect(shares.get('a1')).toBe(5);
         expect(shares.get('a2')).toBe(5);
     });
 
     it('due account peso 3:1 → distribuzione proporzionale', () => {
-        const accounts = [makeAccount('a1', 3, 1), makeAccount('a2', 1, 1)] as ReturnType<typeof import('../accountManager').getRuntimeAccountProfiles>;
+        const accounts = [makeAccount('a1', 3, 1), makeAccount('a2', 1, 1)] as ReturnType<
+            typeof import('../accountManager').getRuntimeAccountProfiles
+        >;
         const shares = computeAccountBudgetShares(accounts, 12, 'invite');
         // 3/4 * 12 = 9, 1/4 * 12 = 3
         expect(shares.get('a1')).toBe(9);
@@ -158,31 +164,43 @@ describe('computeAccountBudgetShares', () => {
     });
 
     it('budget 0 → tutti zero', () => {
-        const accounts = [makeAccount('a1', 1, 1)] as ReturnType<typeof import('../accountManager').getRuntimeAccountProfiles>;
+        const accounts = [makeAccount('a1', 1, 1)] as ReturnType<
+            typeof import('../accountManager').getRuntimeAccountProfiles
+        >;
         const shares = computeAccountBudgetShares(accounts, 0, 'invite');
         expect(shares.get('a1')).toBe(0);
     });
 
     it('budget negativo → tutti zero', () => {
-        const accounts = [makeAccount('a1', 1, 1)] as ReturnType<typeof import('../accountManager').getRuntimeAccountProfiles>;
+        const accounts = [makeAccount('a1', 1, 1)] as ReturnType<
+            typeof import('../accountManager').getRuntimeAccountProfiles
+        >;
         const shares = computeAccountBudgetShares(accounts, -5, 'invite');
         expect(shares.get('a1')).toBe(0);
     });
 
     it('nessun account → default prende tutto', () => {
-        const shares = computeAccountBudgetShares([] as ReturnType<typeof import('../accountManager').getRuntimeAccountProfiles>, 10, 'invite');
+        const shares = computeAccountBudgetShares(
+            [] as ReturnType<typeof import('../accountManager').getRuntimeAccountProfiles>,
+            10,
+            'invite',
+        );
         expect(shares.get('default')).toBe(10);
     });
 
     it('somma shares === budget totale', () => {
-        const accounts = [makeAccount('a1', 2, 1), makeAccount('a2', 3, 1), makeAccount('a3', 1, 1)] as ReturnType<typeof import('../accountManager').getRuntimeAccountProfiles>;
+        const accounts = [makeAccount('a1', 2, 1), makeAccount('a2', 3, 1), makeAccount('a3', 1, 1)] as ReturnType<
+            typeof import('../accountManager').getRuntimeAccountProfiles
+        >;
         const shares = computeAccountBudgetShares(accounts, 17, 'invite');
         const total = Array.from(shares.values()).reduce((s, v) => s + v, 0);
         expect(total).toBe(17);
     });
 
     it('channel message usa messageWeight', () => {
-        const accounts = [makeAccount('a1', 1, 5), makeAccount('a2', 1, 1)] as ReturnType<typeof import('../accountManager').getRuntimeAccountProfiles>;
+        const accounts = [makeAccount('a1', 1, 5), makeAccount('a2', 1, 1)] as ReturnType<
+            typeof import('../accountManager').getRuntimeAccountProfiles
+        >;
         const shares = computeAccountBudgetShares(accounts, 12, 'message');
         // a1 ha messageWeight 5, a2 ha 1 → 5/6 * 12 = 10, 1/6 * 12 = 2
         expect(shares.get('a1')).toBe(10);

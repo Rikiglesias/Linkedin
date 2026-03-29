@@ -4,10 +4,7 @@ import {
     computeBackpressureBatchSize,
     computeNextBackpressureLevel,
 } from '../sync/backpressure';
-import {
-    generateClientReport,
-    formatClientReportText,
-} from '../telemetry/clientReport';
+import { generateClientReport, formatClientReportText } from '../telemetry/clientReport';
 
 describe('Backpressure (M20)', () => {
     it('clampBackpressureLevel clamps tra 1 e 8', () => {
@@ -123,7 +120,7 @@ describe('Client Report (A15)', () => {
             expiredInvitesCount: 15,
             accountHealth: 'YELLOW',
         });
-        expect(report.suggestions.some(s => s.includes('Pending ratio'))).toBe(true);
+        expect(report.suggestions.some((s) => s.includes('Pending ratio'))).toBe(true);
     });
 
     it('zero attività → suggerimento verifica bot', () => {
@@ -139,7 +136,7 @@ describe('Client Report (A15)', () => {
             expiredInvitesCount: 0,
             accountHealth: 'GREEN',
         });
-        expect(report.suggestions.some(s => s.includes('Nessuna attività'))).toBe(true);
+        expect(report.suggestions.some((s) => s.includes('Nessuna attività'))).toBe(true);
     });
 
     it('formatClientReportText produce testo leggibile', () => {

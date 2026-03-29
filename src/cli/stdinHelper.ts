@@ -34,8 +34,14 @@ export async function readLineFromStdin(prompt: string): Promise<string> {
             }
         };
         process.stdin.on('data', onData);
-        process.stdin.once('close', () => { cleanup(); resolve(''); });
-        process.stdin.once('error', () => { cleanup(); resolve(''); });
+        process.stdin.once('close', () => {
+            cleanup();
+            resolve('');
+        });
+        process.stdin.once('error', () => {
+            cleanup();
+            resolve('');
+        });
     });
 }
 

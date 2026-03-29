@@ -17,7 +17,7 @@ describe('utils/random', () => {
         expect(randomInt(7, 7)).toBe(7);
     });
 
-    it('randomElement ritorna un elemento dell\'array', () => {
+    it("randomElement ritorna un elemento dell'array", () => {
         const arr = ['a', 'b', 'c'];
         for (let i = 0; i < 20; i++) {
             expect(arr).toContain(randomElement(arr));

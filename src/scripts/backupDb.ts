@@ -30,7 +30,9 @@ function applyRetentionPolicy(): number {
     const files = fs
         .readdirSync(BACKUP_DIR)
         .filter(
-            (fileName) => (fileName.startsWith('backup-') || fileName.startsWith('pg_backup_')) && (fileName.endsWith('.sqlite') || fileName.endsWith('.sql')),
+            (fileName) =>
+                (fileName.startsWith('backup-') || fileName.startsWith('pg_backup_')) &&
+                (fileName.endsWith('.sqlite') || fileName.endsWith('.sql')),
         )
         .map((fileName) => ({ name: fileName, mtime: fs.statSync(path.join(BACKUP_DIR, fileName)).mtimeMs }))
         .sort((a, b) => b.mtime - a.mtime);
@@ -71,7 +73,16 @@ function runPostgresBackup(timestamp: string): string {
     console.log(`⏳ Avvio backup PostgreSQL in ${backupPath}...`);
 
     if (config.databaseUrl.includes('@db:')) {
-        const output = execFileSync('docker', ['exec', 'linkedin-pg', 'pg_dump', '-U', 'bot_user', '-d', 'linkedin_bot', '--clean']);
+        const output = execFileSync('docker', [
+            'exec',
+            'linkedin-pg',
+            'pg_dump',
+            '-U',
+            'bot_user',
+            '-d',
+            'linkedin_bot',
+            '--clean',
+        ]);
         fs.writeFileSync(backupPath, output);
         console.log(`✅ [PostgreSQL - Docker] Backup completato: ${backupPath}`);
     } else {

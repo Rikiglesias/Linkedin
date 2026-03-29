@@ -12,7 +12,12 @@ beforeAll(() => {
 describe('resolveFollowUpCadence — extreme inputs', () => {
     it('follow_up_count = 100 → delay molto lungo', () => {
         const cadence = resolveFollowUpCadence(
-            { id: 500, messaged_at: '2024-01-01T00:00:00Z', follow_up_sent_at: '2024-06-01T00:00:00Z', follow_up_count: 100 },
+            {
+                id: 500,
+                messaged_at: '2024-01-01T00:00:00Z',
+                follow_up_sent_at: '2024-06-01T00:00:00Z',
+                follow_up_count: 100,
+            },
             null,
         );
         expect(cadence.requiredDelayDays).toBeGreaterThan(100);

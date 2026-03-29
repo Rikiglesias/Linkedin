@@ -102,13 +102,18 @@ async function runCanaryIfNeeded(workflow: WorkflowSelection): Promise<boolean> 
 
             // Rileva restrizioni account (shadowban, limited, under review)
             const restrictionIndicators = [
-                'restricted', 'under review', 'temporarily limited',
-                'limitato', 'attività sospetta', 'account bloccato',
-                'your account has been restricted', 'account is restricted',
+                'restricted',
+                'under review',
+                'temporarily limited',
+                'limitato',
+                'attività sospetta',
+                'account bloccato',
+                'your account has been restricted',
+                'account is restricted',
             ];
-            const pageText = await session.page.textContent('body').catch(() => '') ?? '';
+            const pageText = (await session.page.textContent('body').catch(() => '')) ?? '';
             const lowerText = pageText.toLowerCase();
-            const restriction = restrictionIndicators.find(ind => lowerText.includes(ind));
+            const restriction = restrictionIndicators.find((ind) => lowerText.includes(ind));
             if (restriction) {
                 console.error(`[CANARY] Account ${account.id} RISTRETTO: trovato "${restriction}" nella pagina`);
                 await quarantineAccount('ACCOUNT_RESTRICTED', {
@@ -505,7 +510,6 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
                 'warn',
             );
         }
-
     }
 
     // Ban Probability Score (5.4 wire): stima probabilità ban 0-100.
@@ -514,9 +518,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
     if (!options.dryRun) {
         const banProb = estimateBanProbability(
             [], // predictiveAlerts non disponibili se alerts disabilitati — score usa gli altri 3 fattori
-            schedule.riskSnapshot.pendingRatio > 0
-                ? (1 - schedule.riskSnapshot.pendingRatio) * 100
-                : 50,
+            schedule.riskSnapshot.pendingRatio > 0 ? (1 - schedule.riskSnapshot.pendingRatio) * 100 : 50,
             schedule.riskSnapshot.challengeCount,
             schedule.riskSnapshot.pendingRatio,
         );

@@ -2,8 +2,17 @@ const MAX_RECURSION_DEPTH = 6;
 const REDACTED = '[REDACTED]';
 
 const SENSITIVE_KEY_PARTS = new Set([
-    'token', 'secret', 'password', 'passwd', 'key', 'cookie',
-    'authorization', 'session', 'bearer', 'credential', 'credentials',
+    'token',
+    'secret',
+    'password',
+    'passwd',
+    'key',
+    'cookie',
+    'authorization',
+    'session',
+    'bearer',
+    'credential',
+    'credentials',
 ]);
 
 function isSensitiveKey(key: string): boolean {
@@ -11,7 +20,7 @@ function isSensitiveKey(key: string): boolean {
         .replace(/([a-z])([A-Z])/g, '$1_$2')
         .toLowerCase()
         .split(/[_\-.\s]+/);
-    return parts.some(part => SENSITIVE_KEY_PARTS.has(part));
+    return parts.some((part) => SENSITIVE_KEY_PARTS.has(part));
 }
 
 const JWT_PATTERN = /\b[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\b/g;

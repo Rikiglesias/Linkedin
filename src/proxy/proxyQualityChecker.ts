@@ -32,20 +32,61 @@ export interface ProxyQualityReport {
 // ─── ASN-based datacenter detection ───────────────────────────────────────────
 
 const DATACENTER_ASN_KEYWORDS = [
-    'amazon', 'aws', 'google', 'gcp', 'microsoft', 'azure',
-    'digitalocean', 'linode', 'akamai', 'vultr', 'hetzner',
-    'ovh', 'scaleway', 'oracle', 'ibm', 'rackspace',
-    'cloudflare', 'fastly', 'leaseweb', 'choopa', 'contabo',
-    'hostinger', 'ionos', 'kamatera', 'upcloud', 'cherry servers',
-    'data center', 'datacenter', 'hosting', 'server', 'cloud',
-    'colocation', 'colo',
+    'amazon',
+    'aws',
+    'google',
+    'gcp',
+    'microsoft',
+    'azure',
+    'digitalocean',
+    'linode',
+    'akamai',
+    'vultr',
+    'hetzner',
+    'ovh',
+    'scaleway',
+    'oracle',
+    'ibm',
+    'rackspace',
+    'cloudflare',
+    'fastly',
+    'leaseweb',
+    'choopa',
+    'contabo',
+    'hostinger',
+    'ionos',
+    'kamatera',
+    'upcloud',
+    'cherry servers',
+    'data center',
+    'datacenter',
+    'hosting',
+    'server',
+    'cloud',
+    'colocation',
+    'colo',
 ];
 
 const MOBILE_ASN_KEYWORDS = [
-    'vodafone', 'tim ', 't-mobile', 'verizon', 'at&t',
-    'orange', 'telefonica', 'wind', 'iliad', '3 italia',
-    'fastweb mobile', 'ho.', 'very mobile', 'kena',
-    'mobile', 'wireless', 'cellular', 'lte', '5g',
+    'vodafone',
+    'tim ',
+    't-mobile',
+    'verizon',
+    'at&t',
+    'orange',
+    'telefonica',
+    'wind',
+    'iliad',
+    '3 italia',
+    'fastweb mobile',
+    'ho.',
+    'very mobile',
+    'kena',
+    'mobile',
+    'wireless',
+    'cellular',
+    'lte',
+    '5g',
 ];
 
 export function classifyAsnOrg(asnOrg: string): ProxyIpType {
@@ -235,10 +276,7 @@ export async function checkProxyQuality(proxy: ProxyConfig): Promise<ProxyQualit
     const ip = extractIpFromProxy(proxy.server);
     const apiUrl = config.proxyQualityAsnApiUrl || 'http://ip-api.com/json/';
 
-    const [asnResult, latencyMs] = await Promise.all([
-        lookupAsnInfo(ip, apiUrl),
-        measureProxyLatency(proxy.server),
-    ]);
+    const [asnResult, latencyMs] = await Promise.all([lookupAsnInfo(ip, apiUrl), measureProxyLatency(proxy.server)]);
 
     // If the API explicitly says "hosting=true", it's datacenter regardless of ASN org text
     let detectedType: ProxyIpType;
@@ -271,9 +309,7 @@ export async function checkProxyQuality(proxy: ProxyConfig): Promise<ProxyQualit
 let lastFullCheckAt: string | null = null;
 let lastReport: ProxyQualityReport | null = null;
 
-export async function checkAllProxiesQuality(
-    proxies: ProxyConfig[],
-): Promise<ProxyQualityReport> {
+export async function checkAllProxiesQuality(proxies: ProxyConfig[]): Promise<ProxyQualityReport> {
     if (proxies.length === 0) {
         const emptyReport: ProxyQualityReport = {
             lastCheckAt: new Date().toISOString(),
@@ -350,4 +386,3 @@ export function shouldRunQualityCheck(): boolean {
 export function getLastQualityReport(): ProxyQualityReport | null {
     return lastReport;
 }
-

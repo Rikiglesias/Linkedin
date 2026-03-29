@@ -83,54 +83,72 @@ async function lightListScroll(page: Page): Promise<void> {
 
     // Rileva container scrollabile tramite INDICE (non attributo DOM — evita fingerprint).
     // Stesso pattern di bulkSaveOrchestrator.scrollAndReadPage.
-    const scrollContainerIndex = await page.evaluate((leadSel: string) => {
-        const bodyOverflow = document.body.scrollHeight - window.innerHeight;
-        if (bodyOverflow > 100) return -1; // Window scroll funziona
+    const scrollContainerIndex = await page
+        .evaluate((leadSel: string) => {
+            const bodyOverflow = document.body.scrollHeight - window.innerHeight;
+            if (bodyOverflow > 100) return -1; // Window scroll funziona
 
-        const candidates = document.querySelectorAll('div, main, section, [role="main"]');
-        let bestIndex = -1;
-        let bestDiff = 0;
-        for (let idx = 0; idx < candidates.length; idx++) {
-            const htmlEl = candidates[idx] as HTMLElement;
-            const diff = htmlEl.scrollHeight - htmlEl.clientHeight;
-            if (diff > 100 && diff > bestDiff) {
-                if (htmlEl.querySelector(leadSel)) {
-                    bestIndex = idx;
-                    bestDiff = diff;
+            const candidates = document.querySelectorAll('div, main, section, [role="main"]');
+            let bestIndex = -1;
+            let bestDiff = 0;
+            for (let idx = 0; idx < candidates.length; idx++) {
+                const htmlEl = candidates[idx] as HTMLElement;
+                const diff = htmlEl.scrollHeight - htmlEl.clientHeight;
+                if (diff > 100 && diff > bestDiff) {
+                    if (htmlEl.querySelector(leadSel)) {
+                        bestIndex = idx;
+                        bestDiff = diff;
+                    }
                 }
             }
-        }
-        return bestIndex;
-    }, LEAD_ANCHOR_SELECTOR).catch(() => -1);
+            return bestIndex;
+        }, LEAD_ANCHOR_SELECTOR)
+        .catch(() => -1);
 
     // Helper: esegui scroll sul container corretto (via indice, no attributo DOM)
     const doScroll = async (dy: number) => {
-        await page.evaluate(({ delta, idx }) => {
-            if (idx >= 0) {
-                const el = document.querySelectorAll('div, main, section, [role="main"]')[idx] as HTMLElement | undefined;
-                if (el) { el.scrollTop += delta; return; }
-            }
-            window.scrollBy({ top: delta, behavior: 'smooth' });
-        }, { delta: dy, idx: scrollContainerIndex });
+        await page.evaluate(
+            ({ delta, idx }) => {
+                if (idx >= 0) {
+                    const el = document.querySelectorAll('div, main, section, [role="main"]')[idx] as
+                        | HTMLElement
+                        | undefined;
+                    if (el) {
+                        el.scrollTop += delta;
+                        return;
+                    }
+                }
+                window.scrollBy({ top: delta, behavior: 'smooth' });
+            },
+            { delta: dy, idx: scrollContainerIndex },
+        );
     };
 
     const getScrollPos = () =>
-        page.evaluate((idx: number) => {
-            if (idx >= 0) {
-                const el = document.querySelectorAll('div, main, section, [role="main"]')[idx] as HTMLElement | undefined;
-                return el ? el.scrollTop : window.scrollY;
-            }
-            return window.scrollY;
-        }, scrollContainerIndex).catch(() => 0);
+        page
+            .evaluate((idx: number) => {
+                if (idx >= 0) {
+                    const el = document.querySelectorAll('div, main, section, [role="main"]')[idx] as
+                        | HTMLElement
+                        | undefined;
+                    return el ? el.scrollTop : window.scrollY;
+                }
+                return window.scrollY;
+            }, scrollContainerIndex)
+            .catch(() => 0);
 
     const isAtBottom = () =>
-        page.evaluate((idx: number) => {
-            if (idx >= 0) {
-                const el = document.querySelectorAll('div, main, section, [role="main"]')[idx] as HTMLElement | undefined;
-                if (el) return el.scrollTop + el.clientHeight >= el.scrollHeight - 100;
-            }
-            return window.scrollY + window.innerHeight >= document.body.scrollHeight - 100;
-        }, scrollContainerIndex).catch(() => true);
+        page
+            .evaluate((idx: number) => {
+                if (idx >= 0) {
+                    const el = document.querySelectorAll('div, main, section, [role="main"]')[idx] as
+                        | HTMLElement
+                        | undefined;
+                    if (el) return el.scrollTop + el.clientHeight >= el.scrollHeight - 100;
+                }
+                return window.scrollY + window.innerHeight >= document.body.scrollHeight - 100;
+            }, scrollContainerIndex)
+            .catch(() => true);
 
     // Scroll fino in fondo con pattern humanizzati
     let noProgressCount = 0;
@@ -157,7 +175,7 @@ async function lightListScroll(page: Page): Promise<void> {
         const deltaY = logNormalScrollDelta();
 
         // 10%: overshoot + scroll-back
-        if (Math.random() < 0.10) {
+        if (Math.random() < 0.1) {
             const overshoot = deltaY * (1.3 + Math.random() * 0.4);
             await doScroll(overshoot);
             await humanDelay(page, 200, 500);
@@ -172,7 +190,7 @@ async function lightListScroll(page: Page): Promise<void> {
         await humanDelay(page, 500 + Math.random() * 800, 1200 + Math.random() * 600);
 
         // 20%: hover su una lead card per 1-3s (lettura naturale)
-        if (Math.random() < 0.20) {
+        if (Math.random() < 0.2) {
             await hoverRandomLeadCard(page);
             await humanDelay(page, 1000, 3000);
         }
@@ -186,7 +204,6 @@ async function lightListScroll(page: Page): Promise<void> {
             noProgressCount = 0;
         }
     }
-
 }
 
 /**
@@ -220,7 +237,6 @@ const SHOW_MORE_SELECTOR = [
     'button:has-text("Mostra risultati")',
 ].join(', ');
 
-
 /** Pattern di stato SalesNav che inquinano il nome (es. "era online 5 ore fa") */
 const SALESNAV_STATUS_PATTERNS = [
     /\s+era online\b.*/i,
@@ -231,7 +247,7 @@ const SALESNAV_STATUS_PATTERNS = [
     /\s+\d+\s+(ore?|minut[oi]|giorni?|hours?|minutes?|days?)\s+(fa|ago)\b.*/i,
     /\s+online\s+now.*/i,
     /\s+online\s+ora.*/i,
-    /\s+\(\d+\).*/,  // "(3rd)" connection degree
+    /\s+\(\d+\).*/, // "(3rd)" connection degree
     /\s+·\s+\d+(st|nd|rd|th).*/i,
 ];
 
@@ -310,11 +326,19 @@ function looksLikeLocation(line: string): boolean {
     const parts = normalized.split(',').map((p) => p.trim());
     if (parts.length >= 2 && parts.every((p) => p.length > 1 && p.length < 40)) return true;
     // Paesi comuni a fine riga
-    if (/\b(italy|italia|france|spain|españa|netherlands|nederland|germany|deutschland|belgium|uk|united kingdom|portugal|switzerland|austria|ireland|poland|czech|sweden|denmark|norway|finland|greece|romania|hungary|croatia|brazil|argentina|mexico|india|china|japan|australia|canada|united states)\s*$/i.test(normalized)) return true;
+    if (
+        /\b(italy|italia|france|spain|españa|netherlands|nederland|germany|deutschland|belgium|uk|united kingdom|portugal|switzerland|austria|ireland|poland|czech|sweden|denmark|norway|finland|greece|romania|hungary|croatia|brazil|argentina|mexico|india|china|japan|australia|canada|united states)\s*$/i.test(
+            normalized,
+        )
+    )
+        return true;
     return false;
 }
 
-function pickJobAccountAndLocation(lines: string[], fullName: string): { jobTitle: string; accountName: string; location: string } {
+function pickJobAccountAndLocation(
+    lines: string[],
+    fullName: string,
+): { jobTitle: string; accountName: string; location: string } {
     const normalizedName = cleanText(fullName).toLowerCase();
     const candidates = lines
         .map(cleanText)
@@ -448,14 +472,17 @@ async function extractRawLeadCandidates(page: Page): Promise<RawLeadCandidate[]>
             if (/\/sales\/lists\//i.test(href)) continue;
 
             // Normalizza URL per dedup: rimuovi hash, query e suffisso ,NAME_SEARCH
-            const dedupeKey = href.split('#')[0].split('?')[0].replace(/,NAME_SEARCH.*$/i, '');
+            const dedupeKey = href
+                .split('#')[0]
+                .split('?')[0]
+                .replace(/,NAME_SEARCH.*$/i, '');
             if (seen.has(dedupeKey)) continue;
             seen.add(dedupeKey);
 
             // Cerca il container più vicino (card del lead)
             const container = anchor.closest(
                 'li, article, tr, .artdeco-entity-lockup, [data-test-search-result], ' +
-                '[class*="entity-result"], [class*="result-lockup"], [class*="lead-result"]',
+                    '[class*="entity-result"], [class*="result-lockup"], [class*="lead-result"]',
             ) as HTMLElement | null;
             const textSource = container?.innerText ?? anchor.innerText ?? '';
             const lines = textSource
@@ -478,7 +505,10 @@ async function extractRawLeadCandidates(page: Page): Promise<RawLeadCandidate[]>
             const leadAnchor = el.querySelector('a[href*="/sales/lead/"]') as HTMLAnchorElement | null;
             if (!leadAnchor) continue;
             const href = leadAnchor.href || '';
-            const dedupeKey = href.split('#')[0].split('?')[0].replace(/,NAME_SEARCH.*$/i, '');
+            const dedupeKey = href
+                .split('#')[0]
+                .split('?')[0]
+                .replace(/,NAME_SEARCH.*$/i, '');
             if (seen.has(dedupeKey)) continue;
             seen.add(dedupeKey);
 
@@ -556,25 +586,33 @@ export async function navigateToSavedLists(page: Page): Promise<SalesNavSavedLis
     if (navUrl.includes('/sales/login') || navUrl.includes('/login') || navUrl.includes('/authwall')) {
         throw new Error(
             'SALESNAV_LOGIN_REQUIRED: Sessione Sales Navigator scaduta. ' +
-            `La pagina è stata reindirizzata a: ${page.url()}. ` +
-            'Effettua il login manuale nel browser.',
+                `La pagina è stata reindirizzata a: ${page.url()}. ` +
+                'Effettua il login manuale nel browser.',
         );
     }
 
     // CC-33: Detection paywall/subscription SalesNav
-    const pageText = await page.textContent('body').catch(() => '') ?? '';
+    const pageText = (await page.textContent('body').catch(() => '')) ?? '';
     const lowerText = pageText.toLowerCase();
     const paywallIndicators = [
-        'start your free trial', 'start free trial', 'subscribe to sales navigator',
-        'upgrade to sales navigator', 'get sales navigator', 'try sales navigator',
-        'unlock sales navigator', 'sales navigator core', 'sales navigator advanced',
-        'choose a plan', 'pick your plan', 'compare plans',
+        'start your free trial',
+        'start free trial',
+        'subscribe to sales navigator',
+        'upgrade to sales navigator',
+        'get sales navigator',
+        'try sales navigator',
+        'unlock sales navigator',
+        'sales navigator core',
+        'sales navigator advanced',
+        'choose a plan',
+        'pick your plan',
+        'compare plans',
     ];
-    const isPaywall = paywallIndicators.some(indicator => lowerText.includes(indicator));
+    const isPaywall = paywallIndicators.some((indicator) => lowerText.includes(indicator));
     if (isPaywall) {
         throw new Error(
             'Sales Navigator subscription non rilevata. La pagina mostra un paywall/upgrade prompt. ' +
-            'Verifica che l\'account abbia un abbonamento SalesNav attivo.',
+                "Verifica che l'account abbia un abbonamento SalesNav attivo.",
         );
     }
 
@@ -598,7 +636,7 @@ export async function scrapeLeadsFromSalesNavList(
     if (scrapeUrl.includes('/sales/login') || scrapeUrl.includes('/login') || scrapeUrl.includes('/authwall')) {
         throw new Error(
             'SALESNAV_LOGIN_REQUIRED: Sessione Sales Navigator scaduta durante navigazione alla lista. ' +
-            `URL attuale: ${page.url()}. Effettua il login manuale nel browser.`,
+                `URL attuale: ${page.url()}. Effettua il login manuale nel browser.`,
         );
     }
 
@@ -643,7 +681,9 @@ export async function scrapeLeadsFromSalesNavList(
             rawCandidates = await extractRawLeadCandidates(page);
         }
         candidatesDiscovered += rawCandidates.length;
-        console.log(`[SYNC] Pagina ${pageNumber}: ${rawCandidates.length} candidati trovati, ${byUrl.size} unici finora`);
+        console.log(
+            `[SYNC] Pagina ${pageNumber}: ${rawCandidates.length} candidati trovati, ${byUrl.size} unici finora`,
+        );
         for (const raw of rawCandidates) {
             const parsed = parseRawLeadCandidate(raw);
             if (!parsed) continue;

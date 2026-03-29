@@ -107,23 +107,41 @@ describe('Proxy Quality — Score Computation', () => {
 
 describe('JA3 Validator — Browser Family Detection', () => {
     test('rileva Chrome da User-Agent', () => {
-        expect(detectBrowserFamily('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36')).toBe('chrome');
+        expect(
+            detectBrowserFamily(
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
+            ),
+        ).toBe('chrome');
     });
 
     test('rileva Firefox da User-Agent', () => {
-        expect(detectBrowserFamily('Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:134.0) Gecko/20100101 Firefox/134.0')).toBe('firefox');
+        expect(
+            detectBrowserFamily('Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:134.0) Gecko/20100101 Firefox/134.0'),
+        ).toBe('firefox');
     });
 
     test('rileva Edge da User-Agent', () => {
-        expect(detectBrowserFamily('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 Edg/132.0.0.0')).toBe('edge');
+        expect(
+            detectBrowserFamily(
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 Edg/132.0.0.0',
+            ),
+        ).toBe('edge');
     });
 
     test('rileva Safari da User-Agent', () => {
-        expect(detectBrowserFamily('Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_2) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15')).toBe('safari');
+        expect(
+            detectBrowserFamily(
+                'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_2) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15',
+            ),
+        ).toBe('safari');
     });
 
     test('Chrome iOS (CriOS) → chrome', () => {
-        expect(detectBrowserFamily('Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/132.0.0.0 Mobile/15E148 Safari/604.1')).toBe('chrome');
+        expect(
+            detectBrowserFamily(
+                'Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/132.0.0.0 Mobile/15E148 Safari/604.1',
+            ),
+        ).toBe('chrome');
     });
 
     test('stringa vuota → unknown', () => {
@@ -134,9 +152,12 @@ describe('JA3 Validator — Browser Family Detection', () => {
 // ─── JA3 Validator — JA3 Fingerprint → Browser ──────────────────────────────
 
 describe('JA3 Validator — JA3 Fingerprint Detection', () => {
-    const JA3_CHROME = '771,4865-4866-4867-49195-49199-49196-49200-52393-52392-49171-49172-156-157-47-53,0-23-65281-10-11-35-16-5-13-18-51-45-43-27-17513,29-23-24,0';
-    const JA3_FIREFOX = '771,4865-4867-4866-49195-49199-52393-52392-49196-49200-49162-49161-49171-49172-156-157-47-53,0-23-65281-10-11-35-16-5-34-51-43-13-45-28-21,29-23-24-25-256-257,0';
-    const JA3_SAFARI = '771,4865-4866-4867-49196-49195-52393-49200-49199-52392-49162-49161-49172-49171-157-156-53-47,0-23-65281-10-11-16-5-13-18-51-45-43-27-17513-21,29-23-24-25,0';
+    const JA3_CHROME =
+        '771,4865-4866-4867-49195-49199-49196-49200-52393-52392-49171-49172-156-157-47-53,0-23-65281-10-11-35-16-5-13-18-51-45-43-27-17513,29-23-24,0';
+    const JA3_FIREFOX =
+        '771,4865-4867-4866-49195-49199-52393-52392-49196-49200-49162-49161-49171-49172-156-157-47-53,0-23-65281-10-11-35-16-5-34-51-43-13-45-28-21,29-23-24-25-256-257,0';
+    const JA3_SAFARI =
+        '771,4865-4866-4867-49196-49195-52393-49200-49199-52392-49162-49161-49172-49171-157-156-53-47,0-23-65281-10-11-16-5-13-18-51-45-43-27-17513-21,29-23-24-25,0';
 
     test('rileva Chrome JA3', () => {
         expect(detectJa3BrowserFamily(JA3_CHROME)).toBe('chrome');

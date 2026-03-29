@@ -31,8 +31,7 @@ export class OllamaVisionProvider implements VisionProvider {
 
     async isAvailable(): Promise<boolean> {
         try {
-            const endpoint =
-                this.solver['endpoint'] ?? process.env.OLLAMA_ENDPOINT ?? 'http://127.0.0.1:11434';
+            const endpoint = this.solver['endpoint'] ?? process.env.OLLAMA_ENDPOINT ?? 'http://127.0.0.1:11434';
             const response = await fetch(`${endpoint}/api/tags`, {
                 signal: AbortSignal.timeout(3_000),
             });

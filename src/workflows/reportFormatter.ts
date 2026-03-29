@@ -45,7 +45,9 @@ export function formatWorkflowReport(report: WorkflowReport): string {
         lines.push('  PER-LISTA:');
         for (const lb of report.listBreakdown) {
             const flag = lb.flag === 'critical' ? ' [CRITICA]' : lb.flag === 'underperforming' ? ' [SOTTO]' : '';
-            lines.push(`    ${lb.listName.padEnd(20)} inv:${lb.invitesSent} msg:${lb.messagesSent} acc:${(isNaN(lb.acceptanceRatePct) ? 0 : lb.acceptanceRatePct).toFixed(1)}%${flag}`);
+            lines.push(
+                `    ${lb.listName.padEnd(20)} inv:${lb.invitesSent} msg:${lb.messagesSent} acc:${(isNaN(lb.acceptanceRatePct) ? 0 : lb.acceptanceRatePct).toFixed(1)}%${flag}`,
+            );
         }
     }
 
@@ -88,16 +90,23 @@ export async function sendWorkflowTelegramReport(report: WorkflowReport): Promis
             .map(([k, v]) => `${k.replace(/_/g, ' ')}: <b>${v ?? 'N/A'}</b>`)
             .join('\n');
 
-        const errorSection = report.errors.length > 0
-            ? `\n\nErrori:\n${report.errors.slice(0, 3).map(e => `- ${e}`).join('\n')}`
-            : '';
+        const errorSection =
+            report.errors.length > 0
+                ? `\n\nErrori:\n${report.errors
+                      .slice(0, 3)
+                      .map((e) => `- ${e}`)
+                      .join('\n')}`
+                : '';
 
-        const listSection = report.listBreakdown && report.listBreakdown.length > 0
-            ? `\n\nPer lista:\n${report.listBreakdown.map(lb => {
-                const flag = lb.flag === 'critical' ? ' [!!!]' : lb.flag === 'underperforming' ? ' [!]' : '';
-                return `${lb.listName}: inv=${lb.invitesSent} msg=${lb.messagesSent} acc=${lb.acceptanceRatePct.toFixed(0)}%${flag}`;
-            }).join('\n')}`
-            : '';
+        const listSection =
+            report.listBreakdown && report.listBreakdown.length > 0
+                ? `\n\nPer lista:\n${report.listBreakdown
+                      .map((lb) => {
+                          const flag = lb.flag === 'critical' ? ' [!!!]' : lb.flag === 'underperforming' ? ' [!]' : '';
+                          return `${lb.listName}: inv=${lb.invitesSent} msg=${lb.messagesSent} acc=${lb.acceptanceRatePct.toFixed(0)}%${flag}`;
+                      })
+                      .join('\n')}`
+                : '';
 
         const riskSection = report.riskAssessment
             ? `\nRisk: ${report.riskAssessment.level} (${report.riskAssessment.score}/100)`
@@ -105,7 +114,11 @@ export async function sendWorkflowTelegramReport(report: WorkflowReport): Promis
 
         const message = `Status: <b>${status}</b>\nDurata: ${minutes}m ${seconds}s\n\n${summaryLines}${errorSection}${listSection}${riskSection}\n\nProssima: ${report.nextAction ?? 'N/A'}`;
 
-        const severity: AlertSeverity = !report.success ? 'critical' : report.riskAssessment?.level === 'CAUTION' ? 'warn' : 'info';
+        const severity: AlertSeverity = !report.success
+            ? 'critical'
+            : report.riskAssessment?.level === 'CAUTION'
+              ? 'warn'
+              : 'info';
         const title = `Workflow ${report.workflow.toUpperCase()} — ${status}`;
 
         await sendTelegramAlert(message, title, severity);

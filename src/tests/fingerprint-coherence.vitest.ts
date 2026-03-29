@@ -9,7 +9,7 @@ function deriveHw(id: string, mobile: boolean) {
     const mMem = [2, 3, 4, 6] as const;
     const dMem = [4, 8, 16] as const;
     const hwConc = mobile ? (mHw[h % mHw.length] ?? 0) : (dHw[h % dHw.length] ?? 0);
-    const shifted = (h >>> 4);
+    const shifted = h >>> 4;
     const mem = mobile ? (mMem[shifted % mMem.length] ?? 0) : (dMem[shifted % dMem.length] ?? 0);
     return { hwConc, mem, color: mobile ? 32 : 24 };
 }
@@ -54,6 +54,6 @@ describe('Fingerprint Coherence', () => {
 
     test('ID univoci tra desktop e mobile pool', () => {
         const all = [...desktopFingerprintPool, ...mobileFingerprintPool];
-        expect(new Set(all.map(f => f.id)).size).toBe(all.length);
+        expect(new Set(all.map((f) => f.id)).size).toBe(all.length);
     });
 });

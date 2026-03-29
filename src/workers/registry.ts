@@ -77,10 +77,7 @@ const postCreationProcessor: WorkerProcessor = {
             tone: payload.tone as PostCreatorOptions['tone'],
             dryRun: context.dryRun,
         });
-        return workerResult(
-            postResult.published ? 1 : 0,
-            postResult.error ? [{ message: postResult.error }] : [],
-        );
+        return workerResult(postResult.published ? 1 : 0, postResult.error ? [{ message: postResult.error }] : []);
     },
 };
 

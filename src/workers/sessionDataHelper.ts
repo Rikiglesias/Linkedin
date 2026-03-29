@@ -37,9 +37,7 @@ export async function buildSessionSnapshot(context: WorkerContext): Promise<Real
 
     const riskSnapshot = evaluateRisk(riskInputs);
 
-    const durationSec = context.sessionStartedAtMs
-        ? Math.floor((Date.now() - context.sessionStartedAtMs) / 1000)
-        : 0;
+    const durationSec = context.sessionStartedAtMs ? Math.floor((Date.now() - context.sessionStartedAtMs) / 1000) : 0;
 
     return {
         invitesSent,

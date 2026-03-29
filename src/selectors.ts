@@ -145,21 +145,11 @@ export const SELECTORS = {
         '//button[contains(.,"Show more") or contains(.,"Mostra altro")]',
     ],
 
-    inboxConversationItem: [
-        '.msg-conversation-listitem',
-        '.msg-conversations-container__convo-item',
-    ],
+    inboxConversationItem: ['.msg-conversation-listitem', '.msg-conversations-container__convo-item'],
 
-    inboxUnreadBadge: [
-        '.msg-conversation-card__unread-count',
-        '.msg-conversation-card__content--unread',
-    ],
+    inboxUnreadBadge: ['.msg-conversation-card__unread-count', '.msg-conversation-card__content--unread'],
 
-    inboxMessageContainer: [
-        '.msg-s-message-list-content',
-        '.msg-thread',
-        '.scaffold-finite-scroll',
-    ],
+    inboxMessageContainer: ['.msg-s-message-list-content', '.msg-thread', '.scaffold-finite-scroll'],
 
     inboxProfileLink: [
         '.msg-thread__link-to-profile',

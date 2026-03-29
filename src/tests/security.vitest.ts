@@ -87,9 +87,19 @@ describe('Lead State Machine — stati terminali', () => {
     for (const state of terminalStates) {
         it(`${state} è uno stato terminale (nessuna transizione in uscita eccetto verso se stesso)`, () => {
             const allStatuses: LeadStatus[] = [
-                'NEW', 'READY_INVITE', 'INVITED', 'ACCEPTED', 'CONNECTED',
-                'READY_MESSAGE', 'MESSAGED', 'REPLIED', 'SKIPPED', 'BLOCKED',
-                'DEAD', 'REVIEW_REQUIRED', 'WITHDRAWN',
+                'NEW',
+                'READY_INVITE',
+                'INVITED',
+                'ACCEPTED',
+                'CONNECTED',
+                'READY_MESSAGE',
+                'MESSAGED',
+                'REPLIED',
+                'SKIPPED',
+                'BLOCKED',
+                'DEAD',
+                'REVIEW_REQUIRED',
+                'WITHDRAWN',
             ];
             for (const target of allStatuses) {
                 if (target === state) continue;

@@ -51,12 +51,8 @@ export async function enrichLeadsParallel(opts: ParallelEnrichmentOptions): Prom
     const db = await getDatabase();
     const startMs = Date.now();
 
-    const listFilter = opts.listName
-        ? `AND l.list_name = ?`
-        : '';
-    const params: unknown[] = opts.listName
-        ? [opts.listName, opts.limit]
-        : [opts.limit];
+    const listFilter = opts.listName ? `AND l.list_name = ?` : '';
+    const params: unknown[] = opts.listName ? [opts.listName, opts.limit] : [opts.limit];
 
     const leads = await db.query<LeadRow>(
         `SELECT l.id, l.first_name, l.last_name, l.account_name, l.website,
@@ -78,7 +74,15 @@ export async function enrichLeadsParallel(opts: ParallelEnrichmentOptions): Prom
     );
 
     if (leads.length === 0) {
-        return { total: 0, enriched: 0, emailsFound: 0, businessEmailsFound: 0, phonesFound: 0, failed: 0, durationMs: 0 };
+        return {
+            total: 0,
+            enriched: 0,
+            emailsFound: 0,
+            businessEmailsFound: 0,
+            phonesFound: 0,
+            failed: 0,
+            durationMs: 0,
+        };
     }
 
     await logInfo('parallel_enricher.start', { total: leads.length, concurrency: opts.concurrency });
@@ -98,9 +102,7 @@ export async function enrichLeadsParallel(opts: ParallelEnrichmentOptions): Prom
     for (let i = 0; i < leads.length; i += opts.concurrency) {
         const batch = leads.slice(i, i + opts.concurrency);
 
-        const results = await Promise.allSettled(
-            batch.map((lead) => enrichSingleLead(db, lead)),
-        );
+        const results = await Promise.allSettled(batch.map((lead) => enrichSingleLead(db, lead)));
 
         for (let j = 0; j < results.length; j++) {
             done++;
@@ -169,9 +171,12 @@ async function enrichSingleLead(
                 updated_at = CURRENT_TIMESTAMP
              WHERE id = ?`,
             [
-                result.email, result.phone, result.companyDomain,
+                result.email,
+                result.phone,
+                result.companyDomain,
                 result.businessEmail,
-                result.businessEmail, result.businessEmailConfidence,
+                result.businessEmail,
+                result.businessEmailConfidence,
                 lead.id,
             ],
         );
@@ -185,7 +190,11 @@ async function enrichSingleLead(
             [
                 lead.id,
                 result.companyName || result.companyDomain || result.industry
-                    ? JSON.stringify({ name: result.companyName, domain: result.companyDomain, industry: result.industry })
+                    ? JSON.stringify({
+                          name: result.companyName,
+                          domain: result.companyDomain,
+                          industry: result.industry,
+                      })
                     : null,
                 result.phone ? JSON.stringify([{ number: result.phone, type: 'work', source: result.source }]) : null,
                 result.deepEnrichment?.socialProfiles?.length
@@ -193,10 +202,20 @@ async function enrichSingleLead(
                     : null,
                 result.seniority,
                 result.deepEnrichment?.department ?? null,
-                [result.email, result.phone, result.jobTitle, result.companyName, result.location, result.seniority]
-                    .filter(Boolean).length,
+                [
+                    result.email,
+                    result.phone,
+                    result.jobTitle,
+                    result.companyName,
+                    result.location,
+                    result.seniority,
+                ].filter(Boolean).length,
                 result.emailConfidence,
-                JSON.stringify(result.enrichmentSources ? Object.entries(result.enrichmentSources).map(([k, v]) => `${k}:${v}`) : [result.source]),
+                JSON.stringify(
+                    result.enrichmentSources
+                        ? Object.entries(result.enrichmentSources).map(([k, v]) => `${k}:${v}`)
+                        : [result.source],
+                ),
                 result.domainSource ?? null,
             ],
         );

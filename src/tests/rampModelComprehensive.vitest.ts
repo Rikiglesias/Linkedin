@@ -2,9 +2,17 @@ import { describe, it, expect } from 'vitest';
 import { computeNonLinearRampCap } from '../ml/rampModel';
 
 const base = {
-    currentCap: 15, hardMaxCap: 30, accountAgeDays: 60, warmupDays: 60,
-    channel: 'invite' as const, riskAction: 'NORMAL' as const, riskScore: 20,
-    pendingRatio: 0.3, errorRate: 0.05, healthScore: 80, baseDailyIncrease: 1,
+    currentCap: 15,
+    hardMaxCap: 30,
+    accountAgeDays: 60,
+    warmupDays: 60,
+    channel: 'invite' as const,
+    riskAction: 'NORMAL' as const,
+    riskScore: 20,
+    pendingRatio: 0.3,
+    errorRate: 0.05,
+    healthScore: 80,
+    baseDailyIncrease: 1,
 };
 
 describe('computeNonLinearRampCap — comprehensive', () => {

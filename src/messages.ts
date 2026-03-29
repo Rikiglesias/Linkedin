@@ -77,4 +77,3 @@ export function buildFollowUpMessage(lead: LeadRecord, lang?: string): string {
     const index = lead.id % pool.length;
     return resolveTemplate(pool[index], lead, lang);
 }
-

@@ -22,8 +22,12 @@ describe('resolveFollowUpCadence — comprehensive M29', () => {
     });
 
     it('delay cresce linearmente con follow_up_count (M29)', () => {
-        const delays = [0, 1, 2, 3, 4].map(count =>
-            resolveFollowUpCadence({ id: 100, messaged_at: '2025-01-01', follow_up_sent_at: null, follow_up_count: count }, null).requiredDelayDays,
+        const delays = [0, 1, 2, 3, 4].map(
+            (count) =>
+                resolveFollowUpCadence(
+                    { id: 100, messaged_at: '2025-01-01', follow_up_sent_at: null, follow_up_count: count },
+                    null,
+                ).requiredDelayDays,
         );
         for (let i = 1; i < delays.length; i++) {
             expect(delays[i]).toBeGreaterThanOrEqual(delays[i - 1]);
@@ -59,14 +63,23 @@ describe('resolveFollowUpCadence — comprehensive M29', () => {
     });
 
     it('jitter è deterministico per stesso leadId', () => {
-        const a = resolveFollowUpCadence({ id: 42, messaged_at: '2025-01-01', follow_up_sent_at: null, follow_up_count: 0 }, null);
-        const b = resolveFollowUpCadence({ id: 42, messaged_at: '2025-01-01', follow_up_sent_at: null, follow_up_count: 0 }, null);
+        const a = resolveFollowUpCadence(
+            { id: 42, messaged_at: '2025-01-01', follow_up_sent_at: null, follow_up_count: 0 },
+            null,
+        );
+        const b = resolveFollowUpCadence(
+            { id: 42, messaged_at: '2025-01-01', follow_up_sent_at: null, follow_up_count: 0 },
+            null,
+        );
         expect(a.jitterDays).toBe(b.jitterDays);
     });
 
     it('jitter è 0 o 1 (seededUnit arrotondato)', () => {
         for (let id = 0; id < 50; id++) {
-            const c = resolveFollowUpCadence({ id, messaged_at: '2025-01-01', follow_up_sent_at: null, follow_up_count: 0 }, null);
+            const c = resolveFollowUpCadence(
+                { id, messaged_at: '2025-01-01', follow_up_sent_at: null, follow_up_count: 0 },
+                null,
+            );
             expect([0, 1]).toContain(c.jitterDays);
         }
     });

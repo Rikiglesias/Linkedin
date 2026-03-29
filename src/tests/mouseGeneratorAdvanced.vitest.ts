@@ -28,7 +28,7 @@ describe('MouseGenerator — advanced', () => {
     it('path non è una linea retta (ha curvatura)', () => {
         const path = MouseGenerator.generateHumanPath({ x: 0, y: 0 }, { x: 1000, y: 0 }, viewport);
         // Almeno un punto dovrebbe avere y != 0 (drift/overshoot)
-        const hasVarianceY = path.some(p => Math.abs(p.y) > 5);
+        const hasVarianceY = path.some((p) => Math.abs(p.y) > 5);
         expect(hasVarianceY).toBe(true);
     });
 
@@ -38,7 +38,7 @@ describe('MouseGenerator — advanced', () => {
         for (let i = 0; i < 5; i++) {
             const path = MouseGenerator.generatePath({ x: 0, y: 0 }, { x: 500, y: 300 }, 15);
             expect(path.length).toBeGreaterThanOrEqual(15);
-            expect(path.every(p => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(true);
+            expect(path.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(true);
         }
     });
 
@@ -46,6 +46,6 @@ describe('MouseGenerator — advanced', () => {
         const smallVp = { width: 320, height: 240 };
         const path = MouseGenerator.generateHumanPath({ x: 10, y: 10 }, { x: 300, y: 220 }, smallVp);
         expect(path.length).toBeGreaterThan(0);
-        expect(path.every(p => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(true);
+        expect(path.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(true);
     });
 });

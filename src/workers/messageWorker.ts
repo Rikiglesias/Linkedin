@@ -98,7 +98,10 @@ export async function processMessageJob(
             if (meta.messageMode === 'template') forceTemplate = true;
         } catch (metaErr) {
             // A04: metadata parse tracciato
-            void logWarn('message.a04.metadata_parse_failed', { leadId: lead.id, error: metaErr instanceof Error ? metaErr.message : String(metaErr) });
+            void logWarn('message.a04.metadata_parse_failed', {
+                leadId: lead.id,
+                error: metaErr instanceof Error ? metaErr.message : String(metaErr),
+            });
         }
     }
 
@@ -133,7 +136,10 @@ export async function processMessageJob(
     if (!needsLiveGeneration) {
         messageHash = hashMessage(message);
         const duplicateCount = await countRecentMessageHash(messageHash, 24);
-        const validation = await validateMessageContentAsync(message, { duplicateCountLast24h: duplicateCount, leadId: lead.id });
+        const validation = await validateMessageContentAsync(message, {
+            duplicateCountLast24h: duplicateCount,
+            leadId: lead.id,
+        });
         if (!validation.valid) {
             await transitionLead(lead.id, 'BLOCKED', 'message_validation_failed', {
                 reasons: validation.reasons,
@@ -150,11 +156,7 @@ export async function processMessageJob(
 
     // Navigation Context Chain (1.2): catena di navigazione realistica
     // invece di goto diretto al profilo (segnale detection #1).
-    await navigateToProfileForMessage(
-        context.session.page,
-        lead.linkedin_url,
-        context.accountId,
-    );
+    await navigateToProfileForMessage(context.session.page, lead.linkedin_url, context.accountId);
     await humanDelay(context.session.page, 2500, 5000);
     await simulateHumanReading(context.session.page);
     await contextualReadingPause(context.session.page);
@@ -218,7 +220,11 @@ export async function processMessageJob(
     }
     // PROCEED: delay suggerito dall'AI
     if (aiDecision.suggestedDelaySec && aiDecision.suggestedDelaySec > 0) {
-        await humanDelay(context.session.page, aiDecision.suggestedDelaySec * 1000, (aiDecision.suggestedDelaySec + 2) * 1000);
+        await humanDelay(
+            context.session.page,
+            aiDecision.suggestedDelaySec * 1000,
+            (aiDecision.suggestedDelaySec + 2) * 1000,
+        );
     }
     // GAP 3: Confidence-based caution — delay extra se PROCEED con bassa confidence.
     if (aiDecision.confidence < 0.6 && aiDecision.confidence > 0) {
@@ -252,7 +258,10 @@ export async function processMessageJob(
         }
     } catch (identityErr) {
         // A04: Identity check non bloccante ma tracciato
-        void logWarn('message.a04.identity_check_failed', { leadId: lead.id, error: identityErr instanceof Error ? identityErr.message : String(identityErr) });
+        void logWarn('message.a04.identity_check_failed', {
+            leadId: lead.id,
+            error: identityErr instanceof Error ? identityErr.message : String(identityErr),
+        });
     }
 
     if (await detectChallenge(context.session.page)) {
@@ -307,11 +316,9 @@ export async function processMessageJob(
     }).catch(() => {
         throw new RetryableWorkerError('Bottone messaggio non trovato', 'MESSAGE_BUTTON_NOT_FOUND');
     });
-    await context.session.page
-        .waitForSelector(joinSelectors('messageTextbox'), { timeout: 2500 })
-        .catch(() => {
-            throw new RetryableWorkerError('Textbox messaggio non apparsa dopo click', 'TEXTBOX_NOT_FOUND');
-        });
+    await context.session.page.waitForSelector(joinSelectors('messageTextbox'), { timeout: 2500 }).catch(() => {
+        throw new RetryableWorkerError('Textbox messaggio non apparsa dopo click', 'TEXTBOX_NOT_FOUND');
+    });
     await humanDelay(context.session.page, 1200, 2200);
 
     // Estrai ultimi messaggi dalla chat aperta — usati per reply check + contesto AI generazione
@@ -332,16 +339,17 @@ export async function processMessageJob(
         }
     } catch (draftErr) {
         // A04: draft cleanup tracciato
-        void logWarn('message.a04.draft_cleanup_failed', { leadId: lead.id, error: draftErr instanceof Error ? draftErr.message : String(draftErr) });
+        void logWarn('message.a04.draft_cleanup_failed', {
+            leadId: lead.id,
+            error: draftErr instanceof Error ? draftErr.message : String(draftErr),
+        });
     }
 
     // C07: Check se il lead ha GIÀ scritto nella chat prima di inviare il primo messaggio.
     // Usa chatMessages estratti (se disponibili) o fallback al selettore DOM diretto.
-    const hasTheirReply = chatMessages.length > 0
-        ? chatMessages.some(m => m.startsWith('THEM:'))
-        : false;
+    const hasTheirReply = chatMessages.length > 0 ? chatMessages.some((m) => m.startsWith('THEM:')) : false;
     if (hasTheirReply) {
-        const lastTheirMsg = chatMessages.filter(m => m.startsWith('THEM:')).pop() ?? '';
+        const lastTheirMsg = chatMessages.filter((m) => m.startsWith('THEM:')).pop() ?? '';
         await logInfo('message.existing_reply_detected', {
             leadId: lead.id,
             textExcerpt: lastTheirMsg.substring(0, 55),
@@ -354,7 +362,9 @@ export async function processMessageJob(
     if (chatMessages.length === 0) {
         try {
             const theirLastMsg = context.session.page
-                .locator('.msg-s-message-list__event:not([data-msg-s-message-event-is-me="true"]) .msg-s-event-listitem__body')
+                .locator(
+                    '.msg-s-message-list__event:not([data-msg-s-message-event-is-me="true"]) .msg-s-event-listitem__body',
+                )
                 .last();
             if (await theirLastMsg.isVisible({ timeout: 1500 }).catch(() => false)) {
                 const theirText = await theirLastMsg.innerText().catch(() => '');
@@ -369,7 +379,10 @@ export async function processMessageJob(
                 }
             }
         } catch (replyCheckErr) {
-            void logWarn('message.a04.reply_check_failed', { leadId: lead.id, error: replyCheckErr instanceof Error ? replyCheckErr.message : String(replyCheckErr) });
+            void logWarn('message.a04.reply_check_failed', {
+                leadId: lead.id,
+                error: replyCheckErr instanceof Error ? replyCheckErr.message : String(replyCheckErr),
+            });
         }
     }
 
@@ -377,9 +390,7 @@ export async function processMessageJob(
     // Se l'AI ha detto SKIP/DEFER sopra, questa sezione non viene mai raggiunta (risparmio API).
     if (needsLiveGeneration) {
         // Combina messageContext dell'AI + chatMessages estratti come contesto per la generazione
-        const chatContextStr = chatMessages.length > 0
-            ? `Recent chat: ${chatMessages.join(' | ')}`
-            : '';
+        const chatContextStr = chatMessages.length > 0 ? `Recent chat: ${chatMessages.join(' | ')}` : '';
         const fullAiContext = [aiDecision.messageContext, chatContextStr].filter(Boolean).join('\n') || undefined;
 
         const personalized = await buildPersonalizedFollowUpMessage(lead, lang, fullAiContext);
@@ -390,13 +401,18 @@ export async function processMessageJob(
         // Validazione post-generazione on-the-fly
         messageHash = hashMessage(message);
         const liveDupCount = await countRecentMessageHash(messageHash, 24);
-        const liveValidation = await validateMessageContentAsync(message, { duplicateCountLast24h: liveDupCount, leadId: lead.id });
+        const liveValidation = await validateMessageContentAsync(message, {
+            duplicateCountLast24h: liveDupCount,
+            leadId: lead.id,
+        });
         if (!liveValidation.valid) {
             await transitionLead(lead.id, 'BLOCKED', 'message_validation_failed', {
                 reasons: liveValidation.reasons,
                 source: messageSource,
             });
-            return workerResult(1, [{ leadId: lead.id, message: `message_validation_failed:${liveValidation.reasons.join(',')}` }]);
+            return workerResult(1, [
+                { leadId: lead.id, message: `message_validation_failed:${liveValidation.reasons.join(',')}` },
+            ]);
         }
     }
 
@@ -412,7 +428,8 @@ export async function processMessageJob(
     // Se typing in campo sbagliato o il testo è stato troncato, il contenuto è diverso o vuoto.
     try {
         const textboxContent = await context.session.page
-            .locator(joinSelectors('messageTextbox')).first()
+            .locator(joinSelectors('messageTextbox'))
+            .first()
             .inputValue({ timeout: 2000 })
             .catch(() => '');
         const typed = textboxContent.trim();

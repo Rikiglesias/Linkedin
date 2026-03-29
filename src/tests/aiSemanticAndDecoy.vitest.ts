@@ -39,7 +39,10 @@ describe('SemanticChecker — Jaccard similarity', () => {
     });
 
     it('testi molto simili con piccole variazioni → troppo simili', async () => {
-        await SemanticChecker.remember('Ciao Marco, ho trovato il tuo profilo molto interessante e vorrei aggiungerti alla mia rete.', 1);
+        await SemanticChecker.remember(
+            'Ciao Marco, ho trovato il tuo profilo molto interessante e vorrei aggiungerti alla mia rete.',
+            1,
+        );
         const result = await SemanticChecker.isTooSimilar(
             'Ciao Marco, ho trovato il tuo profilo davvero interessante e vorrei aggiungerti alla mia rete professionale.',
             0.7,

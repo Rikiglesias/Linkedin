@@ -30,10 +30,7 @@ export interface BatchAcceptanceResult {
  * Visita l'invitation manager e raccoglie gli URL dei lead con invito ancora pending.
  * I lead INVITED nel DB che NON appaiono nella lista pending → probabilmente accettati.
  */
-export async function runBatchAcceptanceCheck(
-    page: Page,
-    accountId: string,
-): Promise<BatchAcceptanceResult> {
+export async function runBatchAcceptanceCheck(page: Page, accountId: string): Promise<BatchAcceptanceResult> {
     const startMs = Date.now();
     const result: BatchAcceptanceResult = {
         totalInvited: 0,
@@ -97,9 +94,9 @@ export async function runBatchAcceptanceCheck(
                 await humanDelay(page, 1500, 3000);
             } else {
                 // Se non c'è "Show more", abbiamo caricato tutto
-                const atBottom = await page.evaluate(() =>
-                    window.scrollY + window.innerHeight >= document.body.scrollHeight - 200
-                ).catch(() => true);
+                const atBottom = await page
+                    .evaluate(() => window.scrollY + window.innerHeight >= document.body.scrollHeight - 200)
+                    .catch(() => true);
                 if (atBottom) break;
             }
         }

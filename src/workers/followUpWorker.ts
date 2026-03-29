@@ -158,7 +158,11 @@ async function processSingleFollowUp(
     }
     // PROCEED: delay suggerito dall'AI
     if (aiDecision.suggestedDelaySec && aiDecision.suggestedDelaySec > 0) {
-        await humanDelay(context.session.page, aiDecision.suggestedDelaySec * 1000, (aiDecision.suggestedDelaySec + 2) * 1000);
+        await humanDelay(
+            context.session.page,
+            aiDecision.suggestedDelaySec * 1000,
+            (aiDecision.suggestedDelaySec + 2) * 1000,
+        );
     }
     // GAP 3: Confidence-based caution — delay extra se PROCEED con bassa confidence.
     if (aiDecision.confidence < 0.6 && aiDecision.confidence > 0) {
@@ -232,23 +236,33 @@ async function processSingleFollowUp(
     if (chatMessages.length === 0) {
         try {
             const theirLastMsg = context.session.page
-                .locator('.msg-s-message-list__event:not([data-msg-s-message-event-is-me="true"]) .msg-s-event-listitem__body')
+                .locator(
+                    '.msg-s-message-list__event:not([data-msg-s-message-event-is-me="true"]) .msg-s-event-listitem__body',
+                )
                 .last();
             if (await theirLastMsg.isVisible({ timeout: 1500 }).catch(() => false)) {
                 const theirText = await theirLastMsg.innerText().catch(() => '');
                 if (theirText && theirText.trim().length > 0) {
                     const ourLastMsg = context.session.page
-                        .locator('.msg-s-message-list__event[data-msg-s-message-event-is-me="true"] .msg-s-event-listitem__body')
+                        .locator(
+                            '.msg-s-message-list__event[data-msg-s-message-event-is-me="true"] .msg-s-event-listitem__body',
+                        )
                         .last();
                     const ourText = await ourLastMsg.innerText().catch(() => '');
-                    const theirMsgIndex = await theirLastMsg.evaluate((el) => {
-                        const parent = el.closest('.msg-s-message-list__event');
-                        return parent ? Array.from(parent.parentElement?.children ?? []).indexOf(parent) : -1;
-                    }).catch(() => -1);
-                    const ourMsgIndex = ourText ? await ourLastMsg.evaluate((el) => {
-                        const parent = el.closest('.msg-s-message-list__event');
-                        return parent ? Array.from(parent.parentElement?.children ?? []).indexOf(parent) : -1;
-                    }).catch(() => -1) : -1;
+                    const theirMsgIndex = await theirLastMsg
+                        .evaluate((el) => {
+                            const parent = el.closest('.msg-s-message-list__event');
+                            return parent ? Array.from(parent.parentElement?.children ?? []).indexOf(parent) : -1;
+                        })
+                        .catch(() => -1);
+                    const ourMsgIndex = ourText
+                        ? await ourLastMsg
+                              .evaluate((el) => {
+                                  const parent = el.closest('.msg-s-message-list__event');
+                                  return parent ? Array.from(parent.parentElement?.children ?? []).indexOf(parent) : -1;
+                              })
+                              .catch(() => -1)
+                        : -1;
 
                     if (theirMsgIndex > ourMsgIndex) {
                         await logInfo('follow_up.reply_detected_in_chat', {
@@ -263,25 +277,34 @@ async function processSingleFollowUp(
                 }
             }
         } catch (replyCheckErr) {
-            void logWarn('follow_up.a04.reply_check_failed', { leadId, error: replyCheckErr instanceof Error ? replyCheckErr.message : String(replyCheckErr) });
+            void logWarn('follow_up.a04.reply_check_failed', {
+                leadId,
+                error: replyCheckErr instanceof Error ? replyCheckErr.message : String(replyCheckErr),
+            });
         }
     }
 
     // Generazione messaggio DOPO apertura chat: ora abbiamo chatMessages come contesto AI.
-    const chatContextStr = chatMessages.length > 0
-        ? `Recent chat: ${chatMessages.join(' | ')}`
-        : '';
+    const chatContextStr = chatMessages.length > 0 ? `Recent chat: ${chatMessages.join(' | ')}` : '';
     const fullAiContext = [aiDecision.messageContext, chatContextStr].filter(Boolean).join('\n') || undefined;
-    const { message, source } = await buildFollowUpReminderMessage(lead, days, {
-        intent: intentHint?.intent ?? null,
-        subIntent: intentHint?.subIntent ?? null,
-        entities: intentHint?.entities ?? [],
-    }, fullAiContext);
+    const { message, source } = await buildFollowUpReminderMessage(
+        lead,
+        days,
+        {
+            intent: intentHint?.intent ?? null,
+            subIntent: intentHint?.subIntent ?? null,
+            entities: intentHint?.entities ?? [],
+        },
+        fullAiContext,
+    );
 
     // Validazione anti-duplicata
     const messageHash = hashMessage(message);
     const duplicateCount = await countRecentMessageHash(messageHash, 48);
-    const validation = await validateMessageContentAsync(message, { duplicateCountLast24h: duplicateCount, leadId: lead.id });
+    const validation = await validateMessageContentAsync(message, {
+        duplicateCountLast24h: duplicateCount,
+        leadId: lead.id,
+    });
     if (!validation.valid) {
         await logWarn('follow_up.validation_failed', { leadId, reasons: validation.reasons });
         return false;
@@ -297,7 +320,11 @@ async function processSingleFollowUp(
 
     if (!context.dryRun) {
         // Atomic daily cap check: incrementa follow_ups_sent solo se sotto il limite
-        const withinCap = await checkAndIncrementDailyLimit(context.localDate, 'follow_ups_sent', config.followUpDailyCap);
+        const withinCap = await checkAndIncrementDailyLimit(
+            context.localDate,
+            'follow_ups_sent',
+            config.followUpDailyCap,
+        );
         if (!withinCap) {
             await logInfo('follow_up.daily_cap_atomic', { leadId, cap: config.followUpDailyCap });
             return false;
