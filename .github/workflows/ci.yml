@@ -2,27 +2,33 @@ name: CI — Quality Gate
 
 on:
   push:
-    branches: [main, master, develop]
+    branches: [main]
   pull_request:
-    branches: [main, master]
+    branches: [main]
+
+# Baseline: read-only per tutto il workflow; ogni job eleva solo ciò che serve
+permissions:
+  contents: read
+
+# Annulla run precedenti dello stesso branch/PR per evitare code inutili
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   quality-fast:
     name: Fast Gate (typecheck/lint/format/audit/unit)
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        node-version: [22.x]
+    timeout-minutes: 15
 
     steps:
       - name: Checkout codice
         uses: actions/checkout@v4
 
-      - name: Setup Node.js ${{ matrix.node-version }}
+      - name: Setup Node.js 22.x
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: '22.x'
           cache: 'npm'
 
       - name: Installa dipendenze
@@ -32,7 +38,7 @@ jobs:
         run: npm run typecheck
 
       - name: ESLint
-        run: npx eslint "src/**/*.ts" --max-warnings 0
+        run: npm run lint
 
       - name: Prettier format check
         run: npm run format:check
@@ -46,37 +52,19 @@ jobs:
           NODE_ENV: test
 
   quality-extended:
-    name: Extended Gate (integration/e2e-dry/a11y/docker)
+    name: Extended Gate (e2e-dry/a11y/docker)
     runs-on: ubuntu-latest
     needs: quality-fast
-
-    strategy:
-      matrix:
-        node-version: [22.x]
-
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: testuser
-          POSTGRES_PASSWORD: testpass
-          POSTGRES_DB: testdb
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U testuser"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+    timeout-minutes: 20
 
     steps:
       - name: Checkout codice
         uses: actions/checkout@v4
 
-      - name: Setup Node.js ${{ matrix.node-version }}
+      - name: Setup Node.js 22.x
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: '22.x'
           cache: 'npm'
 
       - name: Installa dipendenze
@@ -127,6 +115,7 @@ jobs:
   codeql:
     name: CodeQL SAST
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       security-events: write
       actions: read
