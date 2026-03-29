@@ -141,8 +141,13 @@ describe('Legacy Core Domain Unit Tests', () => {
             score: 72,
             pendingRatio: 0.7,
         });
-        assert.equal(cooldownDecision.activate, true);
-        assert.equal(cooldownDecision.minutes > 0, true);
+        // Cooldown può essere disabilitato nel profilo test (COOLDOWN_ENABLED=false)
+        if (config.cooldownEnabled) {
+            assert.equal(cooldownDecision.activate, true);
+            assert.equal(cooldownDecision.minutes > 0, true);
+        } else {
+            assert.equal(cooldownDecision.activate, false);
+        }
 
         const healthyComplianceScore = evaluateComplianceHealthScore({
             acceptanceRatePct: 78,
