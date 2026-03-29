@@ -82,18 +82,6 @@ jobs:
       - name: Installa dipendenze
         run: npm ci
 
-      - name: Integration tests (SQLite)
-        run: npm run test:integration
-        env:
-          NODE_ENV: test
-
-      - name: Integration tests (PostgreSQL)
-        run: npm run test:integration
-        env:
-          NODE_ENV: test
-          DATABASE_URL: postgres://testuser:testpass@localhost:5432/testdb
-          ALLOW_SQLITE_IN_PRODUCTION: 'false'
-
       - name: E2E dry-run test
         run: npm run test:e2e:dry
         env:
