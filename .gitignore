@@ -42,6 +42,9 @@ madge_output.txt
 # IDE e tool config personali
 .claude/
 .windsurf/
+.agents/
+.trae/
+skills-lock.json
 
 # File DB orfani (il DB attivo è data/linkedin_bot.sqlite)
 data/linkedin.db
