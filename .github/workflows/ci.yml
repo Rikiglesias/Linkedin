@@ -105,7 +105,7 @@ jobs:
             -e NODE_ENV=test \
             -e SUPABASE_SYNC_ENABLED=false \
             -e DASHBOARD_AUTH_ENABLED=false \
-            linkedin-bot:ci
+            linkedin-bot:ci node dist/index.js dashboard
 
           ready=0
           for _ in {1..30}; do
