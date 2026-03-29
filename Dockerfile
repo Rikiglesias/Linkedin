@@ -18,6 +18,9 @@ COPY scripts/ ./scripts/
 # Compila TypeScript — exit 1 se fallisce (no || echo)
 RUN npm run build
 
+# Copia le migration SQL nel dist (non compilate da tsc)
+RUN mkdir -p /app/dist/db/migrations && cp /app/src/db/migrations/*.sql /app/dist/db/migrations/
+
 # ─── Stage 2: Runner ─────────────────────────────────────────────────────────
 FROM mcr.microsoft.com/playwright:${PLAYWRIGHT_IMAGE_TAG} AS runner
 
