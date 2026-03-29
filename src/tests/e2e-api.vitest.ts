@@ -52,7 +52,8 @@ describe('E2E API — Session auth bootstrap', () => {
         // Se auth è abilitata nel config cachato → 401 (credenziali richieste)
         // Se auth è disabilitata → 200 (sessione creata, backward-compatible)
         // 429 possibile se rate limiter ha budget esaurito da run precedenti
-        expect([200, 401, 429]).toContain(res.status);
+        // 503 possibile se auth abilitata ma credenziali non configurate (es. CI senza .env)
+        expect([200, 401, 429, 503]).toContain(res.status);
         if (res.status === 401) {
             expect(res.body).toHaveProperty('error', 'Unauthorized');
         }
@@ -86,7 +87,7 @@ describe('E2E API — 404 endpoint inesistente', () => {
     test('GET /api/nonexistent ritorna 404 o 401', async () => {
         if (!app) return;
         const res = await request(app).get('/api/nonexistent');
-        // 401 se auth abilitata, 404 se disabilitata
-        expect([401, 404]).toContain(res.status);
+        // 401 se auth abilitata, 404 se disabilitata, 503 se auth abilitata senza credenziali
+        expect([401, 404, 503]).toContain(res.status);
     });
 });

@@ -549,14 +549,18 @@ export async function recordRunLog(
     event: string,
     payload: Record<string, unknown>,
 ): Promise<void> {
-    const db = await getDatabase();
-    await db.run(
-        `
+    try {
+        const db = await getDatabase();
+        await db.run(
+            `
         INSERT INTO run_logs (level, event, payload_json)
         VALUES (?, ?, ?)
     `,
-        [level, event, JSON.stringify(payload)],
-    );
+            [level, event, JSON.stringify(payload)],
+        );
+    } catch {
+        // DB logging is best-effort — never propagate to callers
+    }
 }
 
 export async function getLastRunLogs(
