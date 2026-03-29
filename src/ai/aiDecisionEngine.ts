@@ -122,9 +122,10 @@ export async function aiDecide(request: AIDecisionRequest): Promise<AIDecisionRe
         // Feedback loop: registra la decisione per correlazione con outcome futuro
         if (request.lead?.id) {
             const { recordDecision } = await import('./decisionFeedback');
-            recordDecision(request.lead.id, request.point, parsed).catch((e) =>
+            const leadId = request.lead.id;
+            recordDecision(leadId, request.point, parsed).catch((e) =>
                 logWarn('ai_decision_engine.record_failed', {
-                    leadId: request.lead!.id,
+                    leadId,
                     point: request.point,
                     error: e instanceof Error ? e.message : String(e),
                 }),
