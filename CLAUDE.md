@@ -8,13 +8,17 @@
 
 In aggiunta alla tabella globale, per questo progetto:
 
-| Tipo di task | Skill da invocare |
-|-------------|------------------|
+| Tipo di task | Skill / Tool da invocare |
+|-------------|--------------------------|
 | Messaggi LinkedIn, outreach B2B | `/cold-email`, `/copywriting`, `/marketing-psychology` |
-| Anti-ban review (modifica bot) | `/antiban-review` |
-| Stato produzione / deploy | `/deploy-check` |
-| Report lead LinkedIn | `/lead-report` |
+| Anti-ban review (OBBLIGATORIO prima di ogni modifica bot) | Agent `antiban-review` — invocare con `Agent { subagent_type: "antiban-review" }` |
+| Stato produzione / deploy readiness | `/deploy-check` |
+| Report lead / analytics LinkedIn | Agent `lead-analyst` — invocare con `Agent { subagent_type: "lead-analyst" }` |
+| Debug errori / crash bot | Agent `linkedin-log-debugger` — invocare con `Agent { subagent_type: "linkedin-log-debugger" }` |
 | Audit task aperti | `/audit` |
+| Creare / modificare workflow n8n | Agent `n8n-builder` + MCP n8n (`mcp__n8n-mcp__*`) |
+| Debug visivo browser / DOM LinkedIn | Playwright MCP (`browser_navigate`, `browser_snapshot`, `browser_take_screenshot`) |
+| Security scan mirato su modifica auth/stealth | Semgrep MCP (`semgrep_scan`) |
 
 ---
 
@@ -34,11 +38,11 @@ In aggiunta alla tabella globale, per questo progetto:
 Ogni modifica alla codebase DEVE essere valutata PRIMA DI TUTTO dal punto di vista anti-ban. La domanda zero è sempre: "Questa modifica può farci bannare o rilevare da LinkedIn?"
 
 ### Prima di scrivere codice, chiedersi:
-1. Questa modifica cambia il comportamento del browser su LinkedIn? Se sì → massima attenzione
-2. Questa modifica cambia timing, delay, ordine delle azioni? Se sì → verificare che la varianza resti
-3. Questa modifica tocca fingerprint, stealth, cookie, session? Se sì → verificare coerenza e test
-4. Questa modifica aggiunge un'azione nuova su LinkedIn (click, navigazione, typing)? Se sì → deve sembrare umana
-5. Questa modifica cambia volumi (budget, cap, limiti)? Se sì → verificare che il pending ratio non salga
+1. Cambia comportamento browser su LinkedIn? → varianza garantita, niente pattern fissi
+2. Cambia timing / delay / ordine azioni? → jitter preservato
+3. Tocca fingerprint, stealth, cookie, session? → coerenza e test regressione
+4. Aggiunge azione su LinkedIn (click, navigazione, typing)? → humanDelay obbligatorio
+5. Cambia volumi (budget, cap, limiti)? → pending ratio non deve salire oltre 65%
 
 ### Principi anti-ban non negoziabili
 - **VARIANZA SU TUTTO**: un umano reale non fa mai la stessa cosa allo stesso modo. Login a orari diversi (jitter 0-30min), budget diverso ogni giorno (mood factor ±20%), ratio invite/message variabile (±15%), ordine job shufflato (±60s), typing speed variabile per lunghezza testo
@@ -49,27 +53,43 @@ Ogni modifica alla codebase DEVE essere valutata PRIMA DI TUTTO dal punto di vis
 - **NAVIGAZIONE UMANA**: organic visit 20% recent-activity prima di Connect, warmup sessione (feed/notifiche/search), humanDelay realistici, humanType con velocità variabile, humanMouseMove naturale, humanWindDown variato
 - **MONITORING ATTIVO**: probe LinkedIn prima di ogni batch, inbox scan per keywords ban ("unusual activity", "restricted"), daily report Telegram con pending ratio + risk score, alert immediato per cookie anomaly e hot lead
 
-### Cosa NON fare MAI
-- Inviare inviti senza varianza nei tempi
-- Fare login alla stessa ora ogni giorno
-- Tenere il browser aperto più di 45 minuti di fila
-- Risolvere più di 3 challenge automaticamente in un giorno
-- Ignorare un pending ratio > 65%
-- Usare fake localStorage cookies (GA, Facebook Pixel)
-- Fare doppia patch sulla stessa Web API
-- Navigare con pattern fissi prevedibili
-- Digitare alla stessa velocità su testi di lunghezze diverse
-- Aggiungere azioni su LinkedIn senza humanDelay
-
 ---
 
 ## WORKFLOW OBBLIGATORIO PER QUESTO PROGETTO
-1. `npm run pre-modifiche` PRIMA di iniziare
-2. Valutare impatto anti-ban (priorità #0)
-3. Implementare la modifica
-4. `npm run conta-problemi` DOPO — exit code 0 obbligatorio
-5. Verifica L1-L6 globali + estensioni LinkedIn sotto
-6. Commit con messaggio dettagliato
+
+### Classifica il task prima di tutto
+
+| Tipo | Quando | Passi |
+|------|--------|-------|
+| **Quick fix** | <30min, non tocca browser/timing/stealth | 1 → 4 → 5 → 6 |
+| **Bug bot** | crash, errore runtime | Agent `linkedin-log-debugger` → 1 → 4 → 5 → 6 |
+| **Feature / modifica bot** | tocca browser, timing, delay, stealth, volumi | 1 → 2 → 3 → 4 → 5 → 6 |
+| **Refactor / infra** | DB, log, config — non tocca browser | 1 → 3 → 4 → 5 → 6 *(no anti-ban)* |
+
+### Passi
+
+**1. Pre-modifica** *(sempre)*
+`npm run pre-modifiche` — blocco se errori, warning o test falliti.
+
+**2. Anti-ban + security** *(solo se tocca browser / timing / delay / stealth / volumi / fingerprint / cookie)*
+- `Agent { subagent_type: "antiban-review" }`
+- Se tocca anche auth / input utente / query DB → `mcp__plugin_semgrep-plugin_semgrep__semgrep_scan`
+
+**3. Planning** *(solo feature >1h o decisioni architetturali)*
+- Se approccio non ovvio → `superpowers:brainstorming`
+- Poi Plan Mode per lista step approvata
+- Per ogni passo del piano completato → `superpowers:code-reviewer` (Agent)
+
+**4. Implementa**
+Usa la skill di dominio dalla tabella sopra.
+
+**5. Verifica** *(sempre)*
+`npm run conta-problemi` — exit code 0 obbligatorio. Poi L1-L6 globali + estensioni LinkedIn.
+
+**6. Commit + push** *(dopo ogni unità atomica verificata)*
+- Task complesso: `superpowers:verification-before-completion` prima del commit
+- `/git-commit`
+- Feature branch → `superpowers:finishing-a-development-branch` → `/git-create-pr`
 
 ## Estensioni LinkedIn ai livelli globali
 

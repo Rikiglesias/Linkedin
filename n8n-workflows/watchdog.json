@@ -1,0 +1,101 @@
+{
+  "name": "LinkedIn Bot Watchdog",
+  "nodes": [
+    {
+      "id": "w1", "name": "Check ogni 5 min",
+      "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.3,
+      "position": [0, 300],
+      "parameters": { "rule": { "interval": [{ "field": "cronExpression", "expression": "*/5 * * * *" }] } }
+    },
+    {
+      "id": "w2", "name": "Health Check",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.4,
+      "position": [220, 300],
+      "parameters": { "method": "GET", "url": "http://bot-api:3000/api/health", "options": { "timeout": 5000 } },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "w3", "name": "Bot Online?",
+      "type": "n8n-nodes-base.if", "typeVersion": 2.3,
+      "position": [440, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "version": 2, "caseSensitive": true, "typeValidation": "strict" },
+          "conditions": [{ "id": "w-online", "leftValue": "={{ $json.status }}", "rightValue": "ok", "operator": { "type": "string", "operation": "equals" } }],
+          "combinator": "and"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "w4", "name": "Già online",
+      "type": "n8n-nodes-base.noOp", "typeVersion": 1,
+      "position": [660, 120], "parameters": {}
+    },
+    {
+      "id": "w5", "name": "Conta tentativi",
+      "type": "n8n-nodes-base.code", "typeVersion": 2,
+      "position": [660, 480],
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nif (!staticData.restartCount) staticData.restartCount = 0;\nconst now = new Date();\nconst lastRestart = staticData.lastRestartAt ? new Date(staticData.lastRestartAt) : null;\nconst minutesSinceLast = lastRestart ? (now - lastRestart) / 60000 : 999;\nif (minutesSinceLast > 60) staticData.restartCount = 0;\nstaticData.restartCount++;\nstaticData.lastRestartAt = now.toISOString();\nconst out = { restartCount: staticData.restartCount, shouldRestart: staticData.restartCount <= 3 };\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "w6", "name": "Max restart?",
+      "type": "n8n-nodes-base.if", "typeVersion": 2.3,
+      "position": [880, 480],
+      "parameters": {
+        "conditions": {
+          "options": { "version": 2, "caseSensitive": true, "typeValidation": "strict" },
+          "conditions": [{ "id": "w-restart", "leftValue": "={{ $json.restartCount }}", "rightValue": 3, "operator": { "type": "number", "operation": "lte" } }],
+          "combinator": "and"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "w7", "name": "Docker Auto-Restart",
+      "type": "n8n-nodes-base.noOp", "typeVersion": 1,
+      "position": [1100, 360],
+      "parameters": {}
+    },
+    {
+      "id": "w8", "name": "Telegram Restart",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.4,
+      "position": [1320, 360],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: 'TELEGRAM_CHAT_ID', text: '🔄 LinkedIn Bot offline — restart avviato', parse_mode: 'Markdown' }) }}"
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "w9", "name": "Telegram Critico",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.4,
+      "position": [1100, 600],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: 'TELEGRAM_CHAT_ID', text: '🚨 LinkedIn Bot DOWN — più di 3 restart in 1h. INTERVENTO MANUALE.', parse_mode: 'Markdown' }) }}"
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Check ogni 5 min": { "main": [[{ "node": "Health Check", "type": "main", "index": 0 }]] },
+    "Health Check": { "main": [[{ "node": "Bot Online?", "type": "main", "index": 0 }]] },
+    "Bot Online?": { "main": [[{ "node": "Già online", "type": "main", "index": 0 }], [{ "node": "Conta tentativi", "type": "main", "index": 0 }]] },
+    "Conta tentativi": { "main": [[{ "node": "Max restart?", "type": "main", "index": 0 }]] },
+    "Max restart?": { "main": [[{ "node": "PM2 Restart API", "type": "main", "index": 0 }], [{ "node": "Telegram Critico", "type": "main", "index": 0 }]] },
+    "PM2 Restart API": { "main": [[{ "node": "Telegram Restart", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Rome",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none"
+  }
+}

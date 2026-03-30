@@ -1,0 +1,120 @@
+{
+  "name": "LinkedIn Bot — Timing Optimizer",
+  "nodes": [
+    {
+      "id": "t1",
+      "name": "Schedule Domenica",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [0, 300],
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 16 * * 0" }] }
+      }
+    },
+    {
+      "id": "t2",
+      "name": "Get Timing Slots",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [220, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "http://bot-api:3000/api/ml/timing-slots",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Api-Key", "value": "={{$env.DASHBOARD_API_KEY}}" }] },
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "t3",
+      "name": "Get Snapshot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [440, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "http://bot-api:3000/api/v1/automation/snapshot",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Api-Key", "value": "={{$env.DASHBOARD_API_KEY}}" }] },
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "t4",
+      "name": "Prepara Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300],
+      "parameters": {
+        "jsCode": "const slotsRaw = $('Get Timing Slots').first().json;\nconst snapRaw = $('Get Snapshot').first().json;\nconst slots = slotsRaw.data || slotsRaw || {};\nconst snap = snapRaw.data || snapRaw;\nconst funnel = snap.funnel || {};\nconst risk = snap.risk || {};\nconst totalLeads = funnel.totalLeads || 0;\nconst invited = funnel.invited || 0;\nconst accepted = funnel.accepted || 0;\nconst acceptanceRate = invited > 0 ? ((accepted / invited) * 100).toFixed(1) : '0.0';\nconst pendingPct = ((risk.pendingRatio || 0) * 100).toFixed(1);\nconst slotsJson = JSON.stringify(slots).slice(0, 600);\nconst weekDate = new Date().toISOString().slice(0, 10);\nconst prompt = 'Sei un ottimizzatore di timing per LinkedIn automation. Analisi al ' + weekDate + '.\\n\\nFASCE ORARIE (acceptance rate per slot):\\n' + slotsJson + '\\n\\nCONTESTO FUNNEL:\\n- ' + totalLeads + ' leads | ' + invited + ' invitati | ' + accepted + ' accettati\\n- Acceptance rate attuale: ' + acceptanceRate + '% | Pending ratio: ' + pendingPct + '%\\n\\nAnalizza i dati e suggerisci gli orari ottimali per le sessioni della prossima settimana. Output in italiano, max 10 righe:\\n\\n- Orari consigliati sessione mattina (2-3 opzioni con fascia oraria)\\n- Orari consigliati sessione pomeriggio (2-3 opzioni)\\n- Orari da evitare (con motivazione breve)\\n- Reasoning in 2-3 righe';\nconst claudeBody = JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 400, messages: [{ role: 'user', content: prompt }] });\nreturn [{ json: { claudeBody, weekDate } }];"
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "t5",
+      "name": "Claude AI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [880, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{$env.ANTHROPIC_API_KEY}}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.claudeBody }}",
+        "options": { "timeout": 60000 }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "t6",
+      "name": "Estrai Testo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300],
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst meta = $('Prepara Prompt').first().json;\nlet timingText = 'Suggerimenti non disponibili — errore Claude.';\ntry {\n  const text = response.content?.[0]?.text || '';\n  if (text.length > 10) timingText = text;\n} catch(e) {}\nreturn [{ json: { timingText, weekDate: meta.weekDate } }];"
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "t7",
+      "name": "Telegram Timing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1320, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.telegram.org/bot' + $env.TELEGRAM_BOT_TOKEN + '/sendMessage' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: '⏰ *Timing Optimizer* — Suggerimenti prossima settimana:\\n\\n' + $json.timingText, parse_mode: 'Markdown' }) }}"
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Schedule Domenica": { "main": [[{ "node": "Get Timing Slots", "type": "main", "index": 0 }]] },
+    "Get Timing Slots": { "main": [[{ "node": "Get Snapshot", "type": "main", "index": 0 }]] },
+    "Get Snapshot": { "main": [[{ "node": "Prepara Prompt", "type": "main", "index": 0 }]] },
+    "Prepara Prompt": { "main": [[{ "node": "Claude AI", "type": "main", "index": 0 }]] },
+    "Claude AI": { "main": [[{ "node": "Estrai Testo", "type": "main", "index": 0 }]] },
+    "Estrai Testo": { "main": [[{ "node": "Telegram Timing", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Rome",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none"
+  }
+}

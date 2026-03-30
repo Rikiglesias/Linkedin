@@ -1,0 +1,204 @@
+{
+  "name": "LinkedIn Orchestrator v2 (Claude + Veto)",
+  "nodes": [
+    {
+      "id": "o1", "name": "Schedule Mattina",
+      "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.3,
+      "position": [0, 100],
+      "parameters": { "rule": { "interval": [{ "field": "cronExpression", "expression": "47 8 * * 1-5" }] } }
+    },
+    {
+      "id": "o2", "name": "Schedule Pomeriggio",
+      "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.3,
+      "position": [0, 300],
+      "parameters": { "rule": { "interval": [{ "field": "cronExpression", "expression": "33 14 * * 1-5" }] } }
+    },
+    {
+      "id": "o3", "name": "Bot Health",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.4,
+      "position": [220, 200],
+      "parameters": { "method": "GET", "url": "http://bot-api:3000/api/health", "options": { "timeout": 5000 } },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "o4", "name": "Bot Online?",
+      "type": "n8n-nodes-base.if", "typeVersion": 2.3,
+      "position": [440, 200],
+      "parameters": {
+        "conditions": {
+          "options": { "version": 2, "caseSensitive": true, "typeValidation": "strict" },
+          "conditions": [{ "id": "c-online", "leftValue": "={{ $json.status }}", "rightValue": "ok", "operator": { "type": "string", "operation": "equals" } }],
+          "combinator": "and"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "o5", "name": "Telegram Offline",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.4,
+      "position": [660, 400],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: 'TELEGRAM_CHAT_ID', text: '⚠️ LinkedIn Bot OFFLINE alle ' + $now.toFormat('HH:mm'), parse_mode: 'Markdown' }) }}"
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "o6", "name": "Get Snapshot",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.4,
+      "position": [660, 100],
+      "parameters": {
+        "method": "GET", "url": "http://bot-api:3000/api/v1/automation/snapshot",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Api-Key", "value": "DASHBOARD_API_KEY" }] },
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "o7", "name": "Parse Metrics",
+      "type": "n8n-nodes-base.code", "typeVersion": 2,
+      "position": [880, 100],
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\nconst s = d.data || d;\nconst risk = s.risk || {};\nconst funnel = s.funnel || {};\nconst incidents = s.incidents || {};\nconst riskAction = risk.action || 'NORMAL';\nconst riskScore = risk.score || 0;\nconst pendingPct = ((risk.pendingRatio || 0) * 100).toFixed(1);\nconst totalLeads = funnel.totalLeads || 0;\nconst invited = funnel.invited || 0;\nconst accepted = funnel.accepted || 0;\nconst replied = funnel.replied || 0;\nconst openIncidents = incidents.openCount || 0;\nconst criticalIncidents = incidents.criticalCount || 0;\nconst quarantined = s.system?.quarantined || false;\nconst date = s.localDate || new Date().toISOString().slice(0,10);\nconst hour = new Date().getHours();\nconst session = hour < 12 ? 'mattina' : 'pomeriggio';\nconst prompt = 'Sei l\\'orchestratore LinkedIn Bot anti-ban. Analizza e decidi.\\n\\nDATI (sessione ' + session + ' - ' + date + '):\\n- Risk: ' + riskAction + ' | Score: ' + riskScore + '/100 | Pending: ' + pendingPct + '%\\n- Funnel: ' + totalLeads + ' leads | ' + invited + ' invitati | ' + accepted + ' accettati | ' + replied + ' replies\\n- Incidenti: ' + openIncidents + ' (' + criticalIncidents + ' critici) | Quarantena: ' + quarantined + '\\n\\nREGOLE (priorita decrescente):\\n1. quarantined=true o criticalIncidents>0 → SKIP\\n2. pendingPct>65 o riskAction=STOP → SKIP\\n3. riskAction=WARN|LOW_ACTIVITY → REDUCE workflow=check\\n4. riskAction=NORMAL score<30 → PROCEED workflow=all\\n5. riskAction=NORMAL score 30-60 → PROCEED workflow=check\\n6. pomeriggio + accepted>0 → preferire workflow=message\\n\\nRispondi SOLO JSON valido senza markdown: {\"decision\":\"PROCEED|REDUCE|SKIP\",\"workflow\":\"all|check|message|warmup\",\"reason\":\"max 12 parole\"}';\nconst claudeBody = JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 100, messages: [{ role: 'user', content: prompt }] });\nconst out = { riskAction, riskScore, pendingPct: parseFloat(pendingPct), totalLeads, invited, accepted, replied, openIncidents, criticalIncidents, quarantined, date, session, claudeBody };\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "o8", "name": "Claude AI",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.4,
+      "position": [1100, 100],
+      "parameters": {
+        "method": "POST", "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [
+          { "name": "x-api-key", "value": "={{ $env.ANTHROPIC_API_KEY }}" },
+          { "name": "anthropic-version", "value": "2023-06-01" },
+          { "name": "content-type", "value": "application/json" }
+        ]},
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={{ $json.claudeBody }}",
+        "options": { "timeout": 15000 }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "o9", "name": "Parse Claude",
+      "type": "n8n-nodes-base.code", "typeVersion": 2,
+      "position": [1320, 100],
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst metrics = $('Parse Metrics').first().json;\nlet decision = 'PROCEED';\nlet workflow = 'all';\nlet reason = 'rule-based fallback';\ntry {\n  const content = response.content?.[0]?.text || '';\n  const match = content.match(/\\{[\\s\\S]*?\\}/);\n  if (match) {\n    const p = JSON.parse(match[0]);\n    if (['PROCEED','REDUCE','SKIP'].includes(p.decision)) {\n      decision = p.decision;\n      workflow = ['all','check','message','warmup','invite'].includes(p.workflow) ? p.workflow : 'check';\n      reason = (p.reason || '').slice(0, 60);\n    }\n  }\n} catch(e) {}\nif (reason === 'rule-based fallback') {\n  const r = metrics.riskAction;\n  if (r === 'STOP' || metrics.criticalIncidents > 0 || metrics.quarantined) { decision = 'SKIP'; workflow = 'check'; reason = 'risk ' + r + ' → skip'; }\n  else if (r === 'WARN' || r === 'LOW_ACTIVITY') { decision = 'REDUCE'; workflow = 'check'; reason = 'risk ' + r + ' → check'; }\n  else { decision = 'PROCEED'; workflow = metrics.riskScore < 30 ? 'all' : 'check'; reason = 'risk NORMAL'; }\n}\nconst emojis = { PROCEED: '✅', REDUCE: '🟡', SKIP: '🛑' };\nconst e = emojis[decision] || '❓';\nconst sessEmoji = metrics.session === 'mattina' ? '☀️' : '🌆';\nconst notifyMsg = sessEmoji + ' *LinkedIn Bot ' + metrics.session + '* — ' + metrics.date + '\\n' + e + ' Decisione: *' + decision + '* (' + workflow + ')\\n' + '🤖 _\"' + reason + '\"_\\n\\nHai 10 min per bloccare — invia /pause al bot.';\nconst reportMsg = sessEmoji + ' *LinkedIn Bot ' + metrics.session + '* — ' + metrics.date + '\\n' + e + ' Decisione: *' + decision + '* (' + workflow + ')\\n' + '🤖 _\"' + reason + '\"_\\n\\n📊 Risk: ' + metrics.riskAction + ' (score ' + metrics.riskScore + ') | Pending: ' + metrics.pendingPct + '%\\n👥 ' + metrics.totalLeads + ' leads | ' + metrics.invited + ' invitati | ' + metrics.accepted + ' accettati | ' + metrics.replied + ' replies\\n\\n_[Orchestrator v2]_';\nconst out = { decision, workflow, reason, notifyMsg, reportMsg, session: metrics.session };\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "o10", "name": "Veto Notify",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.4,
+      "position": [1540, 100],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: 'TELEGRAM_CHAT_ID', text: $json.notifyMsg, parse_mode: 'Markdown' }) }}"
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "o11", "name": "Wait 10 min",
+      "type": "n8n-nodes-base.wait", "typeVersion": 1.1,
+      "position": [1760, 100],
+      "parameters": { "resume": "timeInterval", "amount": 10, "unit": "minutes" }
+    },
+    {
+      "id": "o12", "name": "Check Post-Wait",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.4,
+      "position": [1980, 100],
+      "parameters": {
+        "method": "GET", "url": "http://bot-api:3000/api/v1/automation/snapshot",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Api-Key", "value": "DASHBOARD_API_KEY" }] },
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "o13", "name": "Veto Check",
+      "type": "n8n-nodes-base.code", "typeVersion": 2,
+      "position": [2200, 100],
+      "parameters": {
+        "jsCode": "const snap = $input.first().json;\nconst data = snap.data || snap;\nconst isVetoed = !!(data.system?.pausedUntil || data.system?.quarantined);\nconst out = { isVetoed: isVetoed ? 'yes' : 'no' };\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "o14", "name": "Vetoed?",
+      "type": "n8n-nodes-base.if", "typeVersion": 2.3,
+      "position": [2420, 100],
+      "parameters": {
+        "conditions": {
+          "options": { "version": 2, "caseSensitive": true, "typeValidation": "strict" },
+          "conditions": [{ "id": "c-veto", "leftValue": "={{ $json.isVetoed }}", "rightValue": "yes", "operator": { "type": "string", "operation": "equals" } }],
+          "combinator": "and"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "o15", "name": "Telegram Vetoed",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.4,
+      "position": [2640, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: 'TELEGRAM_CHAT_ID', text: '🚫 Sessione ' + $('Parse Claude').first().json.session + ' annullata — bot in pausa manuale.', parse_mode: 'Markdown' }) }}"
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "o16", "name": "Trigger Action",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.4,
+      "position": [2640, 0],
+      "parameters": {
+        "method": "POST", "url": "http://bot-api:3000/api/controls/trigger-run",
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflow: $('Parse Claude').first().json.workflow }) }}"
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "o17", "name": "Report Telegram",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.4,
+      "position": [2860, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: 'TELEGRAM_CHAT_ID', text: $('Parse Claude').first().json.reportMsg, parse_mode: 'Markdown' }) }}"
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Schedule Mattina": { "main": [[{ "node": "Bot Health", "type": "main", "index": 0 }]] },
+    "Schedule Pomeriggio": { "main": [[{ "node": "Bot Health", "type": "main", "index": 0 }]] },
+    "Bot Health": { "main": [[{ "node": "Bot Online?", "type": "main", "index": 0 }]] },
+    "Bot Online?": { "main": [[{ "node": "Get Snapshot", "type": "main", "index": 0 }], [{ "node": "Telegram Offline", "type": "main", "index": 0 }]] },
+    "Get Snapshot": { "main": [[{ "node": "Parse Metrics", "type": "main", "index": 0 }]] },
+    "Parse Metrics": { "main": [[{ "node": "Claude AI", "type": "main", "index": 0 }]] },
+    "Claude AI": { "main": [[{ "node": "Parse Claude", "type": "main", "index": 0 }]] },
+    "Parse Claude": { "main": [[{ "node": "Veto Notify", "type": "main", "index": 0 }]] },
+    "Veto Notify": { "main": [[{ "node": "Wait 10 min", "type": "main", "index": 0 }]] },
+    "Wait 10 min": { "main": [[{ "node": "Check Post-Wait", "type": "main", "index": 0 }]] },
+    "Check Post-Wait": { "main": [[{ "node": "Veto Check", "type": "main", "index": 0 }]] },
+    "Veto Check": { "main": [[{ "node": "Vetoed?", "type": "main", "index": 0 }]] },
+    "Vetoed?": { "main": [[{ "node": "Telegram Vetoed", "type": "main", "index": 0 }], [{ "node": "Trigger Action", "type": "main", "index": 0 }]] },
+    "Trigger Action": { "main": [[{ "node": "Report Telegram", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Rome",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true
+  }
+}

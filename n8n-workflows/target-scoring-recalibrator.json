@@ -1,0 +1,120 @@
+{
+  "name": "LinkedIn Bot — Target Scoring Recalibrator",
+  "nodes": [
+    {
+      "id": "s1",
+      "name": "Schedule Primo Mese",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [0, 300],
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 8 1 * *" }] }
+      }
+    },
+    {
+      "id": "s2",
+      "name": "Get Snapshot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [220, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "http://bot-api:3000/api/v1/automation/snapshot",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Api-Key", "value": "={{$env.DASHBOARD_API_KEY}}" }] },
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "s3",
+      "name": "Get AB Stats",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [440, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "http://bot-api:3000/api/ab-testing/stats",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Api-Key", "value": "={{$env.DASHBOARD_API_KEY}}" }] },
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "s4",
+      "name": "Prepara Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300],
+      "parameters": {
+        "jsCode": "const snapRaw = $('Get Snapshot').first().json;\nconst abRaw = $('Get AB Stats').first().json;\nconst snap = snapRaw.data || snapRaw;\nconst risk = snap.risk || {};\nconst funnel = snap.funnel || {};\nconst pendingPct = ((risk.pendingRatio || 0) * 100).toFixed(1);\nconst riskScore = risk.score || 0;\nconst riskAction = risk.action || 'NORMAL';\nconst totalLeads = funnel.totalLeads || 0;\nconst invited = funnel.invited || 0;\nconst accepted = funnel.accepted || 0;\nconst replied = funnel.replied || 0;\nconst acceptanceRate = invited > 0 ? ((accepted / invited) * 100).toFixed(1) : '0.0';\nconst replyRate = accepted > 0 ? ((replied / accepted) * 100).toFixed(1) : '0.0';\nconst abStats = abRaw.data || abRaw || {};\nconst abVariants = JSON.stringify(abStats).slice(0, 500);\nconst monthDate = new Date().toISOString().slice(0, 7);\nconst prompt = 'Sei un analista di lead scoring per LinkedIn automation. Revisione mensile al ' + monthDate + '.\\n\\nMETRICHE MESE:\\n- Funnel: ' + totalLeads + ' leads | ' + invited + ' invitati | ' + accepted + ' accettati | ' + replied + ' risposte\\n- Acceptance rate: ' + acceptanceRate + '% | Reply rate: ' + replyRate + '%\\n- Pending ratio: ' + pendingPct + '% (soglia critica: 65%)\\n- Risk: ' + riskAction + ' (score ' + riskScore + '/100)\\n- A/B test stats: ' + abVariants + '\\n\\nAnalizza se i criteri di scoring dei lead sono ancora validi e suggerisci modifiche per migliorare acceptance rate (obiettivo >30%), ridurre pending ratio (obiettivo <50%), aumentare reply rate. Output in italiano, max 15 righe:\\n\\n📋 *Analisi attuale*\\n[2-3 bullet su cosa funziona/non funziona]\\n\\n🎯 *Parametri da modificare*\\n| Parametro | Direzione | Motivazione |\\n[tabella markdown 3-5 righe]\\n\\n🚦 *Priorità di intervento*\\n[ordinati da urgente a facoltativo]';\nconst claudeBody = JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 700, messages: [{ role: 'user', content: prompt }] });\nreturn [{ json: { claudeBody, monthDate, acceptanceRate, replyRate, pendingPct, riskScore } }];"
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "s5",
+      "name": "Claude AI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [880, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{$env.ANTHROPIC_API_KEY}}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.claudeBody }}",
+        "options": { "timeout": 60000 }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "s6",
+      "name": "Estrai Testo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300],
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst meta = $('Prepara Prompt').first().json;\nlet recalText = 'Analisi non disponibile — errore Claude.';\ntry {\n  const text = response.content?.[0]?.text || '';\n  if (text.length > 10) recalText = text;\n} catch(e) {}\nreturn [{ json: { recalText, monthDate: meta.monthDate } }];"
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "s7",
+      "name": "Telegram Recalibrator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1320, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.telegram.org/bot' + $env.TELEGRAM_BOT_TOKEN + '/sendMessage' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: '🎯 *Monthly Recalibrator* — Revisione scoring lead ' + $json.monthDate + ':\\n\\n' + $json.recalText, parse_mode: 'Markdown' }) }}"
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Schedule Primo Mese": { "main": [[{ "node": "Get Snapshot", "type": "main", "index": 0 }]] },
+    "Get Snapshot": { "main": [[{ "node": "Get AB Stats", "type": "main", "index": 0 }]] },
+    "Get AB Stats": { "main": [[{ "node": "Prepara Prompt", "type": "main", "index": 0 }]] },
+    "Prepara Prompt": { "main": [[{ "node": "Claude AI", "type": "main", "index": 0 }]] },
+    "Claude AI": { "main": [[{ "node": "Estrai Testo", "type": "main", "index": 0 }]] },
+    "Estrai Testo": { "main": [[{ "node": "Telegram Recalibrator", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Rome",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none"
+  }
+}

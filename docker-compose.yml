@@ -1,9 +1,11 @@
 # ═══════════════════════════════════════════════════════════════════
-# LinkedIn Bot — Docker Compose (Phase 8)
+# LinkedIn Bot — Docker Compose
 # Services:
-#   bot       — Node.js + Playwright (il bot + API/Dashboard)
-#   db        — PostgreSQL 16 con volume persistente
-#   dashboard — Nginx che serve public/ statico
+#   bot-api    — Node.js Express (API/Dashboard, porta 3000)
+#   bot-worker — Node.js + Playwright (run-loop, nessuna porta)
+#   db         — PostgreSQL 16 con volume persistente
+#   n8n        — Workflow automation (porta 5678)
+#   dashboard  — Nginx che serve public/ statico (porta 80)
 # ═══════════════════════════════════════════════════════════════════
 
 services:
@@ -52,7 +54,7 @@ services:
       - ./plugins:/app/plugins
       - ./public:/app/public
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     healthcheck:
       test: [ "CMD-SHELL", "curl -sf http://localhost:3000/api/health/deep || exit 1" ]
       interval: 30s
@@ -103,6 +105,39 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # ── n8n — Workflow Automation ────────────────────────────────────
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: linkedin-n8n
+    restart: unless-stopped
+    environment:
+      N8N_PORT: "5678"
+      N8N_PROTOCOL: "http"
+      N8N_HOST: "0.0.0.0"
+      N8N_LOG_LEVEL: "warn"
+      N8N_ENCRYPTION_KEY: "${N8N_ENCRYPTION_KEY:?Set N8N_ENCRYPTION_KEY in .env}"
+      WEBHOOK_URL: "http://${PUBLIC_HOST:-localhost}:5678/"
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+      # Auth obbligatoria — porta 5678 è esposta pubblicamente
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: "${N8N_BASIC_AUTH_USER:?Set N8N_BASIC_AUTH_USER in .env}"
+      N8N_BASIC_AUTH_PASSWORD: "${N8N_BASIC_AUTH_PASSWORD:?Set N8N_BASIC_AUTH_PASSWORD in .env}"
+      TZ: "Europe/Rome"
+    volumes:
+      - n8n_data:/home/node/.n8n
+    ports:
+      - "5678:5678"
+    depends_on:
+      bot-api:
+        condition: service_healthy
+    networks:
+      - linkedin-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   # ── Dashboard (Nginx) ────────────────────────────────────────────
   dashboard:
     image: nginx:alpine
@@ -128,6 +163,8 @@ services:
 volumes:
   pg_data:
     name: linkedin_pg_data
+  n8n_data:
+    name: linkedin_n8n_data
 
 networks:
   linkedin-net:

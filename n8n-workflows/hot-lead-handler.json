@@ -1,0 +1,152 @@
+{
+  "name": "LinkedIn Bot — Hot Lead Handler",
+  "nodes": [
+    {
+      "id": "h1",
+      "name": "Schedule 30min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [0, 300],
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "*/30 8-18 * * 1-5" }] }
+      }
+    },
+    {
+      "id": "h2",
+      "name": "Get Replied Leads",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [220, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "http://bot-api:3000/api/leads/search?status=replied&limit=10",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Api-Key", "value": "={{$env.DASHBOARD_API_KEY}}" }] },
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "h3",
+      "name": "Filtra Recenti",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300],
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nconst src = raw.data || raw.leads || raw;\nconst arr = Array.isArray(src) ? src : [];\nconst cutoff = Date.now() - 7200000;\nconst recent = [];\nfor (let i = 0; i < arr.length; i++) {\n  if (recent.length >= 8) break;\n  const l = arr[i];\n  const t = l.repliedAt || l.updatedAt || l.createdAt;\n  if (t && new Date(t).getTime() > cutoff) {\n    recent.push({ name: (l.firstName || '') + ' ' + (l.lastName || ''), title: l.jobTitle || l.title || '', company: l.company || '', msg: String(l.lastMessage || l.replyText || '').substring(0, 200), score: Number(l.score) || 0 });\n  }\n}\nconst items = [{ json: { hasLeads: recent.length > 0, leadsCount: recent.length, leads: recent } }];\nreturn items;"
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "h4",
+      "name": "Ci sono lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [660, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "version": 2, "caseSensitive": true, "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "h-check",
+              "leftValue": "={{ $json.hasLeads }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "h5",
+      "name": "Prepara Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 120],
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst leadsStr = JSON.stringify(data.leads || []);\nconst prompt = 'Sei un sales assistant LinkedIn. Analizza questi ' + data.leadsCount + ' lead che hanno risposto di recente e suggerisci la priorità di risposta e il tono giusto per ciascuno.\\n\\nLEAD:\\n' + leadsStr + '\\n\\nPer ogni lead, output in italiano:\\n\\n🔥 *[Nome] - [Azienda]*\\nPriorità: Alta/Media/Bassa\\nTono suggerito: [1 riga]\\nRisposta consigliata: [2-3 righe]\\n\\nOrdina per priorità decrescente.';\nconst claudeBody = JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 800, messages: [{ role: 'user', content: prompt }] });\nreturn [{ json: { claudeBody, leadsCount: data.leadsCount } }];"
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "h6",
+      "name": "Claude AI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1100, 120],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{$env.ANTHROPIC_API_KEY}}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.claudeBody }}",
+        "options": { "timeout": 60000 }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "h7",
+      "name": "Estrai e Invia",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 120],
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst meta = $('Prepara Prompt').first().json;\nlet analysisText = 'Analisi non disponibile.';\nconst content = response.content;\nif (content && content[0] && content[0].text && content[0].text.length > 10) { analysisText = content[0].text; }\nreturn [{ json: { analysisText, leadsCount: meta.leadsCount } }];"
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "h8",
+      "name": "Telegram Hot Leads",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1540, 120],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.telegram.org/bot' + $env.TELEGRAM_BOT_TOKEN + '/sendMessage' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: '🔥 *Hot Leads* — ' + $json.leadsCount + ' risposte recenti:\\n\\n' + $json.analysisText, parse_mode: 'Markdown' }) }}"
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "h9",
+      "name": "Nessun Lead",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [880, 480],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Schedule 30min": { "main": [[{ "node": "Get Replied Leads", "type": "main", "index": 0 }]] },
+    "Get Replied Leads": { "main": [[{ "node": "Filtra Recenti", "type": "main", "index": 0 }]] },
+    "Filtra Recenti": { "main": [[{ "node": "Ci sono lead?", "type": "main", "index": 0 }]] },
+    "Ci sono lead?": {
+      "main": [
+        [{ "node": "Prepara Prompt", "type": "main", "index": 0 }],
+        [{ "node": "Nessun Lead", "type": "main", "index": 0 }]
+      ]
+    },
+    "Prepara Prompt": { "main": [[{ "node": "Claude AI", "type": "main", "index": 0 }]] },
+    "Claude AI": { "main": [[{ "node": "Estrai e Invia", "type": "main", "index": 0 }]] },
+    "Estrai e Invia": { "main": [[{ "node": "Telegram Hot Leads", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Rome",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none"
+  }
+}

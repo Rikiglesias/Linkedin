@@ -1,0 +1,156 @@
+{
+  "name": "LinkedIn Bot — Follow-up Sequence Manager",
+  "nodes": [
+    {
+      "id": "f1",
+      "name": "Schedule Mattina",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [0, 300],
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 7 * * 1-5" }] }
+      }
+    },
+    {
+      "id": "f2",
+      "name": "Get Accepted Leads",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [220, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "http://bot-api:3000/api/leads/search?status=accepted&daysAgo=3&limit=20",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Api-Key", "value": "={{$env.DASHBOARD_API_KEY}}" }] },
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "f3",
+      "name": "Get Snapshot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [440, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "http://bot-api:3000/api/v1/automation/snapshot",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Api-Key", "value": "={{$env.DASHBOARD_API_KEY}}" }] },
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "f4",
+      "name": "Prepara Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300],
+      "parameters": {
+        "jsCode": "const leadsRaw = $('Get Accepted Leads').first().json;\nconst snapRaw = $('Get Snapshot').first().json;\nconst leads = leadsRaw.data || leadsRaw.leads || leadsRaw || [];\nconst arr = Array.isArray(leads) ? leads : [];\nconst snap = snapRaw.data || snapRaw;\nconst risk = snap.risk || {};\nconst riskAction = risk.action || 'NORMAL';\nconst riskScore = risk.score || 0;\nif (arr.length === 0) {\n  return [{ json: { claudeBody: null, leadsCount: 0 } }];\n}\nconst leadsJson = JSON.stringify(arr.map(l => ({\n  name: (l.firstName || '') + ' ' + (l.lastName || ''),\n  title: l.jobTitle || l.title || '',\n  company: l.company || '',\n  acceptedAt: l.acceptedAt || l.updatedAt || '',\n  score: l.score || 0,\n  daysSinceAccept: l.acceptedAt ? Math.floor((Date.now() - new Date(l.acceptedAt).getTime()) / 86400000) : '?'\n}))).slice(0, 1200);\nconst today = new Date().toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });\nconst prompt = 'Sei un sales assistant LinkedIn. Oggi è ' + today + '. Il bot è in modalità ' + riskAction + ' (risk ' + riskScore + '/100).\\n\\nLEAD ACCETTATI DI RECENTE (ultimi 3 giorni):\\n' + leadsJson + '\\n\\nCrea un piano di follow-up per oggi. Considera che il timing ottimale per il primo messaggio è 24-48h dopo l\\'accettazione. Se il risk è HIGH o CRITICAL, suggerisci meno messaggi.\\n\\nOutput in italiano:\\n\\n📬 *Follow-up di oggi*\\n[lista lead a cui inviare oggi, con testo suggerito breve 2-3 righe per ciascuno]\\n\\n⏳ *Da rimandare*\\n[lead troppo recenti o da contattare domani]\\n\\n💡 *Nota di rischio*\\n[1 riga basata su riskAction]';\nconst claudeBody = JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 900, messages: [{ role: 'user', content: prompt }] });\nreturn [{ json: { claudeBody, leadsCount: arr.length } }];"
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "f5",
+      "name": "Ha Lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [880, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "version": 2, "caseSensitive": true, "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "f-check",
+              "leftValue": "={{ $json.leadsCount }}",
+              "rightValue": 0,
+              "operator": { "type": "number", "operation": "gt" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "f6",
+      "name": "Claude AI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1100, 120],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{$env.ANTHROPIC_API_KEY}}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.claudeBody }}",
+        "options": { "timeout": 60000 }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "f7",
+      "name": "Estrai Testo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 120],
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst meta = $('Prepara Prompt').first().json;\nlet planText = 'Piano non disponibile — errore Claude.';\ntry {\n  const text = response.content?.[0]?.text || '';\n  if (text.length > 10) planText = text;\n} catch(e) {}\nreturn [{ json: { planText, leadsCount: meta.leadsCount } }];"
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "f8",
+      "name": "Telegram Followup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1540, 120],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.telegram.org/bot' + $env.TELEGRAM_BOT_TOKEN + '/sendMessage' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: '📬 *Follow-up Plan* — ' + $json.leadsCount + ' lead da gestire:\\n\\n' + $json.planText, parse_mode: 'Markdown' }) }}"
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "f9",
+      "name": "Nessun Lead",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1100, 480],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Schedule Mattina": { "main": [[{ "node": "Get Accepted Leads", "type": "main", "index": 0 }]] },
+    "Get Accepted Leads": { "main": [[{ "node": "Get Snapshot", "type": "main", "index": 0 }]] },
+    "Get Snapshot": { "main": [[{ "node": "Prepara Prompt", "type": "main", "index": 0 }]] },
+    "Prepara Prompt": { "main": [[{ "node": "Ha Lead?", "type": "main", "index": 0 }]] },
+    "Ha Lead?": {
+      "main": [
+        [{ "node": "Claude AI", "type": "main", "index": 0 }],
+        [{ "node": "Nessun Lead", "type": "main", "index": 0 }]
+      ]
+    },
+    "Claude AI": { "main": [[{ "node": "Estrai Testo", "type": "main", "index": 0 }]] },
+    "Estrai Testo": { "main": [[{ "node": "Telegram Followup", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Rome",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none"
+  }
+}

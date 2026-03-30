@@ -1,0 +1,121 @@
+{
+  "name": "LinkedIn Bot — Weekly Lead Report",
+  "nodes": [
+    {
+      "id": "r1",
+      "name": "Schedule Lunedi",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [0, 300],
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 6 * * 1" }] }
+      }
+    },
+    {
+      "id": "r2",
+      "name": "Get Snapshot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [220, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "http://bot-api:3000/api/v1/automation/snapshot",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Api-Key", "value": "={{$env.DASHBOARD_API_KEY}}" }] },
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "r3",
+      "name": "Get AB Stats",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [440, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "http://bot-api:3000/api/ab-testing/stats",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Api-Key", "value": "={{$env.DASHBOARD_API_KEY}}" }] },
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "r4",
+      "name": "Prepara Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300],
+      "parameters": {
+        "jsCode": "const snapRaw = $('Get Snapshot').first().json;\nconst abRaw = $('Get AB Stats').first().json;\nconst snap = snapRaw.data || snapRaw;\nconst risk = snap.risk || {};\nconst funnel = snap.funnel || {};\nconst pendingPct = ((risk.pendingRatio || 0) * 100).toFixed(1);\nconst totalLeads = funnel.totalLeads || 0;\nconst invited = funnel.invited || 0;\nconst accepted = funnel.accepted || 0;\nconst replied = funnel.replied || 0;\nconst acceptanceRate = invited > 0 ? ((accepted / invited) * 100).toFixed(1) : '0.0';\nconst replyRate = accepted > 0 ? ((replied / accepted) * 100).toFixed(1) : '0.0';\nconst riskScore = risk.score || 0;\nconst riskAction = risk.action || 'NORMAL';\nconst abStats = abRaw.data || abRaw || {};\nconst abVariants = JSON.stringify(abStats).slice(0, 400);\nconst weekDate = new Date().toISOString().slice(0, 10);\nconst prompt = 'Sei un analista LinkedIn automation. Produci un report settimanale in italiano.\\n\\nDATI SETTIMANA (al ' + weekDate + '):\\n- Funnel: ' + totalLeads + ' leads totali | ' + invited + ' invitati | ' + accepted + ' accettati | ' + replied + ' risposte\\n- Acceptance rate: ' + acceptanceRate + '% | Reply rate: ' + replyRate + '%\\n- Pending ratio: ' + pendingPct + '%\\n- Risk: ' + riskAction + ' (score ' + riskScore + '/100)\\n- A/B test variants: ' + abVariants + '\\n\\nScrivi un report settimanale in italiano, max 20 righe:\\n\\n📊 *KPI principali*\\n[3 bullet con i numeri chiave]\\n\\n🏆 *Cosa ha funzionato*\\n[2-3 bullet positivi]\\n\\n⚠️ *Attenzione su*\\n[2 bullet critici]\\n\\n💡 *3 azioni per la prossima settimana*\\n[3 bullet concreti e misurabili]\\n\\nTono: professionale, diretto, numeri precisi.';\nconst claudeBody = JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 600, messages: [{ role: 'user', content: prompt }] });\nreturn [{ json: { claudeBody, weekDate, totalLeads, invited, accepted, replied, acceptanceRate, replyRate, pendingPct, riskScore, riskAction } }];"
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "r5",
+      "name": "Claude AI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [880, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{$env.ANTHROPIC_API_KEY}}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.claudeBody }}",
+        "options": { "timeout": 60000 }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "r6",
+      "name": "Estrai Testo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300],
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst metrics = $('Prepara Prompt').first().json;\nlet reportText = 'Report non disponibile — errore generazione Claude.';\ntry {\n  const text = response.content?.[0]?.text || '';\n  if (text.length > 10) reportText = text;\n} catch(e) {}\nreturn [{ json: { reportText, weekDate: metrics.weekDate } }];"
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "r7",
+      "name": "Telegram Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1320, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.telegram.org/bot' + $env.TELEGRAM_BOT_TOKEN + '/sendMessage' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: '📊 *Weekly Report LinkedIn Bot* — ' + $json.weekDate + '\\n\\n' + $json.reportText, parse_mode: 'Markdown' }) }}"
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Schedule Lunedi": { "main": [[{ "node": "Get Snapshot", "type": "main", "index": 0 }]] },
+    "Get Snapshot": { "main": [[{ "node": "Get AB Stats", "type": "main", "index": 0 }]] },
+    "Get AB Stats": { "main": [[{ "node": "Prepara Prompt", "type": "main", "index": 0 }]] },
+    "Prepara Prompt": { "main": [[{ "node": "Claude AI", "type": "main", "index": 0 }]] },
+    "Claude AI": { "main": [[{ "node": "Estrai Testo", "type": "main", "index": 0 }]] },
+    "Estrai Testo": { "main": [[{ "node": "Telegram Report", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Rome",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true
+  }
+}

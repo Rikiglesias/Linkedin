@@ -1,0 +1,103 @@
+{
+  "name": "LinkedIn Bot — Risk Score Monitor",
+  "nodes": [
+    {
+      "id": "m1",
+      "name": "Schedule Orario",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [0, 300],
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 * * * *" }] }
+      }
+    },
+    {
+      "id": "m2",
+      "name": "Get Snapshot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [220, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "http://bot-api:3000/api/v1/automation/snapshot",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Api-Key", "value": "={{$env.DASHBOARD_API_KEY}}" }] },
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "m3",
+      "name": "Estrai Metriche",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300],
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nconst snap = raw.data || raw;\nconst risk = snap.risk || {};\nconst riskScore = risk.score || 0;\nconst pendingRatio = risk.pendingRatio || 0;\nconst pendingPct = parseFloat((pendingRatio * 100).toFixed(1));\nconst riskAction = risk.action || 'NORMAL';\nconst isAlert = riskScore > 55 || pendingRatio > 0.60;\nreturn [{ json: { riskScore, pendingPct, riskAction, isAlert: isAlert ? 'yes' : 'no' } }];"
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "m4",
+      "name": "Soglia Superata?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [660, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "version": 2, "caseSensitive": true, "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "m-alert",
+              "leftValue": "={{ $json.isAlert }}",
+              "rightValue": "yes",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "m5",
+      "name": "Telegram Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [880, 120],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.telegram.org/bot' + $env.TELEGRAM_BOT_TOKEN + '/sendMessage' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: '⚠️ *Risk Alert LinkedIn Bot*\\n\\nScore: ' + $json.riskScore + '/100\\nPending: ' + $json.pendingPct + '%\\nAction: ' + $json.riskAction + '\\n\\nMonitora e riduci attività se necessario.', parse_mode: 'Markdown' }) }}"
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "m6",
+      "name": "Nessun Alert",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [880, 480],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Schedule Orario": { "main": [[{ "node": "Get Snapshot", "type": "main", "index": 0 }]] },
+    "Get Snapshot": { "main": [[{ "node": "Estrai Metriche", "type": "main", "index": 0 }]] },
+    "Estrai Metriche": { "main": [[{ "node": "Soglia Superata?", "type": "main", "index": 0 }]] },
+    "Soglia Superata?": {
+      "main": [
+        [{ "node": "Telegram Alert", "type": "main", "index": 0 }],
+        [{ "node": "Nessun Alert", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Rome",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none"
+  }
+}
