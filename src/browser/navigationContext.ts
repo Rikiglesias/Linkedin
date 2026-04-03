@@ -6,22 +6,23 @@
  * che è il segnale detection #1 per LinkedIn.
  *
  * Catene supportate:
- *   - INVITE: Feed → Search(keywords) → Scroll → Click profilo (70%) | Diretto (30%)
- *   - MESSAGE: Feed → Messaging inbox → Conversazione (60%) | Diretto (40%)
+ *   - INVITE: Feed → Search(keywords) → Scroll → Click profilo
+ *   - MESSAGE: Feed/Notifiche → Search → Click profilo
  *
  * Ogni step ha humanDelay variabile e overlay re-injection.
- * Se una catena fallisce, fallback silenzioso a goto diretto.
+ * Se una catena fallisce, NON usa goto diretto al profilo: ritorna failure e
+ * lascia al caller decidere retry o skip.
  */
 
 import { Page } from 'playwright';
 import { ensureVisualCursorOverlay, ensureInputBlock, humanDelay, simulateHumanReading } from './humanBehavior';
+import { clickLocatorHumanLike } from './humanClick';
 import { isInputBlockSuspended } from '../salesnav/bulkSaveHelpers';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { randomInt } from '../utils/random';
+import type { NavigationStrategy } from '../core/navigationStrategy';
 
 // ─── Tipi ────────────────────────────────────────────────────────────────────
-
-type NavigationStrategy = 'organic_search' | 'organic_feed' | 'direct';
 
 interface NavigationResult {
     strategy: NavigationStrategy;
@@ -82,6 +83,28 @@ function buildSearchKeywords(lead: {
     return GENERIC_SEARCH_TERMS[randomInt(0, GENERIC_SEARCH_TERMS.length - 1)];
 }
 
+function buildSearchKeywordsForProfile(
+    profileUrl: string,
+    lead: { name?: string | null; job_title?: string | null; company?: string | null },
+): string {
+    if (lead.name?.trim() || lead.job_title?.trim() || lead.company?.trim()) {
+        return buildSearchKeywords(lead);
+    }
+
+    const slug = profileUrl.match(/\/in\/([^/?#]+)/i)?.[1] ?? '';
+    const slugKeywords = slug
+        .replace(/[-_]+/g, ' ')
+        .replace(/\d+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    if (slugKeywords.length >= 3) {
+        return slugKeywords;
+    }
+
+    return GENERIC_SEARCH_TERMS[randomInt(0, GENERIC_SEARCH_TERMS.length - 1)];
+}
+
 /**
  * Re-inietta overlay dopo navigazione (il DOM viene distrutto su ogni page load).
  * Rispetta il flag di sospensione globale (durante login manuale).
@@ -94,6 +117,48 @@ async function reInjectOverlays(page: Page): Promise<void> {
     }
     await ensureVisualCursorOverlay(page);
     await ensureInputBlock(page);
+}
+
+async function openProfileViaSearchResults(
+    page: Page,
+    profileUrl: string,
+    lead: { name?: string | null; job_title?: string | null; company?: string | null },
+): Promise<{ success: boolean; stepsCompleted: number }> {
+    let stepsCompleted = 0;
+    const targetSlug = profileUrl.match(/\/in\/([^/?#]+)/i)?.[1]?.toLowerCase();
+    if (!targetSlug) {
+        return { success: false, stepsCompleted };
+    }
+
+    const keywords = buildSearchKeywordsForProfile(profileUrl, lead);
+    const searchUrl = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(keywords)}`;
+    await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 });
+    await reInjectOverlays(page);
+    await humanDelay(page, 2000, 4000);
+    stepsCompleted++;
+
+    await simulateHumanReading(page);
+    await humanDelay(page, 1000, 2500);
+    stepsCompleted++;
+
+    const targetLink = page.locator(`a[href*="/in/${targetSlug}"]`).first();
+    if (!(await targetLink.isVisible({ timeout: 2000 }).catch(() => false))) {
+        await logWarn('navigation_context.target_not_found_in_search_results', {
+            profileSlug: targetSlug,
+            keywords: keywords.substring(0, 80),
+        });
+        return { success: false, stepsCompleted };
+    }
+
+    await humanDelay(page, 400, 1200);
+    await clickLocatorHumanLike(page, targetLink, {
+        selectorForDwell: `a[href*="/in/${targetSlug}"]`,
+        scrollTimeoutMs: 5000,
+    });
+    await page.waitForURL('**/in/**', { timeout: 10_000 }).catch(() => null);
+    await reInjectOverlays(page);
+
+    return { success: true, stepsCompleted: stepsCompleted + 1 };
 }
 
 // ─── Catena Organica: Search ─────────────────────────────────────────────────
@@ -116,79 +181,11 @@ async function navigateViaOrganicSearch(
         await humanDelay(page, 1500, 3500);
         stepsCompleted++;
 
-        // Step 2: Fai una ricerca people con keywords dal lead
-        const keywords = buildSearchKeywords(lead);
-        const searchUrl = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(keywords)}`;
-        await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 });
-        await reInjectOverlays(page);
-        await humanDelay(page, 2000, 4000);
-        stepsCompleted++;
-
-        // Step 3: Scroll i risultati di ricerca (simula lettura lista)
-        await simulateHumanReading(page);
-        await humanDelay(page, 1000, 2500);
-        stepsCompleted++;
-
-        // R08: Tenta di cliccare un risultato REALE nella lista di ricerca.
-        // Se il profilo target è nei risultati → click diretto (referrer /search/ coerente).
-        // Se non trovato → click un risultato qualsiasi (simula curiosità) → poi naviga al target.
-        // Fallback: torna al feed e poi goto diretto (H02 fix originale).
-        let clickedSearchResult = false;
-        try {
-            // Estrai lo slug dal profileUrl (es. /in/mario-rossi/ → mario-rossi)
-            const slugMatch = profileUrl.match(/\/in\/([^/?#]+)/);
-            const targetSlug = slugMatch?.[1]?.toLowerCase();
-
-            // Cerca il profilo target nei risultati
-            if (targetSlug) {
-                const targetLink = page.locator(`a[href*="/in/${targetSlug}"]`).first();
-                if (await targetLink.isVisible({ timeout: 2000 }).catch(() => false)) {
-                    await humanDelay(page, 400, 1200);
-                    await targetLink.click({ timeout: 5000 });
-                    await page.waitForURL('**/in/**', { timeout: 10_000 }).catch(() => null);
-                    await reInjectOverlays(page);
-                    clickedSearchResult = true;
-                    stepsCompleted++;
-                    await logInfo('navigation_context.r08_clicked_target_in_results', {
-                        targetSlug,
-                    });
-                }
-            }
-
-            // Se target non trovato, click un risultato random (30% — simula curiosità umana)
-            if (!clickedSearchResult && Math.random() < 0.3) {
-                const anyResult = page.locator('a[href*="/in/"]').nth(randomInt(0, 4));
-                if (await anyResult.isVisible({ timeout: 1500 }).catch(() => false)) {
-                    await humanDelay(page, 600, 1500);
-                    await anyResult.click({ timeout: 5000 });
-                    await page.waitForTimeout(2000 + Math.floor(Math.random() * 3000));
-                    await reInjectOverlays(page);
-                    // Dopo aver visitato un profilo random, torna indietro e poi vai al target
-                    await page.goBack({ waitUntil: 'domcontentloaded', timeout: 10_000 }).catch(() => null);
-                    await humanDelay(page, 500, 1500);
-                    stepsCompleted++;
-                }
-            }
-        } catch {
-            // Best-effort R08 — fallback al comportamento H02
-        }
-
-        if (!clickedSearchResult) {
-            // H02 fallback: torna al feed → poi goto profilo (referrer = /feed/)
-            await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 15_000 });
-            await reInjectOverlays(page);
-            await humanDelay(page, 800, 2000);
-            stepsCompleted++;
-
-            await page.goto(profileUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 });
-            await reInjectOverlays(page);
-            stepsCompleted++;
-        }
-
-        return { strategy: 'organic_search', success: true, stepsCompleted };
+        const searchResult = await openProfileViaSearchResults(page, profileUrl, lead);
+        stepsCompleted += searchResult.stepsCompleted;
+        return { strategy: 'search_organic', success: searchResult.success, stepsCompleted };
     } catch {
-        // Se qualsiasi step fallisce, fallback a diretto
-        return { strategy: 'organic_search', success: false, stepsCompleted };
+        return { strategy: 'search_organic', success: false, stepsCompleted };
     }
 }
 
@@ -198,7 +195,11 @@ async function navigateViaOrganicSearch(
  * Simula: Feed → Scroll → Click sul profilo.
  * Variante più leggera della catena search.
  */
-async function navigateViaOrganicFeed(page: Page, profileUrl: string): Promise<NavigationResult> {
+async function navigateViaOrganicFeed(
+    page: Page,
+    profileUrl: string,
+    lead: { name?: string | null; job_title?: string | null; company?: string | null } = {},
+): Promise<NavigationResult> {
     let stepsCompleted = 0;
 
     try {
@@ -213,14 +214,57 @@ async function navigateViaOrganicFeed(page: Page, profileUrl: string): Promise<N
         await humanDelay(page, 800, 2000);
         stepsCompleted++;
 
-        // Step 3: Naviga al profilo (come se avessimo cliccato su un post del target)
-        await page.goto(profileUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 });
-        await reInjectOverlays(page);
-        stepsCompleted++;
-
-        return { strategy: 'organic_feed', success: true, stepsCompleted };
+        const searchResult = await openProfileViaSearchResults(page, profileUrl, lead);
+        stepsCompleted += searchResult.stepsCompleted;
+        return { strategy: 'feed_organic', success: searchResult.success, stepsCompleted };
     } catch {
-        return { strategy: 'organic_feed', success: false, stepsCompleted };
+        return { strategy: 'feed_organic', success: false, stepsCompleted };
+    }
+}
+
+async function navigateViaDirectSearchResults(
+    page: Page,
+    profileUrl: string,
+    lead: { name?: string | null; job_title?: string | null; company?: string | null } = {},
+): Promise<NavigationResult> {
+    try {
+        const searchResult = await openProfileViaSearchResults(page, profileUrl, lead);
+        return {
+            strategy: 'direct',
+            success: searchResult.success,
+            stepsCompleted: searchResult.stepsCompleted,
+        };
+    } catch {
+        return { strategy: 'direct', success: false, stepsCompleted: 0 };
+    }
+}
+
+async function navigateByStrategy(
+    page: Page,
+    strategy: NavigationStrategy,
+    profileUrl: string,
+    lead: { name?: string | null; job_title?: string | null; company?: string | null },
+): Promise<NavigationResult> {
+    switch (strategy) {
+        case 'feed_organic':
+            return navigateViaOrganicFeed(page, profileUrl, lead);
+        case 'direct':
+            return navigateViaDirectSearchResults(page, profileUrl, lead);
+        case 'search_organic':
+        default:
+            return navigateViaOrganicSearch(page, profileUrl, lead);
+    }
+}
+
+function buildFallbackChain(preferredStrategy: NavigationStrategy): NavigationStrategy[] {
+    switch (preferredStrategy) {
+        case 'feed_organic':
+            return ['feed_organic', 'search_organic', 'direct'];
+        case 'direct':
+            return ['direct', 'search_organic', 'feed_organic'];
+        case 'search_organic':
+        default:
+            return ['search_organic', 'feed_organic', 'direct'];
     }
 }
 
@@ -230,13 +274,11 @@ async function navigateViaOrganicFeed(page: Page, profileUrl: string): Promise<N
  * Naviga al profilo di un lead con catena di contesto realistica.
  *
  * Distribuzione probabilistica CON DECAY:
- *   - Le probabilità di catena organica CALANO con l'avanzare della sessione.
- *   - Primi 5 inviti: 45% search, 25% feed, 30% diretto
- *   - Inviti 6-15: 25% search, 20% feed, 55% diretto
- *   - Inviti 16+: 10% search, 10% feed, 80% diretto
+ *   - Le probabilità di catena search/feed cambiano con l'avanzare della sessione.
+ *   - Nessun ramo usa goto diretto al profilo target.
  *
- * Razionale: un umano i primi profili li cerca, poi va sempre più diretto
- * perché ha già i tab aperti, la cronologia, i bookmark.
+ * Razionale: un umano può essere più o meno organico, ma il nostro automation
+ * layer non deve teletrasportarsi direttamente al profilo target.
  */
 export async function navigateToProfileWithContext(
     page: Page,
@@ -244,7 +286,30 @@ export async function navigateToProfileWithContext(
     lead: { name?: string | null; job_title?: string | null; company?: string | null },
     accountId: string,
     sessionInviteCount: number = 0,
+    preferredStrategy?: NavigationStrategy,
 ): Promise<NavigationResult> {
+    if (preferredStrategy) {
+        for (const strategy of buildFallbackChain(preferredStrategy)) {
+            const result = await navigateByStrategy(page, strategy, profileUrl, lead);
+            if (result.success) {
+                await logInfo('navigation_context.profile_arrived', {
+                    accountId,
+                    strategy: result.strategy,
+                    stepsCompleted: result.stepsCompleted,
+                });
+                return result;
+            }
+        }
+
+        const failed = { strategy: preferredStrategy, success: false, stepsCompleted: 0 } satisfies NavigationResult;
+        await logInfo('navigation_context.profile_arrived', {
+            accountId,
+            strategy: failed.strategy,
+            stepsCompleted: failed.stepsCompleted,
+        });
+        return failed;
+    }
+
     // Decay: probabilità catena organica cala con la sessione
     let searchProb: number;
     let feedProb: number;
@@ -271,29 +336,29 @@ export async function navigateToProfileWithContext(
                 stepsCompleted: result.stepsCompleted,
                 profileUrl: profileUrl.substring(0, 60),
             });
-            // Fallback a diretto
-            await page.goto(profileUrl, { waitUntil: 'domcontentloaded' });
-            await reInjectOverlays(page);
-            result = { strategy: 'direct', success: true, stepsCompleted: 1 };
+            result = await navigateViaOrganicFeed(page, profileUrl, lead);
         }
     } else if (roll < searchProb + feedProb) {
         // Catena feed organica (probabilità con decay)
-        result = await navigateViaOrganicFeed(page, profileUrl);
+        result = await navigateViaOrganicFeed(page, profileUrl, lead);
         if (!result.success) {
             await logWarn('navigation_context.organic_feed_failed', {
                 accountId,
                 stepsCompleted: result.stepsCompleted,
                 profileUrl: profileUrl.substring(0, 60),
             });
-            await page.goto(profileUrl, { waitUntil: 'domcontentloaded' });
-            await reInjectOverlays(page);
-            result = { strategy: 'direct', success: true, stepsCompleted: 1 };
+            result = await navigateViaOrganicSearch(page, profileUrl, lead);
         }
     } else {
-        // 30%: diretto (bookmark, notifica, URL copiato — comportamento umano legittimo)
-        await page.goto(profileUrl, { waitUntil: 'domcontentloaded' });
-        await reInjectOverlays(page);
-        result = { strategy: 'direct', success: true, stepsCompleted: 1 };
+        result = await navigateViaOrganicSearch(page, profileUrl, lead);
+        if (!result.success) {
+            await logWarn('navigation_context.organic_search_retry_failed', {
+                accountId,
+                stepsCompleted: result.stepsCompleted,
+                profileUrl: profileUrl.substring(0, 60),
+            });
+            result = await navigateViaOrganicFeed(page, profileUrl, lead);
+        }
     }
 
     await logInfo('navigation_context.profile_arrived', {
@@ -309,9 +374,9 @@ export async function navigateToProfileWithContext(
  * Naviga al profilo per azioni leggere (acceptance check, view, like, follow).
  *
  * Distribuzione:
- *   - 40%: Feed → Profilo (simula browsing e poi check)
- *   - 30%: Notifiche → Profilo (simula "ho visto notifica, vado a controllare")
- *   - 30%: Diretto (da tab aperto, bookmark, link copiato)
+ *   - 40%: Feed → Search → Profilo
+ *   - 30%: Notifiche → Search → Profilo
+ *   - 30%: Search diretta ma sempre via risultati
  *
  * Più leggera della catena invite (niente search), perché queste azioni
  * sono tipicamente post-invito: l'umano controlla se hanno accettato.
@@ -330,13 +395,14 @@ export async function navigateToProfileForCheck(
             await reInjectOverlays(page);
             await humanDelay(page, 1200, 2800);
             await simulateHumanReading(page);
-            await page.goto(profileUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 });
-            await reInjectOverlays(page);
-            result = { strategy: 'organic_feed', success: true, stepsCompleted: 2 };
+            const searchResult = await openProfileViaSearchResults(page, profileUrl, {});
+            result = {
+                strategy: 'feed_organic',
+                success: searchResult.success,
+                stepsCompleted: 2 + searchResult.stepsCompleted,
+            };
         } catch {
-            await page.goto(profileUrl, { waitUntil: 'domcontentloaded' });
-            await reInjectOverlays(page);
-            result = { strategy: 'direct', success: true, stepsCompleted: 1 };
+            result = { strategy: 'feed_organic', success: false, stepsCompleted: 1 };
         }
     } else if (roll < 0.7) {
         try {
@@ -346,18 +412,22 @@ export async function navigateToProfileForCheck(
             });
             await reInjectOverlays(page);
             await humanDelay(page, 1500, 3000);
-            await page.goto(profileUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 });
-            await reInjectOverlays(page);
-            result = { strategy: 'organic_feed', success: true, stepsCompleted: 2 };
+            const searchResult = await openProfileViaSearchResults(page, profileUrl, {});
+            result = {
+                strategy: 'feed_organic',
+                success: searchResult.success,
+                stepsCompleted: 2 + searchResult.stepsCompleted,
+            };
         } catch {
-            await page.goto(profileUrl, { waitUntil: 'domcontentloaded' });
-            await reInjectOverlays(page);
-            result = { strategy: 'direct', success: true, stepsCompleted: 1 };
+            result = { strategy: 'feed_organic', success: false, stepsCompleted: 1 };
         }
     } else {
-        await page.goto(profileUrl, { waitUntil: 'domcontentloaded' });
-        await reInjectOverlays(page);
-        result = { strategy: 'direct', success: true, stepsCompleted: 1 };
+        const searchResult = await openProfileViaSearchResults(page, profileUrl, {});
+        result = {
+            strategy: 'direct',
+            success: searchResult.success,
+            stepsCompleted: searchResult.stepsCompleted,
+        };
     }
 
     await logInfo('navigation_context.check_profile_arrived', {
@@ -375,12 +445,12 @@ export async function navigateToProfileForCheck(
  * con un'unica funzione che sceglie la strategia in base a `purpose` e `sessionActionCount`.
  *
  * Purpose → Strategia:
- *   - 'invite':    search organic (con decay) + feed + diretto (come navigateToProfileWithContext)
- *   - 'message':   feed (60%) + notifiche (24%) + diretto (16%) — post-accettazione
- *   - 'check':     feed (40%) + notifiche (30%) + diretto (30%) — verifica leggera
- *   - 'follow_up': feed (50%) + notifiche (20%) + diretto (30%) — simile a message ma più cauto
+ *   - 'invite':    search organic + feed organic
+ *   - 'message':   feed/notifiche + ricerca profilo nei risultati
+ *   - 'check':     feed/notifiche + ricerca profilo nei risultati
+ *   - 'follow_up': simile a message
  *
- * sessionActionCount abilita il decay (primi inviti → search organica, poi → sempre più diretto).
+ * sessionActionCount abilita il decay (primi inviti → più search organica, poi → più feed/search leggere).
  * Se non fornito, usa decay 0 (tutti i profili con stesse probabilità).
  */
 export async function navigateToProfile(
@@ -391,12 +461,13 @@ export async function navigateToProfile(
         lead?: { name?: string | null; job_title?: string | null; company?: string | null };
         accountId: string;
         sessionActionCount?: number;
+        preferredStrategy?: NavigationStrategy;
     },
 ): Promise<NavigationResult> {
-    const { purpose, lead, accountId, sessionActionCount = 0 } = options;
+    const { purpose, lead, accountId, sessionActionCount = 0, preferredStrategy } = options;
 
     if (purpose === 'invite') {
-        return navigateToProfileWithContext(page, profileUrl, lead ?? {}, accountId, sessionActionCount);
+        return navigateToProfileWithContext(page, profileUrl, lead ?? {}, accountId, sessionActionCount, preferredStrategy);
     }
 
     if (purpose === 'check') {
@@ -404,19 +475,42 @@ export async function navigateToProfile(
     }
 
     // 'message' e 'follow_up' usano la stessa logica
-    return navigateToProfileForMessage(page, profileUrl, accountId);
+    return navigateToProfileForMessage(page, profileUrl, accountId, preferredStrategy);
 }
 
 export async function navigateToProfileForMessage(
     page: Page,
     profileUrl: string,
     accountId: string,
+    preferredStrategy?: NavigationStrategy,
 ): Promise<NavigationResult> {
+    if (preferredStrategy) {
+        for (const strategy of buildFallbackChain(preferredStrategy)) {
+            const result = await navigateByStrategy(page, strategy, profileUrl, {});
+            if (result.success) {
+                await logInfo('navigation_context.message_profile_arrived', {
+                    accountId,
+                    strategy: result.strategy,
+                    stepsCompleted: result.stepsCompleted,
+                });
+                return result;
+            }
+        }
+
+        const failed = { strategy: preferredStrategy, success: false, stepsCompleted: 0 } satisfies NavigationResult;
+        await logInfo('navigation_context.message_profile_arrived', {
+            accountId,
+            strategy: failed.strategy,
+            stepsCompleted: failed.stepsCompleted,
+        });
+        return failed;
+    }
+
     const roll = Math.random();
     let result: NavigationResult;
 
     if (roll < 0.6) {
-        // 60%: Feed → Profilo (simula "ho visto che ha accettato, vado a scrivergli")
+        // 60%: Feed/Notifiche → Search → Profilo
         try {
             await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 15_000 });
             await reInjectOverlays(page);
@@ -432,19 +526,22 @@ export async function navigateToProfileForMessage(
                 await humanDelay(page, 1500, 3000);
             }
 
-            await page.goto(profileUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 });
-            await reInjectOverlays(page);
-            result = { strategy: 'organic_feed', success: true, stepsCompleted: 3 };
+            const searchResult = await openProfileViaSearchResults(page, profileUrl, {});
+            result = {
+                strategy: 'feed_organic',
+                success: searchResult.success,
+                stepsCompleted: 2 + searchResult.stepsCompleted,
+            };
         } catch {
-            await page.goto(profileUrl, { waitUntil: 'domcontentloaded' });
-            await reInjectOverlays(page);
-            result = { strategy: 'direct', success: true, stepsCompleted: 1 };
+            result = { strategy: 'feed_organic', success: false, stepsCompleted: 1 };
         }
     } else {
-        // 40%: Diretto (da link, bookmark, o notifica mobile)
-        await page.goto(profileUrl, { waitUntil: 'domcontentloaded' });
-        await reInjectOverlays(page);
-        result = { strategy: 'direct', success: true, stepsCompleted: 1 };
+        const searchResult = await openProfileViaSearchResults(page, profileUrl, {});
+        result = {
+            strategy: 'direct',
+            success: searchResult.success,
+            stepsCompleted: searchResult.stepsCompleted,
+        };
     }
 
     await logInfo('navigation_context.message_profile_arrived', {

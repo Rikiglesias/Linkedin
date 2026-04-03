@@ -13,6 +13,7 @@
 import { Page } from 'playwright';
 import { createVisionProvider } from '../captcha/visionProviderFactory';
 import type { VisionProvider } from '../captcha/visionProvider';
+import { clickCoordinatesHumanLike, clickLocatorHumanLike } from '../browser';
 import { humanDelay } from '../browser/humanBehavior';
 import { logInfo, logWarn, logError } from '../telemetry/logger';
 import { getDailyStat, incrementDailyStat } from '../core/repositories/stats';
@@ -156,7 +157,7 @@ export async function attemptChallengeResolution(page: Page): Promise<boolean> {
                 const vp = page.viewportSize() ?? { width: 1280, height: 800 };
                 const safeX = Math.max(0, Math.min(vp.width - 1, coords.x));
                 const safeY = Math.max(0, Math.min(vp.height - 1, coords.y));
-                await page.mouse.click(safeX, safeY);
+                await clickCoordinatesHumanLike(page, safeX, safeY);
                 await humanDelay(page, 1500, 3000);
 
                 const submitButton = page
@@ -165,7 +166,7 @@ export async function attemptChallengeResolution(page: Page): Promise<boolean> {
                     )
                     .first();
                 if ((await submitButton.count()) > 0) {
-                    await submitButton.click();
+                    await clickLocatorHumanLike(page, submitButton, { scrollTimeoutMs: 3_000 });
                     await humanDelay(page, 2000, 4000);
                 }
 

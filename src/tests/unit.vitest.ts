@@ -552,23 +552,41 @@ describe('Legacy Core Domain Unit Tests', () => {
         assert.equal((rankedSelectors[0]?.score ?? 0) > (rankedSelectors[1]?.score ?? 0), true);
 
         const clickAttempts: string[] = [];
+        const locatorClickAttempts: string[] = [];
         const verifyAttempts: string[] = [];
+        let lastResolvedSelector = '';
         const fakePage = {
             locator: (selector: string) => ({
                 first: () => ({
                     click: async () => {
-                        clickAttempts.push(selector);
+                        locatorClickAttempts.push(selector);
                     },
-                    boundingBox: async () => null,
+                    boundingBox: async () => {
+                        lastResolvedSelector = selector;
+                        return { x: selector.includes('good') ? 420 : 120, y: 200, width: 120, height: 32 };
+                    },
+                    scrollIntoViewIfNeeded: async () => {
+                        lastResolvedSelector = selector;
+                    },
+                    isVisible: async () => true,
                 }),
             }),
             waitForTimeout: async () => undefined,
             url: () => 'https://example.test/profile',
             screenshot: async () => Buffer.from(''),
+            viewportSize: () => ({ width: 1280, height: 800 }),
+            isClosed: () => false,
+            evaluate: async () => undefined,
+            mouse: {
+                move: async () => undefined,
+                click: async () => {
+                    clickAttempts.push(lastResolvedSelector);
+                },
+            },
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any;
 
-        await clickWithFallback(fakePage, ['button.bad-target', 'button.good-target'], 'unit.click.verify', {
+        await clickWithFallback(fakePage, ['button.bad-target', 'button.good-target'], 'unit.click.verify.isolated', {
             timeoutPerSelector: 50,
             verify: async (_page, selectedSelector) => {
                 verifyAttempts.push(selectedSelector);
@@ -577,22 +595,40 @@ describe('Legacy Core Domain Unit Tests', () => {
         });
         assert.deepEqual(verifyAttempts, ['button.bad-target', 'button.good-target']);
         assert.deepEqual(clickAttempts, ['button.bad-target', 'button.good-target']);
+        assert.deepEqual(locatorClickAttempts, []);
 
         // Context cache: il selettore che ha funzionato viene privilegiato nello stesso contesto pagina.
         resetSelectorContextCacheForTests();
         const cacheAttempts: string[] = [];
+        let lastCachedSelector = '';
         const fakeCachePage = {
             locator: (selector: string) => ({
                 first: () => ({
                     click: async () => {
-                        cacheAttempts.push(selector);
+                        throw new Error(`locator.click non dovrebbe essere usato per ${selector}`);
                     },
-                    boundingBox: async () => null,
+                    boundingBox: async () => {
+                        lastCachedSelector = selector;
+                        return { x: selector.includes('cached') ? 320 : 520, y: 260, width: 120, height: 32 };
+                    },
+                    scrollIntoViewIfNeeded: async () => {
+                        lastCachedSelector = selector;
+                    },
+                    isVisible: async () => true,
                 }),
             }),
             waitForTimeout: async () => undefined,
             url: () => 'https://www.linkedin.com/in/cache-test-user/',
             screenshot: async () => Buffer.from(''),
+            viewportSize: () => ({ width: 1280, height: 800 }),
+            isClosed: () => false,
+            evaluate: async () => undefined,
+            mouse: {
+                move: async () => undefined,
+                click: async () => {
+                    cacheAttempts.push(lastCachedSelector);
+                },
+            },
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any;
 

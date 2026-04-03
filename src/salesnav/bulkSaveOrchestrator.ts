@@ -1,12 +1,11 @@
 import type { Page } from 'playwright';
 import { createHash } from 'crypto';
-import { detectChallenge, dismissKnownOverlays, humanDelay, isLoggedIn } from '../browser';
+import { clickLocatorHumanLike, detectChallenge, dismissKnownOverlays, humanDelay, isLoggedIn } from '../browser';
 import { config } from '../config';
 import { cleanText } from '../utils/text';
 import { attemptChallengeResolution } from '../workers/challengeHandler';
 import {
     pauseInputBlock,
-    resumeInputBlock,
     removeAllOverlays,
     releaseMouseConfinement,
 } from '../browser/humanBehavior';
@@ -226,7 +225,10 @@ async function navigateToSavedSearches(page: Page): Promise<void> {
         const navLink = page.locator('a[href*="/sales"]').first();
         if (await navLink.isVisible({ timeout: 2000 }).catch(() => false)) {
             await humanDelay(page, 300, 800);
-            await navLink.click({ timeout: 5000 });
+            await clickLocatorHumanLike(page, navLink, {
+                selectorForDwell: 'a[href*="/sales"]',
+                scrollTimeoutMs: 5000,
+            });
             await page.waitForURL('**/sales/**', { timeout: 15_000 }).catch(() => null);
             navigatedViaNbar = true;
             console.log('[AI-NAV] Navigato a SalesNav dalla navbar LinkedIn.');
@@ -495,13 +497,9 @@ async function clickSavedSearchView(page: Page, search: SavedSearchDescriptor, d
     if (box) {
         await smartClick(page, box);
     } else {
-        // Fallback: click Playwright diretto
-        await pauseInputBlock(page);
-        try {
-            await button.click({ timeout: 5_000 });
-        } finally {
-            await resumeInputBlock(page);
-        }
+        await clickLocatorHumanLike(page, button, {
+            scrollTimeoutMs: 5_000,
+        });
     }
 
     await humanDelay(page, 800, 1_400);
@@ -697,14 +695,9 @@ async function preSyncListToDb(
             const matchesName = nameVariants.some((v) => text.includes(v.toLowerCase()));
             if (matchesName) {
                 console.log(`[PRE-SYNC] Lista trovata via DOM locator: "${text.substring(0, 50)}"`);
-                await pauseInputBlock(page);
-                try {
-                    await anchor.scrollIntoViewIfNeeded({ timeout: 3_000 }).catch(() => null);
-                    await humanDelay(page, 300, 600);
-                    await anchor.click({ timeout: 5_000, force: true });
-                } finally {
-                    await resumeInputBlock(page);
-                }
+                await clickLocatorHumanLike(page, anchor, {
+                    scrollTimeoutMs: 3_000,
+                });
                 listClicked = true;
                 break;
             }
@@ -807,17 +800,9 @@ async function preSyncListToDb(
                 .trim()
                 .toLowerCase();
             if (nameVariantsRetry.some((v) => text.includes(v.toLowerCase()))) {
-                await pauseInputBlock(page);
-                try {
-                    await retryAnchor
-                        .nth(i)
-                        .scrollIntoViewIfNeeded({ timeout: 3_000 })
-                        .catch(() => null);
-                    await humanDelay(page, 300, 600);
-                    await retryAnchor.nth(i).click({ timeout: 5_000, force: true });
-                } finally {
-                    await resumeInputBlock(page);
-                }
+                await clickLocatorHumanLike(page, retryAnchor.nth(i), {
+                    scrollTimeoutMs: 3_000,
+                });
                 retryClicked = true;
                 break;
             }

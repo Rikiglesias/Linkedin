@@ -4,6 +4,7 @@ dist/
 # Runtime data and browser session
 data/*.sqlite
 data/*.sqlite-*
+data/backups/
 data/session/
 data/session*/
 data/security-advisor/
@@ -19,6 +20,10 @@ data/security-advisor/
 
 # Test coverage
 coverage/
+public/assets/*.map
+
+# Local dashboard env
+dashboard/.env.local
 
 # Logs e file temporanei
 logs/
@@ -44,7 +49,11 @@ madge_output.txt
 .windsurf/
 .agents/
 .trae/
+snyk/
 skills-lock.json
+
+# Path corrotti/locali generati accidentalmente nel repo
+%SystemDrive%/
 
 # File DB orfani (il DB attivo è data/linkedin_bot.sqlite)
 data/linkedin.db

@@ -7,26 +7,35 @@
  * Questi test verificano i contratti HTTP, non la business logic (coperta dai unit test).
  */
 
-import { describe, test, expect, beforeAll } from 'vitest';
+import type { Server } from 'node:http';
+import { describe, test, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
+import { bindExpressTestServer, closeExpressTestServer } from './helpers/bindExpressTestServer';
 
 let app: import('express').Express;
+let server: Server | null = null;
 
 beforeAll(async () => {
     // Dynamic import per evitare side-effect al module scope
     try {
         const serverModule = await import('../api/server');
         app = serverModule.app;
+        server = await bindExpressTestServer(app);
     } catch {
         // Se l'import fallisce (es. DB non disponibile), skip i test
         app = null as never;
+        server = null;
     }
+});
+
+afterAll(async () => {
+    await closeExpressTestServer(server);
 });
 
 describe('E2E API — Health endpoints', () => {
     test('GET /api/health ritorna 200 con status ok', async () => {
         if (!app) return;
-        const res = await request(app).get('/api/health');
+        const res = await request(server ?? app).get('/api/health');
         expect(res.status).toBe(200);
         expect(res.body).toHaveProperty('status', 'ok');
         expect(res.body).toHaveProperty('timestamp');
@@ -36,7 +45,7 @@ describe('E2E API — Health endpoints', () => {
 describe('E2E API — Metriche Prometheus', () => {
     test('GET /metrics ritorna text/plain con metriche lkbot_', async () => {
         if (!app) return;
-        const res = await request(app).get('/metrics');
+        const res = await request(server ?? app).get('/metrics');
         // /metrics potrebbe fallire se DB non è inizializzato, 200 o 500
         if (res.status === 200) {
             expect(res.headers['content-type']).toContain('text/plain');
@@ -48,7 +57,7 @@ describe('E2E API — Metriche Prometheus', () => {
 describe('E2E API — Session auth bootstrap', () => {
     test('POST /api/auth/session senza credenziali ritorna 401 o 200 in base alla config auth', async () => {
         if (!app) return;
-        const res = await request(app).post('/api/auth/session').send({});
+        const res = await request(server ?? app).post('/api/auth/session').send({});
         // Se auth è abilitata nel config cachato → 401 (credenziali richieste)
         // Se auth è disabilitata → 200 (sessione creata, backward-compatible)
         // 429 possibile se rate limiter ha budget esaurito da run precedenti
@@ -71,7 +80,7 @@ describe('E2E API — Session auth bootstrap', () => {
         try {
             // Questo test è significativo solo se auth è abilitata E le credenziali sono valide
             // Altrimenti il flusso si ferma prima (401 o 200 senza TOTP)
-            const res = await request(app).post('/api/auth/session').send({});
+            const res = await request(server ?? app).post('/api/auth/session').send({});
             // Se auth disabilitata: arriva al TOTP check → 403
             // Se auth abilitata senza credenziali: 401 (non arriva al TOTP)
             if (res.status === 403) {
@@ -86,7 +95,7 @@ describe('E2E API — Session auth bootstrap', () => {
 describe('E2E API — 404 endpoint inesistente', () => {
     test('GET /api/nonexistent ritorna 404 o 401', async () => {
         if (!app) return;
-        const res = await request(app).get('/api/nonexistent');
+        const res = await request(server ?? app).get('/api/nonexistent');
         // 401 se auth abilitata, 404 se disabilitata, 503 se auth abilitata senza credenziali
         expect([401, 404, 503]).toContain(res.status);
     });

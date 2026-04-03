@@ -6,10 +6,12 @@
  */
 
 import { Router } from 'express';
-import { setRuntimeFlag, recordSecurityAuditEvent } from '../../core/repositories';
+import { randomUUID } from 'crypto';
+import { enqueueAutomationCommand, recordSecurityAuditEvent } from '../../core/repositories';
 import { handleApiError } from '../utils';
 import { handlePauseAction, handleResumeAction, handleQuarantineAction } from '../helpers/controlActions';
 import { resolveRequestIp } from '../helpers/requestIp';
+import { mapLegacyTriggerRunWorkflow } from '../../automation/types';
 
 const router = Router();
 
@@ -48,22 +50,30 @@ router.post('/trigger-run', async (req, res) => {
             res.status(400).json({ success: false, error: `Workflow non valido: ${workflow}` });
             return;
         }
-        await setRuntimeFlag(
-            'ui_trigger_run',
-            JSON.stringify({
-                workflow,
-                requestedAt: new Date().toISOString(),
-                source: 'dashboard',
-            }),
+        const mapped = mapLegacyTriggerRunWorkflow(workflow);
+        if (!mapped) {
+            res.status(400).json({ success: false, error: `Workflow legacy non supportato: ${workflow}` });
+            return;
+        }
+        const queued = await enqueueAutomationCommand(
+            mapped.kind,
+            mapped.payload,
+            'dashboard',
+            `dashboard:${workflow}:${randomUUID()}`,
         );
         void recordSecurityAuditEvent({
             category: 'runtime_control',
             action: 'trigger_run',
             actor: resolveRequestIp(req),
             result: 'ALLOW',
-            metadata: { workflow },
+            metadata: { workflow, requestId: queued.command.requestId, kind: queued.command.kind },
         }).catch(() => null);
-        res.json({ success: true, message: `Run "${workflow}" schedulato. Verrà eseguito al prossimo ciclo.` });
+        res.json({
+            success: true,
+            requestId: queued.command.requestId,
+            kind: queued.command.kind,
+            message: `Run "${workflow}" schedulato. Verrà eseguito al prossimo ciclo.`,
+        });
     } catch (err: unknown) {
         handleApiError(res, err, 'api.controls.trigger-run');
     }

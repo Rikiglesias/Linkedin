@@ -12,10 +12,15 @@ import { launchBrowser, closeBrowser as closeBrowserSession } from '../../browse
 import { checkSessionFreshness } from '../../browser/sessionCookieMonitor';
 import {
     acquireRuntimeLock,
+    claimNextAutomationCommand,
+    getAutomationPauseState,
     getDailyStatsSnapshot,
     getGlobalKPIData,
     getRuntimeFlag,
     heartbeatRuntimeLock,
+    markAutomationCommandFailed,
+    markAutomationCommandSkipped,
+    markAutomationCommandSucceeded,
     recoverStuckJobs,
     releaseRuntimeLock,
     setRuntimeFlag,
@@ -55,6 +60,7 @@ import { processTelegramImportCommand } from '../../cloud/telegramAiImporter';
 import { sendTelegramAlert } from '../../telemetry/alerts';
 import { LoopSubTask, LoopCycleContext, runLoopCycle } from '../../core/loopOrchestrator';
 import { onConfigReload, startConfigWatcher, stopConfigWatcher } from '../../config/hotReload';
+import { dispatchAutomationCommand } from '../../automation/dispatcher';
 
 // ─── Costanti lock ────────────────────────────────────────────────────────────
 
@@ -285,6 +291,7 @@ interface LoopSubTaskBuildContext {
     lockOwnerId: string | null;
     lockTtlSeconds: number;
     profilesDiscoveredRef: { count: number };
+    automationCommandHandledRef: { handled: boolean; requestId: string | null };
     accountOverride?: string | null;
 }
 
@@ -333,7 +340,64 @@ function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
         onError: 'skip',
     });
 
-    // 4. Doctor gate
+    // 4. Automation commands
+    tasks.push({
+        name: 'automation_commands',
+        shouldRun: (ctx) => !ctx.dryRun,
+        execute: async (ctx) => {
+            const claimedBy = `loop:${process.pid}:${ctx.cycle}`;
+            const command = await claimNextAutomationCommand(claimedBy);
+            if (!command) return;
+
+            buildCtx.automationCommandHandledRef.handled = true;
+            buildCtx.automationCommandHandledRef.requestId = command.requestId;
+
+            const quarantineFlag = await getRuntimeFlag('account_quarantine');
+            if (quarantineFlag === 'true') {
+                await markAutomationCommandSkipped(command.id, 'account_quarantine');
+                console.warn(
+                    `[LOOP] automation-command skipped requestId=${command.requestId} reason=account_quarantine`,
+                );
+                return;
+            }
+
+            const pauseState = await getAutomationPauseState();
+            if (pauseState.paused) {
+                const reason = pauseState.reason?.trim() || 'automation_paused';
+                await markAutomationCommandSkipped(command.id, reason);
+                console.warn(`[LOOP] automation-command skipped requestId=${command.requestId} reason=${reason}`);
+                return;
+            }
+
+            const gate = await evaluateLoopDoctorGate(false);
+            if (!gate.proceed) {
+                await markAutomationCommandSkipped(command.id, gate.reason);
+                console.warn(`[LOOP] automation-command skipped requestId=${command.requestId} reason=${gate.reason}`);
+                return;
+            }
+
+            try {
+                const correlationId = resolveCorrelationId(`automation-${command.requestId}`);
+                const result = await runWithCorrelationId(correlationId, async () => {
+                    return dispatchAutomationCommand(command);
+                });
+                await markAutomationCommandSucceeded(command.id, result);
+                console.log(
+                    `[LOOP] automation-command completed requestId=${command.requestId} kind=${command.kind} summary=${JSON.stringify(result.summary)}`,
+                );
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                await markAutomationCommandFailed(command.id, message);
+                console.error(
+                    `[LOOP] automation-command failed requestId=${command.requestId} kind=${command.kind}`,
+                    error,
+                );
+            }
+        },
+        onError: 'skip',
+    });
+
+    // 5. Doctor gate
     tasks.push({
         name: 'doctor_gate',
         shouldRun: () => true,
@@ -347,7 +411,7 @@ function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
         onError: 'abort',
     });
 
-    // 5. Session freshness check
+    // 6. Session freshness check
     tasks.push({
         name: 'session_freshness',
         shouldRun: (ctx) => !ctx.dryRun,
@@ -364,7 +428,7 @@ function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
         onError: 'skip',
     });
 
-    // 6. Auto site-check (warmup rimosso — A.1b: ora integrato nel jobRunner)
+    // 7. Auto site-check (warmup rimosso — A.1b: ora integrato nel jobRunner)
     tasks.push({
         name: 'auto_site_check',
         shouldRun: async (ctx) => {
@@ -657,12 +721,12 @@ function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
     // 14. Main workflow
     tasks.push({
         name: 'workflow',
-        shouldRun: () => true,
+        shouldRun: () => !buildCtx.automationCommandHandledRef.handled,
         execute: async (ctx) => {
             const cycleCorrelationId = resolveCorrelationId(`loop-${ctx.workflow}-${ctx.cycle}-${randomUUID()}`);
-            await runWithCorrelationId(cycleCorrelationId, async () => {
-                await runWorkflow({
-                    workflow: ctx.workflow as import('../../core/scheduler').WorkflowSelection,
+                await runWithCorrelationId(cycleCorrelationId, async () => {
+                    await runWorkflow({
+                    workflow: ctx.workflow as import('../../core/workflowSelection').WorkflowSelection,
                     dryRun: ctx.dryRun,
                 });
             });
@@ -867,11 +931,13 @@ export async function runLoopCommand(args: string[]): Promise<void> {
             }
 
             const profilesDiscoveredRef = { count: 0 };
+            const automationCommandHandledRef = { handled: false, requestId: null as string | null };
             const subTasks = buildLoopSubTasks({
                 workflow,
                 lockOwnerId,
                 lockTtlSeconds,
                 profilesDiscoveredRef,
+                automationCommandHandledRef,
                 accountOverride,
             });
 
@@ -1040,7 +1106,7 @@ export async function runAutopilotCommand(args: string[]): Promise<void> {
 }
 
 export async function runWorkflowCommand(
-    workflow: import('../../core/scheduler').WorkflowSelection,
+    workflow: import('../../core/workflowSelection').WorkflowSelection,
     dryRun: boolean,
 ): Promise<void> {
     const runCorrelationId = resolveCorrelationId(`run-${workflow}-${Date.now()}-${randomUUID()}`);

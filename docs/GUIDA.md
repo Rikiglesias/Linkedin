@@ -1,5 +1,10 @@
 # Guida LinkedIn Bot — Rise Against Hunger
 
+> Stato documento: guida operativa per usare il bot.
+> Per overview tecnica usare `README.md`.
+> Per regole anti-ban usare `GUIDA_ANTI_BAN.md`.
+> Per tutte le variabili e gli esempi di configurazione usare `CONFIG_REFERENCE.md` e `CONFIG_EXAMPLES.md`.
+
 Guida passo-passo per usare il bot. Ogni step spiega COSA fare, PERCHÉ, e COME verificare che abbia funzionato.
 
 ---
@@ -80,7 +85,7 @@ Il bot fa: warmup (feed, notifiche) → inviti con pause umane → wind-down →
 ### Fermare il bot (MOLTO IMPORTANTE)
 - **Modo corretto**: Premi `Ctrl+C` nel terminale.
 - Il bot farà uno "shutdown graceful": se sta guardando un profilo, tornerà al feed (per sembrare umano) e poi chiuderà i browser salvando lo stato.
-- **NON CHUDERE LA FINESTRA DEL TERMINALE**: se chiudi la X in alto a destra, Windows uccide il processo all'istante. LinkedIn vedrà una disconnessione anomala brutale mentre stavi guardando un profilo. Questo è un forte segnale bot (zombie process trace). Usa sempre `Ctrl+C` e aspetta il messaggio "Database chiuso".
+- **NON CHIUDERE LA FINESTRA DEL TERMINALE**: se chiudi la X in alto a destra, Windows uccide il processo all'istante. LinkedIn vedrà una disconnessione anomala brutale mentre stavi guardando un profilo. Questo è un forte segnale bot (zombie process trace). Usa sempre `Ctrl+C` e aspetta il messaggio "Database chiuso".
 - Al termine ricevi alert Telegram "Bot Spento".
 
 ---
@@ -173,4 +178,9 @@ Le impostazioni principali:
 | TELEGRAM_BOT_TOKEN | (tuo token) | Token del bot Telegram |
 | TELEGRAM_CHAT_ID | (tuo chat id) | ID della chat Telegram |
 
-Per cambiare un valore: modifica il .env, poi `npm run build`.
+Per cambiare un valore: modifica il `.env`, poi `npm run build`.
+
+Per il dettaglio completo della configurazione non usare questa guida come reference primaria:
+
+- [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md)
+- [CONFIG_EXAMPLES.md](CONFIG_EXAMPLES.md)

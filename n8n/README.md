@@ -1,13 +1,35 @@
-# n8n Workflows (Import)
+# n8n Workflows
 
-File disponibili:
+Questa repo ha due livelli distinti:
+
+- `n8n/`  
+  workflow base/documentati da importare subito.
+- `n8n-workflows/`  
+  workflow aggiuntivi, template o orchestrazioni piu' avanzate.
+
+## File base in `n8n/`
+
 - `workflow_bot_events.json`
 - `workflow_news_intel.json`
 
+## File in `n8n-workflows/`
+
+Questa cartella contiene workflow piu' specifici o template, ad esempio:
+
+- `orchestrator-v2.json`
+- `watchdog.json`
+- `risk-score-monitor.json`
+- `weekly-lead-report.json`
+- `template-send-invites.json`
+- `template-send-messages.json`
+- `template-sync-list.json`
+- `template-sync-search.json`
+
 ## 1) Import
 1. In n8n vai su `Workflows -> Import from File`.
-2. Importa entrambi i file.
+2. Importa prima i workflow base da `n8n/`.
 3. Apri il workflow e salva.
+4. Importa da `n8n-workflows/` solo i template o le orchestrazioni che ti servono davvero.
 
 ## 2) Variabili ambiente n8n richieste
 - `WEBHOOK_SYNC_SECRET` (deve combaciare con `.env` del bot)
@@ -31,3 +53,4 @@ Nel bot (`.env`):
 - Il workflow eventi include verifica firma HMAC (`x-signature-sha256`) e dedup.
 - Il workflow news gira ogni 60 minuti, filtra keyword e invia solo novità non già viste.
 - Modifica feed/keyword direttamente nel node `Filter + Summarize`.
+- Non trattare `n8n-workflows/` come una cartella da importare in blocco: contiene anche template e workflow di supporto.

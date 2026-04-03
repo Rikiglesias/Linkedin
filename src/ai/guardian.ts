@@ -1,8 +1,9 @@
 import { config } from '../config';
-import { ScheduleResult, WorkflowSelection } from '../core/scheduler';
+import { ScheduleResult } from '../core/scheduler';
 import { getRuntimeFlag, setRuntimeFlag } from '../core/repositories';
 import { isOpenAIConfigured, requestOpenAIText } from './openaiClient';
 import { logWarn as guardianLogWarn } from '../telemetry/logger';
+import type { WorkflowSelection } from '../core/workflowSelection';
 
 const AI_GUARDIAN_LAST_RUN_AT_KEY = 'ai_guardian.last_run_at';
 

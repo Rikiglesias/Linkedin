@@ -183,6 +183,22 @@ export interface OutboxEventRecord {
     created_at: string;
 }
 
+export type OutboxDeliverySink = 'SUPABASE' | 'WEBHOOK';
+export type OutboxDeliveryStatus = 'PENDING' | 'RUNNING' | 'DELIVERED' | 'PERMANENT_FAILURE';
+
+export interface OutboxDeliveryRecord extends OutboxEventRecord {
+    delivery_id: number;
+    sink: OutboxDeliverySink;
+    delivery_status: OutboxDeliveryStatus;
+    delivery_attempts: number;
+    delivery_next_retry_at: string;
+    delivery_delivered_at: string | null;
+    delivery_last_error: string | null;
+    processing_owner: string | null;
+    processing_started_at: string | null;
+    processing_expires_at: string | null;
+}
+
 export interface MessageValidationResult {
     valid: boolean;
     reasons: string[];

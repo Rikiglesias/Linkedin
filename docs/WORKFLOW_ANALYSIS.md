@@ -1,5 +1,9 @@
 # Analisi Dettagliata Workflow — LinkedIn Automation Bot
 
+> Stato documento: analisi tecnica approfondita e di supporto.
+> Non e' il contratto canonico del motore: per quello usare `WORKFLOW_ENGINE.md`.
+> Non e' la guida utente ai workflow: per quello usare `WORKFLOW_MAP.md`.
+
 > Documento generato dall'analisi completa della codebase (~43.000 righe, 120+ file TypeScript).
 > Ogni workflow è descritto passo-passo con riferimenti ai file sorgente.
 

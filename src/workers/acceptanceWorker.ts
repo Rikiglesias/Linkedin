@@ -47,7 +47,14 @@ export async function processAcceptanceJob(
         }
     }
 
-    await navigateToProfileForCheck(context.session.page, lead.linkedin_url, context.accountId ?? 'default');
+    const navigationResult = await navigateToProfileForCheck(
+        context.session.page,
+        lead.linkedin_url,
+        context.accountId ?? 'default',
+    );
+    if (!navigationResult.success) {
+        throw new RetryableWorkerError('Navigazione organica al profilo fallita', 'PROFILE_NAVIGATION_FAILED');
+    }
     await humanDelay(context.session.page, 2000, 4000);
 
     // M13: Rileva profilo eliminato/URL cambiato — "This page doesn't exist" o redirect a 404.

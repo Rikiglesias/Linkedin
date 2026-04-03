@@ -1,4 +1,5 @@
-export type EventSyncSink = 'SUPABASE' | 'WEBHOOK' | 'NONE';
+export type EventSyncTarget = 'SUPABASE' | 'WEBHOOK';
+export type EventSyncSink = EventSyncTarget | 'NONE' | 'BOTH';
 export type ProxyType = 'mobile' | 'residential' | 'unknown';
 
 export interface AccountProfileConfig {

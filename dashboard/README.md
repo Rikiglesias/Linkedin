@@ -10,7 +10,7 @@ Dashboard realtime per gestione task, costruita con Next.js + Supabase.
 3. Esegui lo script (crea tabella `todos`, trigger, Realtime)
 
 ### 2. Variabili d'ambiente
-Copia `.env.local` e inserisci le credenziali Supabase:
+Copia `.env.example` in `.env.local` e inserisci le credenziali Supabase:
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://xxxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...

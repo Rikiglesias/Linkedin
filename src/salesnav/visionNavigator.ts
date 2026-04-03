@@ -1,7 +1,7 @@
 import type { Locator, Page } from 'playwright';
 import type { VisionProvider } from '../captcha/visionProvider';
 import { createVisionProvider, getOpenAIProviderFromCurrent } from '../captcha/visionProviderFactory';
-import { humanMouseMoveToCoords, pulseVisualCursorOverlay } from '../browser/humanBehavior';
+import { clickCoordinatesHumanLike } from '../browser';
 
 export interface VisionRegionClip {
     x: number;
@@ -327,11 +327,8 @@ export async function visionClick(
                 capture.region.y + capture.region.height - 1,
             );
 
-            await humanMouseMoveToCoords(page, x, y);
             await page.waitForTimeout(Math.max(40, options?.preClickDelayMs ?? 140));
-            await pulseVisualCursorOverlay(page);
-            await page.mouse.click(x, y, { delay: 40 + Math.floor(Math.random() * 80) });
-            await pulseVisualCursorOverlay(page);
+            await clickCoordinatesHumanLike(page, x, y);
             await page.waitForTimeout(Math.max(80, options?.postClickDelayMs ?? 700));
 
             return {
@@ -354,7 +351,7 @@ export async function visionClick(
                     const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
                     const fx = clampNumber(fallback.x, 0, viewport.width - 1);
                     const fy = clampNumber(fallback.y, 0, viewport.height - 1);
-                    await page.mouse.click(fx, fy, { delay: 40 + Math.floor(Math.random() * 80) });
+                    await clickCoordinatesHumanLike(page, fx, fy);
                     await page.waitForTimeout(Math.max(80, options?.postClickDelayMs ?? 700));
                     return {
                         x: fx,

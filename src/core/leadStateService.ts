@@ -2,11 +2,10 @@ import {
     adjustLeadScore,
     appendLeadEvent,
     getLeadById,
-    pushOutboxEvent,
     setLeadStatus,
-    recordSecurityAuditEvent,
-} from './repositories';
+} from './repositories/leadsCore';
 import { getDatabase } from '../db';
+import { pushOutboxEvent, recordSecurityAuditEvent } from './repositories/system';
 import { withTransaction } from './repositories/shared';
 import { LeadStatus } from '../types/domain';
 import { publishLiveEvent } from '../telemetry/liveEvents';

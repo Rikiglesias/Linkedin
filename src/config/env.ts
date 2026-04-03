@@ -108,7 +108,7 @@ export function resolvePathFromEnv(name: string, fallbackRelativePath: string): 
 
 export function parseEventSyncSinkEnv(name: string, fallback: EventSyncSink): EventSyncSink {
     const raw = parseStringEnv(name, fallback).toUpperCase();
-    if (raw === 'SUPABASE' || raw === 'WEBHOOK' || raw === 'NONE') {
+    if (raw === 'SUPABASE' || raw === 'WEBHOOK' || raw === 'NONE' || raw === 'BOTH') {
         return raw;
     }
     return fallback;

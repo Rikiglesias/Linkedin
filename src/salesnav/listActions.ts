@@ -1,7 +1,7 @@
 import { Page } from 'playwright';
 import { getAccountProfileById } from '../accountManager';
 import { cleanText } from '../utils/text';
-import { checkLogin, closeBrowser, humanDelay, humanMouseMove, launchBrowser } from '../browser';
+import { checkLogin, clickLocatorHumanLike, closeBrowser, humanDelay, launchBrowser } from '../browser';
 import { blockUserInput, pauseInputBlock, resumeInputBlock } from '../browser/humanBehavior';
 import { enableWindowClickThrough, disableWindowClickThrough } from '../browser/windowInputBlock';
 import { normalizeLinkedInUrl } from '../linkedinUrl';
@@ -117,11 +117,7 @@ export async function createSalesNavList(
         if ((await createButton.count()) === 0) {
             return { ok: false, accountId: account.id, message: 'Bottone Create list non trovato' };
         }
-        await pauseInputBlock(page);
-        await humanMouseMove(page, CREATE_LIST_BUTTON_SELECTOR);
-        await humanDelay(page, 150, 350);
-        await createButton.click();
-        await resumeInputBlock(page);
+        await clickLocatorHumanLike(page, createButton, { selectorForDwell: CREATE_LIST_BUTTON_SELECTOR });
         await humanDelay(page, 800, 1600);
 
         const nameInput = page.locator(LIST_NAME_INPUT_SELECTOR).first();
@@ -129,19 +125,18 @@ export async function createSalesNavList(
             return { ok: false, accountId: account.id, message: 'Input nome lista non trovato' };
         }
         await pauseInputBlock(page);
-        await nameInput.fill(normalizedListName);
-        await resumeInputBlock(page);
+        try {
+            await nameInput.fill(normalizedListName);
+        } finally {
+            await resumeInputBlock(page);
+        }
         await humanDelay(page, 450, 900);
 
         const confirmButton = page.locator(CREATE_LIST_CONFIRM_SELECTOR).first();
         if ((await confirmButton.count()) === 0) {
             return { ok: false, accountId: account.id, message: 'Bottone conferma creazione non trovato' };
         }
-        await pauseInputBlock(page);
-        await humanMouseMove(page, CREATE_LIST_CONFIRM_SELECTOR);
-        await humanDelay(page, 120, 320);
-        await confirmButton.click();
-        await resumeInputBlock(page);
+        await clickLocatorHumanLike(page, confirmButton, { selectorForDwell: CREATE_LIST_CONFIRM_SELECTOR });
         await humanDelay(page, 1400, 2600);
         const resolvedListUrl = await resolveSavedListUrl(page, normalizedListName);
 
@@ -202,11 +197,7 @@ export async function addLeadToSalesNavList(
         if ((await saveButton.count()) === 0) {
             return { ok: false, accountId: account.id, message: 'Bottone Save in list non trovato' };
         }
-        await pauseInputBlock(page);
-        await humanMouseMove(page, SAVE_TO_LIST_BUTTON_SELECTOR);
-        await humanDelay(page, 160, 340);
-        await saveButton.click();
-        await resumeInputBlock(page);
+        await clickLocatorHumanLike(page, saveButton, { selectorForDwell: SAVE_TO_LIST_BUTTON_SELECTOR });
         await humanDelay(page, 900, 1800);
 
         const listOption = page.locator(`text="${normalizedListName}"`).first();
@@ -217,18 +208,14 @@ export async function addLeadToSalesNavList(
                 message: `Lista non trovata nel popup: ${normalizedListName}`,
             };
         }
-        await pauseInputBlock(page);
-        await listOption.click();
-        await resumeInputBlock(page);
+        await clickLocatorHumanLike(page, listOption, {
+            selectorForDwell: `text="${normalizedListName}"`,
+        });
         await humanDelay(page, 400, 900);
 
         const confirmButton = page.locator(ADD_TO_LIST_CONFIRM_SELECTOR).first();
         if ((await confirmButton.count()) > 0) {
-            await pauseInputBlock(page);
-            await humanMouseMove(page, ADD_TO_LIST_CONFIRM_SELECTOR);
-            await humanDelay(page, 120, 300);
-            await confirmButton.click();
-            await resumeInputBlock(page);
+            await clickLocatorHumanLike(page, confirmButton, { selectorForDwell: ADD_TO_LIST_CONFIRM_SELECTOR });
         }
         await humanDelay(page, 900, 1800);
         const resolvedListUrl = await resolveSavedListUrl(page, normalizedListName);

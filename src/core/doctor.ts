@@ -37,10 +37,14 @@ export interface DoctorReport {
     };
     quarantine: boolean;
     sync: {
-        activeSink: 'SUPABASE' | 'WEBHOOK' | 'NONE';
+        activeSink: 'SUPABASE' | 'WEBHOOK' | 'NONE' | 'BOTH';
         enabled: boolean;
         configured: boolean;
         pendingOutbox: number;
+        pendingBySink: {
+            SUPABASE: number;
+            WEBHOOK: number;
+        };
         warning: string | null;
     };
     disasterRecovery: {
@@ -343,6 +347,7 @@ export async function runDoctor(): Promise<DoctorReport> {
             enabled: sync.enabled,
             configured: sync.configured,
             pendingOutbox: sync.pendingOutbox,
+            pendingBySink: sync.pendingBySink,
             warning: sync.warning,
         },
         disasterRecovery: {

@@ -1,4 +1,5 @@
 import {
+    clickLocatorHumanLike,
     clickWithFallback,
     contextualReadingPause,
     detectChallenge,
@@ -40,6 +41,7 @@ import { observePageContext, logObservation } from '../browser/observePageContex
 import { aiDecide } from '../ai/aiDecisionEngine';
 import { WorkerExecutionResult, workerResult } from './result';
 import { inferLeadSegment } from '../ml/segments';
+import { type NavigationStrategy } from '../core/navigationStrategy';
 
 export async function processMessageJob(
     payload: MessageJobPayload,
@@ -154,9 +156,49 @@ export async function processMessageJob(
         }
     }
 
+    const { buildSessionSnapshot } = await import('./sessionDataHelper');
+    const navigationSessionSnapshot = await buildSessionSnapshot(context);
+
+    const navigationDecision = await aiDecide({
+        point: 'navigation',
+        strict: true,
+        lead: {
+            id: lead.id,
+            name: `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim() || undefined,
+            title: lead.job_title ?? undefined,
+            company: lead.account_name ?? undefined,
+            score: lead.lead_score ?? undefined,
+        },
+        session: navigationSessionSnapshot,
+    });
+    if (navigationDecision.action === 'SKIP' || navigationDecision.action === 'DEFER') {
+        await logInfo('message.ai_navigation_skip', {
+            leadId: lead.id,
+            action: navigationDecision.action,
+            reason: navigationDecision.reason.substring(0, 80),
+        });
+        return workerResult(0);
+    }
+    if (navigationDecision.action === 'NOTIFY_HUMAN') {
+        await logInfo('message.ai_navigation_notify_human', {
+            leadId: lead.id,
+            reason: navigationDecision.reason.substring(0, 80),
+        });
+        await transitionLead(lead.id, 'REVIEW_REQUIRED', 'ai_navigation_notify_human');
+        return workerResult(1);
+    }
+
     // Navigation Context Chain (1.2): catena di navigazione realistica
     // invece di goto diretto al profilo (segnale detection #1).
-    await navigateToProfileForMessage(context.session.page, lead.linkedin_url, context.accountId);
+    const navigationResult = await navigateToProfileForMessage(
+        context.session.page,
+        lead.linkedin_url,
+        context.accountId,
+        navigationDecision.navigationStrategy as NavigationStrategy | undefined,
+    );
+    if (!navigationResult.success) {
+        throw new RetryableWorkerError('Navigazione organica al profilo messaggio fallita', 'PROFILE_NAVIGATION_FAILED');
+    }
     await humanDelay(context.session.page, 2500, 5000);
     await simulateHumanReading(context.session.page);
     await contextualReadingPause(context.session.page);
@@ -175,14 +217,14 @@ export async function processMessageJob(
     }
 
     // AI Decision: l'AI decide SE inviare il messaggio — con dati session REALI + enrichment
-    const { buildSessionSnapshot } = await import('./sessionDataHelper');
     const { getLeadEnrichmentSummary } = await import('../core/repositories');
     const [sessionData, enrichment] = await Promise.all([
-        buildSessionSnapshot(context),
+        Promise.resolve(navigationSessionSnapshot),
         getLeadEnrichmentSummary(lead.id).catch(() => null),
     ]);
     const aiDecision = await aiDecide({
         point: 'pre_message',
+        strict: true,
         lead: {
             id: lead.id,
             name: `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim() || undefined,
@@ -332,7 +374,9 @@ export async function processMessageJob(
         const textbox = context.session.page.locator(joinSelectors('messageTextbox')).first();
         const existingContent = await textbox.inputValue({ timeout: 1000 }).catch(() => '');
         if (existingContent.trim().length > 0) {
-            await textbox.click();
+            await clickLocatorHumanLike(context.session.page, textbox, {
+                selectorForDwell: joinSelectors('messageTextbox'),
+            });
             await context.session.page.keyboard.press('Control+A');
             await context.session.page.keyboard.press('Delete');
             await humanDelay(context.session.page, 200, 400);

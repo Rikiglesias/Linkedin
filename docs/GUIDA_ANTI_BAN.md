@@ -1,5 +1,9 @@
 # ⚠️ Guida Anti-Ban — Regole Operative e Protezioni
 
+> Stato documento: guida operativa per l'operatore umano.
+> Per dettagli tecnici di implementazione usare `ARCHITECTURE_ANTIBAN_GUIDE.md`.
+> Per il modello di minaccia formale usare `THREAT_MODEL.md`.
+
 Questa guida spiega le regole da seguire per evitare blocchi e illustra i meccanismi invisibili che il bot usa per proteggere il tuo account.
 
 ---

@@ -4,6 +4,9 @@ import { Page } from 'playwright';
 async function _hb() {
     return import('./humanBehavior');
 }
+async function _hc() {
+    return import('./humanClick');
+}
 import { logInfo, logWarn } from '../telemetry/logger';
 import { randomInt, randomElement } from '../utils/random';
 
@@ -73,7 +76,7 @@ async function expandPostText(page: Page): Promise<void> {
                 // Pausa pre-click (Hover ratio decoy - AD-03 partial overlap)
                 await (await _hb()).humanDelay(page, 300, 800);
 
-                await targetBtn.click({ delay: randomInt(30, 80) });
+                await (await _hc()).clickCoordinatesHumanLike(page, targetX, targetY);
                 await logInfo('organicContent.expandPost', {});
 
                 // Legge il post espanso
@@ -196,7 +199,7 @@ async function reactToPost(page: Page): Promise<void> {
                 if (rBox) {
                     await (await _hb()).humanMouseMoveToCoords(page, rBox.x + rBox.width / 2, rBox.y + rBox.height / 2);
                     await (await _hb()).humanDelay(page, 200, 500);
-                    await specificReaction.click({ delay: randomInt(40, 90) });
+                    await (await _hc()).clickLocatorHumanLike(page, specificReaction);
                     // NEW-12: Dwell time post-reaction (osserva conteggio reazioni)
                     await (await _hb()).humanDelay(page, 500, 2000);
                     await logInfo('organicContent.specificReaction', {});
@@ -206,7 +209,7 @@ async function reactToPost(page: Page): Promise<void> {
         }
 
         // Fallback a un semplice Like / React Toggle
-        await locator.click({ delay: randomInt(40, 100) });
+        await (await _hc()).clickLocatorHumanLike(page, locator);
         // NEW-12: Dwell time post-like (osserva animazione contatore)
         await (await _hb()).humanDelay(page, 500, 1800);
         await logInfo('organicContent.genericLike', {});

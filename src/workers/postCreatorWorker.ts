@@ -243,17 +243,3 @@ export async function createAndPublishPost(page: Page, options: PostCreatorOptio
         return { postId: null, status: 'FAILED', content: '', topic: '', source: 'ai', published: false, error: msg };
     }
 }
-
-/**
- * Conta i post pubblicati oggi per un account (rate limiting).
- */
-export async function countTodayPosts(accountId: string): Promise<number> {
-    const db = await getDatabase();
-    const row = await db.get<{ count: number }>(
-        `SELECT COUNT(*) as count FROM published_posts
-         WHERE account_id = ? AND status = 'PUBLISHED'
-         AND date(published_at) = date('now')`,
-        [accountId],
-    );
-    return row?.count ?? 0;
-}

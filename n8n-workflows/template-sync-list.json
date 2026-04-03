@@ -1,0 +1,159 @@
+{
+  "name": "LinkedIn Bot — Template Sync List Command",
+  "nodes": [
+    {
+      "id": "l1",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 200],
+      "parameters": {}
+    },
+    {
+      "id": "l2",
+      "name": "Get Snapshot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [220, 200],
+      "parameters": {
+        "method": "GET",
+        "url": "http://bot-api:3000/api/v1/automation/snapshot",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Api-Key", "value": "={{ $env.DASHBOARD_API_KEY }}" }] },
+        "options": {}
+      }
+    },
+    {
+      "id": "l3",
+      "name": "Agent Decision (opzionale)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 200],
+      "parameters": {
+        "jsCode": "const raw = $('Get Snapshot').first().json; const data = raw.data || raw; const risk = data.risk || {}; const maxPages = risk.action === 'LOW_ACTIVITY' ? 1 : 2; return [{ json: { command: { kind: 'sync-list', payload: { listUrl: 'TODO_LIST_URL', listName: 'TODO_LIST_NAME', maxPages, maxLeads: 50 }, source: 'n8n-sync-list', idempotencyKey: 'sync-list:' + Date.now() } } }];"
+      }
+    },
+    {
+      "id": "l4",
+      "name": "Submit Command",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [660, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "http://bot-api:3000/api/v1/automation/commands",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Api-Key", "value": "={{ $env.DASHBOARD_API_KEY }}" }] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.command) }}",
+        "options": { "timeout": 15000 }
+      }
+    },
+    {
+      "id": "l5",
+      "name": "Wait Poll",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [880, 200],
+      "parameters": { "resume": "timeInterval", "amount": 45, "unit": "seconds" }
+    },
+    {
+      "id": "l6",
+      "name": "Get Command Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1100, 200],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'http://bot-api:3000/api/v1/automation/commands/' + ($json.data?.requestId || $json.requestId) }}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Api-Key", "value": "={{ $env.DASHBOARD_API_KEY }}" }] },
+        "options": { "timeout": 15000 }
+      }
+    },
+    {
+      "id": "l7",
+      "name": "Parse Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 200],
+      "parameters": {
+        "jsCode": "const raw = $input.first().json; const data = raw.data || raw; const command = data.command || data; const status = command.status || 'UNKNOWN'; return [{ json: { commandName: 'sync-list', requestId: command.requestId || command.request_id, status, terminal: ['SUCCEEDED', 'FAILED', 'SKIPPED'].includes(status), summary: command.result?.summary || null, lastError: command.lastError || command.last_error || null } }];"
+      }
+    },
+    {
+      "id": "l8",
+      "name": "Terminal?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [1540, 200],
+      "parameters": {
+        "conditions": {
+          "options": { "version": 2, "caseSensitive": true, "typeValidation": "strict" },
+          "conditions": [{ "id": "l8-cond", "leftValue": "={{ $json.terminal }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true" } }],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "l9",
+      "name": "Wait Retry",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1760, 320],
+      "parameters": { "resume": "timeInterval", "amount": 45, "unit": "seconds" }
+    },
+    {
+      "id": "l10",
+      "name": "Get Final Snapshot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1760, 80],
+      "parameters": {
+        "method": "GET",
+        "url": "http://bot-api:3000/api/v1/automation/snapshot",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Api-Key", "value": "={{ $env.DASHBOARD_API_KEY }}" }] },
+        "options": {}
+      }
+    },
+    {
+      "id": "l11",
+      "name": "Telegram Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1980, 80],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.telegram.org/bot' + $env.TELEGRAM_BOT_TOKEN + '/sendMessage' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: 'sync-list\\nrequestId=' + $('Parse Status').first().json.requestId + '\\nstatus=' + $('Parse Status').first().json.status + '\\nsummary=' + ($('Parse Status').first().json.summary || '-') + '\\nrisk finale=' + (($('Get Final Snapshot').first().json.data || $('Get Final Snapshot').first().json).risk?.action || 'n/a') + '\\nerror=' + ($('Parse Status').first().json.lastError || '-') }) }}"
+      }
+    }
+  ],
+  "connections": {
+    "Manual Trigger": { "main": [[{ "node": "Get Snapshot", "type": "main", "index": 0 }]] },
+    "Get Snapshot": { "main": [[{ "node": "Agent Decision (opzionale)", "type": "main", "index": 0 }]] },
+    "Agent Decision (opzionale)": { "main": [[{ "node": "Submit Command", "type": "main", "index": 0 }]] },
+    "Submit Command": { "main": [[{ "node": "Wait Poll", "type": "main", "index": 0 }]] },
+    "Wait Poll": { "main": [[{ "node": "Get Command Status", "type": "main", "index": 0 }]] },
+    "Get Command Status": { "main": [[{ "node": "Parse Status", "type": "main", "index": 0 }]] },
+    "Parse Status": { "main": [[{ "node": "Terminal?", "type": "main", "index": 0 }]] },
+    "Terminal?": {
+      "main": [
+        [{ "node": "Get Final Snapshot", "type": "main", "index": 0 }],
+        [{ "node": "Wait Retry", "type": "main", "index": 0 }]
+      ]
+    },
+    "Wait Retry": { "main": [[{ "node": "Get Command Status", "type": "main", "index": 0 }]] },
+    "Get Final Snapshot": { "main": [[{ "node": "Telegram Report", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Rome",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  }
+}

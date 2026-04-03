@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { selectVariant, inferHourBucket } from '../ml/abBandit';
 
 describe('abBandit — selectVariant', () => {
@@ -17,14 +17,26 @@ describe('abBandit — selectVariant', () => {
         await expect(selectVariant([])).rejects.toThrow();
     });
 
-    it('distribuzione non è sempre lo stesso (stocastico)', async () => {
+    it('senza explore forzata usa il ramo exploit deterministico', async () => {
         const variants = ['a', 'b', 'c'];
-        const results = new Set<string>();
-        for (let i = 0; i < 20; i++) {
-            results.add(await selectVariant(variants));
+        const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.99);
+        try {
+            const selected = await selectVariant(variants);
+            expect(selected).toBe('a');
+        } finally {
+            randomSpy.mockRestore();
         }
-        // Con 3 varianti e nessun dato, Thompson sampling dovrebbe esplorare (P(tutte uguali) ≈ 5.8e-10)
-        expect(results.size).toBeGreaterThanOrEqual(2);
+    });
+
+    it('con explore forzata ritorna comunque una variante valida', async () => {
+        const variants = ['a', 'b', 'c'];
+        const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0);
+        try {
+            const selected = await selectVariant(variants);
+            expect(variants).toContain(selected);
+        } finally {
+            randomSpy.mockRestore();
+        }
     });
 
     it('accetta context opzionale', async () => {

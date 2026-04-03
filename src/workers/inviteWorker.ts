@@ -1,9 +1,9 @@
 import { Page } from 'playwright';
 import {
+    clickLocatorHumanLike,
     detectChallenge,
     dismissKnownOverlays,
     humanDelay,
-    humanMouseMove,
     humanType,
     simulateHumanReading,
 } from '../browser';
@@ -38,6 +38,7 @@ import { logInfo, logWarn } from '../telemetry/logger';
 import { normalizeNameForComparison, jaroWinklerSimilarity } from '../utils/text';
 import { observePageContext, logObservation } from '../browser/observePageContext';
 import { aiDecide } from '../ai/aiDecisionEngine';
+import { type NavigationStrategy } from '../core/navigationStrategy';
 
 // Parole attese nel bottone Connect per confidence check pre-click.
 // Previene click su bottone sbagliato se LinkedIn cambia il layout.
@@ -59,17 +60,13 @@ async function clickConnectOnProfile(page: Page): Promise<boolean> {
             );
             return false;
         }
-        await humanMouseMove(page, joinSelectors('connectButtonPrimary'));
-        await humanDelay(page, 120, 320);
-        await primaryBtn.click();
+        await clickLocatorHumanLike(page, primaryBtn, { selectorForDwell: joinSelectors('connectButtonPrimary') });
         return true;
     }
 
     const moreBtn = page.locator(joinSelectors('moreActionsButton')).first();
     if ((await moreBtn.count()) > 0) {
-        await humanMouseMove(page, joinSelectors('moreActionsButton'));
-        await humanDelay(page, 120, 300);
-        await moreBtn.click();
+        await clickLocatorHumanLike(page, moreBtn, { selectorForDwell: joinSelectors('moreActionsButton') });
         await humanDelay(page, 700, 1300);
         const connectInMenu = page.locator(joinSelectors('connectInMoreMenu')).first();
         if ((await connectInMenu.count()) > 0) {
@@ -80,9 +77,7 @@ async function clickConnectOnProfile(page: Page): Promise<boolean> {
                 );
                 return false;
             }
-            await humanMouseMove(page, joinSelectors('connectInMoreMenu'));
-            await humanDelay(page, 120, 300);
-            await connectInMenu.click();
+            await clickLocatorHumanLike(page, connectInMenu, { selectorForDwell: joinSelectors('connectInMoreMenu') });
             return true;
         }
     }
@@ -149,9 +144,9 @@ async function handleInviteModal(
     }
 
     if (wantsNote && canAddNote) {
-        await humanMouseMove(page, joinSelectors('addNoteButton'));
-        await humanDelay(page, 150, 350);
-        await page.locator(joinSelectors('addNoteButton')).first().click();
+        await clickLocatorHumanLike(page, page.locator(joinSelectors('addNoteButton')).first(), {
+            selectorForDwell: joinSelectors('addNoteButton'),
+        });
         await humanDelay(page, 600, 1200);
 
         // Scrivi la nota nella textarea del modale
@@ -192,9 +187,9 @@ async function handleInviteModal(
             await humanDelay(page, 300, 600);
             const sendWithoutNote = page.locator(joinSelectors('sendWithoutNote')).first();
             if ((await sendWithoutNote.count()) > 0) {
-                await humanMouseMove(page, joinSelectors('sendWithoutNote'));
-                await humanDelay(page, 120, 300);
-                await sendWithoutNote.click();
+                await clickLocatorHumanLike(page, sendWithoutNote, {
+                    selectorForDwell: joinSelectors('sendWithoutNote'),
+                });
                 return { sentWithNote: false, noteSource: null, variant: null };
             }
             // Se anche sendWithoutNote non c'è, prova sendFallback sotto
@@ -223,10 +218,7 @@ async function handleInviteModal(
 
         const sendWithNote = page.locator(joinSelectors('sendWithNote')).first();
         if ((await sendWithNote.count()) > 0) {
-            await humanMouseMove(page, joinSelectors('sendWithNote'));
-            await humanDelay(page, 150, 400); // Changed from context.session.page to page
-
-            await sendWithNote.click();
+            await clickLocatorHumanLike(page, sendWithNote, { selectorForDwell: joinSelectors('sendWithNote') });
 
             return { sentWithNote: true, noteSource: generatedNote.source, variant: generatedNote.variant };
         }
@@ -239,17 +231,13 @@ async function handleInviteModal(
     // Fallback: invia senza nota
     const sendWithoutNote = page.locator(joinSelectors('sendWithoutNote')).first();
     if ((await sendWithoutNote.count()) > 0) {
-        await humanMouseMove(page, joinSelectors('sendWithoutNote'));
-        await humanDelay(page, 120, 300);
-        await sendWithoutNote.click();
+        await clickLocatorHumanLike(page, sendWithoutNote, { selectorForDwell: joinSelectors('sendWithoutNote') });
         return { sentWithNote: false, noteSource: null, variant: null };
     }
 
     const fallback = page.locator(joinSelectors('sendFallback')).first();
     if ((await fallback.count()) > 0) {
-        await humanMouseMove(page, joinSelectors('sendFallback'));
-        await humanDelay(page, 120, 300);
-        await fallback.click();
+        await clickLocatorHumanLike(page, fallback, { selectorForDwell: joinSelectors('sendFallback') });
         return { sentWithNote: false, noteSource: null, variant: null };
     }
 
@@ -333,17 +321,53 @@ export async function processInviteJob(
     }
     context.visitedProfilesToday?.add(normalizedUrl);
 
+    const { buildSessionSnapshot } = await import('./sessionDataHelper');
+    const navigationSessionSnapshot = await buildSessionSnapshot(context);
+
+    const navigationDecision = await aiDecide({
+        point: 'navigation',
+        strict: true,
+        lead: {
+            id: lead.id,
+            name: `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim() || undefined,
+            title: lead.job_title ?? undefined,
+            company: lead.account_name ?? undefined,
+            score: lead.lead_score ?? undefined,
+        },
+        session: navigationSessionSnapshot,
+    });
+    if (navigationDecision.action === 'SKIP' || navigationDecision.action === 'DEFER') {
+        await logInfo('invite.ai_navigation_skip', {
+            leadId: lead.id,
+            action: navigationDecision.action,
+            reason: navigationDecision.reason.substring(0, 80),
+        });
+        return workerResult(0);
+    }
+    if (navigationDecision.action === 'NOTIFY_HUMAN') {
+        await logInfo('invite.ai_navigation_notify_human', {
+            leadId: lead.id,
+            reason: navigationDecision.reason.substring(0, 80),
+        });
+        await transitionLead(lead.id, 'REVIEW_REQUIRED', 'ai_navigation_notify_human');
+        return workerResult(1);
+    }
+
     // Navigation Context Chain (1.2): catena di navigazione realistica
     // invece di goto diretto al profilo (segnale detection #1).
     // C05: passa sessionActionCount per attivare il decay della navigazione organica
     // (primi inviti: 45% search, dopo: sempre più diretto — simula umano che si stufa di cercare)
-    await navigateToProfileWithContext(
+    const navigationResult = await navigateToProfileWithContext(
         context.session.page,
         lead.linkedin_url,
         { name: `${lead.first_name} ${lead.last_name}`.trim(), job_title: lead.job_title, company: lead.account_name },
         context.accountId,
         context.sessionActionCount ?? 0,
+        navigationDecision.navigationStrategy as NavigationStrategy | undefined,
     );
+    if (!navigationResult.success) {
+        throw new RetryableWorkerError('Navigazione organica al profilo fallita', 'PROFILE_NAVIGATION_FAILED');
+    }
     // Content-Aware Profile Reading (3.4 fix): funzione UNIFICATA scroll + dwell
     // in budget totale proporzionale alla ricchezza del profilo (4-20s).
     // Sostituisce simulateHumanReading + contextualReadingPause per i profili.
@@ -363,14 +387,14 @@ export async function processInviteJob(
     }
 
     // AI Decision: l'AI decide SE invitare basandosi su contesto pagina + dati lead + session REALI + enrichment
-    const { buildSessionSnapshot } = await import('./sessionDataHelper');
     const { getLeadEnrichmentSummary } = await import('../core/repositories');
     const [sessionData, enrichment] = await Promise.all([
-        buildSessionSnapshot(context),
+        Promise.resolve(navigationSessionSnapshot),
         getLeadEnrichmentSummary(lead.id).catch(() => null),
     ]);
     const aiDecision = await aiDecide({
         point: 'pre_invite',
+        strict: true,
         lead: {
             id: lead.id,
             name: `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim() || undefined,
@@ -485,16 +509,17 @@ export async function processInviteJob(
     const activityBaseProb = 0.1 + Math.random() * 0.2; // 10-30% per lead
     const activityDecay = Math.max(0.05, activityBaseProb - (context.sessionActionCount ?? 0) * 0.02);
     if (Math.random() < activityDecay) {
-        const activityUrl = lead.linkedin_url.replace(/\/$/, '') + '/recent-activity/all/';
         await context.session.page
-            .goto(activityUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 })
+            .evaluate(() => window.scrollBy({ top: 900, behavior: 'smooth' }))
+            .catch(() => null);
+        await humanDelay(context.session.page, 900, 1800);
+        await context.session.page
+            .evaluate(() => window.scrollBy({ top: 500, behavior: 'smooth' }))
             .catch(() => null);
         await simulateHumanReading(context.session.page);
-        // Torna al profilo con goBack (più naturale di goto diretto — il browser ha history)
-        await context.session.page.goBack({ waitUntil: 'domcontentloaded', timeout: 10_000 }).catch(async () => {
-            // Fallback: se goBack fallisce (es. pagina non in history), usa goto
-            await context.session.page.goto(lead.linkedin_url, { waitUntil: 'domcontentloaded' });
-        });
+        await context.session.page
+            .evaluate(() => window.scrollBy({ top: -700, behavior: 'smooth' }))
+            .catch(() => null);
         await humanDelay(context.session.page, 500, 1500);
     }
 

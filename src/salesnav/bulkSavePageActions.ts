@@ -12,7 +12,7 @@
  */
 
 import type { Page } from 'playwright';
-import { humanDelay } from '../browser';
+import { clickLocatorHumanLike, humanDelay } from '../browser';
 import { config } from '../config';
 import {
     hasLocator,
@@ -22,7 +22,6 @@ import {
     safeVisionClick,
     findVisibleClickTarget,
 } from './bulkSaveHelpers';
-import { humanMouseMoveToCoords } from '../browser/humanBehavior';
 import { visionVerify, visionWaitFor } from './visionNavigator';
 import { computerUseSelectList } from './computerUse';
 import {
@@ -221,11 +220,10 @@ export async function openSaveToListDialog(page: Page, dryRun: boolean): Promise
         clicked = true;
     } else if ((await btnLocator.count()) > 0) {
         console.log('[SAVE TO LIST] Strategia 3: button hidden, force click');
-        const hiddenBox = await btnLocator.boundingBox().catch(() => null);
-        if (hiddenBox) {
-            await humanMouseMoveToCoords(page, hiddenBox.x + hiddenBox.width / 2, hiddenBox.y + hiddenBox.height / 2);
-        }
-        await btnLocator.click({ force: true });
+        await clickLocatorHumanLike(page, btnLocator, {
+            selectorForDwell: SAVE_TO_LIST_SELECTOR,
+            scrollTimeoutMs: 3_000,
+        });
         clicked = true;
     }
 
@@ -489,16 +487,7 @@ export async function chooseTargetList(page: Page, targetListName: string, dryRu
             .first();
         if ((await searchInput.count()) > 0) {
             console.log('[CHOOSE LIST] Strategia 1: filtro via campo ricerca (STRICT match)...');
-            // Mouse move umano sull'input prima di digitare
-            const inputBox = await searchInput.boundingBox().catch(() => null);
-            if (inputBox) {
-                await humanMouseMoveToCoords(
-                    page,
-                    inputBox.x + inputBox.width / 2 + (Math.random() * 6 - 3),
-                    inputBox.y + inputBox.height / 2 + (Math.random() * 4 - 2),
-                );
-            }
-            await searchInput.click();
+            await clickLocatorHumanLike(page, searchInput, { scrollTimeoutMs: 3_000 });
             await humanDelay(page, 150, 300);
             await searchInput.fill('');
             await humanDelay(page, 100, 200);
@@ -514,16 +503,7 @@ export async function chooseTargetList(page: Page, targetListName: string, dryRu
             } else {
                 // Fallback: partial name search but still strict match
                 console.log('[CHOOSE LIST] Strategia 1: strict fallita, provo ricerca parziale...');
-                // Mouse move umano sull'input per il retry parziale
-                const retryBox = await searchInput.boundingBox().catch(() => null);
-                if (retryBox) {
-                    await humanMouseMoveToCoords(
-                        page,
-                        retryBox.x + retryBox.width / 2 + (Math.random() * 6 - 3),
-                        retryBox.y + retryBox.height / 2 + (Math.random() * 4 - 2),
-                    );
-                }
-                await searchInput.click();
+                await clickLocatorHumanLike(page, searchInput, { scrollTimeoutMs: 3_000 });
                 await humanDelay(page, 100, 200);
                 await searchInput.fill('');
                 await humanDelay(page, 100, 200);

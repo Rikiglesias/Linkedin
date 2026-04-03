@@ -1,5 +1,9 @@
 # Guida Operativa ai Workflow
 
+> Stato documento: guida operativa e orientata all'uso dei workflow.
+> Per il contratto tecnico del motore usare `WORKFLOW_ENGINE.md`.
+> Per il deep dive architetturale usare `WORKFLOW_ANALYSIS.md`.
+
 Benvenuto nella documentazione dei **Workflow del Bot LinkedIn**. Questa guida è pensata per spiegarti come operano i 5 flussi principali, cosa chiedono, come ti proteggono e cosa generano.
 
 Se stai cercando il modo migliore per estrarre lead, scaldarli e inviare messaggi personalizzati, sei nel posto giusto.

@@ -3,7 +3,7 @@
  * Include sia formato console che formato Telegram (HTML).
  */
 
-import type { WorkflowReport } from './types';
+import type { WorkflowExecutionResult, WorkflowReport } from './types';
 import type { AlertSeverity } from '../telemetry/alerts';
 
 const BOX_WIDTH = 64;
@@ -73,6 +73,58 @@ export function formatWorkflowReport(report: WorkflowReport): string {
     return lines.join('\n');
 }
 
+export function formatWorkflowExecutionResult(result: WorkflowExecutionResult): string {
+    if (result.artifacts?.report) {
+        return formatWorkflowReport(result.artifacts.report);
+    }
+
+    const lines: string[] = [];
+    const status = result.success ? 'COMPLETATO' : result.blocked ? 'BLOCCATO' : 'FALLITO';
+    lines.push('');
+    lines.push(SEP);
+    lines.push(`  REPORT: ${result.workflow.toUpperCase()}`);
+    lines.push(SEP);
+    lines.push(`  Status:    ${status}`);
+
+    if (result.blocked) {
+        lines.push(`  Motivo:    ${result.blocked.reason}`);
+        lines.push(`  Messaggio: ${result.blocked.message}`);
+    }
+
+    if (Object.keys(result.summary).length > 0) {
+        lines.push('');
+        for (const [key, value] of Object.entries(result.summary)) {
+            const label = key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+            lines.push(`  ${label.padEnd(24)} ${value ?? 'N/A'}`);
+        }
+    }
+
+    if (result.errors.length > 0) {
+        lines.push('');
+        lines.push('  ERRORI:');
+        for (const err of result.errors.slice(0, 10)) {
+            lines.push(`    - ${err}`);
+        }
+        if (result.errors.length > 10) {
+            lines.push(`    ... e altri ${result.errors.length - 10}`);
+        }
+    }
+
+    if (result.riskAssessment) {
+        const ra = result.riskAssessment;
+        const riskIcon = ra.level === 'GO' ? '[OK]' : ra.level === 'CAUTION' ? '[!]' : '[!!!]';
+        lines.push('');
+        lines.push(`  ${riskIcon} Risk: ${ra.level} (score: ${ra.score}/100)`);
+    }
+
+    lines.push('');
+    lines.push(`  Prossima azione: ${result.nextAction ?? 'N/A'}`);
+    lines.push(SEP);
+    lines.push('');
+
+    return lines.join('\n');
+}
+
 /**
  * Formatta il report workflow per Telegram (HTML compatto).
  * Invia automaticamente se Telegram e' configurato.
@@ -121,6 +173,46 @@ export async function sendWorkflowTelegramReport(report: WorkflowReport): Promis
               : 'info';
         const title = `Workflow ${report.workflow.toUpperCase()} — ${status}`;
 
+        await sendTelegramAlert(message, title, severity);
+    } catch {
+        // Telegram report e' best-effort — non deve mai bloccare il workflow
+    }
+}
+
+export async function sendWorkflowExecutionTelegramReport(result: WorkflowExecutionResult): Promise<void> {
+    if (result.artifacts?.report) {
+        await sendWorkflowTelegramReport(result.artifacts.report);
+        return;
+    }
+
+    if (result.blocked?.reason === 'USER_CANCELLED') {
+        return;
+    }
+
+    try {
+        const { sendTelegramAlert } = await import('../telemetry/alerts');
+        const status = result.success ? 'COMPLETATO' : result.blocked ? 'BLOCCATO' : 'FALLITO';
+        const summaryLines = Object.entries(result.summary)
+            .map(([k, v]) => `${k.replace(/_/g, ' ')}: <b>${v ?? 'N/A'}</b>`)
+            .join('\n');
+        const errorSection =
+            result.errors.length > 0
+                ? `\n\nErrori:\n${result.errors
+                      .slice(0, 3)
+                      .map((e) => `- ${e}`)
+                      .join('\n')}`
+                : '';
+        const riskSection = result.riskAssessment
+            ? `\nRisk: ${result.riskAssessment.level} (${result.riskAssessment.score}/100)`
+            : '';
+        const blockedSection = result.blocked
+            ? `\n\nBlocco: <b>${result.blocked.reason}</b>\n${result.blocked.message}`
+            : '';
+        const message = `Status: <b>${status}</b>\nWorkflow: <b>${result.workflow}</b>${
+            summaryLines ? `\n\n${summaryLines}` : ''
+        }${blockedSection}${errorSection}${riskSection}\n\nProssima: ${result.nextAction ?? 'N/A'}`;
+        const severity: AlertSeverity = result.success ? 'info' : result.blocked ? 'warn' : 'critical';
+        const title = `Workflow ${result.workflow.toUpperCase()} — ${status}`;
         await sendTelegramAlert(message, title, severity);
     } catch {
         // Telegram report e' best-effort — non deve mai bloccare il workflow

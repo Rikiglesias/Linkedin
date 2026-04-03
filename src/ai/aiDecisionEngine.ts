@@ -18,6 +18,7 @@
 import { config } from '../config';
 import { logInfo, logWarn } from '../telemetry/logger';
 import type { PageObservation } from '../browser/observePageContext';
+import { normalizeNavigationStrategy, type NavigationStrategy } from '../core/navigationStrategy';
 
 // ─── Tipi ────────────────────────────────────────────────────────────────────
 
@@ -55,6 +56,8 @@ export interface AIDecisionRequest {
     chatMessages?: string[];
     /** Contesto aggiuntivo */
     extra?: Record<string, unknown>;
+    /** Se true, quando l'AI e' attiva un errore/timeout non deve degradare a PROCEED */
+    strict?: boolean;
 }
 
 export interface AIDecisionResponse {
@@ -65,7 +68,7 @@ export interface AIDecisionResponse {
     /** Motivazione leggibile (loggata per debugging) */
     reason: string;
     /** Strategia navigazione suggerita (solo per point='navigation') */
-    navigationStrategy?: 'search_organic' | 'feed_organic' | 'direct';
+    navigationStrategy?: NavigationStrategy;
     /** Contesto per il messaggio (solo per point='pre_message' o 'inbox_reply') */
     messageContext?: string;
     /** Delay suggerito in secondi prima dell'azione */
@@ -106,7 +109,7 @@ export async function aiDecide(request: AIDecisionRequest): Promise<AIDecisionRe
         const response = await Promise.race([aiPromise, timeoutPromise]);
 
         if (!response) {
-            return mechanicalFallback(request, response === null ? 'timeout' : 'empty_ai_response');
+            return fallbackDecision(request, response === null ? 'timeout' : 'empty_ai_response');
         }
 
         const parsed = parseDecisionResponse(response, request);
@@ -136,7 +139,7 @@ export async function aiDecide(request: AIDecisionRequest): Promise<AIDecisionRe
             leadId: request.lead?.id,
             error: err instanceof Error ? err.message : String(err),
         });
-        return mechanicalFallback(request, 'ai_error');
+        return fallbackDecision(request, 'ai_error');
     }
 }
 
@@ -150,6 +153,21 @@ function mechanicalFallback(_request: AIDecisionRequest, reason: string): AIDeci
         confidence: 0.5,
         reason: `Mechanical fallback: ${reason}`,
     };
+}
+
+function strictFallback(request: AIDecisionRequest, reason: string): AIDecisionResponse {
+    return {
+        action: request.point === 'inbox_reply' ? 'NOTIFY_HUMAN' : 'DEFER',
+        confidence: 0.25,
+        reason: `AI strict fallback: ${reason}`,
+    };
+}
+
+function fallbackDecision(request: AIDecisionRequest, reason: string): AIDecisionResponse {
+    if (request.strict && config.aiPersonalizationEnabled) {
+        return strictFallback(request, reason);
+    }
+    return mechanicalFallback(request, reason);
 }
 
 // GAP 1: Carica accuracy storica per calibrare il prompt.
@@ -285,33 +303,35 @@ function buildDecisionPrompt(request: AIDecisionRequest): string {
     return parts.join('\n');
 }
 
-function parseDecisionResponse(raw: string, _request: AIDecisionRequest): AIDecisionResponse {
+function parseDecisionResponse(raw: string, request: AIDecisionRequest): AIDecisionResponse {
     try {
         // Estrai JSON dalla risposta (l'AI potrebbe aggiungere testo attorno)
         const jsonMatch = raw.match(/\{[\s\S]*\}/);
         if (!jsonMatch) {
-            return { action: 'PROCEED', confidence: 0.5, reason: 'Mechanical fallback: no_json_in_response' };
+            return fallbackDecision(request, 'no_json_in_response');
         }
 
         const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
         const action = String(parsed.action ?? 'PROCEED').toUpperCase();
         const validActions = ['PROCEED', 'SKIP', 'DEFER', 'NOTIFY_HUMAN'];
+        if (!validActions.includes(action)) {
+            return fallbackDecision(request, 'invalid_action');
+        }
+
+        const normalizedNavigationStrategy = normalizeNavigationStrategy(parsed.navigationStrategy);
 
         return {
-            action: validActions.includes(action) ? (action as AIDecisionResponse['action']) : 'PROCEED',
+            action: action as AIDecisionResponse['action'],
             confidence: Math.max(0, Math.min(1, Number(parsed.confidence) || 0.5)),
             reason: String(parsed.reason ?? 'AI decision'),
             messageContext: typeof parsed.messageContext === 'string' ? parsed.messageContext : undefined,
-            navigationStrategy:
-                typeof parsed.navigationStrategy === 'string'
-                    ? (parsed.navigationStrategy as AIDecisionResponse['navigationStrategy'])
-                    : undefined,
+            navigationStrategy: normalizedNavigationStrategy,
             suggestedDelaySec:
                 typeof parsed.suggestedDelaySec === 'number'
                     ? Math.max(0, Math.min(60, parsed.suggestedDelaySec))
                     : undefined,
         };
     } catch {
-        return { action: 'PROCEED', confidence: 0.5, reason: 'Mechanical fallback: json_parse_error' };
+        return fallbackDecision(request, 'json_parse_error');
     }
 }

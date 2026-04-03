@@ -5,12 +5,12 @@ import { sendTelegramAlert } from '../telemetry/alerts';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { executeWithRetryPolicy, isLikelyTransientError } from '../core/integrationPolicy';
 import {
-    claimPendingOutboxEvents,
-    countPendingOutboxEvents,
+    claimPendingOutboxDeliveries,
+    countPendingOutboxDeliveries,
     getRuntimeFlag,
-    markOutboxDeliveredClaimed,
-    markOutboxPermanentFailureClaimed,
-    markOutboxRetryClaimed,
+    markOutboxDeliveryDeliveredClaimed,
+    markOutboxDeliveryPermanentFailureClaimed,
+    markOutboxDeliveryRetryClaimed,
     setRuntimeFlag,
 } from '../core/repositories';
 import { clampBackpressureLevel, computeBackpressureBatchSize, computeNextBackpressureLevel } from './backpressure';
@@ -60,7 +60,7 @@ async function setSupabaseBackpressureLevel(level: number): Promise<void> {
 }
 
 export async function getSyncStatus(): Promise<SyncStatus> {
-    const pendingOutbox = await countPendingOutboxEvents();
+    const pendingOutbox = await countPendingOutboxDeliveries('SUPABASE');
     const backpressureLevel = await getSupabaseBackpressureLevel();
     return {
         enabled: config.supabaseSyncEnabled,
@@ -81,7 +81,7 @@ export async function runSupabaseSyncOnce(): Promise<void> {
     const effectiveBatchSize = computeBackpressureBatchSize(config.supabaseSyncBatchSize, backpressureLevel);
     const ownerId = `supabase-sync:${process.pid}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
     const leaseSeconds = Math.max(30, Math.ceil(config.integrationRequestTimeoutMs / 1000) * 3);
-    const events = await claimPendingOutboxEvents(effectiveBatchSize, ownerId, leaseSeconds);
+    const events = await claimPendingOutboxDeliveries('SUPABASE', effectiveBatchSize, ownerId, leaseSeconds);
     if (events.length === 0) {
         return;
     }
@@ -118,10 +118,11 @@ export async function runSupabaseSyncOnce(): Promise<void> {
                 },
             );
             sent += 1;
-            const delivered = await markOutboxDeliveredClaimed(event.id, ownerId);
+            const delivered = await markOutboxDeliveryDeliveredClaimed(event.delivery_id, ownerId);
             if (!delivered) {
                 await logWarn('supabase.sync.event.claim_lost', {
                     eventId: event.id,
+                    deliveryId: event.delivery_id,
                     idempotencyKey: event.idempotency_key,
                     ownerId,
                     phase: 'delivered',
@@ -133,10 +134,16 @@ export async function runSupabaseSyncOnce(): Promise<void> {
             const message = error instanceof Error ? error.message : String(error);
             if (attempts >= config.supabaseSyncMaxRetries) {
                 permanentFailures += 1;
-                const marked = await markOutboxPermanentFailureClaimed(event.id, ownerId, attempts, message);
+                const marked = await markOutboxDeliveryPermanentFailureClaimed(
+                    event.delivery_id,
+                    ownerId,
+                    attempts,
+                    message,
+                );
                 if (!marked) {
                     await logWarn('supabase.sync.event.claim_lost', {
                         eventId: event.id,
+                        deliveryId: event.delivery_id,
                         idempotencyKey: event.idempotency_key,
                         ownerId,
                         phase: 'permanent_failure',
@@ -152,10 +159,11 @@ export async function runSupabaseSyncOnce(): Promise<void> {
                 });
             } else {
                 const delay = retryDelayMs(attempts, config.supabaseSyncIntervalMs);
-                const marked = await markOutboxRetryClaimed(event.id, ownerId, attempts, delay, message);
+                const marked = await markOutboxDeliveryRetryClaimed(event.delivery_id, ownerId, attempts, delay, message);
                 if (!marked) {
                     await logWarn('supabase.sync.event.claim_lost', {
                         eventId: event.id,
+                        deliveryId: event.delivery_id,
                         idempotencyKey: event.idempotency_key,
                         ownerId,
                         phase: 'retry',
@@ -193,7 +201,7 @@ export async function runSupabaseSyncOnce(): Promise<void> {
         });
     }
 
-    const pending = await countPendingOutboxEvents();
+    const pending = await countPendingOutboxDeliveries('SUPABASE');
     if (pending > config.outboxAlertBacklog) {
         await logWarn('supabase.sync.backlog_high', { pending, threshold: config.outboxAlertBacklog });
         await sendTelegramAlert(

@@ -1,8 +1,8 @@
 import { Page } from 'playwright';
-import { detectChallenge, dismissKnownOverlays, humanDelay, humanMouseMove } from '../browser';
+import { clickLocatorHumanLike, detectChallenge, dismissKnownOverlays, humanDelay, humanMouseMove } from '../browser';
 import { attemptChallengeResolution } from '../workers/challengeHandler';
 import { cleanText } from '../utils/text';
-import { blockUserInput, pauseInputBlock, resumeInputBlock, humanMouseMoveToCoords } from '../browser/humanBehavior';
+import { blockUserInput, humanMouseMoveToCoords } from '../browser/humanBehavior';
 import { isLinkedInUrl, normalizeLinkedInUrl } from '../linkedinUrl';
 import { SALESNAV_NEXT_PAGE_SELECTOR } from './selectors';
 
@@ -543,9 +543,7 @@ async function clickShowMoreIfPresent(page: Page): Promise<boolean> {
     }
     await humanMouseMove(page, SHOW_MORE_SELECTOR);
     await humanDelay(page, 180, 450);
-    await pauseInputBlock(page);
-    await button.click();
-    await resumeInputBlock(page);
+    await clickLocatorHumanLike(page, button, { selectorForDwell: SHOW_MORE_SELECTOR });
     await humanDelay(page, 1200, 2200);
     return true;
 }
@@ -565,9 +563,7 @@ async function goToNextPage(page: Page): Promise<boolean> {
 
     await humanMouseMove(page, NEXT_PAGE_SELECTOR);
     await humanDelay(page, 180, 420);
-    await pauseInputBlock(page);
-    await nextButton.click();
-    await resumeInputBlock(page);
+    await clickLocatorHumanLike(page, nextButton, { selectorForDwell: NEXT_PAGE_SELECTOR });
     // Attendi caricamento AJAX della nuova pagina (SalesNav non fa page reload)
     await humanDelay(page, 2000, 3500);
     // Attendi che i risultati siano visibili (indicatore di caricamento completato)

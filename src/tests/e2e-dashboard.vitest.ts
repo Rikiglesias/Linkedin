@@ -8,24 +8,33 @@
  * elementi chiave nel markup.
  */
 
-import { describe, test, expect, beforeAll } from 'vitest';
+import type { Server } from 'node:http';
+import { describe, test, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
+import { bindExpressTestServer, closeExpressTestServer } from './helpers/bindExpressTestServer';
 
 let app: import('express').Express;
+let server: Server | null = null;
 
 beforeAll(async () => {
     try {
         const serverModule = await import('../api/server');
         app = serverModule.app;
+        server = await bindExpressTestServer(app);
     } catch {
         app = null as never;
+        server = null;
     }
+});
+
+afterAll(async () => {
+    await closeExpressTestServer(server);
 });
 
 describe('E2E Dashboard — HTML e asset statici', () => {
     test('GET / ritorna HTML con elementi dashboard chiave', async () => {
         if (!app) return;
-        const res = await request(app).get('/');
+        const res = await request(server ?? app).get('/');
         if (res.status === 200) {
             expect(res.headers['content-type']).toContain('text/html');
             expect(res.text).toContain('id="kpi-compare-invites"');
@@ -39,7 +48,7 @@ describe('E2E Dashboard — HTML e asset statici', () => {
 
     test('GET /style.css ritorna CSS valido', async () => {
         if (!app) return;
-        const res = await request(app).get('/style.css');
+        const res = await request(server ?? app).get('/style.css');
         if (res.status === 200) {
             expect(res.headers['content-type']).toContain('text/css');
             expect(res.text).toContain(':root');
@@ -49,7 +58,7 @@ describe('E2E Dashboard — HTML e asset statici', () => {
 
     test('GET /sw.js ritorna service worker JS', async () => {
         if (!app) return;
-        const res = await request(app).get('/sw.js');
+        const res = await request(server ?? app).get('/sw.js');
         if (res.status === 200) {
             expect(res.headers['content-type']).toContain('javascript');
             expect(res.text).toContain('CACHE_STATIC');
@@ -58,7 +67,7 @@ describe('E2E Dashboard — HTML e asset statici', () => {
 
     test('GET /manifest.json ritorna manifest PWA', async () => {
         if (!app) return;
-        const res = await request(app).get('/manifest.json');
+        const res = await request(server ?? app).get('/manifest.json');
         if (res.status === 200) {
             const manifest = res.body;
             expect(manifest).toHaveProperty('name');
@@ -70,7 +79,7 @@ describe('E2E Dashboard — HTML e asset statici', () => {
 describe('E2E Dashboard — Widget presenti nel markup', () => {
     test('HTML contiene tutti i widget operativi', async () => {
         if (!app) return;
-        const res = await request(app).get('/');
+        const res = await request(server ?? app).get('/');
         if (res.status !== 200) return;
 
         const requiredIds = [

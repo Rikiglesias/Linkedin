@@ -5,12 +5,12 @@ import { sendTelegramAlert } from '../telemetry/alerts';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 import {
-    claimPendingOutboxEvents,
-    countPendingOutboxEvents,
+    claimPendingOutboxDeliveries,
+    countPendingOutboxDeliveries,
     getRuntimeFlag,
-    markOutboxDeliveredClaimed,
-    markOutboxPermanentFailureClaimed,
-    markOutboxRetryClaimed,
+    markOutboxDeliveryDeliveredClaimed,
+    markOutboxDeliveryPermanentFailureClaimed,
+    markOutboxDeliveryRetryClaimed,
     setRuntimeFlag,
 } from '../core/repositories';
 import { clampBackpressureLevel, computeBackpressureBatchSize, computeNextBackpressureLevel } from './backpressure';
@@ -56,7 +56,7 @@ async function setWebhookBackpressureLevel(level: number): Promise<void> {
 }
 
 export async function getWebhookSyncStatus(): Promise<WebhookSyncStatus> {
-    const pendingOutbox = await countPendingOutboxEvents();
+    const pendingOutbox = await countPendingOutboxDeliveries('WEBHOOK');
     const configured = !!config.webhookSyncUrl;
     const backpressureLevel = await getWebhookBackpressureLevel();
     return {
@@ -78,7 +78,7 @@ export async function runWebhookSyncOnce(): Promise<void> {
     const effectiveBatchSize = computeBackpressureBatchSize(config.webhookSyncBatchSize, backpressureLevel);
     const ownerId = `webhook-sync:${process.pid}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
     const leaseSeconds = Math.max(30, Math.ceil(config.webhookSyncTimeoutMs / 1000) * 3);
-    const events = await claimPendingOutboxEvents(effectiveBatchSize, ownerId, leaseSeconds);
+    const events = await claimPendingOutboxDeliveries('WEBHOOK', effectiveBatchSize, ownerId, leaseSeconds);
     if (events.length === 0) {
         return;
     }
@@ -129,10 +129,16 @@ export async function runWebhookSyncOnce(): Promise<void> {
                 const attempts = event.attempts + 1;
                 if (attempts >= config.webhookSyncMaxRetries) {
                     permanentFailures += 1;
-                    const marked = await markOutboxPermanentFailureClaimed(event.id, ownerId, attempts, errorMessage);
+                    const marked = await markOutboxDeliveryPermanentFailureClaimed(
+                        event.delivery_id,
+                        ownerId,
+                        attempts,
+                        errorMessage,
+                    );
                     if (!marked) {
                         await logWarn('webhook.sync.event.claim_lost', {
                             eventId: event.id,
+                            deliveryId: event.delivery_id,
                             idempotencyKey: event.idempotency_key,
                             ownerId,
                             phase: 'permanent_failure',
@@ -148,10 +154,17 @@ export async function runWebhookSyncOnce(): Promise<void> {
                     });
                 } else {
                     const delay = retryDelayMs(attempts, Math.max(1000, config.webhookSyncTimeoutMs));
-                    const marked = await markOutboxRetryClaimed(event.id, ownerId, attempts, delay, errorMessage);
+                    const marked = await markOutboxDeliveryRetryClaimed(
+                        event.delivery_id,
+                        ownerId,
+                        attempts,
+                        delay,
+                        errorMessage,
+                    );
                     if (!marked) {
                         await logWarn('webhook.sync.event.claim_lost', {
                             eventId: event.id,
+                            deliveryId: event.delivery_id,
                             idempotencyKey: event.idempotency_key,
                             ownerId,
                             phase: 'retry',
@@ -162,10 +175,11 @@ export async function runWebhookSyncOnce(): Promise<void> {
             }
 
             sent += 1;
-            const delivered = await markOutboxDeliveredClaimed(event.id, ownerId);
+            const delivered = await markOutboxDeliveryDeliveredClaimed(event.delivery_id, ownerId);
             if (!delivered) {
                 await logWarn('webhook.sync.event.claim_lost', {
                     eventId: event.id,
+                    deliveryId: event.delivery_id,
                     idempotencyKey: event.idempotency_key,
                     ownerId,
                     phase: 'delivered',
@@ -177,10 +191,16 @@ export async function runWebhookSyncOnce(): Promise<void> {
             const message = error instanceof Error ? error.message : String(error);
             if (attempts >= config.webhookSyncMaxRetries) {
                 permanentFailures += 1;
-                const marked = await markOutboxPermanentFailureClaimed(event.id, ownerId, attempts, message);
+                const marked = await markOutboxDeliveryPermanentFailureClaimed(
+                    event.delivery_id,
+                    ownerId,
+                    attempts,
+                    message,
+                );
                 if (!marked) {
                     await logWarn('webhook.sync.event.claim_lost', {
                         eventId: event.id,
+                        deliveryId: event.delivery_id,
                         idempotencyKey: event.idempotency_key,
                         ownerId,
                         phase: 'exception_permanent_failure',
@@ -196,10 +216,11 @@ export async function runWebhookSyncOnce(): Promise<void> {
                 });
             } else {
                 const delay = retryDelayMs(attempts, Math.max(1000, config.webhookSyncTimeoutMs));
-                const marked = await markOutboxRetryClaimed(event.id, ownerId, attempts, delay, message);
+                const marked = await markOutboxDeliveryRetryClaimed(event.delivery_id, ownerId, attempts, delay, message);
                 if (!marked) {
                     await logWarn('webhook.sync.event.claim_lost', {
                         eventId: event.id,
+                        deliveryId: event.delivery_id,
                         idempotencyKey: event.idempotency_key,
                         ownerId,
                         phase: 'exception_retry',
@@ -238,7 +259,7 @@ export async function runWebhookSyncOnce(): Promise<void> {
         });
     }
 
-    const pending = await countPendingOutboxEvents();
+    const pending = await countPendingOutboxDeliveries('WEBHOOK');
     if (pending > config.outboxAlertBacklog) {
         await logWarn('webhook.sync.backlog_high', { pending, threshold: config.outboxAlertBacklog });
         await sendTelegramAlert(`${pending} eventi pendenti non inviati al Webhook.`, 'Outbox Backlog Alto', 'warn');

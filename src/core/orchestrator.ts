@@ -1,7 +1,6 @@
-import { checkLogin, closeBrowser, launchBrowser, runSelectorCanaryDetailed } from '../browser';
 import { getRuntimeAccountProfiles, setOverrideAccountId } from '../accountManager';
 import { getSessionMaturity } from '../browser/sessionCookieMonitor';
-import { config, getLocalDateString, getWeekStartDate, isWorkingHour } from '../config';
+import { config, getWeekStartDate } from '../config';
 import { pauseAutomation, quarantineAccount } from '../risk/incidentManager';
 import {
     estimateBanProbability,
@@ -12,14 +11,12 @@ import {
 } from '../risk/riskEngine';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { runEventSyncOnce } from '../sync/eventSync';
-import { checkDiskSpace } from '../db';
-import { ListScheduleBreakdown, scheduleJobs, workflowToJobTypes, WorkflowSelection } from './scheduler';
+import { ListScheduleBreakdown, scheduleJobs, workflowToJobTypes } from './scheduler';
 import { runSiteCheck } from './audit';
 
 import { runQueuedJobs } from './jobRunner';
 import {
     countWeeklyInvites,
-    getAutomationPauseState,
     getComplianceHealthMetrics,
     getDailyStat,
     getRecentDailyStats,
@@ -30,7 +27,9 @@ import {
 import { evaluateAiGuardian } from '../ai/guardian';
 import { runRandomLinkedinActivity } from '../workers/randomActivityWorker';
 import { sendTelegramAlert } from '../telemetry/alerts';
-import { runPreventiveGuards, getSessionVarianceFactor } from './preventiveGuards';
+import { evaluateWorkflowEntryGuards } from './workflowEntryGuards';
+import type { WorkflowSelection } from './workflowSelection';
+import type { WorkflowBlockedState } from '../workflows/types';
 
 export interface RunWorkflowOptions {
     workflow: WorkflowSelection;
@@ -49,6 +48,19 @@ export interface RunWorkflowOptions {
     messageMode?: 'ai' | 'template';
     /** Account ID override (forza un account specifico per il workflow) */
     accountId?: string;
+    /** Internal: salta le entry guard già valutate da un adapter esterno. */
+    skipEntryGuards?: boolean;
+}
+
+export interface RunWorkflowOutcome {
+    status: 'completed' | 'blocked' | 'dry_run';
+    blocked: WorkflowBlockedState | null;
+    localDate?: string;
+}
+
+function toFlagSafeToken(value: string): string {
+    const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    return normalized || 'unknown';
 }
 
 function mapDailySnapshotToPredictiveSample(snapshot: {
@@ -65,122 +77,6 @@ function mapDailySnapshotToPredictiveSample(snapshot: {
         challengeCount: snapshot.challengesCount,
         inviteVelocityRatio: snapshot.invitesSent / Math.max(1, config.hardInviteCap),
     };
-}
-
-function toFlagSafeToken(raw: string): string {
-    const normalized = raw.trim().toLowerCase();
-    if (!normalized) return 'default';
-    return normalized.replace(/[^a-z0-9_-]+/g, '_');
-}
-
-async function runCanaryIfNeeded(workflow: WorkflowSelection): Promise<boolean> {
-    const touchesUi = workflow === 'all' || workflow === 'invite' || workflow === 'message' || workflow === 'check';
-    if (!config.selectorCanaryEnabled || !touchesUi) {
-        return true;
-    }
-
-    // Cache canary per 4 ore — evita sessioni browser extra inutili
-    const lastCanaryOk = await getRuntimeFlag('canary_last_ok_at').catch(() => null);
-    if (lastCanaryOk && Date.now() - Date.parse(lastCanaryOk) < 4 * 60 * 60 * 1000) {
-        return true;
-    }
-
-    const canaryWorkflow = workflow === 'invite' || workflow === 'message' || workflow === 'check' ? workflow : 'all';
-    const localDate = getLocalDateString();
-    const accounts = getRuntimeAccountProfiles();
-    for (const account of accounts) {
-        const session = await launchBrowser({
-            sessionDir: account.sessionDir,
-            proxy: account.proxy,
-            forceDesktop: true,
-        });
-        try {
-            const loggedIn = await checkLogin(session.page);
-            if (!loggedIn) {
-                return false;
-            }
-
-            // Rileva restrizioni account (shadowban, limited, under review)
-            const restrictionIndicators = [
-                'restricted',
-                'under review',
-                'temporarily limited',
-                'limitato',
-                'attività sospetta',
-                'account bloccato',
-                'your account has been restricted',
-                'account is restricted',
-            ];
-            const pageText = (await session.page.textContent('body').catch(() => '')) ?? '';
-            const lowerText = pageText.toLowerCase();
-            const restriction = restrictionIndicators.find((ind) => lowerText.includes(ind));
-            if (restriction) {
-                console.error(`[CANARY] Account ${account.id} RISTRETTO: trovato "${restriction}" nella pagina`);
-                await quarantineAccount('ACCOUNT_RESTRICTED', {
-                    accountId: account.id,
-                    indicator: restriction,
-                    url: session.page.url(),
-                });
-                return false;
-            }
-            const currentUrl = session.page.url();
-            if (/\/(checkpoint|challenge)\b/.test(currentUrl)) {
-                console.error(`[CANARY] Account ${account.id} bloccato da challenge: ${currentUrl}`);
-                await quarantineAccount('CHALLENGE_AT_LOGIN', {
-                    accountId: account.id,
-                    url: currentUrl,
-                });
-                return false;
-            }
-
-            const report = await runSelectorCanaryDetailed(session.page, canaryWorkflow);
-            await pushOutboxEvent(
-                'selector.canary.report',
-                {
-                    localDate,
-                    workflow,
-                    accountId: account.id,
-                    report,
-                },
-                `selector.canary.report:${localDate}:${workflow}:${account.id}:${Date.now()}`,
-            );
-
-            if (report.optionalFailed > 0) {
-                await logWarn('selector.canary.optional_failed', {
-                    localDate,
-                    workflow,
-                    accountId: account.id,
-                    optionalFailed: report.optionalFailed,
-                    steps: report.steps.filter((step) => !step.required && !step.ok),
-                });
-            }
-
-            if (!report.ok) {
-                await logWarn('selector.canary.critical_failed', {
-                    localDate,
-                    workflow,
-                    accountId: account.id,
-                    criticalFailed: report.criticalFailed,
-                    steps: report.steps.filter((step) => step.required && !step.ok),
-                });
-                return false;
-            }
-
-            await logInfo('selector.canary.ok', {
-                localDate,
-                workflow,
-                accountId: account.id,
-                steps: report.steps.length,
-                optionalFailed: report.optionalFailed,
-            });
-        } finally {
-            await closeBrowser(session);
-        }
-    }
-
-    // Canary OK — salva timestamp per cache 4h
-    await setRuntimeFlag('canary_last_ok_at', new Date().toISOString()).catch(() => null);
-    return true;
 }
 
 async function evaluateComplianceHealthGuard(
@@ -329,114 +225,22 @@ async function evaluateComplianceHealthGuard(
     return true;
 }
 
-export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
+export async function runWorkflow(options: RunWorkflowOptions): Promise<RunWorkflowOutcome> {
     if (options.accountId) {
         setOverrideAccountId(options.accountId);
     }
 
-    // Guardie preventive non-bloccanti: heartbeat, backup DB, circuit breaker alert
-    if (!options.dryRun) {
-        await runPreventiveGuards();
-    }
-
-    // K: Varianza sessioni giornaliere — un umano reale non fa sempre lo stesso volume.
-    // Check PRIMA dello scheduling per evitare lavoro inutile se oggi è "giorno libero".
-    // 5% probabilità di skip totale, deterministico per data+account (FNV-1a).
-    if (!options.dryRun) {
-        const accounts = getRuntimeAccountProfiles();
-        const primaryAccount = accounts[0]?.id ?? 'default';
-        const varianceFactor = getSessionVarianceFactor(primaryAccount);
-        if (varianceFactor === 0) {
-            await logInfo('workflow.session_variance.skip_day', {
-                workflow: options.workflow,
-                accountId: primaryAccount,
-            });
-            return;
-        }
-    }
-
-    if (!options.dryRun) {
-        const quarantine = (await getRuntimeFlag('account_quarantine')) === 'true';
-        if (quarantine) {
-            await logWarn('workflow.skipped.quarantine', { workflow: options.workflow });
-            return;
-        }
-
-        const pauseState = await getAutomationPauseState();
-        if (pauseState.paused) {
-            await logWarn('workflow.skipped.paused', {
-                workflow: options.workflow,
-                reason: pauseState.reason,
-                pausedUntil: pauseState.pausedUntil,
-                remainingSeconds: pauseState.remainingSeconds,
-            });
-            return;
-        }
-    }
-
-    if (!options.dryRun) {
-        const diskStatus = checkDiskSpace();
-        if (diskStatus.level === 'critical') {
-            await pauseAutomation(
-                'DISK_SPACE_CRITICAL',
-                { freeMb: diskStatus.freeMb, message: diskStatus.message },
-                60,
-            );
-            await logWarn('workflow.skipped.disk_critical', { freeMb: diskStatus.freeMb });
-            return;
-        }
-        if (diskStatus.level === 'warn') {
-            await logWarn('workflow.disk_warn', { freeMb: diskStatus.freeMb, message: diskStatus.message });
-        }
-    }
-
-    if (!options.dryRun && !isWorkingHour()) {
-        await logInfo('workflow.skipped.out_of_hours', {
-            startHour: config.workingHoursStart,
-            endHour: config.workingHoursEnd,
+    if (!options.skipEntryGuards) {
+        const entryGuardDecision = await evaluateWorkflowEntryGuards({
+            workflow: options.workflow,
+            dryRun: options.dryRun,
+            accountId: options.accountId,
         });
-        return;
-    }
-
-    if (!options.dryRun) {
-        const localDate = getLocalDateString();
-        const selectorFailures = await getDailyStat(localDate, 'selector_failures');
-        if (selectorFailures >= config.maxSelectorFailuresPerDay) {
-            await quarantineAccount('SELECTOR_FAILURE_BURST', {
-                workflow: options.workflow,
-                localDate,
-                selectorFailures,
-                threshold: config.maxSelectorFailuresPerDay,
-            });
-            return;
-        }
-
-        const runErrors = await getDailyStat(localDate, 'run_errors');
-        if (runErrors >= config.maxRunErrorsPerDay) {
-            await pauseAutomation(
-                'RUN_ERRORS_BURST',
-                {
-                    workflow: options.workflow,
-                    localDate,
-                    runErrors,
-                    threshold: config.maxRunErrorsPerDay,
-                },
-                config.autoPauseMinutesOnFailureBurst,
-            );
-            await logWarn('workflow.skipped.run_error_burst', {
-                workflow: options.workflow,
-                localDate,
-                runErrors,
-                threshold: config.maxRunErrorsPerDay,
-                pauseMinutes: config.autoPauseMinutesOnFailureBurst,
-            });
-            return;
-        }
-
-        const canaryOk = await runCanaryIfNeeded(options.workflow);
-        if (!canaryOk) {
-            await quarantineAccount('SELECTOR_CANARY_FAILED', { workflow: options.workflow });
-            return;
+        if (!entryGuardDecision.allowed) {
+            return {
+                status: 'blocked',
+                blocked: entryGuardDecision.blocked,
+            };
         }
     }
 
@@ -462,7 +266,18 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
                 schedule.listBreakdown,
             );
             if (!canProceed) {
-                return;
+                return {
+                    status: 'blocked',
+                    blocked: {
+                        reason: 'COMPLIANCE_HEALTH_BLOCKED',
+                        message: 'Workflow bloccato dal compliance health guard',
+                        details: {
+                            workflow: options.workflow,
+                            localDate: schedule.localDate,
+                        },
+                    },
+                    localDate: schedule.localDate,
+                };
             }
         }
     }
@@ -555,7 +370,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
             messageBudget: schedule.messageBudget,
             listBreakdown: schedule.listBreakdown,
         });
-        return;
+        return { status: 'dry_run', blocked: null, localDate: schedule.localDate };
     }
 
     await pushOutboxEvent(
@@ -579,7 +394,19 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
             workflow: options.workflow,
             riskSnapshot: schedule.riskSnapshot,
         });
-        return;
+        return {
+            status: 'blocked',
+            blocked: {
+                reason: 'RISK_STOP_THRESHOLD',
+                message: 'Workflow bloccato da risk snapshot STOP',
+                details: {
+                    workflow: options.workflow,
+                    localDate: schedule.localDate,
+                    score: schedule.riskSnapshot.score,
+                },
+            },
+            localDate: schedule.localDate,
+        };
     }
 
     const guardian = await evaluateAiGuardian(options.workflow, schedule);
@@ -613,7 +440,20 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
                 pauseMinutes: guardian.decision.pauseMinutes,
                 summary: guardian.decision.summary,
             });
-            return;
+            return {
+                status: 'blocked',
+                blocked: {
+                    reason: 'AI_GUARDIAN_PREEMPTIVE',
+                    message: guardian.decision.summary,
+                    details: {
+                        workflow: options.workflow,
+                        localDate: schedule.localDate,
+                        pauseMinutes: guardian.decision.pauseMinutes,
+                        reason: guardian.reason,
+                    },
+                },
+                localDate: schedule.localDate,
+            };
         }
         if (guardian.decision.severity === 'watch') {
             await logWarn('ai.guardian.watch', {
@@ -656,7 +496,20 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
             score: schedule.riskSnapshot.score,
             pendingRatio: schedule.riskSnapshot.pendingRatio,
         });
-        return;
+        return {
+            status: 'blocked',
+            blocked: {
+                reason: 'RISK_COOLDOWN',
+                message: cooldown.reason ?? 'Cooldown di rischio attivato',
+                details: {
+                    workflow: options.workflow,
+                    localDate: schedule.localDate,
+                    tier: cooldown.tier,
+                    pauseMinutes: cooldown.minutes,
+                },
+            },
+            localDate: schedule.localDate,
+        };
     }
 
     if (schedule.riskSnapshot.action === 'WARN') {
@@ -701,7 +554,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
             }
             await logInfo('workflow.warmup.end', { localDate: schedule.localDate });
         }
-        return;
+        return { status: 'completed', blocked: null, localDate: schedule.localDate };
     }
 
     // Session maturity guard: force random LinkedIn activity before outreach
@@ -762,4 +615,5 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<void> {
     }
 
     await runEventSyncOnce();
+    return { status: 'completed', blocked: null, localDate: schedule.localDate };
 }

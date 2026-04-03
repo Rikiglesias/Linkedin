@@ -1,5 +1,17 @@
 # Plugin SDK minimo
 
+Questa cartella contiene due cose diverse:
+
+- plugin reali del runtime
+- esempi di sviluppo plugin
+
+## File presenti
+
+- `fakeActivity.ts` + `fakeActivity.manifest.json`
+  Plugin reale di runtime.
+- `examples/exampleEngagementBooster.js` + manifest
+  Plugin esempio, non parte del runtime standard.
+
 ## Struttura richiesta
 Ogni plugin deve avere:
 - file runtime (`.js` o `.cjs`)
@@ -42,4 +54,3 @@ Campi consigliati:
    - `PLUGIN_EXAMPLE_MARKER_FILE=data/plugin-example.marker.jsonl`
 2. Avvia il bot (`run-loop` o comando che inizializza plugin system).
 3. Verifica il marker file: deve contenere eventi `onInit`, `onIdle` e `onShutdown`.
-

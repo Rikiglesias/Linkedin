@@ -41,6 +41,17 @@ export async function getDailyStat(
     return row?.[field] ?? 0;
 }
 
+export async function countTodayPosts(accountId: string): Promise<number> {
+    const db = await getDatabase();
+    const row = await db.get<{ count: number }>(
+        `SELECT COUNT(*) as count FROM published_posts
+         WHERE account_id = ? AND status = 'PUBLISHED'
+         AND date(published_at) = date('now')`,
+        [accountId],
+    );
+    return row?.count ?? 0;
+}
+
 function formatPercent(numerator: number, denominator: number): number {
     if (denominator <= 0) return 0;
     return Number.parseFloat(((numerator / denominator) * 100).toFixed(2));

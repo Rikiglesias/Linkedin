@@ -4,8 +4,8 @@
  * Bundle tutti i file frontend TypeScript in un singolo bundle.js
  * usando esbuild. Chart.js è incluso nel bundle (no CDN external).
  *
- * Uso:  npx tsx scripts/buildFrontend.ts
- *       oppure: node -e "require('esbuild').buildSync({...})"
+ * Uso:  npx ts-node scripts/buildFrontend.ts
+ *       oppure: npm run build:frontend
  */
 
 import { buildSync } from 'esbuild';

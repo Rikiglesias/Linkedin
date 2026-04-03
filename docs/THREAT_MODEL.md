@@ -1,5 +1,8 @@
 # Threat Model (Web/API/Plugin/Cloud & Evasion)
 
+> Stato documento: threat model formale.
+> Non sostituisce `SECURITY.md` per l'hardening operativo e non sostituisce `GUIDA_ANTI_BAN.md` per le regole pratiche.
+
 ## Scope
 - **Evasion & Anti-Detection**: Cloudflare, LinkedIn bot detection, FingerprintJS.
 - **Platform**: Dashboard/API (`/api/*`, SSE, session auth, control endpoints)

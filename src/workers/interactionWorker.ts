@@ -10,11 +10,12 @@ import { Page } from 'playwright';
 import { WorkerContext } from './context';
 import { WorkerExecutionResult, workerResult } from './result';
 import { logError, logInfo, logWarn } from '../telemetry/logger';
+import { clickLocatorHumanLike } from '../browser';
 import { humanDelay, simulateHumanReading, humanMouseMove } from '../browser/humanBehavior';
 import { detectChallenge } from '../browser/auth';
 import { navigateToProfileForCheck } from '../browser/navigationContext';
 import { getDatabase } from '../db';
-import { ChallengeDetectedError } from './errors';
+import { ChallengeDetectedError, RetryableWorkerError } from './errors';
 import { config, getLocalDateString } from '../config';
 import { getDailyStat, incrementDailyStat } from '../core/repositories/stats';
 import { isBlacklisted } from '../core/repositories/blacklist';
@@ -36,7 +37,10 @@ async function getLeadLinkedinUrl(leadId: number): Promise<string | null> {
 // ─── VIEW PROFILE ───────────────────────────────────────────────────────────────
 
 async function performViewProfile(page: Page, linkedinUrl: string, accountId: string): Promise<void> {
-    await navigateToProfileForCheck(page, linkedinUrl, accountId);
+    const navigationResult = await navigateToProfileForCheck(page, linkedinUrl, accountId);
+    if (!navigationResult.success) {
+        throw new RetryableWorkerError('Navigazione organica al profilo interazione fallita', 'PROFILE_NAVIGATION_FAILED');
+    }
     await humanDelay(page, 2000, 4000);
     await simulateHumanReading(page);
 
@@ -50,12 +54,18 @@ async function performViewProfile(page: Page, linkedinUrl: string, accountId: st
 // ─── LIKE POST ──────────────────────────────────────────────────────────────────
 
 async function performLikePost(page: Page, linkedinUrl: string, accountId: string): Promise<void> {
-    // Naviga al profilo con context chain, poi vai alla pagina activity
-    await navigateToProfileForCheck(page, linkedinUrl, accountId);
-    const activityUrl = linkedinUrl.replace(/\/$/, '') + '/recent-activity/all/';
-    await page.goto(activityUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 });
-    await humanDelay(page, 2500, 5000);
+    // Naviga al profilo con context chain e resta sul profilo.
+    // Evita teletrasporti su /recent-activity/all/ che rompono la narrativa umana della sessione.
+    const navigationResult = await navigateToProfileForCheck(page, linkedinUrl, accountId);
+    if (!navigationResult.success) {
+        throw new RetryableWorkerError('Navigazione organica al profilo interazione fallita', 'PROFILE_NAVIGATION_FAILED');
+    }
+    await humanDelay(page, 1800, 3200);
     await simulateHumanReading(page);
+    await page.evaluate(() => window.scrollBy({ top: 900, behavior: 'smooth' }));
+    await humanDelay(page, 1200, 2200);
+    await page.evaluate(() => window.scrollBy({ top: 500, behavior: 'smooth' }));
+    await humanDelay(page, 800, 1800);
 
     // Cerca il primo bottone "Like" (non ancora premuto)
     const likeSelectors = [
@@ -70,7 +80,7 @@ async function performLikePost(page: Page, linkedinUrl: string, accountId: strin
         if (count > 0 && (await likeBtn.isVisible())) {
             await humanMouseMove(page, selector);
             await humanDelay(page, 500, 1200);
-            await likeBtn.click();
+            await clickLocatorHumanLike(page, likeBtn, { selectorForDwell: selector });
             await humanDelay(page, 800, 1800);
             return;
         }
@@ -83,7 +93,10 @@ async function performLikePost(page: Page, linkedinUrl: string, accountId: strin
 // ─── FOLLOW ─────────────────────────────────────────────────────────────────────
 
 async function performFollow(page: Page, linkedinUrl: string, accountId: string): Promise<void> {
-    await navigateToProfileForCheck(page, linkedinUrl, accountId);
+    const navigationResult = await navigateToProfileForCheck(page, linkedinUrl, accountId);
+    if (!navigationResult.success) {
+        throw new RetryableWorkerError('Navigazione organica al profilo interazione fallita', 'PROFILE_NAVIGATION_FAILED');
+    }
     await humanDelay(page, 2000, 4000);
 
     const followSelectors = [
@@ -104,7 +117,7 @@ async function performFollow(page: Page, linkedinUrl: string, accountId: string)
             }
             await humanMouseMove(page, selector);
             await humanDelay(page, 500, 1200);
-            await btn.click();
+            await clickLocatorHumanLike(page, btn, { selectorForDwell: selector });
             await humanDelay(page, 800, 1800);
             return;
         }

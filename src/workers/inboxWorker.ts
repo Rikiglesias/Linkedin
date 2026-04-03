@@ -1,4 +1,11 @@
-import { clickWithFallback, humanDelay, humanMouseMove, simulateHumanReading, typeWithFallback } from '../browser';
+import {
+    clickLocatorHumanLike,
+    clickWithFallback,
+    humanDelay,
+    humanMouseMove,
+    simulateHumanReading,
+    typeWithFallback,
+} from '../browser';
 import { WorkerContext } from './context';
 import { resolveIntentAndDraft } from '../ai/intentResolver';
 import { logInfo, logWarn } from '../telemetry/logger';
@@ -143,12 +150,6 @@ export async function processInboxJob(
                 });
                 const { pauseAutomation } = await import('../risk/incidentManager');
                 await pauseAutomation('LINKEDIN_INBOX_WARNING', { preview: previewText.slice(0, 200) }, 1440);
-                const { sendTelegramAlert } = await import('../telemetry/alerts');
-                await sendTelegramAlert(
-                    `🚨 **LinkedIn warning rilevato nella inbox!**\n\nPreview: ${previewText.slice(0, 150)}\n\n_Automazione in pausa per 24h._`,
-                    'LinkedIn Warning',
-                    'critical',
-                ).catch(() => null);
                 return workerResult(0);
             }
         }
@@ -181,7 +182,9 @@ export async function processInboxJob(
             `${joinSelectors('inboxConversationItem')}:has(${joinSelectors('inboxUnreadBadge')})`,
         );
         await humanDelay(page, 200, 600);
-        await convo.click();
+        await clickLocatorHumanLike(page, convo, {
+            selectorForDwell: `${joinSelectors('inboxConversationItem')}:has(${joinSelectors('inboxUnreadBadge')})`,
+        });
 
         await humanDelay(page, 1500, 3000); // Wait for chat to load
 

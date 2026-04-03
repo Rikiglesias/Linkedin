@@ -5,7 +5,6 @@ import { getSessionMaturity } from '../browser/sessionCookieMonitor';
 import { applyGrowthModel, calculateAccountTrustScore } from '../risk/accountBehaviorModel';
 import { getSessionHistory } from '../risk/sessionMemory';
 import { getTodayStrategy } from '../risk/strategyPlanner';
-import { countTodayPosts } from '../workers/postCreatorWorker';
 import { pickAccountIdForLead, getRuntimeAccountProfiles } from '../accountManager';
 import {
     calculateAccountWarmupMultiplier,
@@ -18,6 +17,7 @@ import { getTimingDecisionForLead, TimingAction } from '../ml/timingOptimizer';
 import { computeTimezoneDelaySec } from '../ml/locationTimezone';
 import {
     countWeeklyInvites,
+    countTodayPosts,
     ensureLeadList,
     enqueueJob,
     getDailyStat,
@@ -37,8 +37,7 @@ import {
     computeListPerformanceMultiplier,
 } from './repositories';
 import { transitionLead } from './leadStateService';
-
-export type WorkflowSelection = 'invite' | 'check' | 'message' | 'warmup' | 'all';
+import type { WorkflowSelection } from './workflowSelection';
 
 export interface ScheduleResult {
     localDate: string;

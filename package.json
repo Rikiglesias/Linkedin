@@ -6,7 +6,7 @@
   "scripts": {
     "build": "npm run build:backend && npm run build:frontend",
     "build:backend": "tsc -p tsconfig.json",
-    "build:frontend": "node -e \"require('esbuild').buildSync({entryPoints:['src/frontend/main.ts'],outfile:'public/assets/bundle.js',bundle:true,sourcemap:true,minify:true,format:'esm',target:['es2022'],platform:'browser',logLevel:'info'})\"",
+    "build:frontend": "ts-node scripts/buildFrontend.ts",
     "lint": "eslint src/**/*.ts --max-warnings 0",
     "format": "prettier --write \"src/**/*.ts\" \"public/**/*.{html,css}\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"public/**/*.{html,css}\"",

@@ -15,10 +15,10 @@
  */
 
 import type { Page } from 'playwright';
-import { humanDelay, randomMouseMove } from '../browser';
+import { clickLocatorHumanLike, humanDelay, randomMouseMove } from '../browser';
 import { config } from '../config';
 import { hasLocator, locatorBoundingBox, buildClipAroundLocator, smartClick, safeVisionClick } from './bulkSaveHelpers';
-import { pauseInputBlock, resumeInputBlock, humanMouseMoveToCoords } from '../browser/humanBehavior';
+import { humanMouseMoveToCoords } from '../browser/humanBehavior';
 import { visionRead } from './visionNavigator';
 import { SALESNAV_NEXT_PAGE_SELECTOR as NEXT_PAGE_SELECTOR } from './selectors';
 import type { ScrollCollectedProfile } from './bulkSaveTypes';
@@ -141,7 +141,10 @@ export async function clickNextPage(page: Page, dryRun: boolean): Promise<boolea
             `[WARN] Click Next non ha cambiato pagina (prima: ${pageBefore.current}, dopo: ${pageAfter.current}). Riprovo con click diretto...`,
         );
         // Fallback: click diretto con force
-        await nextButton.click({ force: true }).catch(() => {});
+        await clickLocatorHumanLike(page, nextButton, {
+            selectorForDwell: NEXT_PAGE_SELECTOR,
+            scrollTimeoutMs: 3_000,
+        }).catch(() => {});
         // domcontentloaded (non networkidle — SalesNav ha WebSocket permanente)
         await page.waitForLoadState('domcontentloaded', { timeout: 10_000 }).catch(() => {});
         await humanDelay(page, 600, 1_200);
@@ -207,9 +210,7 @@ export async function dismissTransientUi(page: Page): Promise<void> {
         .first();
     if ((await continueBtn.count().catch(() => 0)) > 0) {
         console.log('[UI] Dismissing mobile app prompt...');
-        await pauseInputBlock(page);
-        await continueBtn.click({ timeout: 3_000 }).catch(() => null);
-        await resumeInputBlock(page);
+        await clickLocatorHumanLike(page, continueBtn, { scrollTimeoutMs: 3_000 }).catch(() => null);
         await page.waitForTimeout(500).catch(() => null);
     }
 }

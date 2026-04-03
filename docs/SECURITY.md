@@ -1,5 +1,9 @@
 # Security & Privacy Hardening
 
+> Stato documento: documento canonico di hardening, privacy, controlli e routine di sicurezza.
+> Per il threat model formale usare `THREAT_MODEL.md`.
+> Per la parte anti-ban orientata all'operatore usare `GUIDA_ANTI_BAN.md`.
+
 ## What is already hardened
 - Browser stealth layer: 19 runtime patches in `stealthScripts.ts` (WebRTC kill, navigator normalization, plugins mock, headless guards, battery/audio/WebGL spoofing, CDP leak prevention, font enumeration defense, platform consistency for iPhone/Android). Firefox UA gets Firefox-appropriate patches (no Chrome plugins/window.chrome). Patches are configurable: `STEALTH_SKIP_SECTIONS` disables specific sections, `CLOAKBROWSER_ENABLED` delegates to binary-level stealth. Canvas/WebGL noise is deterministic per fingerprint via PRNG Mulberry32 with per-region seed. Audio noise uses pseudo-random sample selection (not fixed interval).
 - Fingerprint deterministic selection: same account gets same fingerprint (UA, viewport, WebGL renderer, canvas noise) for ~1 week, then rotates automatically. No random variation between sessions.

@@ -43,6 +43,7 @@ const RETRY_POLICY_BY_CODE: Record<string, RetryPolicyTemplate> = {
     SEND_BUTTON_NOT_FOUND: { retryable: true, maxAttempts: 2, baseDelayMultiplier: 2, category: 'ui_selector' },
     NO_PROOF_OF_SEND: { retryable: true, maxAttempts: 2, baseDelayMultiplier: 2, category: 'ui_selector' },
     INVITE_NOT_CONFIRMED: { retryable: true, maxAttempts: 2, baseDelayMultiplier: 2, category: 'ui_selector' },
+    PROFILE_NAVIGATION_FAILED: { retryable: true, maxAttempts: 2, baseDelayMultiplier: 2, category: 'workflow' },
     WORKER_REPORTED_FAILURE: { retryable: true, maxAttempts: 2, baseDelayMultiplier: 1.5, category: 'workflow' },
     ACCEPTANCE_PENDING: {
         retryable: true,

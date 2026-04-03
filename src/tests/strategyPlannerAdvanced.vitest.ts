@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { getTodayStrategy } from '../risk/strategyPlanner';
 import { config } from '../config';
 
@@ -7,7 +7,16 @@ describe('strategyPlanner — advanced', () => {
         config.weeklyStrategyEnabled = true;
     });
 
-    it('inviteFactor + messageFactor > 0 nei giorni lavorativi', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('inviteFactor + messageFactor > 0 in una mattina feriale', () => {
+        vi.setSystemTime(new Date('2026-04-01T08:00:00.000Z'));
         const strategy = getTodayStrategy();
         if (strategy.dayOfWeek >= 1 && strategy.dayOfWeek <= 5) {
             expect(strategy.inviteFactor + strategy.messageFactor).toBeGreaterThan(0);

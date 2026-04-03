@@ -22,6 +22,7 @@ import {
 import { incrementLockMetric, getLockContentionSummary, listLockMetricsByDate } from './lockMetrics';
 import { OUTBOX_SELECT_COLUMNS, RUNTIME_LOCK_SELECT_COLUMNS } from './sqlColumns';
 import { withTransaction } from './shared';
+import { ensureOutboxEventDeliveries, getActiveOutboxSinks } from './outboxDeliveries';
 
 export { getLockContentionSummary, listLockMetricsByDate };
 
@@ -94,13 +95,30 @@ export async function pushOutboxEvent(
     const db = await getDatabase();
     const correlationId = getCorrelationId();
     const enrichedPayload = correlationId ? { ...payload, correlationId } : payload;
-    await db.run(
-        `
-        INSERT OR IGNORE INTO outbox_events (topic, payload_json, idempotency_key)
-        VALUES (?, ?, ?)
-    `,
-        [topic, JSON.stringify(enrichedPayload), idempotencyKey],
-    );
+    const activeSinks = getActiveOutboxSinks();
+
+    await withTransaction(db, async () => {
+        await db.run(
+            `
+            INSERT OR IGNORE INTO outbox_events (topic, payload_json, idempotency_key)
+            VALUES (?, ?, ?)
+        `,
+            [topic, JSON.stringify(enrichedPayload), idempotencyKey],
+        );
+
+        const eventRow = await db.get<{ id: number }>(
+            `SELECT id
+               FROM outbox_events
+              WHERE idempotency_key = ?
+              LIMIT 1`,
+            [idempotencyKey],
+        );
+        if (!eventRow) {
+            throw new Error(`Outbox event non trovato per idempotency_key=${idempotencyKey}`);
+        }
+
+        await ensureOutboxEventDeliveries(db, eventRow.id, activeSinks);
+    });
 }
 
 export async function getPendingOutboxEvents(limit: number): Promise<OutboxEventRecord[]> {

@@ -9,6 +9,7 @@ import { config } from '../config';
 import { navigateToProfileForCheck } from '../browser/navigationContext';
 import { isLoggedIn } from '../browser/auth';
 import { WorkerExecutionResult, workerResult } from './result';
+import { RetryableWorkerError } from './errors';
 
 const HYGIENE_DAILY_WITHDRAW_CAP = Math.max(1, parseInt(process.env.HYGIENE_DAILY_WITHDRAW_CAP ?? '10', 10) || 10);
 
@@ -61,7 +62,10 @@ export async function processHygieneJob(
                 break; // Esce dal loop — sessione non più valida
             }
 
-            await navigateToProfileForCheck(page, lead.linkedin_url, payload.accountId);
+            const navigationResult = await navigateToProfileForCheck(page, lead.linkedin_url, payload.accountId);
+            if (!navigationResult.success) {
+                throw new RetryableWorkerError('Navigazione organica al profilo hygiene fallita', 'PROFILE_NAVIGATION_FAILED');
+            }
             await humanDelay(page, 2000, 4000);
 
             // Fase 1: Cerca bottone "In attesa" / "Pending" con Fallback progressivo

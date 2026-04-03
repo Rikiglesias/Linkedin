@@ -23,6 +23,8 @@ export {
     performDecoyAction,
     performDecoyBurst,
 } from './browser/humanBehavior';
+export { clickCoordinatesHumanLike, clickLocatorHumanLike } from './browser/humanClick';
+export type { HumanLocatorClickOptions } from './browser/humanClick';
 export { runSelectorCanaryDetailed, runSelectorCanary } from './browser/selectorCanary';
 export type { SelectorCanaryStepResult, SelectorCanaryReport } from './browser/selectorCanary';
 

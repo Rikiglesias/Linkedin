@@ -10,8 +10,8 @@ import {
     recordSelectorLearningRunEvaluation,
     restoreDynamicSelectorSnapshots,
     upsertDynamicSelector,
-} from '../core/repositories';
-import type { SelectorLearningRollbackSnapshotEntry } from '../core/repositories';
+} from '../core/selectorLearning';
+import type { SelectorLearningRollbackSnapshotEntry } from '../core/selectorLearning';
 import { logInfo, logWarn } from '../telemetry/logger';
 
 const DEFAULT_LOOKBACK_DAYS = 7;

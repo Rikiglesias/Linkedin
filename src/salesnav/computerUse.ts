@@ -188,11 +188,14 @@ async function executeAction(page: Page, action: ComputerAction): Promise<void> 
             await humanMouseMoveToCoords(page, x, y);
             await pulseVisualCursorOverlay(page);
             await pauseInputBlock(page);
-            await page.mouse.click(x, y, {
-                button: action.button ?? 'left',
-                delay: 40 + Math.floor(Math.random() * 60),
-            });
-            await resumeInputBlock(page);
+            try {
+                await page.mouse.click(x, y, {
+                    button: action.button ?? 'left',
+                    delay: 40 + Math.floor(Math.random() * 60),
+                });
+            } finally {
+                await resumeInputBlock(page);
+            }
             break;
         }
 
@@ -201,8 +204,11 @@ async function executeAction(page: Page, action: ComputerAction): Promise<void> 
             const y = action.y ?? 0;
             await humanMouseMoveToCoords(page, x, y);
             await pauseInputBlock(page);
-            await page.mouse.dblclick(x, y, { delay: 40 + Math.floor(Math.random() * 40) });
-            await resumeInputBlock(page);
+            try {
+                await page.mouse.dblclick(x, y, { delay: 40 + Math.floor(Math.random() * 40) });
+            } finally {
+                await resumeInputBlock(page);
+            }
             break;
         }
 
@@ -214,8 +220,11 @@ async function executeAction(page: Page, action: ComputerAction): Promise<void> 
         case 'type': {
             if (action.text) {
                 await pauseInputBlock(page);
-                await page.keyboard.type(action.text, { delay: 25 + Math.floor(Math.random() * 30) });
-                await resumeInputBlock(page);
+                try {
+                    await page.keyboard.type(action.text, { delay: 25 + Math.floor(Math.random() * 30) });
+                } finally {
+                    await resumeInputBlock(page);
+                }
             }
             break;
         }
@@ -249,12 +258,15 @@ async function executeAction(page: Page, action: ComputerAction): Promise<void> 
                     F5: 'F5',
                 };
                 await pauseInputBlock(page);
-                for (const rawKey of action.keys) {
-                    const key = KEY_MAP[rawKey.toUpperCase()] ?? rawKey;
-                    await page.keyboard.press(key);
-                    await page.waitForTimeout(50 + Math.floor(Math.random() * 50));
+                try {
+                    for (const rawKey of action.keys) {
+                        const key = KEY_MAP[rawKey.toUpperCase()] ?? rawKey;
+                        await page.keyboard.press(key);
+                        await page.waitForTimeout(50 + Math.floor(Math.random() * 50));
+                    }
+                } finally {
+                    await resumeInputBlock(page);
                 }
-                await resumeInputBlock(page);
             }
             break;
         }

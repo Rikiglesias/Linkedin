@@ -9,6 +9,8 @@ export * from './repositories/jobs';
 export * from './repositories/incidents';
 export * from './repositories/stats';
 export * from './repositories/system';
+export * from './repositories/automationCommands';
+export * from './repositories/outboxDeliveries';
 // A22: aiQuality rimosso dal barrel per rompere circular dependency chain:
 // repositories → aiQuality → ai/* → openaiClient → integrationPolicy → repositories
 // I consumer importano direttamente da './repositories/aiQuality'.

@@ -5,7 +5,7 @@
  * passati da riga di comando. Nessuna dipendenza da DB, browser o config.
  */
 
-import { WorkflowSelection } from '../core/scheduler';
+import type { WorkflowSelection } from '../core/workflowSelection';
 
 // ─── Lettura argomenti ────────────────────────────────────────────────────────
 

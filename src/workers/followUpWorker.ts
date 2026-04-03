@@ -46,6 +46,7 @@ import { ensureViewportDwell } from '../browser/humanBehavior';
 import { isLoggedIn } from '../browser/auth';
 import { observePageContext, logObservation } from '../browser/observePageContext';
 import { aiDecide } from '../ai/aiDecisionEngine';
+import { type NavigationStrategy } from '../core/navigationStrategy';
 
 /**
  * Calcola quanti giorni fa è avvenuto l'evento (dal timestamp ISO).
@@ -91,10 +92,50 @@ async function processSingleFollowUp(
     context: WorkerContext,
 ): Promise<boolean> {
     const days = daysSince(messagedAt);
+    const { buildSessionSnapshot } = await import('./sessionDataHelper');
+    const navigationSessionSnapshot = await buildSessionSnapshot(context);
+
+    const navigationDecision = await aiDecide({
+        point: 'navigation',
+        strict: true,
+        lead: {
+            id: leadId,
+            name: `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim() || undefined,
+            title: lead.job_title ?? undefined,
+            company: lead.account_name ?? undefined,
+            score: lead.lead_score ?? undefined,
+        },
+        session: navigationSessionSnapshot,
+    });
+    if (navigationDecision.action === 'SKIP' || navigationDecision.action === 'DEFER') {
+        await logInfo('follow_up.ai_navigation_skip', {
+            leadId,
+            action: navigationDecision.action,
+            reason: navigationDecision.reason.substring(0, 80),
+        });
+        return false;
+    }
+    if (navigationDecision.action === 'NOTIFY_HUMAN') {
+        await logInfo('follow_up.ai_navigation_notify_human', {
+            leadId,
+            reason: navigationDecision.reason.substring(0, 80),
+        });
+        const { transitionLead } = await import('../core/leadStateService');
+        await transitionLead(leadId, 'REVIEW_REQUIRED', 'ai_navigation_notify_human');
+        return false;
+    }
 
     // C11: Navigazione al profilo con catena organica (era goto diretto — segnale detection #1).
     // navigateToProfileForMessage: 60% Feed→Profilo, 40% Diretto (con varianza notifiche).
-    await navigateToProfileForMessage(context.session.page, linkedinUrl, context.accountId);
+    const navigationResult = await navigateToProfileForMessage(
+        context.session.page,
+        linkedinUrl,
+        context.accountId,
+        navigationDecision.navigationStrategy as NavigationStrategy | undefined,
+    );
+    if (!navigationResult.success) {
+        throw new RetryableWorkerError('Navigazione organica al profilo follow-up fallita', 'PROFILE_NAVIGATION_FAILED');
+    }
     await humanDelay(context.session.page, 2500, 5000);
     await simulateHumanReading(context.session.page);
     await contextualReadingPause(context.session.page);
@@ -112,14 +153,14 @@ async function processSingleFollowUp(
     }
 
     // AI Decision: l'AI decide SE inviare il follow-up — con dati session REALI + enrichment
-    const { buildSessionSnapshot } = await import('./sessionDataHelper');
     const { getLeadEnrichmentSummary } = await import('../core/repositories');
     const [sessionData, enrichment] = await Promise.all([
-        buildSessionSnapshot(context),
+        Promise.resolve(navigationSessionSnapshot),
         getLeadEnrichmentSummary(leadId).catch(() => null),
     ]);
     const aiDecision = await aiDecide({
         point: 'pre_follow_up',
+        strict: true,
         lead: {
             id: leadId,
             name: `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim() || undefined,

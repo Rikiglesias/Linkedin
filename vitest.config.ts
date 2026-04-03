@@ -1,6 +1,10 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+    // Evita il bootstrap su "localhost" quando il resolver locale della macchina è rotto.
+    server: {
+        host: '127.0.0.1',
+    },
     test: {
         globals: false,
         environment: 'node',

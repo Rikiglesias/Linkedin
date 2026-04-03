@@ -20,6 +20,8 @@ import { BrowserContext } from 'playwright';
 /** Stato corrente del click-through per evitare chiamate duplicate. */
 let _clickThroughActive = false;
 let _lastPid: number | null = null;
+let _lastApplyAt = 0;
+const REAPPLY_THROTTLE_MS = 1_200;
 
 /**
  * WeakMap per PID override — usato da Camoufox che non espone browser.process().
@@ -183,6 +185,8 @@ export function enableWindowClickThrough(browserContext: BrowserContext): boolea
 export function reapplyWindowClickThrough(): void {
     if (process.platform !== 'win32') return;
     if (!_lastPid) return;
+    if (!_clickThroughActive) return;
+    if (Date.now() - _lastApplyAt < REAPPLY_THROTTLE_MS) return;
     _applyClickThrough(_lastPid, true);
 }
 
@@ -199,6 +203,7 @@ function _applyClickThrough(pid: number, enable: boolean): boolean {
         if (windowCount > 0) {
             _clickThroughActive = enable;
             _lastPid = pid;
+            _lastApplyAt = enable ? Date.now() : 0;
             if (enable) {
                 console.log(
                     `[WINDOW-BLOCK] ✓ Click-through attivato (PID ${pid}, ${windowCount} finestre) — mouse utente bloccato`,
@@ -232,6 +237,7 @@ export function disableWindowClickThrough(browserContext?: BrowserContext): bool
     if (ok) {
         _clickThroughActive = false;
         _lastPid = null;
+        _lastApplyAt = 0;
         console.log(`[WINDOW-BLOCK] ✓ Click-through disattivato (PID ${pid}) — mouse utente sbloccato`);
     }
     return ok;

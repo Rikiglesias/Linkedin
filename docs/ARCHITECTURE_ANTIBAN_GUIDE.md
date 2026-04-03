@@ -1,3 +1,11 @@
+## Stato documento
+
+- Ruolo: reference tecnica anti-ban e stealth.
+- Canonico per: dettagli implementativi e principi architetturali anti-detect.
+- Non usare come guida operativa per operatori: per quello usare `GUIDA_ANTI_BAN.md`.
+
+---
+
 1. Architettura Generale e Principi di Base
 Il bot è un’applicazione Node.js/TypeScript che orchestra browser reali (Playwright) con un focus ossessivo sull’imitazione del comportamento umano. Tutto il codice è strutturato per rendere ogni azione indistinguibile da quella di un utente legittimo.
 
@@ -280,112 +288,22 @@ Backup periodico: usa npm run db:backup per non perdere dati.
 
 Segui il pre‑flight: se il pre‑flight segnala un proxy blacklisted o budget esaurito, fermati e risolvi.
 
-✅ TO-DO LIST COMPLETA E DEFINITIVA
-(Fusione al 100% di TODO.md originale + analisi stealth maniacale di 2 messaggi fa + configurazione specifica per inviti + messaggi commissione post-accettazione + database automatico)
-Questa è la lista unica, ordinata, senza ripetizioni. Tutto ciò che serve per partire lunedì mattina con rischio ban <12% e aggiornamento automatico del database/CRM.
-FASE 0 – Preparazione Immediata (OGGI, 15 minuti)
+## Limiti del documento
 
- Backup completo: .\bot.ps1 backup (o scripts/backupDb.ts)
- Leggi velocemente GUIDA_ANTI_BAN.md e THREAT_MODEL.md (obbligatorio)
+Questo file non deve contenere:
 
-FASE 1 – LUNEDÌ MATTINA – Setup Pulito (90 minuti max)
-Esegui esattamente in quest’ordine:
+- checklist operative specifiche di campagna
+- `.env` preconfezionati da copiare al volo
+- rollout day-by-day o runbook contestuali a un caso singolo
+- backlog o TODO generici
 
-Build pulitaPowerShellnpm run build
-Pulizia sessione Firefox (obbligatoria)PowerShellRemove-Item -Recurse -Force data\session\*
-Login manuale (Firefox)PowerShell.\bot.ps1 login
-Scopri liste SalesNavPowerShell.\bot.ps1 salesnav lists
-Sincronizza la tua lista commissioniPowerShell.\bot.ps1 sync-list --list "NOME_LISTA_COMMISSI"
-Dry-run completoPowerShell.\bot.ps1 send-invites --dry-run
-Primo autopilot di test (1 ciclo solo)PowerShell.\bot.ps1 autopilot --cycles 1
-Controlla Telegram (devi ricevere “Bot avviato” + report)
+Quel materiale e' stato rimosso e archiviato in:
 
-FASE 2 – .env Stealth & Commissioni (20 minuti)
-Sostituisci il tuo .env con questo (copia-incolla):
-env# LIMITI 2026 (conservativi)
-SOFT_INVITE_CAP=10
-HARD_INVITE_CAP=15
-WEEKLY_INVITE_LIMIT=60
-SOFT_MSG_CAP=8
-HARD_MSG_CAP=12
+- [archive/antiban-operational-rollout-legacy.md](archive/antiban-operational-rollout-legacy.md)
 
-# STEALTH MASSIMO (tutti i trucchi della codebase)
-RANDOM_ACTIVITY_ENABLED=true
-RANDOM_ACTIVITY_PROBABILITY=0.25
-GREEN_MODE_ENABLED=true
-NO_BURST_ENABLED=true
-NO_BURST_MIN_DELAY_SEC=12
-NO_BURST_MAX_DELAY_SEC=35
-INTER_JOB_MIN_DELAY_SEC=8
-INTER_JOB_MAX_DELAY_SEC=22
-PROXY_MOBILE_PRIORITY_ENABLED=true
-PROXY_ROTATE_EVERY_JOBS=45
-PROXY_ROTATE_EVERY_MINUTES=90
+Per i documenti giusti usare invece:
 
-# SESSION & HUMAN (wind-down, probe, circuit breaker)
-SESSION_COOKIE_MAX_AGE_DAYS=14
-SESSION_MEMORY_PROTECTION_MIN_JOBS=35
-SESSION_WIND_DOWN_PCT=0.25
-WARMUP_ENABLED=true
-WARMUP_MIN_ACTIONS=12
-
-# AI + WARM TOUCH COMMISSIONI
-INVITE_WITH_NOTE=true
-INVITE_NOTE_MODE=ai
-AI_PERSONALIZATION_ENABLED=true
-MESSAGE_SCHEDULE_MIN_DELAY_HOURS=72
-MESSAGE_SCHEDULE_MAX_DELAY_HOURS=168
-FOLLOW_UP_DELAY_DAYS=4
-FOLLOW_UP_DELAY_STDDEV_DAYS=2
-USE_PREBUILT_MESSAGES=true
-
-# DATABASE + AUTO-UPDATE
-SUPABASE_SYNC_ENABLED=true
-EVENT_SYNC_SINK=WEBHOOK
-WEBHOOK_SYNC_ENABLED=true
-WEBHOOK_SYNC_URL=https://tuo-n8n/webhook/linkedin-events
-WEBHOOK_SYNC_SECRET=SEGRETO_LUNGO_RANDOM
-Salva → riavvia il bot.
-FASE 3 – Crea Campagna Drip “Commissione” (10 minuti)
-PowerShell.\bot.ps1 add-prebuilt-message --name "commissione_warm" --text "Ciao {{first_name}}, grazie per aver accettato la connessione! Volevo proporti una collaborazione a commissione su [tuo prodotto/servizio]. Ti mando i dettagli?"
-Poi in dashboard:
-
-Nuova campagna → Tipo “Drip”
-Step 1: Invite (nota AI)
-Step 2: Dopo accettazione → wait 4-7 giorni Gaussian → messaggio “commissione_warm”
-
-FASE 4 – Collegamento Database + n8n Auto-Update (15 minuti)
-
-Importa in n8n: n8n/workflow_bot_events.json
-Configura webhook in n8n per:
-lead.transition → aggiorna CRM
-job.succeeded → segna “messaggio commissione inviato”
-
-Test sync:PowerShell.\bot.ps1 sync-run-once
-
-FASE 5 – Avvio Definitivo (da fare dopo Fase 1-4)
-PowerShell.\bot.ps1 autopilot --interval-sec 1800
-Attiva anche:
-
-Inbox Auto-Reply (INBOX_AUTO_REPLY_ENABLED=true)
-Random Activity (già nel .env)
-
-FASE 6 – Checklist Quotidiana (ogni giorno)
-
- Telegram alle 20:00 (daily report)
- Risk score dashboard <25
- Se vedi “Circuit Breaker”, “Proxy Morto” o “Session Anomaly” → ferma subito
- Mai aumentare limiti oltre l’.env
-
-FASE 7 – Scaling Futuro (dopo 7-10 giorni)
-
- Aggiungi account Italia (proxy separato)
- Attiva postCreatorWorker per inbound
- Quando superi 80 inviti/giorno → passa a Camoufox (già pronto)
-
-Fatto tutto questo il bot farà esattamente:
-
-Inviti con nota AI
-Aspetta accettazione (monitorata automaticamente)
-Dopo 4-7 giorni invia messaggio commissione warm
-Aggiorna database + n8n + CRM senza toccare niente
+- [GUIDA_ANTI_BAN.md](GUIDA_ANTI_BAN.md) per le regole operative
+- [GUIDA.md](GUIDA.md) per il flusso utente
+- [CONFIG_EXAMPLES.md](CONFIG_EXAMPLES.md) e [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md) per la configurazione
+- [INTEGRATIONS.md](INTEGRATIONS.md) per webhook, sync e n8n

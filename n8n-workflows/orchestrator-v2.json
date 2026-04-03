@@ -160,6 +160,8 @@
       "position": [2640, 0],
       "parameters": {
         "method": "POST", "url": "http://bot-api:3000/api/controls/trigger-run",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Api-Key", "value": "={{ $env.DASHBOARD_API_KEY }}" }] },
         "sendBody": true, "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ workflow: $('Parse Claude').first().json.workflow }) }}"
       },
