@@ -378,6 +378,53 @@ Nessun automatismo strutturale o invasivo deve partire senza conferma esplicita.
 - Deve includere anche controlli preventivi che migliorano il codice e il progetto nel lungo termine: separazione moduli, confini architetturali, validazione config, error handling, logging, rollback, policy dipendenze, audit periodici e readiness per passaggio ad altri.
 - La checklist deve poter funzionare anche come template cross-project, non solo per questo repository.
 
+## 20-bis. Policy di sicurezza, anti-ban e conformità legale — ⚠️ Parziale
+
+> Questa sezione copre i vincoli **esterni** al progetto: piattaforme (LinkedIn ToS), legge (GDPR) e rischi operativi. Ogni modifica al bot deve essere valutata anche rispetto a questi vincoli, non solo rispetto alla qualità tecnica.
+
+### Anti-ban / anti-detect LinkedIn
+
+- **Regola zero**: prima di ogni modifica che tocca browser, timing, stealth, volumi o sessione → review anti-ban obbligatoria (skill `antiban-review` se disponibile)
+- **Domande obbligatorie** (vedi AGENTS.md "Priorità assoluta: anti-ban"):
+  1. Cambia comportamento browser su LinkedIn?
+  2. Cambia timing, delay o ordine azioni?
+  3. Tocca fingerprint, stealth, cookie, sessione?
+  4. Aggiunge azioni LinkedIn (click, navigazione, typing)?
+  5. Cambia volumi, budget, cap, limiti?
+- **Principi non negoziabili**: varianza su tutto, sessioni credibili, pending ratio controllato, fingerprint coerente, navigazione umana
+- **Status**: regole in AGENTS.md ✅; monitoring con alert Telegram ⚠️ (parziale); eval automatico comportamento ❌
+
+### GDPR e trattamento dati personali
+
+- I dati raccolti su lead LinkedIn (nome, azienda, profilo, messaggi) sono **dati personali** ai sensi del GDPR (Reg. UE 2016/679)
+- **Obblighi minimi**:
+  - Base giuridica esplicita per il trattamento (interesse legittimo B2B o consenso)
+  - Periodo di conservazione definito — i dati non vanno tenuti a tempo indeterminato
+  - Nessun trasferimento a terzi senza garanzie adeguate
+  - Risposta a richieste di cancellazione (diritto all'oblio)
+- **Da implementare**:
+  - Policy di retention nel DB: definire dopo quanti giorni i lead inattivi vengono anonimizzati/cancellati
+  - Log di audit per sapere chi ha ricevuto messaggi e quando
+  - Documentazione del trattamento (registro ex art. 30 GDPR) se si supera una certa scala
+- **Status**: nessuna policy di retention attiva ❌; log messaggi nel DB ✅; audit trail ⚠️
+
+### LinkedIn Terms of Service
+
+- L'uso automatizzato di LinkedIn viola i ToS ufficiali — il progetto opera in zona grigia
+- **Mitigazioni obbligatorie**: volumi bassi, comportamento umano credibile, no scraping aggressivo, no spam di massa
+- **Aggiornamenti ToS**: LinkedIn cambia frequentemente le regole di rilevamento — fare web search periodica su "LinkedIn automation detection [anno]" prima di ogni modifica rilevante al bot
+- **Status**: principi in AGENTS.md ✅; web search periodica non schedulata ❌
+
+### Sicurezza dei dati nel sistema
+
+- API keys, token, credenziali: solo in `.env`, mai in codice o log
+- DB PostgreSQL: accesso solo da rete interna (docker network), porta 5432 non esposta pubblicamente
+- n8n: autenticazione basic auth obbligatoria (già configurata in docker-compose)
+- Dashboard: porta 3000 su `127.0.0.1` solo (non pubblica)
+- **Status**: architettura sicura ✅; audit periodico credenziali ❌
+
+---
+
 ## 20. Verifica continua di regole, skill e workflow — ✅ Implementato
 
 - Controllare periodicamente se le regole si attivano davvero nel momento giusto.
