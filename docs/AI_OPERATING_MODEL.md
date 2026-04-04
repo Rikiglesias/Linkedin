@@ -328,6 +328,47 @@ Nessun automatismo strutturale o invasivo deve partire senza conferma esplicita.
 - Consolidare tutto cio' che serve per andare in produzione in modo ordinato.
 - Rendere workflow e infrastruttura abbastanza chiari da poterli passare anche ad altre persone.
 
+## 19-ter. Politica di manutenzione file per tipo di artefatto — ⚠️ Parziale
+
+> Ogni tipo di file ha la sua policy di manutenzione. Non esiste "pulirò quando è il momento" — il trigger deve essere esplicito.
+
+### Codebase (codice)
+- **Trigger cleanup**: sezione mal strutturata da toccare → proporre refactoring locale prima di aggiungere; file >300 righe + nuova feature → valutare split
+- **Trigger audit**: dead code, funzioni non usate, barrel files cresciuti → `npx madge --circular` + `/kaizen` o `/legacy-modernizer`
+- **Chi decide**: AI propone, utente approva prima di eseguire
+
+### File di regole (CLAUDE.md, AGENTS.md)
+- **Trigger cleanup**: file supera ~300 righe, o si sta per aggiungere una nuova sezione → eseguire PRIMA `claude-md-management:claude-md-improver`
+- **Trigger audit**: regola dimenticata >1 volta, skill nuova installata, nuovo progetto → vedere tabella "Audit skill" in CLAUDE.md
+- **Regola fondamentale**: pulire prima di estendere — mai aggiungere contenuto a un file disorganizzato
+- **Chi decide**: AI esegue audit autonomamente prima di ogni modifica rilevante a questi file
+
+### File di memoria (~/memory/, .claude/memory/)
+- **Trigger cleanup**: memoria contraddice stato attuale, memoria > 6 mesi non toccata, info ora nel codice/docs → eliminare o aggiornare
+- **Trigger aggiornamento**: fine sessione significativa, decisione architetturale presa, priorità cambiate
+- **Regola**: una memoria sbagliata è peggio di nessuna memoria
+- **Chi decide**: AI propone update a fine sessione, esegue se urgente
+
+### Documenti tecnici (AI_OPERATING_MODEL.md, README, ENGINEERING_WORKLOG, docs/)
+- **Trigger aggiornamento AI_OPERATING_MODEL.md**: punto implementato → aggiornare status marker; nuovo obiettivo emerso → aggiungere sezione
+- **Trigger archivio**: sezione completamente implementata e stabile → aggiungere nota "ARCHIVIATO [data]" e link al file canonico
+- **Trigger aggiornamento README**: struttura progetto cambiata, nuovo servizio aggiunto, setup cambiato
+- **ENGINEERING_WORKLOG**: aggiornare a ogni blocco tecnico significativo (non ogni singolo commit)
+- **Chi decide**: AI aggiorna autonomamente tracking; per README/AI_OPERATING_MODEL chiede solo se cambio strutturale
+
+### Skill (~/.claude/skills/)
+- **Trigger cleanup**: skill mai usata in 30gg, skill sovrapponibile a un'altra → candidare a rimozione o merge
+- **Trigger aggiornamento**: comportamento skill non corrisponde più alla realtà del progetto
+- **Trigger nuova skill**: gap non coperto da nessuna esistente → `/skill-creator`
+- **Chi decide**: AI propone, utente approva
+
+### n8n workflow
+- **Trigger cleanup**: workflow non eseguito in 14gg, workflow con errori ripetuti → analisi e fix o archivio
+- **Trigger review**: modifica al bot che tocca area del workflow → verificare che workflow sia ancora coerente
+- **Chi decide**: AI verifica, propone fix, esegue con `n8n-builder` agent
+
+---
+
 ## 19-bis. Checklist 360 gradi per nuovi progetti — ✅ Implementato
 
 - Creare e mantenere una checklist riusabile da usare quando nasce un progetto nuovo o quando un progetto esistente va riallineato a una baseline migliore.
