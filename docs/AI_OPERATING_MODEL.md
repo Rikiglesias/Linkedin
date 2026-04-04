@@ -7,6 +7,71 @@
 Questo documento raccoglie in forma esplicita la roadmap operativa emersa in chat.
 Non e' un file di regole runtime come `AGENTS.md`: qui stanno obiettivi, direzioni e automazioni da costruire.
 
+---
+
+## Roadmap di implementazione — ordine obbligatorio per dipendenze
+
+> **Principio meta:** prima di modificare un file di regole o di memoria, eseguire prima il punto che dice di pulirlo/auditarlo. Aggiungere contenuto a un file disorganizzato lo rende peggiore, non migliore.
+> Es: `claude-md-management:claude-md-improver` va eseguito PRIMA di estendere CLAUDE.md con nuove sezioni.
+
+### Dipendenze tra i punti ancora ⚠️
+
+```
+BLOCCO A — Fondamenta operative (nessuna dipendenza esterna):
+  [0] Regole esplicite ✅ → BASE per tutto
+  [4-bis] File memoria leggibili ✅ → prerequisito per AI context affidabile
+  [4-ter] Anti-dimenticanza ✅ → prerequisito per L9 + hook
+  [9] Best practice per artefatto ✅ → prerequisito per ogni implementazione
+  [10] Ragionamento umano ✅ → prerequisito per autonomia
+
+BLOCCO B — Sistema di controllo (dipende da A):
+  [13] Protocollo multi-livello ✅ → dipende da [0], [9]
+  [14] Multi-dominio per file ✅ → dipende da [13]
+  [15] Loop finale completezza ✅ → dipende da [13], [14]
+  [11] Contesto diretto/indiretto ✅ → dipende da [13]
+
+BLOCCO C — Enforcement automatico (dipende da B):
+  [8-bis] Hook system ⚠️ → dipende da [13], [15]; sblocca [5], [6], [21]
+    → PRIMA: audit skill/MCP esistenti (serve [8] già fatto ✅)
+    → POI: implementare hook per le priorità identificate
+
+BLOCCO D — Orchestrazione (dipende da C):
+  [5] n8n orchestratore ⚠️ → dipende da [8-bis]; n8n già deployato, mancano hook e workflow riusabili
+  [6] Agenti verticali ⚠️ → dipende da [5]
+
+BLOCCO E — Migrazione e ambienti (dipende da A, parzialmente parallelo):
+  [3] Codex migration ⚠️ → dipende da Codex autenticato (azione utente)
+  [2] Prompt e modelli ⚠️ → dipende da [3]; /prompt-improver già fatto, manca selezione automatica modello
+  [3-bis] Parità ambienti ✅ → baseline documentata, verifica Codex dipende da [3]
+
+BLOCCO F — Long-term (dipende da tutto):
+  [19] Manutenzione periodica ⚠️ → ongoing, dipende da sistema stabile
+  [1] Whisper locale ⚠️ → indipendente, può essere fatto in qualsiasi momento
+  [21] Autonomia totale ⚠️ → obiettivo finale, dipende da C + D + E
+```
+
+### Ordine d'implementazione consigliato per i prossimi sprint
+
+| Priorità | Punto | Blocco | Prerequisiti | Sblocca |
+|----------|-------|--------|-------------|---------|
+| 1 | **8-bis Hook system** | C | Nessuno (8 già fatto) | 5, 6, 21 |
+| 2 | **5 n8n orchestratore** | D | 8-bis | 6 |
+| 3 | **6 Agenti verticali** | D | 5 | 21 parziale |
+| 4 | **3 Codex migration** | E | Codex login (utente) | 2 |
+| 5 | **2 Prompt/modelli** | E | 3 | 21 parziale |
+| 6 | **1 Whisper** | — | Nessuno | qualità input |
+| 7 | **19 Manutenzione** | F | Sistema stabile | ongoing |
+| ∞ | **21 Autonomia** | F | Tutto | — |
+
+### Regola "pulisci prima di estendere"
+
+Prima di aggiungere nuove sezioni a un file operativo (CLAUDE.md, AGENTS.md, skill):
+1. Eseguire `claude-md-management:claude-md-improver` su CLAUDE.md se ha superato le ~300 righe o ci sono sezioni da consolidare
+2. Verificare che non esistano già regole simili che vanno aggiornate invece che duplicate
+3. Solo dopo: aggiungere il contenuto nuovo
+
+---
+
 ## 0. Regole esplicite, non implicite — ✅ Implementato
 
 - Nessun punto importante di questa lista deve restare implicito o affidato al buon senso del momento.
