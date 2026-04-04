@@ -7,20 +7,23 @@
 
 1. **Workflow + architecture hardening** — usare [workflow-architecture-hardening.md](C:/Users/albie/Desktop/Programmi/Linkedin/todos/workflow-architecture-hardening.md) come backlog operativo canonico
 2. **Engineering worklog persistente** — aggiornare [ENGINEERING_WORKLOG.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/tracking/ENGINEERING_WORKLOG.md) a ogni blocco tecnico significativo
-3. **AI decision engine** — chiudere il perimetro rimasto (`inbox_reply` + policy finale) dopo strict mode e navigation wiring
-4. **Refactor runtime core + repository** — proseguire per blocchi piccoli sulla base della spec [2026-04-01-runtime-core-repository-refactor-design.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/superpowers/specs/2026-04-01-runtime-core-repository-refactor-design.md)
+3. **Lifecycle + control plane production blockers** — chiudere lock daemon, graceful shutdown, restart remoto, `automation_commands` zombie e readiness reale
+4. **Workflow runtime truthfulness** — far risalire incidenti runtime, allineare job type/contract e togliere side effect impliciti dai workflow orchestrati
+5. **Proxy/session classification** — distinguere login mancante da rate limit/proxy failure e rafforzare il gate proxy reale
+6. **Refactor runtime core + repository** — proseguire per blocchi piccoli sulla base della spec [2026-04-01-runtime-core-repository-refactor-design.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/superpowers/specs/2026-04-01-runtime-core-repository-refactor-design.md)
 
 ## 🔥 Alta priorità
 
 1. **Importare workflow n8n** — aprire n8n UI e importare `orchestrator-v2.json` + `watchdog.json`, sostituire i placeholder
 2. **A04 — 256 empty catch blocks** — aggiungere almeno `logWarn` per non perdere errori silenti in prod
 3. **Dashboard todo** — configurare Supabase (schema.sql), impostare .env.local, `npm run dev`
+4. **Reporting cross-process** — allineare daemon PM2 e API/dashboard su eventi live, stato proxy e stato JA3 reali
 
 ## 📋 Media priorità
 
-4. **A14 — No rollback plan** — aggiungere Docker tag versioned + feature flag minimo
-5. **`frontend/`** — decidere se tenere o eliminare (~2500 righe, stato incerto)
-6. **Sentry** — verificare che `src/telemetry/sentry.ts` riceva eventi reali in produzione
+5. **A14 — No rollback plan** — aggiungere Docker tag versioned + feature flag minimo
+6. **`frontend/`** — decidere se tenere o eliminare (~2500 righe, stato incerto)
+7. **Sentry** — verificare che `src/telemetry/sentry.ts` riceva eventi reali in produzione
 
 ## ✅ Completati di recente
 

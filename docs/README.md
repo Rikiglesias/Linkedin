@@ -13,6 +13,8 @@ Non tutti i documenti hanno lo stesso ruolo: alcuni sono canonici, altri sono gu
   Adapter breve per Claude Code.
 - [AI_OPERATING_MODEL.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_OPERATING_MODEL.md)
   Roadmap esplicita su prompt, modelli, skill, agenti, workflow e automazioni.
+- [NEW_PROJECT_BOOTSTRAP_CHECKLIST.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/NEW_PROJECT_BOOTSTRAP_CHECKLIST.md)
+  Checklist 360 gradi riusabile per bootstrap, prevenzione tecnica e handoff di nuovi progetti.
 - [tracking/README.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/tracking/README.md)
   Regole del tracking tecnico.
 - [tracking/ENGINEERING_WORKLOG.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/tracking/ENGINEERING_WORKLOG.md)

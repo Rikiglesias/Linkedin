@@ -1,9 +1,13 @@
 # AI Operating Model
 
+> **Questo documento è aspirazionale ma tracciato.**
+> Ogni sezione ha uno status: ✅ Implementato | ⚠️ Parziale | ❌ Non ancora fatto.
+> Le implementazioni concrete stanno in: `~/.claude/CLAUDE.md` (regole globali), `AGENTS.md` (progetto), `~/.claude/skills/` (skill), `~/memory/` (memoria).
+
 Questo documento raccoglie in forma esplicita la roadmap operativa emersa in chat.
 Non e' un file di regole runtime come `AGENTS.md`: qui stanno obiettivi, direzioni e automazioni da costruire.
 
-## 0. Regole esplicite, non implicite
+## 0. Regole esplicite, non implicite — ✅ Implementato
 
 - Nessun punto importante di questa lista deve restare implicito o affidato al buon senso del momento.
 - Ogni punto di questo documento deve essere trasformabile in una regola operativa con almeno questi campi:
@@ -17,13 +21,13 @@ Non e' un file di regole runtime come `AGENTS.md`: qui stanno obiettivi, direzio
 - Questa regola vale per tutto: codice, documentazione, config, workflow `n8n`, skill, MCP, plugin, migrazioni, cartelle di progetto e controlli finali.
 - Ogni punto della lista va sempre letto insieme alle regole di impatto diretto e indiretto, di controllo multi-dominio e di verifica finale.
 
-## 1. Strumenti personali e infrastruttura locale
+## 1. Strumenti personali e infrastruttura locale — ⚠️ Parziale
 
 - Creare un programma locale di dettatura basato su Whisper via API OpenAI per sostituire `Win+H`, con maggiore precisione e controllo del testo.
 - Analizzare e risolvere i problemi attuali del computer per eliminare colli di bottiglia tecnici.
 - Tenere una procedura sicura per scollegare il PC e l'alimentatore: spegnimento OS, interruttore su `O`, rimozione della spina prendendo la testa e non il cavo.
 
-## 2. Prompt, modelli e ambiente migliore
+## 2. Prompt, modelli e ambiente migliore — ⚠️ Parziale
 
 - Creare una funzione, skill o mini-software che trasformi prompt scritti male in prompt chiari, completi e ben strutturati.
 - Far scegliere all'AI il modello piu' adatto per ogni task.
@@ -31,13 +35,13 @@ Non e' un file di regole runtime come `AGENTS.md`: qui stanno obiettivi, direzio
 - Far spiegare brevemente il perche' della scelta: qualita', velocita', costo, tool disponibili, rischio di errore e disponibilita' di contesto.
 - Migliorare anche i prompt del sito e la scelta del modello migliore per ogni workflow o caso d'uso.
 
-## 3. Migrazione operativa su Codex
+## 3. Migrazione operativa su Codex — ⚠️ Parziale
 
 - Spostare progressivamente scrittura, analisi e gestione della codebase su `Codex`.
 - Usare altri strumenti solo quando hanno un vantaggio reale.
 - Centralizzare su `Codex` il flusso tecnico principale.
 
-## 3-bis. Parita' operativa tra IDE, terminali e CLI
+## 3-bis. Parita' operativa tra IDE, terminali e CLI — ✅ Implementato
 
 - Fare in modo che ogni ambiente usato per lavorare sul progetto sia configurato correttamente e in modo coerente: `Codex`, `Claude Code`, `Cursor`, `Windsurf`, `Trae`, terminali locali e altri IDE/CLI simili.
 - L'obiettivo non e' solo "farli partire", ma farli comportare nel modo giusto e con le stesse regole operative di base.
@@ -53,12 +57,12 @@ Non e' un file di regole runtime come `AGENTS.md`: qui stanno obiettivi, direzio
 - Nessun ambiente deve restare in stato "semi-configurato": o viene portato a baseline corretta, oppure va classificato come ambiente secondario con limiti espliciti.
 - La baseline corretta deve includere almeno: regole caricate, contesto leggibile, hook o enforcement equivalenti, skill/command set minimo, MCP necessari, permessi/config coerenti e verifiche finali applicabili.
 
-## 4. Passaggio contesto tra chat
+## 4. Passaggio contesto tra chat — ✅ Implementato
 
 - Creare una skill o funzione che trasferisca in una nuova sessione obiettivi, stato, decisioni, file toccati, problemi aperti e prossimi passi.
 - Evitare che ogni nuova chat riparta da zero o perda contesto utile.
 
-## 4-bis. File di memoria e contesto leggibili dall'AI
+## 4-bis. File di memoria e contesto leggibili dall'AI — ✅ Implementato
 
 - Migliorare tutti i file che servono da contesto all'AI, cosi' che possano essere letti correttamente senza perdere informazioni importanti tra sessioni.
 - Questo vale almeno per: file di memoria utente, regole operative, backlog attivo, tracking tecnico, handoff di sessione, indici documentali e altri file di contesto persistente.
@@ -83,7 +87,7 @@ Non e' un file di regole runtime come `AGENTS.md`: qui stanno obiettivi, direzio
 - La progettazione di questi file deve collegarsi alle altre regole: contesto diretto e indiretto, livelli di controllo, best practice specifiche e loop finale di completezza.
 - Va progettato anche un ordine di lettura affidabile dei file di contesto, cosi' che l'AI sappia quali file leggere prima, quali dopo e dove cercare ogni tipo di informazione senza duplicazioni.
 
-## 4-ter. Meccanismi anti-dimenticanza per modelli e agenti
+## 4-ter. Meccanismi anti-dimenticanza per modelli e agenti — ✅ Implementato
 
 - Non bisogna affidarsi solo alla buona volonta' del modello o alla presenza di un file di regole. Servono meccanismi che riducano davvero le dimenticanze.
 - L'obiettivo e' che modelli diversi come `ChatGPT`, `Claude/Sonnet`, `Codex` o altri leggano il contesto giusto, seguano i passaggi obbligatori e saltino meno verifiche.
@@ -116,20 +120,20 @@ Non e' un file di regole runtime come `AGENTS.md`: qui stanno obiettivi, direzio
   - retrieval strutturato invece di contesto grezzo sempre piu' lungo
 - La regola finale e' questa: se un comportamento critico deve avvenire sempre, non deve dipendere solo dalla memoria del modello.
 
-## 5. n8n come orchestratore tecnico
+## 5. n8n come orchestratore tecnico — ⚠️ Parziale
 
 - Usare `n8n` anche come strumento DevOps su attivita' della codebase, collegandolo a `Codex` o `Claude Code`.
 - Preparare `n8n` per la produzione, con workflow chiari, riusabili e distribuibili.
 - Collegare trigger e automatismi a giorni lavorativi, orari e contesto reale dell'utente.
 
-## 6. Agenti verticali e workflow riusabili
+## 6. Agenti verticali e workflow riusabili — ⚠️ Parziale
 
 - Creare agenti verticali specializzati per compiti singoli o workflow singoli.
 - Migliorare anche i workflow del bot, non solo quelli di supporto.
 - Creare workflow `n8n` riusabili per task ripetitivi: analisi impatti, cleanup, audit skill, controlli qualita', controlli pre-produzione e verifica regole.
 - Se una procedura viene usata piu' volte, valutarne la trasformazione in workflow stabile.
 
-## 7. Selezione automatica di skill, agenti, workflow e web search
+## 7. Selezione automatica di skill, agenti, workflow e web search — ✅ Implementato
 
 - Quando arriva una richiesta, l'AI deve fare una classificazione esplicita interna del task prima di agire.
 - La classificazione deve dire almeno:
@@ -141,7 +145,7 @@ Non e' un file di regole runtime come `AGENTS.md`: qui stanno obiettivi, direzio
 - Se uno di questi pezzi non viene deciso in modo esplicito, la selezione va considerata incompleta.
 - La selezione deve essere automatica e orientata a minimizzare errori, omissioni e attivazioni inutili.
 
-## 8. Audit, qualita' e installazione delle skill
+## 8. Audit, qualita' e installazione delle skill — ✅ Implementato
 
 - Fare un audit delle skill presenti per capire quali sono utili, duplicate, deboli o obsolete.
 - Scegliere sempre la skill piu' adatta e piu' forte per il compito.
@@ -155,7 +159,7 @@ Non e' un file di regole runtime come `AGENTS.md`: qui stanno obiettivi, direzio
   - output atteso
   - hook o verifiche collegate
 
-## 8-bis. Pre-hook e post-hook per skill, MCP, regole e workflow
+## 8-bis. Pre-hook e post-hook per skill, MCP, regole e workflow — ⚠️ Parziale
 
 - Progettare un sistema di `pre-hook` e `post-hook` per attivare in modo coerente skill, regole, MCP, workflow e controlli.
 - Ogni skill deve dichiarare almeno:
@@ -171,7 +175,7 @@ Non e' un file di regole runtime come `AGENTS.md`: qui stanno obiettivi, direzio
 - Fare un audit completo di tutte le skill, di tutti gli MCP, delle regole e dei workflow esistenti per definire hook mancanti, hook ridondanti e priorita' di implementazione.
 - L'obiettivo non e' solo "attivare piu' cose", ma attivarle nel momento corretto e nell'ordine corretto per ridurre gli errori.
 
-## 9. Best practice obbligatorie da ingegnere software
+## 9. Best practice obbligatorie da ingegnere software — ✅ Implementato
 
 - Ogni modifica deve seguire best practice da ingegnere software professionale.
 - Le best practice non vanno applicate in modo generico: per ogni tipo di artefatto bisogna usare la best practice specifica di quel tipo.
@@ -184,28 +188,28 @@ Non e' un file di regole runtime come `AGENTS.md`: qui stanno obiettivi, direzio
 - Nessuna modifica e' completa se risolve solo una parte del problema lasciando incoerenze nel sistema.
 - Ogni modifica deve essere valutata anche per la sua tenuta nel tempo: non deve rompere altre aree oggi, non deve lasciare debito nascosto domani e non deve lasciare parti del sistema indietro rispetto al nuovo stato.
 
-## 10. Ragionamento umano, non esecuzione cieca
+## 10. Ragionamento umano, non esecuzione cieca — ✅ Implementato
 
 - L'AI deve capire l'intento reale dell'utente e non limitarsi al testo letterale.
 - Deve leggere tra le righe, anticipare problemi, prevedere dipendenze e completare il quadro tecnico.
 - Deve coprire anche gli aspetti tecnici che l'utente non conosce o non puo' verificare da solo.
 - Questo comportamento non deve restare implicito: quando il task e' ambiguo, l'AI deve esplicitare internamente quale problema reale sta risolvendo e quali aspetti aggiuntivi sta coprendo.
 
-## 11. Contesto corretto su file diretti e indiretti
+## 11. Contesto corretto su file diretti e indiretti — ✅ Implementato
 
 - Ogni modifica riguarda sia i file toccati direttamente sia quelli coinvolti indirettamente.
 - L'AI deve considerare dipendenze, import, contratti, integrazioni, moduli dipendenti ed effetti runtime.
 - Non deve mai lavorare in modo parziale o isolato.
 - Questa regola va applicata in modo esplicito per ogni task: bisogna poter dire quali sono i file diretti, quali gli indiretti e perche' rientrano nel perimetro.
 
-## 12. Ricerca web e attivazione tool nel momento giusto
+## 12. Ricerca web e attivazione tool nel momento giusto — ✅ Implementato
 
 - Se il task riguarda framework, API, librerie o best practice aggiornabili, l'AI deve cercare sul web prima di implementare.
 - Se il task riguarda un artefatto non-code, l'AI deve comunque cercare la best practice aggiornata del suo dominio quando c'e' rischio di usare una struttura debole o superata.
 - Anche per documenti, guide, config, workflow, MCP, plugin e file di supporto, la ricerca non deve limitarsi al singolo file ma includere il suo ruolo nel sistema e i collegamenti con gli altri file.
 - Skill, workflow e tool vanno attivati quando servono davvero, non troppo tardi e non in modo casuale.
 
-## 13. Protocollo di controllo multi-livello
+## 13. Protocollo di controllo multi-livello — ✅ Implementato
 
 Applicare sempre un protocollo strutturato che copra:
 
@@ -218,29 +222,29 @@ Applicare sempre un protocollo strutturato che copra:
 7. validazione finale per dominio
 8. controllo conclusivo anti-errori
 
-## 14. Controllo multi-dominio per ogni file
+## 14. Controllo multi-dominio per ogni file — ✅ Implementato
 
 - Per ogni file modificato, controllare non solo il motivo principale del cambiamento ma anche gli altri aspetti che il file puo' toccare: sicurezza, performance, tipi, error handling, automazione, integrazioni e architettura.
 - Questo controllo deve essere dichiarato per ogni file toccato: non basta dire "controllo completo", bisogna sapere quali domini sono stati valutati davvero.
 
-## 15. Loop finale di completezza
+## 15. Loop finale di completezza — ✅ Implementato
 
 - A fine lavoro, l'AI deve rieseguire un controllo finale completo sui file toccati direttamente e indirettamente.
 - Il task non va chiuso se restano buchi logici, incoerenze o passaggi dimenticati.
 
-## 16. Loop custom tipo Claude, se Codex non lo offre
+## 16. Loop custom tipo Claude, se Codex non lo offre — ✅ Implementato
 
 - Se `Codex` non offre nativamente una funzione equivalente a `Claude Code /loop`, creare una skill, un workflow o un automatismo che replichi quel comportamento.
 - Questa modalita' deve continuare a lavorare, ricontrollare e avanzare di step finche' il task non e' davvero chiuso.
 - Se deve fermarsi per conferma utente, limiti o crediti, deve lasciare stato, blocco e prossimi passi in modo chiarissimo.
 
-## 17. Automatismi intelligenti, non ciechi
+## 17. Automatismi intelligenti, non ciechi — ✅ Implementato
 
 - Gli automatismi devono prima analizzare e poi proporre l'azione, non eseguirla subito.
 - Esempio: per la pulizia periodica della codebase, l'automatismo deve capire se serve davvero cleanup o refactor e poi chiedere conferma.
 - Gli automatismi devono attivarsi solo quando portano valore reale.
 
-## 18. Schema obbligatorio degli automatismi
+## 18. Schema obbligatorio degli automatismi — ✅ Implementato
 
 Ogni automatismo deve seguire questa sequenza:
 
@@ -253,20 +257,29 @@ Ogni automatismo deve seguire questa sequenza:
 
 Nessun automatismo strutturale o invasivo deve partire senza conferma esplicita.
 
-## 19. Manutenzione periodica e produzione
+## 19. Manutenzione periodica e produzione — ⚠️ Parziale
 
 - Fare pulizia periodica della codebase per rimuovere codice inutile e ridurre complessita'.
 - Consolidare tutto cio' che serve per andare in produzione in modo ordinato.
 - Rendere workflow e infrastruttura abbastanza chiari da poterli passare anche ad altre persone.
 
-## 20. Verifica continua di regole, skill e workflow
+## 19-bis. Checklist 360 gradi per nuovi progetti — ✅ Implementato
+
+- Creare e mantenere una checklist riusabile da usare quando nasce un progetto nuovo o quando un progetto esistente va riallineato a una baseline migliore.
+- La checklist deve essere abbastanza chiara da poter essere usata sia dall'utente sia da altre persone a cui il progetto viene passato.
+- Deve coprire a 360 gradi almeno: struttura codice, regole operative, documentazione canonica, memoria AI, quality gates, ambienti/CLI/IDE, skill, hook, MCP, workflow, sicurezza, osservabilita', test, produzione, handoff e prevenzione del debito tecnico.
+- Non deve essere una lista generica vuota: deve essere abbastanza concreta da dire cosa controllare prima che il progetto cresca e cosa sistemare per evitare problemi futuri.
+- Deve includere anche controlli preventivi che migliorano il codice e il progetto nel lungo termine: separazione moduli, confini architetturali, validazione config, error handling, logging, rollback, policy dipendenze, audit periodici e readiness per passaggio ad altri.
+- La checklist deve poter funzionare anche come template cross-project, non solo per questo repository.
+
+## 20. Verifica continua di regole, skill e workflow — ✅ Implementato
 
 - Controllare periodicamente se le regole si attivano davvero nel momento giusto.
 - Verificare se le skill scelte sono le migliori, se ci sono duplicati e se i workflow `n8n` funzionano bene.
 - Le regole non devono restare teoriche: devono produrre comportamento reale.
 - Se una regola risulta ancora solo implicita, va riscritta in forma esplicita e operativa.
 
-## 21. Autonomia operativa totale
+## 21. Autonomia operativa totale — ⚠️ In progress
 
 - L'obiettivo finale e' che l'AI si attivi sempre da sola, ricordi tutte queste regole, scelga in autonomia strumenti, skill, workflow, agenti, ricerca web e ordine di esecuzione.
 - Il lavoro deve arrivare a chiusura reale, senza costringere l'utente a fare da project manager tecnico.

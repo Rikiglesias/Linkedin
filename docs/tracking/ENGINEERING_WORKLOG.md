@@ -255,3 +255,79 @@ Il crash non e' stato riprodotto nemmeno con il rilancio fuori sandbox. Resta ap
 ### Nota anti-ban
 
 Questo blocco non aggiunge nuovi click LinkedIn pericolosi e non introduce teletrasporti al profilo. Cambia il layer decisionale e rende piu' rigoroso il comportamento quando l'AI e' attiva, mantenendo il motore fisico e la policy anti-teleport coerenti con il runtime esistente.
+
+---
+
+## 2026-04-04 — Audit statico end-to-end per production readiness del bot
+
+### Obiettivo
+
+Capire cosa manca davvero tra avvio del bot, esecuzione workflow, control plane, browser/proxy/sessione, reporting e spegnimento, con focus esplicito su collegamenti diretti e indiretti del runtime.
+
+### Perimetro analizzato
+
+- entrypoint CLI e bootstrap: [index.ts](C:/Users/albie/Desktop/Programmi/Linkedin/src/index.ts)
+- loop daemon e run manuale: [loopCommand.ts](C:/Users/albie/Desktop/Programmi/Linkedin/src/cli/commands/loopCommand.ts)
+- orchestrazione workflow: [orchestrator.ts](C:/Users/albie/Desktop/Programmi/Linkedin/src/core/orchestrator.ts), [scheduler.ts](C:/Users/albie/Desktop/Programmi/Linkedin/src/core/scheduler.ts), [jobRunner.ts](C:/Users/albie/Desktop/Programmi/Linkedin/src/core/jobRunner.ts)
+- ingress automation/API e read model: [dispatcher.ts](C:/Users/albie/Desktop/Programmi/Linkedin/src/automation/dispatcher.ts), [automationReadModel.ts](C:/Users/albie/Desktop/Programmi/Linkedin/src/api/helpers/automationReadModel.ts), [server.ts](C:/Users/albie/Desktop/Programmi/Linkedin/src/api/server.ts)
+- browser/proxy/sessione/reporting: moduli `browser/`, `proxy/`, `telemetry/`, `cloud/telegramListener.ts`
+- process management: [ecosystem.config.cjs](C:/Users/albie/Desktop/Programmi/Linkedin/ecosystem.config.cjs), script `package.json`
+
+### Blocker P0 emersi
+
+- Il lock del daemon puo' scadere durante una run ancora attiva, aprendo la porta a due executor concorrenti sullo stesso bot
+- Lo shutdown non e' cooperativo: `process.exit(0)` puo' troncare i `finally` di loop e job runner, lasciando lock, metriche e stato runtime sporchi
+- Il restart remoto via Telegram/cloud bypassa il graceful shutdown e puo' lasciare stato incoerente
+- Il reporting live non attraversa i processi PM2: daemon e API non condividono davvero eventi live, stato proxy o stato JA3
+- Il contratto di esito workflow non propaga gli incidenti runtime critici: il bot puo' auto-pausarsi/quarantinarsi e il workflow risultare comunque `completed`
+- Lo scheduler accoda `INTERACTION`, ma il workflow engine non lo consuma nella stessa run
+- L'ingresso automation/non-interattivo forza `skipPreflight` e salta davvero gran parte del preflight a 6 livelli
+- L'override account e' globale di processo e non viene ripristinato dopo la run
+- `checkLogin()` confonde rate limit, `403`, timeout e problemi proxy con "login mancante", quindi puo' innescare remediation sbagliate
+- Il gate "proxy healthy" e' troppo debole: controlla apertura TCP, non credenziali, `CONNECT`, uscita reale o browsing effettivo
+
+### Gap P1 importanti
+
+- I boundary dei workflow non sono ancora puliti: le run orchestrate eseguono anche inbox scan e follow-up fuori dal contratto nominale del workflow
+- `automation_commands` puo' restare zombie in `RUNNING` dopo crash o stop brutale
+- Una coda automation rumorosa puo' affamare il workflow principale del loop
+- I report `send-invites` e `send-messages` stimano l'outcome con delta su contatori globali, non con esito runtime isolato della singola run
+- Lo snapshot scheduler/report sottostima il lavoro reale pianificato: non rappresenta bene `HYGIENE`, `POST_CREATION`, `ENRICHMENT`
+- `/api/health/deep` non rappresenta la readiness reale di produzione: non copre daemon liveness, proxy reale, JA3/session freshness o zombie automation command
+- Dashboard/API non hanno un vero graceful drain di HTTP, SSE e WebSocket
+- PM2 ha timeout di stop incompatibili con il budget di shutdown dichiarato dall'app
+- Telegram alert/listener hanno buchi di affidabilita': `response.ok` non verificato e checkpoint updates non flushato allo shutdown
+- Sentry non copre bene i crash che contano di piu' nel path `unhandledRejection` / `uncaughtException`
+
+### Cose giudicate gia' sane
+
+- Le entry guard workflow sono centralizzate e richiamate in modo coerente
+- Il boot ha gia' un preflight serio su proxy e JA3 prima dei comandi browser
+- La coda automation ha claim transazionale e idempotency key
+- Il grafo `src` e' ancora a `0` circular dependency dopo il refactor architetturale precedente
+
+### Verifica eseguita
+
+- `npm run pre-modifiche`
+- Nota operativa: in sandbox `vitest` falliva con `spawn EPERM`; il rerun fuori sandbox ha confermato che il repo e' verde e che il problema era del contesto di esecuzione, non della codebase
+- Nessuna modifica runtime in questo blocco: audit statico soltanto
+
+### Esito
+
+Il bot ha gia' un percorso end-to-end leggibile e un runtime significativo, ma non e' ancora production-ready come sistema unico e affidabile da "start" a "stop". I blocker veri non sono piu' "manca il workflow", ma:
+
+- lifecycle concorrente e shutdown non robusto
+- control plane/reporting non allineato al runtime reale
+- workflow result troppo ottimistico rispetto agli incidenti reali
+- proxy/auth/session health classificati in modo troppo debole o ambiguo
+- divergenza ancora aperta tra motore workflow orchestrato e workflow Sales Navigator tipizzati
+
+### Cosa resta da analizzare davvero
+
+Sul piano statico, il quadro utile e' ormai sufficiente. Le verifiche mancanti non sono altri grep o altre letture, ma test dinamici mirati:
+
+- run staging reali con browser/proxy/account veri
+- verifica cross-process reale tra daemon PM2 e API dashboard
+- prove di stop/restart forzato durante run attiva
+- prove su login degradato, proxy auth failure, rate limit e session cookie stale
+- verifica di liveness/readiness osservata dal control plane mentre il daemon e' fermo, bloccato o concorrente

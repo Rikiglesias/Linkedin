@@ -7,6 +7,7 @@ Questo file e' il backlog tecnico operativo da usare durante i prossimi blocchi 
 - [x] Circular dependency del `src` portate a zero
 - [x] Primo tightening dei confini tra `automation`, `core`, `browser` e repository layer
 - [x] Human-click hardening sui path core dei workflow
+- [x] Audit statico end-to-end su startup, workflow runtime, browser/proxy/sessione, reporting e shutdown
 - [ ] Decision engine AI reso davvero affidabile sui punti critici
 - [ ] Split dei monoliti piu' rischiosi ancora da fare
 - [ ] Validazione staging reale con browser/proxy/account veri ancora da fare
@@ -28,10 +29,33 @@ Questo file e' il backlog tecnico operativo da usare durante i prossimi blocchi 
 ## P0 — Workflow runtime e anti-ban
 
 - [ ] Audit completo dei 4 workflow pubblici su proxy/session/account health
+- [ ] Far propagare gli incidenti runtime critici (`pauseAutomation`, quarantine, proxy/JA3/session failure) fino al `WorkflowExecutionResult`
+- [ ] Allineare `workflowToJobTypes(...)` con i job realmente accodati dallo scheduler, incluso `INTERACTION`
+- [ ] Ripulire i boundary dei workflow orchestrati: niente inbox scan/follow-up impliciti se non fanno parte del contratto richiesto
+- [ ] Eliminare il `skipPreflight` troppo permissivo sugli ingressi automation/API o sostituirlo con un preflight non-interattivo equivalente ai 6 livelli
+- [ ] Rendere l'override account scoped alla singola run e sempre ripristinato
 - [ ] Audit dei path residui fuori dal core che non usano ancora lo stesso standard di click/input
 - [ ] Audit di `windowInputBlock` e protezione dal takeover del mouse da parte dell'utente
 - [ ] Verifica che non restino teletrasporti di navigazione nei path laterali
 - [ ] Verifica che Telegram/report/API consumino sempre lo stesso `WorkflowExecutionResult`
+
+## P0 — Lifecycle, control plane e reporting
+
+- [ ] Rendere il lock del daemon cooperativo e rinnovato per tutta la durata reale della run
+- [ ] Eliminare i `process.exit(0)` che bypassano il graceful shutdown nei path restart/stop critici
+- [ ] Aggiungere stop/flush esplicito per `telegramListener` e persistenza checkpoint a shutdown
+- [ ] Allineare i timeout PM2 con il budget reale di shutdown dell'app
+- [ ] Portare reporting live, stato proxy e stato JA3 fuori dalla memoria di processo locale, con un canale cross-process reale
+- [ ] Fare in modo che `/api/health/deep` misuri anche daemon liveness, runtime lock e zombie `automation_commands`
+- [ ] Recuperare anche `automation_commands` rimasti `RUNNING` dopo crash/stop
+
+## P0 — Proxy, sessione e classificazione incidenti
+
+- [ ] Separare `LOGIN_MISSING` da `rate limit`, `403`, timeout, proxy failure e rete degradata
+- [ ] Rafforzare il gate "proxy healthy" con verifica reale di auth, `CONNECT`, exit IP e browsing minimo
+- [ ] Valutare coerenza geo sull'exit IP reale e non sul gateway del provider
+- [ ] Ripristinare il controllo UA <-> engine anche con `USE_JA3_PROXY=true` o sostituirlo con una regola equivalente
+- [ ] Allineare il preflight workflow al mondo multi-account/multi-proxy reale
 
 ## P1 — Architettura runtime
 
@@ -47,6 +71,8 @@ Questo file e' il backlog tecnico operativo da usare durante i prossimi blocchi 
 - [ ] Consolidare una suite di test focalizzata su workflow + AI + browser behavior da lanciare a ogni blocco
 - [ ] Aggiungere contract tests sul lato AI decisionale
 - [ ] Aggiungere characterization tests sui path di fallback dei workflow
+- [ ] Aggiungere test di lifecycle su stop/restart durante run attiva, lock takeover e recovery post-crash
+- [ ] Aggiungere test o smoke controllati su daemon/API in processi separati per verificare reporting cross-process
 - [ ] Preparare un runbook di staging per validare browser/proxy/account senza toccare produzione
 
 ## P2 — Pulizia strutturale della codebase
