@@ -1,0 +1,181 @@
+{
+  "name": "LinkedIn DevOps — Weekly Lead Report v2",
+  "nodes": [
+    {
+      "id": "wr1",
+      "name": "Schedule Venerdi 17:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "wr2",
+      "name": "Pre-Hook: Valida Contesto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const startedAt = new Date().toISOString();\nconst missingVars = [];\nif (!$env.TELEGRAM_BOT_TOKEN) missingVars.push('TELEGRAM_BOT_TOKEN');\nif (!$env.TELEGRAM_CHAT_ID) missingVars.push('TELEGRAM_CHAT_ID');\nif (!$env.DASHBOARD_API_KEY) missingVars.push('DASHBOARD_API_KEY');\nif (missingVars.length > 0) {\n  throw new Error('Pre-hook FAIL: ' + missingVars.join(', '));\n}\nconst out = { startedAt, contextOk: true, workflow: 'weekly-lead-report-v2' };\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "wr3",
+      "name": "Get Snapshot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "http://bot-api:3000/api/v1/automation/snapshot",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{$env.DASHBOARD_API_KEY}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "wr4",
+      "name": "Costruisci Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const ctx = $('Pre-Hook: Valida Contesto').first().json;\nconst snap = $('Get Snapshot').first().json;\nconst endedAt = new Date().toISOString();\nconst durationMs = new Date(endedAt) - new Date(ctx.startedAt);\n\nconst auto = snap.automation || {};\nconst stats = auto.stats || {};\nconst weekly = stats.weekly || {};\nconst total = stats.total || {};\n\nconst invitesSent = weekly.invitesSent ?? stats.invitesSent ?? 'n/d';\nconst invitesAccepted = weekly.invitesAccepted ?? stats.accepted ?? 'n/d';\nconst messagesSent = weekly.messagesSent ?? stats.messagesSent ?? 'n/d';\nconst replies = weekly.replies ?? stats.replies ?? 'n/d';\nconst pendingRatio = auto.pendingRatio ?? 'n/d';\nconst riskAction = auto.riskAction || 'UNKNOWN';\nconst healthScore = auto.healthScore ?? 'n/d';\n\nconst now = new Date();\nconst weekStr = now.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });\n\nconst acceptanceRate = (typeof invitesSent === 'number' && invitesSent > 0 && typeof invitesAccepted === 'number')\n  ? ((invitesAccepted / invitesSent) * 100).toFixed(1) + '%'\n  : 'n/d';\n\nconst replyRate = (typeof messagesSent === 'number' && messagesSent > 0 && typeof replies === 'number')\n  ? ((replies / messagesSent) * 100).toFixed(1) + '%'\n  : 'n/d';\n\nconst report = [\n  '📊 *Weekly Lead Report — ' + weekStr + '*',\n  '',\n  '*Inviti*',\n  '  Inviati: ' + invitesSent,\n  '  Accettati: ' + invitesAccepted + ' (' + acceptanceRate + ')',\n  '',\n  '*Messaggi*',\n  '  Inviati: ' + messagesSent,\n  '  Risposte: ' + replies + ' (' + replyRate + ')',\n  '',\n  '*Stato account*',\n  '  Pending ratio: ' + (typeof pendingRatio === 'number' ? (pendingRatio * 100).toFixed(1) + '%' : pendingRatio),\n  '  Risk: ' + riskAction,\n  '  Health score: ' + healthScore,\n  '',\n  '_Durata report: ' + durationMs + 'ms_'\n].join('\n');\n\nconst out = { report, invitesSent, invitesAccepted, messagesSent, replies, riskAction, startedAt: ctx.startedAt, endedAt, durationMs };\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "wr5",
+      "name": "Telegram Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: $json.report, parse_mode: 'Markdown' }) }}",
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "wr6",
+      "name": "Post-Hook Log Finale",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const r = $input.first().json;\nconst log = {\n  workflow: 'weekly-lead-report-v2',\n  invitesSent: r.invitesSent,\n  messagesSent: r.messagesSent,\n  riskAction: r.riskAction,\n  durationMs: r.durationMs,\n  loggedAt: new Date().toISOString()\n};\nconsole.log('[POST-HOOK weekly-report]', JSON.stringify(log));\nreturn [{ json: log }];"
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Venerdi 17:00": {
+      "main": [
+        [
+          {
+            "node": "Pre-Hook: Valida Contesto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pre-Hook: Valida Contesto": {
+      "main": [
+        [
+          {
+            "node": "Get Snapshot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Snapshot": {
+      "main": [
+        [
+          {
+            "node": "Costruisci Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Costruisci Report": {
+      "main": [
+        [
+          {
+            "node": "Telegram Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Report": {
+      "main": [
+        [
+          {
+            "node": "Post-Hook Log Finale",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "reporting"
+    },
+    {
+      "name": "weekly"
+    }
+  ]
+}

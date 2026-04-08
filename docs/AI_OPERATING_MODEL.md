@@ -34,7 +34,7 @@ BLOCCO C — Enforcement automatico (dipende da B):
   [8-bis] Hook system ✅ (2026-04-04) → PreToolUse antiban, PostToolUse quality log, Pre/Post-conditions su antiban-review/loop-codex/context-handoff; n8n hook documentati ma non ancora attivi
 
 BLOCCO D — Orchestrazione (dipende da C):
-  [5] n8n orchestratore ⚠️ → dipende da [8-bis]; n8n già deployato, mancano hook e workflow riusabili
+  [5] n8n orchestratore ✅ (2026-04-08) → 4 workflow DevOps creati con pre/post-hook; importare in n8n quando attivo
   [6] Agenti verticali ⚠️ → dipende da [5]
 
 BLOCCO E — Migrazione e ambienti (dipende da A, parzialmente parallelo):
@@ -53,7 +53,7 @@ BLOCCO F — Long-term (dipende da tutto):
 | Priorità | Punto | Blocco | Prerequisiti | Sblocca |
 |----------|-------|--------|-------------|---------|
 | 1 | **8-bis Hook system** ✅ | C | Nessuno (8 già fatto) | 5, 6, 21 |
-| 2 | **5 n8n orchestratore** | D | 8-bis | 6 |
+| 2 | **5 n8n orchestratore** ✅ | D | 8-bis | 6 |
 | 3 | **6 Agenti verticali** | D | 5 | 21 parziale |
 | 4 | **3 Codex migration** | E | Codex login (utente) | 2 |
 | 5 | **2 Prompt/modelli** | E | 3 | 21 parziale |
@@ -184,11 +184,34 @@ Prima di aggiungere nuove sezioni a un file operativo (CLAUDE.md, AGENTS.md, ski
   - retrieval strutturato invece di contesto grezzo sempre piu' lungo
 - La regola finale e' questa: se un comportamento critico deve avvenire sempre, non deve dipendere solo dalla memoria del modello.
 
-## 5. n8n come orchestratore tecnico — ⚠️ Parziale
+## 5. n8n come orchestratore tecnico — ✅ Implementato (2026-04-08)
 
-- Usare `n8n` anche come strumento DevOps su attivita' della codebase, collegandolo a `Codex` o `Claude Code`.
-- Preparare `n8n` per la produzione, con workflow chiari, riusabili e distribuibili.
-- Collegare trigger e automatismi a giorni lavorativi, orari e contesto reale dell'utente.
+- Usare n8n anche come strumento DevOps su attivita' della codebase.
+- 4 workflow riusabili creati in n8n-workflows/, pronti per import.
+- Trigger collegati a giorni lavorativi e orari reali.
+- Pre-hook e post-hook integrati in ogni workflow.
+
+### Workflow creati al 2026-04-08
+
+| File | Trigger | Funzione |
+|------|---------|---------|
+| quality-gate-check.json | Webhook POST o manuale | Typecheck via bot API, notifica Telegram pass/fail |
+| gdpr-retention-cleanup.json | Cron lunedi 9:00 | Dry-run GDPR, attende conferma webhook, esegue cleanup reale |
+| bot-health-check.json | Cron 9/13/17 lun-ven | Health API + Snapshot, alert Telegram se down |
+| weekly-lead-report-v2.json | Cron venerdi 17:00 | Report inviti/messaggi/reply/risk via Telegram |
+
+**Architettura comune:**
+- Pre-hook obbligatorio: valida env vars, filtra weekend, errore se contesto incompleto
+- Post-hook obbligatorio: log strutturato timestamp + durata in console n8n
+- Variabili env richieste: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, DASHBOARD_API_KEY
+- URL bot interno: http://bot-api:3000 (Docker) o http://localhost:3000 (PM2)
+
+**Da fare per attivare:**
+1. Avviare n8n (docker-compose up o pm2 start n8n)
+2. Importare i 4 JSON in n8n UI (Settings → Import Workflow)
+3. Configurare env vars nel container n8n: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, DASHBOARD_API_KEY
+4. Attivare i workflow
+5. Test quality-gate: POST http://localhost:5678/webhook/quality-gate
 
 ## 6. Agenti verticali e workflow riusabili — ⚠️ Parziale
 

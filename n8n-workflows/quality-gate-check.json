@@ -1,0 +1,149 @@
+{
+  "name": "LinkedIn DevOps — Quality Gate Check",
+  "nodes": [
+    {
+      "id": "qg1",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 300],
+      "parameters": {
+        "path": "quality-gate",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "qg2",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 500],
+      "parameters": {}
+    },
+    {
+      "id": "qg3",
+      "name": "Pre-Hook: Valida Contesto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 380],
+      "parameters": {
+        "jsCode": "const startedAt = new Date().toISOString();\nconst source = $input.first().json;\nconst branch = source.branch || source.body?.branch || 'main';\nconst files = source.files || source.body?.files || [];\nconst missingVars = [];\nif (!$env.TELEGRAM_BOT_TOKEN) missingVars.push('TELEGRAM_BOT_TOKEN');\nif (!$env.TELEGRAM_CHAT_ID) missingVars.push('TELEGRAM_CHAT_ID');\nif (missingVars.length > 0) {\n  throw new Error('Pre-hook FAIL: variabili mancanti: ' + missingVars.join(', '));\n}\nconst out = { branch, files, startedAt, contextOk: true };\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "qg4",
+      "name": "Run Typecheck",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [440, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://bot-api:3000/api/controls/trigger-run",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"workflow\": \"check\"}",
+        "options": { "timeout": 30000 }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "qg5",
+      "name": "Interpreta Risultato",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300],
+      "parameters": {
+        "jsCode": "const ctx = $('Pre-Hook: Valida Contesto').first().json;\nconst resp = $input.first().json;\nconst httpError = $input.first().json.error || null;\nconst passed = !httpError && resp.status !== 'error';\nconst endedAt = new Date().toISOString();\nconst startedAt = ctx.startedAt;\nconst durationMs = new Date(endedAt) - new Date(startedAt);\nconst out = {\n  branch: ctx.branch,\n  passed,\n  error: httpError || (passed ? null : JSON.stringify(resp)),\n  startedAt,\n  endedAt,\n  durationMs,\n  workflow: 'quality-gate-check'\n};\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "qg6",
+      "name": "Esito OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [880, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "version": 2, "caseSensitive": true, "typeValidation": "strict" },
+          "conditions": [{ "id": "qg-pass", "leftValue": "={{ $json.passed }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true" } }],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "qg7",
+      "name": "Telegram PASS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1100, 180],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: '✅ *Quality Gate PASS*\nBranch: `' + $json.branch + '`\nDurata: ' + $json.durationMs + 'ms\n' + $json.endedAt, parse_mode: 'Markdown' }) }}",
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "qg8",
+      "name": "Telegram FAIL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1100, 420],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: '❌ *Quality Gate FAIL*\nBranch: `' + $json.branch + '`\nErrore: ' + ($json.error || 'sconosciuto') + '\n' + $json.endedAt, parse_mode: 'Markdown' }) }}",
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "qg9",
+      "name": "Post-Hook: Log Finale",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 300],
+      "parameters": {
+        "jsCode": "const prev = $input.first().json;\nconst log = {\n  workflow: 'quality-gate-check',\n  branch: prev.branch,\n  passed: prev.passed,\n  durationMs: prev.durationMs,\n  loggedAt: new Date().toISOString()\n};\nconsole.log('[POST-HOOK quality-gate]', JSON.stringify(log));\nreturn [{ json: log }];"
+      }
+    },
+    {
+      "id": "qg10",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [1540, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": { "main": [[{ "node": "Pre-Hook: Valida Contesto", "type": "main", "index": 0 }]] },
+    "Manual Trigger": { "main": [[{ "node": "Pre-Hook: Valida Contesto", "type": "main", "index": 0 }]] },
+    "Pre-Hook: Valida Contesto": { "main": [[{ "node": "Run Typecheck", "type": "main", "index": 0 }]] },
+    "Run Typecheck": { "main": [[{ "node": "Interpreta Risultato", "type": "main", "index": 0 }]] },
+    "Interpreta Risultato": { "main": [[{ "node": "Esito OK?", "type": "main", "index": 0 }]] },
+    "Esito OK?": {
+      "main": [
+        [{ "node": "Telegram PASS", "type": "main", "index": 0 }],
+        [{ "node": "Telegram FAIL", "type": "main", "index": 0 }]
+      ]
+    },
+    "Telegram PASS": { "main": [[{ "node": "Post-Hook: Log Finale", "type": "main", "index": 0 }]] },
+    "Telegram FAIL": { "main": [[{ "node": "Post-Hook: Log Finale", "type": "main", "index": 0 }]] },
+    "Post-Hook: Log Finale": { "main": [[{ "node": "Webhook Response", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1", "saveManualExecutions": true, "callerPolicy": "workflowsFromSameOwner" },
+  "staticData": null,
+  "tags": [{ "name": "devops" }, { "name": "quality-gate" }]
+}

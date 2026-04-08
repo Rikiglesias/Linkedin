@@ -1,0 +1,352 @@
+{
+  "name": "LinkedIn DevOps — GDPR Retention Cleanup",
+  "nodes": [
+    {
+      "id": "gr1",
+      "name": "Schedule Lunedi 9:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "gr2",
+      "name": "Pre-Hook: Valida Contesto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const startedAt = new Date().toISOString();\nconst missingVars = [];\nif (!$env.TELEGRAM_BOT_TOKEN) missingVars.push('TELEGRAM_BOT_TOKEN');\nif (!$env.TELEGRAM_CHAT_ID) missingVars.push('TELEGRAM_CHAT_ID');\nif (!$env.DASHBOARD_API_KEY) missingVars.push('DASHBOARD_API_KEY');\nif (missingVars.length > 0) {\n  throw new Error('Pre-hook FAIL: variabili mancanti: ' + missingVars.join(', '));\n}\nconst out = { startedAt, contextOk: true, workflow: 'gdpr-retention-cleanup' };\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "gr3",
+      "name": "Run Dry-Run",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://bot-api:3000/api/controls/trigger-run",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"workflow\": \"gdpr-dry-run\"}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{$env.DASHBOARD_API_KEY}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "gr4",
+      "name": "Prepara Messaggio Approvazione",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const ctx = $('Pre-Hook: Valida Contesto').first().json;\nconst resp = $input.first().json;\nconst dryRunOutput = resp.output || resp.message || resp.result || JSON.stringify(resp);\nconst approveUrl = 'http://localhost:5678/webhook/gdpr-approve';\nconst msg = [\n  '🔍 *GDPR Retention — Dry Run completato*',\n  '',\n  'Output:',\n  '```',\n  String(dryRunOutput).substring(0, 600),\n  '```',\n  '',\n  '⚠️ Confermare esecuzione reale?',\n  'Inviare POST a: ' + approveUrl + ' con body {\"approved\": true}'\n].join('\n');\nconst out = { ctx, dryRunOutput, msg, approveUrl };\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "gr5",
+      "name": "Telegram Chiedi Conferma",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: $json.msg, parse_mode: 'Markdown' }) }}",
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "gr6",
+      "name": "Attendi Conferma Webhook",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "resume": "webhook",
+        "webhookSuffix": "gdpr-approve",
+        "options": {}
+      }
+    },
+    {
+      "id": "gr7",
+      "name": "Confermato?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1320,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "caseSensitive": false,
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "gr-confirm",
+              "leftValue": "={{ $json.body?.approved ?? $json.approved }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "gr8",
+      "name": "Run Reale",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1540,
+        180
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://bot-api:3000/api/controls/trigger-run",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"workflow\": \"gdpr-cleanup\"}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{$env.DASHBOARD_API_KEY}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "gr9",
+      "name": "Telegram Rifiutato",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1540,
+        420
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: '🚫 GDPR Retention cleanup *ANNULLATO*. Eseguire manualmente se necessario.', parse_mode: 'Markdown' }) }}",
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "gr10",
+      "name": "Post-Hook Log Finale",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        180
+      ],
+      "parameters": {
+        "jsCode": "const resp = $input.first().json;\nconst endedAt = new Date().toISOString();\nconst log = {\n  workflow: 'gdpr-retention-cleanup',\n  phase: 'real-run',\n  result: resp.result || resp.message || JSON.stringify(resp),\n  loggedAt: endedAt\n};\nconsole.log('[POST-HOOK gdpr-cleanup]', JSON.stringify(log));\nreturn [{ json: log }];"
+      }
+    },
+    {
+      "id": "gr11",
+      "name": "Telegram Completato",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1980,
+        180
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: '✅ *GDPR Retention cleanup completato*\n' + ($json.result || '') + '\n' + $json.loggedAt, parse_mode: 'Markdown' }) }}",
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Schedule Lunedi 9:00": {
+      "main": [
+        [
+          {
+            "node": "Pre-Hook: Valida Contesto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pre-Hook: Valida Contesto": {
+      "main": [
+        [
+          {
+            "node": "Run Dry-Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Dry-Run": {
+      "main": [
+        [
+          {
+            "node": "Prepara Messaggio Approvazione",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepara Messaggio Approvazione": {
+      "main": [
+        [
+          {
+            "node": "Telegram Chiedi Conferma",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Chiedi Conferma": {
+      "main": [
+        [
+          {
+            "node": "Attendi Conferma Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attendi Conferma Webhook": {
+      "main": [
+        [
+          {
+            "node": "Confermato?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confermato?": {
+      "main": [
+        [
+          {
+            "node": "Run Reale",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram Rifiutato",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Reale": {
+      "main": [
+        [
+          {
+            "node": "Post-Hook Log Finale",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post-Hook Log Finale": {
+      "main": [
+        [
+          {
+            "node": "Telegram Completato",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "devops"
+    },
+    {
+      "name": "gdpr"
+    },
+    {
+      "name": "compliance"
+    }
+  ]
+}
