@@ -41,6 +41,8 @@
     "test:vitest": "vitest run",
     "test:vitest:watch": "vitest",
     "test:vitest:coverage": "vitest run --coverage",
+    "audit": "ts-node src/scripts/codebaseAudit.ts",
+    "audit:json": "ts-node src/scripts/codebaseAudit.ts --json",
     "test:e2e:dry": "ts-node src/tests/e2eDry.ts",
     "test:a11y:smoke": "ts-node src/tests/accessibilitySmoke.ts",
     "test": "npm run test:vitest && npm run test:e2e:dry && npm run test:a11y:smoke"

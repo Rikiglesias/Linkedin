@@ -6,10 +6,7 @@
       "name": "Schedule Domenica 10:00",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.3,
-      "position": [
-        0,
-        200
-      ],
+      "position": [0, 200],
       "parameters": {
         "rule": {
           "interval": [
@@ -26,10 +23,7 @@
       "name": "Manual Trigger",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
-      "position": [
-        0,
-        400
-      ],
+      "position": [0, 400],
       "parameters": {}
     },
     {
@@ -37,43 +31,32 @@
       "name": "Pre-Hook: Valida Contesto",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        220,
-        300
-      ],
+      "position": [220, 300],
       "parameters": {
-        "jsCode": "const startedAt=new Date().toISOString();\nconst missingVars=[];\nif(!$env.TELEGRAM_BOT_TOKEN)missingVars.push(\"TELEGRAM_BOT_TOKEN\");\nif(!$env.TELEGRAM_CHAT_ID)missingVars.push(\"TELEGRAM_CHAT_ID\");\nif(missingVars.length>0)throw new Error(\"Pre-hook FAIL: \"+missingVars.join(\", \"));\nconst out={startedAt,contextOk:true,workflow:\"codebase-audit\"};\nreturn[{json:out}];"
+        "jsCode": "const startedAt = new Date().toISOString();\nconst missingVars = [];\nif (!$env.TELEGRAM_BOT_TOKEN) missingVars.push('TELEGRAM_BOT_TOKEN');\nif (!$env.TELEGRAM_CHAT_ID) missingVars.push('TELEGRAM_CHAT_ID');\nif (missingVars.length > 0) throw new Error('Pre-hook FAIL: ' + missingVars.join(', '));\nreturn [{ json: { startedAt, workflow: 'codebase-audit', ok: true } }];"
       }
     },
     {
       "id": "au4",
-      "name": "Check TypeScript Errors",
+      "name": "Esegui Audit via API",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
-      "position": [
-        440,
-        300
-      ],
+      "position": [440, 300],
       "onError": "continueRegularOutput",
       "parameters": {
         "method": "GET",
-        "url": "http://localhost:3000/api/health",
-        "options": {
-          "timeout": 8000
-        }
+        "url": "http://localhost:3000/api/controls/codebase-audit",
+        "options": { "timeout": 60000 }
       }
     },
     {
       "id": "au5",
-      "name": "Costruisci Report Audit",
+      "name": "Costruisci Report Telegram",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        660,
-        300
-      ],
+      "position": [660, 300],
       "parameters": {
-        "jsCode": "const ctx=$(\"Pre-Hook: Valida Contesto\").first().json;\nconst tscData=$(\"Check TypeScript Errors\").first().json;\nconst endedAt=new Date().toISOString();\nconst durationMs=new Date(endedAt)-new Date(ctx.startedAt);\nconst now=new Date();\nconst dateStr=now.toLocaleDateString(\"it-IT\",{day:\"2-digit\",month:\"2-digit\",year:\"numeric\"});\nconst lines=[\"🔍 *Codebase Audit — \"+dateStr+\"*\",\"\"];\nlines.push(\"*Verifica TypeScript:* \"+(tscData.tscOk?\"✅ clean\":\"❌ errori rilevati\"));\nlines.push(\"*Nota:* Per analisi complete (circular deps, file grandi, TODO) attivare Execute Command nodes.\");\nlines.push(\"\");\nlines.push(\"*Raccomandazioni:*\");\nlines.push(\"  • Eseguire npx madge --circular src/ per circular deps\");\nlines.push(\"  • Eseguire grep -r \\\"TODO|FIXME\\\" src/ per tech debt\");\nlines.push(\"  • Verificare file > 300 righe con wc -l src/**/*.ts\");\nlines.push(\"\");\nlines.push(\"_Durata: \"+durationMs+\"ms | \"+endedAt+\"_\");\nconst out={report:lines.join(\"\n\"),startedAt:ctx.startedAt,endedAt,durationMs};\nreturn[{json:out}];"
+        "jsCode": "const ctx = $('Pre-Hook: Valida Contesto').first().json;\nconst audit = $('Esegui Audit via API').first().json;\nconst endedAt = new Date().toISOString();\nconst durationMs = new Date(endedAt) - new Date(ctx.startedAt);\n\nconst scoreEmoji = audit.score >= 90 ? '✅' : audit.score >= 70 ? '⚠️' : '🔴';\nconst lines = [];\nlines.push(`🔍 *Codebase Audit — ${new Date().toLocaleDateString('it-IT')}*`);\nlines.push('');\nlines.push(`*Score:* ${scoreEmoji} ${audit.score ?? '?'}/100`);\nlines.push(`*File TS:* ${audit.totalFiles ?? '?'} (${audit.totalLines?.toLocaleString() ?? '?'} righe totali)`);\nlines.push('');\n\n// File grandi\nconst big = audit.filesOverThreshold ?? [];\nif (big.length > 0) {\n  lines.push(`*File >300 righe (${big.length}):*`);\n  big.slice(0, 8).forEach(f => {\n    const icon = f.lines > 1000 ? '🔴' : f.lines > 600 ? '🟠' : '🟡';\n    const name = f.file.replace('src/', '');\n    lines.push(`  ${icon} ${f.lines} — ${name}`);\n  });\n  if (big.length > 8) lines.push(`  ... e altri ${big.length - 8}`);\n  lines.push('');\n} else {\n  lines.push('✅ Nessun file >300 righe');\n  lines.push('');\n}\n\n// Circular deps\nconst circular = audit.circularDeps ?? [];\nif (circular.length > 0) {\n  lines.push(`🔴 *Circular deps: ${circular.length}*`);\n} else {\n  lines.push('✅ Nessuna circular dep');\n}\n\n// Tech debt\nconst debt = audit.techDebt ?? [];\nif (debt.length > 0) {\n  lines.push(`⚠️ *Tech debt: ${debt.length} TODO/FIXME*`);\n} else {\n  lines.push('✅ Nessun TODO/FIXME');\n}\n\nlines.push('');\nlines.push(`_Durata: ${durationMs}ms_`);\n\nreturn [{ json: { report: lines.join('\\n'), score: audit.score, endedAt, durationMs } }];"
       }
     },
     {
@@ -81,17 +64,14 @@
       "name": "Telegram Report",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
-      "position": [
-        880,
-        300
-      ],
+      "position": [880, 300],
       "onError": "continueRegularOutput",
       "parameters": {
         "method": "POST",
         "url": "=https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/sendMessage",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: $json.report, parse_mode: \"Markdown\" }) }}",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: $json.report, parse_mode: 'Markdown' }) }}",
         "options": {}
       }
     },
@@ -100,81 +80,30 @@
       "name": "Post-Hook: Log Finale",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        1100,
-        300
-      ],
+      "position": [1100, 300],
       "parameters": {
-        "jsCode": "const r=$input.first().json;\nconst log={workflow:\"codebase-audit\",durationMs:r.durationMs,loggedAt:new Date().toISOString()};\nconsole.log(\"[POST-HOOK codebase-audit]\",JSON.stringify(log));\nreturn[{json:log}];"
+        "jsCode": "const r = $input.first().json;\nconst log = { workflow: 'codebase-audit', score: r.score, durationMs: r.durationMs, loggedAt: new Date().toISOString() };\nconsole.log('[POST-HOOK codebase-audit]', JSON.stringify(log));\nreturn [{ json: log }];"
       }
     }
   ],
   "connections": {
     "Schedule Domenica 10:00": {
-      "main": [
-        [
-          {
-            "node": "Pre-Hook: Valida Contesto",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Pre-Hook: Valida Contesto", "type": "main", "index": 0 }]]
     },
     "Manual Trigger": {
-      "main": [
-        [
-          {
-            "node": "Pre-Hook: Valida Contesto",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Pre-Hook: Valida Contesto", "type": "main", "index": 0 }]]
     },
     "Pre-Hook: Valida Contesto": {
-      "main": [
-        [
-          {
-            "node": "Check TypeScript Errors",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Esegui Audit via API", "type": "main", "index": 0 }]]
     },
-    "Check TypeScript Errors": {
-      "main": [
-        [
-          {
-            "node": "Costruisci Report Audit",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+    "Esegui Audit via API": {
+      "main": [[{ "node": "Costruisci Report Telegram", "type": "main", "index": 0 }]]
     },
-    "Costruisci Report Audit": {
-      "main": [
-        [
-          {
-            "node": "Telegram Report",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+    "Costruisci Report Telegram": {
+      "main": [[{ "node": "Telegram Report", "type": "main", "index": 0 }]]
     },
     "Telegram Report": {
-      "main": [
-        [
-          {
-            "node": "Post-Hook: Log Finale",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Post-Hook: Log Finale", "type": "main", "index": 0 }]]
     }
   },
   "settings": {
@@ -182,16 +111,5 @@
     "saveManualExecutions": true,
     "callerPolicy": "workflowsFromSameOwner"
   },
-  "staticData": null,
-  "tags": [
-    {
-      "name": "linkedin"
-    },
-    {
-      "name": "audit"
-    },
-    {
-      "name": "codebase"
-    }
-  ]
+  "tags": ["linkedin", "audit", "codebase"]
 }

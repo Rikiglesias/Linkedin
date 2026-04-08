@@ -12,6 +12,7 @@ import { handleApiError } from '../utils';
 import { handlePauseAction, handleResumeAction, handleQuarantineAction } from '../helpers/controlActions';
 import { resolveRequestIp } from '../helpers/requestIp';
 import { mapLegacyTriggerRunWorkflow } from '../../automation/types';
+import { runCodebaseAudit } from '../../scripts/codebaseAudit';
 
 const router = Router();
 
@@ -76,6 +77,15 @@ router.post('/trigger-run', async (req, res) => {
         });
     } catch (err: unknown) {
         handleApiError(res, err, 'api.controls.trigger-run');
+    }
+});
+
+router.get('/codebase-audit', async (_req, res) => {
+    try {
+        const result = await runCodebaseAudit();
+        res.json(result);
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.controls.codebase-audit');
     }
 });
 
