@@ -36,6 +36,8 @@
 - Per ogni file modificato, l'AI controlla automaticamente tutti i domini che quel file può toccare — non solo il motivo principale del cambiamento. I domini sono: sicurezza, performance, tipi, error handling, automazione, integrazioni, architettura, osservabilità. Questo controllo viene dichiarato esplicitamente per ogni file.
 - Le best practice seguite non sono generiche: dipendono dal tipo di artefatto. Codice TypeScript, documento tecnico, config, workflow n8n, schema API, migrazione DB, file di tracking — ognuno ha le sue regole specifiche. L'AI le applica senza che l'utente le debba specificare.
 - L'ordine delle modifiche viene deciso prima di iniziare, così da non rompere import, tipi, runtime o integrazioni. Nessuna modifica è completa se risolve solo una parte lasciando incoerenze nel resto del sistema.
+- **Spec-driven development** (best practice 2026): spec e design diventano un contratto tra utente e AI. File come `AI_OPERATING_MODEL.md`, `AGENTS.md`, `CLAUDE.md` fungono da spec a cui l'AI fa riferimento continuamente — non li legge una volta sola. Se la spec manca o è ambigua, l'AI rileva l'insufficienza del contesto prima di procedere, non dopo.
+- **Context engineering** come disciplina: rendere espliciti intent, convenzioni e decisioni architetturali del progetto come artefatti di prima classe — non commenti sparsi. Il contesto strutturato riduce la deriva dell'AI nelle sessioni lunghe.
 
 **Implementato in**: P0 Step A, L0 blast radius, L7, L8 in `~/.claude/CLAUDE.md`.
 
@@ -60,6 +62,8 @@
   - Proporzionalità: quick fix → L1-L4; feature/refactor → L1-L9
 - **Auto-commit quando L9=DONE** e exit code 0 — senza aspettare input dell'utente. Eccezioni (chiedere prima): push remote, force push, infrastruttura condivisa.
 - **Automatismi**: ogni automatismo segue la sequenza — rileva bisogno → analizza contesto → propone all'utente → attende conferma → esegue → report finale. Nessun automatismo invasivo parte senza conferma esplicita. Quelli di sola lettura o monitoring partono autonomamente.
+- **Shift-right validation** (best practice 2026): la verifica non finisce al deploy. I difetti rilevati in produzione vengono alimentati nei pipeline automatici come input per il ciclo successivo. L9 è la porta d'uscita della sessione, ma il vero loop di qualità è continuo: dev → deploy → produzione → feedback → dev.
+- **Quality gates per codice AI** (best practice 2026): i gate devono includere soglie di complessità ciclomatica e scan OWASP, non solo build+lint. Configurare questi check come bloccanti nei hook PostToolUse.
 
 **Implementato in**: P0 Step B, L1-L9 in `~/.claude/CLAUDE.md`; `/loop-codex` skill per Codex.
 
@@ -74,6 +78,8 @@
 - MCP (Supabase, Playwright, Semgrep, n8n, Gmail, Calendar) vengono attivati quando portano valore reale, nel momento giusto, non in modo casuale o tardivo.
 - L'AI raccomanda il modello e l'ambiente migliori per il task (qualità, velocità, costo, tool disponibili, contesto, rischio di errore) e spiega brevemente perché — la decisione finale spetta all'utente prima di aprire la sessione.
 - Audit continuo delle skill: quelle non usate da 30 giorni, duplicate o deboli vengono candidate a rimozione o merge. Nuove skill solo se coprono un gap reale. Mappa con trigger, casi in cui NON usarle, dipendenze, output atteso, hook collegati.
+- **Tool Search on-demand** (best practice 2026): caricare le definizioni degli strumenti solo quando servono al task corrente (non tutto upfront). Anthropic ha misurato +25% di accuracy (da 49% a 74% su Opus 4) con tool libraries grandi usando questo pattern. Implicazione: la mappa skill in CLAUDE.md deve essere ordinata per frequenza d'uso, non alfabeticamente.
+- **Architettura strumenti** (best practice 2026): Skills = layer di conoscenza procedurale (30-50 token l'una, caricate on-demand). MCP = sistema nervoso per integrazioni esterne (50k+ token). Hooks = garanzia di esecuzione. Aggiungere nell'ordine giusto: prima MCP per integrazione primaria, poi Skills per procedure ripetute, poi Hooks per enforcement.
 
 **Implementato in**: P0 Step B, tabella skill in `~/.claude/CLAUDE.md`.
 
@@ -88,9 +94,11 @@
 - **File regole corto = AI ricorda tutto**: CLAUDE.md deve restare abbastanza compatto da poter essere letto e tenuto in contesto affidabilmente in una sessione. Più cresce, più regole vengono dimenticate. Prima di aggiungere → eseguire `claude-md-management:claude-md-improver` per pulire. Mai aggiungere a un file disorganizzato.
 - **Audit periodico delle regole**: verificare che le regole si attivino davvero nel momento giusto — non solo che siano scritte. Regole che non producono comportamento reale → convertire in hook o rimuovere. Regole dimenticate più di una volta → diventano hook obbligatoriamente.
 - Non affidarsi solo alla memoria del modello: usare memoria persistente separata per tipo (procedurale, semantica, episodica), checklist obbligatorie, output strutturati, subagenti specializzati.
+- **Dato empirico 2026**: i modelli migliori seguono meno del 30% delle istruzioni perfettamente in scenari agentici quando il numero di istruzioni cresce. Il compliance cala linearmente con il numero di regole. **Implicazione diretta**: CLAUDE.md corto non è una preferenza estetica — è una necessità tecnica per compliance >30%. Ogni regola aggiunta ne fa dimenticare un'altra.
+- **Hook con deny permanente** (best practice 2026): un hook che restituisce `permissionDecision: "deny"` blocca l'azione anche in modalità `--dangerously-skip-permissions` e `bypassPermissions`. Le regole critiche devono usare questo pattern — non il semplice exit 2 che può essere aggirato.
 
 **Implementato**: hook antiban ✅, hook qualità ✅, pre/post-conditions skill ✅.
-**Mancante**: eval/misura di quali regole vengono dimenticate ❌; audit automatico conformità ❌.
+**Mancante**: eval/misura di quali regole vengono dimenticate ❌; audit automatico conformità ❌; `permissionDecision: "deny"` per regole critiche ❌.
 
 ---
 
@@ -103,6 +111,8 @@
 - Ogni file di contesto dice: cosa contiene, cosa non contiene, quando va aggiornato, a quale file canonico è collegato. Apertura chiara, sezioni piccole, riepilogo finale di stato/decisioni/prossimi passi/blocchi.
 - File troppo grande o con troppi temi → split in indice + file tematici. Mai mega-file con tutto dentro.
 - Le informazioni importanti non restano solo in chat: se servono alla prossima sessione, vengono promosse nel file canonico giusto prima di chiudere.
+- **Memory consolidation / Auto Dream** (best practice 2026): Anthropic ha aggiunto in Claude Code una capability di consolidamento automatico della memoria tra sessioni (Auto Dream). Le sessioni significative producono un riassunto compresso che viene promosso a memoria di lungo termine. Il sistema `~/memory/` + `MEMORY.md` implementa questo pattern manualmente — da verificare se Auto Dream è attivabile in modo nativo per ridurre il lavoro manuale.
+- **Gerarchia memoria** (best practice 2026): User Memory (fatti cross-sessione stabili), Session Memory (contesto a breve termine), Agent Memory (conoscenza specifica dell'agente). Il nostro sistema attuale copre User e Session — Agent Memory (per skill specializzate) non è ancora separato.
 
 **Implementato in**: `~/.claude/skills/context-handoff/`, sistema `~/memory/`, `MEMORY.md`.
 
@@ -123,6 +133,8 @@
   - `loop-codex`: pre (L1 pulito, task misurabile, scope definito), post (auto-commit se DONE, worklog)
   - `context-handoff`: pre (git status, memoria aggiornata, active.md), post (SESSION_HANDOFF.md committato)
 - **Gap**: hook in ingresso/uscita per workflow n8n (richiedono n8n attivo) ⚠️
+- **permissionDecision deny** (best practice 2026): convertire i hook critici da `exit 2` a `permissionDecision: "deny"` nel JSON — blocca anche `--dangerously-skip-permissions`. Candidati: hook antiban su file sensibili LinkedIn ❌ da implementare.
+- **Thread-based enforcement** (best practice 2026): separare la governance policy (quando serve review) dall'enforcement meccanico (hook che blocca). Il file regole dice il "quando", l'hook esegue il "blocca" — senza passare per il ragionamento dell'AI.
 
 ---
 
@@ -153,6 +165,12 @@
 
 **Per attivare**: avviare n8n → importare JSON in `Settings → Import Workflow` → configurare `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `DASHBOARD_API_KEY`, credenziale Postgres.
 
+**Best practice 2026 applicate/da applicare**:
+- **Modular design**: usare il nodo Execute Workflow per richiamare sotto-workflow riusabili — no mega-workflow da 50 nodi ✅ (già seguito)
+- **Memory nodes obbligatori** (2026: "stateless automation is dead"): ogni workflow che gestisce stato o conversazione deve includere Redis Chat Memory o equivalente — il bot fa già un tracking su DB, ma i workflow n8n mancano di memoria interna ❌
+- **API keys mai nel JSON del workflow**: usare variabili d'ambiente n8n o un secrets manager esterno — verificare che i 9 workflow non contengano credenziali hardcoded ❌ da verificare
+- **Human-in-the-loop con Wait Node**: per azioni ad alto rischio (GDPR cleanup, deploy) usare il pattern pause → Telegram approval → resume ⚠️ solo gdpr-retention lo fa già
+
 **Gap**:
 - Workflow bot LinkedIn (inviteWorker, messageWorker, sequenze follow-up) non ancora migliorati ❌
 - Guida setup completa per passare il sistema ad altri ❌
@@ -170,6 +188,8 @@
 - Per ogni ambiente: definire quali file di regole legge, quali tool/MCP supporta, quali hook o equivalenti ha, quali skill/comandi sono disponibili, quali limiti ha.
 - Se una capability manca in un ambiente → progettare un sostituto: wrapper, workflow, checklist, slash command.
 - Audit periodico di drift: se un hook o skill funziona in Claude Code ma manca in Codex → gap documentato e corretto dove possibile.
+- **Industry convergence** (best practice 2026): Claude Code, Codex, Copilot, Gemini, Cursor e Devin stanno convergendo sugli stessi primitive architetturali. Mantenere la parity non è lottare contro la corrente — è seguire lo standard che emerge. Agent control plane unificato (kick off da un punto, esegue ovunque) è il prossimo passo.
+- **Consistency come metrica**: la qualità in ambiente multiplo si misura — stessa task in Claude Code e Codex deve produrre stesso risultato. Se diverge → gap documentato, non ignorato.
 
 ---
 
@@ -181,6 +201,8 @@
   - F9 start/stop → testo in clipboard → notifica Windows
   - Per attivare: `pip install keyboard` + API key in `.env` + `start.bat` come admin
   - Sostituisce Win+H con maggiore precisione e controllo
+  - **Alternativa matura 2026**: [OpenWhispr](https://github.com/OpenWhispr/openwhispr) — cross-platform, offline + cloud, meeting auto-detection, 100+ lingue, privacy-first. Se il tool custom dà problemi → valutare migrazione a OpenWhispr.
+  - **Modello migliore**: `whisper-large-v3` (Hugging Face) per qualità massima locale; API OpenAI `gpt-4o-transcribe` per velocità cloud. Latenza target: <500ms.
 - **Procedura alimentatore** ✅: spegnimento OS → interruttore su O → rimozione spina prendendo la testa, non il cavo
 - **Problema computer** ⚠️: documentato in `~/memory/computer.md`, non ancora risolto
 - **Modello e ambiente**: l'AI raccomanda quale modello e ambiente usare per ogni task con spiegazione (qualità, velocità, costo, tool disponibili, contesto, rischio errore) — la scelta finale spetta all'utente prima di aprire la sessione ❌ da implementare
@@ -208,6 +230,15 @@
 - Checklist 360 riusabile per nuovi progetti: struttura codice, regole, memoria AI, quality gates, ambienti, skill, hook, MCP, workflow, sicurezza, osservabilità, test, produzione, handoff ❌ file da creare
 - Workflow bot LinkedIn (inviteWorker, messageWorker, sequenze follow-up) da migliorare ❌
 
+### Self-healing (best practice 2026)
+Pattern da implementare per il bot:
+- Memory leak rilevato → PM2 restart automatico (già parziale via PM2 max_memory_restart)
+- Traffic spike / rate limit → backoff automatico con alert Telegram
+- Failed deployment → rollback automatico all'ultimo commit stabile
+- Workflow n8n non eseguito da 14gg → alert manutenzione
+
+Orchestrazione multi-agente enterprise richiede: lifecycle management (deploy/monitor/update/rollback), resource allocation, inter-agent communication, **centralized logging con distributed tracing** — il nostro sistema attuale ha logging locale ma non tracing correlato tra bot + n8n + dashboard.
+
 ---
 
 ## 11. Sicurezza e compliance — ⚠️ Parziale
@@ -219,6 +250,12 @@
 - 5 domande obbligatorie: cambia comportamento browser? timing/delay? fingerprint/stealth/cookie/sessione? aggiunge azioni LinkedIn? cambia volumi/budget/cap?
 - Principi non negoziabili: varianza su tutto, sessioni credibili, pending ratio controllato, navigazione umana
 - **Status**: hook ✅; monitoring Telegram ⚠️; eval automatico comportamento ❌; web search periodica su detection non schedulata ❌
+
+**Nuovi vettori di detection 2026** (da aggiornare nella skill antiban-review):
+- **Behavioral biometrics ML**: LinkedIn usa ML per analizzare il "ritmo" dell'account — se i delay sono matematicamente precisi (es. esattamente 45s ogni azione), flagga automaticamente. La randomizzazione deve simulare hesitation umana, non solo range numerico.
+- **VPN detection**: i VPN vengono rilevati dal pattern di cifratura del traffico; gli IP datacenter sono già in blacklist. Preferire IP residenziali o 4G. Il nostro setup Oxylabs (proxy residenziali) è corretto.
+- **Limite safe confermato**: 80 azioni/giorno è il threshold usato da piattaforme anti-ban professionali — non superare.
+- **GDPR Right to Erasure in DB**: quando un lead richiede cancellazione, la purge deve coprire anche i database di automazione (non solo il DB principale). La nostra migration 059 copre leads ma verificare audit_log e eventuali cache. ⚠️
 
 ### GDPR
 - Dati lead LinkedIn sono dati personali (Reg. UE 2016/679)
@@ -248,5 +285,14 @@
 - Un sistema misura quali regole vengono dimenticate e le converte in hook ❌
 - I workflow n8n girano in autonomia nei giorni e orari giusti ❌ (n8n da attivare)
 - Nessuna "false completion" — il loop si chiude solo quando L9 è verde ✓ (implementato)
+
+**Self-evolving agent pattern** (best practice 2026 — OpenAI Cookbook):
+Il sistema migliora in autonomia seguendo il ciclo: **percezione → ragionamento → azione → feedback**.
+1. Percezione: l'AI rileva un errore ricorrente o una regola dimenticata
+2. Ragionamento: identifica la causa (regola solo in testo, hook mancante, skill assente)
+3. Azione: converte la regola in hook, o crea una skill, o aggiorna CLAUDE.md
+4. Feedback: misura se il comportamento è migliorato nel ciclo successivo
+
+Questo loop è attualmente manuale (l'utente segnala → Claude aggiorna). **Obiettivo**: rendere il rilevamento automatico tramite hook PostToolUse che tracciano violazioni → alert → proposta di fix.
 
 **Dipende da**: punti 4 (hook-first completo) + 7 (n8n attivo) + 10 (produzione) completati.
