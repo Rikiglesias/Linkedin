@@ -227,7 +227,7 @@
 
 ### Produzione e handoff
 - Guida setup completa (n8n + bot + PM2 + credenziali) per passare il sistema ad altri ❌
-- Checklist 360 riusabile per nuovi progetti: struttura codice, regole, memoria AI, quality gates, ambienti, skill, hook, MCP, workflow, sicurezza, osservabilità, test, produzione, handoff ❌ file da creare
+- Checklist 360 riusabile ✅ creata in `docs/360-checklist.md` (101 check, 15 aree)
 - Workflow bot LinkedIn (inviteWorker, messageWorker, sequenze follow-up) da migliorare ❌
 
 ### Self-healing (best practice 2026)
@@ -249,7 +249,7 @@ Orchestrazione multi-agente enterprise richiede: lifecycle management (deploy/mo
 - Prima di ogni modifica che tocca browser, timing, stealth, volumi o sessione → review anti-ban obbligatoria automatica (hook PreToolUse attivo ✅)
 - 5 domande obbligatorie: cambia comportamento browser? timing/delay? fingerprint/stealth/cookie/sessione? aggiunge azioni LinkedIn? cambia volumi/budget/cap?
 - Principi non negoziabili: varianza su tutto, sessioni credibili, pending ratio controllato, navigazione umana
-- **Status**: hook ✅; monitoring Telegram ⚠️; eval automatico comportamento ❌; web search periodica su detection non schedulata ❌
+- **Status**: hook ✅; 6a domanda behavioral biometrics ✅; monitoring Telegram ⚠️; eval automatico comportamento ❌; web search periodica schedulata ✅ (linkedin-detection-monitor.json)
 
 **Nuovi vettori di detection 2026** (da aggiornare nella skill antiban-review):
 - **Behavioral biometrics ML**: LinkedIn usa ML per analizzare il "ritmo" dell'account — se i delay sono matematicamente precisi (es. esattamente 45s ogni azione), flagga automaticamente. La randomizzazione deve simulare hesitation umana, non solo range numerico.
@@ -262,6 +262,7 @@ Orchestrazione multi-agente enterprise richiede: lifecycle management (deploy/mo
 - **Implementato** (2026-04-08): retention policy ✅ (migration 059, 180gg anonimizza/365gg cancella); audit trail ✅ (auditLog.ts in messageWorker + inviteWorker); `docs/GDPR_POLICY.md` ✅
 - Cleanup manuale: `npx ts-node src/scripts/gdprRetentionCleanup.ts --dry-run`
 - **Mancante**: scheduling automatico cleanup ❌; registro trattamenti art. 30 ❌
+- **Right to Erasure** ✅ (2026-04-08): `runRightToErasure(url)` anonimizza anche `audit_log.lead_identifier` — caso edge del `--delete-only` coperto
 
 ### Sicurezza sistema
 - Credenziali solo in `.env`, mai in codice o log ✅
