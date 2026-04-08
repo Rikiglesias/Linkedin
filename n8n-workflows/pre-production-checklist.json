@@ -1,0 +1,336 @@
+{
+  "name": "LinkedIn — Pre-Production Checklist",
+  "nodes": [
+    {
+      "id": "pc1",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {
+        "path": "pre-production-checklist",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "pc2",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        400
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "pc3",
+      "name": "Pre-Hook: Valida Contesto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const startedAt=new Date().toISOString();\nconst missingVars=[];\nif(!$env.TELEGRAM_BOT_TOKEN)missingVars.push(\"TELEGRAM_BOT_TOKEN\");\nif(!$env.TELEGRAM_CHAT_ID)missingVars.push(\"TELEGRAM_CHAT_ID\");\nif(!$env.DASHBOARD_API_KEY)missingVars.push(\"DASHBOARD_API_KEY\");\nif(missingVars.length>0)throw new Error(\"Pre-hook FAIL: \"+missingVars.join(\", \"));\nconst out={startedAt,contextOk:true,workflow:\"pre-production-checklist\"};\nreturn[{json:out}];"
+      }
+    },
+    {
+      "id": "pc4",
+      "name": "Check Health API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        440,
+        200
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "GET",
+        "url": "http://localhost:3000/api/health",
+        "options": {
+          "timeout": 8000
+        }
+      }
+    },
+    {
+      "id": "pc5",
+      "name": "Check Snapshot API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        440,
+        400
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "GET",
+        "url": "http://localhost:3000/api/v1/automation/snapshot",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{$env.DASHBOARD_API_KEY}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      }
+    },
+    {
+      "id": "pc6",
+      "name": "Aggreg Risultati e Checklist",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const ctx=$(\"Pre-Hook: Valida Contesto\").first().json;\nconst healthResp=$(\"Check Health API\").first().json;\nconst snapResp=$(\"Check Snapshot API\").first().json;\nconst endedAt=new Date().toISOString();\nconst durationMs=new Date(endedAt)-new Date(ctx.startedAt);\nconst checks=[];\nconst healthOk=healthResp.status===\"ok\";\nchecks.push({name:\"API Health\",passed:healthOk,detail:healthOk?\"ok\":JSON.stringify(healthResp)});\nconst snapOk=!!snapResp.automation&&!snapResp.error;\nchecks.push({name:\"Snapshot API\",passed:snapOk,detail:snapOk?\"ok\":\"snapshot non disponibile\"});\nconst auto=snapResp.automation||{};\nconst pr=auto.pendingRatio;\nconst prOk=typeof pr===\"number\"?pr<0.30:null;\nchecks.push({name:\"Pending ratio < 30%\",passed:prOk,detail:prOk===null?\"n/d\":\"ratio: \"+(pr*100).toFixed(1)+\"%\"});\nconst risk=auto.riskAction||\"UNKNOWN\";\nchecks.push({name:\"Risk action non STOP\",passed:risk!==\"STOP\",detail:\"risk: \"+risk});\nchecks.push({name:\"DB connection\",passed:snapOk,detail:snapOk?\"ok\":\"non verificabile\"});\nconst failures=checks.filter(c=>c.passed===false);\nconst allPassed=failures.length===0;\nconst verdict=allPassed?\"READY\":\"NOT READY\";\nconst lines=[allPassed?\"✅ *Pre-Production Checklist: READY*\":\"❌ *Pre-Production Checklist: NOT READY*\",\"\"];\nlines.push(\"*Checks (\"+checks.filter(c=>c.passed===true).length+\"/\"+checks.length+\" passati):*\");\nchecks.forEach(c=>{const icon=c.passed===true?\"✅\":c.passed===false?\"❌\":\"⚠️\";lines.push(icon+\" \"+c.name+\" — \"+c.detail);});\nif(failures.length>0){lines.push(\"\");lines.push(\"*Fallimenti bloccanti:*\");failures.forEach(f=>lines.push(\"  • \"+f.name+\": \"+f.detail));}\nlines.push(\"\");lines.push(\"_Durata: \"+durationMs+\"ms | \"+endedAt+\"_\");\nconst out={report:lines.join(\"\n\"),verdict,failureCount:failures.length,checkCount:checks.length,startedAt:ctx.startedAt,endedAt,durationMs};\nreturn[{json:out}];"
+      }
+    },
+    {
+      "id": "pc7",
+      "name": "Esito READY?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        900,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "pc-ready",
+              "leftValue": "={{ $json.verdict }}",
+              "rightValue": "READY",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "pc8",
+      "name": "Telegram READY",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1100,
+        180
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: $json.report, parse_mode: \"Markdown\" }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "pc9",
+      "name": "Telegram NOT READY",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1100,
+        420
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: $json.report, parse_mode: \"Markdown\" }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "pc10",
+      "name": "Post-Hook: Log Finale",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const r=$input.first().json;\nconst log={workflow:\"pre-production-checklist\",verdict:r.verdict,failureCount:r.failureCount,durationMs:r.durationMs,loggedAt:new Date().toISOString()};\nconsole.log(\"[POST-HOOK pre-production-checklist]\",JSON.stringify(log));\nreturn[{json:log}];"
+      }
+    },
+    {
+      "id": "pc11",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1540,
+        300
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Pre-Hook: Valida Contesto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Pre-Hook: Valida Contesto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pre-Hook: Valida Contesto": {
+      "main": [
+        [
+          {
+            "node": "Check Health API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Health API": {
+      "main": [
+        [
+          {
+            "node": "Check Snapshot API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Snapshot API": {
+      "main": [
+        [
+          {
+            "node": "Aggreg Risultati e Checklist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggreg Risultati e Checklist": {
+      "main": [
+        [
+          {
+            "node": "Esito READY?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Esito READY?": {
+      "main": [
+        [
+          {
+            "node": "Telegram READY",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram NOT READY",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram READY": {
+      "main": [
+        [
+          {
+            "node": "Post-Hook: Log Finale",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram NOT READY": {
+      "main": [
+        [
+          {
+            "node": "Post-Hook: Log Finale",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post-Hook: Log Finale": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "linkedin"
+    },
+    {
+      "name": "deploy"
+    },
+    {
+      "name": "checklist"
+    }
+  ]
+}

@@ -1,0 +1,281 @@
+{
+  "name": "LinkedIn — Lead Pipeline Health",
+  "nodes": [
+    {
+      "id": "lp1",
+      "name": "Schedule Giornaliero 8:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * 1-5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "lp2",
+      "name": "Pre-Hook: Valida Contesto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const startedAt=new Date().toISOString();\nconst missingVars=[];\nif(!$env.TELEGRAM_BOT_TOKEN)missingVars.push(\"TELEGRAM_BOT_TOKEN\");\nif(!$env.TELEGRAM_CHAT_ID)missingVars.push(\"TELEGRAM_CHAT_ID\");\nif(!$env.DASHBOARD_API_KEY)missingVars.push(\"DASHBOARD_API_KEY\");\nif(missingVars.length>0)throw new Error(\"Pre-hook FAIL: \"+missingVars.join(\", \"));\nconst out={startedAt,contextOk:true,workflow:\"lead-pipeline-health\"};\nreturn[{json:out}];"
+      }
+    },
+    {
+      "id": "lp3",
+      "name": "Get Snapshot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        440,
+        300
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "GET",
+        "url": "http://localhost:3000/api/v1/automation/snapshot",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{$env.DASHBOARD_API_KEY}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      }
+    },
+    {
+      "id": "lp4",
+      "name": "Analizza Pipeline",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const ctx=$(\"Pre-Hook: Valida Contesto\").first().json;\nconst snap=$input.first().json;\nconst endedAt=new Date().toISOString();\nconst durationMs=new Date(endedAt)-new Date(ctx.startedAt);\nconst auto=snap.automation||{};\nconst stats=auto.stats||{};\nconst weekly=stats.weekly||{};\nconst pendingRatio=typeof auto.pendingRatio===\"number\"?auto.pendingRatio:null;\nconst pendingCount=auto.pendingCount||weekly.pending||null;\nconst invitesLast2d=weekly.invitesSentLast2d||null;\nconst invitesLast7d=weekly.invitesSent||0;\nconst acceptedLast7d=weekly.invitesAccepted||0;\nconst acceptanceRate7d=invitesLast7d>0?((acceptedLast7d/invitesLast7d)*100).toFixed(1):null;\nconst riskAction=auto.riskAction||\"UNKNOWN\";\nconst alerts=[];\nif(pendingCount!==null&&pendingCount>50){alerts.push(\"⚠️ Troppi pending: \"+pendingCount+\" > 50 → rallenta gli inviti\");}\nif(invitesLast2d!==null&&invitesLast2d===0){alerts.push(\"⚠️ Bot inattivo? 0 inviti negli ultimi 2 giorni\");}\nif(riskAction===\"STOP\"||riskAction===\"WARN\"){alerts.push(\"🛑 Risk action: \"+riskAction+\" → verifica account\");}\nconst hasAlerts=alerts.length>0;\nconst out={snap:auto,pendingRatio,pendingCount,invitesLast7d,acceptedLast7d,acceptanceRate7d,invitesLast2d,riskAction,alerts,hasAlerts,startedAt:ctx.startedAt,endedAt,durationMs};\nreturn[{json:out}];"
+      }
+    },
+    {
+      "id": "lp5",
+      "name": "Ha Alert?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "lp-alert",
+              "leftValue": "={{ $json.hasAlerts }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "lp6",
+      "name": "Costruisci Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        180
+      ],
+      "parameters": {
+        "jsCode": "const data=$input.first().json;\nconst now=new Date();\nconst dateStr=now.toLocaleDateString(\"it-IT\",{day:\"2-digit\",month:\"2-digit\",year:\"numeric\"});\nconst lines=[\"📈 *Lead Pipeline Health — \"+dateStr+\"*\",\"\"];\nlines.push(\"*Ultimi 7 giorni:*\");\nlines.push(\"  Inviti inviati: \"+(data.invitesLast7d||\"n/d\"));\nlines.push(\"  Inviti accettati: \"+(data.acceptedLast7d||\"n/d\")+\" (\"+( data.acceptanceRate7d||\"n/d\")+\"%)\");\nlines.push(\"  Pending totali: \"+(data.pendingCount||\"n/d\"));\nlines.push(\"  Risk action: \"+(data.riskAction||\"n/d\"));\nif(data.alerts.length>0){lines.push(\"\");lines.push(\"*🚨 Alert:*\");data.alerts.forEach(a=>lines.push(\"  \"+a));}\nlines.push(\"\");lines.push(\"_Durata: \"+data.durationMs+\"ms_\");\nconst out={report:lines.join(\"\n\"),hasAlerts:data.hasAlerts,alertCount:data.alerts.length,startedAt:data.startedAt,endedAt:data.endedAt,durationMs:data.durationMs};\nreturn[{json:out}];"
+      }
+    },
+    {
+      "id": "lp7",
+      "name": "Telegram Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1320,
+        180
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: $json.report, parse_mode: \"Markdown\" }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "lp8",
+      "name": "Silenzio OK",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        420
+      ],
+      "parameters": {
+        "jsCode": "const r=$input.first().json;\nconsole.log(\"[lead-pipeline-health] nessun alert, silenzioso\");\nreturn[{json:{silent:true,riskAction:r.riskAction,loggedAt:new Date().toISOString()}}];"
+      }
+    },
+    {
+      "id": "lp9",
+      "name": "Post-Hook: Log Finale",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const r=$input.first().json;\nconst log={workflow:\"lead-pipeline-health\",hasAlerts:r.hasAlerts,alertCount:r.alertCount,durationMs:r.durationMs,loggedAt:new Date().toISOString()};\nconsole.log(\"[POST-HOOK lead-pipeline-health]\",JSON.stringify(log));\nreturn[{json:log}];"
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Giornaliero 8:00": {
+      "main": [
+        [
+          {
+            "node": "Pre-Hook: Valida Contesto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pre-Hook: Valida Contesto": {
+      "main": [
+        [
+          {
+            "node": "Get Snapshot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Snapshot": {
+      "main": [
+        [
+          {
+            "node": "Analizza Pipeline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analizza Pipeline": {
+      "main": [
+        [
+          {
+            "node": "Ha Alert?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ha Alert?": {
+      "main": [
+        [
+          {
+            "node": "Costruisci Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Silenzio OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Costruisci Report": {
+      "main": [
+        [
+          {
+            "node": "Telegram Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Alert": {
+      "main": [
+        [
+          {
+            "node": "Post-Hook: Log Finale",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Silenzio OK": {
+      "main": [
+        [
+          {
+            "node": "Post-Hook: Log Finale",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "linkedin"
+    },
+    {
+      "name": "pipeline"
+    },
+    {
+      "name": "monitoring"
+    }
+  ]
+}

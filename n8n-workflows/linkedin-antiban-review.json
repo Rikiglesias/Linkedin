@@ -1,0 +1,293 @@
+{
+  "name": "LinkedIn — Antiban Review",
+  "nodes": [
+    {
+      "id": "ab1",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "path": "antiban-review",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "ab2",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        500
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "ab3",
+      "name": "Pre-Hook: Valida Contesto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        380
+      ],
+      "parameters": {
+        "jsCode": "const startedAt = new Date().toISOString();\nconst source = $input.first().json;\nconst files = source.files || source.body?.files || [];\nconst pr = source.pr || source.body?.pr || null;\nconst missingVars = [];\nif (!$env.TELEGRAM_BOT_TOKEN) missingVars.push(\"TELEGRAM_BOT_TOKEN\");\nif (!$env.TELEGRAM_CHAT_ID) missingVars.push(\"TELEGRAM_CHAT_ID\");\nif (missingVars.length > 0) throw new Error(\"Pre-hook FAIL: \" + missingVars.join(\", \"));\nconst out = { files, pr, startedAt, contextOk: true, workflow: \"linkedin-antiban-review\" };\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "ab4",
+      "name": "Analizza File Sensibili",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        380
+      ],
+      "parameters": {
+        "jsCode": "const ctx = $input.first().json;\nconst files = ctx.files || [];\nconst PAT = [\"browser\",\"playwright\",\"stealth\",\"fingerprint\",\"timing\",\"delay\",\"session\",\"humanDelay\",\"inputBlock\",\"clickLocator\",\"inviteWorker\",\"inboxWorker\",\"organicContent\",\"syncSearch\",\"syncList\",\"sendInvites\",\"sendMessages\"];\nconst QUESTIONS = [\"1. Cambia comportamento browser su LinkedIn?\",\"2. Cambia timing, delay o ordine delle azioni?\",\"3. Tocca fingerprint, stealth, cookie o sessione?\",\"4. Aggiunge azioni LinkedIn (click, navigazione, typing)?\",\"5. Cambia volumi, budget, cap o limiti?\"];\nconst flagged = files.filter(f => PAT.some(p => (f||\"\").toLowerCase().includes(p.toLowerCase())));\nconst verdict = flagged.length > 0 ? \"REVIEW\" : \"SAFE\";\nconst out = { files, flaggedFiles: flagged, hasSensitiveFiles: flagged.length > 0, verdict, checklist: flagged.length > 0 ? QUESTIONS : [], pr: ctx.pr, startedAt: ctx.startedAt, workflow: ctx.workflow };\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "ab5",
+      "name": "Esito SAFE?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        660,
+        380
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "ab-safe",
+              "leftValue": "={{ $json.verdict }}",
+              "rightValue": "SAFE",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "ab6",
+      "name": "Telegram SAFE",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        880,
+        200
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: \"✅ *Antiban Review: SAFE*\nFile analizzati: \" + $json.files.length + \"\nFile sensibili: nessuno\nNessuna revisione necessaria.\n_\" + $json.startedAt + \"_\", parse_mode: \"Markdown\" }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "ab7",
+      "name": "Costruisci Report REVIEW",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        540
+      ],
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst flagged = data.flaggedFiles || [];\nconst lines = [\"⚠️ *Antiban Review: REVIEW RICHIESTA*\",\"\",\"*File sensibili rilevati (\" + flagged.length + \"):*\"];\nflagged.forEach(f => lines.push(\"  • \"));\nlines.push(\"\");\nlines.push(\"*Checklist anti-ban obbligatoria:*\");\n(data.checklist || []).forEach(q => lines.push(\"  \" + q));\nlines.push(\"\");\nlines.push(\"*Azione richiesta:* esegui /antiban-review prima di procedere.\");\nlines.push(\"*Verdetto:* \" + data.verdict);\nif (data.pr) lines.push(\"*PR/Branch:* \" + data.pr);\nlines.push(\"_\" + data.startedAt + \"_\");\nconst out = { report: lines.join(\"\n\"), verdict: data.verdict, flaggedFiles: flagged, startedAt: data.startedAt };\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "ab8",
+      "name": "Telegram REVIEW",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1100,
+        540
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: $json.report, parse_mode: \"Markdown\" }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "ab9",
+      "name": "Post-Hook: Log Finale",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        380
+      ],
+      "parameters": {
+        "jsCode": "const prev = $input.first().json;\nconst log = { workflow:\"linkedin-antiban-review\", verdict: prev.verdict||\"SAFE\", flaggedFiles: prev.flaggedFiles||[], loggedAt: new Date().toISOString() };\nconsole.log(\"[POST-HOOK antiban-review]\", JSON.stringify(log));\nreturn [{ json: log }];"
+      }
+    },
+    {
+      "id": "ab10",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1540,
+        380
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Pre-Hook: Valida Contesto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Pre-Hook: Valida Contesto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pre-Hook: Valida Contesto": {
+      "main": [
+        [
+          {
+            "node": "Analizza File Sensibili",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analizza File Sensibili": {
+      "main": [
+        [
+          {
+            "node": "Esito SAFE?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Esito SAFE?": {
+      "main": [
+        [
+          {
+            "node": "Telegram SAFE",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Costruisci Report REVIEW",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram SAFE": {
+      "main": [
+        [
+          {
+            "node": "Post-Hook: Log Finale",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Costruisci Report REVIEW": {
+      "main": [
+        [
+          {
+            "node": "Telegram REVIEW",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram REVIEW": {
+      "main": [
+        [
+          {
+            "node": "Post-Hook: Log Finale",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post-Hook: Log Finale": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "linkedin"
+    },
+    {
+      "name": "antiban"
+    },
+    {
+      "name": "review"
+    }
+  ]
+}

@@ -1,0 +1,200 @@
+{
+  "name": "LinkedIn — Campaign Analyzer",
+  "nodes": [
+    {
+      "id": "ca1",
+      "name": "Schedule Lunedi 8:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * 1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ca2",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        400
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "ca3",
+      "name": "Pre-Hook: Valida Contesto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const startedAt=new Date().toISOString();\nconst missingVars=[];\nif(!$env.TELEGRAM_BOT_TOKEN)missingVars.push(\"TELEGRAM_BOT_TOKEN\");\nif(!$env.TELEGRAM_CHAT_ID)missingVars.push(\"TELEGRAM_CHAT_ID\");\nif(!$env.DB_CONNECTION_STRING&&!$env.POSTGRES_HOST)missingVars.push(\"DB_CONNECTION_STRING or POSTGRES_HOST\");\nif(missingVars.length>0)throw new Error(\"Pre-hook FAIL: \"+missingVars.join(\", \"));\nconst out={startedAt,contextOk:true,workflow:\"linkedin-campaign-analyzer\"};\nreturn[{json:out}];"
+      }
+    },
+    {
+      "id": "ca4",
+      "name": "Query Metriche Campagne",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        440,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "{{POSTGRES_CREDENTIAL_ID}}",
+          "name": "Postgres LinkedIn Bot"
+        }
+      },
+      "parameters": {
+        "query": "SELECT\n  COALESCE(l.campaign_id::text, 'default') AS campaign_id,\n  COUNT(*) FILTER (WHERE l.status = 'invited') AS invite_sent,\n  COUNT(*) FILTER (WHERE l.status = 'accepted') AS invite_accepted,\n  COUNT(*) FILTER (WHERE l.status = 'messaged') AS messaged,\n  COUNT(*) FILTER (WHERE l.status = 'replied') AS replied,\n  COUNT(*) FILTER (WHERE l.status = 'pending') AS pending_count,\n  COUNT(*) AS total_leads\nFROM leads l\nWHERE l.created_at >= NOW() - INTERVAL '30 days'\nGROUP BY l.campaign_id\nORDER BY total_leads DESC",
+        "operation": "executeQuery",
+        "options": {}
+      }
+    },
+    {
+      "id": "ca5",
+      "name": "Calcola Metriche e Genera Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const ctx=$(\"Pre-Hook: Valida Contesto\").first().json;\nconst rows=$input.all().map(item=>item.json);\nconst endedAt=new Date().toISOString();\nconst durationMs=new Date(endedAt)-new Date(ctx.startedAt);\nconst alerts=[];\nconst campaignLines=[];\nrows.forEach(row=>{\n  const sent=parseInt(row.invite_sent)||0;\n  const accepted=parseInt(row.invite_accepted)||0;\n  const messaged=parseInt(row.messaged)||0;\n  const replied=parseInt(row.replied)||0;\n  const pending=parseInt(row.pending_count)||0;\n  const total=parseInt(row.total_leads)||0;\n  const campaign=row.campaign_id||\"default\";\n  const acceptanceRate=sent>0?((accepted/sent)*100).toFixed(1):\"n/d\";\n  const replyRate=messaged>0?((replied/messaged)*100).toFixed(1):\"n/d\";\n  const pendingRatio=total>0?((pending/total)*100).toFixed(1):\"n/d\";\n  campaignLines.push(\"\n*Campagna: \"+campaign+\"*\");\n  campaignLines.push(\"  Inviti: \"+sent+\" → accettati \"+accepted+\" (\"+acceptanceRate+\"%)\");\n  campaignLines.push(\"  Messaggi: \"+messaged+\" → risposte \"+replied+\" (\"+replyRate+\"%)\");\n  campaignLines.push(\"  Pending: \"+pending+\" (\"+pendingRatio+\"%)\");\n  const pNum=parseFloat(pendingRatio);\n  const aNum=parseFloat(acceptanceRate);\n  if(!isNaN(pNum)&&pNum>30)alerts.push(\"⚠️ Campagna \"+campaign+\": pending \"+pendingRatio+\"% > 30% → RISCHIO ACCOUNT\");\n  if(!isNaN(aNum)&&aNum<20)alerts.push(\"🔍 Campagna \"+campaign+\": acceptance \"+acceptanceRate+\"% < 20% → review targeting\");\n});\nconst now=new Date();\nconst dateStr=now.toLocaleDateString(\"it-IT\",{day:\"2-digit\",month:\"2-digit\",year:\"numeric\"});\nconst lines=[\"📊 *Campaign Analyzer — \"+dateStr+\"*\"];\nif(rows.length===0){lines.push(\"\nNessuna campagna con dati negli ultimi 30 giorni.\");}else{lines.push(\"\n*Campagne analizzate: \"+rows.length+\"*\");campaignLines.forEach(l=>lines.push(l));}\nif(alerts.length>0){lines.push(\"\n*ALERT:*\");alerts.forEach(a=>lines.push(\"  \"+a));}\nlines.push(\"\n_Durata: \"+durationMs+\"ms_\");\nconst out={report:lines.join(\"\n\"),alertCount:alerts.length,campaigns:rows.length,startedAt:ctx.startedAt,endedAt,durationMs};\nreturn[{json:out}];"
+      }
+    },
+    {
+      "id": "ca6",
+      "name": "Telegram Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        880,
+        300
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: $json.report, parse_mode: \"Markdown\" }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "ca7",
+      "name": "Post-Hook: Log Finale",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const r=$input.first().json;\nconst log={workflow:\"linkedin-campaign-analyzer\",campaigns:r.campaigns,alertCount:r.alertCount,durationMs:r.durationMs,loggedAt:new Date().toISOString()};\nconsole.log(\"[POST-HOOK campaign-analyzer]\",JSON.stringify(log));\nreturn[{json:log}];"
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Lunedi 8:00": {
+      "main": [
+        [
+          {
+            "node": "Pre-Hook: Valida Contesto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Pre-Hook: Valida Contesto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pre-Hook: Valida Contesto": {
+      "main": [
+        [
+          {
+            "node": "Query Metriche Campagne",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Metriche Campagne": {
+      "main": [
+        [
+          {
+            "node": "Calcola Metriche e Genera Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcola Metriche e Genera Report": {
+      "main": [
+        [
+          {
+            "node": "Telegram Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Report": {
+      "main": [
+        [
+          {
+            "node": "Post-Hook: Log Finale",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "linkedin"
+    },
+    {
+      "name": "campaign"
+    },
+    {
+      "name": "analytics"
+    }
+  ]
+}

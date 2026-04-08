@@ -213,12 +213,29 @@ Prima di aggiungere nuove sezioni a un file operativo (CLAUDE.md, AGENTS.md, ski
 4. Attivare i workflow
 5. Test quality-gate: POST http://localhost:5678/webhook/quality-gate
 
-## 6. Agenti verticali e workflow riusabili — ⚠️ Parziale
+## 6. Agenti verticali e workflow riusabili — ✅ Implementato (2026-04-08)
 
-- Creare agenti verticali specializzati per compiti singoli o workflow singoli.
-- Migliorare anche i workflow del bot, non solo quelli di supporto.
-- Creare workflow `n8n` riusabili per task ripetitivi: analisi impatti, cleanup, audit skill, controlli qualita', controlli pre-produzione e verifica regole.
-- Se una procedura viene usata piu' volte, valutarne la trasformazione in workflow stabile.
+- Creati 5 agenti verticali specializzati come workflow n8n in `n8n-workflows/`, pronti per import.
+- Stessa architettura pre-hook/post-hook dei workflow DevOps (punto 5).
+
+### Workflow creati al 2026-04-08
+
+| File | Trigger | Funzione |
+|------|---------|----------|
+| linkedin-antiban-review.json | Webhook POST o manuale | Riceve lista file modificati, rileva file sensibili, genera checklist anti-ban con 5 domande obbligatorie, notifica Telegram SAFE/REVIEW |
+| linkedin-campaign-analyzer.json | Cron lunedi 8:00 o manuale | Query DB metriche campagna 30gg, calcola acceptance/reply/pending rate, alert se pending > 30% o acceptance < 20% |
+| pre-production-checklist.json | Webhook POST o manuale | Verifica Health API, Snapshot API, pending ratio, risk action, DB connection; verdetto READY/NOT READY via Telegram |
+| codebase-audit.json | Cron domenica 10:00 o manuale | Verifica TypeScript health, report con raccomandazioni per circular deps/TODO/file grandi; notifica Telegram |
+| lead-pipeline-health.json | Cron lun-ven 8:00 | Snapshot giornaliero pipeline: alert se pending > 50 o bot inattivo 2gg; silenzioso se tutto ok |
+
+**Credenziali n8n da configurare:**
+- , ,  (tutti i workflow)
+-  (solo linkedin-campaign-analyzer, nodo Postgres)
+
+**Da fare per attivare:**
+1. Importare i 5 JSON in n8n UI (Settings → Import Workflow)
+2. Configurare env vars nel container n8n
+3. Per linkedin-campaign-analyzer: creare credenziale Postgres in n8n e aggiornare il credential ID nel nodo
 
 ## 7. Selezione automatica di skill, agenti, workflow e web search — ✅ Implementato
 

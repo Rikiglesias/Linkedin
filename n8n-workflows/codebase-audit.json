@@ -1,0 +1,197 @@
+{
+  "name": "LinkedIn — Codebase Audit",
+  "nodes": [
+    {
+      "id": "au1",
+      "name": "Schedule Domenica 10:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 10 * * 0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "au2",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        400
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "au3",
+      "name": "Pre-Hook: Valida Contesto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const startedAt=new Date().toISOString();\nconst missingVars=[];\nif(!$env.TELEGRAM_BOT_TOKEN)missingVars.push(\"TELEGRAM_BOT_TOKEN\");\nif(!$env.TELEGRAM_CHAT_ID)missingVars.push(\"TELEGRAM_CHAT_ID\");\nif(missingVars.length>0)throw new Error(\"Pre-hook FAIL: \"+missingVars.join(\", \"));\nconst out={startedAt,contextOk:true,workflow:\"codebase-audit\"};\nreturn[{json:out}];"
+      }
+    },
+    {
+      "id": "au4",
+      "name": "Check TypeScript Errors",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        440,
+        300
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "GET",
+        "url": "http://localhost:3000/api/health",
+        "options": {
+          "timeout": 8000
+        }
+      }
+    },
+    {
+      "id": "au5",
+      "name": "Costruisci Report Audit",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const ctx=$(\"Pre-Hook: Valida Contesto\").first().json;\nconst tscData=$(\"Check TypeScript Errors\").first().json;\nconst endedAt=new Date().toISOString();\nconst durationMs=new Date(endedAt)-new Date(ctx.startedAt);\nconst now=new Date();\nconst dateStr=now.toLocaleDateString(\"it-IT\",{day:\"2-digit\",month:\"2-digit\",year:\"numeric\"});\nconst lines=[\"🔍 *Codebase Audit — \"+dateStr+\"*\",\"\"];\nlines.push(\"*Verifica TypeScript:* \"+(tscData.tscOk?\"✅ clean\":\"❌ errori rilevati\"));\nlines.push(\"*Nota:* Per analisi complete (circular deps, file grandi, TODO) attivare Execute Command nodes.\");\nlines.push(\"\");\nlines.push(\"*Raccomandazioni:*\");\nlines.push(\"  • Eseguire npx madge --circular src/ per circular deps\");\nlines.push(\"  • Eseguire grep -r \\\"TODO|FIXME\\\" src/ per tech debt\");\nlines.push(\"  • Verificare file > 300 righe con wc -l src/**/*.ts\");\nlines.push(\"\");\nlines.push(\"_Durata: \"+durationMs+\"ms | \"+endedAt+\"_\");\nconst out={report:lines.join(\"\n\"),startedAt:ctx.startedAt,endedAt,durationMs};\nreturn[{json:out}];"
+      }
+    },
+    {
+      "id": "au6",
+      "name": "Telegram Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        880,
+        300
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.TELEGRAM_CHAT_ID, text: $json.report, parse_mode: \"Markdown\" }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "au7",
+      "name": "Post-Hook: Log Finale",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const r=$input.first().json;\nconst log={workflow:\"codebase-audit\",durationMs:r.durationMs,loggedAt:new Date().toISOString()};\nconsole.log(\"[POST-HOOK codebase-audit]\",JSON.stringify(log));\nreturn[{json:log}];"
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Domenica 10:00": {
+      "main": [
+        [
+          {
+            "node": "Pre-Hook: Valida Contesto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Pre-Hook: Valida Contesto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pre-Hook: Valida Contesto": {
+      "main": [
+        [
+          {
+            "node": "Check TypeScript Errors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check TypeScript Errors": {
+      "main": [
+        [
+          {
+            "node": "Costruisci Report Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Costruisci Report Audit": {
+      "main": [
+        [
+          {
+            "node": "Telegram Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Report": {
+      "main": [
+        [
+          {
+            "node": "Post-Hook: Log Finale",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "linkedin"
+    },
+    {
+      "name": "audit"
+    },
+    {
+      "name": "codebase"
+    }
+  ]
+}
