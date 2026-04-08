@@ -35,6 +35,7 @@ import { ensureViewportDwell } from '../browser/humanBehavior';
 import { buildPersonalizedFollowUpMessage } from '../ai/messagePersonalizer';
 import { getUnusedPrebuiltMessage, markPrebuiltMessageUsed } from '../core/repositories/prebuiltMessages';
 import { logInfo, logWarn } from '../telemetry/logger';
+import { writeAuditEntry } from '../core/repositories/auditLog';
 import { normalizeNameForComparison, jaroWinklerSimilarity } from '../utils/text';
 import { bridgeDailyStat, bridgeLeadStatus } from '../cloud/cloudBridge';
 import { observePageContext, logObservation } from '../browser/observePageContext';
@@ -197,7 +198,10 @@ export async function processMessageJob(
         navigationDecision.navigationStrategy as NavigationStrategy | undefined,
     );
     if (!navigationResult.success) {
-        throw new RetryableWorkerError('Navigazione organica al profilo messaggio fallita', 'PROFILE_NAVIGATION_FAILED');
+        throw new RetryableWorkerError(
+            'Navigazione organica al profilo messaggio fallita',
+            'PROFILE_NAVIGATION_FAILED',
+        );
     }
     await humanDelay(context.session.page, 2500, 5000);
     await simulateHumanReading(context.session.page);
@@ -552,6 +556,12 @@ export async function processMessageJob(
         await incrementDailyStat(context.localDate, 'messages_sent');
     }
     await incrementListDailyStat(context.localDate, lead.list_name, 'messages_sent');
+    // Audit trail GDPR — non bloccante
+    void writeAuditEntry(isCampaignDriven ? 'follow_up_sent' : 'message_sent', lead.id, lead.linkedin_url, 'bot', {
+        list_name: lead.list_name,
+        message_length: message.length,
+        dry_run: context.dryRun,
+    });
     // Cloud sync non-bloccante
     bridgeLeadStatus(lead.linkedin_url, 'MESSAGED', { messaged_at: new Date().toISOString() });
     bridgeDailyStat(context.localDate, context.accountId, 'messages_sent');

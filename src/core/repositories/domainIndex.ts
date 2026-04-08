@@ -29,3 +29,4 @@ export * as jobsOps from './jobs';
 export * as campaignOps from './campaigns';
 export * as salesnavOps from './salesnavSync';
 export * as blacklistOps from './blacklist';
+export * as auditLogOps from './auditLog';

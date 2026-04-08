@@ -35,6 +35,7 @@ import { recordSent, inferHourBucket } from '../ml/abBandit';
 import { WorkerExecutionResult, workerResult } from './result';
 import { inferLeadSegment } from '../ml/segments';
 import { logInfo, logWarn } from '../telemetry/logger';
+import { writeAuditEntry } from '../core/repositories/auditLog';
 import { normalizeNameForComparison, jaroWinklerSimilarity } from '../utils/text';
 import { observePageContext, logObservation } from '../browser/observePageContext';
 import { aiDecide } from '../ai/aiDecisionEngine';
@@ -509,17 +510,11 @@ export async function processInviteJob(
     const activityBaseProb = 0.1 + Math.random() * 0.2; // 10-30% per lead
     const activityDecay = Math.max(0.05, activityBaseProb - (context.sessionActionCount ?? 0) * 0.02);
     if (Math.random() < activityDecay) {
-        await context.session.page
-            .evaluate(() => window.scrollBy({ top: 900, behavior: 'smooth' }))
-            .catch(() => null);
+        await context.session.page.evaluate(() => window.scrollBy({ top: 900, behavior: 'smooth' })).catch(() => null);
         await humanDelay(context.session.page, 900, 1800);
-        await context.session.page
-            .evaluate(() => window.scrollBy({ top: 500, behavior: 'smooth' }))
-            .catch(() => null);
+        await context.session.page.evaluate(() => window.scrollBy({ top: 500, behavior: 'smooth' })).catch(() => null);
         await simulateHumanReading(context.session.page);
-        await context.session.page
-            .evaluate(() => window.scrollBy({ top: -700, behavior: 'smooth' }))
-            .catch(() => null);
+        await context.session.page.evaluate(() => window.scrollBy({ top: -700, behavior: 'smooth' })).catch(() => null);
         await humanDelay(context.session.page, 500, 1500);
     }
 
@@ -747,6 +742,13 @@ export async function processInviteJob(
     }
     // invites_sent already incremented atomically by checkAndIncrementDailyLimit (pre-send)
     await incrementListDailyStat(context.localDate, lead.list_name, 'invites_sent');
+    // Audit trail GDPR — non bloccante
+    void writeAuditEntry('connection_request', lead.id, lead.linkedin_url, 'bot', {
+        list_name: lead.list_name,
+        variant: effectiveVariant,
+        with_note: inviteResult.sentWithNote,
+        dry_run: context.dryRun,
+    });
     // Cloud sync non-bloccante
     bridgeLeadStatus(lead.linkedin_url, 'INVITED', {
         invited_at: new Date().toISOString(),
