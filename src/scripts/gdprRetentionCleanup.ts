@@ -302,6 +302,53 @@ export async function runGdprRetentionCleanup(opts: {
     return report;
 }
 
+// ─── Right to Erasure ─────────────────────────────────────────────────────────
+
+/**
+ * Right to Erasure (GDPR Art. 17): anonimizza i dati personali di un lead specifico
+ * in TUTTE le tabelle, inclusi audit_log.
+ *
+ * Uso: npx ts-node src/scripts/gdprRetentionCleanup.ts --erasure <linkedin_url>
+ *
+ * Copre il caso edge: lead cancellato senza previa anonimizzazione (--delete-only),
+ * dove audit_log può conservare l'URL originale come lead_identifier.
+ */
+export async function runRightToErasure(linkedinUrl: string, dryRun = false): Promise<void> {
+    const db = await getDatabase();
+    const urlHash = sha256(linkedinUrl);
+    const anonIdentifier = `anon:${urlHash}`;
+
+    if (!dryRun) {
+        // 1. Anonimizza il lead se ancora presente
+        await db.run(
+            `UPDATE leads SET
+                first_name = '[ANONIMIZZATO]', last_name = '[ANONIMIZZATO]',
+                email = NULL, phone = NULL, about = NULL, experience = NULL,
+                business_email = NULL, linkedin_url = ?,
+                anonymized_at = datetime('now'), updated_at = datetime('now')
+             WHERE linkedin_url = ? AND anonymized_at IS NULL`,
+            [anonIdentifier, linkedinUrl],
+        );
+
+        // 2. Anonimizza lead_identifier in audit_log per questo lead (GDPR Right to Erasure)
+        await db.run(`UPDATE audit_log SET lead_identifier = ? WHERE lead_identifier = ?`, [
+            anonIdentifier,
+            linkedinUrl,
+        ]);
+
+        // 3. Scrivi evento erasure in audit_log
+        await db.run(
+            `INSERT INTO audit_log (action, lead_id, lead_identifier, performed_by, metadata_json)
+             VALUES ('erasure_requested', NULL, ?, 'gdpr_erasure', '{"source":"right_to_erasure"}')`,
+            [anonIdentifier],
+        );
+
+        console.log(`[ERASURE] Lead ${linkedinUrl.slice(0, 40)}... anonimizzato ovunque.`);
+    } else {
+        console.log(`[DRY-RUN] Erasure per: ${linkedinUrl.slice(0, 40)}...`);
+    }
+}
+
 // ─── CLI entry-point ──────────────────────────────────────────────────────────
 
 if (require.main === module) {
@@ -309,27 +356,40 @@ if (require.main === module) {
     const dryRun = args.includes('--dry-run');
     const anonymizeOnly = args.includes('--anonymize-only');
     const deleteOnly = args.includes('--delete-only');
+    const erasureIdx = args.indexOf('--erasure');
 
-    console.log('=== GDPR Retention Cleanup ===');
-    if (dryRun) console.log('[DRY-RUN] Nessuna modifica verrà applicata.');
+    if (erasureIdx !== -1 && args[erasureIdx + 1]) {
+        const url = args[erasureIdx + 1];
+        console.log(`=== GDPR Right to Erasure: ${url} ===`);
+        if (dryRun) console.log('[DRY-RUN] Nessuna modifica verrà applicata.');
+        runRightToErasure(url, dryRun)
+            .then(() => console.log('Erasure completato.'))
+            .catch((err) => {
+                console.error('Errore:', err);
+                process.exit(1);
+            });
+    } else {
+        console.log('=== GDPR Retention Cleanup ===');
+        if (dryRun) console.log('[DRY-RUN] Nessuna modifica verrà applicata.');
 
-    runGdprRetentionCleanup({ dryRun, anonymizeOnly, deleteOnly })
-        .then((report) => {
-            console.log('\n=== Report ===');
-            console.log(`Lead scansionati:    ${report.scannedTotal}`);
-            console.log(`Candidati anonymize: ${report.candidatesAnonymize}`);
-            console.log(`Candidati delete:    ${report.candidatesDelete}`);
-            console.log(`Anonimizzati:        ${report.anonymized}`);
-            console.log(`Cancellati:          ${report.deleted}`);
-            console.log(`Saltati:             ${report.skipped}`);
-            if (report.errors.length > 0) {
-                console.log(`\nErrori (${report.errors.length}):`);
-                report.errors.forEach((e) => console.log(`  - ${e}`));
-            }
-            console.log('\nFatto.');
-        })
-        .catch((err) => {
-            console.error('Errore fatale:', err);
-            process.exit(1);
-        });
+        runGdprRetentionCleanup({ dryRun, anonymizeOnly, deleteOnly })
+            .then((report) => {
+                console.log('\n=== Report ===');
+                console.log(`Lead scansionati:    ${report.scannedTotal}`);
+                console.log(`Candidati anonymize: ${report.candidatesAnonymize}`);
+                console.log(`Candidati delete:    ${report.candidatesDelete}`);
+                console.log(`Anonimizzati:        ${report.anonymized}`);
+                console.log(`Cancellati:          ${report.deleted}`);
+                console.log(`Saltati:             ${report.skipped}`);
+                if (report.errors.length > 0) {
+                    console.log(`\nErrori (${report.errors.length}):`);
+                    report.errors.forEach((e) => console.log(`  - ${e}`));
+                }
+                console.log('\nFatto.');
+            })
+            .catch((err) => {
+                console.error('Errore fatale:', err);
+                process.exit(1);
+            });
+    } // chiude else del blocco erasure
 }
