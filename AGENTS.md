@@ -85,6 +85,34 @@ Questa mappatura non deve restare vaga: per ogni task bisogna poter distinguere 
 - Se una skill o un workflow viene usato spesso ma richiede sempre gli stessi controlli a mano, va candidato a hook esplicito.
 - Gli hook devono ridurre errori e omissioni, non aumentare la complessita' senza valore.
 
+### Hook attivi (implementati al 2026-04-04)
+
+| Evento | Tipo | Trigger | Azione | File log |
+|--------|------|---------|--------|----------|
+| `PreToolUse` | bloccante (exit 2) | Edit/Write su file sensibili LinkedIn | Avvisa e blocca: richiede `/antiban-review` prima di procedere | `memory/antiban-hook-log.txt` |
+| `PostToolUse` | async | Bash con `npm run`, `npx tsc`, `npx madge`, `vitest` | Loga i comandi di qualita' eseguiti | `memory/quality-hook-log.txt` |
+| `Stop` | async | Fine sessione | Suono notifica + log sessione con working dir | `memory/session-log.txt` |
+| `TeammateIdle` | async | Agent team idle | Log teams | `memory/teams-log.txt` |
+| `TaskCreated` | async | Agent team task creato | Log teams | `memory/teams-log.txt` |
+| `TaskCompleted` | async | Agent team task completato | Log teams | `memory/teams-log.txt` |
+
+### Pattern file sensibili LinkedIn (PreToolUse matcher)
+
+I file che triggerano il pre-hook antiban contengono nel path o nel nome: `browser`, `playwright`, `stealth`, `fingerprint`, `timing`, `delay`, `session`, `humanDelay`, `inputBlock`, `clickLocator`, `inviteWorker`, `inboxWorker`, `organicContent`, `syncSearch`, `syncList`, `sendInvites`, `sendMessages`.
+
+### Pre/post-conditions nelle skill (implementate al 2026-04-04)
+
+| Skill | Pre-conditions | Post-conditions |
+|-------|---------------|-----------------|
+| `antiban-review` | Quando invocare obbligatoriamente (file sensibili, azioni LinkedIn, volumi) | Verdetto → SICURO/ATTENZIONE/BLOCCO con azione successiva |
+| `loop-codex` | L1 pulito prima del loop, task con criteri misurabili, scope no-antiban | Auto-commit se DONE, update ENGINEERING_WORKLOG |
+| `context-handoff` | Git status pulito o documentato, memoria aggiornata, active.md coerente | SESSION_HANDOFF.md committato, active.md aggiornato |
+
+### Hook n8n (da implementare, non ancora attivo)
+
+- Pre-hook ingresso: validare context minimo (account attivo, proxy ok, no quarantena) prima di eseguire workflow LinkedIn
+- Post-hook uscita: verificare stato finale, loggare su Telegram se WARN/CRITICAL, aggiornare `automation_commands`
+
 ## Workflow obbligatorio per questo progetto
 
 Classificare il task prima di partire:

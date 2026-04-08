@@ -1,3 +1,12 @@
+const cleanInheritedProxyEnv = {
+    HTTP_PROXY: "",
+    HTTPS_PROXY: "",
+    ALL_PROXY: "",
+    GIT_HTTP_PROXY: "",
+    GIT_HTTPS_PROXY: "",
+    NO_PROXY: "localhost,127.0.0.1,::1",
+};
+
 module.exports = {
     apps: [
         // ── LinkedIn Bot — automazione (run-loop) ──────────────────────────
@@ -20,8 +29,16 @@ module.exports = {
             log_date_format: "YYYY-MM-DD HH:mm:ss Z",
             log_type: "json",
             max_size: "50M",
-            env: { NODE_ENV: "development", FORCE_COLOR: "1" },
-            env_production: { NODE_ENV: "production", FORCE_COLOR: "0" }
+            env: {
+                NODE_ENV: "development",
+                FORCE_COLOR: "1",
+                ...cleanInheritedProxyEnv,
+            },
+            env_production: {
+                NODE_ENV: "production",
+                FORCE_COLOR: "0",
+                ...cleanInheritedProxyEnv,
+            }
         },
 
         // ── LinkedIn Bot — server HTTP/dashboard (porta 3000) ─────────────
@@ -44,8 +61,16 @@ module.exports = {
             error_file: "./logs/api-error.log",
             merge_logs: true,
             log_date_format: "YYYY-MM-DD HH:mm:ss Z",
-            env: { NODE_ENV: "development", FORCE_COLOR: "1" },
-            env_production: { NODE_ENV: "production", FORCE_COLOR: "0" }
+            env: {
+                NODE_ENV: "development",
+                FORCE_COLOR: "1",
+                ...cleanInheritedProxyEnv,
+            },
+            env_production: {
+                NODE_ENV: "production",
+                FORCE_COLOR: "0",
+                ...cleanInheritedProxyEnv,
+            }
         },
 
         // ── n8n — workflow automation ─────────────────────────────────────
@@ -71,7 +96,8 @@ module.exports = {
             env: {
                 NODE_ENV: "production",
                 N8N_PORT: "5678",
-                N8N_LOG_LEVEL: "warn"
+                N8N_LOG_LEVEL: "warn",
+                ...cleanInheritedProxyEnv,
             }
         }
     ]

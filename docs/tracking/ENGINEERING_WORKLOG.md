@@ -2,6 +2,33 @@
 
 Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o verificati nel repo.
 
+## 2026-04-04 — GDPR Retention Policy & Audit Trail (punto 20-bis)
+
+### Obiettivo
+
+Implementare retention policy GDPR e audit trail per i dati personali dei lead LinkedIn.
+
+### Interventi completati
+
+- Migrazione `059_gdpr_retention.sql`: aggiunte colonne `last_activity_at`, `anonymized_at`, `retention_expires_at` su `leads`; creata tabella `audit_log` con indici appropriati
+- Script `src/scripts/gdprRetentionCleanup.ts`: job manuale/schedulabile che anonimizza (180gg) e cancella (365gg) lead inattivi; flag `--dry-run`, `--anonymize-only`, `--delete-only`; backfill automatico di `last_activity_at`
+- Repository `src/core/repositories/auditLog.ts`: `writeAuditEntry`, `getAuditEntriesForLead`, `getAuditEntriesForLeadId`, `getAuditSummary`
+- `domainIndex.ts`: aggiunto namespace `auditLogOps`
+- `messageWorker.ts` e `inviteWorker.ts`: aggiunto `void writeAuditEntry(...)` non-bloccante dopo ogni messaggio/invito inviato
+- `docs/GDPR_POLICY.md`: documentazione dati raccolti, retention, diritto all'oblio, query SQL
+- `docs/AI_OPERATING_MODEL.md`: aggiornato punto 20-bis — status da ❌/⚠️ a ✅
+
+### Verifica eseguita
+
+- `npx tsc --noEmit` → nessun errore
+- `npx madge --circular src/` → 0 circular deps
+
+### Esito
+
+Verde. La retention policy non gira automaticamente — va invocata manualmente o schedulata. L'audit trail è attivo sui worker principali (messaggio, invito). Il tipo di dato rimane SQLite-compatibile (DATETIME, TEXT, INTEGER).
+
+---
+
 ## 2026-04-01 — Human-click hardening sui workflow core
 
 ### Obiettivo

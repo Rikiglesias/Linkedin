@@ -31,9 +31,7 @@ BLOCCO B — Sistema di controllo (dipende da A):
   [11] Contesto diretto/indiretto ✅ → dipende da [13]
 
 BLOCCO C — Enforcement automatico (dipende da B):
-  [8-bis] Hook system ⚠️ → dipende da [13], [15]; sblocca [5], [6], [21]
-    → PRIMA: audit skill/MCP esistenti (serve [8] già fatto ✅)
-    → POI: implementare hook per le priorità identificate
+  [8-bis] Hook system ✅ (2026-04-04) → PreToolUse antiban, PostToolUse quality log, Pre/Post-conditions su antiban-review/loop-codex/context-handoff; n8n hook documentati ma non ancora attivi
 
 BLOCCO D — Orchestrazione (dipende da C):
   [5] n8n orchestratore ⚠️ → dipende da [8-bis]; n8n già deployato, mancano hook e workflow riusabili
@@ -54,7 +52,7 @@ BLOCCO F — Long-term (dipende da tutto):
 
 | Priorità | Punto | Blocco | Prerequisiti | Sblocca |
 |----------|-------|--------|-------------|---------|
-| 1 | **8-bis Hook system** | C | Nessuno (8 già fatto) | 5, 6, 21 |
+| 1 | **8-bis Hook system** ✅ | C | Nessuno (8 già fatto) | 5, 6, 21 |
 | 2 | **5 n8n orchestratore** | D | 8-bis | 6 |
 | 3 | **6 Agenti verticali** | D | 5 | 21 parziale |
 | 4 | **3 Codex migration** | E | Codex login (utente) | 2 |
@@ -88,6 +86,7 @@ Prima di aggiungere nuove sezioni a un file operativo (CLAUDE.md, AGENTS.md, ski
 
 ## 1. Strumenti personali e infrastruttura locale — ⚠️ Parziale
 
+- **Whisper Dictation creato** (2026-04-04): `C:\Users\albie\tools\whisper-dictation\` — hotkey F9 start/stop, testo in clipboard, notifica Windows. Manca test con API key reale. Quando testato e funzionante → aggiornare status a ✅.
 - Creare un programma locale di dettatura basato su Whisper via API OpenAI per sostituire `Win+H`, con maggiore precisione e controllo del testo.
 - Analizzare e risolvere i problemi attuali del computer per eliminare colli di bottiglia tecnici.
 - Tenere una procedura sicura per scollegare il PC e l'alimentatore: spegnimento OS, interruttore su `O`, rimozione della spina prendendo la testa e non il cavo.
@@ -224,7 +223,7 @@ Prima di aggiungere nuove sezioni a un file operativo (CLAUDE.md, AGENTS.md, ski
   - output atteso
   - hook o verifiche collegate
 
-## 8-bis. Pre-hook e post-hook per skill, MCP, regole e workflow — ⚠️ Parziale
+## 8-bis. Pre-hook e post-hook per skill, MCP, regole e workflow — ✅ Implementato (2026-04-04)
 
 - Progettare un sistema di `pre-hook` e `post-hook` per attivare in modo coerente skill, regole, MCP, workflow e controlli.
 - Ogni skill deve dichiarare almeno:
@@ -239,6 +238,17 @@ Prima di aggiungere nuove sezioni a un file operativo (CLAUDE.md, AGENTS.md, ski
 - Anche i workflow `n8n` devono prevedere hook in ingresso e in uscita, cosi' da non partire con contesto incompleto e da lasciare stato e verifiche finali coerenti.
 - Fare un audit completo di tutte le skill, di tutti gli MCP, delle regole e dei workflow esistenti per definire hook mancanti, hook ridondanti e priorita' di implementazione.
 - L'obiettivo non e' solo "attivare piu' cose", ma attivarle nel momento corretto e nell'ordine corretto per ridurre gli errori.
+
+### Implementato al 2026-04-04
+
+- **settings.json `PreToolUse`**: hook bloccante (exit 2) su Edit/Write per file con pattern sensibili LinkedIn (browser, stealth, timing, ecc.) → richiede `/antiban-review` prima di procedere. Log in `memory/antiban-hook-log.txt`.
+- **settings.json `PostToolUse`**: hook asincrono su Bash con comandi di qualita' (`npm run`, `npx tsc`, `npx madge`, `vitest`) → log in `memory/quality-hook-log.txt`.
+- **settings.json `Stop`**: arricchito con working dir nel log → `memory/session-log.txt`.
+- **Skill `antiban-review`**: aggiunta sezione `Pre-conditions` (trigger obbligatori) e `Post-conditions` (azione per ogni verdetto).
+- **Skill `loop-codex`**: aggiunta sezione `Pre-conditions` (L1 pulito, task misurabile, scope) e `Post-conditions` (auto-commit, worklog).
+- **Skill `context-handoff`**: aggiunta sezione `Pre-conditions` (git status, memoria aggiornata, active.md) e `Post-conditions` (SESSION_HANDOFF.md committato).
+- **AGENTS.md "Hook orchestration"**: aggiunta mappa tabellare degli hook attivi, pattern file sensibili, pre/post-conditions skill, hook n8n documentati come prossimi.
+- **Mancante (non ancora attivo)**: hook n8n in ingresso/uscita (validazione contesto, log Telegram, aggiornamento `automation_commands`).
 
 ## 9. Best practice obbligatorie da ingegnere software — ✅ Implementato
 
@@ -402,11 +412,16 @@ Nessun automatismo strutturale o invasivo deve partire senza conferma esplicita.
   - Periodo di conservazione definito — i dati non vanno tenuti a tempo indeterminato
   - Nessun trasferimento a terzi senza garanzie adeguate
   - Risposta a richieste di cancellazione (diritto all'oblio)
-- **Da implementare**:
-  - Policy di retention nel DB: definire dopo quanti giorni i lead inattivi vengono anonimizzati/cancellati
-  - Log di audit per sapere chi ha ricevuto messaggi e quando
-  - Documentazione del trattamento (registro ex art. 30 GDPR) se si supera una certa scala
-- **Status**: nessuna policy di retention attiva ❌; log messaggi nel DB ✅; audit trail ⚠️
+- **Implementato** (2026-04-04):
+  - Policy di retention: `src/db/migrations/059_gdpr_retention.sql` — colonne `last_activity_at`, `anonymized_at`, `retention_expires_at`
+  - Script retention manuale: `src/scripts/gdprRetentionCleanup.ts` — 180gg anonimizza, 365gg cancella; flag `--dry-run`
+  - Audit trail: tabella `audit_log`; `writeAuditEntry` nei worker `messageWorker` e `inviteWorker`
+  - Documentazione: `docs/GDPR_POLICY.md`
+- **Da implementare ancora**:
+  - Scheduling automatico retention cleanup
+  - Registro trattamenti ex art. 30 (se scala supera uso personale)
+  - Pseudonimizzazione prompt Anthropic API
+- **Status**: policy di retention ✅; log messaggi nel DB ✅; audit trail ✅; doc GDPR ✅
 
 ### LinkedIn Terms of Service
 
