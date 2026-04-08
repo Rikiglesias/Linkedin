@@ -15,7 +15,10 @@
 
 import { readFileSync, readdirSync } from 'fs';
 import { join, relative } from 'path';
-import { execSync } from 'child_process';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 const ROOT = join(__dirname, '../../');
 const SRC = join(ROOT, 'src');
@@ -77,16 +80,15 @@ export async function runCodebaseAudit(): Promise<AuditResult> {
     filesOverThreshold.sort((a, b) => b.lines - a.lines);
 
     // 2. Circular deps via madge CLI
+    // madge --circular --json outputs string[][] (array of cycles, each cycle is array of filenames)
     let circularDeps: string[][] = [];
     try {
-        const result = execSync(`npx madge --circular --json ${SRC}`, {
+        const { stdout } = await execAsync(`npx madge --circular --json "${SRC}"`, {
             cwd: ROOT,
             timeout: 30000,
-            encoding: 'utf8',
         });
-        const parsed = JSON.parse(result.trim() || '{}');
-        // madge --json outputs { "file": ["dep1", "dep2"] } for circular deps
-        circularDeps = Object.entries(parsed).map(([k, v]) => [k, ...(v as string[])]);
+        const parsed = JSON.parse(stdout.trim() || '[]');
+        circularDeps = Array.isArray(parsed) ? parsed : [];
     } catch {
         circularDeps = [];
     }

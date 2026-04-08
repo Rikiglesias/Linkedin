@@ -97,8 +97,8 @@
 - **Dato empirico 2026**: i modelli migliori seguono meno del 30% delle istruzioni perfettamente in scenari agentici quando il numero di istruzioni cresce. Il compliance cala linearmente con il numero di regole. **Implicazione diretta**: CLAUDE.md corto non è una preferenza estetica — è una necessità tecnica per compliance >30%. Ogni regola aggiunta ne fa dimenticare un'altra.
 - **Hook con deny permanente** (best practice 2026): un hook che restituisce `permissionDecision: "deny"` blocca l'azione anche in modalità `--dangerously-skip-permissions` e `bypassPermissions`. Le regole critiche devono usare questo pattern — non il semplice exit 2 che può essere aggirato.
 
-**Implementato**: hook antiban ✅, hook qualità ✅, pre/post-conditions skill ✅.
-**Mancante**: eval/misura di quali regole vengono dimenticate ❌; audit automatico conformità ❌; `permissionDecision: "deny"` per regole critiche ❌.
+**Implementato**: hook antiban ✅, hook qualità ✅, pre/post-conditions skill ✅, `permissionDecision: "deny"` hook antiban ✅.
+**Mancante**: eval/misura di quali regole vengono dimenticate ❌; audit automatico conformità ❌.
 
 ---
 
@@ -133,7 +133,7 @@
   - `loop-codex`: pre (L1 pulito, task misurabile, scope definito), post (auto-commit se DONE, worklog)
   - `context-handoff`: pre (git status, memoria aggiornata, active.md), post (SESSION_HANDOFF.md committato)
 - **Gap**: hook in ingresso/uscita per workflow n8n (richiedono n8n attivo) ⚠️
-- **permissionDecision deny** (best practice 2026): convertire i hook critici da `exit 2` a `permissionDecision: "deny"` nel JSON — blocca anche `--dangerously-skip-permissions`. Candidati: hook antiban su file sensibili LinkedIn ❌ da implementare.
+- **permissionDecision deny** (best practice 2026): hook antiban convertito da `exit 2` a `permissionDecision: "deny"` + `exit 0` — blocca anche `--dangerously-skip-permissions` ✅.
 - **Thread-based enforcement** (best practice 2026): separare la governance policy (quando serve review) dall'enforcement meccanico (hook che blocca). Il file regole dice il "quando", l'hook esegue il "blocca" — senza passare per il ragionamento dell'AI.
 
 ---

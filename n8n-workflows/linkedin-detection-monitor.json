@@ -1,82 +1,6 @@
 {
-  "name": "LinkedIn Detection Monitor — Weekly Intelligence",
+  "name": "LinkedIn — Weekly Safety Reminder",
   "nodes": [
-    {
-      "parameters": {
-        "jsCode": "// Pre-hook: verifica env vars e filtra weekend\nconst now = new Date();\nconst dayOfWeek = now.getDay();\nconst startedAt = now.toISOString();\n\nconst missingVars = [];\nif (!$env.TELEGRAM_BOT_TOKEN) missingVars.push('TELEGRAM_BOT_TOKEN');\nif (!$env.TELEGRAM_CHAT_ID) missingVars.push('TELEGRAM_CHAT_ID');\nif (missingVars.length > 0) {\n  throw new Error('Pre-hook FAIL — env vars mancanti: ' + missingVars.join(', '));\n}\n\n// Questo workflow gira ogni lunedì — se triggerato manualmente in weekend va bene\nreturn [{ json: { startedAt, workflow: 'linkedin-detection-monitor', ok: true } }];"
-      },
-      "id": "pre-hook",
-      "name": "Pre-hook: valida env",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [240, 300]
-    },
-    {
-      "parameters": {
-        "url": "https://www.google.com/search?q=LinkedIn+bot+detection+anti-ban+2026+new&tbm=nws",
-        "options": {
-          "timeout": 15000
-        }
-      },
-      "id": "search-linkedin-detection",
-      "name": "Cerca: LinkedIn detection news 2026",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [460, 200]
-    },
-    {
-      "parameters": {
-        "url": "https://getsales.io/blog/linkedin-automation-safety-guide-2026/",
-        "options": {
-          "timeout": 15000
-        }
-      },
-      "id": "fetch-safety-guide",
-      "name": "Fetch: Safety guide aggiornata",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [460, 400]
-    },
-    {
-      "parameters": {
-        "jsCode": "// Analizza le risposte e costruisce il report di intelligence\nconst startedAt = $('Pre-hook: valida env').first().json.startedAt;\nconst searchData = $('Cerca: LinkedIn detection news 2026').first().json;\nconst safetyData = $('Fetch: Safety guide aggiornata').first().json;\n\n// Estrai snippets rilevanti (testo grezzo semplificato)\nconst now = new Date().toISOString();\n\nconst report = {\n  checkDate: now.split('T')[0],\n  sources_checked: 2,\n  topics_monitored: [\n    'LinkedIn bot detection algorithms',\n    'Behavioral biometrics detection',\n    'Safe action limits 2026',\n    'IP/VPN detection updates',\n    'New TOS violations'\n  ],\n  action_required: 'Rivedere manualmente le fonti e aggiornare /antiban-review se ci sono novità',\n  reminder: 'Limite 80 azioni/giorno | IP residenziale | Delay variabile | Sessioni max 45min',\n  links: [\n    'https://getsales.io/blog/linkedin-automation-safety-guide-2026/',\n    'https://growleads.io/blog/linkedin-automation-ban-risk-2026-safe-use/',\n    'https://www.dux-soup.com/blog/linkedin-automation-safety-guide-how-to-avoid-account-restrictions-in-2026'\n  ]\n};\n\nreturn [{ json: report }];"
-      },
-      "id": "build-report",
-      "name": "Costruisci report intelligence",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [680, 300]
-    },
-    {
-      "parameters": {
-        "chatId": "={{$env.TELEGRAM_CHAT_ID}}",
-        "text": "=🔍 *LinkedIn Detection Monitor — {{ $json.checkDate }}*\n\n*Fonti verificate:* {{ $json.sources_checked }}\n*Topic monitorati:*\n• Behavioral biometrics detection\n• Safe action limits\n• IP/VPN detection updates\n• TOS violations nuovi\n\n*Reminder limiti sicuri:*\n📊 Max 80 azioni/giorno\n🌐 Solo IP residenziali (Oxylabs)\n⏱️ Delay variabile (no pattern fisso)\n⏳ Sessioni max 45 min\n\n*Azione richiesta:* Rivedere le fonti se ci sono aggiornamenti recenti e aggiornare `/antiban-review` skill se necessario.\n\n*Fonti:*\n• [GetSales Safety Guide 2026](https://getsales.io/blog/linkedin-automation-safety-guide-2026/)\n• [GrowLeads Ban Risk Analysis](https://growleads.io/blog/linkedin-automation-ban-risk-2026-safe-use/)\n• [Dux-Soup Safety Guide](https://www.dux-soup.com/blog/linkedin-automation-safety-guide-how-to-avoid-account-restrictions-in-2026)",
-        "additionalFields": {
-          "parse_mode": "Markdown"
-        }
-      },
-      "id": "telegram-alert",
-      "name": "Telegram: invia report",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [900, 300],
-      "credentials": {
-        "telegramApi": {
-          "id": "telegram-bot",
-          "name": "Telegram Bot"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "// Post-hook: logga completamento\nconst ts = new Date().toISOString();\nconst startedAt = $('Pre-hook: valida env').first().json.startedAt;\nconst durationMs = new Date(ts) - new Date(startedAt);\nconsole.log(`[${ts}] linkedin-detection-monitor completato in ${durationMs}ms`);\nreturn [{ json: { completedAt: ts, durationMs, status: 'ok' } }];"
-      },
-      "id": "post-hook",
-      "name": "Post-hook: log completamento",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1120, 300]
-    },
     {
       "parameters": {
         "rule": {
@@ -93,6 +17,56 @@
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.1,
       "position": [20, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pre-hook: verifica env vars\nconst startedAt = new Date().toISOString();\n\nconst missingVars = [];\nif (!$env.TELEGRAM_BOT_TOKEN) missingVars.push('TELEGRAM_BOT_TOKEN');\nif (!$env.TELEGRAM_CHAT_ID) missingVars.push('TELEGRAM_CHAT_ID');\nif (missingVars.length > 0) {\n  throw new Error('Pre-hook FAIL — env vars mancanti: ' + missingVars.join(', '));\n}\n\nreturn [{ json: { startedAt, workflow: 'linkedin-safety-reminder', ok: true } }];"
+      },
+      "id": "pre-hook",
+      "name": "Pre-hook: valida env",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Costruisce il promemoria settimanale anti-ban.\n// Nota: questo workflow NON fa web scraping (Google blocca i bot).\n// Per aggiornamenti manuali alle linee guida, aggiornare la skill /antiban-review.\nconst now = new Date();\nconst checkDate = now.toISOString().split('T')[0];\nconst weekNumber = Math.ceil((now.getDate() + new Date(now.getFullYear(), now.getMonth(), 1).getDay()) / 7);\n\nreturn [{\n  json: {\n    checkDate,\n    weekNumber,\n    reminder: 'Max 80 azioni/giorno | IP residenziale | Delay variabile | Sessioni max 45min',\n    links: [\n      'https://getsales.io/blog/linkedin-automation-safety-guide-2026/',\n      'https://growleads.io/blog/linkedin-automation-ban-risk-2026-safe-use/',\n      'https://www.dux-soup.com/blog/linkedin-automation-safety-guide-how-to-avoid-account-restrictions-in-2026'\n    ]\n  }\n}];"
+      },
+      "id": "build-reminder",
+      "name": "Costruisci promemoria",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$env.TELEGRAM_CHAT_ID}}",
+        "text": "=🛡️ *LinkedIn Safety Reminder — {{ $json.checkDate }}*\n\n*Limiti sicuri (aggiornati 2026):*\n📊 Max 80 azioni/giorno\n🌐 Solo IP residenziali (Oxylabs)\n⏱️ Delay variabile — no pattern fisso\n⏳ Sessioni max 45 min\n🤖 Behavioral biometrics: evitare ritmi matematicamente precisi\n\n*Da controllare manualmente questa settimana:*\n• Novità su detection LinkedIn → cercare su Google/Twitter\n• Se ci sono cambiamenti → aggiornare `/antiban-review` skill\n\n*Fonti di riferimento:*\n• [GetSales Safety Guide](https://getsales.io/blog/linkedin-automation-safety-guide-2026/)\n• [GrowLeads Ban Risk Analysis](https://growleads.io/blog/linkedin-automation-ban-risk-2026-safe-use/)\n• [Dux-Soup Safety Guide](https://www.dux-soup.com/blog/linkedin-automation-safety-guide-how-to-avoid-account-restrictions-in-2026)",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "telegram-alert",
+      "name": "Telegram: invia promemoria",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [680, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Post-hook: logga completamento\nconst ts = new Date().toISOString();\nconst startedAt = $('Pre-hook: valida env').first().json.startedAt;\nconst durationMs = new Date(ts).getTime() - new Date(startedAt).getTime();\nconsole.log(`[${ts}] linkedin-safety-reminder completato in ${durationMs}ms`);\nreturn [{ json: { completedAt: ts, durationMs, status: 'ok' } }];"
+      },
+      "id": "post-hook",
+      "name": "Post-hook: log completamento",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
     }
   ],
   "connections": {
@@ -103,28 +77,15 @@
     },
     "Pre-hook: valida env": {
       "main": [
-        [
-          { "node": "Cerca: LinkedIn detection news 2026", "type": "main", "index": 0 },
-          { "node": "Fetch: Safety guide aggiornata", "type": "main", "index": 0 }
-        ]
+        [{ "node": "Costruisci promemoria", "type": "main", "index": 0 }]
       ]
     },
-    "Cerca: LinkedIn detection news 2026": {
+    "Costruisci promemoria": {
       "main": [
-        [{ "node": "Costruisci report intelligence", "type": "main", "index": 0 }]
+        [{ "node": "Telegram: invia promemoria", "type": "main", "index": 0 }]
       ]
     },
-    "Fetch: Safety guide aggiornata": {
-      "main": [
-        [{ "node": "Costruisci report intelligence", "type": "main", "index": 0 }]
-      ]
-    },
-    "Costruisci report intelligence": {
-      "main": [
-        [{ "node": "Telegram: invia report", "type": "main", "index": 0 }]
-      ]
-    },
-    "Telegram: invia report": {
+    "Telegram: invia promemoria": {
       "main": [
         [{ "node": "Post-hook: log completamento", "type": "main", "index": 0 }]
       ]
@@ -133,5 +94,5 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "tags": ["linkedin", "security", "monitoring", "weekly"]
+  "tags": ["linkedin", "security", "weekly"]
 }

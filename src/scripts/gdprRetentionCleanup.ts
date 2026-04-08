@@ -131,7 +131,7 @@ async function anonymizeLead(
             `UPDATE leads SET
                 first_name     = ?,
                 last_name      = ?,
-                account_name   = COALESCE(account_name, ''),
+                account_name   = ?,
                 email          = NULL,
                 phone          = NULL,
                 about          = NULL,
@@ -141,7 +141,7 @@ async function anonymizeLead(
                 anonymized_at  = datetime('now'),
                 updated_at     = datetime('now')
              WHERE id = ? AND anonymized_at IS NULL`,
-            ['[ANONIMIZZATO]', '[ANONIMIZZATO]', `anon:${urlHash}`, lead.id],
+            ['[ANONIMIZZATO]', '[ANONIMIZZATO]', '[ANONIMIZZATO]', `anon:${urlHash}`, lead.id],
         );
 
         await writeAuditLog(db, 'lead_anonymized', lead.id, originalUrl, {
