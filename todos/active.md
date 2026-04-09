@@ -15,13 +15,13 @@
 ## 🔥 Alta priorità
 
 1. **Importare workflow n8n** — aprire n8n UI e importare `orchestrator-v2.json` + `watchdog.json`, sostituire i placeholder
-2. **A04 — 256 empty catch blocks** — aggiungere almeno `logWarn` per non perdere errori silenti in prod
+2. ~~**A04 — 256 empty catch blocks**~~ — ANALIZZATO (2026-04-09): falso positivo audit. Tutti i catch hanno handling adeguato (fallback/re-throw/counter/comment best-effort). Nessuna azione.
 3. **Dashboard todo** — configurare Supabase (schema.sql), impostare .env.local, `npm run dev`
 4. **Reporting cross-process** — allineare daemon PM2 e API/dashboard su eventi live, stato proxy e stato JA3 reali
 
 ## 📋 Media priorità
 
-5. **A14 — No rollback plan** — aggiungere Docker tag versioned + feature flag minimo
+5. ~~**A14 — No rollback plan**~~ — COMPLETATO (2026-04-09): `scripts/docker-release.sh` (build/promote/rollback/list), npm scripts `docker:*`, feature flags già in `src/config/featureFlags.ts`
 6. **`frontend/`** — decidere se tenere o eliminare (~2500 righe, stato incerto)
 7. **Sentry** — verificare che `src/telemetry/sentry.ts` riceva eventi reali in produzione
 

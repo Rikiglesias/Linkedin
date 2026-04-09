@@ -76,3 +76,8 @@ TODO_MIGLIORAMENTI.md
 audit-*.md
 docs/archive/AUDIT_*.md
 docs/archive/TODO.md
+
+# Docker release state
+.docker-current-tag
+.docker-stable-tag
+.docker-release-history.txt

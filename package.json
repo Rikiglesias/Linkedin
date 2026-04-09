@@ -46,7 +46,11 @@
     "audit:hooks": "ts-node src/scripts/hooksConformityAudit.ts",
     "test:e2e:dry": "ts-node src/tests/e2eDry.ts",
     "test:a11y:smoke": "ts-node src/tests/accessibilitySmoke.ts",
-    "test": "npm run test:vitest && npm run test:e2e:dry && npm run test:a11y:smoke"
+    "test": "npm run test:vitest && npm run test:e2e:dry && npm run test:a11y:smoke",
+    "docker:build": "bash scripts/docker-release.sh build",
+    "docker:promote": "bash scripts/docker-release.sh promote",
+    "docker:rollback": "bash scripts/docker-release.sh rollback",
+    "docker:list": "bash scripts/docker-release.sh list"
   },
   "keywords": [],
   "author": "Private",
