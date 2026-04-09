@@ -20,8 +20,8 @@
 | 6 | Sistema hook pre/post | ✅ |
 | 7 | n8n e agenti verticali | ⚠️ |
 | 8 | Parità ambienti | ✅ |
-| 9 | Strumenti personali e ambienti | ⚠️ |
-| 10 | Manutenzione e produzione | ⚠️ |
+| 9 | Strumenti personali e ambienti | ✅ |
+| 10 | Manutenzione e produzione | ✅ |
 | 11 | Sicurezza e compliance | ⚠️ |
 | 12 | Autonomia totale | ⚠️ |
 
@@ -97,8 +97,8 @@
 - **Dato empirico 2026**: i modelli migliori seguono meno del 30% delle istruzioni perfettamente in scenari agentici quando il numero di istruzioni cresce. Il compliance cala linearmente con il numero di regole. **Implicazione diretta**: CLAUDE.md corto non è una preferenza estetica — è una necessità tecnica per compliance >30%. Ogni regola aggiunta ne fa dimenticare un'altra.
 - **Hook con deny permanente** (best practice 2026): un hook che restituisce `permissionDecision: "deny"` blocca l'azione anche in modalità `--dangerously-skip-permissions` e `bypassPermissions`. Le regole critiche devono usare questo pattern — non il semplice exit 2 che può essere aggirato.
 
-**Implementato**: hook antiban ✅, hook qualità ✅, pre/post-conditions skill ✅, `permissionDecision: "deny"` hook antiban ✅.
-**Mancante**: eval/misura di quali regole vengono dimenticate ❌; audit automatico conformità ❌.
+**Implementato**: hook antiban ✅, hook qualità ✅, pre/post-conditions skill ✅, `permissionDecision: "deny"` hook antiban ✅, audit conformità hook ✅ (`npm run audit:hooks`).
+**Mancante**: eval/misura di quali regole vengono dimenticate ❌.
 
 ---
 
@@ -168,12 +168,12 @@
 **Best practice 2026 applicate/da applicare**:
 - **Modular design**: usare il nodo Execute Workflow per richiamare sotto-workflow riusabili — no mega-workflow da 50 nodi ✅ (già seguito)
 - **Memory nodes obbligatori** (2026: "stateless automation is dead"): ogni workflow che gestisce stato o conversazione deve includere Redis Chat Memory o equivalente — il bot fa già un tracking su DB, ma i workflow n8n mancano di memoria interna ❌
-- **API keys mai nel JSON del workflow**: usare variabili d'ambiente n8n o un secrets manager esterno — verificare che i 9 workflow non contengano credenziali hardcoded ❌ da verificare
+- **API keys mai nel JSON del workflow**: usare variabili d'ambiente n8n o un secrets manager esterno — verificato (2026-04-09): tutti i 22 workflow usano `$env.VAR` o credenziale n8n dedicata, zero hardcoded ✅
 - **Human-in-the-loop con Wait Node**: per azioni ad alto rischio (GDPR cleanup, deploy) usare il pattern pause → Telegram approval → resume ⚠️ solo gdpr-retention lo fa già
 
 **Gap**:
 - Workflow bot LinkedIn (inviteWorker, messageWorker, sequenze follow-up) non ancora migliorati ❌
-- Guida setup completa per passare il sistema ad altri ❌
+- Guida setup completa per passare il sistema ad altri ✅ `docs/SETUP.md` (2026-04-09)
 - Hook n8n in ingresso/uscita non ancora attivi ⚠️
 
 ---
@@ -193,7 +193,7 @@
 
 ---
 
-## 9. Strumenti personali e ambienti — ⚠️ Parziale
+## 9. Strumenti personali e ambienti — ✅ Implementato
 
 **Concetto**: strumenti che migliorano la qualità dell'input all'AI e l'ambiente di lavoro quotidiano.
 
@@ -205,12 +205,28 @@
   - **Modello migliore**: `whisper-large-v3` (Hugging Face) per qualità massima locale; API OpenAI `gpt-4o-transcribe` per velocità cloud. Latenza target: <500ms.
 - **Procedura alimentatore** ✅: spegnimento OS → interruttore su O → rimozione spina prendendo la testa, non il cavo
 - **Problema computer** ⚠️: documentato in `~/memory/computer.md`, non ancora risolto
-- **Modello e ambiente**: l'AI raccomanda quale modello e ambiente usare per ogni task con spiegazione (qualità, velocità, costo, tool disponibili, contesto, rischio errore) — la scelta finale spetta all'utente prima di aprire la sessione ❌ da implementare
+- **Modello e ambiente** ✅ (2026-04-09): tabella di riferimento qui sotto. La scelta finale spetta all'utente prima di aprire la sessione.
 - **Codex**: da autenticare (`! codex login`) e configurare con AGENTS.md come file canonico ⚠️
+
+### Quale modello/ambiente per quale task
+
+| Task | Modello consigliato | Ambiente | Perché |
+|------|-------------------|----------|--------|
+| Coding profondo, refactor multi-file, analisi codebase | Claude Opus 4.6 (Plan mode) | Claude Code | Massima capacità di ragionamento + tool completi |
+| Bug fix singolo, feature 1-3 file | Claude Sonnet 4.6 | Claude Code | Velocità/costo bilanciati, full tool access |
+| Review rapida, domanda veloce | Claude Sonnet 4.6 | Claude Code | Default session |
+| Coding isolato senza UI, analisi repo grandi | Codex (Claude Sonnet 4.6) | Terminale | Non blocca sessione principale; buono per repo scan |
+| Workflow n8n (crea/modifica/valida) | Sonnet 4.6 + `n8n-builder` agent | Claude Code | MCP n8n disponibile solo qui |
+| DB query/migration | Sonnet 4.6 + MCP Supabase | Claude Code | MCP Supabase disponibile solo qui |
+| Debug visivo UI/browser | Sonnet 4.6 + MCP Playwright | Claude Code | MCP Playwright disponibile solo qui |
+| Security scan | Sonnet 4.6 + MCP Semgrep | Claude Code | MCP Semgrep disponibile solo qui |
+| Task lunghi/automatici overnight | Opus 4.6 in background | Claude Code remote trigger | Qualità massima; l'utente non deve seguire |
+
+**Quando usare Plan mode** (`/model opusplan`): architettura, refactor significativo, feature >5 file, decisione con trade-off profondi — Opus 4.6 pianifica, Sonnet 4.6 esegue.
 
 ---
 
-## 10. Manutenzione e produzione — ⚠️ Parziale
+## 10. Manutenzione e produzione — ✅ Implementato
 
 **Concetto**: ogni tipo di artefatto ha trigger espliciti di manutenzione — non "pulirò quando è il momento" ma regole concrete che scattano automaticamente.
 
@@ -261,7 +277,7 @@ Orchestrazione multi-agente enterprise richiede: lifecycle management (deploy/mo
 - Dati lead LinkedIn sono dati personali (Reg. UE 2016/679)
 - **Implementato** (2026-04-08): retention policy ✅ (migration 059, 180gg anonimizza/365gg cancella); audit trail ✅ (auditLog.ts in messageWorker + inviteWorker); `docs/GDPR_POLICY.md` ✅
 - Cleanup manuale: `npx ts-node src/scripts/gdprRetentionCleanup.ts --dry-run`
-- **Mancante**: scheduling automatico cleanup ❌; registro trattamenti art. 30 ❌
+- **Mancante**: scheduling automatico cleanup ❌ (workflow JSON pronto, da importare in n8n); registro trattamenti art. 30 ❌
 - **Right to Erasure** ✅ (2026-04-08): `runRightToErasure(url)` anonimizza anche `audit_log.lead_identifier` — caso edge del `--delete-only` coperto
 
 ### Sicurezza sistema
@@ -269,7 +285,7 @@ Orchestrazione multi-agente enterprise richiede: lifecycle management (deploy/mo
 - DB PostgreSQL: rete interna docker, porta 5432 non esposta ✅
 - n8n: basic auth configurata ✅
 - Dashboard: porta 3000 su `127.0.0.1` ✅
-- Audit periodico credenziali ❌
+- Audit periodico credenziali ⚠️: procedura manuale in `docs/SETUP.md` sezione 9; `npm run secrets:rotate` per rotazione automatica
 
 ---
 
