@@ -243,7 +243,7 @@
 | **Workflow n8n** | Non eseguito 14gg; errori ripetuti | Modifica bot tocca area del workflow |
 
 ### Produzione e handoff
-- Guida setup completa (n8n + bot + PM2 + credenziali) per passare il sistema ad altri ❌
+- Guida setup completa (n8n + bot + PM2 + credenziali) per passare il sistema ad altri ✅ `docs/SETUP.md`
 - Checklist 360 riusabile ✅ creata in `docs/360-checklist.md` (101 check, 15 aree)
 - Workflow bot LinkedIn (inviteWorker, messageWorker, sequenze follow-up) da migliorare ❌
 

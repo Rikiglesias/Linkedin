@@ -85,12 +85,13 @@ Questa mappatura non deve restare vaga: per ogni task bisogna poter distinguere 
 - Se una skill o un workflow viene usato spesso ma richiede sempre gli stessi controlli a mano, va candidato a hook esplicito.
 - Gli hook devono ridurre errori e omissioni, non aumentare la complessita' senza valore.
 
-### Hook attivi (implementati al 2026-04-04)
+### Hook attivi (aggiornato al 2026-04-09)
 
 | Evento | Tipo | Trigger | Azione | File log |
 |--------|------|---------|--------|----------|
-| `PreToolUse` | bloccante (exit 2) | Edit/Write su file sensibili LinkedIn | Avvisa e blocca: richiede `/antiban-review` prima di procedere | `memory/antiban-hook-log.txt` |
+| `PreToolUse` | bloccante (permissionDecision: deny) | Edit/Write su file sensibili LinkedIn | Avvisa e blocca: richiede `/antiban-review` prima di procedere | `memory/antiban-hook-log.txt` |
 | `PostToolUse` | async | Bash con `npm run`, `npx tsc`, `npx madge`, `vitest` | Loga i comandi di qualita' eseguiti | `memory/quality-hook-log.txt` |
+| `PostToolUse` | async | Edit/Write su file sensibili LinkedIn senza antiban-review oggi | Logga possibile miss regola antiban | `memory/rule-violations-log.txt` |
 | `Stop` | async | Fine sessione | Suono notifica + log sessione con working dir | `memory/session-log.txt` |
 | `TeammateIdle` | async | Agent team idle | Log teams | `memory/teams-log.txt` |
 | `TaskCreated` | async | Agent team task creato | Log teams | `memory/teams-log.txt` |
