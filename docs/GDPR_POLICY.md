@@ -134,8 +134,8 @@ Lo script NON gira automaticamente. Va programmato manualmente (cron, task sched
 
 ## 8. Limiti e cosa manca ancora
 
-- [ ] Registro dei trattamenti ex art. 30 GDPR (obbligatorio se >250 dipendenti o trattamento sistematico ad alto rischio)
+- [x] Registro dei trattamenti ex art. 30 GDPR → `docs/GDPR_ART30_REGISTER.md` (2026-04-09)
 - [ ] Privacy notice da mostrare ai lead (applicabile se il bot opera su larga scala)
 - [ ] Pseudonimizzazione dei prompt inviati ad Anthropic API
-- [ ] Scheduling automatico del retention cleanup (oggi: solo manuale)
+- [ ] Scheduling automatico del retention cleanup → workflow JSON pronto `n8n-workflows/gdpr-retention-cleanup.json`, da importare in n8n UI
 - [ ] Interfaccia dashboard per consultare audit_log senza SQL

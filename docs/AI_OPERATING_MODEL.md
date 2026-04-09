@@ -22,7 +22,7 @@
 | 8 | Parità ambienti | ✅ |
 | 9 | Strumenti personali e ambienti | ✅ |
 | 10 | Manutenzione e produzione | ✅ |
-| 11 | Sicurezza e compliance | ⚠️ |
+| 11 | Sicurezza e compliance | ⚠️ → ✅ parziale (2026-04-09) |
 | 12 | Autonomia totale | ⚠️ |
 
 ---
@@ -97,8 +97,8 @@
 - **Dato empirico 2026**: i modelli migliori seguono meno del 30% delle istruzioni perfettamente in scenari agentici quando il numero di istruzioni cresce. Il compliance cala linearmente con il numero di regole. **Implicazione diretta**: CLAUDE.md corto non è una preferenza estetica — è una necessità tecnica per compliance >30%. Ogni regola aggiunta ne fa dimenticare un'altra.
 - **Hook con deny permanente** (best practice 2026): un hook che restituisce `permissionDecision: "deny"` blocca l'azione anche in modalità `--dangerously-skip-permissions` e `bypassPermissions`. Le regole critiche devono usare questo pattern — non il semplice exit 2 che può essere aggirato.
 
-**Implementato**: hook antiban ✅, hook qualità ✅, pre/post-conditions skill ✅, `permissionDecision: "deny"` hook antiban ✅, audit conformità hook ✅ (`npm run audit:hooks`).
-**Mancante**: eval/misura di quali regole vengono dimenticate ❌.
+**Implementato**: hook antiban ✅, hook qualità ✅, pre/post-conditions skill ✅, `permissionDecision: "deny"` hook antiban ✅, audit conformità hook ✅ (`npm run audit:hooks`), violations-tracker PostToolUse hook ✅ (logga miss antiban in `rule-violations-log.txt`) (2026-04-09), skill `/audit-rules` ✅ (legge log, propone conversioni in hook) (2026-04-09).
+**Mancante**: metrica automatica percentuale compliance ❌ (richiede dataset di almeno 2-4 settimane di violations log prima di essere significativa).
 
 ---
 
@@ -170,11 +170,12 @@
 - **Memory nodes obbligatori** (2026: "stateless automation is dead"): ogni workflow che gestisce stato o conversazione deve includere Redis Chat Memory o equivalente — il bot fa già un tracking su DB, ma i workflow n8n mancano di memoria interna ❌
 - **API keys mai nel JSON del workflow**: usare variabili d'ambiente n8n o un secrets manager esterno — verificato (2026-04-09): tutti i 22 workflow usano `$env.VAR` o credenziale n8n dedicata, zero hardcoded ✅
 - **Human-in-the-loop con Wait Node**: per azioni ad alto rischio (GDPR cleanup, deploy) usare il pattern pause → Telegram approval → resume ⚠️ solo gdpr-retention lo fa già
+- **Dedup alert via staticData** (2026-04-09): `linkedin-campaign-analyzer.json` aggiornato con nodo Dedup Alert Check + IF — evita Telegram duplicati se le metriche non cambiano settimana su settimana ✅
 
 **Gap**:
 - Workflow bot LinkedIn (inviteWorker, messageWorker, sequenze follow-up) non ancora migliorati ❌
 - Guida setup completa per passare il sistema ad altri ✅ `docs/SETUP.md` (2026-04-09)
-- Hook n8n in ingresso/uscita non ancora attivi ⚠️
+- Hook n8n in ingresso/uscita non ancora attivi ⚠️ (richiedono n8n online)
 
 ---
 
@@ -277,7 +278,7 @@ Orchestrazione multi-agente enterprise richiede: lifecycle management (deploy/mo
 - Dati lead LinkedIn sono dati personali (Reg. UE 2016/679)
 - **Implementato** (2026-04-08): retention policy ✅ (migration 059, 180gg anonimizza/365gg cancella); audit trail ✅ (auditLog.ts in messageWorker + inviteWorker); `docs/GDPR_POLICY.md` ✅
 - Cleanup manuale: `npx ts-node src/scripts/gdprRetentionCleanup.ts --dry-run`
-- **Mancante**: scheduling automatico cleanup ❌ (workflow JSON pronto, da importare in n8n); registro trattamenti art. 30 ❌
+- **Mancante**: scheduling automatico cleanup ❌ (workflow JSON pronto in `n8n-workflows/gdpr-retention-cleanup.json`, da importare manualmente in n8n UI); registro trattamenti art. 30 ✅ creato `docs/GDPR_ART30_REGISTER.md` (2026-04-09)
 - **Right to Erasure** ✅ (2026-04-08): `runRightToErasure(url)` anonimizza anche `audit_log.lead_identifier` — caso edge del `--delete-only` coperto
 
 ### Sicurezza sistema

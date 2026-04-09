@@ -27,6 +27,11 @@
 
 ## ✅ Completati di recente
 
+- AI Operating Model punti 4/7/9/10/11: setup guide, hooks audit, model table (2026-04-08)
+- GDPR art.30 register: `docs/GDPR_ART30_REGISTER.md` (2026-04-09)
+- Violations-tracker hook in `settings.json` — rileva miss antiban (2026-04-09)
+- Skill `/audit-rules` — analisi compliance regole da log (2026-04-09)
+- Campaign-analyzer: dedup alert via staticData (evita Telegram duplicati) (2026-04-09)
 - Sistema "secondo cervello": memory files + personalità + briefing + dashboard (2026-03-30)
 - n8n Docker service + auth obbligatoria (2026-03-30)
 - Workflow n8n fix: URL bot-api:3000, sintassi expression (2026-03-30)

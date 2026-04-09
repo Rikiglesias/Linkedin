@@ -80,13 +80,46 @@
       }
     },
     {
+      "id": "ca5b",
+      "name": "Dedup Alert Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        770,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const current = $input.first().json;\nconst staticData = $getWorkflowStaticData('global');\nconst lastAlerts = staticData.lastAlerts || [];\nconst lastRunDate = staticData.lastRunDate || null;\nconst currentAlerts = current.report.match(/[⚠️🔍][^\\n]*/g) || [];\nconst alertsChanged = JSON.stringify(currentAlerts.sort()) !== JSON.stringify(lastAlerts.sort());\nconst isFirstRun = !lastRunDate;\n// Aggiorna lo stato persistente\nstaticData.lastAlerts = currentAlerts;\nstaticData.lastRunDate = new Date().toISOString();\nconst shouldSend = isFirstRun || alertsChanged || current.alertCount > 0;\nreturn [{ json: { ...current, shouldSend, alertsChanged, isFirstRun } }];"
+      }
+    },
+    {
+      "id": "ca5c",
+      "name": "Skip se Nessun Cambiamento",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.shouldSend }}",
+              "value2": true
+            }
+          ]
+        }
+      }
+    },
+    {
       "id": "ca6",
       "name": "Telegram Report",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        880,
-        300
+        1060,
+        220
       ],
       "onError": "continueRegularOutput",
       "parameters": {
@@ -104,8 +137,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1100,
-        300
+        1280,
+        220
       ],
       "parameters": {
         "jsCode": "const r=$input.first().json;\nconst log={workflow:\"linkedin-campaign-analyzer\",campaigns:r.campaigns,alertCount:r.alertCount,durationMs:r.durationMs,loggedAt:new Date().toISOString()};\nconsole.log(\"[POST-HOOK campaign-analyzer]\",JSON.stringify(log));\nreturn[{json:log}];"
@@ -161,11 +194,34 @@
       "main": [
         [
           {
-            "node": "Telegram Report",
+            "node": "Dedup Alert Check",
             "type": "main",
             "index": 0
           }
         ]
+      ]
+    },
+    "Dedup Alert Check": {
+      "main": [
+        [
+          {
+            "node": "Skip se Nessun Cambiamento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip se Nessun Cambiamento": {
+      "main": [
+        [
+          {
+            "node": "Telegram Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
       ]
     },
     "Telegram Report": {
