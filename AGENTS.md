@@ -115,6 +115,17 @@ Le regole globali (P0, L1-L9, parità ambienti, memoria, anti-dimenticanza) stan
 - Una procedura che esiste solo in chat o solo in un `.md` non e' considerata affidabile abbastanza se puo' essere implementata meglio come skill, hook, script o workflow.
 - Se una capability automatica esiste in un ambiente ma manca in un altro, il gap va documentato e chiuso dove possibile; non va trattato come una differenza accettabile per abitudine.
 
+## Manutenzione incrementale e blast radius documentale
+
+- Quando si modifica o aggiorna un artefatto (file di memoria, documento canonico, todo, worklog, regola, skill, hook), l'AI deve cercare attivamente altri artefatti sullo stesso argomento che potrebbero essere diventati stale.
+- La logica di blast radius si applica non solo al codice, ma anche a tutti gli artefatti non-code: memory, docs, todos, AGENTS.md, skill, hook, workflow.
+- Per gli artefatti sullo stesso argomento del task corrente: aggiornarli automaticamente come parte del task, senza chiedere conferma.
+- Per gli artefatti su argomenti diversi che appaiono stale o incoerenti con lo stato corrente: segnalarli all'utente e chiedere conferma prima di modificarli.
+- La distinzione tra "stesso argomento" e "argomento diverso" va applicata con giudizio contestuale, non con pattern matching meccanico.
+- Questa regola si applica alla chiusura di ogni task rilevante, come parte obbligatoria del controllo DOPO.
+- Obiettivo: manutenzione incrementale a ogni task invece di accumulare arretrato documentale che poi richiede sessioni dedicate di cleanup.
+- Se il cleanup identificato e' troppo grande per essere fatto inline, va tracciato nel contenitore corretto (todos, worklog, backlog) con priorita' esplicita — non lasciato solo in risposta.
+
 ## Gap di capability e promozione strutturale
 
 - Se durante il task emerge che il vero problema non e' il codice ma l'assenza della primitive giusta, l'AI deve riconoscerlo esplicitamente.

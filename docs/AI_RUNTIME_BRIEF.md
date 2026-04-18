@@ -89,6 +89,7 @@ L'utente non deve ricordare all'AI di fare questa valutazione: la valutazione st
 - Se l'utente ha dato esempi, verificare se il pattern suggerisce altri controlli coerenti che non sono stati nominati esplicitamente.
 - Monitorare segnali di degrado del contesto: omissioni ripetute, ledger che perde copertura, contraddizioni, prompt/sessione troppo grandi, rischio di compact con perdita di stato.
 - Se il ragionamento sta degradando, preparare handoff, aggiornare i contenitori minimi e proporre o usare `context-handoff` invece di continuare in stato degradato.
+- Alla chiusura di ogni task: cercare artefatti correlati (memory, docs, todos, skill, hook) potenzialmente stale. Stesso argomento → aggiornare automaticamente. Argomento diverso → segnalare e chiedere conferma.
 
 ## Prima di chiudere
 

@@ -323,6 +323,16 @@ function buildMatrix(): RuleResult[] {
             'Commit automatico dopo verifiche verdi, push contestuale al tipo di lavoro',
             'Dipende dal contesto git e policy di branch — parzialmente enforced da git-gate hook ma non completamente',
         ),
+        notMechRule(
+            'artifact-blast-radius',
+            'Cercare e aggiornare artefatti non-code correlati (memory, docs, todos) a ogni task',
+            'Richiede ragionamento semantico su "stesso argomento" — non meccanizzabile con pattern matching',
+        ),
+        notMechRule(
+            'incremental-maintenance',
+            'Manutenzione incrementale a ogni task invece di accumulare arretrato documentale',
+            "Dipende dal contesto del task e dalla valutazione di cosa e' stale — non meccanizzabile",
+        ),
     ];
 
     return results;
