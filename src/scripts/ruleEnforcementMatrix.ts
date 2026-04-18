@@ -152,7 +152,16 @@ function buildMatrix(): RuleResult[] {
             'Aggiungere pre-bash-git-gate.ps1 in PreToolUse Bash',
         ),
 
-        // --- B: Hook asincrono ---
+        // --- B: Hook sync/asincrono ---
+        hookRule(
+            'session-start',
+            'Caricamento memoria e runtime brief a inizio sessione',
+            'Hook sync',
+            'hook-asincrono',
+            hookExists(settings, 'SessionStart', 'session-start.ps1'),
+            'SessionStart → session-start.ps1',
+            'Aggiungere session-start.ps1 in SessionStart',
+        ),
         hookRule(
             'runtime-brief-prompt',
             'Runtime brief reiniettato a ogni prompt utente',
@@ -198,7 +207,26 @@ function buildMatrix(): RuleResult[] {
             'PostToolUse Edit/Write → post-edit-antiban-audit.ps1',
             'Aggiungere post-edit-antiban-audit.ps1 in PostToolUse Edit/Write',
         ),
-        // GAP: worklog non controllato dallo Stop hook
+        hookRule(
+            'file-size-check',
+            'Avviso file >300 righe per valutare split',
+            'Hook asincrono',
+            'hook-asincrono',
+            hookExists(settings, 'PostToolUse', 'file-size-check.ps1'),
+            'PostToolUse Edit/Write → file-size-check.ps1',
+            'Aggiungere file-size-check.ps1 in PostToolUse Edit/Write',
+        ),
+        hookRule(
+            'teammate-events',
+            'Log eventi agent team (idle, created, completed)',
+            'Hook asincrono',
+            'hook-asincrono',
+            hookExists(settings, 'TeammateIdle', 'teammate-event.ps1') &&
+                hookExists(settings, 'TaskCreated', 'teammate-event.ps1') &&
+                hookExists(settings, 'TaskCompleted', 'teammate-event.ps1'),
+            'TeammateIdle/TaskCreated/TaskCompleted → teammate-event.ps1',
+            'Aggiungere teammate-event.ps1 in TeammateIdle, TaskCreated e TaskCompleted',
+        ),
         ((): RuleResult => {
             const stopScript = readText(join(HOOKS_DIR, 'stop-session.ps1'));
             const hasWorklogCheck = stopScript?.includes('ENGINEERING_WORKLOG') ?? false;

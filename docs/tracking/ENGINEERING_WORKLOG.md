@@ -2,6 +2,31 @@
 
 Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o verificati nel repo.
 
+## 2026-04-18 — Item #8: allineamento hook canonici ↔ audit ↔ matrice
+
+### Obiettivo
+
+Chiudere il disallineamento tra hook dichiarati in AGENTS.md, hook verificati dagli audit script, e regole mappate nella matrice di enforcement.
+
+### Gap trovati e chiusi
+
+- `file-size-check.ps1`: auditato da hooksConformityAudit ma NON dichiarato in AGENTS.md → aggiunto alla tabella hook
+- `SessionStart/session-start.ps1`: dichiarato in AGENTS.md, verificato da aiControlPlaneAudit ma NON da hooksConformityAudit → aggiunto check
+- `PostToolUse/post-edit-antiban-audit.ps1` (violations tracker): dichiarato in AGENTS.md, NON verificato da hooksConformityAudit → aggiunto check
+- `TeammateIdle/TaskCreated/TaskCompleted`: dichiarati in AGENTS.md, NON verificati da nessun audit → aggiunto check
+- 4 hook mancanti dalla matrice enforcement (`session-start`, `file-size-check`, `teammate-events`) → aggiunti
+
+### Verifica
+
+- `audit:rule-enforcement`: 21/26 enforced, 0 gap, 5 non-meccanizzabili ✅
+- `audit:hooks`: 13/13 (era 10/10) ✅
+- `audit:ai-control-plane`: 18/18 ✅
+- `post-modifiche`: verde (136/136, 1421/1421) ✅
+
+### Stato item lista
+
+- Item #8 (allineare hook e regole canoniche): DONE — tutti i 14 hook dichiarati in AGENTS.md sono ora verificati da almeno un audit script e mappati nella matrice enforcement
+
 ## 2026-04-18 — Fix antiban false positive + completamento item #7 (copertura matrice)
 
 ### Obiettivo
