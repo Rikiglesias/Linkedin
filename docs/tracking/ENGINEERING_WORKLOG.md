@@ -2,6 +2,778 @@
 
 Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o verificati nel repo.
 
+## 2026-04-18 — Rule Enforcement Matrix: matrice enforcement + chiusura GAP worklog-update
+
+### Obiettivo
+
+Implementare il punto #6 della lista AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md:
+produrre una matrice `regola → primitive di enforcement → verifica meccanica`.
+
+### Interventi completati
+
+- Creato `src/scripts/ruleEnforcementMatrix.ts` (22 regole, 4 categorie di enforcement)
+- Aggiunto `audit:rule-enforcement` in `package.json`
+- Identificato e chiuso GAP meccanizzabile: `stop-session.ps1` non verificava se ENGINEERING_WORKLOG.md era stato aggiornato
+- Aggiornato `~/.claude/hooks/stop-session.ps1`: aggiunto controllo `git diff HEAD` con avviso Yellow a console
+
+### Verifica
+
+- `npm run audit:rule-enforcement`: `18/21 enforced, 0 gap meccanizzabili, 3 non-meccanizzabili (by design)`
+- `npm run post-modifiche`: verde (136/136, 1421/1421)
+
+### Nota operativa
+
+Il hook `pre-edit-antiban.ps1` produce falso positivo su file in `~/.claude/hooks/` (pattern "session" matcha `stop-session.ps1`). Da fixare: escludere path `~/.claude/hooks/` dalla verifica antiban.
+
+## 2026-04-18 — Rafforzata la logica dei quattro blocchi ancora troppo "ombrello"
+
+### Obiettivo
+
+Rendere piu' forti, espliciti e meno mescolati i quattro blocchi che coprivano gia' il perimetro giusto ma con logica ancora troppo aggregata:
+
+- n8n, agenti verticali e automazioni durevoli
+- parity ambienti
+- orizzonti temporali e cadenze periodiche
+- autonomia e sistema che migliora se stesso
+
+L'obiettivo non era aggiungere dettaglio esecutivo, ma separare meglio responsabilita', criterio di chiusura, tipo di controllo e collegamento con il resto del sistema.
+
+### Interventi completati
+
+- Aggiornato [AI_MASTER_IMPLEMENTATION_BACKLOG.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md)
+  - i punti 4, 5, 10 e 13 ora distinguono meglio:
+    - boundary tra primitive corrette
+    - controllo reale vs presenza documentale
+    - differenza tra stato operativo, fallback, ownership e metriche
+    - criterio di done piu' logico e meno generico
+- Aggiornato [AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md)
+  - riallineati gli item 21-28, 58-65, 71-76 e 88-93
+  - i punti restano compatti ma sono meno "ombrello" e piu' chiari sulla funzione logica che devono coprire
+
+### Verifica
+
+- `npm run audit:ai-control-plane`
+- `npm run post-modifiche`
+
+### Esito
+
+Verde.
+
+- `npm run audit:ai-control-plane` passato (`18/18`)
+- `npm run post-modifiche` passato
+- typecheck, lint e suite Vitest verdi (`136/136` file test, `1421/1421` test)
+
+## 2026-04-18 — Creato il backlog madre unico dei punti ancora da completare
+
+### Obiettivo
+
+Chiudere un gap documentale rimasto aperto dopo il consolidamento della spec AI:
+
+- la lista completa del sistema desiderato esisteva gia' in [AI_MASTER_SYSTEM_SPEC.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_SYSTEM_SPEC.md)
+- lo stato e l'ordine di implementazione esistevano gia' in [AI_OPERATING_MODEL.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_OPERATING_MODEL.md)
+- i backlog vivi esistevano gia' in [active.md](C:/Users/albie/Desktop/Programmi/Linkedin/todos/active.md) e [workflow-architecture-hardening.md](C:/Users/albie/Desktop/Programmi/Linkedin/todos/workflow-architecture-hardening.md)
+
+Mancava ancora un file unico che rispondesse in modo esplicito a:
+
+**"cosa manca ancora davvero, con sottopunti, primitive corrette e criterio di done?"**
+
+### Interventi completati
+
+- Creato [AI_MASTER_IMPLEMENTATION_BACKLOG.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md)
+  - backlog madre unico dei punti ancora aperti
+  - separazione netta tra spec desiderata, roadmap/stato e backlog residuo
+  - dettaglio esplicito dei blocchi ancora da chiudere con:
+    - status
+    - orizzonte temporale
+    - primitive corrette
+    - sottopunti aperti
+    - criterio di done
+- Aggiornato [AI_MASTER_SYSTEM_SPEC.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_SYSTEM_SPEC.md)
+  - aggiunto link al backlog madre di completamento
+- Aggiornato [AI_OPERATING_MODEL.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_OPERATING_MODEL.md)
+  - aggiunto link esplicito al backlog madre unico dei punti aperti
+- Aggiornato [docs/README.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/README.md)
+  - classificato il nuovo file come documento canonico
+
+### Verifica
+
+- `npm run pre-modifiche`
+- `npm run audit:ai-control-plane`
+- `npm run post-modifiche`
+
+### Esito
+
+Verde.
+
+- `npm run pre-modifiche` passato
+- `npm run audit:ai-control-plane` passato (`18/18`)
+- `npm run post-modifiche` passato
+- typecheck, lint e suite Vitest verdi (`136/136` file test, `1421/1421` test)
+
+## 2026-04-18 — Riallineati i gap residui del backlog madre contro la chat estesa
+
+### Obiettivo
+
+Verificare se, dopo la creazione del backlog madre unico, restavano ancora punti importanti emersi in chat ma non abbastanza espliciti nei canonici.
+
+### Gap residui individuati
+
+- la migrazione operativa progressiva verso Codex era presente come direzione, ma non ancora come item di backlog esplicito
+- la governance degli agenti era ancora meno esplicita di quella delle skill
+- la leggibilita' "AI-readable" dei documenti era presente come principio, ma non ancora come style guide esplicita da formalizzare
+- i bug/blocchi reali di ambiente emersi su Cloud Code / OpenRouter / hook `SessionStart` non erano ancora tracciati come punto aperto nel backlog madre
+
+### Interventi completati
+
+- Aggiornato [AI_MASTER_IMPLEMENTATION_BACKLOG.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md)
+  - aggiunto audit esplicito su agenti e workflow decisionali deboli
+  - aggiunta style guide esplicita per documenti AI-readable da formalizzare
+  - aggiunto piano di migrazione progressiva del flusso tecnico principale verso Codex
+  - aggiunta stabilizzazione dei problemi operativi di ambiente: `settings.json`, `SessionStart`, provider/model switching e visibilita' modelli OpenRouter
+
+### Verifica
+
+- `npm run audit:ai-control-plane`
+- `npm run post-modifiche`
+
+### Esito
+
+Verde.
+
+- `npm run audit:ai-control-plane` passato (`18/18`)
+- `npm run post-modifiche` passato
+- typecheck, lint e suite Vitest verdi (`136/136` file test, `1421/1421` test)
+
+## 2026-04-18 — Creata anche la vista lineare unica del backlog aperto
+
+### Obiettivo
+
+Affiancare al backlog strutturato una vista lineare unica di tutti i punti ancora aperti, utile per:
+
+- revisione rapida in una sola passata
+- confronto diretto con la chat
+- merge, pruning e miglioramento della lista
+
+senza sostituire il backlog strutturato che resta la fonte primaria con area, primitive corrette e done criteria.
+
+### Interventi completati
+
+- Creato [AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md)
+  - lista lineare unica dei punti aperti
+  - prima versione con 98 item atomici marcati con area e orizzonte
+  - regola esplicita che la vista lineare e' derivata dal backlog strutturato, non fonte indipendente
+- Aggiornato [AI_MASTER_IMPLEMENTATION_BACKLOG.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md)
+  - link alla vista lineare unica
+- Aggiornato [docs/README.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/README.md)
+  - classificata la vista lineare come documento di supporto canonico alla revisione del backlog
+- Rifinito [AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md)
+  - pruning della lista lineare
+  - passaggio da ordine per area a ordine logico per dipendenze
+  - riduzione degli item da 98 a 94
+  - introduzione di 10 fasi di lavoro:
+    - control plane cognitivo
+    - contesto e memoria
+    - parity ambienti
+    - runtime reale
+    - anti-ban/compliance
+    - n8n/automazioni
+    - chiusura tecnica e cadenze
+    - cleanup
+    - riuso
+    - metriche di autonomia
+- Rifinito di nuovo [AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md)
+  - aggiunte regole esplicite di scrittura della lista per evitare punti troppo vaghi o sovrapposti
+  - rese piu' esplicite varie righe ancora troppo generiche
+  - fusi o stretti i punti ancora troppo vicini tra loro
+  - mantenute le 10 fasi logiche, ma con formulazioni piu' operative
+  - riduzione finale degli item da 94 a 93
+
+### Verifica
+
+- `npm run audit:ai-control-plane`
+- `npm run post-modifiche`
+
+### Esito
+
+Verde.
+
+- `npm run audit:ai-control-plane` passato (`18/18`)
+- `npm run post-modifiche` passato
+- typecheck, lint e suite Vitest verdi (`136/136` file test, `1421/1421` test)
+
+## 2026-04-18 — Resa esplicita anche la governance del catalogo capability AI
+
+### Obiettivo
+
+Chiudere un altro gap emerso dalla chat: la documentazione parlava gia' di skill duplicate e di primitive corrette, ma non ancora in modo abbastanza esplicito su:
+
+- inventario unico delle capability installate o disponibili
+- decisione `skill` vs `MCP` vs `plugin` vs `hook` vs `workflow`
+- valutazione di candidate esterne specifiche prima di installarle
+- routing per dominio pratico, cosi' backend e frontend non restano casi impliciti
+
+### Interventi completati
+
+- Aggiornato [AI_MASTER_SYSTEM_SPEC.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_SYSTEM_SPEC.md)
+  - aggiunto inventario unico delle capability
+  - resa esplicita la scelta della primitive corretta anche con `plugin`
+  - aggiunta la valutazione preventiva di candidate come Caveman, LeanCTX, SIMDex e Contact Skills
+- Aggiornato [AI_MASTER_IMPLEMENTATION_BACKLOG.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md)
+  - aggiunti item aperti su inventory capability, keep/merge/remove, routing matrix per dominio e valutazione candidate esterne
+- Aggiornato [AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md)
+  - resa esplicita la parte di audit capability installate e valutazione delle skill candidate nominate in chat
+- Aggiornato [AI_OPERATING_MODEL.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_OPERATING_MODEL.md)
+  - esplicitata la governance del catalogo installato e la routing matrix per dominio pratico
+
+### Verifica
+
+- `npm run pre-modifiche`
+- verifica locale sui path skill disponibili per Caveman / LeanCTX / SIMDex / Contact Skills
+
+### Esito
+
+Verde.
+
+- `npm run pre-modifiche` passato
+- nessuna delle skill candidate nominate risulta gia' installata nei percorsi locali controllati
+- il requisito ora e' tracciato in modo esplicito nei canonici corretti, senza aprire documenti duplicati
+
+### Estensione successiva dello stesso blocco
+
+Per chiudere il rischio di requisito solo "documentato ma non operativo", il tema e' stato propagato anche nei file che guidano davvero il comportamento runtime:
+
+- [AGENTS.md](C:/Users/albie/Desktop/Programmi/Linkedin/AGENTS.md)
+  - esteso da sola `skill governance` a `capability governance`
+  - inventario capability + routing matrix + valutazione candidate esterne
+- [AI_RUNTIME_BRIEF.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_RUNTIME_BRIEF.md)
+  - aggiunti `plugin`, overlap capability e routing mentale per dominio pratico
+- [active.md](C:/Users/albie/Desktop/Programmi/Linkedin/todos/active.md)
+  - il tema entra anche nelle priorita' vive come catalogo capability ordinato
+- [aiControlPlaneAudit.ts](C:/Users/albie/Desktop/Programmi/Linkedin/src/scripts/aiControlPlaneAudit.ts)
+  - l'audit statico pretende ora anche questi frammenti, cosi' il requisito non puo' sparire senza essere rilevato
+
+## 2026-04-17 — Formalizzata la policy anti-allucinazione piena e il contesto codebase esteso
+
+### Obiettivo
+
+Rendere espliciti tre concetti che erano presenti ma ancora non abbastanza netti:
+
+- l'allucinazione non e' solo "inventare fatti", ma anche dichiarare verifiche non fatte o eseguire ciecamente ipotesi dell'utente
+- considerare al 100% una tua indicazione non significa obbedire ciecamente se la fonte di verita' o l'impatto tecnico dicono altro
+- una modifica locale non puo' mai restare locale per definizione: va estesa al blast radius reale della codebase usando i migliori strumenti disponibili
+
+### Interventi completati
+
+- Aggiornato [AGENTS.md](C:/Users/albie/Desktop/Programmi/Linkedin/AGENTS.md)
+  - definizione piu' forte di allucinazione
+  - regola esplicita contro l'obbedienza cieca al testo utente
+  - regola esplicita sul fatto che il limite pratico di contesto non giustifica patch isolate
+- Aggiornato [AI_RUNTIME_BRIEF.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_RUNTIME_BRIEF.md)
+  - aggiunta anti-allucinazione esplicita nel digest runtime
+  - chiarito che l'input utente va trattato come segnale, non come comando cieco
+  - esplicitato l'uso di code search, mapping dipendenze/test, memoria e agenti per estendere il contesto
+- Aggiornato [AI_MASTER_SYSTEM_SPEC.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_SYSTEM_SPEC.md)
+  - definizione piena di allucinazione
+  - chiarita la differenza tra prendere sul serio una richiesta e obbedirle ciecamente
+  - esplicitato il dovere di estendere la modifica locale alla codebase reale
+- Aggiornato [AI_OPERATING_MODEL.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_OPERATING_MODEL.md)
+  - aggiunta definizione operativa di allucinazione dentro il punto 1
+  - esplicitato che se non si puo' leggere tutta la codebase si devono usare strumenti e contesto sostitutivi, non patch locali cieche
+- Aggiornato [360-checklist.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/360-checklist.md)
+  - nuovo check anti-allucinazione piena
+  - nuovo check sul blast radius reale della modifica locale
+- Aggiornato [aiControlPlaneAudit.ts](C:/Users/albie/Desktop/Programmi/Linkedin/src/scripts/aiControlPlaneAudit.ts)
+  - l'audit statico ora pretende anche questi punti nei canonici
+
+### Verifica
+
+- `npm run pre-modifiche`
+- `npm run audit:ai-control-plane`
+- `npm run post-modifiche`
+
+### Esito
+
+Verde.
+
+- `npm run pre-modifiche` passato
+- `npm run audit:ai-control-plane` passato (`18/18`)
+- `npm run post-modifiche` passato
+- typecheck, lint e suite Vitest verdi (`136/136` file test, `1421/1421` test)
+
+## 2026-04-17 — Esplicitata la regola sugli esempi illustrativi dell'utente
+
+### Obiettivo
+
+Chiudere un altro punto sottile emerso dalla chat: l'AI non deve prendere gli esempi dell'utente come legge esaustiva, ma come pattern di ragionamento da estendere con altri controlli utili coerenti con il contesto.
+
+### Interventi completati
+
+- Aggiornato [AGENTS.md](C:/Users/albie/Desktop/Programmi/Linkedin/AGENTS.md)
+  - gli esempi dell'utente sono ora esplicitamente trattati come pattern illustrativi
+  - il requirement capture deve distinguere tra esempi dati e controlli aggiuntivi inferiti
+- Aggiornato [AI_RUNTIME_BRIEF.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_RUNTIME_BRIEF.md)
+  - il ledger runtime ora include esempi utente e controlli inferiti
+- Aggiornato [AI_MASTER_SYSTEM_SPEC.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_SYSTEM_SPEC.md)
+  - chiarito che gli esempi non sono elenco esaustivo e che l'AI deve estendere il pattern
+- Aggiornato [AI_OPERATING_MODEL.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_OPERATING_MODEL.md)
+  - il punto 1 ora rende esplicito che dagli esempi vanno inferiti altri controlli coerenti
+- Aggiornato [360-checklist.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/360-checklist.md)
+  - nuovo check dedicato sugli esempi illustrativi
+- Aggiornato [aiControlPlaneAudit.ts](C:/Users/albie/Desktop/Programmi/Linkedin/src/scripts/aiControlPlaneAudit.ts)
+  - l'audit statico ora pretende anche questo comportamento nei canonici
+
+### Verifica
+
+- `npm run pre-modifiche`
+- `npm run audit:ai-control-plane`
+- `npm run post-modifiche`
+
+### Esito
+
+Verde.
+
+- `npm run pre-modifiche` passato
+- `npm run audit:ai-control-plane` passato (`18/18`)
+- `npm run post-modifiche` passato
+- typecheck, lint e suite Vitest verdi (`136/136` file test, `1421/1421` test)
+
+## 2026-04-17 — Formalizzati capability gap e degrado del contesto
+
+### Obiettivo
+
+Rendere esplicite nei canonici due regole che erano solo parzialmente implicite:
+
+- riconoscere quando manca la primitive corretta (`skill`, `hook`, `memoria`, `audit`, `workflow`) e proporre la promozione giusta
+- fermarsi e usare `context-handoff` o nuova sessione quando il contesto degrada davvero
+
+### Interventi completati
+
+- Aggiornato [AGENTS.md](C:/Users/albie/Desktop/Programmi/Linkedin/AGENTS.md)
+  - nuova sezione `Gap di capability e promozione strutturale`
+  - nuova sezione `Degrado del contesto e handoff obbligatorio`
+  - esplicitati i controlli periodici minimi su codebase, documenti, memoria e sicurezza
+- Aggiornato [AI_RUNTIME_BRIEF.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_RUNTIME_BRIEF.md)
+  - aggiunti capability gap, distinzione tra automazione e conferma utente, degrado del contesto e handoff
+- Aggiornato [AI_MASTER_SYSTEM_SPEC.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_SYSTEM_SPEC.md)
+  - resa esplicita la gestione dei capability gap
+  - reso esplicito l'obbligo di handoff quando il contesto non e' piu' affidabile
+  - estesi i controlli periodici di salute della codebase
+- Aggiornato [AI_OPERATING_MODEL.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_OPERATING_MODEL.md)
+  - aggiunti gap di capability, handoff per degrado del contesto e baseline dei controlli periodici
+- Aggiornato [360-checklist.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/360-checklist.md)
+  - nuovi check su capability gap, automazione vs conferma, degrado del contesto e code health periodica
+- Aggiornato [active.md](C:/Users/albie/Desktop/Programmi/Linkedin/todos/active.md)
+  - nuovo item di sprint su capability gap e context degradation
+- Aggiornato [aiControlPlaneAudit.ts](C:/Users/albie/Desktop/Programmi/Linkedin/src/scripts/aiControlPlaneAudit.ts)
+  - l'audit statico ora richiede anche i nuovi punti nei canonici
+
+### Verifica
+
+- `npm run pre-modifiche`
+- `npm run audit:ai-control-plane`
+- `npm run post-modifiche`
+
+### Esito
+
+Verde.
+
+- `npm run pre-modifiche` passato
+- `npm run audit:ai-control-plane` passato (`18/18`)
+- `npm run post-modifiche` passato
+- typecheck, lint e suite Vitest verdi (`136/136` file test, `1421/1421` test)
+
+## 2026-04-17 — Formalizzati gli orizzonti temporali del ragionamento AI
+
+### Obiettivo
+
+Chiudere un altro gap emerso dalla chat: il sistema aveva gia' regole forti su fonte di verita', hook, loop, memoria e automazione, ma mancava una distinzione esplicita tra:
+
+- cosa va fatto subito nel task corrente
+- cosa va chiuso entro la stessa iniziativa o branch
+- cosa appartiene invece alla manutenzione periodica o al miglioramento sistemico
+
+Questo mancato asse temporale poteva produrre due errori opposti:
+
+- trattare tutto come urgente e immediato
+- rimandare a "poi" controlli che invece servono per chiudere bene il task corrente
+
+### Interventi completati
+
+- Aggiornato [AGENTS.md](C:/Users/albie/Desktop/Programmi/Linkedin/AGENTS.md)
+  - nuova sezione `Orizzonti temporali e cadenze operative`
+  - regola esplicita su breve, medio e lungo termine
+  - chiarita la differenza tra obblighi immediati, follow-up della stessa iniziativa e manutenzione periodica
+  - aggiunto controllo in chiusura: nessun obbligo di breve termine puo' essere degradato impropriamente a backlog
+- Aggiornato [AI_MASTER_SYSTEM_SPEC.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_SYSTEM_SPEC.md)
+  - aggiunta sezione dedicata agli orizzonti temporali e ai task periodici
+  - esplicitati esempi trasversali su memoria, code review e automazione
+- Aggiornato [AI_OPERATING_MODEL.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_OPERATING_MODEL.md)
+  - nuovo asse trasversale breve/medio/lungo termine
+  - matrice operativa per distinguere dove chiudere i vari tipi di lavoro
+  - aggiunta cadenza periodica minima per code review, memoria, documenti, automazione e git
+- Aggiornato [AI_RUNTIME_BRIEF.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_RUNTIME_BRIEF.md)
+  - il digest runtime ora impone anche la classificazione per orizzonte temporale
+- Aggiornato [360-checklist.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/360-checklist.md)
+  - nuovi check su orizzonte temporale, memoria multi-orizzonte e cadenze periodiche
+- Aggiornato [aiControlPlaneAudit.ts](C:/Users/albie/Desktop/Programmi/Linkedin/src/scripts/aiControlPlaneAudit.ts)
+  - l'audit statico ora controlla anche la presenza del nuovo asse temporale nei canonici
+- Aggiornato [active.md](C:/Users/albie/Desktop/Programmi/Linkedin/todos/active.md)
+  - aperto un gap operativo esplicito: trasformare queste cadenze in enforcement reale e non solo documentale
+
+### Verifica eseguita
+
+- `npm run pre-modifiche`
+
+### Esito
+
+Il sistema distingue ora meglio:
+
+- task da chiudere nel breve termine
+- follow-up della stessa iniziativa
+- manutenzione periodica e hardening di lungo periodo
+
+Resta aperto il passaggio successivo: spingere una parte di queste cadenze in automazioni, audit o workflow veri, cosi' da non lasciarle solo come disciplina documentale.
+
+## 2026-04-17 — Creata lista madre unica del sistema AI e resa esplicita la regola anti-compiacenza
+
+### Obiettivo
+
+Chiudere un gap rimasto aperto nella documentazione: i contenuti della chat e delle checklist erano gia' quasi tutti presenti, ma distribuiti tra piu' file. Serviva una lista madre unica, dettagliata, non duplicata e abbastanza esplicita da far emergere anche un principio chiave richiesto dall'utente: l'AI non deve assumere che tutto cio' che dice l'utente sia certamente corretto e non deve mai fingere di aver completato o verificato lavoro che non ha davvero eseguito.
+
+### Interventi completati
+
+- Creato [AI_MASTER_SYSTEM_SPEC.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_SYSTEM_SPEC.md)
+  - unifica in una sola lista esplicita i requisiti del sistema AI
+  - copre verita' operativa, ragionamento, contesto, fonte di verita', web search, tool selection, memoria, protocolli di controllo, hook, n8n, prompt/modello, commit/push, cleanup, nuovi progetti e strumenti locali
+  - rende esplicito il principio "no compiacenza, no false completion"
+- Aggiornato [AGENTS.md](C:/Users/albie/Desktop/Programmi/Linkedin/AGENTS.md) con la sezione `Verita' operativa e non compiacenza`
+- Aggiornato [AI_OPERATING_MODEL.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_OPERATING_MODEL.md) per:
+  - includere il principio che l'input utente non e' automaticamente verita' tecnica
+  - collegare il modello operativo alla nuova lista madre
+  - esplicitare uno standard operativo "zero omissioni / zero assunzioni gratuite" invece di affidarsi a formule vaghe
+- Aggiornato [docs/README.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/README.md) per classificare il nuovo documento come canonico
+- Creato [AI_RUNTIME_BRIEF.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_RUNTIME_BRIEF.md)
+  - digest runtime compatto derivato dai canonici
+  - pensato per essere caricato meccanicamente dai hook senza iniettare ogni volta file troppo lunghi
+
+### Verifica eseguita
+
+- `npm run pre-modifiche`
+
+### Esito
+
+Il sistema ha ora anche un documento madre unico che riduce il rischio di perdere pezzi nella lettura distribuita dei canonici.
+Resta comunque vero che la lista, da sola, non basta: i punti critici continuano a richiedere conversione progressiva in hook, script, audit e workflow perche' non dipendano solo dalla lettura del documento.
+
+### Estensione successiva dello stesso blocco
+
+Su richiesta dell'utente e' stata resa esplicita anche una regola prima solo implicita:
+
+- quando il prompt e' lungo o molto denso, l'AI non deve seguire solo il punto piu' visibile
+- deve prima decomporre il prompt in una mappa dei requisiti, inclusi i punti sottili e qualitativi
+- deve sapere in che fase del task si trova (inizio, lavoro in corso, chiusura)
+- deve rieseguire un controllo di copertura prima di rispondere
+- omissioni, assunzioni non verificate e chiusure premature vanno trattate come failure del task
+
+Questo e' stato formalizzato in:
+
+- [AGENTS.md](C:/Users/albie/Desktop/Programmi/Linkedin/AGENTS.md)
+- [AI_MASTER_SYSTEM_SPEC.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_SYSTEM_SPEC.md)
+- [AI_OPERATING_MODEL.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_OPERATING_MODEL.md)
+
+### Estensione successiva: enforcement hook della memoria operativa per-prompt
+
+Per ridurre la dipendenza dalla sola lettura iniziale dei documenti e dalla memoria del modello:
+
+- `session-start.ps1` ora carica anche `AI_RUNTIME_BRIEF.md`
+- e' stato aggiunto un hook globale `UserPromptSubmit` che reinietta il runtime brief prima di ogni nuovo prompt
+- e' stato aggiunto un hook globale `PreCompact` che reinietta il runtime brief prima della compattazione
+- gli audit `audit:hooks` e `audit:ai-control-plane` ora controllano anche questa parte del control plane
+
+Questo non garantisce ancora perfezione assoluta, ma chiude un gap importante: le regole operative critiche non vengono piu' affidate solo al primo caricamento di sessione.
+
+### Estensione successiva: selezione contestuale automatica resa esplicita
+
+Su richiesta dell'utente e' stato reso ancora piu' esplicito un punto importante:
+
+- la selezione di skill, MCP, web/docs, loop, piano, workflow e quality gate non deve partire solo quando l'utente lo chiede
+- deve partire automaticamente a ogni nuovo prompt e a ogni modifica rilevante
+- questa rivalutazione deve stare nei canonici, nel runtime brief e negli audit, non solo come interpretazione implicita
+
+### Estensione successiva: riallineati anche i documenti guida non canonici stretti
+
+Verificati anche file fuori dal nucleo canonico stretto per evitare drift documentale:
+
+- `README.md`
+- `CLAUDE.md`
+- `docs/360-checklist.md`
+- overview dei file in `todos/`, `docs/`, `dashboard/`, `n8n/`, `plugins/`, `scripts/`
+
+Correzioni applicate:
+
+- root `README.md` ora include anche `AI_MASTER_SYSTEM_SPEC.md` nell'ordine di lettura e chiarisce che `AI_RUNTIME_BRIEF.md` e' runtime, non fonte primaria manuale
+- `CLAUDE.md` ora richiama anche `AI_MASTER_SYSTEM_SPEC.md`, chiarisce il ruolo di `AI_RUNTIME_BRIEF.md` e rende esplicita l'automaticita' della selezione contestuale
+- `docs/360-checklist.md` ora include anche:
+  - selezione contestuale automatica a ogni prompt/modifica
+  - `UserPromptSubmit`
+  - `PreCompact`
+  - runtime brief nel sistema hook
+
+## 2026-04-15 — Chiusura gap tra regole git scritte e enforcement hook reale
+
+### Obiettivo
+
+Chiudere il buco rimasto aperto dopo l'introduzione dell'audit git: le regole su commit/push e quality gate erano scritte bene, ma non ancora rese meccaniche via hook. Inoltre chiarire in modo esplicito che Claude Code non offre un evento separato `during`, quindi il controllo continuo corretto va modellato tramite tool-use hooks.
+
+### Interventi completati
+
+- Creato hook globale [pre-bash-git-gate.ps1](C:/Users/albie/.claude/hooks/pre-bash-git-gate.ps1)
+  - blocca `git commit` se il working tree non e' commit-ready
+  - blocca `git push` se il repository non e' push-ready
+  - applica enforcement su branch condivisi, repo sporco, upstream/divergenza e file sensibili
+- Creato hook globale [post-bash-git-audit.ps1](C:/Users/albie/.claude/hooks/post-bash-git-audit.ps1)
+  - esegue audit automatico dopo `post-modifiche`, `conta-problemi`, `git commit`, `git push`
+  - logga lo stato git reale in `C:\Users\albie\memory\git-hook-log.txt`
+  - marca automaticamente i casi `AUTOCOMMIT_CANDIDATE` quando quality gate e stato git sono entrambi verdi
+- Aggiornato [settings.json](C:/Users/albie/.claude/settings.json) per agganciare i nuovi hook Bash pre/post
+- Aggiornato [AGENTS.md](C:/Users/albie/Desktop/Programmi/Linkedin/AGENTS.md) per:
+  - chiarire che non esiste un evento nativo `during`
+  - dichiarare il pattern corretto `SessionStart` + `PreToolUse` + `PostToolUse` + `Stop`
+  - rendere esplicito l'enforcement git ora attivo
+- Aggiornato [AI_OPERATING_MODEL.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_OPERATING_MODEL.md) per riallineare la sezione hook al comportamento reale
+- Aggiornato [360-checklist.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/360-checklist.md) con check specifici su session-start, git gates e git hook log
+- Rafforzati gli audit repo:
+  - [hooksConformityAudit.ts](C:/Users/albie/Desktop/Programmi/Linkedin/src/scripts/hooksConformityAudit.ts) ora verifica anche `pre-bash-l1-gate`, `pre-bash-git-gate`, `post-bash-git-audit`
+  - [aiControlPlaneAudit.ts](C:/Users/albie/Desktop/Programmi/Linkedin/src/scripts/aiControlPlaneAudit.ts) ora verifica anche gli script git di audit e la presenza dei git hooks in `settings.json`
+
+### Verifica eseguita
+
+- `npm run audit:hooks`
+- `npm run audit:ai-control-plane`
+- `npm run post-modifiche`
+
+### Esito
+
+Il sistema resta ancora parziale sulla parity cross-environment e su n8n ingress/egress hooks, ma non e' piu' corretto dire che commit/push o il controllo "durante" siano solo scritti nei documenti:
+
+- i blocker git principali sono ora enforced via hook
+- lo stato git viene ri-audito automaticamente durante il lavoro nei momenti giusti
+- la documentazione canonica ora dichiara esplicitamente anche il limite reale del modello eventi di Claude Code
+
+## 2026-04-15 — Audit eseguibile della readiness commit/push
+
+### Obiettivo
+
+Trasformare il punto commit/push da sola policy documentale a controllo git eseguibile, cosi' da distinguere in modo oggettivo quando il sistema puo' chiudere un blocco con commit assistito e quando invece deve fermarsi o chiedere review prima del remote.
+
+### Interventi completati
+
+- Creato [gitAutomationAudit.ts](C:/Users/albie/Desktop/Programmi/Linkedin/src/scripts/gitAutomationAudit.ts)
+  - legge stato branch/upstream/origin
+  - calcola ahead/behind
+  - rileva working tree sporco, scope troppo ampio, file sensibili e operazioni git in corso
+  - produce un verdetto separato per `commit` e `push`: `READY`, `REVIEW`, `BLOCKED`, `NOOP`
+  - supporta `--json` e modalita' `--strict=commit` / `--strict=push` per futuri hook o workflow
+- Esposto il controllo in [package.json](C:/Users/albie/Desktop/Programmi/Linkedin/package.json) come `npm run audit:git-automation`
+- Aggiunti anche script npm dedicati per evitare ambiguita' di forwarding nel terminale:
+  - `npm run audit:git-automation:json`
+  - `npm run audit:git-automation:strict:commit`
+  - `npm run audit:git-automation:strict:push`
+- Aggiornato [AGENTS.md](C:/Users/albie/Desktop/Programmi/Linkedin/AGENTS.md) per collegare la policy commit/push a un audit deterministicamente eseguibile
+- Aggiornato [AI_OPERATING_MODEL.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_OPERATING_MODEL.md) per rendere questo audit parte della strategia di autonomia contestuale
+
+### Verifica eseguita
+
+- `npm run pre-modifiche`
+- `npm run audit:git-automation`
+
+### Esito
+
+Il sistema non e' ancora a "push cieco automatico", e non deve esserlo. Pero' non dipende piu' solo da testo e memoria del modello:
+
+- il commit puo' essere valutato con un audit oggettivo del working tree
+- il push viene bloccato o promosso in base a branch, upstream, divergenza e stato locale
+- l'automazione git resta quindi contestuale, ma ora e' anche misurabile
+
+## 2026-04-14 — Esplicitazione della policy commit/push nel sistema AI
+
+### Obiettivo
+
+Chiudere un gap rimasto implicito nella lista: distinguere chiaramente cosa del flusso git deve essere automatico davvero e cosa invece deve restare governato dal contesto.
+
+### Interventi completati
+
+- Aggiornato [AGENTS.md](C:/Users/albie/Desktop/Programmi/Linkedin/AGENTS.md) con una sezione esplicita `Commit e push — policy operativa esplicita`
+- Formalizzato che:
+  - il commit deve essere la chiusura naturale di un blocco verificato
+  - l'auto-commit e' desiderato by default quando i gate sono verdi
+  - il push non va automatizzato in modo cieco
+  - il push puo' essere automatico solo se branch, upstream, remote state e review policy sono chiari e sicuri
+  - se il sistema si ferma al commit, l'AI deve spiegare il motivo e il prossimo passo corretto
+- Aggiornato [AI_OPERATING_MODEL.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_OPERATING_MODEL.md) per rendere commit/push parte esplicita del punto autonomia totale
+- Aggiornata [360-checklist.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/360-checklist.md) con due check specifici su commit e push
+
+### Verifica eseguita
+
+- review statica dei canonici e delle skill git esistenti (`git-commit`, `git-create-pr`)
+
+### Esito
+
+Il sistema non era "senza copertura" su commit e push, ma il comportamento era distribuito tra skill e regole sparse. Ora la policy e' esplicita:
+
+- commit = automatizzabile e desiderato come default dopo verifiche verdi
+- push = contestuale, non cieco, subordinato a branch policy e rischio operativo
+
+## 2026-04-14 — Cleanup mirato della documentazione e riduzione del rumore operativo
+
+### Obiettivo
+
+Ridurre il rischio di drift documentale senza comprimere forzatamente documenti con ruoli diversi: archiviare il piano 360 ormai storico, chiarire l'indice e rendere piu' leggibili i documenti ancora vivi.
+
+### Interventi completati
+
+- Aggiornato [docs/README.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/README.md):
+  - chiarito che [A16_LINKEDIN_DEPENDENCY_PLAN.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/A16_LINKEDIN_DEPENDENCY_PLAN.md) e [AI_QUALITY_PIPELINE.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_QUALITY_PIPELINE.md) sono documenti specialistici, non backlog vivi
+  - aggiunto [codebase-debt.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/tracking/codebase-debt.md) come snapshot di supporto
+  - aggiunto in archivio il riferimento al piano 360 storico
+- Aggiornato [docs/tracking/README.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/tracking/README.md) per rendere esplicito il ruolo di [codebase-debt.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/tracking/codebase-debt.md) come file di supporto al tracking
+- Normalizzato [docs/GUIDA.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/GUIDA.md) rimuovendo il titolo troppo specifico "Rise Against Hunger" e riportandolo a guida operativa generale
+- Normalizzato [ARCHITECTURE_ANTIBAN_GUIDE.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/ARCHITECTURE_ANTIBAN_GUIDE.md) con un vero titolo di primo livello coerente con gli altri documenti
+- Aggiornato [A16_LINKEDIN_DEPENDENCY_PLAN.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/A16_LINKEDIN_DEPENDENCY_PLAN.md) con una nota esplicita che lo declassa da possibile backlog implicito a documento analitico specialistico
+- Archiviato il piano storico [360-analysis-plan.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/archive/360-analysis-plan-2026-04-04.md), rimuovendolo dal backlog vivo in `todos/`
+
+### Verifica eseguita
+
+- controllo statico dei link principali e dell'indice documentale
+- review dei cluster canonici, specialistici, sidecar e archive
+
+### Esito
+
+La documentazione resta ampia ma piu' governata:
+
+- il nucleo canonico resta separato e chiaro
+- il piano 360 non resta piu' tra i TODO attivi come falso backlog vivo
+- i documenti specialistici sono piu' esplicitamente classificati
+- il debt snapshot e' visibile senza promuoverlo a canonico improprio
+
+## 2026-04-14 — Audit del control plane AI e riallineamento canonici vs runtime operativo
+
+### Obiettivo
+
+Trasformare la Fase A da semplice documentazione a verifica oggettiva: controllare che repo canonici, control plane globale Claude e skill chiave siano davvero coerenti tra loro.
+
+### Interventi completati
+
+- Creato [aiControlPlaneAudit.ts](C:/Users/albie/Desktop/Programmi/Linkedin/src/scripts/aiControlPlaneAudit.ts):
+  - verifica che [AGENTS.md](C:/Users/albie/Desktop/Programmi/Linkedin/AGENTS.md) contenga i blocchi canonici della fase A
+  - verifica che [AI_OPERATING_MODEL.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_OPERATING_MODEL.md) contenga ordine corretto di implementazione e orchestrazione contestuale
+  - verifica che [active.md](C:/Users/albie/Desktop/Programmi/Linkedin/todos/active.md) tenga aperto il backlog giusto
+  - verifica che il `CLAUDE.md` globale usi davvero l'orchestrazione cognitiva contestuale e non il vecchio flusso rigido
+  - verifica che il `SessionStart` hook carichi davvero memoria globale, todos e indice memoria progetto
+  - verifica che le skill globali `context-handoff`, `loop-codex` e `audit-rules` esistano e contengano i requisiti minimi dichiarati
+- Aggiunto script npm canonico:
+  - `npm run audit:ai-control-plane`
+- Eseguito riallineamento del file globale `C:\Users\albie\.claude\CLAUDE.md`:
+  - rimosso il blocco rigido `PRIMA — DURANTE — DOPO (ogni richiesta, sempre, automaticamente)`
+  - sostituito con `Orchestrazione cognitiva contestuale`
+
+### Verifica eseguita
+
+- `npm run pre-modifiche`
+- `npm run audit:hooks`
+- `npm run audit:ai-control-plane`
+
+### Esito
+
+Verde sulla parte meta-operativa della Fase A:
+
+- la baseline repo e' confermata verde
+- il control plane globale non promette piu' un flusso rigido in conflitto con i canonici del repo
+- esiste ora un audit dedicato che misura la coerenza minima tra documenti canonici, hook e skill chiave
+
+Resta aperto il lavoro piu' difficile della Fase A: far riconoscere all'agente quando proporre davvero loop, MCP, web search o workflow in modo affidabile e non solo documentato.
+
+## 2026-04-14 — Allineamento operating model, scelta strumenti e truthful audit
+
+### Obiettivo
+
+Chiudere il blocco meta-operativo prima di continuare con feature LinkedIn: rendere piu' esplicita la scelta tra hook, skill, MCP, web, script e n8n; unire i punti della lista in un sistema coerente; correggere audit e documenti che potevano guidare male.
+
+### Interventi completati
+
+- Aggiornato [AGENTS.md](C:/Users/albie/Desktop/Programmi/Linkedin/AGENTS.md) con una sezione esplicita su:
+  - fonte di verita' primaria del task
+  - quando la ricerca web/docs ufficiali e' obbligatoria
+  - quando usare hook, skill, MCP, script, n8n e memoria
+  - come trattare le divergenze tra documenti, audit e stato reale
+- Aggiornato [AI_OPERATING_MODEL.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_OPERATING_MODEL.md) con un meta-principio trasversale:
+  - i punti non sono indipendenti ma interconnessi
+  - la scelta corretta non e' "internet sempre", ma "fonte di verita' piu' affidabile e aggiornata"
+  - mappa esplicita scenario -> fonte primaria -> primitive corretta -> intersezioni obbligatorie
+  - aggiunta regola sui controlli truthful per evitare falsi verdi/falsi rossi
+- Aggiornata [360-checklist.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/360-checklist.md) per includere:
+  - classificazione della fonte di verita'
+  - uso corretto di skill vs MCP vs hook
+  - obbligo di web/docs ufficiali sui task esterni o mutevoli
+  - requirement che self-audit e checklist siano truthful
+- Aggiornata [NEW_PROJECT_BOOTSTRAP_CHECKLIST.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/NEW_PROJECT_BOOTSTRAP_CHECKLIST.md) per rendere riusabile anche nei nuovi progetti la stessa sequenza cognitiva obbligatoria:
+  - PRIMA -> DURANTE -> DOPO su ogni richiesta
+  - scelta esplicita della fonte di verita' primaria
+  - distinzione tra web/docs ufficiali, skill, MCP, hook, script e workflow
+  - loop o equivalente obbligatorio quando serve per evitare false completion
+- Rafforzati [AGENTS.md](C:/Users/albie/Desktop/Programmi/Linkedin/AGENTS.md) e [AI_OPERATING_MODEL.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_OPERATING_MODEL.md) con una policy esplicita di automazione:
+  - automation-first fino al confine di sicurezza
+  - scala di promozione chat -> file canonico -> checklist -> skill -> hook -> script/audit -> workflow persistente
+  - principio che i passaggi dimenticati o ri-spiegati piu' volte non devono restare allo stesso livello
+  - distinzione esplicita tra cio' che va automatizzato per default e cio' che richiede sempre conferma umana
+- Rafforzata la definizione di "automatico" nei file canonici:
+  - l'utente non deve dover scrivere "leggi le regole", "usa il loop", "controlla su internet" o "attiva la skill giusta" per ottenere il comportamento corretto
+  - slash command, skill manuali e richieste esplicite di primitive restano override/debug, non prerequisito di qualita'
+  - la sequenza cognitiva deve attivarsi in tre momenti: ingresso task, rivalutazione durante il task, controllo finale prima della risposta
+- Aggiornati [360-checklist.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/360-checklist.md), [NEW_PROJECT_BOOTSTRAP_CHECKLIST.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/NEW_PROJECT_BOOTSTRAP_CHECKLIST.md) e [todos/active.md](C:/Users/albie/Desktop/Programmi/Linkedin/todos/active.md) per trasformare questo punto da principio astratto a gap operativo esplicito.
+- Riallineati i canonici dopo correzione di rotta:
+  - rimosso il messaggio implicito di "stesso flusso sempre"
+  - sostituito con "orchestrazione cognitiva contestuale"
+  - esplicitato che loop, MCP, web search e workflow vanno riconosciuti e proposti caso per caso
+  - esplicitato che l'AI deve ragionare con l'utente in modo visibile, non solo attivare primitive in silenzio
+- Corretto lo stato rapido di [AI_OPERATING_MODEL.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_OPERATING_MODEL.md) per allinearlo meglio allo stato reale:
+  - parita' ambienti da ✅ a ⚠️
+  - strumenti personali e ambienti da ✅ a ⚠️
+  - manutenzione e produzione da ✅ a ⚠️
+- Aggiunta in [AI_OPERATING_MODEL.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_OPERATING_MODEL.md) una sezione esplicita con l'ordine corretto di implementazione per dipendenze:
+  - Fase A: base cognitiva e truthful control plane
+  - Fase B: runtime reale, sicurezza operativa e produzione
+  - Fase C: n8n e agenti verticali
+  - Fase D: parity ambienti e strumenti personali
+  - Fase E: consolidamento e metriche di autonomia
+- Riallineata [SETUP.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/SETUP.md) al repo reale:
+  - `db:migrate` al posto di script inesistenti
+  - `ecosystem.config.cjs` al posto di `ecosystem.config.js`
+  - nomi PM2 reali (`linkedin-bot-api`, `linkedin-bot-daemon`, `n8n`)
+  - ordine import n8n coerente con i file realmente presenti
+  - rimosso il gate falso `audit > 80/100` come requisito binario di go-live
+- Corretto [hooksConformityAudit.ts](C:/Users/albie/Desktop/Programmi/Linkedin/src/scripts/hooksConformityAudit.ts):
+  - ora legge il formato reale degli hook Claude (`matcher` + `hooks[]`)
+  - verifica i command path reali (`pre-edit-antiban.ps1`, `post-bash-quality-log.ps1`, `file-size-check.ps1`, `stop-session.ps1`)
+  - controlla il vero enforcement antiban leggendo lo script globale e cercando `Write-HookDecision -Decision deny`
+
+### Verifica eseguita
+
+- `npm run audit:hooks`
+- `npm run pre-modifiche`
+- `npm test`
+
+### Esito
+
+Verde sul piano meta-operativo:
+
+- l'audit hook torna a misurare il sistema reale invece di un formato vecchio
+- la regola "fonte di verita' + strumento corretto" e' ora esplicita nei file canonici
+- la guida setup non richiama piu' comandi e file inesistenti
+- il significato di "automatico" e' stato corretto: non flusso fisso sempre uguale, ma memoria delle regole + scelta contestuale delle primitive + ragionamento esplicito con l'utente
+
+Resta aperto il debito strutturale gia' noto del repo (monoliti, runtime truthfulness, lifecycle/control plane, staging reale), che non viene chiuso da questo blocco documentale/di audit.
+
 ## 2026-04-04 — GDPR Retention Policy & Audit Trail (punto 20-bis)
 
 ### Obiettivo
