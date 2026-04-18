@@ -278,6 +278,24 @@ function buildMatrix(): RuleResult[] {
             "Identificare la fonte di verita' corretta",
             brief,
         ),
+        briefRule(
+            'scelta-strumenti-esplicita',
+            'Dichiarare fonte, strumenti attivati e strumenti esclusi nella risposta',
+            'strumenti attivati e strumenti esclusi',
+            brief,
+        ),
+        briefRule(
+            'web-search-policy',
+            'Regola decisionale web search: obbligatoria/facoltativa/inutile',
+            'Ricerca web obbligatoria quando',
+            brief,
+        ),
+        briefRule(
+            'modello-ambiente-scelta',
+            'Proporre modello e ambiente in base a qualita/costo/velocita/rischio',
+            'Proporre modello e ambiente',
+            brief,
+        ),
 
         // --- D: Non meccanizzabile ---
         notMechRule(

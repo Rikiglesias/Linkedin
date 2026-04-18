@@ -2,6 +2,28 @@
 
 Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o verificati nel repo.
 
+## 2026-04-18 — Items #1-3, #9, #10, #11: brief rafforzato + pre/post conditions + violation analysis
+
+### Obiettivo
+
+Chiudere i punti rimasti aperti nella Fase 1 del control plane cognitivo.
+
+### Interventi completati
+
+- **#1**: Aggiunto al runtime brief "dichiarare fonte, strumenti attivati e strumenti esclusi"
+- **#2**: Aggiunto al runtime brief regola decisionale web search (obbligatoria/facoltativa/inutile)
+- **#3**: Aggiunto al runtime brief "proporre modello e ambiente in base a qualita/costo/velocita/rischio"
+- **#9**: Estesa tabella pre/post conditions in AGENTS.md: da 3 a 10 skill/MCP coperti
+- **#10**: Coperto da `audit:rule-enforcement` (gia' implementato in blocco precedente)
+- **#11**: Creato `src/scripts/violationLogAnalysis.ts` + `npm run audit:violations`
+- Matrice enforcement aggiornata: 3 nuovi brief check (scelta-strumenti-esplicita, web-search-policy, modello-ambiente-scelta)
+
+### Verifica
+
+- `audit:rule-enforcement`: 24/29 enforced, 0 gap, 5 non-meccanizzabili ✅
+- `audit:violations`: funzionante, 0 segnali critici ✅
+- `post-modifiche`: verde (136/136, 1421/1421) ✅
+
 ## 2026-04-18 — Item #8: allineamento hook canonici ↔ audit ↔ matrice
 
 ### Obiettivo

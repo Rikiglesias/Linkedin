@@ -311,13 +311,20 @@ Questa mappatura non deve restare vaga: per ogni task bisogna poter distinguere 
 
 I file che triggerano il pre-hook antiban contengono nel path o nel nome: `browser`, `playwright`, `stealth`, `fingerprint`, `timing`, `delay`, `session`, `humanDelay`, `inputBlock`, `clickLocator`, `inviteWorker`, `inboxWorker`, `organicContent`, `syncSearch`, `syncList`, `sendInvites`, `sendMessages`.
 
-### Pre/post-conditions nelle skill (implementate al 2026-04-04)
+### Pre/post-conditions nelle skill e MCP critici
 
-| Skill | Pre-conditions | Post-conditions |
-|-------|---------------|-----------------|
-| `antiban-review` | Quando invocare obbligatoriamente (file sensibili, azioni LinkedIn, volumi) | Verdetto → SICURO/ATTENZIONE/BLOCCO con azione successiva |
-| `loop-codex` | L1 pulito prima del loop, task con criteri misurabili, scope no-antiban | Auto-commit se DONE, update ENGINEERING_WORKLOG |
+| Skill / MCP | Pre-conditions | Post-conditions |
+|-------------|---------------|-----------------|
+| `antiban-review` | File sensibile LinkedIn, azione browser, cambio volume | Verdetto SICURO/ATTENZIONE/BLOCCO con azione successiva |
+| `loop-codex` | L1 pulito, task con criteri misurabili, scope no-antiban | Auto-commit se DONE, update ENGINEERING_WORKLOG |
 | `context-handoff` | Git status pulito o documentato, memoria aggiornata, active.md coerente | SESSION_HANDOFF.md committato, active.md aggiornato |
+| `debugging-wizard` | Errore riproducibile o log disponibile, primo tentativo di debug | Root cause identificata o escalation a `systematic-debugging` |
+| `verification-protocol` (L7-L9) | Implementazione completata, L1-L6 gia' verificati | Esito DONE o BLOCKED con causa esplicita |
+| `typescript-pro` | Task TS con logica non banale, codebase TS presente | Codice conforme a pattern progetto, typecheck pulito |
+| `code-review` | PR creata o diff locale significativo, area core/sicurezza/DB | Commenti con severity, no falsi positivi su stile |
+| `audit-rules` | Sospetto violazione regole operative o audit periodico | Report gap con azione correttiva |
+| MCP Supabase | Query o migrazione DB necessaria, credenziali configurate | Risultato query o migration applicata, tipi aggiornati se serve |
+| MCP Playwright | Bug UI non riproducibile da log, pagina accessibile | Screenshot o DOM snapshot, diagnosi visiva |
 
 ### Hook n8n (da implementare, non ancora attivo)
 
