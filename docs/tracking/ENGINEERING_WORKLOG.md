@@ -2,6 +2,30 @@
 
 Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o verificati nel repo.
 
+## 2026-04-18 — Fix antiban false positive + completamento item #7 (copertura matrice)
+
+### Obiettivo
+
+Tre fix in sequenza:
+- A: Antiban hook produceva falsi positivi su file `~/.claude/hooks/` (pattern "session" matchava `stop-session.ps1`)
+- B: `audit:rule-enforcement` non era registrato in `aiControlPlaneAudit.ts`
+- C: 2 regole da AGENTS.md/AI_MASTER_SYSTEM_SPEC non ancora mappate nella matrice
+
+### Interventi completati
+
+- Aggiunto `Test-AntibanFile` in `~/.claude/hooks/_lib.ps1` con whitelist `~/.claude/hooks/`
+- Aggiornati `pre-edit-antiban.ps1` e `post-edit-antiban-audit.ps1` per usare `Test-AntibanFile`
+- Aggiunto `'audit:rule-enforcement'` a `requiredScripts` in `aiControlPlaneAudit.ts`
+- Aggiunti `capability-governance` e `auto-commit-policy` come `non-meccanizzabile` in `ruleEnforcementMatrix.ts`
+
+### Verifica
+
+- `Test-AntibanFile` su `stop-session.ps1` → `False` (non bloccato) ✅
+- `Test-AntibanFile` su `sessionManager.ts` → `True` (bloccato) ✅
+- `audit:rule-enforcement`: 18/23 enforced, 0 gap, 5 non-meccanizzabili by design ✅
+- `audit:ai-control-plane`: 18/18 ✅
+- `post-modifiche`: verde (136/136, 1421/1421) ✅
+
 ## 2026-04-18 — Rule Enforcement Matrix: matrice enforcement + chiusura GAP worklog-update
 
 ### Obiettivo

@@ -267,6 +267,16 @@ function buildMatrix(): RuleResult[] {
             'Analisi blast radius reale sulla codebase (caller, test, import)',
             'Richiede code search e ragionamento sulle dipendenze reali — si supporta con strumenti ma non si enforced automaticamente',
         ),
+        notMechRule(
+            'capability-governance',
+            'Selezione e routing capability corretta per dominio (skill/MCP/plugin/hook/workflow)',
+            'Richiede ragionamento contestuale sul dominio del task — non verificabile con script',
+        ),
+        notMechRule(
+            'auto-commit-policy',
+            'Commit automatico dopo verifiche verdi, push contestuale al tipo di lavoro',
+            'Dipende dal contesto git e policy di branch — parzialmente enforced da git-gate hook ma non completamente',
+        ),
     ];
 
     return results;
