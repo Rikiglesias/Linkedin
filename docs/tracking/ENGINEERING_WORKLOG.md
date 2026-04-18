@@ -2,6 +2,28 @@
 
 Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o verificati nel repo.
 
+## 2026-04-18 — Fase 2: items #13, #15, #17, #18, #19, #20
+
+### Obiettivo
+
+Implementare Fase 2 del control plane: contesto, memoria, documenti AI-readable.
+
+### Interventi completati
+
+- **#13**: session-start.ps1 ora inietta SESSION_HANDOFF.md se presente nella cwd
+- **#15**: Creato docs/AI_DOC_STYLE_GUIDE.md con convenzioni documenti AI-readable
+- **#17**: inject-runtime-brief.ps1 aggiunge CONTEXT_DEGRADATION_WARNING durante PreCompact
+- **#18**: stop-session.ps1 controlla anche se todos/active.md e' stato aggiornato
+- **#19**: Creato src/scripts/ledgerCoverageAudit.ts (audit:ledger) — 14/14 check
+- **#20**: Creato src/scripts/skillActivationAudit.ts (audit:skills) — 5/5 critiche + inventario 172 skill
+
+### Verifica
+
+- `audit:ledger`: 14/14 ✅
+- `audit:skills`: 5/5 critiche ✅
+- `audit:rule-enforcement`: 24/29 enforced, 0 gap ✅
+- `post-modifiche`: verde (136/136, 1421/1421) ✅
+
 ## 2026-04-18 — Items #1-3, #9, #10, #11: brief rafforzato + pre/post conditions + violation analysis
 
 ### Obiettivo
