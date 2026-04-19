@@ -90,6 +90,8 @@ L'utente non deve ricordare all'AI di fare questa valutazione: la valutazione st
 - Monitorare segnali di degrado del contesto: omissioni ripetute, ledger che perde copertura, contraddizioni, prompt/sessione troppo grandi, rischio di compact con perdita di stato.
 - Se il ragionamento sta degradando, preparare handoff, aggiornare i contenitori minimi e proporre o usare `context-handoff` invece di continuare in stato degradato.
 - Alla chiusura di ogni task: cercare artefatti correlati (memory, docs, todos, skill, hook) potenzialmente stale. Stesso argomento → aggiornare automaticamente. Argomento diverso → segnalare e chiedere conferma.
+- Quando si aggiunge/modifica una capability (skill, MCP, hook, workflow): propagare automaticamente a tabelle, pre/post conditions, matrice enforcement e docs. Installazione senza propagazione = incompleta.
+- Quando si lavora su una lista di item: completare N interamente (web search + plan + implementazione + verifica + propagazione) prima di iniziare N+1. Se servono piu' step, usare loop mode.
 
 ## Prima di chiudere
 

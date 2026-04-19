@@ -144,6 +144,8 @@ Questa lista non e' ordinata solo per priorita'. E' ordinata soprattutto per dip
 81. `[Cleanup/docs/root][medio/lungo]` Pulire root e cartelle solo dopo classificazione esplicita del loro ruolo.
 82. `[Cleanup/docs/root][medio/lungo]` Ridurre duplicazioni, backlog morti e documenti che dicono la stessa cosa con nomi diversi.
 82b. ✅ `[Cleanup/docs/root][breve/medio]` Applicare blast radius documentale a ogni task: cercare e aggiornare artefatti correlati stale (stesso argomento = automatico, argomento diverso = chiedere). → *Formalizzato come regola in AGENTS.md e runtime brief (2026-04-18)*
+82c. ✅ `[Control plane][breve]` Propagazione automatica capability: quando si aggiunge/modifica skill, MCP, hook o workflow, aggiornare automaticamente tabelle, pre/post conditions, matrice e docs. → *Formalizzato in AGENTS.md e runtime brief (2026-04-19)*
+82d. ✅ `[Control plane][breve]` Disciplina di esecuzione sequenziale: completare item N interamente (web search + plan + implementazione + verifica + propagazione) prima di N+1. Usare loop mode se servono piu' step. → *Formalizzato in AGENTS.md e runtime brief (2026-04-19)*
 83. `[Cleanup/docs/root][medio/lungo]` Mantenere AI-readable i file canonici, evitando monoliti documentali ingestibili.
 
 ### Fase 9 — Riuso su nuovi progetti e consegna ad altri

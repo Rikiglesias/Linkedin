@@ -126,6 +126,34 @@ Le regole globali (P0, L1-L9, parità ambienti, memoria, anti-dimenticanza) stan
 - Obiettivo: manutenzione incrementale a ogni task invece di accumulare arretrato documentale che poi richiede sessioni dedicate di cleanup.
 - Se il cleanup identificato e' troppo grande per essere fatto inline, va tracciato nel contenitore corretto (todos, worklog, backlog) con priorita' esplicita — non lasciato solo in risposta.
 
+## Propagazione automatica delle capability
+
+- Quando si aggiunge, rimuove o modifica una capability (skill, MCP, plugin, hook, workflow, agente, audit script), l'AI deve propagare automaticamente la modifica a tutti i punti che la referenziano:
+  - Tabelle skill/MCP in AGENTS.md e CLAUDE.md globale
+  - Pre/post conditions in AGENTS.md se la capability e' critica
+  - Runtime brief se la capability influenza il comportamento a ogni prompt
+  - Matrice di enforcement (`ruleEnforcementMatrix.ts`) se e' una regola enforced
+  - Hook `settings.json` se e' un hook
+  - Inventario skill (`audit:skills`) se e' una skill
+  - Documentazione del workflow se e' un workflow n8n
+- Il flusso completo e': aggiungere la capability → aggiornare tutti i riferimenti → verificare che il sistema la scopra e la usi correttamente.
+- Non chiedere conferma per gli aggiornamenti di propagazione: fanno parte dell'azione originale. Un'installazione senza propagazione e' incompleta.
+- Se la capability sostituisce o si sovrappone a una esistente, trattare l'overlap come segnale da auditare e proporre merge o rimozione del duplicato.
+
+## Disciplina di esecuzione sequenziale
+
+- Quando si lavora su una lista di item (backlog, piano, checklist), completare ogni item interamente prima di passare al successivo. Mai iniziare N+1 se N non e' verificato e chiuso.
+- "Completare interamente" significa:
+  - cercare la best practice specifica per quel punto (web search se il dominio lo richiede)
+  - usare Plan Mode per strutturare l'approccio
+  - implementare tutti gli aspetti, non solo quelli ovvi
+  - verificare con test, audit o controllo manuale
+  - propagare le modifiche correlate (blast radius)
+  - aggiornare tracking e documentazione
+- Se un item richiede piu' step di quanti ne entrano in una singola risposta, usare loop mode per completarlo senza lasciare lavoro a meta'.
+- Eccezione: item esplicitamente classificati come "medio/lungo termine" possono essere tracciati e rimandati, ma la decisione deve essere dichiarata, non implicita.
+- Ogni item completato deve essere verificabile: chi legge il codice o gli audit deve poter confermare che il punto e' davvero chiuso, non solo dichiarato tale.
+
 ## Gap di capability e promozione strutturale
 
 - Se durante il task emerge che il vero problema non e' il codice ma l'assenza della primitive giusta, l'AI deve riconoscerlo esplicitamente.

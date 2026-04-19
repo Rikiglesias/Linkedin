@@ -333,6 +333,16 @@ function buildMatrix(): RuleResult[] {
             'Manutenzione incrementale a ogni task invece di accumulare arretrato documentale',
             "Dipende dal contesto del task e dalla valutazione di cosa e' stale — non meccanizzabile",
         ),
+        notMechRule(
+            'capability-propagation',
+            'Propagare automaticamente aggiunta/modifica capability a tabelle, docs, matrice e pre/post conditions',
+            'Richiede comprensione di quali documenti referenziano la capability — non meccanizzabile',
+        ),
+        notMechRule(
+            'sequential-execution',
+            'Completare item N interamente prima di iniziare N+1, con web search + plan + verifica',
+            'Richiede giudizio su completezza reale del punto — non meccanizzabile',
+        ),
     ];
 
     return results;
