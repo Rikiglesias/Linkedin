@@ -81,15 +81,15 @@ Questa lista non e' ordinata solo per priorita'. E' ordinata soprattutto per dip
 
 ### Fase 4 — Runtime reale e truthfulness del bot
 
-33. `[Runtime/control plane][breve]` Rendere il lock del daemon cooperativo e rinnovato per tutta la durata reale della run.
-34. `[Runtime/control plane][breve]` Eliminare i `process.exit(0)` nei path critici e chiudere davvero il graceful shutdown.
-35. `[Runtime/control plane][breve]` Aggiungere stop e flush esplicito di listener e checkpoint allo shutdown.
-36. `[Runtime/control plane][breve]` Allineare i timeout PM2 al budget reale di stop.
+33. ✅ `[Runtime/control plane][breve]` Rendere il lock del daemon cooperativo e rinnovato per tutta la durata reale della run. → *`src/core/lifecycle.ts` + `onShutdown()` in loopCommand.ts (2026-04-19)*
+34. ✅ `[Runtime/control plane][breve]` Eliminare i `process.exit(0)` nei path critici e chiudere davvero il graceful shutdown. → *`src/index.ts`: `performGracefulShutdown` chiama `runShutdownCallbacks()` prima di tutto (2026-04-19)*
+35. ✅ `[Runtime/control plane][breve]` Aggiungere stop e flush esplicito di listener e checkpoint allo shutdown. → *`runShutdownCallbacks()` in `src/core/lifecycle.ts` (2026-04-19)*
+36. ✅ `[Runtime/control plane][breve]` Allineare i timeout PM2 al budget reale di stop. → *`ecosystem.config.cjs`: daemon 10s→35s, API 5s→15s (SHUTDOWN_TIMEOUT_MS=30s + buffer) (2026-04-19)*
 37. `[Runtime/control plane][breve/medio]` Portare reporting live, stato proxy e stato JA3 fuori dalla memoria locale di processo.
 38. `[Runtime/control plane][breve/medio]` Fare in modo che `/api/health/deep` misuri anche daemon liveness, zombie `automation_commands` e readiness reale.
 39. `[Runtime/control plane][breve/medio]` Recuperare gli `automation_commands` rimasti `RUNNING` dopo crash o stop brutale.
 40. `[Runtime/control plane][breve/medio]` Far propagare gli incidenti runtime critici fino al `WorkflowExecutionResult`.
-41. `[Runtime/control plane][breve/medio]` Allineare `workflowToJobTypes(...)` con i job realmente accodati e consumati.
+41. ✅ `[Runtime/control plane][breve/medio]` Allineare `workflowToJobTypes(...)` con i job realmente accodati e consumati. → *`scheduler.ts`: aggiunto `INTERACTION` a `'all'`; test aggiornato (2026-04-19)*
 42. `[Runtime/control plane][medio]` Ripulire i boundary dei workflow per evitare side effect impliciti fuori contratto.
 43. `[Runtime/control plane][breve/medio]` Sostituire o chiudere il `skipPreflight` troppo permissivo nei path non interattivi.
 44. `[Runtime/control plane][breve/medio]` Rendere l'override account scoped alla singola run e sempre ripristinato.
