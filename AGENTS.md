@@ -333,6 +333,15 @@ Questa mappatura non deve restare vaga: per ogni task bisogna poter distinguere 
   - agenti o subtask esplorativi quando il perimetro e' grande e il contesto locale non basta
 - L'impossibilita' pratica di leggere "tutto" non giustifica mai una patch isolata su un solo file.
 
+## Contratti, stato e propagazione dei fallimenti
+
+- Ogni funzione, modulo e workflow deve avere un contratto esplicito: input attesi, output dichiarati, side effect conosciuti. Side effect non dichiarati nel contratto sono bug architetturali, non comportamento accettabile.
+- Stato condiviso da piu' consumatori (API, report, Telegram, dashboard) deve avere una sola fonte di verita' autoritativa. Copie multiple che possono divergere sono bug architetturali.
+- Mutazioni temporanee su stato condiviso (override account, flag run-scoped, variabili di sessione) devono essere limitate allo scope dell'operazione e ripristinate automaticamente al termine. Non devono mai propagarsi verso operazioni successive non correlate.
+- I fallimenti critici non devono essere assorbiti a strati intermedi: devono propagarsi fino al livello che puo' agire su di essi (WorkflowExecutionResult, risposta API, alert). Swallowing silenzioso e' un bug operativo.
+- I gate di sicurezza e i preflight check non devono essere bypassabili in modo silenzioso nei path di produzione. Qualsiasi bypass deve essere esplicito, scoped alla singola operazione, loggato e automaticamente revocato.
+- Quando si diagnostica un errore o un failure, classificare la root cause prima di proporre il fix: errori con cause diverse (es. `LOGIN_MISSING` vs rate limit vs proxy failure vs rete degradata) richiedono recovery diverse anche quando i sintomi superficiali si assomigliano.
+
 ## Hook orchestration
 
 - Skill, MCP, plugin, regole e workflow devono poter dichiarare `pre-hook` e `post-hook`.
@@ -451,6 +460,7 @@ Estensioni LinkedIn ai livelli globali (vedi L1-L9 in `~/.claude/CLAUDE.md` per 
 - I documenti di tracking devono restare nel perimetro `docs/tracking/` e `todos/`.
 - Ogni nuovo documento in root o in `docs/` deve avere uno scopo canonico chiaro; niente duplicati con nomi diversi per lo stesso tema.
 - Se una regola, procedura o vincolo viene usato piu' volte ma non e' ancora scritto in modo esplicito, va candidato subito a formalizzazione nei file canonici.
+- Prima di modificare o estendere un documento, classificarne il ruolo: **storico** (archivio, non modificare), **operativo** (in uso, aggiornare con cura), **canonico** (fonte di verita', modifiche devono propagarsi). Mescolare i ruoli in un documento genera incoerenza e contenuto stale.
 
 ## Cleanup e analisi periodica
 

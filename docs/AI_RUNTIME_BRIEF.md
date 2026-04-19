@@ -34,6 +34,7 @@
 - Non rimandare a medio/lungo termine un obbligo che appartiene al breve termine.
 - Per ogni modifica, ragionare proattivamente sul grafo di connessioni: quali file, regole, docs, test e config sono connessi. Anticipare gli aggiornamenti, non aspettare che l'utente li segnali.
 - Per task non banali: fare un recap di cio' che si e' capito e chiedere conferma all'utente prima di implementare.
+- Prima di proporre un fix su un errore, classificare la root cause: cause diverse (login mancante vs rate limit vs proxy failure vs rete) richiedono recovery diverse anche con sintomi simili.
 
 ## Requirement ledger obbligatorio per prompt lunghi o densi
 

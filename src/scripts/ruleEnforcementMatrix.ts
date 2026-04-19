@@ -353,6 +353,16 @@ function buildMatrix(): RuleResult[] {
             'Recap strutturato e conferma utente prima di implementare task non banali',
             "Richiede giudizio su cosa e' banale vs non banale — non meccanizzabile",
         ),
+        notMechRule(
+            'explicit-contracts',
+            'Contratti espliciti: no side effect impliciti, SSOT per stato condiviso, cleanup mutazioni temporanee, propagazione fallimenti',
+            'Richiede comprensione semantica dei contratti di ogni funzione/workflow — non meccanizzabile',
+        ),
+        notMechRule(
+            'error-root-cause',
+            'Classificare root cause prima di proporre fix — cause diverse richiedono recovery diverse',
+            "Richiede comprensione semantica del dominio dell'errore — non meccanizzabile",
+        ),
     ];
 
     return results;
