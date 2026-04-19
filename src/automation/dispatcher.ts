@@ -12,6 +12,26 @@ import type {
 export async function dispatchAutomationCommand(
     command: ParsedAutomationCommandRecord,
 ): Promise<AutomationCommandExecutionResult> {
+    try {
+        return await dispatchAutomationCommandInner(command);
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        const stack = error instanceof Error ? error.stack : undefined;
+        return {
+            workflow: command.kind,
+            success: false,
+            blocked: { reason: 'WORKFLOW_ERROR', message },
+            summary: { status: 'FAILED' },
+            errors: [message],
+            nextAction: 'Incidente runtime non gestito. Controlla i log del loop per lo stack trace completo.',
+            details: { error: message, ...(stack ? { stack } : {}) },
+        };
+    }
+}
+
+async function dispatchAutomationCommandInner(
+    command: ParsedAutomationCommandRecord,
+): Promise<AutomationCommandExecutionResult> {
     switch (command.kind) {
         case 'sync-search': {
             const payload = command.payload as AutomationCommandPayloadMap['sync-search'];

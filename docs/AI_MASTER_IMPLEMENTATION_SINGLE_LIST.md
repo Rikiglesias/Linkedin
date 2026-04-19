@@ -88,7 +88,7 @@ Questa lista non e' ordinata solo per priorita'. E' ordinata soprattutto per dip
 37. `[Runtime/control plane][breve/medio]` Portare reporting live, stato proxy e stato JA3 fuori dalla memoria locale di processo.
 38. ✅ `[Runtime/control plane][breve/medio]` Fare in modo che `/api/health/deep` misuri anche daemon liveness, zombie `automation_commands` e readiness reale. → *`health.ts`: check #5 daemon liveness (runtime_locks), check #6 zombie automation_commands >10min (2026-04-19)*
 39. ✅ `[Runtime/control plane][breve/medio]` Recuperare gli `automation_commands` rimasti `RUNNING` dopo crash o stop brutale. → *`automationCommands.ts`: `recoverStaleAutomationCommands(15)` — chiamata al boot in `index.ts` (2026-04-19)*
-40. `[Runtime/control plane][breve/medio]` Far propagare gli incidenti runtime critici fino al `WorkflowExecutionResult`.
+40. ✅ `[Runtime/control plane][breve/medio]` Far propagare gli incidenti runtime critici fino al `WorkflowExecutionResult`. → *`dispatcher.ts`: top-level try/catch in `dispatchAutomationCommand` — unhandled throws convertiti in `AutomationCommandExecutionResult` strutturato con `WORKFLOW_ERROR` e stack trace (2026-04-19)*
 41. ✅ `[Runtime/control plane][breve/medio]` Allineare `workflowToJobTypes(...)` con i job realmente accodati e consumati. → *`scheduler.ts`: aggiunto `INTERACTION` a `'all'`; test aggiornato (2026-04-19)*
 42. `[Runtime/control plane][medio]` Ripulire i boundary dei workflow per evitare side effect impliciti fuori contratto.
 43. `[Runtime/control plane][breve/medio]` Sostituire o chiudere il `skipPreflight` troppo permissivo nei path non interattivi.
