@@ -82,13 +82,13 @@ import { printCommandHelp } from './cli/commandHelp';
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 
-let shuttingDown = false;
+import { isShuttingDown, setShuttingDown, runShutdownCallbacks } from './core/lifecycle';
 
 const SHUTDOWN_TIMEOUT_MS = 30_000;
 
 async function performGracefulShutdown(reason: string): Promise<void> {
-    if (shuttingDown) return;
-    shuttingDown = true;
+    if (isShuttingDown()) return;
+    setShuttingDown();
     console.warn(`[SHUTDOWN] ${reason} — chiusura graceful in corso (timeout ${SHUTDOWN_TIMEOUT_MS / 1000}s)...`);
 
     // Timeout di sicurezza: se lo shutdown supera 30s, forza uscita
@@ -97,6 +97,9 @@ async function performGracefulShutdown(reason: string): Promise<void> {
         process.exit(1);
     }, SHUTDOWN_TIMEOUT_MS);
     forceExitTimer.unref();
+
+    // 0. Callback registrati (lock release, custom cleanup)
+    await runShutdownCallbacks();
 
     // 1. Plugin shutdown
     try {
@@ -731,7 +734,7 @@ main()
         process.exitCode = 1;
     })
     .finally(async () => {
-        if (shuttingDown) return;
+        if (isShuttingDown()) return;
         await pluginRegistry.shutdown().catch(() => {});
         await closeDatabase();
     });

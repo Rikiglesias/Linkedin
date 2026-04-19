@@ -6,6 +6,7 @@
  */
 
 import { randomUUID } from 'crypto';
+import { onShutdown } from '../../core/lifecycle';
 import { config, getEffectiveLoopIntervalMs, getHourInTimezone, getLocalDateString, isWorkingHour } from '../../config';
 import { sleep } from '../../utils/async';
 import { launchBrowser, closeBrowser as closeBrowserSession } from '../../browser';
@@ -724,8 +725,8 @@ function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
         shouldRun: () => !buildCtx.automationCommandHandledRef.handled,
         execute: async (ctx) => {
             const cycleCorrelationId = resolveCorrelationId(`loop-${ctx.workflow}-${ctx.cycle}-${randomUUID()}`);
-                await runWithCorrelationId(cycleCorrelationId, async () => {
-                    await runWorkflow({
+            await runWithCorrelationId(cycleCorrelationId, async () => {
+                await runWorkflow({
                     workflow: ctx.workflow as import('../../core/workflowSelection').WorkflowSelection,
                     dryRun: ctx.dryRun,
                 });
@@ -877,6 +878,12 @@ export async function runLoopCommand(args: string[]): Promise<void> {
               intervalMs,
               startedAt: new Date().toISOString(),
           });
+
+    if (lockOwnerId) {
+        onShutdown(async () => {
+            await releaseWorkflowRunnerLock(lockOwnerId);
+        });
+    }
 
     // ── Login jitter: delay random 0-30 min prima del primo ciclo ──────────
     // Evita pattern "login alle 09:00:00 ogni giorno" — un umano varia.
@@ -1122,6 +1129,9 @@ export async function runWorkflowCommand(
         workflow,
         dryRun: false,
         startedAt: new Date().toISOString(),
+    });
+    onShutdown(async () => {
+        await releaseWorkflowRunnerLock(lockOwnerId);
     });
     try {
         await runWithCorrelationId(runCorrelationId, async () => {
