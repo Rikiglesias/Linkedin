@@ -146,6 +146,8 @@ Questa lista non e' ordinata solo per priorita'. E' ordinata soprattutto per dip
 82b. ✅ `[Cleanup/docs/root][breve/medio]` Applicare blast radius documentale a ogni task: cercare e aggiornare artefatti correlati stale (stesso argomento = automatico, argomento diverso = chiedere). → *Formalizzato come regola in AGENTS.md e runtime brief (2026-04-18)*
 82c. ✅ `[Control plane][breve]` Propagazione automatica capability: quando si aggiunge/modifica skill, MCP, hook o workflow, aggiornare automaticamente tabelle, pre/post conditions, matrice e docs. → *Formalizzato in AGENTS.md e runtime brief (2026-04-19)*
 82d. ✅ `[Control plane][breve]` Disciplina di esecuzione sequenziale: completare item N interamente (web search + plan + implementazione + verifica + propagazione) prima di N+1. Usare loop mode se servono piu' step. → *Formalizzato in AGENTS.md e runtime brief (2026-04-19)*
+82e. ✅ `[Control plane][breve]` Ragionamento connessivo: per ogni modifica ragionare proattivamente sul grafo di connessioni (file, regole, docs, test, config) e aggiornare tutto cio' che e' connesso — PRIMA e DURANTE, non solo DOPO. → *Formalizzato in AGENTS.md e runtime brief (2026-04-19)*
+82f. ✅ `[Control plane][breve]` Recap e conferma utente: prima di implementare task non banali, fare recap strutturato di cio' che si e' capito e chiedere conferma esplicita all'utente. → *Formalizzato in AGENTS.md e runtime brief (2026-04-19)*
 83. `[Cleanup/docs/root][medio/lungo]` Mantenere AI-readable i file canonici, evitando monoliti documentali ingestibili.
 
 ### Fase 9 — Riuso su nuovi progetti e consegna ad altri

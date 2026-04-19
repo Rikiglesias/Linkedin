@@ -32,6 +32,8 @@
 - Trattare l'input dell'utente come segnale ad alta priorita', non come comando da eseguire ciecamente se la fonte di verita' dice altro.
 - Se il prompt e' lungo o denso, costruire prima un requirement ledger.
 - Non rimandare a medio/lungo termine un obbligo che appartiene al breve termine.
+- Per ogni modifica, ragionare proattivamente sul grafo di connessioni: quali file, regole, docs, test e config sono connessi. Anticipare gli aggiornamenti, non aspettare che l'utente li segnali.
+- Per task non banali: fare un recap di cio' che si e' capito e chiedere conferma all'utente prima di implementare.
 
 ## Requirement ledger obbligatorio per prompt lunghi o densi
 

@@ -80,6 +80,14 @@ Le regole globali (P0, L1-L9, parità ambienti, memoria, anti-dimenticanza) stan
 - Prima della risposta finale l'AI deve rieseguire un coverage check sui requisiti estratti; se qualcosa non e' coperto o non e' verificato, deve dirlo.
 - Se il prompt e' troppo compresso o ambiguo per garantire copertura affidabile in un solo passaggio, l'AI deve esplicitare la decomposizione o proporre il miglior equivalent di piano/ledger invece di improvvisare.
 
+## Recap e conferma prima di iniziare
+
+- Prima di implementare un task non banale, l'AI deve fare un recap strutturato di cio' che ha capito dal prompt dell'utente e chiedere conferma esplicita.
+- Il recap deve includere: obiettivo capito, punti principali identificati, approccio proposto, punti che potrebbero essere stati fraintesi.
+- Solo dopo la conferma dell'utente si puo' iniziare l'implementazione.
+- Eccezione: task chiaramente banali (fix singoli, domande dirette) non richiedono recap.
+- Il recap non e' un requirement ledger (quello e' piu' formale e analitico): e' un "ho capito bene?" rapido che previene fraintendimenti prima di investire tempo.
+
 ## Tolleranza zero a omissioni e assunzioni
 
 - La severita' richiesta dall'utente va tradotta in comportamento operativo, non in retorica: non serve scrivere "se sbagli succede qualcosa di terribile", serve rendere esplicito che omissioni, assunzioni gratuite e chiusure premature sono considerate fallimenti del task.
@@ -139,6 +147,15 @@ Le regole globali (P0, L1-L9, parità ambienti, memoria, anti-dimenticanza) stan
 - Il flusso completo e': aggiungere la capability → aggiornare tutti i riferimenti → verificare che il sistema la scopra e la usi correttamente.
 - Non chiedere conferma per gli aggiornamenti di propagazione: fanno parte dell'azione originale. Un'installazione senza propagazione e' incompleta.
 - Se la capability sostituisce o si sovrappone a una esistente, trattare l'overlap come segnale da auditare e proporre merge o rimozione del duplicato.
+
+## Ragionamento connessivo
+
+- Per ogni modifica, l'AI deve ragionare proattivamente sul grafo di connessioni: quali file, regole, docs, memory, test, workflow, tabelle e configurazioni sono connessi a cio' che sta cambiando.
+- Questo non e' un controllo post-task (quello e' il blast radius): e' un ragionamento che deve avvenire PRIMA e DURANTE il lavoro, non solo DOPO.
+- Il ragionamento connessivo si applica a tutto: codice, documenti, regole, configurazione, memoria, skill, hook, workflow.
+- L'AI non deve aspettare che l'utente segnali che qualcosa e' rimasto incoerente: deve anticipare le connessioni e proporre o applicare gli aggiornamenti come parte naturale del task.
+- Se una modifica tocca un concetto che appare in piu' posti (es. una regola citata in AGENTS.md, runtime brief e matrice), tutti i posti vanno aggiornati nella stessa azione.
+- Se il grafo di connessioni e' troppo ampio per essere gestito inline, dichiararlo e tracciare i punti aperti nel contenitore corretto.
 
 ## Disciplina di esecuzione sequenziale
 

@@ -343,6 +343,16 @@ function buildMatrix(): RuleResult[] {
             'Completare item N interamente prima di iniziare N+1, con web search + plan + verifica',
             'Richiede giudizio su completezza reale del punto — non meccanizzabile',
         ),
+        notMechRule(
+            'connective-reasoning',
+            'Ragionare proattivamente sul grafo di connessioni per ogni modifica',
+            'Richiede comprensione semantica delle dipendenze tra artefatti — non meccanizzabile',
+        ),
+        notMechRule(
+            'user-recap-confirmation',
+            'Recap strutturato e conferma utente prima di implementare task non banali',
+            "Richiede giudizio su cosa e' banale vs non banale — non meccanizzabile",
+        ),
     ];
 
     return results;
