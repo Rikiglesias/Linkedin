@@ -63,7 +63,9 @@ export function parseAutomationCommandRecord(record: AutomationCommandRecord): P
     };
 }
 
-async function getAutomationCommandByIdempotencyKeyRaw(idempotencyKey: string): Promise<AutomationCommandRecord | null> {
+async function getAutomationCommandByIdempotencyKeyRaw(
+    idempotencyKey: string,
+): Promise<AutomationCommandRecord | null> {
     const db = await getDatabase();
     const row = await db.get<AutomationCommandRecord>(
         `SELECT ${AUTOMATION_COMMAND_SELECT_COLUMNS}
@@ -134,7 +136,9 @@ export async function enqueueAutomationCommand(
     });
 }
 
-export async function getAutomationCommandByRequestId(requestId: string): Promise<ParsedAutomationCommandRecord | null> {
+export async function getAutomationCommandByRequestId(
+    requestId: string,
+): Promise<ParsedAutomationCommandRecord | null> {
     const db = await getDatabase();
     const row = await db.get<AutomationCommandRecord>(
         `SELECT ${AUTOMATION_COMMAND_SELECT_COLUMNS}
@@ -301,4 +305,32 @@ export async function getAutomationCommandSummary(): Promise<AutomationCommandSu
         return { pending, running, lastCompleted: null };
     }
     return { pending, running, lastCompleted };
+}
+
+export async function recoverStaleAutomationCommands(maxAgeMinutes: number = 15): Promise<number> {
+    const db = await getDatabase();
+    const safeMinutes = Math.max(1, maxAgeMinutes);
+    const errorMsg = `Stato RUNNING per oltre ${safeMinutes} min — ripristinato automaticamente al boot dopo crash o stop forzato.`;
+    const resultJson = JSON.stringify({
+        success: false,
+        blocked: { reason: 'CRASH_RECOVERY', message: errorMsg },
+        summary: { status: 'FAILED' },
+        errors: [errorMsg],
+        nextAction: "Il daemon e' stato riavviato. Reinvia il comando se necessario.",
+        details: { recoveredAt: new Date().toISOString() },
+    });
+
+    const result = await db.run(
+        `UPDATE automation_commands
+            SET status = 'FAILED',
+                finished_at = CURRENT_TIMESTAMP,
+                result_json = ?,
+                last_error = ?,
+                updated_at = CURRENT_TIMESTAMP
+          WHERE status = 'RUNNING'
+            AND started_at <= DATETIME('now', '-' || ? || ' minutes')`,
+        [resultJson, errorMsg, safeMinutes],
+    );
+
+    return result.changes ?? 0;
 }

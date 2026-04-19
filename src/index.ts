@@ -17,6 +17,7 @@ import { runDoctor } from './core/doctor';
 import {
     getGlobalKPIData,
     listOpenIncidents,
+    recoverStaleAutomationCommands,
     recoverStuckJobs,
     recoverStuckAcceptedLeads,
     recoverStuckPublishingPosts,
@@ -396,6 +397,12 @@ async function main(): Promise<void> {
         const recoveredPosts = await recoverStuckPublishingPosts(10);
         if (recoveredPosts > 0) {
             console.warn(`[BOOT] Recuperati ${recoveredPosts} post bloccati in PUBLISHING → FAILED.`);
+        }
+        const recoveredCommands = await recoverStaleAutomationCommands(15);
+        if (recoveredCommands > 0) {
+            console.warn(
+                `[BOOT] Recuperati ${recoveredCommands} automation_commands RUNNING bloccati da oltre 15 minuti.`,
+            );
         }
     }
 

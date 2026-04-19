@@ -86,8 +86,8 @@ Questa lista non e' ordinata solo per priorita'. E' ordinata soprattutto per dip
 35. ✅ `[Runtime/control plane][breve]` Aggiungere stop e flush esplicito di listener e checkpoint allo shutdown. → *`runShutdownCallbacks()` in `src/core/lifecycle.ts` (2026-04-19)*
 36. ✅ `[Runtime/control plane][breve]` Allineare i timeout PM2 al budget reale di stop. → *`ecosystem.config.cjs`: daemon 10s→35s, API 5s→15s (SHUTDOWN_TIMEOUT_MS=30s + buffer) (2026-04-19)*
 37. `[Runtime/control plane][breve/medio]` Portare reporting live, stato proxy e stato JA3 fuori dalla memoria locale di processo.
-38. `[Runtime/control plane][breve/medio]` Fare in modo che `/api/health/deep` misuri anche daemon liveness, zombie `automation_commands` e readiness reale.
-39. `[Runtime/control plane][breve/medio]` Recuperare gli `automation_commands` rimasti `RUNNING` dopo crash o stop brutale.
+38. ✅ `[Runtime/control plane][breve/medio]` Fare in modo che `/api/health/deep` misuri anche daemon liveness, zombie `automation_commands` e readiness reale. → *`health.ts`: check #5 daemon liveness (runtime_locks), check #6 zombie automation_commands >10min (2026-04-19)*
+39. ✅ `[Runtime/control plane][breve/medio]` Recuperare gli `automation_commands` rimasti `RUNNING` dopo crash o stop brutale. → *`automationCommands.ts`: `recoverStaleAutomationCommands(15)` — chiamata al boot in `index.ts` (2026-04-19)*
 40. `[Runtime/control plane][breve/medio]` Far propagare gli incidenti runtime critici fino al `WorkflowExecutionResult`.
 41. ✅ `[Runtime/control plane][breve/medio]` Allineare `workflowToJobTypes(...)` con i job realmente accodati e consumati. → *`scheduler.ts`: aggiunto `INTERACTION` a `'all'`; test aggiornato (2026-04-19)*
 42. `[Runtime/control plane][medio]` Ripulire i boundary dei workflow per evitare side effect impliciti fuori contratto.

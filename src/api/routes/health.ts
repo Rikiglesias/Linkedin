@@ -60,6 +60,46 @@ healthRouter.get('/deep', async (_req, res) => {
         allOk = false;
     }
 
+    // 5. Daemon liveness (runtime_locks)
+    try {
+        const db = await getDatabase();
+        const lock = await db.get<{ owner_id: string; heartbeat_at: string }>(
+            `SELECT owner_id, heartbeat_at FROM runtime_locks
+             WHERE lock_key = 'workflow.runner'
+               AND expires_at > DATETIME('now')
+             LIMIT 1`,
+        );
+        checks.daemon = {
+            ok: !!lock,
+            detail: lock
+                ? `alive: owner=${lock.owner_id} heartbeat=${lock.heartbeat_at}`
+                : 'no active lock — daemon not running or crashed',
+        };
+        if (!lock) allOk = false;
+    } catch {
+        checks.daemon = { ok: false, detail: 'Unable to read runtime_locks' };
+        allOk = false;
+    }
+
+    // 6. Zombie automation_commands (RUNNING > 10 min)
+    try {
+        const db = await getDatabase();
+        const row = await db.get<{ total: number }>(
+            `SELECT COUNT(*) as total FROM automation_commands
+             WHERE status = 'RUNNING'
+               AND started_at <= DATETIME('now', '-10 minutes')`,
+        );
+        const zombies = row ? Number(row.total) : 0;
+        checks.automationZombies = {
+            ok: zombies === 0,
+            detail: zombies === 0 ? 'no zombie commands' : `${zombies} RUNNING for >10min`,
+        };
+        if (zombies > 0) allOk = false;
+    } catch {
+        checks.automationZombies = { ok: false, detail: 'Unable to read automation_commands' };
+        allOk = false;
+    }
+
     const statusCode = allOk ? 200 : 503;
     res.status(statusCode).json({
         status: allOk ? 'healthy' : 'degraded',
