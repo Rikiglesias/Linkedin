@@ -45,7 +45,8 @@ describe('workflowToJobTypes', () => {
         expect(types).toContain('ACCEPTANCE_CHECK');
         expect(types).toContain('MESSAGE');
         expect(types).toContain('HYGIENE');
-        expect(types.length).toBeGreaterThanOrEqual(4);
+        expect(types).toContain('INTERACTION');
+        expect(types.length).toBeGreaterThanOrEqual(5);
     });
 
     it('invite → solo INVITE', () => {

@@ -87,7 +87,8 @@ export interface ListScheduleBreakdown {
 }
 
 export function workflowToJobTypes(workflow: WorkflowSelection): JobType[] {
-    if (workflow === 'all') return ['INVITE', 'ACCEPTANCE_CHECK', 'MESSAGE', 'HYGIENE', 'POST_CREATION', 'ENRICHMENT'];
+    if (workflow === 'all')
+        return ['INVITE', 'ACCEPTANCE_CHECK', 'MESSAGE', 'HYGIENE', 'POST_CREATION', 'ENRICHMENT', 'INTERACTION'];
     if (workflow === 'invite') return ['INVITE'];
     if (workflow === 'check') return ['ACCEPTANCE_CHECK', 'HYGIENE'];
     if (workflow === 'warmup') return [];
