@@ -114,7 +114,7 @@ Tutti gli altri item sono `[usr]`.
 
 46. `[Cleanup][medio]` Riesaminare file troppo lunghi o con responsabilita' miste e decidere split concreti.
 
-69. `[Cleanup][breve]` Risolvere i bug di coerenza del repository ancora aperti: file untracked da inserire o escludere esplicitamente, disallineamento tra CLAUDE.md e AGENTS.md su regole operative, ordine di lettura di AI_RUNTIME_BRIEF.md incoerente tra i file che vi fanno riferimento.
+69. ✅ `[Cleanup][breve]` Risolvere i bug di coerenza repository: file untracked committati, 30+ path assoluti Windows → relativi nei canonici, ordine lettura AI_RUNTIME_BRIEF.md coerente CLAUDE/AGENTS/README. → *6 commit: `663b1e9`* *(2026-04-20)*
 
 48. `[Cleanup][medio]` Separare meglio documenti storici, documenti operativi e documenti canonici.
 
