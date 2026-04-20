@@ -21,6 +21,19 @@
 - [ ] File regole <300 righe (più è lungo, più regole vengono dimenticate)
 - [ ] Ogni regola ha: trigger, ambito, azione, verifica
 - [ ] Nessuna regola duplicata o contraddittoria
+- [ ] Ogni task classifica la fonte di verita' primaria (repo, test, log, web/docs ufficiali, MCP, memoria)
+- [ ] La ricerca web/docs ufficiali e' obbligatoria sui task che dipendono da fatti esterni o mutevoli
+- [ ] Skill usate per procedure, MCP per stato reale esterno, hook per obblighi non dimenticabili
+- [ ] Nessun flusso rigido identico per tutti i task: l'AI riconosce il caso e richiama le regole pertinenti
+- [ ] La valutazione contestuale di skill, MCP, web/docs, loop, piano, workflow e quality gate parte automaticamente a ogni prompt e a ogni modifica rilevante
+- [ ] L'AI spiega brevemente all'utente quali leve propone di usare e perche'
+- [ ] Ogni task viene classificato anche per orizzonte temporale (breve, medio, lungo termine)
+- [ ] Nessun obbligo di breve termine viene rimandato impropriamente a backlog o manutenzione futura
+- [ ] Gli esempi dell'utente vengono trattati come pattern illustrativi, non come lista esaustiva
+- [ ] Le allucinazioni sono vietate in senso pieno: niente fatti/stati/verifiche inventati e niente esecuzione cieca di ipotesi utente
+- [ ] Se manca la primitive corretta (skill, hook, memoria, audit, workflow), l'AI riconosce il gap e propone la promozione giusta
+- [ ] L'AI distingue tra automazioni che devono partire da sole e cambi durevoli o invasivi da proporre con conferma
+- [ ] Audit automatici e controlli di conformita' allineati al formato reale, senza falsi verdi o falsi rossi
 
 ## 3. Memoria AI (secondo cervello)
 
@@ -30,6 +43,8 @@
 - [ ] `decisions.md`: decisioni motivazionali non derivabili dal codice
 - [ ] `todos/active.md`: priorità correnti
 - [ ] Aggiornamento proattivo a fine sessione significativa
+- [ ] Memoria gestita su tre orizzonti: update immediato, consolidamento/handoff, pulizia periodica
+- [ ] Se il contesto degrada o si compatta troppo, l'AI prepara handoff e nuova sessione invece di continuare in modo degradato
 
 ## 4. Quality gates (L1-L9)
 
@@ -40,15 +55,22 @@
 - [ ] Lint/prettier configurati
 - [ ] L7 (multi-dominio per file) applicato a ogni modifica significativa
 - [ ] L9 (loop finale) prima di dichiarare DONE
+- [ ] Una modifica locale viene sempre estesa al blast radius reale con file diretti/indiretti, dipendenze, test o strumenti di esplorazione adeguati
 
 ## 5. Hook system (`settings.json`)
 
+- [ ] `SessionStart` carica memoria, todos, indice progetto e runtime brief automaticamente
+- [ ] `UserPromptSubmit` reinietta il runtime brief prima di ogni nuovo prompt
 - [ ] `PreToolUse` bloccante su file sensibili del dominio
 - [ ] Hook antiban usa `permissionDecision: "deny"` (non bypassabile)
+- [ ] `PreToolUse` bloccante su `git commit` / `git push` quando il repo non e' nello stato corretto
+- [ ] `PreCompact` reinietta il runtime brief prima della compattazione del contesto
 - [ ] `PostToolUse` asincrono su comandi qualità
+- [ ] `PostToolUse` asincrono con audit git dopo quality gate e operazioni git rilevanti
 - [ ] `Stop` hook per log sessione
 - [ ] Log hook in `memory/quality-hook-log.txt`
 - [ ] Log antiban in `memory/antiban-hook-log.txt`
+- [ ] Log git in `memory/git-hook-log.txt`
 
 ## 6. Skill
 
@@ -106,6 +128,8 @@
 - [ ] Guida setup per onboarding altri (n8n + bot + PM2 + credenziali)
 - [ ] Trigger manutenzione per tipo artefatto documentati
 - [ ] Self-healing: memory leak → auto restart configurato
+- [ ] Cadenze periodiche esplicite per code review, memoria, documenti e automazioni
+- [ ] Le analisi periodiche coprono almeno file >300 righe, drift strutturale, dead code, circular deps, drift documentale e security check mirati
 
 ## 12. Osservabilità
 
@@ -131,35 +155,27 @@
 
 ## 15. Autonomia AI (obiettivo finale)
 
-- [ ] Loop automatico su ogni task (senza dire "usa il loop")
-- [ ] Web search obbligatoria prima di ogni implementazione significativa
+- [ ] Fonte di verita' scelta correttamente per ogni task, non per abitudine
+- [ ] Web search obbligatoria quando il task dipende da informazioni esterne o mutevoli
 - [ ] L1-L9 applicati senza essere richiesti
-- [ ] Skill/MCP/agente scelti autonomamente
+- [ ] Loop usato quando serve davvero, non per riflesso
+- [ ] Skill/MCP/agente scelti o proposti con ragionamento esplicito
+- [ ] L'AI non dimentica regole e controlli rilevanti anche se il task cambia forma
+- [ ] Il commit parte come chiusura naturale di un blocco verificato, non come passaggio da ricordare a mano
+- [ ] Il push viene deciso correttamente in base a branch, upstream, review e rischio operativo
+- [ ] L'AI distingue correttamente cosa appartiene al breve termine, al medio termine e al lungo termine
 - [ ] Regole critiche tutte in hook (non solo in testo)
 - [ ] Workflow n8n girano in autonomia negli orari giusti
 - [ ] Nessuna "false completion" — L9 verde prima di DONE
+- [ ] Self-audit e checklist automatiche truthful rispetto al sistema reale
 
 ---
 
 ## Score rapido
 
-Conta i ✅ e dividi per il totale. Target: >80% per produzione, >90% per sistemi critici.
+Non usare score statici scritti a mano in questo file: diventano stale troppo facilmente e creano falsa autorevolezza.
 
-| Area | Check totali |
-|------|-------------|
-| Struttura codice | 6 |
-| Regole AI | 5 |
-| Memoria AI | 6 |
-| Quality gates | 7 |
-| Hook system | 6 |
-| Skill | 6 |
-| n8n workflow | 7 |
-| Sicurezza | 9 |
-| Anti-ban | 9 |
-| Parità ambienti | 4 |
-| Manutenzione | 6 |
-| Osservabilità | 5 |
-| Test | 4 |
-| Strumenti personali | 4 |
-| Autonomia AI | 7 |
-| **Totale** | **101** |
+Se serve una percentuale:
+
+- contare i check in modo automatico prima di citarla
+- trattare questa checklist prima di tutto come checklist binaria, non come dashboard numerica

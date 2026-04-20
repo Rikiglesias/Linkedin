@@ -11,6 +11,16 @@ Non tutti i documenti hanno lo stesso ruolo: alcuni sono canonici, altri sono gu
   Regole operative canoniche per agenti AI e sessioni tool-driven.
 - [CLAUDE.md](/C:/Users/albie/Desktop/Programmi/Linkedin/CLAUDE.md)
   Adapter breve per Claude Code.
+- [AI_MASTER_SYSTEM_SPEC.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_SYSTEM_SPEC.md)
+  Lista madre unica, esplicita e non duplicata del sistema AI desiderato.
+- [AI_MASTER_IMPLEMENTATION_BACKLOG.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md)
+  Fonte primaria unica del "cosa manca ancora" rispetto alla spec completa.
+- [AI_IMPLEMENTATION_LIST_GLOBAL.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_IMPLEMENTATION_LIST_GLOBAL.md)
+  Backlog lineari item AI/globali (control plane, memoria, parita' ambienti, git, autonomia).
+- [LINKEDIN_IMPLEMENTATION_LIST.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/LINKEDIN_IMPLEMENTATION_LIST.md)
+  Backlog lineari item LinkedIn-specifici (runtime, anti-ban, proxy, n8n, compliance).
+- [AI_RUNTIME_BRIEF.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_RUNTIME_BRIEF.md)
+  Digest runtime compatto caricato dai hook prima dei prompt e prima della compattazione; non sostituisce i canonici, ma li rende richiamabili in modo affidabile.
 - [AI_OPERATING_MODEL.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_OPERATING_MODEL.md)
   Roadmap esplicita su prompt, modelli, skill, agenti, workflow e automazioni.
 - [NEW_PROJECT_BOOTSTRAP_CHECKLIST.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/NEW_PROJECT_BOOTSTRAP_CHECKLIST.md)
@@ -43,15 +53,10 @@ Questi file sembrano simili, ma non devono essere usati per lo stesso scopo:
   Contratto canonico del motore workflow lato backend.
 - [WORKFLOW_MAP.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/WORKFLOW_MAP.md)
   Guida operativa ai workflow lato utente/operatore.
-- [WORKFLOW_ANALYSIS.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/WORKFLOW_ANALYSIS.md)
-  Analisi tecnica approfondita e di supporto.
-
 ## Configurazione e integrazioni
 
 - [CONFIG_REFERENCE.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/CONFIG_REFERENCE.md)
   Riferimento tecnico delle variabili.
-- [CONFIG_EXAMPLES.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/CONFIG_EXAMPLES.md)
-  Esempi pratici di configurazione.
 - [INTEGRATIONS.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/INTEGRATIONS.md)
   Integrazioni esterne e payload.
 
@@ -68,19 +73,28 @@ Questi file sembrano simili, ma non devono essere usati per lo stesso scopo:
 
 ## Storico, analisi e documenti specialistici
 
-- [A16_LINKEDIN_DEPENDENCY_PLAN.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/A16_LINKEDIN_DEPENDENCY_PLAN.md)
-  Piano specifico sul dependency risk LinkedIn.
+- [AI_DOC_STYLE_GUIDE.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_DOC_STYLE_GUIDE.md)
+  Style guide per documenti AI-readable: come scrivere e strutturare i file per massimizzare comprensione e retrieval.
 - [AI_QUALITY_PIPELINE.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_QUALITY_PIPELINE.md)
-  Pipeline di qualita' AI.
-- [superpowers/specs/2026-04-01-runtime-core-repository-refactor-design.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/superpowers/specs/2026-04-01-runtime-core-repository-refactor-design.md)
-  Spec di refactor, non documento operativo generale.
-
+  Documento specialistico sulla pipeline di qualita' AI.
+- [tracking/codebase-debt.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/tracking/codebase-debt.md)
+  Snapshot del debito tecnico e dei monoliti da splittare al prossimo tocco.
 ## Archivio
 
 - [archive/todo-audit-archive-2026-04-03.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/archive/todo-audit-archive-2026-04-03.md)
   Audit monolitico storico, non backlog operativo vivo.
 - [archive/antiban-operational-rollout-legacy.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/archive/antiban-operational-rollout-legacy.md)
   Checklist legacy di rollout/campagna rimossa dal documento tecnico anti-ban.
+- [archive/360-analysis-plan-2026-04-04.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/archive/360-analysis-plan-2026-04-04.md)
+  Piano generato da analisi parallela, utile come storico ma non come backlog attivo.
+- [archive/workflow-analysis-archive-2026-04.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/archive/workflow-analysis-archive-2026-04.md)
+  Analisi tecnica workflow archiviata (aprile 2026).
+- [archive/a16-linkedin-dependency-plan-archive.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/archive/a16-linkedin-dependency-plan-archive.md)
+  Piano A16 dependency risk LinkedIn archiviato.
+- [archive/2026-04-01-runtime-core-repository-refactor-design.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/archive/2026-04-01-runtime-core-repository-refactor-design.md)
+  Spec di refactor runtime/core archiviata (aprile 2026).
+- [archive/engineering-worklog-archive-2026-04.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/archive/engineering-worklog-archive-2026-04.md)
+  Worklog tecnico storico aprile 2026 (entries pre-18 aprile).
 
 ## Root e cartelle da non pulire alla cieca
 

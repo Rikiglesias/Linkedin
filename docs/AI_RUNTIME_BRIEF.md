@@ -5,7 +5,10 @@
 > Le fonti di verita' restano:
 > - `AGENTS.md`
 > - `docs/AI_MASTER_SYSTEM_SPEC.md`
+> - `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md`
 > - `docs/AI_OPERATING_MODEL.md`
+> - `docs/tracking/AI_CAPABILITY_ROUTING.json`
+> - `docs/tracking/AI_LEVEL_ENFORCEMENT.json`
 
 ## Obiettivo operativo
 
@@ -15,6 +18,14 @@
 - Nessuna allucinazione: niente fatti, verifiche, stato o cause inventate.
 - I punti sottili valgono quanto quelli espliciti.
 - Se qualcosa non e' verificato, non puo' essere dichiarato completo.
+
+## Stato corrente dei 9 livelli
+
+- Il modello canonico e' di 9 livelli (L1-L9).
+- **L1**: enforcement meccanico reale — hook blocca `git commit` senza quality gate.
+- **L2-L6**: `audit-assisted` — registri machine-readable (`AI_LEVEL_ENFORCEMENT.json`) + advisory hook (`skill-activation.ps1`) + audit (`npm run audit:violations`). Non ancora blocking sul task specifico.
+- **L7-L9**: skill-gated via `/verification-protocol` — obbligatori su task non triviali (bug, feature, refactor). L7 = multi-dominio per file. L8 = coerenza cross-file. L9 = loop finale DONE/BLOCKED. Non ancora enforced da hook automatico.
+- L2-L6 non sono ancora `blocking`: il task specifico resta da verificare semanticamente, non solo per presenza di protocollo.
 
 ## Prima di iniziare
 
@@ -50,7 +61,7 @@ Il ledger deve distinguere almeno:
 - criteri di completezza
 - limiti o punti non ancora verificati
 
-Gli esempi dell'utente non chiudono il ragionamento: servono a mostrare il pattern da estendere.
+**Regola esempi**: gli esempi dell'utente mostrano il tipo di ragionamento richiesto, non una lista chiusa. Ricavare il principio sottostante e applicarlo a TUTTI i casi analoghi — anche quelli non citati. Se l'utente porta 2 scenari, chiedersi: quanti altri tocca lo stesso principio?
 
 ## Selezione strumenti
 
@@ -63,16 +74,19 @@ Valutare ogni volta, in modo contestuale e automatico:
 - loop o re-check iterativo
 - hook gia' attivi
 - workflow o n8n
+- registri machine-readable di routing e livelli (`AI_CAPABILITY_ROUTING.json`, `AI_LEVEL_ENFORCEMENT.json`)
 
 Non usare una primitive per abitudine.
 Non saltarla se il task la richiede davvero.
 L'utente non deve ricordare all'AI di fare questa valutazione: la valutazione stessa e' parte obbligatoria del ragionamento.
 - Dichiarare brevemente nella risposta: fonte di verita' scelta, strumenti attivati e strumenti esclusi con motivo. Non lasciare la scelta implicita.
+- In Claude Code, `UserPromptSubmit` deve produrre un blocco advisory compatto (`PROJECT_ROUTING_DECISION`) con: source of truth, web/docs, capability da usare/escludere, preferred environment e focus `L2-L6`.
 - Ricerca web obbligatoria quando: librerie/API/framework possono essere cambiati, best practice di sicurezza/anti-ban/stealth/compliance evolve, piattaforma esterna (LinkedIn, proxy provider) cambia comportamento. Facoltativa per task puramente interni al repo con codice stabile. Mai per scelte architetturali gia' consolidate nel progetto.
 - Proporre modello e ambiente in base a: qualita' richiesta dal task, tool disponibili nell'ambiente, costo, velocita', rischio. Non usare sempre lo stesso per abitudine.
 - Non accumulare capability sovrapposte: se skill, MCP, plugin, hook o workflow sembrano fare la stessa cosa, scegliere la primitive piu' corretta e trattare l'overlap come segnale da auditare.
 - Usare una routing matrix mentale per dominio pratico: backend, frontend, browser, DB, documentazione, review, anti-ban, memoria, n8n.
 - Se manca la primitive giusta (`skill`, `MCP`, `plugin`, `hook`, `memoria`, `audit`, `script`, `workflow`), trattarlo come capability gap: dichiararlo e proporre la promozione corretta invece di improvvisare workaround fragili.
+- Se nessun dominio raggiunge confidenza sufficiente, dichiarare `Capability gap` e non inventare una capability “abbastanza buona”.
 - Nuove capability candidate non si installano alla cieca: prima vanno valutate su gap reale, overlap, trigger e costo di manutenzione.
 - Distinguere tra cio' che puo' partire automaticamente e cio' che richiede conferma esplicita dell'utente perche' cambia il sistema in modo durevole o invasivo.
 
@@ -86,10 +100,14 @@ L'utente non deve ricordare all'AI di fare questa valutazione: la valutazione st
 - Se emerge un punto reale ma non chiudibile ora, tracciarlo nel contenitore corretto invece di lasciarlo solo in risposta.
 - Non lavorare sul solo file locale: considerare dipendenze, import, contratti, integrazioni, runtime e impatti indiretti.
 - Se il perimetro e' piu' ampio del file locale, usare code search, mapping dipendenze/test, memoria e, se serve, agenti o esplorazione dedicata per estendere il contesto alla codebase reale.
+- Per task non banali, usare il focus `L2-L6` proposto dal registro livelli come checklist advisory minima:
+  - quick-fix -> `L2-L3`
+  - bug -> `L2-L4` + `L6`
+  - feature/refactor -> `L2-L6`
 - Applicare best practice specifiche del tipo di artefatto.
 - Se il task e' esterno o recente, verificare prima online invece di fidarsi della memoria.
 - Se una parte e' ambigua o rischiosa, correggere l'interpretazione o fermarsi sul confine vero del lavoro svolto.
-- Se l'utente ha dato esempi, verificare se il pattern suggerisce altri controlli coerenti che non sono stati nominati esplicitamente.
+- Se l'utente ha dato esempi: (1) identificare il principio sottostante, (2) elencare tutti gli altri casi che lo stesso principio tocca — non solo quelli citati, (3) verificare ognuno.
 - Monitorare segnali di degrado del contesto: omissioni ripetute, ledger che perde copertura, contraddizioni, prompt/sessione troppo grandi, rischio di compact con perdita di stato.
 - Se il ragionamento sta degradando, preparare handoff, aggiornare i contenitori minimi e proporre o usare `context-handoff` invece di continuare in stato degradato.
 - Alla chiusura di ogni task: cercare artefatti correlati (memory, docs, todos, skill, hook) potenzialmente stale. Stesso argomento → aggiornare automaticamente. Argomento diverso → segnalare e chiedere conferma.

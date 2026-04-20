@@ -29,8 +29,8 @@ Questo file e' il backlog tecnico operativo da usare durante i prossimi blocchi 
 ## P0 — Workflow runtime e anti-ban
 
 - [ ] Audit completo dei 4 workflow pubblici su proxy/session/account health
-- [ ] Far propagare gli incidenti runtime critici (`pauseAutomation`, quarantine, proxy/JA3/session failure) fino al `WorkflowExecutionResult`
-- [ ] Allineare `workflowToJobTypes(...)` con i job realmente accodati dallo scheduler, incluso `INTERACTION`
+- [ ] Completare la propagazione dei casi critici specifici (`pauseAutomation`, quarantine, proxy/JA3/session failure) fino al `WorkflowExecutionResult`
+- [x] Allineare `workflowToJobTypes(...)` con i job realmente accodati dallo scheduler, incluso `INTERACTION`
 - [ ] Ripulire i boundary dei workflow orchestrati: niente inbox scan/follow-up impliciti se non fanno parte del contratto richiesto
 - [ ] Eliminare il `skipPreflight` troppo permissivo sugli ingressi automation/API o sostituirlo con un preflight non-interattivo equivalente ai 6 livelli
 - [ ] Rendere l'override account scoped alla singola run e sempre ripristinato
@@ -41,13 +41,13 @@ Questo file e' il backlog tecnico operativo da usare durante i prossimi blocchi 
 
 ## P0 — Lifecycle, control plane e reporting
 
-- [ ] Rendere il lock del daemon cooperativo e rinnovato per tutta la durata reale della run
-- [ ] Eliminare i `process.exit(0)` che bypassano il graceful shutdown nei path restart/stop critici
-- [ ] Aggiungere stop/flush esplicito per `telegramListener` e persistenza checkpoint a shutdown
-- [ ] Allineare i timeout PM2 con il budget reale di shutdown dell'app
+- [x] Rendere il lock del daemon cooperativo e rinnovato per tutta la durata reale della run
+- [x] Eliminare i `process.exit(0)` che bypassano il graceful shutdown nei path restart/stop critici
+- [x] Aggiungere stop/flush esplicito per `telegramListener` e persistenza checkpoint a shutdown
+- [x] Allineare i timeout PM2 con il budget reale di shutdown dell'app
 - [ ] Portare reporting live, stato proxy e stato JA3 fuori dalla memoria di processo locale, con un canale cross-process reale
-- [ ] Fare in modo che `/api/health/deep` misuri anche daemon liveness, runtime lock e zombie `automation_commands`
-- [ ] Recuperare anche `automation_commands` rimasti `RUNNING` dopo crash/stop
+- [x] Fare in modo che `/api/health/deep` misuri anche daemon liveness, runtime lock e zombie `automation_commands`
+- [x] Recuperare anche `automation_commands` rimasti `RUNNING` dopo crash/stop
 
 ## P0 — Proxy, sessione e classificazione incidenti
 

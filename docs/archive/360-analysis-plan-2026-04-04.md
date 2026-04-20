@@ -1,5 +1,8 @@
 # Piano d'azione — Analisi 360° Codebase (2026-04-04)
 
+> Stato documento: archivio storico.
+> Generato da analisi parallela del 2026-04-04. Non usare come backlog operativo corrente: per quello usare `todos/active.md`, `todos/workflow-architecture-hardening.md` e `docs/tracking/ENGINEERING_WORKLOG.md`.
+
 Generato da analisi con 10 agent paralleli che hanno coperto l'intera codebase.
 Ogni fix include il blast radius reale mappato dall'agent cross-domain.
 

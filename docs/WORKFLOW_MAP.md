@@ -2,7 +2,7 @@
 
 > Stato documento: guida operativa e orientata all'uso dei workflow.
 > Per il contratto tecnico del motore usare `WORKFLOW_ENGINE.md`.
-> Per il deep dive architetturale usare `WORKFLOW_ANALYSIS.md`.
+> Per il deep dive architetturale usare `archive/workflow-analysis-archive-2026-04.md`.
 
 Benvenuto nella documentazione dei **Workflow del Bot LinkedIn**. Questa guida è pensata per spiegarti come operano i 5 flussi principali, cosa chiedono, come ti proteggono e cosa generano.
 

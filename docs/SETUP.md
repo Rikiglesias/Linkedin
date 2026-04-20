@@ -50,7 +50,7 @@ Aprire `.env` e compilare **tutti** i campi obbligatori:
 | `SENTRY_DSN` | ⚠️ | Sentry dashboard → onboarding → DSN |
 | `NODE_ENV` | ✅ | `production` in prod, `development` in dev |
 
-**Verifica**: `npm run doctor` — deve uscire senza errori sulle env vars.
+**Verifica**: `npm run start:dev -- doctor` oppure `.\bot.ps1 doctor` — deve uscire senza errori sulle env vars e sul preflight base.
 
 ---
 
@@ -58,10 +58,10 @@ Aprire `.env` e compilare **tutti** i campi obbligatori:
 
 ```bash
 # Applica tutte le migration in ordine
-npm run migrate
+npm run db:migrate
 
-# Verifica che le tabelle siano create
-npm run db:check
+# Verifica preflight e stato base
+npm run start:dev -- doctor
 ```
 
 Se usi Supabase: applicare le migration via `mcp__claude_ai_Supabase__apply_migration` o dalla dashboard SQL Editor.
@@ -96,7 +96,7 @@ Deve terminare senza errori (`npx tsc --noEmit` exit 0).
 
 ```bash
 # Avvia il bot e il daemon
-pm2 start ecosystem.config.js
+pm2 start ecosystem.config.cjs
 
 # Verifica che girino
 pm2 status
@@ -112,8 +112,9 @@ pm2 startup
 **Processi attesi in PM2**:
 | Nome | Funzione |
 |------|---------|
-| `linkedin-api` | API REST + dashboard backend |
-| `linkedin-daemon` | Loop principale del bot |
+| `linkedin-bot-api` | API REST + dashboard backend |
+| `linkedin-bot-daemon` | Loop principale del bot |
+| `n8n` | Workflow automation (se avviato via PM2) |
 
 **Verifica**: `pm2 status` → tutti i processi in `online`.
 
@@ -159,11 +160,13 @@ Per ogni file in `n8n-workflows/`:
 
 **Ordine di import consigliato**:
 1. `bot-health-check.json` (health monitoring)
-2. `weekly-lead-report-v2.json` (report settimanale)
-3. `gdpr-retention-cleanup.json` (pulizia automatica lunedì)
-4. `linkedin-safety-reminder.json` / `linkedin-detection-monitor.json`
-5. `quality-gate-check.json`
-6. `lead-pipeline-health.json`
+2. `orchestrator-v2.json` (orchestrazione tecnica principale)
+3. `watchdog.json` (monitoring e recovery)
+4. `weekly-lead-report-v2.json` (report settimanale)
+5. `gdpr-retention-cleanup.json` (pulizia automatica lunedì)
+6. `linkedin-detection-monitor.json`
+7. `quality-gate-check.json`
+8. `lead-pipeline-health.json`
 
 ### Configurare la credenziale Telegram in n8n
 
@@ -197,7 +200,7 @@ curl http://localhost:3000/api/health
 - [ ] `.\bot.ps1 doctor` → `sessionLoginOk: true`, proxy ok
 - [ ] n8n accessibile su `localhost:5678`
 - [ ] Almeno un workflow n8n eseguito con alert Telegram ricevuto
-- [ ] `npm run audit` → score > 80/100
+- [ ] `npm run audit` eseguito e findings strutturali triaged nel backlog operativo
 - [ ] Nessuna circular dependency (`npx madge --circular src/`)
 
 ---

@@ -12,14 +12,24 @@ Leggi in quest'ordine:
    Regole operative canoniche del progetto.
 2. [docs/README.md](docs/README.md)  
    Indice della documentazione e ruolo di ogni file.
-3. [docs/AI_OPERATING_MODEL.md](docs/AI_OPERATING_MODEL.md)  
+3. [docs/AI_MASTER_SYSTEM_SPEC.md](docs/AI_MASTER_SYSTEM_SPEC.md)  
+   Lista madre unica del sistema AI desiderato.
+4. [docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md](docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md)  
+   Backlog strutturato primario del mancante rispetto alla spec.
+5. [docs/AI_OPERATING_MODEL.md](docs/AI_OPERATING_MODEL.md)  
    Roadmap su modelli, skill, workflow, n8n e automazioni.
-4. [todos/active.md](todos/active.md)  
+6. [todos/active.md](todos/active.md)  
    Priorita' correnti.
-5. [todos/workflow-architecture-hardening.md](todos/workflow-architecture-hardening.md)  
+7. [todos/workflow-architecture-hardening.md](todos/workflow-architecture-hardening.md)  
    Backlog tecnico operativo.
-6. [docs/tracking/ENGINEERING_WORKLOG.md](docs/tracking/ENGINEERING_WORKLOG.md)  
+8. [docs/tracking/ENGINEERING_WORKLOG.md](docs/tracking/ENGINEERING_WORKLOG.md)  
    Verifiche e interventi tecnici realmente eseguiti.
+
+Nota runtime:
+
+- [docs/AI_RUNTIME_BRIEF.md](docs/AI_RUNTIME_BRIEF.md) non e' un file da usare come fonte primaria manuale.
+- Viene caricato automaticamente dai hook per ricordare le regole critiche a ogni prompt e prima della compattazione.
+- [docs/AI_IMPLEMENTATION_LIST_GLOBAL.md](docs/AI_IMPLEMENTATION_LIST_GLOBAL.md) e [docs/LINKEDIN_IMPLEMENTATION_LIST.md](docs/LINKEDIN_IMPLEMENTATION_LIST.md) sono le viste lineari di review, non il backlog primario.
 
 ## Mappa rapida dei documenti
 
@@ -37,12 +47,8 @@ Leggi in quest'ordine:
   Contratto canonico del motore workflow.
 - [docs/WORKFLOW_MAP.md](docs/WORKFLOW_MAP.md)  
   Vista utente/operatore dei workflow.
-- [docs/WORKFLOW_ANALYSIS.md](docs/WORKFLOW_ANALYSIS.md)  
-  Analisi tecnica approfondita, non guida operativa.
 - [docs/CONFIG_REFERENCE.md](docs/CONFIG_REFERENCE.md)  
-  Reference tecnica della configurazione.
-- [docs/CONFIG_EXAMPLES.md](docs/CONFIG_EXAMPLES.md)  
-  Configurazioni d'esempio.
+  Reference tecnica della configurazione e esempi pratici.
 - [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md)  
   Integrazioni esterne, webhook e n8n.
 

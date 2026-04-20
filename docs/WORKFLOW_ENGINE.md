@@ -2,7 +2,7 @@
 
 > Stato documento: contratto canonico del motore workflow backend.
 > Per la guida utente ai workflow usare `WORKFLOW_MAP.md`.
-> Per l'analisi tecnica estesa usare `WORKFLOW_ANALYSIS.md`.
+> Per l'analisi tecnica estesa usare `archive/workflow-analysis-archive-2026-04.md`.
 
 Questo documento descrive il contratto stabile del nuovo motore workflow backend.
 CLI, API automation e frontend futuro devono usare questo livello e non ricostruire logica operativa o anti-ban lato client.

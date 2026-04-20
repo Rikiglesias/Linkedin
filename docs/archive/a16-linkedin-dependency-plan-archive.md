@@ -1,5 +1,8 @@
 # A16 — Piano Diversificazione LinkedIn Dependency Risk
 
+> Stato documento: analisi specialistica sul rischio di dipendenza da LinkedIn.
+> Non usare questo file come backlog operativo principale: per le priorita' vive usare `todos/active.md` e `todos/workflow-architecture-hardening.md`.
+
 ## Rischio
 100% del valore del bot dipende da LinkedIn. Se LinkedIn:
 - Cambia UI radicalmente → selettori rotti → bot fermo

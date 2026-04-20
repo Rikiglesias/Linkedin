@@ -1,0 +1,37 @@
+- generic [active] [ref=e1]:
+  - img [ref=e4]
+  - generic [ref=e5]:
+    - generic [ref=e6]:
+      - text: The Kit Packing program provided critical, immediate relief
+      - text: to over 33,000 localized beneficiaries in 2025.
+    - generic [ref=e7]:
+      - generic [ref=e8]:
+        - generic [ref=e9]: 10,427
+        - generic [ref=e10]: Kits Produced
+      - generic [ref=e11]:
+        - generic [ref=e12]: 10,727
+        - generic [ref=e13]: Kits Distributed
+      - generic [ref=e14]:
+        - generic [ref=e15]: 33,618
+        - generic [ref=e16]: Lives Impacted 2025
+    - generic [ref=e17]:
+      - generic [ref=e18]:
+        - generic [ref=e19]: Italy
+        - generic [ref=e22]: 5,633
+      - generic [ref=e23]:
+        - generic [ref=e24]: Ukraine
+        - generic [ref=e27]: 4,100
+      - generic [ref=e28]:
+        - generic [ref=e29]: EU
+        - generic [ref=e32]: "794"
+    - generic [ref=e33]:
+      - generic [ref=e34]: Historical Scale Callout
+      - generic [ref=e35]:
+        - generic [ref=e36]:
+          - generic [ref=e37]: 82,517
+          - generic [ref=e38]: Kits produced since the birth of RAH Italy
+        - generic [ref=e39]:
+          - generic [ref=e40]: 285,360
+          - generic [ref=e41]: Total lives impacted historically
+  - generic [ref=e43]: RAH Italy — Kit Packing Impact 2025
+  - img [ref=e44]

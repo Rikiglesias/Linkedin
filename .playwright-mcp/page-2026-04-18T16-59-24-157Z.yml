@@ -1,0 +1,31 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - text: Global meal packing operations mobilized over 10,000 volunteers
+      - text: to impact 11,100 lives across Africa and Ukraine.
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - generic [ref=e7]: 2,248,344
+        - generic [ref=e8]: Meals Produced
+      - generic [ref=e9]:
+        - generic [ref=e10]: 2,397,600
+        - generic [ref=e11]: Meals Distributed
+    - generic [ref=e12]:
+      - generic [ref=e13]:
+        - generic [ref=e14]: 11,100
+        - generic [ref=e15]: Total Lives Impacted
+      - generic [ref=e16]:
+        - generic [ref=e17]: 10,414
+        - generic [ref=e18]: Volunteers Involved
+    - generic [ref=e19]:
+      - generic [ref=e20]:
+        - generic [ref=e21]: Zimbabwe
+        - generic [ref=e24]: 1,775,668
+      - generic [ref=e25]:
+        - generic [ref=e26]: South Africa
+        - generic [ref=e29]: 570,240
+      - generic [ref=e30]:
+        - generic [ref=e31]: Ukraine
+        - generic [ref=e34]: 52,272
+  - generic [ref=e36]: RAH Italy — Meal Packing Impact 2025
+  - img [ref=e37]

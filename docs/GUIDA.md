@@ -1,9 +1,9 @@
-# Guida LinkedIn Bot — Rise Against Hunger
+# Guida Operativa LinkedIn Bot
 
 > Stato documento: guida operativa per usare il bot.
 > Per overview tecnica usare `README.md`.
 > Per regole anti-ban usare `GUIDA_ANTI_BAN.md`.
-> Per tutte le variabili e gli esempi di configurazione usare `CONFIG_REFERENCE.md` e `CONFIG_EXAMPLES.md`.
+> Per tutte le variabili e gli esempi di configurazione usare `CONFIG_REFERENCE.md`.
 
 Guida passo-passo per usare il bot. Ogni step spiega COSA fare, PERCHÉ, e COME verificare che abbia funzionato.
 
@@ -183,4 +183,3 @@ Per cambiare un valore: modifica il `.env`, poi `npm run build`.
 Per il dettaglio completo della configurazione non usare questa guida come reference primaria:
 
 - [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md)
-- [CONFIG_EXAMPLES.md](CONFIG_EXAMPLES.md)

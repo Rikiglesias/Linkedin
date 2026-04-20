@@ -14,8 +14,17 @@ Questa cartella esiste per evitare che audit, tentativi, verifiche e decisioni t
   Backlog tecnico operativo per workflow, AI decisionale, anti-ban, architettura e hardening.
 - [active.md](C:/Users/albie/Desktop/Programmi/Linkedin/todos/active.md)
   Priorita' correnti ad alto livello.
-- [2026-04-01-runtime-core-repository-refactor-design.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/superpowers/specs/2026-04-01-runtime-core-repository-refactor-design.md)
-  Design del refactor architetturale runtime core + repository.
+- [2026-04-01-runtime-core-repository-refactor-design.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/archive/2026-04-01-runtime-core-repository-refactor-design.md)
+  Design del refactor architetturale runtime core + repository (archiviato).
+
+## File di supporto al tracking
+
+- [codebase-debt.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/tracking/codebase-debt.md)
+  Snapshot del debito tecnico strutturale. Non e' un backlog vivo autonomo: serve a supportare i file canonici sopra.
+- [AI_CAPABILITY_ROUTING.json](C:/Users/albie/Desktop/Programmi/Linkedin/docs/tracking/AI_CAPABILITY_ROUTING.json)
+  Registro machine-readable del routing capability/domini del control plane AI.
+- [AI_LEVEL_ENFORCEMENT.json](C:/Users/albie/Desktop/Programmi/Linkedin/docs/tracking/AI_LEVEL_ENFORCEMENT.json)
+  Registro machine-readable del protocollo `L2-L6` audit-assisted.
 
 ## Regole di aggiornamento
 
