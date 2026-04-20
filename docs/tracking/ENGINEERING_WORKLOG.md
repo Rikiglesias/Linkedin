@@ -224,13 +224,13 @@ L'obiettivo non era aggiungere dettaglio esecutivo, ma separare meglio responsab
 
 ### Interventi completati
 
-- Aggiornato [AI_MASTER_IMPLEMENTATION_BACKLOG.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md)
+- Aggiornato [AI_MASTER_IMPLEMENTATION_BACKLOG.md](docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md)
   - i punti 4, 5, 10 e 13 ora distinguono meglio:
     - boundary tra primitive corrette
     - controllo reale vs presenza documentale
     - differenza tra stato operativo, fallback, ownership e metriche
     - criterio di done piu' logico e meno generico
-- Aggiornato [AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md)
+- Aggiornato [AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md](docs/AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md)
   - riallineati gli item 21-28, 58-65, 71-76 e 88-93
   - i punti restano compatti ma sono meno "ombrello" e piu' chiari sulla funzione logica che devono coprire
 
@@ -253,9 +253,9 @@ Verde.
 
 Chiudere un gap documentale rimasto aperto dopo il consolidamento della spec AI:
 
-- la lista completa del sistema desiderato esisteva gia' in [AI_MASTER_SYSTEM_SPEC.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_SYSTEM_SPEC.md)
-- lo stato e l'ordine di implementazione esistevano gia' in [AI_OPERATING_MODEL.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_OPERATING_MODEL.md)
-- i backlog vivi esistevano gia' in [active.md](C:/Users/albie/Desktop/Programmi/Linkedin/todos/active.md) e [workflow-architecture-hardening.md](C:/Users/albie/Desktop/Programmi/Linkedin/todos/workflow-architecture-hardening.md)
+- la lista completa del sistema desiderato esisteva gia' in [AI_MASTER_SYSTEM_SPEC.md](docs/AI_MASTER_SYSTEM_SPEC.md)
+- lo stato e l'ordine di implementazione esistevano gia' in [AI_OPERATING_MODEL.md](docs/AI_OPERATING_MODEL.md)
+- i backlog vivi esistevano gia' in [active.md](todos/active.md) e [workflow-architecture-hardening.md](todos/workflow-architecture-hardening.md)
 
 Mancava ancora un file unico che rispondesse in modo esplicito a:
 
@@ -263,7 +263,7 @@ Mancava ancora un file unico che rispondesse in modo esplicito a:
 
 ### Interventi completati
 
-- Creato [AI_MASTER_IMPLEMENTATION_BACKLOG.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md)
+- Creato [AI_MASTER_IMPLEMENTATION_BACKLOG.md](docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md)
   - backlog madre unico dei punti ancora aperti
   - separazione netta tra spec desiderata, roadmap/stato e backlog residuo
   - dettaglio esplicito dei blocchi ancora da chiudere con:
@@ -272,11 +272,11 @@ Mancava ancora un file unico che rispondesse in modo esplicito a:
     - primitive corrette
     - sottopunti aperti
     - criterio di done
-- Aggiornato [AI_MASTER_SYSTEM_SPEC.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_SYSTEM_SPEC.md)
+- Aggiornato [AI_MASTER_SYSTEM_SPEC.md](docs/AI_MASTER_SYSTEM_SPEC.md)
   - aggiunto link al backlog madre di completamento
-- Aggiornato [AI_OPERATING_MODEL.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_OPERATING_MODEL.md)
+- Aggiornato [AI_OPERATING_MODEL.md](docs/AI_OPERATING_MODEL.md)
   - aggiunto link esplicito al backlog madre unico dei punti aperti
-- Aggiornato [docs/README.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/README.md)
+- Aggiornato [docs/README.md](docs/README.md)
   - classificato il nuovo file come documento canonico
 
 ### Verifica
@@ -309,7 +309,7 @@ Verificare se, dopo la creazione del backlog madre unico, restavano ancora punti
 
 ### Interventi completati
 
-- Aggiornato [AI_MASTER_IMPLEMENTATION_BACKLOG.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md)
+- Aggiornato [AI_MASTER_IMPLEMENTATION_BACKLOG.md](docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md)
   - aggiunto audit esplicito su agenti e workflow decisionali deboli
   - aggiunta style guide esplicita per documenti AI-readable da formalizzare
   - aggiunto piano di migrazione progressiva del flusso tecnico principale verso Codex
@@ -342,15 +342,15 @@ senza sostituire il backlog strutturato che resta la fonte primaria con area, pr
 
 ### Interventi completati
 
-- Creato [AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md)
+- Creato [AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md](docs/AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md)
   - lista lineare unica dei punti aperti
   - prima versione con 98 item atomici marcati con area e orizzonte
   - regola esplicita che la vista lineare e' derivata dal backlog strutturato, non fonte indipendente
-- Aggiornato [AI_MASTER_IMPLEMENTATION_BACKLOG.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md)
+- Aggiornato [AI_MASTER_IMPLEMENTATION_BACKLOG.md](docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md)
   - link alla vista lineare unica
-- Aggiornato [docs/README.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/README.md)
+- Aggiornato [docs/README.md](docs/README.md)
   - classificata la vista lineare come documento di supporto canonico alla revisione del backlog
-- Rifinito [AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md)
+- Rifinito [AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md](docs/AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md)
   - pruning della lista lineare
   - passaggio da ordine per area a ordine logico per dipendenze
   - riduzione degli item da 98 a 94
@@ -365,7 +365,7 @@ senza sostituire il backlog strutturato che resta la fonte primaria con area, pr
     - cleanup
     - riuso
     - metriche di autonomia
-- Rifinito di nuovo [AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md)
+- Rifinito di nuovo [AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md](docs/AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md)
   - aggiunte regole esplicite di scrittura della lista per evitare punti troppo vaghi o sovrapposti
   - rese piu' esplicite varie righe ancora troppo generiche
   - fusi o stretti i punti ancora troppo vicini tra loro
@@ -398,15 +398,15 @@ Chiudere un altro gap emerso dalla chat: la documentazione parlava gia' di skill
 
 ### Interventi completati
 
-- Aggiornato [AI_MASTER_SYSTEM_SPEC.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_SYSTEM_SPEC.md)
+- Aggiornato [AI_MASTER_SYSTEM_SPEC.md](docs/AI_MASTER_SYSTEM_SPEC.md)
   - aggiunto inventario unico delle capability
   - resa esplicita la scelta della primitive corretta anche con `plugin`
   - aggiunta la valutazione preventiva di candidate come Caveman, LeanCTX, SIMDex e Contact Skills
-- Aggiornato [AI_MASTER_IMPLEMENTATION_BACKLOG.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md)
+- Aggiornato [AI_MASTER_IMPLEMENTATION_BACKLOG.md](docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md)
   - aggiunti item aperti su inventory capability, keep/merge/remove, routing matrix per dominio e valutazione candidate esterne
-- Aggiornato [AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md)
+- Aggiornato [AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md](docs/AI_MASTER_IMPLEMENTATION_SINGLE_LIST.md)
   - resa esplicita la parte di audit capability installate e valutazione delle skill candidate nominate in chat
-- Aggiornato [AI_OPERATING_MODEL.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_OPERATING_MODEL.md)
+- Aggiornato [AI_OPERATING_MODEL.md](docs/AI_OPERATING_MODEL.md)
   - esplicitata la governance del catalogo installato e la routing matrix per dominio pratico
 
 ### Verifica
@@ -426,14 +426,14 @@ Verde.
 
 Per chiudere il rischio di requisito solo "documentato ma non operativo", il tema e' stato propagato anche nei file che guidano davvero il comportamento runtime:
 
-- [AGENTS.md](C:/Users/albie/Desktop/Programmi/Linkedin/AGENTS.md)
+- [AGENTS.md](AGENTS.md)
   - esteso da sola `skill governance` a `capability governance`
   - inventario capability + routing matrix + valutazione candidate esterne
-- [AI_RUNTIME_BRIEF.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_RUNTIME_BRIEF.md)
+- [AI_RUNTIME_BRIEF.md](docs/AI_RUNTIME_BRIEF.md)
   - aggiunti `plugin`, overlap capability e routing mentale per dominio pratico
-- [active.md](C:/Users/albie/Desktop/Programmi/Linkedin/todos/active.md)
+- [active.md](todos/active.md)
   - il tema entra anche nelle priorita' vive come catalogo capability ordinato
-- [aiControlPlaneAudit.ts](C:/Users/albie/Desktop/Programmi/Linkedin/src/scripts/aiControlPlaneAudit.ts)
+- [aiControlPlaneAudit.ts](src/scripts/aiControlPlaneAudit.ts)
   - l'audit statico pretende ora anche questi frammenti, cosi' il requisito non puo' sparire senza essere rilevato
 
 

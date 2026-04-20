@@ -8,22 +8,22 @@ Questa cartella esiste per evitare che audit, tentativi, verifiche e decisioni t
 
 ## File canonici
 
-- [ENGINEERING_WORKLOG.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/tracking/ENGINEERING_WORKLOG.md)
+- [ENGINEERING_WORKLOG.md](docs/tracking/ENGINEERING_WORKLOG.md)
   Log cronologico delle analisi, dei refactor tentati, delle verifiche eseguite e dei risultati.
-- [workflow-architecture-hardening.md](C:/Users/albie/Desktop/Programmi/Linkedin/todos/workflow-architecture-hardening.md)
+- [workflow-architecture-hardening.md](todos/workflow-architecture-hardening.md)
   Backlog tecnico operativo per workflow, AI decisionale, anti-ban, architettura e hardening.
-- [active.md](C:/Users/albie/Desktop/Programmi/Linkedin/todos/active.md)
+- [active.md](todos/active.md)
   Priorita' correnti ad alto livello.
-- [2026-04-01-runtime-core-repository-refactor-design.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/archive/2026-04-01-runtime-core-repository-refactor-design.md)
+- [2026-04-01-runtime-core-repository-refactor-design.md](docs/archive/2026-04-01-runtime-core-repository-refactor-design.md)
   Design del refactor architetturale runtime core + repository (archiviato).
 
 ## File di supporto al tracking
 
-- [codebase-debt.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/tracking/codebase-debt.md)
+- [codebase-debt.md](docs/tracking/codebase-debt.md)
   Snapshot del debito tecnico strutturale. Non e' un backlog vivo autonomo: serve a supportare i file canonici sopra.
-- [AI_CAPABILITY_ROUTING.json](C:/Users/albie/Desktop/Programmi/Linkedin/docs/tracking/AI_CAPABILITY_ROUTING.json)
+- [AI_CAPABILITY_ROUTING.json](docs/tracking/AI_CAPABILITY_ROUTING.json)
   Registro machine-readable del routing capability/domini del control plane AI.
-- [AI_LEVEL_ENFORCEMENT.json](C:/Users/albie/Desktop/Programmi/Linkedin/docs/tracking/AI_LEVEL_ENFORCEMENT.json)
+- [AI_LEVEL_ENFORCEMENT.json](docs/tracking/AI_LEVEL_ENFORCEMENT.json)
   Registro machine-readable del protocollo `L2-L6` audit-assisted.
 
 ## Regole di aggiornamento

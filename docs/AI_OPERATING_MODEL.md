@@ -6,9 +6,9 @@
 
 **Obiettivo centrale**: un sistema AI che ragiona bene, non dimentica nessuna regola rilevante, non assume che l'input dell'utente sia automaticamente corretto e non dichiara mai "fatto" senza aver verificato davvero tutto. L'obiettivo non e' un flusso fisso uguale per ogni task, ma un'orchestrazione cognitiva capace di capire il caso e scegliere il metodo corretto.
 
-Per la lista madre unica, esplicita e non duplicata del sistema desiderato, vedere anche [AI_MASTER_SYSTEM_SPEC.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_SYSTEM_SPEC.md).
-Per il backlog madre unico dei punti ancora da chiudere, vedere [AI_MASTER_IMPLEMENTATION_BACKLOG.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md).
-Per le viste lineari per review e pruning: [AI_IMPLEMENTATION_LIST_GLOBAL.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_IMPLEMENTATION_LIST_GLOBAL.md) e [LINKEDIN_IMPLEMENTATION_LIST.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/LINKEDIN_IMPLEMENTATION_LIST.md).
+Per la lista madre unica, esplicita e non duplicata del sistema desiderato, vedere anche [AI_MASTER_SYSTEM_SPEC.md](docs/AI_MASTER_SYSTEM_SPEC.md).
+Per il backlog madre unico dei punti ancora da chiudere, vedere [AI_MASTER_IMPLEMENTATION_BACKLOG.md](docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md).
+Per le viste lineari per review e pruning: [AI_IMPLEMENTATION_LIST_GLOBAL.md](docs/AI_IMPLEMENTATION_LIST_GLOBAL.md) e [LINKEDIN_IMPLEMENTATION_LIST.md](docs/LINKEDIN_IMPLEMENTATION_LIST.md).
 
 Nota di stato da tenere fissa nei canonici: il modello canonico resta di 9 livelli; l'enforcement meccanico attuale copre L1 e L7-L9; L2-L6 restano definiti ma ancora da promuovere a enforcement `blocking`; nel frattempo L2-L6 audit-assisted tramite registri machine-readable + advisory hook + audit dedicati.
 

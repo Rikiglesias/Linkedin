@@ -1,6 +1,6 @@
 # AI Master Implementation Backlog
 
-Questo file e' il backlog madre unico dei punti ancora da completare rispetto a [AI_MASTER_SYSTEM_SPEC.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_SYSTEM_SPEC.md).
+Questo file e' il backlog madre unico dei punti ancora da completare rispetto a [AI_MASTER_SYSTEM_SPEC.md](docs/AI_MASTER_SYSTEM_SPEC.md).
 
 Serve a rispondere a una sola domanda:
 
@@ -8,11 +8,11 @@ Serve a rispondere a una sola domanda:
 
 Questo file non sostituisce:
 
-- [AI_MASTER_SYSTEM_SPEC.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_SYSTEM_SPEC.md) = sistema AI desiderato completo
-- [AI_OPERATING_MODEL.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_OPERATING_MODEL.md) = stato, roadmap e ordine corretto di implementazione
-- [AI_IMPLEMENTATION_LIST_GLOBAL.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_IMPLEMENTATION_LIST_GLOBAL.md) + [LINKEDIN_IMPLEMENTATION_LIST.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/LINKEDIN_IMPLEMENTATION_LIST.md) = vista lineare derivata degli stessi punti aperti (split per dominio), utile per review ma non seconda autorita'
-- [active.md](/C:/Users/albie/Desktop/Programmi/Linkedin/todos/active.md) = priorita' correnti
-- [workflow-architecture-hardening.md](/C:/Users/albie/Desktop/Programmi/Linkedin/todos/workflow-architecture-hardening.md) = backlog tecnico specialistico su bot/runtime
+- [AI_MASTER_SYSTEM_SPEC.md](docs/AI_MASTER_SYSTEM_SPEC.md) = sistema AI desiderato completo
+- [AI_OPERATING_MODEL.md](docs/AI_OPERATING_MODEL.md) = stato, roadmap e ordine corretto di implementazione
+- [AI_IMPLEMENTATION_LIST_GLOBAL.md](docs/AI_IMPLEMENTATION_LIST_GLOBAL.md) + [LINKEDIN_IMPLEMENTATION_LIST.md](docs/LINKEDIN_IMPLEMENTATION_LIST.md) = vista lineare derivata degli stessi punti aperti (split per dominio), utile per review ma non seconda autorita'
+- [active.md](todos/active.md) = priorita' correnti
+- [workflow-architecture-hardening.md](todos/workflow-architecture-hardening.md) = backlog tecnico specialistico su bot/runtime
 
 Regola di governance:
 
@@ -48,8 +48,8 @@ Gia' presente:
 
 - regole esplicite su fonte di verita', web/docs, orchestrazione contestuale e scelta degli strumenti
 - runtime brief reiniettato in Claude Code prima dei prompt e prima della compattazione
-- tabella modelli/ambienti gia' presente in [AI_OPERATING_MODEL.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_OPERATING_MODEL.md)
-- registro machine-readable [AI_CAPABILITY_ROUTING.json](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/tracking/AI_CAPABILITY_ROUTING.json) con domini, capability e policy `sourceOfTruth` / `webPolicy`
+- tabella modelli/ambienti gia' presente in [AI_OPERATING_MODEL.md](docs/AI_OPERATING_MODEL.md)
+- registro machine-readable [AI_CAPABILITY_ROUTING.json](docs/tracking/AI_CAPABILITY_ROUTING.json) con domini, capability e policy `sourceOfTruth` / `webPolicy`
 - advisory hook `UserPromptSubmit -> skill-activation.ps1` che emette `PROJECT_ROUTING_DECISION`
 - audit dedicato `npm run audit:routing`
 
@@ -80,9 +80,9 @@ Gia' presente:
 
 - hook `SessionStart`, `UserPromptSubmit`, `PreCompact`, `PreToolUse`, `PostToolUse`, `Stop`
 - gate quality e gate git gia' attivi in Claude Code per i blocker principali
-- regole canoniche forti in [AGENTS.md](/C:/Users/albie/Desktop/Programmi/Linkedin/AGENTS.md)
+- regole canoniche forti in [AGENTS.md](AGENTS.md)
 - matrice enforcement gia' misurata da `npm run audit:rule-enforcement`
-- protocollo machine-readable [AI_LEVEL_ENFORCEMENT.json](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/tracking/AI_LEVEL_ENFORCEMENT.json) per `L2-L6`
+- protocollo machine-readable [AI_LEVEL_ENFORCEMENT.json](docs/tracking/AI_LEVEL_ENFORCEMENT.json) per `L2-L6`
 - audit dedicato `npm run audit:l2-l6`
 - `UserPromptSubmit -> skill-activation.ps1` ora espone focus `L2-L6` in forma advisory
 
@@ -166,7 +166,7 @@ Primitive corrette: matrice di capability, canonici condivisi, fallback esplicit
 
 Gia' presente:
 
-- [AGENTS.md](/C:/Users/albie/Desktop/Programmi/Linkedin/AGENTS.md) come riferimento operativo di progetto
+- [AGENTS.md](AGENTS.md) come riferimento operativo di progetto
 - distinzione di massima tra Claude Code e Codex gia' documentata
 
 Da completare:
@@ -218,7 +218,7 @@ Primitive corrette: refactor runtime, script di audit, test, health endpoint, ba
 
 Riferimento specialistico corrente:
 
-- [workflow-architecture-hardening.md](/C:/Users/albie/Desktop/Programmi/Linkedin/todos/workflow-architecture-hardening.md)
+- [workflow-architecture-hardening.md](todos/workflow-architecture-hardening.md)
 
 Gia' presente:
 
@@ -282,7 +282,7 @@ Gia' presente:
 
 - gate quality e gate git in Claude Code
 - audit contestuale `audit:git-automation`
-- policy esplicita in [AGENTS.md](/C:/Users/albie/Desktop/Programmi/Linkedin/AGENTS.md)
+- policy esplicita in [AGENTS.md](AGENTS.md)
 
 Da completare:
 
@@ -350,7 +350,7 @@ Primitive corrette: checklist bootstrap, template, setup guide, documentazione d
 
 Gia' presente:
 
-- [NEW_PROJECT_BOOTSTRAP_CHECKLIST.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/NEW_PROJECT_BOOTSTRAP_CHECKLIST.md)
+- [NEW_PROJECT_BOOTSTRAP_CHECKLIST.md](docs/NEW_PROJECT_BOOTSTRAP_CHECKLIST.md)
 
 Da completare:
 
@@ -399,9 +399,9 @@ Per non amplificare caos o automazioni premature, l'ordine corretto resta questo
 
 ## Backlog specialistici che devono restare allineati
 
-- [active.md](/C:/Users/albie/Desktop/Programmi/Linkedin/todos/active.md) = priorita' correnti del momento
-- [workflow-architecture-hardening.md](/C:/Users/albie/Desktop/Programmi/Linkedin/todos/workflow-architecture-hardening.md) = dettaglio tecnico runtime/bot
-- [ENGINEERING_WORKLOG.md](/C:/Users/albie/Desktop/Programmi/Linkedin/docs/tracking/ENGINEERING_WORKLOG.md) = storico delle analisi e delle verifiche reali
+- [active.md](todos/active.md) = priorita' correnti del momento
+- [workflow-architecture-hardening.md](todos/workflow-architecture-hardening.md) = dettaglio tecnico runtime/bot
+- [ENGINEERING_WORKLOG.md](docs/tracking/ENGINEERING_WORKLOG.md) = storico delle analisi e delle verifiche reali
 
 Regola finale:
 
