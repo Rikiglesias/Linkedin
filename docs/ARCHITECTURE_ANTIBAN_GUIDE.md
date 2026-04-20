@@ -1,3 +1,5 @@
+# Architecture Anti-Ban Guide
+
 ## Stato documento
 
 - Ruolo: reference tecnica anti-ban e stealth.
@@ -162,44 +164,6 @@ La tabella leads ha una colonna version per supportare optimistic locking, preve
 Outbox con idempotenza (src/core/repositories/system.ts)
 Gli eventi (lead.transition, job.failed) vengono prima salvati in outbox_events con chiave idempotente, poi inviati a Supabase/webhook in modo asincrono con backpressure. Questo garantisce che ogni evento venga recapitato almeno una volta, anche in caso di crash.
 
-3. Automazione delle Richieste di Connessione e Messaggi
-3.1. Inviti (Connect)
-Generazione nota personalizzata (src/ai/inviteNotePersonalizer.ts)
-La nota può essere generata con AI (se configurata) o presa da template. L’AI estrae contesto dal profilo (about, experience) per personalizzare. C’è anche un A/B test tra varianti di prompt.
-
-Workflow di invito (src/workers/inviteWorker.ts)
-
-Verifica blacklist e stato lead.
-Enrichment al volo (se non già arricchito) tramite API esterne/OSINT.
-Navigazione contestuale al profilo.
-Scroll e lettura del profilo (dwell time proporzionale alla ricchezza).
-Click sul pulsante Connect (con confidence check sul testo).
-Gestione del modale (con/senza nota).
-Verifica post‑azione (proof‑of‑send).
-Transizione a INVITED e registrazione timing (per optimizer).
-3.2. Messaggi dopo connessione
-Generazione messaggio (src/ai/messagePersonalizer.ts)
-Simile all’invito, ma può essere un follow‑up breve o un reminder. Anche qui c’è A/B test.
-
-Pre‑built messages (src/workers/messagePrebuildWorker.ts)
-I messaggi vengono generati in batch offline (per ridurre latenza durante la sessione browser) e salvati in tabella prebuilt_messages. Il worker di messaggi li consuma, se disponibili, altrimenti genera on‑the‑fly.
-
-Workflow di messaggio (src/workers/messageWorker.ts)
-Simile all’invito, ma naviga alla inbox o al profilo, apre la conversazione, scrive il messaggio con digitazione umana e invia.
-
-3.3. Follow‑up automatici
-Worker follow‑up (src/workers/followUpWorker.ts)
-Per lead in stato MESSAGED da un certo numero di giorni, invia un reminder breve. Il delay dipende dall’intento del lead (es. se aveva fatto domande, il follow‑up è più breve).
-
-4. Integrazione con Database e Aggiornamento Automatico
-Il database (SQLite/PostgreSQL) è il cuore dello stato. Ogni modifica ai lead (invito inviato, accettazione, messaggio) è una transazione che aggiorna i campi e scrive un evento nell’outbox.
-
-Schema del database : vedi le migrazioni in src/db/migrations/. Ogni migrazione è incrementale e idempotente.
-
-Repository pattern : tutte le query sono incapsulate in funzioni in src/core/repositories/, così la logica di business è separata dall’accesso ai dati.
-
-Sincronizzazione cloud (opzionale) : tramite supabaseDataClient.ts e webhookSyncWorker.ts, i dati possono essere replicati su Supabase per dashboard centralizzata o analytics. La sincronizzazione usa backpressure e retry.
-
 5. Trucchi Evasivi e Bypass Policy – Lista Completa
 Riassumendo, ecco l’elenco completo dei meccanismi evasivi implementati:
 
@@ -273,21 +237,6 @@ Timing optimizer basato su dati storici (slot orari migliori).
 
 Rilevamento anomalie cookie (cambiato senza rotazione).
 
-6. Consigli Pratici per l’Uso
-Non sovrapporre sessioni: usa un solo account per browser, non aprire LinkedIn manualmente mentre il bot gira (o usa lo stesso profilo con lo stesso proxy).
-
-Monitora i log: il bot scrive log dettagliati in logs/ e invia alert su Telegram. Impara a leggere i warning.
-
-Rispetta i limiti: non forzare HARD_INVITE_CAP oltre i 20‑25 se l’account è giovane. Usa il growth model.
-
-Proxy di qualità: investi in proxy residenziali o mobili; i datacenter sono troppo rischiosi.
-
-Warmup manuale iniziale: prima di lanciare il bot, usa l’account per qualche giorno come farebbe un umano (feed, like, post).
-
-Backup periodico: usa npm run db:backup per non perdere dati.
-
-Segui il pre‑flight: se il pre‑flight segnala un proxy blacklisted o budget esaurito, fermati e risolvi.
-
 ## Limiti del documento
 
 Questo file non deve contenere:
@@ -305,5 +254,5 @@ Per i documenti giusti usare invece:
 
 - [GUIDA_ANTI_BAN.md](GUIDA_ANTI_BAN.md) per le regole operative
 - [GUIDA.md](GUIDA.md) per il flusso utente
-- [CONFIG_EXAMPLES.md](CONFIG_EXAMPLES.md) e [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md) per la configurazione
+- [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md) per la configurazione e gli esempi pratici
 - [INTEGRATIONS.md](INTEGRATIONS.md) per webhook, sync e n8n
