@@ -16,7 +16,13 @@ import { homedir } from 'os';
 import { join, resolve } from 'path';
 
 type Status = 'ENFORCED' | 'GAP' | 'NOT_MECH';
-type EnforcementType = 'hook-bloccante' | 'hook-asincrono' | 'runtime-brief' | 'non-meccanizzabile';
+type EnforcementType =
+    | 'hook-bloccante'
+    | 'hook-asincrono'
+    | 'advisory-hook'
+    | 'audit-script'
+    | 'runtime-brief'
+    | 'non-meccanizzabile';
 
 interface RuleResult {
     id: string;
@@ -77,6 +83,18 @@ function hookRule(
     return { id, name, category, type, status: present ? 'ENFORCED' : 'GAP', detail, gapNote };
 }
 
+function auditRule(id: string, name: string, category: string, present: boolean, detail: string, gapNote?: string): RuleResult {
+    return {
+        id,
+        name,
+        category,
+        type: 'audit-script',
+        status: present ? 'ENFORCED' : 'GAP',
+        detail,
+        gapNote,
+    };
+}
+
 function briefRule(id: string, name: string, snippet: string, brief: string | null): RuleResult {
     const found = brief ? brief.includes(snippet) : false;
     return {
@@ -109,10 +127,15 @@ const HOME = homedir();
 const SETTINGS_PATH = join(HOME, '.claude', 'settings.json');
 const HOOKS_DIR = join(HOME, '.claude', 'hooks');
 const BRIEF_PATH = resolve('docs', 'AI_RUNTIME_BRIEF.md');
+const ROUTING_REGISTRY_PATH = resolve('docs', 'tracking', 'AI_CAPABILITY_ROUTING.json');
+const LEVEL_REGISTRY_PATH = resolve('docs', 'tracking', 'AI_LEVEL_ENFORCEMENT.json');
+const PACKAGE_JSON_PATH = resolve('package.json');
 
 function buildMatrix(): RuleResult[] {
     const settings = readJson<Record<string, unknown>>(SETTINGS_PATH) ?? {};
     const brief = readText(BRIEF_PATH);
+    const packageJson = readJson<{ scripts?: Record<string, string> }>(PACKAGE_JSON_PATH) ?? {};
+    const scripts = packageJson.scripts ?? {};
 
     // --- A: Hook bloccante ---
     const antiBanScript = readText(join(HOOKS_DIR, 'pre-edit-antiban.ps1'));
@@ -170,6 +193,15 @@ function buildMatrix(): RuleResult[] {
             hookExists(settings, 'UserPromptSubmit', 'inject-runtime-brief.ps1'),
             'UserPromptSubmit → inject-runtime-brief.ps1',
             'Aggiungere inject-runtime-brief.ps1 in UserPromptSubmit',
+        ),
+        hookRule(
+            'routing-advisory-hook',
+            'Routing advisory per prompt via skill-activation',
+            'Advisory hook',
+            'advisory-hook',
+            hookExists(settings, 'UserPromptSubmit', 'skill-activation.ps1'),
+            'UserPromptSubmit → skill-activation.ps1',
+            'Aggiungere skill-activation.ps1 in UserPromptSubmit',
         ),
         hookRule(
             'runtime-brief-compact',
@@ -296,6 +328,39 @@ function buildMatrix(): RuleResult[] {
             'Proporre modello e ambiente',
             brief,
         ),
+        briefRule(
+            'l2-l6-audit-assisted',
+            'Stato audit-assisted esplicito per L2-L6',
+            'L2-L6 audit-assisted',
+            brief,
+        ),
+
+        // --- C2: Audit script ---
+        auditRule(
+            'routing-registry',
+            'Registro machine-readable di routing capability/domini',
+            'Audit script',
+            existsSync(ROUTING_REGISTRY_PATH) && typeof scripts['audit:routing'] === 'string',
+            'AI_CAPABILITY_ROUTING.json + audit:routing presenti',
+            'Aggiungere docs/tracking/AI_CAPABILITY_ROUTING.json e npm run audit:routing',
+        ),
+        auditRule(
+            'l2-l6-registry',
+            'Registro machine-readable del protocollo L2-L6',
+            'Audit script',
+            existsSync(LEVEL_REGISTRY_PATH) && typeof scripts['audit:l2-l6'] === 'string',
+            'AI_LEVEL_ENFORCEMENT.json + audit:l2-l6 presenti',
+            'Aggiungere docs/tracking/AI_LEVEL_ENFORCEMENT.json e npm run audit:l2-l6',
+        ),
+        auditRule(
+            'ai-control-plane-umbrella',
+            'Audit umbrella del control plane',
+            'Audit script',
+            typeof scripts['audit:ai-control-plane'] === 'string' &&
+                typeof scripts['audit:ai-control-plane:docs'] === 'string',
+            'audit:ai-control-plane + audit:ai-control-plane:docs presenti',
+            'Esportare audit:ai-control-plane come umbrella e audit:ai-control-plane:docs come doc-check',
+        ),
 
         // --- D: Non meccanizzabile ---
         notMechRule(
@@ -311,12 +376,12 @@ function buildMatrix(): RuleResult[] {
         notMechRule(
             'blast-radius-reale',
             'Analisi blast radius reale sulla codebase (caller, test, import)',
-            'Richiede code search e ragionamento sulle dipendenze reali — si supporta con strumenti ma non si enforced automaticamente',
+            'Richiede code search e ragionamento sul task specifico — ora supportato da protocollo L2 audit-assisted ma non verificabile automaticamente per ogni risposta',
         ),
         notMechRule(
             'capability-governance',
             'Selezione e routing capability corretta per dominio (skill/MCP/plugin/hook/workflow)',
-            'Richiede ragionamento contestuale sul dominio del task — non verificabile con script',
+            'Ora supportato da routing registry + advisory hook, ma la scelta finale su ogni prompt resta ancora non verificabile semanticamente',
         ),
         notMechRule(
             'auto-commit-policy',

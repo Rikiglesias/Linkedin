@@ -1,0 +1,310 @@
+{
+  "capabilities": [
+    {
+      "id": "repo-canonici",
+      "kind": "repo",
+      "label": "repo/canonici/test/log",
+      "status": "active",
+      "environments": ["either", "claude-code", "codex"],
+      "notes": "Fonte interna stabile: codice, test, log, config, documenti canonici."
+    },
+    {
+      "id": "repo-code-search",
+      "kind": "repo",
+      "label": "code search e mapping dipendenze",
+      "status": "active",
+      "environments": ["either", "claude-code", "codex"],
+      "notes": "Blast radius, caller scan, contratti, mapping test."
+    },
+    {
+      "id": "official-web-docs",
+      "kind": "web",
+      "label": "docs ufficiali / web search",
+      "status": "active",
+      "environments": ["either", "claude-code", "codex"],
+      "notes": "Necessario per librerie, provider, API esterne e best practice recenti."
+    },
+    {
+      "id": "mcp-live-state",
+      "kind": "mcp",
+      "label": "MCP / tool live state",
+      "status": "active",
+      "environments": ["claude-code"],
+      "notes": "Serve per stato esterno reale; mai sostituirlo con supposizioni da docs o repo."
+    },
+    {
+      "id": "browser-automation",
+      "kind": "mcp",
+      "label": "browser automation / BrightData",
+      "status": "active",
+      "environments": ["claude-code"],
+      "notes": "Evidenza browser, DOM, stato pagina, interazioni reali."
+    },
+    {
+      "id": "playwright",
+      "kind": "mcp",
+      "label": "Playwright",
+      "status": "active",
+      "environments": ["claude-code"],
+      "notes": "Debug visivo e verifiche browser deterministiche."
+    },
+    {
+      "id": "webapp-testing",
+      "kind": "skill",
+      "label": "skill webapp-testing",
+      "status": "active",
+      "environments": ["either", "claude-code", "codex"],
+      "notes": "Supporto operativo per debug/verifica browser."
+    },
+    {
+      "id": "db-schema-query",
+      "kind": "mcp",
+      "label": "DB live / schema / query",
+      "status": "active",
+      "environments": ["claude-code"],
+      "notes": "Fonte autorevole per persistenza e stato dati."
+    },
+    {
+      "id": "audit-git-automation",
+      "kind": "script",
+      "label": "audit:git-automation",
+      "status": "active",
+      "environments": ["either", "claude-code", "codex"],
+      "notes": "Valida commit/push readiness e contesto git reale."
+    },
+    {
+      "id": "git-commit",
+      "kind": "skill",
+      "label": "skill git-commit",
+      "status": "active",
+      "environments": ["either", "claude-code", "codex"],
+      "notes": "Commit intelligente dopo verifiche verdi."
+    },
+    {
+      "id": "git-create-pr",
+      "kind": "skill",
+      "label": "skill git-create-pr",
+      "status": "active",
+      "environments": ["either", "claude-code", "codex"],
+      "notes": "PR e review workflow."
+    },
+    {
+      "id": "memoria",
+      "kind": "skill",
+      "label": "skill memoria",
+      "status": "active",
+      "environments": ["either", "claude-code", "codex"],
+      "notes": "Lettura/aggiornamento memoria e contesto persistente."
+    },
+    {
+      "id": "n8n-mcp",
+      "kind": "mcp",
+      "label": "n8n MCP / istanza live",
+      "status": "active",
+      "environments": ["claude-code"],
+      "notes": "Fonte reale per workflow n8n vivi e loro configurazione."
+    },
+    {
+      "id": "repo-n8n-json",
+      "kind": "workflow",
+      "label": "workflow JSON nel repo",
+      "status": "active",
+      "environments": ["either", "claude-code", "codex"],
+      "notes": "Artefatti di design/fallback, non prova di stato live."
+    },
+    {
+      "id": "antiban-review",
+      "kind": "skill",
+      "label": "skill antiban-review",
+      "status": "active",
+      "environments": ["claude-code"],
+      "notes": "Primitive primaria per browser/timing/stealth/LinkedIn risk."
+    },
+    {
+      "id": "debugging-wizard",
+      "kind": "skill",
+      "label": "skill debugging-wizard",
+      "status": "active",
+      "environments": ["either", "claude-code", "codex"],
+      "notes": "Primo tentativo strutturato di debug."
+    },
+    {
+      "id": "root-cause-tracing",
+      "kind": "skill",
+      "label": "skill root-cause-tracing",
+      "status": "active",
+      "environments": ["either", "claude-code", "codex"],
+      "notes": "Escalation per tracing causale profondo."
+    },
+    {
+      "id": "systematic-debugging",
+      "kind": "skill",
+      "label": "skill systematic-debugging",
+      "status": "active",
+      "environments": ["either", "claude-code", "codex"],
+      "notes": "Escalation dopo due tentativi falliti."
+    },
+    {
+      "id": "vitest-e2e",
+      "kind": "script",
+      "label": "Vitest / E2E / coverage",
+      "status": "active",
+      "environments": ["either", "claude-code", "codex"],
+      "notes": "Fonte di verita' per test e regressioni."
+    },
+    {
+      "id": "test-master",
+      "kind": "skill",
+      "label": "skill test-master",
+      "status": "active",
+      "environments": ["either", "claude-code", "codex"],
+      "notes": "Supporto strategico su test, coverage e QA."
+    },
+    {
+      "id": "code-review",
+      "kind": "skill",
+      "label": "skill code-review",
+      "status": "active",
+      "environments": ["either", "claude-code", "codex"],
+      "notes": "Review strutturata del diff locale o PR."
+    },
+    {
+      "id": "security-reviewer",
+      "kind": "skill",
+      "label": "skill security-reviewer",
+      "status": "active",
+      "environments": ["either", "claude-code", "codex"],
+      "notes": "Security review mirata sulle aree sensibili."
+    },
+    {
+      "id": "semgrep",
+      "kind": "script",
+      "label": "Semgrep mirato",
+      "status": "active",
+      "environments": ["either", "claude-code", "codex"],
+      "notes": "SAST mirato su auth, input utente e query."
+    }
+  ],
+  "domains": [
+    {
+      "domainId": "antiban-linkedin",
+      "intentPatterns": ["linkedin", "anti.?ban", "stealth", "fingerprint", "timing", "delay", "session", "proxy", "detect"],
+      "sourceOfTruth": "repo",
+      "webPolicy": "conditional",
+      "primaryCapabilities": ["antiban-review", "repo-code-search", "repo-canonici"],
+      "fallbackCapabilities": ["official-web-docs", "browser-automation", "playwright"],
+      "preferredEnvironment": "claude-code",
+      "notes": "Prima domanda: questa modifica puo' far bannare o far rilevare il bot?"
+    },
+    {
+      "domainId": "external-live-state",
+      "intentPatterns": ["stato reale", "today", "oggi", "latest", "live", "production", "deploy", "runtime", "sentry", "vercel", "supabase"],
+      "sourceOfTruth": "live-mcp-or-tool",
+      "webPolicy": "conditional",
+      "primaryCapabilities": ["mcp-live-state", "repo-canonici"],
+      "fallbackCapabilities": ["official-web-docs", "debugging-wizard"],
+      "preferredEnvironment": "claude-code",
+      "notes": "Per stato esterno reale servono MCP/tool live; il repo non basta."
+    },
+    {
+      "domainId": "recent-library-provider",
+      "intentPatterns": ["libreria", "library", "sdk", "provider", "api", "deprec", "breaking", "version", "upgrade", "best practice"],
+      "sourceOfTruth": "official-web-docs",
+      "webPolicy": "required",
+      "primaryCapabilities": ["official-web-docs", "repo-code-search"],
+      "fallbackCapabilities": ["repo-canonici", "debugging-wizard"],
+      "preferredEnvironment": "either",
+      "notes": "Per librerie/provider recenti non basta la knowledge interna del modello."
+    },
+    {
+      "domainId": "browser-ui",
+      "intentPatterns": ["browser", "dom", "ui", "click", "selector", "playwright", "page", "screenshot", "frontend", "html"],
+      "sourceOfTruth": "browser-automation",
+      "webPolicy": "conditional",
+      "primaryCapabilities": ["playwright", "browser-automation", "webapp-testing"],
+      "fallbackCapabilities": ["repo-code-search", "repo-canonici"],
+      "preferredEnvironment": "claude-code",
+      "notes": "Per UI/DOM servono evidenza visiva e strumenti browser, non supposizioni dal codice."
+    },
+    {
+      "domainId": "database-persistence",
+      "intentPatterns": ["database", "db", "sql", "query", "migration", "schema", "table", "record", "persist", "supabase"],
+      "sourceOfTruth": "database-live",
+      "webPolicy": "not-needed",
+      "primaryCapabilities": ["db-schema-query", "repo-canonici"],
+      "fallbackCapabilities": ["repo-code-search", "official-web-docs"],
+      "preferredEnvironment": "claude-code",
+      "notes": "Per dati e schema conta il database reale o il contratto schema, non intuizioni dal codice."
+    },
+    {
+      "domainId": "git-closure",
+      "intentPatterns": ["commit", "push", "pr", "pull request", "branch", "merge", "review", "git"],
+      "sourceOfTruth": "git-state",
+      "webPolicy": "not-needed",
+      "primaryCapabilities": ["audit-git-automation", "git-commit", "git-create-pr"],
+      "fallbackCapabilities": ["repo-canonici", "repo-code-search"],
+      "preferredEnvironment": "either",
+      "notes": "Prima il contesto git reale, poi commit/push/PR."
+    },
+    {
+      "domainId": "memory-handoff",
+      "intentPatterns": ["memory", "memoria", "handoff", "context", "contesto", "secondo cervello", "briefing", "todos"],
+      "sourceOfTruth": "memory-files",
+      "webPolicy": "not-needed",
+      "primaryCapabilities": ["memoria", "repo-canonici"],
+      "fallbackCapabilities": ["repo-code-search", "debugging-wizard"],
+      "preferredEnvironment": "either",
+      "notes": "Per stato e continuita' la fonte primaria sono memory, todos, worklog e canonici."
+    },
+    {
+      "domainId": "n8n-orchestration",
+      "intentPatterns": ["n8n", "workflow", "orchestration", "trigger", "cron", "automation", "agent", "node"],
+      "sourceOfTruth": "n8n-live",
+      "webPolicy": "conditional",
+      "primaryCapabilities": ["n8n-mcp", "repo-n8n-json"],
+      "fallbackCapabilities": ["repo-canonici", "official-web-docs"],
+      "preferredEnvironment": "claude-code",
+      "notes": "Distinguere sempre design repo vs workflow vivi nell'istanza reale."
+    },
+    {
+      "domainId": "debugging",
+      "intentPatterns": ["bug", "errore", "crash", "broken", "failure", "traceback", "stack trace", "debug", "root cause"],
+      "sourceOfTruth": "repo",
+      "webPolicy": "conditional",
+      "primaryCapabilities": ["debugging-wizard", "repo-code-search", "repo-canonici"],
+      "fallbackCapabilities": ["root-cause-tracing", "systematic-debugging"],
+      "preferredEnvironment": "either",
+      "notes": "Il debug parte da log, repro e codice reale; l'escalation e' sequenziale."
+    },
+    {
+      "domainId": "testing",
+      "intentPatterns": ["test", "vitest", "coverage", "e2e", "regression", "smoke", "qa", "assert"],
+      "sourceOfTruth": "repo",
+      "webPolicy": "not-needed",
+      "primaryCapabilities": ["vitest-e2e", "test-master", "repo-canonici"],
+      "fallbackCapabilities": ["repo-code-search", "debugging-wizard"],
+      "preferredEnvironment": "either",
+      "notes": "Per testing e regressione contano suite reali e coverage, non giudizi intuitivi."
+    },
+    {
+      "domainId": "review-security",
+      "intentPatterns": ["review", "security", "auth", "xss", "sql injection", "semgrep", "vulnerability", "audit", "input utente"],
+      "sourceOfTruth": "repo",
+      "webPolicy": "conditional",
+      "primaryCapabilities": ["code-review", "security-reviewer", "semgrep"],
+      "fallbackCapabilities": ["repo-code-search", "official-web-docs"],
+      "preferredEnvironment": "either",
+      "notes": "Review e security devono appoggiarsi a diff reale, scan mirati e documentazione primaria quando serve."
+    },
+    {
+      "domainId": "repo-code",
+      "intentPatterns": ["refactor", "implement", "feature", "modifica", "codebase", "module", "typescript", "node", "contract", "caller"],
+      "sourceOfTruth": "repo",
+      "webPolicy": "not-needed",
+      "primaryCapabilities": ["repo-code-search", "repo-canonici"],
+      "fallbackCapabilities": ["official-web-docs", "test-master"],
+      "preferredEnvironment": "either",
+      "notes": "Default per lavoro interno al repo quando non serve stato esterno o docs recenti."
+    }
+  ]
+}

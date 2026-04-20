@@ -48,6 +48,13 @@ async function persistLastUpdateId(): Promise<void> {
     }
 }
 
+export async function stopTelegramListener(): Promise<void> {
+    isPolling = false;
+    await persistLastUpdateId();
+    _updatesSinceLastPersist = 0;
+    await logInfo('telegram.listener_stopped', { lastUpdateId });
+}
+
 export async function startTelegramListener(): Promise<void> {
     if (!config.telegramBotToken) {
         await logWarn('telegram.listener_not_started', { reason: 'missing_bot_token' });

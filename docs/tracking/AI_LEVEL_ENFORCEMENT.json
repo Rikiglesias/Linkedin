@@ -1,0 +1,138 @@
+{
+  "levels": [
+    {
+      "level": "L2",
+      "appliesTo": ["quick-fix", "bug", "feature/refactor"],
+      "focusChecks": [
+        "mappare caller, import ed export toccati",
+        "verificare contratti e parametri propagati",
+        "identificare i test impattati"
+      ],
+      "expectedEvidence": [
+        "caller/import scan esplicito",
+        "contratti aggiornati senza drift",
+        "lista test impattati o eseguiti"
+      ],
+      "advisoryPrompt": "L2: controlla catene dirette, contratti e test impattati prima di chiudere.",
+      "currentPrimitive": "audit+hook",
+      "promotionTarget": "hook+audit"
+    },
+    {
+      "level": "L3",
+      "appliesTo": ["quick-fix", "bug", "feature/refactor"],
+      "focusChecks": [
+        "coprire timeout, listener, stato, null/undefined e array vuoti",
+        "verificare failure surface e leak evidenti",
+        "controllare query/input sensibili se presenti"
+      ],
+      "expectedEvidence": [
+        "runtime edge cases elencati",
+        "failure mode principali considerati",
+        "security scan mirato quando il perimetro lo richiede"
+      ],
+      "advisoryPrompt": "L3: copri runtime edges, listener/timeout/stato e failure surface reali.",
+      "currentPrimitive": "audit+hook",
+      "promotionTarget": "hook+audit"
+    },
+    {
+      "level": "L4",
+      "appliesTo": ["bug", "feature/refactor"],
+      "focusChecks": [
+        "valutare doppia esecuzione, retry, partial failure e rollback",
+        "controllare idempotenza e side effect a meta' flusso",
+        "esplicitare cosa succede se il flusso fallisce a meta'"
+      ],
+      "expectedEvidence": [
+        "scenari di partial failure coperti",
+        "idempotenza o limiti dichiarati",
+        "rollback/recovery esplicitati dove servono"
+      ],
+      "advisoryPrompt": "L4: ragiona su doppia esecuzione, partial failure, rollback e retry.",
+      "currentPrimitive": "audit+hook",
+      "promotionTarget": "hook+audit"
+    },
+    {
+      "level": "L5",
+      "appliesTo": ["feature/refactor"],
+      "focusChecks": [
+        "verificare reachability utente e flusso prodotto",
+        "controllare alert/HITL e messaggi operativi",
+        "evitare feature solo API o solo codice non raggiungibile"
+      ],
+      "expectedEvidence": [
+        "percorso utente o operatore esplicitato",
+        "alert dicono cosa fare",
+        "nessuna regressione evidente di accessibilita' prodotto"
+      ],
+      "advisoryPrompt": "L5: verifica reachability utente, alert operativi e impatto prodotto.",
+      "currentPrimitive": "audit+hook",
+      "promotionTarget": "audit-script"
+    },
+    {
+      "level": "L6",
+      "appliesTo": ["bug", "feature/refactor"],
+      "focusChecks": [
+        "seguire config/env e data flow end-to-end",
+        "verificare SSOT, contract propagation e osservabilita'",
+        "controllare che il dato arrivi davvero dove deve arrivare"
+      ],
+      "expectedEvidence": [
+        "env/config e contratti coerenti",
+        "SSOT non duplicata o esplicitamente governata",
+        "percorso end-to-end e observability considerati"
+      ],
+      "advisoryPrompt": "L6: controlla env, data flow end-to-end, SSOT e observability.",
+      "currentPrimitive": "audit+hook",
+      "promotionTarget": "audit-script"
+    },
+    {
+      "level": "L7",
+      "appliesTo": ["bug", "feature/refactor"],
+      "focusChecks": [
+        "valutare ogni file toccato su tutti i domini rilevanti",
+        "non limitarsi al tema principale della modifica",
+        "verificare sicurezza, architettura, anti-ban, timing e compliance per ogni file"
+      ],
+      "expectedEvidence": [
+        "analisi multi-dominio esplicita su ogni file modificato",
+        "nessun dominio rilevante ignorato"
+      ],
+      "advisoryPrompt": "L7: per ogni file toccato, verifica TUTTI i domini — sicurezza, architettura, anti-ban, timing, compliance.",
+      "currentPrimitive": "skill",
+      "promotionTarget": "hook+skill"
+    },
+    {
+      "level": "L8",
+      "appliesTo": ["feature/refactor"],
+      "focusChecks": [
+        "verificare coerenza cross-file tra contratti, tipi e comportamenti",
+        "controllare che le modifiche su file diversi siano allineate",
+        "aggiornare documentazione e canonici che puntano ai file toccati"
+      ],
+      "expectedEvidence": [
+        "nessuna incoerenza cross-file identificata",
+        "docs e canonici aggiornati o esplicitamente esclusi"
+      ],
+      "advisoryPrompt": "L8: verifica coerenza cross-file — contratti, tipi, docs e canonici allineati.",
+      "currentPrimitive": "skill",
+      "promotionTarget": "hook+skill"
+    },
+    {
+      "level": "L9",
+      "appliesTo": ["bug", "feature/refactor"],
+      "focusChecks": [
+        "loop finale: nessun obbligo di breve termine rimasto aperto",
+        "nessun artefatto correlato stale: memory, todos, worklog, hook",
+        "dichiarare esito DONE o BLOCKED con causa esplicita"
+      ],
+      "expectedEvidence": [
+        "lista obblighi residui vuota o rinviata con motivo esplicito",
+        "worklog, active.md e memory aggiornati",
+        "esito finale dichiarato: DONE o BLOCKED"
+      ],
+      "advisoryPrompt": "L9: loop finale — nessun obbligo aperto, artefatti aggiornati. Esito: DONE o BLOCKED.",
+      "currentPrimitive": "skill",
+      "promotionTarget": "hook+skill"
+    }
+  ]
+}

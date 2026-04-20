@@ -17,6 +17,7 @@ import { runSiteCheck } from './audit';
 import { runQueuedJobs } from './jobRunner';
 import {
     countWeeklyInvites,
+    getAutomationPauseState,
     getComplianceHealthMetrics,
     getDailyStat,
     getRecentDailyStats,
@@ -59,7 +60,11 @@ export interface RunWorkflowOutcome {
 }
 
 function toFlagSafeToken(value: string): string {
-    const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    const normalized = value
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
     return normalized || 'unknown';
 }
 
@@ -588,6 +593,34 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<RunWorkf
         allowedTypes: workflowToJobTypes(options.workflow),
         dryRun: options.dryRun,
     });
+
+    // Propagate mid-run pause/quarantine triggered inside runQueuedJobs
+    const quarantinedMidRun = (await getRuntimeFlag('account_quarantine')) === 'true';
+    if (quarantinedMidRun) {
+        return {
+            status: 'blocked',
+            blocked: {
+                reason: 'ACCOUNT_QUARANTINED',
+                message: 'Account messo in quarantena durante la run',
+            },
+            localDate: schedule.localDate,
+        };
+    }
+    const pauseStateMidRun = await getAutomationPauseState();
+    if (pauseStateMidRun.paused) {
+        return {
+            status: 'blocked',
+            blocked: {
+                reason: 'AUTOMATION_PAUSED',
+                message: `Automazione messa in pausa durante la run: ${pauseStateMidRun.reason ?? 'motivo sconosciuto'}`,
+                details: {
+                    pausedUntil: pauseStateMidRun.pausedUntil,
+                    remainingSeconds: pauseStateMidRun.remainingSeconds,
+                },
+            },
+            localDate: schedule.localDate,
+        };
+    }
 
     if (config.postRunStateSyncEnabled) {
         const stateSyncReport = await runSiteCheck({

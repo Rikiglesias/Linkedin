@@ -91,20 +91,17 @@ function formatMissing(label: string, missing: string[]): string {
 function checkRepoAgents(): CheckResult {
     const path = resolve('AGENTS.md');
     const required = [
-        "## Fonte di verita' e strumento corretto",
-        '## Gap di capability e promozione strutturale',
-        '## Capability governance',
-        '## Orizzonti temporali e cadenze operative',
-        '## Degrado del contesto e handoff obbligatorio',
-        '## Hook orchestration',
+        'Le regole di orchestrazione cognitiva, requirement ledger, orizzonti temporali, blast radius documentale e handoff sono in `docs/AI_RUNTIME_BRIEF.md`',
+        "## Fonte di verita' e routing strumenti",
+        '## Automazione: ordine di promozione',
+        '## File canonici da leggere e mantenere allineati',
         '## Loop di completamento',
-        "Questa valutazione contestuale non e' facoltativa",
-        '`skill`, `MCP`, `plugin`, `hook`, `file di memoria`, `audit`, `script` o `workflow`',
-        'inventario unico delle capability',
-        'routing matrix per domini pratici',
-        'gli esempi non vanno trattati come lista chiusa',
-        '"allucinazione" include anche',
-        'L\'impossibilita\' pratica di leggere "tutto" non giustifica mai una patch isolata',
+        'docs/AI_MASTER_SYSTEM_SPEC.md',
+        'docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md',
+        'docs/AI_IMPLEMENTATION_LIST_GLOBAL.md',
+        'docs/LINKEDIN_IMPLEMENTATION_LIST.md',
+        'Procedura cognitiva ripetibile → skill. Regola non dimenticabile → hook. Controllo deterministico → script/test/lint. Automazione durevole → n8n/workflow persistente.',
+        'Documenti, audit e stato reale divergono → bug operativo da correggere subito.',
     ];
     const missing = missingSnippets(readText(path), required);
     if (missing.length > 0) {
@@ -119,13 +116,17 @@ function checkRepoAgents(): CheckResult {
         area: 'Repo canonici',
         name: 'AGENTS.md copre la fase A',
         passed: true,
-        detail: "Fonte di verita', hook orchestration e loop di completamento presenti ✅",
+        detail: 'Routing strumenti, backlog canonico e loop di completamento presenti ✅',
     };
 }
 
 function checkRootReadme(): CheckResult {
     const path = resolve('README.md');
-    const required = ['docs/AI_MASTER_SYSTEM_SPEC.md', 'docs/AI_RUNTIME_BRIEF.md'];
+    const required = [
+        'docs/AI_MASTER_SYSTEM_SPEC.md',
+        'docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md',
+        'docs/AI_RUNTIME_BRIEF.md',
+    ];
     const missing = missingSnippets(readText(path), required);
     if (missing.length > 0) {
         return {
@@ -139,7 +140,7 @@ function checkRootReadme(): CheckResult {
         area: 'Repo canonici',
         name: 'README root allineato',
         passed: true,
-        detail: 'Ordine di lettura root include spec madre e nota runtime brief ✅',
+        detail: 'Ordine di lettura root include spec, backlog madre e nota runtime brief ✅',
     };
 }
 
@@ -147,6 +148,7 @@ function checkProjectClaudeAdapter(): CheckResult {
     const path = resolve('CLAUDE.md');
     const required = [
         'docs/AI_MASTER_SYSTEM_SPEC.md',
+        'docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md',
         'docs/AI_RUNTIME_BRIEF.md',
         'La scelta contestuale di skill, MCP, web/docs, loop, piano e workflow deve partire automaticamente',
     ];
@@ -163,7 +165,7 @@ function checkProjectClaudeAdapter(): CheckResult {
         area: 'Repo canonici',
         name: 'CLAUDE adapter allineato',
         passed: true,
-        detail: 'Adapter Claude richiama spec madre, runtime brief e selezione contestuale automatica ✅',
+        detail: 'Adapter Claude richiama spec, backlog, runtime brief e selezione contestuale automatica ✅',
     };
 }
 
@@ -205,17 +207,12 @@ function checkOperatingModel(): CheckResult {
     const required = [
         '## Ordine corretto di implementazione (non numerico)',
         '### Fase A — Base cognitiva e truthful control plane',
-        '## Asse temporale trasversale — breve, medio, lungo termine',
+        'modello canonico resta di 9 livelli',
+        'enforcement meccanico attuale copre L1 e L7-L9',
+        'L2-L6 restano definiti ma ancora da promuovere',
+        'routing operativo advisory implementato',
+        'L2-L6 audit-assisted',
         'Da decidere caso per caso con ragionamento esplicito',
-        'Questa valutazione deve partire automaticamente a ogni nuovo prompt',
-        'gap reale di capability',
-        'catalogo installato',
-        'routing matrix per domini pratici',
-        'degrado del contesto',
-        'context-handoff',
-        'pattern di ragionamento',
-        'allucinare non significa solo',
-        'patch locali cieche',
     ];
     const missing = missingSnippets(readText(path), required);
     if (missing.length > 0) {
@@ -230,7 +227,7 @@ function checkOperatingModel(): CheckResult {
         area: 'Repo canonici',
         name: 'AI operating model allineato',
         passed: true,
-        detail: 'Ordine di implementazione e orchestrazione contestuale presenti ✅',
+        detail: 'Ordine di implementazione e narrativa coerente sul modello a 9 livelli presenti ✅',
     };
 }
 
@@ -238,6 +235,7 @@ function checkMasterSpec(): CheckResult {
     const path = resolve('docs', 'AI_MASTER_SYSTEM_SPEC.md');
     const required = [
         '## 22. Orizzonti temporali e task periodici',
+        'Il modello canonico resta a 9 livelli.',
         'breve termine',
         'medio termine',
         'lungo termine',
@@ -263,13 +261,40 @@ function checkMasterSpec(): CheckResult {
         area: 'Repo canonici',
         name: 'AI master system spec allineata',
         passed: true,
-        detail: 'Lista madre include orizzonti temporali e task periodici ✅',
+        detail: 'Lista madre include protocollo canonico a 9 livelli e orizzonti temporali ✅',
+    };
+}
+
+function checkMasterBacklog(): CheckResult {
+    const path = resolve('docs', 'AI_MASTER_IMPLEMENTATION_BACKLOG.md');
+    const required = [
+        'questo documento deve restare la vista unica e completa del "cosa manca ancora"',
+        'modello a 9 livelli',
+        'L1 e L7-L9 hanno enforcement meccanico reale; L2-L6 sono regole testuali',
+        'vista lineare derivata',
+        'non seconda autorita',
+    ];
+    const missing = missingSnippets(readText(path), required);
+    if (missing.length > 0) {
+        return {
+            area: 'Repo canonici',
+            name: 'AI master backlog governa il mancante',
+            passed: false,
+            detail: formatMissing(path, missing),
+        };
+    }
+    return {
+        area: 'Repo canonici',
+        name: 'AI master backlog governa il mancante',
+        passed: true,
+        detail: 'Backlog strutturato unico e single list derivata esplicitati ✅',
     };
 }
 
 function checkActiveTodos(): CheckResult {
     const path = resolve('todos', 'active.md');
     const required = [
+        'AI_MASTER_IMPLEMENTATION_BACKLOG.md',
         'Orchestrazione cognitiva contestuale',
         'Orizzonti temporali del task',
         'Gap di capability + context degradation',
@@ -301,9 +326,12 @@ function checkPackageScripts(): CheckResult {
         'conta-problemi',
         'audit:hooks',
         'audit:ai-control-plane',
+        'audit:ai-control-plane:docs',
         'audit:git-automation',
         'audit:git-automation:strict:commit',
         'audit:git-automation:strict:push',
+        'audit:routing',
+        'audit:l2-l6',
         'audit:rule-enforcement',
     ];
     const missing = requiredScripts.filter((scriptName) => !(scriptName in scripts));
@@ -464,9 +492,17 @@ function checkRuntimeBriefDoc(): CheckResult {
     const path = resolve('docs', 'AI_RUNTIME_BRIEF.md');
     const required = [
         "Non e' la fonte di verita' primaria.",
+        'docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md',
+        'AI_CAPABILITY_ROUTING.json',
+        'AI_LEVEL_ENFORCEMENT.json',
         '## Requirement ledger obbligatorio per prompt lunghi o densi',
         '## Selezione strumenti',
         '## Prima di chiudere',
+        'Il modello canonico',
+        '9 livelli',
+        'L7-L9',
+        'L2-L6',
+        'audit-assisted',
         'orizzonte temporale dominante',
         'Valutare ogni volta, in modo contestuale e automatico',
         "L'utente non deve ricordare all'AI di fare questa valutazione",
@@ -476,7 +512,7 @@ function checkRuntimeBriefDoc(): CheckResult {
         'Non accumulare capability sovrapposte',
         'Monitorare segnali di degrado del contesto',
         "esempi forniti dall'utente",
-        'pattern da estendere',
+        'TUTTI i casi analoghi',
         'Nessuna allucinazione',
         'comando da eseguire ciecamente',
         'code search, mapping dipendenze/test, memoria',
@@ -495,6 +531,26 @@ function checkRuntimeBriefDoc(): CheckResult {
         name: 'AI runtime brief presente e completo',
         passed: true,
         detail: 'Digest runtime compatto presente e allineabile ai canonici ✅',
+    };
+}
+
+function checkRoutingRegistries(): CheckResult {
+    const routingPath = resolve('docs', 'tracking', 'AI_CAPABILITY_ROUTING.json');
+    const levelPath = resolve('docs', 'tracking', 'AI_LEVEL_ENFORCEMENT.json');
+    const missing = [routingPath, levelPath].filter((path) => !existsSync(path));
+    if (missing.length > 0) {
+        return {
+            area: 'Repo canonici',
+            name: 'Registri machine-readable del control plane presenti',
+            passed: false,
+            detail: `Registri mancanti: ${missing.join(', ')}`,
+        };
+    }
+    return {
+        area: 'Repo canonici',
+        name: 'Registri machine-readable del control plane presenti',
+        passed: true,
+        detail: 'AI_CAPABILITY_ROUTING.json e AI_LEVEL_ENFORCEMENT.json presenti ✅',
     };
 }
 
@@ -524,6 +580,35 @@ function checkUserPromptSubmitHook(): CheckResult {
         name: 'UserPromptSubmit runtime hook configurato',
         passed: true,
         detail: 'UserPromptSubmit reinietta il runtime brief a ogni prompt ✅',
+    };
+}
+
+function checkSkillActivationHook(): CheckResult {
+    const path = join(homedir(), '.claude', 'settings.json');
+    const settings = readJson<Record<string, unknown>>(path);
+    if (!settings) {
+        return {
+            area: 'Control plane globale',
+            name: 'UserPromptSubmit skill routing hook configurato',
+            passed: false,
+            detail: `${path} non trovato o non leggibile.`,
+        };
+    }
+
+    if (!findHookCommand(settings, 'UserPromptSubmit', 'skill-activation.ps1')) {
+        return {
+            area: 'Control plane globale',
+            name: 'UserPromptSubmit skill routing hook configurato',
+            passed: false,
+            detail: 'settings.json non richiama skill-activation.ps1 in UserPromptSubmit.',
+        };
+    }
+
+    return {
+        area: 'Control plane globale',
+        name: 'UserPromptSubmit skill routing hook configurato',
+        passed: true,
+        detail: 'UserPromptSubmit richiama skill-activation.ps1 ✅',
     };
 }
 
@@ -635,15 +720,18 @@ function run(): void {
         checkRootReadme(),
         checkProjectClaudeAdapter(),
         checkMasterSpec(),
+        checkMasterBacklog(),
         checkOperatingModel(),
         check360Checklist(),
         checkActiveTodos(),
         checkRuntimeBriefDoc(),
+        checkRoutingRegistries(),
         checkPackageScripts(),
         checkGlobalClaudeOrchestration(),
         checkSessionStartHook(),
         checkSessionStartMemoryCoverage(),
         checkUserPromptSubmitHook(),
+        checkSkillActivationHook(),
         checkPreCompactHook(),
         checkGitAutomationHooks(),
         checkContextHandoffSkill(),

@@ -43,7 +43,7 @@ import { runDeadLetterWorker } from '../../workers/deadLetterWorker';
 import { runSelectorLearner } from '../../selectors/learner';
 import { backupDatabase } from '../../db';
 import { runControlPlaneSync } from '../../cloud/controlPlaneSync';
-import { startTelegramListener } from '../../cloud/telegramListener';
+import { startTelegramListener, stopTelegramListener } from '../../cloud/telegramListener';
 import { markTelegramCommandProcessed, pollPendingTelegramCommand } from '../../cloud/supabaseDataClient';
 import { getRuntimeAccountProfiles, setOverrideAccountId } from '../../accountManager';
 import { RunStatus } from '../../types/domain';
@@ -836,6 +836,7 @@ export async function runLoopCommand(args: string[]): Promise<void> {
 
     if (!dryRun) {
         await startTelegramListener().catch((e) => console.error('[TELEGRAM] Errore listener background', e));
+        onShutdown(stopTelegramListener);
         startConfigWatcher();
         // CC-24: Quando un cap diminuisce via hot-reload, cancella job in coda in eccesso
         onConfigReload((changedKeys) => {

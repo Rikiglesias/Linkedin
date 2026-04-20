@@ -207,6 +207,23 @@ function checkUserPromptSubmitRuntimeHook(hooks: Record<string, unknown[]>): Che
     };
 }
 
+function checkUserPromptSubmitSkillRoutingHook(hooks: Record<string, unknown[]>): CheckResult {
+    const submit = getHookEntries(hooks, 'UserPromptSubmit');
+    const routingHook = findEntryByCommand(submit, 'skill-activation.ps1');
+    if (!routingHook) {
+        return {
+            name: 'UserPromptSubmit skill-routing hook',
+            passed: false,
+            detail: 'Hook skill-activation.ps1 mancante in UserPromptSubmit.',
+        };
+    }
+    return {
+        name: 'UserPromptSubmit skill-routing hook',
+        passed: true,
+        detail: 'skill-activation.ps1 presente su UserPromptSubmit ✅',
+    };
+}
+
 function checkPreCompactRuntimeHook(hooks: Record<string, unknown[]>): CheckResult {
     const compact = getHookEntries(hooks, 'PreCompact');
     const runtimeBrief = findEntryByCommand(compact, 'inject-runtime-brief.ps1 -HookEventName PreCompact');
@@ -320,6 +337,7 @@ function run(): void {
 
     const checks: CheckResult[] = [
         checkUserPromptSubmitRuntimeHook(hooks),
+        checkUserPromptSubmitSkillRoutingHook(hooks),
         checkPreToolUseAntiban(hooks),
         checkAntibanMatcherCoverage(hooks),
         checkPreToolUseL1Gate(hooks),
