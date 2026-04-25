@@ -84,6 +84,49 @@ Se una capability manca in un ambiente, documentare il gap e chiuderlo; non acce
   - gate git via hook globali Claude Code
   - il comportamento desiderato e' quindi **meccanicamente enforced in Claude Code** per i blocker noti; il push resta comunque contestuale sul remote
 
+### Auto-push post-commit — trigger automatico
+
+- Dopo ogni commit verificato, l'AI deve valutare l'auto-push **senza chiedere conferma all'utente**, se tutte le precondizioni sono soddisfatte. L'utente non deve dover ricordare di chiedere "fai anche push": e' parte della chiusura naturale del blocco.
+- **Trigger**: il commit appena creato e' su una "sezione naturale di chiusura". Una sezione e' naturale se:
+  - chiude un'iniziativa coerente (feature completata, bug risolto, refactor finito, docs/regole codificate)
+  - non lascia stato di lavoro a meta' nel working tree
+  - non e' un commit intermedio di una serie ancora in corso
+- **Precondizioni cumulative** (tutte vere → push automatico, una falsa → fermarsi e dire perche'):
+  - quality gate verde nello stesso ciclo (`post-modifiche` + `conta-problemi` = 0)
+  - `audit:git-automation` ritorna `READY` per push (non `REVIEW`/`BLOCKED`/`NOOP`)
+  - branch corrente non e' `main`/`master`/`production` protetto **oppure** la policy del progetto autorizza push diretto
+  - upstream configurato e nessuna divergenza con remote
+  - il flusso non richiede PR/review (solo personale o tooling/docs)
+  - l'utente non ha esplicitamente detto di fermarsi al commit
+- **Precondizioni che ROMPONO il trigger** (anche con tutto il resto verde): branch condiviso senza policy chiara, modifica che tocca anti-ban/sicurezza/migration DB ad alto rischio, repository con review obbligatoria.
+- **Comportamento atteso dell'AI**: dopo il commit verificato, esegue `git push` automatico se le precondizioni sono soddisfatte e dichiara cosa ha fatto. Se anche solo una precondizione manca, dichiara esplicitamente cosa manca e propone l'azione corretta (PR, attesa review, conferma utente). Mai silenzio.
+- **Memoria del comportamento**: se l'utente chiede "fai anche push" piu' di una volta in sessione, e' un segnale che il trigger non sta scattando: l'AI deve correggere la propria valutazione, non aspettare il prompt successivo.
+
+## Selezione modello AI per task — regola dura
+
+- L'AI deve dichiarare proattivamente quale modello e provider e' piu' adatto al task corrente, **prima di iniziare**, e suggerire uno switch quando il task corrente non e' allineato al modello attivo. Non aspettare che l'utente lo chieda.
+- Contesto router locale: `ANTHROPIC_BASE_URL=http://127.0.0.1:4319` risolve sia alias Anthropic (`opus`, `sonnet`, `haiku`, `opusplan`) sia alias OpenRouter (`kimi`, `glm`, `qwen`, `gemini`, `deepseek`, `gpt`). Lo `settings.model` corrente non determina il provider: serve consultare statusline (AN/OR) o `switch-claude-backend.mjs status`.
+- **Matrice task → modello consigliato** (default ragionevoli, non assoluti):
+
+  | Tipo task | Modello primario | Fallback / alternativa | Perche' |
+  |-----------|------------------|------------------------|---------|
+  | Plan Mode, decisione architetturale, refactor cross-file, blast radius ampio | `opus` (Anthropic) o `opusplan` | `gemini` (OpenRouter) per long context | Reasoning profondo, contesto lungo |
+  | Coding standard, bug fix, feature media, edit mirati | `sonnet` (Anthropic) | `deepseek` (OpenRouter) per code-gen pesante | Default solido, costo/qualita' bilanciato |
+  | Lookup veloce, file map, comando shell, risposta secca | `haiku` (Anthropic) | `kimi` o `glm` (OpenRouter) | Latenza/costo minimi |
+  | Bulk noioso, conversione formati, migrazione boilerplate, batch | `glm` o `qwen` (OpenRouter) | `kimi` (OpenRouter) | Costo basso, qualita' sufficiente per ripetitivo |
+  | Multimodale (immagini, screenshot, OCR, Playwright debug) | `gemini` (OpenRouter) | `sonnet` (Anthropic) | Vision nativa di qualita' |
+  | Anti-ban LinkedIn, sicurezza, migration DB, codice production-critical | `opus` o `sonnet` (Anthropic) | **mai** OpenRouter senza esplicita autorizzazione | Reasoning + tracciabilita' provider su area ad alto rischio |
+  | Loop autonomo lungo, polling, babysitting | `haiku` o `glm`/`kimi` (OpenRouter) | — | Costo per iterazione basso |
+  | Documentazione, scrittura prosa, traduzione, regole canoniche | `sonnet` (Anthropic) | `qwen` (OpenRouter) | Coerenza linguistica IT/EN |
+
+- **Quando suggerire uno switch**:
+  - task corrente classificato in cella diversa dal modello attivo → dichiarare lo scarto e proporre `/model <alias>`
+  - task ad alto rischio (anti-ban, sicurezza, DB) su modello OpenRouter → fermarsi e raccomandare switch a Anthropic prima di procedere
+  - task bulk/ripetitivo lungo su Opus/Sonnet → suggerire downgrade a OpenRouter per costo, dichiarando il trade-off
+  - Plan Mode attivato ma modello non e' Opus/opusplan → suggerire switch
+- **Formato della raccomandazione** (breve, in cima alla risposta quando applicabile): `Modello attivo: X. Per questo task consiglio: Y. Motivo: Z.` Se il modello attivo e' gia' adeguato, non serve dichiarare nulla.
+- **No raccomandazione cieca**: la matrice e' un default. Se il contesto del task ha vincoli specifici (esempio: utente ha appena chiesto OpenRouter perche' su quota Anthropic, oppure ha esplicitamente forzato un modello), rispettare il vincolo e dichiarare di aver letto il segnale.
+
 ## Priorita' assoluta: anti-ban e anti-detect
 
 Ogni modifica alla codebase del bot deve essere valutata prima di tutto dal punto di vista anti-ban.

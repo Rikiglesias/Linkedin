@@ -17,6 +17,20 @@ data/security-advisor/
 .env.backup
 *.env.bak
 *.env.backup
+# Key material e credenziali — mai committare
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+!**/test/**/*.crt
+secrets.json
+credentials.json
+service-account*.json
+gcp-key*.json
+aws-credentials*
+.aws/credentials
+.ssh/id_*
 
 # Test coverage
 coverage/
