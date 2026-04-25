@@ -33,7 +33,7 @@ try {
 }
 
 $promptLower = $prompt.ToLowerInvariant()
-$matches = New-Object System.Collections.Generic.List[object]
+$matchedDomains = New-Object System.Collections.Generic.List[object]
 
 foreach ($domain in $routing.domains) {
     $matched = $false
@@ -45,7 +45,7 @@ foreach ($domain in $routing.domains) {
     }
     if ($matched) {
         $caps = ($domain.primaryCapabilities -join ', ')
-        $matches.Add([PSCustomObject]@{
+        $matchedDomains.Add([PSCustomObject]@{
             Domain  = $domain.domainId
             Caps    = $caps
             Notes   = $domain.notes
@@ -53,13 +53,13 @@ foreach ($domain in $routing.domains) {
     }
 }
 
-if ($matches.Count -eq 0) { exit 0 }
+if ($matchedDomains.Count -eq 0) { exit 0 }
 
 # Costruisci messaggio forzato
 $lines = @()
 $lines += '### ROUTING_FORCED [hook automatico - NON IGNORARE]'
 $lines += 'Il prompt corrente matcha questi domini del routing AI. PRIMA di scrivere codice o tooling custom, valutare le capability gia' + "'" + ' disponibili:'
-foreach ($m in $matches) {
+foreach ($m in $matchedDomains) {
     $lines += ('- **' + $m.Domain + '** -> ' + $m.Caps)
     if ($m.Notes) { $lines += ('  ' + $m.Notes) }
 }
@@ -68,7 +68,7 @@ $lines += 'Se le capability primarie coprono il task, USARLE invece di reinventa
 
 $ctx = $lines -join "`n"
 
-Write-HookLog -File $LOG -Message ("Match domains: " + (($matches | ForEach-Object { $_.Domain }) -join ','))
+Write-HookLog -File $LOG -Message ("Match domains: " + (($matchedDomains | ForEach-Object { $_.Domain }) -join ','))
 
 $output = [ordered]@{
     hookSpecificOutput = [ordered]@{
