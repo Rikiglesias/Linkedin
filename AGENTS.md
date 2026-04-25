@@ -77,6 +77,10 @@ Se una capability manca in un ambiente, documentare il gap e chiuderlo; non acce
   - `pre-bash-l1-gate.ps1` blocca `git commit` senza quality gate recente
   - `pre-bash-git-gate.ps1` blocca `git commit` / `git push` se il repository non e' nel giusto stato operativo
   - `post-bash-git-audit.ps1` logga automaticamente la readiness git dopo quality gate e operazioni git rilevanti
+- Enforcement git nativo (versionato in `.githooks/`, attivare con `npm run setup:git-hooks`):
+  - `pre-commit` esegue `scripts/security/check-no-secrets.mjs` — bloccante su secret reali (OpenAI/Anthropic/GitHub PAT/Google API/AWS/Slack/JWT/PEM private key)
+  - whitelist su pattern di test (sk-XXX, sk-test-, your-api-key, ecc.)
+  - eseguibile manualmente: `npm run security:scan`
 - Primitive correnti:
   - commit/push intelligente via skill `git-commit`
   - PR via skill `git-create-pr`

@@ -1,0 +1,12 @@
+#!/bin/sh
+# Pre-commit hook versionato. Installato via `npm run setup:git-hooks`.
+
+# code-review-graph (opzionale, non bloccante)
+if command -v code-review-graph >/dev/null 2>&1; then
+    code-review-graph detect-changes --brief || true
+fi
+
+# Anti-secret scan (BLOCCANTE)
+if [ -f scripts/security/check-no-secrets.mjs ]; then
+    node scripts/security/check-no-secrets.mjs || exit 1
+fi

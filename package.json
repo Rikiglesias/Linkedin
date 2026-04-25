@@ -36,6 +36,8 @@
     "ai:quality": "ts-node src/scripts/aiQualityPipeline.ts",
     "feature-store": "ts-node src/index.ts feature-store",
     "secrets:rotate": "ts-node src/scripts/rotateSecrets.ts --interval-days 7",
+    "security:scan": "node scripts/security/check-no-secrets.mjs",
+    "setup:git-hooks": "git config core.hooksPath .githooks",
     "docs": "typedoc --entryPointStrategy expand src --out docs --exclude '**/*.test.ts' --name 'LinkedIn Bot API'",
     "docs:config": "node scripts/generate-config-docs.mjs",
     "test:vitest": "vitest run",
