@@ -1,7 +1,21 @@
 # AI Operating Model
 
-> **Questo documento è aspirazionale ma tracciato.**
-> Ogni sezione ha uno status: ✅ Implementato | ⚠️ Parziale | ❌ Non ancora fatto.
+> **Quando leggere**: per sapere lo stato reale di implementazione, il gap corrente e l'ordine corretto di lavoro. Aggiornato: 2026-04-25.
+
+## Cosa contiene
+
+Stato tracciato del sistema AI (✅/⚠️/❌), ordine di implementazione per fase, roadmap prompt/modelli/skill/workflow.
+
+## Cosa NON contiene
+
+| Domanda | File corretto |
+|---------|--------------|
+| Cosa deve fare il sistema? | `docs/AI_MASTER_SYSTEM_SPEC.md` |
+| Sottopunti espliciti da chiudere? | `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md` |
+| Cosa fare adesso? | `todos/active.md` |
+| Quale capability per quale dominio? | `docs/tracking/AI_CAPABILITY_ROUTING.json` |
+| Quale ambiente per quale task? | `docs/tracking/CAPABILITY_MATRIX.md` |
+
 > Le implementazioni concrete stanno in: `~/.claude/CLAUDE.md` (regole globali), `AGENTS.md` (progetto), `~/.claude/skills/` (skill), `~/memory/` (memoria).
 
 **Obiettivo centrale**: un sistema AI che ragiona bene, non dimentica nessuna regola rilevante, non assume che l'input dell'utente sia automaticamente corretto e non dichiara mai "fatto" senza aver verificato davvero tutto. L'obiettivo non e' un flusso fisso uguale per ogni task, ma un'orchestrazione cognitiva capace di capire il caso e scegliere il metodo corretto.

@@ -81,3 +81,5 @@ docs/archive/TODO.md
 .docker-current-tag
 .docker-stable-tag
 .docker-release-history.txt
+# Added by code-review-graph
+.code-review-graph/

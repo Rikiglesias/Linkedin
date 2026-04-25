@@ -183,6 +183,94 @@
       "status": "active",
       "environments": ["either", "claude-code", "codex"],
       "notes": "SAST mirato su auth, input utente e query."
+    },
+    {
+      "id": "lean-ctx",
+      "kind": "mcp",
+      "label": "lean-ctx MCP",
+      "status": "active",
+      "environments": ["claude-code"],
+      "notes": "Taglia context window mantenendo segnale. Attivare quando ctx >70%."
+    },
+    {
+      "id": "symdex",
+      "kind": "mcp",
+      "label": "symdex MCP",
+      "status": "active",
+      "environments": ["claude-code"],
+      "notes": "Symbol index locale — trovare funzioni/classi/route senza leggere file interi."
+    },
+    {
+      "id": "code-review-graph",
+      "kind": "mcp",
+      "label": "code-review-graph MCP",
+      "status": "active",
+      "environments": ["claude-code"],
+      "notes": "Grafo strutturale codebase — impact radius, community, flow. Attivare su refactor/feature."
+    },
+    {
+      "id": "claude-peers",
+      "kind": "mcp",
+      "label": "claude-peers MCP",
+      "status": "active",
+      "environments": ["claude-code"],
+      "notes": "Comunicazione cross-sessione tra istanze Claude Code. Richiede --dangerously-load-development-channels."
+    },
+    {
+      "id": "autoresearch",
+      "kind": "skill",
+      "label": "skill autoresearch (+ debug/fix/security/ship)",
+      "status": "active",
+      "environments": ["claude-code"],
+      "notes": "Loop autonomo con auto-revert. Usa autoresearch:security per audit, autoresearch:fix per errori ripetuti, autoresearch:debug per bug hunting autonomo."
+    },
+    {
+      "id": "paul",
+      "kind": "skill",
+      "label": "paul (plan/apply/unify)",
+      "status": "active",
+      "environments": ["claude-code"],
+      "notes": "Feature lunghe cross-session con STATE.md. Usa paul:plan -> paul:apply -> paul:unify. Preferire su superpowers quando serve loop closure garantito."
+    },
+    {
+      "id": "context-engineering",
+      "kind": "skill",
+      "label": "skill context-compression/degradation/optimization",
+      "status": "active",
+      "environments": ["either"],
+      "notes": "Gestione context degradation, compressione, ottimizzazione. Attivare quando context >70% o sessione lunga."
+    },
+    {
+      "id": "silent-failure-hunter",
+      "kind": "agent",
+      "label": "agent silent-failure-hunter",
+      "status": "active",
+      "environments": ["claude-code"],
+      "notes": "Trova failure silenziosi post-modifica. Attivare dopo refactor o quando test passano ma comportamento sospetto."
+    },
+    {
+      "id": "codeburn",
+      "kind": "cli",
+      "label": "codeburn CLI",
+      "status": "active",
+      "environments": ["claude-code"],
+      "notes": "Dashboard costo/token per sessione. Usare periodicamente per trovare sprechi. Comando: codeburn"
+    },
+    {
+      "id": "rtk-dippy",
+      "kind": "hook",
+      "label": "RTK + Dippy (PreToolUse:Bash)",
+      "status": "active",
+      "environments": ["claude-code"],
+      "notes": "RTK comprime output bash (-90% token). Dippy auto-approva comandi safe via AST. Attivi automaticamente su ogni Bash tool call."
+    },
+    {
+      "id": "obsidian-brain",
+      "kind": "skill",
+      "label": "obsidian-mind vault + obsidian-* skills",
+      "status": "active",
+      "environments": ["claude-code"],
+      "notes": "Vault Brain in Desktop/Brain/. Usa obsidian-cli/markdown/bases per note AI-readable. Context: aprire Claude Code con cwd=Desktop/Brain."
     }
   ],
   "domains": [
@@ -301,10 +389,40 @@
       "intentPatterns": ["refactor", "implement", "feature", "modifica", "codebase", "module", "typescript", "node", "contract", "caller"],
       "sourceOfTruth": "repo",
       "webPolicy": "not-needed",
-      "primaryCapabilities": ["repo-code-search", "repo-canonici"],
+      "primaryCapabilities": ["repo-code-search", "repo-canonici", "code-review-graph", "symdex"],
       "fallbackCapabilities": ["official-web-docs", "test-master"],
       "preferredEnvironment": "either",
-      "notes": "Default per lavoro interno al repo quando non serve stato esterno o docs recenti."
+      "notes": "Default per lavoro interno al repo. Usare symdex per symbol nav, code-review-graph per impact radius."
+    },
+    {
+      "domainId": "context-management",
+      "intentPatterns": ["context", "contesto", "token", "compatta", "compact", "sessione lunga", "context window", "ctx", "memoria"],
+      "sourceOfTruth": "session-state",
+      "webPolicy": "not-needed",
+      "primaryCapabilities": ["lean-ctx", "context-engineering", "memoria"],
+      "fallbackCapabilities": ["context-handoff", "codeburn"],
+      "preferredEnvironment": "claude-code",
+      "notes": "ctx >70%: attivare lean-ctx. ctx >85%: context-handoff prima di compattare. codeburn per analisi storica sprechi."
+    },
+    {
+      "domainId": "autonomous-loop",
+      "intentPatterns": ["autonomo", "loop", "iterazione", "overnight", "fix automatico", "security audit", "autoresearch", "paul"],
+      "sourceOfTruth": "repo",
+      "webPolicy": "conditional",
+      "primaryCapabilities": ["autoresearch", "paul"],
+      "fallbackCapabilities": ["silent-failure-hunter", "repo-code-search"],
+      "preferredEnvironment": "claude-code",
+      "notes": "Feature lunga cross-session -> paul. Errori ripetuti/security -> autoresearch:fix/security. Debug autonomo -> autoresearch:debug."
+    },
+    {
+      "domainId": "code-graph-analysis",
+      "intentPatterns": ["impact", "blast radius", "dipendenze", "grafo", "community", "caller", "flow", "architettura", "accoppiamento"],
+      "sourceOfTruth": "repo",
+      "webPolicy": "not-needed",
+      "primaryCapabilities": ["code-review-graph", "symdex"],
+      "fallbackCapabilities": ["repo-code-search", "silent-failure-hunter"],
+      "preferredEnvironment": "claude-code",
+      "notes": "Impact analysis -> code-review-graph. Symbol lookup veloce -> symdex. Failure silenzioso post-refactor -> silent-failure-hunter."
     }
   ]
 }

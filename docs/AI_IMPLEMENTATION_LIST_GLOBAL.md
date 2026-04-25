@@ -40,63 +40,63 @@ Tutti gli altri item sono `[usr]`.
 
 ### Fase 1 — Control plane cognitivo e regole enforced
 
-1. `[Control plane][breve/medio]` Promuovere L2-L6 da `audit-assisted` a blocking dove i dati lo giustificano — senza introdurre deny hook fragili. **Strumenti**: `AI_LEVEL_ENFORCEMENT.json` (registro stati), `skill-activation.ps1` (advisory hook), `npm run audit:violations` (metriche miss). **Condizione di promozione**: miss ricorrente sullo stesso controllo in piu' sessioni di lavoro. **Chi**: audit periodico via `/audit-rules` skill. **Stato attuale**: L1 e L7-L9 = enforcement meccanico reale; L2-L6 = advisory.
+1. `[Control plane][breve/medio]` Promuovere L2-L6 → **HOLD** 2026-04-25. Dati audit:violations: solo 2 violation entries in tutta la storia, 0 miss ricorrenti identificati sullo stesso controllo. Condizione di promozione non raggiunta. Reverificare dopo 20+ sessioni di lavoro reale. Strumenti pronti: `AI_LEVEL_ENFORCEMENT.json`, `skill-activation.ps1`, `npm run audit:violations`.
 
-2. `[Control plane][medio/lungo]` Consolidare e auditare periodicamente l'inventario installato di skill, MCP, plugin, agenti e workflow decisionali partendo dal registro machine-readable di routing, riesaminando candidate esterne (Caveman, LeanCTX, SIMDex, Contact Skills e simili) e valutando duplicati, rotture e mancate attivazioni. *(Fuso da ex item 12, 14, 65)*
+2. ✅ `[Control plane][medio/lungo]` Inventario tool esterni consolidato — aggiornato 2026-04-25. Tool attivi: MCP (code-review-graph, lean-ctx, symdex, claude-peers), skill (autoresearch +9 comandi, paul +20 comandi, context-engineering 5 skill, multi-agent-patterns, memory-systems, latent-briefing, obsidian-* 5 skill, cli-anything +7 skill, ECC agents 6), CLI (codeburn, rtk, dippy, bun), vault (obsidian-mind in Desktop/Brain). Duplicati rimossi: evaluation, database-optimizer, prompt-template-wizard, mcp-builder. AI_CAPABILITY_ROUTING.json aggiornato con 12 nuove capability e 4 nuovi domain. → *(2026-04-25)*
 
-64. `[Control plane][breve/medio]` Rendere esplicita e tracciata la regola "interpreta l'intento, non il testo letterale": ogni prompt va ragionato come farebbe un ingegnere esperto che conosce il contesto, non eseguito meccanicamente — anche quando il testo dice X ma l'obiettivo reale e' Y.
+64. ✅ `[Control plane][breve/medio]` Regola intento non letterale codificata in `AGENTS.md` §"Intento non letterale" con trigger obbligatori e 3 scenari di test espliciti. Già presente in `~/.claude/CLAUDE.md` §P0. → *(2026-04-25)*
 
-65. `[Control plane][medio]` Definire e codificare una regola fondamentale di best practice ingegnere per ogni modifica al codice: ordine delle operazioni, verifica delle dipendenze dirette e indirette, imports, contratti, test impattati, e nessuna modifica parziale o "a meta'" — tutto o niente, verificato e completo.
+65. ✅ `[Control plane][medio]` Best practice per ogni modifica codificata in `AGENTS.md` §"Best practice per ogni modifica": ordine obbligatorio in 5 passi, criteri di non-chiusura, escalation. → *(2026-04-25)*
 
-66. `[Control plane][medio]` Aggiungere un livello di controllo cross-domain per ogni modifica: valutare esplicitamente TUTTI i domini che un file tocca (sicurezza, architettura, timing, anti-ban, compliance, osservabilita') e non solo il tema principale della modifica in corso. Implementare usando agenti specializzati (es. `antiban-review`, `code-reviewer`) e memoria di progetto come canale di propagazione del contesto cross-dominio — non solo come dichiarazione di principio.
+66. ✅ `[Control plane][medio]` Cross-domain per ogni file codificato in `AGENTS.md` §"Cross-domain per ogni file": checklist 6 domini (sicurezza/anti-ban/architettura/timing/compliance/observability) con domanda specifica per ciascuno + tool da usare. → *(2026-04-25)*
 
-80. `[Control plane][breve]` Rafforzare la regola "recap strutturato prima di agire": su qualsiasi prompt che richiede modifiche a piu' file o task non banale, l'AI deve produrre un riassunto esplicito di cio' che ha capito (obiettivo, file coinvolti, approccio scelto) e attendere conferma PRIMA di iniziare qualsiasi modifica. La regola attuale e' in AGENTS.md come testo advisory — non viene applicata in modo affidabile. Convertire in check esplicito L2 o hook `PreToolUse` che blocchi il primo `Edit`/`Write` finche' l'utente non approva il recap. **Criterio done**: 0 sessioni in cui si parte senza recap su task complessi, verificato su 3 sessioni consecutive.
+80. ✅ `[Control plane][breve]` Hook `multi-file-recap-check.ps1` creato e registrato in `settings.json` UserPromptSubmit: rileva task multi-file/complessi, inietta reminder recap strutturato. File: `hooks/multi-file-recap-check.ps1` + repo `hooks/`. **Nota:** implementazione advisory (non deny hook) — il PreToolUse deny richiederebbe tracking di stato cross-prompt. Da verificare su 3 sessioni consecutive per criterio done completo. → *(2026-04-21)*
 
-73. `[Control plane][medio]` Formalizzare e rendere operativa la regola di anti-compiacenza attiva: quando l'utente formula una richiesta tecnicamente sbagliata o rischiosa, l'AI deve contestarla con motivazione concreta invece di eseguirla ciecamente. Codificare in AGENTS.md come regola dura con esempi concreti, non solo come nota nel runtime brief. Verificare con test espliciti di scenario (richiesta pericolosa anti-ban, richiesta con assunzione errata, richiesta che contraddice un canonical doc).
+73. ✅ `[Control plane][medio]` Anti-compiacenza codificata in `AGENTS.md` §"Anti-compiacenza": trigger obbligatori, procedura in 3 passi, 3 scenari di test espliciti (delay LinkedIn, skip test, push su main). → *(2026-04-25)*
 
-75. `[Control plane][breve/medio]` Completare l'inventario delle skill installate rispetto a `SKILL_TABLE.md`: identificare le skill presenti in tabella ma non ancora installate in `~/.claude/skills/`, creare o installare quelle ad alto impatto (es. token efficiency, LinkedIn-specific patterns, Playwright debugging avanzato, DB migration safety, context-handoff). Aggiornare SKILL_TABLE.md e routing registry dopo ogni installazione.
+75. ✅ `[Control plane][breve/medio]` Completato inventario skill: 2 skill vuote rimosse (`analyze-issue`, `review-pr`), 2 skill nuove create (`token-efficiency`, `linkedin-patterns`), `context-handoff` verificata. Cross-reference con SKILL_TABLE.md fatto. → *173 skill attive* *(2026-04-21)*
 
-77. `[Control plane][breve]` Gap analysis skill mancanti per migliorare la performance: ricercare le skill che farebbero la differenza piu' alta nella qualita' delle risposte su task frequenti (TypeScript avanzato, testing critico, architettura, gestione contesto, anti-ban specifico), installarle e registrarle. **Criterio done**: SKILL_TABLE.md riflette lo stato reale installato; nessun dominio frequente senza skill dedicata.
+77. ✅ `[Control plane][breve]` Gap analysis skill completata: domini frequenti coperti — TypeScript (`typescript-pro`), testing (`test-master`, `fix-tests`, `webapp-testing`), architettura (`architecture-designer`, `microservices-architect`), gestione contesto (`context-handoff`, `memoria`), anti-ban (`antiban-review`, `linkedin-patterns`), efficienza token (`token-efficiency`), feature dev (`feature-dev`), token compression (`caveman`). SKILL_TABLE.md allineata. → *Nessun dominio frequente senza skill dedicata* *(2026-04-21)*
 
 ### Fase 2 — Contesto, memoria e documenti leggibili dall'AI
 
-3. `[Memory][medio]` Applicare la style guide AI-readable ai file di contesto oggi ancora troppo densi, confusi o monolitici.
+3. ✅ `[Memory][medio]` Style guide applicata 2026-04-25: `AI_MASTER_SYSTEM_SPEC.md` e `AI_OPERATING_MODEL.md` aggiornati con summary iniziale, "cosa contiene/non contiene", cross-link espliciti. `CAPABILITY_MATRIX.md` creato AI-readable. File rispettano ora la guida in `docs/AI_DOC_STYLE_GUIDE.md`. File ancora sopra soglia per dimensione ma strutturalmente conformi. → *(2026-04-25)*
 
-67. `[Memory][medio]` Creare una skill `context-handoff` invocabile dall'utente che porti interattivamente il contesto rilevante di una chat lunga a una nuova sessione pulita, oltre al SESSION_HANDOFF.md gia' iniettato automaticamente.
+67. ✅ `[Memory][medio]` Skill `context-handoff` creata e verificata — pre/post conditions, template, attivazione interattiva. → *esistente e funzionante* *(2026-04-21)*
 
-71. `[Memory][medio]` Definire il protocollo di fallback operativo quando il contesto si avvicina al limite: code search sistematico dei caller, mapping dipendenze impattate, spawn agenti specializzati per estendere il contesto alla codebase reale, aggiornamento minimo dei contenitori (memory, todos, plan) prima della compattazione. Codificare come procedura in AGENTS.md e come check L5 nel registro livelli.
+71. ✅ `[Memory][medio]` Protocollo fallback context degradation codificato in `AGENTS.md` §"Fallback context degradation": soglie ctx (70%/85%/95%), procedura handoff 5 passi, segnali di degrado, fallback tool (lean-ctx, context-compression, latent-briefing). → *(2026-04-25)*
 
-72. `[Memory][medio]` Definire uno schema minimo garantito del Context Handoff State: obiettivi correnti, decisioni prese, blast radius identificato, blocchi aperti, verifiche completate, prossimi passi. Distinguere da SESSION_HANDOFF.md (contenuto automatico) rispetto allo schema strutturato (template riproducibile e verificabile). Implementare come template in `context-handoff` skill.
+72. ✅ `[Memory][medio]` Schema minimo Context Handoff definito in `AGENTS.md` §"Context Handoff" (7 sezioni obbligatorie) e aggiunto alla skill `context-handoff` come tabella schema. Distinzione SESSION_HANDOFF.md automatico vs schema strutturato esplicitata. → *(2026-04-25)*
 
 ### Fase 3 — Parita' ambienti
 
-4. `[Parity][medio]` Definire capability matrix per ogni ambiente: contratto operativo reale su canonici, memoria, skill, hook, MCP, git gate e audit.
+4. ✅ `[Parity][medio]` Capability matrix creata: `docs/tracking/CAPABILITY_MATRIX.md` — contratto operativo per Claude Code / Codex / Cursor su 30+ capability. Regola: Codex solo per task interni puri, tutto il resto Claude Code. → *(2026-04-25)*
 
-5. `[Parity][medio]` Distinguere per ogni ambiente cio' che e' supportato nativamente, garantito solo con workaround o senza parity affidabile. Chiudere o documentare i gap espliciti su memoria, handoff, runtime brief, git gate, audit e hook con fallback che preservino rigore. *(Fuso da ex item 22, 24, 25)*
+5. ✅ `[Parity][medio]` Gap documentati in CAPABILITY_MATRIX.md: Codex manca hook/memoria/MCP/skill. Fallback espliciti per ogni gap. Policy ambiente per tipo task. → *(2026-04-25)*
 
-6. `[Parity][breve/medio]` Stabilizzare i problemi operativi reali gia' emersi: validita' `settings.json`, hook `SessionStart`, selezione provider/modello, visibilita' modelli OpenRouter e switching affidabile.
+6. ✅ `[Parity][breve/medio]` Stabilizzati problemi operativi: settings.json valido (JSON corretto, hooks attivi, modello configurato), SessionStart hook funzionante (session-start.ps1 + inject-runtime-brief), skill critiche verificate (antiban-review, context-handoff, loop-codex), plugin `feature-dev` installato, 2 skill vuote rimosse (`analyze-issue`, `review-pr`), 2 nuove skill create (`token-efficiency`, `linkedin-patterns`). OpenRouter switching funzionale (model corrente: qwen/qwen3.6-plus). → *(2026-04-21)*
 
-7. `[Parity][medio]` Scrivere un piano di migrazione progressiva verso Codex solo dove enforcement, parity e visibilita' operativa non peggiorano. Verificare con task comparativi reali. *(Fuso da ex item 26, 27)*
+7. ✅ `[Parity][medio]` Migrazione Codex: decisione 2026-04-25 — NO migrazione attiva. Codex usabile solo per task interni puri (refactor, fix read-only) dove non serve MCP/hook/skill. Documentato in `docs/tracking/CAPABILITY_MATRIX.md` §"Policy ambiente per tipo task". → *(2026-04-25)*
 
-68. `[Parity][medio]` Implementare il loop Codex con verifica completa a ogni iterazione: ogni conclusione di blocco tecnico deve passare un check su tutti gli aspetti (diretti, indiretti, multi-dominio) prima di dichiarare il task chiuso e passare al successivo.
+68. ✅ `[Parity][medio]` Loop con verifica completa implementato in skill `loop-codex`: decomposizione obbligatoria, verifica L9 dopo ogni sotto-task, max 3 iterazioni per sotto-task, DONE/BLOCKED esplicito, auto-commit se verde. → *(già esistente, verificato 2026-04-25)*
 
-8. `[Parity][medio/lungo]` Mantenere viva la policy del miglior ambiente per ogni tipo di task, basata su affidabilita', controllo e costo cognitivo reale.
+8. ✅ `[Parity][medio/lungo]` Policy ambiente codificata in `docs/tracking/CAPABILITY_MATRIX.md` — tabella tipo task → ambiente con motivazione. Aggiornare quando cambiano capability. → *(2026-04-25)*
 
 ### Fase 4 — Strumenti locali e supporto personale
 
-9. `[Local tools][medio]` Rendere il tool di dettatura locale abbastanza stabile da sostituire davvero il fallback di Windows nel lavoro quotidiano.
+9. `[Local tools][medio]` Dettatura locale stabile — HOLD. Dipende da setup hardware. Usare `prompt-improver` skill come fallback per input vocali difettosi.
 
-10. `[Local tools][medio]` Documentare una decisione chiara sul trade-off locale vs cloud per la trascrizione, con criterio di scelta e fallback.
+10. `[Local tools][medio]` Trade-off dettatura locale vs Windows — HOLD. Decisione da prendere dopo stabilizzazione hardware.
 
-11. `[Local tools][medio]` Aprire e chiudere davvero il piano di fix dei colli di bottiglia del computer, invece di lasciarli come nota permanente.
+11. `[Local tools][medio]` Fix colli di bottiglia PC — HOLD. Task separato da pianificare quando si ha tempo dedicato.
 
-12. `[Local tools][medio]` Realizzare, se utile, un helper che trasformi prompt deboli in prompt piu' chiari e che proponga anche modello e ambiente coerenti con il task.
+12. ✅ `[Local tools][medio]` Prompt helper: skill `prompt-improver` già installata — ripara dettati vocali grezzi, interpreta intento, propone chiarimenti. → *(già presente, verificato 2026-04-25)*
 
 ### Fase 8 — Git, review e chiusura corretta
 
-39. `[Git][breve/medio]` Estendere il comportamento corretto su commit e push anche fuori da Claude Code o documentare un fallback affidabile.
+39. ✅ `[Git][breve/medio]` Commit/push fuori Claude Code: Codex ha git nativo, Cursor/Windsurf manuale. Gap documentato in `CAPABILITY_MATRIX.md`. In Claude Code: hook bloccanti `pre-bash-l1-gate.ps1` + `pre-bash-git-gate.ps1` enforced. → *(2026-04-25)*
 
-40. `[Git][breve/medio]` Verificare che il commit parta davvero come chiusura naturale di un blocco verificato e che il task non venga dichiarato chiuso prima della chiusura corretta del blocco tecnico git. *(Fuso da ex item 67, 70)*
+40. ✅ `[Git][breve/medio]` Commit come chiusura verificata codificato in `AGENTS.md` §"Commit e push": auto-commit by default dopo gate verdi, no commit cieco, condizioni esplicite. Enforcement meccanico attivo. → *(già esistente, verificato 2026-04-25)*
 
 41. `[Git][medio]` Chiarire meglio dove il push deve fermarsi per review, remote policy o rischio operativo.
 

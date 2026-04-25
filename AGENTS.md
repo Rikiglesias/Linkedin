@@ -107,6 +107,105 @@ Principi anti-ban non negoziabili:
 - navigazione umana e non teletrasportata
 - monitoring attivo con alert chiari
 
+## Intento non letterale — regola dura
+
+Ogni prompt va interpretato come farebbe un senior engineer con pieno contesto, non eseguito meccanicamente.
+
+**Regola**: quando il testo dice X ma il contesto suggerisce Y, interpretare Y, dichiararlo e procedere.
+
+**Trigger obbligatori**:
+- dettato vocale → interpretare semanticamente, ignorare errori fonetic
+- richiesta tecnicamente sbagliata → dichiararlo PRIMA, non dopo
+- richiesta che contraddice un canonico o una decisione passata → segnalarlo
+- richiesta che potrebbe causare ban → rispondere con domanda zero antiban
+
+**Test di conformita'** (verificare su questi scenari):
+1. Utente dice "cancella il file X" ma X e' un log critico → dichiarare rischio, chiedere conferma
+2. Utente dice "disabilita il delay" → rispondere con antiban check, non eseguire
+3. Utente dice "fai quello di prima" senza contesto → chiedere chiarimento, non inventare
+
+## Fallback context degradation — protocollo
+
+Quando il context window supera soglia critica o il ragionamento mostra segnali di degrado:
+
+**Soglie**:
+- ctx >70% → attivare `lean-ctx` MCP, ridurre verbosità
+- ctx >85% → proporre `context-handoff` prima di compattare
+- ctx >95% → fermarsi, eseguire handoff, non continuare
+
+**Procedura handoff** (da eseguire prima della compattazione):
+1. `Grep` caller dei moduli toccati — blast radius reale
+2. Aggiornare `todos/active.md` con stato corrente
+3. Aggiornare `docs/tracking/ENGINEERING_WORKLOG.md`
+4. Eseguire skill `context-handoff` → genera `SESSION_HANDOFF.md`
+5. Committare se L1 verde
+
+**Segnali di degrado** (oltre ctx%):
+- ripetizione di stesse domande già risolte
+- dimenticanza di decisioni prese nella stessa sessione
+- risposta che ignora constraint dichiarati all'inizio
+
+**Fallback tool**: `context-compression` skill, `lean-ctx` MCP, `latent-briefing` skill per multi-agent.
+
+## Best practice per ogni modifica — regola dura
+
+Ogni modifica al codice deve seguire questo ordine. Nessuna eccezione.
+
+1. **Blast radius prima** — mappare file toccati direttamente e indirettamente
+2. **Contratti** — verificare input/output/side-effect di ogni funzione modificata
+3. **Dipendenze** — controllare import, export, caller toccati
+4. **Test impattati** — identificare e rieseguire i test che coprono il perimetro
+5. **Nessuna modifica parziale** — tutto o niente, verificato e completo
+
+**Non dichiarare chiuso** se:
+- un caller è stato modificato ma non verificato
+- un test impattato non è stato rieseguito
+- un contratto è cambiato ma non propagato ai consumer
+
+**Escalation**: se il perimetro è maggiore del previsto → fermarsi, ridisegnare scope, comunicare.
+
+## Cross-domain per ogni file — regola dura
+
+Ogni file toccato deve essere valutato su TUTTI i domini, non solo il tema principale.
+
+**Domini da verificare** (checklist mentale obbligatoria per ogni file):
+
+| Dominio | Domanda |
+|---------|---------|
+| Sicurezza | Input validato? Auth rispettata? Segreti esposti? |
+| Anti-ban | Tocca browser/timing/stealth/LinkedIn? → antiban-review |
+| Architettura | Circular deps? SRP rispettata? Contratto pulito? |
+| Timing/performance | Timeout? Leak? Busy wait? |
+| Compliance | Dati personali? GDPR? Log sensibili? |
+| Observability | Log strutturati? Alert dicono cosa fare? |
+
+**Tool**: `antiban-review` per file LinkedIn, `security-reviewer` per auth/input, `silent-failure-hunter` post-refactor.
+
+**Non è sufficiente** verificare solo il dominio principale della modifica.
+
+## Anti-compiacenza — regola dura
+
+L'AI deve contestare richieste sbagliate o rischiose PRIMA di eseguirle.
+
+**Quando contestare obbligatoriamente**:
+- richiesta che contraddice un canonico o decisione passata
+- richiesta che aumenta rischio ban LinkedIn
+- richiesta che disabilita un gate di sicurezza
+- richiesta con assunzione tecnica errata evidente
+- richiesta di dichiarare "fatto" senza verifica reale
+
+**Come contestare**:
+1. Dichiarare il problema in modo esplicito e motivato
+2. Proporre alternativa corretta
+3. Procedere solo dopo conferma consapevole dell'utente
+
+**Scenari di test**:
+1. "Disabilita il delay tra azioni" → bloccare, antiban check, proporre varianza invece
+2. "Questo è già testato, skippa i test" → dichiarare rischio, non saltare
+3. "Fai il push diretto su main" → dichiarare policy, chiedere conferma esplicita
+
+**NON è anti-compiacenza**: chiedere conferma su ogni cosa banale. Solo su rischi reali.
+
 ## Blast radius e ordine di esecuzione
 
 1. Mappare file toccati direttamente e indirettamente (dipendenze, import, contratti, integrazioni).
@@ -199,6 +298,37 @@ Estensioni LinkedIn ai livelli globali (vedi L1-L9 in `~/.claude/CLAUDE.md` per 
 - L4: scenari multi-giorno, recovery, pause durante invito, aggiornamento selettori LinkedIn
 - L5: Telegram e report devono dire cosa fare, non solo cosa e' successo
 - L6: verificare il percorso migration -> repository -> API -> frontend -> report
+
+## Context Handoff — schema minimo garantito
+
+`SESSION_HANDOFF.md` deve sempre contenere queste sezioni. Nessuna opzionale.
+
+```markdown
+## Obiettivi correnti
+[cosa stavo cercando di fare — 1-3 bullet]
+
+## Decisioni prese
+[decisioni tecniche non ovvie prese in questa sessione]
+
+## Blast radius identificato
+[file toccati direttamente + file impattati indirettamente]
+
+## Stato implementazione
+[DONE / IN PROGRESS / BLOCKED per ogni blocco di lavoro]
+
+## Verifiche completate
+[L1-L9 completati: quali sì, quali no e perché]
+
+## Blocchi aperti
+[problemi irrisolti con causa esplicita]
+
+## Prossimi passi
+[azioni concrete ordinate per priorità]
+```
+
+**Differenza da SESSION_HANDOFF.md automatico**: questo schema è il template minimo verificabile. Il file automatico può aggiungere sezioni ma non togliere queste.
+
+**Quando generare**: ctx >85%, fine sessione lunga, prima di cambio progetto.
 
 ## Loop di completamento
 

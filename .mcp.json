@@ -1,0 +1,27 @@
+{
+  "mcpServers": {
+    "code-review-graph": {
+      "command": "uvx",
+      "args": [
+        "code-review-graph",
+        "serve"
+      ],
+      "type": "stdio"
+    },
+    "lean-ctx": {
+      "command": "C:\\Users\\albie\\AppData\\Local\\lean-ctx\\lean-ctx.exe",
+      "args": [],
+      "type": "stdio"
+    },
+    "symdex": {
+      "command": "uvx",
+      "args": ["symdex", "serve"],
+      "type": "stdio"
+    },
+    "claude-peers": {
+      "command": "C:\\Users\\albie\\.bun\\bin\\bun.exe",
+      "args": ["C:\\Users\\albie\\AppData\\Local\\claude-peers-mcp\\server.ts"],
+      "type": "stdio"
+    }
+  }
+}

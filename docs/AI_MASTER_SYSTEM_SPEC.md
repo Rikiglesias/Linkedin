@@ -1,19 +1,23 @@
 # AI Master System Spec
 
-Documento madre unico che raccoglie in una sola lista esplicita il sistema AI desiderato.
-Serve per evitare che i punti restino sparsi tra chat, memoria, checklist e documenti diversi.
+> **Quando leggere**: solo quando si vuole capire il sistema AI *completo e desiderato*. Non leggere per sapere cosa manca (→ backlog) o cosa e' implementato (→ operating model).
+> **Aggiornato**: 2026-04-25
 
-Questo file non sostituisce i canonici operativi:
-- `AGENTS.md` = enforcement e regole operative del progetto
-- `AI_OPERATING_MODEL.md` = stato, roadmap, gap e ordine di implementazione
-- `AI_MASTER_IMPLEMENTATION_BACKLOG.md` = backlog madre unico dei punti ancora da completare
-- `360-checklist.md` = verifica pratica e audit
-- `NEW_PROJECT_BOOTSTRAP_CHECKLIST.md` = riuso su nuovi progetti
+## Cosa contiene
 
-Questo file risponde a una domanda piu' semplice:
-"Qual e' il sistema completo che l'AI deve incarnare, senza buchi, senza duplicazioni e senza compiacenza?"
+Lista esplicita e completa del sistema AI desiderato. Una sola fonte di verita' su "cosa deve fare il sistema AI".
 
-> **Nota**: questo documento e' aspirazionale — descrive il sistema AI come dovrebbe essere, non come e' implementato ora. Per lo stato reale e i gap ancora aperti, consultare `AI_MASTER_IMPLEMENTATION_BACKLOG.md`.
+## Cosa NON contiene
+
+| Domanda | File corretto |
+|---------|--------------|
+| Cosa manca ancora? | `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md` |
+| Qual e' lo stato reale? | `docs/AI_OPERATING_MODEL.md` |
+| Cosa fare adesso? | `todos/active.md` |
+| Come verifica pratica? | `docs/360-checklist.md` |
+| Regole operative? | `AGENTS.md` |
+
+> **Nota**: aspirazionale — descrive il sistema come *dovrebbe* essere, non come e' ora.
 
 ---
 
