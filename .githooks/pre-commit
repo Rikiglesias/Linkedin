@@ -7,6 +7,17 @@ if command -v code-review-graph >/dev/null 2>&1; then
 fi
 
 # Anti-secret scan (BLOCCANTE)
+# Layer 1: gitleaks (industry standard ~150 rules) se installato
+if command -v gitleaks >/dev/null 2>&1; then
+    gitleaks protect --staged --redact --verbose --no-banner || {
+        echo ""
+        echo "❌ gitleaks ha trovato segreti nei file staged. Commit BLOCCATO."
+        echo "   Per emergenza: SKIP_GITLEAKS=1 git commit ..."
+        [ "$SKIP_GITLEAKS" = "1" ] || exit 1
+    }
+fi
+
+# Layer 2: custom scanner (fallback / pattern progetto-specifici)
 if [ -f scripts/security/check-no-secrets.mjs ]; then
     node scripts/security/check-no-secrets.mjs || exit 1
 fi
