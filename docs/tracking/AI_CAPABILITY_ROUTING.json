@@ -342,7 +342,7 @@
       "primaryCapabilities": ["session-prompt", "memoria", "repo-canonici"],
       "fallbackCapabilities": ["repo-code-search", "debugging-wizard"],
       "preferredEnvironment": "either",
-      "notes": "Cambio chat manuale: /session-prompt (scrive .claude/SESSION_PROMPT.md da far leggere alla nuova chat). /context-handoff e' alias di /session-prompt. Hook automatici gestiscono CONTINUATION.md senza intervento utente."
+      "notes": "Cambio chat manuale: /session-prompt (scrive .claude/SESSION_PROMPT.md da far leggere alla nuova chat). Hook automatici gestiscono CONTINUATION.md senza intervento utente."
     },
     {
       "domainId": "n8n-orchestration",
