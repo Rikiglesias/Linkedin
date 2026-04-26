@@ -336,13 +336,13 @@
     },
     {
       "domainId": "memory-handoff",
-      "intentPatterns": ["memory", "memoria", "handoff", "context", "contesto", "secondo cervello", "briefing", "todos"],
+      "intentPatterns": ["memory", "memoria", "handoff", "context", "contesto", "secondo cervello", "briefing", "todos", "cambio chat", "nuova sessione", "nuova chat", "altra sessione", "passa il testimone", "continuita", "spostare", "chiudi sessione", "cambia chat", "cambiare chat", "sessione precedente"],
       "sourceOfTruth": "memory-files",
       "webPolicy": "not-needed",
-      "primaryCapabilities": ["memoria", "repo-canonici"],
+      "primaryCapabilities": ["context-handoff", "memoria", "repo-canonici"],
       "fallbackCapabilities": ["repo-code-search", "debugging-wizard"],
       "preferredEnvironment": "either",
-      "notes": "Per stato e continuita' la fonte primaria sono memory, todos, worklog e canonici."
+      "notes": "Passaggio tra sessioni: /context-handoff SNELLA (max 25 righe, CONTINUATION.md) o FORMALE (SESSION_HANDOFF.md). Per stato e continuita' la fonte primaria sono memory, todos, worklog e canonici."
     },
     {
       "domainId": "n8n-orchestration",
