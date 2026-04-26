@@ -44,6 +44,9 @@ function Test-AntibanFile {
             return $false
         }
     }
+    # File di documentazione/testo non contengono mai codice LinkedIn sensibile
+    $ext = [System.IO.Path]::GetExtension($FilePath).ToLowerInvariant()
+    if ($ext -in @('.md', '.txt', '.log', '.csv')) { return $false }
     return ($FilePath -match $ANTIBAN_PATTERN)
 }
 

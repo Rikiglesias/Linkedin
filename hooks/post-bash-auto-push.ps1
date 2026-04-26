@@ -114,10 +114,10 @@ try {
     $pushExit = $LASTEXITCODE
     if ($pushExit -eq 0) {
         Write-HookLog -File $LOG -Message "Auto-push OK su $branch -> $upstream"
-        $msg = "AUTO-PUSH ESEGUITO — branch=$branch -> $upstream. Output: $($pushOutput -join ' | ')"
+        $msg = "AUTO-PUSH ESEGUITO - branch=$branch -> $upstream. Output: $(($pushOutput | ForEach-Object { "$_" }) -join ' | ')"
     } else {
-        Write-HookLog -File $LOG -Message "Auto-push FAIL su ${branch}: exit=$pushExit, output=$pushOutput"
-        $msg = "AUTO-PUSH FAILED - branch=$branch, exit=$pushExit. Output: $($pushOutput -join ' | '). AI must declare and propose fix."
+        Write-HookLog -File $LOG -Message "Auto-push FAIL su ${branch}: exit=$pushExit, output=$(($pushOutput | ForEach-Object { "$_" }) -join ' | ')"
+        $msg = "AUTO-PUSH FAILED - branch=$branch, exit=$pushExit. Output: $(($pushOutput | ForEach-Object { "$_" }) -join ' | '). AI must declare and propose fix."
     }
     $output = [ordered]@{
         hookSpecificOutput = [ordered]@{
