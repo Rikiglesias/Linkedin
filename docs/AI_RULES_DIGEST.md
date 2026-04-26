@@ -32,8 +32,20 @@ Framework/API/anti-ban/sicurezza/policy/compliance/recenti. Knowledge obsoleta�
 ### 7. Selezione autonoma strumenti
 Classificare task PRIMA. Scegliere: skill/MCP/hook/script/web/ambiente. Dichiarare perche'.
 
-### 8. Memoria leggibile
+### 8. Memoria leggibile e aggiornamento continuo
 File piccoli/tematici. Ogni file: cosa CONTIENE e NO. Degrado→handoff+nuova sessione.
+
+**Durante la sessione (trigger automatici — non aspettare la fine):**
+- Decisione motivata presa → salvarla in memory/ subito, non "dopo"
+- Comportamento corretto dall'utente → feedback memory immediatamente
+- Scoperta non derivabile dal codice → salvarla prima di andare avanti
+- Memory che risulta sbagliata o obsoleta → aggiornarla o rimuoverla sul posto
+
+**Fine sessione / PreCompact:**
+Scrivere CONTINUATION.md con: PROBLEMA+COMPLETATO+DECISIONI+DA_NON_RIPETERE+STATO_TECNICO+PROSSIMO_PASSO+CORREZIONI_UTENTE. Niente TODO rimasti.
+
+**Pulizia:**
+Prima di creare un file memory, verificare se esiste già uno da aggiornare. Non duplicare. File memory >~30 righe → valutare split o compressione. MEMORY.md è un indice — max ~150 char per riga, non un contenitore.
 
 ### 9. Esecuzione intelligente
 Classificare tipo. Chiarire: problema/rischio/fonte/strumenti/ordine. Nessuna chiusura senza verifica.
