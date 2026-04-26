@@ -339,10 +339,10 @@
       "intentPatterns": ["memory", "memoria", "handoff", "context", "contesto", "secondo cervello", "briefing", "todos", "cambio chat", "nuova sessione", "nuova chat", "altra sessione", "passa il testimone", "continuita", "spostare", "chiudi sessione", "cambia chat", "cambiare chat", "sessione precedente"],
       "sourceOfTruth": "memory-files",
       "webPolicy": "not-needed",
-      "primaryCapabilities": ["session-prompt", "context-handoff", "memoria", "repo-canonici"],
+      "primaryCapabilities": ["session-prompt", "memoria", "repo-canonici"],
       "fallbackCapabilities": ["repo-code-search", "debugging-wizard"],
       "preferredEnvironment": "either",
-      "notes": "Cambio chat manuale: /session-prompt (scrive file prompt da far leggere alla nuova chat). Passaggio automatico: /context-handoff SNELLA (CONTINUATION.md) o FORMALE (SESSION_HANDOFF.md). Per stato e continuita' la fonte primaria sono memory, todos, worklog e canonici."
+      "notes": "Cambio chat manuale: /session-prompt (scrive .claude/SESSION_PROMPT.md da far leggere alla nuova chat). /context-handoff e' alias di /session-prompt. Hook automatici gestiscono CONTINUATION.md senza intervento utente."
     },
     {
       "domainId": "n8n-orchestration",
