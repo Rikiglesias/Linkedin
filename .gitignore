@@ -97,3 +97,6 @@ docs/archive/TODO.md
 .docker-release-history.txt
 # Added by code-review-graph
 .code-review-graph/
+
+# Tool di sviluppo AI/Claude (non fanno parte del progetto LinkedIn)
+tools/
