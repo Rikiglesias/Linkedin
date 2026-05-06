@@ -1,0 +1,7 @@
+# Hook globali — vivono in ~/.claude/hooks/, non qui
+*
+!.gitignore
+!post-bash-auto-push.ps1
+!README.md
+!tests/
+!tests/**
