@@ -7,7 +7,8 @@
 INIZIO (SessionStart): memoria+digest+routing. DURANTE (UserPromptSubmit+Pre/PostToolUse): routing,L1gate,antiban,audit. FINE (Stop): worklog+active.md.
 
 ## 9 Livelli
-L1 typecheck+lint+test+madge=0 BLOCKING | L2 caller/contratti/test audit | L3 runtime/null/leak audit | L4 double-exec/partial-fail/rollback audit | L5 reachability/alert audit | L6 data-flow/SSOT audit | L7 multi-dominio/file skill | L8 coerenza cross-file skill | L9 loop DONE/BLOCKED skill. Quick=L1-L4. Bug=L1-L6. Feature=L1-L9.
+Definizione canonica: ~/.claude/CLAUDE.md sezione "## L1-L9". Non ridefinire qui.
+Proporzione: Quick=L1-L4 | Bug=L1-L6 | Feature=L1-L9.
 
 ## 22 Regole
 
