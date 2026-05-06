@@ -1,146 +1,30 @@
 # AI Runtime Brief
 
 > Documento runtime compatto caricato dai hook.
-> Non e' la fonte di verita' primaria.
-> Le fonti di verita' restano:
-> - `AGENTS.md`
-> - `docs/AI_MASTER_SYSTEM_SPEC.md`
-> - `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md`
-> - `docs/AI_OPERATING_MODEL.md`
-> - `docs/tracking/AI_CAPABILITY_ROUTING.json`
-> - `docs/tracking/AI_LEVEL_ENFORCEMENT.json`
+> Regole complete: ~/.claude/CLAUDE.md e AGENTS.md. Non ridefinire qui.
+
+## Fonti di verita'
+
+- `AGENTS.md`, `docs/AI_MASTER_SYSTEM_SPEC.md`, `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md`
+- `docs/AI_OPERATING_MODEL.md`, `docs/tracking/AI_CAPABILITY_ROUTING.json`, `docs/tracking/AI_LEVEL_ENFORCEMENT.json`
 
 ## Obiettivo operativo
 
-- Nessuna omissione rilevante.
-- Nessuna assunzione gratuita.
-- Nessuna false completion.
-- Nessuna allucinazione: niente fatti, verifiche, stato o cause inventate.
-- I punti sottili valgono quanto quelli espliciti.
-- Se qualcosa non e' verificato, non puo' essere dichiarato completo.
+Nessuna omissione. Nessuna assunzione gratuita. Nessuna false completion.
+Se non e' verificato, non puo' essere dichiarato completo.
 
-## Stato corrente dei 9 livelli
+## Livelli L1-L9
 
-- Il modello canonico e' di 9 livelli (L1-L9).
-- **L1**: enforcement meccanico reale — hook blocca `git commit` senza quality gate.
-- **L2-L6**: `audit-assisted` — registri machine-readable (`AI_LEVEL_ENFORCEMENT.json`) + advisory hook (`skill-activation.ps1`) + audit (`npm run audit:violations`). Non ancora blocking sul task specifico.
-- **L7-L9**: skill-gated via `/verification-protocol` — obbligatori su task non triviali (bug, feature, refactor). L7 = multi-dominio per file. L8 = coerenza cross-file. L9 = loop finale DONE/BLOCKED. Non ancora enforced da hook automatico.
-- L2-L6 non sono ancora `blocking`: il task specifico resta da verificare semanticamente, non solo per presenza di protocollo.
-
-## Prima di iniziare
-
-- Capire il problema reale, non solo il testo letterale.
-- Questa valutazione iniziale deve avvenire automaticamente a ogni nuovo prompt e non solo quando l'utente lo chiede in modo esplicito.
-- Classificare il task: quick fix, bug, feature, refactor, audit, cleanup, produzione, workflow.
-- Classificare anche l'orizzonte temporale dominante:
-  - breve termine = obblighi di questa richiesta/sessione
-  - medio termine = follow-up della stessa iniziativa o branch
-  - lungo termine = manutenzione periodica, audit sistemici, hardening
-- Identificare la fonte di verita' corretta:
-  - repo/test/log/config per fatti interni stabili
-  - web/docs ufficiali per librerie, API, framework, provider, sicurezza, anti-ban, piattaforme esterne o informazioni recenti
-  - MCP/tool reali per stato esterno reale
-- Trattare l'input dell'utente come segnale ad alta priorita', non come comando da eseguire ciecamente se la fonte di verita' dice altro.
-- Se il prompt e' lungo o denso, costruire prima un requirement ledger.
-- Non rimandare a medio/lungo termine un obbligo che appartiene al breve termine.
-- Per ogni modifica, ragionare proattivamente sul grafo di connessioni: quali file, regole, docs, test e config sono connessi. Anticipare gli aggiornamenti, non aspettare che l'utente li segnali.
-- Per task non banali: fare un recap di cio' che si e' capito e chiedere conferma all'utente prima di implementare.
-- Prima di proporre un fix su un errore, classificare la root cause: cause diverse (login mancante vs rate limit vs proxy failure vs rete) richiedono recovery diverse anche con sintomi simili.
-
-## Requirement ledger obbligatorio per prompt lunghi o densi
-
-Il ledger deve distinguere almeno:
-- obiettivo reale
-- requisiti espliciti
-- requisiti sottili o qualitativi
-- esempi forniti dall'utente
-- controlli aggiuntivi da inferire correttamente dagli esempi
-- best practice implicite ma obbligatorie
-- controlli da fare all'inizio, durante e alla fine
-- strumenti o primitive da valutare
-- criteri di completezza
-- limiti o punti non ancora verificati
-
-**Regola esempi**: gli esempi dell'utente mostrano il tipo di ragionamento richiesto, non una lista chiusa. Ricavare il principio sottostante e applicarlo a TUTTI i casi analoghi — anche quelli non citati. Se l'utente porta 2 scenari, chiedersi: quanti altri tocca lo stesso principio?
-
-## Selezione strumenti
-
-Valutare ogni volta, in modo contestuale e automatico:
-- skill
-- MCP
-- plugin
-- ricerca web / documentazione ufficiale
-- piano
-- loop o re-check iterativo
-- hook gia' attivi
-- workflow o n8n
-- registri machine-readable di routing e livelli (`AI_CAPABILITY_ROUTING.json`, `AI_LEVEL_ENFORCEMENT.json`)
-
-Non usare una primitive per abitudine.
-Non saltarla se il task la richiede davvero.
-L'utente non deve ricordare all'AI di fare questa valutazione: la valutazione stessa e' parte obbligatoria del ragionamento.
-- Dichiarare brevemente nella risposta: fonte di verita' scelta, strumenti attivati e strumenti esclusi con motivo. Non lasciare la scelta implicita.
-- In Claude Code, `UserPromptSubmit` deve produrre un blocco advisory compatto (`PROJECT_ROUTING_DECISION`) con: source of truth, web/docs, capability da usare/escludere, preferred environment e focus `L2-L6`.
-- Ricerca web obbligatoria quando: librerie/API/framework possono essere cambiati, best practice di sicurezza/anti-ban/stealth/compliance evolve, piattaforma esterna (LinkedIn, proxy provider) cambia comportamento. Facoltativa per task puramente interni al repo con codice stabile. Mai per scelte architetturali gia' consolidate nel progetto.
-- Proporre modello e ambiente in base a: qualita' richiesta dal task, tool disponibili nell'ambiente, costo, velocita', rischio. Non usare sempre lo stesso per abitudine.
-- Non accumulare capability sovrapposte: se skill, MCP, plugin, hook o workflow sembrano fare la stessa cosa, scegliere la primitive piu' corretta e trattare l'overlap come segnale da auditare.
-- Usare una routing matrix mentale per dominio pratico: backend, frontend, browser, DB, documentazione, review, anti-ban, memoria, n8n.
-- Se manca la primitive giusta (`skill`, `MCP`, `plugin`, `hook`, `memoria`, `audit`, `script`, `workflow`), trattarlo come capability gap: dichiararlo e proporre la promozione corretta invece di improvvisare workaround fragili.
-- Se nessun dominio raggiunge confidenza sufficiente, dichiarare `Capability gap` e non inventare una capability “abbastanza buona”.
-- Nuove capability candidate non si installano alla cieca: prima vanno valutate su gap reale, overlap, trigger e costo di manutenzione.
-- Distinguere tra cio' che puo' partire automaticamente e cio' che richiede conferma esplicita dell'utente perche' cambia il sistema in modo durevole o invasivo.
-
-## Durante il task
-
-- Capire in che fase ci si trova:
-  - ingresso task
-  - lavoro in corso
-  - chiusura e verifica finale
-- Mantenere aggiornato il ledger: coperto, aperto, non applicabile, non verificato.
-- Se emerge un punto reale ma non chiudibile ora, tracciarlo nel contenitore corretto invece di lasciarlo solo in risposta.
-- Non lavorare sul solo file locale: considerare dipendenze, import, contratti, integrazioni, runtime e impatti indiretti.
-- Se il perimetro e' piu' ampio del file locale, usare code search, mapping dipendenze/test, memoria e, se serve, agenti o esplorazione dedicata per estendere il contesto alla codebase reale.
-- Per task non banali, usare il focus `L2-L6` proposto dal registro livelli come checklist advisory minima:
-  - quick-fix -> `L2-L3`
-  - bug -> `L2-L4` + `L6`
-  - feature/refactor -> `L2-L6`
-- Applicare best practice specifiche del tipo di artefatto.
-- Se il task e' esterno o recente, verificare prima online invece di fidarsi della memoria.
-- Se una parte e' ambigua o rischiosa, correggere l'interpretazione o fermarsi sul confine vero del lavoro svolto.
-- Se l'utente ha dato esempi: (1) identificare il principio sottostante, (2) elencare tutti gli altri casi che lo stesso principio tocca — non solo quelli citati, (3) verificare ognuno.
-- Monitorare segnali di degrado del contesto: omissioni ripetute, ledger che perde copertura, contraddizioni, prompt/sessione troppo grandi, rischio di compact con perdita di stato.
-- Se il ragionamento sta degradando, preparare handoff, aggiornare i contenitori minimi e proporre o usare `context-handoff` invece di continuare in stato degradato.
-- Alla chiusura di ogni task: cercare artefatti correlati (memory, docs, todos, skill, hook) potenzialmente stale. Stesso argomento → aggiornare automaticamente. Argomento diverso → segnalare e chiedere conferma.
-- Quando si aggiunge/modifica una capability (skill, MCP, hook, workflow): propagare automaticamente a tabelle, pre/post conditions, matrice enforcement e docs. Installazione senza propagazione = incompleta.
-- Quando si lavora su una lista di item: completare N interamente (web search + plan + implementazione + verifica + propagazione) prima di iniziare N+1. Se servono piu' step, usare loop mode.
-
-## Prima di chiudere
-
-- Rieseguire un coverage check del ledger.
-- Verificare che i requisiti principali e quelli sottili siano entrambi coperti.
-- Verificare i collegamenti diretti e indiretti.
-- Verificare che nulla di dovuto nel breve termine sia stato spostato impropriamente su medio/lungo termine.
-- Se il task ha esposto un capability gap non chiuso, dichiararlo e tracciarlo invece di nasconderlo dentro una chiusura apparentemente completa.
-- Non aspettare che sia l'utente a scoprire cosa manca.
-- Se qualcosa resta non verificato, dichiararlo in modo esplicito.
-
-## Regole dure
-
-- "Usa best practice", "non essere superficiale", "non dimenticare pezzi" e "fai tutto bene" sono requisiti hard.
-- Una risposta apparentemente completa ma non dimostrata vale meno di una risposta parziale ma vera.
-- Omissioni, assunzioni non verificate e chiusure premature vanno trattate come failure del task.
+Definizione canonica: ~/.claude/CLAUDE.md sezione "## L1-L9".
+Proporzione: Quick-fix=L1-L4 | Bug=L1-L6 | Feature/refactor=L1-L9.
+Stato enforcement: L1 bloccante. L2-L6 audit-assisted. L7-L9 via /verification-protocol.
 
 ## Repo LinkedIn — estensioni locali
 
-- Modifiche su browser, timing, delay, stealth, fingerprint, sessione o volumi: valutare sempre impatto anti-ban.
-- Per modifiche codice: rispettare quality gate del repo.
-- Commit solo dopo blocco verificato; push solo se il contesto remote lo rende corretto e sicuro.
-
-## Nota sui hook
-
-- Non esiste un vero evento nativo `during`.
-- L'equivalente corretto e':
-  - `UserPromptSubmit` prima di ogni nuovo prompt
-  - `PreToolUse` / `PostToolUse` durante l'esecuzione degli strumenti
-  - `PreCompact` prima della compattazione del contesto
-  - `Stop` a fine risposta
+- Modifiche su browser, timing, delay, stealth, fingerprint, sessione o volumi: valutare sempre impatto anti-ban (`antiban-review`).
+- L1: `madge --circular` sui moduli core toccati + coverage adeguata per risk/scheduler/auth/stealth.
+- L3: memory leak, listener, timeout, pattern stealth, busy timeout DB.
+- L4: scenari multi-giorno, recovery, pause durante invito, aggiornamento selettori LinkedIn.
+- L5: Telegram e report devono dire cosa fare, non solo cosa e' successo.
+- L6: percorso migration → repository → API → frontend → report.
+- Commit solo dopo L1 verde. Push solo se branch/upstream/rischio OK.
