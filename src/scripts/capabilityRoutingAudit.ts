@@ -45,6 +45,13 @@ const EXPECTATIONS: PromptExpectation[] = [
         expectCapabilityGap: false,
     },
     {
+        label: 'capability-discovery',
+        prompt: 'Cerca se esiste una skill finder o una capability per scoprire skill non installate',
+        expectedDomains: ['capability-discovery'],
+        expectedWebPolicy: 'required',
+        expectCapabilityGap: false,
+    },
+    {
         label: 'external-live-state',
         prompt: 'Controlla lo stato live di produzione su Supabase e Sentry oggi',
         expectedDomains: ['external-live-state'],

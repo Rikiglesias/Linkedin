@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
 
-export type CapabilityKind = 'repo' | 'web' | 'mcp' | 'hook' | 'skill' | 'script' | 'workflow';
+export type CapabilityKind = 'repo' | 'web' | 'mcp' | 'hook' | 'skill' | 'script' | 'workflow' | 'plugin' | 'agent' | 'cli';
 export type WebPolicy = 'required' | 'conditional' | 'not-needed';
 export type PreferredEnvironment = 'claude-code' | 'codex' | 'either' | 'n8n';
 export type SourceOfTruth =
@@ -12,7 +12,8 @@ export type SourceOfTruth =
     | 'database-live'
     | 'git-state'
     | 'memory-files'
-    | 'n8n-live';
+    | 'n8n-live'
+    | 'session-state';
 export type TaskClass = 'quick-fix' | 'bug' | 'feature/refactor';
 
 export interface CapabilityEntry {
@@ -80,7 +81,18 @@ export interface RoutingDecision {
 const ROUTING_REGISTRY_PATH = resolve('docs', 'tracking', 'AI_CAPABILITY_ROUTING.json');
 const LEVEL_REGISTRY_PATH = resolve('docs', 'tracking', 'AI_LEVEL_ENFORCEMENT.json');
 
-const CAPABILITY_KIND_SET = new Set<CapabilityKind>(['repo', 'web', 'mcp', 'hook', 'skill', 'script', 'workflow']);
+const CAPABILITY_KIND_SET = new Set<CapabilityKind>([
+    'repo',
+    'web',
+    'mcp',
+    'hook',
+    'skill',
+    'script',
+    'workflow',
+    'plugin',
+    'agent',
+    'cli',
+]);
 const WEB_POLICY_SET = new Set<WebPolicy>(['required', 'conditional', 'not-needed']);
 const ENVIRONMENT_SET = new Set<PreferredEnvironment>(['claude-code', 'codex', 'either', 'n8n']);
 const SOURCE_OF_TRUTH_SET = new Set<SourceOfTruth>([
@@ -92,6 +104,7 @@ const SOURCE_OF_TRUTH_SET = new Set<SourceOfTruth>([
     'git-state',
     'memory-files',
     'n8n-live',
+    'session-state',
 ]);
 const TASK_CLASS_SET = new Set<TaskClass>(['quick-fix', 'bug', 'feature/refactor']);
 const LEVEL_SEQUENCE: Array<LevelDefinition['level']> = ['L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8', 'L9'];

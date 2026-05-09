@@ -25,6 +25,14 @@
       "notes": "Necessario per librerie, provider, API esterne e best practice recenti."
     },
     {
+      "id": "skill-discovery-external",
+      "kind": "cli",
+      "label": "skill discovery esterna / npx skills find",
+      "status": "active",
+      "environments": ["either", "claude-code", "codex"],
+      "notes": "Quando una skill/capability non e' locale, cercare su npx skills find, skills.sh e repository affidabili prima di dichiararla inesistente o crearla."
+    },
+    {
       "id": "mcp-live-state",
       "kind": "mcp",
       "label": "MCP / tool live state",
@@ -95,6 +103,22 @@
       "status": "active",
       "environments": ["either", "claude-code", "codex"],
       "notes": "Lettura/aggiornamento memoria e contesto persistente."
+    },
+    {
+      "id": "context-handoff",
+      "kind": "skill",
+      "label": "skill context-handoff",
+      "status": "active",
+      "environments": ["claude-code"],
+      "notes": "Handoff operativo tra sessioni: SESSION_HANDOFF.md, git status, active.md, memoria e blocchi aperti."
+    },
+    {
+      "id": "session-prompt",
+      "kind": "skill",
+      "label": "skill session-prompt",
+      "status": "active",
+      "environments": ["claude-code"],
+      "notes": "Trasferimento manuale del contesto a una nuova chat quando serve un prompt copiabile."
     },
     {
       "id": "n8n-mcp",
@@ -274,6 +298,16 @@
     }
   ],
   "domains": [
+    {
+      "domainId": "capability-discovery",
+      "intentPatterns": ["skill", "skills", "capability", "capability finder", "skill finder", "find-skills", "skills.sh", "npx skills", "plugin", "mcp", "tool", "strumento", "cercare skill", "installare skill", "non c'e una skill", "manca una skill"],
+      "sourceOfTruth": "official-web-docs",
+      "webPolicy": "required",
+      "primaryCapabilities": ["skill-discovery-external", "official-web-docs"],
+      "fallbackCapabilities": ["repo-canonici", "repo-code-search"],
+      "preferredEnvironment": "either",
+      "notes": "Una capability assente localmente non va dichiarata inesistente: cercare prima cataloghi ufficiali e fonti affidabili."
+    },
     {
       "domainId": "antiban-linkedin",
       "intentPatterns": ["linkedin", "anti.?ban", "stealth", "fingerprint", "timing", "delay", "session", "proxy", "detect"],

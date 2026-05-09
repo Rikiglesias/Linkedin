@@ -1,0 +1,655 @@
+{
+  "schemaVersion": 1,
+  "updated": "2026-05-07",
+  "purpose": "Governance machine-readable del modello Agent Development Kit: decide il layer corretto di ogni capability del control plane AI, senza duplicare il routing per dominio.",
+  "adkModel": {
+    "name": "Agent Development Kit",
+    "coreLayers": [
+      {
+        "id": "rules-memory",
+        "label": "Layer 1 - rules and memory",
+        "requiredArtifacts": ["CLAUDE.md", "AGENTS.md", "AI_RUNTIME_BRIEF.md", "memory files", "todos/active.md"],
+        "globalScope": "~/.claude/ e ~/memory/ per regole/preferenze valide su tutti i progetti",
+        "projectScope": "AGENTS.md, docs canonici e memory progetto per regole specifiche della repo",
+        "standard": "Sempre caricato o reiniettato; deve contenere regole operative stabili, non procedure lunghe o workflow fragili."
+      },
+      {
+        "id": "skill",
+        "label": "Layer 2 - skills",
+        "requiredArtifacts": ["SKILL.md", "scripts/", "templates/", "assets/"],
+        "globalScope": "~/.codex/skills o ~/.agents/skills per workflow riusabili",
+        "projectScope": ".agents/skills per conoscenza specifica della repo",
+        "standard": "Una skill ha trigger descrittivo auto-invocabile, contesto minimo, eventuali script/template/assets e non diventa una skill omnibus."
+      },
+      {
+        "id": "hook",
+        "label": "Layer 3 - hooks",
+        "requiredArtifacts": ["PreToolUse", "PostToolUse", "SessionStart", "UserPromptSubmit", "PreCompact", "Stop", "SubagentStop"],
+        "globalScope": "~/.claude/hooks e ~/.claude/settings.json",
+        "projectScope": ".githooks e script di audit repo quando il controllo e' versionato",
+        "standard": "Deterministico, non AI. Blocca solo condizioni verificabili; per il resto logga, avvisa o chiama audit."
+      },
+      {
+        "id": "subagent",
+        "label": "Layer 4 - subagents",
+        "requiredArtifacts": ["one job", "own context", "own tools", "own permissions", "single result"],
+        "globalScope": "Subagent riusabili per review, test, explorer o failure hunting",
+        "projectScope": "Subagent specializzati solo quando il dominio repo lo giustifica",
+        "standard": "Un subagent deve avere un job specifico, contesto isolato, permessi dichiarati e un unico risultato di ritorno."
+      },
+      {
+        "id": "plugin-distribution",
+        "label": "Layer 5 - plugins and distribution",
+        "requiredArtifacts": ["plugin.json", "manifest", "skills/", "hooks/", "agents/", "commands/", "version", "provenance", "team install"],
+        "globalScope": "Plugin home-local o marketplace personale/team",
+        "projectScope": "Plugin repo-local quando la capability serve a un progetto specifico",
+        "standard": "Pacchetto installabile e versionato; evita copie manuali divergenti di regole, skill, hook, agenti e comandi."
+      }
+    ],
+    "externalSurfaces": [
+      {
+        "id": "mcp-external",
+        "label": "MCP and live external tools",
+        "standard": "Fonte di stato esterno o capability live; non va confusa con skill o hook."
+      },
+      {
+        "id": "script-audit",
+        "label": "Deterministic scripts and audits",
+        "standard": "Controllo ripetibile, versionato e testabile; puo' essere richiamato da hook o npm script."
+      },
+      {
+        "id": "workflow-automation",
+        "label": "Persistent workflows",
+        "standard": "Automazione durevole o schedulata; usare quando un processo deve partire senza memoria umana."
+      },
+      {
+        "id": "source-registry",
+        "label": "Repo, memory and source registries",
+        "standard": "Fonte di verita' stabile o indice; serve al routing ma non e' una capability esecutiva."
+      },
+      {
+        "id": "web-source",
+        "label": "Official web/docs source",
+        "standard": "Fonte temporale o provider-specifica; obbligatoria quando le API/best practice possono cambiare."
+      },
+      {
+        "id": "cli-tool",
+        "label": "Local CLI tool",
+        "standard": "Tool locale invocabile; va promosso a script/hook/plugin solo se ricorrente e stabile."
+      }
+    ]
+  },
+  "placementPolicy": {
+    "rules": [
+      {
+        "when": "Regola stabile che deve valere sempre",
+        "targetLayer": "rules-memory",
+        "promotion": "documento canonico -> runtime brief -> hook solo se esiste segnale deterministico"
+      },
+      {
+        "when": "Procedura cognitiva ripetibile ma non deterministica",
+        "targetLayer": "skill",
+        "promotion": "skill con SKILL.md snello e script/reference solo se servono"
+      },
+      {
+        "when": "Controllo verificabile meccanicamente",
+        "targetLayer": "hook",
+        "promotion": "audit/script prima, hook blocking solo se falsi positivi accettabili"
+      },
+      {
+        "when": "Lavoro isolabile che sporca troppo il contesto principale",
+        "targetLayer": "subagent",
+        "promotion": "subagent con job singolo, output unico e permessi limitati"
+      },
+      {
+        "when": "Capability riusabile da team o nuovi progetti",
+        "targetLayer": "plugin-distribution",
+        "promotion": "plugin.json + manifest + versioning + provenance + install policy"
+      },
+      {
+        "when": "Stato esterno live o tool provider",
+        "targetLayer": "mcp-external",
+        "promotion": "MCP/tool live, non memoria o documento statico"
+      }
+    ],
+    "requiredCapabilityFields": [
+      "id",
+      "sourceRegistry",
+      "adkLayer",
+      "scope",
+      "primitive",
+      "domain",
+      "trigger",
+      "limits",
+      "decision",
+      "relationship",
+      "verification"
+    ]
+  },
+  "candidateExternalCapabilities": [
+    {
+      "id": "caveman",
+      "displayName": "Caveman",
+      "status": "candidate",
+      "decision": "evaluate-before-install",
+      "evaluationRequired": "Verificare scopo reale, overlap con skill esistenti, installabilita', sicurezza e layer ADK corretto prima di aggiungerla."
+    },
+    {
+      "id": "leanctx",
+      "displayName": "LeanCTX",
+      "status": "candidate",
+      "decision": "evaluate-before-install",
+      "evaluationRequired": "Verificare se copre meglio context degradation rispetto a lean-ctx/context-engineering gia' tracciati."
+    },
+    {
+      "id": "simdex",
+      "displayName": "SIMDex",
+      "status": "candidate",
+      "decision": "evaluate-before-install",
+      "evaluationRequired": "Verificare se e' duplicato di symdex/code-review-graph o se aggiunge un indice semantico reale."
+    },
+    {
+      "id": "contact-skills",
+      "displayName": "Contact Skills",
+      "status": "candidate",
+      "decision": "evaluate-before-install",
+      "evaluationRequired": "Verificare se serve al dominio contatti/outreach e se deve essere skill, plugin o workflow."
+    }
+  ],
+  "capabilityPlacements": [
+    {
+      "id": "repo-canonici",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "rules-memory",
+      "scope": "project",
+      "primitive": "canonical-docs",
+      "domain": "repo source of truth",
+      "trigger": "Sempre quando il fatto e' interno e stabile.",
+      "limits": "Non prova stato live esterno.",
+      "decision": "keep",
+      "relationship": "Base per routing e audit; non sostituisce MCP live.",
+      "verification": "audit:ai-control-plane"
+    },
+    {
+      "id": "repo-code-search",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "source-registry",
+      "scope": "project",
+      "primitive": "code-search",
+      "domain": "blast radius and dependency mapping",
+      "trigger": "Prima di modifiche codice, refactor, bug o feature.",
+      "limits": "Non e' memoria persistente e non sostituisce test.",
+      "decision": "keep",
+      "relationship": "Supporta L2-L6 e routing repo-code.",
+      "verification": "audit:routing"
+    },
+    {
+      "id": "official-web-docs",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "web-source",
+      "scope": "global",
+      "primitive": "official-docs-web",
+      "domain": "recent providers and external best practices",
+      "trigger": "API, provider, librerie, leggi, prezzi o best practice recenti.",
+      "limits": "Non sostituisce MCP quando serve stato live.",
+      "decision": "keep",
+      "relationship": "Fallback o primary source per domini temporali.",
+      "verification": "audit:routing"
+    },
+    {
+      "id": "skill-discovery-external",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "cli-tool",
+      "scope": "global",
+      "primitive": "npx-skills-find-skills-sh",
+      "domain": "external skill and capability discovery",
+      "trigger": "Quando una skill/capability non e' locale o la scelta non e' chiara.",
+      "limits": "Non installa automaticamente; richiede verifica qualita', reputazione, install count, overlap e compatibilita'.",
+      "decision": "keep",
+      "relationship": "Estende skill-finder/capability finder oltre la lista locale.",
+      "verification": "audit:routing + audit:adk-capabilities"
+    },
+    {
+      "id": "mcp-live-state",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "mcp-external",
+      "scope": "global",
+      "primitive": "mcp",
+      "domain": "external live state",
+      "trigger": "Quando serve stato reale di provider o sistemi esterni.",
+      "limits": "Dipende da disponibilita' e permessi ambiente.",
+      "decision": "keep",
+      "relationship": "Primary per external-live-state.",
+      "verification": "audit:routing"
+    },
+    {
+      "id": "browser-automation",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "mcp-external",
+      "scope": "global",
+      "primitive": "browser-tool",
+      "domain": "browser evidence",
+      "trigger": "DOM, screenshot, click, stato pagina o riproduzione UI.",
+      "limits": "Non sostituisce test automatici versionati.",
+      "decision": "keep",
+      "relationship": "Overlap con Playwright; usare in base al target.",
+      "verification": "audit:routing"
+    },
+    {
+      "id": "playwright",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "mcp-external",
+      "scope": "global",
+      "primitive": "browser-tool",
+      "domain": "browser debug and deterministic UI checks",
+      "trigger": "Debug visivo, DOM/network e bug UI riproducibili.",
+      "limits": "Non usare per dedurre stato LinkedIn senza anti-ban review.",
+      "decision": "keep",
+      "relationship": "Complementare a browser-automation.",
+      "verification": "audit:routing"
+    },
+    {
+      "id": "webapp-testing",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "skill",
+      "scope": "global",
+      "primitive": "skill",
+      "domain": "webapp testing workflow",
+      "trigger": "Task di verifica browser/frontend dove serve procedura ripetibile.",
+      "limits": "Non sostituisce evidenza Playwright quando serve screenshot/DOM reale.",
+      "decision": "keep",
+      "relationship": "Skill procedurale sopra tool browser.",
+      "verification": "audit:adk-capabilities"
+    },
+    {
+      "id": "db-schema-query",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "mcp-external",
+      "scope": "global",
+      "primitive": "mcp",
+      "domain": "database live schema and queries",
+      "trigger": "Schema, migrazioni, dati reali, query o tipi DB.",
+      "limits": "Non usare se mancano credenziali o ambiente live autorizzato.",
+      "decision": "keep",
+      "relationship": "Primary per database-persistence.",
+      "verification": "audit:routing"
+    },
+    {
+      "id": "audit-git-automation",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "script-audit",
+      "scope": "project",
+      "primitive": "audit-script",
+      "domain": "git closure readiness",
+      "trigger": "Prima di commit/push e dopo gate qualita'.",
+      "limits": "Classifica il contesto git, non garantisce qualita' codice.",
+      "decision": "keep",
+      "relationship": "Usato da hook e workflow git.",
+      "verification": "audit:git-automation"
+    },
+    {
+      "id": "git-commit",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "skill",
+      "scope": "global",
+      "primitive": "skill",
+      "domain": "commit workflow",
+      "trigger": "Commit atomico dopo verifiche verdi.",
+      "limits": "Non bypassa audit git o working tree misto.",
+      "decision": "keep",
+      "relationship": "Consuma audit-git-automation.",
+      "verification": "audit:routing"
+    },
+    {
+      "id": "git-create-pr",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "skill",
+      "scope": "global",
+      "primitive": "skill",
+      "domain": "pull request workflow",
+      "trigger": "Quando il flusso corretto richiede PR/review.",
+      "limits": "Non sostituisce review o policy branch.",
+      "decision": "keep",
+      "relationship": "Segue git-commit.",
+      "verification": "audit:routing"
+    },
+    {
+      "id": "memoria",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "skill",
+      "scope": "global",
+      "primitive": "skill",
+      "domain": "memory management",
+      "trigger": "Lettura/aggiornamento memoria e secondo cervello.",
+      "limits": "Non duplicare codice o git history in memoria.",
+      "decision": "keep",
+      "relationship": "Supporta rules-memory.",
+      "verification": "audit:skills"
+    },
+    {
+      "id": "context-handoff",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "skill",
+      "scope": "global",
+      "primitive": "skill",
+      "domain": "context handoff",
+      "trigger": "ctx alto, fine sessione lunga o cambio chat.",
+      "limits": "Meccanismo presente; serve prova nuova chat end-to-end.",
+      "decision": "keep",
+      "relationship": "Collegata a session-prompt e memoria.",
+      "verification": "audit:skills"
+    },
+    {
+      "id": "session-prompt",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "skill",
+      "scope": "global",
+      "primitive": "skill",
+      "domain": "manual new chat transfer",
+      "trigger": "Quando serve prompt copiabile per nuova chat.",
+      "limits": "Non sostituisce verifica reale di ripartenza.",
+      "decision": "keep",
+      "relationship": "Complementare a context-handoff.",
+      "verification": "audit:ai-list-completeness"
+    },
+    {
+      "id": "n8n-mcp",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "mcp-external",
+      "scope": "global",
+      "primitive": "mcp",
+      "domain": "n8n live workflow state",
+      "trigger": "Quando serve leggere o modificare workflow n8n reali.",
+      "limits": "Non confondere con JSON repo.",
+      "decision": "keep",
+      "relationship": "Primary per n8n-orchestration.",
+      "verification": "audit:routing"
+    },
+    {
+      "id": "repo-n8n-json",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "workflow-automation",
+      "scope": "project",
+      "primitive": "workflow-artifact",
+      "domain": "n8n design artifacts",
+      "trigger": "Design o fallback versionato di workflow.",
+      "limits": "Non prova stato live.",
+      "decision": "keep",
+      "relationship": "Fallback a n8n-mcp.",
+      "verification": "audit:routing"
+    },
+    {
+      "id": "antiban-review",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "skill",
+      "scope": "project",
+      "primitive": "skill",
+      "domain": "LinkedIn anti-ban reasoning",
+      "trigger": "Browser, timing, stealth, fingerprint, sessione o volumi LinkedIn.",
+      "limits": "Non sostituisce test live o evidenza browser.",
+      "decision": "keep",
+      "relationship": "Primary per antiban-linkedin.",
+      "verification": "audit:skills"
+    },
+    {
+      "id": "debugging-wizard",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "skill",
+      "scope": "global",
+      "primitive": "skill",
+      "domain": "first-pass debugging",
+      "trigger": "Bug con log, errore o comportamento anomalo.",
+      "limits": "Dopo tentativi falliti escalare, non ripetere ipotesi.",
+      "decision": "keep",
+      "relationship": "Prima escalation verso root-cause-tracing.",
+      "verification": "audit:routing"
+    },
+    {
+      "id": "root-cause-tracing",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "skill",
+      "scope": "global",
+      "primitive": "skill",
+      "domain": "deep causal tracing",
+      "trigger": "Debug non risolto o root cause non chiara.",
+      "limits": "Non sostituisce systematic-debugging dopo due fallimenti.",
+      "decision": "keep",
+      "relationship": "Escalation da debugging-wizard.",
+      "verification": "audit:routing"
+    },
+    {
+      "id": "systematic-debugging",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "skill",
+      "scope": "global",
+      "primitive": "skill",
+      "domain": "systematic debugging escalation",
+      "trigger": "Dopo due tentativi falliti sullo stesso bug.",
+      "limits": "Richiede ipotesi e prove, non patch casuali.",
+      "decision": "keep",
+      "relationship": "Escalation finale di debug.",
+      "verification": "audit:routing"
+    },
+    {
+      "id": "vitest-e2e",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "script-audit",
+      "scope": "project",
+      "primitive": "test-script",
+      "domain": "test and regression truth",
+      "trigger": "Verifica post-modifica, regressioni, coverage.",
+      "limits": "Test verdi non provano tutto il comportamento runtime.",
+      "decision": "keep",
+      "relationship": "Base L1.",
+      "verification": "post-modifiche"
+    },
+    {
+      "id": "test-master",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "skill",
+      "scope": "global",
+      "primitive": "skill",
+      "domain": "testing strategy",
+      "trigger": "Quando serve progettare o migliorare test.",
+      "limits": "Non sostituisce suite test reale.",
+      "decision": "keep",
+      "relationship": "Complementare a vitest-e2e.",
+      "verification": "audit:routing"
+    },
+    {
+      "id": "code-review",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "skill",
+      "scope": "global",
+      "primitive": "skill",
+      "domain": "code review",
+      "trigger": "Diff locale, PR, area core o rischio regressione.",
+      "limits": "Non sostituisce test o scan mirati.",
+      "decision": "keep",
+      "relationship": "Complementare a security-reviewer.",
+      "verification": "audit:routing"
+    },
+    {
+      "id": "security-reviewer",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "skill",
+      "scope": "global",
+      "primitive": "skill",
+      "domain": "security review",
+      "trigger": "Auth, input utente, query DB, segreti o superficie OWASP.",
+      "limits": "Non sostituisce Semgrep dove serve SAST.",
+      "decision": "keep",
+      "relationship": "Complementare a semgrep.",
+      "verification": "audit:routing"
+    },
+    {
+      "id": "semgrep",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "script-audit",
+      "scope": "global",
+      "primitive": "sast-script",
+      "domain": "targeted static security scan",
+      "trigger": "Auth, input utente, query DB o file sensibili.",
+      "limits": "Da usare mirato; non sostituisce review logica.",
+      "decision": "keep",
+      "relationship": "Tool deterministico sotto security-reviewer.",
+      "verification": "manual targeted scan"
+    },
+    {
+      "id": "lean-ctx",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "mcp-external",
+      "scope": "global",
+      "primitive": "mcp",
+      "domain": "context reduction",
+      "trigger": "Context window sopra soglia o degradazione rilevata.",
+      "limits": "Dipende da disponibilita' MCP.",
+      "decision": "keep",
+      "relationship": "Overlap da valutare con LeanCTX candidate.",
+      "verification": "audit:adk-capabilities"
+    },
+    {
+      "id": "symdex",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "mcp-external",
+      "scope": "global",
+      "primitive": "mcp",
+      "domain": "symbol index",
+      "trigger": "Ricerca simboli senza leggere file interi.",
+      "limits": "Non sostituisce code search semantico o test.",
+      "decision": "keep",
+      "relationship": "Overlap da valutare con SIMDex candidate.",
+      "verification": "audit:adk-capabilities"
+    },
+    {
+      "id": "code-review-graph",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "mcp-external",
+      "scope": "global",
+      "primitive": "mcp",
+      "domain": "graph-based impact analysis",
+      "trigger": "Blast radius, accoppiamento, community, flow.",
+      "limits": "Non sostituisce lettura dei contratti toccati.",
+      "decision": "keep",
+      "relationship": "Complementare a repo-code-search.",
+      "verification": "audit:routing"
+    },
+    {
+      "id": "claude-peers",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "mcp-external",
+      "scope": "global",
+      "primitive": "mcp",
+      "domain": "cross-session coordination",
+      "trigger": "Coordinamento tra sessioni Claude quando abilitato.",
+      "limits": "Dipende da development channels e non vale in Codex.",
+      "decision": "keep",
+      "relationship": "Non sostituisce SESSION_HANDOFF.",
+      "verification": "audit:adk-capabilities"
+    },
+    {
+      "id": "autoresearch",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "skill",
+      "scope": "global",
+      "primitive": "skill",
+      "domain": "autonomous research/fix/security loop",
+      "trigger": "Loop autonomo, security audit o fix ripetuti.",
+      "limits": "Non usare su anti-ban o aree high risk senza controllo.",
+      "decision": "keep",
+      "relationship": "Overlap con paul su feature lunghe.",
+      "verification": "audit:adk-capabilities"
+    },
+    {
+      "id": "paul",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "skill",
+      "scope": "global",
+      "primitive": "skill",
+      "domain": "long-running feature planning/apply/unify",
+      "trigger": "Feature lunghe cross-session.",
+      "limits": "Non sostituisce gate repo o review.",
+      "decision": "keep",
+      "relationship": "Overlap con autoresearch su loop lunghi.",
+      "verification": "audit:adk-capabilities"
+    },
+    {
+      "id": "context-engineering",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "skill",
+      "scope": "global",
+      "primitive": "skill",
+      "domain": "context compression and degradation",
+      "trigger": "Sessione lunga, ctx alto o compact imminente.",
+      "limits": "Non sostituisce handoff quando ctx >85%.",
+      "decision": "keep",
+      "relationship": "Complementare a lean-ctx e context-handoff.",
+      "verification": "audit:adk-capabilities"
+    },
+    {
+      "id": "silent-failure-hunter",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "subagent",
+      "scope": "global",
+      "primitive": "subagent",
+      "domain": "silent failure review",
+      "trigger": "Dopo refactor o quando i test passano ma il comportamento resta sospetto.",
+      "limits": "Va usato con job singolo e output unico.",
+      "decision": "keep",
+      "relationship": "Complementare a code-review e test.",
+      "verification": "audit:adk-capabilities"
+    },
+    {
+      "id": "codeburn",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "cli-tool",
+      "scope": "global",
+      "primitive": "cli",
+      "domain": "token/cost observability",
+      "trigger": "Analisi sprechi token/costo sessione.",
+      "limits": "Non e' enforcement automatico.",
+      "decision": "keep",
+      "relationship": "Possibile input a metriche autonomia.",
+      "verification": "manual CLI check"
+    },
+    {
+      "id": "rtk-dippy",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "hook",
+      "scope": "global",
+      "primitive": "hook",
+      "domain": "bash output compression and safe command approval",
+      "trigger": "PreToolUse Bash in Claude Code.",
+      "limits": "Non disponibile in tutti gli ambienti; non sostituisce policy sicurezza.",
+      "decision": "keep",
+      "relationship": "Hook/guardrail automatico.",
+      "verification": "audit:hooks"
+    },
+    {
+      "id": "obsidian-brain",
+      "sourceRegistry": "AI_CAPABILITY_ROUTING.json",
+      "adkLayer": "skill",
+      "scope": "global",
+      "primitive": "skill",
+      "domain": "external brain/vault workflows",
+      "trigger": "Lavoro nel vault Brain o note Obsidian AI-readable.",
+      "limits": "Non sostituisce memoria canonica del progetto.",
+      "decision": "keep",
+      "relationship": "Complementare a memoria.",
+      "verification": "audit:adk-capabilities"
+    },
+    {
+      "id": "plugin-packaging",
+      "sourceRegistry": "AI_ADK_CAPABILITY_GOVERNANCE.json",
+      "adkLayer": "plugin-distribution",
+      "scope": "team",
+      "primitive": "plugin",
+      "domain": "distribution of reusable agent capabilities",
+      "trigger": "Quando regole, skill, hook, subagent o comandi devono essere riusati da team o nuovi progetti.",
+      "limits": "Ancora planned: richiede creazione manifest reale e simulazione installazione.",
+      "decision": "promote",
+      "relationship": "Promuove capability mature dagli altri layer in pacchetto versionato.",
+      "verification": "future plugin manifest review"
+    }
+  ]
+}

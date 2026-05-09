@@ -1,16 +1,23 @@
-# Active Tasks — LinkedIn Bot
+# Active Tasks — LinkedIn Bot + Sistema AI
 
 *Aggiorna questo file e fai commit quando cambiano le priorità.*
 *Il briefing mattutino remoto legge questo file ogni giorno alle 08:00.*
-*Per il sistema AI complessivo, il backlog primario resta [AI_MASTER_IMPLEMENTATION_BACKLOG.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md); le viste lineari di review sono [AI_IMPLEMENTATION_LIST_GLOBAL.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_IMPLEMENTATION_LIST_GLOBAL.md) e [LINKEDIN_IMPLEMENTATION_LIST.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/LINKEDIN_IMPLEMENTATION_LIST.md).*
+*Per il sistema AI complessivo, il backlog primario resta [AI_MASTER_IMPLEMENTATION_BACKLOG.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md); la vista lineare AI e' [AI_IMPLEMENTATION_LIST_GLOBAL.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_IMPLEMENTATION_LIST_GLOBAL.md). [LINKEDIN_IMPLEMENTATION_LIST.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/LINKEDIN_IMPLEMENTATION_LIST.md) resta backlog applicativo separato e fuori scope per il completamento della lista AI.*
+
+## 🎯 Priorità immediata — Sistema AI globale
+
+1. **Completare e mantenere completa la lista del sistema AI** — usare [AI_MASTER_IMPLEMENTATION_BACKLOG.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md) come fonte madre e [AI_IMPLEMENTATION_LIST_GLOBAL.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_IMPLEMENTATION_LIST_GLOBAL.md) come vista lineare derivata; ogni punto aperto deve avere problema, stato, primitive, ordine, sottopunti, criterio done e verifiche.
+2. **Fuori scope LinkedIn applicativo** — non ampliare qui runtime bot, proxy, anti-ban operativo, dashboard, staging account reali o n8n bot-specifico; quei punti restano nei backlog specialistici dedicati.
+3. **Audit anti-lista-generica** — mantenere `audit:ai-list-completeness` verde per evitare punti aperti incompleti, falsi completati o regressioni di scope.
+4. **Agent Development Kit a 5 layer** — governare capability e riuso come stack esplicito: regole/memoria, skill, hook, subagent, plugin/distribution e MCP esterni; distinguere sempre layer globale, layer progetto e pacchetto installabile per team.
 
 ## 🔧 Sprint tecnico corrente
 
-1. **Workflow + architecture hardening** — usare [workflow-architecture-hardening.md](C:/Users/albie/Desktop/Programmi/Linkedin/todos/workflow-architecture-hardening.md) come backlog operativo canonico
-2. **Engineering worklog persistente** — aggiornare [ENGINEERING_WORKLOG.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/tracking/ENGINEERING_WORKLOG.md) a ogni blocco tecnico significativo
-3. **Orchestrazione cognitiva contestuale** — consolidare il routing advisory machine-readable e trasformarlo progressivamente in enforcement piu' forte solo dove i miss ricorrenti lo giustificano
-4. **Orizzonti temporali del task** — distinguere sempre breve/medio/lungo termine e trasformare le cadenze periodiche di memoria, review e manutenzione in enforcement reale
-5. **Gap di capability + context degradation** — partire dai registri `AI_CAPABILITY_ROUTING.json` e `AI_LEVEL_ENFORCEMENT.json` per far riconoscere gap reali, mantenere un catalogo capability ordinato con routing per dominio pratico, e capire quando il contesto va chiuso con `context-handoff`
+1. **Engineering worklog persistente** — aggiornare [ENGINEERING_WORKLOG.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/tracking/ENGINEERING_WORKLOG.md) a ogni blocco tecnico significativo
+2. **Orchestrator Layer / Orchestrazione cognitiva contestuale** — consolidare la gerarchia P0 e il routing advisory machine-readable in un vero layer architetturale: intento reale, input utente come ipotesi, esempi come pattern, decomposizione ricorsiva dell'argomento, visione 360/lungo termine, fonte, capability, modello, ambiente, loop, handoff, verifiche e continuita' proattiva del prossimo passo; trasformarlo progressivamente in enforcement piu' forte solo dove i miss ricorrenti lo giustificano
+3. **Orizzonti temporali del task** — distinguere sempre breve/medio/lungo termine e trasformare le cadenze periodiche di memoria, review e manutenzione in enforcement reale
+4. **Gap di capability + context degradation + cambio chat** — partire dai registri `AI_CAPABILITY_ROUTING.json` e `AI_LEVEL_ENFORCEMENT.json` per far riconoscere gap reali, mantenere un catalogo capability ordinato con routing per dominio pratico, cercare su internet/cataloghi ufficiali (`npx skills find`, `skills.sh`, repo affidabili) quando una skill/capability non e' locale, capire quando il contesto va chiuso con `context-handoff`, e validare che una nuova chat riparta da `SESSION_HANDOFF.md` / `SESSION_PROMPT.md` senza omissioni o punti generici
+5. **Workflow + architecture hardening** — usare [workflow-architecture-hardening.md](C:/Users/albie/Desktop/Programmi/Linkedin/todos/workflow-architecture-hardening.md) come backlog operativo canonico per i punti LinkedIn-specifici, senza mischiarli con la lista AI globale
 6. **Lifecycle + control plane production blockers** — completare stop/flush di listener/checkpoint a shutdown e chiudere il reporting runtime cross-process (proxy/JA3/live state)
 7. **Workflow runtime truthfulness** — allineare `WorkflowExecutionResult` tra API, Telegram, report e dashboard, completando anche i failure mode specifici ancora non propagati
 8. **Proxy/session classification** — distinguere login mancante da rate limit/proxy failure e rafforzare il gate proxy reale

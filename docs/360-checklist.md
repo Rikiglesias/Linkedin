@@ -25,11 +25,16 @@
 - [ ] La ricerca web/docs ufficiali e' obbligatoria sui task che dipendono da fatti esterni o mutevoli
 - [ ] Skill usate per procedure, MCP per stato reale esterno, hook per obblighi non dimenticabili
 - [ ] Nessun flusso rigido identico per tutti i task: l'AI riconosce il caso e richiama le regole pertinenti
+- [ ] La gerarchia P0 parte prima di piano, skill, edit o risposta: intento reale, input utente come ipotesi, esempi come pattern, decomposizione ricorsiva dell'argomento, visione 360/lungo termine, root cause/soluzione migliore, fonte/primitive/verifica, continuita' proattiva
+- [ ] Ogni argomento non banale viene aperto in albero dell'argomento con sottopunti e sotto-sottopunti
+- [ ] Per ogni ramo dell'albero vengono rivalutati fonte corretta, web/docs/MCP, skill/capability, rischi, verifiche e done criteria
 - [ ] La valutazione contestuale di skill, MCP, web/docs, loop, piano, workflow e quality gate parte automaticamente a ogni prompt e a ogni modifica rilevante
 - [ ] L'AI spiega brevemente all'utente quali leve propone di usare e perche'
+- [ ] Se una skill/capability manca localmente, l'AI cerca su internet/cataloghi ufficiali (`npx skills find`, `skills.sh`, repo affidabili) prima di dichiararla inesistente o crearne una nuova
 - [ ] Ogni task viene classificato anche per orizzonte temporale (breve, medio, lungo termine)
 - [ ] Nessun obbligo di breve termine viene rimandato impropriamente a backlog o manutenzione futura
 - [ ] Gli esempi dell'utente vengono trattati come pattern illustrativi, non come lista esaustiva
+- [ ] Nei task non banali l'AI cerca root cause/problema reale, confronta alternative e sceglie la soluzione migliore verificabile invece del primo workaround
 - [ ] Le allucinazioni sono vietate in senso pieno: niente fatti/stati/verifiche inventati e niente esecuzione cieca di ipotesi utente
 - [ ] Se manca la primitive corretta (skill, hook, memoria, audit, workflow), l'AI riconosce il gap e propone la promozione giusta
 - [ ] L'AI distingue tra automazioni che devono partire da sole e cambi durevoli o invasivi da proporre con conferma
@@ -56,6 +61,7 @@
 - [ ] L7 (multi-dominio per file) applicato a ogni modifica significativa
 - [ ] L9 (loop finale) prima di dichiarare DONE
 - [ ] Una modifica locale viene sempre estesa al blast radius reale con file diretti/indiretti, dipendenze, test o strumenti di esplorazione adeguati
+- [ ] Ogni chiusura operativa include prossimo passo concreto, blocco reale o domanda specifica; niente chiusure passive se esiste un'azione successiva ragionevole
 
 ## 5. Hook system (`settings.json`)
 

@@ -272,29 +272,53 @@ Quando l'utente fornisce esempi come input:
 
 - gli esempi mostrano il TIPO di ragionamento richiesto, non la lista completa dei casi da coprire
 - identificare il principio sottostante all'esempio (non il caso specifico)
+- decomporre argomento o esempio in albero dell'argomento: sottopunti, sotto-sottopunti e rami correlati
+- per ogni ramo rivalutare fonte corretta, web/docs/MCP, skill/capability, rischi, verifiche e done criteria
 - applicare quel principio a TUTTI i casi analoghi — anche quelli non citati esplicitamente dall'utente
 - se l'utente porta 2 scenari, chiedersi: quanti altri scenari analoghi tocca lo stesso principio?
 - non dichiarare concluso un ragionamento limitandosi ai soli esempi forniti
 - questo vale per rischi tecnici, controlli di qualita', pattern documentali e regole operative
 
-### Hook attivi (aggiornato al 2026-04-15)
+### Hook attivi (aggiornato al 2026-05-09)
+
+Configurazione attiva in `~/.claude/settings.json`: 34 command hook. Non aumentare il numero per abitudine: prima misurare miss reali e promuovere solo controlli deterministici o advisory ad alto valore.
 
 | Evento | Tipo | Trigger | Azione | File log |
 |--------|------|---------|--------|----------|
-| `SessionStart` | sync | Inizio sessione | Carica memoria globale, todos, indice memoria progetto e `AI_RUNTIME_BRIEF.md` in `additionalContext` | n/a |
-| `UserPromptSubmit` | sync | Ogni nuovo prompt utente | Reinietta `AI_RUNTIME_BRIEF.md` prima che Claude elabori il prompt | n/a |
-| `PreToolUse` | bloccante (permissionDecision: deny) | Edit/Write su file sensibili LinkedIn | Avvisa e blocca: richiede `/antiban-review` prima di procedere | `memory/antiban-hook-log.txt` |
-| `PreToolUse` | bloccante | Bash con `git commit` | Richiede quality gate recente prima del commit | `memory/rule-violations-log.txt` |
-| `PreToolUse` | bloccante | Bash con `git commit` / `git push` | Blocca operazioni git se il repository non e' nello stato corretto | `memory/rule-violations-log.txt` |
-| `PreCompact` | sync | Prima della compattazione contesto | Reinietta `AI_RUNTIME_BRIEF.md` per non perdere le regole critiche nel compact | n/a |
-| `PostToolUse` | async | Bash con `npm run`, `npx tsc`, `npx madge`, `vitest` | Loga i comandi di qualita' eseguiti | `memory/quality-hook-log.txt` |
-| `PostToolUse` | async | Bash con `post-modifiche`, `conta-problemi`, `git commit`, `git push` | Esegue audit git automatico "durante" il lavoro e logga la readiness reale | `memory/git-hook-log.txt` |
-| `PostToolUse` | async | Edit/Write su file sensibili LinkedIn senza antiban-review oggi | Logga possibile miss regola antiban | `memory/rule-violations-log.txt` |
-| `PostToolUse` | async | Edit/Write su file >300 righe | Logga avviso file troppo grande per valutare split | `memory/file-size-log.txt` |
-| `Stop` | async | Fine sessione | Suono notifica + log sessione con working dir + avviso se ENGINEERING_WORKLOG non aggiornato | `memory/session-log.txt` |
-| `TeammateIdle` | async | Agent team idle | Log teams | `memory/teams-log.txt` |
-| `TaskCreated` | async | Agent team task creato | Log teams | `memory/teams-log.txt` |
-| `TaskCompleted` | async | Agent team task completato | Log teams | `memory/teams-log.txt` |
+| `SessionStart` | sync | Inizio sessione | `ensure-claude-model-router.ps1` mantiene il router modello pronto | n/a |
+| `SessionStart` | sync | Inizio sessione | `merge-canonical-settings.mjs` riallinea settings canonici | n/a |
+| `SessionStart` | sync | Inizio sessione | `session-start.ps1` carica memoria globale, todos, indice memoria progetto e `AI_RUNTIME_BRIEF.md` | n/a |
+| `SessionStart` | sync | Inizio sessione | `session-start-continuation.ps1` reinietta eventuale continuita' della sessione precedente | n/a |
+| `UserPromptSubmit` | sync | Ogni prompt | `ensure-claude-model-router.ps1` mantiene stabile provider/modello | n/a |
+| `UserPromptSubmit` | sync | Ogni prompt | `inject-runtime-brief.ps1 UserPromptSubmit` reinietta runtime brief con gerarchia P0 | n/a |
+| `UserPromptSubmit` | sync advisory | Ogni prompt | `skill-activation.ps1` propone P0 compatto, fonte, skill/MCP/web/loop e focus L2-L9 | n/a |
+| `UserPromptSubmit` | sync advisory | Task multi-file/complesso | `multi-file-recap-check.ps1` richiede recap e blast radius prima delle patch | `memory/recap-check-log.txt` |
+| `UserPromptSubmit` | sync advisory | Prompt di fix/correzione | `pre-edit-verify-intent.ps1` richiede lettura codice reale e verifica problema prima di agire | n/a |
+| `UserPromptSubmit` | sync advisory | Pending dirty da sessione precedente | `user-prompt-commit-gate.ps1` reinietta obbligo di chiudere o dichiarare il blocco git | n/a |
+| `UserPromptSubmit` | sync advisory | Prompt con dominio modello chiaro | `user-prompt-model-suggestion.ps1` suggerisce modello/ambiente corretto | `memory/model-suggestion-log.txt` |
+| `PreToolUse` | blocking | Edit/Write/MultiEdit su file sensibili LinkedIn | `pre-edit-antiban.ps1` blocca senza `/antiban-review` | `memory/antiban-hook-log.txt` |
+| `PreToolUse` | blocking | Edit/Write/MultiEdit su segreti/file sensibili | `pre-edit-secrets.ps1` blocca secret o path vietati | `memory/rule-violations-log.txt` |
+| `PreToolUse` | advisory | Edit/Write/MultiEdit | `pre-edit-best-practice.ps1` inietta best practice e policy web per tipo file | `memory/best-practice-log.txt` |
+| `PreToolUse` | blocking | Bash con `git commit` | `pre-bash-l1-gate.ps1` richiede quality gate recente | `memory/rule-violations-log.txt` |
+| `PreToolUse` | blocking | Bash con `git commit` / `git push` | `pre-bash-git-gate.ps1` blocca stato git non coerente | `memory/rule-violations-log.txt` |
+| `PreToolUse` | blocking/advisory | MCP ad alto impatto | `pre-mcp-guard.ps1` blocca operazioni distruttive e avvisa su azioni rischiose | n/a |
+| `PreCompact` | sync | Prima compact | `inject-runtime-brief.ps1 PreCompact` reinietta runtime brief | n/a |
+| `PreCompact` | sync advisory | Prima compact | `pre-compact-handoff.ps1` crea `.claude/CONTINUATION.md` e forza handoff operativo | `memory/compact-handoff-log.txt` |
+| `PostToolUse` | async | Bash con quality command | `post-bash-quality-log.ps1` logga comandi qualita' | `memory/quality-hook-log.txt` |
+| `PostToolUse` | async | Bash con gate/git | `post-bash-git-audit.ps1` logga readiness git | `memory/git-hook-log.txt` |
+| `PostToolUse` | async | Edit/Write/MultiEdit su file >300 righe | `file-size-check.ps1` logga avviso split | `memory/file-size-log.txt` |
+| `PostToolUse` | async | Edit/Write/MultiEdit su file sensibili LinkedIn | `post-edit-antiban-audit.ps1` logga possibili miss anti-ban | `memory/rule-violations-log.txt` |
+| `PostToolUse` | async gated | `.claude/REQUEST_COMMIT` / `.claude/REQUEST_PUSH` | `post-edit-request-action.ps1` esegue commit/push solo dopo `post-modifiche` e `audit:git-automation:strict:*` | `memory/request-action-log.txt` |
+| `PostToolUse` | sync advisory | Edit/Write/MultiEdit su codice | `post-edit-verify-checklist.ps1` richiede dichiarazione L2-L6 applicabile | n/a |
+| `PostToolUse` | sync advisory | Edit/Write/MultiEdit | `post-edit-codebase-hygiene.ps1` richiede valutazione pulizia file diretto/indiretto, duplicati, sostituzioni, split e follow-up | `memory/codebase-hygiene-log.txt` |
+| `PostToolUse` | async | WebSearch | `post-websearch-log.ps1` logga query e risultati principali | `memory/websearch-log.txt` |
+| `Stop` | async | Fine sessione | `stop-session.ps1` logga sessione e warning memoria/worklog | `memory/session-log.txt` |
+| `Stop` | sync advisory | Fine sessione con working tree dirty | `pre-stop-commit-gate.ps1` scrive pending commit gate per turno successivo | `memory/stop-commit-gate-log.txt` |
+| `Stop` | sync advisory | Fine risposta operativa | `stop-proactive-next-step.ps1` reinietta obbligo di prossimo passo concreto, blocco reale o domanda specifica | `memory/proactive-next-step-log.txt` |
+| `SubagentStop` | async | Subagent concluso | `subagent-stop.ps1` logga summary subagent | `memory/subagent-log.txt` |
+| `TeammateIdle` | async | Agent team idle | `teammate-event.ps1` log teams | `memory/teams-log.txt` |
+| `TaskCreated` | async | Agent team task creato | `teammate-event.ps1` log teams | `memory/teams-log.txt` |
+| `TaskCompleted` | async | Agent team task completato | `teammate-event.ps1` log teams | `memory/teams-log.txt` |
 
 ### Pattern file sensibili LinkedIn (PreToolUse matcher)
 
@@ -381,6 +405,7 @@ Estensioni LinkedIn ai livelli globali (vedi L1-L9 in `~/.claude/CLAUDE.md` per 
 
 - Un task non va considerato concluso finche' non ha superato L9 (loop finale di completezza) sui file toccati direttamente e indirettamente — vedi definizione in `~/.claude/CLAUDE.md`.
 - Se il task si ferma per conferma utente, limiti operativi o crediti, l'agente deve lasciare stato, blocco e prossimi passi in modo esplicito.
+- Alla fine di ogni blocco operativo, completare tutto il completabile nel turno corrente e lasciare sempre continuita' operativa: prossimo passo concreto, blocco reale o domanda specifica. Niente chiusure passive se esiste un'azione successiva ragionevole.
 - Prima di chiudere il task l'AI deve anche verificare che nessun obbligo di breve termine sia stato spinto impropriamente su medio/lungo termine e che i follow-up reali siano stati tracciati in modo esplicito.
 - A fine ogni blocco tecnico significativo: aggiornare `docs/tracking/ENGINEERING_WORKLOG.md` con data, tema, interventi effettuati e verifica finale.
 

@@ -20,6 +20,10 @@ Stato tracciato del sistema AI (✅/⚠️/❌), ordine di implementazione per f
 
 **Obiettivo centrale**: un sistema AI che ragiona bene, non dimentica nessuna regola rilevante, non assume che l'input dell'utente sia automaticamente corretto e non dichiara mai "fatto" senza aver verificato davvero tutto. L'obiettivo non e' un flusso fisso uguale per ogni task, ma un'orchestrazione cognitiva capace di capire il caso e scegliere il metodo corretto.
 
+**Gerarchia P0**: prima di ogni task non banale il sistema deve applicare questo ordine cognitivo: intento reale prima del testo letterale, input utente come ipotesi e non verita' assoluta, esempi come pattern, decomposizione ricorsiva dell'argomento, visione 360/lungo termine, root cause/soluzione migliore, fonte/primitive/verifica, continuita' proattiva e truthful completion.
+
+**Orchestrator Layer**: il cuore architetturale del sistema AI. Prima dell'esecuzione deve normalizzare input, classificare task/dominio/rischio/orizzonte, scegliere fonte di verita', capability, modello, ambiente, loop, handoff e verifiche. Non e' una singola skill e non e' n8n: e' il control plane che coordina rules/memory, skill, hook, script/audit, MCP, plugin, subagent e workflow.
+
 Per la lista madre unica, esplicita e non duplicata del sistema desiderato, vedere anche [AI_MASTER_SYSTEM_SPEC.md](docs/AI_MASTER_SYSTEM_SPEC.md).
 Per il backlog madre unico dei punti ancora da chiudere, vedere [AI_MASTER_IMPLEMENTATION_BACKLOG.md](docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md).
 Per le viste lineari per review e pruning: [AI_IMPLEMENTATION_LIST_GLOBAL.md](docs/AI_IMPLEMENTATION_LIST_GLOBAL.md) e [LINKEDIN_IMPLEMENTATION_LIST.md](docs/LINKEDIN_IMPLEMENTATION_LIST.md).
@@ -34,7 +38,7 @@ Nota di stato da tenere fissa nei canonici: il modello canonico resta di 9 livel
 |---|-------|--------|
 | 1 | Ragionamento e contesto completo | ✅ |
 | 2 | Loop e verifica sistematica | ⚠️ (`L2-L6` audit-assisted; ancora non blocking sul task specifico) |
-| 3 | Selezione autonoma degli strumenti | ⚠️ (routing operativo advisory implementato; parity e metrica miss ancora aperte) |
+| 3 | Orchestrator Layer e selezione autonoma degli strumenti | ⚠️ (routing operativo advisory implementato; contratto unico, parity e metrica miss ancora aperte) |
 | 4 | Regole che non si dimenticano | ⚠️ (audit verde: snapshot 29/42 enforced, 0 gap meccanizzabili) |
 | 5 | Contesto e memoria tra sessioni | ✅ |
 | 6 | Sistema hook pre/post | ✅ |
@@ -52,11 +56,13 @@ Nota di stato da tenere fissa nei canonici: il modello canonico resta di 9 livel
 
 La lista non va implementata in ordine 1, 2, 3. Va implementata in ordine di dipendenze e riduzione del rischio:
 
-### Fase A — Base cognitiva e truthful control plane
+### Fase A — Orchestrator Layer, base cognitiva e truthful control plane
 
 Punti coinvolti: **3, 4, 6, 12**
 
 Prima di aggiungere altra automazione bisogna rendere piu' affidabile il cervello operativo del sistema:
+- gerarchia P0 prima di piano, skill, edit o risposta finale, inclusa continuita' proattiva del prossimo passo
+- Orchestrator Layer esplicito: input -> classificazione -> fonte -> capability -> modello/ambiente -> piano/verifiche -> output
 - scelta strumenti davvero contestuale e spiegata bene
 - regole critiche trasformate in enforcement reale dove serve
 - hook e audit truthful
@@ -132,6 +138,8 @@ Non sono "chiusi per sempre", ma non sono il collo di bottiglia principale oggi.
 
 - L'AI capisce l'intento reale dell'utente, non solo le parole. Se la richiesta è ambigua, dettata a voce o incompleta, interpreta semanticamente e dichiara internamente quale problema reale sta risolvendo.
 - L'AI non tratta ogni affermazione dell'utente come tecnicamente certa: la usa come segnale importante, ma la verifica contro la fonte di verita' giusta quando il task lo richiede.
+- L'AI applica la gerarchia P0: input utente come ipotesi, esempi come pattern, visione 360/lungo termine, root cause/soluzione migliore, continuita' proattiva e chiusura solo con prove.
+- Quando l'utente cita un argomento o fa un esempio, l'AI costruisce un albero dell'argomento: sottopunti, sotto-sottopunti e rami correlati. Per ogni ramo rivaluta fonte corretta, web/docs/MCP, skill/capability, rischi, verifiche e done criteria.
 - Se il prompt e' lungo o denso, l'AI deve prima estrarre e organizzare i requisiti invece di inseguire solo il punto piu' evidente.
 - Se l'utente fa esempi, l'AI non li tratta come lista chiusa: li usa per capire il pattern di ragionamento e inferire altri controlli coerenti con l'obiettivo reale.
 - In questo sistema, allucinare non significa solo "inventare un fatto": significa anche dichiarare verifiche non fatte, trattare come certo cio' che e' solo ipotesi o eseguire ciecamente un'idea dell'utente senza verificarne l'impatto reale.
@@ -140,6 +148,9 @@ Non sono "chiusi per sempre", ma non sono il collo di bottiglia principale oggi.
 - Per ogni file modificato, l'AI controlla automaticamente tutti i domini che quel file può toccare — non solo il motivo principale del cambiamento. I domini sono: sicurezza, performance, tipi, error handling, automazione, integrazioni, architettura, osservabilità. Questo controllo viene dichiarato esplicitamente per ogni file.
 - Se non puo' rileggere tutta la codebase, l'AI usa code search, mapping dipendenze/test, documenti canonici, memoria e, quando serve, agenti esplorativi per evitare patch locali cieche.
 - Le best practice seguite non sono generiche: dipendono dal tipo di artefatto. Codice TypeScript, documento tecnico, config, workflow n8n, schema API, migrazione DB, file di tracking — ognuno ha le sue regole specifiche. L'AI le applica senza che l'utente le debba specificare.
+- L'AI deve cercare la root cause/problema reale e la soluzione migliore verificabile, non il primo workaround. Nei task non banali confronta alternative, verifica best practice aggiornate con la fonte corretta, sceglie in base a rischio/manutenzione/testabilita'/coerenza sistema e itera finche' esiste una strada ragionevole.
+- Se la soluzione migliore non e' raggiungibile nel task corrente, l'esito corretto e' dichiarare blocco reale, prove mancanti, limiti residui e prossimo passo; non inventare certezza.
+- Alla fine di ogni blocco operativo, l'AI non deve lasciare l'utente a fare project management: completa tutto il completabile nel turno corrente, poi indica il prossimo passo concreto. Se serve input, fa una domanda specifica e si ferma.
 - L'ordine delle modifiche viene deciso prima di iniziare, così da non rompere import, tipi, runtime o integrazioni. Nessuna modifica è completa se risolve solo una parte lasciando incoerenze nel resto del sistema.
 **Implementato in**: P0 Step A, L0 blast radius, L7, L8 in `~/.claude/CLAUDE.md`.
 
@@ -151,6 +162,7 @@ Non sono "chiusi per sempre", ma non sono il collo di bottiglia principale oggi.
 
 Stato corrente da non contraddire:
 
+- **Principio madre**: prima di agire su task non banali, l'AI deve costruire un modello della situazione: dominio, fonti, assunzioni, elementi verificati/non verificati, dipendenze dirette/indirette, casi correlati, problemi prevedibili e limiti residui. Se il dominio non e' interno/stabile/gia' verificato, deve studiarlo con internet, docs ufficiali, MCP o tool live adeguati.
 - il modello canonico resta di 9 livelli
 - enforcement meccanico attuale copre L1 e L7-L9
 - L2-L6 sono audit-assisted tramite `AI_LEVEL_ENFORCEMENT.json`, advisory hook e `audit:l2-l6`
@@ -181,6 +193,8 @@ Stato corrente da non contraddire:
 
 **Concetto**: l'AI classifica ogni task prima di agire e sceglie gli strumenti necessari senza dipendere da prompt meccanici dell'utente. Questa valutazione deve partire automaticamente a ogni nuovo prompt e a ogni modifica rilevante, ma deve anche spiegare in modo breve il perche' della scelta e, quando serve, ragionare con l'utente sulla mossa giusta.
 
+- Questo punto e' l'Orchestrator Layer operativo: non esegue direttamente, ma decide il percorso corretto prima dell'esecuzione.
+- Il suo output minimo e': intento normalizzato, task class, fonte di verita', capability da usare/escludere, modello/ambiente, verifiche, eventuale loop/handoff e limiti residui.
 - Prima di ogni azione, e di nuovo quando il contesto cambia, l'AI classifica internamente il task: tipo di lavoro, skill necessarie, agente o workflow n8n da attivare, se serve ricerca web, quale modello o ambiente è più adatto. Se uno di questi pezzi non viene deciso, la selezione è incompleta.
 - Questa classificazione non deve dipendere da un promemoria dell'utente. Deve essere una fase automatica del ragionamento, resa piu' affidabile da runtime brief, hook e canonici.
 - La skill più adatta viene scelta dalla mappa in CLAUDE.md — non per abitudine ma per corrispondenza al dominio del task. Se esiste una skill più forte per quel dominio, viene usata quella.
@@ -189,11 +203,13 @@ Stato corrente da non contraddire:
 - **Criterio corretto**: l'utente non deve dover conoscere il nome della primitive corretta, ma deve poter vedere il ragionamento con cui l'AI propone di usare web/docs, skill, MCP, hook, script, loop o workflow.
 - La disponibilita' di slash command o skill manuali non basta: l'AI deve saper riconoscere da sola quando potrebbero servire, e dirlo.
 - Se il vero blocco non e' il task in se' ma un gap reale di capability, l'AI deve riconoscerlo e proporre la primitive corretta da creare o rafforzare: skill, hook, memoria, audit, script o workflow.
+- Se una skill/capability non e' installata localmente, l'AI deve cercare su internet/cataloghi ufficiali prima di dichiararla inesistente: `npx skills find`, `skills.sh`, repository ufficiali o fonti affidabili, poi verifica qualita', reputazione, install count, overlap e compatibilita'.
 - Audit continuo del catalogo installato: skill, MCP, plugin, agenti e workflow non usati, duplicati o deboli vengono candidati a rimozione, merge o riclassificazione nella primitive corretta. Nuove capability solo se coprono un gap reale.
 - Deve esistere anche una routing matrix per domini pratici, cosi' backend, frontend, browser, DB, documentazione, review, anti-ban, memoria e n8n attivino la capability giusta senza dipendere dall'intuito del momento.
-- Base implementata: `docs/tracking/AI_CAPABILITY_ROUTING.json` + `UserPromptSubmit -> skill-activation.ps1` producono un blocco advisory compatto con source of truth, web/docs, capability da usare/escludere, preferred environment e focus `L2-L6`.
+- Deve esistere un `skill-finder` / capability finder che copra skill locali, skill pubbliche (`gh skill search`, `npx skills find`, `skills.sh`), duplicati e migrazioni tra Claude Code, Codex e progetto.
+- Base implementata: `docs/tracking/AI_CAPABILITY_ROUTING.json` + `docs/tracking/AI_ADK_CAPABILITY_GOVERNANCE.json` + `UserPromptSubmit -> skill-activation.ps1` producono un blocco advisory compatto con source of truth, web/docs, capability da usare/escludere, layer ADK corretto, preferred environment e focus `L2-L6`.
 - Candidate esterne specifiche, per esempio Caveman, LeanCTX, SIMDex e Contact Skills, vanno trattate come capability da valutare su gap reale, overlap, trigger, qualita' e costo di manutenzione prima di installarle.
-**Implementato in**: P0 Step B, tabella skill in `~/.claude/CLAUDE.md`, `docs/tracking/AI_CAPABILITY_ROUTING.json`, `~/.claude/hooks/skill-activation.ps1`, `npm run audit:routing`.
+**Implementato in**: P0 Step B, tabella skill in `~/.claude/CLAUDE.md`, `docs/tracking/AI_CAPABILITY_ROUTING.json`, `docs/tracking/AI_ADK_CAPABILITY_GOVERNANCE.json`, `~/.claude/hooks/skill-activation.ps1`, `npm run audit:routing`, `npm run audit:adk-capabilities`.
 **Gap aperto**: rendere il routing meno dipendente da Claude Code, misurare i miss ricorrenti e trasformare l'advisory in enforcement piu' forte solo dove ha senso.
 
 ---
@@ -238,6 +254,7 @@ Stato corrente da non contraddire:
 
 - **Pre-hook**: valida contesto, prerequisiti, dipendenze e rischi prima che l'azione avvenga. Se le condizioni non sono soddisfatte, blocca.
 - **Post-hook**: verifica esito, esegue cleanup, registra log, lascia il sistema in stato coerente.
+- **Codebase hygiene post-edit**: dopo ogni modifica il sistema deve valutare se il file diretto era quello corretto, se i file indiretti restano coerenti e se ci sono duplicati, file obsoleti, split, rename, delete o follow-up da gestire.
 - **Durante**: Claude Code non espone un evento separato chiamato "during". Il pattern corretto e' enforcement continuo su ogni tool use tramite `PreToolUse`/`PostToolUse`, piu' `SessionStart`, `Stop` e task events.
 - **Implementato in `settings.json`**:
   - `SessionStart` carica memoria globale, todos e indice memoria progetto nel contesto iniziale
@@ -246,6 +263,7 @@ Stato corrente da non contraddire:
   - `PreToolUse` bloccante su Bash per `git push` → richiede repo push-ready e blocca branch condivisi / repo sporco / divergenza
   - `PostToolUse` asincrono su Bash con comandi qualità (`tsc`, `madge`, `vitest`, `npm run`) → log in `memory/quality-hook-log.txt`
   - `PostToolUse` asincrono su Bash per `post-modifiche`, `conta-problemi`, `git commit`, `git push` → audit git automatico e log in `memory/git-hook-log.txt`
+  - `PostToolUse` advisory su Edit/Write/MultiEdit → `post-edit-codebase-hygiene.ps1` richiede valutazione pulizia file diretti/indiretti dopo ogni edit
   - `Stop` con log working dir → `memory/session-log.txt`
 - **Skill con pre/post-conditions**:
   - `antiban-review`: pre (quando invocarla obbligatoriamente), post (azione per ogni verdetto SAFE/REVIEW/BLOCK)
@@ -365,6 +383,7 @@ Questa matrice serve a evitare due errori opposti:
 - rimandare a "manutenzione futura" obblighi che servono per chiudere bene il task corrente
 
 **Baseline minima dei controlli periodici di salute della codebase**:
+- controllo post-edit continuo su file diretto e file indiretti collegati
 - file >300 righe o con responsabilita' miste
 - drift strutturale, naming debole e dead code
 - circular deps e contratti cross-file fragili

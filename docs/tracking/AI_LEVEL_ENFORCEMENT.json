@@ -38,16 +38,20 @@
       "level": "L4",
       "appliesTo": ["bug", "feature/refactor"],
       "focusChecks": [
+        "identificare root cause o problema reale prima del fix",
         "valutare doppia esecuzione, retry, partial failure e rollback",
         "controllare idempotenza e side effect a meta' flusso",
-        "esplicitare cosa succede se il flusso fallisce a meta'"
+        "esplicitare cosa succede se il flusso fallisce a meta'",
+        "non fermarsi al primo workaround se esiste una soluzione migliore raggiungibile"
       ],
       "expectedEvidence": [
+        "root cause o problema reale dichiarato",
         "scenari di partial failure coperti",
         "idempotenza o limiti dichiarati",
-        "rollback/recovery esplicitati dove servono"
+        "rollback/recovery esplicitati dove servono",
+        "alternative considerate quando il task non e' banale"
       ],
-      "advisoryPrompt": "L4: ragiona su doppia esecuzione, partial failure, rollback e retry.",
+      "advisoryPrompt": "L4: identifica root cause/problema reale, confronta alternative ragionevoli e ragiona su doppia esecuzione, partial failure, rollback e retry.",
       "currentPrimitive": "audit+hook",
       "promotionTarget": "hook+audit"
     },

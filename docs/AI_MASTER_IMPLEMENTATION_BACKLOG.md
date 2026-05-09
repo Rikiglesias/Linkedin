@@ -1,408 +1,1009 @@
 # AI Master Implementation Backlog
 
-Questo file e' il backlog madre unico dei punti ancora da completare rispetto a [AI_MASTER_SYSTEM_SPEC.md](docs/AI_MASTER_SYSTEM_SPEC.md).
+Questo file e' il backlog madre unico dei punti ancora da completare rispetto a `docs/AI_MASTER_SYSTEM_SPEC.md`.
 
 Serve a rispondere a una sola domanda:
 
-**"Quali sono tutti i punti ancora aperti, con sottopunti espliciti, primitive corrette e criterio di done?"**
+**"Quali sono tutti i punti ancora aperti del sistema AI globale, con sottopunti espliciti, primitive corrette, ordine logico, criterio di done e verifiche?"**
+
+## Scope corretto
+
+Questo documento contiene solo il sistema AI globale:
+
+- regole, memoria, runtime brief, handoff e trasferimento contesto
+- hook, audit, script, skill, MCP, plugin, agenti, workflow e loro routing
+- modelli, provider, ambiente migliore, fonte di verita' e web/docs
+- loop di completamento, no false completion, anti-compiacenza e autonomia
+- parity tra Claude Code, Codex, Cloud Code e altri ambienti
+- manutenzione periodica, cleanup AI-readable, bootstrap nuovi progetti e riuso
+
+Questo documento non contiene backlog applicativo LinkedIn:
+
+- runtime reale del bot, proxy, JA3, account health, browser LinkedIn, dashboard, staging account reali, preflight applicativo e anti-ban operativo del bot stanno fuori scope qui
+- quei punti vanno mantenuti nei backlog specialistici dedicati, non ampliati in questo documento
+- se un punto LinkedIn-specifico compare qui come item aperto, e' un bug documentale da correggere
+
+## Relazione con gli altri canonici
 
 Questo file non sostituisce:
 
-- [AI_MASTER_SYSTEM_SPEC.md](docs/AI_MASTER_SYSTEM_SPEC.md) = sistema AI desiderato completo
-- [AI_OPERATING_MODEL.md](docs/AI_OPERATING_MODEL.md) = stato, roadmap e ordine corretto di implementazione
-- [AI_IMPLEMENTATION_LIST_GLOBAL.md](docs/AI_IMPLEMENTATION_LIST_GLOBAL.md) + [LINKEDIN_IMPLEMENTATION_LIST.md](docs/LINKEDIN_IMPLEMENTATION_LIST.md) = vista lineare derivata degli stessi punti aperti (split per dominio), utile per review ma non seconda autorita'
-- [active.md](todos/active.md) = priorita' correnti
-- [workflow-architecture-hardening.md](todos/workflow-architecture-hardening.md) = backlog tecnico specialistico su bot/runtime
+- `docs/AI_MASTER_SYSTEM_SPEC.md` = sistema AI desiderato completo
+- `docs/AI_OPERATING_MODEL.md` = stato, roadmap e ordine corretto di implementazione
+- `docs/AI_IMPLEMENTATION_LIST_GLOBAL.md` = vista lineare derivata degli stessi punti AI, utile per review ma non seconda autorita'
+- `docs/LINKEDIN_IMPLEMENTATION_LIST.md` = backlog separato LinkedIn-specifico, fuori scope per questa lista AI
+- `todos/active.md` = priorita' correnti
+- `docs/tracking/ENGINEERING_WORKLOG.md` = storico delle analisi, verifiche e decisioni operative reali
 
 Regola di governance:
 
-- se un punto aperto compare solo in backlog locali o in chat, il sistema non e' abbastanza ordinato
-- i backlog specialistici possono dettagliare l'esecuzione, ma non devono introdurre temi nuovi fuori da questo file
+- se un punto aperto AI compare solo in backlog locali o in chat, il sistema non e' abbastanza ordinato
+- i backlog specialistici possono dettagliare l'esecuzione di dominio, ma non devono introdurre temi AI globali nuovi fuori da questo file
 - questo documento deve restare la vista unica e completa del "cosa manca ancora"
+- i completati restano sintetici, ma devono dichiarare prova reale o limite residuo
 
-## Come leggere questo file
+## Come leggere ogni punto
 
 - `Status`: `PARZIALE`, `NON AVVIATO`, `OPERATIVO MA NON ENFORCED`, `DA VERIFICARE`
 - `Orizzonte`: `breve`, `medio`, `lungo`
-- `Primitive corrette`: leve principali da usare per chiudere davvero il punto
-- `Done`: condizioni minime per poter dire che il punto e' chiuso davvero
+- `Problema reale`: perche' il punto esiste e quale fallimento deve evitare
+- `Stato attuale`: cosa c'e' gia' e cosa manca davvero
+- `Trigger operativo`: quando il punto deve attivarsi o essere considerato
+- `Output atteso`: cosa deve produrre in modo osservabile
+- `Limiti / non-goals`: cosa non deve fare o non deve promettere
+- `Primitive corrette`: skill, hook, audit, script, MCP, plugin, workflow, memoria o documento canonico da usare
+- `Ordine logico`: sequenza corretta per chiudere il punto senza creare caos
+- `Sottopunti operativi`: lavoro residuo concreto
+- `Criterio done`: condizioni minime per dire chiuso davvero
+- `Verifiche richieste`: prove automatiche o manuali da eseguire
 
-## Baseline gia' presenti e non trattate qui come blocker primari
+## Baseline gia' presenti
 
 Questi blocchi sono gia' abbastanza formalizzati da poter fungere da base. Non sono "chiusi per sempre", ma non sono il collo di bottiglia principale adesso:
 
-- verita' operativa e anti-compiacenza di base
-- ragionamento non letterale e comprensione dell'intento
-- blast radius, contesto diretto/indiretto e multi-dominio come regole canoniche
+- verita' operativa, no hallucination e anti-compiacenza di base
+- ragionamento non letterale, interpretazione semantica del dettato vocale e comprensione dell'intento
+- esempi dell'utente come pattern, non come lista chiusa
+- blast radius, contesto diretto/indiretto e verifica multi-dominio come regole canoniche
 - requirement ledger e gestione dei prompt lunghi come regola esplicita
-- modello a 9 livelli e loop finale di completezza come baseline operativa (nota: L1 e L7-L9 hanno enforcement meccanico reale; L2-L6 sono regole testuali senza enforcement dedicato — da costruire)
-- memoria di base, handoff e runtime brief come meccanismi gia' presenti
+- modello a 9 livelli e loop finale di completezza come baseline operativa
+- L1 e L7-L9 hanno enforcement meccanico reale; L2-L6 sono regole testuali senza enforcement dedicato completo, da promuovere solo dove i miss ricorrenti lo giustificano
+- memoria di base, runtime brief e handoff come meccanismi gia' presenti
 
-## 1. Selezione autonoma di strumenti, modello, ambiente e fonte di verita'
+---
+
+## 1. Completezza della lista AI e separazione dello scope
+
+Status: PARZIALE
+Orizzonte: breve
+
+Problema reale:
+
+La lista e' stata mescolata piu' volte con backlog applicativi LinkedIn. Questo crea due danni: la nuova chat non capisce cosa deve implementare sul sistema AI, e i punti sembrano completi anche quando sono solo descritti in modo generico.
+
+Stato attuale:
+
+Esistono spec, backlog madre e vista lineare globale, ma il backlog madre conteneva ancora sezioni LinkedIn-specifiche e la vista lineare aveva completati dentro la sezione aperti.
+
+Trigger operativo:
+
+Ogni volta che viene aggiunto, spostato o chiuso un punto del sistema AI globale, oppure quando una nuova chat deve capire cosa manca senza leggere tutta la storia.
+
+Output atteso:
+
+Lista AI-only con punti aperti uniformi, fonte madre chiara, vista lineare derivata e audit che impedisce regressioni strutturali.
+
+Limiti / non-goals:
+
+Non deve diventare backlog applicativo LinkedIn, roadmap prodotto o raccolta di idee generiche non trasformate in punti verificabili.
+
+Primitive corrette:
+
+- documento canonico
+- vista lineare derivata
+- audit `audit:ai-list-completeness`
+- worklog
+- todos attivi
+
+Ordine logico:
+
+1. separare esplicitamente AI globale da backlog applicativo LinkedIn
+2. rendere ogni punto AI aperto uniforme e non generico
+3. aggiungere audit che fallisce se la lista degrada
+4. aggiornare todos e worklog
+
+Sottopunti operativi:
+
+- [ ] impedire che runtime bot, proxy, JA3, dashboard e anti-ban applicativo rientrino nel backlog AI globale
+- [ ] mantenere `AI_MASTER_IMPLEMENTATION_BACKLOG.md` come fonte madre del mancante AI
+- [ ] mantenere `AI_IMPLEMENTATION_LIST_GLOBAL.md` come vista lineare derivata, non come seconda autorita'
+- [ ] controllare che nessun punto aperto AI sia privo di problema, stato, primitive, ordine, sottopunti, done e verifiche
+- [ ] distinguere falsi completati da meccanismi presenti ma non validati end-to-end
+
+Criterio done:
+
+- una nuova chat puo' leggere solo backlog madre + vista lineare globale e capire cosa va fatto sul sistema AI senza chiedere "cosa intendi?"
+- nessun punto LinkedIn-specifico resta nella lista AI come item aperto
+- l'audit di completezza lista passa e viene incluso nel control plane AI
+
+Verifiche richieste:
+
+- `npm run audit:ai-list-completeness`
+- `npm run audit:ai-control-plane`
+- controllo manuale su `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md` e `docs/AI_IMPLEMENTATION_LIST_GLOBAL.md`
+
+## 2. Orchestrator Layer e selezione autonoma di fonte, modello, ambiente e strumenti
 
 Status: PARZIALE
 Orizzonte: breve + medio
-Primitive corrette: hook runtime, skill governance, plugin governance, audit script, documentazione ufficiale, MCP, canonici
 
-Gia' presente:
+Problema reale:
 
-- regole esplicite su fonte di verita', web/docs, orchestrazione contestuale e scelta degli strumenti
-- runtime brief reiniettato in Claude Code prima dei prompt e prima della compattazione
-- tabella modelli/ambienti gia' presente in [AI_OPERATING_MODEL.md](docs/AI_OPERATING_MODEL.md)
-- registro machine-readable [AI_CAPABILITY_ROUTING.json](docs/tracking/AI_CAPABILITY_ROUTING.json) con domini, capability e policy `sourceOfTruth` / `webPolicy`
-- advisory hook `UserPromptSubmit -> skill-activation.ps1` che emette `PROJECT_ROUTING_DECISION`
-- audit dedicato `npm run audit:routing`
+L'utente non puo' specificare ogni volta fonte corretta, modello, skill, MCP, web/docs e ordine di esecuzione. Serve un Orchestrator Layer che decida come lavorare prima dell'esecuzione: normalizza input, classifica task, sceglie fonte, capability, modello, ambiente, piano, loop, handoff e verifiche.
 
-Da completare:
+Stato attuale:
 
-- [ ] misurare i miss ricorrenti di selezione strumento per trasformarli in enforcement reale
-- [ ] consolidare l'inventario unico delle capability installate o disponibili: skill, MCP, plugin, hook, workflow e agenti, con dominio, trigger, overlap, costo cognitivo e stato reale
-- [ ] decidere per ogni capability se va tenuta, fusa, rimossa o spostata nella primitive piu' corretta, invece di accumulare tool che fanno casino
-- [ ] riesaminare periodicamente skill duplicate, deboli o obsolete e chiarire quale sia la skill "migliore" per ogni dominio pratico
-- [ ] riesaminare periodicamente anche agenti e workflow decisionali, non solo skill, per capire quali sono troppo deboli, troppo generici o superati dal caso d'uso reale
-- [ ] valutare in modo esplicito candidate esterne come Caveman, LeanCTX, SIMDex e Contact Skills prima di installarle o scartarle, sulla base di gap reale, overlap, trigger, qualita' e costo di manutenzione
+Sono gia' presenti regole su fonte di verita', web/docs, modello, ambiente e routing. Esistono `AI_CAPABILITY_ROUTING.json`, `AI_ADK_CAPABILITY_GOVERNANCE.json`, runtime brief e hook advisory `skill-activation.ps1`. Il comportamento pero' e' ancora soprattutto advisory e distribuito: l'Orchestrator Layer non e' ancora abbastanza esplicito come contratto unico cross-ambiente. Il miss reale emerso e' che una skill non installata localmente e' stata trattata come inesistente invece di attivare discovery esterna.
 
-Done:
+Trigger operativo:
 
-- l'AI spiega sempre, in modo breve, perche' ha scelto o non scelto skill, MCP, web/docs, loop e workflow rilevanti
-- i task che richiedono stato esterno o best practice aggiornate non partono senza la fonte corretta
-- i miss ricorrenti non restano note in chat ma vengono promossi in primitive strutturali
-- il catalogo delle capability installate ha una decisione esplicita `tenere / fondere / rimuovere / promuovere / declassare`
-- skill, MCP e plugin candidati non vengono accumulati per moda ma solo dopo valutazione esplicita e routing chiaro per dominio
+Ogni prompt non banale, ogni modifica a codice/documenti/workflow e ogni task che dipende da fonte esterna, ambiente, provider, modello o capability specifica.
 
-## 2. Enforcement reale delle regole che non devono essere dimenticate
+Output atteso:
+
+Decisione esplicita o mentale ma coerente su input normalizzato, task class, fonte, modello, ambiente, skill, MCP, plugin, hook, script/audit, subagent, web/docs, loop, handoff e verifiche da usare o escludere.
+
+Limiti / non-goals:
+
+Non deve produrre rumore su task banali e non deve trasformare ogni scelta in hook bloccante se il segnale non e' deterministico.
+
+Primitive corrette:
+
+- runtime brief
+- hook advisory o bloccanti solo dove deterministici
+- registry `AI_CAPABILITY_ROUTING.json`
+- registry `AI_ADK_CAPABILITY_GOVERNANCE.json`
+- audit `audit:routing`
+- audit `audit:adk-capabilities`
+- skill-finder / capability finder locale + esterno
+- discovery skill esterna: `npx skills find`, `skills.sh`, repository ufficiali o fonti affidabili
+- docs ufficiali e web search quando la conoscenza puo' essere cambiata
+- MCP o plugin quando servono stato reale o operazioni esterne
+
+Ordine logico:
+
+1. normalizzare input, intento, esempi, vincoli e assunzioni
+2. classificare task per dominio, rischio, orizzonte, impatti e fonte di verita'
+3. interrogare registry/capability finder quando la primitive non e' ovvia
+4. se la skill/capability non e' locale, cercare su internet/cataloghi ufficiali prima di dichiarare gap o crearla
+5. scegliere modello, ambiente, skill, MCP, plugin, hook, script/audit, subagent, loop, handoff e verifiche
+6. dichiarare esclusioni rilevanti nei task non banali
+7. usare docs ufficiali o web quando il dato e' instabile
+8. misurare miss e trasformare quelli ricorrenti in audit/hook/skill/workflow
+
+Sottopunti operativi:
+
+- [ ] misurare i miss di selezione strumento/modello/ambiente dai log e dalle sessioni reali
+- [ ] definire contratto unico dell'Orchestrator Layer: input, output, stato persistente, confini e failure mode
+- [ ] rafforzare la decisione `fonte interna / docs ufficiali / web / MCP / plugin / skill / agente`
+- [ ] creare o integrare `skill-finder` / capability finder per cercare skill locali, skill pubbliche (`gh skill search`), duplicati e candidate da migrare
+- [ ] obbligare discovery esterna quando la skill/capability manca localmente: `npx skills find`, `skills.sh`, repo ufficiali/affidabili, verifica install count/reputazione/compatibilita'
+- [ ] rendere esplicito quando la richiesta dell'utente e' solo un esempio e va generalizzata per pattern
+- [ ] impedire che l'AI parta da knowledge cutoff quando il dato e' temporale o provider/API dipendente
+- [ ] far dichiarare sempre la scelta tecnica solo quando e' utile, senza creare rumore su task banali
+
+Criterio done:
+
+- task non banali passano sempre da una decisione orchestrata, anche se non sempre verbalizzata
+- task instabili o provider-specifici non partono senza fonte aggiornata o MCP corretto
+- skill/capability assente localmente non viene dichiarata inesistente senza ricerca web/cataloghi ufficiali
+- il sistema sa spiegare perche' usa o non usa skill, web, MCP, plugin, agenti e loop
+- i miss ricorrenti di routing hanno owner e primitive di correzione
+
+Verifiche richieste:
+
+- `npm run audit:routing`
+- smoke prompt su almeno 5 domini diversi
+- review periodica dei log di violazione e dei casi in cui l'utente ha dovuto ricordare una skill/fonte
+
+## 3. Governance di skill, MCP, plugin, agenti e capability installate
+
+Status: PARZIALE
+Orizzonte: breve + medio
+
+Problema reale:
+
+Accumulo di skill, MCP, plugin e agenti senza routing chiaro crea confusione. La capability migliore per backend, frontend, documenti, handoff, sicurezza o prompt non deve dipendere dalla memoria dell'utente. Le immagini WhatsApp del 2026-05-06 aggiungono un requisito esplicito: il sistema deve essere trattato come Agent Development Kit a 5 layer, non come lista piatta di tool.
+
+Stato attuale:
+
+Esistono registry machine-readable per routing, livelli L2-L9 e governance ADK. Alcune skill sono verificate, i 33 command hook attivi sono stati auditati, e il registry ADK classifica tutte le capability del routing nei layer corretti. Manca ancora la valutazione qualitativa completa di duplicati, candidate esterne e pacchetto plugin installabile reale.
+
+Trigger operativo:
+
+Quando si aggiunge, installa, duplica, promuove, rimuove o invoca una capability; quando l'utente nomina una skill/tool candidata; quando due strumenti sembrano coprire lo stesso dominio.
+
+Output atteso:
+
+Catalogo capability con layer ADK corretto, trigger, limiti, overlap, decisione keep/merge/remove/promote/demote e stato delle candidate esterne.
+
+Limiti / non-goals:
+
+Non deve installare tool per curiosita', accumulare skill sovrapposte o confondere MCP, skill, hook, plugin e workflow come se fossero equivalenti.
+
+Primitive corrette:
+
+- `AI_CAPABILITY_ROUTING.json`
+- `AI_ADK_CAPABILITY_GOVERNANCE.json`
+- audit capability
+- skill governance
+- plugin governance
+- subagent governance
+- Agent Development Kit 5-layer architecture
+- plugin manifest / marketplace / team install
+- MCP registry
+- worklog decisionale
+- eventuali workflow periodici
+
+Ordine logico:
+
+1. classificare il layer corretto: rules/memory, skill, hook, subagent, plugin/distribution, MCP esterno
+2. inventariare capability reali installate o disponibili
+3. classificare dominio, trigger, output, limiti, overlap e stato
+4. decidere keep/merge/remove/promote/demote
+5. aggiornare routing e canonici
+6. verificare con prompt reali che parta la capability giusta
+
+Sottopunti operativi:
+
+- [x] consolidare inventario unico delle capability operative del control plane in `AI_ADK_CAPABILITY_GOVERNANCE.json`
+- [x] formalizzare il modello Agent Development Kit a 5 layer: `CLAUDE.md`/`AGENTS.md` per regole e memoria, `SKILL.md` per conoscenza modulare, hook per guardrail deterministici, subagent per delega isolata, plugin per distribuzione
+- [x] distinguere layer globale e layer progetto: cosa vive in `~/.claude/` per tutti i progetti e cosa vive nella repo per regole, skill, hook e contesto specifici
+- [x] standardizzare struttura skill: `SKILL.md`, `scripts/`, `templates/`, `assets/`, contesto minimo e trigger descrittivo auto-invocabile
+- [x] standardizzare subagent: un job per subagent, contesto proprio, strumenti/permessi propri, risultato unico di ritorno, nessun inquinamento del thread principale
+- [x] standardizzare plugin: `plugin.json`/manifest, lista di skill/agenti/hook/comandi inclusi, versione, firma o provenance, installazione team/repo
+- [x] decidere per ogni capability nel routing registry se e' migliore come skill, MCP, plugin, hook, audit, script, workflow o fonte esterna
+- [ ] eliminare o fondere duplicati che fanno casino invece di aiutare
+- [x] registrare candidate esterne Caveman, LeanCTX, SIMDex e Contact Skills come `evaluate-before-install`, senza installazione cieca
+- [ ] valutare davvero candidate esterne Caveman, LeanCTX, SIMDex e Contact Skills prima di installarle
+- [ ] distinguere capability backend, frontend, docs, prompt, handoff, sicurezza, testing, review e automazioni
+- [ ] creare regole di attivazione chiare per capability con nomi simili
+- [ ] documentare gap reali e chiedere conferma all'utente quando serve creare una nuova primitive
+
+Criterio done:
+
+- ogni capability ha dominio, trigger, limiti, owner logico, stato e relazione con capability simili
+- ogni capability ha anche un layer corretto nel modello Agent Development Kit e non vive in una cartella casuale
+- le capability riusabili per team/progetti possono essere pacchettizzate come plugin versionato invece di essere copiate manualmente
+- le candidate esterne non vengono installate per nome, ma solo dopo valutazione di gap reale e overlap
+- l'AI puo' scegliere la skill o primitive corretta senza aspettare esempi dell'utente
+
+Verifiche richieste:
+
+- `npm run audit:routing`
+- `npm run audit:adk-capabilities`
+- `npm run audit:ai-list-completeness`
+- audit manuale inventario capability
+- test con prompt backend/frontend/docs/handoff/prompt/review
+- review manuale su un esempio di skill, un hook, un subagent e un plugin/manifest
+
+## 4. Enforcement reale delle regole critiche
 
 Status: PARZIALE
 Orizzonte: breve + medio + lungo
-Primitive corrette: hook, script, audit, runtime brief, canonici
 
-Gia' presente:
+Problema reale:
 
-- hook `SessionStart`, `UserPromptSubmit`, `PreCompact`, `PreToolUse`, `PostToolUse`, `Stop`
-- gate quality e gate git gia' attivi in Claude Code per i blocker principali
-- regole canoniche forti in [AGENTS.md](AGENTS.md)
-- matrice enforcement gia' misurata da `npm run audit:rule-enforcement`
-- protocollo machine-readable [AI_LEVEL_ENFORCEMENT.json](docs/tracking/AI_LEVEL_ENFORCEMENT.json) per `L2-L6`
-- audit dedicato `npm run audit:l2-l6`
-- `UserPromptSubmit -> skill-activation.ps1` ora espone focus `L2-L6` in forma advisory
+Una regola critica scritta solo in un documento viene dimenticata. Pero' trasformare tutto in hook bloccante crea falsi positivi e blocca lavoro legittimo. Serve decidere quali regole diventano hook, quali audit, quali skill e quali restano disciplina operativa.
 
-Da completare:
+Stato attuale:
 
-- [ ] promuovere dove serve i controlli `L2-L6` da `audit-assisted` a `blocking`, senza introdurre deny hook fragili o puramente cosmetici
-- [ ] chiudere i gap tra hook attivi e regole dichiarate nei canonici
-- [ ] estendere fuori da Claude Code i blocker minimi gia' enforced localmente, oppure documentare un fallback reale dove la parity non e' possibile
-- [ ] controllare periodicamente il drift tra runtime brief, hook e documenti canonici
+Esistono hook `SessionStart`, `UserPromptSubmit`, `PreCompact`, `PreToolUse`, `PostToolUse`, `Stop`, `SubagentStop` e agent team, gate git/quality e audit `audit:rule-enforcement`, `audit:l2-l6`, `audit:hooks`. `audit:hooks` ora verifica tutti i 33 command hook attivi e include il controllo che l'auto-commit via trigger non usi `git add .` o `--no-verify`. L2-L6 sono audit-assisted, non blocking completi. Il nuovo hook `post-edit-codebase-hygiene.ps1` rende esplicita dopo ogni edit la valutazione pulizia su file diretti e indiretti.
 
-Done:
+Trigger operativo:
 
-- nessuna regola critica resta affidata solo alla memoria del modello se puo' essere enforced meglio
-- esiste una mappa verificabile regola -> primitive -> verifica
-- il drift tra documento, hook e comportamento reale viene trattato come bug operativo
+Quando una regola viene dimenticata piu' volte, quando un audit rileva drift, quando un quality gate puo' essere bypassato o quando una regola critica ha un segnale osservabile robusto.
 
-## 3. Memoria, contesto lungo, degrado del contesto e skill personalizzate
+Output atteso:
+
+Matrice regola -> rischio -> segnale -> primitive corretta, con distinzione tra hook bloccante, advisory, audit, skill e disciplina operativa.
+
+Limiti / non-goals:
+
+Non deve aggiungere hook generici per compensare ragionamento debole e non deve bloccare lavoro legittimo con controlli semantici fragili.
+
+Primitive corrette:
+
+- hook bloccanti solo per condizioni deterministiche
+- audit periodici
+- script di verifica
+- runtime brief
+- skill per procedure cognitive
+- log violation
+
+Ordine logico:
+
+1. mappare regola -> rischio -> segnale osservabile -> primitive corretta
+2. misurare miss reali prima di promuovere a blocker
+3. implementare enforcement minimo robusto
+4. verificare falsi positivi e falsi negativi
+5. aggiornare canonici e audit
+
+Sottopunti operativi:
+
+- [x] decidere il set hook operativo corrente: 33 command hook attivi, nessun nuovo hook da aggiungere senza miss ricorrenti misurati o advisory ad alto valore
+- [x] correggere l'hook di auto-commit su trigger per non bypassare gate git o native pre-commit
+- [ ] mantenere `audit:hooks` allineato a `~/.claude/settings.json` ogni volta che cambia la configurazione
+- [ ] promuovere L2-L6 da audit-assisted a blocking solo dove esiste condizione verificabile
+- [ ] coprire best practice di modifica codice: blast radius, contratti, dipendenze, test impattati, file diretti e indiretti
+- [ ] coprire cross-domain per ogni file: sicurezza, architettura, performance/timing, compliance, observability e rischio dominio
+- [x] aggiungere hook advisory post-edit per codebase hygiene: file diretto corretto, file indiretti coerenti, duplicati/obsoleti/split/rename/delete/follow-up
+- [ ] impedire falsi completati: meccanismo presente non significa test end-to-end superato
+- [ ] mantenere drift doc-hook-audit come bug operativo, non come nota
+
+Criterio done:
+
+- ogni regola critica ha primitive, verifica e limite dichiarato
+- nessun blocker si basa su interpretazioni fragili che producono caos
+- ogni miss ricorrente viene promosso al livello corretto o motivatamente lasciato come disciplina
+
+Verifiche richieste:
+
+- `npm run audit:hooks`
+- `npm run audit:rule-enforcement`
+- `npm run audit:l2-l6`
+- review manuale dei violation log
+
+## 5. Memoria, handoff e trasferimento contesto in una nuova chat
 
 Status: PARZIALE
-Orizzonte: breve + medio + lungo
-Primitive corrette: memory files, skill `context-handoff`, audit, worklog, todos, runtime brief
+Orizzonte: breve + medio
 
-Gia' presente:
+Problema reale:
 
-- memoria personale e di progetto
-- regole su handoff e degrado del contesto
-- brief runtime reiniettato dai hook
+Il sistema sembra avere memoria e handoff, ma se una nuova chat non riparte davvero senza perdita di stato, il meccanismo e' solo teorico. Il trasferimento contesto e' un punto aperto finche' non viene validato end-to-end.
 
-Da completare:
+Stato attuale:
 
-- [ ] testare davvero in scenari reali la continuita' tra chat vecchia e chat nuova, non solo dichiararla nei documenti
-- [ ] riesaminare e migliorare le skill personalizzate gia' create, non solo installare skill nuove
-- [ ] rendere tutti i file di contesto ancora troppo densi piu' piccoli, tematici, indicizzati e leggibili dall'AI
-- [ ] formalizzare una style guide esplicita per documenti AI-readable: un tema per file, scopo dichiarato, limiti di lunghezza, summary iniziale, non-goals, cross-link e sezione "cosa non contiene"
-- [ ] far scattare in modo piu' affidabile il riconoscimento del degrado del contesto e la proposta di handoff
-- [ ] aggiornare in modo piu' sistematico memoria, worklog e todos quando cambia lo stato reale del lavoro
-- [ ] verificare che il requirement ledger resti coperto durante task lunghi e prompt molto compressi
-- [ ] definire test o audit che confermino che le skill personalizzate si attivano quando dovrebbero
+Esistono memoria globale/progetto, `AI_RUNTIME_BRIEF.md`, skill `context-handoff` e `SESSION_HANDOFF.md`. Manca una validazione reale con nuova chat e un eventuale `SESSION_PROMPT.md` copiabile.
 
-Done:
+Trigger operativo:
 
-- una nuova sessione puo' ripartire con obiettivi, stato, decisioni, blocchi e prossimi passi senza perdita significativa
-- le skill personalizzate non sono "presenti" soltanto: sono verificate, manutenute e utili davvero
-- il degrado del contesto viene intercettato prima che il ragionamento crolli
+Fine sessione lunga, contesto sopra soglia critica, cambio chat/ambiente, compact imminente, lavoro multi-step non chiuso o richiesta esplicita di trasferire contesto.
 
-## 4. n8n, agenti verticali e automazioni durevoli
+Output atteso:
+
+Handoff operativo e prompt nuova chat con stato, decisioni, blast radius, verifiche, blocchi, prossimi passi, git status e file canonici da leggere.
+
+Limiti / non-goals:
+
+Non deve essere riassunto narrativo generico e non deve marcare il trasferimento come chiuso senza prova reale in una nuova chat.
+
+Primitive corrette:
+
+- skill `context-handoff`
+- `SESSION_HANDOFF.md`
+- eventuale `SESSION_PROMPT.md`
+- memory files
+- `todos/active.md`
+- `ENGINEERING_WORKLOG.md`
+- audit handoff
+
+Ordine logico:
+
+1. generare handoff completo con stato, decisioni, blast radius, verifiche e blocchi
+2. generare prompt minimo per nuova chat
+3. far leggere alla nuova chat solo i file previsti
+4. verificare se ricostruisce lavoro e prossimi passi senza omissioni
+5. correggere template, skill o canonici se resta generico
+
+Sottopunti operativi:
+
+- [ ] definire contenuto minimo non opzionale di `SESSION_HANDOFF.md`
+- [ ] creare o standardizzare `SESSION_PROMPT.md` quando serve passare contesto a nuova chat
+- [ ] includere stato git, modifiche non committate, verifiche eseguite e verifiche mancanti
+- [ ] includere blocchi aperti e prossimi passi ordinati logicamente
+- [ ] validare almeno una nuova chat reale leggendo solo handoff + canonici indicati
+- [ ] marcare il punto come completato solo dopo prova reale, non per presenza dei file
+
+Criterio done:
+
+- una nuova chat riparte senza chiedere all'utente di rispiegare contesto, scope o blocchi
+- handoff e prompt non sono generici, ma operativi
+- eventuali omissioni trovate diventano correzioni a skill/template/audit
+
+Verifiche richieste:
+
+- prova manuale con nuova chat
+- `npm run audit:ai-control-plane`
+- controllo manuale di `SESSION_HANDOFF.md` e `SESSION_PROMPT.md` se presente
+
+## 6. Ragionamento autonomo, esempi come pattern e no false completion
+
+Status: PARZIALE
+Orizzonte: breve + medio
+
+Problema reale:
+
+Quando l'utente fa esempi, l'AI non deve trattarli come legge chiusa. Deve partire da una priorita P0: intento reale prima del testo letterale, input utente come ipotesi e non verita' assoluta, esempi come pattern, decomposizione ricorsiva dell'argomento, visione 360/lungo termine, root cause/soluzione migliore, fonte/primitive/verifica, continuita' proattiva e truthful completion. Deve capire il principio, costruire un modello della situazione, trasformare argomento o esempio in albero dell'argomento con sottopunti e sotto-sottopunti, cercare altri casi analoghi, studiare il dominio, usare best practice del dominio e contestare richieste sbagliate. Deve anche prevedere problemi diretti e indiretti, evitare allucinazioni e non dichiarare fatto cio' che non ha verificato. Il punto centrale e' cercare il problema reale/root cause e la soluzione migliore verificabile, non fermarsi alla prima risposta plausibile o al primo workaround.
+
+Stato attuale:
+
+Le regole esistono in `AGENTS.md`, runtime brief e master spec. Il principio madre di ragionamento 360 e' ora esplicito come protocollo operativo: trigger, modello della situazione, gerarchia P0, output minimo, limiti, fonti corrette, internet/docs ufficiali quando servono, esempi come pattern, controllo dei problemi prevedibili e protocollo soluzione migliore. Manca ancora una verifica sistematica del comportamento reale nei task lunghi e multi-dominio.
+
+Trigger operativo:
+
+Prompt lunghi, vocali, densi o incompleti; esempi dell'utente; richieste di miglioramento generiche; task multi-file/multi-dominio; argomenti mutevoli o esterni; rischio di false completion.
+
+Output atteso:
+
+Modello della situazione, gerarchia P0 applicata, albero dell'argomento, requirement ledger, fonti usate o escluse, casi analoghi/correlati, problemi prevedibili, root cause/problema reale, alternative considerate, criterio della soluzione migliore, primitive scelte, verifiche fatte/non fatte, limiti residui e continuita' operativa.
+
+Limiti / non-goals:
+
+Non deve diventare frase motivazionale tipo "pensa meglio" e non deve promettere onniscienza, loop infinito, bypass di gate o completamento senza prove.
+
+Primitive corrette:
+
+- gerarchia P0 runtime
+- runtime brief
+- requirement ledger
+- albero dell'argomento
+- decomposizione ricorsiva in sottopunti e sotto-sottopunti
+- modello della situazione
+- protocollo soluzione migliore
+- root cause analysis
+- confronto alternative
+- loop di completamento
+- protocollo di chiusura proattiva
+- Stop hook `stop-proactive-next-step.ps1` per reiniettare continuita' operativa alla chiusura
+- audit di falsi completati
+- code search
+- agenti esplorativi quando disponibili e utili
+- web/docs ufficiali quando la best practice cambia
+- MCP/tool live quando serve stato reale
+
+Ordine logico:
+
+1. normalizzare intento reale prima del testo letterale
+2. trattare input utente come ipotesi da verificare, non come verita' assoluta
+3. estrarre requisito reale e principio dagli esempi
+4. decomporre ricorsivamente argomento o esempio in albero dell'argomento
+5. aprire sottopunti e sotto-sottopunti finche' il quadro e' operativo
+6. per ogni ramo rivalutare fonte corretta, web/docs/MCP, skill/capability, rischi, verifiche e done criteria
+7. generalizzare ai casi analoghi, correlati e indiretti
+8. costruire il modello della situazione: obiettivo, contesto, assunzioni, fonti, verificato/non verificato
+9. applicare visione 360/lungo termine su impatti, domini, manutenzione futura e failure mode
+10. studiare dominio e best practice con repo, internet/docs ufficiali, MCP o tool live secondo fonte corretta
+11. identificare root cause/problema reale prima del fix quando il task non e' banale
+12. confrontare alternative ragionevoli e scegliere la soluzione migliore per rischio, manutenzione, testabilita' e coerenza sistema
+13. prevedere problemi diretti e indiretti specifici dell'argomento
+14. trasformare requisiti e rischi in ledger operativo
+15. completare tutto il completabile nel turno corrente senza aspettare un nuovo prompt
+16. chiudere con prove, continuita' operativa e domanda concreta solo se serve input utente
+
+Sottopunti operativi:
+
+- [ ] rendere obbligatorio il requirement ledger per prompt lunghi, vocali o densi
+- [ ] applicare sempre la gerarchia P0 prima di piano, skill, edit o risposta finale
+- [ ] trattare input utente come ipotesi da validare quando il task ha rischio, ambiguita' o impatti indiretti
+- [ ] rendere esplicito il modello della situazione per task non banali: contesto, fonte, assunzioni, verificato, non verificato, correlazioni e rischi
+- [ ] verificare che l'AI usi gli esempi come pattern e cerchi casi analoghi non citati
+- [ ] decomporre ogni argomento non banale in albero dell'argomento con sottopunti e sotto-sottopunti
+- [ ] per ogni ramo dell'albero rivalutare fonte, web/docs/MCP, skill/capability, rischi, verifiche e done criteria
+- [ ] fermare la decomposizione solo quando il ramo e' irrilevante, gia' coperto o abbastanza piccolo da essere eseguito/verificato
+- [ ] applicare visione lunga e 360 anche quando l'utente cita solo un esempio locale
+- [ ] obbligare studio del dominio con internet/docs ufficiali/MCP/tool live quando il tema non e' interno, stabile o gia' verificato
+- [ ] obbligare ricerca root cause/problema reale prima del fix su task non banali
+- [ ] obbligare confronto alternative quando esistono piu' soluzioni plausibili
+- [ ] impedire workaround superficiali quando esiste una soluzione migliore raggiungibile nel perimetro
+- [ ] prevedere problemi diretti e indiretti dello specifico argomento prima di dichiarare il task completo
+- [ ] completare nel turno corrente tutto cio' che non richiede nuova conferma o rischio aggiuntivo
+- [ ] chiudere ogni risposta operativa con il prossimo passo concreto, un blocco reale o una domanda specifica
+- [ ] evitare chiusure passive tipo "fammi sapere" quando esiste un'azione successiva ragionevole
+- [x] aggiungere `Stop` hook advisory `stop-proactive-next-step.ps1` per rendere non dimenticabile la continuita' di chiusura
+- [ ] introdurre audit o checklist finale contro falsi completati
+- [ ] rafforzare il loop Codex: ogni iterazione deve chiedersi se tutto e' completo su file diretti e indiretti
+- [ ] far emergere in modo esplicito quando manca una skill/regola/memoria/audit e proporre di crearla
+- [ ] impedire esecuzione cieca di ipotesi utente tecnicamente rischiose
+
+Criterio done:
+
+- l'utente non deve elencare ogni sottocaso per ottenere lavoro completo
+- l'AI non prende l'input utente come verita' assoluta e non limita il ragionamento agli esempi ricevuti
+- l'AI apre argomenti ed esempi in albero dell'argomento e non chiude finche' i rami rilevanti non sono coperti, esclusi o tracciati
+- la gerarchia P0 resta visibile nel runtime brief e nel routing hook prima di ogni task non banale
+- l'AI sa dichiarare il modello della situazione e i limiti residui invece di fingere controllo totale
+- la soluzione scelta e' motivata rispetto a root cause, alternative, best practice, rischio e coerenza del sistema
+- ogni chiusura lascia continuita' operativa: prossimo passo autonomo eseguito, prossimo passo da fare o domanda concreta se serve input
+- ogni task lungo conserva requisiti, esclusioni, prove e limiti residui
+- nessuna verifica viene dichiarata se non e' stata eseguita o motivatamente esclusa
+
+Verifiche richieste:
+
+- `npm run audit:ledger`
+- test con prompt denso contenente esempi incompleti
+- review manuale di un loop Codex completo
+
+## 7. n8n, agenti e automazioni AI-globali
 
 Status: PARZIALE
 Orizzonte: medio + lungo
-Primitive corrette: workflow n8n, agenti verticali, hook ingresso/uscita, memoria workflow, human-in-the-loop
 
-Gia' presente:
+Problema reale:
 
-- JSON workflow gia' preparati
-- guida setup e parte della documentazione operativa
-- principio canonico "analisi -> proposta -> conferma -> esecuzione -> report"
+Alcuni passaggi devono diventare automazioni durevoli, ma non tutto appartiene a n8n. Se un workflow assorbe logica che dovrebbe essere una skill, un hook o un audit, il sistema diventa fragile.
 
-Da completare:
+Stato attuale:
 
-- [ ] spostare n8n da "workflow JSON presenti nel repo" a "workflow vivi governati nell'istanza reale", distinguendo chiaramente design, deployment e controllo operativo
-- [ ] definire per ogni automazione il boundary corretto tra workflow persistente, skill di sessione, hook, script locale e intervento umano, cosi' n8n non assorbe compiti che appartengono a primitive diverse
-- [ ] attivare davvero workflow e hook di ingresso/uscita previsti, cosi' i controlli non restano documentati solo nei file ma esistono anche nel sistema reale
-- [ ] aggiungere memoria o stato durevole nei flussi che non possono essere trattati come stateless senza perdita di affidabilita' o contesto
-- [ ] distinguere gli agenti verticali per responsabilita', trigger, limiti e criterio di scelta, sostituendo o restringendo quelli troppo generici, ridondanti o difficili da attivare nel momento giusto
-- [ ] imporre human-in-the-loop reale per flussi ad alto rischio, strutturali o invasivi, con pause e conferme nei punti decisionali giusti
-- [ ] allineare scheduling, giorni/orari e condizioni di avvio al contesto reale dell'utente, cosi' l'automazione parte quando porta valore e non per semplice calendario cieco
-- [ ] rendere i workflow trasferibili ad altri con setup, env validation, health check, runbook e ownership espliciti
-- [ ] introdurre audit periodici su uso reale, drift, duplicati, rotture e agenti/workflow che esistono ma non vengono scelti correttamente dal sistema
+Esistono workflow JSON e principi di human-in-the-loop. Manca una governance reale su quali automazioni AI-globali devono vivere in n8n, quali in skill, quali in hook e quali in script.
 
-Done:
+Trigger operativo:
 
-- i workflow esistono come sistema operativo reale, non come artefatti pronti ma inattivi
-- ogni flusso ha confini chiari tra automazione, controllo umano e stato durevole
-- la qualita' degli agenti viene giudicata dal loro uso corretto nel contesto, non dalla sola presenza nel catalogo
+Quando un'azione AI diventa ricorrente, deve essere eseguita da altri, richiede scheduling, stato persistente, human-in-the-loop o integrazione tra piu' sistemi.
 
-## 5. Parita' ambienti: Claude Code, Codex, Cloud Code e altri IDE/CLI
+Output atteso:
+
+Boundary chiaro tra workflow n8n, skill, hook, script, MCP, plugin, agente e intervento umano, con input/output/failure mode per ogni automazione AI globale.
+
+Limiti / non-goals:
+
+Non deve spostare in n8n logica che appartiene a skill, hook o audit e non deve mescolare automazioni AI-globali con workflow applicativi LinkedIn.
+
+Primitive corrette:
+
+- workflow n8n
+- agenti verticali
+- skill
+- hook ingresso/uscita
+- audit
+- memoria durevole
+- runbook
+
+Ordine logico:
+
+1. inventariare automazioni AI-globali esistenti e desiderate
+2. decidere boundary tra n8n, skill, hook, script, MCP, plugin e umano
+3. rendere vivi solo i workflow con valore durevole
+4. aggiungere health check, setup e runbook
+5. auditare drift e duplicati
+
+Sottopunti operativi:
+
+- [ ] distinguere workflow AI-globali da workflow applicativi LinkedIn
+- [ ] definire trigger, input, output, stato, owner e failure mode per ogni workflow AI
+- [ ] decidere quando un agente verticale e' migliore di una skill o di un workflow
+- [ ] aggiungere human-in-the-loop nei punti strutturali o ad alto rischio
+- [ ] governare giorni, orari e condizioni di avvio come decisione esplicita, non calendario cieco
+- [ ] rendere i workflow trasferibili ad altri con setup, env validation e runbook
+
+Criterio done:
+
+- ogni automazione ha sede corretta e motivo esplicito
+- n8n non contiene logica che appartiene a hook/skill/audit
+- i workflow AI-globali sono deployabili, trasferibili e verificabili
+
+Verifiche richieste:
+
+- audit manuale workflow
+- eventuale `npm run audit:routing`
+- prova di import/deploy su istanza reale solo quando il workflow e' pronto
+
+## 8. Parita' ambienti: Claude Code, Codex, Cloud Code e altri
 
 Status: PARZIALE
 Orizzonte: medio
-Primitive corrette: matrice di capability, canonici condivisi, fallback espliciti, eventuali script di parity
 
-Gia' presente:
+Problema reale:
 
-- [AGENTS.md](AGENTS.md) come riferimento operativo di progetto
-- distinzione di massima tra Claude Code e Codex gia' documentata
+Cambiare ambiente non deve cambiare metodo di lavoro. Se Codex, Claude Code o Cloud Code non hanno gli stessi hook, memoria, MCP o gate, il sistema deve saperlo e adattarsi, non fingere parity.
 
-Da completare:
+Stato attuale:
 
-- [ ] definire una capability matrix che non dica solo "cosa esiste", ma quale contratto operativo reale offre ogni ambiente su canonici, memoria, skill, hook, MCP, git gate e audit
-- [ ] distinguere per ogni ambiente cio' che e' supportato nativamente, cio' che e' ottenibile solo con workaround e cio' che oggi non ha parity affidabile
-- [ ] chiudere o rendere espliciti i gap su memoria, handoff, runtime brief, git gate, audit e hook, con fallback che mantengano lo stesso standard di verita' invece di soluzioni solo comode
-- [ ] stabilizzare i failure mode operativi gia' emersi in uso reale (`settings.json`, `SessionStart`, provider/model switching, modelli OpenRouter visibili o meno) invece di trattarli come incidenti scollegati
-- [ ] verificare con task comparativi reali che Cloud Code e gli altri ambienti seguano la stessa logica contestuale di selezione strumenti e quality gate
-- [ ] mantenere una policy viva sul miglior ambiente per ogni tipo di lavoro, basata su enforcement, visibilita', affidabilita' e costo cognitivo reale
-- [ ] portare avanti la migrazione progressiva verso Codex solo dove il risultato non perde garanzie operative rispetto agli altri ambienti
-- [ ] impedire che una regola critica viva in un solo ambiente: se una capability non e' portabile, il gap va tracciato come debito operativo e non normalizzato
+`AGENTS.md` e capability matrix documentano parte della distinzione. Manca verifica comparativa reale e una policy viva sulla migrazione progressiva verso Codex.
 
-Done:
+Trigger operativo:
 
-- il cambio di ambiente non cambia il metodo di lavoro, ma solo la primitive disponibile
-- limiti, fallback e garanzie di ciascun ambiente sono confrontabili in modo esplicito
-- la scelta dell'ambiente e' una decisione tecnica motivata, non un'abitudine o un bug operativo
+Quando si cambia ambiente o modello, quando un task richiede tool non disponibili ovunque, quando si vuole spostare lavoro a Codex/Claude/Cloud Code o quando un gate funziona in un ambiente ma non in un altro.
 
-## 6. Strumenti personali e supporto locale
+Output atteso:
+
+Matrice ambiente -> capability -> garanzia reale, con fallback, gap, limiti e decisione su dove eseguire il task.
+
+Limiti / non-goals:
+
+Non deve fingere parity tra ambienti e non deve normalizzare workaround fragili come se fossero equivalenti a enforcement reale.
+
+Primitive corrette:
+
+- capability matrix
+- canonici condivisi
+- fallback espliciti
+- audit parity
+- test comparativi
+- policy modello/provider
+
+Ordine logico:
+
+1. mappare capability reali per ambiente
+2. distinguere nativo, workaround e gap non risolto
+3. definire fallback che mantengono lo standard
+4. testare task comparativi reali
+5. migrare verso Codex solo dove non si perdono garanzie
+
+Sottopunti operativi:
+
+- [ ] aggiornare matrice ambiente -> capability -> garanzia reale
+- [ ] verificare memoria, hook, runtime brief, skill, MCP, plugin, git gate e audit per ogni ambiente
+- [ ] documentare gap senza normalizzarli
+- [ ] stabilizzare problemi noti: settings, SessionStart, provider/model switching, visibilita' modelli
+- [ ] definire quando usare Opus/Sonnet/Haiku/OpenRouter/Codex in base a rischio e costo
+- [ ] trasferire progressivamente lavoro a Codex solo dove il controllo resta equivalente
+
+Criterio done:
+
+- il sistema sceglie ambiente e modello come decisione tecnica, non come abitudine
+- nessuna regola critica vive in un solo ambiente senza gap tracciato
+- i fallback sono chiari prima di iniziare il task
+
+Verifiche richieste:
+
+- review capability matrix
+- smoke task comparativi in almeno due ambienti
+- `npm run audit:ai-control-plane`
+
+## 9. Strumenti personali, dettatura e prompt improvement
 
 Status: PARZIALE
 Orizzonte: medio
-Primitive corrette: software locale, script, documentazione operativa, checklist di supporto
 
-Gia' presente:
+Problema reale:
 
-- base di Whisper/dettatura locale gia' impostata
-- procedura alimentatore formalizzata
+Input vocali sporchi, problemi del computer e scelta modello/prompt non devono generare lavoro AI incompleto o frainteso. Il sistema deve supportare il modo reale in cui l'utente lavora.
 
-Da completare:
+Stato attuale:
 
-- [ ] rendere il tool di dettatura locale abbastanza stabile da sostituire davvero il fallback di Windows nel workflow quotidiano
-- [ ] decidere e documentare meglio il trade-off locale vs cloud per la trascrizione
-- [ ] risolvere i problemi del computer che oggi restano colli di bottiglia operativi
-- [ ] creare, se serve, un assistente o un workflow che aiuti a riscrivere prompt mal formulati in prompt piu' chiari e strutturati
-- [ ] collegare in modo affidabile il suggerimento su modello/ambiente al prompt reale dell'utente
+Whisper/dettatura locale e prompt helper esistono come direzione. La stabilita' hardware e il trade-off locale/cloud non sono ancora chiusi.
 
-Done:
+Trigger operativo:
 
-- input vocale, prompt improvement e scelta ambiente non restano lavori manuali improvvisati
-- i problemi ricorrenti della macchina non restano note sparse ma hanno tracciamento e risoluzione
+Prompt vocali sporchi, trascrizione ambigua, problemi macchina, lentezza, tool locale instabile o richiesta che beneficia di prompt/model improvement.
 
-## 7. Runtime reale, production truthfulness e control plane del bot
+Output atteso:
 
-Status: PARZIALE
-Orizzonte: breve + medio
-Primitive corrette: refactor runtime, script di audit, test, health endpoint, backlog specialistico, worklog
+Input pulito semanticamente, scelta locale/cloud motivata, procedura supporto chiara, modello/prompt migliore quando serve e problemi hardware tracciati.
 
-Riferimento specialistico corrente:
+Limiti / non-goals:
 
-- [workflow-architecture-hardening.md](todos/workflow-architecture-hardening.md)
+Non deve correggere il dettato cambiando l'intento reale e non deve trattare problemi hardware o di input come colpa dell'utente.
 
-Gia' presente:
+Primitive corrette:
 
-- lock del daemon cooperativo con heartbeat durante la run e release su shutdown
-- percorso centrale di graceful shutdown nel daemon
-- timeout PM2 riallineati al budget reale di stop
-- `/api/health/deep` con daemon liveness via `runtime_locks` e zombie `automation_commands`
-- recovery degli `automation_commands` `RUNNING` rimasti dopo crash/stop
-- fallback strutturato `WORKFLOW_ERROR` per incidenti runtime non gestiti
-- `workflowToJobTypes(...)` allineato ai job reali, incluso `INTERACTION`
+- tool locale
+- skill prompt-improver
+- checklist supporto
+- documentazione operativa
+- eventuale automazione locale
 
-Da completare:
+Ordine logico:
 
-- [ ] aggiungere stop/flush esplicito di listener e checkpoint allo shutdown
-- [ ] portare reporting live, stato proxy e stato JA3 fuori dalla memoria locale di processo
-- [ ] ripulire i boundary dei workflow per evitare side effect impliciti fuori contratto
-- [ ] sostituire o chiudere il `skipPreflight` troppo permissivo nei path non interattivi
-- [ ] rendere l'override account scoped alla singola run e sempre ripristinato
-- [ ] verificare che API, Telegram, report e dashboard leggano la stessa verita' runtime e che i failure mode specifici propaghino tutti lo stesso `WorkflowExecutionResult`
-- [ ] completare validazioni di staging reali con browser, proxy e account veri
+1. distinguere problema hardware, dettatura, prompt e modello
+2. stabilizzare input vocale o definire fallback
+3. usare prompt improvement per dettato sporco
+4. collegare scelta modello/ambiente al prompt reale
+5. documentare procedure ricorrenti
 
-Done:
+Sottopunti operativi:
 
-- il control plane descrive lo stesso stato che esiste davvero nel runtime
-- shutdown, restart e recovery non lasciano stato incoerente
-- workflow, API, dashboard e report non divergono sui fatti critici
+- [ ] rendere il tool Whisper/dettatura abbastanza stabile per uso quotidiano
+- [ ] decidere trade-off locale vs cloud per trascrizione
+- [ ] tracciare e risolvere colli di bottiglia del computer
+- [ ] mantenere procedura supporto locale, inclusa gestione alimentatore se rilevante
+- [ ] usare prompt helper quando il dettato vocale e' semanticamente denso o sporco
+- [ ] proporre modello e prompt migliore quando il task lo richiede
 
-## 8. Anti-ban, proxy/sessione, sicurezza e compliance
+Criterio done:
 
-Status: PARZIALE
-Orizzonte: breve + medio + lungo
-Primitive corrette: skill antiban, hook, security scan mirati, workflow periodici, docs ufficiali, test, staging
+- l'input vocale non obbliga l'utente a ripetere manualmente tutto
+- problemi ricorrenti della macchina hanno tracciamento e soluzione
+- prompt e modello vengono migliorati senza perdere intento reale
 
-Da completare:
+Verifiche richieste:
 
-- [ ] audit completo dei workflow pubblici su proxy, sessione, account health e preflight reale
-- [ ] separare in modo affidabile `LOGIN_MISSING` da rate limit, `403`, timeout, proxy failure e rete degradata
-- [ ] rafforzare il gate "proxy healthy" con verifica reale di auth, `CONNECT`, exit IP e browsing minimo
-- [ ] valutare e verificare la coerenza geo sull'exit IP reale
-- [ ] ripristinare o sostituire in modo corretto il controllo UA <-> engine anche nei casi JA3/proxy
-- [ ] allineare il preflight workflow al mondo multi-account e multi-proxy reale
-- [ ] aggiornare la parte anti-ban con i vettori di detection piu' recenti e con monitor periodici reali
-- [ ] importare e attivare davvero il workflow di retention/GDPR gia' preparato
-- [ ] verificare end-to-end right to erasure, retention e data hygiene anche sugli store secondari
-- [ ] verificare che Sentry e i controlli di sicurezza ricevano eventi reali in produzione
-- [ ] mantenere security scan mirati su auth, input utente, query DB, stealth e aree sensibili
+- prova pratica di dettatura su prompt lungo
+- review manuale di prompt riscritto
+- controllo todos/worklog per problemi hardware ancora aperti
 
-Done:
-
-- il sistema distingue correttamente i failure mode piu' critici
-- le difese anti-ban non restano solo documentali ma sono osservabili e verificate
-- gli obblighi di compliance non restano "parzialmente pronti" ma girano anche come automazioni reali
-
-## 9. Commit, push, review e chiusura corretta dei blocchi di lavoro
+## 10. Git, review e chiusura corretta dei blocchi AI
 
 Status: PARZIALE
 Orizzonte: breve + medio
-Primitive corrette: hook git, audit git, skill `git-commit`, skill `git-create-pr`, review discipline
 
-Gia' presente:
+Problema reale:
 
-- gate quality e gate git in Claude Code
-- audit contestuale `audit:git-automation`
-- policy esplicita in [AGENTS.md](AGENTS.md)
+Un blocco AI non e' chiuso solo perche' i file sono stati modificati. Deve avere verifiche verdi, worklog aggiornato, stato git valutato e decisione chiara su commit, push o PR.
 
-Da completare:
+Stato attuale:
 
-- [ ] estendere il comportamento corretto su commit/push anche fuori da Claude Code o documentare un fallback affidabile
-- [ ] verificare che il commit parta davvero come chiusura naturale di un blocco verificato, non solo come regola scritta
-- [ ] chiarire meglio dove il push deve fermarsi per review, remote policy o rischio operativo
-- [ ] rendere piu' sistematica la distinzione tra review locale, review di branch e audit periodico
-- [ ] evitare che il task venga dichiarato chiuso prima della chiusura corretta del blocco tecnico e git
+Esistono gate quality, gate git, `audit:git-automation`, policy commit/push e skill git. Serve verificare che il comportamento scatti anche fuori Claude Code e che non dipenda da promemoria dell'utente.
 
-Done:
+Trigger operativo:
 
-- commit e push non dipendono da promemoria manuali dell'utente
-- review e chiusura del blocco seguono il rischio reale e non l'abitudine
-- l'AI non lascia blocchi verificati senza sapere se devono essere committati, pushati o mandati in PR
+Fine di unita' logica verificata, working tree dirty dopo modifiche AI, richiesta di commit/push/PR, o blocco che non puo' essere dichiarato chiuso senza decisione git.
 
-## 10. Orizzonti temporali, cadenze periodiche e backlog di manutenzione
+Output atteso:
+
+Gate verdi o blocker esplicito, worklog/todos aggiornati se serve, stato git classificato e decisione motivata su commit, push, PR o stop.
+
+Limiti / non-goals:
+
+Non deve fare commit/push ciechi, non deve mischiare modifiche non correlate e non deve dichiarare completato un blocco con stato git non valutato.
+
+Primitive corrette:
+
+- git hooks
+- `audit:git-automation`
+- skill `git-commit`
+- skill `git-create-pr`
+- review locale/branch
+- worklog
+
+Ordine logico:
+
+1. completare unita' logica
+2. eseguire gate qualita'
+3. aggiornare worklog/todos
+4. auditare stato git
+5. commit se pronto
+6. push/PR solo se policy e rischio lo consentono
+
+Sottopunti operativi:
+
+- [ ] verificare auto-commit come chiusura naturale solo dopo gate verdi
+- [ ] chiarire meglio quando push deve fermarsi per review, remote policy o rischio
+- [ ] distinguere review locale, review di branch e audit periodico
+- [ ] estendere o documentare fallback fuori Claude Code
+- [ ] impedire dichiarazioni di completamento se commit/push/PR richiesti restano non valutati
+
+Criterio done:
+
+- l'utente non deve ricordare "committa" dopo un blocco verificato
+- se push non avviene, il motivo e il prossimo passo sono espliciti
+- review e git closure seguono rischio reale e stato repository
+
+Verifiche richieste:
+
+- `npm run post-modifiche`
+- `npm run audit:git-automation`
+- `git status --short --untracked-files=all`
+
+## 11. Orizzonti temporali, manutenzione e cadenze periodiche
 
 Status: PARZIALE
 Orizzonte: breve + medio + lungo
-Primitive corrette: canonici, todos, worklog, audit periodici, workflow schedulati
 
-Da completare:
+Problema reale:
 
-- [ ] trattare breve, medio e lungo termine come classificazione obbligatoria del task, non come nota descrittiva separata
-- [ ] distinguere sempre cosa va eseguito ora, cosa va chiuso come follow-up della stessa iniziativa e cosa appartiene a manutenzione o hardening periodico
-- [ ] dare a ogni punto non di breve termine una sede canonica precisa, cosi' nulla resta sospeso in chat o nella memoria volatile
-- [ ] formalizzare cadenze minime e owner logico di code review, memoria, documenti, cleanup, sicurezza, capability audit e automazioni
-- [ ] promuovere le ricorrenze stabili da backlog testuale ad audit, script o workflow schedulati quando il valore e' realmente periodico
-- [ ] impedire che obblighi del breve termine vengano spostati nel backlog solo per rinviare lavoro necessario nella sessione corrente
-- [ ] mantenere backlog madre, backlog specialistici, worklog e priorita' attive come facce coerenti dello stesso stato operativo
+Senza orizzonte temporale, il backlog diventa una discarica: obblighi immediati finiscono nel medio/lungo termine, mentre task periodici restano promemoria manuali.
 
-Done:
+Stato attuale:
 
-- ogni punto aperto ha orizzonte, contenitore e motivo chiari
-- il backlog non diventa discarica di obblighi che dovevano essere eseguiti subito
-- manutenzione periodica e lavoro corrente non si confondono
+La regola esiste nei canonici. Manca una cadenza operativa completa per memoria, docs, cleanup, capability audit, sicurezza, review e automazioni.
 
-## 11. Pulizia della codebase, dei documenti e della root
+Trigger operativo:
+
+Ogni task non banale, ogni follow-up emerso da audit, ogni ricorrenza di manutenzione e ogni punto che rischia di essere rinviato senza owner.
+
+Output atteso:
+
+Classificazione breve/medio/lungo, contenitore canonico, owner logico, cadenza o prossimo passo esplicito.
+
+Limiti / non-goals:
+
+Non deve usare medio/lungo termine per rinviare obblighi del breve termine e non deve creare backlog senza manutenzione reale.
+
+Primitive corrette:
+
+- todos
+- worklog
+- audit periodici
+- workflow schedulati
+- runtime brief
+- canonici
+
+Ordine logico:
+
+1. classificare ogni task in breve/medio/lungo
+2. separare cio' che va fatto ora da follow-up e manutenzione
+3. assegnare sede canonica e owner logico
+4. promuovere ricorrenze stabili ad audit o workflow
+5. verificare che il backlog non nasconda obblighi immediati
+
+Sottopunti operativi:
+
+- [ ] rendere la classificazione temporale obbligatoria nei task non banali
+- [ ] definire cadenze minime per memoria, docs, cleanup, capability audit, security review e automazioni
+- [ ] dare owner logico e contenitore canonico a ogni follow-up
+- [ ] trasformare ricorrenze utili in audit/script/workflow schedulati
+- [ ] auditare backlog per trovare obblighi brevi parcheggiati impropriamente
+
+Criterio done:
+
+- ogni punto aperto ha orizzonte, sede e motivo
+- manutenzione periodica non dipende dalla memoria dell'utente
+- lavoro corrente e backlog futuro non si confondono
+
+Verifiche richieste:
+
+- review `todos/active.md`
+- review `ENGINEERING_WORKLOG.md`
+- audit periodico da definire per cadenze
+
+## 12. Cleanup AI-readable, documenti canonici, bootstrap e riuso
 
 Status: PARZIALE
 Orizzonte: medio + lungo
-Primitive corrette: audit, cleanup guidato, code search, worklog, docs index, backlog strutturale
 
-Da completare:
+Problema reale:
+
+File lunghi, documenti duplicati e root caotica peggiorano il comportamento dell'AI. Se il sistema deve essere riusato in altri progetti o consegnato ad altri, non puo' dipendere da conoscenza implicita.
+
+Stato attuale:
+
+Esistono style guide AI-readable, checklist bootstrap e documenti canonici. Manca una revisione sistematica di monoliti, duplicati, documenti storici, pacchetto di handoff riusabile e pacchetto ADK installabile con manifest/versione per allineare team e nuovi progetti.
+
+Trigger operativo:
+
+File troppo lunghi, documenti duplicati, root caotica, nuovo progetto, passaggio ad altre persone/team, pluginizzazione o drift tra canonici.
+
+Output atteso:
+
+Documenti classificati, duplicati ridotti, indici allineati, bootstrap riusabile e pacchetto ADK/plugin installabile con manifest e confini globali/progetto.
+
+Limiti / non-goals:
+
+Non deve fare pulizia invasiva senza classificazione e non deve creare nuovi documenti se uno canonico esistente puo' essere aggiornato.
+La pulizia continua post-edit e' obbligatoria come valutazione, non come cancellazione automatica: ogni modifica deve chiedersi se ha creato duplicati, file obsoleti o incoerenze dirette/indirette.
+
+Primitive corrette:
+
+- docs style guide
+- audit architetturale/documentale
+- cleanup guidato
+- bootstrap checklist
+- template handoff
+- docs index
+- plugin packaging
+- `plugin.json`
+- manifest/versione/provenance
+- marketplace o team install
+
+Ordine logico:
+
+1. classificare documenti canonici, operativi, storici e tracking
+2. ridurre duplicati e monoliti AI-unfriendly
+3. decidere cosa e' globale, cosa e' progetto-specifico e cosa va distribuito come plugin
+4. aggiornare indici e cross-link
+5. creare pacchetto bootstrap/riuso e ADK installabile
+6. testare trasferibilita' fuori da questa repo
+
+Sottopunti operativi:
 
 - [ ] riesaminare file troppo lunghi o con responsabilita' miste e decidere split concreti
-- [ ] decidere il destino delle aree legacy o ambigue della UI/dashboard
-- [ ] separare meglio documenti storici, documenti operativi e documenti canonici
-- [ ] tenere `docs/README.md` davvero allineato ai documenti importanti
-- [ ] pulire root e cartelle solo dopo classificazione esplicita del loro ruolo
-- [ ] ridurre duplicazioni, backlog morti e documenti che dicono la stessa cosa con nomi diversi
-- [ ] mantenere AI-readable i file canonici, evitando monoliti documentali ingestibili
+- [ ] applicare a ogni modifica il controllo codebase hygiene: file diretto giusto, file indiretti coerenti, duplicati/obsoleti rilevati, cleanup sicuro o follow-up tracciato
+- [ ] separare documenti storici, operativi, canonici e tracking
+- [ ] mantenere `docs/README.md` allineato ai documenti importanti
+- [ ] pulire root e cartelle solo dopo classificazione esplicita
+- [ ] mantenere AI-readable i file canonici con summary, non-goals, cross-link e limiti
+- [ ] mantenere `NEW_PROJECT_BOOTSTRAP_CHECKLIST.md` allineata al sistema reale
+- [ ] creare pacchetto handoff riusabile per altri progetti o persone
+- [ ] creare pacchetto ADK riusabile con regole/memoria, skill, hook, subagent, comandi e manifest di plugin
+- [ ] definire schema minimo di `plugin.json`: nome, versione, contenuti inclusi, hook installati, skill incluse, subagent inclusi, provenance, compatibilita' ambiente e strategia update
+- [ ] decidere cosa resta globale, cosa resta progetto-specifico e cosa va nel plugin installabile per evitare copie divergenti
 
-Done:
+Criterio done:
 
-- il progetto ha meno ambiguita' strutturale
-- la documentazione non costringe l'AI o l'utente a cercare lo stesso tema in piu' posti
-- la root e i documenti non accumulano caos destinato a essere amplificato dall'AI
+- una nuova sessione capisce dove trovare ogni cosa e perche'
+- i documenti non dicono la stessa cosa in posti diversi con nomi diversi
+- un nuovo progetto puo' partire con baseline AI senza conoscenza implicita
+- un team puo' installare lo stesso pacchetto versionato senza ricostruire a mano regole, skill, hook e agenti
 
-## 12. Nuovi progetti, riuso e consegna ad altre persone
+Verifiche richieste:
 
-Status: PARZIALE
-Orizzonte: medio + lungo
-Primitive corrette: checklist bootstrap, template, setup guide, documentazione di handoff
+- review `docs/README.md`
+- audit documentale/manuale dei canonici
+- prova bootstrap su progetto di test o checklist simulata
+- review del manifest/plugin package
+- simulazione di installazione in progetto vuoto
 
-Gia' presente:
-
-- [NEW_PROJECT_BOOTSTRAP_CHECKLIST.md](docs/NEW_PROJECT_BOOTSTRAP_CHECKLIST.md)
-
-Da completare:
-
-- [ ] mantenere la checklist bootstrap allineata al sistema reale e non lasciarla divergere
-- [ ] creare un pacchetto di handoff davvero riusabile per altri progetti o altre persone
-- [ ] chiarire cosa va portato sempre in un nuovo progetto: regole, memory, quality gate, hook, workflow, sicurezza, git discipline, handoff
-- [ ] verificare che il sistema resti trasferibile anche fuori da questa singola codebase
-
-Done:
-
-- un nuovo progetto non parte da conoscenza implicita
-- il sistema puo' essere riusato o consegnato senza perdere i pezzi fondamentali
-
-## 13. Autonomia totale e sistema che migliora se stesso
+## 13. Autonomia, metriche e sistema che migliora se stesso
 
 Status: PARZIALE
 Orizzonte: medio + lungo
-Primitive corrette: audit, hook, skill governance, metriche di compliance, workflow periodici
 
-Da completare:
+Problema reale:
 
-- [ ] misurare omissioni, errori di scelta delle primitive e falsi completamenti come segnali di sistema, non come episodi isolati
-- [ ] convertire i miss ricorrenti nel livello corretto di automazione o enforcement: regola, checklist, skill, hook, script o workflow
-- [ ] far riconoscere automaticamente quando il problema reale e' l'assenza della primitive giusta e proporre la promozione strutturale corretta
-- [ ] rendere piu' automatica la scelta del prossimo passo corretto, mantenendo pero' esplicita verso l'utente la logica di selezione
-- [ ] verificare sistematicamente che l'AI non finga completezza, avanzamento o verifica oltre le prove davvero disponibili
-- [ ] collegare autonomia, orizzonti temporali, truthful control plane e capability governance in metriche verificabili e confrontabili nel tempo
-- [ ] usare quelle metriche per decidere dove intervenire su regole, hook, skill, workflow e documenti, invece di aggiungere pezzi a intuito
+Il sistema non deve aspettare che l'utente ripeta sempre le stesse correzioni. Deve misurare omissioni, falsi completati, scelta errata di primitive e gap di capability, poi proporre o costruire la correzione strutturale corretta.
 
-Done:
+Stato attuale:
 
-- il sistema impara dai propri errori ricorrenti e li trasforma in enforcement migliore
+Esistono audit e violation log, ma non ancora un sistema maturo di metriche che collega errori ricorrenti a promozione regola -> checklist -> skill -> hook -> audit -> workflow.
+
+Trigger operativo:
+
+Quando l'utente ripete una correzione, quando gli audit trovano lo stesso problema, quando una capability manca, quando una false completion si ripete o quando un tool/regola non viene mai usato.
+
+Output atteso:
+
+Metriche di miss, root cause, primitive correttiva, verifica dell'effetto e rimozione o riduzione di regole/tool inutili.
+
+Limiti / non-goals:
+
+Non deve accumulare automazioni per ansia di completezza e non deve chiamare "autonomia" una serie di decisioni non misurate.
+
+Primitive corrette:
+
+- metriche compliance
+- violation log
+- audit
+- hook
+- skill governance
+- workflow periodici
+- worklog decisionale
+
+Ordine logico:
+
+1. raccogliere miss reali
+2. classificarli per root cause
+3. decidere primitive corretta
+4. implementare correzione minima robusta
+5. misurare se il miss sparisce
+6. rimuovere o ridurre primitive inutili
+
+Sottopunti operativi:
+
+- [ ] misurare omissioni, errori di routing e falsi completati come segnali sistemici
+- [ ] convertire miss ricorrenti nel livello corretto di automazione o enforcement
+- [ ] far riconoscere automaticamente quando manca la primitive giusta e proporre creazione con conferma utente
+- [ ] collegare autonomia, orizzonti temporali, capability governance e truthful completion in metriche verificabili
+- [ ] evitare accumulo di regole o tool che non vengono usati o non risolvono miss reali
+- [ ] definire audit di salute architetturale/documentale del sistema AI
+
+Criterio done:
+
 - l'utente non fa da memoria esterna o project manager tecnico
-- autonomia significa auto-orchestrazione verificabile, non liberta' di improvvisare
+- errori ricorrenti producono miglioramento strutturale misurabile
+- autonomia significa auto-orchestrazione verificabile, non improvvisazione
+
+Verifiche richieste:
+
+- `npm run audit:violations`
+- `npm run audit:rule-enforcement`
+- audit periodico metriche autonomia da definire
+
+---
 
 ## Ordine corretto di chiusura
 
-Per non amplificare caos o automazioni premature, l'ordine corretto resta questo:
+Per non automatizzare caos, l'ordine logico e':
 
-1. control plane cognitivo, scelta strumenti e enforcement delle regole
-2. runtime reale, production truthfulness e control plane del bot
-3. anti-ban, proxy/sessione, sicurezza e compliance
-4. n8n, agenti verticali e automazioni durevoli
-5. parity ambienti e strumenti personali
-6. manutenzione periodica, cleanup, riuso su nuovi progetti e metriche di autonomia
+1. completezza lista AI e separazione scope
+2. routing fonte/modello/ambiente/strumenti
+3. governance capability
+4. enforcement regole e L2-L6 dove giustificato
+5. memoria, handoff e trasferimento nuova chat
+6. ragionamento autonomo, loop e no false completion
+7. n8n/agenti/automazioni AI-globali
+8. parity ambienti e strumenti personali
+9. git/review/chiusura tecnica
+10. cadenze periodiche, cleanup, bootstrap, riuso e metriche autonomia
 
-## Backlog specialistici che devono restare allineati
+## Backlog specialistici che devono restare allineati ma fuori scope qui
 
-- [active.md](todos/active.md) = priorita' correnti del momento
-- [workflow-architecture-hardening.md](todos/workflow-architecture-hardening.md) = dettaglio tecnico runtime/bot
-- [ENGINEERING_WORKLOG.md](docs/tracking/ENGINEERING_WORKLOG.md) = storico delle analisi e delle verifiche reali
+- `todos/active.md` = priorita' correnti del momento
+- `todos/workflow-architecture-hardening.md` = dettaglio tecnico runtime/bot
+- `docs/LINKEDIN_IMPLEMENTATION_LIST.md` = vista lineare LinkedIn-specifica
+- `docs/tracking/ENGINEERING_WORKLOG.md` = storico delle analisi e verifiche reali
 
 Regola finale:
 
-se un punto aperto rilevante esiste in uno di questi file ma non esiste qui, questo backlog madre non e' ancora abbastanza completo.
+se un punto AI globale rilevante esiste in uno di questi file ma non esiste qui, questo backlog madre non e' ancora abbastanza completo. Se invece il punto e' applicativo LinkedIn, deve restare fuori da questo documento.

@@ -77,6 +77,18 @@ function findHookCommand(settings: Record<string, unknown>, eventName: string, c
     );
 }
 
+function findHookCommandParts(settings: Record<string, unknown>, eventName: string, commandParts: string[]): boolean {
+    return getHookEntries(settings, eventName).some((entry) =>
+        getNestedCommands(entry).some((hook) => {
+            const command = hook.command;
+            if (typeof command !== 'string') {
+                return false;
+            }
+            return commandParts.every((part) => command.includes(part));
+        }),
+    );
+}
+
 function missingSnippets(text: string | null, snippets: string[]): string[] {
     if (!text) {
         return snippets;
@@ -172,10 +184,19 @@ function checkProjectClaudeAdapter(): CheckResult {
 function check360Checklist(): CheckResult {
     const path = resolve('docs', '360-checklist.md');
     const required = [
+        'La gerarchia P0 parte prima di piano, skill, edit o risposta',
+        "decomposizione ricorsiva dell'argomento",
+        "albero dell'argomento",
+        'sotto-sottopunti',
+        'Per ogni ramo',
+        "continuita' proattiva",
+        'Ogni chiusura operativa include prossimo passo concreto',
         'La valutazione contestuale di skill, MCP, web/docs, loop, piano, workflow e quality gate parte automaticamente',
         'pattern illustrativi, non come lista esaustiva',
         'Le allucinazioni sono vietate in senso pieno',
         'Se manca la primitive corretta (skill, hook, memoria, audit, workflow)',
+        'npx skills find',
+        'skills.sh',
         'cambi durevoli o invasivi da proporre con conferma',
         'contesto degrada o si compatta troppo',
         'drift strutturale, dead code, circular deps',
@@ -206,13 +227,31 @@ function checkOperatingModel(): CheckResult {
     const path = resolve('docs', 'AI_OPERATING_MODEL.md');
     const required = [
         '## Ordine corretto di implementazione (non numerico)',
-        '### Fase A — Base cognitiva e truthful control plane',
+        '### Fase A — Orchestrator Layer, base cognitiva e truthful control plane',
+        'Gerarchia P0',
+        'input utente come ipotesi',
+        "decomposizione ricorsiva dell'argomento",
+        "albero dell'argomento",
+        'sotto-sottopunti',
+        'visione 360/lungo termine',
+        "continuita' proattiva",
+        'fonte/primitive/verifica',
+        'Orchestrator Layer',
+        'input -> classificazione -> fonte -> capability -> modello/ambiente -> piano/verifiche -> output',
         'modello canonico resta di 9 livelli',
         'enforcement meccanico attuale copre L1 e L7-L9',
         'L2-L6 restano definiti ma ancora da promuovere',
         'routing operativo advisory implementato',
+        'AI_ADK_CAPABILITY_GOVERNANCE.json',
+        'audit:adk-capabilities',
         'L2-L6 audit-assisted',
         'Da decidere caso per caso con ragionamento esplicito',
+        'Principio madre',
+        'modello della situazione',
+        'root cause/problema reale',
+        'soluzione migliore verificabile',
+        'npx skills find',
+        'skills.sh',
     ];
     const missing = missingSnippets(readText(path), required);
     if (missing.length > 0) {
@@ -235,18 +274,52 @@ function checkMasterSpec(): CheckResult {
     const path = resolve('docs', 'AI_MASTER_SYSTEM_SPEC.md');
     const required = [
         '## 22. Orizzonti temporali e task periodici',
+        'Principio madre: ragionamento 360',
+        'Priorita P0 non negoziabile',
+        'Input utente come ipotesi',
+        'Decomposizione ricorsiva',
+        "albero dell'argomento",
+        'sotto-sottopunti',
+        'Visione 360/lungo termine',
+        'Fonte/primitive/verifica',
+        "Continuita' proattiva",
+        'stop-proactive-next-step.ps1',
+        'domanda specifica',
+        'Orchestrator Layer: decisione centrale prima dell\'esecuzione',
+        'control plane che coordina regole, memoria, skill, MCP, plugin, hook, subagent, workflow, modello, ambiente, ricerca web e verifiche',
+        'skill-finder',
+        'Trigger obbligatori',
+        'Protocollo operativo',
+        'Output minimo nei task non banali',
+        'modello della situazione',
+        'problemi diretti e indiretti',
+        'root cause',
+        'soluzione migliore',
+        'prima soluzione plausibile',
+        'alternative ragionevoli',
+        'fonte usata',
+        'limiti residui',
         'Il modello canonico resta a 9 livelli.',
         'breve termine',
         'medio termine',
         'lungo termine',
         'manca la primitive corretta',
+        'npx skills find',
+        'skills.sh',
+        'repository ufficiali',
         'inventario unico delle capability installate o disponibili',
+        'layer ADK',
         'plugin',
         'Caveman, LeanCTX, SIMDex e Contact Skills',
         'contesto corrente sta degradando',
         'elenco esaustivo',
         'esecuzione cieca di ipotesi utente',
         'modifica locale cieca',
+        'codebase hygiene',
+        'hook advisory post-edit',
+        'file diretto',
+        'file indiretti',
+        'cancellazioni automatiche',
     ];
     const missing = missingSnippets(readText(path), required);
     if (missing.length > 0) {
@@ -299,6 +372,8 @@ function checkActiveTodos(): CheckResult {
         'Orizzonti temporali del task',
         'Gap di capability + context degradation',
         'catalogo capability ordinato',
+        'npx skills find',
+        'skills.sh',
     ];
     const missing = missingSnippets(readText(path), required);
     if (missing.length > 0) {
@@ -327,10 +402,12 @@ function checkPackageScripts(): CheckResult {
         'audit:hooks',
         'audit:ai-control-plane',
         'audit:ai-control-plane:docs',
+        'audit:ai-list-completeness',
         'audit:git-automation',
         'audit:git-automation:strict:commit',
         'audit:git-automation:strict:push',
         'audit:routing',
+        'audit:adk-capabilities',
         'audit:l2-l6',
         'audit:rule-enforcement',
     ];
@@ -388,6 +465,99 @@ function checkGitAutomationHooks(): CheckResult {
         name: 'Git hooks di automazione presenti',
         passed: true,
         detail: 'Gate git pre/post presenti in settings.json ✅',
+    };
+}
+
+function checkCodebaseHygieneHook(): CheckResult {
+    const settingsPath = join(homedir(), '.claude', 'settings.json');
+    const hookPath = join(homedir(), '.claude', 'hooks', 'post-edit-codebase-hygiene.ps1');
+    const settings = readJson<Record<string, unknown>>(settingsPath);
+    const missing: string[] = [];
+
+    if (!settings) {
+        missing.push(`${settingsPath} non leggibile`);
+    } else if (!findHookCommand(settings, 'PostToolUse', 'post-edit-codebase-hygiene.ps1')) {
+        missing.push('settings.json non richiama post-edit-codebase-hygiene.ps1 in PostToolUse');
+    }
+
+    const hookRequired = [
+        'CODEBASE_HYGIENE',
+        'file diretto',
+        'file indiretti',
+        'duplicati',
+        'obsoleti',
+        'split',
+        'rename',
+        'delete',
+        'follow-up',
+        'Non fare cancellazioni',
+    ];
+    const hookMissing = missingSnippets(readText(hookPath), hookRequired);
+    if (hookMissing.length > 0) {
+        missing.push(formatMissing(hookPath, hookMissing));
+    }
+
+    if (missing.length > 0) {
+        return {
+            area: 'Control plane globale',
+            name: 'Post-edit codebase hygiene hook configurato',
+            passed: false,
+            detail: missing.join(' | '),
+        };
+    }
+
+    return {
+        area: 'Control plane globale',
+        name: 'Post-edit codebase hygiene hook configurato',
+        passed: true,
+        detail: 'Hook post-edit per pulizia diretta/indiretta della codebase presente ✅',
+    };
+}
+
+function checkStopProactiveNextStepHook(): CheckResult {
+    const settingsPath = join(homedir(), '.claude', 'settings.json');
+    const hookPath = join(homedir(), '.claude', 'hooks', 'stop-proactive-next-step.ps1');
+    const routerPath = join(homedir(), '.claude', 'scripts', 'model-router-config.mjs');
+    const settings = readJson<Record<string, unknown>>(settingsPath);
+    const missing: string[] = [];
+
+    if (!settings) {
+        missing.push(`${settingsPath} non leggibile`);
+    } else if (!findHookCommand(settings, 'Stop', 'stop-proactive-next-step.ps1')) {
+        missing.push('settings.json non richiama stop-proactive-next-step.ps1 in Stop');
+    }
+
+    const hookRequired = [
+        'PROACTIVE_NEXT_STEP_GATE',
+        'prossimi passi concreti',
+        'domanda specifica',
+        'dimmi tu',
+        'Write-HookAdditionalContext',
+    ];
+    const hookMissing = missingSnippets(readText(hookPath), hookRequired);
+    if (hookMissing.length > 0) {
+        missing.push(formatMissing(hookPath, hookMissing));
+    }
+
+    const routerMissing = missingSnippets(readText(routerPath), ['stop-proactive-next-step.ps1']);
+    if (routerMissing.length > 0) {
+        missing.push(formatMissing(routerPath, routerMissing));
+    }
+
+    if (missing.length > 0) {
+        return {
+            area: 'Control plane globale',
+            name: 'Stop proactive next-step hook configurato',
+            passed: false,
+            detail: missing.join(' | '),
+        };
+    }
+
+    return {
+        area: 'Control plane globale',
+        name: 'Stop proactive next-step hook configurato',
+        passed: true,
+        detail: 'Stop hook per continuita operativa presente in settings e fonte canonica ✅',
     };
 }
 
@@ -494,8 +664,39 @@ function checkRuntimeBriefDoc(): CheckResult {
         "Non e' la fonte di verita' primaria.",
         'docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md',
         'AI_CAPABILITY_ROUTING.json',
+        'AI_ADK_CAPABILITY_GOVERNANCE.json',
         'AI_LEVEL_ENFORCEMENT.json',
+        '## Gerarchia P0 prima di ogni ragionamento',
+        'Input utente come ipotesi',
+        'Esempi come pattern',
+        'Decomposizione ricorsiva',
+        "albero dell'argomento",
+        'sotto-sottopunti',
+        'per ogni ramo',
+        'Visione 360/lungo termine',
+        'Root cause/soluzione migliore',
+        'Fonte/primitive/verifica',
+        "Continuita' proattiva",
+        'Chiusura proattiva',
+        'stop-proactive-next-step.ps1',
+        'domanda specifica',
         '## Requirement ledger obbligatorio per prompt lunghi o densi',
+        '## Protocollo ragionamento 360',
+        'Orchestrator Layer: prima di eseguire un task non banale',
+        'skill-finder',
+        'capability finder',
+        'Output minimo quando il task e\' non banale',
+        'Limite: ragionamento 360',
+        'modello della situazione',
+        'domini direttamente e indirettamente correlati',
+        "problemi prevedibili specifici dell'argomento",
+        'Protocollo soluzione migliore',
+        'root cause',
+        'alternative considerate',
+        'primo workaround',
+        'fonte usata',
+        'verifiche fatte/non fatte',
+        'limiti residui',
         '## Selezione strumenti',
         '## Prima di chiudere',
         'Il modello canonico',
@@ -507,7 +708,11 @@ function checkRuntimeBriefDoc(): CheckResult {
         'Valutare ogni volta, in modo contestuale e automatico',
         "L'utente non deve ricordare all'AI di fare questa valutazione",
         'Se manca la primitive giusta',
+        'npx skills find',
+        'skills.sh',
+        'repo affidabili',
         'plugin',
+        'layer ADK corretto',
         'routing matrix mentale',
         'Non accumulare capability sovrapposte',
         'Monitorare segnali di degrado del contesto',
@@ -516,6 +721,11 @@ function checkRuntimeBriefDoc(): CheckResult {
         'Nessuna allucinazione',
         'comando da eseguire ciecamente',
         'code search, mapping dipendenze/test, memoria',
+        'Codebase hygiene sempre',
+        'Edit/Write/MultiEdit',
+        'file diretto',
+        'file indiretti',
+        'cleanup invasivo senza conferma',
     ];
     const missing = missingSnippets(readText(path), required);
     if (missing.length > 0) {
@@ -537,7 +747,8 @@ function checkRuntimeBriefDoc(): CheckResult {
 function checkRoutingRegistries(): CheckResult {
     const routingPath = resolve('docs', 'tracking', 'AI_CAPABILITY_ROUTING.json');
     const levelPath = resolve('docs', 'tracking', 'AI_LEVEL_ENFORCEMENT.json');
-    const missing = [routingPath, levelPath].filter((path) => !existsSync(path));
+    const adkPath = resolve('docs', 'tracking', 'AI_ADK_CAPABILITY_GOVERNANCE.json');
+    const missing = [routingPath, levelPath, adkPath].filter((path) => !existsSync(path));
     if (missing.length > 0) {
         return {
             area: 'Repo canonici',
@@ -550,7 +761,39 @@ function checkRoutingRegistries(): CheckResult {
         area: 'Repo canonici',
         name: 'Registri machine-readable del control plane presenti',
         passed: true,
-        detail: 'AI_CAPABILITY_ROUTING.json e AI_LEVEL_ENFORCEMENT.json presenti ✅',
+        detail: 'AI_CAPABILITY_ROUTING.json, AI_LEVEL_ENFORCEMENT.json e AI_ADK_CAPABILITY_GOVERNANCE.json presenti ✅',
+    };
+}
+
+function checkTrackingReadmeChangeMap(): CheckResult {
+    const path = resolve('docs', 'tracking', 'README.md');
+    const required = [
+        '## Change map sistema AI',
+        'Nuova regola/requisito AI globale',
+        'Nuova capability/skill/MCP/plugin/agente',
+        'Nuovo hook Claude Code',
+        'model-router-config.mjs',
+        'AI_CAPABILITY_ROUTING.json',
+        'AI_ADK_CAPABILITY_GOVERNANCE.json',
+        'AI_LEVEL_ENFORCEMENT.json',
+        'SESSION_HANDOFF.md',
+        'SESSION_PROMPT.md',
+    ];
+    const missing = missingSnippets(readText(path), required);
+    if (missing.length > 0) {
+        return {
+            area: 'Repo canonici',
+            name: 'Tracking README contiene change map futura',
+            passed: false,
+            detail: formatMissing(path, missing),
+        };
+    }
+
+    return {
+        area: 'Repo canonici',
+        name: 'Tracking README contiene change map futura',
+        passed: true,
+        detail: 'Mappa aggiornamento futuro per regole, capability, hook, livelli e handoff presente ✅',
     };
 }
 
@@ -566,7 +809,7 @@ function checkUserPromptSubmitHook(): CheckResult {
         };
     }
 
-    if (!findHookCommand(settings, 'UserPromptSubmit', 'inject-runtime-brief.ps1 -HookEventName UserPromptSubmit')) {
+    if (!findHookCommandParts(settings, 'UserPromptSubmit', ['inject-runtime-brief.ps1', 'UserPromptSubmit'])) {
         return {
             area: 'Control plane globale',
             name: 'UserPromptSubmit runtime hook configurato',
@@ -612,6 +855,42 @@ function checkSkillActivationHook(): CheckResult {
     };
 }
 
+function checkSkillActivationP0Reminder(): CheckResult {
+    const path = join(homedir(), '.claude', 'hooks', 'skill-activation.ps1');
+    const required = [
+        'P0 ordine cognitivo',
+        'input utente come ipotesi',
+        'esempi come pattern',
+        'decomposizione ricorsiva',
+        'albero argomento',
+        'sotto-sottopunti',
+        'per ogni ramo',
+        'visione 360/lungo termine',
+        'root cause/soluzione migliore',
+        'fonte/primitive/verifica',
+        'continuita proattiva',
+        'truthful completion',
+        'Chiusura proattiva',
+        'domanda concreta',
+    ];
+    const missing = missingSnippets(readText(path), required);
+    if (missing.length > 0) {
+        return {
+            area: 'Control plane globale',
+            name: 'Skill activation reinietta P0 compatto',
+            passed: false,
+            detail: formatMissing(path, missing),
+        };
+    }
+
+    return {
+        area: 'Control plane globale',
+        name: 'Skill activation reinietta P0 compatto',
+        passed: true,
+        detail: 'skill-activation.ps1 espone l\'ordine cognitivo P0 nel routing advisory ✅',
+    };
+}
+
 function checkPreCompactHook(): CheckResult {
     const path = join(homedir(), '.claude', 'settings.json');
     const settings = readJson<Record<string, unknown>>(path);
@@ -624,7 +903,7 @@ function checkPreCompactHook(): CheckResult {
         };
     }
 
-    if (!findHookCommand(settings, 'PreCompact', 'inject-runtime-brief.ps1 -HookEventName PreCompact')) {
+    if (!findHookCommandParts(settings, 'PreCompact', ['inject-runtime-brief.ps1', 'PreCompact'])) {
         return {
             area: 'Control plane globale',
             name: 'PreCompact runtime hook configurato',
@@ -726,14 +1005,18 @@ function run(): void {
         checkActiveTodos(),
         checkRuntimeBriefDoc(),
         checkRoutingRegistries(),
+        checkTrackingReadmeChangeMap(),
         checkPackageScripts(),
         checkGlobalClaudeOrchestration(),
         checkSessionStartHook(),
         checkSessionStartMemoryCoverage(),
         checkUserPromptSubmitHook(),
         checkSkillActivationHook(),
+        checkSkillActivationP0Reminder(),
         checkPreCompactHook(),
         checkGitAutomationHooks(),
+        checkCodebaseHygieneHook(),
+        checkStopProactiveNextStepHook(),
         checkContextHandoffSkill(),
         checkLoopCodexSkill(),
         checkAuditRulesSkill(),

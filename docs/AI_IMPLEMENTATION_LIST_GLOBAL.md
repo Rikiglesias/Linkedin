@@ -1,190 +1,637 @@
 # AI Implementation List — Global
 
-Questa lista raccoglie i punti di implementazione che riguardano il sistema AI indipendentemente dal progetto specifico: control plane, memoria, parity ambienti, tool locali, git discipline, orizzonti temporali, cleanup sistemico, bootstrap riuso e metriche di autonomia.
+Questa e' la vista lineare dettagliata dei punti aperti del sistema AI globale.
 
-Scopo: leggere tutto in una sola passata, confrontare con la chat, capire cosa manca a livello di infrastruttura AI.
+Fonte madre: `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md`.
 
-Nota: questo file e' il backlog primario per i punti AI/globali. Il backlog strutturato con sottopunti, primitive corrette e done criteria sta in `AGENTS.md` e `docs/AI_OPERATING_MODEL.md`.
+Scope: solo sistema AI globale. Non include backlog applicativo LinkedIn, runtime bot, proxy, dashboard, staging account reali o anti-ban operativo del bot.
 
-Regola di aggiornamento: quando si chiude un item, spostarlo nella sezione Completati con data e riferimento all'intervento.
-
----
-
-## Classificazione enforcement
-
-**`[auto]`** — comportamento AI: deve scattare automaticamente su ogni prompt/task rilevante, senza che l'utente lo richieda esplicitamente. Se non scatta, e' un miss operativo.
-
-**`[usr]`** — task a iniziativa utente: implementazione, audit periodico, decisione strategica, tool da costruire. Default implicito per tutti gli item senza marcatura specifica.
-
-| Categoria | Item `[auto]` | Comportamento atteso |
-|-----------|--------------|----------------------|
-| Intent | 64 | Interpreta intento reale, non testo letterale |
-| Best practice | 65 | Verifica dipendenze, contratti e test a ogni modifica |
-| Cross-domain | 66 | Valuta TUTTI i domini su ogni file toccato |
-| Recap | 80 | Riepilogo strutturato prima di qualsiasi modifica multi-file |
-| Anti-compiacenza | 73 | Contesta richieste sbagliate/rischiose prima di eseguire |
-| Context fallback | 71 | Attiva fallback (code search, agenti) se contesto degrada |
-| Loop check | 68 | Verifica completa a ogni iterazione di loop Codex |
-| Selezione ambiente | 8 | Propone modello/ambiente migliore per ogni task |
-| Commit naturale | 40 | Commit solo come chiusura verificata, mai prima |
-| Orizzonte temporale | 43 | Classifica ogni task come breve/medio/lungo prima di agire |
-| Capability gap | 60 | Riconosce gap e costruisce la primitive corretta |
-| Prossimo passo | 61 | Sceglie il prossimo passo corretto e lo dichiara |
-| No false completion | 62 | Non finge verifica o completamento senza prove reali |
-
-Tutti gli altri item sono `[usr]`.
+Regola: se una voce aperta non ha problema, stato, trigger, output, limiti, primitive, ordine, sottopunti, done e verifiche, la voce e' incompleta. Se una voce e' completata, deve stare in `## Completati`, non in `## Aperti`.
 
 ---
 
 ## Aperti
 
-### Fase 1 — Control plane cognitivo e regole enforced
+### 1. `[Lista AI][breve]` Completezza lista AI e separazione scope
 
-1. `[Control plane][breve/medio]` Promuovere L2-L6 → **HOLD** 2026-04-25. Dati audit:violations: solo 2 violation entries in tutta la storia, 0 miss ricorrenti identificati sullo stesso controllo. Condizione di promozione non raggiunta. Reverificare dopo 20+ sessioni di lavoro reale. Strumenti pronti: `AI_LEVEL_ENFORCEMENT.json`, `skill-activation.ps1`, `npm run audit:violations`.
+Problema: la lista AI e' stata mescolata con backlog applicativi LinkedIn, rendendo difficile capire cosa va implementato sul sistema AI globale.
 
-2. ✅ `[Control plane][medio/lungo]` Inventario tool esterni consolidato — aggiornato 2026-04-25. Tool attivi: MCP (code-review-graph, lean-ctx, symdex, claude-peers), skill (autoresearch +9 comandi, paul +20 comandi, context-engineering 5 skill, multi-agent-patterns, memory-systems, latent-briefing, obsidian-* 5 skill, cli-anything +7 skill, ECC agents 6), CLI (codeburn, rtk, dippy, bun), vault (obsidian-mind in Desktop/Brain). Duplicati rimossi: evaluation, database-optimizer, prompt-template-wizard, mcp-builder. AI_CAPABILITY_ROUTING.json aggiornato con 12 nuove capability e 4 nuovi domain. → *(2026-04-25)*
+Stato: backlog madre e vista lineare esistono, ma vanno mantenuti AI-only e protetti da regressioni.
 
-64. ✅ `[Control plane][breve/medio]` Regola intento non letterale codificata in `AGENTS.md` §"Intento non letterale" con trigger obbligatori e 3 scenari di test espliciti. Già presente in `~/.claude/CLAUDE.md` §P0. → *(2026-04-25)*
+Trigger: aggiunta, chiusura o spostamento di punti AI; passaggio contesto a nuova chat; rischio di mescolare AI globale e backlog LinkedIn.
 
-65. ✅ `[Control plane][medio]` Best practice per ogni modifica codificata in `AGENTS.md` §"Best practice per ogni modifica": ordine obbligatorio in 5 passi, criteri di non-chiusura, escalation. → *(2026-04-25)*
+Output: lista AI-only con fonte madre, vista derivata e audit di regressione.
 
-66. ✅ `[Control plane][medio]` Cross-domain per ogni file codificato in `AGENTS.md` §"Cross-domain per ogni file": checklist 6 domini (sicurezza/anti-ban/architettura/timing/compliance/observability) con domanda specifica per ciascuno + tool da usare. → *(2026-04-25)*
+Limiti: non e' backlog applicativo LinkedIn e non e' raccolta generica di idee.
 
-80. ✅ `[Control plane][breve]` Hook `multi-file-recap-check.ps1` creato e registrato in `settings.json` UserPromptSubmit: rileva task multi-file/complessi, inietta reminder recap strutturato. File: `hooks/multi-file-recap-check.ps1` + repo `hooks/`. **Nota:** implementazione advisory (non deny hook) — il PreToolUse deny richiederebbe tracking di stato cross-prompt. Da verificare su 3 sessioni consecutive per criterio done completo. → *(2026-04-21)*
+Primitive: documento canonico, vista lineare derivata, audit `audit:ai-list-completeness`, worklog, todos.
 
-73. ✅ `[Control plane][medio]` Anti-compiacenza codificata in `AGENTS.md` §"Anti-compiacenza": trigger obbligatori, procedura in 3 passi, 3 scenari di test espliciti (delay LinkedIn, skip test, push su main). → *(2026-04-25)*
+Ordine: separare scope -> uniformare punti -> aggiungere audit -> aggiornare todos/worklog.
 
-75. ✅ `[Control plane][breve/medio]` Completato inventario skill: 2 skill vuote rimosse (`analyze-issue`, `review-pr`), 2 skill nuove create (`token-efficiency`, `linkedin-patterns`), `context-handoff` verificata. Cross-reference con SKILL_TABLE.md fatto. → *173 skill attive* *(2026-04-21)*
+Sottopunti:
 
-77. ✅ `[Control plane][breve]` Gap analysis skill completata: domini frequenti coperti — TypeScript (`typescript-pro`), testing (`test-master`, `fix-tests`, `webapp-testing`), architettura (`architecture-designer`, `microservices-architect`), gestione contesto (`context-handoff`, `memoria`), anti-ban (`antiban-review`, `linkedin-patterns`), efficienza token (`token-efficiency`), feature dev (`feature-dev`), token compression (`caveman`). SKILL_TABLE.md allineata. → *Nessun dominio frequente senza skill dedicata* *(2026-04-21)*
+- [ ] impedire che runtime bot, proxy, JA3, dashboard, staging account e anti-ban applicativo entrino nella lista AI
+- [ ] mantenere `AI_MASTER_IMPLEMENTATION_BACKLOG.md` come fonte madre del mancante AI
+- [ ] mantenere `AI_IMPLEMENTATION_LIST_GLOBAL.md` come vista lineare derivata, non seconda autorita'
+- [ ] fallire audit se un punto aperto non ha campi operativi minimi
+- [ ] trattare meccanismo presente ma non testato come aperto, non completato
 
-### Fase 2 — Contesto, memoria e documenti leggibili dall'AI
+Done: una nuova chat capisce tutto il backlog AI globale senza chiedere "cosa intendi?", e i punti LinkedIn-specifici restano fuori scope.
 
-3. ✅ `[Memory][medio]` Style guide applicata 2026-04-25: `AI_MASTER_SYSTEM_SPEC.md` e `AI_OPERATING_MODEL.md` aggiornati con summary iniziale, "cosa contiene/non contiene", cross-link espliciti. `CAPABILITY_MATRIX.md` creato AI-readable. File rispettano ora la guida in `docs/AI_DOC_STYLE_GUIDE.md`. File ancora sopra soglia per dimensione ma strutturalmente conformi. → *(2026-04-25)*
+Verifiche: `npm run audit:ai-list-completeness`, `npm run audit:ai-control-plane`, review manuale delle due liste AI.
 
-67. ✅ `[Memory][medio]` Skill `context-handoff` creata e verificata — pre/post conditions, template, attivazione interattiva. → *esistente e funzionante* *(2026-04-21)*
+### 2. `[Orchestrator][breve/medio]` Orchestrator Layer e selezione autonoma di fonte, modello, ambiente e strumenti
 
-71. ✅ `[Memory][medio]` Protocollo fallback context degradation codificato in `AGENTS.md` §"Fallback context degradation": soglie ctx (70%/85%/95%), procedura handoff 5 passi, segnali di degrado, fallback tool (lean-ctx, context-compression, latent-briefing). → *(2026-04-25)*
+Problema: l'utente non puo' specificare ogni volta best practice, fonte corretta, modello, skill, MCP, plugin o web/docs. Serve un Orchestrator Layer che decida come lavorare prima dell'esecuzione.
 
-72. ✅ `[Memory][medio]` Schema minimo Context Handoff definito in `AGENTS.md` §"Context Handoff" (7 sezioni obbligatorie) e aggiunto alla skill `context-handoff` come tabella schema. Distinzione SESSION_HANDOFF.md automatico vs schema strutturato esplicitata. → *(2026-04-25)*
+Stato: runtime brief, registry e hook advisory esistono; manca un contratto unico cross-ambiente dell'Orchestrator Layer e una misura sistematica dei miss. Il miss reale emerso e' che una skill non installata localmente puo' essere trattata come inesistente se non parte la discovery esterna.
 
-### Fase 3 — Parita' ambienti
+Trigger: ogni task non banale, task con dato instabile, provider/API/libreria, ambiente o capability specifica.
 
-4. ✅ `[Parity][medio]` Capability matrix creata: `docs/tracking/CAPABILITY_MATRIX.md` — contratto operativo per Claude Code / Codex / Cursor su 30+ capability. Regola: Codex solo per task interni puri, tutto il resto Claude Code. → *(2026-04-25)*
+Output: decisione coerente su input normalizzato, task class, fonte, modello, ambiente, skill, MCP, plugin, hook, script/audit, subagent, web/docs, loop, handoff e verifiche.
 
-5. ✅ `[Parity][medio]` Gap documentati in CAPABILITY_MATRIX.md: Codex manca hook/memoria/MCP/skill. Fallback espliciti per ogni gap. Policy ambiente per tipo task. → *(2026-04-25)*
+Limiti: niente rumore su task banali; niente hook bloccanti se il segnale non e' deterministico.
 
-6. ✅ `[Parity][breve/medio]` Stabilizzati problemi operativi: settings.json valido (JSON corretto, hooks attivi, modello configurato), SessionStart hook funzionante (session-start.ps1 + inject-runtime-brief), skill critiche verificate (antiban-review, context-handoff, loop-codex), plugin `feature-dev` installato, 2 skill vuote rimosse (`analyze-issue`, `review-pr`), 2 nuove skill create (`token-efficiency`, `linkedin-patterns`). OpenRouter switching funzionale (model corrente: qwen/qwen3.6-plus). → *(2026-04-21)*
+Primitive: runtime brief, `AI_CAPABILITY_ROUTING.json`, `AI_ADK_CAPABILITY_GOVERNANCE.json`, hook advisory/blocking dove deterministico, audit `audit:routing`, audit `audit:adk-capabilities`, skill-finder / capability finder, discovery esterna skill (`npx skills find`, `skills.sh`, repo ufficiali/affidabili), web/docs ufficiali, MCP, plugin, skill.
 
-7. ✅ `[Parity][medio]` Migrazione Codex: decisione 2026-04-25 — NO migrazione attiva. Codex usabile solo per task interni puri (refactor, fix read-only) dove non serve MCP/hook/skill. Documentato in `docs/tracking/CAPABILITY_MATRIX.md` §"Policy ambiente per tipo task". → *(2026-04-25)*
+Ordine: normalizzare input -> classificare task -> interrogare registry/finder -> se manca locale cercare su web/cataloghi ufficiali -> scegliere fonte/modello/ambiente/capability/verifiche -> dichiarare esclusioni utili -> misurare miss -> promuovere primitive corrette.
 
-68. ✅ `[Parity][medio]` Loop con verifica completa implementato in skill `loop-codex`: decomposizione obbligatoria, verifica L9 dopo ogni sotto-task, max 3 iterazioni per sotto-task, DONE/BLOCKED esplicito, auto-commit se verde. → *(già esistente, verificato 2026-04-25)*
+Sottopunti:
 
-8. ✅ `[Parity][medio/lungo]` Policy ambiente codificata in `docs/tracking/CAPABILITY_MATRIX.md` — tabella tipo task → ambiente con motivazione. Aggiornare quando cambiano capability. → *(2026-04-25)*
+- [ ] misurare miss di selezione strumento/modello/ambiente
+- [ ] definire contratto unico dell'Orchestrator Layer: input, output, stato persistente, confini e failure mode
+- [ ] distinguere fonte interna, docs ufficiali, web, MCP, plugin, skill, agente e workflow
+- [ ] creare o integrare `skill-finder` / capability finder per skill locali, `gh skill search`, duplicati e migrazioni Codex/Claude
+- [ ] obbligare discovery esterna quando la skill/capability manca localmente: `npx skills find`, `skills.sh`, repo ufficiali/affidabili, verifica install count/reputazione/compatibilita'
+- [ ] usare web/docs quando il dato e' temporale, provider-specifico o soggetto a cambiamenti
+- [ ] generalizzare esempi dell'utente in pattern e casi analoghi
+- [ ] dichiarare scelta tecnica senza produrre rumore nei task banali
 
-### Fase 4 — Strumenti locali e supporto personale
+Done: task non banali passano da una decisione orchestrata, task instabili non partono senza fonte corretta, skill/capability assenti localmente non vengono dichiarate inesistenti senza ricerca web/cataloghi ufficiali e l'AI sa spiegare perche' usa o esclude ogni primitive rilevante.
 
-9. `[Local tools][medio]` Dettatura locale stabile — HOLD. Dipende da setup hardware. Usare `prompt-improver` skill come fallback per input vocali difettosi.
+Verifiche: `npm run audit:routing`, smoke prompt su almeno 5 domini, review violation log.
 
-10. `[Local tools][medio]` Trade-off dettatura locale vs Windows — HOLD. Decisione da prendere dopo stabilizzazione hardware.
+### 3. `[Capability][breve/medio]` Governance di skill, MCP, plugin, agenti e capability installate
 
-11. `[Local tools][medio]` Fix colli di bottiglia PC — HOLD. Task separato da pianificare quando si ha tempo dedicato.
+Problema: accumulare capability senza routing chiaro crea confusione e fa scegliere strumenti sbagliati. Le immagini "Agent Development Kit" aggiungono un vincolo esplicito: il sistema AI va governato come stack a 5 layer, non come somma casuale di regole, skill e tool.
 
-12. ✅ `[Local tools][medio]` Prompt helper: skill `prompt-improver` già installata — ripara dettati vocali grezzi, interpreta intento, propone chiarimenti. → *(già presente, verificato 2026-04-25)*
+Stato: esistono registry machine-readable per routing, livelli L2-L9 e governance ADK. La collocazione corretta nei layer esiste per tutte le capability del routing; restano aperte qualita', overlap, conversione reale e candidate esterne.
 
-### Fase 8 — Git, review e chiusura corretta
+Trigger: nuova capability, duplicati, candidate esterne nominate, conversione skill/MCP/plugin/hook/workflow, routing ambiguo.
 
-39. ✅ `[Git][breve/medio]` Commit/push fuori Claude Code: Codex ha git nativo, Cursor/Windsurf manuale. Gap documentato in `CAPABILITY_MATRIX.md`. In Claude Code: hook bloccanti `pre-bash-l1-gate.ps1` + `pre-bash-git-gate.ps1` enforced. → *(2026-04-25)*
+Output: catalogo capability con layer ADK, trigger, limiti, overlap, decisione e stato candidate.
 
-40. ✅ `[Git][breve/medio]` Commit come chiusura verificata codificato in `AGENTS.md` §"Commit e push": auto-commit by default dopo gate verdi, no commit cieco, condizioni esplicite. Enforcement meccanico attivo. → *(già esistente, verificato 2026-04-25)*
+Limiti: niente installazioni cieche e niente accumulo di tool sovrapposti.
 
-41. `[Git][medio]` Chiarire meglio dove il push deve fermarsi per review, remote policy o rischio operativo.
+Primitive: `AI_CAPABILITY_ROUTING.json`, `AI_ADK_CAPABILITY_GOVERNANCE.json`, audit capability, skill governance, plugin governance, subagent governance, Agent Development Kit 5-layer architecture, plugin manifest / marketplace / team install, MCP registry, worklog decisionale.
 
-42. `[Git][medio]` Rendere piu' sistematica la distinzione tra review locale, review di branch e audit periodico.
+Ordine: classificare layer corretto -> inventariare -> classificare trigger/limiti/overlap -> decidere keep/merge/remove/promote/demote -> aggiornare routing -> testare prompt reali.
 
-### Fase 9 — Orizzonti temporali e cadenze periodiche
+Sottopunti:
 
-43. `[Temporal][breve/medio]` Trattare breve, medio e lungo termine come classificazione obbligatoria del task e impedire che obblighi del breve termine vengano parcheggiati nel backlog per rinviare lavoro necessario. *(Condensato da ex item 71, 72, 75)*
+- [x] consolidare inventario unico delle capability operative del control plane in `AI_ADK_CAPABILITY_GOVERNANCE.json`
+- [x] formalizzare il modello Agent Development Kit a 5 layer: `CLAUDE.md`/`AGENTS.md` per regole e memoria, `SKILL.md` per conoscenza modulare, hook per guardrail deterministici, subagent per delega isolata, plugin per distribuzione
+- [x] distinguere layer globale e layer progetto: cosa vive in `~/.claude/` per tutti i progetti e cosa vive nella repo per regole, skill, hook e contesto specifici
+- [x] standardizzare struttura skill: `SKILL.md`, `scripts/`, `templates/`, `assets/`, contesto minimo e trigger descrittivo auto-invocabile
+- [x] standardizzare subagent: un job per subagent, contesto proprio, strumenti/permessi propri, risultato unico di ritorno, nessun inquinamento del thread principale
+- [x] standardizzare plugin: `plugin.json`/manifest, lista di skill/agenti/hook/comandi inclusi, versione, firma o provenance, installazione team/repo
+- [x] decidere per ogni capability nel routing registry la primitive corretta: skill, MCP, plugin, hook, audit, script, workflow o fonte esterna
+- [ ] eliminare o fondere duplicati
+- [x] registrare Caveman, LeanCTX, SIMDex e Contact Skills come candidate `evaluate-before-install`, senza installazione cieca
+- [ ] valutare davvero Caveman, LeanCTX, SIMDex e Contact Skills prima di installarle
+- [ ] definire routing per backend, frontend, docs, prompt, handoff, sicurezza, testing, review e automazioni
+- [ ] creare regole di attivazione per capability simili
+- [ ] chiedere conferma quando serve creare una nuova primitive durevole
 
-44. `[Temporal][medio/lungo]` Dare a ogni punto non di breve termine un contenitore canonico, una cadenza minima e un owner logico espliciti, mantenendo coerenti backlog madre, specialistici, worklog e priorita' attive. *(Condensato da ex item 73, 76)*
+Done: ogni capability ha dominio, trigger, limiti, stato, relazione con alternative e layer ADK corretto; le capability riusabili per team/progetti possono essere pacchettizzate come plugin versionato; l'AI sceglie la primitive corretta senza aspettare esempi dell'utente.
 
-45. `[Temporal][lungo]` Promuovere i task periodici stabili da backlog testuale ad audit, script o workflow schedulati quando il valore e' ricorrente.
+Verifiche: `npm run audit:routing`, `npm run audit:adk-capabilities`, `npm run audit:ai-list-completeness`, audit manuale inventario capability, review manuale di una skill, un hook, un subagent e un plugin/manifest, test prompt multi-dominio.
 
-### Fase 10 — Cleanup strutturale e documentale (globale)
+### 4. `[Enforcement][breve/medio/lungo]` Enforcement reale delle regole critiche
 
-46. `[Cleanup][medio]` Riesaminare file troppo lunghi o con responsabilita' miste e decidere split concreti.
+Problema: regole solo documentali vengono dimenticate, ma hook troppo generici creano falsi positivi.
 
-69. ✅ `[Cleanup][breve]` Risolvere i bug di coerenza repository: file untracked committati, 30+ path assoluti Windows → relativi nei canonici, ordine lettura AI_RUNTIME_BRIEF.md coerente CLAUDE/AGENTS/README. → *6 commit: `663b1e9`* *(2026-04-20)*
+Stato: hook, quality gate, git gate e audit esistono. `audit:hooks` ora copre tutti i 33 command hook attivi e verifica che l'auto-commit via trigger non bypassi gate con `git add .` o `--no-verify`. L2-L6 restano audit-assisted e non blocking completi. `post-edit-codebase-hygiene.ps1` reinietta il controllo pulizia su file diretti/indiretti dopo ogni edit.
 
-48. `[Cleanup][medio]` Separare meglio documenti storici, documenti operativi e documenti canonici.
+Trigger: regola dimenticata piu' volte, drift audit-doc-hook, gate bypassabile o miss con segnale deterministico.
 
-52. `[Cleanup][medio/lungo]` Mantenere AI-readable i file canonici, evitando monoliti documentali ingestibili.
+Output: mappa regola -> rischio -> segnale -> primitive corretta, con blocker solo dove robusto.
 
-53. ✅ `[Cleanup][breve/medio]` Ridurre il file CLAUDE.md globale sotto le 200 righe applicando la regola "file regole corto = AI ricorda tutto". → *326→195 righe (2026-04-19)*
+Limiti: niente hook generici che simulano ragionamento AI e niente blocker fragili.
 
-### Fase 11 — Riuso su nuovi progetti e consegna ad altri
+Primitive: hook bloccanti solo deterministici, audit periodici, script, runtime brief, skill, violation log.
 
-54. `[Bootstrap][medio]` Mantenere la checklist bootstrap allineata al sistema reale e non lasciarla divergere.
+Ordine: mappare regola/rischio/segnale -> misurare miss -> implementare enforcement robusto -> verificare falsi positivi/negativi -> aggiornare canonici.
 
-55. `[Bootstrap][medio/lungo]` Creare un pacchetto di handoff davvero riusabile per altri progetti o altre persone.
+Sottopunti:
 
-56. `[Bootstrap][medio]` Chiarire cosa va portato sempre in un nuovo progetto: regole, memory, quality gate, hook, workflow, sicurezza, git discipline e handoff.
+- [x] decidere quanti hook servono davvero oggi: 33 command hook attivi, nessun nuovo hook senza miss ricorrenti misurati o advisory ad alto valore
+- [x] correggere l'hook di auto-commit su trigger per non bypassare gate git o native pre-commit
+- [ ] mantenere `audit:hooks` allineato a `~/.claude/settings.json` a ogni cambio configurazione
+- [ ] promuovere L2-L6 a blocking solo dove il segnale e' verificabile
+- [ ] coprire blast radius, contratti, dipendenze, test impattati e file diretti/indiretti
+- [ ] coprire cross-domain per ogni file: sicurezza, architettura, performance, compliance, observability e rischio dominio
+- [x] aggiungere hook advisory post-edit per codebase hygiene: file diretto corretto, file indiretti coerenti, duplicati/obsoleti/split/rename/delete/follow-up
+- [ ] impedire falsi completati quando esiste solo il meccanismo ma manca test reale
+- [ ] trattare drift doc-hook-audit come bug operativo
 
-57. `[Bootstrap][medio/lungo]` Verificare che il sistema resti trasferibile anche fuori da questa singola codebase.
+Done: ogni regola critica ha primitive, verifica e limite dichiarato; i blocker non si basano su interpretazioni fragili.
 
-### Fase 12 — Metriche di autonomia e sistema che migliora se stesso
+Verifiche: `npm run audit:hooks`, `npm run audit:rule-enforcement`, `npm run audit:l2-l6`, review violation log.
 
-58. `[Autonomy][medio/lungo]` Misurare omissioni, errori di scelta delle primitive e falsi completamenti come segnali sistemici, non come incidenti isolati.
+### 5. `[Memory][breve/medio]` Memoria, handoff e trasferimento contesto in nuova chat
 
-59. `[Autonomy][medio/lungo]` Convertire i miss ricorrenti nel livello corretto di enforcement: regola, checklist, skill, hook, script o workflow.
+Problema: handoff e memoria sono inutili se una nuova chat non riesce davvero a ripartire senza perdita di stato.
 
-60. `[Autonomy][medio/lungo]` Far riconoscere automaticamente quando il vero gap e' l'assenza della primitive giusta e costruire attivamente la primitive strutturale corretta (skill, hook, audit, workflow) — senza aspettare richiesta esplicita dell'utente.
+Stato: `SESSION_HANDOFF.md`, runtime brief e skill `context-handoff` esistono; manca prova end-to-end reale e possibile `SESSION_PROMPT.md`.
 
-61. `[Autonomy][medio/lungo]` Rendere piu' automatica la scelta del prossimo passo corretto, mantenendo pero' esplicita verso l'utente la logica della selezione.
+Trigger: fine sessione lunga, compact, cambio chat/ambiente, contesto degradato o richiesta di trasferire contesto.
 
-62. `[Autonomy][medio/lungo]` Verificare in modo sistematico che l'AI non finga completezza, avanzamento o verifica oltre le prove realmente disponibili.
+Output: handoff e prompt nuova chat con stato, decisioni, blast radius, verifiche, blocchi, prossimi passi e git status.
 
-63. `[Autonomy][medio/lungo]` Collegare autonomia, temporalita', truthful control plane e capability governance in metriche verificabili e usabili per migliorare il sistema.
+Limiti: non e' riassunto narrativo e non e' completato senza prova reale in nuova chat.
 
-70. `[Autonomy][breve]` Verificare che i task marcati "completati" nella lista siano chiusi davvero nel repository e non solo in locale: in particolare `skill-activation.ps1`, `session-start.ps1` e la configurazione hook in `settings.json` — controllare che siano committati e funzionanti nel repo, non solo presenti sulla macchina di sviluppo.
+Primitive: skill `context-handoff`, `SESSION_HANDOFF.md`, `SESSION_PROMPT.md`, memory files, `todos/active.md`, `ENGINEERING_WORKLOG.md`, audit handoff.
 
-74. `[Autonomy][lungo]` Definire metriche di salute architetturale automatizzabili: file troppo lunghi (>300 righe), responsabilita' miste, drift doc-codice, dead code, circular deps, disallineamento doc-memory. Implementare come `npm run audit:arch-health` che generi un report prioritizzato con aree di intervento. Usare come input periodico per decidere sprint di cleanup o split.
+Ordine: generare handoff -> generare prompt nuova chat -> far leggere solo file previsti -> verificare ricostruzione -> correggere template/skill.
+
+Sottopunti:
+
+- [ ] definire contenuto minimo non opzionale di `SESSION_HANDOFF.md`
+- [ ] creare o standardizzare `SESSION_PROMPT.md` per nuova chat
+- [ ] includere stato git, modifiche non committate, verifiche fatte e mancanti
+- [ ] includere blocchi aperti e prossimi passi ordinati
+- [ ] validare una nuova chat reale leggendo solo handoff + canonici indicati
+- [ ] non marcare completato finche' la prova reale non passa
+
+Done: una nuova chat riparte senza chiedere contesto all'utente e senza portarsi dietro blocker stale o punti generici.
+
+Verifiche: prova manuale nuova chat, `npm run audit:ai-control-plane`, review `SESSION_HANDOFF.md` e `SESSION_PROMPT.md`.
+
+### 6. `[Reasoning][breve/medio]` Ragionamento autonomo, esempi come pattern e no false completion
+
+Problema: l'AI deve partire da una priorita P0: intento reale prima del testo letterale, input utente come ipotesi e non verita' assoluta, esempi come pattern, decomposizione ricorsiva dell'argomento, visione 360/lungo termine, root cause/soluzione migliore, fonte/primitive/verifica, continuita' proattiva e truthful completion. Deve capire il principio dietro gli esempi, trasformare esempio o argomento in albero dell'argomento con sottopunti e sotto-sottopunti, costruire un modello della situazione, studiare il dominio, applicarlo ai casi analoghi/correlati, prevedere problemi diretti e indiretti, evitare allucinazioni e non dichiarare verifiche non fatte. Deve cercare il problema reale/root cause e la soluzione migliore verificabile, non fermarsi alla prima risposta plausibile o al primo workaround.
+
+Stato: regole presenti in `AGENTS.md`, runtime brief e master spec; il principio madre di ragionamento 360 e' esplicito come protocollo operativo con trigger, gerarchia P0, modello della situazione, output minimo, protocollo soluzione migliore e limiti. Manca verifica sistematica su task lunghi e multi-dominio.
+
+Trigger: prompt lungo/vocale/denso, esempio dell'utente, richiesta generica di miglioramento, task multi-file/multi-dominio, tema esterno o rischio false completion.
+
+Output: gerarchia P0 applicata, modello della situazione, albero dell'argomento, ledger, fonti usate o escluse, casi analoghi/correlati, problemi prevedibili, root cause/problema reale, alternative considerate, criterio della soluzione migliore, primitive scelte, verifiche fatte/non fatte, limiti residui e continuita' operativa.
+
+Limiti: non significa onniscienza, loop infinito, bypass di gate o dichiarare completo senza prove.
+
+Primitive: gerarchia P0 runtime, runtime brief, requirement ledger, albero dell'argomento, decomposizione ricorsiva in sottopunti e sotto-sottopunti, modello della situazione, protocollo soluzione migliore, protocollo di chiusura proattiva, Stop hook `stop-proactive-next-step.ps1`, root cause analysis, confronto alternative, loop di completamento, audit falsi completati, code search, agenti esplorativi, internet/docs ufficiali, MCP/tool live.
+
+Ordine: normalizzare intento reale -> trattare input utente come ipotesi -> estrarre requisito -> usare esempi come pattern -> decomporre in albero dell'argomento -> aprire sottopunti e sotto-sottopunti -> per ogni ramo rivalutare fonte/web/docs/MCP/skill/capability/rischi/verifiche -> generalizzare -> costruire modello situazione -> applicare visione 360/lungo termine -> studiare dominio/fonte/best practice -> identificare root cause -> confrontare alternative -> scegliere soluzione migliore -> prevedere problemi diretti e indiretti -> mantenere ledger -> completare tutto il completabile nel turno corrente -> chiudere con prove e continuita' operativa.
+
+Sottopunti:
+
+- [ ] attivare requirement ledger su prompt lunghi, vocali o densi
+- [ ] applicare sempre gerarchia P0 prima di piano, skill, edit o risposta finale
+- [ ] trattare input utente come ipotesi da validare quando il task ha rischio, ambiguita' o impatti indiretti
+- [ ] rendere esplicito il modello della situazione per task non banali
+- [ ] trattare esempi utente come pattern, non lista esaustiva
+- [ ] decomporre ogni argomento non banale in albero dell'argomento con sottopunti e sotto-sottopunti
+- [ ] per ogni ramo dell'albero rivalutare fonte, web/docs/MCP, skill/capability, rischi, verifiche e done criteria
+- [ ] fermare la decomposizione solo quando il ramo e' irrilevante, gia' coperto o abbastanza piccolo da essere eseguito/verificato
+- [ ] inferire casi analoghi, correlati e indirettamente collegati
+- [ ] applicare visione lunga e 360 anche quando l'utente cita solo un esempio locale
+- [ ] studiare dominio con internet/docs ufficiali/MCP/tool live quando il tema non e' interno, stabile o gia' verificato
+- [ ] cercare root cause/problema reale prima del fix su task non banali
+- [ ] confrontare alternative quando esistono piu' soluzioni plausibili
+- [ ] evitare workaround superficiali quando esiste una soluzione migliore raggiungibile
+- [ ] prevedere problemi diretti e indiretti dello specifico argomento
+- [ ] completare nel turno corrente tutto cio' che non richiede nuova conferma o rischio aggiuntivo
+- [ ] chiudere ogni risposta operativa con il prossimo passo concreto, un blocco reale o una domanda specifica
+- [ ] evitare chiusure passive tipo "fammi sapere" quando esiste un'azione successiva ragionevole
+- [x] aggiungere `Stop` hook advisory `stop-proactive-next-step.ps1` per rendere non dimenticabile la continuita' di chiusura
+- [ ] introdurre checklist/audit finale contro falsi completati
+- [ ] rafforzare loop Codex sui file diretti e indiretti
+- [ ] proporre creazione di skill/regola/memoria/audit quando manca la primitive giusta
+- [ ] contestare ipotesi utente tecnicamente sbagliate prima di eseguirle
+
+Done: l'utente non deve elencare ogni sottocaso; l'AI non prende l'input utente come verita' assoluta e non limita il ragionamento agli esempi ricevuti; l'AI apre argomenti ed esempi in albero dell'argomento e non chiude finche' i rami rilevanti non sono coperti, esclusi o tracciati; la gerarchia P0 resta visibile nel runtime brief e nel routing hook prima di ogni task non banale; requisiti, esclusioni, modello della situazione, root cause, alternative, criterio della soluzione migliore, problemi prevedibili, prove, limiti e continuita' operativa restano espliciti fino alla chiusura.
+
+Verifiche: `npm run audit:ledger`, test con prompt denso incompleto, review manuale di un loop completo.
+
+### 7. `[Automation][medio/lungo]` n8n, agenti e automazioni AI-globali
+
+Problema: non tutto deve diventare n8n; alcune cose sono skill, hook, audit, script o decisione umana.
+
+Stato: workflow JSON e principi human-in-the-loop esistono, ma manca governance completa delle automazioni AI-globali.
+
+Trigger: azione AI ricorrente, scheduling, stato persistente, integrazione multi-sistema, human-in-the-loop o distribuzione ad altri.
+
+Output: boundary chiaro tra n8n, skill, hook, script, MCP, plugin, agente e umano.
+
+Limiti: non spostare in n8n logica da skill/hook/audit; non mescolare con workflow applicativi LinkedIn.
+
+Primitive: workflow n8n, agenti verticali, skill, hook, audit, memoria durevole, runbook.
+
+Ordine: inventariare automazioni -> decidere boundary -> rendere vivi solo workflow utili -> aggiungere health/runbook -> auditare drift.
+
+Sottopunti:
+
+- [ ] distinguere workflow AI-globali da workflow applicativi LinkedIn
+- [ ] definire trigger, input, output, stato, owner e failure mode
+- [ ] decidere quando usare agente verticale invece di skill o workflow
+- [ ] inserire human-in-the-loop nei punti strutturali o ad alto rischio
+- [ ] governare giorni, orari e condizioni di avvio
+- [ ] rendere workflow trasferibili con setup, env validation e runbook
+
+Done: ogni automazione ha sede corretta, motivo esplicito, setup trasferibile e verifica.
+
+Verifiche: audit manuale workflow, `npm run audit:routing`, prova import/deploy solo quando pronta.
+
+### 8. `[Parity][medio]` Parita' ambienti: Claude Code, Codex, Cloud Code e altri
+
+Problema: cambiare ambiente non deve far perdere memoria, hook, MCP, gate o metodo di lavoro.
+
+Stato: capability matrix esiste in parte; mancano test comparativi e policy viva su migrazione verso Codex.
+
+Trigger: cambio ambiente/modello, tool non disponibile ovunque, migrazione verso Codex/Claude/Cloud Code o gate non equivalente.
+
+Output: matrice ambiente -> capability -> garanzia reale, fallback e gap dichiarati.
+
+Limiti: non fingere parity e non trattare workaround fragili come enforcement.
+
+Primitive: capability matrix, canonici condivisi, fallback espliciti, audit parity, test comparativi, policy modello/provider.
+
+Ordine: mappare capability -> distinguere nativo/workaround/gap -> definire fallback -> testare -> migrare solo dove non si perde controllo.
+
+Sottopunti:
+
+- [ ] aggiornare matrice ambiente -> capability -> garanzia reale
+- [ ] verificare memoria, hook, runtime brief, skill, MCP, plugin, git gate e audit per ambiente
+- [ ] documentare gap senza normalizzarli
+- [ ] stabilizzare settings, SessionStart, provider/model switching e visibilita' modelli
+- [ ] definire uso corretto di Opus/Sonnet/Haiku/OpenRouter/Codex per rischio e costo
+- [ ] spostare lavoro a Codex solo dove le garanzie restano equivalenti
+
+Done: ambiente e modello sono scelti tecnicamente; nessuna regola critica vive in un solo ambiente senza gap tracciato.
+
+Verifiche: review capability matrix, smoke task comparativi, `npm run audit:ai-control-plane`.
+
+### 9. `[Local tools][medio]` Strumenti personali, dettatura e prompt improvement
+
+Problema: dettato vocale sporco, problemi PC o prompt non chiari non devono produrre esecuzione parziale o fraintesa.
+
+Stato: Whisper/dettatura e prompt helper esistono come direzione; hardware e trade-off locale/cloud sono ancora aperti.
+
+Trigger: dettato sporco, prompt ambiguo, problema PC, lentezza o task che richiede prompt/model improvement.
+
+Output: input semanticamente pulito, modello/prompt migliore, trade-off locale/cloud e problemi macchina tracciati.
+
+Limiti: non cambiare intento reale dell'utente e non normalizzare problemi locali ricorrenti.
+
+Primitive: tool locale, skill prompt-improver, checklist supporto, documentazione operativa, automazione locale eventuale.
+
+Ordine: distinguere hardware/dettatura/prompt/modello -> stabilizzare input -> usare prompt helper -> collegare modello al prompt -> documentare procedure.
+
+Sottopunti:
+
+- [ ] stabilizzare Whisper/dettatura per uso quotidiano
+- [ ] decidere trade-off locale vs cloud per trascrizione
+- [ ] tracciare e risolvere colli di bottiglia computer
+- [ ] mantenere procedure supporto locale, inclusa gestione alimentatore se rilevante
+- [ ] usare prompt helper su dettati lunghi o sporchi
+- [ ] proporre modello e prompt migliore quando il task lo richiede
+
+Done: input vocale e problemi locali non costringono l'utente a ripetere manualmente o correggere l'AI.
+
+Verifiche: prova dettatura lunga, review prompt riscritto, controllo todos/worklog sui problemi hardware.
+
+### 10. `[Git][breve/medio]` Git, review e chiusura corretta dei blocchi AI
+
+Problema: modifiche AI non sono chiuse senza gate verdi, worklog, stato git e decisione su commit/push/PR.
+
+Stato: gate quality/git e `audit:git-automation` esistono; serve verificare comportamento fuori Claude Code e ridurre dipendenza da reminder utente.
+
+Trigger: fine unita' logica, working tree dirty dopo modifiche, richiesta commit/push/PR o blocco da dichiarare chiuso.
+
+Output: gate verdi o blocker, worklog/todos aggiornati se serve, stato git classificato e decisione commit/push/PR/stop.
+
+Limiti: niente commit/push ciechi e niente completamento con git non valutato.
+
+Primitive: git hooks, `audit:git-automation`, skill `git-commit`, skill `git-create-pr`, review locale/branch, worklog.
+
+Ordine: completare unita' -> gate qualita' -> aggiornare worklog/todos -> audit git -> commit -> push/PR se consentito.
+
+Sottopunti:
+
+- [ ] verificare auto-commit dopo gate verdi come chiusura naturale
+- [ ] chiarire quando push deve fermarsi per review, remote policy o rischio
+- [ ] distinguere review locale, branch review e audit periodico
+- [ ] documentare fallback fuori Claude Code
+- [ ] impedire "completato" se commit/push/PR richiesti non sono valutati
+
+Done: l'utente non deve ricordare commit/push; se il push non avviene, motivo e prossimo passo sono espliciti.
+
+Verifiche: `npm run post-modifiche`, `npm run audit:git-automation`, `git status --short --untracked-files=all`.
+
+### 11. `[Temporal][breve/medio/lungo]` Orizzonti temporali, manutenzione e cadenze periodiche
+
+Problema: senza orizzonte temporale il backlog diventa una discarica e gli obblighi immediati vengono rinviati.
+
+Stato: regole presenti nei canonici; mancano cadenze operative complete per memoria, docs, cleanup, capability audit, sicurezza, review e automazioni.
+
+Trigger: task non banale, follow-up da audit, manutenzione ricorrente o punto senza owner temporale.
+
+Output: classificazione breve/medio/lungo, sede canonica, owner logico, cadenza o prossimo passo.
+
+Limiti: non rinviare obblighi brevi nel medio/lungo termine.
+
+Primitive: todos, worklog, audit periodici, workflow schedulati, runtime brief, canonici.
+
+Ordine: classificare breve/medio/lungo -> separare ora/follow-up/manutenzione -> assegnare sede -> promuovere ricorrenze -> auditare backlog.
+
+Sottopunti:
+
+- [ ] rendere classificazione temporale obbligatoria nei task non banali
+- [ ] definire cadenze per memoria, docs, cleanup, capability audit, security review e automazioni
+- [ ] dare owner logico e contenitore canonico a ogni follow-up
+- [ ] trasformare ricorrenze utili in audit/script/workflow schedulati
+- [ ] trovare obblighi brevi parcheggiati impropriamente nel backlog
+
+Done: ogni punto aperto ha orizzonte, sede e motivo; manutenzione periodica non dipende dalla memoria dell'utente.
+
+Verifiche: review `todos/active.md`, review `ENGINEERING_WORKLOG.md`, audit cadenze da definire.
+
+### 12. `[Docs][medio/lungo]` Cleanup AI-readable, documenti canonici, bootstrap e riuso
+
+Problema: file lunghi, documenti duplicati e root caotica peggiorano il comportamento dell'AI e rendono difficile riusare il sistema. Se il sistema AI deve essere portato in nuovi progetti o dato ad altre persone, deve diventare un pacchetto ADK installabile e non una serie di file copiati a mano.
+
+Stato: style guide e checklist bootstrap esistono; manca revisione sistematica di monoliti, duplicati, documenti storici, pacchetto riusabile e manifest di distribuzione per allineare team/progetti.
+
+Trigger: file lunghi, duplicati, root caotica, nuovo progetto, passaggio a team/altri utenti, pluginizzazione o drift canonici.
+
+Output: documenti classificati, duplicati ridotti, indici allineati, bootstrap e pacchetto ADK/plugin riusabili.
+
+Limiti: niente pulizia invasiva senza classificazione e niente nuovi documenti se esiste un canonico da aggiornare. La codebase hygiene post-edit e' obbligatoria come valutazione, non come cancellazione automatica.
+
+Primitive: docs style guide, audit architetturale/documentale, cleanup guidato, bootstrap checklist, template handoff, docs index, plugin packaging, `plugin.json`, manifest/versione/provenance, marketplace o team install.
+
+Ordine: classificare documenti -> ridurre duplicati/monoliti -> decidere cosa e' globale/progetto/plugin -> aggiornare indici -> creare pacchetto bootstrap/ADK -> testare trasferibilita'.
+
+Sottopunti:
+
+- [ ] riesaminare file troppo lunghi o con responsabilita' miste
+- [ ] applicare a ogni modifica il controllo codebase hygiene: file diretto giusto, file indiretti coerenti, duplicati/obsoleti rilevati, cleanup sicuro o follow-up tracciato
+- [ ] separare documenti storici, operativi, canonici e tracking
+- [ ] mantenere `docs/README.md` allineato
+- [ ] pulire root e cartelle solo dopo classificazione esplicita
+- [ ] mantenere AI-readable i canonici con summary, non-goals, cross-link e limiti
+- [ ] mantenere `NEW_PROJECT_BOOTSTRAP_CHECKLIST.md` allineata
+- [ ] creare pacchetto handoff riusabile per altri progetti o persone
+- [ ] creare pacchetto ADK riusabile con regole/memoria, skill, hook, subagent, comandi e manifest di plugin
+- [ ] definire schema minimo di `plugin.json`: nome, versione, contenuti inclusi, hook installati, skill incluse, subagent inclusi, provenance, compatibilita' ambiente e strategia update
+- [ ] decidere cosa resta globale, cosa resta progetto-specifico e cosa va nel plugin installabile per evitare copie divergenti
+
+Done: una nuova sessione capisce dove trovare ogni cosa; un nuovo progetto puo' partire con baseline AI senza conoscenza implicita; un team puo' installare lo stesso pacchetto versionato senza ricostruire a mano regole, skill, hook e agenti.
+
+Verifiche: review `docs/README.md`, audit documentale manuale, prova bootstrap simulata, review del manifest/plugin package, simulazione di installazione in progetto vuoto.
+
+### 13. `[Autonomy][medio/lungo]` Autonomia, metriche e sistema che migliora se stesso
+
+Problema: l'utente non deve ripetere sempre le stesse correzioni; il sistema deve misurare miss e correggersi strutturalmente.
+
+Stato: audit e violation log esistono; manca sistema maturo di metriche che colleghi miss a regola/checklist/skill/hook/audit/workflow.
+
+Trigger: correzione ripetuta dall'utente, miss ricorrente, false completion, capability mancante o regola/tool inutilizzato.
+
+Output: metrica del miss, root cause, primitive correttiva, verifica dell'effetto e riduzione di regole/tool inutili.
+
+Limiti: non accumulare automazioni non misurate e non chiamare autonomia una decisione improvvisata.
+
+Primitive: metriche compliance, violation log, audit, hook, skill governance, workflow periodici, worklog decisionale.
+
+Ordine: raccogliere miss -> classificare root cause -> scegliere primitive -> implementare correzione minima -> misurare effetto -> rimuovere inutili.
+
+Sottopunti:
+
+- [ ] misurare omissioni, routing errato e falsi completati come segnali sistemici
+- [ ] convertire miss ricorrenti nel livello corretto di automazione o enforcement
+- [ ] riconoscere quando manca la primitive giusta e proporre creazione con conferma
+- [ ] collegare autonomia, orizzonti temporali, capability governance e truthful completion in metriche
+- [ ] evitare accumulo di regole/tool non usati
+- [ ] definire audit di salute architetturale/documentale del sistema AI
+
+Done: errori ricorrenti producono miglioramento strutturale misurabile e l'utente non fa da memoria esterna.
+
+Verifiche: `npm run audit:violations`, `npm run audit:rule-enforcement`, audit metriche autonomia da definire.
 
 ---
 
 ## Completati
 
-### Fase 1 — Control plane cognitivo
+Regola per leggere questa sezione: un completato non significa che l'intera area sia chiusa per sempre. Significa che quel blocco specifico e' stato implementato, collegato ai canonici e verificato almeno con audit/gate indicati. I limiti residui restano tracciati negli item aperti.
 
-- ✅ Far comparire in ogni task micro-spiegazione su fonte di verita', strumenti attivati e strumenti esclusi. → *Runtime brief (2026-04-18)* *(ex 1)*
-- ✅ Formalizzare regola decisionale su quando la ricerca web e' obbligatoria, facoltativa o inutile. → *Runtime brief (2026-04-18)* *(ex 2)*
-- ✅ Far proporre sempre modello e ambiente in base a qualita', costo, velocita', tool disponibili, contesto e rischio. → *Runtime brief (2026-04-18)* *(ex 3)*
-- ✅ Far riconoscere automaticamente i capability gap e instradarli verso la primitive corretta. → *Gia' nel runtime brief* *(ex 4)*
-- ✅ Impedire che gli esempi dati dall'utente vengano trattati come lista chiusa: ricavare il principio sottostante e applicarlo a tutti i casi analoghi — anche non citati. → *Runtime brief + AGENTS.md sezione "Interpretazione degli esempi" (2026-04-20)* *(ex 5)*
-- ✅ Produrre matrice unica `regola -> primitive di enforcement -> verifica`. → *`src/scripts/ruleEnforcementMatrix.ts` + `audit:rule-enforcement` verde (snapshot 24/37, 0 gap meccanizzabili, 2026-04-19)* *(ex 6)*
-- ✅ Promuovere a hook o audit bloccante tutte le regole critiche ancora solo testo. → *Tutte le regole meccanizzabili mappate e verificate (2026-04-18)* *(ex 7)*
-- ✅ Allineare hook attivi e regole canoniche. → *13/13 hook verificati, matrice allineata con AGENTS.md (2026-04-18)* *(ex 8)*
-- ✅ Definire pre-condition e post-condition standard per skill e MCP critici. → *10 skill/MCP coperti in AGENTS.md (2026-04-18)* *(ex 9)*
-- ✅ Aggiungere audit dedicato che misuri la copertura reale. → *`npm run audit:rule-enforcement` (2026-04-18)* *(ex 10)*
-- ✅ Misurare dai log e dalle violazioni ricorrenti quali decisioni vengono sbagliate. → *`npm run audit:violations` (2026-04-18)* *(ex 11)*
-- ✅ Propagazione automatica capability: aggiornare tabelle, pre/post conditions, matrice e docs quando si aggiunge/modifica skill, MCP, hook o workflow. → *AGENTS.md e runtime brief (2026-04-19)* *(ex 82c)*
-- ✅ Disciplina di esecuzione sequenziale: completare item N interamente prima di N+1. → *AGENTS.md e runtime brief (2026-04-19)* *(ex 82d)*
-- ✅ Ragionamento connessivo: ragionare proattivamente sul grafo di connessioni e aggiornare tutto cio' che e' connesso. → *AGENTS.md e runtime brief (2026-04-19)* *(ex 82e)*
-- ✅ Recap e conferma utente prima di implementare task non banali. → *AGENTS.md e runtime brief (2026-04-19)* *(ex 82f)*
-- ✅ Contratti espliciti, SSOT per stato condiviso, propagazione fallimenti al top level, no silent bypass safety gate. → *AGENTS.md (2026-04-19)* *(ex 82g)*
-- ✅ Classificazione errori per root cause prima del fix; classificazione documenti per ruolo. → *AGENTS.md + runtime brief (2026-04-19)* *(ex 82h)*
-- ✅ Skill-activation hook `UserPromptSubmit`: suggerisce skill in base al contenuto del prompt. → *`skill-activation.ps1` in settings.json (2026-04-19)*
+### C1. `2026-04-18` Runtime brief operativo iniziale
 
-### Fase 2 — Contesto, memoria e documenti
+Cosa copre: scelta fonte/strumenti, web policy, modello/ambiente, capability gap, no false completion e requisiti runtime minimi che devono essere reiniettati all'AI.
 
-- ✅ Provare con casi reali la continuita' tra chat vecchia e chat nuova. → *session-start.ps1 inietta SESSION_HANDOFF.md (2026-04-18)* *(ex 13)*
-- ✅ Scrivere style guide esplicita per documenti AI-readable. → *`docs/AI_DOC_STYLE_GUIDE.md` (2026-04-18)* *(ex 15)*
-- ✅ Definire segnali oggettivi di context degradation e far proporre l'handoff. → *PreCompact inietta CONTEXT_DEGRADATION_WARNING (2026-04-18)* *(ex 17)*
-- ✅ Rendere piu' sistematico l'aggiornamento di memory, worklog e todos. → *stop-session.ps1 controlla worklog + active.md (2026-04-18)* *(ex 18)*
-- ✅ Verificare con audit che il requirement ledger resti coperto. → *`npm run audit:ledger` — 14/14 check (2026-04-18)* *(ex 19)*
-- ✅ Aggiungere audit che confermi che le skill personalizzate si attivano davvero. → *`npm run audit:skills` — 5/5 critiche verificate (2026-04-18)* *(ex 20)*
+Dove vive: `docs/AI_RUNTIME_BRIEF.md`, `AGENTS.md`, `CLAUDE.md`, hook `SessionStart`, `UserPromptSubmit` e `PreCompact`.
 
-### Fase 10 — Cleanup strutturale
+Prova: `audit:ai-control-plane`, `audit:ledger` e successivi `post-modifiche` hanno verificato che il brief sia presente nei canonici e agganciato ai punti runtime.
 
-- ✅ Blast radius documentale a ogni task: cercare e aggiornare artefatti correlati stale. → *AGENTS.md e runtime brief (2026-04-18)* *(ex 82b)*
-- ✅ AGENTS.md slim-down: rimuovere sezioni duplicate con runtime brief e condensare il file. → *476→199 righe (2026-04-19)*
+Limite residuo: il brief rende visibili le regole, ma non garantisce da solo comportamento perfetto; i miss reali vanno ancora misurati e promossi in hook/audit quando deterministici.
+
+### C2. `2026-04-18` Matrice rule enforcement e audit regole
+
+Cosa copre: classificazione delle regole tra testo, skill, hook, audit/script e workflow, con distinzione tra enforcement reale e regola solo documentale.
+
+Dove vive: `src/scripts/ruleEnforcementMatrix.ts`, script `audit:rule-enforcement`, documenti di tracking e worklog.
+
+Prova: `audit:rule-enforcement` ha prodotto snapshot con gap meccanizzabili a zero nel perimetro misurato.
+
+Limite residuo: L2-L6 e molte regole cognitive restano audit-assisted/advisory, non blocking, per evitare hook semantici fragili.
+
+### C3. `2026-04-18` Audit violations, ledger e skill
+
+Cosa copre: controlli specifici per violazioni operative, copertura requirement ledger e coerenza skill/capability critiche.
+
+Dove vive: script `audit:violations`, `audit:ledger`, `audit:skills`, log in `~/memory/` e riferimenti nei canonici.
+
+Prova: gli audit sono stati creati, collegati ai package scripts e usati nei cicli di verifica successivi.
+
+Limite residuo: gli audit statici misurano presenza e copertura documentale; la qualita' del ragionamento runtime richiede test comportamentali su prompt reali.
+
+### C4. `2026-04-18` Style guide AI-readable
+
+Cosa copre: standard per documenti leggibili dall'AI: responsabilita' chiara, sezioni esplicite, nomi stabili, niente mega-file caotici e contenuti separati per scopo.
+
+Dove vive: `docs/AI_DOC_STYLE_GUIDE.md` e richiami nei canonici/documenti di tracking.
+
+Prova: usata come criterio per riorganizzare runtime brief, backlog madre, lista lineare e documenti di tracking.
+
+Limite residuo: non tutti i documenti storici sono stati riscritti; i file lunghi restano accettabili solo se sono storici o canonici, non runtime brief.
+
+### C5. `2026-04-18` SessionStart, UserPromptSubmit e PreCompact collegati al runtime brief
+
+Cosa copre: caricamento automatico di memoria, todos, runtime brief e reminder prima dei momenti critici di sessione e compact.
+
+Dove vive: `~/.claude/settings.json`, `~/.claude/hooks/session-start.ps1`, `~/.claude/hooks/inject-runtime-brief.ps1`, `docs/AI_RUNTIME_BRIEF.md`.
+
+Prova: `audit:hooks` e `audit:ai-control-plane:docs` verificano che i hook siano configurati e puntino a file esistenti.
+
+Limite residuo: il comportamento e' forte in Claude Code; la parity in Codex/Cloud Code resta un punto aperto.
+
+### C6. `2026-04-19` Routing capability e livelli L2-L9 audit-assisted
+
+Cosa copre: registry machine-readable per decidere fonte, capability, web/docs, ambiente e livelli di verifica in base al dominio del task.
+
+Dove vive: `docs/tracking/AI_CAPABILITY_ROUTING.json`, `docs/tracking/AI_LEVEL_ENFORCEMENT.json`, `src/scripts/capabilityRoutingAudit.ts`, `src/scripts/levelEnforcementAudit.ts`.
+
+Prova: `audit:routing` passa su smoke prompt canonici e `audit:l2-l6` verifica la copertura per quick-fix, bug e feature/refactor.
+
+Limite residuo: il routing resta advisory; diventa blocking solo quando il miss e' misurabile senza falsi positivi.
+
+### C7. `2026-04-19` Hook `skill-activation.ps1` su `UserPromptSubmit`
+
+Cosa copre: reminder runtime compatto per fonte di verita', web/docs, capability da usare/escludere, ambiente preferito, focus L2-L9 e ora P0/decomposizione/chiusura proattiva.
+
+Dove vive: `~/.claude/hooks/skill-activation.ps1`, `~/.claude/settings.json`, `docs/tracking/AI_CAPABILITY_ROUTING.json`.
+
+Prova: `audit:hooks` verifica presenza hook; `audit:ai-control-plane:docs` verifica contenuti P0 minimi nel file hook.
+
+Limite residuo: non sostituisce il ragionamento del modello; e' un advisory ad alto valore, non un deny hook.
+
+### C8. `2026-04-19` Slim-down e riallineamento canonici principali
+
+Cosa copre: separazione tra fonte madre, backlog, operating model, runtime brief e adapter, riducendo duplicazioni e conflitti tra AGENTS/CLAUDE/docs.
+
+Dove vive: `AGENTS.md`, `CLAUDE.md`, `docs/AI_MASTER_SYSTEM_SPEC.md`, `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md`, `docs/AI_OPERATING_MODEL.md`, `docs/AI_RUNTIME_BRIEF.md`.
+
+Prova: `audit:ai-control-plane:docs` controlla che i riferimenti canonici esistano e siano coerenti.
+
+Limite residuo: i canonici sono lunghi per natura; il controllo principale e' evitare drift, non renderli tutti brevi.
+
+### C9. `2026-04-21` Skill `context-handoff`
+
+Cosa copre: meccanismo base per trasferire obiettivi, stato, decisioni, file toccati, verifiche, blocchi e prossimi passi a una nuova sessione.
+
+Dove vive: `~/.claude/skills/context-handoff/`, `SESSION_HANDOFF.md`, `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md` item 5.
+
+Prova: `audit:ai-control-plane:docs` verifica che la skill contenga pre/post-condition minime (`Git status`, `SESSION_HANDOFF.md`, `active.md coerente`).
+
+Limite residuo: trasferimento end-to-end con nuova chat reale resta aperto; la presenza della skill non basta per marcare chiuso l'item 5.
+
+### C10. `2026-04-25` Capability matrix e policy ambiente/modello
+
+Cosa copre: distinzione tra Claude Code, Codex, Cloud Code e altri ambienti; scelta modello/ambiente in base a rischio, costo, qualita', contesto e tool disponibili.
+
+Dove vive: `docs/tracking/CAPABILITY_MATRIX.md`, `docs/AI_OPERATING_MODEL.md`, `AGENTS.md`, memoria decisioni sul router/modelli.
+
+Prova: `audit:ai-control-plane:docs` e `audit:routing` verificano che modello, ambiente e capability siano parte del control plane.
+
+Limite residuo: la parity completa tra ambienti non e' chiusa; Codex e Cloud Code non hanno tutte le stesse primitive di Claude Code.
+
+### C11. `2026-04-25` Intento non letterale, best practice, cross-domain e anti-compiacenza
+
+Cosa copre: l'AI non deve eseguire ciecamente; deve interpretare semantica, contestare ipotesi rischiose, controllare domini collegati e applicare best practice per artefatto.
+
+Dove vive: `AGENTS.md`, `docs/AI_RUNTIME_BRIEF.md`, `docs/AI_MASTER_SYSTEM_SPEC.md`, `docs/360-checklist.md`.
+
+Prova: presenza protetta da `audit:ai-control-plane:docs` e consolidata negli item aperti su ragionamento autonomo/enforcement.
+
+Limite residuo: comportamento reale da validare su task lunghi e ambigui; alcune parti restano cognitive e non bloccabili con hook.
+
+### C12. `2026-05-07` Hardening hook, runtime brief e handoff
+
+Cosa copre: audit hook aggiornato al formato reale, runtime brief piu' completo, handoff operativo e sicurezza auto-commit/push.
+
+Dove vive: `src/scripts/hooksConformityAudit.ts`, `docs/tracking/AI_HOOK_ENFORCEMENT_PLAN.md`, `docs/AI_RUNTIME_BRIEF.md`, hook git/request-action.
+
+Prova: `audit:hooks` passa su 17/17 check e `audit:ai-control-plane` include hooks, routing, ADK, L2-L6 e lista AI.
+
+Limite residuo: nuova chat reale e auto-push restano vincolati da stato git, branch policy e scope coerente.
+
+### C13. `2026-05-07` Lista sistema AI completata come backlog operativo
+
+Cosa copre: separazione tra lista AI globale e backlog applicativo LinkedIn, schema uniforme per ogni punto aperto, vista lineare derivata e audit anti-lista-generica.
+
+Dove vive: `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md`, `docs/AI_IMPLEMENTATION_LIST_GLOBAL.md`, `src/scripts/aiListCompletenessAudit.ts`.
+
+Prova: `audit:ai-list-completeness` passa su 9/9 check e fallisce se item aperti mancano di problema, stato, primitive, ordine, sottopunti, done o verifiche.
+
+Limite residuo: i punti aperti restano aperti; la lista e' completa come struttura, non come implementazione finale di tutto il sistema AI.
+
+### C14. `2026-05-08` Orchestrator Layer esplicitato
+
+Cosa copre: definizione dell'Orchestrator Layer come control plane che normalizza input, classifica task, sceglie fonte, capability, modello/ambiente, piano, verifiche, handoff e limiti.
+
+Dove vive: `docs/AI_MASTER_SYSTEM_SPEC.md`, `docs/AI_RUNTIME_BRIEF.md`, `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md`, `docs/AI_IMPLEMENTATION_LIST_GLOBAL.md`, `docs/AI_OPERATING_MODEL.md`.
+
+Prova: `audit:ai-list-completeness` e `audit:ai-control-plane:docs` verificano frammenti obbligatori su orchestrator, fonte, capability, modello, ambiente e verifiche.
+
+Limite residuo: manca ancora contratto unico cross-ambiente e metrica sistematica dei miss.
+
+### C15. `2026-05-08` Skill discovery esterna quando manca capability locale
+
+Cosa copre: una skill non installata localmente non va trattata come inesistente; il sistema deve cercare su cataloghi/fonti ufficiali e valutare qualita', reputazione, overlap e compatibilita'.
+
+Dove vive: `docs/AI_RUNTIME_BRIEF.md`, `docs/AI_MASTER_SYSTEM_SPEC.md`, `AI_CAPABILITY_ROUTING.json`, backlog/lista AI, audit control plane.
+
+Prova: `audit:routing` include smoke prompt `capability-discovery`; `audit:ai-control-plane:docs` verifica `npx skills find`, `skills.sh` e discovery esterna.
+
+Limite residuo: non e' ancora installata una skill locale `find-skills`; va deciso se promuoverla a capability stabile.
+
+### C16. `2026-05-08` Agent Development Kit e governance capability a 5 layer
+
+Cosa copre: regole/memoria, skill, hook, subagent, plugin/distribution e MCP esterni come layer distinti, con decisione di placement e riuso.
+
+Dove vive: `docs/tracking/AI_ADK_CAPABILITY_GOVERNANCE.json`, `src/scripts/adkCapabilityGovernanceAudit.ts`, `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md`, `docs/AI_IMPLEMENTATION_LIST_GLOBAL.md`.
+
+Prova: `audit:adk-capabilities` passa su standard layer, placement capability, candidate esterne e coverage layer.
+
+Limite residuo: alcune candidate esterne (Caveman, LeanCTX, SIMDex, Contact Skills) sono da valutare, non da installare alla cieca.
+
+### C17. `2026-05-08` Protocollo root cause e soluzione migliore
+
+Cosa copre: divieto di fermarsi alla prima risposta plausibile o al primo workaround quando esiste una soluzione migliore raggiungibile; richiesta di root cause, alternative e best practice aggiornate.
+
+Dove vive: `docs/AI_MASTER_SYSTEM_SPEC.md`, `docs/AI_RUNTIME_BRIEF.md`, `AI_LEVEL_ENFORCEMENT.json`, backlog/lista AI, checklist.
+
+Prova: `audit:l2-l6`, `audit:ai-list-completeness` e `audit:ai-control-plane:docs` falliscono se spariscono root cause, alternative, soluzione migliore o primo workaround.
+
+Limite residuo: richiede prova comportamentale reale su prompt ambigui dove la prima soluzione plausibile non e' la migliore.
+
+### C18. `2026-05-09` Organizzazione futura e change map sistema AI
+
+Cosa copre: mappa dei file da aggiornare insieme quando cambiano regole, capability, hook, livelli o handoff; ripristino del hook codebase hygiene nel settings reale e nella fonte di autoriparazione.
+
+Dove vive: `docs/tracking/README.md`, `src/scripts/aiControlPlaneAudit.ts`, `~/.claude/settings.json`, `~/.claude/scripts/model-router-config.mjs`.
+
+Prova: `audit:ai-control-plane:docs` include check della change map e `audit:hooks` verifica hook attivi.
+
+Limite residuo: il worklog resta storico e lungo; va usato come tracking, non come runtime brief.
+
+### C19. `2026-05-09` Gerarchia P0 del ragionamento AI
+
+Cosa copre: ordine cognitivo prioritario: intento reale, input utente come ipotesi, esempi come pattern, decomposizione, visione 360, root cause, fonte/primitive/verifica, continuita' e truthful completion.
+
+Dove vive: `docs/AI_RUNTIME_BRIEF.md`, `docs/AI_MASTER_SYSTEM_SPEC.md`, `~/.claude/hooks/skill-activation.ps1`, backlog/lista AI, operating model, checklist.
+
+Prova: `audit:ai-control-plane:docs` verifica P0 nel runtime brief e nel hook; `audit:ai-list-completeness` verifica P0 nella lista AI.
+
+Limite residuo: P0 e' advisory/runtime, non blocking semantico; va validato con prompt reali e miss loggati.
+
+### C20. `2026-05-09` Continuita' proattiva di chiusura
+
+Cosa copre: l'AI deve completare tutto il completabile nel turno corrente, poi lasciare prossimo passo concreto, blocco reale o domanda specifica; niente chiusure passive se esiste un'azione successiva ragionevole.
+
+Dove vive: `docs/AI_RUNTIME_BRIEF.md`, `docs/AI_MASTER_SYSTEM_SPEC.md`, `~/.claude/hooks/skill-activation.ps1`, `~/.claude/hooks/stop-proactive-next-step.ps1`, `~/.claude/settings.json`, `~/.claude/scripts/model-router-config.mjs`, `AGENTS.md`, backlog/lista AI.
+
+Prova: `audit:ai-control-plane:docs` verifica `Chiusura proattiva` e domanda concreta/specifica; `audit:hooks` verifica la presenza del `Stop` hook; `audit:ai-control-plane` verifica script, settings e fonte canonica; `post-modifiche` resta il gate finale sui cambi.
+
+Limite residuo: il hook e' advisory e non puo' leggere semanticamente ogni risposta finale; diventa blocking solo con metrica affidabile di false completion o miss ripetuti.
+
+### C21. `2026-05-09` Decomposizione ricorsiva dell'argomento
+
+Cosa copre: esempio o argomento diventano albero dell'argomento con sottopunti, sotto-sottopunti e rami correlati; per ogni ramo si rivalutano fonte, web/docs/MCP, skill/capability, rischi, verifiche e done criteria.
+
+Dove vive: `docs/AI_RUNTIME_BRIEF.md`, `docs/AI_MASTER_SYSTEM_SPEC.md`, `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md`, `docs/AI_IMPLEMENTATION_LIST_GLOBAL.md`, `~/.claude/hooks/skill-activation.ps1`.
+
+Prova: `audit:ai-control-plane:docs`, `audit:ai-list-completeness`, `audit:hooks`, `audit:ai-control-plane` e `post-modifiche` sono passati dopo l'inserimento.
+
+Limite residuo: la decomposizione resta cognitiva/advisory; va misurata tramite audit ledger e test su prompt densi.

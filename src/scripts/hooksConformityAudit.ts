@@ -28,6 +28,13 @@ interface HookEntry {
     hooks?: unknown;
 }
 
+interface ExpectedHookSpec {
+    eventName: string;
+    matcherIncludes?: string[];
+    commandParts: string[];
+    label: string;
+}
+
 function readSettings(): Record<string, unknown> {
     const path = join(homedir(), '.claude', 'settings.json');
     if (!existsSync(path)) {
@@ -69,12 +76,169 @@ function findEntryByCommand(entries: HookEntry[], commandPattern: string): HookE
     );
 }
 
+function findEntryByCommandParts(entries: HookEntry[], commandParts: string[]): HookEntry | undefined {
+    return entries.find((entry) =>
+        getNestedCommands(entry).some((hook) => {
+            const command = getCommandText(hook);
+            return commandParts.every((part) => command.includes(part));
+        }),
+    );
+}
+
 function readHookScript(scriptName: string): string | null {
     const scriptPath = join(homedir(), '.claude', 'hooks', scriptName);
     if (!existsSync(scriptPath)) {
         return null;
     }
     return readFileSync(scriptPath, 'utf8');
+}
+
+function getAllHookCommands(hooks: Record<string, unknown[]>): string[] {
+    return Object.values(hooks)
+        .flatMap((entries) => entries.filter(isRecord) as HookEntry[])
+        .flatMap((entry) => getNestedCommands(entry))
+        .map(getCommandText)
+        .filter((command) => command.length > 0);
+}
+
+function commandReferencesPath(command: string): string | null {
+    const fileMatch = command.match(/(?:-File|node)\s+("?)([A-Za-z]:[^\s"]+)\1/i);
+    if (!fileMatch) {
+        return null;
+    }
+    return fileMatch[2].replace(/\//g, '\\');
+}
+
+function checkConfiguredCommandTargetsExist(hooks: Record<string, unknown[]>): CheckResult {
+    const missing = getAllHookCommands(hooks)
+        .map((command) => commandReferencesPath(command))
+        .filter((path): path is string => path !== null)
+        .filter((path) => !existsSync(path));
+
+    if (missing.length > 0) {
+        return {
+            name: 'Tutti gli hook configurati puntano a file esistenti',
+            passed: false,
+            detail: `Target mancanti: ${[...new Set(missing)].join(', ')}`,
+        };
+    }
+
+    return {
+        name: 'Tutti gli hook configurati puntano a file esistenti',
+        passed: true,
+        detail: `${getAllHookCommands(hooks).length} comandi hook configurati hanno target validi ✅`,
+    };
+}
+
+function checkExpectedHooksConfigured(hooks: Record<string, unknown[]>): CheckResult {
+    const expected: ExpectedHookSpec[] = [
+        { eventName: 'PreToolUse', matcherIncludes: ['Edit', 'Write', 'MultiEdit'], commandParts: ['pre-edit-antiban.ps1'], label: 'pre-edit-antiban' },
+        { eventName: 'PreToolUse', matcherIncludes: ['Edit', 'Write', 'MultiEdit'], commandParts: ['pre-edit-secrets.ps1'], label: 'pre-edit-secrets' },
+        { eventName: 'PreToolUse', matcherIncludes: ['Edit', 'Write', 'MultiEdit'], commandParts: ['pre-edit-best-practice.ps1'], label: 'pre-edit-best-practice' },
+        { eventName: 'PreToolUse', matcherIncludes: ['Bash'], commandParts: ['pre-bash-l1-gate.ps1'], label: 'pre-bash-l1-gate' },
+        { eventName: 'PreToolUse', matcherIncludes: ['Bash'], commandParts: ['pre-bash-git-gate.ps1'], label: 'pre-bash-git-gate' },
+        { eventName: 'PreToolUse', matcherIncludes: ['mcp__.*'], commandParts: ['pre-mcp-guard.ps1'], label: 'pre-mcp-guard' },
+        { eventName: 'SessionStart', commandParts: ['ensure-claude-model-router.ps1'], label: 'ensure router session-start' },
+        { eventName: 'SessionStart', commandParts: ['merge-canonical-settings.mjs'], label: 'merge canonical settings' },
+        { eventName: 'SessionStart', commandParts: ['session-start.ps1'], label: 'session-start' },
+        { eventName: 'SessionStart', commandParts: ['session-start-continuation.ps1'], label: 'session-start-continuation' },
+        { eventName: 'UserPromptSubmit', commandParts: ['ensure-claude-model-router.ps1'], label: 'ensure router prompt' },
+        { eventName: 'UserPromptSubmit', commandParts: ['inject-runtime-brief.ps1', 'UserPromptSubmit'], label: 'runtime brief prompt' },
+        { eventName: 'UserPromptSubmit', commandParts: ['skill-activation.ps1'], label: 'skill activation' },
+        { eventName: 'UserPromptSubmit', commandParts: ['multi-file-recap-check.ps1'], label: 'multi-file recap' },
+        { eventName: 'UserPromptSubmit', commandParts: ['pre-edit-verify-intent.ps1'], label: 'verify intent' },
+        { eventName: 'UserPromptSubmit', commandParts: ['user-prompt-commit-gate.ps1'], label: 'pending commit gate' },
+        { eventName: 'UserPromptSubmit', commandParts: ['user-prompt-model-suggestion.ps1'], label: 'model suggestion' },
+        { eventName: 'PreCompact', commandParts: ['inject-runtime-brief.ps1', 'PreCompact'], label: 'runtime brief compact' },
+        { eventName: 'PreCompact', commandParts: ['pre-compact-handoff.ps1'], label: 'pre-compact handoff' },
+        { eventName: 'Stop', commandParts: ['stop-session.ps1'], label: 'stop session' },
+        { eventName: 'Stop', commandParts: ['pre-stop-commit-gate.ps1'], label: 'stop commit gate' },
+        { eventName: 'Stop', commandParts: ['stop-proactive-next-step.ps1'], label: 'stop proactive next step' },
+        { eventName: 'PostToolUse', matcherIncludes: ['Bash'], commandParts: ['post-bash-quality-log.ps1'], label: 'quality log' },
+        { eventName: 'PostToolUse', matcherIncludes: ['Bash'], commandParts: ['post-bash-git-audit.ps1'], label: 'git audit log' },
+        { eventName: 'PostToolUse', matcherIncludes: ['Edit', 'Write', 'MultiEdit'], commandParts: ['file-size-check.ps1'], label: 'file size check' },
+        { eventName: 'PostToolUse', matcherIncludes: ['Edit', 'Write', 'MultiEdit'], commandParts: ['post-edit-antiban-audit.ps1'], label: 'antiban post audit' },
+        { eventName: 'PostToolUse', matcherIncludes: ['Edit', 'Write', 'MultiEdit'], commandParts: ['post-edit-request-action.ps1'], label: 'request action' },
+        { eventName: 'PostToolUse', matcherIncludes: ['Edit', 'Write', 'MultiEdit'], commandParts: ['post-edit-verify-checklist.ps1'], label: 'post edit L2-L6 checklist' },
+        { eventName: 'PostToolUse', matcherIncludes: ['Edit', 'Write', 'MultiEdit'], commandParts: ['post-edit-codebase-hygiene.ps1'], label: 'post edit codebase hygiene' },
+        { eventName: 'PostToolUse', matcherIncludes: ['WebSearch'], commandParts: ['post-websearch-log.ps1'], label: 'web search log' },
+        { eventName: 'SubagentStop', commandParts: ['subagent-stop.ps1'], label: 'subagent stop' },
+        { eventName: 'TeammateIdle', commandParts: ['teammate-event.ps1'], label: 'teammate idle' },
+        { eventName: 'TaskCreated', commandParts: ['teammate-event.ps1'], label: 'task created' },
+        { eventName: 'TaskCompleted', commandParts: ['teammate-event.ps1'], label: 'task completed' },
+    ];
+
+    const missing = expected.filter((spec) => {
+        const entries = getHookEntries(hooks, spec.eventName);
+        const matchingEntry = findEntryByCommandParts(entries, spec.commandParts);
+        if (!matchingEntry) {
+            return true;
+        }
+        if (!spec.matcherIncludes || spec.matcherIncludes.length === 0) {
+            return false;
+        }
+        const matcher = getMatcher(matchingEntry);
+        return spec.matcherIncludes.some((part) => !matcher.includes(part));
+    });
+
+    if (missing.length > 0) {
+        return {
+            name: 'Copertura completa hook attivi',
+            passed: false,
+            detail: `Hook mancanti o matcher errato: ${missing.map((spec) => `${spec.eventName}:${spec.label}`).join(', ')}`,
+        };
+    }
+
+    return {
+        name: 'Copertura completa hook attivi',
+        passed: true,
+        detail: `${expected.length} hook/config command attesi sono presenti con evento e matcher corretti ✅`,
+    };
+}
+
+function checkPostEditRequestActionSafety(): CheckResult {
+    const script = readHookScript('post-edit-request-action.ps1');
+    if (!script) {
+        return {
+            name: 'Post-edit request action sicuro',
+            passed: false,
+            detail: 'Script post-edit-request-action.ps1 non trovato.',
+        };
+    }
+
+    const executableScript = script
+        .split(/\r?\n/)
+        .filter((line) => !line.trimStart().startsWith('#'))
+        .join('\n');
+
+    const forbidden = [
+        { label: 'git add .', pattern: /git\s+-C\s+\$cwd\s+add\s+\./i },
+        { label: '--no-verify', pattern: /--no-verify/i },
+    ].filter((entry) => entry.pattern.test(executableScript));
+
+    const required = [
+        'audit:git-automation:strict:commit',
+        'audit:git-automation:strict:push',
+        'post-modifiche',
+    ].filter((snippet) => !script.includes(snippet));
+
+    if (forbidden.length > 0 || required.length > 0) {
+        const details = [
+            ...forbidden.map((entry) => `vietato: ${entry.label}`),
+            ...required.map((snippet) => `manca: ${snippet}`),
+        ];
+        return {
+            name: 'Post-edit request action sicuro',
+            passed: false,
+            detail: details.join(', '),
+        };
+    }
+
+    return {
+        name: 'Post-edit request action sicuro',
+        passed: true,
+        detail: 'Niente git add cieco, niente --no-verify, gate post-modifiche + git audit richiesti ✅',
+    };
 }
 
 function checkPreToolUseAntiban(hooks: Record<string, unknown[]>): CheckResult {
@@ -180,6 +344,7 @@ function checkPostToolUseGitAudit(hooks: Record<string, unknown[]>): CheckResult
 function checkStopHook(hooks: Record<string, unknown[]>): CheckResult {
     const stop = getHookEntries(hooks, 'Stop');
     const sessionLog = findEntryByCommand(stop, 'stop-session.ps1');
+    const proactiveNextStep = findEntryByCommand(stop, 'stop-proactive-next-step.ps1');
     if (!sessionLog) {
         return {
             name: 'Stop hook (session log)',
@@ -187,12 +352,23 @@ function checkStopHook(hooks: Record<string, unknown[]>): CheckResult {
             detail: 'Stop hook con session-log mancante.',
         };
     }
-    return { name: 'Stop hook (session log)', passed: true, detail: 'session-log.txt presente ✅' };
+    if (!proactiveNextStep) {
+        return {
+            name: 'Stop hook (session log + continuita)',
+            passed: false,
+            detail: 'Stop hook stop-proactive-next-step.ps1 mancante.',
+        };
+    }
+    return {
+        name: 'Stop hook (session log + continuita)',
+        passed: true,
+        detail: 'session-log + PROACTIVE_NEXT_STEP_GATE presenti ✅',
+    };
 }
 
 function checkUserPromptSubmitRuntimeHook(hooks: Record<string, unknown[]>): CheckResult {
     const submit = getHookEntries(hooks, 'UserPromptSubmit');
-    const runtimeBrief = findEntryByCommand(submit, 'inject-runtime-brief.ps1 -HookEventName UserPromptSubmit');
+    const runtimeBrief = findEntryByCommandParts(submit, ['inject-runtime-brief.ps1', 'UserPromptSubmit']);
     if (!runtimeBrief) {
         return {
             name: 'UserPromptSubmit runtime-brief hook',
@@ -226,7 +402,7 @@ function checkUserPromptSubmitSkillRoutingHook(hooks: Record<string, unknown[]>)
 
 function checkPreCompactRuntimeHook(hooks: Record<string, unknown[]>): CheckResult {
     const compact = getHookEntries(hooks, 'PreCompact');
-    const runtimeBrief = findEntryByCommand(compact, 'inject-runtime-brief.ps1 -HookEventName PreCompact');
+    const runtimeBrief = findEntryByCommandParts(compact, ['inject-runtime-brief.ps1', 'PreCompact']);
     if (!runtimeBrief) {
         return {
             name: 'PreCompact runtime-brief hook',
@@ -336,6 +512,9 @@ function run(): void {
     const hooks = getHooks(settings);
 
     const checks: CheckResult[] = [
+        checkConfiguredCommandTargetsExist(hooks),
+        checkExpectedHooksConfigured(hooks),
+        checkPostEditRequestActionSafety(),
         checkUserPromptSubmitRuntimeHook(hooks),
         checkUserPromptSubmitSkillRoutingHook(hooks),
         checkPreToolUseAntiban(hooks),

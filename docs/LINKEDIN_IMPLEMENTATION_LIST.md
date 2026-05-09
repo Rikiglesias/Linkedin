@@ -4,7 +4,7 @@ Questa lista raccoglie i punti di implementazione specifici per questo progetto 
 
 Scopo: leggere tutto in una sola passata, confrontare con la chat, capire cosa manca a livello di bot e infrastruttura LinkedIn.
 
-Nota: questo file e' il backlog primario per i punti LinkedIn-specifici. Il backlog strutturato con sottopunti, primitive corrette e done criteria sta in `AGENTS.md`, `docs/AI_OPERATING_MODEL.md` e `todos/workflow-architecture-hardening.md`.
+Nota: questo file e' la vista lineare primaria per i punti LinkedIn-specifici. Il backlog strutturato madre con sottopunti, primitive corrette e done criteria sta in `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md`; il dettaglio tecnico operativo del bot sta in `todos/workflow-architecture-hardening.md`.
 
 Regola di aggiornamento: quando si chiude un item, spostarlo nella sezione Completati con data e riferimento all'intervento.
 

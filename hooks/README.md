@@ -22,8 +22,8 @@ ls hooks/
 | Hook file | Evento CC | Tipo | Scopo |
 |-----------|-----------|------|-------|
 | `session-start.ps1` | `SessionStart` | sync | Carica memoria globale, todos, AI_RUNTIME_BRIEF.md |
-| `inject-runtime-brief.ps1` | `UserPromptSubmit` | sync | Reinietta AI_RUNTIME_BRIEF.md prima di ogni prompt |
-| `skill-activation.ps1` | `UserPromptSubmit` | sync | Routing capability basato su AI_CAPABILITY_ROUTING.json |
+| `inject-runtime-brief.ps1` | `UserPromptSubmit` | sync | Reinietta AI_RUNTIME_BRIEF.md e gerarchia P0 prima di ogni prompt |
+| `skill-activation.ps1` | `UserPromptSubmit` | sync | Routing capability basato su AI_CAPABILITY_ROUTING.json + reminder P0 compatto |
 | `pre-bash-l1-gate.ps1` | `PreToolUse` (bash git commit) | deny | Blocca commit senza quality gate recente |
 | `pre-bash-git-gate.ps1` | `PreToolUse` (bash git commit/push) | deny | Blocca commit/push se repo in stato sbagliato |
 | `pre-edit-antiban.ps1` | `PreToolUse` (edit/write su file sensibili) | deny | Blocca modifiche LinkedIn senza antiban-review |
@@ -32,6 +32,8 @@ ls hooks/
 | `post-edit-antiban-audit.ps1` | `PostToolUse` (edit/write su file sensibili) | async | Audit violazioni antiban post-modifica |
 | `file-size-check.ps1` | `PostToolUse` (edit/write) | async | Avviso su file >300 righe per valutare split |
 | `stop-session.ps1` | `Stop` | async | Check worklog + active.md + notifica fine sessione |
+| `pre-stop-commit-gate.ps1` | `Stop` | sync advisory | Segnala chiusura con working tree dirty o blocco git pendente |
+| `stop-proactive-next-step.ps1` | `Stop` | sync advisory | Richiede prossimo passo concreto, blocco reale o domanda specifica prima della chiusura |
 | `teammate-event.ps1` | `TeammateIdle/TaskCreated/TaskCompleted` | async | Log eventi agent teams |
 | `_lib.ps1` | — | — | Libreria condivisa per tutti gli hook |
 
