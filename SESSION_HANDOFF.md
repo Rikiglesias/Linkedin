@@ -1,8 +1,10 @@
-# SESSION_HANDOFF — 2026-05-07
+# SESSION_HANDOFF — 2026-05-11
 
 ## Scopo Del File
 
 Questo file serve a trasferire il contesto operativo a una nuova chat senza costringere Riccardo a rispiegare tutto.
+
+Ultima validazione reale: nuova sessione Codex del 2026-05-11 avviata con prompt `resume`. La sessione ha letto memoria globale, questo handoff, AGENTS e canonici indicati, ricostruendo obiettivi, stato, blocchi e prossimi passi senza input aggiuntivo dell'utente.
 
 Non e' un diario completo. Deve dire:
 - cosa si stava facendo
@@ -42,7 +44,7 @@ Non e' un diario completo. Deve dire:
 - `context-handoff` e `session-prompt` devono restare distinti:
   - `context-handoff` = handoff operativo dettagliato.
   - `session-prompt` = prompt copiabile per nuova chat.
-- Il trasferimento chat vecchia -> chat nuova e' **parziale**, non chiuso: esiste il meccanismo, ma va validata la qualita' reale del contenuto.
+- Il trasferimento chat vecchia -> chat nuova ha una prima prova reale passata in Codex (2026-05-11), ma resta da mantenere contro drift/staleness e da verificare quando si rigenera `.claude/SESSION_PROMPT.md`.
 - `post-bash-auto-push.ps1:117` non e' piu' un blocker aperto: lo script versionato parsea con `pwsh` e `powershell`, e non e' presente negli hook globali attivi.
 
 ## Blast Radius Identificato
@@ -60,6 +62,12 @@ Non e' un diario completo. Deve dire:
 - `src/scripts/aiControlPlaneAudit.ts` — fix audit hook runtime brief con argomenti posizionali.
 - `src/scripts/hooksConformityAudit.ts` — fix audit hook runtime brief con argomenti posizionali.
 - `src/scripts/lib/aiControlPlaneRegistry.ts` — supporto capability `plugin`, `agent`, `cli` e source `session-state`.
+
+### Aggiornamento ripresa 2026-05-11
+
+- `SESSION_HANDOFF.md` — aggiornato per rimuovere blocchi git stale e registrare la prova reale di ripresa.
+- `.claude/SESSION_PROMPT.md` — file ignorato da git, da rigenerare con stato corrente quando serve passare una chat nuova.
+- `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md`, `docs/AI_IMPLEMENTATION_LIST_GLOBAL.md`, `todos/active.md`, `docs/tracking/ENGINEERING_WORKLOG.md` — da tenere allineati alla prova di ripresa.
 
 ### File globali/non versionati rilevanti
 
@@ -89,17 +97,18 @@ Non e' un diario completo. Deve dire:
 - Piano hook scritto: 22 hook logici attuali, promozioni future solo su miss ricorrenti.
 - Punto "trasferire contesto in un'altra chat" ora e' aperto in modo esplicito nella lista operativa, non solo disperso nei canonici.
 
-### Fatto ma ancora da validare end-to-end
+### Fatto e validato una prima volta
 
 - Trasferimento chat vecchia -> chat nuova:
   - il meccanismo esiste
   - il template esiste
   - l'handoff e' stato riscritto
-  - manca ancora test reale con nuova chat che legga solo handoff + canonici indicati e riparta senza omissioni
+  - una nuova sessione Codex (2026-05-11) e' ripartita da `resume`, memoria globale, `SESSION_HANDOFF.md` e canonici indicati senza chiedere contesto aggiuntivo
 
 ### Non chiuso
 
-- Commit/push del blocco corrente: non automatico per working tree misto, branch `main` ahead 1 e immagini untracked.
+- Protezione anti-staleness del prompt: `.claude/SESSION_PROMPT.md` esiste ma e' ignorato da git e puo' diventare stale se non rigenerato.
+- Commit/push del blocco corrente: branch `main` allineato a `origin/main` su `99c9eb5`; working tree iniziale sporco solo per 6 immagini WhatsApp untracked in root.
 - Briefing mattutino: ancora da configurare.
 - Plugin L5: manifesto presente, manca install script robusto.
 - LinkedIn Bot production blockers: lifecycle, control plane, workflow truthfulness, proxy/session classification, staging reale.
@@ -119,19 +128,22 @@ Non e' un diario completo. Deve dire:
 - `npm run audit:routing` — registry valido, 36 capability, 15 domini.
 - `npm run audit:skills` — 5/5 skill critiche.
 - `git diff --check` — verde.
+- `npm run pre-modifiche` — verde il 2026-05-11: typecheck backend/frontend, ESLint e 1430 test Vitest passati.
+- `npm run post-modifiche` — verde il 2026-05-11: typecheck backend/frontend, ESLint e 1430 test Vitest passati.
+- `npm run audit:ai-control-plane` — verde il 2026-05-11.
+- `npm run conta-problemi` — verde il 2026-05-11: typecheck backend/frontend, ESLint e 1430 test Vitest passati.
 
 ## Blocchi Aperti
 
-1. **Handoff nuova chat non ancora validato end-to-end**
-   - Serve aprire una nuova chat o simulare una ripartenza.
-   - La nuova chat deve leggere solo questo file e i canonici indicati.
-   - Deve ricostruire obiettivi, stato, blocchi, file modificati e prossimi passi senza chiedere a Riccardo di rispiegare.
-   - Se fallisce, correggere template `context-handoff` e `session-prompt`.
+1. **Handoff nuova chat validato una prima volta, ma da proteggere contro staleness**
+   - Prova passata: nuova sessione Codex 2026-05-11 con prompt `resume`.
+   - Problema trovato: `.claude/SESSION_PROMPT.md` era stale rispetto al commit corrente e ai blocchi reali.
+   - Azione corretta: rigenerare il prompt quando serve, e mantenere `SESSION_HANDOFF.md` come fonte operativa tracked.
 
-2. **Working tree non pronto per commit automatico**
-   - Branch `main` ahead 1 rispetto a `origin/main`.
-   - Working tree contiene modifiche repo + 6 immagini untracked.
-   - `audit:git-automation` richiede review dello scope prima di commit/push.
+2. **Working tree con materiale esterno non correlato**
+   - Branch `main` e `origin/main` sono allineati su `99c9eb5`.
+   - Restano 6 immagini WhatsApp untracked in root.
+   - Non includerle in commit ciechi; trattarle come input esterno gia' analizzato o da archiviare con decisione separata.
 
 3. **Sistema AI ancora non completamente autonomo**
    - Oggi i gap meccanizzabili sono 0, ma 13 controlli restano non meccanizzabili by design.
@@ -140,17 +152,15 @@ Non e' un diario completo. Deve dire:
 
 ## Prossimi Passi Ordinati
 
-1. Validare il trasferimento in nuova chat:
-   - generare/controllare `SESSION_PROMPT.md`
-   - aprire nuova chat
-   - far leggere questo handoff + canonici indicati
-   - verificare se la nuova chat riparte correttamente
-   - correggere template/skill se manca dettaglio
+1. Chiudere l'allineamento della prova di ripresa:
+   - aggiornare `.claude/SESSION_PROMPT.md` con stato corrente quando serve una nuova chat
+   - aggiornare backlog/worklog con la prova 2026-05-11
+   - committare solo i file tracked del blocco handoff/docs, escludendo le immagini WhatsApp
 
-2. Separare commit del blocco AI:
-   - includere solo file docs/src collegati al control plane e handoff
+2. Commit del blocco AI:
+   - includere solo file docs/handoff collegati al control plane e alla validazione ripresa
    - escludere immagini WhatsApp
-   - verificare se `SESSION_HANDOFF.md` va nello stesso commit o in commit docs separato
+   - valutare push solo dopo `audit:git-automation`
 
 3. Configurare briefing mattutino:
    - definire canale/tool

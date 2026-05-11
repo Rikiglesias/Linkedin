@@ -981,3 +981,32 @@ Rendere la chiusura proattiva una primitive reale, non solo una regola testuale:
 - `npm run audit:ai-list-completeness` passato: 10/10 check.
 - `npm run post-modifiche` passato: typecheck backend/frontend, lint e 1430 test Vitest verdi.
 - `git diff --check` passato.
+
+
+## 2026-05-11 — Validazione reale ripresa nuova chat
+
+### Obiettivo
+
+Verificare che una nuova sessione riesca a ripartire dal sistema di memoria e handoff senza chiedere a Riccardo di rispiegare contesto, stato o blocchi aperti.
+
+### Interventi eseguiti
+
+- Avviata nuova sessione Codex con prompt `resume`.
+- Letti i file obbligatori di memoria globale e `todos/active.md`.
+- Letti `SESSION_HANDOFF.md`, `.claude/CONTINUATION.md`, `AGENTS.md`, `docs/AI_RUNTIME_BRIEF.md`, backlog e worklog rilevanti.
+- Verificato lo stato git reale: `main` allineato a `origin/main` su `99c9eb5`; restano solo 6 immagini WhatsApp untracked in root.
+- Aggiornati `SESSION_HANDOFF.md`, backlog AI, vista lineare, `todos/active.md` e memoria globale active per registrare la prima prova passata e il residuo anti-staleness.
+- Aggiornato `.claude/SESSION_PROMPT.md` ignorato da git per rimuovere contenuto stale del 2026-05-06.
+
+### Stato residuo
+
+- Il trasferimento chat ha una prova reale passata, ma resta aperto il controllo anti-staleness di `SESSION_HANDOFF.md` / `.claude/SESSION_PROMPT.md` dopo nuovi commit o cambi working tree.
+- Le 6 immagini WhatsApp untracked restano fuori scope e non vanno incluse in commit ciechi.
+
+### Verifica
+
+- `npm run pre-modifiche` passato: typecheck backend/frontend, ESLint e 1430 test Vitest verdi.
+- `npm run post-modifiche` passato: typecheck backend/frontend, ESLint e 1430 test Vitest verdi.
+- `npm run audit:ai-control-plane` passato: 25/25 control-plane, 17/17 hook, routing/adk/L2-L9/list completeness verdi.
+- `npm run conta-problemi` passato: typecheck backend/frontend, ESLint e 1430 test Vitest verdi.
+- `git diff --check` passato.

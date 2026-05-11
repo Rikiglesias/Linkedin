@@ -355,7 +355,7 @@ Verifiche richieste:
 
 ## 5. Memoria, handoff e trasferimento contesto in una nuova chat
 
-Status: PARZIALE
+Status: PARZIALE — prima prova manuale passata il 2026-05-11; resta hardening anti-staleness
 Orizzonte: breve + medio
 
 Problema reale:
@@ -364,7 +364,7 @@ Il sistema sembra avere memoria e handoff, ma se una nuova chat non riparte davv
 
 Stato attuale:
 
-Esistono memoria globale/progetto, `AI_RUNTIME_BRIEF.md`, skill `context-handoff` e `SESSION_HANDOFF.md`. Manca una validazione reale con nuova chat e un eventuale `SESSION_PROMPT.md` copiabile.
+Esistono memoria globale/progetto, `AI_RUNTIME_BRIEF.md`, skill `context-handoff`, `SESSION_HANDOFF.md` e `.claude/SESSION_PROMPT.md` come prompt copiabile ignorato da git. Una nuova sessione Codex del 2026-05-11 avviata con `resume` ha ricostruito contesto, stato, blocchi e prossimi passi leggendo memoria, handoff e canonici senza chiedere spiegazioni aggiuntive. Il gap residuo e' impedire che `.claude/SESSION_PROMPT.md` e handoff diventino stale tra una sessione e l'altra.
 
 Trigger operativo:
 
@@ -398,12 +398,13 @@ Ordine logico:
 
 Sottopunti operativi:
 
-- [ ] definire contenuto minimo non opzionale di `SESSION_HANDOFF.md`
-- [ ] creare o standardizzare `SESSION_PROMPT.md` quando serve passare contesto a nuova chat
-- [ ] includere stato git, modifiche non committate, verifiche eseguite e verifiche mancanti
-- [ ] includere blocchi aperti e prossimi passi ordinati logicamente
-- [ ] validare almeno una nuova chat reale leggendo solo handoff + canonici indicati
-- [ ] marcare il punto come completato solo dopo prova reale, non per presenza dei file
+- [x] definire contenuto minimo non opzionale di `SESSION_HANDOFF.md`
+- [x] creare o standardizzare `.claude/SESSION_PROMPT.md` quando serve passare contesto a nuova chat
+- [x] includere stato git, modifiche non committate, verifiche eseguite e verifiche mancanti
+- [x] includere blocchi aperti e prossimi passi ordinati logicamente
+- [x] validare almeno una nuova chat reale leggendo solo handoff + canonici indicati — prova Codex 2026-05-11
+- [ ] marcare il punto come completato solo dopo prova reale e gestione anti-staleness, non per presenza dei file
+- [ ] aggiungere o mantenere controllo anti-staleness sul prompt/handoff quando una sessione viene ripresa dopo commit nuovi
 
 Criterio done:
 
@@ -413,7 +414,7 @@ Criterio done:
 
 Verifiche richieste:
 
-- prova manuale con nuova chat
+- prova manuale con nuova chat — prima prova passata in Codex il 2026-05-11
 - `npm run audit:ai-control-plane`
 - controllo manuale di `SESSION_HANDOFF.md` e `SESSION_PROMPT.md` se presente
 

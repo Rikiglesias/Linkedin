@@ -143,7 +143,7 @@ Verifiche: `npm run audit:hooks`, `npm run audit:rule-enforcement`, `npm run aud
 
 Problema: handoff e memoria sono inutili se una nuova chat non riesce davvero a ripartire senza perdita di stato.
 
-Stato: `SESSION_HANDOFF.md`, runtime brief e skill `context-handoff` esistono; manca prova end-to-end reale e possibile `SESSION_PROMPT.md`.
+Stato: `SESSION_HANDOFF.md`, runtime brief, skill `context-handoff` e `.claude/SESSION_PROMPT.md` esistono. Prima prova end-to-end reale passata in Codex il 2026-05-11 con prompt `resume`: la nuova sessione ha ricostruito contesto, blocchi e prossimi passi senza chiedere spiegazioni all'utente. Resta aperto il controllo anti-staleness del prompt/handoff quando il repo avanza.
 
 Trigger: fine sessione lunga, compact, cambio chat/ambiente, contesto degradato o richiesta di trasferire contesto.
 
@@ -157,16 +157,17 @@ Ordine: generare handoff -> generare prompt nuova chat -> far leggere solo file 
 
 Sottopunti:
 
-- [ ] definire contenuto minimo non opzionale di `SESSION_HANDOFF.md`
-- [ ] creare o standardizzare `SESSION_PROMPT.md` per nuova chat
-- [ ] includere stato git, modifiche non committate, verifiche fatte e mancanti
-- [ ] includere blocchi aperti e prossimi passi ordinati
-- [ ] validare una nuova chat reale leggendo solo handoff + canonici indicati
-- [ ] non marcare completato finche' la prova reale non passa
+- [x] definire contenuto minimo non opzionale di `SESSION_HANDOFF.md`
+- [x] creare o standardizzare `.claude/SESSION_PROMPT.md` per nuova chat
+- [x] includere stato git, modifiche non committate, verifiche fatte e mancanti
+- [x] includere blocchi aperti e prossimi passi ordinati
+- [x] validare una nuova chat reale leggendo solo handoff + canonici indicati — prova Codex 2026-05-11
+- [ ] non marcare completato finche' anche il rischio staleness del prompt/handoff e' gestito
+- [ ] proteggere prompt/handoff da staleness dopo nuovi commit o working tree cambiato
 
 Done: una nuova chat riparte senza chiedere contesto all'utente e senza portarsi dietro blocker stale o punti generici.
 
-Verifiche: prova manuale nuova chat, `npm run audit:ai-control-plane`, review `SESSION_HANDOFF.md` e `SESSION_PROMPT.md`.
+Verifiche: prova manuale nuova chat (prima prova Codex 2026-05-11), `npm run audit:ai-control-plane`, review `SESSION_HANDOFF.md` e `.claude/SESSION_PROMPT.md`.
 
 ### 6. `[Reasoning][breve/medio]` Ragionamento autonomo, esempi come pattern e no false completion
 
