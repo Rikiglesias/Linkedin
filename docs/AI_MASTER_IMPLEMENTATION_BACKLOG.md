@@ -339,6 +339,7 @@ Sottopunti operativi:
 - [x] aggiungere hook advisory post-edit per codebase hygiene: file diretto corretto, file indiretti coerenti, duplicati/obsoleti/split/rename/delete/follow-up
 - [x] impedire falsi completati: meccanismo presente non significa test end-to-end superato — `audit:ai-list-completeness` fail su item privi di prova
 - [x] mantenere drift doc-hook-audit come bug operativo, non come nota — fix router hook 2026-05-13 trattato come bug
+- [x] introdurre `.claude/rules/` path-scoped: scaffold creato (2026-05-13) con `browser-antiban.md`, `api-security.md`, `scripts-audit.md`. Manca promozione automatica via hook che legge da qui
 
 Criterio done:
 
@@ -900,6 +901,10 @@ Sottopunti operativi:
 - [ ] creare pacchetto ADK riusabile con regole/memoria, skill, hook, subagent, comandi e manifest di plugin
 - [ ] definire schema minimo di `plugin.json`: nome, versione, contenuti inclusi, hook installati, skill incluse, subagent inclusi, provenance, compatibilita' ambiente e strategia update
 - [ ] decidere cosa resta globale, cosa resta progetto-specifico e cosa va nel plugin installabile per evitare copie divergenti
+- [ ] adottare struttura canonica `.claude/` (reference da community 2026): `hooks/`, `commands/`, `skills/`, `agents/`, `output-styles/`, `plugins/`, `rules/`, `statusline`, `settings.json`, `settings.local.json` — verificare gap rispetto a quanto presente
+- [ ] introdurre `.claude/output-styles/` per response format predefiniti (terse, code-only) — utile anche per gestire override Caveman ultra in italiano
+- [ ] aggiungere `CLAUDE.local.md` (gitignored) per override personali utente senza inquinare il repo condiviso
+- [ ] mantenere `CLAUDE.md` di progetto sotto ~200 righe come convention community (attualmente 161)
 
 Criterio done:
 
@@ -927,7 +932,7 @@ Il sistema non deve aspettare che l'utente ripeta sempre le stesse correzioni. D
 
 Stato attuale:
 
-Esistono audit e violation log, ma non ancora un sistema maturo di metriche che collega errori ricorrenti a promozione regola -> checklist -> skill -> hook -> audit -> workflow.
+Esistono audit e violation log; primo audit metriche `audit:miss-metrics` creato (2026-05-13) legge 15 stream di log e produce hit count 7d/30d/totale, trend e candidate per promozione. Manca ancora collegamento metrica -> root cause -> primitive correttiva automatica e un sistema maturo che propone azioni concrete.
 
 Trigger operativo:
 
@@ -962,8 +967,8 @@ Ordine logico:
 
 Sottopunti operativi:
 
-- [ ] misurare omissioni, errori di routing e falsi completati come segnali sistemici
-- [ ] convertire miss ricorrenti nel livello corretto di automazione o enforcement
+- [x] misurare omissioni, errori di routing e falsi completati come segnali sistemici — `audit:miss-metrics` (2026-05-13) legge 15 stream `~/memory/*-log.txt` e produce hit count, trend, raccomandazione promozione
+- [ ] convertire miss ricorrenti nel livello corretto di automazione o enforcement — primo set candidate identificato (proactive-next-step 106/7d, codebase-hygiene 96/7d, best-practice 85/7d, skill-precheck 12/7d)
 - [ ] far riconoscere automaticamente quando manca la primitive giusta e proporre creazione con conferma utente
 - [ ] collegare autonomia, orizzonti temporali, capability governance e truthful completion in metriche verificabili
 - [ ] evitare accumulo di regole o tool che non vengono usati o non risolvono miss reali

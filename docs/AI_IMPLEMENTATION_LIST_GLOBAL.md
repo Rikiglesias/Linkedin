@@ -134,6 +134,7 @@ Sottopunti:
 - [x] aggiungere hook advisory post-edit per codebase hygiene: file diretto corretto, file indiretti coerenti, duplicati/obsoleti/split/rename/delete/follow-up
 - [x] impedire falsi completati quando esiste solo il meccanismo ma manca test reale — `audit:ai-list-completeness` fail su item senza prova end-to-end
 - [x] trattare drift doc-hook-audit come bug operativo — fix router hook 2026-05-13 e' precedente esempio
+- [x] introdurre `.claude/rules/` path-scoped: regole che si caricano automaticamente solo quando l'AI tocca un certo glob — scaffold creato (2026-05-13) con `browser-antiban.md`, `api-security.md`, `scripts-audit.md` e README. Manca ancora promozione automatica via hook che legge da qui
 
 Done: ogni regola critica ha primitive, verifica e limite dichiarato; i blocker non si basano su interpretazioni fragili.
 
@@ -387,6 +388,10 @@ Sottopunti:
 - [ ] creare pacchetto ADK riusabile con regole/memoria, skill, hook, subagent, comandi e manifest di plugin
 - [ ] definire schema minimo di `plugin.json`: nome, versione, contenuti inclusi, hook installati, skill incluse, subagent inclusi, provenance, compatibilita' ambiente e strategia update
 - [ ] decidere cosa resta globale, cosa resta progetto-specifico e cosa va nel plugin installabile per evitare copie divergenti
+- [ ] adottare struttura canonica `.claude/` (reference da community 2026): `hooks/`, `commands/`, `skills/`, `agents/`, `output-styles/`, `plugins/`, `rules/`, `statusline`, `settings.json`, `settings.local.json` — verificare gap rispetto a quanto presente
+- [ ] introdurre `.claude/output-styles/` per response format predefiniti (terse, code-only) — anche per gestire override Caveman ultra in italiano
+- [ ] aggiungere `CLAUDE.local.md` (gitignored) per override personali utente senza inquinare il repo condiviso
+- [ ] mantenere `CLAUDE.md` di progetto sotto ~200 righe come convention community (attualmente 161)
 
 Done: una nuova sessione capisce dove trovare ogni cosa; un nuovo progetto puo' partire con baseline AI senza conoscenza implicita; un team puo' installare lo stesso pacchetto versionato senza ricostruire a mano regole, skill, hook e agenti.
 
@@ -396,7 +401,7 @@ Verifiche: review `docs/README.md`, audit documentale manuale, prova bootstrap s
 
 Problema: l'utente non deve ripetere sempre le stesse correzioni; il sistema deve misurare miss e correggersi strutturalmente.
 
-Stato: audit e violation log esistono; manca sistema maturo di metriche che colleghi miss a regola/checklist/skill/hook/audit/workflow.
+Stato: audit e violation log esistono; primo audit metriche `audit:miss-metrics` creato (2026-05-13) che legge `~/memory/*-log.txt` e produce hit count 7d/30d/totale, trend e candidate per promozione. Output corrente identifica 4 candidate forti: `proactive-next-step`, `codebase-hygiene`, `best-practice`, `skill-precheck`. Manca ancora collegamento metrica -> root cause -> primitive correttiva automatica.
 
 Trigger: correzione ripetuta dall'utente, miss ricorrente, false completion, capability mancante o regola/tool inutilizzato.
 
@@ -410,8 +415,8 @@ Ordine: raccogliere miss -> classificare root cause -> scegliere primitive -> im
 
 Sottopunti:
 
-- [ ] misurare omissioni, routing errato e falsi completati come segnali sistemici
-- [ ] convertire miss ricorrenti nel livello corretto di automazione o enforcement
+- [x] misurare omissioni, routing errato e falsi completati come segnali sistemici — `audit:miss-metrics` legge 15 stream di log e produce hit count 7d/30d/totale
+- [ ] convertire miss ricorrenti nel livello corretto di automazione o enforcement — primo set di candidate identificato (proactive-next-step, codebase-hygiene, best-practice, skill-precheck)
 - [ ] riconoscere quando manca la primitive giusta e proporre creazione con conferma
 - [ ] collegare autonomia, orizzonti temporali, capability governance e truthful completion in metriche
 - [ ] evitare accumulo di regole/tool non usati

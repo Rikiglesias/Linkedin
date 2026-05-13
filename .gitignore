@@ -59,7 +59,8 @@ madge_output.txt
 *.resolved
 
 # IDE e tool config personali
-.claude/
+.claude/*
+!.claude/rules/
 .windsurf/
 .agents/
 .trae/
