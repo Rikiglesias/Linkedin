@@ -16,7 +16,7 @@ Regola: se una voce aperta non ha problema, stato, trigger, output, limiti, prim
 
 Problema: la lista AI e' stata mescolata con backlog applicativi LinkedIn, rendendo difficile capire cosa va implementato sul sistema AI globale.
 
-Stato: backlog madre e vista lineare esistono, ma vanno mantenuti AI-only e protetti da regressioni.
+Stato: tutti i 5 sottopunti coperti dagli audit verdi (`audit:ai-list-completeness` 10/10 al 2026-05-13). Il punto resta aperto come manutentivo: ogni nuovo item AI va aggiunto qui, non in backlog applicativi LinkedIn.
 
 Trigger: aggiunta, chiusura o spostamento di punti AI; passaggio contesto a nuova chat; rischio di mescolare AI globale e backlog LinkedIn.
 
@@ -30,11 +30,11 @@ Ordine: separare scope -> uniformare punti -> aggiungere audit -> aggiornare tod
 
 Sottopunti:
 
-- [ ] impedire che runtime bot, proxy, JA3, dashboard, staging account e anti-ban applicativo entrino nella lista AI
-- [ ] mantenere `AI_MASTER_IMPLEMENTATION_BACKLOG.md` come fonte madre del mancante AI
-- [ ] mantenere `AI_IMPLEMENTATION_LIST_GLOBAL.md` come vista lineare derivata, non seconda autorita'
-- [ ] fallire audit se un punto aperto non ha campi operativi minimi
-- [ ] trattare meccanismo presente ma non testato come aperto, non completato
+- [x] impedire che runtime bot, proxy, JA3, dashboard, staging account e anti-ban applicativo entrino nella lista AI
+- [x] mantenere `AI_MASTER_IMPLEMENTATION_BACKLOG.md` come fonte madre del mancante AI
+- [x] mantenere `AI_IMPLEMENTATION_LIST_GLOBAL.md` come vista lineare derivata, non seconda autorita'
+- [x] fallire audit se un punto aperto non ha campi operativi minimi
+- [x] trattare meccanismo presente ma non testato come aperto, non completato
 
 Done: una nuova chat capisce tutto il backlog AI globale senza chiedere "cosa intendi?", e i punti LinkedIn-specifici restano fuori scope.
 
@@ -111,7 +111,7 @@ Verifiche: `npm run audit:routing`, `npm run audit:adk-capabilities`, `npm run a
 
 Problema: regole solo documentali vengono dimenticate, ma hook troppo generici creano falsi positivi.
 
-Stato: hook, quality gate, git gate e audit esistono. `audit:hooks` ora copre tutti i 33 command hook attivi e verifica che l'auto-commit via trigger non bypassi gate con `git add .` o `--no-verify`. L2-L6 restano audit-assisted e non blocking completi. `post-edit-codebase-hygiene.ps1` reinietta il controllo pulizia su file diretti/indiretti dopo ogni edit.
+Stato: hook, quality gate, git gate e audit esistono. `audit:hooks` ora copre 32 hook sempre attivi + 2 hook router condizionali (filtrati in modalita' Anthropic nativo) ed e' condition-aware su `ANTHROPIC_BASE_URL`. Verifica anche che l'auto-commit via trigger non bypassi gate con `git add .` o `--no-verify`. L2-L6 restano audit-assisted e non blocking completi. `post-edit-codebase-hygiene.ps1` reinietta il controllo pulizia su file diretti/indiretti dopo ogni edit.
 
 Trigger: regola dimenticata piu' volte, drift audit-doc-hook, gate bypassabile o miss con segnale deterministico.
 
@@ -127,13 +127,13 @@ Sottopunti:
 
 - [x] decidere quanti hook servono davvero oggi: 33 command hook attivi, nessun nuovo hook senza miss ricorrenti misurati o advisory ad alto valore
 - [x] correggere l'hook di auto-commit su trigger per non bypassare gate git o native pre-commit
-- [ ] mantenere `audit:hooks` allineato a `~/.claude/settings.json` a ogni cambio configurazione
+- [x] mantenere `audit:hooks` allineato a `~/.claude/settings.json` a ogni cambio configurazione — reso condition-aware su `ANTHROPIC_BASE_URL` (2026-05-13)
 - [ ] promuovere L2-L6 a blocking solo dove il segnale e' verificabile
 - [ ] coprire blast radius, contratti, dipendenze, test impattati e file diretti/indiretti
 - [ ] coprire cross-domain per ogni file: sicurezza, architettura, performance, compliance, observability e rischio dominio
 - [x] aggiungere hook advisory post-edit per codebase hygiene: file diretto corretto, file indiretti coerenti, duplicati/obsoleti/split/rename/delete/follow-up
-- [ ] impedire falsi completati quando esiste solo il meccanismo ma manca test reale
-- [ ] trattare drift doc-hook-audit come bug operativo
+- [x] impedire falsi completati quando esiste solo il meccanismo ma manca test reale — `audit:ai-list-completeness` fail su item senza prova end-to-end
+- [x] trattare drift doc-hook-audit come bug operativo — fix router hook 2026-05-13 e' precedente esempio
 
 Done: ogni regola critica ha primitive, verifica e limite dichiarato; i blocker non si basano su interpretazioni fragili.
 
@@ -143,7 +143,7 @@ Verifiche: `npm run audit:hooks`, `npm run audit:rule-enforcement`, `npm run aud
 
 Problema: handoff e memoria sono inutili se una nuova chat non riesce davvero a ripartire senza perdita di stato.
 
-Stato: `SESSION_HANDOFF.md`, runtime brief, skill `context-handoff` e `.claude/SESSION_PROMPT.md` esistono. Prima prova end-to-end reale passata in Codex il 2026-05-11 con prompt `resume`: la nuova sessione ha ricostruito contesto, blocchi e prossimi passi senza chiedere spiegazioni all'utente. Resta aperto il controllo anti-staleness del prompt/handoff quando il repo avanza.
+Stato: `SESSION_HANDOFF.md`, runtime brief, skill `context-handoff` e `.claude/SESSION_PROMPT.md` esistono. Prima prova end-to-end reale passata in Codex il 2026-05-11 con prompt `resume`: la nuova sessione ha ricostruito contesto, blocchi e prossimi passi senza chiedere spiegazioni all'utente. Anti-staleness coperto da `audit:handoff-staleness` (2026-05-13) che rileva drift commit, branch e working tree rispetto al prompt salvato.
 
 Trigger: fine sessione lunga, compact, cambio chat/ambiente, contesto degradato o richiesta di trasferire contesto.
 
@@ -162,8 +162,8 @@ Sottopunti:
 - [x] includere stato git, modifiche non committate, verifiche fatte e mancanti
 - [x] includere blocchi aperti e prossimi passi ordinati
 - [x] validare una nuova chat reale leggendo solo handoff + canonici indicati — prova Codex 2026-05-11
-- [ ] non marcare completato finche' anche il rischio staleness del prompt/handoff e' gestito
-- [ ] proteggere prompt/handoff da staleness dopo nuovi commit o working tree cambiato
+- [x] non marcare completato finche' anche il rischio staleness del prompt/handoff e' gestito — `audit:handoff-staleness` 2026-05-13
+- [x] proteggere prompt/handoff da staleness dopo nuovi commit o working tree cambiato — `src/scripts/handoffStalenessAudit.ts` rileva drift commit/branch/working tree
 
 Done: una nuova chat riparte senza chiedere contesto all'utente e senza portarsi dietro blocker stale o punti generici.
 

@@ -73,7 +73,7 @@ Questi blocchi sono gia' abbastanza formalizzati da poter fungere da base. Non s
 
 ## 1. Completezza della lista AI e separazione dello scope
 
-Status: PARZIALE
+Status: STRUTTURALMENTE COMPLETO — manutentivo a ogni nuovo item AI
 Orizzonte: breve
 
 Problema reale:
@@ -113,11 +113,11 @@ Ordine logico:
 
 Sottopunti operativi:
 
-- [ ] impedire che runtime bot, proxy, JA3, dashboard e anti-ban applicativo rientrino nel backlog AI globale
-- [ ] mantenere `AI_MASTER_IMPLEMENTATION_BACKLOG.md` come fonte madre del mancante AI
-- [ ] mantenere `AI_IMPLEMENTATION_LIST_GLOBAL.md` come vista lineare derivata, non come seconda autorita'
-- [ ] controllare che nessun punto aperto AI sia privo di problema, stato, primitive, ordine, sottopunti, done e verifiche
-- [ ] distinguere falsi completati da meccanismi presenti ma non validati end-to-end
+- [x] impedire che runtime bot, proxy, JA3, dashboard e anti-ban applicativo rientrino nel backlog AI globale — `checkLinkedInScope` in `audit:ai-list-completeness`
+- [x] mantenere `AI_MASTER_IMPLEMENTATION_BACKLOG.md` come fonte madre del mancante AI
+- [x] mantenere `AI_IMPLEMENTATION_LIST_GLOBAL.md` come vista lineare derivata, non come seconda autorita'
+- [x] controllare che nessun punto aperto AI sia privo di problema, stato, primitive, ordine, sottopunti, done e verifiche — `checkMasterSections` + `checkGlobalOpenItems`
+- [x] distinguere falsi completati da meccanismi presenti ma non validati end-to-end — `checkContextTransferOpen` esempio canonico
 
 Criterio done:
 
@@ -297,7 +297,7 @@ Una regola critica scritta solo in un documento viene dimenticata. Pero' trasfor
 
 Stato attuale:
 
-Esistono hook `SessionStart`, `UserPromptSubmit`, `PreCompact`, `PreToolUse`, `PostToolUse`, `Stop`, `SubagentStop` e agent team, gate git/quality e audit `audit:rule-enforcement`, `audit:l2-l6`, `audit:hooks`. `audit:hooks` ora verifica tutti i 33 command hook attivi e include il controllo che l'auto-commit via trigger non usi `git add .` o `--no-verify`. L2-L6 sono audit-assisted, non blocking completi. Il nuovo hook `post-edit-codebase-hygiene.ps1` rende esplicita dopo ogni edit la valutazione pulizia su file diretti e indiretti.
+Esistono hook `SessionStart`, `UserPromptSubmit`, `PreCompact`, `PreToolUse`, `PostToolUse`, `Stop`, `SubagentStop` e agent team, gate git/quality e audit `audit:rule-enforcement`, `audit:l2-l6`, `audit:hooks`. `audit:hooks` ora verifica 32 hook sempre attivi + 2 hook router condizionali (filtrati in modalita' Anthropic nativo), è condition-aware su `ANTHROPIC_BASE_URL`, e include il controllo che l'auto-commit via trigger non usi `git add .` o `--no-verify`. L2-L6 sono audit-assisted, non blocking completi. Il nuovo hook `post-edit-codebase-hygiene.ps1` rende esplicita dopo ogni edit la valutazione pulizia su file diretti e indiretti.
 
 Trigger operativo:
 
@@ -332,13 +332,13 @@ Sottopunti operativi:
 
 - [x] decidere il set hook operativo corrente: 33 command hook attivi, nessun nuovo hook da aggiungere senza miss ricorrenti misurati o advisory ad alto valore
 - [x] correggere l'hook di auto-commit su trigger per non bypassare gate git o native pre-commit
-- [ ] mantenere `audit:hooks` allineato a `~/.claude/settings.json` ogni volta che cambia la configurazione
+- [x] mantenere `audit:hooks` allineato a `~/.claude/settings.json` ogni volta che cambia la configurazione — reso condition-aware su `ANTHROPIC_BASE_URL` (2026-05-13)
 - [ ] promuovere L2-L6 da audit-assisted a blocking solo dove esiste condizione verificabile
 - [ ] coprire best practice di modifica codice: blast radius, contratti, dipendenze, test impattati, file diretti e indiretti
 - [ ] coprire cross-domain per ogni file: sicurezza, architettura, performance/timing, compliance, observability e rischio dominio
 - [x] aggiungere hook advisory post-edit per codebase hygiene: file diretto corretto, file indiretti coerenti, duplicati/obsoleti/split/rename/delete/follow-up
-- [ ] impedire falsi completati: meccanismo presente non significa test end-to-end superato
-- [ ] mantenere drift doc-hook-audit come bug operativo, non come nota
+- [x] impedire falsi completati: meccanismo presente non significa test end-to-end superato — `audit:ai-list-completeness` fail su item privi di prova
+- [x] mantenere drift doc-hook-audit come bug operativo, non come nota — fix router hook 2026-05-13 trattato come bug
 
 Criterio done:
 
@@ -355,7 +355,7 @@ Verifiche richieste:
 
 ## 5. Memoria, handoff e trasferimento contesto in una nuova chat
 
-Status: PARZIALE — prima prova manuale passata il 2026-05-11; resta hardening anti-staleness
+Status: PARZIALE — prima prova manuale passata il 2026-05-11; anti-staleness coperto da `audit:handoff-staleness` (2026-05-13). Validazione periodica resta da fare a ogni cambio strutturale
 Orizzonte: breve + medio
 
 Problema reale:
@@ -403,8 +403,8 @@ Sottopunti operativi:
 - [x] includere stato git, modifiche non committate, verifiche eseguite e verifiche mancanti
 - [x] includere blocchi aperti e prossimi passi ordinati logicamente
 - [x] validare almeno una nuova chat reale leggendo solo handoff + canonici indicati — prova Codex 2026-05-11
-- [ ] marcare il punto come completato solo dopo prova reale e gestione anti-staleness, non per presenza dei file
-- [ ] aggiungere o mantenere controllo anti-staleness sul prompt/handoff quando una sessione viene ripresa dopo commit nuovi
+- [x] marcare il punto come completato solo dopo prova reale e gestione anti-staleness, non per presenza dei file — regola seguita: prova Codex 2026-05-11 + `audit:handoff-staleness` 2026-05-13
+- [x] aggiungere o mantenere controllo anti-staleness sul prompt/handoff quando una sessione viene ripresa dopo commit nuovi — `src/scripts/handoffStalenessAudit.ts` rileva drift commit/branch/working tree
 
 Criterio done:
 

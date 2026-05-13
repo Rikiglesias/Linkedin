@@ -19,11 +19,11 @@ Regola pratica:
 
 | Evento | Hook | Tipo | Stato | Motivo |
 |---|---|---|---|---|
-| `SessionStart` | `ensure-claude-model-router.ps1` | sync context | attivo | Mantiene disponibile il router modello/provider. |
+| `SessionStart` | `ensure-claude-model-router.ps1` | sync context | condizionale (unified router) | Mantiene disponibile il router modello/provider; aggiunto solo quando `ANTHROPIC_BASE_URL=http://127.0.0.1:4319`. In modalita' Anthropic nativo viene filtrato via da `applyManagedClaudeCodeSettings`. |
 | `SessionStart` | `merge-canonical-settings.mjs` | sync config | attivo | Riallinea settings canonici prima della sessione. |
 | `SessionStart` | `session-start.ps1` | sync context | attivo | Carica memoria, todos, runtime brief e contesto progetto. |
 | `SessionStart` | `session-start-continuation.ps1` | sync context | attivo | Reinietta continuita' della sessione precedente se presente. |
-| `UserPromptSubmit` | `ensure-claude-model-router.ps1` | sync config | attivo | Mantiene coerente provider/modello a ogni prompt. |
+| `UserPromptSubmit` | `ensure-claude-model-router.ps1` | sync config | condizionale (unified router) | Mantiene coerente provider/modello a ogni prompt; attivo solo in unified router mode, filtrato in modalita' Anthropic nativo. |
 | `UserPromptSubmit` | `inject-runtime-brief.ps1` | sync context | attivo | Reinietta gerarchia P0 e regole critiche prima di ogni prompt. |
 | `UserPromptSubmit` | `skill-activation.ps1` | sync advisory | attivo | Propone gerarchia P0 compatta, decomposizione ricorsiva, chiusura proattiva, fonte di verita', skill/MCP/web/loop e livelli L2-L9. |
 | `UserPromptSubmit` | `multi-file-recap-check.ps1` | sync advisory | attivo | Ricorda recap per task multi-file o complessi. |
@@ -52,7 +52,7 @@ Regola pratica:
 | `SubagentStop` | `subagent-stop.ps1` | async log | attivo | Traccia output subagent. |
 | `TaskCreated/TaskCompleted/TeammateIdle` | `teammate-event.ps1` | async log | attivo | Traccia agent teams. |
 
-Totale operativo attuale: **34 command hook configurati** distribuiti su eventi Claude Code. Non vanno aumentati senza miss ricorrenti misurati o senza un advisory ad alto valore che renda visibile un miss sistemico.
+Totale operativo attuale: **32 hook sempre attivi + 2 condizionali (router)** distribuiti su eventi Claude Code. I 2 hook router sono gestiti dinamicamente da `applyManagedClaudeCodeSettings` in `~/.claude/scripts/model-router-config.mjs`: presenti in unified router mode, filtrati in Anthropic nativo. Non vanno aumentati senza miss ricorrenti misurati o senza un advisory ad alto valore che renda visibile un miss sistemico.
 
 ## Regole che devono restare hook
 

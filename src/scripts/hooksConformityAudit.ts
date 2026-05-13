@@ -33,6 +33,14 @@ interface ExpectedHookSpec {
     matcherIncludes?: string[];
     commandParts: string[];
     label: string;
+    requiresUnifiedRouter?: boolean;
+}
+
+const UNIFIED_ROUTER_BASE_URL = 'http://127.0.0.1:4319';
+
+function isUnifiedRouterActive(settings: Record<string, unknown>): boolean {
+    const env = (settings.env as Record<string, unknown> | undefined) ?? {};
+    return env.ANTHROPIC_BASE_URL === UNIFIED_ROUTER_BASE_URL;
 }
 
 function readSettings(): Record<string, unknown> {
@@ -138,11 +146,11 @@ function checkExpectedHooksConfigured(hooks: Record<string, unknown[]>): CheckRe
         { eventName: 'PreToolUse', matcherIncludes: ['Bash'], commandParts: ['pre-bash-l1-gate.ps1'], label: 'pre-bash-l1-gate' },
         { eventName: 'PreToolUse', matcherIncludes: ['Bash'], commandParts: ['pre-bash-git-gate.ps1'], label: 'pre-bash-git-gate' },
         { eventName: 'PreToolUse', matcherIncludes: ['mcp__.*'], commandParts: ['pre-mcp-guard.ps1'], label: 'pre-mcp-guard' },
-        { eventName: 'SessionStart', commandParts: ['ensure-claude-model-router.ps1'], label: 'ensure router session-start' },
+        { eventName: 'SessionStart', commandParts: ['ensure-claude-model-router.ps1'], label: 'ensure router session-start', requiresUnifiedRouter: true },
         { eventName: 'SessionStart', commandParts: ['merge-canonical-settings.mjs'], label: 'merge canonical settings' },
         { eventName: 'SessionStart', commandParts: ['session-start.ps1'], label: 'session-start' },
         { eventName: 'SessionStart', commandParts: ['session-start-continuation.ps1'], label: 'session-start-continuation' },
-        { eventName: 'UserPromptSubmit', commandParts: ['ensure-claude-model-router.ps1'], label: 'ensure router prompt' },
+        { eventName: 'UserPromptSubmit', commandParts: ['ensure-claude-model-router.ps1'], label: 'ensure router prompt', requiresUnifiedRouter: true },
         { eventName: 'UserPromptSubmit', commandParts: ['inject-runtime-brief.ps1', 'UserPromptSubmit'], label: 'runtime brief prompt' },
         { eventName: 'UserPromptSubmit', commandParts: ['skill-activation.ps1'], label: 'skill activation' },
         { eventName: 'UserPromptSubmit', commandParts: ['multi-file-recap-check.ps1'], label: 'multi-file recap' },
@@ -168,7 +176,10 @@ function checkExpectedHooksConfigured(hooks: Record<string, unknown[]>): CheckRe
         { eventName: 'TaskCompleted', commandParts: ['teammate-event.ps1'], label: 'task completed' },
     ];
 
-    const missing = expected.filter((spec) => {
+    const unifiedRouterActive = isUnifiedRouterActive(readSettings());
+    const applicable = expected.filter((spec) => !spec.requiresUnifiedRouter || unifiedRouterActive);
+
+    const missing = applicable.filter((spec) => {
         const entries = getHookEntries(hooks, spec.eventName);
         const matchingEntry = findEntryByCommandParts(entries, spec.commandParts);
         if (!matchingEntry) {

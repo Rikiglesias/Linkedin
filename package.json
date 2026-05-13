@@ -46,6 +46,7 @@
     "audit": "ts-node src/scripts/codebaseAudit.ts",
     "audit:json": "ts-node src/scripts/codebaseAudit.ts --json",
     "audit:hooks": "ts-node src/scripts/hooksConformityAudit.ts",
+    "audit:handoff-staleness": "ts-node src/scripts/handoffStalenessAudit.ts",
     "audit:ai-control-plane": "npm run audit:ai-control-plane:docs && npm run audit:hooks && npm run audit:routing && npm run audit:adk-capabilities && npm run audit:l2-l6 && npm run audit:ai-list-completeness",
     "audit:ai-control-plane:docs": "ts-node src/scripts/aiControlPlaneAudit.ts",
     "audit:ai-list-completeness": "ts-node src/scripts/aiListCompletenessAudit.ts",
