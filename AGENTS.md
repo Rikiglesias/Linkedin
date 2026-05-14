@@ -5,6 +5,21 @@ Questo file e' il riferimento operativo canonico della repo per agenti AI e sess
 Le regole globali (P0, L1-L9, parita' ambienti, memoria, anti-dimenticanza) stanno in `~/.claude/CLAUDE.md`.
 Le regole di orchestrazione cognitiva, requirement ledger, orizzonti temporali, blast radius documentale e handoff sono in `docs/AI_RUNTIME_BRIEF.md` (reiniettato automaticamente dai hook a ogni prompt).
 
+## Scope: due livelli distinti
+
+Questa repo contiene due livelli che vanno governati separatamente, anche se condividono lo stesso codebase:
+
+1. **Sistema AI globale (ADK)** — l'AI come **programmatore autonomo riusabile**. Regole, skill, hook, subagent, audit, plugin packaging. Vive principalmente in `~/.claude/` (globale) + `.claude/rules/`, `.claude/plugin.json`, `.claude/output-styles/`, `docs/AI_*.md`, `src/scripts/*Audit.ts` (project-side). E' **portabile su altri progetti** dello stesso utente o di team via `docs/tracking/AI_ADK_DISTRIBUTION.md`. Il backlog di questo livello e' `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md` (13 item).
+2. **LinkedIn Bot applicativo** — il runtime del bot (browser, risk engine, antiban, scheduler, proxy, dashboard, n8n workflow). Vive in `src/` (eccetto `src/scripts/*Audit.ts`). E' **specifico di questo dominio**. Il backlog applicativo e' `docs/LINKEDIN_IMPLEMENTATION_LIST.md` + `todos/workflow-architecture-hardening.md`.
+
+**Implicazione per le decisioni**:
+- Tool/skill/capability candidato → valutarlo contro **entrambi i livelli** prima di scartare. Una risorsa "fuori scope LinkedIn" puo' essere ottima per il sistema AI globale (es. usabile su altri progetti) e va tracciata come candidate-out-of-current-repo, non scartata.
+- Best practice canoniche → vivono nel livello AI globale, applicate ovunque.
+- Anti-ban / proxy / LinkedIn-specific → restano nel livello applicativo, non inquinano l'AI globale.
+- Audit cross-domain L7 → verifica che ogni file tocchi entrambi i livelli correttamente.
+
+L'utente puo' usare lo stesso sistema AI globale anche su progetti non-LinkedIn (es. chatbot personale, content automation, altri bot/agenti). Quel caso d'uso resta legittimo e va considerato nelle decisioni di capability governance.
+
 ## Fonte di verita' e routing strumenti
 
 - Fatto interno stabile → codice, test, log, config, documenti canonici del repo.

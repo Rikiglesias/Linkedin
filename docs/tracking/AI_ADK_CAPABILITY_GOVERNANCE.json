@@ -175,6 +175,13 @@
       "status": "candidate",
       "decision": "evaluate-before-install",
       "evaluationRequired": "Knowledge graph interattivo della codebase. URL: https://github.com/Lum1104/Understand-Anything . Comandi /understand, /understand-dashboard, /understand-chat, /understand-diff, /understand-domain. Nativo Claude Code. POSSIBILE OVERLAP con code-review-graph MCP gia' installato (anche lui knowledge graph per code review). Da confrontare: feature distinct? Quale copre meglio onboarding nuova chat + impact analysis? Layer ADK: skill o plugin con comandi slash. Forte allineamento item 12 (bootstrap nuovo progetto) e item 5 (ricostruzione contesto). Backlog item collegati: 12 (Cleanup + bootstrap), 5 (Memory/handoff), 3 (Capability governance)."
+    },
+    {
+      "id": "weclone",
+      "displayName": "WeClone (xming521)",
+      "status": "candidate",
+      "decision": "evaluate-before-install",
+      "evaluationRequired": "Fine-tune LLM su chat log per replicare stile comunicativo personale + bot Telegram/WhatsApp/Discord. URL: https://github.com/xming521/weclone . FUORI SCOPE LinkedIn Bot applicativo. POTENZIALMENTE IN SCOPE per il sistema AI globale come progetto ADK separato dell'utente: digital twin personale, chatbot assistente con stile dell'utente, automazione messaggi personali (NON-LinkedIn). Richiede GPU locale + training Qwen2.5-VL-7B + LoRA. Privacy filtering via Microsoft Presidio. Valutazione: se Riccardo vuole creare un progetto separato (es. chatbot personale Telegram con suo stile), questa e' la base. Per il LinkedIn Bot: non rilevante, non installare nel sistema corrente. Decisione: out-of-scope-current-repo, candidato per progetto separato. Layer ADK: standalone, non integrare con LinkedIn."
     }
   ],
   "capabilityPlacements": [

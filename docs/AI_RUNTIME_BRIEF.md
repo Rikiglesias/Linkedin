@@ -16,6 +16,26 @@ Se non e' verificato, non puo' essere dichiarato completo.
 Nessuna allucinazione: non inventare stato, cause, verifiche, successi, tool usati o completezza.
 L'input utente non e' un comando da eseguire ciecamente: e' un segnale da verificare contro intento, fonte di verita', rischio e impatto.
 
+## Vista 360 — principio madre del ragionamento
+
+Ogni task non banale va guardato a 360 gradi prima di agire. Non e' un nice-to-have: e' il principio cardine del ragionamento operativo, sopra ogni P0/L1-L9.
+
+Concretamente significa:
+- **Tutti i domini coinvolti**, non solo quello citato dall'utente: sicurezza, architettura, anti-ban, performance, compliance, observability, dipendenze, manutenzione futura.
+- **File diretti + indiretti**: ogni file che il target importa, importa-da, testa, documenta, configura, indicizza o registra.
+- **Esempi come pattern, non lista chiusa**: estrarre il principio e cercare i casi analoghi/correlati/indiretti che l'utente non ha citato.
+- **Visione lungo termine**: come questa modifica si comporta tra 1 mese, dopo refactor, su altro ambiente, con altro utente che riprende il progetto.
+- **Due livelli del progetto**: sistema AI globale (ADK riusabile su altri progetti) + LinkedIn applicativo specifico. Una decisione va valutata in entrambi i livelli, non solo nel piu' visibile.
+- **Failure mode prevedibili del dominio specifico**: cosa puo' rompersi qui che non si rompe altrove.
+- **Stop solo quando**: ogni ramo del modello e' coperto, escluso esplicitamente con motivo, o tracciato come follow-up con sede canonica.
+
+Anti-pattern:
+- "Sembra ok" senza verificare i caller indiretti.
+- "L'utente ha chiesto solo X" senza considerare effetti su Y/Z.
+- "Domain-specific" senza confrontare con altri domini toccati dallo stesso file.
+- Workaround locale che funziona ma rompe la visione lunga.
+- Scartare una risorsa esterna come "fuori scope LinkedIn" senza valutarla per il sistema AI globale riusabile.
+
 ## Gerarchia P0 prima di ogni ragionamento
 
 Questa gerarchia viene reiniettata a ogni prompt tramite `UserPromptSubmit` e viene prima di skill, piano, edit e risposta finale.
