@@ -98,7 +98,8 @@ Sottopunti:
 - [x] decidere per ogni capability nel routing registry la primitive corretta: skill, MCP, plugin, hook, audit, script, workflow o fonte esterna
 - [x] eliminare o fondere duplicati — `audit:skill-duplicates` (2026-05-14) ha scansionato 197 skill: solo 9 overlap nome (tutti legittimi: `<x>-generator`/`<x>-validator` paired, `audit` parent + `audit-rules` child, `react-expert`/`react-native-expert`). Nessun duplicato operativo da rimuovere. Volume alto (100 marketing, 66 web-frontend) viene dai marketplace community, non da installazioni manuali. 9 skill non classificate (debugging-wizard, json-canvas, launch-strategy, ecc.) restano legittime — solo non hanno keyword nel dictionary di dominio.
 - [x] registrare Caveman, LeanCTX, SIMDex e Contact Skills come candidate `evaluate-before-install`, senza installazione cieca
-- [ ] valutare davvero Caveman, LeanCTX, SIMDex e Contact Skills prima di installarle
+- [x] registrare candidate esterne emergenti 2026-05-14: Google CodeWiki (Gemini-powered docs auto-generation, attendere extension privata), Ruflo (multi-agent orchestrator, alto rischio overlap), Understand-Anything (knowledge graph codebase, overlap da valutare con code-review-graph MCP)
+- [ ] valutare davvero Caveman, LeanCTX, SIMDex, Contact Skills, Google CodeWiki, Ruflo e Understand-Anything prima di installarle
 - [ ] definire routing per backend, frontend, docs, prompt, handoff, sicurezza, testing, review e automazioni
 - [ ] creare regole di attivazione per capability simili
 - [ ] chiedere conferma quando serve creare una nuova primitive durevole

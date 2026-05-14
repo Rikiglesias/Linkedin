@@ -154,6 +154,27 @@
       "status": "candidate",
       "decision": "evaluate-before-install",
       "evaluationRequired": "Verificare se serve al dominio contatti/outreach e se deve essere skill, plugin o workflow."
+    },
+    {
+      "id": "google-codewiki",
+      "displayName": "Google CodeWiki (Gemini)",
+      "status": "candidate",
+      "decision": "evaluate-before-install",
+      "evaluationRequired": "Wiki auto-generato + diagrammi + AI chat su repo GitHub, powered by Gemini. URL: https://developers.googleblog.com/introducing-code-wiki-accelerating-your-code-understanding/ . Public preview solo open-source; Gemini CLI extension per repo privati in sviluppo. Repo LinkedIn e' privato -> attendere extension privata prima di valutare. Possibili duplicati con docs/AI_*.md canonici e con audit:docs-size: andrebbe usato come fonte secondaria, non primaria. Layer ADK candidato: rules-memory o plugin/distribution. Backlog item collegati: 12 (Cleanup/docs), 5 (Memory/handoff context). Sub-decision: candidate-wait fino a release Gemini CLI extension per privati."
+    },
+    {
+      "id": "ruflo",
+      "displayName": "Ruflo (ruvnet)",
+      "status": "candidate",
+      "decision": "evaluate-before-install",
+      "evaluationRequired": "Multi-agent orchestration per Claude. URL: https://github.com/ruvnet/ruflo . 100+ agenti, swarm coordination, memoria vettoriale HNSW, learning autonomo (SONA, ReasoningBank), federazione, multi-provider LLM, AIDefence prompt injection. Plugin marketplace + CLI npx ruflo init + MCP server. RISCHIO ALTO: a) potenziale overlap con 197 skill gia' installate; b) multi-provider LLM confligge con router locale; c) sostituzione/duplicazione del nostro Orchestrator Layer custom (item 2); d) lock-in. Valutare in repo separato prima di toccare il sistema. Decisione = adottare solo se sostituisce davvero meglio il nostro Orchestrator + non duplica skill esistenti. Backlog item collegati: 2 (Orchestrator Layer), 3 (Capability governance), 13 (Autonomy + metriche)."
+    },
+    {
+      "id": "understand-anything",
+      "displayName": "Understand Anything (Lum1104)",
+      "status": "candidate",
+      "decision": "evaluate-before-install",
+      "evaluationRequired": "Knowledge graph interattivo della codebase. URL: https://github.com/Lum1104/Understand-Anything . Comandi /understand, /understand-dashboard, /understand-chat, /understand-diff, /understand-domain. Nativo Claude Code. POSSIBILE OVERLAP con code-review-graph MCP gia' installato (anche lui knowledge graph per code review). Da confrontare: feature distinct? Quale copre meglio onboarding nuova chat + impact analysis? Layer ADK: skill o plugin con comandi slash. Forte allineamento item 12 (bootstrap nuovo progetto) e item 5 (ricostruzione contesto). Backlog item collegati: 12 (Cleanup + bootstrap), 5 (Memory/handoff), 3 (Capability governance)."
     }
   ],
   "capabilityPlacements": [
