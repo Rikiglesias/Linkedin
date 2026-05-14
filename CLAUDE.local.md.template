@@ -1,0 +1,51 @@
+# CLAUDE.local.md — Template overrides personali
+
+> Questo è un **template**. Per attivarlo, copialo in `CLAUDE.local.md` (gitignored).
+> Le regole qui dentro hanno priorità su `CLAUDE.md` di progetto e `AGENTS.md`.
+> Usalo per preferenze personali, alias locali, configurazioni macchina-specifiche che NON vanno condivise con il team.
+
+## Esempi di overrides personali
+
+### Preferenze comunicazione
+- Lingua: italiano (default)
+- Voice dictation: interpreta semanticamente, non letteralmente
+- Risposte: brevi, dirette, senza fluff
+
+### Tool locali specifici della macchina
+```
+- Whisper path: C:\path\to\whisper.exe
+- Editor preferito: VS Code
+- Browser test: Chrome Canary
+```
+
+### Alias bash personali
+```bash
+alias audit-week='cd /c/Users/albie/Desktop/Programmi/Linkedin && npm run audit:weekly'
+alias audit-month='cd /c/Users/albie/Desktop/Programmi/Linkedin && npm run audit:monthly'
+```
+
+### Override modello/router locale
+- Modalità default: opusplan (Plan Mode → Opus, normale → Sonnet)
+- Router locale: http://127.0.0.1:4319 (unified) o nativo
+
+### Overrides skill/capability
+- Skill disabilitate localmente: nessuna
+- Skill preferite per dominio: ...
+
+### Pattern di chiusura sessione preferiti
+- Conferma "ok" → procedi senza altre domande
+- Riassunto finale: max 5 righe
+
+## Cosa NON mettere qui
+
+- Regole di team/progetto → vanno in `AGENTS.md` o `CLAUDE.md` di progetto (tracked)
+- Anti-ban rules → `AGENTS.md`
+- Best practice cross-platform → `~/.claude/CLAUDE.md` globale
+- Segreti, token, password → mai in nessun file repo (usa env validate)
+
+## Riferimenti
+
+- `~/.claude/CLAUDE.md` — regole globali tutti i progetti
+- `AGENTS.md` — regole canoniche progetto LinkedIn
+- `CLAUDE.md` — adapter Claude Code progetto
+- `.claude/plugin.json` — manifest ADK

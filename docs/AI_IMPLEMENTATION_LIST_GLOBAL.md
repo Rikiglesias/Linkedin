@@ -321,11 +321,11 @@ Ordine: completare unita' -> gate qualita' -> aggiornare worklog/todos -> audit 
 
 Sottopunti:
 
-- [ ] verificare auto-commit dopo gate verdi come chiusura naturale
-- [ ] chiarire quando push deve fermarsi per review, remote policy o rischio
+- [x] verificare auto-commit dopo gate verdi come chiusura naturale — testato in sessione corrente (commit aa541c6 + push auto via hook)
+- [x] chiarire quando push deve fermarsi per review, remote policy o rischio — `AGENTS.md` sezione "Auto-push post-commit — trigger automatico" con precondizioni cumulative
 - [ ] distinguere review locale, branch review e audit periodico
-- [ ] documentare fallback fuori Claude Code
-- [ ] impedire "completato" se commit/push/PR richiesti non sono valutati
+- [x] documentare fallback fuori Claude Code — `AGENTS.md` sezione "Fallback per ambienti senza hook PowerShell" (2026-05-14): procedura manuale equivalente per Codex/Cloud Code/Cursor
+- [x] impedire "completato" se commit/push/PR richiesti non sono valutati — pre-stop-commit-gate.ps1 blocca chiusura silente con dirty + `audit:handoff-staleness` rileva working tree non riflesso
 
 Done: l'utente non deve ricordare commit/push; se il push non avviene, motivo e prossimo passo sono espliciti.
 
@@ -349,7 +349,7 @@ Ordine: classificare breve/medio/lungo -> separare ora/follow-up/manutenzione ->
 
 Sottopunti:
 
-- [ ] rendere classificazione temporale obbligatoria nei task non banali
+- [x] rendere classificazione temporale obbligatoria nei task non banali — `AGENTS.md` sezione "Classificazione temporale del task — regola dura" (2026-05-14) con tabella breve/medio/lungo e scenari di test
 - [x] definire cadenze per memoria, docs, cleanup, capability audit, security review e automazioni — `docs/tracking/AI_AUDIT_CADENCES.md` (2026-05-14) con bundle settimanale (miss-metrics + handoff-staleness + violations) e mensile (ai-control-plane + adk + rule-enforcement + ledger + skills)
 - [ ] dare owner logico e contenitore canonico a ogni follow-up
 - [x] trasformare ricorrenze utili in audit/script/workflow schedulati — npm scripts `audit:weekly` e `audit:monthly` definiti; schedulazione Windows Task Scheduler documentata (da configurare lato utente)
@@ -385,13 +385,13 @@ Sottopunti:
 - [ ] mantenere AI-readable i canonici con summary, non-goals, cross-link e limiti
 - [ ] mantenere `NEW_PROJECT_BOOTSTRAP_CHECKLIST.md` allineata
 - [ ] creare pacchetto handoff riusabile per altri progetti o persone
-- [ ] creare pacchetto ADK riusabile con regole/memoria, skill, hook, subagent, comandi e manifest di plugin
-- [ ] definire schema minimo di `plugin.json`: nome, versione, contenuti inclusi, hook installati, skill incluse, subagent inclusi, provenance, compatibilita' ambiente e strategia update
+- [x] creare pacchetto ADK riusabile con regole/memoria, skill, hook, subagent, comandi e manifest di plugin — `.claude/plugin.json` (2026-05-14) inventaria rules/skills/hooks/subagents/audits/canonicalDocs con compatibility, provenance, installation steps e supportedEnvironments
+- [x] definire schema minimo di `plugin.json`: nome, versione, contenuti inclusi, hook installati, skill incluse, subagent inclusi, provenance, compatibilita' ambiente e strategia update — schema completo in `.claude/plugin.json`
 - [ ] decidere cosa resta globale, cosa resta progetto-specifico e cosa va nel plugin installabile per evitare copie divergenti
-- [ ] adottare struttura canonica `.claude/` (reference da community 2026): `hooks/`, `commands/`, `skills/`, `agents/`, `output-styles/`, `plugins/`, `rules/`, `statusline`, `settings.json`, `settings.local.json` — verificare gap rispetto a quanto presente
-- [ ] introdurre `.claude/output-styles/` per response format predefiniti (terse, code-only) — anche per gestire override Caveman ultra in italiano
-- [ ] aggiungere `CLAUDE.local.md` (gitignored) per override personali utente senza inquinare il repo condiviso
-- [ ] mantenere `CLAUDE.md` di progetto sotto ~200 righe come convention community (attualmente 161)
+- [x] adottare struttura canonica `.claude/` (reference da community 2026): scaffold `.claude/rules/`, `.claude/output-styles/`, `.claude/plugin.json` creati 2026-05-14 (rest globale: `~/.claude/hooks|skills|agents|plugins`)
+- [x] introdurre `.claude/output-styles/` per response format predefiniti — `terse.md` e `italian-concise.md` creati 2026-05-14
+- [x] aggiungere `CLAUDE.local.md` (gitignored) per override personali utente — `CLAUDE.local.md.template` creato + `.gitignore` aggiornato
+- [x] mantenere `CLAUDE.md` di progetto sotto ~200 righe come convention community (attualmente 161 ✓)
 
 Done: una nuova sessione capisce dove trovare ogni cosa; un nuovo progetto puo' partire con baseline AI senza conoscenza implicita; un team puo' installare lo stesso pacchetto versionato senza ricostruire a mano regole, skill, hook e agenti.
 

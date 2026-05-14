@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json.schemastore.org/package",
+  "name": "linkedin-bot-ai-adk",
+  "version": "0.1.0",
+  "description": "Agent Development Kit installabile per il sistema AI del LinkedIn Bot. Include regole, skill, hook, subagent, audit e routing canonici.",
+  "author": "Riccardo (albie)",
+  "license": "private",
+  "homepage": "https://github.com/Rikiglesias/Linkedin",
+  "compatibility": {
+    "claudeCode": ">=1.0.0",
+    "codex": ">=0.27.0",
+    "node": ">=20.0.0",
+    "os": ["windows", "linux", "darwin"]
+  },
+  "contents": {
+    "rules": {
+      "globalPath": null,
+      "projectPath": ".claude/rules/",
+      "files": [
+        "browser-antiban.md",
+        "api-security.md",
+        "scripts-audit.md"
+      ],
+      "loadStrategy": "path-scoped",
+      "description": "Regole che si caricano automaticamente quando l'AI tocca un certo glob di file"
+    },
+    "skills": {
+      "globalPath": "~/.claude/skills/",
+      "projectPath": null,
+      "critical": [
+        "antiban-review",
+        "context-handoff",
+        "loop-codex",
+        "audit-rules",
+        "memoria"
+      ],
+      "description": "Skill globali per workflow cognitivi specifici"
+    },
+    "hooks": {
+      "globalPath": "~/.claude/hooks/",
+      "projectPath": null,
+      "criticalBlocking": [
+        "pre-edit-antiban.ps1",
+        "pre-edit-secrets.ps1",
+        "pre-bash-l1-gate.ps1",
+        "pre-bash-git-gate.ps1",
+        "pre-compact-handoff.ps1",
+        "pre-stop-commit-gate.ps1"
+      ],
+      "advisory": [
+        "skill-activation.ps1",
+        "inject-runtime-brief.ps1",
+        "post-edit-codebase-hygiene.ps1",
+        "stop-proactive-next-step.ps1"
+      ],
+      "registry": "~/.claude/settings.json -> hooks{}",
+      "auditScript": "audit:hooks",
+      "description": "32 hook sempre attivi + 2 hook router condizionali (unified mode only)"
+    },
+    "subagents": {
+      "globalPath": "~/.claude/agents/",
+      "projectPath": ".claude/agents/",
+      "registry": "~/.claude/agents/*.md, .claude/agents/*.md",
+      "description": "Subagent isolati con context window separato (code-reviewer, researcher, log-analyzer pattern)"
+    },
+    "audits": {
+      "projectPath": "src/scripts/",
+      "scripts": [
+        "audit:ai-control-plane",
+        "audit:hooks",
+        "audit:routing",
+        "audit:adk-capabilities",
+        "audit:l2-l6",
+        "audit:rule-enforcement",
+        "audit:ledger",
+        "audit:skills",
+        "audit:ai-list-completeness",
+        "audit:handoff-staleness",
+        "audit:miss-metrics",
+        "audit:weekly",
+        "audit:monthly"
+      ],
+      "description": "Audit periodici per verifica conformità del control plane"
+    },
+    "canonicalDocs": {
+      "projectPath": "docs/",
+      "files": [
+        "AI_MASTER_SYSTEM_SPEC.md",
+        "AI_MASTER_IMPLEMENTATION_BACKLOG.md",
+        "AI_IMPLEMENTATION_LIST_GLOBAL.md",
+        "AI_OPERATING_MODEL.md",
+        "AI_RUNTIME_BRIEF.md",
+        "tracking/AI_HOOK_ENFORCEMENT_PLAN.md",
+        "tracking/AI_CAPABILITY_ROUTING.json",
+        "tracking/AI_ADK_CAPABILITY_GOVERNANCE.json",
+        "tracking/AI_LEVEL_ENFORCEMENT.json",
+        "tracking/AI_AUDIT_CADENCES.md"
+      ]
+    },
+    "entryPoints": [
+      "AGENTS.md",
+      "CLAUDE.md"
+    ]
+  },
+  "provenance": {
+    "createdAt": "2026-05-14",
+    "lastUpdate": "2026-05-14",
+    "verifiedOn": ["windows-11", "claude-code-opus-4.7"],
+    "knownGaps": [
+      "Codex parity: alcuni hook PowerShell non hanno equivalente Codex",
+      "Cloud Code parity: non testato",
+      "Plugin marketplace: non ancora pubblicato"
+    ]
+  },
+  "installation": {
+    "manualSteps": [
+      "1. Clonare il repo nella cartella di lavoro",
+      "2. npm install",
+      "3. Copiare .claude/rules/ se non presente",
+      "4. Verificare ~/.claude/settings.json contiene gli hook critici (audit:hooks)",
+      "5. Skill critiche: npx skills install <nome> oppure git clone in ~/.claude/skills/",
+      "6. Eseguire npm run audit:ai-control-plane per verifica conformità",
+      "7. Personalizzare CLAUDE.local.md (gitignored) con overrides personali"
+    ],
+    "updateStrategy": "manual",
+    "autoUpdate": false
+  },
+  "supportedEnvironments": {
+    "claudeCode": {
+      "supported": true,
+      "notes": "Ambiente primario, tutte le primitive funzionano"
+    },
+    "codex": {
+      "supported": "partial",
+      "notes": "Skill e regole funzionano via AGENTS.md; hook PowerShell non disponibili nativamente"
+    },
+    "cloudCode": {
+      "supported": "unverified",
+      "notes": "Non ancora testato"
+    },
+    "cursor": {
+      "supported": "manual",
+      "notes": "Caricamento manuale di AGENTS.md / CLAUDE.md tramite prompt"
+    }
+  }
+}

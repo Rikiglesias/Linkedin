@@ -106,6 +106,29 @@ Se una capability manca in un ambiente, documentare il gap e chiuderlo; non acce
 - **Comportamento atteso dell'AI**: dopo il commit verificato, esegue `git push` automatico se le precondizioni sono soddisfatte e dichiara cosa ha fatto. Se anche solo una precondizione manca, dichiara esplicitamente cosa manca e propone l'azione corretta (PR, attesa review, conferma utente). Mai silenzio.
 - **Memoria del comportamento**: se l'utente chiede "fai anche push" piu' di una volta in sessione, e' un segnale che il trigger non sta scattando: l'AI deve correggere la propria valutazione, non aspettare il prompt successivo.
 
+### Fallback per ambienti senza hook PowerShell (Codex, Cloud Code, Cursor)
+
+In Claude Code i gate git sono enforced via hook PowerShell (`pre-bash-l1-gate.ps1`, `pre-bash-git-gate.ps1`, `post-bash-git-audit.ps1`). In ambienti che NON eseguono questi hook nativamente, l'AI deve **simulare manualmente** lo stesso comportamento prima di ogni commit/push:
+
+**Procedura manuale equivalente (Codex / Cloud Code / Cursor / shell diretta):**
+
+1. **Pre-commit gate (sostituisce `pre-bash-l1-gate.ps1`)**: verificare che `npm run conta-problemi` sia stato eseguito con esito verde negli ultimi ~60 minuti. Se non lo e', eseguirlo prima del commit.
+2. **Pre-commit gate (sostituisce `pre-bash-git-gate.ps1`)**: eseguire `npm run audit:git-automation:strict:commit` — deve ritornare `READY`. Se `REVIEW`/`BLOCKED`/`NOOP`, fermarsi e dichiarare il motivo.
+3. **Pre-push gate**: eseguire `npm run audit:git-automation:strict:push` — deve ritornare `READY`. Se non, niente push automatico.
+4. **Native git hooks** (`.githooks/pre-commit`): attivati una volta sola con `npm run setup:git-hooks`. Questi sono attivi anche fuori Claude Code (sono git hooks nativi, non Claude hooks).
+5. **Output post-commit**: dichiarare esplicitamente "commit fatto", "push fatto" oppure "push non eseguito perche' X".
+
+**Cosa NON cambia:**
+- Native git hook `.githooks/pre-commit` (security scan) funziona ovunque dopo `setup:git-hooks`.
+- `npm run conta-problemi` / `npm run audit:git-automation` sono npm scripts cross-environment.
+- Le regole "Auto-commit by default", "No auto-push se branch protetto", "Precondizioni cumulative" valgono identiche.
+
+**Differenza operativa principale:**
+- In Claude Code: hook bloccano automaticamente. Il modello non puo' bypassare per dimenticanza.
+- Fuori Claude Code: il modello deve eseguire i gate come tool call espliciti. La dimenticanza diventa miss reale.
+
+**Quando l'utente lavora in Codex/Cloud Code**, la regola e' rinforzata: dichiarare sempre, prima del commit, l'output del gate manuale. Niente "ho committato" silenzioso.
+
 ## Selezione modello AI per task — regola dura
 
 - L'AI deve dichiarare proattivamente quale modello e provider e' piu' adatto al task corrente, **prima di iniziare**, e suggerire uno switch quando il task corrente non e' allineato al modello attivo. Non aspettare che l'utente lo chieda.
@@ -252,6 +275,35 @@ L'AI deve contestare richieste sbagliate o rischiose PRIMA di eseguirle.
 3. "Fai il push diretto su main" → dichiarare policy, chiedere conferma esplicita
 
 **NON è anti-compiacenza**: chiedere conferma su ogni cosa banale. Solo su rischi reali.
+
+## Classificazione temporale del task — regola dura
+
+Per ogni task non banale, prima di pianificare, **classificare l'orizzonte temporale**:
+
+| Orizzonte | Significato | Esempio |
+|---|---|---|
+| **breve** | Da chiudere in questa sessione o entro 1 settimana | Bug fix, feature piccola, documentazione |
+| **medio** | Da chiudere in 1-4 settimane, multi-sessione | Refactor area, nuovo modulo, integrazione |
+| **lungo** | Mesi, milestone, iniziativa | Riarchitettura, pacchetto distribuito, parity ambienti |
+
+**Quando classificare obbligatoriamente**:
+- Task multi-file o multi-dominio
+- Task che dipendono da decisioni esterne o input utente
+- Backlog item con sub-task
+- Manutenzione ricorrente (audit, review, cleanup)
+
+**Come usarlo**:
+1. Dichiarare l'orizzonte in 1 riga prima della pianificazione: "Orizzonte: breve / medio / lungo"
+2. **Non rinviare obblighi brevi nel medio/lungo termine** — i task brevi vanno fatti nella sessione corrente o documentati come blocked con motivo concreto
+3. Task medio/lungo → spezzarli in milestone con orizzonte breve verificabile
+4. Manutenzione ricorrente → cadenza esplicita (settimanale, mensile) via `audit:weekly` / `audit:monthly` o Windows Task Scheduler
+
+**Scenari di test**:
+1. "Aggiungi feature X complessa" → "Orizzonte: medio. Sub-milestone breve: scaffold + test base"
+2. "Aggiorna la docs" → "Orizzonte: breve" + fare adesso
+3. "Migra tutto a Codex" → "Orizzonte: lungo. Sub-milestone breve: matrice capability + test smoke 1 modulo"
+
+**Anti-pattern**: usare medio/lungo termine come parcheggio per task che potresti fare subito. Se chiudibile oggi → orizzonte breve, fallo.
 
 ## Blast radius e ordine di esecuzione
 
