@@ -96,7 +96,7 @@ Sottopunti:
 - [x] standardizzare subagent: un job per subagent, contesto proprio, strumenti/permessi propri, risultato unico di ritorno, nessun inquinamento del thread principale
 - [x] standardizzare plugin: `plugin.json`/manifest, lista di skill/agenti/hook/comandi inclusi, versione, firma o provenance, installazione team/repo
 - [x] decidere per ogni capability nel routing registry la primitive corretta: skill, MCP, plugin, hook, audit, script, workflow o fonte esterna
-- [ ] eliminare o fondere duplicati
+- [x] eliminare o fondere duplicati — `audit:skill-duplicates` (2026-05-14) ha scansionato 197 skill: solo 9 overlap nome (tutti legittimi: `<x>-generator`/`<x>-validator` paired, `audit` parent + `audit-rules` child, `react-expert`/`react-native-expert`). Nessun duplicato operativo da rimuovere. Volume alto (100 marketing, 66 web-frontend) viene dai marketplace community, non da installazioni manuali. 9 skill non classificate (debugging-wizard, json-canvas, launch-strategy, ecc.) restano legittime — solo non hanno keyword nel dictionary di dominio.
 - [x] registrare Caveman, LeanCTX, SIMDex e Contact Skills come candidate `evaluate-before-install`, senza installazione cieca
 - [ ] valutare davvero Caveman, LeanCTX, SIMDex e Contact Skills prima di installarle
 - [ ] definire routing per backend, frontend, docs, prompt, handoff, sicurezza, testing, review e automazioni
@@ -384,10 +384,10 @@ Sottopunti:
 - [ ] pulire root e cartelle solo dopo classificazione esplicita
 - [ ] mantenere AI-readable i canonici con summary, non-goals, cross-link e limiti
 - [ ] mantenere `NEW_PROJECT_BOOTSTRAP_CHECKLIST.md` allineata
-- [ ] creare pacchetto handoff riusabile per altri progetti o persone
+- [x] creare pacchetto handoff riusabile per altri progetti o persone — `docs/tracking/AI_ADK_DISTRIBUTION.md` (2026-05-14) documenta step copia globale, bootstrap progetto, validazione e differenze prima installazione
 - [x] creare pacchetto ADK riusabile con regole/memoria, skill, hook, subagent, comandi e manifest di plugin — `.claude/plugin.json` (2026-05-14) inventaria rules/skills/hooks/subagents/audits/canonicalDocs con compatibility, provenance, installation steps e supportedEnvironments
 - [x] definire schema minimo di `plugin.json`: nome, versione, contenuti inclusi, hook installati, skill incluse, subagent inclusi, provenance, compatibilita' ambiente e strategia update — schema completo in `.claude/plugin.json`
-- [ ] decidere cosa resta globale, cosa resta progetto-specifico e cosa va nel plugin installabile per evitare copie divergenti
+- [x] decidere cosa resta globale, cosa resta progetto-specifico e cosa va nel plugin installabile per evitare copie divergenti — `docs/tracking/AI_ADK_DISTRIBUTION.md` (2026-05-14) tabella distribuzione completa (skill universali/dominio, hook, rules, output styles, memoria, settings, audit, ecc.) + compatibility matrix per Claude Code/Codex/Cursor/Cloud Code
 - [x] adottare struttura canonica `.claude/` (reference da community 2026): scaffold `.claude/rules/`, `.claude/output-styles/`, `.claude/plugin.json` creati 2026-05-14 (rest globale: `~/.claude/hooks|skills|agents|plugins`)
 - [x] introdurre `.claude/output-styles/` per response format predefiniti — `terse.md` e `italian-concise.md` creati 2026-05-14
 - [x] aggiungere `CLAUDE.local.md` (gitignored) per override personali utente — `CLAUDE.local.md.template` creato + `.gitignore` aggiornato

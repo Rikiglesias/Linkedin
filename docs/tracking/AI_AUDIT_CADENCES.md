@@ -59,12 +59,15 @@ Modificare `~/.claude/hooks/session-start.ps1` per controllare last-run timestam
 - Monthly: audit di salute architetturale (registry, governance, schema).
 - Mai aggiungere audit che richiedono input utente — solo audit programmatici idempotenti.
 
-## Stato corrente
+## Stato corrente (aggiornato 2026-05-14)
 
 - Bundle script: presenti in `package.json` (`audit:weekly`, `audit:monthly`).
-- Schedulazione esterna: documentata qui, ancora **da configurare** una volta dall'utente.
-- Last run weekly: da tracciare con prima esecuzione.
-- Last run monthly: da tracciare con prima esecuzione.
+- **Wrapper .bat creati**: `scripts/run-audit-weekly.bat`, `scripts/run-audit-monthly.bat` (output in `%USERPROFILE%\memory\audit-{weekly,monthly}-YYYYMMDD.log`).
+- **Task Scheduler registrato**:
+  - `LinkedIn-AI-Audit-Weekly` — prima esecuzione lun 18/05/2026 09:00, ogni lunedì
+  - `LinkedIn-AI-Audit-Monthly` — prima esecuzione 01/06/2026 09:00, ogni primo del mese
+- Last run: nessuna ancora — attende prima trigger automatica.
+- Verifica manuale: `schtasks /Query /TN "LinkedIn-AI-Audit-Weekly"` o `Get-ScheduledTask -TaskName "LinkedIn-AI-Audit-*"`.
 
 ## Fonti di verità
 
