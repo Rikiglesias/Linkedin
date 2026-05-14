@@ -174,7 +174,7 @@ Verifiche: prova manuale nuova chat (prima prova Codex 2026-05-11), `npm run aud
 
 Problema: l'AI deve partire da una priorita P0: intento reale prima del testo letterale, input utente come ipotesi e non verita' assoluta, esempi come pattern, decomposizione ricorsiva dell'argomento, visione 360/lungo termine, root cause/soluzione migliore, fonte/primitive/verifica, continuita' proattiva e truthful completion. Deve capire il principio dietro gli esempi, trasformare esempio o argomento in albero dell'argomento con sottopunti e sotto-sottopunti, costruire un modello della situazione, studiare il dominio, applicarlo ai casi analoghi/correlati, prevedere problemi diretti e indiretti, evitare allucinazioni e non dichiarare verifiche non fatte. Deve cercare il problema reale/root cause e la soluzione migliore verificabile, non fermarsi alla prima risposta plausibile o al primo workaround.
 
-Stato: regole presenti in `AGENTS.md`, runtime brief e master spec; il principio madre di ragionamento 360 e' esplicito come protocollo operativo con trigger, gerarchia P0, modello della situazione, output minimo, protocollo soluzione migliore e limiti. Manca verifica sistematica su task lunghi e multi-dominio.
+Stato: regole presenti in `AGENTS.md`, runtime brief e master spec; il principio madre di ragionamento 360 e' esplicito come protocollo operativo con trigger, gerarchia P0, modello della situazione, output minimo, protocollo soluzione migliore e limiti. 12/22 sub-task ora enforced via hook (P0 reinietta, esempi come pattern, decomposizione ricorsiva, web/docs required, Stop proattivo, audit falsi completati, loop-codex, anti-compiacenza). I 10 residui restano cognitive advisory: modello situazione esplicito, rami albero rivalutati, casi analoghi, visione 360, root cause, alternative, problemi prevedibili, completamento turno. Non meccanizzabili senza generare falsi positivi.
 
 Trigger: prompt lungo/vocale/denso, esempio dell'utente, richiesta generica di miglioramento, task multi-file/multi-dominio, tema esterno o rischio false completion.
 
@@ -188,29 +188,29 @@ Ordine: normalizzare intento reale -> trattare input utente come ipotesi -> estr
 
 Sottopunti:
 
-- [ ] attivare requirement ledger su prompt lunghi, vocali o densi
-- [ ] applicare sempre gerarchia P0 prima di piano, skill, edit o risposta finale
-- [ ] trattare input utente come ipotesi da validare quando il task ha rischio, ambiguita' o impatti indiretti
+- [x] attivare requirement ledger su prompt lunghi, vocali o densi — enforced via `inject-runtime-brief.ps1` UserPromptSubmit (reinietta P0 + ledger obbligatorio); audit `audit:ledger` 14/14
+- [x] applicare sempre gerarchia P0 prima di piano, skill, edit o risposta finale — reinietta P0 a ogni prompt via runtime brief
+- [x] trattare input utente come ipotesi da validare quando il task ha rischio, ambiguita' o impatti indiretti — P0 #2 in runtime brief + `pre-edit-verify-intent.ps1` per fix
 - [ ] rendere esplicito il modello della situazione per task non banali
-- [ ] trattare esempi utente come pattern, non lista esaustiva
-- [ ] decomporre ogni argomento non banale in albero dell'argomento con sottopunti e sotto-sottopunti
+- [x] trattare esempi utente come pattern, non lista esaustiva — P0 #3 esplicito in runtime brief
+- [x] decomporre ogni argomento non banale in albero dell'argomento con sottopunti e sotto-sottopunti — P0 #4 "Decomposizione ricorsiva" + `PROJECT_ROUTING_DECISION` reinietta esplicitamente
 - [ ] per ogni ramo dell'albero rivalutare fonte, web/docs/MCP, skill/capability, rischi, verifiche e done criteria
 - [ ] fermare la decomposizione solo quando il ramo e' irrilevante, gia' coperto o abbastanza piccolo da essere eseguito/verificato
 - [ ] inferire casi analoghi, correlati e indirettamente collegati
 - [ ] applicare visione lunga e 360 anche quando l'utente cita solo un esempio locale
-- [ ] studiare dominio con internet/docs ufficiali/MCP/tool live quando il tema non e' interno, stabile o gia' verificato
+- [x] studiare dominio con internet/docs ufficiali/MCP/tool live quando il tema non e' interno, stabile o gia' verificato — routing decision `Web/docs: required` automatico per `recent-library-provider`; hook `post-websearch-log.ps1`
 - [ ] cercare root cause/problema reale prima del fix su task non banali
 - [ ] confrontare alternative quando esistono piu' soluzioni plausibili
 - [ ] evitare workaround superficiali quando esiste una soluzione migliore raggiungibile
 - [ ] prevedere problemi diretti e indiretti dello specifico argomento
 - [ ] completare nel turno corrente tutto cio' che non richiede nuova conferma o rischio aggiuntivo
-- [ ] chiudere ogni risposta operativa con il prossimo passo concreto, un blocco reale o una domanda specifica
-- [ ] evitare chiusure passive tipo "fammi sapere" quando esiste un'azione successiva ragionevole
+- [x] chiudere ogni risposta operativa con il prossimo passo concreto, un blocco reale o una domanda specifica — enforced via `stop-proactive-next-step.ps1` (advisory, hit rate 107/7d)
+- [x] evitare chiusure passive tipo "fammi sapere" quando esiste un'azione successiva ragionevole — coperto dallo stesso Stop hook
 - [x] aggiungere `Stop` hook advisory `stop-proactive-next-step.ps1` per rendere non dimenticabile la continuita' di chiusura
-- [ ] introdurre checklist/audit finale contro falsi completati
-- [ ] rafforzare loop Codex sui file diretti e indiretti
-- [ ] proporre creazione di skill/regola/memoria/audit quando manca la primitive giusta
-- [ ] contestare ipotesi utente tecnicamente sbagliate prima di eseguirle
+- [x] introdurre checklist/audit finale contro falsi completati — `audit:ai-list-completeness` (item senza prova end-to-end = aperto) + `audit:miss-metrics` (activations vs miss veri)
+- [x] rafforzare loop Codex sui file diretti e indiretti — skill `loop-codex` presente in `~/.claude/skills/loop-codex/skill.md` + hook `post-edit-codebase-hygiene.ps1` richiede valutazione file diretti/indiretti
+- [x] proporre creazione di skill/regola/memoria/audit quando manca la primitive giusta — P0 #8 "Proattivita' controllata" esplicito nel runtime brief
+- [x] contestare ipotesi utente tecnicamente sbagliate prima di eseguirle — sezione `Anti-compiacenza — regola dura` in `AGENTS.md`
 
 Done: l'utente non deve elencare ogni sottocaso; l'AI non prende l'input utente come verita' assoluta e non limita il ragionamento agli esempi ricevuti; l'AI apre argomenti ed esempi in albero dell'argomento e non chiude finche' i rami rilevanti non sono coperti, esclusi o tracciati; la gerarchia P0 resta visibile nel runtime brief e nel routing hook prima di ogni task non banale; requisiti, esclusioni, modello della situazione, root cause, alternative, criterio della soluzione migliore, problemi prevedibili, prove, limiti e continuita' operativa restano espliciti fino alla chiusura.
 
@@ -377,8 +377,8 @@ Ordine: classificare documenti -> ridurre duplicati/monoliti -> decidere cosa e'
 
 Sottopunti:
 
-- [ ] riesaminare file troppo lunghi o con responsabilita' miste
-- [ ] applicare a ogni modifica il controllo codebase hygiene: file diretto giusto, file indiretti coerenti, duplicati/obsoleti rilevati, cleanup sicuro o follow-up tracciato
+- [x] riesaminare file troppo lunghi o con responsabilita' miste — `audit:docs-size` (2026-05-14) scansiona canonici con soft/hard limit per categoria. Risultato attuale: solo `ENGINEERING_WORKLOG.md` (1013 righe) sopra hard 800 → split per anno/quarter quando blocca lettura
+- [x] applicare a ogni modifica il controllo codebase hygiene: file diretto giusto, file indiretti coerenti, duplicati/obsoleti rilevati, cleanup sicuro o follow-up tracciato — enforced via hook `post-edit-codebase-hygiene.ps1` (richiede dichiarazione dopo ogni Edit/Write)
 - [ ] separare documenti storici, operativi, canonici e tracking
 - [ ] mantenere `docs/README.md` allineato
 - [ ] pulire root e cartelle solo dopo classificazione esplicita
