@@ -48,6 +48,8 @@
     "audit:hooks": "ts-node src/scripts/hooksConformityAudit.ts",
     "audit:handoff-staleness": "ts-node src/scripts/handoffStalenessAudit.ts",
     "audit:miss-metrics": "ts-node src/scripts/missMetricsAudit.ts",
+    "audit:weekly": "npm run audit:miss-metrics && npm run audit:handoff-staleness && npm run audit:violations",
+    "audit:monthly": "npm run audit:ai-control-plane && npm run audit:adk-capabilities && npm run audit:rule-enforcement && npm run audit:ledger && npm run audit:skills",
     "audit:ai-control-plane": "npm run audit:ai-control-plane:docs && npm run audit:hooks && npm run audit:routing && npm run audit:adk-capabilities && npm run audit:l2-l6 && npm run audit:ai-list-completeness",
     "audit:ai-control-plane:docs": "ts-node src/scripts/aiControlPlaneAudit.ts",
     "audit:ai-list-completeness": "ts-node src/scripts/aiListCompletenessAudit.ts",

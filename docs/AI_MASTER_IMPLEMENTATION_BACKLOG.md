@@ -789,7 +789,7 @@ Senza orizzonte temporale, il backlog diventa una discarica: obblighi immediati 
 
 Stato attuale:
 
-La regola esiste nei canonici. Manca una cadenza operativa completa per memoria, docs, cleanup, capability audit, sicurezza, review e automazioni.
+La regola esiste nei canonici. Bundle `audit:weekly` e `audit:monthly` definiti in `package.json` (2026-05-14) con doc operativo in `docs/tracking/AI_AUDIT_CADENCES.md`. Schedulazione Windows Task Scheduler documentata ma ancora da configurare lato utente. Classificazione temporale obbligatoria su task non banali resta aperta.
 
 Trigger operativo:
 
@@ -823,9 +823,9 @@ Ordine logico:
 Sottopunti operativi:
 
 - [ ] rendere la classificazione temporale obbligatoria nei task non banali
-- [ ] definire cadenze minime per memoria, docs, cleanup, capability audit, security review e automazioni
+- [x] definire cadenze minime per memoria, docs, cleanup, capability audit, security review e automazioni — `docs/tracking/AI_AUDIT_CADENCES.md` (2026-05-14): weekly bundle + monthly bundle
 - [ ] dare owner logico e contenitore canonico a ogni follow-up
-- [ ] trasformare ricorrenze utili in audit/script/workflow schedulati
+- [x] trasformare ricorrenze utili in audit/script/workflow schedulati — npm scripts `audit:weekly` (miss-metrics + handoff-staleness + violations) e `audit:monthly` (ai-control-plane + adk + rule-enforcement + ledger + skills); schedulazione Windows Task Scheduler documentata
 - [ ] auditare backlog per trovare obblighi brevi parcheggiati impropriamente
 
 Criterio done:
@@ -932,7 +932,7 @@ Il sistema non deve aspettare che l'utente ripeta sempre le stesse correzioni. D
 
 Stato attuale:
 
-Esistono audit e violation log; primo audit metriche `audit:miss-metrics` creato (2026-05-13) legge 15 stream di log e produce hit count 7d/30d/totale, trend e candidate per promozione. Manca ancora collegamento metrica -> root cause -> primitive correttiva automatica e un sistema maturo che propone azioni concrete.
+Esistono audit e violation log; audit `audit:miss-metrics` (2026-05-13) legge 15 stream di log e distingue **activations** (ogni hit del hook) da **miss veri** (linee con BLOCK/violation/dirty). Refinement 2026-05-14: aggiunto `missPattern` regex per ogni regola; risultato attuale = 0 candidate forti per promozione blocking. Compliance advisory hook ~97-100% (proactive-next-step 107 act / 0 miss, best-practice 80 act / 0 miss). Lezione operativa: NON promuovere a blocking sulla base di activations alte se miss veri assenti. Manca ancora collegamento miss -> root cause -> primitive correttiva automatica e un sistema maturo che propone azioni concrete.
 
 Trigger operativo:
 

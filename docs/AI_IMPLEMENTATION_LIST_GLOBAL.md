@@ -335,7 +335,7 @@ Verifiche: `npm run post-modifiche`, `npm run audit:git-automation`, `git status
 
 Problema: senza orizzonte temporale il backlog diventa una discarica e gli obblighi immediati vengono rinviati.
 
-Stato: regole presenti nei canonici; mancano cadenze operative complete per memoria, docs, cleanup, capability audit, sicurezza, review e automazioni.
+Stato: regole presenti nei canonici; bundle `audit:weekly` e `audit:monthly` definiti in `package.json` (2026-05-14) con doc operativo in `docs/tracking/AI_AUDIT_CADENCES.md`. Schedulazione Windows Task Scheduler documentata ma ancora da configurare lato utente.
 
 Trigger: task non banale, follow-up da audit, manutenzione ricorrente o punto senza owner temporale.
 
@@ -350,9 +350,9 @@ Ordine: classificare breve/medio/lungo -> separare ora/follow-up/manutenzione ->
 Sottopunti:
 
 - [ ] rendere classificazione temporale obbligatoria nei task non banali
-- [ ] definire cadenze per memoria, docs, cleanup, capability audit, security review e automazioni
+- [x] definire cadenze per memoria, docs, cleanup, capability audit, security review e automazioni — `docs/tracking/AI_AUDIT_CADENCES.md` (2026-05-14) con bundle settimanale (miss-metrics + handoff-staleness + violations) e mensile (ai-control-plane + adk + rule-enforcement + ledger + skills)
 - [ ] dare owner logico e contenitore canonico a ogni follow-up
-- [ ] trasformare ricorrenze utili in audit/script/workflow schedulati
+- [x] trasformare ricorrenze utili in audit/script/workflow schedulati — npm scripts `audit:weekly` e `audit:monthly` definiti; schedulazione Windows Task Scheduler documentata (da configurare lato utente)
 - [ ] trovare obblighi brevi parcheggiati impropriamente nel backlog
 
 Done: ogni punto aperto ha orizzonte, sede e motivo; manutenzione periodica non dipende dalla memoria dell'utente.
@@ -401,7 +401,7 @@ Verifiche: review `docs/README.md`, audit documentale manuale, prova bootstrap s
 
 Problema: l'utente non deve ripetere sempre le stesse correzioni; il sistema deve misurare miss e correggersi strutturalmente.
 
-Stato: audit e violation log esistono; primo audit metriche `audit:miss-metrics` creato (2026-05-13) che legge `~/memory/*-log.txt` e produce hit count 7d/30d/totale, trend e candidate per promozione. Output corrente identifica 4 candidate forti: `proactive-next-step`, `codebase-hygiene`, `best-practice`, `skill-precheck`. Manca ancora collegamento metrica -> root cause -> primitive correttiva automatica.
+Stato: audit `audit:miss-metrics` (2026-05-13) legge `~/memory/*-log.txt` e distingue **activations** (ogni hit del hook) da **miss veri** (linee con BLOCK/violation/dirty pattern). Aggiornamento 2026-05-14: aggiunto `missPattern` per ogni regola; risultato attuale = **0 candidate forti per promozione**. Compliance advisory hook ~97-100% (es. proactive-next-step 107 act / 0 miss, best-practice 80 act / 0 miss). Lezione operativa: NON promuovere a blocking sulla base di activations alte se i miss veri sono assenti — gli advisory funzionano. Manca ancora collegamento miss -> root cause -> primitive correttiva automatica.
 
 Trigger: correzione ripetuta dall'utente, miss ricorrente, false completion, capability mancante o regola/tool inutilizzato.
 
