@@ -88,6 +88,20 @@ La prima volta che si installa su una macchina, alcuni hook PowerShell potrebber
 | Claude Cloud Code | 🔵 non testato | Da verificare |
 | Cursor / Windsurf | 🔵 manuale | Caricamento manuale di AGENTS.md via prompt |
 
+## Mapping con community reference 2026 (Agent Development Kit a 5 layer)
+
+Il community reference 2026 (chase.h.ai, leadgenman, ecc.) propone struttura standard `agent-dev-kit/` con 5 layer. Il nostro sistema e' **funzionalmente allineato**, con varianti stilistiche.
+
+| Layer reference | Reference struttura | Nostro equivalente | Note |
+|---|---|---|---|
+| **L1 Memory Layer** | `CLAUDE.md/architecture.rules`, `global.md`, `project.md` | `~/.claude/CLAUDE.md` + `CLAUDE.md` repo + `CLAUDE.local.md.template` + `AGENTS.md` | AGENTS.md piu' ricco e funzionale di `architecture.rules` separato |
+| **L2 Knowledge Layer** | `skills/SKILL.md`, `scripts/`, `context.md` | `~/.claude/skills/*/SKILL.md` (197 skill) + `src/scripts/` | Niente `context.md` per skill; copertura via runtime brief + capability routing |
+| **L3 Guardrail Layer** | `hooks/PreToolUse.sh`, `PostToolUse.sh`, `SessionStart.sh` | 32+2 hook PowerShell frammentati per concern (SRP) | Nostro frammentato = piu' SRP. Reference consolidato = 3 file fan-out. Variante stilistica |
+| **L4 Delegation Layer** | `subagents/code-reviewer.md`, `test-runner.md`, `explorer.md` | Skill globali `code-reviewer`, `explorer` + Agent Teams; no `test-runner` dedicato (usiamo `npm run conta-problemi`) | Allineato; test-runner come hook L1 invece di subagent |
+| **L5 Distribution Layer** | `plugins/manifest.json`, `marketplace.url`, `team.install` | `.claude/plugin.json` + step bootstrap in questo doc | Niente `marketplace.url`/`team.install` file: opzionali |
+
+**Verdetto**: nessuna implementazione urgente. Differenze sono varianti, non gap funzionali. Documentazione su 89 comandi nativi Claude Code in `docs/tracking/CLAUDE_CODE_COMMANDS_REFERENCE.md`.
+
 ## Fonti di verità
 
 - `.claude/plugin.json` — manifest pacchetto
@@ -95,4 +109,5 @@ La prima volta che si installa su una macchina, alcuni hook PowerShell potrebber
 - `docs/AI_OPERATING_MODEL.md` — roadmap operativa
 - `docs/AI_RUNTIME_BRIEF.md` — digest runtime
 - `docs/tracking/AI_AUDIT_CADENCES.md` — cadenze
+- `docs/tracking/CLAUDE_CODE_COMMANDS_REFERENCE.md` — 89 comandi nativi categorizzati
 - `~/.claude/CLAUDE.md` — regole globali utente
