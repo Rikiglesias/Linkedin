@@ -23,6 +23,8 @@ Quando l'AI riceve un task che tocca un file matchato dal glob, deve:
 | `api-security.md` | `src/api/**`, `src/auth/**` | `pre-edit-secrets.ps1`, code review manuale |
 | `scripts-audit.md` | `src/scripts/**` | `audit:ai-control-plane`, `audit:hooks` |
 | `model-selection.md` | `**` (sempre attiva) | `user-prompt-model-suggestion.ps1` (advisory), `ensure-claude-model-router.ps1` (config) |
+| `git-commit-push.md` | `**` (sempre attiva) | `pre-bash-l1-gate.ps1` (blocking), `pre-bash-git-gate.ps1` (blocking), `post-bash-git-audit.ps1` (async) |
+| `autonomous-workflows.md` | `**` (sempre attiva) | native `/goal`, `/loop`, `stop-proactive-next-step.ps1` (advisory) |
 
 ## Rapporto con backlog AI
 

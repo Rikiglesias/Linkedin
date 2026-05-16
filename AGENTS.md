@@ -68,81 +68,7 @@ Se una capability manca in un ambiente, documentare il gap e chiuderlo; non acce
 
 ## Commit e push — policy operativa esplicita
 
-- Il commit non deve dipendere dalla memoria dell'utente: quando un'unita' logica di lavoro e' davvero verificata, il sistema deve arrivare al commit in modo predefinito.
-- **Auto-commit by default**: dopo verifiche verdi (`post-modifiche` + `conta-problemi` a zero) l'AI deve proporre o attivare il commit come chiusura naturale del blocco, non lasciarlo come passaggio implicito.
-- **No commit automatico cieco** se:
-  - il lavoro e' ancora a meta'
-  - ci sono modifiche non correlate mescolate nello stesso working tree
-  - il task e' bloccato o richiede ancora conferma sostanziale
-  - i gate non sono verdi
-- Il **push non e' automatico in assoluto**: va trattato come azione contestuale, perche' tocca remote condivisi, branch policy, review e rischio operativo.
-- **Auto-push consentito** solo quando tutte queste condizioni sono vere:
-  - branch e destinazione sono chiari
-  - upstream gia' configurato oppure strategia di push esplicita
-  - nessuna divergenza o conflitto remoto
-  - il flusso corretto non richiede PR o review preventiva
-  - l'utente non ha chiesto di fermarsi prima del remote
-- **No auto-push** se il branch e' protetto/condiviso, se serve PR, se il remote e' divergente, se la policy di integrazione non e' chiara o se il task tocca aree ad alto rischio che richiedono review.
-- Se il sistema arriva al commit ma non al push, l'AI deve dirlo in modo esplicito e motivato: cosa ha fatto, perche' si e' fermata e qual e' il prossimo step corretto.
-- Verifica deterministica disponibile: `npm run audit:git-automation`
-  - classifica il repository in `READY` / `REVIEW` / `BLOCKED` / `NOOP` per commit e push
-  - espone anche script affidabili per futuri hook o workflow: `audit:git-automation:strict:commit`, `audit:git-automation:strict:push`, `audit:git-automation:json`
-  - non sostituisce `post-modifiche` e `conta-problemi`: governa il contesto git, non la qualita' del codice
-- Enforcement meccanico attivo in Claude Code:
-  - `pre-bash-l1-gate.ps1` blocca `git commit` senza quality gate recente
-  - `pre-bash-git-gate.ps1` blocca `git commit` / `git push` se il repository non e' nel giusto stato operativo
-  - `post-bash-git-audit.ps1` logga automaticamente la readiness git dopo quality gate e operazioni git rilevanti
-- Enforcement git nativo (versionato in `.githooks/`, attivare con `npm run setup:git-hooks`):
-  - `pre-commit` esegue `scripts/security/check-no-secrets.mjs` — bloccante su secret reali (OpenAI/Anthropic/GitHub PAT/Google API/AWS/Slack/JWT/PEM private key)
-  - whitelist su pattern di test (sk-XXX, sk-test-, your-api-key, ecc.)
-  - eseguibile manualmente: `npm run security:scan`
-- Primitive correnti:
-  - commit/push intelligente via skill `git-commit`
-  - PR via skill `git-create-pr`
-  - audit contestuale git via `audit:git-automation`
-  - gate git via hook globali Claude Code
-  - il comportamento desiderato e' quindi **meccanicamente enforced in Claude Code** per i blocker noti; il push resta comunque contestuale sul remote
-
-### Auto-push post-commit — trigger automatico
-
-- Dopo ogni commit verificato, l'AI deve valutare l'auto-push **senza chiedere conferma all'utente**, se tutte le precondizioni sono soddisfatte. L'utente non deve dover ricordare di chiedere "fai anche push": e' parte della chiusura naturale del blocco.
-- **Trigger**: il commit appena creato e' su una "sezione naturale di chiusura". Una sezione e' naturale se:
-  - chiude un'iniziativa coerente (feature completata, bug risolto, refactor finito, docs/regole codificate)
-  - non lascia stato di lavoro a meta' nel working tree
-  - non e' un commit intermedio di una serie ancora in corso
-- **Precondizioni cumulative** (tutte vere → push automatico, una falsa → fermarsi e dire perche'):
-  - quality gate verde nello stesso ciclo (`post-modifiche` + `conta-problemi` = 0)
-  - `audit:git-automation` ritorna `READY` per push (non `REVIEW`/`BLOCKED`/`NOOP`)
-  - branch corrente non e' `main`/`master`/`production` protetto **oppure** la policy del progetto autorizza push diretto
-  - upstream configurato e nessuna divergenza con remote
-  - il flusso non richiede PR/review (solo personale o tooling/docs)
-  - l'utente non ha esplicitamente detto di fermarsi al commit
-- **Precondizioni che ROMPONO il trigger** (anche con tutto il resto verde): branch condiviso senza policy chiara, modifica che tocca anti-ban/sicurezza/migration DB ad alto rischio, repository con review obbligatoria.
-- **Comportamento atteso dell'AI**: dopo il commit verificato, esegue `git push` automatico se le precondizioni sono soddisfatte e dichiara cosa ha fatto. Se anche solo una precondizione manca, dichiara esplicitamente cosa manca e propone l'azione corretta (PR, attesa review, conferma utente). Mai silenzio.
-- **Memoria del comportamento**: se l'utente chiede "fai anche push" piu' di una volta in sessione, e' un segnale che il trigger non sta scattando: l'AI deve correggere la propria valutazione, non aspettare il prompt successivo.
-
-### Fallback per ambienti senza hook PowerShell (Codex, Cloud Code, Cursor)
-
-In Claude Code i gate git sono enforced via hook PowerShell (`pre-bash-l1-gate.ps1`, `pre-bash-git-gate.ps1`, `post-bash-git-audit.ps1`). In ambienti che NON eseguono questi hook nativamente, l'AI deve **simulare manualmente** lo stesso comportamento prima di ogni commit/push:
-
-**Procedura manuale equivalente (Codex / Cloud Code / Cursor / shell diretta):**
-
-1. **Pre-commit gate (sostituisce `pre-bash-l1-gate.ps1`)**: verificare che `npm run conta-problemi` sia stato eseguito con esito verde negli ultimi ~60 minuti. Se non lo e', eseguirlo prima del commit.
-2. **Pre-commit gate (sostituisce `pre-bash-git-gate.ps1`)**: eseguire `npm run audit:git-automation:strict:commit` — deve ritornare `READY`. Se `REVIEW`/`BLOCKED`/`NOOP`, fermarsi e dichiarare il motivo.
-3. **Pre-push gate**: eseguire `npm run audit:git-automation:strict:push` — deve ritornare `READY`. Se non, niente push automatico.
-4. **Native git hooks** (`.githooks/pre-commit`): attivati una volta sola con `npm run setup:git-hooks`. Questi sono attivi anche fuori Claude Code (sono git hooks nativi, non Claude hooks).
-5. **Output post-commit**: dichiarare esplicitamente "commit fatto", "push fatto" oppure "push non eseguito perche' X".
-
-**Cosa NON cambia:**
-- Native git hook `.githooks/pre-commit` (security scan) funziona ovunque dopo `setup:git-hooks`.
-- `npm run conta-problemi` / `npm run audit:git-automation` sono npm scripts cross-environment.
-- Le regole "Auto-commit by default", "No auto-push se branch protetto", "Precondizioni cumulative" valgono identiche.
-
-**Differenza operativa principale:**
-- In Claude Code: hook bloccano automaticamente. Il modello non puo' bypassare per dimenticanza.
-- Fuori Claude Code: il modello deve eseguire i gate come tool call espliciti. La dimenticanza diventa miss reale.
-
-**Quando l'utente lavora in Codex/Cloud Code**, la regola e' rinforzata: dichiarare sempre, prima del commit, l'output del gate manuale. Niente "ho committato" silenzioso.
+Regola estratta in `.claude/rules/git-commit-push.md` (path-scoped `**`). Contiene: principi auto-commit/no-auto-push, verifica `audit:git-automation`, enforcement Claude Code + git nativo, trigger auto-push post-commit con precondizioni cumulative, fallback per ambienti senza hook PowerShell (Codex/Cloud Code/Cursor). Modifica lì, non duplicare qui.
 
 ## Selezione modello AI per task — regola dura
 
@@ -367,60 +293,7 @@ Per ogni task non banale, prima di pianificare, **classificare l'orizzonte tempo
 
 ## Workflow autonomi continui — `/goal`, `/loop`, Stop hook
 
-Claude Code offre tre meccanismi per tenere la sessione attiva tra prompt senza che l'utente debba scrivere ogni turno. Scegliere in base a **quando deve iniziare il turno successivo** e **quando deve fermarsi**.
-
-| Approccio | Inizio turno successivo | Stop quando |
-|---|---|---|
-| **`/goal <condizione>`** | Subito dopo il turno precedente | Un evaluator (Haiku) conferma che la condizione è soddisfatta |
-| **`/loop <intervallo>`** | Dopo intervallo temporale (es. 5 minuti) | L'utente ferma, o il modello decide che il lavoro è finito |
-| **Stop hook** (`stop-proactive-next-step.ps1`) | Subito dopo il turno precedente | Logica deterministica nello script |
-
-### Quando usare `/goal`
-
-Per lavoro sostanziale con **end state verificabile** sopra più turni:
-- Migrazione modulo a nuova API fino a quando tutti i call site compilano e i test passano
-- Implementazione design doc fino a quando tutti i criteri di accettazione tengono
-- Split file grande in moduli focalizzati fino a quando ogni file è sotto soglia
-- Lavoro su backlog labeled fino a quando la queue è vuota
-
-**Esempio operativo**:
-```text
-/goal all tests in test/auth pass and `npm run conta-problemi` exits 0 and `audit:ai-control-plane` returns 25/25
-```
-
-Il modello continua a lavorare finché non è davvero fatto. L'evaluator separato (Haiku, costo trascurabile) verifica ogni turn. Niente false completion.
-
-### Come scrivere una condizione efficace
-
-Tre componenti obbligatori:
-1. **End state misurabile**: test result, build exit code, audit verde, file count, queue vuota
-2. **Check dichiarato**: come provarlo, es. "`npm test` exits 0" o "`git status` is clean"
-3. **Constraint che contano**: cose che non devono cambiare strada facendo, es. "no other test file is modified"
-
-**Bounded mode**: per evitare loop infiniti, includere clausola `or stop after N turns`. Esempio: `/goal CHANGELOG.md has an entry for every PR merged this week or stop after 15 turns`.
-
-### Quando NON usare `/goal`
-
-- Quick fix < 30 min: overhead inutile
-- Task ambiguo senza condizione misurabile
-- Decisione architetturale che richiede input utente
-- Quando ti basta `/loop` (re-run periodico) o Stop hook (logica deterministica)
-
-### Comportamento operativo
-
-- Setting `/goal` parte subito con la condizione come direttiva (no prompt separato)
-- Indicator `◎ /goal active` mostra durata
-- L'evaluator non chiama tool: giudica solo quanto Claude ha già mostrato in conversazione
-- Goal cancellato a sessione end → restored su `--resume`, ma turn count/timer/token spend resettati
-- `/goal clear` per cancellare prima che la condizione sia soddisfatta
-
-### Requisiti
-
-`/goal` richiede workspace trusted (trust dialog accettato). Non funziona se `disableAllHooks` o `allowManagedHooksOnly` sono settati. In tal caso il comando lo dice esplicitamente.
-
-### Combinazione con auto mode
-
-`/goal` + auto mode = ogni turn del goal gira senza prompt per-tool. Compatibili.
+Regola estratta in `.claude/rules/autonomous-workflows.md` (path-scoped `**`). Contiene: tabella confronto `/goal` vs `/loop` vs Stop hook, quando usare `/goal` (end state misurabile multi-turno), come scrivere condizione efficace (3 componenti + bounded mode), quando NON usare, comportamento operativo, requisiti, combinazione con auto mode. Modifica lì, non duplicare qui.
 
 ## Blast radius e ordine di esecuzione
 
