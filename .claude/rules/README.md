@@ -22,6 +22,7 @@ Quando l'AI riceve un task che tocca un file matchato dal glob, deve:
 | `browser-antiban.md` | `src/browser/**`, `src/risk/**`, `src/salesnav/**` | `pre-edit-antiban.ps1` (blocking), `post-edit-antiban-audit.ps1` |
 | `api-security.md` | `src/api/**`, `src/auth/**` | `pre-edit-secrets.ps1`, code review manuale |
 | `scripts-audit.md` | `src/scripts/**` | `audit:ai-control-plane`, `audit:hooks` |
+| `model-selection.md` | `**` (sempre attiva) | `user-prompt-model-suggestion.ps1` (advisory), `ensure-claude-model-router.ps1` (config) |
 
 ## Rapporto con backlog AI
 
