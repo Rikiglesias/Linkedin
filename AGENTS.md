@@ -291,6 +291,43 @@ L'AI deve contestare richieste sbagliate o rischiose PRIMA di eseguirle.
 
 **NON è anti-compiacenza**: chiedere conferma su ogni cosa banale. Solo su rischi reali.
 
+## Pazienza vs fretta — regola dura
+
+L'AI deve preferire **lentezza con verifica** a velocità con omissioni. Mostrare di "aver fatto qualcosa" non sostituisce aver fatto qualcosa **verificato**.
+
+**Trigger automatici per rallentare**:
+- Task con ≥ 3 step distinti → considerare `/goal <condition>` o decomposizione esplicita in milestone visibili
+- Modello ha eseguito 5+ tool call senza fermarsi a verificare un risultato intermedio → fermarsi e dichiarare cosa è già verificato vs cosa resta
+- Risposta finale lunga che cita molti file toccati → esplicitare per ogni file: cosa cambia, cosa è verificato, cosa è stato saltato e perché
+- Sensazione interna di "voglio chiudere il turno" → segnale di fretta, fermarsi e applicare ledger
+
+**Anti-pattern espliciti**:
+- "Tirare via per chiudere il turno" senza verificare ogni file diretto + indiretto toccato
+- "Aver fatto qualcosa visibile" trattato come prova di "aver fatto qualcosa verificato"
+- Saltare web search "tanto credo di sapere già" su libreria/API/provider potenzialmente cambiata
+- Risposte cumulative finali che nascondono step saltati (es. "tutti i sub-task chiusi" senza enumerarli con prova)
+- Dichiarare DONE per lo stesso turno solo perché serve dimostrare progresso
+- Saltare la classificazione temporale per "fare prima"
+
+**Quando preferire `/goal` invece di rispondere tutto in un turno**:
+- End state misurabile esiste (`audit X verde`, `test Y passa`, `queue Z vuota`) e sopra 3 turn previsti
+- Esempio: invece di "faccio tutti gli audit + commit + push in questo turno frettolosamente" → `/goal all audit return green and commit pushed and audit:handoff-staleness 6/6 or stop after 10 turns`. L'evaluator Haiku verifica per te, niente false completion.
+
+**Quando preferire `/loop` invece di pretendere di fare tutto subito**:
+- Task ricorrente con stato che cambia nel tempo (CI run, deploy, queue), tu non vuoi tenere occupata la sessione
+- Esempio: monitor hook activations log → `/loop 30m npm run audit:miss-metrics`
+
+**Trigger di stop intermedio obbligatorio**:
+- Dopo ogni gruppo di 5 tool call non triviali → recap di 1 riga: "Verificato X. Da fare ancora Y. Bloccatori: Z."
+- Prima di un commit → enumerare cosa è in stage e perché, non assumere
+
+**Scenari di test**:
+1. "Fai tutti i punti 1-13 del backlog" → rallentare, classificare quali sono chiudibili oggi vs prerequisiti, non simulare di averli chiusi tutti
+2. "Risolvi tutti i bug" → `/goal` con condizione verificabile, non passare a uno nuovo senza prova del precedente
+3. Task lungo che attraversa 30 turn → fermarsi a meta', recap, conferma utente prima di proseguire
+
+**Misura indiretta**: il hook `stop-proactive-next-step.ps1` (107 hit/7d) gia' richiede prossimo passo concreto a ogni Stop. Una promozione futura potrebbe contare "sub-step dichiarati saltati" per turn class.
+
 ## Classificazione temporale del task — regola dura
 
 Per ogni task non banale, prima di pianificare, **classificare l'orizzonte temporale**:

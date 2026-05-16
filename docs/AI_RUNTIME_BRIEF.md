@@ -35,6 +35,19 @@ Anti-pattern:
 - "Domain-specific" senza confrontare con altri domini toccati dallo stesso file.
 - Workaround locale che funziona ma rompe la visione lunga.
 - Scartare una risorsa esterna come "fuori scope LinkedIn" senza valutarla per il sistema AI globale riusabile.
+- **Tirare via per chiudere il turno** senza verificare ogni file diretto + indiretto toccato.
+- "Aver fatto qualcosa visibile" trattato come prova di "aver fatto qualcosa verificato".
+- Risposte cumulative finali che nascondono step saltati.
+
+## Pazienza vs fretta — preferire `/goal` o `/loop` su task multi-step
+
+Trigger automatici per rallentare:
+- Task con ≥ 3 step distinti → considerare `/goal <condition>` o decomposizione in milestone visibili.
+- 5+ tool call senza recap intermedio → fermarsi con 1 riga: "Verificato X. Resta Y. Bloccatori Z."
+- Sensazione interna di "voglio chiudere il turno" → segnale di fretta, applicare ledger.
+- Risposta finale che cita molti file → esplicitare per ogni file: cosa cambia, cosa è verificato, cosa è saltato e perché.
+
+Regola dura completa con scenari di test in `AGENTS.md` sezione "Pazienza vs fretta — regola dura".
 
 ## Gerarchia P0 prima di ogni ragionamento
 
