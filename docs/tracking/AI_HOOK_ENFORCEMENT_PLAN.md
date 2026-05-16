@@ -103,3 +103,67 @@ Fonte di misura: `audit:violations`, `audit:rule-enforcement`, `audit:hooks`, `a
 - richiede `npm run audit:git-automation:strict:push` prima del push
 
 `audit:hooks` ora controlla tutti i 34 command hook attivi, non solo il vecchio sottoinsieme da 14.
+
+---
+
+## Mappatura inversa: regola canonica → hook coverage
+
+> Audit 2026-05-16: per ogni regola canonica, quale hook la rende automatica.
+> Obiettivo: identificare regole "orfane" (solo testo, nessun hook). Non promuovere a hook se i miss veri sono sotto soglia (regola activations vs miss veri).
+
+| Regola | Fonte canonica | Hook che la enforced | Tipo | Stato | Orfana? |
+|---|---|---|---|---|---|
+| P0 cognitivo (intento, fonte, vista 360, decomposizione, root cause, verifica, continuità, truthful) | `~/.claude/CLAUDE.md` + runtime brief | `inject-runtime-brief.ps1` (UserPromptSubmit + SessionStart + PreCompact) | sync inject | attivo | No |
+| L1 deterministico (typecheck/lint/test/madge/coverage/size/build) | `~/.claude/CLAUDE.md` L1 | `pre-bash-l1-gate.ps1` blocca commit senza quality gate | blocking | attivo | No |
+| L2-L6 advisory (caller, edges, scenari, UX, E2E) | `~/.claude/CLAUDE.md` L2-L6 | `post-edit-verify-checklist.ps1` richiede dichiarazione applicabile | sync advisory | attivo | No |
+| L7 cross-domain per file | `~/.claude/CLAUDE.md` L7 | `post-edit-codebase-hygiene.ps1` advisory (parziale) | sync advisory | attivo | Parziale |
+| L8 coerenza cross-file | `~/.claude/CLAUDE.md` L8 | nessuno specifico (delegato a `/verification-protocol`) | — | inattivo | **Sì** |
+| L9 truthful completion | `~/.claude/CLAUDE.md` L9 | `stop-proactive-next-step.ps1` advisory parziale | sync advisory | attivo | Parziale |
+| Anti-ban LinkedIn (5 domande + principi) | AGENTS.md `Priorita' assoluta` | `pre-edit-antiban.ps1` blocking + `post-edit-antiban-audit.ps1` | blocking + async | attivo | No |
+| Memoria continuous update | `~/.claude/CLAUDE.md` `Memoria — Secondo Cervello` | `session-start.ps1` carica + `stop-session.ps1` warning | sync load + async warn | attivo | Parziale (no enforce update) |
+| Codebase hygiene file diretto/indiretto | AGENTS.md `Cross-domain` + runtime brief | `post-edit-codebase-hygiene.ps1` richiede dichiarazione | sync advisory | attivo | No |
+| Auto-commit by default | AGENTS.md `Commit e push` | `pre-bash-git-gate.ps1` blocking + `post-edit-request-action.ps1` | blocking + sync gated | attivo | No |
+| Auto-push post-commit | AGENTS.md `Auto-push post-commit` | `audit:git-automation:strict:push` + `post-bash-git-audit.ps1` | blocking + async | attivo | No |
+| Selezione modello per task | AGENTS.md `Selezione modello AI` | `user-prompt-model-suggestion.ps1` + `ensure-claude-model-router.ps1` | sync advisory + config | attivo (condizionale) | No |
+| Intento non letterale | AGENTS.md `Intento non letterale` | `pre-edit-verify-intent.ps1` + brief inject | sync advisory | attivo | No |
+| Fallback context degradation | AGENTS.md `Fallback context degradation` | `pre-compact-handoff.ps1` blocking | blocking | attivo | No |
+| Pazienza vs fretta | AGENTS.md `Pazienza vs fretta` | nessuno specifico (parte regola in brief) | — | inattivo | **Sì** |
+| Anti-compiacenza | AGENTS.md `Anti-compiacenza` | nessuno | — | inattivo | **Sì** |
+| Posizione ferma con evidenza | feedback memory `feedback_hold_position` | nessuno | — | inattivo | **Sì** |
+| Verifica 100% (NUOVA) | feedback memory + L9.7 espanso | nessuno specifico (entra in L9 via post-edit-verify-checklist) | — | inattivo | **Sì** |
+| Concetti come check operativi (NUOVA) | feedback memory | nessuno | — | inattivo | **Sì** |
+| Task multi-categoria proattività | AGENTS.md `Task multi-categoria` | nessuno (richiede stato cross-turn) | — | inattivo | Sì (low priority) |
+| Classificazione temporale | AGENTS.md `Classificazione temporale` | nessuno | — | inattivo | Sì (low priority) |
+| Workflow autonomi /goal /loop | AGENTS.md `Workflow autonomi continui` | nessuno (slash command nativo) | — | n/a | n/a |
+| Skill ricerca pre-creazione | `~/.claude/CLAUDE.md` `Regola zero-A` | `skill-activation.ps1` advisory | sync advisory | attivo | No |
+| Activations vs miss veri | feedback memory `feedback_metrics_activations_vs_miss` | meta-regola per audit hook stessi | — | n/a | n/a |
+| Agire su messaggi hook | feedback memory `feedback_hook_messages` | `user-prompt-commit-gate.ps1` + `pre-stop-commit-gate.ps1` parziale | sync advisory | attivo | Parziale |
+| File size >300 righe | `~/.claude/CLAUDE.md` `Organizzazione` + L1.6/L7.7 | `file-size-check.ps1` PostToolUse | async log | attivo | No |
+| Secret/credenziali in commit | AGENTS.md + `.githooks/pre-commit` | `pre-edit-secrets.ps1` blocking + native git hook | blocking | attivo | No |
+| Web search per librerie/API | AGENTS.md `Protocollo pre-task` | `post-websearch-log.ps1` async + `pre-edit-best-practice.ps1` advisory | async + advisory | attivo | Parziale |
+| MCP guard | AGENTS.md uso MCP | `pre-mcp-guard.ps1` blocking/advisory | blocking | attivo | No |
+| Subagent traceability | AGENTS.md Agent Teams | `subagent-stop.ps1` + `teammate-event.ps1` | async log | attivo | No |
+
+### Regole orfane critiche (priorità di promozione)
+
+Solo se i miss veri sono misurabili sopra soglia (regola activations vs miss):
+
+1. **L8 coerenza cross-file** — promuovere a script audit (`src/scripts/crossFileCoherenceAudit.ts`) che verifica: contratti caller/callee, tipi duplicati, MEMORY.md/registry allineati a file modificati. Trigger: PostToolUse Edit/Write con scope multi-file.
+2. **Pazienza vs fretta** — promuovere a check del `stop-proactive-next-step.ps1`: se la risposta cita >5 affermazioni "fatto", richiedere dichiarazione esplicita "verificate al 100%: X/Y".
+3. **Anti-compiacenza** — promuovere a sub-check del `pre-edit-best-practice.ps1`: se l'utente richiede azione che contraddice canonici/decisions.md/anti-ban, hook restituisce warning bloccante "contraddizione rilevata, dichiarare prima di procedere".
+4. **Verifica 100%** — promuovere a sub-check del `post-edit-verify-checklist.ps1`: aggiungere domanda "ogni claim 'verificato' supportato da check reale eseguito in questo turno?".
+5. **Concetti come check operativi** — non promuovibile a hook generico (richiede analisi semantica). Lasciare in feedback memory + L9.7.
+6. **Posizione ferma con evidenza** — non promuovibile a hook (richiede analisi dialogica). Lasciare in feedback memory.
+
+### Regole orfane low-priority
+
+- Task multi-categoria proattività: richiede stato cross-turn non disponibile via hook stateless attuali.
+- Classificazione temporale: utile in advisory ma rumore probabile. Lasciare in canonico.
+
+### Logica generale
+
+Hook bloccante = controllo deterministico facile (regex pattern, file size, git status).
+Hook advisory = inietta contesto/checklist che il modello deve leggere e dichiarare.
+Hook NON adatto = controllo semantico ambiguo, analisi dialogica multi-turn, ragionamento aperto.
+
+Il valore degli hook advisory dipende dal modello che legge il messaggio e agisce (vedi `feedback_hook_messages.md`). Se il modello ignora gli advisory ricorrentemente, va promosso il check a bloccante o trasformato in script verificabile.
