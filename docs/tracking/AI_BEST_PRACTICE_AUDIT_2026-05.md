@@ -347,13 +347,19 @@ Il file `antiban-review/SKILL.md` è conforme:
 
 ### Stato nostro sistema
 
-| File | Posizione | Tracked? | Server | Note |
-|---|---|---|---|---|
-| `.mcp.json` | repo root | **sì** (committato) | 4: code-review-graph, lean-ctx, symdex, claude-peers | Path utente hardcoded |
-| `~/.claude.json` | user global | no (gitignored per definizione) | ~10: Booking, Canva, Gamma, Gmail, Calendar, Drive, Hugging Face, Spotify, Supabase, Supabase_2, ide, n8n-mcp, playwright | Personal |
-| `.claude/settings.local.json` | project | no (gitignored) | — | Permission overrides, `bypassPermissions` mode |
+| Sorgente | Tracked? | Server reali (count verificato) | Note |
+|---|---|---|---|
+| `.mcp.json` repo | **sì** (committato) | 4: code-review-graph, lean-ctx, symdex, claude-peers | Path utente hardcoded |
+| `~/.claude.json` root `mcpServers` | no (file utente) | 1: n8n-mcp | Verificato via JSON parse |
+| `~/.claude.json` projects-scoped `mcpServers` | no | 1: claude-context (project LinkedIn) | Verificato via JSON parse |
+| Hosted Anthropic claude.ai (account-level) | n/a (web app) | ~10: Booking, Canva, Gamma, Gmail, Calendar, Drive, Hugging Face, Spotify, Supabase, Supabase_2 | NON in file locali, provisioned via claude.ai |
+| Built-in | n/a | 1: ide | Built-in Claude Code |
+| Plugin scope | n/a | 1: plugin_playwright | Via plugin install |
+| `.claude/settings.local.json` | no | — | Permission overrides, `bypassPermissions` mode |
 
-**Totale MCP visibili nel runtime**: 14 server (sotto soglia 20 raccomandata) ✅
+**Totale MCP runtime visibili**: ~18 server (sotto soglia 20 raccomandata, vicino al limite) ⚠️
+
+**Distinzione importante**: la spec Anthropic sui "5-6 server ottimali" si applica ai **server con tool surface ricca** caricati nel context del modello. Hosted come Booking/Canva/Gamma hanno tool list grande (visto in /context: Canva 35 tool, Gmail 13, Supabase 23, ecc.).
 
 ### Gap identificati
 
