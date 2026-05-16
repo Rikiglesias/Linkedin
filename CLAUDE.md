@@ -1,18 +1,18 @@
 # CLAUDE.md
 
-Questo file e' l'adapter per Claude Code.
-Le regole operative canoniche del progetto stanno in `AGENTS.md`.
+@AGENTS.md
 
-## Ordine di lettura
+Questo file e' l'adapter per Claude Code. Importa `AGENTS.md` (regole operative canoniche) tramite la sintassi `@` raccomandata da Anthropic 2026: il contenuto viene caricato automaticamente nel contesto a session start.
 
-1. `AGENTS.md`
-2. `docs/README.md`
-3. `docs/AI_MASTER_SYSTEM_SPEC.md`
-4. `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md`
-5. `docs/AI_OPERATING_MODEL.md`
-6. `todos/active.md`
-7. `todos/workflow-architecture-hardening.md`
-8. `docs/tracking/README.md`
+## Ordine di lettura aggiuntivo (oltre AGENTS.md gia' importato sopra)
+
+1. `docs/README.md`
+2. `docs/AI_MASTER_SYSTEM_SPEC.md`
+3. `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md`
+4. `docs/AI_OPERATING_MODEL.md`
+5. `todos/active.md`
+6. `todos/workflow-architecture-hardening.md`
+7. `docs/tracking/README.md`
 
 ## Regole Claude Code specifiche
 
