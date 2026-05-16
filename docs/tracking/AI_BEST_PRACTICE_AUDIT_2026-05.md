@@ -11,7 +11,7 @@
 2. ⏳ Hook PowerShell (`~/.claude/hooks/*.ps1`)
 3. ⏳ Hook Node/MJS (`~/.claude/scripts/*.mjs`)
 4. ✅ Skill SKILL.md (`~/.claude/skills/*/SKILL.md`)
-5. ⏳ MCP config (settings.json mcpServers + MCP servers)
+5. ✅ MCP config (settings.json mcpServers + MCP servers)
 6. ⏳ JSON registry (AI_CAPABILITY_ROUTING.json, AI_ADK_CAPABILITY_GOVERNANCE.json, AI_LEVEL_ENFORCEMENT.json, plugin.json)
 7. ⏳ Path-scoped rules (`.claude/rules/*.md`)
 8. ⏳ Output styles (`.claude/output-styles/*.md`)
@@ -323,6 +323,77 @@ Il file `antiban-review/SKILL.md` è conforme:
 
 ---
 
+## Categoria 5 — MCP config
+
+### Fonti best practice consultate (2026)
+
+- [Anthropic Claude Code: MCP](https://code.claude.com/docs/en/mcp)
+- [Claude Code MCP Setup 2026 — Nimbalyst](https://nimbalyst.com/blog/claude-code-mcp-setup/)
+- [Configuring MCP Tools in Claude Code — Scott Spence](https://scottspence.com/posts/configuring-mcp-tools-in-claude-code)
+- [Complete Guide MCP Config Files 2026 — MCP Playground](https://mcpplaygroundonline.com/blog/complete-guide-mcp-config-files-claude-desktop-cursor-lovable)
+
+### Best practice ufficiali identificate
+
+| BP | Cosa dice Anthropic / 2026 | Severity |
+|---|---|---|
+| Scope hierarchy | local (`~/.claude.json` per progetto) > project (`.mcp.json` repo root, committato) > user (`~/.claude.json` globale) | HIGH |
+| Transport | `stdio` per server locali, `http`/`sse` per remoti | MEDIUM |
+| Server count | 5-6 server ottimali, prune oltre 20 (focus context modello) | MEDIUM |
+| Env var expansion | `${VAR}` o `${VAR:-default}` in `.mcp.json` per credenziali/path machine-specific | HIGH |
+| Path binari | absolute path o `command` resolvable da PATH; NO path hardcoded utente-specific in file condivisi | HIGH |
+| Security | secret MAI in `.mcp.json` committato; usare env var expansion + `.env` gitignored | HIGH |
+| Reload | restart Claude Code o `/mcp` disconnect/reconnect dopo edit | LOW |
+| Debug failure | jq sintassi, absolute path resolution, run server manuale per stderr | LOW |
+
+### Stato nostro sistema
+
+| File | Posizione | Tracked? | Server | Note |
+|---|---|---|---|---|
+| `.mcp.json` | repo root | **sì** (committato) | 4: code-review-graph, lean-ctx, symdex, claude-peers | Path utente hardcoded |
+| `~/.claude.json` | user global | no (gitignored per definizione) | ~10: Booking, Canva, Gamma, Gmail, Calendar, Drive, Hugging Face, Spotify, Supabase, Supabase_2, ide, n8n-mcp, playwright | Personal |
+| `.claude/settings.local.json` | project | no (gitignored) | — | Permission overrides, `bypassPermissions` mode |
+
+**Totale MCP visibili nel runtime**: 14 server (sotto soglia 20 raccomandata) ✅
+
+### Gap identificati
+
+| # | Gap | Severity | Evidenza |
+|---|---|---|---|
+| 1 | `.mcp.json` committato ha path hardcoded utente-specific | **HIGH** | `C:\\Users\\albie\\AppData\\Local\\lean-ctx\\lean-ctx.exe`, `C:\\Users\\albie\\.bun\\bin\\bun.exe` |
+| 2 | Nessun env var expansion usato | MEDIUM | Tutti i path letterali, no `${VAR}` |
+| 3 | `.gitignore` non lista esplicitamente `settings.local.json`/`.mcp.json.local` | LOW | grep negativo; tracked by convention non da gitignore |
+| 4 | Nessun audit script che verifica MCP config sanity (jq, path resolution) | LOW | gap futuro |
+| 5 | Server "personal" (Booking, Canva, Spotify) caricati in contesto progetto LinkedIn — rumore tool list | LOW | provider personali utente, mitigabile via project-scope override |
+
+### Verifica conformità
+
+- ✅ Scope hierarchy rispettata: project `.mcp.json` per server condivisi, user `~/.claude.json` per personali
+- ✅ Transport corretto: tutti stdio per locali
+- ✅ Server count 14 < 20
+- ❌ Env var expansion: assente, path hardcoded
+- ✅ Security: nessun secret in `.mcp.json` (solo path eseguibili)
+- ⚠️ Portabilità: `.mcp.json` rotto se clonato da altro utente (path utente-specific)
+
+### Fix proposti — NON applicati in questo turno
+
+**Rationale Pazienza vs fretta**: modificare `.mcp.json` cambia entry point degli MCP server. Se rotto, perdo lean-ctx/symdex/claude-peers nella prossima sessione → blast radius alto, va testato con restart Claude Code.
+
+**Proposta operativa** (futura):
+1. Rimpiazzare path hardcoded con env var expansion:
+   ```json
+   "command": "${LEAN_CTX_PATH:-C:\\Users\\albie\\AppData\\Local\\lean-ctx\\lean-ctx.exe}"
+   "command": "${BUN_PATH:-C:\\Users\\albie\\.bun\\bin\\bun.exe}"
+   ```
+2. Aggiungere `audit:mcp-config` script TypeScript che:
+   - Valida JSON con jq-like
+   - Verifica path eseguibili esistono (Test-Path)
+   - Conferma transport coerente con tipo server
+3. Aggiungere a `audit:weekly`
+
+**Risk**: medio. Va testato con `/mcp` reconnect prima di committare. Conferma utente raccomandata.
+
+---
+
 ## Sintesi corrente
 
 | Categoria | Stato | Gap critici | Fix applicati ora | Fix proposti futuro |
@@ -331,8 +402,9 @@ Il file `antiban-review/SKILL.md` è conforme:
 | 2. Hook PowerShell | ✅ audit | 2 medi (StrictMode, ErrorAction) | 0 | 3 (init in `_lib.ps1`, PSScriptAnalyzer, comment-help) |
 | 3. Hook Node/MJS | ✅ audit | 1 minor (`node:` prefix), 1 medio (silent catch) | 0 | 2 (`node:` prefix refactor, logging esplicito) |
 | 4. Skill SKILL.md | ✅ audit | 1 medio (11/197 filename non canonico) | 0 | 3 (rename, audit script, weekly check) |
+| 5. MCP config | ✅ audit | 1 HIGH (path hardcoded `.mcp.json`), 1 MEDIUM (no env var expansion) | 0 | 3 (env var expand, audit:mcp-config, weekly) |
 | 13.5 Validazione comandi community | ✅ verifica | 76/89 comandi non confermati ufficialmente | 0 | 1 (colonna source verified) |
-| 5-13 | ⏳ | — | — | — |
+| 6-13 | ⏳ | — | — | — |
 
 **Working tree**: pulito.
 **Audit**: tutti verdi.
