@@ -5,6 +5,7 @@ dist/
 data/*.sqlite
 data/*.sqlite-*
 data/backups/
+data/restore-drill/
 data/session/
 data/session*/
 data/security-advisor/

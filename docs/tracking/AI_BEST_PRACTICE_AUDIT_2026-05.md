@@ -3,23 +3,23 @@
 > Audit completo dei file del sistema AI globale vs best practice ufficiali 2026.
 > Trigger: utente — verificare aderenza best practice web-verified.
 > Approccio: 13 categorie file, una sezione per categoria. Web-verified per ogni categoria.
-> Status: in corso. Ultima sezione completata: Categoria 1 (markdown canonici).
+> Status: audit categorie 1-13 completato. Fix futuri tracciati per gli item non chiusi in questo turno.
 
 ## Indice categorie
 
 1. ✅ Markdown canonici (CLAUDE.md, AGENTS.md, runtime brief, master spec)
-2. ⏳ Hook PowerShell (`~/.claude/hooks/*.ps1`)
-3. ⏳ Hook Node/MJS (`~/.claude/scripts/*.mjs`)
+2. ✅ Hook PowerShell (`~/.claude/hooks/*.ps1`)
+3. ✅ Hook Node/MJS (`~/.claude/scripts/*.mjs`)
 4. ✅ Skill SKILL.md (`~/.claude/skills/*/SKILL.md`)
 5. ✅ MCP config (settings.json mcpServers + MCP servers)
 6. ✅ JSON registry (AI_CAPABILITY_ROUTING.json, AI_ADK_CAPABILITY_GOVERNANCE.json, AI_LEVEL_ENFORCEMENT.json, plugin.json)
 7. ✅ Path-scoped rules (`.claude/rules/*.md`)
 8. ✅ Output styles (`.claude/output-styles/*.md`)
-9. ⏳ TypeScript audit script (`src/scripts/*Audit.ts`)
-10. ⏳ Bat wrapper (`scripts/run-audit-*.bat`)
-11. ⏳ package.json (npm scripts AI section)
-12. ⏳ .gitignore (AI section)
-13. ⏳ Tracking docs (`docs/tracking/AI_*.md`)
+9. ✅ TypeScript audit script (`src/scripts/*Audit.ts`)
+10. ✅ Bat wrapper (`scripts/run-audit-*.bat`)
+11. ✅ package.json (npm scripts AI section)
+12. ✅ .gitignore (AI/runtime section)
+13. ✅ Tracking docs (`docs/tracking/AI_*.md`)
 
 ---
 
@@ -591,6 +591,181 @@ Il file `antiban-review/SKILL.md` è conforme:
 
 ---
 
+## Categoria 9 — TypeScript audit script (`src/scripts/*Audit.ts`)
+
+### Fonti best practice consultate (2026)
+
+- [TypeScript TSConfig `strict`](https://www.typescriptlang.org/tsconfig/strict.html)
+- [npm scripts documentation](https://docs.npmjs.com/cli/v10/using-npm/scripts/)
+
+### Best practice identificate
+
+Type checking stretto, script npm dichiarativi, output deterministico, SRP per audit e API strutturate al posto di string command fragili.
+
+### Stato nostro sistema — count verificato L9.8
+
+| Misura | Valore | Evidenza |
+|---|---:|---|
+| Script `*Audit.ts` | 15 | `src/scripts/*Audit.ts` |
+| Script oltre ~300 righe | 5 | `aiControlPlaneAudit`, `aiListCompletenessAudit`, `gitAutomationAudit`, `hooksConformityAudit`, `adkCapabilityGovernanceAudit` |
+| Uso `execSync` | 1 | `handoffStalenessAudit.ts` |
+| Interfaccia `CheckResult` duplicata | 7+ | pattern ripetuto nei singoli audit |
+| Quality gate agganciati a npm | ✅ | `package.json` scripts `audit:*` |
+
+### Gap identificati
+
+| # | Gap | Severity | Evidenza |
+|---|---|---|---|
+| 1 | Alcuni audit sono diventati moduli monolitici | MEDIUM | 5 file >~300 righe; `aiControlPlaneAudit.ts` 1058 righe |
+| 2 | Tipi e helper comuni duplicati | MEDIUM | `CheckResult`, `readFileSafe`, output summary ripetuti |
+| 3 | `execSync("git ...")` usa stringa shell invece di argomenti strutturati | LOW/MEDIUM | `handoffStalenessAudit.ts` |
+| 4 | Alcuni audit emettono warning ma non exit code non-zero | LOW | scelta consapevole per advisory, ma va dichiarata per ogni audit |
+
+### Fix applicati in questo turno
+
+- Nessun refactor TypeScript applicato: il blast radius e' medio e non serve per chiudere il problema di contesto/handoff corrente.
+- Tracciato il refactor corretto: estrarre libreria condivisa `auditCore` per `CheckResult`, path safe read, summary e severity.
+
+### Fix proposti futuri
+
+1. Creare `src/scripts/auditCore.ts` con tipi, helper FS safe, renderer risultati e policy exit code.
+2. Spezzare `aiControlPlaneAudit.ts` in audit docs/hooks/routing/list delegati o wrapper compositivo.
+3. Sostituire `execSync` string con `spawnSync('git', args, ...)` nei punti dove il comando prende argomenti dinamici.
+
+---
+
+## Categoria 10 — Bat wrapper (`scripts/run-audit-*.bat`)
+
+### Fonti best practice consultate (Microsoft 2026)
+
+- [Microsoft Learn: `setlocal`](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/setlocal)
+- [Microsoft Learn: `exit`](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/exit)
+
+### Best practice identificate
+
+`setlocal` isola l'ambiente; dopo `call` va preservato `%ERRORLEVEL%`; `exit /b <exitcode>` propaga il codice uscita al Task Scheduler.
+
+### Stato nostro sistema
+
+| File | Problema rilevato | Fix |
+|---|---|---|
+| `scripts/run-audit-weekly.bat` | Non propagava exit code di `npm run audit:weekly` | ✅ cattura `%ERRORLEVEL%`, logga exit code, `exit /b` |
+| `scripts/run-audit-monthly.bat` | Non propagava exit code di `npm run audit:monthly` | ✅ cattura `%ERRORLEVEL%`, logga exit code, `exit /b` |
+
+### Gap residui
+
+| # | Gap | Severity | Note |
+|---|---|---|---|
+| 1 | Path repo hardcoded | LOW | accettabile su macchina personale; per ADK distribuito usare env var |
+
+### Fix applicati in questo turno
+
+- ✅ Entrambi i wrapper ora terminano con lo stesso exit code dell'audit npm.
+- ✅ Il log contiene `Exit code: N` prima di `=== END ===`.
+- ✅ `DATESTAMP` ora usa `Get-Date -Format yyyyMMdd`, non substring locale-sensitive di `%date%`.
+
+---
+
+## Categoria 11 — `package.json` (npm scripts AI section)
+
+### Fonti best practice consultate (2026)
+
+- [npm docs: scripts](https://docs.npmjs.com/cli/v10/using-npm/scripts/)
+
+### Best practice identificate
+
+Script `package.json` espliciti, componibili, scoperti via `npm run` e con exit code propagato.
+
+### Stato nostro sistema
+
+| Area | Stato | Note |
+|---|---|---|
+| Quality gate | ✅ | `pre-modifiche`, `post-modifiche`, `conta-problemi` |
+| Audit weekly/monthly | ✅ | scripts presenti e usati dai `.bat` |
+| Audit control plane | ✅ | aggrega docs/hooks/routing/ADK/L2-L6/list |
+| Git automation gate | ✅ | strict commit/push disponibili |
+
+### Gap identificati
+
+| # | Gap | Severity | Evidenza |
+|---|---|---|---|
+| 1 | `audit:monthly` riesegue `audit:adk-capabilities` gia' incluso in `audit:ai-control-plane` | LOW | duplicazione costo/tempo, non bug |
+| 2 | Nessun namespace esplicito `audit:ai:*` separato da audit applicativi | LOW | leggibilita' futura se crescono gli audit |
+
+### Fix applicati in questo turno
+
+- Nessuna modifica a `package.json`: la duplicazione e' low-risk e non blocca il problema reale.
+
+---
+
+## Categoria 12 — `.gitignore` (AI/runtime section)
+
+### Fonti best practice consultate (2026)
+
+- [Git manual: gitignore](https://git-scm.com/docs/gitignore)
+
+### Best practice identificate
+
+Pattern generati e condivisi nel repo vanno in `.gitignore`; file personali restano in exclude locale; `.gitignore` non rimuove file gia' tracciati.
+
+### Stato nostro sistema
+
+| Area | Stato | Note |
+|---|---|---|
+| Runtime DB/session | ✅ | `data/*.sqlite`, `data/session*`, backup |
+| Secrets | ✅ | `.env`, key material, credenziali cloud |
+| Tool AI locali | ✅ | `.claude/*` con allowlist rules/plugin/output styles |
+| Restore drill | ✅ fixato | `data/restore-drill/` ora ignorato |
+
+### Fix applicati in questo turno
+
+- ✅ Aggiunto `data/restore-drill/` sotto Runtime data. Motivo: `git status` generava warning `Permission denied` su directory generata/local-only.
+- ✅ Verificato con `git check-ignore -v data/restore-drill/`.
+
+### Gap residui
+
+- Nessun gap bloccante. Resta da mantenere esplicita la allowlist `.claude/` per evitare di committare stato locale Claude.
+
+---
+
+## Categoria 13 — Tracking docs (`docs/tracking/AI_*.md`)
+
+### Fonti best practice consultate (2026)
+
+- [CommonMark specification](https://spec.commonmark.org/)
+- [Diataxis: Reference](https://diataxis.fr/reference/)
+
+### Best practice identificate
+
+Tracking non monolitico, claim numerici contati con tool, audit separato dai fix e heading/link stabili per ripresa tra chat.
+
+### Stato nostro sistema
+
+| File | Stato | Note |
+|---|---|---|
+| `AI_BEST_PRACTICE_AUDIT_2026-05.md` | ✅ categorie 1-13 completate | oltre soft limit, ma audit storico concentrato |
+| `AI_ADK_DISTRIBUTION.md` | ✅ OK | sotto soglie |
+| `AI_AUDIT_CADENCES.md` | ✅ OK | sotto soglie |
+| `AI_HOOK_ENFORCEMENT_PLAN.md` | ✅ OK | sotto soglie |
+| `ENGINEERING_WORKLOG.md` | ✅ fixato | 529 righe dopo split 2026-04 |
+
+### Gap identificati
+
+| # | Gap | Severity | Evidenza |
+|---|---|---|---|
+| 1 | `AI_BEST_PRACTICE_AUDIT_2026-05.md` oltre soft limit | MEDIUM | audit storico completo; futuro split per categoria |
+
+### Fix applicati in questo turno
+
+- ✅ Completate le sezioni 9-13 del report, con fix applicati e gap futuri separati.
+- ✅ Split mensile del worklog: aprile archiviato in `ENGINEERING_WORKLOG_2026-04.md`.
+
+### Fix proposti futuri
+
+1. Valutare split di questo audit in `AI_BEST_PRACTICE_AUDIT_2026-05_PART_*.md` se deve diventare canonico ricorrente.
+
+---
+
 ## Nota correttiva commit `7abbf2c` (verifica L9.8 retroattiva)
 
 Nel commit message `7abbf2c` "feat(ai-rules): L1-L9 granulari + hook coverage audit + LinkedIn delta" ho scritto:
@@ -614,9 +789,11 @@ Nel commit message `7abbf2c` "feat(ai-rules): L1-L9 granulari + hook coverage au
 | 6. JSON registry | ✅ audit | 1 HIGH (plugin manifest path errato `.claude/` vs `.claude-plugin/`), 1 MEDIUM (`$schema` sbagliato) | 0 | 4 (move plugin.json, fix schema, audit:json-schemas, weekly) |
 | 7. Path-scoped rules | ✅ audit | 1 HIGH (bug Anthropic noti su loading), 1 MEDIUM (coverage parziale 3/~8 path critici) | 0 | 3 (audit:rules-coverage, +3 rules path, fix duplicazione hook) |
 | 8. Output styles | ✅ audit | 1 MEDIUM (italian-concise è workaround anti-Caveman) | 0 | 3 (user-scope migration, risolvere Caveman root cause, audit:output-styles) |
+| 9. TypeScript audit script | ✅ audit | 1 MEDIUM (audit monolitici), 1 MEDIUM (helper duplicati) | 0 | 3 (auditCore, split aiControlPlane, spawnSync git) |
+| 10. Bat wrapper | ✅ audit + fix | 1 LOW (path repo hardcoded) | 3 | 1 (path da env var per ADK distribuito) |
+| 11. package.json scripts | ✅ audit | 1 LOW (duplicazione `audit:adk-capabilities` in monthly) | 0 | 1 (dedupe monthly) |
+| 12. .gitignore | ✅ audit + fix | 0 bloccanti | 1 | 0 |
+| 13. Tracking docs | ✅ audit + fix | 1 MEDIUM (`AI_BEST...` > soft) | 1 | 1 (split audit storico se ricorrente) |
 | 13.5 Validazione comandi community | ✅ verifica | 76/89 comandi non confermati ufficialmente | 0 | 1 (colonna source verified) |
-| 9-13 | ⏳ | — | — | — |
 
-**Working tree**: pulito.
-**Audit**: tutti verdi.
-**Quality gate**: ultimo run 1430/1430 test passati.
+**Stato**: modifiche in corso; `pre-modifiche` gia' passato, audit e `post-modifiche` da rieseguire.

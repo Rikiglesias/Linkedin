@@ -1,10 +1,12 @@
-# SESSION_HANDOFF — 2026-05-11
+# SESSION_HANDOFF — 2026-05-16
 
 ## Scopo Del File
 
 Questo file serve a trasferire il contesto operativo a una nuova chat senza costringere Riccardo a rispiegare tutto.
 
 Ultima validazione reale: nuova sessione Codex del 2026-05-11 avviata con prompt `resume`. La sessione ha letto memoria globale, questo handoff, AGENTS e canonici indicati, ricostruendo obiettivi, stato, blocchi e prossimi passi senza input aggiuntivo dell'utente.
+
+Aggiornamento 2026-05-16: ripresa reale da contesto chat vecchia corretta dall'utente. Sono stati riallineati `.claude/SESSION_PROMPT.md` e `.claude/CONTINUATION.md`, completato l'audit best practice AI categorie 9-13, corretti i wrapper scheduler `.bat`, ignorato `data/restore-drill/`, ripulita la struttura memory/frontmatter e splittato `ENGINEERING_WORKLOG.md` sotto hard limit.
 
 Non e' un diario completo. Deve dire:
 - cosa si stava facendo
@@ -63,11 +65,15 @@ Non e' un diario completo. Deve dire:
 - `src/scripts/hooksConformityAudit.ts` — fix audit hook runtime brief con argomenti posizionali.
 - `src/scripts/lib/aiControlPlaneRegistry.ts` — supporto capability `plugin`, `agent`, `cli` e source `session-state`.
 
-### Aggiornamento ripresa 2026-05-11
+### Aggiornamento ripresa 2026-05-11 / 2026-05-16
 
 - `SESSION_HANDOFF.md` — aggiornato per rimuovere blocchi git stale e registrare la prova reale di ripresa.
 - `.claude/SESSION_PROMPT.md` — file ignorato da git, da rigenerare con stato corrente quando serve passare una chat nuova.
 - `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md`, `docs/AI_IMPLEMENTATION_LIST_GLOBAL.md`, `todos/active.md`, `docs/tracking/ENGINEERING_WORKLOG.md` — da tenere allineati alla prova di ripresa.
+- `docs/tracking/AI_BEST_PRACTICE_AUDIT_2026-05.md` — categorie 9-13 completate nel blocco 2026-05-16.
+- `scripts/run-audit-weekly.bat`, `scripts/run-audit-monthly.bat` — ora propagano exit code e usano datestamp robusto.
+- `.gitignore` — ora ignora `data/restore-drill/`.
+- `docs/tracking/ENGINEERING_WORKLOG_2026-04.md` — archivio mensile creato per ridurre il worklog corrente.
 
 ### File globali/non versionati rilevanti
 

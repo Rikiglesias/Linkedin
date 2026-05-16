@@ -7,7 +7,8 @@ setlocal
 
 set "REPO_DIR=C:\Users\albie\Desktop\Programmi\Linkedin"
 set "LOG_DIR=%USERPROFILE%\memory"
-set "DATESTAMP=%date:~10,4%%date:~4,2%%date:~7,2%"
+for /f %%I in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd"') do set "DATESTAMP=%%I"
+if not defined DATESTAMP set "DATESTAMP=%date:/=%"
 set "LOGFILE=%LOG_DIR%\audit-weekly-%DATESTAMP%.log"
 
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
@@ -19,8 +20,10 @@ echo Repo: %REPO_DIR% >> "%LOGFILE%"
 echo. >> "%LOGFILE%"
 
 call npm run audit:weekly >> "%LOGFILE%" 2>&1
+set "EXIT_CODE=%ERRORLEVEL%"
 
 echo. >> "%LOGFILE%"
+echo Exit code: %EXIT_CODE% >> "%LOGFILE%"
 echo === END === >> "%LOGFILE%"
 
-endlocal
+endlocal & exit /b %EXIT_CODE%
