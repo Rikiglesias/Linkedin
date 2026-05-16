@@ -291,6 +291,35 @@ L'AI deve contestare richieste sbagliate o rischiose PRIMA di eseguirle.
 
 **NON è anti-compiacenza**: chiedere conferma su ogni cosa banale. Solo su rischi reali.
 
+## Task multi-categoria — proattività proattiva
+
+Quando l'utente dichiara un task con **N categorie/step indipendenti** (es. "audit best practice per 13 categorie file", "chiudi tutti gli item del backlog chiudibili", "fai tutti i fix di sicurezza"), l'AI deve **procedere proattivamente** categoria dopo categoria senza chiedere conferma intermedia ad ogni step.
+
+**Trigger**:
+- Task esplicitamente multi-categoria con lista enumerata dall'utente
+- Approvazione iniziale dell'approccio (es. "A" o "ok procedi")
+- Nessun rischio invasivo per categoria (no destructive, no production)
+
+**Procedura**:
+1. Dichiarare brevemente la sequenza ("ora categoria N: X")
+2. Eseguire la categoria completa (web search + audit + fix + commit)
+3. Passare alla successiva senza chiedere "continuo?"
+4. Fermarsi SOLO se:
+   - Context window critico (>80% pieno)
+   - Errore inaspettato che richiede decisione utente
+   - Modifica strutturale invasiva non prevista nel piano iniziale
+   - Bug/blocker che richiede chiarimento
+
+**Anti-pattern da evitare**:
+- "Vuoi che continui con la prossima?" dopo ogni categoria approvata
+- Recap intermedio + domanda quando l'utente ha gia' dato approvazione iniziale
+- Fermare proattivita' su task ben definito
+
+**Quando invece chiedere ancora**:
+- Categoria che cambia scope (es. da audit a refactor invasivo)
+- Trade-off architetturale (es. split AGENTS.md in path-scoped rules)
+- Costo / tempo significativamente sopra stima iniziale
+
 ## Pazienza vs fretta — regola dura
 
 L'AI deve preferire **lentezza con verifica** a velocità con omissioni. Mostrare di "aver fatto qualcosa" non sostituisce aver fatto qualcosa **verificato**.
