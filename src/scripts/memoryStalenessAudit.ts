@@ -33,6 +33,18 @@ interface CheckResult {
 const STALE_DAYS_WARNING = 30;
 const PROJECT_KEY = 'C--Users-albie-Desktop-Programmi-Linkedin';
 
+// Tipi memory evergreen: contenuto stabile per natura (profilo utente, personalità,
+// reference doc, rubrica contatti, preferenze). NON contati come stale.
+const EVERGREEN_TYPES = new Set([
+    'user',         // profilo utente stabile
+    'personality',  // regole di ingaggio stabili
+    'people',       // rubrica contatti
+    'reference',    // best practice / playbook stabili
+    'preferences',  // preferenze operative
+    'computer',     // setup macchina
+    'feedback',     // lezioni acquisite permanenti (correzioni utente)
+]);
+
 const DIRS: MemoryDir[] = [
     {
         label: 'global memory',
@@ -170,18 +182,19 @@ function auditDir(dir: MemoryDir): CheckResult[] {
         const content = readFileSafe(filePath);
         if (!content) continue;
 
+        const fields = hasFrontmatter(content) ? extractFrontmatterFields(content) : null;
+        const memoryType = fields?.type?.trim().toLowerCase() ?? '';
+        const isEvergreen = EVERGREEN_TYPES.has(memoryType);
+
         const days = daysSinceModified(filePath);
-        if (days > STALE_DAYS_WARNING) {
+        if (days > STALE_DAYS_WARNING && !isEvergreen) {
             staleFiles.push(`${file} (${days}d)`);
         }
 
-        if (!hasFrontmatter(content)) {
+        if (!fields) {
             noFrontmatter.push(file);
-        } else {
-            const fields = extractFrontmatterFields(content);
-            if (!fields.name || !fields.description || !fields.type) {
-                incompleteFrontmatter.push(file);
-            }
+        } else if (!fields.name || !fields.description || !fields.type) {
+            incompleteFrontmatter.push(file);
         }
     }
 
