@@ -410,6 +410,7 @@ function checkPackageScripts(): CheckResult {
         'audit:codex-hook-parity',
         'audit:ai-list-completeness',
         'audit:output-styles',
+        'audit:mcp-config',
         'audit:git-automation',
         'audit:git-automation:strict:commit',
         'audit:git-automation:strict:push',

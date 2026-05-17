@@ -9,7 +9,7 @@
       "type": "stdio"
     },
     "lean-ctx": {
-      "command": "C:\\Users\\albie\\AppData\\Local\\lean-ctx\\lean-ctx.exe",
+      "command": "${LEAN_CTX_PATH:-C:\\Users\\albie\\AppData\\Local\\lean-ctx\\lean-ctx.exe}",
       "args": [],
       "type": "stdio"
     },
@@ -19,8 +19,8 @@
       "type": "stdio"
     },
     "claude-peers": {
-      "command": "C:\\Users\\albie\\.bun\\bin\\bun.exe",
-      "args": ["C:\\Users\\albie\\AppData\\Local\\claude-peers-mcp\\server.ts"],
+      "command": "${BUN_PATH:-C:\\Users\\albie\\.bun\\bin\\bun.exe}",
+      "args": ["${CLAUDE_PEERS_SERVER_PATH:-C:\\Users\\albie\\AppData\\Local\\claude-peers-mcp\\server.ts}"],
       "type": "stdio"
     }
   }

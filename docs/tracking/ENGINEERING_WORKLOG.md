@@ -682,3 +682,41 @@ Chiudere `/goal 3`: spostare gli output styles riusabili da project-scope a user
 - Fonte ufficiale Claude Code: gli output styles user-level stanno in `~/.claude/output-styles`.
 - `npm run audit:output-styles` passato: 3/3.
 - `npm run audit:ai-control-plane` passato: 26/26 + audit collegati verdi.
+
+
+## 2026-05-17 — /goal 4 MCP env var expansion
+
+### Obiettivo
+
+Chiudere `/goal 4`: rendere `.mcp.json` portabile usando env var expansion con default, aggiungere audit dedicato e verificare che gli MCP coinvolti si riconnettano.
+
+### Interventi eseguiti
+
+- Aggiornato `.mcp.json`.
+  - `lean-ctx.command` usa `${LEAN_CTX_PATH:-C:\Users\albie\AppData\Local\lean-ctx\lean-ctx.exe}`.
+  - `claude-peers.command` usa `${BUN_PATH:-C:\Users\albie\.bun\bin\bun.exe}`.
+  - `claude-peers.args[0]` usa `${CLAUDE_PEERS_SERVER_PATH:-C:\Users\albie\AppData\Local\claude-peers-mcp\server.ts}`.
+- Creato `src/scripts/mcpConfigAudit.ts`.
+  - Valida JSON/schema minimo.
+  - Valida transport coerente.
+  - Blocca path machine-specific senza `${VAR:-default}`.
+  - Risolve i default locali e verifica i path.
+- Aggiunto `audit:mcp-config` a `package.json` e `audit:weekly`.
+- Aggiornati `src/scripts/aiControlPlaneAudit.ts`, `docs/tracking/README.md` e `docs/tracking/AI_GOAL_QUEUE.md`.
+- Corretto server esterno locale `C:\Users\albie\AppData\Local\claude-peers-mcp`:
+  - `server.ts`: `fileURLToPath(new URL("./broker.ts", import.meta.url))` per path Windows corretto.
+  - `broker.ts`: fallback `USERPROFILE` quando `HOME` non e' definita.
+
+### Stato residuo
+
+- `claude-context` resta failed in `claude mcp list`, ma e' fuori scope di `/goal 4` e non dipende da `.mcp.json`.
+- Le patch a `C:\Users\albie\AppData\Local\claude-peers-mcp` sono locali/non versionate in questa repo; se il pacchetto viene reinstallato, vanno riportate upstream o tracciate in gestione tool globali.
+
+### Verifica
+
+- Fonte ufficiale Claude Code: `.mcp.json` supporta `${VAR}` e `${VAR:-default}` in `command`, `args`, `env`, `url`, `headers`.
+- `npm run audit:mcp-config` passato: 4/4.
+- `claude --version`: 2.1.143.
+- `claude mcp get lean-ctx`: connected.
+- `claude mcp get claude-peers`: connected.
+- `claude mcp list`: `lean-ctx`, `symdex`, `code-review-graph`, `claude-peers` connected; `claude-context` ancora failed fuori scope.

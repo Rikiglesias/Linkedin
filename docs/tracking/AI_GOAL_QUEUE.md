@@ -19,7 +19,7 @@
 | 1 | Cat 11 dedupe `audit:monthly` | 3 | basso | ✅ DONE 2026-05-17 |
 | 2 | Cat 10 bat wrapper env var | 5 | basso | ✅ DONE 2026-05-17 |
 | 3 | Cat 8 output styles user-scope | 8 | medio (Caveman) | ✅ DONE 2026-05-17 |
-| 4 | Cat 5 MCP env var expansion | 10 | medio | ⏳ pending |
+| 4 | Cat 5 MCP env var expansion | 10 | medio | ✅ DONE 2026-05-17 |
 | 5 | Cat 3 Node mjs `node:` prefix | 10 | basso | ⏳ pending |
 | 6 | Cat 6 plugin.json move | 10 | alto (cross-project) | ⏳ pending |
 | 7 | Cat 1 split AGENTS.md <200 | 10 | medio | ⏳ pending |
@@ -161,6 +161,15 @@
 - **Caveman**: stato locale verificato `ultra`; `italian-concise` resta come override italiano, non rimosso.
 - **Audit**: creato `src/scripts/outputStylesAudit.ts`; aggiunto `audit:output-styles` e integrato in `audit:weekly`.
 - **Verifica**: docs ufficiali Claude Code confermano user-scope `~/.claude/output-styles`; `audit:output-styles` 3/3 verde.
+
+### /goal 4 — Cat 5 MCP env var expansion ✅ DONE 2026-05-17
+
+- **Problema**: `.mcp.json` conteneva path utente-specific hardcoded per `lean-ctx`, `bun.exe` e `claude-peers` server.
+- **Fix**: `lean-ctx.command` usa `${LEAN_CTX_PATH:-...}`, `claude-peers.command` usa `${BUN_PATH:-...}`, `claude-peers.args[0]` usa `${CLAUDE_PEERS_SERVER_PATH:-...}`.
+- **Audit**: creato `src/scripts/mcpConfigAudit.ts`; aggiunto `audit:mcp-config` e integrato in `audit:weekly`.
+- **Claude docs**: confermato supporto `.mcp.json` env expansion `${VAR}` e `${VAR:-default}` in `command`, `args`, `env`, `url`, `headers`.
+- **Verifica**: `audit:mcp-config` 4/4; `claude mcp get lean-ctx` connected; `claude mcp get claude-peers` connected.
+- **Fix esterno locale**: corretto `C:\Users\albie\AppData\Local\claude-peers-mcp\server.ts` e `broker.ts` per compatibilita' Windows (`fileURLToPath`, fallback `USERPROFILE`).
 
 ## Falliti / BLOCKED
 
