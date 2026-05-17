@@ -626,3 +626,31 @@ Rendere verificabile il sistema AI globale per ragionamento, scelta automatica d
 - `npm run audit:weekly` passato, con warning non bloccanti su memoria stale project e docs oltre soft limit.
 - `npm run post-modifiche` passato: typecheck backend/frontend, ESLint e 1430 test Vitest verdi.
 - `git diff --check` passato.
+
+
+## 2026-05-17 — /goal 2 wrapper audit portabili
+
+### Obiettivo
+
+Chiudere `/goal 2` della coda AI: rendere `scripts/run-audit-weekly.bat` e `scripts/run-audit-monthly.bat` portabili per altri ambienti/progetti tramite `CLAUDE_REPO_ROOT`, mantenendo fallback compatibile con il path attuale.
+
+### Interventi eseguiti
+
+- Aggiornato `scripts/run-audit-weekly.bat`.
+  - Usa `CLAUDE_REPO_ROOT` se definita.
+  - Mantiene fallback a `C:\Users\albie\Desktop\Programmi\Linkedin`.
+  - Valida che `%REPO_DIR%\package.json` esista prima di eseguire npm.
+- Aggiornato `scripts/run-audit-monthly.bat` con la stessa logica.
+- Aggiornato `scripts/README.md` con uso dei wrapper e comando `setx CLAUDE_REPO_ROOT`.
+- Aggiornato `docs/tracking/AI_GOAL_QUEUE.md` segnando `/goal 2` come DONE.
+
+### Stato residuo
+
+- I task schedulati esistenti continuano a funzionare via fallback.
+- Per renderli cross-project va impostata `CLAUDE_REPO_ROOT` a livello utente o macchina nel sistema che esegue Task Scheduler.
+
+### Verifica
+
+- `cmd /c scripts\run-audit-weekly.bat` con `CLAUDE_REPO_ROOT` impostata: exit code 0.
+- `cmd /c scripts\run-audit-weekly.bat` senza `CLAUDE_REPO_ROOT`: exit code 0.
+- `cmd /c scripts\run-audit-monthly.bat` con `CLAUDE_REPO_ROOT` impostata: exit code 0.

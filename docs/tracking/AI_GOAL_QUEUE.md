@@ -17,7 +17,7 @@
 | # | Categoria | Turns | Rischio | Stato |
 |---|---|---|---|---|
 | 1 | Cat 11 dedupe `audit:monthly` | 3 | basso | ✅ DONE 2026-05-17 |
-| 2 | Cat 10 bat wrapper env var | 5 | basso | ⏳ pending |
+| 2 | Cat 10 bat wrapper env var | 5 | basso | ✅ DONE 2026-05-17 |
 | 3 | Cat 8 output styles user-scope | 8 | medio (Caveman) | ⏳ pending |
 | 4 | Cat 5 MCP env var expansion | 10 | medio | ⏳ pending |
 | 5 | Cat 3 Node mjs `node:` prefix | 10 | basso | ⏳ pending |
@@ -136,6 +136,14 @@
 - **Chiuso**: turno 1/3 (early DONE rispetto a bounded max 3)
 - **Commit**: in pending push corrente
 - **Caller invariati**: `scripts/run-audit-monthly.bat` (Task Scheduler), `plugin.json` registry
+
+### /goal 2 — Cat 10 bat wrapper env var ✅ DONE 2026-05-17
+
+- **Problema**: `scripts/run-audit-weekly.bat` e `scripts/run-audit-monthly.bat` avevano path repo hardcoded come unica fonte.
+- **Fix**: entrambi usano `CLAUDE_REPO_ROOT` quando definita e mantengono fallback al path attuale `C:\Users\albie\Desktop\Programmi\Linkedin`.
+- **Documentazione**: `scripts/README.md` documenta i wrapper e `setx CLAUDE_REPO_ROOT`.
+- **Verifica**: weekly testato con env var e senza env var; monthly testato con env var; tutti exit code 0.
+- **Chiuso**: turno 1/5.
 
 ## Falliti / BLOCKED
 

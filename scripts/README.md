@@ -17,6 +17,22 @@ Questa cartella non contiene solo script dello stesso tipo. Per evitare confusio
   Utility manuale per proxy JA3/CycleTLS. Non fa parte del runtime normale del bot.
 - [setup-vps.sh](/C:/Users/albie/Desktop/Programmi/Linkedin/scripts/setup-vps.sh)  
   Helper manuale per setup VPS.
+- [run-audit-weekly.bat](/C:/Users/albie/Desktop/Programmi/Linkedin/scripts/run-audit-weekly.bat)
+  Wrapper Windows Task Scheduler per `npm run audit:weekly`.
+- [run-audit-monthly.bat](/C:/Users/albie/Desktop/Programmi/Linkedin/scripts/run-audit-monthly.bat)
+  Wrapper Windows Task Scheduler per `npm run audit:monthly`.
+
+### Wrapper audit Windows
+
+I wrapper `run-audit-weekly.bat` e `run-audit-monthly.bat` usano `CLAUDE_REPO_ROOT` se definita. Se la variabile non esiste, mantengono il fallback al path attuale `C:\Users\albie\Desktop\Programmi\Linkedin` per compatibilita' con le attivita' gia' schedulate.
+
+Esempio configurazione utente:
+
+```bat
+setx CLAUDE_REPO_ROOT "C:\Users\albie\Desktop\Programmi\Linkedin"
+```
+
+Per Task Scheduler, impostare la variabile a livello utente o macchina prima dell'esecuzione del task.
 
 ## Script sidecar / ad-hoc
 
