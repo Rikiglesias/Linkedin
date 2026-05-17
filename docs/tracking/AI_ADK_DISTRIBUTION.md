@@ -7,11 +7,11 @@
 
 **Globale** = riusabile su tutti i progetti dello stesso utente → vive in `~/.claude/`.
 **Progetto-specifico** = dipende dal dominio del repo → vive in repo (`.claude/`, `AGENTS.md`, ecc.).
-**Plugin** = pacchettizzato per distribuzione team/altri utenti → `.claude/plugin.json` con riferimenti versionati.
+**Plugin** = pacchettizzato per distribuzione team/altri utenti → `.claude-plugin/plugin.json` con riferimenti versionati.
 
 ## Tabella distribuzione
 
-| Elemento | Globale (`~/.claude/`) | Progetto (repo) | Plugin (`.claude/plugin.json`) | Motivo |
+| Elemento | Globale (`~/.claude/`) | Progetto (repo) | Plugin (`.claude-plugin/plugin.json`) | Motivo |
 |---|---|---|---|---|
 | **Skill universali** (typescript-pro, debugging-wizard, claude-api) | ✅ globale | — | reference in plugin.json | Stesse capabilities ovunque |
 | **Skill dominio** (antiban-review, audit, deploy-check) | — | ✅ progetto (in skill global ma triggered da context progetto) | reference critico | Dipendono da regole LinkedIn |
@@ -58,7 +58,7 @@ Per dare il sistema AI a un'altra persona o portarlo su un nuovo progetto:
 Clonare il repo, poi:
 1. `npm install`
 2. `npm run setup:git-hooks` (native git pre-commit)
-3. Verificare `.claude/rules/`, `.claude/plugin.json`, `.claude/output-styles/` presenti
+3. Verificare `.claude/rules/`, `.claude-plugin/plugin.json`, `.claude/output-styles/` presenti
 4. Copiare `CLAUDE.local.md.template` in `CLAUDE.local.md` se servono override personali
 5. `npm run audit:ai-control-plane` per verifica conformità
 6. Registrare Task Scheduler con `scripts/run-audit-weekly.bat` e `scripts/run-audit-monthly.bat` (vedi `docs/tracking/AI_AUDIT_CADENCES.md`)
@@ -74,7 +74,7 @@ La prima volta che si installa su una macchina, alcuni hook PowerShell potrebber
 
 ## Strategia di update
 
-- Plugin version (`.claude/plugin.json` → `version`): semver, aggiornare su change strutturale (nuovi hook, nuove rules path-scoped, breaking change schema).
+- Plugin version (`.claude-plugin/plugin.json` → `version`): semver, aggiornare su change strutturale (nuovi hook, nuove rules path-scoped, breaking change schema).
 - Globale (`~/.claude/`): aggiornare manualmente o tramite `npx skills install`/`npx skills update`.
 - Progetto: tracked in git, segue commit history.
 
@@ -98,13 +98,13 @@ Il community reference 2026 (chase.h.ai, leadgenman, ecc.) propone struttura sta
 | **L2 Knowledge Layer** | `skills/SKILL.md`, `scripts/`, `context.md` | `~/.claude/skills/*/SKILL.md` (197 skill) + `src/scripts/` | Niente `context.md` per skill; copertura via runtime brief + capability routing |
 | **L3 Guardrail Layer** | `hooks/PreToolUse.sh`, `PostToolUse.sh`, `SessionStart.sh` | 32+2 hook PowerShell frammentati per concern (SRP) | Nostro frammentato = piu' SRP. Reference consolidato = 3 file fan-out. Variante stilistica |
 | **L4 Delegation Layer** | `subagents/code-reviewer.md`, `test-runner.md`, `explorer.md` | Skill globali `code-reviewer`, `explorer` + Agent Teams; no `test-runner` dedicato (usiamo `npm run conta-problemi`) | Allineato; test-runner come hook L1 invece di subagent |
-| **L5 Distribution Layer** | `plugins/manifest.json`, `marketplace.url`, `team.install` | `.claude/plugin.json` + step bootstrap in questo doc | Niente `marketplace.url`/`team.install` file: opzionali |
+| **L5 Distribution Layer** | `plugins/manifest.json`, `marketplace.url`, `team.install` | `.claude-plugin/plugin.json` + step bootstrap in questo doc | Niente `marketplace.url`/`team.install` file: opzionali |
 
 **Verdetto**: nessuna implementazione urgente. Differenze sono varianti, non gap funzionali. Documentazione su 89 comandi nativi Claude Code in `docs/tracking/CLAUDE_CODE_COMMANDS_REFERENCE.md`.
 
 ## Fonti di verità
 
-- `.claude/plugin.json` — manifest pacchetto
+- `.claude-plugin/plugin.json` — manifest pacchetto
 - `AGENTS.md` — regole operative repo
 - `docs/AI_OPERATING_MODEL.md` — roadmap operativa
 - `docs/AI_RUNTIME_BRIEF.md` — digest runtime

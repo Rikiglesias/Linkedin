@@ -1,5 +1,4 @@
 {
-  "$schema": "https://json.schemastore.org/package",
   "name": "linkedin-bot-ai-adk",
   "version": "0.1.0",
   "description": "Agent Development Kit installabile per il sistema AI del LinkedIn Bot. Include regole, skill, hook, subagent, audit e routing canonici.",

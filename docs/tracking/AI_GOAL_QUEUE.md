@@ -21,7 +21,7 @@
 | 3 | Cat 8 output styles user-scope | 8 | medio (Caveman) | ✅ DONE 2026-05-17 |
 | 4 | Cat 5 MCP env var expansion | 10 | medio | ✅ DONE 2026-05-17 |
 | 5 | Cat 3 Node mjs `node:` prefix | 10 | basso | ✅ DONE 2026-05-17 |
-| 6 | Cat 6 plugin.json move | 10 | alto (cross-project) | ⏳ pending |
+| 6 | Cat 6 plugin.json move | 10 | alto (cross-project) | ✅ DONE 2026-05-17 (partial: audit JSON schemas deferred) |
 | 7 | Cat 1 split AGENTS.md <200 | 10 | medio | ⏳ pending |
 | 8 | Cat 7 +3 rules path-scoped | 12 | basso | ⏳ pending |
 | 9 | Cat 13 split tracking docs | 12 | basso | ⏳ pending |
@@ -127,6 +127,18 @@
 ---
 
 ## Completati
+
+### /goal 6 — Cat 6 plugin.json move canonico ✅ DONE 2026-05-17 (partial)
+
+- **Problema**: plugin.json in `.claude/` non era path canonico Anthropic 2026, `$schema` puntava a `package.json` schema (errato)
+- **Fix applicati**:
+  - `git mv .claude/plugin.json .claude-plugin/plugin.json`
+  - Rimosso `$schema` errato (no schema Anthropic plugin ufficiale disponibile)
+  - `.gitignore` aggiornato (eccezione `.claude/plugin.json` rimossa, `.claude-plugin/` tracked by default)
+  - 3 canonici aggiornati: AGENTS.md, AI_IMPLEMENTATION_LIST_GLOBAL.md, AI_ADK_DISTRIBUTION.md
+- **Verifica L9.8**: JSON valid `python3 json.load` OK, grep refs attivi rotti = 0, quality gate 1430/1430
+- **DEFERRED**: `src/scripts/jsonSchemasAudit.ts` (validation 4 JSON registry) — scope > 10 turn, /goal dedicato futuro
+- **Note**: snapshot session-prompts/* immutabili (storici), refs nel report audit semanticamente corretti (descrivono problema pre-fix)
 
 ### /goal 5 — Cat 3 Node mjs `node:` prefix ✅ DONE 2026-05-17
 
