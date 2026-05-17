@@ -20,7 +20,7 @@
 | 2 | Cat 10 bat wrapper env var | 5 | basso | ✅ DONE 2026-05-17 |
 | 3 | Cat 8 output styles user-scope | 8 | medio (Caveman) | ✅ DONE 2026-05-17 |
 | 4 | Cat 5 MCP env var expansion | 10 | medio | ✅ DONE 2026-05-17 |
-| 5 | Cat 3 Node mjs `node:` prefix | 10 | basso | ⏳ pending |
+| 5 | Cat 3 Node mjs `node:` prefix | 10 | basso | ✅ DONE 2026-05-17 |
 | 6 | Cat 6 plugin.json move | 10 | alto (cross-project) | ⏳ pending |
 | 7 | Cat 1 split AGENTS.md <200 | 10 | medio | ⏳ pending |
 | 8 | Cat 7 +3 rules path-scoped | 12 | basso | ⏳ pending |
@@ -127,6 +127,14 @@
 ---
 
 ## Completati
+
+### /goal 5 — Cat 3 Node mjs `node:` prefix ✅ DONE 2026-05-17
+
+- **Problema**: 6/7 file `~/.claude/scripts/*.mjs` importavano built-in Node senza `node:` prefix (BP 2026 raccomandata da ESLint `n/prefer-node-protocol`)
+- **Fix**: aggiunto `node:` prefix a tutti gli import built-in (`fs`, `path`, `os`, `http`, `child_process`, `url`, `stream`) in 6 file: `claude-model-router`, `claude-model-statusline`, `merge-canonical-settings`, `model-router-config`, `refresh-openrouter-models`, `switch-claude-backend`
+- **Verifica L9.8**: grep mirato → 0 built-in non prefissati. `node --check` → 7/7 OK
+- **Chiuso**: turno 1/10 (early DONE)
+- **Note**: file globali fuori repo (`~/.claude/scripts/`), modifiche persistono su disco locale, NON committate
 
 ### /goal 1 — Cat 11 dedupe `audit:monthly` ✅ DONE 2026-05-17
 
