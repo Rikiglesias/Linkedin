@@ -402,6 +402,12 @@ function checkPackageScripts(): CheckResult {
         'audit:hooks',
         'audit:ai-control-plane',
         'audit:ai-control-plane:docs',
+        'audit:ai-reasoning-hardening',
+        'audit:orchestrator-contract',
+        'audit:reasoning-trace',
+        'audit:hook-semantic-coverage',
+        'audit:continuation-completeness',
+        'audit:codex-hook-parity',
         'audit:ai-list-completeness',
         'audit:git-automation',
         'audit:git-automation:strict:commit',
@@ -744,6 +750,49 @@ function checkRuntimeBriefDoc(): CheckResult {
     };
 }
 
+function checkOrchestratorContractDoc(): CheckResult {
+    const path = resolve('docs', 'tracking', 'AI_ORCHESTRATOR_CONTRACT.md');
+    const required = [
+        '## Scope',
+        '## Trigger',
+        '## Contratto Operativo',
+        '## Traccia Operativa Osservabile',
+        '## Hook Coverage',
+        'Intento reale prima del testo letterale',
+        'Input utente come ipotesi',
+        'Esempi come pattern',
+        'Decomposizione ricorsiva',
+        'Root cause prima del workaround',
+        'Fonte di verita corretta',
+        'Capability routing automatico',
+        'Blast radius L2-L9',
+        'Cross-domain per ogni file',
+        'Truthful completion',
+        'SessionStart',
+        'UserPromptSubmit',
+        'PreToolUse',
+        'PostToolUse',
+        'PreCompact',
+        'Stop',
+        'Codex',
+    ];
+    const missing = missingSnippets(readText(path), required);
+    if (missing.length > 0) {
+        return {
+            area: 'Repo canonici',
+            name: 'AI orchestrator contract presente',
+            passed: false,
+            detail: formatMissing(path, missing),
+        };
+    }
+    return {
+        area: 'Repo canonici',
+        name: 'AI orchestrator contract presente',
+        passed: true,
+        detail: 'Contratto operativo AI esplicito e auditabile presente ✅',
+    };
+}
+
 function checkRoutingRegistries(): CheckResult {
     const routingPath = resolve('docs', 'tracking', 'AI_CAPABILITY_ROUTING.json');
     const levelPath = resolve('docs', 'tracking', 'AI_LEVEL_ENFORCEMENT.json');
@@ -1004,6 +1053,7 @@ function run(): void {
         check360Checklist(),
         checkActiveTodos(),
         checkRuntimeBriefDoc(),
+        checkOrchestratorContractDoc(),
         checkRoutingRegistries(),
         checkTrackingReadmeChangeMap(),
         checkPackageScripts(),

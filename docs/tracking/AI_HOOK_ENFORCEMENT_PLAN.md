@@ -54,6 +54,20 @@ Regola pratica:
 
 Totale operativo attuale: **32 hook sempre attivi + 2 condizionali (router)** distribuiti su eventi Claude Code. I 2 hook router sono gestiti dinamicamente da `applyManagedClaudeCodeSettings` in `~/.claude/scripts/model-router-config.mjs`: presenti in unified router mode, filtrati in Anthropic nativo. Non vanno aumentati senza miss ricorrenti misurati o senza un advisory ad alto valore che renda visibile un miss sistemico.
 
+## Codex parity
+
+Codex deve avere parity minima per il control plane AI, anche se non espone tutte le stesse primitive di Claude Code.
+
+| Evento Codex | Hook repo | Stato | Nota |
+|---|---|---|---|
+| `SessionStart` | `.codex/hooks/codex-runtime-context.ps1` | attivo | Reinietta runtime brief e contratto orchestrator. |
+| `UserPromptSubmit` | `.codex/hooks/codex-runtime-context.ps1` | attivo | Reinietta intent, capability routing, L2-L9 e truthful completion. |
+| `PreToolUse` | `.codex/hooks/codex-bash-gate.ps1` | attivo | Gate minimo su shell/git e reminder blast radius. |
+| `PostToolUse` | `.codex/hooks/codex-post-tool-review.ps1` | attivo | Log e reminder post-tool su file diretti/indiretti. |
+| `Stop` | `.codex/hooks/codex-stop-check.ps1` | attivo | Stop gate leggero su false completion, continuation e working tree dirty. |
+
+Gap noto: `PreCompact` non ha equivalente diretto in Codex al 2026-05-17. La mitigazione corrente e' `Stop` + continuation/handoff audit. Verifica: `npm run audit:codex-hook-parity`.
+
 ## Regole che devono restare hook
 
 - Anti-ban su file browser/timing/stealth/sessione/LinkedIn.

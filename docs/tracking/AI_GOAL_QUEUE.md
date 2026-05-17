@@ -1,4 +1,4 @@
-# AI Goal Queue — 13 `/goal` pronti per esecuzione sequenziale
+# AI Goal Queue — 15 `/goal` pronti per esecuzione sequenziale
 
 > Coda di `/goal` derivata da `AI_BEST_PRACTICE_AUDIT_2026-05.md` (28 fix proposti su 13 categorie).
 > Ogni `/goal` ha condizione misurabile + bounded mode (stop after N turns) per evitare loop infiniti.
@@ -29,6 +29,8 @@
 | 11 | Cat 9 TS refactor audit | 15 | alto (regressione) | ⏳ pending |
 | 12 | Cat 2 hook PowerShell BP | 15 | alto (32 hook) | ⏳ pending |
 | 13 | Cat 4 rename 11 skill | 15 | alto (cross-project) | ⏳ pending |
+| 14 | Auto-append findings/task da pattern AI | 10 | medio (false positive) | ⏳ pending |
+| 15 | L2-L9 blocking per ragionamento AI | 12 | medio (gate troppo rigidi) | ⏳ pending |
 
 ---
 
@@ -108,6 +110,18 @@
 
 ```text
 /goal Tutte 11 skill non canoniche (audit-rules/index.md, context-handoff/skill.md, git-commit/skill.md, git-create-pr/skill.md, linkedin-patterns/skill.md, loop-codex/skill.md, memoria/skill.md, prompt-improver/skill.md, session-prompt/index.md, token-efficiency/skill.md, verification-protocol/index.md) rinominate in SKILL.md uppercase con git mv, src/scripts/skillFilenameAudit.ts creato ritorna 197/197 conformi (185 originali + 11 rinominati + 1 nuovo se serve), audit aggiunto a audit:weekly, ogni skill rinominata caricata correttamente in /context. Stop after 15 turns.
+```
+
+## /goal 14 — Auto-append findings/task da pattern AI
+
+```text
+/goal Stop/transcript/continuation hook, non PostToolUse, rileva output finale e handoff contenenti pattern "TODO futuro:", "Fix tracciato:", "Sprint dedicato:", "BLOCKED:", "Decisione:" e propone/auto-appende in docs/tracking/SESSION_FINDINGS.md (finding) o todos/active.md (task) solo quando source+timestamp+hash conversazione sono disponibili. Pattern matching con allowlist + sezione frontmatter "auto-tracked" per distinguere da entry manuali. src/scripts/autoTrackAudit.ts valida timestamp, source, hash, dedupe e zero placeholder. Test su 5 risposte sintetiche con e senza pattern: zero falsi positivi su risposte banali, 100% recall su pattern espliciti. Stop after 10 turns.
+```
+
+## /goal 15 — L2-L9 blocking per ragionamento AI
+
+```text
+/goal I controlli AI_ORCHESTRATOR_CONTRACT.md sono promossi da solo-documentazione ad audit/gate eseguibili: src/scripts/aiReasoningHardeningAudit.ts valida contract, runtime brief, hook Claude, continuation e Codex parity; package.json espone audit:ai-reasoning-hardening, audit:orchestrator-contract, audit:reasoning-trace, audit:hook-semantic-coverage, audit:continuation-completeness, audit:codex-hook-parity; audit:ai-control-plane include il nuovo audit; .claude/CONTINUATION.md non contiene placeholder TODO; npm run audit:ai-control-plane e npm run post-modifiche passano. Stop after 12 turns.
 ```
 
 ---

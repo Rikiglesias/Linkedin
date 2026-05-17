@@ -7,7 +7,7 @@
 ## Fonti di verita'
 
 - `AGENTS.md`, `docs/AI_MASTER_SYSTEM_SPEC.md`, `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md`
-- `docs/AI_OPERATING_MODEL.md`, `docs/tracking/AI_CAPABILITY_ROUTING.json`, `docs/tracking/AI_ADK_CAPABILITY_GOVERNANCE.json`, `docs/tracking/AI_LEVEL_ENFORCEMENT.json`
+- `docs/AI_OPERATING_MODEL.md`, `docs/tracking/AI_ORCHESTRATOR_CONTRACT.md`, `docs/tracking/AI_CAPABILITY_ROUTING.json`, `docs/tracking/AI_ADK_CAPABILITY_GOVERNANCE.json`, `docs/tracking/AI_LEVEL_ENFORCEMENT.json`
 
 ## Obiettivo operativo
 
@@ -81,6 +81,8 @@ Per ogni task non banale, costruire un modello della situazione prima di agire:
 - problemi prevedibili specifici dell'argomento
 - primitive utili o mancanti
 
+Questa decomposizione ricorsiva non e' output decorativo: serve a scegliere fonte, skill/capability, rischio, verifica e done criteria per ogni ramo rilevante.
+
 Protocollo soluzione migliore: non fermarsi alla prima risposta plausibile o al primo workaround. Cercare root cause/problema reale, confrontare alternative ragionevoli, usare best practice aggiornate dalla fonte corretta, iterare su ricerca/verifica/correzione finche' esiste una strada ragionevole. Se non si puo' arrivare alla soluzione migliore nel task corrente, dichiarare blocco reale, prove mancanti e prossimo passo.
 
 Output minimo quando il task e' non banale: fonte usata, assunzioni rilevanti, correlazioni considerate oltre l'esempio dell'utente, problemi prevedibili, root cause/problema reale, alternative considerate quando utili, criterio della soluzione scelta, primitive scelte o escluse, verifiche fatte/non fatte e limiti residui.
@@ -117,7 +119,7 @@ Prima di chiudere: coverage check del ledger. Se un punto resta non ancora verif
 
 ## Selezione strumenti
 
-Orchestrator Layer: prima di eseguire un task non banale, decidere come lavorare. Deve coordinare input, task class, fonte di verita', capability, modello/ambiente, piano, verifiche, contesto/handoff e limiti residui.
+Orchestrator Layer: prima di eseguire un task non banale, decidere come lavorare. Deve coordinare input, task class, fonte di verita', capability, modello/ambiente, piano, verifiche, contesto/handoff e limiti residui. Il contratto auditabile e' `docs/tracking/AI_ORCHESTRATOR_CONTRACT.md`; questo runtime brief ne reinietta solo il digest operativo.
 
 Valutare ogni volta, in modo contestuale e automatico:
 - Normalizzare input e intento reale: dettato vocale, esempi, vincoli, assunzioni e requisito implicito.

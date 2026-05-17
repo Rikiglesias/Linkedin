@@ -44,6 +44,7 @@ Se una capability manca in un ambiente, documentare il gap e chiuderlo; non acce
 - `docs/LINKEDIN_IMPLEMENTATION_LIST.md`: lista lineare item LinkedIn-specifici per review e pruning.
 - `docs/AI_OPERATING_MODEL.md`: roadmap esplicita su prompt, modelli, skill, agenti, workflow e automazioni.
 - `docs/AI_RUNTIME_BRIEF.md`: digest runtime compatto usato dai hook per reiniettare le regole davvero critiche. Non sostituisce i canonici; deve restare allineato a loro.
+- `docs/tracking/AI_ORCHESTRATOR_CONTRACT.md`: contratto auditabile per ragionamento AI, capability routing, hook coverage, continuation e truthful completion.
 - `todos/active.md`: priorita' correnti ad alto livello.
 - `todos/workflow-architecture-hardening.md`: backlog tecnico operativo su workflow e hardening.
 - `docs/tracking/ENGINEERING_WORKLOG.md`: log cronologico delle analisi, verifiche e refactor.

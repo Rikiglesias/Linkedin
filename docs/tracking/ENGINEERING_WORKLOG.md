@@ -583,3 +583,46 @@ Verificare che una nuova sessione riesca a ripartire dal sistema di memoria e ha
 - `npm run audit:ai-control-plane` passato: 25/25 control-plane, 17/17 hook, routing/adk/L2-L9/list completeness verdi.
 - `npm run conta-problemi` passato: typecheck backend/frontend, ESLint e 1430 test Vitest verdi.
 - `git diff --check` passato.
+
+
+## 2026-05-17 — AI reasoning hardening, continuation e Codex hook parity
+
+### Obiettivo
+
+Rendere verificabile il sistema AI globale per ragionamento, scelta automatica di skill/capability/fonti, hook, continuation e truthful completion. Il perimetro e' solo control plane AI: non LinkedIn applicativo, n8n produzione, Whisper o problemi hardware.
+
+### Interventi eseguiti
+
+- Creato `docs/tracking/AI_ORCHESTRATOR_CONTRACT.md`.
+  - Copre intento reale, input come ipotesi, esempi come pattern, decomposizione ricorsiva, root cause, fonte di verita, capability routing, modello/ambiente, blast radius L2-L9, cross-domain e truthful completion.
+  - Esplicita Hook Coverage per `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact` e `Stop`.
+- Creato `src/scripts/aiReasoningHardeningAudit.ts`.
+  - Scope: `orchestrator`, `reasoning`, `hook-coverage`, `continuation`, `codex`.
+  - Verifica che contract, runtime brief, AGENTS, hook Claude, continuation e Codex parity restino allineati.
+- Aggiunti hook Codex minimi in `.codex/hooks.json` e `.codex/hooks/*.ps1`.
+  - `codex-runtime-context.ps1`: reinietta contratto e runtime context.
+  - `codex-bash-gate.ps1`: gate shell/git minimo.
+  - `codex-post-tool-review.ps1`: log/reminder post-tool.
+  - `codex-stop-check.ps1`: stop gate leggero su false completion, continuation e dirty tree.
+- Aggiornato `C:/Users/albie/.codex/config.toml` con `[features].hooks = true`, forma corrente indicata dalle docs OpenAI.
+- Aggiornati `package.json`, `src/scripts/aiControlPlaneAudit.ts`, `AGENTS.md`, `docs/AI_RUNTIME_BRIEF.md`, `docs/tracking/README.md`, `docs/tracking/AI_HOOK_ENFORCEMENT_PLAN.md`, `docs/tracking/AI_GOAL_QUEUE.md`.
+- Aggiornati `.claude/CONTINUATION.md` e `.claude/SESSION_PROMPT.md` per rimuovere placeholder e riflettere il working tree corrente.
+
+### Stato residuo
+
+- I hook Codex sono installati nel repo e la feature e' abilitata, ma la prova comportamentale end-to-end richiede una nuova sessione Codex dopo il reload.
+- `PreCompact` non ha equivalente diretto Codex al 2026-05-17; mitigazione corrente: `Stop` + continuation/handoff audit.
+- `audit:git-automation` blocca push e richiede commit locale coerente perche' il working tree e' dirty.
+
+### Verifica
+
+- `npm run audit:orchestrator-contract` passato: 1/1.
+- `npm run audit:reasoning-trace` passato: 1/1.
+- `npm run audit:hook-semantic-coverage` passato: 2/2.
+- `npm run audit:continuation-completeness` passato: 1/1.
+- `npm run audit:codex-hook-parity` passato: 1/1.
+- `npm run audit:ai-reasoning-hardening` passato: 6/6.
+- `npm run audit:ai-control-plane` passato: 26/26 + audit collegati verdi.
+- `npm run audit:weekly` passato, con warning non bloccanti su memoria stale project e docs oltre soft limit.
+- `npm run post-modifiche` passato: typecheck backend/frontend, ESLint e 1430 test Vitest verdi.
+- `git diff --check` passato.

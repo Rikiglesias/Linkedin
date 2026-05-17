@@ -27,6 +27,8 @@ Questa cartella esiste per evitare che audit, tentativi, verifiche e decisioni t
   Registro machine-readable del protocollo `L2-L6` audit-assisted.
 - [AI_ADK_CAPABILITY_GOVERNANCE.json](AI_ADK_CAPABILITY_GOVERNANCE.json)
   Registro machine-readable del layer ADK corretto per ogni capability del control plane AI.
+- [AI_ORCHESTRATOR_CONTRACT.md](AI_ORCHESTRATOR_CONTRACT.md)
+  Contratto auditabile per ragionamento AI, capability routing, hook coverage, continuation e truthful completion.
 
 ## Change map sistema AI
 
@@ -35,8 +37,10 @@ Usare questa mappa quando cambia il control plane AI. L'obiettivo e' evitare mod
 | Cambio | File da aggiornare insieme | Verifica |
 | --- | --- | --- |
 | Nuova regola/requisito AI globale | `docs/AI_MASTER_SYSTEM_SPEC.md`, `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md`, `docs/AI_IMPLEMENTATION_LIST_GLOBAL.md`, `docs/AI_RUNTIME_BRIEF.md`, `docs/AI_OPERATING_MODEL.md`, `docs/360-checklist.md`, `docs/tracking/ENGINEERING_WORKLOG.md` | `npm run audit:ai-list-completeness` + `npm run audit:ai-control-plane` |
+| Nuovo requisito di ragionamento/orchestrazione AI | `docs/tracking/AI_ORCHESTRATOR_CONTRACT.md`, `docs/AI_RUNTIME_BRIEF.md`, `AGENTS.md`, hook Claude/Codex collegati, `docs/tracking/ENGINEERING_WORKLOG.md` | `npm run audit:ai-reasoning-hardening` + `npm run audit:codex-hook-parity` |
 | Nuova capability/skill/MCP/plugin/agente | `docs/tracking/AI_CAPABILITY_ROUTING.json`, `docs/tracking/AI_ADK_CAPABILITY_GOVERNANCE.json`, canonici che spiegano trigger/limiti | `npm run audit:routing` + `npm run audit:adk-capabilities` |
 | Nuovo hook Claude Code | hook reale in `C:/Users/albie/.claude/hooks/`, `C:/Users/albie/.claude/settings.json`, `C:/Users/albie/.claude/scripts/model-router-config.mjs`, `AGENTS.md`, `docs/tracking/AI_HOOK_ENFORCEMENT_PLAN.md`, `src/scripts/hooksConformityAudit.ts` | `npm run audit:hooks` + `npm run audit:ai-control-plane` |
+| Nuovo hook Codex | `.codex/hooks.json`, `.codex/hooks/*.ps1`, `C:/Users/albie/.codex/config.toml`, `docs/tracking/AI_ORCHESTRATOR_CONTRACT.md`, `src/scripts/aiReasoningHardeningAudit.ts` | `npm run audit:codex-hook-parity` |
 | Nuovo livello o cambio L2-L9 | `docs/tracking/AI_LEVEL_ENFORCEMENT.json`, `docs/AI_RUNTIME_BRIEF.md`, `docs/AI_OPERATING_MODEL.md`, audit collegati | `npm run audit:l2-l6` + `npm run audit:ai-control-plane` |
 | Cambio handoff/cambio chat | `SESSION_HANDOFF.md`, eventuale `SESSION_PROMPT.md`, `todos/active.md`, `docs/tracking/ENGINEERING_WORKLOG.md`, skill `context-handoff` o `session-prompt` se toccate | prova nuova chat + `npm run audit:ai-control-plane` |
 
