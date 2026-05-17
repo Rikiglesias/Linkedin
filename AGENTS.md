@@ -9,7 +9,7 @@ Le regole di orchestrazione cognitiva, requirement ledger, orizzonti temporali, 
 
 Questa repo contiene due livelli che vanno governati separatamente, anche se condividono lo stesso codebase:
 
-1. **Sistema AI globale (ADK)** — l'AI come **programmatore autonomo riusabile**. Regole, skill, hook, subagent, audit, plugin packaging. Vive principalmente in `~/.claude/` (globale) + `.claude/rules/`, `.claude/plugin.json`, `.claude/output-styles/`, `docs/AI_*.md`, `src/scripts/*Audit.ts` (project-side). E' **portabile su altri progetti** dello stesso utente o di team via `docs/tracking/AI_ADK_DISTRIBUTION.md`. Il backlog di questo livello e' `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md` (13 item).
+1. **Sistema AI globale (ADK)** — l'AI come **programmatore autonomo riusabile**. Regole, skill, hook, subagent, audit, plugin packaging e output styles user-scope. Vive principalmente in `~/.claude/` (globale) + `.claude/rules/`, `.claude/plugin.json`, `docs/AI_*.md`, `src/scripts/*Audit.ts` (project-side). Gli output styles riusabili vivono in `~/.claude/output-styles/`. E' **portabile su altri progetti** dello stesso utente o di team via `docs/tracking/AI_ADK_DISTRIBUTION.md`. Il backlog di questo livello e' `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md` (13 item).
 2. **LinkedIn Bot applicativo** — il runtime del bot (browser, risk engine, antiban, scheduler, proxy, dashboard, n8n workflow). Vive in `src/` (eccetto `src/scripts/*Audit.ts`). E' **specifico di questo dominio**. Il backlog applicativo e' `docs/LINKEDIN_IMPLEMENTATION_LIST.md` + `todos/workflow-architecture-hardening.md`.
 
 **Implicazione per le decisioni**:

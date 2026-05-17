@@ -409,6 +409,7 @@ function checkPackageScripts(): CheckResult {
         'audit:continuation-completeness',
         'audit:codex-hook-parity',
         'audit:ai-list-completeness',
+        'audit:output-styles',
         'audit:git-automation',
         'audit:git-automation:strict:commit',
         'audit:git-automation:strict:push',

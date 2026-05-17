@@ -1,19 +1,19 @@
-# .claude/output-styles/
+# Output styles
 
-> Custom response format definitions per Claude Code (pattern community 2026).
-> Selezionabili via `/output-style <name>` o tramite `.claude/settings.json` → `outputStyle: "<name>"`.
+> Questo progetto non mantiene piu' definizioni output-style locali.
+> Gli style riusabili vivono a livello utente in `C:\Users\albie\.claude\output-styles\`, coerente con la documentazione Claude Code.
 
-## Stili disponibili
+## Stili globali disponibili
 
 | File | Quando usare |
 |---|---|
-| `terse.md` | Risposte code-only, no prose. Utile per coding session lunghe |
-| `italian-concise.md` | Risposte italiane brevi (workaround per Caveman ultra inglese-specifico) |
+| `C:\Users\albie\.claude\output-styles\terse.md` | Risposte code-only, no prose. Utile per coding session lunghe |
+| `C:\Users\albie\.claude\output-styles\italian-concise.md` | Risposte italiane brevi; override utile quando Caveman ultra spinge verso tono inglese/iper-sintetico |
 
 ## Quando definire un nuovo stile
 
 - Riccardo nota miss ricorrente di tone/format del modello su task specifico
-- Compatibilità Caveman ultra non gestita per lingua/contesto
+- Compatibilita' Caveman ultra non gestita per lingua/contesto
 - Distribuzione team: stile uniforme per il progetto
 
 ## Cosa NON è uno output-style
