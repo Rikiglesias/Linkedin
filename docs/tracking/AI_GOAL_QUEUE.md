@@ -18,7 +18,7 @@
 |---|---|---|---|---|
 | 1 | Cat 11 dedupe `audit:monthly` | 3 | basso | ✅ DONE 2026-05-17 |
 | 2 | Cat 10 bat wrapper env var | 5 | basso | ✅ DONE 2026-05-17 |
-| 3 | Cat 8 output styles user-scope | 8 | medio (Caveman) | ⏳ pending |
+| 3 | Cat 8 output styles user-scope | 8 | medio (Caveman) | ✅ DONE 2026-05-17 |
 | 4 | Cat 5 MCP env var expansion | 10 | medio | ⏳ pending |
 | 5 | Cat 3 Node mjs `node:` prefix | 10 | basso | ⏳ pending |
 | 6 | Cat 6 plugin.json move | 10 | alto (cross-project) | ⏳ pending |
@@ -153,6 +153,14 @@
 - **Codex parity**: aggiunti `.codex/hooks.json` e hook PowerShell minimi; abilitato `hooks = true` in `C:\Users\albie\.codex\config.toml`.
 - **Verifica**: `audit:ai-reasoning-hardening` 6/6, `audit:ai-control-plane` 26/26, `post-modifiche` verde.
 - **Commit**: `755f4fc` + `a028d93`, pushati su `main`.
+
+### /goal 3 — Cat 8 output styles user-scope ✅ DONE 2026-05-17
+
+- **Problema**: `terse.md` e `italian-concise.md` vivevano in `.claude/output-styles/`, quindi erano project-scope invece che riusabili cross-project.
+- **Fix**: style spostati a `C:\Users\albie\.claude\output-styles\`; `.claude/output-styles/README.md` resta come puntatore.
+- **Caveman**: stato locale verificato `ultra`; `italian-concise` resta come override italiano, non rimosso.
+- **Audit**: creato `src/scripts/outputStylesAudit.ts`; aggiunto `audit:output-styles` e integrato in `audit:weekly`.
+- **Verifica**: docs ufficiali Claude Code confermano user-scope `~/.claude/output-styles`; `audit:output-styles` 3/3 verde.
 
 ## Falliti / BLOCKED
 

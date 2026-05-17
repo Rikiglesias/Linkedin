@@ -654,3 +654,31 @@ Chiudere `/goal 2` della coda AI: rendere `scripts/run-audit-weekly.bat` e `scri
 - `cmd /c scripts\run-audit-weekly.bat` con `CLAUDE_REPO_ROOT` impostata: exit code 0.
 - `cmd /c scripts\run-audit-weekly.bat` senza `CLAUDE_REPO_ROOT`: exit code 0.
 - `cmd /c scripts\run-audit-monthly.bat` con `CLAUDE_REPO_ROOT` impostata: exit code 0.
+
+
+## 2026-05-17 — /goal 3 output styles user-scope
+
+### Obiettivo
+
+Chiudere `/goal 3`: spostare gli output styles riusabili da project-scope a user-scope, verificare Caveman e aggiungere audit dedicato.
+
+### Interventi eseguiti
+
+- Spostati `italian-concise.md` e `terse.md` da `.claude/output-styles/` a `C:\Users\albie\.claude\output-styles\`.
+- Mantenuto `.claude/output-styles/README.md` come puntatore project-side verso la sede user-scope.
+- Verificato stato Caveman: `C:\Users\albie\.claude\.caveman-active` e `caveman-state.txt` indicano `ultra`.
+- Aggiornato `italian-concise.md` globale come override italiano per Caveman ultra.
+- Creato `src/scripts/outputStylesAudit.ts`.
+- Aggiunto `audit:output-styles` e integrato in `audit:weekly`.
+- Aggiornati `AGENTS.md` e `src/scripts/aiControlPlaneAudit.ts` per riflettere la nuova primitive.
+
+### Stato residuo
+
+- Caveman non risulta come plugin abilitato nel `settings.json` corrente, ma i flag locali lo marcano `ultra`; per questo non e' stato rimosso.
+- La selezione effettiva dello style resta azione Claude Code (`/output-style italian-concise` o config `outputStyle`), non forzata dal repo.
+
+### Verifica
+
+- Fonte ufficiale Claude Code: gli output styles user-level stanno in `~/.claude/output-styles`.
+- `npm run audit:output-styles` passato: 3/3.
+- `npm run audit:ai-control-plane` passato: 26/26 + audit collegati verdi.
