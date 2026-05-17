@@ -4,6 +4,32 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-05-17 — /goal 1 Cat 11 dedupe audit:monthly
+
+### Obiettivo
+
+Eseguire `/goal 1` dalla queue `AI_GOAL_QUEUE.md`: rimuovere duplicato `audit:adk-capabilities` da script `audit:monthly` in package.json.
+
+### Problema verificato
+
+`audit:monthly` invocava `audit:adk-capabilities` direttamente E indirettamente via `audit:ai-control-plane`, causando doppia esecuzione (~2-3 secondi sprecati + log doppio).
+
+### Fix applicato
+
+Rimosso `&& npm run audit:adk-capabilities` dallo script `audit:monthly` (già coperto da `audit:ai-control-plane`).
+
+### Verifica end-to-end
+
+- `npm run audit:monthly` eseguito: `audit:adk-capabilities` ora appare 1 sola volta nel log.
+- Tutti i sotto-audit passano: ai-control-plane 25/25, hooks 17/17, adk-capabilities 4/4, ai-list-completeness 10/10, rule-enforcement, ledger 14/14, skill-activation.
+- Caller esterni invariati: `scripts/run-audit-monthly.bat` (Task Scheduler), `plugin.json` registry.
+
+### Stato
+
+DONE. /goal 1 chiuso al primo turno (era 3 max). Sposta entry in "Completati" di AI_GOAL_QUEUE.md.
+
+---
+
 ## 2026-05-16 — Ripresa problemi contesto e audit AI 9-13
 
 ### Obiettivo

@@ -16,7 +16,7 @@
 
 | # | Categoria | Turns | Rischio | Stato |
 |---|---|---|---|---|
-| 1 | Cat 11 dedupe `audit:monthly` | 3 | basso | ⏳ pending |
+| 1 | Cat 11 dedupe `audit:monthly` | 3 | basso | ✅ DONE 2026-05-17 |
 | 2 | Cat 10 bat wrapper env var | 5 | basso | ⏳ pending |
 | 3 | Cat 8 output styles user-scope | 8 | medio (Caveman) | ⏳ pending |
 | 4 | Cat 5 MCP env var expansion | 10 | medio | ⏳ pending |
@@ -114,7 +114,14 @@
 
 ## Completati
 
-(Spostare qui i `/goal` quando chiusi DONE con commit hash di riferimento)
+### /goal 1 — Cat 11 dedupe `audit:monthly` ✅ DONE 2026-05-17
+
+- **Problema**: `audit:monthly` invocava `audit:adk-capabilities` direttamente E indirettamente via `audit:ai-control-plane` (doppia esecuzione)
+- **Fix**: rimosso `&& npm run audit:adk-capabilities` da script `audit:monthly` in `package.json`
+- **Verifica**: `npm run audit:monthly` ora esegue `audit:adk-capabilities` 1 sola volta, tutti audit verdi
+- **Chiuso**: turno 1/3 (early DONE rispetto a bounded max 3)
+- **Commit**: in pending push corrente
+- **Caller invariati**: `scripts/run-audit-monthly.bat` (Task Scheduler), `plugin.json` registry
 
 ## Falliti / BLOCKED
 
