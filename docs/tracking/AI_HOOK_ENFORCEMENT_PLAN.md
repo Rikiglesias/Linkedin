@@ -167,3 +167,25 @@ Hook advisory = inietta contesto/checklist che il modello deve leggere e dichiar
 Hook NON adatto = controllo semantico ambiguo, analisi dialogica multi-turn, ragionamento aperto.
 
 Il valore degli hook advisory dipende dal modello che legge il messaggio e agisce (vedi `feedback_hook_messages.md`). Se il modello ignora gli advisory ricorrentemente, va promosso il check a bloccante o trasformato in script verificabile.
+
+---
+
+## Pre/post-conditions nelle skill e MCP critici
+
+| Skill / MCP | Pre-conditions | Post-conditions |
+|-------------|---------------|-----------------|
+| `antiban-review` | File sensibile LinkedIn, azione browser, cambio volume | Verdetto SICURO/ATTENZIONE/BLOCCO con azione successiva |
+| `loop-codex` | L1 pulito, task con criteri misurabili, scope no-antiban | Auto-commit se DONE, update ENGINEERING_WORKLOG |
+| `context-handoff` | Git status pulito o documentato, memoria aggiornata, active.md coerente | SESSION_HANDOFF.md committato, active.md aggiornato |
+| `debugging-wizard` | Errore riproducibile o log disponibile, primo tentativo di debug | Root cause identificata o escalation a `systematic-debugging` |
+| `verification-protocol` (L7-L9) | Implementazione completata, L1-L6 gia' verificati | Esito DONE o BLOCKED con causa esplicita |
+| `typescript-pro` | Task TS con logica non banale, codebase TS presente | Codice conforme a pattern progetto, typecheck pulito |
+| `code-review` | PR creata o diff locale significativo, area core/sicurezza/DB | Commenti con severity, no falsi positivi su stile |
+| `audit-rules` | Sospetto violazione regole operative o audit periodico | Report gap con azione correttiva |
+| MCP Supabase | Query o migrazione DB necessaria, credenziali configurate | Risultato query o migration applicata, tipi aggiornati se serve |
+| MCP Playwright | Bug UI non riproducibile da log, pagina accessibile | Screenshot o DOM snapshot, diagnosi visiva |
+
+## Hook n8n (da implementare, non ancora attivo)
+
+- Pre-hook ingresso: validare context minimo (account attivo, proxy ok, no quarantena) prima di eseguire workflow LinkedIn
+- Post-hook uscita: verificare stato finale, loggare su Telegram se WARN/CRITICAL, aggiornare `automation_commands`

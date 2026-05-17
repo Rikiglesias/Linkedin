@@ -227,69 +227,37 @@ Quando l'utente dichiara un task con **N categorie/step indipendenti** (es. "aud
 
 ## Pazienza vs fretta — regola dura
 
-L'AI deve preferire **lentezza con verifica** a velocità con omissioni. Mostrare di "aver fatto qualcosa" non sostituisce aver fatto qualcosa **verificato**.
+Preferire **lentezza con verifica** a velocità con omissioni. "Aver fatto qualcosa" ≠ "aver fatto qualcosa verificato".
 
-**Trigger automatici per rallentare**:
-- Task con ≥ 3 step distinti → considerare `/goal <condition>` o decomposizione esplicita in milestone visibili
-- Modello ha eseguito 5+ tool call senza fermarsi a verificare un risultato intermedio → fermarsi e dichiarare cosa è già verificato vs cosa resta
-- Risposta finale lunga che cita molti file toccati → esplicitare per ogni file: cosa cambia, cosa è verificato, cosa è stato saltato e perché
-- Sensazione interna di "voglio chiudere il turno" → segnale di fretta, fermarsi e applicare ledger
+**Rallenta quando**: task ≥3 step (→ `/goal`); 5+ tool call senza recap (→ "verificato X, resta Y, bloccatori Z"); sensazione di "chiudere il turno" (segnale di fretta); risposta finale lunga (esplicitare per ogni file cosa è verificato e cosa saltato).
 
-**Anti-pattern espliciti**:
-- "Tirare via per chiudere il turno" senza verificare ogni file diretto + indiretto toccato
-- "Aver fatto qualcosa visibile" trattato come prova di "aver fatto qualcosa verificato"
-- Saltare web search "tanto credo di sapere già" su libreria/API/provider potenzialmente cambiata
-- Risposte cumulative finali che nascondono step saltati (es. "tutti i sub-task chiusi" senza enumerarli con prova)
-- Dichiarare DONE per lo stesso turno solo perché serve dimostrare progresso
-- Saltare la classificazione temporale per "fare prima"
+**Anti-pattern**: tirare via senza verificare file diretti+indiretti, "fatto visibile" trattato come "fatto verificato", saltare web search "credo di sapere", risposte cumulative che nascondono step saltati, dichiarare DONE solo per dimostrare progresso, saltare classificazione temporale.
 
-**Quando preferire `/goal` invece di rispondere tutto in un turno**:
-- End state misurabile esiste (`audit X verde`, `test Y passa`, `queue Z vuota`) e sopra 3 turn previsti
-- Esempio: invece di "faccio tutti gli audit + commit + push in questo turno frettolosamente" → `/goal all audit return green and commit pushed and audit:handoff-staleness 6/6 or stop after 10 turns`. L'evaluator Haiku verifica per te, niente false completion.
+**Preferire `/goal`**: end state misurabile sopra 3 turn (`audit X verde + test Y + count Z`). Esempio: `/goal all audit green and commit pushed or stop after 10 turns` invece di "faccio tutto frettolosamente".
 
-**Quando preferire `/loop` invece di pretendere di fare tutto subito**:
-- Task ricorrente con stato che cambia nel tempo (CI run, deploy, queue), tu non vuoi tenere occupata la sessione
-- Esempio: monitor hook activations log → `/loop 30m npm run audit:miss-metrics`
+**Preferire `/loop`**: task ricorrente con stato che cambia nel tempo (CI, deploy, queue). Esempio: `/loop 30m npm run audit:miss-metrics`.
 
-**Trigger di stop intermedio obbligatorio**:
-- Dopo ogni gruppo di 5 tool call non triviali → recap di 1 riga: "Verificato X. Da fare ancora Y. Bloccatori: Z."
-- Prima di un commit → enumerare cosa è in stage e perché, non assumere
-
-**Scenari di test**:
-1. "Fai tutti i punti 1-13 del backlog" → rallentare, classificare quali sono chiudibili oggi vs prerequisiti, non simulare di averli chiusi tutti
-2. "Risolvi tutti i bug" → `/goal` con condizione verificabile, non passare a uno nuovo senza prova del precedente
-3. Task lungo che attraversa 30 turn → fermarsi a meta', recap, conferma utente prima di proseguire
-
-**Misura indiretta**: il hook `stop-proactive-next-step.ps1` (107 hit/7d) gia' richiede prossimo passo concreto a ogni Stop. Una promozione futura potrebbe contare "sub-step dichiarati saltati" per turn class.
+**Stop intermedi obbligatori**: dopo ogni 5 tool call → recap 1 riga; prima di commit → enumerare staged e perché.
 
 ## Classificazione temporale del task — regola dura
 
-Per ogni task non banale, prima di pianificare, **classificare l'orizzonte temporale**:
+Per ogni task non banale, dichiarare orizzonte prima di pianificare:
 
 | Orizzonte | Significato | Esempio |
 |---|---|---|
-| **breve** | Da chiudere in questa sessione o entro 1 settimana | Bug fix, feature piccola, documentazione |
-| **medio** | Da chiudere in 1-4 settimane, multi-sessione | Refactor area, nuovo modulo, integrazione |
-| **lungo** | Mesi, milestone, iniziativa | Riarchitettura, pacchetto distribuito, parity ambienti |
+| **breve** | Sessione corrente o entro 1 settimana | Bug fix, feature piccola, docs |
+| **medio** | 1-4 settimane, multi-sessione | Refactor area, nuovo modulo, integrazione |
+| **lungo** | Mesi, milestone | Riarchitettura, pacchetto, parity ambienti |
 
-**Quando classificare obbligatoriamente**:
-- Task multi-file o multi-dominio
-- Task che dipendono da decisioni esterne o input utente
-- Backlog item con sub-task
-- Manutenzione ricorrente (audit, review, cleanup)
+**Quando obbligatorio**: task multi-file/multi-dominio, dipendenze esterne, backlog con sub-task, manutenzione ricorrente.
 
-**Come usarlo**:
-1. Dichiarare l'orizzonte in 1 riga prima della pianificazione: "Orizzonte: breve / medio / lungo"
-2. **Non rinviare obblighi brevi nel medio/lungo termine** — i task brevi vanno fatti nella sessione corrente o documentati come blocked con motivo concreto
-3. Task medio/lungo → spezzarli in milestone con orizzonte breve verificabile
-4. Manutenzione ricorrente → cadenza esplicita (settimanale, mensile) via `audit:weekly` / `audit:monthly` o Windows Task Scheduler
+**Regole**:
+1. Dichiarare l'orizzonte in 1 riga prima della pianificazione
+2. **Non rinviare obblighi brevi nel medio/lungo termine** — task brevi vanno fatti nella sessione o documentati come BLOCKED con motivo
+3. Task medio/lungo → spezzare in milestone con orizzonte breve verificabile
+4. Manutenzione ricorrente → cadenza esplicita (`audit:weekly`/`audit:monthly` o Task Scheduler)
 
-**Scenari di test**:
-1. "Aggiungi feature X complessa" → "Orizzonte: medio. Sub-milestone breve: scaffold + test base"
-2. "Aggiorna la docs" → "Orizzonte: breve" + fare adesso
-3. "Migra tutto a Codex" → "Orizzonte: lungo. Sub-milestone breve: matrice capability + test smoke 1 modulo"
-
-**Anti-pattern**: usare medio/lungo termine come parcheggio per task che potresti fare subito. Se chiudibile oggi → orizzonte breve, fallo.
+**Anti-pattern**: usare medio/lungo come parcheggio per task chiudibili oggi.
 
 ## Workflow autonomi continui — `/goal`, `/loop`, Stop hook
 
@@ -321,136 +289,13 @@ Quando l'utente fornisce esempi come input:
 - non dichiarare concluso un ragionamento limitandosi ai soli esempi forniti
 - questo vale per rischi tecnici, controlli di qualita', pattern documentali e regole operative
 
-### Hook attivi (aggiornato al 2026-05-09)
+### Hook attivi, skill pre/post-conditions, hook n8n futuri
 
-Configurazione attiva in `~/.claude/settings.json`: 34 command hook. Non aumentare il numero per abitudine: prima misurare miss reali e promuovere solo controlli deterministici o advisory ad alto valore.
-
-| Evento | Tipo | Trigger | Azione | File log |
-|--------|------|---------|--------|----------|
-| `SessionStart` | sync | Inizio sessione | `ensure-claude-model-router.ps1` mantiene il router modello pronto | n/a |
-| `SessionStart` | sync | Inizio sessione | `merge-canonical-settings.mjs` riallinea settings canonici | n/a |
-| `SessionStart` | sync | Inizio sessione | `session-start.ps1` carica memoria globale, todos, indice memoria progetto e `AI_RUNTIME_BRIEF.md` | n/a |
-| `SessionStart` | sync | Inizio sessione | `session-start-continuation.ps1` reinietta eventuale continuita' della sessione precedente | n/a |
-| `UserPromptSubmit` | sync | Ogni prompt | `ensure-claude-model-router.ps1` mantiene stabile provider/modello | n/a |
-| `UserPromptSubmit` | sync | Ogni prompt | `inject-runtime-brief.ps1 UserPromptSubmit` reinietta runtime brief con gerarchia P0 | n/a |
-| `UserPromptSubmit` | sync advisory | Ogni prompt | `skill-activation.ps1` propone P0 compatto, fonte, skill/MCP/web/loop e focus L2-L9 | n/a |
-| `UserPromptSubmit` | sync advisory | Task multi-file/complesso | `multi-file-recap-check.ps1` richiede recap e blast radius prima delle patch | `memory/recap-check-log.txt` |
-| `UserPromptSubmit` | sync advisory | Prompt di fix/correzione | `pre-edit-verify-intent.ps1` richiede lettura codice reale e verifica problema prima di agire | n/a |
-| `UserPromptSubmit` | sync advisory | Pending dirty da sessione precedente | `user-prompt-commit-gate.ps1` reinietta obbligo di chiudere o dichiarare il blocco git | n/a |
-| `UserPromptSubmit` | sync advisory | Prompt con dominio modello chiaro | `user-prompt-model-suggestion.ps1` suggerisce modello/ambiente corretto | `memory/model-suggestion-log.txt` |
-| `PreToolUse` | blocking | Edit/Write/MultiEdit su file sensibili LinkedIn | `pre-edit-antiban.ps1` blocca senza `/antiban-review` | `memory/antiban-hook-log.txt` |
-| `PreToolUse` | blocking | Edit/Write/MultiEdit su segreti/file sensibili | `pre-edit-secrets.ps1` blocca secret o path vietati | `memory/rule-violations-log.txt` |
-| `PreToolUse` | advisory | Edit/Write/MultiEdit | `pre-edit-best-practice.ps1` inietta best practice e policy web per tipo file | `memory/best-practice-log.txt` |
-| `PreToolUse` | blocking | Bash con `git commit` | `pre-bash-l1-gate.ps1` richiede quality gate recente | `memory/rule-violations-log.txt` |
-| `PreToolUse` | blocking | Bash con `git commit` / `git push` | `pre-bash-git-gate.ps1` blocca stato git non coerente | `memory/rule-violations-log.txt` |
-| `PreToolUse` | blocking/advisory | MCP ad alto impatto | `pre-mcp-guard.ps1` blocca operazioni distruttive e avvisa su azioni rischiose | n/a |
-| `PreCompact` | sync | Prima compact | `inject-runtime-brief.ps1 PreCompact` reinietta runtime brief | n/a |
-| `PreCompact` | sync advisory | Prima compact | `pre-compact-handoff.ps1` crea `.claude/CONTINUATION.md` e forza handoff operativo | `memory/compact-handoff-log.txt` |
-| `PostToolUse` | async | Bash con quality command | `post-bash-quality-log.ps1` logga comandi qualita' | `memory/quality-hook-log.txt` |
-| `PostToolUse` | async | Bash con gate/git | `post-bash-git-audit.ps1` logga readiness git | `memory/git-hook-log.txt` |
-| `PostToolUse` | async | Edit/Write/MultiEdit su file >300 righe | `file-size-check.ps1` logga avviso split | `memory/file-size-log.txt` |
-| `PostToolUse` | async | Edit/Write/MultiEdit su file sensibili LinkedIn | `post-edit-antiban-audit.ps1` logga possibili miss anti-ban | `memory/rule-violations-log.txt` |
-| `PostToolUse` | async gated | `.claude/REQUEST_COMMIT` / `.claude/REQUEST_PUSH` | `post-edit-request-action.ps1` esegue commit/push solo dopo `post-modifiche` e `audit:git-automation:strict:*` | `memory/request-action-log.txt` |
-| `PostToolUse` | sync advisory | Edit/Write/MultiEdit su codice | `post-edit-verify-checklist.ps1` richiede dichiarazione L2-L6 applicabile | n/a |
-| `PostToolUse` | sync advisory | Edit/Write/MultiEdit | `post-edit-codebase-hygiene.ps1` richiede valutazione pulizia file diretto/indiretto, duplicati, sostituzioni, split e follow-up | `memory/codebase-hygiene-log.txt` |
-| `PostToolUse` | async | WebSearch | `post-websearch-log.ps1` logga query e risultati principali | `memory/websearch-log.txt` |
-| `Stop` | async | Fine sessione | `stop-session.ps1` logga sessione e warning memoria/worklog | `memory/session-log.txt` |
-| `Stop` | sync advisory | Fine sessione con working tree dirty | `pre-stop-commit-gate.ps1` scrive pending commit gate per turno successivo | `memory/stop-commit-gate-log.txt` |
-| `Stop` | sync advisory | Fine risposta operativa | `stop-proactive-next-step.ps1` reinietta obbligo di prossimo passo concreto, blocco reale o domanda specifica | `memory/proactive-next-step-log.txt` |
-| `SubagentStop` | async | Subagent concluso | `subagent-stop.ps1` logga summary subagent | `memory/subagent-log.txt` |
-| `TeammateIdle` | async | Agent team idle | `teammate-event.ps1` log teams | `memory/teams-log.txt` |
-| `TaskCreated` | async | Agent team task creato | `teammate-event.ps1` log teams | `memory/teams-log.txt` |
-| `TaskCompleted` | async | Agent team task completato | `teammate-event.ps1` log teams | `memory/teams-log.txt` |
-
-### Pattern file sensibili LinkedIn (PreToolUse matcher)
-
-I file che triggerano il pre-hook antiban contengono nel path o nel nome: `browser`, `playwright`, `stealth`, `fingerprint`, `timing`, `delay`, `session`, `humanDelay`, `inputBlock`, `clickLocator`, `inviteWorker`, `inboxWorker`, `organicContent`, `syncSearch`, `syncList`, `sendInvites`, `sendMessages`.
-
-### Pre/post-conditions nelle skill e MCP critici
-
-| Skill / MCP | Pre-conditions | Post-conditions |
-|-------------|---------------|-----------------|
-| `antiban-review` | File sensibile LinkedIn, azione browser, cambio volume | Verdetto SICURO/ATTENZIONE/BLOCCO con azione successiva |
-| `loop-codex` | L1 pulito, task con criteri misurabili, scope no-antiban | Auto-commit se DONE, update ENGINEERING_WORKLOG |
-| `context-handoff` | Git status pulito o documentato, memoria aggiornata, active.md coerente | SESSION_HANDOFF.md committato, active.md aggiornato |
-| `debugging-wizard` | Errore riproducibile o log disponibile, primo tentativo di debug | Root cause identificata o escalation a `systematic-debugging` |
-| `verification-protocol` (L7-L9) | Implementazione completata, L1-L6 gia' verificati | Esito DONE o BLOCKED con causa esplicita |
-| `typescript-pro` | Task TS con logica non banale, codebase TS presente | Codice conforme a pattern progetto, typecheck pulito |
-| `code-review` | PR creata o diff locale significativo, area core/sicurezza/DB | Commenti con severity, no falsi positivi su stile |
-| `audit-rules` | Sospetto violazione regole operative o audit periodico | Report gap con azione correttiva |
-| MCP Supabase | Query o migrazione DB necessaria, credenziali configurate | Risultato query o migration applicata, tipi aggiornati se serve |
-| MCP Playwright | Bug UI non riproducibile da log, pagina accessibile | Screenshot o DOM snapshot, diagnosi visiva |
-
-### Hook n8n (da implementare, non ancora attivo)
-
-- Pre-hook ingresso: validare context minimo (account attivo, proxy ok, no quarantena) prima di eseguire workflow LinkedIn
-- Post-hook uscita: verificare stato finale, loggare su Telegram se WARN/CRITICAL, aggiornare `automation_commands`
+Inventory completo (34 command hook attivi + tabella pre/post-conditions skill/MCP + roadmap hook n8n) in `docs/tracking/AI_HOOK_ENFORCEMENT_PLAN.md`. Pattern file sensibili LinkedIn nei matcher PreToolUse e regole anti-ban in `.claude/rules/browser-antiban.md` + `.claude/rules/workflow-linkedin.md`. Modifica lì, non duplicare qui.
 
 ## Workflow obbligatorio per questo progetto
 
-Classificare il task prima di partire:
-
-- quick fix: piccolo, locale, non tocca browser o stealth
-- bug bot: crash, errore runtime o comportamento anomalo
-- feature/modifica bot: tocca browser, timing, delay, stealth o volumi
-- refactor/infra: tocca DB, log, config, documentazione o orchestrazione senza toccare il browser
-
-Passi obbligatori:
-
-1. pre-modifica
-2. review anti-ban e security se il perimetro lo richiede
-3. planning se il task e' lungo o l'approccio non e' ovvio
-4. implementazione
-5. verifica
-6. commit/push solo dopo verifiche verdi
-
-Estensioni LinkedIn ai livelli globali (vedi L1-L9 in `~/.claude/CLAUDE.md` per i livelli completi). Sono **delta sopra** i sub-check globali, non sostituzioni.
-
-**L1 LinkedIn**:
-- L1-LI.1 build progetto exit 0 (frontend + backend se toccati)
-- L1-LI.2 `madge --circular` su `src/risk/`, `src/scheduler/`, `src/auth/`, `src/stealth/`, `src/browser/`
-- L1-LI.3 coverage adeguata sui moduli critici: risk engine, scheduler, auth, stealth, antiban
-- L1-LI.4 nessun file LinkedIn-sensibile (browser, stealth, fingerprint, timing) >300 righe senza split-plan
-- L1-LI.5 audit npm di dominio (`npm run audit:hooks`, `audit:ai-control-plane`) verdi se area toccata
-
-**L3 LinkedIn**:
-- L3-LI.1 memory leak: listener Playwright/browser context chiusi, page.close() in ogni branch
-- L3-LI.2 timeout esplicito su ogni `clickLocator`, `waitFor`, `goto` (no default infinito)
-- L3-LI.3 stealth pattern: nessuna `setTimeout` con valore fisso prevedibile (sempre varianza ±30%+)
-- L3-LI.4 transazione DB busy_timeout configurato (no deadlock su SQLite)
-- L3-LI.5 selettori CSS/XPath: fallback chain se il principale fallisce, log selettore usato
-
-**L4 LinkedIn worst-case**:
-- L4-LI.1 scenario multi-giorno: state recovery dopo crash, scheduler riprende dal punto corretto
-- L4-LI.2 pause durante invito: salvataggio stato + reumana il pickup
-- L4-LI.3 aggiornamento selettori: ogni cambio LinkedIn DOM ha selector versioning + alert
-- L4-LI.4 pending ratio sale sopra soglia → pause automatica del flusso outbound
-- L4-LI.5 fingerprint mutation: cambio coerente non contraddittorio (canvas + UA + lingua + tz)
-
-**L5 LinkedIn — alert e prodotto**:
-- L5-LI.1 alert Telegram strutturato: WHAT (cosa è successo), WHY (causa probabile), DO (azione utente concreta)
-- L5-LI.2 report giornaliero include: invii fatti, accept rate, reply rate, pending ratio, alert attivi
-- L5-LI.3 dashboard mostra stato real-time (running, paused, error) con timestamp ultima azione
-- L5-LI.4 nessun silent failure: ogni eccezione browser propagata fino a livello che genera alert
-- L5-LI.5 storico azioni LinkedIn auditabile (chi/quando/cosa/risultato per ogni invio/messaggio)
-
-**L6 LinkedIn — data flow E2E**:
-- L6-LI.1 percorso completo: migration SQL → repository → API → frontend → report
-- L6-LI.2 env vars validati: proxy URL, account credentials, Telegram token, Supabase keys
-- L6-LI.3 proxy classification: residential vs DC corretto per account, regione coerente con fingerprint
-- L6-LI.4 cookie/session storage: persistenza cifrata, no plain text su disco
-- L6-LI.5 migration DB: backward-compat se schema cambia (Supabase + SQLite locale)
-- L6-LI.6 GDPR compliance: erasure path funzionante, retention configurata
-
-**L7 LinkedIn — cross-domain per file LinkedIn-touch**:
-- L7-LI.1 anti-ban: varianza timing, sessioni credibili, pending ratio, navigazione umana
-- L7-LI.2 fingerprint coerenza: no contraddizioni canvas/UA/lingua/tz
-- L7-LI.3 proxy stickiness: stesso proxy per stessa session, no rotation in mezzo a action sequence
-- L7-LI.4 LinkedIn API rate limit rispettato: no burst, no flood, no parallel su stesso account
-- L7-LI.5 selettori multi-locale: IT/EN/FR/DE supportati se file lavora con LinkedIn DOM
-
-**L8-LI**: dopo modifica risk engine/scheduler/antiban, ri-eseguire test integrazione browser staging reale (non solo unit).
-**L9-LI**: working tree pulito + nessun file LinkedIn-touch lasciato senza `/antiban-review` verdetto se modificato in questo turno.
+Regola estratta in `.claude/rules/workflow-linkedin.md` (path-scoped `src/**`, `workflows/**`). Contiene: classificazione task (quick fix / bug bot / feature-modifica bot / refactor-infra), 6 passi obbligatori (pre-modifica → review antiban → planning → impl → verifica → commit), estensioni L1-L9 LinkedIn delta (35 sub-check su L1, L3, L4, L5, L6, L7, L8, L9). Modifica lì, non duplicare qui.
 
 ## Context Handoff — schema minimo garantito
 
