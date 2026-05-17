@@ -1,0 +1,67 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:/Users/albie/Desktop/Programmi/Linkedin/.codex/hooks/codex-runtime-context.ps1\" SessionStart",
+            "timeout": 10,
+            "statusMessage": "Injecting Codex session context"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:/Users/albie/Desktop/Programmi/Linkedin/.codex/hooks/codex-runtime-context.ps1\" UserPromptSubmit",
+            "timeout": 10,
+            "statusMessage": "Injecting Codex routing context"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|shell_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:/Users/albie/Desktop/Programmi/Linkedin/.codex/hooks/codex-bash-gate.ps1\"",
+            "timeout": 10,
+            "statusMessage": "Checking Codex shell gate"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|shell_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:/Users/albie/Desktop/Programmi/Linkedin/.codex/hooks/codex-post-tool-review.ps1\"",
+            "timeout": 10,
+            "statusMessage": "Recording Codex tool review"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:/Users/albie/Desktop/Programmi/Linkedin/.codex/hooks/codex-stop-check.ps1\"",
+            "timeout": 10,
+            "statusMessage": "Checking Codex stop gate"
+          }
+        ]
+      }
+    ]
+  }
+}
