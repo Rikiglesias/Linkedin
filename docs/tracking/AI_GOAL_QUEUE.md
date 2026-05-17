@@ -30,7 +30,7 @@
 | 12 | Cat 2 hook PowerShell BP | 15 | alto (32 hook) | ⏳ pending |
 | 13 | Cat 4 rename 11 skill | 15 | alto (cross-project) | ⏳ pending |
 | 14 | Auto-append findings/task da pattern AI | 10 | medio (false positive) | ⏳ pending |
-| 15 | L2-L9 blocking per ragionamento AI | 12 | medio (gate troppo rigidi) | ⏳ pending |
+| 15 | L2-L9 blocking per ragionamento AI | 12 | medio (gate troppo rigidi) | ✅ DONE 2026-05-17 |
 
 ---
 
@@ -144,6 +144,15 @@
 - **Documentazione**: `scripts/README.md` documenta i wrapper e `setx CLAUDE_REPO_ROOT`.
 - **Verifica**: weekly testato con env var e senza env var; monthly testato con env var; tutti exit code 0.
 - **Chiuso**: turno 1/5.
+
+### /goal 15 — L2-L9 blocking per ragionamento AI ✅ DONE 2026-05-17
+
+- **Problema**: i controlli su ragionamento AI, continuation e Codex parity erano documentati ma non abbastanza auditabili come blocco unico.
+- **Fix**: creato `docs/tracking/AI_ORCHESTRATOR_CONTRACT.md` e `src/scripts/aiReasoningHardeningAudit.ts`.
+- **Script**: aggiunti `audit:ai-reasoning-hardening`, `audit:orchestrator-contract`, `audit:reasoning-trace`, `audit:hook-semantic-coverage`, `audit:continuation-completeness`, `audit:codex-hook-parity`.
+- **Codex parity**: aggiunti `.codex/hooks.json` e hook PowerShell minimi; abilitato `hooks = true` in `C:\Users\albie\.codex\config.toml`.
+- **Verifica**: `audit:ai-reasoning-hardening` 6/6, `audit:ai-control-plane` 26/26, `post-modifiche` verde.
+- **Commit**: `755f4fc` + `a028d93`, pushati su `main`.
 
 ## Falliti / BLOCKED
 
