@@ -18,7 +18,12 @@
       "files": [
         "browser-antiban.md",
         "api-security.md",
-        "scripts-audit.md"
+        "scripts-audit.md",
+        "model-selection.md",
+        "git-commit-push.md",
+        "autonomous-workflows.md",
+        "workflow-linkedin.md",
+        "meta-reasoning.md"
       ],
       "loadStrategy": "path-scoped",
       "description": "Regole che si caricano automaticamente quando l'AI tocca un certo glob di file"
