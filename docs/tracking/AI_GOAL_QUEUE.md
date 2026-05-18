@@ -64,12 +64,6 @@
 /goal Tutti gli 8 file ~/.claude/scripts/*.mjs usano "node:" prefix sui built-in imports (fs, path, crypto, util, child_process), ogni catch silenzioso "return {}" sostituito con logging esplicito su stderr o file dedicato, node --check exit 0 su tutti gli 8 file. Stop after 10 turns.
 ```
 
-## /goal 8 — Cat 7 path-scoped rules coverage
-
-```text
-/goal Aggiunte 3 path-scoped rules concrete: scheduler-rules.md (paths src/scheduler/**, src/risk/**), messaging-rules.md (paths src/messaging/**, src/inbox/**), proxy-rules.md (paths src/proxy/**). src/scripts/rulesCoverageAudit.ts creato verifica YAML frontmatter parse + glob pattern punta a file esistenti + mapping rule→hook coerente, README .claude/rules/ aggiornato a 10 rules totali. Stop after 12 turns.
-```
-
 ## /goal 9 — Cat 13 split tracking docs
 
 ```text
@@ -94,12 +88,6 @@
 /goal Tutti i 32 hook ~/.claude/hooks/*.ps1 hanno Set-StrictMode -Version Latest + $ErrorActionPreference='Stop' iniettati via _lib.ps1 helper Initialize-HookStrictMode chiamato come prima istruzione di ogni hook, PSScriptAnalyzer eseguito con zero warning su almeno 5 hook campione (pre-edit-antiban, pre-edit-secrets, pre-bash-l1-gate, stop-session, post-edit-codebase-hygiene), comment-help <# .SYNOPSIS .DESCRIPTION #> aggiunto agli hook critici, tutti i 32 hook syntax check PSParser::Tokenize OK. Stop after 15 turns.
 ```
 
-## /goal 13 — Cat 4 rename 11 skill non canoniche
-
-```text
-/goal Tutte 11 skill non canoniche (audit-rules/index.md, context-handoff/skill.md, git-commit/skill.md, git-create-pr/skill.md, linkedin-patterns/skill.md, loop-codex/skill.md, memoria/skill.md, prompt-improver/skill.md, session-prompt/index.md, token-efficiency/skill.md, verification-protocol/index.md) rinominate in SKILL.md uppercase con git mv, src/scripts/skillFilenameAudit.ts creato ritorna 197/197 conformi (185 originali + 11 rinominati + 1 nuovo se serve), audit aggiunto a audit:weekly, ogni skill rinominata caricata correttamente in /context. Stop after 15 turns.
-```
-
 ## /goal 14 — Auto-append findings/task da pattern AI
 
 ```text
@@ -115,6 +103,28 @@
 ---
 
 ## Completati
+
+### /goal 13 — Cat 4 rename 11 skill non canoniche ✅ DONE 2026-05-18
+
+- **Problema**: 11 skill globali con naming non canonico (`skill.md`/`index.md` invece di `SKILL.md`)
+- **Fix applicati**:
+  - 11 file rinominati via `mv` (cartella `~/.claude/skills/` non versionata): audit-rules, context-handoff, git-commit, git-create-pr, linkedin-patterns, loop-codex, memoria, prompt-improver, session-prompt, token-efficiency, verification-protocol — tutti ora `SKILL.md`
+  - `src/scripts/skillFilenameAudit.ts` (NEW): scan dir skills, verifica SKILL.md canonico, segnala variazioni (`skill.md`, `index.md`, ecc.), env var `SKILLS_DIR` override
+  - npm script `audit:skill-filenames` + integrato in `audit:weekly`
+- **Verifica L9.8**: audit 197/197 conformi, 0 file non canonici, le 11 skill rinominate compaiono nel listing `Skill` tool
+- **Note**: file fuori repo LinkedIn (cartella user globale), modifiche persistono su disco locale, non committate
+
+### /goal 8 — Cat 7 path-scoped rules coverage ✅ DONE 2026-05-18
+
+- **Problema**: 7 rules path-scoped esistenti ma coverage incompleta (no scheduler/messaging/proxy concrete) + zero audit deterministico
+- **Fix applicati**:
+  - 3 nuove rules: `scheduler-rules.md` (paths src/workers/**, src/risk/**, src/automation/**), `messaging-rules.md` (paths messageWorker/inbox/automation), `proxy-rules.md` (paths src/proxy/**)
+  - `src/scripts/rulesCoverageAudit.ts` (NEW): valida YAML frontmatter + glob → dir esistenti + plugin.json presence + README tabella
+  - npm script `audit:rules-coverage` + integrato in `audit:weekly`
+  - Fix 4 glob obsoleti su rules pre-esistenti: api-security (rimosso src/auth/**), scripts-audit (.claude/hooks/** → .githooks/**), workflow-linkedin (workflows/** → n8n-workflows/**), meta-reasoning (aggiunto frontmatter mancante)
+  - `.claude-plugin/plugin.json` + `.claude/rules/README.md` aggiornati a 11 rules
+- **Verifica L9.8**: audit:rules-coverage 11/11 valide, audit:json-schemas 4/4, audit:ai-list-completeness 10/10, quality gate 1430/1430
+- **Commit**: 4824645, push auto verso origin/main
 
 ### /goal 7 — Cat 1 split AGENTS.md sotto 200 ✅ DONE 2026-05-18
 
