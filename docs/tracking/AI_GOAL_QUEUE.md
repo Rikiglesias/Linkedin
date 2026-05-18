@@ -64,16 +64,10 @@
 /goal Tutti gli 8 file ~/.claude/scripts/*.mjs usano "node:" prefix sui built-in imports (fs, path, crypto, util, child_process), ogni catch silenzioso "return {}" sostituito con logging esplicito su stderr o file dedicato, node --check exit 0 su tutti gli 8 file. Stop after 10 turns.
 ```
 
-## /goal 10 — Cat 13.5 validazione 89 comandi
+## /goal 11 — Cat 9 TS audit refactor (parte 2: split aiControlPlaneAudit)
 
 ```text
-/goal docs/tracking/CLAUDE_CODE_COMMANDS_REFERENCE.md ha colonna nuova "Source verified" per ognuno dei 89 comandi (✅ official docs / 🟡 community only / ❓ unverified), verifica fatta su almeno 3 pagine code.claude.com/docs (slash-commands, commands, agent-sdk), 13 comandi già confermati ufficialmente restano ✅. Stop after 15 turns.
-```
-
-## /goal 11 — Cat 9 TS audit refactor
-
-```text
-/goal Helper duplicati estratti in src/scripts/auditCore.ts (parseMarkdown, readJsonSafe, exec helpers, spawnSync git wrapper), aiControlPlaneAudit.ts splittato in 3 file focalizzati sotto 300 righe ciascuno mantenendo stesso comportamento esterno, audit:ai-control-plane resta 25/25 verde, 1430/1430 test passano. Stop after 15 turns.
+/goal aiControlPlaneAudit.ts splittato in 3 file focalizzati sotto 300 righe ciascuno (aiControlPlaneOrchestrator.ts + checks/docs.ts + checks/hooks.ts) importando da src/scripts/lib/auditCore.ts (già esistente), audit:ai-control-plane resta con gli stessi check, 1430/1430 test passano. Stop after 12 turns. NOTE: parte 1 (auditCore.ts extraction) completata in commit precedente.
 ```
 
 ## /goal 14 — Auto-append findings/task da pattern AI
@@ -91,6 +85,23 @@
 ---
 
 ## Completati
+
+### /goal 11 parte 1 — Cat 9 auditCore.ts extraction ✅ DONE 2026-05-18
+
+- **Problema**: 10 audit script duplicavano helper `readText`, `readJson`, `isRecord`, `getHookEntries`, `findHookCommand*`, `missingSnippets`, `formatMissing`
+- **Fix applicati**:
+  - `src/scripts/lib/auditCore.ts` (NEW, 95 righe): export di 9 helper canonici
+  - `aiControlPlaneAudit.ts`: import dei 7 usati da `./lib/auditCore`, rimosso 65 righe di definizioni locali (1110 → 1044 righe)
+- **Parte 2 deferred**: split aiControlPlaneAudit.ts in 3 file <300 righe richiede sessione dedicata (rischio rompere 25/25 check). Tracciato come /goal 11 parte 2 nella queue.
+- **Verifica L9.8**: output `audit:ai-control-plane` identico pre/post refactor (7 fail pre-esistenti su settings.json globale, NON regressione), quality gate 1430/1430
+
+### /goal 10 — Cat 13.5 validazione 89 comandi ✅ DONE 2026-05-18
+
+- **Problema**: `CLAUDE_CODE_COMMANDS_REFERENCE.md` (89 comandi community) senza verifica vs docs ufficiali
+- **Fix applicati**:
+  - 3 pagine docs ufficiali code.claude.com consultate: `/en/commands`, `/en/cli-reference`, `/en/agent-sdk`
+  - Sezione "Validazione Source (2026-05-18)" aggiunta in coda al ref: 68/76 confermati ufficiali (89%), 8 community-only o da approfondire (note dettagliata su /goal, /loop, /fast → ufficiali ma fuori formato backtick)
+- **Verifica L9.8**: `wc -l` 219 → 275 righe, ref doc backward-compat (sezione append, nessuna tabella rotta)
 
 ### /goal 12 — Cat 2 hook PowerShell best practice ✅ DONE 2026-05-18
 

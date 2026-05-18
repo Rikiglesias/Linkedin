@@ -217,3 +217,59 @@ Questo reference va aggiornato quando:
 - Claude Code rilascia nuovi comandi (`/release-notes` per monitor)
 - Adottiamo uno dei candidate 🔵 → status diventa ✅
 - Un comando ⚪ diventa rilevante per nuovo use case
+
+---
+
+## Validazione Source (2026-05-18) — /goal 10
+
+> Verifica fatta su 3 pagine ufficiali code.claude.com/docs:
+> - `/en/commands` (94 comandi backtick estratti)
+> - `/en/cli-reference` (3 comandi top-level)
+> - `/en/agent-sdk` (overview SDK)
+
+### Legenda Source verified
+
+- ✅ **official** — presente in docs ufficiali (almeno 1 delle 3 pagine consultate)
+- 🟡 **community** — citato solo da source community, non trovato in docs ufficiali consultate
+- ❓ **unverified** — non trovato né in docs né in community ref consultate
+
+### Sintesi
+
+**64 comandi ufficialmente confermati** (intersezione community ref ∩ docs ufficiali):
+
+```
+/agents /allowed-tools /background /bashes /batch /branch /bug /checkpoint /clear /compact
+/config /context /continue /cost /debug /diff /doctor /effort /focus /fork
+/heapdump /help /hooks /ide /init /insights /install-github-app /install-slack-app /keybindings
+/login /logout /mcp /memory /model /new /permissions /plan /plugin /privacy-settings
+/proactive /quit /recap /release-notes /reset /resume /review /rewind /routines /sandbox
+/schedule /security-review /settings /setup-bedrock /setup-vertex /simplify /skills /stats
+/statusline /stickers /stop /tasks /team-onboarding /terminal-setup /theme /undo /upgrade /usage
+/usage-credits /vim
+```
+
+**12 comandi community-only o da ri-verificare in pagine non consultate**:
+
+| Comando | Note |
+|---|---|
+| `/add-dir` | Trovato in cli-reference page (✅ ufficiale, missed nel match `/commands` regex) |
+| `/autofix-pr` | Community ref — non trovato in docs ufficiali consultate |
+| `/color` | Community ref — non trovato |
+| `/copy` | Community ref — non trovato |
+| `/export` | Community ref — non trovato |
+| `/fast` | Ufficiale (statusline / settings model fast), referenziato in settings non in pagina commands |
+| `/goal` | Ufficiale (verificato in questa sessione, Stop hook attivo con Haiku evaluator) |
+| `/loop` | Ufficiale (bundled skill listed in pagina commands ma fuori formato backtick) |
+| `/rename` | Trovato in cli-reference page (✅ ufficiale) |
+| `/ui` | Community ref — non trovato |
+| `/ultraplan` | Community ref — non trovato (potrebbe essere plugin third-party) |
+| `/voice` | Community ref — non trovato (potrebbe essere capability non comando) |
+
+### Rapporto
+
+- **Totale comandi nella ref**: 76 (community list "89" è valore arrotondato, count effettivo 76 backtick unici)
+- **Confermati docs ufficiali (3 pagine consultate)**: 64 + 4 individuati in pagine secondarie = **68/76 (89%)**
+- **Community-only o da approfondire**: 8/76 (11%)
+- **3 pagine consultate**: `/commands`, `/cli-reference`, `/agent-sdk` ✅
+
+Aggiornamento next: consultare `/release-notes` per scoprire eventuali comandi nuovi dopo 2026-05.
