@@ -70,12 +70,6 @@
 /goal aiControlPlaneAudit.ts splittato in 3 file focalizzati sotto 300 righe ciascuno (aiControlPlaneOrchestrator.ts + checks/docs.ts + checks/hooks.ts) importando da src/scripts/lib/auditCore.ts (già esistente), audit:ai-control-plane resta con gli stessi check, 1430/1430 test passano. Stop after 12 turns. NOTE: parte 1 (auditCore.ts extraction) completata in commit precedente.
 ```
 
-## /goal 14 — Auto-append findings/task da pattern AI
-
-```text
-/goal Stop/transcript/continuation hook, non PostToolUse, rileva output finale e handoff contenenti pattern "TODO futuro:", "Fix tracciato:", "Sprint dedicato:", "BLOCKED:", "Decisione:" e propone/auto-appende in docs/tracking/SESSION_FINDINGS.md (finding) o todos/active.md (task) solo quando source+timestamp+hash conversazione sono disponibili. Pattern matching con allowlist + sezione frontmatter "auto-tracked" per distinguere da entry manuali. src/scripts/autoTrackAudit.ts valida timestamp, source, hash, dedupe e zero placeholder. Test su 5 risposte sintetiche con e senza pattern: zero falsi positivi su risposte banali, 100% recall su pattern espliciti. Stop after 10 turns.
-```
-
 ## /goal 15 — L2-L9 blocking per ragionamento AI
 
 ```text
@@ -85,6 +79,20 @@
 ---
 
 ## Completati
+
+### /goal 14 — Auto-append findings/task da pattern AI ✅ DONE 2026-05-18
+
+- **Problema**: pattern strutturati nelle risposte AI (TODO futuro, Fix tracciato, Sprint dedicato, BLOCKED, Decisione) andavano persi tra sessioni
+- **Fix applicati**:
+  - `docs/tracking/SESSION_FINDINGS.md` (NEW): doc canonical con frontmatter `auto-tracked: true`, schema entry documentato, sezioni Auto-tracked + Manuali separate
+  - `~/.claude/hooks/stop-auto-track.ps1` (NEW): hook Stop/SubagentStop/SessionEnd, allowlist regex pattern stretti (`^Label:` start-of-line), dedupe via hash SHA-256 dei primi 256 char, transcript_path read sicuro
+  - `src/scripts/autoTrackAudit.ts` (NEW): valida timestamp ISO 8601, session_id, hash SHA-256 64char hex, source ∈ {stop, subagent-stop, session-end}, pattern ∈ allowlist, no placeholder TODO/PLACEHOLDER nel content, dedupe via hash+pattern. Code block skip per evitare falsi positivi su esempi inline.
+  - npm script `audit:auto-track` + integrato in `audit:weekly`
+- **Verifica L9.8**:
+  - 5/5 test sintetici PASS: zero falsi positivi su risposte banali (T1 plain, T4 TODO mid-line), 100% recall su pattern espliciti (T2 TODO futuro, T3 multi-pattern, T5 Sprint)
+  - hook syntax check PSParser OK
+  - audit:auto-track verde su SESSION_FINDINGS.md vuoto
+- **Note**: hook fuori repo (`~/.claude/hooks/`), modifiche persistono su disco locale, non committate
 
 ### /goal 11 parte 1 — Cat 9 auditCore.ts extraction ✅ DONE 2026-05-18
 
