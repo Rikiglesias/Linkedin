@@ -64,12 +64,6 @@
 /goal Tutti gli 8 file ~/.claude/scripts/*.mjs usano "node:" prefix sui built-in imports (fs, path, crypto, util, child_process), ogni catch silenzioso "return {}" sostituito con logging esplicito su stderr o file dedicato, node --check exit 0 su tutti gli 8 file. Stop after 10 turns.
 ```
 
-## /goal 6 — Cat 6 plugin.json move canonico
-
-```text
-/goal plugin.json spostato da .claude/ a .claude-plugin/ (path canonico Anthropic 2026), $schema package corretto a schema plugin Anthropic o rimosso se schema non disponibile, grep -rn ".claude/plugin.json" verificato zero reference rotti nel repo, src/scripts/jsonSchemasAudit.ts creato valida tutti i 4 JSON registry. Stop after 10 turns.
-```
-
 ## /goal 7 — Cat 1 split AGENTS.md sotto 200
 
 ```text
@@ -128,16 +122,19 @@
 
 ## Completati
 
-### /goal 6 — Cat 6 plugin.json move canonico ✅ DONE 2026-05-17 (partial)
+### /goal 6 — Cat 6 plugin.json move canonico ✅ DONE 2026-05-18 (complete)
 
 - **Problema**: plugin.json in `.claude/` non era path canonico Anthropic 2026, `$schema` puntava a `package.json` schema (errato)
-- **Fix applicati**:
+- **Fix applicati (turno 1)**:
   - `git mv .claude/plugin.json .claude-plugin/plugin.json`
   - Rimosso `$schema` errato (no schema Anthropic plugin ufficiale disponibile)
   - `.gitignore` aggiornato (eccezione `.claude/plugin.json` rimossa, `.claude-plugin/` tracked by default)
   - 3 canonici aggiornati: AGENTS.md, AI_IMPLEMENTATION_LIST_GLOBAL.md, AI_ADK_DISTRIBUTION.md
-- **Verifica L9.8**: JSON valid `python3 json.load` OK, grep refs attivi rotti = 0, quality gate 1430/1430
-- **DEFERRED**: `src/scripts/jsonSchemasAudit.ts` (validation 4 JSON registry) — scope > 10 turn, /goal dedicato futuro
+- **Fix applicati (turno 2, completamento condizione /goal)**:
+  - `src/scripts/jsonSchemasAudit.ts` creato (validation 4 JSON registry: syntax + top-level keys + per-file schema)
+  - npm script `audit:json-schemas` aggiunto + integrato in `audit:weekly`
+  - Run: **4/4 file passano** (`.claude-plugin/plugin.json`, `AI_CAPABILITY_ROUTING.json`, `AI_ADK_CAPABILITY_GOVERNANCE.json`, `AI_LEVEL_ENFORCEMENT.json`)
+- **Verifica L9.8**: typecheck verde, JSON valid `python3 json.load` OK, grep refs attivi rotti = 0, audit 4/4 PASS
 - **Note**: snapshot session-prompts/* immutabili (storici), refs nel report audit semanticamente corretti (descrivono problema pre-fix)
 
 ### /goal 5 — Cat 3 Node mjs `node:` prefix ✅ DONE 2026-05-17
