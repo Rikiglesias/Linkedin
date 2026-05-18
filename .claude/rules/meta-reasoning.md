@@ -1,3 +1,12 @@
+---
+name: meta-reasoning
+paths:
+  - "**"
+enforcement:
+  - UserPromptSubmit reminder hooks (advisory)
+  - documento canonico AGENTS.md (puntatore)
+---
+
 # Meta-reasoning rules — interpretazione, verifica, proattività
 
 > Path-scoped rule estratta da AGENTS.md. Attiva sempre (`**`).

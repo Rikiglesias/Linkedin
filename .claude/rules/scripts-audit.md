@@ -3,7 +3,7 @@ name: scripts-audit
 paths:
   - src/scripts/**
   - hooks/**
-  - .claude/hooks/**
+  - .githooks/**
 enforcement:
   - audit:hooks
   - audit:ai-control-plane

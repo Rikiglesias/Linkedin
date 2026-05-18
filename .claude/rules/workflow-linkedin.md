@@ -2,7 +2,7 @@
 name: workflow-linkedin
 paths:
   - src/**
-  - workflows/**
+  - n8n-workflows/**
 enforcement:
   - pre-edit-antiban.ps1 (blocking)
   - pre-bash-l1-gate.ps1 (blocking)

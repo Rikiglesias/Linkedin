@@ -2,7 +2,6 @@
 name: api-security
 paths:
   - src/api/**
-  - src/auth/**
   - src/security/**
   - src/integrations/**
 enforcement:
