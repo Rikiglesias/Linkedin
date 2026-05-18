@@ -64,12 +64,6 @@
 /goal Tutti gli 8 file ~/.claude/scripts/*.mjs usano "node:" prefix sui built-in imports (fs, path, crypto, util, child_process), ogni catch silenzioso "return {}" sostituito con logging esplicito su stderr o file dedicato, node --check exit 0 su tutti gli 8 file. Stop after 10 turns.
 ```
 
-## /goal 7 — Cat 1 split AGENTS.md sotto 200
-
-```text
-/goal AGENTS.md sotto 200 righe verificato con wc -l, sezioni meta-regole comportamentali (Anti-compiacenza, Intento non letterale, Cross-domain, Best practice modifica, Contratti, Blast radius, Interpretazione esempi, Vista 360) estratte in .claude/rules/ con paths "**" oppure compresse mantenendo semantica, audit:ai-list-completeness rimane 10/10 verde, README .claude/rules/ aggiornato. Stop after 10 turns.
-```
-
 ## /goal 8 — Cat 7 path-scoped rules coverage
 
 ```text
@@ -121,6 +115,17 @@
 ---
 
 ## Completati
+
+### /goal 7 — Cat 1 split AGENTS.md sotto 200 ✅ DONE 2026-05-18
+
+- **Problema**: AGENTS.md a 344 righe, oltre target 200 raccomandato per canonico operativo
+- **Fix applicati**:
+  - `.claude/rules/meta-reasoning.md` (NEW, 174 righe, paths `**`): estratte 11 meta-regole comportamentali (intento non letterale, context degradation, best practice modifica, cross-domain, anti-compiacenza, task multi-categoria, pazienza/fretta, classificazione temporale, blast radius, contratti/fallimenti, interpretazione esempi)
+  - AGENTS.md: 344 → **160 righe** (sotto target 200), sezioni meta sostituite con puntatore single-line
+  - `.claude/rules/README.md`: tabella aggiornata con `meta-reasoning.md`
+  - `.claude-plugin/plugin.json`: `rules.files` allineato a 8 rules reali (era 3)
+- **Verifica L9.8**: `wc -l AGENTS.md` = 160, audit:ai-list-completeness 10/10, audit:json-schemas 4/4, quality gate 1430/1430
+- **Commit**: 90d3c14, push auto verso origin/main
 
 ### /goal 6 — Cat 6 plugin.json move canonico ✅ DONE 2026-05-18 (complete)
 
