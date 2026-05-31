@@ -973,7 +973,7 @@ Sottopunti operativi:
 - [ ] far riconoscere automaticamente quando manca la primitive giusta e proporre creazione con conferma utente
 - [ ] collegare autonomia, orizzonti temporali, capability governance e truthful completion in metriche verificabili
 - [ ] evitare accumulo di regole o tool che non vengono usati o non risolvono miss reali
-- [ ] definire audit di salute architetturale/documentale del sistema AI
+- [x] definire audit di salute architetturale/documentale del sistema AI — `audit:ai-control-plane` esteso (2026-06-01) con `docs-size` + `skill-duplicates` + `memory-staleness`: un comando dà struttura+regole+hook+memoria+igiene. Audit di salute fatto a mano in sessione promosso a bundle ripetibile (zero-F).
 
 Criterio done:
 
