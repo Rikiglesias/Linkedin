@@ -1,97 +1,72 @@
 # AI_RULES_DIGEST.md
 
-> Indice compatto di TUTTE le regole AI (22 sezioni Spec).
+> Indice compatto delle regole AI operative del progetto LinkedIn bot.
 > Non e' fonte primaria — per dettagli leggere canonici completi.
 
 ## 3 Momenti
+
 INIZIO (SessionStart): memoria+digest+routing. DURANTE (UserPromptSubmit+Pre/PostToolUse): routing,L1gate,antiban,audit. FINE (Stop): worklog+active.md.
 
 ## 9 Livelli
-Definizione canonica: ~/.claude/CLAUDE.md sezione "## L1-L9". Non ridefinire qui.
+
+Definizione canonica: `~/.claude/L_LEVELS.md` (splittato da CLAUDE.md per leggibilità). Non ridefinire qui.
 Proporzione: Quick=L1-L4 | Bug=L1-L6 | Feature=L1-L9.
 
-## 22 Regole
+## 10 Regole zero (canoniche globali)
 
-### 1. Verita' operativa
-Non fingere fatto senza prova. Dichiarare cosa manca. Allucinazione=verifiche non eseguite.
+Definizione canonica completa: `~/.claude/ZERO_RULES.md`. Sintesi tabellare in `~/.claude/CLAUDE.md`.
 
-### 2. Intento non letterale
-Interpretare semanticamente. Collegare a storia/decisioni/priorita'. Esempi=pattern → inferire controlli.
+- **zero-A**: cerca prima, costruisci dopo (skill/MCP/web prima di reinventare)
+- **zero-B**: ragionamento oggettivo, posizione ferma con evidenza
+- **zero-C**: metodo migliore per OGNI task, 360°, mettiti alla prova
+- **zero-D**: contesto totale + pulizia obbligatoria prima di creare/modificare
+- **zero-E**: dettaglio massimo, esplicito + implicito
+- **zero-F**: auto-evoluzione (proporre regole/skill/hook quando serve)
+- **zero-G**: domande proattive (generali / dominio / task type)
+- **zero-H**: light ogni volta vs deep periodico
+- **zero-I**: simplicity first / surgical changes (counterbalance overengineering)
+- **zero-J**: completamento totale 360°, mai chiusura "abbastanza"
 
-### 3. Blast radius
-Mai file isolato. Mappare blast PRIMA. Ordine deciso prima.
+## Checklist operativa
 
-### 4. Best practice per artefatto
-Ogni tipo ha le sue. Tecnologia cambia → web/docs ufficiali.
+Distillato cosa fare SEMPRE + per task type + per dominio + dichiarazione finale: `~/.claude/CHECKLIST.md`.
 
-### 5. Fonte di verita'
-Stabile→repo/test/canonici. Esterno→docs+web. Reale→MCP. Divergenza=bug.
+## 9 Regole operative LinkedIn-specifiche (non duplicate con globali)
+
+Le 13 regole storiche che duplicavano zero-A/B/C/D/E/F/G/H/I/J, L_LEVELS.md, `.claude/rules/git-commit-push.md`, `.claude/rules/model-selection.md`, `meta-reasoning.md` sono state rimosse e ora risiedono nei canonici globali. Restano solo le 9 regole specifiche al bot:
+
+### 5. Fonte di verita' (mapping specifico bot)
+
+Stabile→repo/test/canonici. Esterno→docs+web ufficiali. Reale→MCP (Supabase/Playwright). Divergenza→bug operativo.
 
 ### 6. Web/docs obbligatori
-Framework/API/anti-ban/sicurezza/policy/compliance/recenti. Knowledge obsoleta≠aggiornata.
 
-### 7. Selezione autonoma strumenti
-Classificare task PRIMA. Scegliere: skill/MCP/hook/script/web/ambiente. Dichiarare perche'.
-
-### 8. Memoria leggibile e aggiornamento continuo
-File piccoli/tematici. Ogni file: cosa CONTIENE e NO. Degrado→handoff+nuova sessione.
-
-**Durante la sessione (trigger automatici — non aspettare la fine):**
-- Decisione motivata presa → salvarla in memory/ subito, non "dopo"
-- Comportamento corretto dall'utente → feedback memory immediatamente
-- Scoperta non derivabile dal codice → salvarla prima di andare avanti
-- Memory che risulta sbagliata o obsoleta → aggiornarla o rimuoverla sul posto
-
-**Fine sessione / PreCompact:**
-Scrivere CONTINUATION.md con: PROBLEMA+COMPLETATO+DECISIONI+DA_NON_RIPETERE+STATO_TECNICO+PROSSIMO_PASSO+CORREZIONI_UTENTE. Niente TODO rimasti.
-
-**Pulizia:**
-Prima di creare un file memory, verificare se esiste già uno da aggiornare. Non duplicare. File memory >~30 righe → valutare split o compressione. MEMORY.md è un indice — max ~150 char per riga, non un contenitore.
+Framework/API/anti-ban/stealth/sicurezza/policy/compliance LinkedIn recenti. Knowledge obsoleta≠aggiornata.
 
 ### 9. Esecuzione intelligente
-Classificare tipo. Chiarire: problema/rischio/fonte/strumenti/ordine. Nessuna chiusura senza verifica.
 
-### 10. 9 livelli
-Vedi sezione sopra. Proporzionale al task.
-
-### 11. Multi-dominio per file
-Ogni file: sicurezza,arch,anti-ban,timing,compliance,performance. Sistematico.
+Classificare task. Chiarire: problema/rischio/fonte/strumenti/ordine. Nessuna chiusura senza verifica.
 
 ### 12. Loop e lavoro incrementale
-Task troppo grande per un passaggio → NON provare tutto insieme. Scomponi in parti, loop su ciascuna, verifica ogni pezzo prima del successivo. Meglio 3 parti verificate che 5 mezze e rotte. /loop per iterazione automatica. Verifica L1-L4 ad ogni giro. Dichiarare cosa manca se non completato al 100%.
 
-### 13. Automazione massima
-Scala: chat→canonico→checklist→skill→hook→script/audit→workflow. Dimenticato>1 → promuovere.
-
-### 14. Hook pre/post continuo
-Regole critiche=hook non testo. Coprire inizio/azione/post/fine/eventi.
+Task troppo grande → Scomponi in parti, loop su ciascuna, verifica ogni pezzo. Meglio 3 pezzi verificati che 5 mezze+rotte. `/loop` per iterazione automatica. Verifica L1-L4 ad ogni giro.
 
 ### 15. n8n + agenti
-n8n=orchestratore. Workflow riusabili/leggibili. Trigger=contesto reale. HITL per rischio.
 
-### 16. Modello/ambiente
-Prompt deboli→chiari. Dire se altro modello/ambiente. Contestuale.
-
-### 17. Commit/push
-Commit=chiusura verificata (auto). Push=solo se branch/upstream/rischio OK.
-
-### 18. Pulizia
-Analisi reale. Ridurre duplicati/morti/ambigui/caos. File>300 righe→split.
+n8n=orchestratore primario. Workflow riusabili/leggibili. Trigger=contesto reale. HITL per operazioni rischiose.
 
 ### 19. Nuovi progetti
-Checklist bootstrap: setup/gate/tooling/memoria/ambienti/sicurezza/handoff/manutenzione.
+
+Checklist bootstrap: setup/gate/tooling/memoria/ambienti/sicurezza/handoff/manutenzione. Vedi `docs/NEW_PROJECT_BOOTSTRAP_CHECKLIST.md`.
 
 ### 20. Strumenti personali
-Whisper stabile. Codex quando ha senso. Problemi→tracciare+risolvere.
 
-### 21. Obiettivo finale
-Utente≠PM tecnico. AI sceglie tutto. Dice verita'. Si ferma. Chiude o dichiara blocco.
+Whisper stabile per voice dictation. Codex quando ha senso (non-LLM task). Problemi→tracciare+risolvere.
 
-### 22. Orizzonti temporali
-BREVE=ora. MEDIO=stessa iniziativa. LUNGO=manutenzione. Non rimandare breve→lungo.
+## Anti-Ban LinkedIn (specifico al dominio)
 
-## Anti-Ban LinkedIn
-Varianza su tutto | Sessioni credibili | Pending ratio | Navigazione umana | Biometrics: hesitation non delay precisi
+Varianza su tutto | Sessioni credibili | Pending ratio sotto controllo | Navigazione umana | Biometrics: hesitation non delay precisi | Fingerprint coerente | Azioni sicure verify pre/post | Monitoring attivo con alert chiari
 
-## Domini + Source
-anti-ban→repo | stato→MCP | librerie→web | browser→playwright | DB→Supabase | git→audit | memoria→files | n8n→live | debug→repo | test→vitest | review→diff | codice→search
+## Domini + Source (mapping bot)
+
+anti-ban→repo | stato→MCP Supabase | librerie→web docs ufficiali | browser→Playwright MCP | DB→Supabase | git→audit | memoria→files | n8n→live | debug→repo | test→vitest | review→diff | codice→search
