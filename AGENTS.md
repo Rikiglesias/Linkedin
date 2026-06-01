@@ -27,6 +27,7 @@ L'utente puo' usare lo stesso sistema AI globale anche su progetti non-LinkedIn 
 - Stato reale sistema esterno → MCP o tool equivalenti; mai supposizioni.
 - Procedura cognitiva ripetibile → skill. Regola non dimenticabile → hook. Controllo deterministico → script/test/lint. Automazione durevole → n8n/workflow persistente.
 - Documenti, audit e stato reale divergono → bug operativo da correggere subito.
+- Best practice non autoreferenziale: "fatto da noi" non significa "migliore possibile". Regole, metodi, capability, hook, skill, MCP, workflow e architetture vanno confrontati periodicamente con fonti ufficiali/recenti prima di dichiararli best practice; tracciare fonte, gap, decisione e verifica.
 
 ## Automazione: ordine di promozione
 

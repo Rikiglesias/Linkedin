@@ -344,6 +344,7 @@ function checkPackageScripts(): CheckResult {
         'audit:continuation-completeness',
         'audit:codex-hook-parity',
         'audit:ai-list-completeness',
+        'audit:ai-backlog-consistency',
         'audit:output-styles',
         'audit:mcp-config',
         'audit:git-automation',

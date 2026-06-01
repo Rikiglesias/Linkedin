@@ -4,6 +4,46 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-01 — Audit zero-trust dei 13 punti AI
+
+### Obiettivo
+
+Ricontrollare uno per uno i 13 punti del Cervello AI senza fidarsi di checkbox/backlog, creare un report canonico con evidenze e aggiungere un gate che blocchi drift tra backlog madre, vista lineare e `active.md`.
+
+### Interventi eseguiti
+
+- Creato `docs/tracking/AI_POINT_BY_POINT_AUDIT_2026-06-01.md`: tabella zero-trust per ogni sottopunto con fonte, evidenza, stato reale, mancanza, miglioramento e verifica richiesta.
+- Rimosso da `~/.claude/settings.json` il hook legacy `PostCompact -> post-compact-restore-openrouter.ps1`; la decisione router corrente dice che il vecchio restore OpenRouter e `/or:compact` non devono tornare.
+- Aggiornato `~/.claude/CAPABILITY_INVENTORY.md` per spostare il PostCompact restore tra le esclusioni, non tra gli hook attivi.
+- Riallineati `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md` e `docs/AI_IMPLEMENTATION_LIST_GLOBAL.md`: stesso conteggio checkbox per tutti i 13 punti, con criteri conservativi zero-trust.
+- Aggiunto `src/scripts/aiBacklogConsistencyAudit.ts` e script `audit:ai-backlog-consistency`; incluso nel bundle `audit:ai-control-plane`.
+- Aggiunta regola globale "fatto da noi non significa best practice" in `~/.claude/CLAUDE.md`, `AGENTS.md` e `docs/AI_RUNTIME_BRIEF.md`.
+- Aggiornati `todos/active.md` repo-side e globale con snapshot `ZERO_TRUST_AI_AUDIT`.
+- Rivalutate e aggiornate 6 project memory stale come snapshot storici o fonti non autoritative.
+- Eseguito sync Obsidian memory->vault dopo le modifiche a canonici e memoria.
+
+### Stato reale dei 13 punti
+
+- Chiuso provato: 1, 5.
+- Parziale: 2, 3, 4, 6, 8, 11, 13.
+- Aperto reale: 7, 9, 10, 12.
+- Obsoleto/duplicato: PostCompact restore OpenRouter legacy rimosso.
+
+### Verifica
+
+- `npm run pre-modifiche --silent`: 137 file test, 1430 test passati.
+- `npm run audit:hooks --silent`: 17/17.
+- `npm run audit:ai-control-plane --silent`: bundle completo verde, incluso `audit:ai-backlog-consistency`.
+- `npm run audit:memory-staleness --silent`: 12/12, nessuna memoria stale.
+- `npm run audit:obsidian-vault --silent`: 5/5 dopo sync `sync-memory-to-obsidian.mjs --verbose`.
+- `npm run audit:codex-hook-parity --silent`: 2/2.
+
+### Stato
+
+DONE per il blocco audit/gate. Restano volutamente aperti i punti zero-trust non provati; non sono stati marcati chiusi a sentimento.
+
+---
+
 ## 2026-05-17 — /goal 1 Cat 11 dedupe audit:monthly
 
 ### Obiettivo

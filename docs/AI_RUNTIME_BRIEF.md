@@ -126,6 +126,7 @@ Valutare ogni volta, in modo contestuale e automatico:
 - Classificare task, dominio, rischio, orizzonte temporale e impatti diretti/indiretti.
 - Identificare la fonte di verita' corretta: repo/test/log per fatti interni; docs ufficiali/web per API, provider, best practice recenti; MCP/tool live per stato esterno reale.
 - Ricerca web obbligatoria quando il task dipende da librerie/framework/provider/API/policy/best practice aggiornabili o rischio anti-ban/sicurezza/compliance.
+- Best practice non autoreferenziale: se una regola/metodo/capability e' stata creata internamente, confrontarla periodicamente con fonti ufficiali/recenti prima di chiamarla best practice. "Fatto da noi" non e' prova sufficiente.
 - Se il dominio non e' abbastanza noto o puo' essere cambiato, studiarlo prima con internet/docs ufficiali/MCP/tool live; non procedere solo per intuizione.
 - Scegliere skill, MCP, plugin, hook, script, audit, subagent, loop o workflow n8n in base al dominio reale e al layer ADK corretto.
 - L'utente non deve ricordare all'AI di fare questa valutazione.

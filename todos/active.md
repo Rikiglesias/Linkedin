@@ -4,6 +4,20 @@
 *Il briefing mattutino remoto legge questo file ogni giorno alle 08:00.*
 *Per il sistema AI complessivo, il backlog primario resta [AI_MASTER_IMPLEMENTATION_BACKLOG.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md); la vista lineare AI e' [AI_IMPLEMENTATION_LIST_GLOBAL.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_IMPLEMENTATION_LIST_GLOBAL.md). [LINKEDIN_IMPLEMENTATION_LIST.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/LINKEDIN_IMPLEMENTATION_LIST.md) resta backlog applicativo separato e fuori scope per il completamento della lista AI.*
 
+## ZERO_TRUST_AI_AUDIT — 2026-06-01
+
+Fonte corrente: [AI_POINT_BY_POINT_AUDIT_2026-06-01.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/tracking/AI_POINT_BY_POINT_AUDIT_2026-06-01.md).
+
+Regola: nessun punto AI e' chiuso solo perche' compare come `[x]` in una lista. Stato valido = regola esplicita + meccanismo applicato + audit/verifica + fonte aggiornata.
+
+| Stato | Punti | Azione |
+|---|---|---|
+| chiuso provato | 1, 5 | mantenere audit e freshness |
+| parziale | 2, 3, 4, 6, 8, 11, 13 | chiudere solo sottopunti con prova concreta |
+| aperto reale | 7, 9, 10, 12 | sessioni dedicate, senza spunte a sentimento |
+| obsoleto/duplicato | PostCompact `post-compact-restore-openrouter.ps1` | rimosso da settings/inventory; legacy `/or:compact` |
+| da rendere piu esplicito | best practice esterna periodica | ora regola globale: fatto da noi non basta |
+
 ## 🎯 Priorità immediata — Sistema AI globale
 
 1. **Completare e mantenere completa la lista del sistema AI** — usare [AI_MASTER_IMPLEMENTATION_BACKLOG.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md) come fonte madre e [AI_IMPLEMENTATION_LIST_GLOBAL.md](C:/Users/albie/Desktop/Programmi/Linkedin/docs/AI_IMPLEMENTATION_LIST_GLOBAL.md) come vista lineare derivata; ogni punto aperto deve avere problema, stato, primitive, ordine, sottopunti, criterio done e verifiche.

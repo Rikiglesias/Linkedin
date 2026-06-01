@@ -189,29 +189,28 @@ Ordine: normalizzare intento reale -> trattare input utente come ipotesi -> estr
 
 Sottopunti:
 
-- [x] attivare requirement ledger su prompt lunghi, vocali o densi — enforced via `inject-runtime-brief.ps1` UserPromptSubmit (reinietta P0 + ledger obbligatorio); audit `audit:ledger` 14/14
-- [x] applicare sempre gerarchia P0 prima di piano, skill, edit o risposta finale — reinietta P0 a ogni prompt via runtime brief
-- [x] trattare input utente come ipotesi da validare quando il task ha rischio, ambiguita' o impatti indiretti — P0 #2 in runtime brief + `pre-edit-verify-intent.ps1` per fix
+- [ ] attivare requirement ledger su prompt lunghi, vocali o densi — regola e audit esistono, ma manca test comportamentale zero-trust su prompt reali recenti
+- [ ] applicare sempre gerarchia P0 prima di piano, skill, edit o risposta finale — reiniezione runtime presente, ma resta comportamento cognitivo non blocking
+- [ ] trattare input utente come ipotesi da validare quando il task ha rischio, ambiguita' o impatti indiretti — P0 + pre-edit esistono, ma non coprono ogni risposta/task non-edit
 - [ ] rendere esplicito il modello della situazione per task non banali
-- [x] trattare esempi utente come pattern, non lista esaustiva — P0 #3 esplicito in runtime brief
-- [x] decomporre ogni argomento non banale in albero dell'argomento con sottopunti e sotto-sottopunti — P0 #4 "Decomposizione ricorsiva" + `PROJECT_ROUTING_DECISION` reinietta esplicitamente
+- [ ] trattare esempi utente come pattern, non lista esaustiva — regola esplicita, ma non ancora prova comportamentale/audit dedicato
+- [ ] decomporre ogni argomento non banale in albero dell'argomento con sottopunti e sotto-sottopunti — regola esplicita, ma non ancora enforcement o audit comportamentale
 - [ ] per ogni ramo dell'albero rivalutare fonte, web/docs/MCP, skill/capability, rischi, verifiche e done criteria
 - [ ] fermare la decomposizione solo quando il ramo e' irrilevante, gia' coperto o abbastanza piccolo da essere eseguito/verificato
-- [ ] inferire casi analoghi, correlati e indirettamente collegati
 - [ ] applicare visione lunga e 360 anche quando l'utente cita solo un esempio locale
-- [x] studiare dominio con internet/docs ufficiali/MCP/tool live quando il tema non e' interno, stabile o gia' verificato — routing decision `Web/docs: required` automatico per `recent-library-provider`; hook `post-websearch-log.ps1`
+- [ ] studiare dominio con internet/docs ufficiali/MCP/tool live quando il tema non e' interno, stabile o gia' verificato — hook/log esistono, ma serve regola best-practice esterna periodica e audit su casi reali
 - [ ] cercare root cause/problema reale prima del fix su task non banali
 - [ ] confrontare alternative quando esistono piu' soluzioni plausibili
 - [ ] evitare workaround superficiali quando esiste una soluzione migliore raggiungibile
 - [ ] prevedere problemi diretti e indiretti dello specifico argomento
 - [ ] completare nel turno corrente tutto cio' che non richiede nuova conferma o rischio aggiuntivo
-- [x] chiudere ogni risposta operativa con il prossimo passo concreto, un blocco reale o una domanda specifica — enforced via `stop-proactive-next-step.ps1` (advisory, hit rate 107/7d)
-- [x] evitare chiusure passive tipo "fammi sapere" quando esiste un'azione successiva ragionevole — coperto dallo stesso Stop hook
+- [ ] chiudere ogni risposta operativa con il prossimo passo concreto, un blocco reale o una domanda specifica — hook advisory presente, ma non blocca semanticamente ogni finale
+- [ ] evitare chiusure passive tipo "fammi sapere" quando esiste un'azione successiva ragionevole — coperto solo in modo advisory dallo Stop hook
 - [x] aggiungere `Stop` hook advisory `stop-proactive-next-step.ps1` per rendere non dimenticabile la continuita' di chiusura
-- [x] introdurre checklist/audit finale contro falsi completati — `audit:ai-list-completeness` (item senza prova end-to-end = aperto) + `audit:miss-metrics` (activations vs miss veri)
-- [x] rafforzare loop Codex sui file diretti e indiretti — skill `loop-codex` presente in `~/.claude/skills/loop-codex/skill.md` + hook `post-edit-codebase-hygiene.ps1` richiede valutazione file diretti/indiretti
-- [x] proporre creazione di skill/regola/memoria/audit quando manca la primitive giusta — P0 #8 "Proattivita' controllata" esplicito nel runtime brief
-- [x] contestare ipotesi utente tecnicamente sbagliate prima di eseguirle — sezione `Anti-compiacenza — regola dura` in `AGENTS.md`
+- [ ] introdurre checklist/audit finale contro falsi completati — esistono audit strutturali, manca audit comportamentale puntuale per ogni chiusura complessa
+- [ ] rafforzare loop Codex sui file diretti e indiretti — skill/hook advisory presenti, ma non equivalgono a enforcement Codex nativo
+- [ ] proporre creazione di skill/regola/memoria/audit quando manca la primitive giusta — regola presente, ma comportamento da misurare
+- [ ] contestare ipotesi utente tecnicamente sbagliate prima di eseguirle — regola presente, ma non auditata su casi reali
 
 Done: l'utente non deve elencare ogni sottocaso; l'AI non prende l'input utente come verita' assoluta e non limita il ragionamento agli esempi ricevuti; l'AI apre argomenti ed esempi in albero dell'argomento e non chiude finche' i rami rilevanti non sono coperti, esclusi o tracciati; la gerarchia P0 resta visibile nel runtime brief e nel routing hook prima di ogni task non banale; requisiti, esclusioni, modello della situazione, root cause, alternative, criterio della soluzione migliore, problemi prevedibili, prove, limiti e continuita' operativa restano espliciti fino alla chiusura.
 
@@ -264,11 +263,11 @@ Ordine: mappare capability -> distinguere nativo/workaround/gap -> definire fall
 
 Sottopunti:
 
-- [ ] aggiornare matrice ambiente -> capability -> garanzia reale
-- [ ] verificare memoria, hook, runtime brief, skill, MCP, plugin, git gate e audit per ambiente
-- [ ] documentare gap senza normalizzarli
+- [x] aggiornare matrice ambiente -> capability -> garanzia reale — `docs/PARITY_MATRIX.md` (2026-06-01)
+- [x] verificare memoria, hook, runtime brief, skill, MCP, plugin, git gate e audit per ogni ambiente — matrice completa con stato per capability
+- [x] documentare gap senza normalizzarli — gap critici espliciti in `docs/PARITY_MATRIX.md`
 - [ ] stabilizzare settings, SessionStart, provider/model switching e visibilita' modelli
-- [ ] definire uso corretto di Opus/Sonnet/Haiku/OpenRouter/Codex per rischio e costo
+- [x] definire uso corretto di Opus/Sonnet/Haiku/OpenRouter/Codex per rischio e costo — matrice decisionale task->ambiente + contesto runtime Codex
 - [ ] spostare lavoro a Codex solo dove le garanzie restano equivalenti
 
 Done: ambiente e modello sono scelti tecnicamente; nessuna regola critica vive in un solo ambiente senza gap tracciato.
@@ -322,11 +321,11 @@ Ordine: completare unita' -> gate qualita' -> aggiornare worklog/todos -> audit 
 
 Sottopunti:
 
-- [x] verificare auto-commit dopo gate verdi come chiusura naturale — testato in sessione corrente (commit aa541c6 + push auto via hook)
-- [x] chiarire quando push deve fermarsi per review, remote policy o rischio — `AGENTS.md` sezione "Auto-push post-commit — trigger automatico" con precondizioni cumulative
+- [ ] verificare auto-commit dopo gate verdi come chiusura naturale — non considerato chiuso zero-trust fuori Claude Code
+- [ ] chiarire quando push deve fermarsi per review, remote policy o rischio — policy presente, ma serve verifica cross-ambiente aggiornata
 - [ ] distinguere review locale, branch review e audit periodico
-- [x] documentare fallback fuori Claude Code — `AGENTS.md` sezione "Fallback per ambienti senza hook PowerShell" (2026-05-14): procedura manuale equivalente per Codex/Cloud Code/Cursor
-- [x] impedire "completato" se commit/push/PR richiesti non sono valutati — pre-stop-commit-gate.ps1 blocca chiusura silente con dirty + `audit:handoff-staleness` rileva working tree non riflesso
+- [ ] documentare fallback fuori Claude Code — esiste policy testuale, ma serve audit Codex/Cloud aggiornato
+- [ ] impedire "completato" se commit/push/PR richiesti non sono valutati — hook Claude presente, ma non enforcement equivalente cross-ambiente
 
 Done: l'utente non deve ricordare commit/push; se il push non avviene, motivo e prossimo passo sono espliciti.
 
@@ -350,7 +349,7 @@ Ordine: classificare breve/medio/lungo -> separare ora/follow-up/manutenzione ->
 
 Sottopunti:
 
-- [x] rendere classificazione temporale obbligatoria nei task non banali — `AGENTS.md` sezione "Classificazione temporale del task — regola dura" (2026-05-14) con tabella breve/medio/lungo e scenari di test
+- [ ] rendere classificazione temporale obbligatoria nei task non banali — regola presente, ma non ancora meccanismo/audit sufficiente per chiusura zero-trust
 - [x] definire cadenze per memoria, docs, cleanup, capability audit, security review e automazioni — `docs/tracking/AI_AUDIT_CADENCES.md` (2026-05-14) con bundle settimanale (miss-metrics + handoff-staleness + violations) e mensile (ai-control-plane + adk + rule-enforcement + ledger + skills)
 - [ ] dare owner logico e contenitore canonico a ogni follow-up
 - [x] trasformare ricorrenze utili in audit/script/workflow schedulati — npm scripts `audit:weekly` e `audit:monthly` definiti; schedulazione Windows Task Scheduler documentata (da configurare lato utente)
@@ -378,21 +377,21 @@ Ordine: classificare documenti -> ridurre duplicati/monoliti -> decidere cosa e'
 
 Sottopunti:
 
-- [x] riesaminare file troppo lunghi o con responsabilita' miste — `audit:docs-size` (2026-05-14) scansiona canonici con soft/hard limit per categoria. Risultato attuale: solo `ENGINEERING_WORKLOG.md` (1013 righe) sopra hard 800 → split per anno/quarter quando blocca lettura
-- [x] applicare a ogni modifica il controllo codebase hygiene: file diretto giusto, file indiretti coerenti, duplicati/obsoleti rilevati, cleanup sicuro o follow-up tracciato — enforced via hook `post-edit-codebase-hygiene.ps1` (richiede dichiarazione dopo ogni Edit/Write)
+- [ ] riesaminare file troppo lunghi o con responsabilita' miste e decidere split concreti
+- [ ] applicare a ogni modifica il controllo codebase hygiene: file diretto giusto, file indiretti coerenti, duplicati/obsoleti rilevati, cleanup sicuro o follow-up tracciato
 - [ ] separare documenti storici, operativi, canonici e tracking
 - [ ] mantenere `docs/README.md` allineato
 - [ ] pulire root e cartelle solo dopo classificazione esplicita
 - [ ] mantenere AI-readable i canonici con summary, non-goals, cross-link e limiti
 - [ ] mantenere `NEW_PROJECT_BOOTSTRAP_CHECKLIST.md` allineata
-- [x] creare pacchetto handoff riusabile per altri progetti o persone — `docs/tracking/AI_ADK_DISTRIBUTION.md` (2026-05-14) documenta step copia globale, bootstrap progetto, validazione e differenze prima installazione
-- [x] creare pacchetto ADK riusabile con regole/memoria, skill, hook, subagent, comandi e manifest di plugin — `.claude-plugin/plugin.json` (2026-05-14) inventaria rules/skills/hooks/subagents/audits/canonicalDocs con compatibility, provenance, installation steps e supportedEnvironments
-- [x] definire schema minimo di `plugin.json`: nome, versione, contenuti inclusi, hook installati, skill incluse, subagent inclusi, provenance, compatibilita' ambiente e strategia update — schema completo in `.claude-plugin/plugin.json`
-- [x] decidere cosa resta globale, cosa resta progetto-specifico e cosa va nel plugin installabile per evitare copie divergenti — `docs/tracking/AI_ADK_DISTRIBUTION.md` (2026-05-14) tabella distribuzione completa (skill universali/dominio, hook, rules, output styles, memoria, settings, audit, ecc.) + compatibility matrix per Claude Code/Codex/Cursor/Cloud Code
-- [x] adottare struttura canonica `.claude/` (reference da community 2026): scaffold `.claude/rules/`, `.claude/output-styles/`, `.claude-plugin/plugin.json` creati 2026-05-14 (rest globale: `~/.claude/hooks|skills|agents|plugins`)
-- [x] introdurre `.claude/output-styles/` per response format predefiniti — `terse.md` e `italian-concise.md` creati 2026-05-14
-- [x] aggiungere `CLAUDE.local.md` (gitignored) per override personali utente — `CLAUDE.local.md.template` creato + `.gitignore` aggiornato
-- [x] mantenere `CLAUDE.md` di progetto sotto ~200 righe come convention community (attualmente 161 ✓)
+- [ ] creare pacchetto handoff riusabile per altri progetti o persone
+- [ ] creare pacchetto ADK riusabile con regole/memoria, skill, hook, subagent, comandi e manifest di plugin
+- [ ] definire schema minimo di `plugin.json`: nome, versione, contenuti inclusi, hook installati, skill incluse, subagent inclusi, provenance, compatibilita' ambiente e strategia update
+- [ ] decidere cosa resta globale, cosa resta progetto-specifico e cosa va nel plugin installabile per evitare copie divergenti
+- [ ] adottare struttura canonica `.claude/` (reference da community 2026): `hooks/`, `commands/`, `skills/`, `agents/`, `output-styles/`, `plugins/`, `rules/`, `statusline`, `settings.json`, `settings.local.json`
+- [ ] introdurre `.claude/output-styles/` per response format predefiniti
+- [ ] aggiungere `CLAUDE.local.md` (gitignored) per override personali utente senza inquinare il repo condiviso
+- [ ] mantenere `CLAUDE.md` di progetto sotto ~200 righe come convention community
 
 Done: una nuova sessione capisce dove trovare ogni cosa; un nuovo progetto puo' partire con baseline AI senza conoscenza implicita; un team puo' installare lo stesso pacchetto versionato senza ricostruire a mano regole, skill, hook e agenti.
 
@@ -421,7 +420,7 @@ Sottopunti:
 - [ ] riconoscere quando manca la primitive giusta e proporre creazione con conferma
 - [ ] collegare autonomia, orizzonti temporali, capability governance e truthful completion in metriche
 - [ ] evitare accumulo di regole/tool non usati
-- [ ] definire audit di salute architetturale/documentale del sistema AI
+- [x] definire audit di salute architetturale/documentale del sistema AI — `audit:ai-control-plane` esteso (2026-06-01) con struttura+regole+hook+memoria+igiene
 
 Done: errori ricorrenti producono miglioramento strutturale misurabile e l'utente non fa da memoria esterna.
 

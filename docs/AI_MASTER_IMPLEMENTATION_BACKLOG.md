@@ -262,7 +262,7 @@ Sottopunti operativi:
 - [x] standardizzare subagent: un job per subagent, contesto proprio, strumenti/permessi propri, risultato unico di ritorno, nessun inquinamento del thread principale
 - [x] standardizzare plugin: `plugin.json`/manifest, lista di skill/agenti/hook/comandi inclusi, versione, firma o provenance, installazione team/repo
 - [x] decidere per ogni capability nel routing registry se e' migliore come skill, MCP, plugin, hook, audit, script, workflow o fonte esterna
-- [ ] eliminare o fondere duplicati che fanno casino invece di aiutare
+- [x] eliminare o fondere duplicati — `audit:skill-duplicates` (2026-05-14) ha scansionato 197 skill: solo overlap legittimi generator/validator o skill parent/child; nessun duplicato operativo da rimuovere
 - [x] registrare candidate esterne Caveman, LeanCTX, SIMDex e Contact Skills come `evaluate-before-install`, senza installazione cieca
 - [x] registrare candidate esterne 2026-05-14: Google CodeWiki (Gemini, attendere extension privata), Ruflo (multi-agent orchestrator, alto rischio overlap), Understand-Anything (knowledge graph codebase, overlap da confrontare con code-review-graph MCP)
 - [ ] valutare davvero candidate esterne Caveman, LeanCTX, SIMDex, Contact Skills, Google CodeWiki, Ruflo e Understand-Anything prima di installarle
