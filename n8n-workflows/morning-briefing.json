@@ -1,0 +1,118 @@
+{
+  "name": "Morning Briefing — Riccardo",
+  "nodes": [
+    {
+      "id": "mb1",
+      "name": "Schedule 08:00 daily",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [0, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "mb2",
+      "name": "Read active.md",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [220, 200],
+      "parameters": {
+        "operation": "read",
+        "fileSelector": "C:\\Users\\albie\\todos\\active.md",
+        "options": {}
+      }
+    },
+    {
+      "id": "mb3",
+      "name": "Read decisions index",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [220, 400],
+      "parameters": {
+        "operation": "read",
+        "fileSelector": "C:\\Users\\albie\\memory\\decisions.md",
+        "options": {}
+      }
+    },
+    {
+      "id": "mb4",
+      "name": "Unisci file briefing",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [440, 300],
+      "parameters": {
+        "mode": "append",
+        "numberInputs": 2
+      }
+    },
+    {
+      "id": "mb5",
+      "name": "Estrai top 3 priorità",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const items = $input.all();\nconst activeBin = items.find(i => i.binary && i.binary.data && i.binary.data.fileName && i.binary.data.fileName.includes('active'));\nconst decisionsBin = items.find(i => i.binary && i.binary.data && i.binary.data.fileName && i.binary.data.fileName.includes('decisions'));\n\nfunction decode(bin) {\n  if (!bin || !bin.binary || !bin.binary.data || !bin.binary.data.data) return '';\n  return Buffer.from(bin.binary.data.data, 'base64').toString('utf8');\n}\n\nconst activeText = decode(activeBin);\nconst decisionsText = decode(decisionsBin);\n\nfunction extractTop3(text) {\n  if (!text) return Array.of('(active.md vuoto o non leggibile)');\n  const lines = text.split(/\\r?\\n/);\n  const out = [];\n  let inHigh = false;\n  for (const line of lines) {\n    if (/^##\\s+.*Alta priorit/i.test(line)) { inHigh = true; continue; }\n    if (inHigh && /^##\\s+/.test(line)) break;\n    if (inHigh && /^\\s*\\d+\\.\\s+\\*\\*/.test(line)) {\n      out.push(line.replace(/^\\s*\\d+\\.\\s+/, ''));\n      if (out.length >= 3) break;\n    }\n  }\n  return out.length ? out : Array.of('(nessuna priorità alta trovata)');\n}\n\nconst priorities = extractTop3(activeText);\nconst today = new Date().toLocaleDateString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });\n\nconst body = [\n  `# Briefing — ${today}`,\n  '',\n  '## Top 3 priorità',\n  ...priorities.map((p, i) => `${i + 1}. ${p}`),\n  '',\n  '## Reminder decisioni chiave',\n  decisionsText ? decisionsText.split(/\\r?\\n/).slice(0, 12).join('\\n') : '(decisions.md non disponibile)',\n  '',\n  '---',\n  'Fonte: ~/todos/active.md + ~/memory/decisions.md',\n  'Generato da n8n workflow morning-briefing alle 08:00.'\n].join('\\n');\n\nconst subject = `Briefing ${today.split(',')[0]} — Top 3 priorità`;\n\nreturn [{ json: { subject, body, generatedAt: new Date().toISOString() } }];"
+      }
+    },
+    {
+      "id": "mb6",
+      "name": "Crea bozza Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [880, 300],
+      "parameters": {
+        "resource": "draft",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.body }}",
+        "options": {
+          "sendTo": "albieri.riccardo02@gmail.com"
+        }
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "name": "Gmail (Riccardo)"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule 08:00 daily": {
+      "main": [
+        [
+          { "node": "Read active.md", "type": "main", "index": 0 },
+          { "node": "Read decisions index", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Read active.md": {
+      "main": [[{ "node": "Unisci file briefing", "type": "main", "index": 0 }]]
+    },
+    "Read decisions index": {
+      "main": [[{ "node": "Unisci file briefing", "type": "main", "index": 1 }]]
+    },
+    "Unisci file briefing": {
+      "main": [[{ "node": "Estrai top 3 priorità", "type": "main", "index": 0 }]]
+    },
+    "Estrai top 3 priorità": {
+      "main": [[{ "node": "Crea bozza Gmail", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "description": "Briefing mattutino: cron 08:00 -> legge active.md + decisions.md indice -> estrae top 3 priorita + reminder decisioni -> crea bozza Gmail per Riccardo. NON invia automaticamente (draft), per controllo manuale."
+  },
+  "tags": ["briefing", "personal", "secondo-cervello"]
+}
