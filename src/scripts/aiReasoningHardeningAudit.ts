@@ -79,9 +79,7 @@ function getNestedCommands(entry: HookEntry): HookCommand[] {
 
 function eventHasCommand(settings: Record<string, unknown>, eventName: string, commandPart: string): boolean {
     return getHookEntries(settings, eventName).some((entry) =>
-        getNestedCommands(entry).some(
-            (hook) => typeof hook.command === 'string' && hook.command.includes(commandPart),
-        ),
+        getNestedCommands(entry).some((hook) => typeof hook.command === 'string' && hook.command.includes(commandPart)),
     );
 }
 
@@ -133,34 +131,39 @@ function checkFileContains(area: string, name: string, path: string, snippets: s
 }
 
 function checkOrchestratorContract(): CheckResult {
-    return checkFileContains('Contratto', 'AI_ORCHESTRATOR_CONTRACT completo', resolve('docs', 'tracking', 'AI_ORCHESTRATOR_CONTRACT.md'), [
-        '## Scope',
-        '## Trigger',
-        '## Contratto Operativo',
-        '## Traccia Operativa Osservabile',
-        '## Hook Coverage',
-        '## Non Goals',
-        'intento reale',
-        'Input utente come ipotesi',
-        'Esempi come pattern',
-        'Decomposizione ricorsiva',
-        'Root cause',
-        'Fonte di verita',
-        'Capability routing automatico',
-        'Modello e ambiente',
-        'Blast radius L2-L9',
-        'file diretti',
-        'file indiretti',
-        'Cross-domain per ogni file',
-        'Truthful completion',
-        'SessionStart',
-        'UserPromptSubmit',
-        'PreToolUse',
-        'PostToolUse',
-        'PreCompact',
-        'Stop',
-        'Codex',
-    ]);
+    return checkFileContains(
+        'Contratto',
+        'AI_ORCHESTRATOR_CONTRACT completo',
+        resolve('docs', 'tracking', 'AI_ORCHESTRATOR_CONTRACT.md'),
+        [
+            '## Scope',
+            '## Trigger',
+            '## Contratto Operativo',
+            '## Traccia Operativa Osservabile',
+            '## Hook Coverage',
+            '## Non Goals',
+            'intento reale',
+            'Input utente come ipotesi',
+            'Esempi come pattern',
+            'Decomposizione ricorsiva',
+            'Root cause',
+            'Fonte di verita',
+            'Capability routing automatico',
+            'Modello e ambiente',
+            'Blast radius L2-L9',
+            'file diretti',
+            'file indiretti',
+            'Cross-domain per ogni file',
+            'Truthful completion',
+            'SessionStart',
+            'UserPromptSubmit',
+            'PreToolUse',
+            'PostToolUse',
+            'PreCompact',
+            'Stop',
+            'Codex',
+        ],
+    );
 }
 
 function checkReasoningTrace(): CheckResult {
@@ -192,11 +195,7 @@ function checkReasoningTrace(): CheckResult {
         ],
         [
             resolve('docs', 'tracking', 'README.md'),
-            [
-                'AI_ORCHESTRATOR_CONTRACT.md',
-                'audit:ai-reasoning-hardening',
-                'audit:codex-hook-parity',
-            ],
+            ['AI_ORCHESTRATOR_CONTRACT.md', 'audit:ai-reasoning-hardening', 'audit:codex-hook-parity'],
         ],
     ];
 
@@ -276,15 +275,12 @@ function checkClaudeHookCoverage(): CheckResult {
 }
 
 function checkHookPlanDoc(): CheckResult {
-    return checkFileContains('Hook Claude', 'Piano hook documenta coverage', resolve('docs', 'tracking', 'AI_HOOK_ENFORCEMENT_PLAN.md'), [
-        'SessionStart',
-        'UserPromptSubmit',
-        'PreToolUse',
-        'PostToolUse',
-        'PreCompact',
-        'Stop',
-        'Codex',
-    ]);
+    return checkFileContains(
+        'Hook Claude',
+        'Piano hook documenta coverage',
+        resolve('docs', 'tracking', 'AI_HOOK_ENFORCEMENT_PLAN.md'),
+        ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PreCompact', 'Stop', 'Codex'],
+    );
 }
 
 function checkContinuationCompleteness(): CheckResult {
@@ -369,6 +365,78 @@ function checkCodexHookParity(): CheckResult {
     };
 }
 
+/**
+ * Verifica la COPERTURA REALE delle capability critiche in Codex, non solo gli eventi minimi.
+ * I gap critici della PARITY_MATRIX (PreToolUse Edit, post-edit hygiene, sync Obsidian,
+ * principi comportamentali) devono essere coperti da hook reali con contenuto verificato.
+ */
+function checkCodexCapabilityCoverage(): CheckResult {
+    const hooksPath = resolve('.codex', 'hooks.json');
+    const hooksConfig = readJson<CodexHookConfig>(hooksPath);
+    const missing: string[] = [];
+
+    // 1. PreToolUse Edit gate (chiude GAP-2 anti-ban/secrets su edit)
+    const preToolCommands = hooksConfig ? collectCodexCommands(hooksConfig, 'PreToolUse') : [];
+    if (!preToolCommands.some((c) => c.includes('codex-edit-gate'))) {
+        missing.push('PreToolUse -> codex-edit-gate.ps1 (anti-ban + secrets su Edit)');
+    }
+
+    // 2. PostToolUse Edit hygiene (chiude GAP-4 size + hygiene + verify)
+    const postToolCommands = hooksConfig ? collectCodexCommands(hooksConfig, 'PostToolUse') : [];
+    if (!postToolCommands.some((c) => c.includes('codex-post-edit'))) {
+        missing.push('PostToolUse -> codex-post-edit.ps1 (size + hygiene + verify L2-L7)');
+    }
+
+    // 3. Edit gate file deve esistere E contenere i 3 gate
+    const editGatePath = resolve('.codex', 'hooks', 'codex-edit-gate.ps1');
+    const editGateMissing = missingSnippets(readText(editGatePath), ['ANTI-BAN', 'SECRETS', 'BEST-PRACTICE']);
+    if (editGateMissing.length > 0) {
+        missing.push(`codex-edit-gate.ps1 incompleto: mancano ${editGateMissing.join(', ')}`);
+    }
+
+    // 4. Runtime context deve iniettare i principi comportamentali (parità con skill-activation Claude)
+    const runtimeCtxPath = resolve('.codex', 'hooks', 'codex-runtime-context.ps1');
+    const ctxMissing = missingSnippets(readText(runtimeCtxPath), [
+        'MINDSET DIPENDENTE',
+        'SPINGITI OLTRE',
+        'CODEX_MEMORY',
+        'CODEX_PARITY',
+    ]);
+    if (ctxMissing.length > 0) {
+        missing.push(`codex-runtime-context.ps1 incompleto: mancano ${ctxMissing.join(', ')}`);
+    }
+
+    // 5. Stop check deve fare sync Obsidian (chiude GAP-5)
+    const stopCheckPath = resolve('.codex', 'hooks', 'codex-stop-check.ps1');
+    const stopMissing = missingSnippets(readText(stopCheckPath), ['sync-memory-to-obsidian', 'PROACTIVE_NEXT_STEP']);
+    if (stopMissing.length > 0) {
+        missing.push(`codex-stop-check.ps1 incompleto: mancano ${stopMissing.join(', ')}`);
+    }
+
+    // 6. PARITY_MATRIX.md deve esistere e documentare i gap
+    const parityPath = resolve('docs', 'PARITY_MATRIX.md');
+    const parityMissing = missingSnippets(readText(parityPath), ['GAP-1', 'GAP-2', 'Quando usare cosa']);
+    if (parityMissing.length > 0) {
+        missing.push(`PARITY_MATRIX.md incompleto: mancano ${parityMissing.join(', ')}`);
+    }
+
+    if (missing.length > 0) {
+        return {
+            area: 'Codex parity',
+            name: 'Copertura capability Codex (gap critici PARITY_MATRIX)',
+            passed: false,
+            detail: `Gap non coperti: ${missing.join(' | ')}`,
+        };
+    }
+
+    return {
+        area: 'Codex parity',
+        name: 'Copertura capability Codex (gap critici PARITY_MATRIX)',
+        passed: true,
+        detail: 'Edit gate, post-edit hygiene, principi comportamentali, sync Obsidian e parity matrix coperti.',
+    };
+}
+
 function parseScope(): Scope {
     const scopeArg = process.argv.find((arg) => arg.startsWith('--scope='));
     const value = scopeArg?.slice('--scope='.length) ?? 'all';
@@ -395,7 +463,7 @@ function checksForScope(scope: Scope): CheckResult[] {
         checks.push(checkContinuationCompleteness());
     }
     if (scope === 'all' || scope === 'codex') {
-        checks.push(checkCodexHookParity());
+        checks.push(checkCodexHookParity(), checkCodexCapabilityCoverage());
     }
 
     return checks;

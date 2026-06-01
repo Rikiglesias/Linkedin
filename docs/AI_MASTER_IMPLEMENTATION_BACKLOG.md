@@ -633,14 +633,16 @@ Ordine logico:
 4. testare task comparativi reali
 5. migrare verso Codex solo dove non si perdono garanzie
 
+Stato attuale (2026-06-01): chiuso il grosso del gap Claude Code <-> Codex. Creata `docs/PARITY_MATRIX.md` (matrice ambiente x capability x garanzia + 5 GAP critici documentati + matrice decisionale task->ambiente). Estesi/creati hook Codex: `codex-runtime-context.ps1` (ora inietta P0 + DIPENDENTE + SPINGITI OLTRE + memoria + routing + parity awareness), `codex-edit-gate.ps1` (PreToolUse Edit: anti-ban + secrets + best-practice, chiude GAP-2), `codex-post-edit.ps1` (PostToolUse Edit: size + hygiene + verify L2-L7, chiude GAP-4), `codex-stop-check.ps1` (ora fa sync Obsidian + proactive-next-step, chiude GAP-5). Audit `audit:codex-hook-parity` rafforzato con `checkCodexCapabilityCoverage` che verifica copertura reale (non solo eventi minimi). Cloud Code resta non coperto (gap tracciato).
+
 Sottopunti operativi:
 
-- [ ] aggiornare matrice ambiente -> capability -> garanzia reale
-- [ ] verificare memoria, hook, runtime brief, skill, MCP, plugin, git gate e audit per ogni ambiente
-- [ ] documentare gap senza normalizzarli
-- [ ] stabilizzare problemi noti: settings, SessionStart, provider/model switching, visibilita' modelli
-- [ ] definire quando usare Opus/Sonnet/Haiku/OpenRouter/Codex in base a rischio e costo
-- [ ] trasferire progressivamente lavoro a Codex solo dove il controllo resta equivalente
+- [x] aggiornare matrice ambiente -> capability -> garanzia reale — `docs/PARITY_MATRIX.md` (2026-06-01)
+- [x] verificare memoria, hook, runtime brief, skill, MCP, plugin, git gate e audit per ogni ambiente — matrice completa con stato per capability
+- [x] documentare gap senza normalizzarli — 5 GAP critici espliciti in PARITY_MATRIX con impatto/mitigazione/gap residuo
+- [ ] stabilizzare problemi noti: settings, SessionStart, provider/model switching, visibilita' modelli — parziale: Codex SessionStart coperto, switch provider resta manuale
+- [x] definire quando usare Opus/Sonnet/Haiku/OpenRouter/Codex in base a rischio e costo — matrice decisionale task->ambiente + sezione model in codex-runtime-context
+- [ ] trasferire progressivamente lavoro a Codex solo dove il controllo resta equivalente — ora possibile per review/audit/bulk (audit portabili); Linkedin-touch resta Claude Code-only (gate anti-ban ora presente anche in Codex come fallback)
 
 Criterio done:
 
@@ -650,8 +652,9 @@ Criterio done:
 
 Verifiche richieste:
 
-- review capability matrix
-- smoke task comparativi in almeno due ambienti
+- review capability matrix — `docs/PARITY_MATRIX.md`
+- smoke task comparativi in almeno due ambienti — DA FARE: test reale in Codex con i nuovi hook
+- `npm run audit:codex-hook-parity` (2/2) + `npm run audit:ai-reasoning-hardening` (7/7)
 - `npm run audit:ai-control-plane`
 
 ## 9. Strumenti personali, dettatura e prompt improvement

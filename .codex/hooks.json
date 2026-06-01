@@ -1,67 +1,89 @@
 {
-  "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "startup|resume",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:/Users/albie/Desktop/Programmi/Linkedin/.codex/hooks/codex-runtime-context.ps1\" SessionStart",
-            "timeout": 10,
-            "statusMessage": "Injecting Codex session context"
-          }
+    "hooks": {
+        "SessionStart": [
+            {
+                "matcher": "startup|resume",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:/Users/albie/Desktop/Programmi/Linkedin/.codex/hooks/codex-runtime-context.ps1\" SessionStart",
+                        "timeout": 10,
+                        "statusMessage": "Injecting Codex session context"
+                    }
+                ]
+            }
+        ],
+        "UserPromptSubmit": [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:/Users/albie/Desktop/Programmi/Linkedin/.codex/hooks/codex-runtime-context.ps1\" UserPromptSubmit",
+                        "timeout": 10,
+                        "statusMessage": "Injecting Codex routing context"
+                    }
+                ]
+            }
+        ],
+        "PreToolUse": [
+            {
+                "matcher": "Bash|shell_command",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:/Users/albie/Desktop/Programmi/Linkedin/.codex/hooks/codex-bash-gate.ps1\"",
+                        "timeout": 10,
+                        "statusMessage": "Checking Codex shell gate"
+                    }
+                ]
+            },
+            {
+                "matcher": "Edit|Write|MultiEdit|str_replace|apply_patch|create_file",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:/Users/albie/Desktop/Programmi/Linkedin/.codex/hooks/codex-edit-gate.ps1\"",
+                        "timeout": 10,
+                        "statusMessage": "Checking Codex edit gate (anti-ban + secrets + best-practice)"
+                    }
+                ]
+            }
+        ],
+        "PostToolUse": [
+            {
+                "matcher": "Bash|shell_command",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:/Users/albie/Desktop/Programmi/Linkedin/.codex/hooks/codex-post-tool-review.ps1\"",
+                        "timeout": 10,
+                        "statusMessage": "Recording Codex tool review"
+                    }
+                ]
+            },
+            {
+                "matcher": "Edit|Write|MultiEdit|str_replace|apply_patch|create_file",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:/Users/albie/Desktop/Programmi/Linkedin/.codex/hooks/codex-post-edit.ps1\"",
+                        "timeout": 10,
+                        "statusMessage": "Checking Codex post-edit (size + hygiene + verify L2-L7)"
+                    }
+                ]
+            }
+        ],
+        "Stop": [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:/Users/albie/Desktop/Programmi/Linkedin/.codex/hooks/codex-stop-check.ps1\"",
+                        "timeout": 10,
+                        "statusMessage": "Checking Codex stop gate"
+                    }
+                ]
+            }
         ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:/Users/albie/Desktop/Programmi/Linkedin/.codex/hooks/codex-runtime-context.ps1\" UserPromptSubmit",
-            "timeout": 10,
-            "statusMessage": "Injecting Codex routing context"
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Bash|shell_command",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:/Users/albie/Desktop/Programmi/Linkedin/.codex/hooks/codex-bash-gate.ps1\"",
-            "timeout": 10,
-            "statusMessage": "Checking Codex shell gate"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Bash|shell_command",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:/Users/albie/Desktop/Programmi/Linkedin/.codex/hooks/codex-post-tool-review.ps1\"",
-            "timeout": 10,
-            "statusMessage": "Recording Codex tool review"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:/Users/albie/Desktop/Programmi/Linkedin/.codex/hooks/codex-stop-check.ps1\"",
-            "timeout": 10,
-            "statusMessage": "Checking Codex stop gate"
-          }
-        ]
-      }
-    ]
-  }
+    }
 }
