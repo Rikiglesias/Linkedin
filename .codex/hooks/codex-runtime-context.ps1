@@ -36,45 +36,22 @@ $domainLines = @(
     "- MCP disponibili (Codex): code-review-graph, symdex. Altri (Supabase, Playwright, Semgrep, n8n, Gmail, Calendar, Drive) solo in Claude Code."
 )
 
-# === SEZIONE 3: MODEL SUGGESTION (adattivo) ===
-$modelLines = @()
-$prompt = $null
-try {
-    $input = $host.UI.RawUI.ReadStreamBufferContents(4096)
-    if ($input) { $prompt = [System.Text.Encoding]::UTF8.GetString($input) }
-} catch {}
-
-if ($prompt) {
-    $promptLower = $prompt.ToLower()
-    $suggestion = $null
-
-    # Pattern task → modello
-    if ($promptLower -match "linkedin|anti-?ban|proxy|stealth|account") {
-        $suggestion = "Opus (ragionamento profondo su sicurezza + anti-ban)"
-    }
-    elseif ($promptLower -match "refactor|architett|pianific|strateg") {
-        $suggestion = "Opus (ragionamento profondo per decisioni architetturali)"
-    }
-    elseif ($promptLower -match "bug|error|debug|fix") {
-        $suggestion = "Sonnet (coding standard + investigation)"
-    }
-    elseif ($promptLower -match "bulk|migrazion|conversion|batch") {
-        $suggestion = "Haiku (costo basso, compito ripetitivo)"
-    }
-    elseif ($promptLower -match "multimodal|image|screenshot|ocr") {
-        $suggestion = "Sonnet (vision nativa) o Gemini via OpenRouter"
-    }
-    elseif ($promptLower -match "audit|review|analisi") {
-        $suggestion = "Opus (ragionamento approfondito + cross-domain)"
-    }
-
-    if ($suggestion) {
-        $modelLines = @(
-            "=== CODEX_MODEL [suggerimento adattivo] ===",
-            "- Task rilevato: modello suggerito = $suggestion",
-            "- Conferma con utente se task ad alto rischio (anti-ban, sicurezza, produzione)."
-        )
-    }
+# === SEZIONE 3: MODEL SUGGESTION (matrice statica) ===
+# NOTA: Codex hooks non hanno accesso diretto al prompt utente come gli hook Claude Code,
+# quindi usiamo matrice decisione basata su tipo di evento e routing dominio dichiarato.
+# L'utente sceglie il modello manualmente; questa è guidance.
+$modelLines = @(
+    "=== CODEX_MODEL [scelta modello] ===",
+    "- Opus: ragionamento profondo, decisioni architetturali, audit multi-dominio, blast radius ampio.",
+    "- Sonnet: coding standard, bug investigation, feature media, edit mirati.",
+    "- Haiku: quick lookup, file map, task ripetitivi/bulk, costo basso.",
+    "- Gemini (OpenRouter): multimodale, immagini, screenshot, OCR.",
+    "- Per Linkedin-touch o anti-ban: MIGRA a Claude Code (Codex non ha hook anti-ban).",
+    "- Per audit/review/analisi: Opus preferito se costo non è problema.",
+    "- Per refactor >3 file: Opus preferito (cross-file reasoning)."
+)
+if ($EventName -eq "SessionStart") {
+    $modelLines += "- Sessione Codex avviata: considera modello in base al primo task reale."
 }
 
 # === SEZIONE 4: CARICAMENTO MEMORIA (chiusura GAP-1) ===
