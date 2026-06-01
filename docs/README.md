@@ -60,6 +60,8 @@ Questi file sembrano simili, ma non devono essere usati per lo stesso scopo:
   Riferimento tecnico delle variabili.
 - [INTEGRATIONS.md](INTEGRATIONS.md)
   Integrazioni esterne e payload.
+- [PARITY_MATRIX.md](PARITY_MATRIX.md)
+  Matrice parita' ambienti (Claude Code / Codex / Cloud Code): capability, garanzie, gap critici, matrice decisionale task->ambiente.
 
 ## Sidecar e supporto
 
