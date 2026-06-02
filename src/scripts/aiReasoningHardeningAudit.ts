@@ -240,7 +240,7 @@ function checkClaudeHookCoverage(): CheckResult {
         ['UserPromptSubmit', 'inject-runtime-brief.ps1'],
         ['UserPromptSubmit', 'skill-activation.ps1'],
         ['UserPromptSubmit', 'pre-edit-verify-intent.ps1'],
-        ['UserPromptSubmit', 'user-prompt-model-suggestion.ps1'],
+        ['UserPromptSubmit', 'user-prompt-session-advisor.ps1'],
         ['PreToolUse', 'pre-edit-best-practice.ps1'],
         ['PreToolUse', 'pre-edit-secrets.ps1'],
         ['PreToolUse', 'pre-bash-l1-gate.ps1'],
