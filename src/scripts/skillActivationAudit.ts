@@ -31,7 +31,7 @@ interface CriticalSkill {
 
 const CRITICAL_SKILLS: CriticalSkill[] = [
     { dir: 'antiban-review', requiredSnippet: 'SICURO', description: 'Review anti-ban per file LinkedIn' },
-    { dir: 'context-handoff', requiredSnippet: 'SESSION_HANDOFF', description: 'Handoff contesto tra sessioni' },
+    { dir: 'context-handoff', requiredSnippet: 'CONTINUATION.md', description: 'Continuita contesto tra sessioni' },
     { dir: 'loop-codex', requiredSnippet: 'loop', description: 'Loop di completamento task' },
     { dir: 'audit-rules', requiredSnippet: 'audit', description: 'Audit compliance regole' },
     { dir: 'memoria', requiredSnippet: 'memory', description: 'Gestione memoria persistente' },

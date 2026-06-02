@@ -233,18 +233,19 @@ Stato corrente da non contraddire:
 
 **Concetto**: nessuna sessione riparte da zero. Il contesto viene trasferito automaticamente e i file di memoria sono progettati per essere letti bene dall'AI, non solo dall'umano.
 
-- **`/context-handoff`**: skill che trasferisce in una nuova sessione obiettivi, stato, decisioni, file toccati, problemi aperti e prossimi passi. Va usata automaticamente a fine ogni sessione significativa.
+- **Continuita' primaria**: `.claude/CONTINUATION.md` trasferisce alla nuova sessione obiettivi, stato, decisioni, file toccati, problemi aperti e prossimi passi; Obsidian pubblica la vista `Resources/continuita/START-NEXT-CHAT.md`.
+- **`/context-handoff`**: skill di supporto per compilare la continuita' primaria; non deve piu' rendere `SESSION_HANDOFF.md` la fonte principale.
 - Ogni file di memoria ha una responsabilità unica: preferenze utente, decisioni, stato lavori, tracking, regole, backlog e handoff non vanno mescolati nello stesso file.
 - Ogni file di contesto dice: cosa contiene, cosa non contiene, quando va aggiornato, a quale file canonico è collegato. Apertura chiara, sezioni piccole, riepilogo finale di stato/decisioni/prossimi passi/blocchi.
 - File troppo grande o con troppi temi → split in indice + file tematici. Mai mega-file con tutto dentro.
 - Le informazioni importanti non restano solo in chat: se servono alla prossima sessione, vengono promosse nel file canonico giusto prima di chiudere.
 - La memoria va gestita su tre orizzonti:
   - breve termine = salvare subito decisioni e stato appena emersi
-  - medio termine = consolidare handoff e backlog operativo dello stesso blocco
+  - medio termine = consolidare continuita' Obsidian e backlog operativo dello stesso blocco
   - lungo termine = pulizia, dedup e audit periodico dei file memory
-- **Degrado del contesto e nuova sessione**: se il requirement ledger perde copertura, ricompaiono omissioni, aumentano le contraddizioni o la sessione diventa troppo grande per restare affidabile, l'AI deve preparare `context-handoff` e proporre la continuazione in una nuova chat invece di forzare il ragionamento in stato degradato.
+- **Degrado del contesto e nuova sessione**: se il requirement ledger perde copertura, ricompaiono omissioni, aumentano le contraddizioni o la sessione diventa troppo grande/costosa per restare affidabile, l'AI deve compilare `.claude/CONTINUATION.md`, sincronizzare Obsidian `Resources/continuita` e proporre la continuazione in una nuova chat invece di forzare il ragionamento in stato degradato.
 
-**Implementato in**: `~/.claude/skills/context-handoff/`, sistema `~/memory/`, `MEMORY.md`.
+**Implementato in**: `~/.claude/skills/context-handoff/`, `.claude/CONTINUATION.md`, sistema `~/memory/`, Obsidian `Resources/continuita`, `MEMORY.md`.
 
 ---
 
@@ -268,7 +269,7 @@ Stato corrente da non contraddire:
 - **Skill con pre/post-conditions**:
   - `antiban-review`: pre (quando invocarla obbligatoriamente), post (azione per ogni verdetto SAFE/REVIEW/BLOCK)
   - `loop-codex`: pre (L1 pulito, task misurabile, scope definito), post (auto-commit se DONE, worklog)
-  - `context-handoff`: pre (git status, memoria aggiornata, active.md), post (SESSION_HANDOFF.md committato)
+  - `context-handoff`: pre (git status, memoria aggiornata, active.md), post (`.claude/CONTINUATION.md` compilato + Obsidian `Resources/continuita` sincronizzato; `SESSION_HANDOFF.md` solo fallback legacy)
 - **Gap residui**: hook in ingresso/uscita per workflow n8n (richiedono n8n attivo) ⚠️; parity di enforcement fuori da Claude Code ❌
 
 ---
@@ -498,7 +499,7 @@ L'obiettivo non e' "piu' automazione possibile in assoluto", ma **piu' affidabil
 - L'AI sa riconoscere quando proporre loop, MCP, web search o workflow, senza aspettare che l'utente glielo scriva ❌
 - L'AI spiega in modo breve perche' propone o non propone certe primitive ❌
 - L'AI riconosce quando manca la primitive corretta e propone la creazione o l'upgrade giusto ⚠️ requisito esplicitato, enforcement ancora da rafforzare
-- L'AI rileva degrado del contesto e propone `context-handoff` o nuova sessione prima che la qualita' crolli ⚠️ requisito esplicitato, enforcement ancora da rafforzare
+- L'AI rileva degrado del contesto/costo e propone continuita' Obsidian o nuova sessione prima che qualita' o costo peggiorino ⚠️ requisito esplicitato, enforcement ancora da rafforzare
 - Il modello a 9 livelli e' definito nei canonici e non viene ridotto per comodita' ✓, ma l'enforcement meccanico oggi copre solo L1 + L7-L9 ⚠️
 - Skill, MCP, agente, workflow vengono scelti o proposti senza essere indicati ⚠️ ancora parziale
 - Il commit parte come chiusura naturale di un blocco verificato ⚠️ → enforced in Claude Code per i blocker noti

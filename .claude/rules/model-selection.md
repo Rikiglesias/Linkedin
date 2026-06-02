@@ -1,10 +1,10 @@
 ---
 name: model-selection
 paths:
-  - "**"
+    - '**'
 enforcement:
-  - user-prompt-model-suggestion.ps1 (advisory)
-  - switch-claude-backend.mjs (config)
+    - user-prompt-session-advisor.ps1 (advisory: modello + chat-nuova, ogni richiesta)
+    - switch-claude-backend.mjs (config)
 ---
 
 # Regole selezione modello AI per task
@@ -29,16 +29,16 @@ Per verificare lo stato usare `node C:\Users\albie\.claude\scripts\switch-claude
 
 Default ragionevoli, non assoluti.
 
-| Tipo task | Modello primario | Fallback / alternativa | Perché |
-|-----------|------------------|------------------------|--------|
-| Plan Mode, decisione architetturale, refactor cross-file, blast radius ampio | Opus dal picker Anthropic nativo | `gemini` (OpenRouter) per long context | Reasoning profondo, contesto lungo |
-| Coding standard, bug fix, feature media, edit mirati | `sonnet` (Anthropic) | `deepseek` (OpenRouter) per code-gen pesante | Default solido, costo/qualità bilanciato |
-| Lookup veloce, file map, comando shell, risposta secca | `haiku` (Anthropic) | `kimi` o `glm` (OpenRouter) | Latenza/costo minimi |
-| Bulk noioso, conversione formati, migrazione boilerplate, batch | `glm` o `qwen` (OpenRouter) | `kimi` (OpenRouter) | Costo basso, qualità sufficiente per ripetitivo |
-| Multimodale (immagini, screenshot, OCR, Playwright debug) | `gemini` (OpenRouter) | `sonnet` (Anthropic) | Vision nativa di qualità |
-| Anti-ban LinkedIn, sicurezza, migration DB, codice production-critical | `opus` o `sonnet` (Anthropic) | **mai** OpenRouter senza esplicita autorizzazione | Reasoning + tracciabilità provider su area ad alto rischio |
-| Loop autonomo lungo, polling, babysitting | `haiku` o `glm`/`kimi` (OpenRouter) | — | Costo per iterazione basso |
-| Documentazione, scrittura prosa, traduzione, regole canoniche | `sonnet` (Anthropic) | `qwen` (OpenRouter) | Coerenza linguistica IT/EN |
+| Tipo task                                                                    | Modello primario                    | Fallback / alternativa                            | Perché                                                     |
+| ---------------------------------------------------------------------------- | ----------------------------------- | ------------------------------------------------- | ---------------------------------------------------------- |
+| Plan Mode, decisione architetturale, refactor cross-file, blast radius ampio | Opus dal picker Anthropic nativo    | `gemini` (OpenRouter) per long context            | Reasoning profondo, contesto lungo                         |
+| Coding standard, bug fix, feature media, edit mirati                         | `sonnet` (Anthropic)                | `deepseek` (OpenRouter) per code-gen pesante      | Default solido, costo/qualità bilanciato                   |
+| Lookup veloce, file map, comando shell, risposta secca                       | `haiku` (Anthropic)                 | `kimi` o `glm` (OpenRouter)                       | Latenza/costo minimi                                       |
+| Bulk noioso, conversione formati, migrazione boilerplate, batch              | `glm` o `qwen` (OpenRouter)         | `kimi` (OpenRouter)                               | Costo basso, qualità sufficiente per ripetitivo            |
+| Multimodale (immagini, screenshot, OCR, Playwright debug)                    | `gemini` (OpenRouter)               | `sonnet` (Anthropic)                              | Vision nativa di qualità                                   |
+| Anti-ban LinkedIn, sicurezza, migration DB, codice production-critical       | `opus` o `sonnet` (Anthropic)       | **mai** OpenRouter senza esplicita autorizzazione | Reasoning + tracciabilità provider su area ad alto rischio |
+| Loop autonomo lungo, polling, babysitting                                    | `haiku` o `glm`/`kimi` (OpenRouter) | —                                                 | Costo per iterazione basso                                 |
+| Documentazione, scrittura prosa, traduzione, regole canoniche                | `sonnet` (Anthropic)                | `qwen` (OpenRouter)                               | Coerenza linguistica IT/EN                                 |
 
 ## Quando suggerire uno switch
 

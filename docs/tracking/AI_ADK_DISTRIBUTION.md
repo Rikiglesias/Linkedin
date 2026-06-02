@@ -40,9 +40,9 @@
 - `.env`, secrets, token, password (ovviamente).
 - 6 immagini WhatsApp untracked in root (non rilevanti).
 - Log in `~/memory/*-log.txt` (privacy, volume grosso).
-- Backup commit (`session-prompts/*.md` storici).
+- Backup commit (`session-prompts/*.md` storici e legacy).
 
-## Pacchetto handoff riusabile per altri persone/progetti
+## Pacchetto continuita riusabile per altre persone/progetti
 
 Per dare il sistema AI a un'altra persona o portarlo su un nuovo progetto:
 
@@ -62,11 +62,12 @@ Clonare il repo, poi:
 4. Copiare `CLAUDE.local.md.template` in `CLAUDE.local.md` se servono override personali
 5. `npm run audit:ai-control-plane` per verifica conformità
 6. Registrare Task Scheduler con `scripts/run-audit-weekly.bat` e `scripts/run-audit-monthly.bat` (vedi `docs/tracking/AI_AUDIT_CADENCES.md`)
+7. Verificare che `.claude/CONTINUATION.md` e Obsidian `Resources/continuita/START-NEXT-CHAT.md` siano supportati dal progetto; `SESSION_HANDOFF.md` e `SESSION_PROMPT.md` restano solo fallback legacy.
 
 ### Step 3: validazione
 1. `npm run conta-problemi` deve essere verde
 2. `npm run audit:ai-control-plane` deve essere 25/25
-3. `npm run audit:handoff-staleness` per verifica handoff
+3. `npm run audit:handoff-staleness` per verifica continuita primaria + Obsidian
 4. Smoke prompt: chiedere all'AI "che cosa fa questo progetto?" — deve rispondere senza chiedere context
 
 ### Step 4: differenza con prima installazione

@@ -241,6 +241,8 @@ function checkClaudeHookCoverage(): CheckResult {
         ['UserPromptSubmit', 'skill-activation.ps1'],
         ['UserPromptSubmit', 'pre-edit-verify-intent.ps1'],
         ['UserPromptSubmit', 'user-prompt-session-advisor.ps1'],
+        ['UserPromptSubmit', 'turn-governor-hook.ps1'],
+        ['UserPromptSubmit', 'token-cost-context.ps1'],
         ['PreToolUse', 'pre-edit-best-practice.ps1'],
         ['PreToolUse', 'pre-edit-secrets.ps1'],
         ['PreToolUse', 'pre-bash-l1-gate.ps1'],
@@ -270,7 +272,7 @@ function checkClaudeHookCoverage(): CheckResult {
         area: 'Hook Claude',
         name: 'Copertura semantica hook Claude',
         passed: true,
-        detail: 'SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact e Stop coperti.',
+        detail: 'SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop e costo/token coperti.',
     };
 }
 
@@ -437,6 +439,50 @@ function checkCodexCapabilityCoverage(): CheckResult {
     };
 }
 
+function checkGlobalCodexTurnGovernor(): CheckResult {
+    const hooksPath = join(homedir(), '.codex', 'hooks.json');
+    const hooksConfig = readJson<CodexHookConfig>(hooksPath);
+    const commands = hooksConfig ? collectCodexCommands(hooksConfig, 'UserPromptSubmit') : [];
+    const turnGovernorPath = join(homedir(), '.claude', 'scripts', 'turn-governor-hook.ps1');
+    const tokenCostPath = join(homedir(), '.codex', 'hooks', 'token-cost-context.ps1');
+    const turnGovernorText = readText(turnGovernorPath);
+    const tokenCostText = readText(tokenCostPath);
+
+    const missing: string[] = [];
+    if (!commands.some((command) => command.includes('turn-governor-hook.ps1'))) {
+        missing.push(`${hooksPath} -> UserPromptSubmit turn-governor-hook.ps1`);
+    }
+    if (!commands.some((command) => command.includes('token-cost-context.ps1'))) {
+        missing.push(`${hooksPath} -> UserPromptSubmit token-cost-context.ps1`);
+    }
+
+    const turnMissing = missingSnippets(turnGovernorText, ['TOKEN_COST_CHAT_SWITCH', 'token-cost-state.json', 'credits', 'costUsd']);
+    if (turnMissing.length > 0) {
+        missing.push(`${turnGovernorPath} incompleto: mancano ${turnMissing.join(', ')}`);
+    }
+
+    const tokenMissing = missingSnippets(tokenCostText, ['Costo:', 'codex-token-cost-status.mjs', 'crediti ufficiali', 'Claude Code']);
+    if (tokenMissing.length > 0) {
+        missing.push(`${tokenCostPath} incompleto: mancano ${tokenMissing.join(', ')}`);
+    }
+
+    if (missing.length > 0) {
+        return {
+            area: 'Codex parity',
+            name: 'Hook globali Codex per turn governor e costo',
+            passed: false,
+            detail: `Mancanze: ${missing.join(' | ')}`,
+        };
+    }
+
+    return {
+        area: 'Codex parity',
+        name: 'Hook globali Codex per turn governor e costo',
+        passed: true,
+        detail: 'UserPromptSubmit globale Codex inietta turn governor e token-cost context cost-aware.',
+    };
+}
+
 function parseScope(): Scope {
     const scopeArg = process.argv.find((arg) => arg.startsWith('--scope='));
     const value = scopeArg?.slice('--scope='.length) ?? 'all';
@@ -463,7 +509,7 @@ function checksForScope(scope: Scope): CheckResult[] {
         checks.push(checkContinuationCompleteness());
     }
     if (scope === 'all' || scope === 'codex') {
-        checks.push(checkCodexHookParity(), checkCodexCapabilityCoverage());
+        checks.push(checkCodexHookParity(), checkCodexCapabilityCoverage(), checkGlobalCodexTurnGovernor());
     }
 
     return checks;

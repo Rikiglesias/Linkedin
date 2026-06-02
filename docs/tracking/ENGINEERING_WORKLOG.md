@@ -760,3 +760,29 @@ Chiudere `/goal 4`: rendere `.mcp.json` portabile usando env var expansion con d
 - `claude mcp get lean-ctx`: connected.
 - `claude mcp get claude-peers`: connected.
 - `claude mcp list`: `lean-ctx`, `symdex`, `code-review-graph`, `claude-peers` connected; `claude-context` ancora failed fuori scope.
+
+
+## 2026-06-02 — Migrazione cambio chat a Obsidian
+
+### Obiettivo
+
+Migrare la regola di cambio chat dal metodo legacy `SESSION_HANDOFF.md` / `.claude/SESSION_PROMPT.md` alla continuita primaria basata su `~/memory`, `todos/active.md`, `.claude/CONTINUATION.md` e Obsidian `Resources/continuita`.
+
+### Interventi eseguiti
+
+- Esteso `C:\Users\albie\.claude\scripts\sync-memory-to-obsidian.mjs` per pubblicare `CONTINUATION-Linkedin.md`, `START-NEXT-CHAT.md` e i file legacy con banner di fallback.
+- Riallineati hook globali Claude: `pre-compact-handoff.ps1`, `stop-session.ps1`, `post-bash-handoff-invalidate.ps1`, `session-start-continuation.ps1` e `_lib.ps1`.
+- Riscritto `src/scripts/handoffStalenessAudit.ts`: stesso comando `audit:handoff-staleness`, nuova semantica Obsidian-first.
+- Aggiornati canonici e registry: `AGENTS.md`, `.claude/rules/meta-reasoning.md`, `docs/AI_RUNTIME_BRIEF.md`, backlog/lista AI, `AI_CAPABILITY_ROUTING.json`, `AI_ADK_CAPABILITY_GOVERNANCE.json`, cadenze audit, change map e skill globali `context-handoff` / `session-prompt`.
+- Aggiornate memoria globale e priorita correnti con la decisione: `SESSION_HANDOFF.md` e `.claude/SESSION_PROMPT.md` restano fallback legacy.
+
+### Verifica
+
+- `node C:\Users\albie\.claude\scripts\sync-memory-to-obsidian.mjs --verbose`: 19 memorie + 3 auto-memory + 7 canonici + 4 continuita, 0 fallite.
+- `npm run audit:handoff-staleness`: 6/6.
+- `npm run audit:obsidian-vault`: 5/5.
+- `npm run audit:skills`: 5/5.
+- `npm run audit:ai-list-completeness`: 10/10.
+- `npm run audit:hooks`: 18/18.
+- `npm run audit:ai-control-plane`: verde.
+- `npm run conta-problemi`: typecheck, lint e 1430 test Vitest passati.

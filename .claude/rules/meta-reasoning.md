@@ -29,25 +29,30 @@ Ogni prompt va interpretato come farebbe un senior engineer con pieno contesto, 
 2. "Disabilita il delay" → rispondere con antiban check, non eseguire
 3. "Fai quello di prima" senza contesto → chiedere chiarimento, non inventare
 
-## 2. Fallback context degradation
+## 2. Fallback context degradation e cambio chat
 
 Quando il context window supera soglia critica o il ragionamento mostra degrado:
 
 **Soglie**:
 - ctx >70% → attivare `lean-ctx` MCP, ridurre verbosità
-- ctx >85% → proporre `context-handoff` prima di compattare
-- ctx >95% → fermarsi, eseguire handoff, non continuare
+- ctx >85% → proporre cambio chat/continuita' Obsidian prima di compattare
+- ctx >95% → fermarsi, compilare continuita', sincronizzare Obsidian, non continuare sullo stesso contesto
 
-**Procedura handoff** (pre-compattazione):
+**Procedura continuita'** (pre-compattazione / nuova chat):
 1. `Grep` caller dei moduli toccati — blast radius reale
 2. Aggiornare `todos/active.md` con stato corrente
 3. Aggiornare `docs/tracking/ENGINEERING_WORKLOG.md`
-4. Eseguire skill `context-handoff` → genera `SESSION_HANDOFF.md`
-5. Committare se L1 verde
+4. Aggiornare `C:\Users\albie\memory\` se sono cambiate decisioni, stato o preferenze
+5. Compilare `.claude/CONTINUATION.md` senza TODO con problema, completato, decisioni, stato tecnico e prossimo passo
+6. Eseguire `node C:\Users\albie\.claude\scripts\sync-memory-to-obsidian.mjs --verbose`
+7. Verificare `npm run audit:handoff-staleness`
+8. Committare se L1 verde e il blocco e' pronto
+
+`SESSION_HANDOFF.md` e `.claude/SESSION_PROMPT.md` sono fallback legacy/storico: consultarli solo se la continuita' primaria manca o serve confronto storico.
 
 **Segnali di degrado oltre ctx%**: ripetizione di stesse domande già risolte, dimenticanza decisioni della stessa sessione, risposta che ignora constraint dichiarati.
 
-**Fallback tool**: `context-compression` skill, `lean-ctx` MCP, `latent-briefing` skill per multi-agent.
+**Fallback tool**: `context-compression` skill, `lean-ctx` MCP, `latent-briefing` skill per multi-agent, `context-handoff` solo se serve rigenerare un pacchetto legacy.
 
 ## 3. Best practice per ogni modifica
 

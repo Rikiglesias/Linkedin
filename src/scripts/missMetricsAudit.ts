@@ -40,21 +40,93 @@ interface RuleMetrics {
 }
 
 const RULES: RuleSpec[] = [
-    { logFile: 'antiban-hook-log.txt', label: 'antiban-hook', type: 'blocking', candidatePromotion: false, missPattern: /HARD-BLOCK|BLOCKED/i },
-    { logFile: 'best-practice-log.txt', label: 'best-practice', type: 'advisory', candidatePromotion: true, missPattern: /BLOCK|violation|missing|skipped/i },
-    { logFile: 'codebase-hygiene-log.txt', label: 'codebase-hygiene', type: 'advisory', candidatePromotion: true, missPattern: /BLOCK|violation|skipped|missing/i },
-    { logFile: 'compact-handoff-log.txt', label: 'compact-handoff', type: 'blocking', candidatePromotion: false, missPattern: /BLOCK|forced/i },
-    { logFile: 'git-hook-log.txt', label: 'git-hook', type: 'audit', candidatePromotion: false, missPattern: /BLOCK|fail|error/i },
-    { logFile: 'model-suggestion-log.txt', label: 'model-suggestion', type: 'cognitive', candidatePromotion: false },
-    { logFile: 'proactive-next-step-log.txt', label: 'proactive-next-step', type: 'advisory', candidatePromotion: true, missPattern: /BLOCK|violation|missing/i },
-    { logFile: 'quality-hook-log.txt', label: 'quality-hook', type: 'blocking', candidatePromotion: false, missPattern: /BLOCK|fail|error/i },
-    { logFile: 'recap-check-log.txt', label: 'recap-check', type: 'advisory', candidatePromotion: true, missPattern: /BLOCK|violation|missing/i },
+    {
+        logFile: 'antiban-hook-log.txt',
+        label: 'antiban-hook',
+        type: 'blocking',
+        candidatePromotion: false,
+        missPattern: /HARD-BLOCK|BLOCKED/i,
+    },
+    {
+        logFile: 'best-practice-log.txt',
+        label: 'best-practice',
+        type: 'advisory',
+        candidatePromotion: true,
+        missPattern: /BLOCK|violation|missing|skipped/i,
+    },
+    {
+        logFile: 'codebase-hygiene-log.txt',
+        label: 'codebase-hygiene',
+        type: 'advisory',
+        candidatePromotion: true,
+        missPattern: /BLOCK|violation|skipped|missing/i,
+    },
+    {
+        logFile: 'compact-handoff-log.txt',
+        label: 'compact-handoff',
+        type: 'blocking',
+        candidatePromotion: false,
+        missPattern: /BLOCK|forced/i,
+    },
+    {
+        logFile: 'git-hook-log.txt',
+        label: 'git-hook',
+        type: 'audit',
+        candidatePromotion: false,
+        missPattern: /BLOCK|fail|error/i,
+    },
+    { logFile: 'session-advisor-log.txt', label: 'session-advisor', type: 'cognitive', candidatePromotion: false },
+    {
+        logFile: 'proactive-next-step-log.txt',
+        label: 'proactive-next-step',
+        type: 'advisory',
+        candidatePromotion: true,
+        missPattern: /BLOCK|violation|missing/i,
+    },
+    {
+        logFile: 'quality-hook-log.txt',
+        label: 'quality-hook',
+        type: 'blocking',
+        candidatePromotion: false,
+        missPattern: /BLOCK|fail|error/i,
+    },
+    {
+        logFile: 'recap-check-log.txt',
+        label: 'recap-check',
+        type: 'advisory',
+        candidatePromotion: true,
+        missPattern: /BLOCK|violation|missing/i,
+    },
     { logFile: 'routing-log.txt', label: 'routing', type: 'cognitive', candidatePromotion: false },
-    { logFile: 'rule-violations-log.txt', label: 'rule-violations', type: 'audit', candidatePromotion: false, missPattern: /./ },
-    { logFile: 'secrets-hook-log.txt', label: 'secrets-hook', type: 'blocking', candidatePromotion: false, missPattern: /BLOCK|denied/i },
-    { logFile: 'stop-commit-gate-log.txt', label: 'stop-commit-gate', type: 'blocking', candidatePromotion: false, missPattern: /dirty=[1-9]/i },
+    {
+        logFile: 'rule-violations-log.txt',
+        label: 'rule-violations',
+        type: 'audit',
+        candidatePromotion: false,
+        missPattern: /./,
+    },
+    {
+        logFile: 'secrets-hook-log.txt',
+        label: 'secrets-hook',
+        type: 'blocking',
+        candidatePromotion: false,
+        missPattern: /BLOCK|denied/i,
+    },
+    {
+        logFile: 'stop-commit-gate-log.txt',
+        label: 'stop-commit-gate',
+        type: 'blocking',
+        candidatePromotion: false,
+        missPattern: /dirty=[1-9]/i,
+    },
     { logFile: 'websearch-log.txt', label: 'websearch', type: 'cognitive', candidatePromotion: false },
-    { logFile: 'skill-precheck-log.txt', label: 'skill-precheck', type: 'advisory', candidatePromotion: true, missPattern: /BLOCK|violation|missing/i },
+    {
+        logFile: 'skill-precheck-log.txt',
+        label: 'skill-precheck',
+        type: 'advisory',
+        candidatePromotion: true,
+        missPattern: /BLOCK|violation|missing/i,
+    },
 ];
 
 const MEMORY_DIR = join(homedir(), 'memory');
@@ -107,9 +179,12 @@ function computeTrend(current: number, baseline30d: number): RuleMetrics['trend'
     return '→';
 }
 
-function computeRecommendation(spec: RuleSpec, metrics: { miss7d: number; miss30d: number; activations7d: number }): string {
+function computeRecommendation(
+    spec: RuleSpec,
+    metrics: { miss7d: number; miss30d: number; activations7d: number },
+): string {
     if (!spec.candidatePromotion) {
-        if (spec.type === 'blocking') return 'gia\' blocking';
+        if (spec.type === 'blocking') return "gia' blocking";
         if (spec.type === 'cognitive') return 'cognitive (no promozione meccanizzabile)';
         if (spec.type === 'audit') return 'audit-only';
         return '-';

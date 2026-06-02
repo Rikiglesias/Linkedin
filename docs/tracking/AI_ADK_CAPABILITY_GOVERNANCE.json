@@ -361,10 +361,10 @@
       "scope": "global",
       "primitive": "skill",
       "domain": "context handoff",
-      "trigger": "ctx alto, fine sessione lunga o cambio chat.",
-      "limits": "Meccanismo presente; serve prova nuova chat end-to-end.",
+      "trigger": "ctx alto, costo/token alto, fine sessione lunga o cambio chat.",
+      "limits": "Supporta la continuita primaria; non deve rendere SESSION_HANDOFF.md fonte primaria.",
       "decision": "keep",
-      "relationship": "Collegata a session-prompt e memoria.",
+      "relationship": "Collegata a memoria, .claude/CONTINUATION.md e Obsidian Resources/continuita; session-prompt resta fallback legacy.",
       "verification": "audit:skills"
     },
     {
@@ -374,10 +374,10 @@
       "scope": "global",
       "primitive": "skill",
       "domain": "manual new chat transfer",
-      "trigger": "Quando serve prompt copiabile per nuova chat.",
-      "limits": "Non sostituisce verifica reale di ripartenza.",
+      "trigger": "Quando l'utente chiede esplicitamente un prompt copiabile o Obsidian/CONTINUATION non basta.",
+      "limits": "Fallback legacy: non sostituisce memoria + CONTINUATION.md + Obsidian.",
       "decision": "keep",
-      "relationship": "Complementare a context-handoff.",
+      "relationship": "Fallback di context-handoff/continuita Obsidian.",
       "verification": "audit:ai-list-completeness"
     },
     {
@@ -572,7 +572,7 @@
       "trigger": "Coordinamento tra sessioni Claude quando abilitato.",
       "limits": "Dipende da development channels e non vale in Codex.",
       "decision": "keep",
-      "relationship": "Non sostituisce SESSION_HANDOFF.",
+      "relationship": "Non sostituisce memoria, CONTINUATION.md o Obsidian Resources/continuita.",
       "verification": "audit:adk-capabilities"
     },
     {
@@ -609,7 +609,7 @@
       "primitive": "skill",
       "domain": "context compression and degradation",
       "trigger": "Sessione lunga, ctx alto o compact imminente.",
-      "limits": "Non sostituisce handoff quando ctx >85%.",
+      "limits": "Non sostituisce CONTINUATION.md + Obsidian quando ctx >85%.",
       "decision": "keep",
       "relationship": "Complementare a lean-ctx e context-handoff.",
       "verification": "audit:adk-capabilities"

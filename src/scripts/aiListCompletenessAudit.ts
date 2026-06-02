@@ -240,7 +240,15 @@ function checkContextTransferOpen(masterText: string, globalText: string): Check
         extractBetween(globalText, '## Aperti', '## Completati'),
     ].join('\n');
 
-    const required = ['nuova chat', 'SESSION_HANDOFF.md', 'SESSION_PROMPT.md', 'prova manuale'];
+    const required = [
+        'nuova chat',
+        '.claude/CONTINUATION.md',
+        'Resources/continuita',
+        'START-NEXT-CHAT.md',
+        'SESSION_HANDOFF.md',
+        'fallback legacy',
+        'prova manuale',
+    ];
     const missing = missingSnippets(openText, required);
 
     if (missing.length > 0) {
@@ -254,7 +262,7 @@ function checkContextTransferOpen(masterText: string, globalText: string): Check
     return {
         name: 'Context transfer: resta aperto finche non validato',
         passed: true,
-        detail: 'Trasferimento nuova chat tracciato come aperto con SESSION_HANDOFF.md, SESSION_PROMPT.md e prova manuale.',
+        detail: 'Trasferimento nuova chat tracciato con CONTINUATION.md, Obsidian Resources/continuita, legacy fallback e prova manuale.',
     };
 }
 

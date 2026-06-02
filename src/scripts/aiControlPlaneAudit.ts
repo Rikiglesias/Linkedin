@@ -763,8 +763,8 @@ function checkTrackingReadmeChangeMap(): CheckResult {
         'AI_CAPABILITY_ROUTING.json',
         'AI_ADK_CAPABILITY_GOVERNANCE.json',
         'AI_LEVEL_ENFORCEMENT.json',
-        'SESSION_HANDOFF.md',
-        'SESSION_PROMPT.md',
+        '.claude/CONTINUATION.md',
+        'Resources/continuita/START-NEXT-CHAT.md',
     ];
     const missing = missingSnippets(readText(path), required);
     if (missing.length > 0) {
@@ -921,7 +921,7 @@ function readSkillText(skillDirName: string): string | null {
 
 function checkContextHandoffSkill(): CheckResult {
     const skillText = readSkillText('context-handoff');
-    const required = ['Git status', 'SESSION_HANDOFF.md', 'active.md coerente'];
+    const required = ['Git status', '.claude/CONTINUATION.md', 'Resources/continuita', 'fallback legacy'];
     const missing = missingSnippets(skillText, required);
     if (missing.length > 0) {
         return {
@@ -935,7 +935,7 @@ function checkContextHandoffSkill(): CheckResult {
         area: 'Skill globali',
         name: 'Skill context-handoff completa',
         passed: true,
-        detail: 'Pre/post-condition e handoff operativo presenti ✅',
+        detail: 'Pre/post-condition aggiornate a CONTINUATION.md + Obsidian, legacy fallback presente ✅',
     };
 }
 

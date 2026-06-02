@@ -173,8 +173,10 @@ Responsabilita':
    - cosa va dichiarato come limite residuo
 7. Gestire contesto e handoff:
    - quando usare memoria
-   - quando usare `context-handoff`
-   - quando generare `SESSION_PROMPT.md`
+   - quando compilare `.claude/CONTINUATION.md`
+   - quando sincronizzare Obsidian `Resources/continuita/START-NEXT-CHAT.md`
+   - quando usare `context-handoff` come supporto
+   - quando generare `SESSION_PROMPT.md` solo come fallback legacy esplicito
    - quando fermarsi per context degradation
 8. Migliorare se stesso:
    - rilevare miss ricorrenti

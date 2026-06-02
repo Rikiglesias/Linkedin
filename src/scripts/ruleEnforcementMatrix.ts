@@ -83,7 +83,14 @@ function hookRule(
     return { id, name, category, type, status: present ? 'ENFORCED' : 'GAP', detail, gapNote };
 }
 
-function auditRule(id: string, name: string, category: string, present: boolean, detail: string, gapNote?: string): RuleResult {
+function auditRule(
+    id: string,
+    name: string,
+    category: string,
+    present: boolean,
+    detail: string,
+    gapNote?: string,
+): RuleResult {
     return {
         id,
         name,
@@ -143,6 +150,13 @@ function buildMatrix(): RuleResult[] {
         hookExists(settings, 'PreToolUse', 'pre-edit-antiban.ps1') &&
         (antiBanScript?.includes('Write-HookDecision') ?? false) &&
         (antiBanScript?.includes('deny') ?? false);
+    const turnGovernorScript = readText(join(HOME, '.claude', 'scripts', 'turn-governor-hook.ps1'));
+    const turnGovernorCostAware =
+        hookExists(settings, 'UserPromptSubmit', 'turn-governor-hook.ps1') &&
+        (turnGovernorScript?.includes('TOKEN_COST_CHAT_SWITCH') ?? false) &&
+        (turnGovernorScript?.includes('token-cost-state.json') ?? false) &&
+        (turnGovernorScript?.includes('credits') ?? false) &&
+        (turnGovernorScript?.includes('costUsd') ?? false);
 
     const results: RuleResult[] = [
         hookRule(
@@ -222,13 +236,31 @@ function buildMatrix(): RuleResult[] {
             'Aggiungere skill-activation.ps1 in UserPromptSubmit',
         ),
         hookRule(
-            'model-suggestion-hook',
-            'Suggerimento modello/ambiente per dominio del task',
+            'session-advisor-hook',
+            'Modello adatto al task + consiglio chat-nuova, dichiarati ad ogni richiesta',
             'Advisory hook',
             'advisory-hook',
-            hookExists(settings, 'UserPromptSubmit', 'user-prompt-model-suggestion.ps1'),
-            'UserPromptSubmit → user-prompt-model-suggestion.ps1',
-            'Aggiungere user-prompt-model-suggestion.ps1 in UserPromptSubmit',
+            hookExists(settings, 'UserPromptSubmit', 'user-prompt-session-advisor.ps1'),
+            'UserPromptSubmit → user-prompt-session-advisor.ps1',
+            'Aggiungere user-prompt-session-advisor.ps1 in UserPromptSubmit',
+        ),
+        hookRule(
+            'turn-governor-hook',
+            'Regole di turno: Ho capito, prompt optimizer, auto-vs-chiedi, hygiene, recap e fine turno',
+            'Advisory hook',
+            'advisory-hook',
+            hookExists(settings, 'UserPromptSubmit', 'turn-governor-hook.ps1'),
+            'UserPromptSubmit → turn-governor-hook.ps1',
+            'Aggiungere turn-governor-hook.ps1 in UserPromptSubmit',
+        ),
+        hookRule(
+            'token-cost-chat-switch',
+            'Cambio chat basato su contesto, token e crediti/costo',
+            'Advisory hook',
+            'advisory-hook',
+            turnGovernorCostAware && hookExists(settings, 'UserPromptSubmit', 'token-cost-context.ps1'),
+            'UserPromptSubmit → turn-governor-hook.ps1 + token-cost-context.ps1 con TOKEN_COST_CHAT_SWITCH',
+            'Rendere turn-governor cost-aware e aggiungere token-cost-context.ps1 in UserPromptSubmit',
         ),
         hookRule(
             'multi-file-recap-hook',
@@ -436,12 +468,7 @@ function buildMatrix(): RuleResult[] {
             'Proporre modello e ambiente',
             brief,
         ),
-        briefRule(
-            'l2-l6-audit-assisted',
-            'Stato audit-assisted esplicito per L2-L6',
-            'L2-L6 audit-assisted',
-            brief,
-        ),
+        briefRule('l2-l6-audit-assisted', 'Stato audit-assisted esplicito per L2-L6', 'L2-L6 audit-assisted', brief),
 
         // --- C2: Audit script ---
         auditRule(

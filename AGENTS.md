@@ -115,36 +115,47 @@ Inventory completo (34 command hook attivi + tabella pre/post-conditions skill/M
 
 Regola estratta in `.claude/rules/workflow-linkedin.md` (path-scoped `src/**`, `workflows/**`). Contiene: classificazione task (quick fix / bug bot / feature-modifica bot / refactor-infra), 6 passi obbligatori (pre-modifica → review antiban → planning → impl → verifica → commit), estensioni L1-L9 LinkedIn delta (35 sub-check su L1, L3, L4, L5, L6, L7, L8, L9). Modifica lì, non duplicare qui.
 
-## Context Handoff — schema minimo garantito
+## Cambio chat e continuita' — Obsidian come vista operativa
 
-`SESSION_HANDOFF.md` deve sempre contenere queste sezioni. Nessuna opzionale.
+Fonte primaria per ripartire in nuova chat:
+
+1. `C:\Users\albie\memory\` = memoria vera.
+2. `C:\Users\albie\todos\active.md` = priorita correnti.
+3. `.claude/CONTINUATION.md` = stato operativo del progetto corrente.
+4. Obsidian `C:\Users\albie\Desktop\AI brain\Resources\continuita\START-NEXT-CHAT.md` = vista navigabile di ripartenza.
+
+`SESSION_HANDOFF.md` e `.claude/SESSION_PROMPT.md` sono fallback legacy/storico. Non sono piu' la procedura primaria e non vanno rigenerati come passaggio obbligatorio se `CONTINUATION.md` + Obsidian sono freschi.
+
+`.claude/CONTINUATION.md` deve sempre contenere queste sezioni. Nessuna opzionale.
 
 ```markdown
-## Obiettivi correnti
-[cosa stavo cercando di fare — 1-3 bullet]
+## PROBLEMA CHE STAVAMO RISOLVENDO
+[problema reale, non solo task tecnico]
 
-## Decisioni prese
-[decisioni tecniche non ovvie prese in questa sessione]
+## COSA E STATO COMPLETATO
+[punti precisi, con verifica eseguita o mancante]
 
-## Blast radius identificato
-[file toccati direttamente + file impattati indirettamente]
+## DECISIONI CHIAVE (non derivabili dal codice)
+[decisioni motivate, non ovvieta]
 
-## Stato implementazione
-[DONE / IN PROGRESS / BLOCKED per ogni blocco di lavoro]
+## DA NON RIPETERE
+[tentativi falliti, errori corretti dall'utente, approcci scartati]
 
-## Verifiche completate
-[L1-L9 completati: quali sì, quali no e perché]
+## STATO TECNICO ESATTO
+[file/stato/git/test/verifiche]
 
-## Blocchi aperti
-[problemi irrisolti con causa esplicita]
+## PROSSIMO PASSO ESATTO
+[azione concreta con comando/file/verifica]
 
-## Prossimi passi
-[azioni concrete ordinate per priorità]
+## CORREZIONI UTENTE QUESTA SESSIONE
+[feedback operativo da salvare o "nessuno"]
 ```
 
-**Differenza da SESSION_HANDOFF.md automatico**: questo schema è il template minimo verificabile. Il file automatico può aggiungere sezioni ma non togliere queste.
+**Regola di sync**: prima di cambiare chat, aggiornare memoria/todos/worklog se serve, compilare `CONTINUATION.md` senza TODO e sincronizzare Obsidian (`node C:\Users\albie\.claude\scripts\sync-memory-to-obsidian.mjs --verbose`).
 
-**Quando generare**: ctx >85%, fine sessione lunga, prima di cambio progetto.
+**Quando generare/aggiornare**: ctx >85%, fine sessione lunga, compact imminente, cambio progetto/tema, soglie costo-token superate o prima di nuova chat.
+
+**Verifica**: `npm run audit:handoff-staleness` deve passare. Se fallisce, non dichiarare la continuita' pronta.
 
 ## Loop di completamento
 

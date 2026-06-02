@@ -24,7 +24,7 @@ A major focus is the stability of the bot's runtime environment.
 
 ### 3. Contextual Integrity and Memory
 The system acknowledges that context degradation is a technical failure. 
-*   **Context Handoff:** When a session becomes too dense (300k+ tokens) or incoherent, the system is mandated to use the `context-handoff` skill to migrate relevant state to a clean session.
+*   **Context Handoff:** When a session becomes too dense/costly or incoherent, the system is mandated to update `.claude/CONTINUATION.md`, sync Obsidian `Resources/continuita/START-NEXT-CHAT.md`, and use `context-handoff` only as support/fallback.
 *   **AI-Readable Context:** Moving away from "monolithic" documents toward modular, indexed, and thematic files.
 
 ### 4. Anti-Ban and Compliance (LinkedIn Specific)

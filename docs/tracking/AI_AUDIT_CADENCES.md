@@ -43,7 +43,7 @@ Modificare `~/.claude/hooks/session-start.ps1` per controllare last-run timestam
 
 ### Weekly review (5 min)
 - Output `audit:miss-metrics`: ci sono candidate forti per promozione blocking (miss veri sopra soglia)? Se sì, valutare promozione.
-- Output `audit:handoff-staleness`: se 4/6 o meno, rigenerare `SESSION_PROMPT.md` con `/session-prompt`.
+- Output `audit:handoff-staleness`: se fallisce, aggiornare `.claude/CONTINUATION.md`, memoria/todos se serve, poi eseguire sync Obsidian; usare `/session-prompt` solo come fallback legacy richiesto.
 - Output `audit:violations`: pattern di warning ricorrenti (worklog non aggiornato, hard blocks)?
 
 ### Monthly review (15 min)

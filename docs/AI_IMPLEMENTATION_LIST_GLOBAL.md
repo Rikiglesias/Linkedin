@@ -145,31 +145,32 @@ Verifiche: `npm run audit:hooks`, `npm run audit:rule-enforcement`, `npm run aud
 
 Problema: handoff e memoria sono inutili se una nuova chat non riesce davvero a ripartire senza perdita di stato.
 
-Stato: `SESSION_HANDOFF.md`, runtime brief, skill `context-handoff` e `.claude/SESSION_PROMPT.md` esistono. Prima prova end-to-end reale passata in Codex il 2026-05-11 con prompt `resume`: la nuova sessione ha ricostruito contesto, blocchi e prossimi passi senza chiedere spiegazioni all'utente. Anti-staleness coperto da `audit:handoff-staleness` (2026-05-13) che rileva drift commit, branch e working tree rispetto al prompt salvato.
+Stato: il metodo primario e' migrato a `~/memory` + `todos/active.md` + `.claude/CONTINUATION.md` sincronizzato in Obsidian `Resources/continuita` con `START-NEXT-CHAT.md`. `SESSION_HANDOFF.md`, skill `context-handoff` e `.claude/SESSION_PROMPT.md` restano fallback legacy/storico. Prima prova end-to-end reale passata in Codex il 2026-05-11 con prompt `resume`: la nuova sessione ha ricostruito contesto, blocchi e prossimi passi senza chiedere spiegazioni all'utente. Anti-staleness coperto da `audit:handoff-staleness`, ora centrato su continuita primaria, sync Obsidian, memoria e todos.
 
 Trigger: fine sessione lunga, compact, cambio chat/ambiente, contesto degradato o richiesta di trasferire contesto.
 
-Output: handoff e prompt nuova chat con stato, decisioni, blast radius, verifiche, blocchi, prossimi passi e git status.
+Output: continuita nuova chat con stato, decisioni, blast radius, verifiche, blocchi, prossimi passi, git status e vista Obsidian `Resources/continuita/START-NEXT-CHAT.md`.
 
 Limiti: non e' riassunto narrativo e non e' completato senza prova reale in nuova chat.
 
-Primitive: skill `context-handoff`, `SESSION_HANDOFF.md`, `SESSION_PROMPT.md`, memory files, `todos/active.md`, `ENGINEERING_WORKLOG.md`, audit handoff.
+Primitive: `.claude/CONTINUATION.md`, Obsidian `Resources/continuita`, `START-NEXT-CHAT.md`, memory files, `todos/active.md`, `ENGINEERING_WORKLOG.md`, audit handoff/continuita, skill `context-handoff` solo come supporto, `SESSION_HANDOFF.md` e `SESSION_PROMPT.md` come fallback legacy.
 
-Ordine: generare handoff -> generare prompt nuova chat -> far leggere solo file previsti -> verificare ricostruzione -> correggere template/skill.
+Ordine: aggiornare memoria/todos/worklog -> compilare `.claude/CONTINUATION.md` senza TODO -> sincronizzare Obsidian `Resources/continuita` -> far leggere solo fonti previste alla nuova chat -> verificare ricostruzione -> correggere hook/sync/audit.
 
 Sottopunti:
 
-- [x] definire contenuto minimo non opzionale di `SESSION_HANDOFF.md`
-- [x] creare o standardizzare `.claude/SESSION_PROMPT.md` per nuova chat
+- [x] definire contenuto minimo non opzionale di `SESSION_HANDOFF.md` — ora fallback legacy
+- [x] creare o standardizzare `.claude/SESSION_PROMPT.md` per nuova chat — ora fallback legacy
 - [x] includere stato git, modifiche non committate, verifiche fatte e mancanti
 - [x] includere blocchi aperti e prossimi passi ordinati
 - [x] validare una nuova chat reale leggendo solo handoff + canonici indicati — prova Codex 2026-05-11
-- [x] non marcare completato finche' anche il rischio staleness del prompt/handoff e' gestito — `audit:handoff-staleness` 2026-05-13
-- [x] proteggere prompt/handoff da staleness dopo nuovi commit o working tree cambiato — `src/scripts/handoffStalenessAudit.ts` rileva drift commit/branch/working tree
+- [x] non marcare completato finche' anche il rischio staleness della continuita e' gestito — `audit:handoff-staleness`
+- [x] proteggere continuita da staleness dopo nuovi commit o working tree cambiato — `src/scripts/handoffStalenessAudit.ts` verifica `.claude/CONTINUATION.md`, `Resources/continuita`, memoria e todos
+- [x] migrare procedura primaria a Obsidian `Resources/continuita/START-NEXT-CHAT.md`, con `SESSION_HANDOFF.md` / `SESSION_PROMPT.md` solo fallback legacy
 
 Done: una nuova chat riparte senza chiedere contesto all'utente e senza portarsi dietro blocker stale o punti generici.
 
-Verifiche: prova manuale nuova chat (prima prova Codex 2026-05-11), `npm run audit:ai-control-plane`, review `SESSION_HANDOFF.md` e `.claude/SESSION_PROMPT.md`.
+Verifiche: prova manuale nuova chat (prima prova Codex 2026-05-11), `npm run audit:handoff-staleness`, `npm run audit:ai-control-plane`, review `.claude/CONTINUATION.md`, `Resources/continuita/START-NEXT-CHAT.md`, `SESSION_HANDOFF.md` e `.claude/SESSION_PROMPT.md` se presenti come fallback legacy.
 
 ### 6. `[Reasoning][breve/medio]` Ragionamento autonomo, esempi come pattern e no false completion
 
@@ -514,13 +515,13 @@ Limite residuo: i canonici sono lunghi per natura; il controllo principale e' ev
 
 ### C9. `2026-04-21` Skill `context-handoff`
 
-Cosa copre: meccanismo base per trasferire obiettivi, stato, decisioni, file toccati, verifiche, blocchi e prossimi passi a una nuova sessione.
+Cosa copre: meccanismo base per trasferire obiettivi, stato, decisioni, file toccati, verifiche, blocchi e prossimi passi a una nuova sessione tramite continuita primaria e fallback legacy.
 
-Dove vive: `~/.claude/skills/context-handoff/`, `SESSION_HANDOFF.md`, `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md` item 5.
+Dove vive: `~/.claude/skills/context-handoff/`, `.claude/CONTINUATION.md`, Obsidian `Resources/continuita`, `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md` item 5. `SESSION_HANDOFF.md` resta storico/fallback legacy.
 
-Prova: `audit:ai-control-plane:docs` verifica che la skill contenga pre/post-condition minime (`Git status`, `SESSION_HANDOFF.md`, `active.md coerente`).
+Prova: `audit:ai-control-plane:docs` verifica che la skill contenga pre/post-condition minime (`Git status`, `.claude/CONTINUATION.md`, `Resources/continuita`, fallback legacy).
 
-Limite residuo: trasferimento end-to-end con nuova chat reale resta aperto; la presenza della skill non basta per marcare chiuso l'item 5.
+Limite residuo: trasferimento end-to-end con nuova chat reale resta da rivalidare a ogni cambio strutturale; la presenza della skill non basta per marcare chiuso l'item 5.
 
 ### C10. `2026-04-25` Capability matrix e policy ambiente/modello
 

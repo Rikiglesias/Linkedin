@@ -110,7 +110,7 @@
       "label": "skill context-handoff",
       "status": "active",
       "environments": ["claude-code"],
-      "notes": "Handoff operativo tra sessioni: SESSION_HANDOFF.md, git status, active.md, memoria e blocchi aperti."
+      "notes": "Supporto alla continuita tra sessioni: .claude/CONTINUATION.md, memoria, active.md e sync Obsidian Resources/continuita. SESSION_HANDOFF.md e SESSION_PROMPT.md sono fallback legacy."
     },
     {
       "id": "session-prompt",
@@ -118,7 +118,7 @@
       "label": "skill session-prompt",
       "status": "active",
       "environments": ["claude-code"],
-      "notes": "Trasferimento manuale del contesto a una nuova chat quando serve un prompt copiabile."
+      "notes": "Fallback legacy per prompt copiabile quando richiesto esplicitamente o quando Obsidian/CONTINUATION non basta."
     },
     {
       "id": "n8n-mcp",
@@ -373,10 +373,10 @@
       "intentPatterns": ["memory", "memoria", "handoff", "context", "contesto", "secondo cervello", "briefing", "todos", "cambio chat", "nuova sessione", "nuova chat", "altra sessione", "passa il testimone", "continuita", "spostare", "chiudi sessione", "cambia chat", "cambiare chat", "sessione precedente"],
       "sourceOfTruth": "memory-files",
       "webPolicy": "not-needed",
-      "primaryCapabilities": ["session-prompt", "memoria", "repo-canonici"],
-      "fallbackCapabilities": ["repo-code-search", "debugging-wizard"],
+      "primaryCapabilities": ["memoria", "context-handoff", "repo-canonici"],
+      "fallbackCapabilities": ["session-prompt", "repo-code-search", "debugging-wizard"],
       "preferredEnvironment": "either",
-      "notes": "Cambio chat manuale: /session-prompt (scrive .claude/SESSION_PROMPT.md da far leggere alla nuova chat). Hook automatici gestiscono CONTINUATION.md senza intervento utente."
+      "notes": "Cambio chat primario: memoria/todos + .claude/CONTINUATION.md + Obsidian Resources/continuita/START-NEXT-CHAT.md. session-prompt resta fallback legacy."
     },
     {
       "domainId": "n8n-orchestration",
@@ -436,7 +436,7 @@
       "primaryCapabilities": ["lean-ctx", "context-engineering", "memoria"],
       "fallbackCapabilities": ["context-handoff", "codeburn"],
       "preferredEnvironment": "claude-code",
-      "notes": "ctx >70%: attivare lean-ctx. ctx >85%: context-handoff prima di compattare. codeburn per analisi storica sprechi."
+      "notes": "ctx >70%: attivare lean-ctx. ctx >85%: compilare CONTINUATION.md e sync Obsidian Resources/continuita prima di compattare. codeburn per analisi storica sprechi."
     },
     {
       "domainId": "autonomous-loop",

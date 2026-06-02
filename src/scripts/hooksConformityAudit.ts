@@ -140,36 +140,146 @@ function checkConfiguredCommandTargetsExist(hooks: Record<string, unknown[]>): C
 
 function checkExpectedHooksConfigured(hooks: Record<string, unknown[]>): CheckResult {
     const expected: ExpectedHookSpec[] = [
-        { eventName: 'PreToolUse', matcherIncludes: ['Edit', 'Write', 'MultiEdit'], commandParts: ['pre-edit-antiban.ps1'], label: 'pre-edit-antiban' },
-        { eventName: 'PreToolUse', matcherIncludes: ['Edit', 'Write', 'MultiEdit'], commandParts: ['pre-edit-secrets.ps1'], label: 'pre-edit-secrets' },
-        { eventName: 'PreToolUse', matcherIncludes: ['Edit', 'Write', 'MultiEdit'], commandParts: ['pre-edit-best-practice.ps1'], label: 'pre-edit-best-practice' },
-        { eventName: 'PreToolUse', matcherIncludes: ['Bash'], commandParts: ['pre-bash-l1-gate.ps1'], label: 'pre-bash-l1-gate' },
-        { eventName: 'PreToolUse', matcherIncludes: ['Bash'], commandParts: ['pre-bash-git-gate.ps1'], label: 'pre-bash-git-gate' },
-        { eventName: 'PreToolUse', matcherIncludes: ['mcp__.*'], commandParts: ['pre-mcp-guard.ps1'], label: 'pre-mcp-guard' },
-        { eventName: 'SessionStart', commandParts: ['ensure-claude-model-router.ps1'], label: 'ensure router session-start', requiresUnifiedRouter: true },
-        { eventName: 'SessionStart', commandParts: ['merge-canonical-settings.mjs'], label: 'merge canonical settings' },
+        {
+            eventName: 'PreToolUse',
+            matcherIncludes: ['Edit', 'Write', 'MultiEdit'],
+            commandParts: ['pre-edit-antiban.ps1'],
+            label: 'pre-edit-antiban',
+        },
+        {
+            eventName: 'PreToolUse',
+            matcherIncludes: ['Edit', 'Write', 'MultiEdit'],
+            commandParts: ['pre-edit-secrets.ps1'],
+            label: 'pre-edit-secrets',
+        },
+        {
+            eventName: 'PreToolUse',
+            matcherIncludes: ['Edit', 'Write', 'MultiEdit'],
+            commandParts: ['pre-edit-best-practice.ps1'],
+            label: 'pre-edit-best-practice',
+        },
+        {
+            eventName: 'PreToolUse',
+            matcherIncludes: ['Bash'],
+            commandParts: ['pre-bash-l1-gate.ps1'],
+            label: 'pre-bash-l1-gate',
+        },
+        {
+            eventName: 'PreToolUse',
+            matcherIncludes: ['Bash'],
+            commandParts: ['pre-bash-git-gate.ps1'],
+            label: 'pre-bash-git-gate',
+        },
+        {
+            eventName: 'PreToolUse',
+            matcherIncludes: ['mcp__.*'],
+            commandParts: ['pre-mcp-guard.ps1'],
+            label: 'pre-mcp-guard',
+        },
+        {
+            eventName: 'SessionStart',
+            commandParts: ['ensure-claude-model-router.ps1'],
+            label: 'ensure router session-start',
+            requiresUnifiedRouter: true,
+        },
+        {
+            eventName: 'SessionStart',
+            commandParts: ['merge-canonical-settings.mjs'],
+            label: 'merge canonical settings',
+        },
         { eventName: 'SessionStart', commandParts: ['session-start.ps1'], label: 'session-start' },
-        { eventName: 'SessionStart', commandParts: ['session-start-continuation.ps1'], label: 'session-start-continuation' },
-        { eventName: 'UserPromptSubmit', commandParts: ['ensure-claude-model-router.ps1'], label: 'ensure router prompt', requiresUnifiedRouter: true },
-        { eventName: 'UserPromptSubmit', commandParts: ['inject-runtime-brief.ps1', 'UserPromptSubmit'], label: 'runtime brief prompt' },
+        {
+            eventName: 'SessionStart',
+            commandParts: ['session-start-continuation.ps1'],
+            label: 'session-start-continuation',
+        },
+        {
+            eventName: 'UserPromptSubmit',
+            commandParts: ['ensure-claude-model-router.ps1'],
+            label: 'ensure router prompt',
+            requiresUnifiedRouter: true,
+        },
+        {
+            eventName: 'UserPromptSubmit',
+            commandParts: ['inject-runtime-brief.ps1', 'UserPromptSubmit'],
+            label: 'runtime brief prompt',
+        },
         { eventName: 'UserPromptSubmit', commandParts: ['skill-activation.ps1'], label: 'skill activation' },
         { eventName: 'UserPromptSubmit', commandParts: ['multi-file-recap-check.ps1'], label: 'multi-file recap' },
         { eventName: 'UserPromptSubmit', commandParts: ['pre-edit-verify-intent.ps1'], label: 'verify intent' },
         { eventName: 'UserPromptSubmit', commandParts: ['user-prompt-commit-gate.ps1'], label: 'pending commit gate' },
-        { eventName: 'UserPromptSubmit', commandParts: ['user-prompt-model-suggestion.ps1'], label: 'model suggestion' },
-        { eventName: 'PreCompact', commandParts: ['inject-runtime-brief.ps1', 'PreCompact'], label: 'runtime brief compact' },
+        {
+            eventName: 'UserPromptSubmit',
+            commandParts: ['user-prompt-session-advisor.ps1'],
+            label: 'session advisor (modello + chat-nuova)',
+        },
+        {
+            eventName: 'UserPromptSubmit',
+            commandParts: ['turn-governor-hook.ps1'],
+            label: 'turn governor (prompt + costo + cambio chat)',
+        },
+        {
+            eventName: 'UserPromptSubmit',
+            commandParts: ['token-cost-context.ps1'],
+            label: 'token cost context',
+        },
+        {
+            eventName: 'PreCompact',
+            commandParts: ['inject-runtime-brief.ps1', 'PreCompact'],
+            label: 'runtime brief compact',
+        },
         { eventName: 'PreCompact', commandParts: ['pre-compact-handoff.ps1'], label: 'pre-compact handoff' },
         { eventName: 'Stop', commandParts: ['stop-session.ps1'], label: 'stop session' },
         { eventName: 'Stop', commandParts: ['pre-stop-commit-gate.ps1'], label: 'stop commit gate' },
         { eventName: 'Stop', commandParts: ['stop-proactive-next-step.ps1'], label: 'stop proactive next step' },
-        { eventName: 'PostToolUse', matcherIncludes: ['Bash'], commandParts: ['post-bash-quality-log.ps1'], label: 'quality log' },
-        { eventName: 'PostToolUse', matcherIncludes: ['Bash'], commandParts: ['post-bash-git-audit.ps1'], label: 'git audit log' },
-        { eventName: 'PostToolUse', matcherIncludes: ['Edit', 'Write', 'MultiEdit'], commandParts: ['file-size-check.ps1'], label: 'file size check' },
-        { eventName: 'PostToolUse', matcherIncludes: ['Edit', 'Write', 'MultiEdit'], commandParts: ['post-edit-antiban-audit.ps1'], label: 'antiban post audit' },
-        { eventName: 'PostToolUse', matcherIncludes: ['Edit', 'Write', 'MultiEdit'], commandParts: ['post-edit-request-action.ps1'], label: 'request action' },
-        { eventName: 'PostToolUse', matcherIncludes: ['Edit', 'Write', 'MultiEdit'], commandParts: ['post-edit-verify-checklist.ps1'], label: 'post edit L2-L6 checklist' },
-        { eventName: 'PostToolUse', matcherIncludes: ['Edit', 'Write', 'MultiEdit'], commandParts: ['post-edit-codebase-hygiene.ps1'], label: 'post edit codebase hygiene' },
-        { eventName: 'PostToolUse', matcherIncludes: ['WebSearch'], commandParts: ['post-websearch-log.ps1'], label: 'web search log' },
+        {
+            eventName: 'PostToolUse',
+            matcherIncludes: ['Bash'],
+            commandParts: ['post-bash-quality-log.ps1'],
+            label: 'quality log',
+        },
+        {
+            eventName: 'PostToolUse',
+            matcherIncludes: ['Bash'],
+            commandParts: ['post-bash-git-audit.ps1'],
+            label: 'git audit log',
+        },
+        {
+            eventName: 'PostToolUse',
+            matcherIncludes: ['Edit', 'Write', 'MultiEdit'],
+            commandParts: ['file-size-check.ps1'],
+            label: 'file size check',
+        },
+        {
+            eventName: 'PostToolUse',
+            matcherIncludes: ['Edit', 'Write', 'MultiEdit'],
+            commandParts: ['post-edit-antiban-audit.ps1'],
+            label: 'antiban post audit',
+        },
+        {
+            eventName: 'PostToolUse',
+            matcherIncludes: ['Edit', 'Write', 'MultiEdit'],
+            commandParts: ['post-edit-request-action.ps1'],
+            label: 'request action',
+        },
+        {
+            eventName: 'PostToolUse',
+            matcherIncludes: ['Edit', 'Write', 'MultiEdit'],
+            commandParts: ['post-edit-verify-checklist.ps1'],
+            label: 'post edit L2-L6 checklist',
+        },
+        {
+            eventName: 'PostToolUse',
+            matcherIncludes: ['Edit', 'Write', 'MultiEdit'],
+            commandParts: ['post-edit-codebase-hygiene.ps1'],
+            label: 'post edit codebase hygiene',
+        },
+        {
+            eventName: 'PostToolUse',
+            matcherIncludes: ['WebSearch'],
+            commandParts: ['post-websearch-log.ps1'],
+            label: 'web search log',
+        },
         { eventName: 'SubagentStop', commandParts: ['subagent-stop.ps1'], label: 'subagent stop' },
         { eventName: 'TeammateIdle', commandParts: ['teammate-event.ps1'], label: 'teammate idle' },
         { eventName: 'TaskCreated', commandParts: ['teammate-event.ps1'], label: 'task created' },
@@ -411,6 +521,35 @@ function checkUserPromptSubmitSkillRoutingHook(hooks: Record<string, unknown[]>)
     };
 }
 
+function checkTurnGovernorCostAware(hooks: Record<string, unknown[]>): CheckResult {
+    const submit = getHookEntries(hooks, 'UserPromptSubmit');
+    const turnGovernor = findEntryByCommand(submit, 'turn-governor-hook.ps1');
+    const tokenCost = findEntryByCommand(submit, 'token-cost-context.ps1');
+    const scriptPath = join(homedir(), '.claude', 'scripts', 'turn-governor-hook.ps1');
+    const script = existsSync(scriptPath) ? readFileSync(scriptPath, 'utf8') : null;
+    const required = ['TOKEN_COST_CHAT_SWITCH', 'token-cost-state.json', 'credits', 'costUsd'];
+
+    const missing = required.filter((snippet) => !script?.includes(snippet));
+    if (!turnGovernor || !tokenCost || missing.length > 0) {
+        const details = [
+            !turnGovernor ? 'turn-governor-hook.ps1 mancante in UserPromptSubmit' : '',
+            !tokenCost ? 'token-cost-context.ps1 mancante in UserPromptSubmit' : '',
+            ...missing.map((snippet) => `turn-governor senza ${snippet}`),
+        ].filter(Boolean);
+        return {
+            name: 'UserPromptSubmit cost-aware turn governor',
+            passed: false,
+            detail: details.join(', '),
+        };
+    }
+
+    return {
+        name: 'UserPromptSubmit cost-aware turn governor',
+        passed: true,
+        detail: 'turn-governor + token-cost-context presenti; cambio chat valuta anche token/crediti ✅',
+    };
+}
+
 function checkPreCompactRuntimeHook(hooks: Record<string, unknown[]>): CheckResult {
     const compact = getHookEntries(hooks, 'PreCompact');
     const runtimeBrief = findEntryByCommandParts(compact, ['inject-runtime-brief.ps1', 'PreCompact']);
@@ -528,6 +667,7 @@ function run(): void {
         checkPostEditRequestActionSafety(),
         checkUserPromptSubmitRuntimeHook(hooks),
         checkUserPromptSubmitSkillRoutingHook(hooks),
+        checkTurnGovernorCostAware(hooks),
         checkPreToolUseAntiban(hooks),
         checkAntibanMatcherCoverage(hooks),
         checkPreToolUseL1Gate(hooks),

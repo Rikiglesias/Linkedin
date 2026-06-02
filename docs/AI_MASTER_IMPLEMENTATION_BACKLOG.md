@@ -357,7 +357,7 @@ Verifiche richieste:
 
 ## 5. Memoria, handoff e trasferimento contesto in una nuova chat
 
-Status: PARZIALE — prima prova manuale passata il 2026-05-11; anti-staleness coperto da `audit:handoff-staleness` (2026-05-13). Validazione periodica resta da fare a ogni cambio strutturale
+Status: PARZIALE — prima prova manuale passata il 2026-05-11; migrazione Obsidian avviata 2026-06-02; anti-staleness ora copre `.claude/CONTINUATION.md`, `Resources/continuita` e sync memoria/todos. Validazione periodica resta da fare a ogni cambio strutturale
 Orizzonte: breve + medio
 
 Problema reale:
@@ -366,7 +366,7 @@ Il sistema sembra avere memoria e handoff, ma se una nuova chat non riparte davv
 
 Stato attuale:
 
-Esistono memoria globale/progetto, `AI_RUNTIME_BRIEF.md`, skill `context-handoff`, `SESSION_HANDOFF.md` e `.claude/SESSION_PROMPT.md` come prompt copiabile ignorato da git. Una nuova sessione Codex del 2026-05-11 avviata con `resume` ha ricostruito contesto, stato, blocchi e prossimi passi leggendo memoria, handoff e canonici senza chiedere spiegazioni aggiuntive. Il gap residuo e' impedire che `.claude/SESSION_PROMPT.md` e handoff diventino stale tra una sessione e l'altra.
+Esistono memoria globale/progetto, `AI_RUNTIME_BRIEF.md`, `.claude/CONTINUATION.md`, sync unidirezionale verso Obsidian e vista `Resources/continuita/START-NEXT-CHAT.md`. Una nuova sessione Codex del 2026-05-11 avviata con `resume` ha ricostruito contesto, stato, blocchi e prossimi passi leggendo memoria, handoff e canonici senza chiedere spiegazioni aggiuntive. Il metodo primario nuovo e': `~/memory` + `todos/active.md` + `.claude/CONTINUATION.md` sincronizzato in Obsidian `Resources/continuita`. `SESSION_HANDOFF.md` e `.claude/SESSION_PROMPT.md` restano fallback legacy/storico, non procedura primaria.
 
 Trigger operativo:
 
@@ -374,7 +374,7 @@ Fine sessione lunga, contesto sopra soglia critica, cambio chat/ambiente, compac
 
 Output atteso:
 
-Handoff operativo e prompt nuova chat con stato, decisioni, blast radius, verifiche, blocchi, prossimi passi, git status e file canonici da leggere.
+Continuita' operativa per nuova chat con stato, decisioni, blast radius, verifiche, blocchi, prossimi passi, git status, file canonici da leggere e nota Obsidian `START-NEXT-CHAT.md`.
 
 Limiti / non-goals:
 
@@ -382,43 +382,51 @@ Non deve essere riassunto narrativo generico e non deve marcare il trasferimento
 
 Primitive corrette:
 
-- skill `context-handoff`
-- `SESSION_HANDOFF.md`
-- eventuale `SESSION_PROMPT.md`
+- `.claude/CONTINUATION.md`
+- sync Obsidian `Resources/continuita`
+- `START-NEXT-CHAT.md`
+- skill `context-handoff` solo come supporto/manual fallback
+- `SESSION_HANDOFF.md` come fallback legacy
+- eventuale `SESSION_PROMPT.md` come fallback legacy
 - memory files
 - `todos/active.md`
 - `ENGINEERING_WORKLOG.md`
-- audit handoff
+- audit handoff/continuita'
 
 Ordine logico:
 
-1. generare handoff completo con stato, decisioni, blast radius, verifiche e blocchi
-2. generare prompt minimo per nuova chat
-3. far leggere alla nuova chat solo i file previsti
-4. verificare se ricostruisce lavoro e prossimi passi senza omissioni
-5. correggere template, skill o canonici se resta generico
+1. aggiornare memoria, `todos/active.md` e worklog quando cambia lo stato reale
+2. compilare `.claude/CONTINUATION.md` senza TODO con stato, decisioni, blast radius, verifiche e blocchi
+3. sincronizzare Obsidian in `Resources/continuita` e generare `START-NEXT-CHAT.md`
+4. far leggere alla nuova chat solo memoria, todos, canonici e vista Obsidian prevista
+5. usare `SESSION_HANDOFF.md` / `SESSION_PROMPT.md` solo come fallback legacy se la vista primaria manca
+6. verificare se ricostruisce lavoro e prossimi passi senza omissioni
+7. correggere template, hook, sync o audit se resta generico
 
 Sottopunti operativi:
 
-- [x] definire contenuto minimo non opzionale di `SESSION_HANDOFF.md`
-- [x] creare o standardizzare `.claude/SESSION_PROMPT.md` quando serve passare contesto a nuova chat
+- [x] definire contenuto minimo non opzionale di `SESSION_HANDOFF.md` — ora storico/fallback legacy
+- [x] creare o standardizzare `.claude/SESSION_PROMPT.md` quando serve passare contesto a nuova chat — ora storico/fallback legacy
 - [x] includere stato git, modifiche non committate, verifiche eseguite e verifiche mancanti
 - [x] includere blocchi aperti e prossimi passi ordinati logicamente
 - [x] validare almeno una nuova chat reale leggendo solo handoff + canonici indicati — prova Codex 2026-05-11
-- [x] marcare il punto come completato solo dopo prova reale e gestione anti-staleness, non per presenza dei file — regola seguita: prova Codex 2026-05-11 + `audit:handoff-staleness` 2026-05-13
-- [x] aggiungere o mantenere controllo anti-staleness sul prompt/handoff quando una sessione viene ripresa dopo commit nuovi — `src/scripts/handoffStalenessAudit.ts` rileva drift commit/branch/working tree
+- [x] marcare il punto come completato solo dopo prova reale e gestione anti-staleness, non per presenza dei file — regola seguita: prova Codex 2026-05-11 + `audit:handoff-staleness`
+- [x] aggiungere o mantenere controllo anti-staleness sulla continuita' quando una sessione viene ripresa dopo commit nuovi — `src/scripts/handoffStalenessAudit.ts` verifica `.claude/CONTINUATION.md`, Obsidian `Resources/continuita`, memoria e todos
+- [x] migrare la procedura primaria a `.claude/CONTINUATION.md` + Obsidian `Resources/continuita/START-NEXT-CHAT.md`, lasciando `SESSION_HANDOFF.md` / `SESSION_PROMPT.md` come fallback legacy
 
 Criterio done:
 
 - una nuova chat riparte senza chiedere all'utente di rispiegare contesto, scope o blocchi
-- handoff e prompt non sono generici, ma operativi
+- la vista Obsidian `Resources/continuita` e `START-NEXT-CHAT.md` non e' generica, ma operativa
+- `SESSION_HANDOFF.md` e `SESSION_PROMPT.md` non vengono piu' richiesti come fonte primaria
 - eventuali omissioni trovate diventano correzioni a skill/template/audit
 
 Verifiche richieste:
 
 - prova manuale con nuova chat — prima prova passata in Codex il 2026-05-11
+- `npm run audit:handoff-staleness`
 - `npm run audit:ai-control-plane`
-- controllo manuale di `SESSION_HANDOFF.md` e `SESSION_PROMPT.md` se presente
+- controllo manuale di `.claude/CONTINUATION.md`, `Resources/continuita/START-NEXT-CHAT.md`, `SESSION_HANDOFF.md` e `SESSION_PROMPT.md` se presenti come fallback legacy
 
 ## 6. Ragionamento autonomo, esempi come pattern e no false completion
 

@@ -1,21 +1,18 @@
 /**
- * handoffStalenessAudit.ts — Verifica che SESSION_HANDOFF.md e .claude/SESSION_PROMPT.md
- * non siano stale rispetto allo stato corrente del repo.
+ * handoffStalenessAudit.ts
  *
- * Controlli:
- * - data nell'header del handoff vs data corrente (warning > 14 giorni)
- * - commit citato nel session prompt vs HEAD corrente
- * - branch citato vs branch corrente
- * - working tree dirty non riflesso nei file
+ * Audit legacy-compatible: il comando resta `audit:handoff-staleness`, ma la
+ * fonte primaria di cambio chat ora e' `.claude/CONTINUATION.md` sincronizzato
+ * in Obsidian `Resources/continuita/`.
  *
- * Uso:
- *   npx ts-node src/scripts/handoffStalenessAudit.ts
- *   npm run audit:handoff-staleness
+ * `SESSION_HANDOFF.md` e `.claude/SESSION_PROMPT.md` sono fallback legacy:
+ * possono esistere, ma non sono piu' prerequisiti per aprire una nuova chat.
  */
 
-import { readFileSync, existsSync } from 'fs';
+import { execFileSync } from 'child_process';
+import { existsSync, readFileSync, statSync } from 'fs';
+import { homedir } from 'os';
 import { join } from 'path';
-import { execSync } from 'child_process';
 
 interface CheckResult {
     name: string;
@@ -24,9 +21,18 @@ interface CheckResult {
 }
 
 const REPO_ROOT = process.cwd();
-const HANDOFF_PATH = join(REPO_ROOT, 'SESSION_HANDOFF.md');
-const PROMPT_PATH = join(REPO_ROOT, '.claude', 'SESSION_PROMPT.md');
-const STALE_DAYS_WARNING = 14;
+const CONTINUATION_PATH = join(REPO_ROOT, '.claude', 'CONTINUATION.md');
+const LEGACY_HANDOFF_PATH = join(REPO_ROOT, 'SESSION_HANDOFF.md');
+const LEGACY_PROMPT_PATH = join(REPO_ROOT, '.claude', 'SESSION_PROMPT.md');
+const OBSIDIAN_VAULT = join(homedir(), 'Desktop', 'AI brain');
+const OBSIDIAN_CONTINUITY_DIR = join(OBSIDIAN_VAULT, 'Resources', 'continuita');
+const OBSIDIAN_CONTINUATION = join(OBSIDIAN_CONTINUITY_DIR, 'CONTINUATION-Linkedin.md');
+const OBSIDIAN_START_NEXT_CHAT = join(OBSIDIAN_CONTINUITY_DIR, 'START-NEXT-CHAT.md');
+const TODOS_SOURCE = join(homedir(), 'todos', 'active.md');
+const TODOS_OBSIDIAN = join(OBSIDIAN_VAULT, 'Resources', 'sistema', 'active-todos.md');
+const MEMORY_SOURCE = join(homedir(), 'memory', 'decisions_secondo_cervello.md');
+const MEMORY_OBSIDIAN = join(OBSIDIAN_VAULT, 'Resources', 'memorie', 'decisions_secondo_cervello.md');
+const MAX_SYNC_LAG_MS = 5 * 60 * 1000;
 
 function readFileSafe(path: string): string | null {
     try {
@@ -36,179 +42,238 @@ function readFileSafe(path: string): string | null {
     }
 }
 
-function gitCommand(args: string): string | null {
+function gitCommand(args: string[]): string | null {
     try {
-        return execSync(`git ${args}`, { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+        return execFileSync('git', args, { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
     } catch {
         return null;
     }
 }
 
-function extractDate(text: string): string | null {
-    const match = text.match(/(\d{4}-\d{2}-\d{2})/);
-    return match ? match[1] : null;
+function hasTodos(text: string): boolean {
+    return /TODO:\s*\[AI:/i.test(text) || /^TODO:\s*$/im.test(text);
 }
 
-function extractShortCommit(text: string): string | null {
-    const match = text.match(/(?:Ultimo commit|commit):\s*([a-f0-9]{7,40})/i);
-    return match ? match[1].substring(0, 7) : null;
+function hasStaleMarker(text: string): boolean {
+    return /STALE-AFTER-COMMIT|CONTINUITY STALE|HANDOFF STALE/i.test(text);
 }
 
-function extractBranch(text: string): string | null {
-    const match = text.match(/Branch:\s*([^\s|]+)/i);
-    return match ? match[1] : null;
-}
-
-function daysSince(dateStr: string): number {
-    const date = new Date(dateStr);
-    if (Number.isNaN(date.getTime())) return -1;
-    const diffMs = Date.now() - date.getTime();
-    return Math.floor(diffMs / (1000 * 60 * 60 * 24));
-}
-
-function checkHandoffPresence(): CheckResult {
-    if (!existsSync(HANDOFF_PATH)) {
-        return { name: 'SESSION_HANDOFF.md presente', passed: false, detail: `File mancante: ${HANDOFF_PATH}` };
+function mtime(path: string): number | null {
+    try {
+        return existsSync(path) ? statSync(path).mtime.getTime() : null;
+    } catch {
+        return null;
     }
-    return { name: 'SESSION_HANDOFF.md presente', passed: true, detail: 'File trovato in root' };
 }
 
-function checkSessionPromptPresence(): CheckResult {
-    if (!existsSync(PROMPT_PATH)) {
-        return { name: '.claude/SESSION_PROMPT.md presente', passed: false, detail: `File mancante: ${PROMPT_PATH}` };
-    }
-    return { name: '.claude/SESSION_PROMPT.md presente', passed: true, detail: 'File trovato in .claude/' };
-}
-
-function checkHandoffDateFreshness(): CheckResult {
-    const text = readFileSafe(HANDOFF_PATH);
+function checkContinuationPrimary(): CheckResult {
+    const text = readFileSafe(CONTINUATION_PATH);
     if (!text) {
-        return { name: 'Handoff: data fresca', passed: false, detail: 'handoff non leggibile' };
-    }
-    const date = extractDate(text);
-    if (!date) {
-        return { name: 'Handoff: data fresca', passed: false, detail: 'nessuna data ISO trovata nell\'header' };
-    }
-    const days = daysSince(date);
-    if (days < 0) {
-        return { name: 'Handoff: data fresca', passed: false, detail: `data malformata: ${date}` };
-    }
-    if (days > STALE_DAYS_WARNING) {
-        return { name: 'Handoff: data fresca', passed: false, detail: `handoff datato ${date} (${days} giorni fa) — aggiornare prima di nuova chat` };
-    }
-    return { name: 'Handoff: data fresca', passed: true, detail: `handoff del ${date} (${days} giorni fa)` };
-}
-
-function checkSessionPromptCommitMatch(): CheckResult {
-    const text = readFileSafe(PROMPT_PATH);
-    if (!text) {
-        return { name: 'Session prompt: commit allineato', passed: false, detail: 'session prompt non leggibile' };
-    }
-    const citedCommit = extractShortCommit(text);
-    if (!citedCommit) {
-        return { name: 'Session prompt: commit allineato', passed: false, detail: 'nessun commit citato nel session prompt' };
-    }
-    const headCommit = gitCommand('rev-parse --short HEAD');
-    if (!headCommit) {
-        return { name: 'Session prompt: commit allineato', passed: false, detail: 'git non disponibile per verifica HEAD' };
-    }
-    const headShort = headCommit.substring(0, 7);
-    if (citedCommit !== headShort) {
-        const commitsAhead = gitCommand(`rev-list --count ${citedCommit}..HEAD`);
-        const aheadInfo = commitsAhead ? ` (${commitsAhead} commit avanti)` : '';
         return {
-            name: 'Session prompt: commit allineato',
+            name: 'Continuita primaria presente',
             passed: false,
-            detail: `prompt cita ${citedCommit}, HEAD ora e' ${headShort}${aheadInfo} — rigenerare con /session-prompt`,
+            detail: `Manca ${CONTINUATION_PATH}. Gli hook devono generarlo prima di cambio chat/compact.`,
         };
     }
-    return { name: 'Session prompt: commit allineato', passed: true, detail: `prompt e HEAD su ${headShort}` };
-}
 
-function checkSessionPromptBranchMatch(): CheckResult {
-    const text = readFileSafe(PROMPT_PATH);
-    if (!text) {
-        return { name: 'Session prompt: branch allineato', passed: false, detail: 'session prompt non leggibile' };
-    }
-    const citedBranch = extractBranch(text);
-    if (!citedBranch) {
-        return { name: 'Session prompt: branch allineato', passed: true, detail: 'nessun branch citato (ok)' };
-    }
-    const currentBranch = gitCommand('rev-parse --abbrev-ref HEAD');
-    if (!currentBranch) {
-        return { name: 'Session prompt: branch allineato', passed: false, detail: 'git non disponibile' };
-    }
-    if (citedBranch !== currentBranch) {
+    const required = [
+        'PROBLEMA CHE STAVAMO RISOLVENDO',
+        'COSA E STATO COMPLETATO',
+        'DECISIONI CHIAVE',
+        'STATO TECNICO ESATTO',
+        'PROSSIMO PASSO ESATTO',
+    ];
+    const missing = required.filter((snippet) => !text.includes(snippet));
+    if (missing.length > 0) {
         return {
-            name: 'Session prompt: branch allineato',
+            name: 'Continuita primaria strutturata',
             passed: false,
-            detail: `prompt cita branch '${citedBranch}', repo ora su '${currentBranch}'`,
+            detail: `CONTINUATION.md manca sezioni: ${missing.join(', ')}`,
         };
     }
-    return { name: 'Session prompt: branch allineato', passed: true, detail: `entrambi su '${currentBranch}'` };
+
+    if (hasTodos(text)) {
+        return {
+            name: 'Continuita primaria compilata',
+            passed: false,
+            detail: 'CONTINUATION.md contiene ancora placeholder TODO: [AI:]. Compilarlo prima di cambiare chat.',
+        };
+    }
+
+    if (hasStaleMarker(text)) {
+        return {
+            name: 'Continuita primaria fresca',
+            passed: false,
+            detail: 'CONTINUATION.md e\' marcato stale dopo commit. Aggiornare memoria/continuation e risincronizzare Obsidian.',
+        };
+    }
+
+    return {
+        name: 'Continuita primaria pronta',
+        passed: true,
+        detail: '.claude/CONTINUATION.md presente, strutturato e senza placeholder.',
+    };
 }
 
-function checkWorkingTreeReflected(): CheckResult {
-    const status = gitCommand('status --porcelain');
-    if (status === null) {
-        return { name: 'Working tree riflesso nel prompt', passed: false, detail: 'git non disponibile' };
+function checkContinuationGitAlignment(): CheckResult {
+    const text = readFileSafe(CONTINUATION_PATH);
+    if (!text) {
+        return { name: 'Continuita allineata al git', passed: false, detail: 'CONTINUATION.md non leggibile.' };
     }
-    const promptText = readFileSafe(PROMPT_PATH);
-    if (!promptText) {
-        return { name: 'Working tree riflesso nel prompt', passed: false, detail: 'session prompt non leggibile' };
+
+    const headCommit = gitCommand(['rev-parse', '--short', 'HEAD']);
+    const branch = gitCommand(['rev-parse', '--abbrev-ref', 'HEAD']);
+    const status = gitCommand(['status', '--porcelain']);
+
+    if (!headCommit || !branch || status === null) {
+        return { name: 'Continuita allineata al git', passed: false, detail: 'git non disponibile per HEAD/branch/status.' };
     }
-    const dirty = status.split('\n').filter((l) => l.trim().length > 0);
-    if (dirty.length === 0) {
-        return { name: 'Working tree riflesso nel prompt', passed: true, detail: 'working tree pulito' };
+
+    const problems: string[] = [];
+    if (!text.includes(headCommit)) {
+        problems.push(`HEAD ${headCommit} non citato`);
     }
-    const modifiedFiles = dirty
-        .map((l) => l.substring(3).trim())
-        .filter((f) => !f.startsWith('"WhatsApp Image'));
-    const unmentioned = modifiedFiles.filter((f) => !promptText.includes(f));
-    if (unmentioned.length > 0 && modifiedFiles.length > 3) {
+    if (!text.includes(`Branch: ${branch}`)) {
+        problems.push(`branch ${branch} non citato`);
+    }
+
+    const dirtyFiles = status
+        .split('\n')
+        .map((line) => line.trimEnd())
+        .filter(Boolean)
+        .map((line) => line.substring(3).trim())
+        .filter((file) => file && !file.startsWith('"WhatsApp Image'));
+
+    const unmentionedDirty = dirtyFiles.filter((file) => !text.includes(file));
+    if (unmentionedDirty.length > 0) {
+        problems.push(`${unmentionedDirty.length}/${dirtyFiles.length} file dirty non riflessi: ${unmentionedDirty.slice(0, 5).join(', ')}`);
+    }
+
+    if (problems.length > 0) {
         return {
-            name: 'Working tree riflesso nel prompt',
+            name: 'Continuita allineata al git',
             passed: false,
-            detail: `${modifiedFiles.length} file dirty, ${unmentioned.length} non menzionati nel prompt — rigenerare`,
+            detail: `${problems.join('; ')}. Aggiornare CONTINUATION.md prima di nuova chat.`,
+        };
+    }
+
+    return {
+        name: 'Continuita allineata al git',
+        passed: true,
+        detail: `branch ${branch}, HEAD ${headCommit}, dirty files coperti: ${dirtyFiles.length}.`,
+    };
+}
+
+function checkObsidianContinuityView(): CheckResult {
+    const startText = readFileSafe(OBSIDIAN_START_NEXT_CHAT);
+    const continuationText = readFileSafe(OBSIDIAN_CONTINUATION);
+    if (!startText || !continuationText) {
+        return {
+            name: 'Obsidian: vista continuita presente',
+            passed: false,
+            detail: `Mancano ${OBSIDIAN_START_NEXT_CHAT} o ${OBSIDIAN_CONTINUATION}. Eseguire sync-memory-to-obsidian.mjs --verbose.`,
+        };
+    }
+
+    const required = [
+        'START NEXT CHAT - Continuita Obsidian',
+        'SESSION_HANDOFF.md',
+        'SESSION_PROMPT.md',
+        'fallback legacy',
+        'Resources/continuita/CONTINUATION-Linkedin.md',
+    ];
+    const missing = required.filter((snippet) => !startText.includes(snippet));
+    if (missing.length > 0) {
+        return {
+            name: 'Obsidian: START-NEXT-CHAT corretto',
+            passed: false,
+            detail: `START-NEXT-CHAT.md manca: ${missing.join(', ')}`,
+        };
+    }
+
+    if (hasTodos(continuationText) || hasStaleMarker(continuationText)) {
+        return {
+            name: 'Obsidian: CONTINUATION pubblicato valido',
+            passed: false,
+            detail: 'La copia Obsidian di CONTINUATION contiene TODO o marker stale.',
+        };
+    }
+
+    return {
+        name: 'Obsidian: vista continuita valida',
+        passed: true,
+        detail: 'Resources/continuita contiene START-NEXT-CHAT e CONTINUATION-Linkedin validi.',
+    };
+}
+
+function checkFileFreshness(source: string, target: string, label: string): CheckResult {
+    const sourceTime = mtime(source);
+    const targetTime = mtime(target);
+    if (sourceTime === null) {
+        return { name: `${label}: fonte presente`, passed: false, detail: `Fonte mancante: ${source}` };
+    }
+    if (targetTime === null) {
+        return { name: `${label}: sync Obsidian presente`, passed: false, detail: `Vista Obsidian mancante: ${target}` };
+    }
+    if (targetTime + MAX_SYNC_LAG_MS < sourceTime) {
+        return {
+            name: `${label}: sync fresco`,
+            passed: false,
+            detail: `Vista Obsidian piu' vecchia della fonte di ${Math.round((sourceTime - targetTime) / 1000)}s.`,
         };
     }
     return {
-        name: 'Working tree riflesso nel prompt',
+        name: `${label}: sync fresco`,
         passed: true,
-        detail: `${modifiedFiles.length} file dirty, copertura accettabile`,
+        detail: 'Vista Obsidian allineata alla fonte.',
+    };
+}
+
+function checkLegacyFilesAreFallbackOnly(): CheckResult {
+    const present = [
+        existsSync(LEGACY_HANDOFF_PATH) ? 'SESSION_HANDOFF.md' : null,
+        existsSync(LEGACY_PROMPT_PATH) ? '.claude/SESSION_PROMPT.md' : null,
+    ].filter(Boolean);
+
+    return {
+        name: 'Legacy handoff non obbligatorio',
+        passed: true,
+        detail:
+            present.length > 0
+                ? `${present.join(', ')} presenti ma trattati come fallback legacy.`
+                : 'Nessun file legacy presente; ok, non sono prerequisiti.',
     };
 }
 
 function run(): void {
-    console.log('=== Handoff Staleness Audit ===\n');
-    const today = new Date().toISOString().slice(0, 10);
-    console.log(`Data: ${today}\n`);
+    console.log('=== Continuity / Handoff Staleness Audit ===\n');
+    console.log(`Data: ${new Date().toISOString().slice(0, 10)}\n`);
 
     const checks: CheckResult[] = [
-        checkHandoffPresence(),
-        checkSessionPromptPresence(),
-        checkHandoffDateFreshness(),
-        checkSessionPromptCommitMatch(),
-        checkSessionPromptBranchMatch(),
-        checkWorkingTreeReflected(),
+        checkContinuationPrimary(),
+        checkContinuationGitAlignment(),
+        checkObsidianContinuityView(),
+        checkFileFreshness(TODOS_SOURCE, TODOS_OBSIDIAN, 'todos/active.md'),
+        checkFileFreshness(MEMORY_SOURCE, MEMORY_OBSIDIAN, 'memoria secondo cervello'),
+        checkLegacyFilesAreFallbackOnly(),
     ];
 
     let passed = 0;
     for (const check of checks) {
-        const icon = check.passed ? '✅' : '❌';
-        console.log(`${icon} ${check.name}`);
-        console.log(`   → ${check.detail}`);
+        const icon = check.passed ? 'OK' : 'FAIL';
+        console.log(`[${icon}] ${check.name}`);
+        console.log(`     ${check.detail}`);
         if (check.passed) passed++;
     }
 
     console.log(`\n--- ${passed}/${checks.length} check passati ---`);
 
     if (passed < checks.length) {
-        console.log('\nRigenera handoff/prompt con `/context-handoff` o `/session-prompt` prima di aprire una nuova chat.');
+        console.log('\nAggiorna .claude/CONTINUATION.md, ~/memory, todos/active.md e riesegui sync Obsidian prima di aprire una nuova chat.');
         process.exit(1);
     }
 
-    console.log('\n✅ Handoff e session prompt sono freschi e allineati al repo.');
+    console.log('\nContinuita primaria e vista Obsidian fresche. SESSION_HANDOFF/SESSION_PROMPT restano solo fallback legacy.');
 }
 
 run();

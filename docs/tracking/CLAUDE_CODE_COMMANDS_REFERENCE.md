@@ -28,7 +28,7 @@ Identifica gap di adozione e candidate per integrazione nel workflow.
 | 3 | `/add-dir` | Add another folder | 🟡 |
 | 4 | `/rename` | Rename current session | 🔵 |
 | 5 | `/branch` | Copy conversation path | 🔵 |
-| 6 | `/resume` | Continue old session | ✅ (con SESSION_PROMPT.md) |
+| 6 | `/resume` | Continue old session | ✅ (con memoria + CONTINUATION/Obsidian; SESSION_PROMPT legacy) |
 | 7 | `/clear` | Start fresh chat | 🟡 |
 | 8 | `/export` | Save chat life | 🔵 |
 
@@ -39,7 +39,7 @@ Identifica gap di adozione e candidate per integrazione nel workflow.
 | 9 | `/context` | Show context usage | ✅ |
 | 10 | `/compact` | Shrink chat history | ✅ (con PreCompact hook) |
 | 11 | `/copy` | Copy last answer | 🟡 |
-| 12 | `/recap` | Summarize session | 🔵 (utile vs nostro context-handoff) |
+| 12 | `/recap` | Summarize session | 🔵 (utile, ma non sostituisce CONTINUATION/Obsidian) |
 | 13 | `/focus` | Cleaner screen mode | ⚪ |
 | 14 | `/rewind` | Go back earlier | 🔵 |
 

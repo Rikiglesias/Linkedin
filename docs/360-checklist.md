@@ -82,7 +82,7 @@
 
 - [ ] Tabella skill nel CLAUDE.md con trigger precisi
 - [ ] Skill antiban aggiornata con vettori detection correnti
-- [ ] Skill context-handoff configurata
+- [ ] Continuita cambio chat configurata: `.claude/CONTINUATION.md` + Obsidian `Resources/continuita` + `context-handoff` come supporto/fallback
 - [ ] Skill loop-codex configurata
 - [ ] Pre/post-conditions nelle skill critiche
 - [ ] Audit periodico (rimuovere skill non usate da 30gg)

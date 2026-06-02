@@ -45,7 +45,7 @@ Usare questa mappa quando cambia il control plane AI. L'obiettivo e' evitare mod
 | Nuovo hook Claude Code | hook reale in `C:/Users/albie/.claude/hooks/`, `C:/Users/albie/.claude/settings.json`, `C:/Users/albie/.claude/scripts/model-router-config.mjs`, `AGENTS.md`, `docs/tracking/AI_HOOK_ENFORCEMENT_PLAN.md`, `src/scripts/hooksConformityAudit.ts` | `npm run audit:hooks` + `npm run audit:ai-control-plane` |
 | Nuovo hook Codex | `.codex/hooks.json`, `.codex/hooks/*.ps1`, `C:/Users/albie/.codex/config.toml`, `docs/tracking/AI_ORCHESTRATOR_CONTRACT.md`, `src/scripts/aiReasoningHardeningAudit.ts` | `npm run audit:codex-hook-parity` |
 | Nuovo livello o cambio L2-L9 | `docs/tracking/AI_LEVEL_ENFORCEMENT.json`, `docs/AI_RUNTIME_BRIEF.md`, `docs/AI_OPERATING_MODEL.md`, audit collegati | `npm run audit:l2-l6` + `npm run audit:ai-control-plane` |
-| Cambio handoff/cambio chat | `SESSION_HANDOFF.md`, eventuale `SESSION_PROMPT.md`, `todos/active.md`, `docs/tracking/ENGINEERING_WORKLOG.md`, skill `context-handoff` o `session-prompt` se toccate | prova nuova chat + `npm run audit:ai-control-plane` |
+| Cambio handoff/cambio chat | `.claude/CONTINUATION.md`, `C:/Users/albie/memory/`, `todos/active.md`, Obsidian `Resources/continuita/START-NEXT-CHAT.md`, `docs/tracking/ENGINEERING_WORKLOG.md`; `SESSION_HANDOFF.md` / `SESSION_PROMPT.md` solo fallback legacy | `npm run audit:handoff-staleness` + prova nuova chat + `npm run audit:ai-control-plane` |
 | Audit zero-trust/backlog AI | `docs/tracking/AI_POINT_BY_POINT_AUDIT_*.md`, `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md`, `docs/AI_IMPLEMENTATION_LIST_GLOBAL.md`, `todos/active.md` | `npm run audit:ai-backlog-consistency` + `npm run audit:ai-control-plane` |
 
 ## Regole di aggiornamento
