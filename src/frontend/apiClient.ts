@@ -155,10 +155,10 @@ export class DashboardApi {
      */
     async hasValidSession(): Promise<boolean> {
         try {
-            const resp = await fetch('/api/kpis');
+            const resp = await fetch('/api/kpis', { signal: AbortSignal.timeout(5_000) });
             return resp.ok;
         } catch {
-            return true; // Network error → non mostrare login, potrebbe essere offline
+            return true; // Network error/timeout → non mostrare login, potrebbe essere offline
         }
     }
 
