@@ -40,6 +40,16 @@ module.exports = [
             "@typescript-eslint/await-thenable": "error",         // await su non-Promise
             "no-return-await": "off",
             "@typescript-eslint/return-await": ["error", "in-try-catch"],  // return await solo in try/catch
+
+            // ── L3 enforcement deterministico (backlog AI punto 4) ───────
+            // fetch() senza secondo argomento = nessun signal/timeout possibile.
+            // I/O di rete senza timeout = leak/hang silenzioso (L3.3). Bloccante,
+            // non advisory: il codice attuale e' gia' conforme (tutte le fetch
+            // hanno AbortController/AbortSignal.timeout). Previene regressioni.
+            "no-restricted-syntax": ["error", {
+                "selector": "CallExpression[callee.name='fetch'][arguments.length<2]",
+                "message": "fetch() richiede un secondo argomento con signal (AbortController o AbortSignal.timeout). I/O di rete senza timeout viola L3.3 (timeout esplicito su ogni I/O).",
+            }],
         },
     },
     eslintConfigPrettier,
