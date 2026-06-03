@@ -105,3 +105,9 @@ docs/archive/TODO.md
 
 # Tool di sviluppo AI/Claude (non fanno parte del progetto LinkedIn)
 tools/
+
+# Vault Obsidian per lead/note LinkedIn — contiene dati personali (nomi, aziende,
+# conversazioni). NON deve mai entrare in git/push (GDPR, L6.7/L7.5).
+# Vault reale: Linkedin/ . Il .obsidian/ alla root e' apertura accidentale del repo.
+.obsidian/
+Linkedin/
