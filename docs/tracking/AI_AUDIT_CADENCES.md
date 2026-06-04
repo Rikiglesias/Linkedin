@@ -4,10 +4,15 @@
 
 ## Bundle audit
 
-| Bundle | Quando | Cosa esegue | Tempo medio |
+| Bundle | Quando | Copre (domini) | Cosa esegue |
 |---|---|---|---|
-| `npm run audit:weekly` | Settimanale (lunedì mattina) | miss-metrics + handoff-staleness + violations | ~30s |
-| `npm run audit:monthly` | Mensile (primo del mese) | ai-control-plane + adk-capabilities + rule-enforcement + ledger + skills | ~60s |
+| `npm run audit:daily` | Ogni giorno | sicurezza + qualità + backend/frontend | security:scan (secret) + conta-problemi (typecheck BE+FE + lint + test) |
+| `npm run audit:weekly` | Settimanale (lun) | AI-meta: drift/log/handoff | miss-metrics + handoff-staleness + continuation + violations + memory-staleness + docs-size + obsidian-vault + output-styles + mcp-config + json-schemas + rules-coverage + skill-filenames + auto-track |
+| `npm run audit:biweekly` | Ogni 2 settimane | + architettura + build E2E | audit:weekly + `madge --circular src/` + build (backend+frontend) |
+| `npm run audit:monthly` | Mensile (1° del mese) | AI-meta: salute control plane | ai-control-plane + adk-capabilities + rule-enforcement + ledger + skills |
+| `npm run audit:quarterly` | Ogni 4 settimane | profondo: sicurezza + architettura + build | audit:monthly + security:scan + build + `madge --circular src/` |
+
+> Copertura end-to-end: **sicurezza** (security:scan secret in daily/quarterly; SAST semgrep MCP/`/security-reviewer` = manuale periodico), **qualità** (typecheck+lint+test in daily), **architettura** (madge circular in biweekly/quarterly), **backend+frontend** (typecheck:backend + typecheck:frontend + build in daily/biweekly/quarterly), **AI control plane** (weekly/monthly).
 
 Esecuzione singola degli audit possibile via npm script dedicato (vedi `package.json` sezione `scripts`).
 
@@ -66,7 +71,14 @@ Modificare `~/.claude/hooks/session-start.ps1` per controllare last-run timestam
 - **Task Scheduler registrato**:
   - `LinkedIn-AI-Audit-Weekly` — prima esecuzione lun 18/05/2026 09:00, ogni lunedì
   - `LinkedIn-AI-Audit-Monthly` — prima esecuzione 01/06/2026 09:00, ogni primo del mese
-- Last run: nessuna ancora — attende prima trigger automatica.
+- **Da registrare (bundle nuovi 2026-06-04)** — comandi `schtasks` pronti (eseguire una volta):
+  ```cmd
+  schtasks /Create /TN "LinkedIn-AI-Audit-Daily" /SC DAILY /ST 09:00 /TR "cmd /c cd /d C:\Users\albie\Desktop\Programmi\Linkedin && npm run audit:daily > %USERPROFILE%\memory\audit-daily.log 2>&1"
+  schtasks /Create /TN "LinkedIn-AI-Audit-Biweekly" /SC WEEKLY /MO 2 /D MON /ST 09:00 /TR "cmd /c cd /d C:\Users\albie\Desktop\Programmi\Linkedin && npm run audit:biweekly > %USERPROFILE%\memory\audit-biweekly.log 2>&1"
+  schtasks /Create /TN "LinkedIn-AI-Audit-Quarterly" /SC WEEKLY /MO 4 /D MON /ST 09:00 /TR "cmd /c cd /d C:\Users\albie\Desktop\Programmi\Linkedin && npm run audit:quarterly > %USERPROFILE%\memory\audit-quarterly.log 2>&1"
+  ```
+- `audit:daily` validato 2026-06-04 (security:scan + 1430 test verdi). `biweekly`/`quarterly` eseguono `npx madge` (scarica madge al primo run).
+- Last run automatica: nessuna ancora — attende prima trigger.
 - Verifica manuale: `schtasks /Query /TN "LinkedIn-AI-Audit-Weekly"` o `Get-ScheduledTask -TaskName "LinkedIn-AI-Audit-*"`.
 
 ## Fonti di verità
