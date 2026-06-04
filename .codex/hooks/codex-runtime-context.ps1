@@ -79,8 +79,12 @@ if (Test-Path $ParityMatrixPath) {
     $parityLines = @(
         "=== CODEX_PARITY [limiti ambiente] ===",
         "- PARITY MATRIX: $ParityMatrixPath",
-        "- Codex GAP critici: PreToolUse Edit (0 hook), memoria non auto-caricata,",
-        "  post-edit hygiene assente, sync Obsidian non configurato.",
+        "- Gate ATTIVI in Codex: PreToolUse Edit (codex-edit-gate: anti-ban+secrets+best-practice),",
+        "  PreToolUse Bash (codex-bash-gate: git block), PostToolUse Edit (codex-post-edit: size+hygiene+verify),",
+        "  Stop (codex-stop-check: sync Obsidian + proactive next step).",
+        "- GAP residui REALI (non fingere parita'): memoria globale annunciata ma NON auto-letta",
+        "  (leggila tu), PreCompact opaco (nessun handoff automatico), switch modello/provider manuale,",
+        "  Cloud Code non coperto.",
         "- Per Linkedin-touch o task sensibili: MIGRA a Claude Code.",
         "- Audit portabili: usa 'npm run audit:*' che funzionano in Codex."
     )
@@ -91,8 +95,8 @@ $obsidianLines = @(
     "=== CODEX_OBSIDIAN [sincronizzazione vault] ===",
     "- Vault Obsidian: C:\Users\albie\Desktop\AI brain\ (PARA + Bases + 47 note)",
     "- START-HERE.md: leggi questo per ripartire completo",
-    "- Sync memoria: manuale (Codex non ha hook Stop auto-sync)",
-    "- Per aggiornare vault dopo modifiche importanti: esegui 'npm run sync:obsidian'"
+    "- Sync memoria: automatico via codex-stop-check.ps1 (best-effort se Obsidian aperto)",
+    "- Sync manuale on-demand: esegui 'npm run sync:obsidian'"
 )
 
 # === ASSEMBLA TUTTO IL CONTESTO ===

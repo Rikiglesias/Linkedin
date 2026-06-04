@@ -250,7 +250,7 @@ Verifiche: audit manuale workflow, `npm run audit:routing`, prova import/deploy 
 
 Problema: cambiare ambiente non deve far perdere memoria, hook, MCP, gate o metodo di lavoro.
 
-Stato: capability matrix esiste in parte; mancano test comparativi e policy viva su migrazione verso Codex.
+Stato: capability matrix completa e aggiornata (`PARITY_MATRIX.md` 2026-06-04); gate Codex implementati, registrati e provati (`audit:codex-hook-smoke` 13/13). Gap residui strutturali dichiarati. Resta verifica end-to-end in Codex reale.
 
 Trigger: cambio ambiente/modello, tool non disponibile ovunque, migrazione verso Codex/Claude/Cloud Code o gate non equivalente.
 
@@ -267,13 +267,13 @@ Sottopunti:
 - [x] aggiornare matrice ambiente -> capability -> garanzia reale — `docs/PARITY_MATRIX.md` (2026-06-01)
 - [x] verificare memoria, hook, runtime brief, skill, MCP, plugin, git gate e audit per ogni ambiente — matrice completa con stato per capability
 - [x] documentare gap senza normalizzarli — gap critici espliciti in `docs/PARITY_MATRIX.md`
-- [ ] stabilizzare settings, SessionStart, provider/model switching e visibilita' modelli
+- [x] stabilizzare settings, SessionStart, provider/model switching e visibilita' modelli — `PARITY_MATRIX.md` sezione "Model/provider switching Codex" (limite strutturale governato: switch manuale by design, no router locale in Codex)
 - [x] definire uso corretto di Opus/Sonnet/Haiku/OpenRouter/Codex per rischio e costo — matrice decisionale task->ambiente + contesto runtime Codex
-- [ ] spostare lavoro a Codex solo dove le garanzie restano equivalenti
+- [x] spostare lavoro a Codex solo dove le garanzie restano equivalenti — matrice decisionale + gate Codex provati (`audit:codex-hook-smoke` 13/13); Linkedin-touch resta Claude Code-only
 
-Done: ambiente e modello sono scelti tecnicamente; nessuna regola critica vive in un solo ambiente senza gap tracciato.
+Done: ambiente e modello sono scelti tecnicamente; nessuna regola critica vive in un solo ambiente senza gap tracciato. Gap residui strutturali (GAP-3 PreCompact, Cloud Code, switch manuale) dichiarati non normalizzati; resta verifica end-to-end in Codex reale (passo utente).
 
-Verifiche: review capability matrix, smoke task comparativi, `npm run audit:ai-control-plane`.
+Verifiche: review capability matrix, `npm run audit:codex-hook-parity` (3/3), `npm run audit:codex-hook-smoke` (13/13), `npm run audit:ai-control-plane`.
 
 ### 9. `[Local tools][medio]` Strumenti personali, dettatura e prompt improvement
 
@@ -308,7 +308,7 @@ Verifiche: prova dettatura lunga, review prompt riscritto, controllo todos/workl
 
 Problema: modifiche AI non sono chiuse senza gate verdi, worklog, stato git e decisione su commit/push/PR.
 
-Stato: gate quality/git e `audit:git-automation` esistono; serve verificare comportamento fuori Claude Code e ridurre dipendenza da reminder utente.
+Stato: sottopunti operativi chiusi e verificati 2026-06-04 — auto-commit/push policy, distinzione review locale/branch/audit, fallback Codex provato ed enforcement no-completion cross-ambiente. Resta pratica continua.
 
 Trigger: fine unita' logica, working tree dirty dopo modifiche, richiesta commit/push/PR o blocco da dichiarare chiuso.
 
@@ -322,11 +322,11 @@ Ordine: completare unita' -> gate qualita' -> aggiornare worklog/todos -> audit 
 
 Sottopunti:
 
-- [ ] verificare auto-commit dopo gate verdi come chiusura naturale — non considerato chiuso zero-trust fuori Claude Code
-- [ ] chiarire quando push deve fermarsi per review, remote policy o rischio — policy presente, ma serve verifica cross-ambiente aggiornata
-- [ ] distinguere review locale, branch review e audit periodico
-- [ ] documentare fallback fuori Claude Code — esiste policy testuale, ma serve audit Codex/Cloud aggiornato
-- [ ] impedire "completato" se commit/push/PR richiesti non sono valutati — hook Claude presente, ma non enforcement equivalente cross-ambiente
+- [x] verificare auto-commit dopo gate verdi come chiusura naturale — `git-commit-push.md` "Auto-commit by default" + `pre-bash-l1-gate.ps1`; `audit:git-automation` provato READY 2026-06-04
+- [x] chiarire quando push deve fermarsi per review, remote policy o rischio — `git-commit-push.md` precondizioni cumulative + ROMPONO il trigger; provato push BLOCKED 2026-06-04
+- [x] distinguere review locale, branch review e audit periodico — nuova sezione tabellare in `git-commit-push.md`
+- [x] documentare fallback fuori Claude Code — `git-commit-push.md` "Fallback ambienti senza hook PowerShell" + gate Codex provato (`audit:codex-hook-smoke`)
+- [x] impedire "completato" se commit/push/PR richiesti non sono valutati — enforcement cross-ambiente: `pre-stop-commit-gate.ps1` (Claude) + `codex-stop-check.ps1` (Codex, provato smoke)
 
 Done: l'utente non deve ricordare commit/push; se il push non avviene, motivo e prossimo passo sono espliciti.
 

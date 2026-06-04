@@ -4,6 +4,34 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-04 — Chiusura sottopunti backlog AI punto 8 (parità) e punto 10 (git/review)
+
+### Obiettivo
+
+Completare i sottopunti operativi aperti di #8 (parità ambienti Claude Code/Codex) e #10 (git/review/chiusura blocchi fuori Claude Code), con prova reale e fonte aggiornata — non spuntare a sentimento.
+
+### Interventi eseguiti
+
+- Creato `.codex/smoke-test-hooks.ps1` + npm script `audit:codex-hook-smoke`: esercita ogni hook Codex con input simulato e verifica la decisione reale (anti-ban/secrets/git block + advisory). Chiude la verifica "smoke task comparativi" mancante del punto 8. Root cause risolta in fase di sviluppo: powershell.exe 5.1 legge i file senza BOM come ANSI (script reso ASCII-only) e il pipe stringa→child è inaffidabile per ConvertFrom-Json in 5.1 (stdin passato via `Start-Process -RedirectStandardInput` da temp file, più fedele all'OS-pipe usato da Codex reale).
+- Corretto drift interno in `.codex/hooks/codex-runtime-context.ps1`: la sezione CODEX_PARITY dichiarava gap GIÀ chiusi (PreToolUse Edit "0 hook", post-edit hygiene "assente", sync Obsidian "non configurato"). Riallineata ai gate attivi reali + gap residui STRUTTURALI veri (GAP-1 memoria non auto-letta, GAP-3 PreCompact, switch modello manuale, Cloud Code). Corretta anche la riga "Sync memoria: manuale" (ora automatico via codex-stop-check).
+- Riscritto `docs/PARITY_MATRIX.md` (era 2026-06-01, stale): GAP-2/GAP-4/GAP-5 marcati CHIUSI con hook che li chiude e prova smoke; GAP-1/GAP-3 mitigati con gap residuo dichiarato; tabella hook allineata allo stato reale (codex-edit-gate, codex-post-edit, codex-bash-gate, codex-post-tool-review); nuova sezione "Model/provider switching Codex" (limite strutturale governato, chiude sottopunto #8 "stabilizzare provider switching").
+- Aggiunta sezione "Livelli di review: locale / branch / audit periodico" in `.claude/rules/git-commit-push.md` (chiude sottopunto #10 "distinguere review locale/branch/audit periodico", unico gap reale di #10; gli altri 4 erano già coperti dalla regola).
+- Aggiornati backlog madre `AI_MASTER_IMPLEMENTATION_BACKLOG.md` e vista lineare `AI_IMPLEMENTATION_LIST_GLOBAL.md`: #8 sottopunti operativi → [x] con prova; #10 tutti i 5 sottopunti → [x] con prova; Status onesti (8 = parziale con gap strutturali residui + 1 verifica end-to-end utente; 10 = chiuso sottopunti).
+
+### Stato reale dopo il blocco
+
+- Punto 8: sottopunti operativi chiusi e verificati. Gap residui STRUTTURALI dichiarati non normalizzati (GAP-3 PreCompact opaco, Cloud Code non coperto, switch modello manuale) + verifica end-to-end in sessione Codex reale = passo utente.
+- Punto 10: sottopunti operativi chiusi e verificati cross-ambiente (Claude + Codex).
+
+### Verifica
+
+- `npm run audit:codex-hook-parity`: 3/3.
+- `npm run audit:codex-hook-smoke`: 13/13 (anche via npm).
+- `npm run audit:ai-reasoning-hardening`: 8/8.
+- `npm run audit:ai-list-completeness`: 10/10.
+- `npm run audit:ai-backlog-consistency`: 3/3.
+- `npm run audit:git-automation`: commit READY, push BLOCKED (working tree dirty — comportamento corretto).
+
 ## 2026-06-01 — Audit zero-trust dei 13 punti AI
 
 ### Obiettivo

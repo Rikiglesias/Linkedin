@@ -59,6 +59,21 @@ Versionato in `.githooks/`, attivare con `npm run setup:git-hooks`:
 - audit contestuale git via `audit:git-automation`
 - gate git via hook globali Claude Code
 
+## Livelli di review: locale / branch / audit periodico
+
+Tre livelli distinti per scope, momento e primitive. Non sono intercambiabili: usare quello giusto per la situazione.
+
+| Livello | Quando | Scope | Primitive |
+|---|---|---|---|
+| **Review locale** (pre-commit) | Working tree dirty, prima di committare un'unità logica | Solo il diff NON committato (incluse untracked) | `/code-review` o `/simplify` sul diff locale; `/code-review:review-local-changes`; per LinkedIn-touch anche `antiban-review` |
+| **Review di branch** (pre-merge) | Branch pronto, prima di PR/merge su base condivisa | Tutti i commit del branch vs base | `code-review:code-review` su PR; `/code-review ultra <PR#>` (cloud, billed, user-triggered); apertura PR via skill `git-create-pr` |
+| **Audit periodico** (cadenza) | Settimanale/mensile o pre-release, NON per singolo blocco | Salute sistemica del control plane, non un diff | `npm run audit:weekly` / `audit:monthly`; `/deep-hygiene`; `security-reviewer` SAST full |
+
+Regole:
+- La review locale è la chiusura naturale del blocco prima del commit; non sostituisce la review di branch su codice condiviso ad alto rischio (anti-ban, auth, migration DB).
+- La review di branch è obbligatoria quando il flusso richiede PR/review (vedi precondizioni auto-push sotto): non auto-pushare bypassandola.
+- L'audit periodico NON va eseguito a ogni blocco (zero-H light-vs-deep): è manutenzione a cadenza, tracciata in `docs/tracking/AI_AUDIT_CADENCES.md`.
+
 ## Auto-push post-commit — trigger automatico
 
 Dopo ogni commit verificato, l'AI deve valutare l'auto-push **senza chiedere conferma all'utente** se le precondizioni sono soddisfatte. L'utente non deve dover ricordare di chiedere "fai anche push": è parte della chiusura naturale del blocco.

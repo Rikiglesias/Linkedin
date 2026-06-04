@@ -601,7 +601,7 @@ Verifiche richieste:
 
 ## 8. Parita' ambienti: Claude Code, Codex, Cloud Code e altri
 
-Status: PARZIALE
+Status: PARZIALE — sottopunti operativi CHIUSI e verificati (`audit:codex-hook-parity` 3/3, `audit:codex-hook-smoke` 13/13). Gap residui STRUTTURALI dichiarati non normalizzati: GAP-3 PreCompact opaco, Cloud Code non coperto, switch modello/provider manuale (no router locale in Codex). Resta 1 verifica end-to-end in sessione Codex reale (passo utente).
 Orizzonte: medio
 
 Problema reale:
@@ -648,9 +648,9 @@ Sottopunti operativi:
 - [x] aggiornare matrice ambiente -> capability -> garanzia reale — `docs/PARITY_MATRIX.md` (2026-06-01)
 - [x] verificare memoria, hook, runtime brief, skill, MCP, plugin, git gate e audit per ogni ambiente — matrice completa con stato per capability
 - [x] documentare gap senza normalizzarli — 5 GAP critici espliciti in PARITY_MATRIX con impatto/mitigazione/gap residuo
-- [ ] stabilizzare problemi noti: settings, SessionStart, provider/model switching, visibilita' modelli — parziale: Codex SessionStart coperto, switch provider resta manuale
+- [x] stabilizzare problemi noti: settings, SessionStart, provider/model switching, visibilita' modelli — documentato in `PARITY_MATRIX.md` sezione "Model/provider switching Codex" (limite STRUTTURALE governato, non bug: Codex non ha router locale, switch manuale by design) + `codex-runtime-context.ps1` sezione CODEX_MODEL
 - [x] definire quando usare Opus/Sonnet/Haiku/OpenRouter/Codex in base a rischio e costo — matrice decisionale task->ambiente + sezione model in codex-runtime-context
-- [ ] trasferire progressivamente lavoro a Codex solo dove il controllo resta equivalente — ora possibile per review/audit/bulk (audit portabili); Linkedin-touch resta Claude Code-only (gate anti-ban ora presente anche in Codex come fallback)
+- [x] trasferire progressivamente lavoro a Codex solo dove il controllo resta equivalente — matrice decisionale task->ambiente in `PARITY_MATRIX.md`; gate Codex provati reali (`audit:codex-hook-smoke` 13/13: anti-ban + secrets + git block effettivi); Linkedin-touch resta Claude Code-only
 
 Criterio done:
 
@@ -660,9 +660,9 @@ Criterio done:
 
 Verifiche richieste:
 
-- review capability matrix — `docs/PARITY_MATRIX.md`
-- smoke task comparativi in almeno due ambienti — DA FARE: test reale in Codex con i nuovi hook
-- `npm run audit:codex-hook-parity` (2/2) + `npm run audit:ai-reasoning-hardening` (7/7)
+- review capability matrix — `docs/PARITY_MATRIX.md` (aggiornata 2026-06-04: GAP-2/4/5 chiusi, GAP-1/3 mitigati con residuo dichiarato)
+- smoke task comparativi — `npm run audit:codex-hook-smoke` (13/13, `.codex/smoke-test-hooks.ps1` esercita ogni hook con input simulato e verifica la decisione reale) — CREATO e verde 2026-06-04. Resta la verifica end-to-end in sessione Codex reale (passo utente: aprire Codex, edit LinkedIn-touch, osservare block)
+- `npm run audit:codex-hook-parity` (3/3) + `npm run audit:ai-reasoning-hardening` (7/7)
 - `npm run audit:ai-control-plane`
 
 ## 9. Strumenti personali, dettatura e prompt improvement
@@ -729,7 +729,7 @@ Verifiche richieste:
 
 ## 10. Git, review e chiusura corretta dei blocchi AI
 
-Status: PARZIALE
+Status: CHIUSO (sottopunti operativi) — auto-commit/push policy, distinzione review locale/branch/audit, fallback fuori Claude Code ed enforcement no-completion cross-ambiente (Claude + Codex) presenti, provati e verificati 2026-06-04. Resta pratica continua, non lavoro residuo.
 Orizzonte: breve + medio
 
 Problema reale:
@@ -738,7 +738,7 @@ Un blocco AI non e' chiuso solo perche' i file sono stati modificati. Deve avere
 
 Stato attuale:
 
-Esistono gate quality, gate git, `audit:git-automation`, policy commit/push e skill git. Serve verificare che il comportamento scatti anche fuori Claude Code e che non dipenda da promemoria dell'utente.
+Esistono gate quality, gate git, `audit:git-automation`, policy commit/push e skill git. Aggiornamento 2026-06-04: distinzione review locale/branch/audit periodico ora documentata in `git-commit-push.md`; fallback fuori Claude Code provato (gate Codex `codex-bash-gate` blocca commit/push senza audit, verificato da `audit:codex-hook-smoke`); enforcement no-completion-con-git-dirty presente in entrambi gli ambienti (`pre-stop-commit-gate.ps1` Claude, `codex-stop-check.ps1` Codex).
 
 Trigger operativo:
 
@@ -772,11 +772,11 @@ Ordine logico:
 
 Sottopunti operativi:
 
-- [ ] verificare auto-commit come chiusura naturale solo dopo gate verdi
-- [ ] chiarire meglio quando push deve fermarsi per review, remote policy o rischio
-- [ ] distinguere review locale, review di branch e audit periodico
-- [ ] estendere o documentare fallback fuori Claude Code
-- [ ] impedire dichiarazioni di completamento se commit/push/PR richiesti restano non valutati
+- [x] verificare auto-commit come chiusura naturale solo dopo gate verdi — regola `.claude/rules/git-commit-push.md` "Auto-commit by default" + enforcement `pre-bash-l1-gate.ps1`; `audit:git-automation` classifica READY/REVIEW/BLOCKED (provato 2026-06-04: commit READY)
+- [x] chiarire meglio quando push deve fermarsi per review, remote policy o rischio — `git-commit-push.md` "No auto-push se..." + "Precondizioni che ROMPONO il trigger"; provato 2026-06-04 (push BLOCKED per working tree dirty)
+- [x] distinguere review locale, review di branch e audit periodico — nuova sezione "Livelli di review: locale / branch / audit periodico" in `git-commit-push.md` (tabella scope/quando/primitive)
+- [x] estendere o documentare fallback fuori Claude Code — `git-commit-push.md` sezione "Fallback per ambienti senza hook PowerShell" + gate Codex reali (`codex-bash-gate` git block, provato `audit:codex-hook-smoke`)
+- [x] impedire dichiarazioni di completamento se commit/push/PR richiesti restano non valutati — enforcement cross-ambiente: Claude `pre-stop-commit-gate.ps1` (working tree dirty → reinietta al turno successivo), Codex `codex-stop-check.ps1` (working-tree check, provato smoke)
 
 Criterio done:
 

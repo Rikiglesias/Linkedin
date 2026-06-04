@@ -63,6 +63,7 @@
         "audit:hook-semantic-coverage": "ts-node src/scripts/aiReasoningHardeningAudit.ts --scope=hook-coverage",
         "audit:continuation-completeness": "ts-node src/scripts/aiReasoningHardeningAudit.ts --scope=continuation",
         "audit:codex-hook-parity": "ts-node src/scripts/aiReasoningHardeningAudit.ts --scope=codex",
+        "audit:codex-hook-smoke": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .codex/smoke-test-hooks.ps1",
         "audit:ai-list-completeness": "ts-node src/scripts/aiListCompletenessAudit.ts",
         "audit:output-styles": "ts-node src/scripts/outputStylesAudit.ts",
         "audit:mcp-config": "ts-node src/scripts/mcpConfigAudit.ts",
