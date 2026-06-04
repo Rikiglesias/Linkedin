@@ -65,6 +65,7 @@ madge_output.txt
 !.claude/output-styles/
 # .claude-plugin/ tracked by default (manifest Anthropic 2026 path canonico)
 CLAUDE.local.md
+.no-auto-commit
 .windsurf/
 .agents/
 .trae/
