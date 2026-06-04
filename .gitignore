@@ -111,3 +111,4 @@ tools/
 # Vault reale: Linkedin/ . Il .obsidian/ alla root e' apertura accidentale del repo.
 .obsidian/
 Linkedin/
+Obsidian/
