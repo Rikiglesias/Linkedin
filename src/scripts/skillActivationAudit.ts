@@ -1,10 +1,23 @@
 /**
  * skillActivationAudit.ts — Verifica che le skill critiche esistano e siano attivabili
  *
+ * SCOPE (importante): questo e' un check di **presenza minima / loadability**, NON una
+ * misura di copertura totale del catalogo skill. Verifica che le skill critiche per il
+ * funzionamento del progetto siano installate e caricabili — non garantisce che TUTTE le
+ * skill desiderabili siano presenti. Vedi `docs/tracking/AI_AUDIT_CADENCES.md`:
+ * "skill critiche ancora attivabili (no manifest rotti dopo update marketplace)".
+ *
  * Per ogni skill critica del progetto, verifica:
  * - directory e file skill.md/index.md esistono
  * - contenuto include snippet chiave atteso
- * - nessun duplicato ovvio tra skill diverse
+ * - contenuto NON e' vuoto/troncato (corpo minimo): cattura il manifest rotto dopo un
+ *   aggiornamento marketplace, scenario in cui lo snippet potrebbe sopravvivere ma il
+ *   file resta inutilizzabile.
+ *
+ * Inventario dinamico (segnale informativo, NON pass/fail per le skill non-critiche per
+ * evitare falsi-fail su rimozioni legittime): conta totale skill, con contenuto e vuote.
+ * L'unico fail su inventario scatta se NESSUNA skill e' caricabile (directory wiped),
+ * sintomo di control plane rotto — non drift legittimo.
  *
  * Uso:
  *   npx ts-node src/scripts/skillActivationAudit.ts
@@ -22,6 +35,14 @@ interface SkillCheck {
 }
 
 const SKILLS_DIR = join(homedir(), '.claude', 'skills');
+
+/**
+ * Soglia di corpo minimo per considerare un SKILL.md critico "caricabile".
+ * Conservativa: un SKILL.md reale ha frontmatter + descrizione ben oltre 50 char,
+ * quindi nessun falso-fail su skill legittime; serve solo a catturare file
+ * troncati/svuotati (manifest rotto dopo update marketplace).
+ */
+const MIN_SKILL_BODY_CHARS = 50;
 
 interface CriticalSkill {
     dir: string;
@@ -63,6 +84,18 @@ function checkCriticalSkill(skill: CriticalSkill): SkillCheck {
             name: skill.dir,
             passed: false,
             detail: `Directory esiste ma manca skill.md/index.md`,
+        };
+    }
+
+    // Corpo minimo: cattura un manifest troncato/svuotato dopo update marketplace.
+    // Floor conservativo (nessun SKILL.md critico reale e' sotto questa soglia) =>
+    // zero rischio di falso-fail, ma fail reale se il file e' di fatto inutilizzabile.
+    const body = content.trim();
+    if (body.length < MIN_SKILL_BODY_CHARS) {
+        return {
+            name: skill.dir,
+            passed: false,
+            detail: `File skill caricato ma corpo minimo (${body.length} char < ${MIN_SKILL_BODY_CHARS}): manifest probabilmente troncato o svuotato`,
         };
     }
 
@@ -125,12 +158,20 @@ function run(): void {
         console.log(`  \u26A0\uFE0F ${stats.empty} skill vuote — candidare a rimozione`);
     }
 
+    // Floor di control plane: se NESSUNA skill e' caricabile, la directory e' wiped o
+    // rotta. Questo NON e' drift legittimo (un control plane vivo ha sempre contenuto):
+    // e' l'unica condizione di inventario che diventa fail, senza rischio falso-fail.
+    const inventoryBroken = stats.withContent === 0;
+    if (inventoryBroken) {
+        console.log(`  [FAIL] Nessuna skill caricabile in ${SKILLS_DIR} — control plane skill assente o corrotto.`);
+    }
+
     // Summary
     const passed = results.filter((r) => r.passed).length;
     const failed = results.filter((r) => !r.passed);
 
     console.log(`\n--- ${passed}/${results.length} skill critiche verificate ---`);
-    if (failed.length === 0) {
+    if (failed.length === 0 && !inventoryBroken) {
         console.log('\u2705 Tutte le skill critiche sono attivabili.');
         process.exit(0);
     } else {

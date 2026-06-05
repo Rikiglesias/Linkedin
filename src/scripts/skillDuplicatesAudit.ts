@@ -1,8 +1,17 @@
 /**
- * skillDuplicatesAudit.ts — Identifica overlap e duplicati tra skill installate
+ * skillDuplicatesAudit.ts — Conta le skill installate e segnala SOLO coppie a nome esatto
  *
- * Scansiona ~/.claude/skills/ e raggruppa per dominio + keyword
- * per identificare candidate da fondere, rimuovere o disambiguare.
+ * Scansiona ~/.claude/skills/ e produce un report PURAMENTE INFORMATIVO:
+ *   - totale skill con contenuto
+ *   - skill senza description chiara
+ *   - coppie "twin" a stem esatto (es. X-generator / X-validator) = unico segnale reale
+ *     di possibile consolidamento.
+ *
+ * NON raggruppa più per substring di dominio: quel raggruppamento era fuorviante
+ * (es. 'architecture-designer' e 'audit' finivano in [marketing] perché la description
+ * conteneva la sottostringa 'ad'/'audit'). Gli accoppiamenti per parole-nome generiche
+ * (es. read-only-gh-pr-review <-> read-only-postgres) producevano falsi positivi e non
+ * guidavano alcun consolidamento. Tenuto solo ciò che è segnale vero.
  *
  * Item 3 del backlog AI: governance capability — eliminare duplicati.
  *
@@ -19,34 +28,38 @@ interface SkillInfo {
     folder: string;
     description: string;
     fileSize: number;
-    keywords: string[];
 }
 
-interface OverlapGroup {
-    domain: string;
-    skills: string[];
+/**
+ * Coppia twin a stem esatto: stesso prefisso, suffixo di ruolo complementare.
+ * Es. { stem: 'terraform', a: 'terraform-generator', b: 'terraform-validator' }
+ */
+interface TwinPair {
+    stem: string;
+    a: string;
+    b: string;
+    role: string;
 }
 
 const SKILLS_DIR = join(homedir(), '.claude', 'skills');
 
-const DOMAIN_KEYWORDS: Record<string, string[]> = {
-    'web-frontend': ['react', 'vue', 'angular', 'nextjs', 'frontend', 'ui', 'css', 'tailwind', 'shadcn'],
-    'web-backend': ['nestjs', 'fastapi', 'express', 'django', 'laravel', 'rails', 'api', 'rest', 'graphql'],
-    'devops-cicd': ['github actions', 'gitlab', 'jenkins', 'azure pipelines', 'pipeline', 'ci/cd', 'workflow'],
-    'devops-iac': ['terraform', 'ansible', 'helm', 'kubernetes', 'k8s', 'dockerfile', 'docker'],
-    'language-spec': ['typescript', 'javascript', 'python', 'rust', 'golang', 'cpp', 'c#', 'csharp', 'java', 'kotlin', 'php', 'swift'],
-    'security': ['security', 'vulnerability', 'secrets', 'auth', 'sast', 'owasp'],
-    'review-test': ['review', 'test', 'tdd', 'audit', 'lint', 'quality'],
-    'marketing': ['marketing', 'seo', 'ad', 'email', 'cold-email', 'copywriting', 'cro', 'landing', 'campaign'],
-    'data-ml': ['ml', 'pipeline', 'evaluation', 'rag', 'embedding', 'fine-tuning', 'llm'],
-    'docs-content': ['documenter', 'documentation', 'content', 'markdown', 'doc'],
-    'cli-tools': ['cli', 'terminal', 'shell', 'bash', 'powershell'],
-    'context-mgmt': ['context', 'memory', 'handoff', 'session', 'compression'],
-    'design': ['design', 'banner', 'slide', 'brand', 'ui-ux', 'frontend-design'],
-    'agent-ops': ['agent', 'multi-agent', 'subagent', 'mcp', 'skill'],
-};
+/**
+ * Suffissi di ruolo complementari che, a parità di stem, indicano skill gemelle
+ * (stesso dominio, fase diversa) → candidate reali a consolidamento o coabitazione.
+ */
+const TWIN_ROLE_SUFFIXES = ['generator', 'validator'];
+
+/**
+ * Anti path-traversal: accetta solo nomi di cartella "semplici" (no separatori,
+ * no `..`, no path assoluti). Le voci provengono da readdirSync su una directory
+ * fissa, ma la validazione esplicita chiude il rischio CWE-22 alla radice.
+ */
+function isSafeSkillName(name: string): boolean {
+    return name.length > 0 && /^[A-Za-z0-9._-]+$/.test(name) && name !== '.' && name !== '..';
+}
 
 function readSkillFile(folder: string): string | null {
+    if (!isSafeSkillName(folder)) return null;
     const skillPath = join(SKILLS_DIR, folder);
     if (!existsSync(skillPath) || !statSync(skillPath).isDirectory()) return null;
     for (const fileName of ['SKILL.md', 'index.md']) {
@@ -76,20 +89,6 @@ function extractDescription(content: string): string {
     return '';
 }
 
-function extractKeywords(text: string): string[] {
-    const lower = text.toLowerCase();
-    const found = new Set<string>();
-    for (const [domain, keywords] of Object.entries(DOMAIN_KEYWORDS)) {
-        for (const kw of keywords) {
-            if (lower.includes(kw)) {
-                found.add(domain);
-                break;
-            }
-        }
-    }
-    return Array.from(found);
-}
-
 function loadSkills(): SkillInfo[] {
     if (!existsSync(SKILLS_DIR)) return [];
     const folders = readdirSync(SKILLS_DIR).filter((f) => statSync(join(SKILLS_DIR, f)).isDirectory());
@@ -97,61 +96,69 @@ function loadSkills(): SkillInfo[] {
     for (const folder of folders) {
         const content = readSkillFile(folder);
         if (!content) continue;
-        const description = extractDescription(content);
         skills.push({
             name: folder,
             folder,
-            description,
+            description: extractDescription(content),
             fileSize: content.length,
-            keywords: extractKeywords(folder + ' ' + description),
         });
     }
     return skills;
 }
 
-function findNameOverlaps(skills: SkillInfo[]): Array<{ a: string; b: string; reason: string }> {
-    const overlaps: Array<{ a: string; b: string; reason: string }> = [];
-    for (let i = 0; i < skills.length; i++) {
-        for (let j = i + 1; j < skills.length; j++) {
-            const a = skills[i];
-            const b = skills[j];
-            const aLower = a.name.toLowerCase();
-            const bLower = b.name.toLowerCase();
-            if (aLower === bLower) {
-                overlaps.push({ a: a.name, b: b.name, reason: 'nome identico' });
-                continue;
-            }
-            if (aLower.includes(bLower) || bLower.includes(aLower)) {
-                overlaps.push({ a: a.name, b: b.name, reason: 'nome contenuto' });
-                continue;
-            }
-            const aWords = new Set(aLower.split(/[-_:]/));
-            const bWords = new Set(bLower.split(/[-_:]/));
-            const intersection = Array.from(aWords).filter((w) => bWords.has(w) && w.length > 3);
-            if (intersection.length >= 2) {
-                overlaps.push({ a: a.name, b: b.name, reason: `parole comuni: ${intersection.join(', ')}` });
-            }
+/**
+ * Decompone un nome skill in { stem, role } se termina con un suffisso di ruolo gemello.
+ * Es. 'azure-pipelines-generator' → { stem: 'azure-pipelines', role: 'generator' }.
+ * Restituisce null se il nome non termina con un suffisso noto.
+ */
+function splitStemRole(name: string): { stem: string; role: string } | null {
+    const lower = name.toLowerCase();
+    for (const role of TWIN_ROLE_SUFFIXES) {
+        const suffix = `-${role}`;
+        if (lower.endsWith(suffix)) {
+            return { stem: lower.slice(0, -suffix.length), role };
         }
     }
-    return overlaps;
+    return null;
 }
 
-function groupByDomain(skills: SkillInfo[]): OverlapGroup[] {
-    const map = new Map<string, string[]>();
+/**
+ * Trova le coppie twin a stem esatto: stesso stem, ruoli complementari
+ * (generator/validator). Unico segnale di duplicazione affidabile dai nomi.
+ * Niente substring, niente "parole comuni" generiche → niente falsi positivi.
+ */
+function findTwinPairs(skills: SkillInfo[]): TwinPair[] {
+    const byStem = new Map<string, Array<{ name: string; role: string }>>();
     for (const skill of skills) {
-        for (const domain of skill.keywords) {
-            const list = map.get(domain) ?? [];
-            list.push(skill.name);
-            map.set(domain, list);
+        const split = splitStemRole(skill.name);
+        if (!split) continue;
+        const list = byStem.get(split.stem) ?? [];
+        list.push({ name: skill.name, role: split.role });
+        byStem.set(split.stem, list);
+    }
+
+    const pairs: TwinPair[] = [];
+    for (const [stem, members] of byStem) {
+        if (members.length < 2) continue;
+        // genera coppie distinte con ruoli diversi (es. generator + validator)
+        for (let i = 0; i < members.length; i++) {
+            for (let j = i + 1; j < members.length; j++) {
+                if (members[i].role === members[j].role) continue;
+                const sorted = [members[i], members[j]].sort((x, y) => x.name.localeCompare(y.name));
+                pairs.push({
+                    stem,
+                    a: sorted[0].name,
+                    b: sorted[1].name,
+                    role: `${sorted[0].role}/${sorted[1].role}`,
+                });
+            }
         }
     }
-    return Array.from(map.entries())
-        .map(([domain, list]) => ({ domain, skills: list.sort() }))
-        .sort((a, b) => b.skills.length - a.skills.length);
+    return pairs.sort((a, b) => a.stem.localeCompare(b.stem));
 }
 
 function run(): void {
-    console.log('=== Skill Duplicates Audit ===\n');
+    console.log('=== Skill Duplicates Audit (informativo) ===\n');
     const today = new Date().toISOString().slice(0, 10);
     console.log(`Data: ${today}`);
     console.log(`Skills directory: ${SKILLS_DIR}\n`);
@@ -161,44 +168,26 @@ function run(): void {
 
     const noDescription = skills.filter((s) => s.description.length < 10);
     if (noDescription.length > 0) {
-        console.log(`Skill senza description chiara: ${noDescription.length}`);
+        console.log(`Skill senza description chiara: ${noDescription.length} (${noDescription.map((s) => s.name).slice(0, 10).join(', ')}${noDescription.length > 10 ? '...' : ''})`);
     }
 
-    console.log('\n--- Raggruppamento per dominio ---');
-    const groups = groupByDomain(skills);
-    for (const g of groups) {
-        console.log(`[${g.domain}] ${g.skills.length} skill: ${g.skills.slice(0, 6).join(', ')}${g.skills.length > 6 ? '...' : ''}`);
-    }
-
-    const unclassified = skills.filter((s) => s.keywords.length === 0);
-    if (unclassified.length > 0) {
-        console.log(`\n[non classificate] ${unclassified.length}: ${unclassified.map((s) => s.name).slice(0, 10).join(', ')}${unclassified.length > 10 ? '...' : ''}`);
-    }
-
-    console.log('\n--- Overlap forti (parole nome in comune) ---');
-    const overlaps = findNameOverlaps(skills);
-    if (overlaps.length === 0) {
-        console.log('Nessun overlap forte rilevato.');
+    console.log('\n--- Coppie twin a nome esatto (stesso stem, ruoli complementari) ---');
+    const twins = findTwinPairs(skills);
+    if (twins.length === 0) {
+        console.log('Nessuna coppia twin rilevata.');
     } else {
-        for (const o of overlaps.slice(0, 30)) {
-            console.log(`  ${o.a}  <->  ${o.b}  (${o.reason})`);
+        console.log('Queste coppie condividono lo stesso stem: verificare se sono fasi complementari');
+        console.log('dello stesso tool (legittime) o duplicati da fondere.');
+        for (const t of twins) {
+            console.log(`  ${t.a}  <->  ${t.b}  (stem: ${t.stem}, ${t.role})`);
         }
-        if (overlaps.length > 30) console.log(`  ... + ${overlaps.length - 30} altri`);
-    }
-
-    console.log('\n--- Domini con piu di 6 skill (candidate per consolidamento) ---');
-    const oversized = groups.filter((g) => g.skills.length > 6);
-    for (const g of oversized) {
-        console.log(`  [${g.domain}] ${g.skills.length} skill — valutare se overlap reale o specializzazione legittima`);
     }
 
     console.log('\n--- Sintesi ---');
-    console.log(`Skills totali: ${skills.length}`);
-    console.log(`Overlap nome: ${overlaps.length}`);
-    console.log(`Domini coperti: ${groups.length}`);
-    console.log(`Domini oversize (>6 skill): ${oversized.length}`);
-    console.log(`Non classificate: ${unclassified.length}`);
-    console.log('\nOK — audit informativo, non blocca chiusura. Review manuale necessaria per consolidamenti.');
+    console.log(`Skill totali: ${skills.length}`);
+    console.log(`Senza description chiara: ${noDescription.length}`);
+    console.log(`Coppie twin a nome esatto: ${twins.length}`);
+    console.log('\nOK — audit puramente informativo (conteggio + twin esatti), non blocca chiusura.');
 }
 
 run();
