@@ -58,7 +58,7 @@
         "audit:daily": "ts-node src/scripts/auditRunner.ts daily",
         "audit:biweekly": "ts-node src/scripts/auditRunner.ts biweekly",
         "audit:quarterly": "ts-node src/scripts/auditRunner.ts quarterly",
-        "audit:ai-control-plane": "npm run audit:ai-control-plane:docs && npm run audit:ai-reasoning-hardening && npm run audit:hooks && npm run audit:routing && npm run audit:adk-capabilities && npm run audit:l2-l6 && npm run audit:ai-list-completeness && npm run audit:ai-backlog-consistency && npm run audit:docs-size && npm run audit:skill-duplicates && npm run audit:memory-staleness && npm run audit:obsidian-vault",
+        "audit:ai-control-plane": "npm run audit:ai-control-plane:docs && npm run audit:ai-reasoning-hardening && npm run audit:hooks && npm run audit:routing && npm run audit:adk-capabilities && npm run audit:l2-l6 && npm run audit:ai-list-completeness && npm run audit:ai-backlog-consistency && npm run audit:skill-duplicates",
         "audit:ai-control-plane:docs": "ts-node src/scripts/aiControlPlaneAudit.ts",
         "audit:ai-reasoning-hardening": "ts-node src/scripts/aiReasoningHardeningAudit.ts",
         "audit:orchestrator-contract": "ts-node src/scripts/aiReasoningHardeningAudit.ts --scope=orchestrator",

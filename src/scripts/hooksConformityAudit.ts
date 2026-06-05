@@ -10,7 +10,7 @@
  */
 
 import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
+import { join, basename } from 'path';
 import { homedir } from 'os';
 
 interface CheckResult {
@@ -310,6 +310,61 @@ function checkExpectedHooksConfigured(hooks: Record<string, unknown[]>): CheckRe
         passed: true,
         detail: `${expected.length} hook/config command attesi sono presenti con evento e matcher corretti ✅`,
     };
+}
+
+/**
+ * 2A-2: check BIDIREZIONALE. checkExpectedHooksConfigured verifica solo expected⊆live, quindi un
+ * hook LIVE non documentato sfugge (drift silenzioso). Qui il contrario: ogni hook live in
+ * settings.json deve avere il suo script nel canonico MANAGED_ROUTER_HOOKS (fonte di verita,
+ * model-router-config.mjs). Un hook aggiunto a mano e non tracciato fa fallire l'audit.
+ */
+function checkNoUndocumentedHooks(hooks: Record<string, unknown[]>): CheckResult {
+    const name = 'Nessun hook live non-canonico';
+    const canonicalPath = join(homedir(), '.claude', 'scripts', 'model-router-config.mjs');
+    if (!existsSync(canonicalPath)) {
+        return { name, passed: true, detail: 'canonico model-router-config.mjs assente: check saltato.' };
+    }
+    const canonicalText = readFileSync(canonicalPath, 'utf8');
+    const canonical = new Set<string>();
+    // Cattura OGNI nome-script (.ps1/.mjs/.js) menzionato nel canonico — via helper
+    // (hookScriptCommand/supportScriptCommand), MANAGED_ROUTER_HOOK_SCRIPTS o comando diretto.
+    // Un hook live e' "documentato" se il suo basename compare nel canonico.
+    for (const m of canonicalText.matchAll(/([\w.-]+\.(?:ps1|mjs|js))/g)) {
+        canonical.add(basename(m[1]).toLowerCase());
+    }
+    if (canonical.size === 0) {
+        return { name, passed: true, detail: 'nessuno script estratto dal canonico (parsing): check saltato.' };
+    }
+    const undocumented = new Set<string>();
+    for (const [eventName, groups] of Object.entries(hooks)) {
+        if (!Array.isArray(groups)) {
+            continue;
+        }
+        for (const group of groups) {
+            const entries = (group as { hooks?: unknown[] })?.hooks;
+            if (!Array.isArray(entries)) {
+                continue;
+            }
+            for (const entry of entries) {
+                const cmd = String((entry as { command?: unknown })?.command ?? '');
+                const scriptMatch = cmd.match(/([\w.-]+\.(?:ps1|mjs|js))/i);
+                if (!scriptMatch) {
+                    continue;
+                }
+                if (!canonical.has(scriptMatch[1].toLowerCase())) {
+                    undocumented.add(`${eventName}:${scriptMatch[1]}`);
+                }
+            }
+        }
+    }
+    if (undocumented.size > 0) {
+        return {
+            name,
+            passed: false,
+            detail: `Hook live NON nel canonico MANAGED_ROUTER_HOOKS (${[...undocumented].join(', ')}) -> aggiungerli al canonico o rimuoverli da settings.json.`,
+        };
+    }
+    return { name, passed: true, detail: `Tutti gli hook live risultano nel canonico (${canonical.size} script gestiti) ✅` };
 }
 
 function checkPostEditRequestActionSafety(): CheckResult {
@@ -655,6 +710,7 @@ function run(): void {
     const hooks = getHooks(settings);
 
     const checks: CheckResult[] = [
+        checkNoUndocumentedHooks(hooks),
         checkConfiguredCommandTargetsExist(hooks),
         checkExpectedHooksConfigured(hooks),
         checkPostEditRequestActionSafety(),

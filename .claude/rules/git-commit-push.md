@@ -41,9 +41,20 @@ enforcement:
 
 ## Enforcement meccanico in Claude Code
 
-- `pre-bash-l1-gate.ps1` blocca `git commit` senza quality gate recente
-- `pre-bash-git-gate.ps1` blocca `git commit` / `git push` se il repository non è nel giusto stato operativo
-- `post-bash-git-audit.ps1` logga automaticamente la readiness git dopo quality gate e operazioni git rilevanti
+Hook globali registrati in `~/.claude/settings.json` (via `MANAGED_ROUTER_HOOKS` in `model-router-config.mjs`):
+
+- `pre-bash-l1-gate.ps1` (PreToolUse Bash, blocking) blocca `git commit` senza quality gate recente
+- `pre-bash-git-gate.ps1` (PreToolUse Bash, blocking) blocca `git commit` / `git push` se il repository non è nel giusto stato operativo
+- `post-bash-git-audit.ps1` (PostToolUse Bash, async) logga la readiness git dopo quality gate e operazioni git rilevanti — **logga soltanto, non esegue commit né push**
+
+### Due hook PostToolUse Edit/Write che committano — chi fa cosa, perché non collidono
+
+Sullo stesso matcher `Edit|Write` girano due hook globali con **trigger disgiunti** (complementari, non ridondanti):
+
+- `post-edit-auto-commit.ps1` (async): committa **automaticamente** ogni modifica a file **già tracciati** (`git add -u`, mai untracked), rate-limited a max 1 commit / 5 min, messaggio `auto: N file (HH:mm)`. Scatta su **qualsiasi** edit a file tracciati. **Non pusha mai.** Opt-out per repo: file `.no-auto-commit` nella root (raccomandato dove vale "commit solo a L9=DONE").
+- `post-edit-request-action.ps1` (sync): committa — ed è l'**unico** che pusha — **solo quando l'AI crea esplicitamente** i file trigger `.claude/REQUEST_COMMIT` (1ª riga = messaggio) / `.claude/REQUEST_PUSH`. Prima di committare esegue i gate `post-modifiche` + `audit:git-automation:strict:commit`; il push richiede anche `audit:git-automation:strict:push` READY. Mai `git add .`, mai `--no-verify`.
+
+Non collidono: il primo è il commit di default su edit tracciati; il secondo è il commit/push **on-demand verificato** quando serve un messaggio voluto o un push. Con `.no-auto-commit` attivo nel repo, resta solo il percorso esplicito (`REQUEST_COMMIT`/`REQUEST_PUSH`). Il push automatico vero e proprio passa **solo** da `post-edit-request-action.ps1` via trigger esplicito: vedi la sezione "Auto-push post-commit" sotto — non esiste un hook che pusha da solo dopo un `git commit` da Bash.
 
 ## Enforcement git nativo
 
@@ -74,28 +85,32 @@ Regole:
 - La review di branch è obbligatoria quando il flusso richiede PR/review (vedi precondizioni auto-push sotto): non auto-pushare bypassandola.
 - L'audit periodico NON va eseguito a ogni blocco (zero-H light-vs-deep): è manutenzione a cadenza, tracciata in `docs/tracking/AI_AUDIT_CADENCES.md`.
 
-## Auto-push post-commit — trigger automatico
+## Auto-push post-commit — valutazione del modello (NON un hook automatico)
 
-Dopo ogni commit verificato, l'AI deve valutare l'auto-push **senza chiedere conferma all'utente** se le precondizioni sono soddisfatte. L'utente non deve dover ricordare di chiedere "fai anche push": è parte della chiusura naturale del blocco.
+> **Stato reale (verificato 2026-06-05)**: l'auto-push **NON** è enforced da un hook attivo. È una **valutazione che fa il MODELLO** dopo un commit, quando le precondizioni sotto sono vere. Non aspettarti che uno script pushi da solo.
+>
+> Evidenza: nessun hook `*push*` è registrato — non in `MANAGED_ROUTER_HOOKS` (`~/.claude/scripts/model-router-config.mjs`), non in `~/.claude/settings.json`, non in `.claude/settings.json` del repo. Lo script `hooks/post-bash-auto-push.ps1` esiste nel repo ma è **orfano**: non è in `~/.claude/hooks/` (dove gli hook attivi vengono risolti) e nessun matcher lo dispatcha. Il log storico `C:\Users\albie\memory\auto-push-log.txt` è **fermo dal 2026-05-19**: era l'output di una versione precedente del flusso, ora cessata. L'unico hook git PostToolUse Bash attivo è `post-bash-git-audit.ps1`, che **logga la readiness git** (audit async) ma **non esegue push**.
 
-**Trigger**: il commit appena creato è su una "sezione naturale di chiusura". Una sezione è naturale se:
+L'AI deve **valutare** l'auto-push dopo ogni commit verificato e, se le precondizioni sono soddisfatte, eseguire `git push` come tool call esplicita **senza chiedere conferma**. L'utente non deve dover ricordare di chiedere "fai anche push": è parte della chiusura naturale del blocco. Ma è il modello a doverlo fare attivamente — niente automatismo deterministico a cui appoggiarsi.
+
+**Quando valutare il push**: il commit appena creato è su una "sezione naturale di chiusura". Una sezione è naturale se:
 - chiude un'iniziativa coerente (feature completata, bug risolto, refactor finito, docs/regole codificate)
 - non lascia stato di lavoro a metà nel working tree
 - non è un commit intermedio di una serie ancora in corso
 
-**Precondizioni cumulative** (tutte vere → push automatico, una falsa → fermarsi e dire perché):
+**Precondizioni cumulative** (tutte vere → push, una falsa → fermarsi e dire perché):
 - quality gate verde nello stesso ciclo (`post-modifiche` + `conta-problemi` = 0)
-- `audit:git-automation` ritorna `READY` per push (non `REVIEW`/`BLOCKED`/`NOOP`)
+- `npm run audit:git-automation:strict:push` ritorna `READY` (non `REVIEW`/`BLOCKED`/`NOOP`)
 - branch corrente non è `main`/`master`/`production` protetto **oppure** la policy del progetto autorizza push diretto
-- upstream configurato e nessuna divergenza con remote
+- upstream configurato e nessuna divergenza con remote (verificare `git fetch` + `rev-list HEAD..@{u}`)
 - il flusso non richiede PR/review (solo personale o tooling/docs)
 - l'utente non ha esplicitamente detto di fermarsi al commit
 
-**Precondizioni che ROMPONO il trigger** (anche con tutto il resto verde): branch condiviso senza policy chiara, modifica che tocca anti-ban/sicurezza/migration DB ad alto rischio, repository con review obbligatoria.
+**Precondizioni che ROMPONO la valutazione** (anche con tutto il resto verde): branch condiviso senza policy chiara, modifica che tocca anti-ban/sicurezza/migration DB ad alto rischio, repository con review obbligatoria.
 
-**Comportamento atteso**: dopo il commit verificato, esegue `git push` automatico se le precondizioni sono soddisfatte e dichiara cosa ha fatto. Se anche solo una precondizione manca, dichiara esplicitamente cosa manca e propone l'azione corretta (PR, attesa review, conferma utente). Mai silenzio.
+**Comportamento atteso**: dopo il commit verificato, l'AI esegue `git push` come tool call se le precondizioni sono soddisfatte e dichiara cosa ha fatto. Se anche solo una precondizione manca, dichiara esplicitamente cosa manca e propone l'azione corretta (PR, fetch+rebase, attesa review, conferma utente). Mai silenzio, mai "ho pushato" presunto senza eseguire il comando.
 
-**Memoria del comportamento**: se l'utente chiede "fai anche push" più di una volta in sessione, è un segnale che il trigger non sta scattando: l'AI deve correggere la propria valutazione, non aspettare il prompt successivo.
+**Memoria del comportamento**: se l'utente chiede "fai anche push" più di una volta in sessione, è un segnale che la valutazione non sta scattando: l'AI deve correggere il proprio comportamento, non aspettare il prompt successivo.
 
 ## Fallback per ambienti senza hook PowerShell
 
