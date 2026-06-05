@@ -219,11 +219,6 @@ function checkExpectedHooksConfigured(hooks: Record<string, unknown[]>): CheckRe
             label: 'turn governor (prompt + costo + cambio chat)',
         },
         {
-            eventName: 'UserPromptSubmit',
-            commandParts: ['token-cost-context.ps1'],
-            label: 'token cost context',
-        },
-        {
             eventName: 'PreCompact',
             commandParts: ['inject-runtime-brief.ps1', 'PreCompact'],
             label: 'runtime brief compact',
@@ -524,16 +519,14 @@ function checkUserPromptSubmitSkillRoutingHook(hooks: Record<string, unknown[]>)
 function checkTurnGovernorCostAware(hooks: Record<string, unknown[]>): CheckResult {
     const submit = getHookEntries(hooks, 'UserPromptSubmit');
     const turnGovernor = findEntryByCommand(submit, 'turn-governor-hook.ps1');
-    const tokenCost = findEntryByCommand(submit, 'token-cost-context.ps1');
     const scriptPath = join(homedir(), '.claude', 'scripts', 'turn-governor-hook.ps1');
     const script = existsSync(scriptPath) ? readFileSync(scriptPath, 'utf8') : null;
     const required = ['TOKEN_COST_CHAT_SWITCH', 'token-cost-state.json', 'credits', 'costUsd'];
 
     const missing = required.filter((snippet) => !script?.includes(snippet));
-    if (!turnGovernor || !tokenCost || missing.length > 0) {
+    if (!turnGovernor || missing.length > 0) {
         const details = [
             !turnGovernor ? 'turn-governor-hook.ps1 mancante in UserPromptSubmit' : '',
-            !tokenCost ? 'token-cost-context.ps1 mancante in UserPromptSubmit' : '',
             ...missing.map((snippet) => `turn-governor senza ${snippet}`),
         ].filter(Boolean);
         return {
@@ -546,7 +539,7 @@ function checkTurnGovernorCostAware(hooks: Record<string, unknown[]>): CheckResu
     return {
         name: 'UserPromptSubmit cost-aware turn governor',
         passed: true,
-        detail: 'turn-governor + token-cost-context presenti; cambio chat valuta anche token/crediti ✅',
+        detail: 'turn-governor presente con logica cost-aware (TOKEN_COST_CHAT_SWITCH); token-cost-context.ps1 deprecato/assorbito ✅',
     };
 }
 

@@ -21,9 +21,9 @@ Quando l'AI riceve un task che tocca un file matchato dal glob, deve:
 
 | File                      | Glob match                                                   | Enforcement                                                                                              |
 | ------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
-| `browser-antiban.md`      | `src/browser/**`, `src/risk/**`, `src/salesnav/**`           | `pre-edit-antiban.ps1` (blocking), `post-edit-antiban-audit.ps1`                                         |
-| `api-security.md`         | `src/api/**`, `src/auth/**`                                  | `pre-edit-secrets.ps1`, code review manuale                                                              |
-| `scripts-audit.md`        | `src/scripts/**`                                             | `audit:ai-control-plane`, `audit:hooks`                                                                  |
+| `browser-antiban.md`      | `src/browser/**`, `src/risk/**`, `src/salesnav/**`, `src/captcha/**`, `src/workers/**` | `pre-edit-antiban.ps1` (blocking), `post-edit-antiban-audit.ps1` (advisory), skill `/antiban-review`     |
+| `api-security.md`         | `src/api/**`, `src/security/**`, `src/integrations/**`       | `pre-edit-secrets.ps1` (blocking), `pre-edit-best-practice.ps1` (advisory), skill `/security-reviewer`, audit semgrep |
+| `scripts-audit.md`        | `src/scripts/**`, `hooks/**`, `.githooks/**`                 | `audit:hooks`, `audit:ai-control-plane`, `post-edit-codebase-hygiene.ps1`                                |
 | `model-selection.md`      | `**` (sempre attiva)                                         | `user-prompt-session-advisor.ps1` (advisory: modello + chat-nuova), `switch-claude-backend.mjs` (config) |
 | `git-commit-push.md`      | `**` (sempre attiva)                                         | `pre-bash-l1-gate.ps1` (blocking), `pre-bash-git-gate.ps1` (blocking), `post-bash-git-audit.ps1` (async) |
 | `autonomous-workflows.md` | `**` (sempre attiva)                                         | native `/goal`, `/loop`, `stop-proactive-next-step.ps1` (advisory)                                       |

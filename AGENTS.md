@@ -109,11 +109,11 @@ Regola estratta in `.claude/rules/autonomous-workflows.md` (path-scoped `**`). C
 
 ### Hook attivi, skill pre/post-conditions, hook n8n futuri
 
-Inventory completo (34 command hook attivi + tabella pre/post-conditions skill/MCP + roadmap hook n8n) in `docs/tracking/AI_HOOK_ENFORCEMENT_PLAN.md`. Pattern file sensibili LinkedIn nei matcher PreToolUse e regole anti-ban in `.claude/rules/browser-antiban.md` + `.claude/rules/workflow-linkedin.md`. Modifica lì, non duplicare qui.
+Inventory completo (command hook attivi — conteggio derivato dal canonico `MANAGED_ROUTER_HOOKS` in `~/.claude/scripts/model-router-config.mjs`, non hardcodato — + tabella pre/post-conditions skill/MCP + roadmap hook n8n) in `docs/tracking/AI_HOOK_ENFORCEMENT_PLAN.md`. Pattern file sensibili LinkedIn nei matcher PreToolUse e regole anti-ban in `.claude/rules/browser-antiban.md` + `.claude/rules/workflow-linkedin.md`. Modifica lì, non duplicare qui.
 
 ## Workflow obbligatorio per questo progetto
 
-Regola estratta in `.claude/rules/workflow-linkedin.md` (path-scoped `src/**`, `workflows/**`). Contiene: classificazione task (quick fix / bug bot / feature-modifica bot / refactor-infra), 6 passi obbligatori (pre-modifica → review antiban → planning → impl → verifica → commit), estensioni L1-L9 LinkedIn delta (35 sub-check su L1, L3, L4, L5, L6, L7, L8, L9). Modifica lì, non duplicare qui.
+Regola estratta in `.claude/rules/workflow-linkedin.md` (path-scoped `src/**`, `n8n-workflows/**`). Contiene: classificazione task (quick fix / bug bot / feature-modifica bot / refactor-infra), 6 passi obbligatori (pre-modifica → review antiban → planning → impl → verifica → commit), estensioni L1-L9 LinkedIn delta (35 sub-check su L1, L3, L4, L5, L6, L7, L8, L9). Modifica lì, non duplicare qui.
 
 ## Cambio chat e continuita' — Obsidian come vista operativa
 

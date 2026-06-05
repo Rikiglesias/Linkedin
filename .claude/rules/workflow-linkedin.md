@@ -34,7 +34,7 @@ enforcement:
 ## L1 LinkedIn (delta su L1 globale)
 
 - L1-LI.1 build progetto exit 0 (frontend + backend se toccati)
-- L1-LI.2 `madge --circular` su `src/risk/`, `src/scheduler/`, `src/auth/`, `src/stealth/`, `src/browser/`
+- L1-LI.2 `madge --circular` su `src/risk/`, `src/core/scheduler.ts`, `src/browser/auth.ts`, `src/browser/stealth.ts`, `src/browser/`
 - L1-LI.3 coverage adeguata sui moduli critici: risk engine, scheduler, auth, stealth, antiban
 - L1-LI.4 nessun file LinkedIn-sensibile (browser, stealth, fingerprint, timing) >300 righe senza split-plan
 - L1-LI.5 audit npm di dominio (`npm run audit:hooks`, `audit:ai-control-plane`) verdi se area toccata
@@ -42,7 +42,7 @@ enforcement:
 ## L3 LinkedIn (delta runtime edges)
 
 - L3-LI.1 memory leak: listener Playwright/browser context chiusi, page.close() in ogni branch
-- L3-LI.2 timeout esplicito su ogni `clickLocator`, `waitFor`, `goto` (no default infinito)
+- L3-LI.2 timeout esplicito su ogni `clickLocatorHumanLike`, `waitFor`, `goto` (no default infinito)
 - L3-LI.3 stealth pattern: nessuna `setTimeout` con valore fisso prevedibile (sempre varianza ±30%+)
 - L3-LI.4 transazione DB busy_timeout configurato (no deadlock su SQLite)
 - L3-LI.5 selettori CSS/XPath: fallback chain se il principale fallisce, log selettore usato

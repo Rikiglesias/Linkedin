@@ -55,7 +55,18 @@ Regola pratica:
 | `SubagentStop`                           | `subagent-stop.ps1`               | async log           | attivo                        | Traccia output subagent.                                                                                                                                                                                |
 | `TaskCreated/TaskCompleted/TeammateIdle` | `teammate-event.ps1`              | async log           | attivo                        | Traccia agent teams.                                                                                                                                                                                    |
 
-Totale operativo attuale: **34 hook sempre attivi + 2 condizionali (router)** distribuiti su eventi Claude Code. I 2 hook router sono gestiti dinamicamente da `applyManagedClaudeCodeSettings` in `~/.claude/scripts/model-router-config.mjs`: presenti in unified router mode, filtrati in Anthropic nativo. Non vanno aumentati senza miss ricorrenti misurati o senza un advisory ad alto valore che renda visibile un miss sistemico.
+Totale operativo: il conteggio **non va hardcodato** in questo documento — va derivato dal canonico `MANAGED_ROUTER_HOOKS` in `~/.claude/scripts/model-router-config.mjs` (`applyManagedClaudeCodeSettings` lo materializza in `~/.claude/settings.json`). Allo stato attuale (2026-06-05) il canonico definisce **45 script hook unici** (incluso `ensure-claude-model-router.ps1`, il solo condizionale: presente in unified router mode, filtrato in Anthropic nativo) e `settings.json` materializza **47 voci hook** distribuite sugli eventi Claude Code (alcuni script sono registrati su più eventi: `inject-runtime-brief.ps1` su `UserPromptSubmit`+`PreCompact`, `teammate-event.ps1` su `TeammateIdle`+`TaskCreated`+`TaskCompleted`). La tabella sopra è un sottoinsieme storico (32 voci) e NON è più la fonte del conteggio. Non aumentare gli hook senza miss ricorrenti misurati o senza un advisory ad alto valore che renda visibile un miss sistemico. Verifica del numero reale: `npm run audit:hooks` (allineato al canonico, non a questa tabella).
+
+### Hook live non ancora documentati nella tabella sopra
+
+Hook presenti in `settings.json` (via `MANAGED_ROUTER_HOOKS`) ma assenti dall'inventory storico:
+
+- `SessionStart`: `session-start-sync-check.ps1`
+- `UserPromptSubmit`: `user-prompt-router-switch.ps1` (sostituisce il vecchio `ensure-claude-model-router.ps1` come switch router su prompt), `zero-rules-enforcer.ps1`
+- `PostToolUse Bash`: `post-bash-package-change.ps1`, `post-bash-handoff-invalidate.ps1`
+- `PostToolUse Edit/Write/MultiEdit`: `post-edit-auto-commit.ps1`
+- `PreCompact`: `block-auto-compact.ps1`
+- `Stop`: `stop-completeness-check.ps1`, `stop-auto-track.ps1`, `stop-todolist-goal-reminder.ps1`, `stop-decide-dont-ask.ps1`, `stop-selfcorrection-rule.ps1`, `stop-sync-obsidian.ps1`
 
 ## Codex parity
 
@@ -124,7 +135,7 @@ Fonte di misura: `audit:violations`, `audit:rule-enforcement`, `audit:hooks`, `a
 - richiede `npm run audit:git-automation:strict:commit`
 - richiede `npm run audit:git-automation:strict:push` prima del push
 
-`audit:hooks` ora controlla tutti i 34 command hook attivi, non solo il vecchio sottoinsieme da 14.
+`audit:hooks` ora controlla tutti i command hook attivi derivati dal canonico `MANAGED_ROUTER_HOOKS`, non solo il vecchio sottoinsieme da 14.
 
 ---
 
