@@ -546,7 +546,7 @@ Alcuni passaggi devono diventare automazioni durevoli, ma non tutto appartiene a
 
 Stato attuale:
 
-Esistono workflow JSON e principi di human-in-the-loop. Manca una governance reale su quali automazioni AI-globali devono vivere in n8n, quali in skill, quali in hook e quali in script.
+L'abilitante tecnico e' pronto: `n8n-mcp` e' connesso (`claude mcp list` → `✓ Connected`) e l'inventario workflow esiste in `n8n-workflows/` (~20 workflow versionati come JSON; conteggio reale da `n8n-workflows/*.json` + istanza n8n live, non hardcodato qui per evitare drift). Restano aperti i 6 sotto-punti di governance: boundary n8n/skill/hook/script, trigger/input/output/owner/failure mode per workflow, scelta agente verticale vs skill/workflow, human-in-the-loop nei punti ad alto rischio, governo di giorni/orari/condizioni di avvio e trasferibilita' con setup/env validation/runbook. La governance reale su quali automazioni AI-globali devono vivere in n8n, quali in skill, quali in hook e quali in script non e' ancora formalizzata.
 
 Trigger operativo:
 
@@ -944,7 +944,7 @@ Il sistema non deve aspettare che l'utente ripeta sempre le stesse correzioni. D
 
 Stato attuale:
 
-Esistono audit e violation log; audit `audit:miss-metrics` (2026-05-13) legge 15 stream di log e distingue **activations** (ogni hit del hook) da **miss veri** (linee con BLOCK/violation/dirty). Refinement 2026-05-14: aggiunto `missPattern` regex per ogni regola; risultato attuale = 0 candidate forti per promozione blocking. Compliance advisory hook ~97-100% (proactive-next-step 107 act / 0 miss, best-practice 80 act / 0 miss). Lezione operativa: NON promuovere a blocking sulla base di activations alte se miss veri assenti. Manca ancora collegamento miss -> root cause -> primitive correttiva automatica e un sistema maturo che propone azioni concrete.
+Esistono audit e violation log; audit `audit:miss-metrics` (2026-05-13) legge 15 stream di log e distingue **activations** (ogni hit del hook) da **miss veri** (linee con BLOCK/violation/dirty). Refinement 2026-05-14: aggiunto `missPattern` regex per ogni regola; risultato attuale = 0 candidate forti per promozione blocking. Gli advisory hook restano a 0 miss/7d nonostante activations alte (per i conteggi correnti vedi l'output live di `npm run audit:miss-metrics`, non riportati inline qui per evitare drift). Lezione operativa: NON promuovere a blocking sulla base di activations alte se miss veri assenti. Manca ancora collegamento miss -> root cause -> primitive correttiva automatica e un sistema maturo che propone azioni concrete.
 
 Trigger operativo:
 
@@ -980,7 +980,7 @@ Ordine logico:
 Sottopunti operativi:
 
 - [x] misurare omissioni, errori di routing e falsi completati come segnali sistemici — `audit:miss-metrics` (2026-05-13) legge 15 stream `~/memory/*-log.txt` e produce hit count, trend, raccomandazione promozione
-- [ ] convertire miss ricorrenti nel livello corretto di automazione o enforcement — primo set candidate identificato (proactive-next-step 106/7d, codebase-hygiene 96/7d, best-practice 85/7d, skill-precheck 12/7d)
+- [ ] convertire miss ricorrenti nel livello corretto di automazione o enforcement — i candidati vanno letti dall'output corrente di `npm run audit:miss-metrics` (colonna "Miss 7d" >= soglia 5), non da conteggi inline che diventano stantii; al run del 2026-06-05 nessun advisory supera la soglia (miss 7d = 0 su proactive-next-step / codebase-hygiene / best-practice / skill-precheck)
 - [ ] far riconoscere automaticamente quando manca la primitive giusta e proporre creazione con conferma utente
 - [ ] collegare autonomia, orizzonti temporali, capability governance e truthful completion in metriche verificabili
 - [ ] evitare accumulo di regole o tool che non vengono usati o non risolvono miss reali

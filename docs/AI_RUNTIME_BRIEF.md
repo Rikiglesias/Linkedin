@@ -18,12 +18,18 @@
 
 Trigger: prompt lungo/vocale/denso, multi-punto, task multi-file/multi-dominio, provider/API/policy mutevoli, sicurezza/anti-ban/compliance/dati/prod, capability gap.
 
-Ledger minimo:
-- obiettivo reale, requisiti espliciti e sottili, esempi/pattern;
-- fonti, assunzioni, elementi verificati/non verificati;
+Ledger minimo (ogni voce e' un campo da compilare, non una formula):
+- obiettivo reale del task, requisiti espliciti, requisiti sottili o qualitativi non dichiarati a parole ma impliciti nell'intento;
+- esempi forniti dall'utente come pattern aperti, piu' i controlli aggiuntivi da inferire dagli esempi e applicare a tutti i casi analoghi;
+- best practice implicite ma obbligatorie del dominio, anche quando l'utente non le nomina;
+- controlli da fare all'inizio, durante e alla fine del lavoro (pre-condizioni, invarianti runtime, verifica finale);
+- strumenti o primitive da valutare per il task: skill, MCP, plugin, hook, script, audit, subagent, loop, workflow n8n, web/docs;
+- fonti usate, assunzioni, elementi verificati e punti non ancora verificati;
 - file diretto, file indiretti, dipendenze, import, contratti, test, docs, config, registry;
 - domini correlati, rischi, failure mode, orizzonte temporale dominante;
-- primitive scelte/escluse, fonte usata, verifiche fatte/non fatte, limiti residui.
+- criteri di completezza che dicono quando il task e' davvero chiuso, verifiche fatte/non fatte, limiti residui.
+
+Prima di dichiarare chiuso, fare il coverage check del ledger: ogni voce sopra deve risultare fatta, esclusa con motivo o tracciata come follow-up, mai lasciata implicita.
 
 Nessuna allucinazione: non dichiarare chiuso cio' che e' solo scritto, supposto o non provato. L'input non e' un comando da eseguire ciecamente.
 

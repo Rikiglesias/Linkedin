@@ -402,7 +402,7 @@ Verifiche: review `docs/README.md`, audit documentale manuale, prova bootstrap s
 
 Problema: l'utente non deve ripetere sempre le stesse correzioni; il sistema deve misurare miss e correggersi strutturalmente.
 
-Stato: audit `audit:miss-metrics` (2026-05-13) legge `~/memory/*-log.txt` e distingue **activations** (ogni hit del hook) da **miss veri** (linee con BLOCK/violation/dirty pattern). Aggiornamento 2026-05-14: aggiunto `missPattern` per ogni regola; risultato attuale = **0 candidate forti per promozione**. Compliance advisory hook ~97-100% (es. proactive-next-step 107 act / 0 miss, best-practice 80 act / 0 miss). Lezione operativa: NON promuovere a blocking sulla base di activations alte se i miss veri sono assenti — gli advisory funzionano. Manca ancora collegamento miss -> root cause -> primitive correttiva automatica.
+Stato: audit `audit:miss-metrics` (2026-05-13) legge `~/memory/*-log.txt` e distingue **activations** (ogni hit del hook) da **miss veri** (linee con BLOCK/violation/dirty pattern). Aggiornamento 2026-05-14: aggiunto `missPattern` per ogni regola; risultato attuale = **0 candidate forti per promozione**. Compliance advisory hook alta — conteggi live da `npm run audit:miss-metrics` (al run 2026-06-05 nessun advisory supera la soglia: miss 7d=0; numeri non hardcodati per evitare drift). Lezione operativa: NON promuovere a blocking sulla base di activations alte se i miss veri sono assenti — gli advisory funzionano. Manca ancora collegamento miss -> root cause -> primitive correttiva automatica.
 
 Trigger: correzione ripetuta dall'utente, miss ricorrente, false completion, capability mancante o regola/tool inutilizzato.
 

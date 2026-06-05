@@ -64,22 +64,23 @@ Modificare `~/.claude/hooks/session-start.ps1` per controllare last-run timestam
 - Monthly: audit di salute architetturale (registry, governance, schema).
 - Mai aggiungere audit che richiedono input utente — solo audit programmatici idempotenti.
 
-## Stato corrente (aggiornato 2026-05-14)
+## Stato corrente (aggiornato 2026-06-05)
 
-- Bundle script: presenti in `package.json` (`audit:weekly`, `audit:monthly`).
-- **Wrapper .bat creati**: `scripts/run-audit-weekly.bat`, `scripts/run-audit-monthly.bat` (output in `%USERPROFILE%\memory\audit-{weekly,monthly}-YYYYMMDD.log`).
-- **Task Scheduler registrato**:
-  - `LinkedIn-AI-Audit-Weekly` — prima esecuzione lun 18/05/2026 09:00, ogni lunedì
-  - `LinkedIn-AI-Audit-Monthly` — prima esecuzione 01/06/2026 09:00, ogni primo del mese
-- **Da registrare (bundle nuovi 2026-06-04)** — comandi `schtasks` pronti (eseguire una volta):
-  ```cmd
-  schtasks /Create /TN "LinkedIn-AI-Audit-Daily" /SC DAILY /ST 09:00 /TR "cmd /c cd /d C:\Users\albie\Desktop\Programmi\Linkedin && npm run audit:daily > %USERPROFILE%\memory\audit-daily.log 2>&1"
-  schtasks /Create /TN "LinkedIn-AI-Audit-Biweekly" /SC WEEKLY /MO 2 /D MON /ST 09:00 /TR "cmd /c cd /d C:\Users\albie\Desktop\Programmi\Linkedin && npm run audit:biweekly > %USERPROFILE%\memory\audit-biweekly.log 2>&1"
-  schtasks /Create /TN "LinkedIn-AI-Audit-Quarterly" /SC WEEKLY /MO 4 /D MON /ST 09:00 /TR "cmd /c cd /d C:\Users\albie\Desktop\Programmi\Linkedin && npm run audit:quarterly > %USERPROFILE%\memory\audit-quarterly.log 2>&1"
-  ```
+- Bundle script: presenti in `package.json` (tutti e 5: `audit:daily/weekly/biweekly/monthly/quarterly`).
+- **Task Scheduler — 5 cadenze REGISTRATE e funzionanti** (2026-06-05, fix finding 4B-1/4B-2):
+  | Task | Cadenza | Bundle |
+  |---|---|---|
+  | `LinkedIn-AI-Audit-Daily` | ogni giorno 09:00 | `audit:daily` (security:scan + 1430 test) |
+  | `LinkedIn-AI-Audit-Weekly` | lunedì 09:00 | `audit:weekly` (AI-meta drift/log) |
+  | `LinkedIn-AI-Audit-Biweekly` | lun ogni 2 sett. 09:00 | `audit:biweekly` (+ madge + build) |
+  | `LinkedIn-AI-Audit-Monthly` | 1° del mese 09:00 | `audit:monthly` (control-plane) |
+  | `LinkedIn-AI-Audit-Quarterly` | lun ogni 4 sett. 09:00 | `audit:quarterly` (security + build profondo) |
+- **Fix 4B-1 applicato** (era: Weekly/Monthly fallivano con HRESULT 0x800710E0): tutti i task ora hanno `DisallowStartIfOnBatteries=false`, `StopIfGoingOnBatteries=false`, `StartWhenAvailable=true` (recupera i run mancati). Verificato: `/Run` Daily → State=Running, LastResult=0x41301 (running, NON più 0x800710E0 respinto).
+- **LogonType=InteractiveToken** (registrati via `schtasks /Create /XML`, senza admin): i task partono quando l'utente è loggato (PC personale, quasi sempre) + `StartWhenAvailable` recupera al login i run saltati.
+- **Opzionale — S4U "run whether logged on or not"**: richiede PowerShell **admin** (`Set-ScheduledTask -Principal (New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType S4U)`). Non applicato (il mio shell non è elevato); da eseguire manualmente se serve esecuzione da sloggato. Leva utente.
 - `audit:daily` validato 2026-06-04 (security:scan + 1430 test verdi). `biweekly`/`quarterly` eseguono `npx madge` (scarica madge al primo run).
-- Last run automatica: nessuna ancora — attende prima trigger.
-- Verifica manuale: `schtasks /Query /TN "LinkedIn-AI-Audit-Weekly"` o `Get-ScheduledTask -TaskName "LinkedIn-AI-Audit-*"`.
+- ⚠️ **Collegato — finding 6-2/6-3 (cascata `&&` fragile)**: quando i task girano, le cascate `audit:weekly`/`monthly`/`biweekly`/`quarterly` possono abortire all'80% se una sub-audit di stato (handoff-staleness/obsidian-vault) fallisce. Fix cascata (runner ts no-`&&` + hard-fail vs soft-state) = prossimo blocco prima che lo scheduling dia copertura piena.
+- Verifica manuale: `Get-ScheduledTask -TaskName "LinkedIn-AI-Audit-*"` o `schtasks /Query /TN "LinkedIn-AI-Audit-Daily" /XML`.
 
 ## Fonti di verità
 

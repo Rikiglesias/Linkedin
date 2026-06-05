@@ -1,4 +1,5 @@
 {
+  "_note": "code-review-graph e' definito anche in tools/code-review-graph/.mcp.json e tools/skills/.mcp.json. NON sono duplicati da accorpare: quelle due cartelle sono repo git standalone vendored (tools/code-review-graph -> github.com/tirth8205/code-review-graph, tools/skills -> github.com/vercel-labs/skills), ognuna col proprio .mcp.json project-scoped. Questo file (root) e' l'unica config MCP attiva del progetto LinkedIn. Non cancellare le copie nei subrepo: appartengono al loro upstream. Chiave _note ignorata dal loader Claude Code (legge solo mcpServers).",
   "mcpServers": {
     "code-review-graph": {
       "command": "uvx",
