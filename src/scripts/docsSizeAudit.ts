@@ -58,34 +58,8 @@ const CANONICALS: CanonicalSpec[] = [
         category: 'runtime-brief',
         rationale: 'Reiniettato a ogni prompt: deve restare compatto',
     },
-    {
-        path: 'docs/AI_MASTER_SYSTEM_SPEC.md',
-        softLimit: 800,
-        hardLimit: 1200,
-        category: 'spec-completa',
-        rationale: 'Spec madre del sistema: tollerato lungo, oltre 1200 split',
-    },
-    {
-        path: 'docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md',
-        softLimit: 1100,
-        hardLimit: 1500,
-        category: 'backlog-madre',
-        rationale: '13 item con sub-task: cresce con la chiusura. Oltre 1500 modulare',
-    },
-    {
-        path: 'docs/AI_IMPLEMENTATION_LIST_GLOBAL.md',
-        softLimit: 700,
-        hardLimit: 1000,
-        category: 'vista-lineare',
-        rationale: 'Vista lineare derivata: accettabile sopra 500',
-    },
-    {
-        path: 'docs/AI_OPERATING_MODEL.md',
-        softLimit: 600,
-        hardLimit: 900,
-        category: 'operating-model',
-        rationale: 'Roadmap operativa: accettabile, evitare bloat',
-    },
+    // Doc ADK (master spec, backlog ADK, implementation-list globale, operating model) migrati in
+    // AI-Control-Plane/spec via adk-split: non più monitorati da questo audit di igiene del repo.
     {
         path: 'docs/360-checklist.md',
         softLimit: 200,
