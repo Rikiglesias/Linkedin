@@ -47,7 +47,6 @@
         "audit:json": "ts-node src/scripts/codebaseAudit.ts --json",
         "audit:handoff-staleness": "ts-node src/scripts/handoffStalenessAudit.ts",
         "audit:docs-size": "ts-node src/scripts/docsSizeAudit.ts",
-        "audit:ai-backlog-consistency": "ts-node src/scripts/aiBacklogConsistencyAudit.ts",
         "audit:weekly": "ts-node src/scripts/auditRunner.ts weekly",
         "audit:monthly": "ts-node src/scripts/auditRunner.ts monthly",
         "audit:daily": "ts-node src/scripts/auditRunner.ts daily",
