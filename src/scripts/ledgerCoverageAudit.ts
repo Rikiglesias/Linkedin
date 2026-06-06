@@ -89,15 +89,8 @@ function run(): void {
         console.log(`${icon} ${check.label}`);
     }
 
-    // Check style guide exists
-    const styleGuide = existsSync(resolve('docs', 'AI_DOC_STYLE_GUIDE.md'));
-    results.push({
-        name: 'Style guide documenti AI',
-        passed: styleGuide,
-        detail: styleGuide ? 'docs/AI_DOC_STYLE_GUIDE.md presente' : 'Style guide mancante',
-    });
-    console.log(`\n--- Documentazione ---`);
-    console.log(`${styleGuide ? '\u2705' : '\u26A0\uFE0F'} Style guide documenti AI-readable`);
+    // (adk-split T11.5b) Check AI_DOC_STYLE_GUIDE rimosso: \u00E8 un doc ADK migrato in
+    // AI-Control-Plane/spec \u2192 la sua presenza la verifica un audit ACP, non questo audit del repo.
 
     const passed = results.filter((r) => r.passed).length;
     const failed = results.filter((r) => !r.passed);
