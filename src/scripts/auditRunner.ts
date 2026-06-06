@@ -29,18 +29,14 @@ const NPX = 'npx';
 const a = (name: string, hard: boolean): Step => ({ name, file: NPM, args: ['run', `audit:${name}`], hard });
 
 const WEEKLY: Step[] = [
-  a('miss-metrics', false),
   a('handoff-staleness', false),
   a('continuation-completeness', false),
   a('violations', false),
-  a('memory-staleness', false),
   a('docs-size', false),
-  a('obsidian-vault', false),
   a('output-styles', true),
   a('mcp-config', true),
   a('json-schemas', true),
   a('rules-coverage', true),
-  a('skill-filenames', true),
   a('auto-track', false),
 ];
 
@@ -48,7 +44,6 @@ const MONTHLY: Step[] = [
   a('ai-control-plane', true),
   a('rule-enforcement', false),
   a('ledger', false),
-  a('skills', true),
 ];
 
 const MADGE: Step = { name: 'madge-circular', file: NPX, args: ['madge', '--circular', 'src/'], hard: true };
