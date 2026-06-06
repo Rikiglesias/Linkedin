@@ -5,20 +5,16 @@ Questo file e' il riferimento operativo canonico della repo per agenti AI e sess
 Le regole globali (P0, L1-L9, parita' ambienti, memoria, anti-dimenticanza) stanno in `~/.claude/CLAUDE.md`.
 Le regole di orchestrazione cognitiva, requirement ledger, orizzonti temporali, blast radius documentale e handoff sono in `docs/AI_RUNTIME_BRIEF.md` (reiniettato automaticamente dai hook a ogni prompt).
 
-## Scope: due livelli distinti
+## Scope: questo repo è il LinkedIn Bot applicativo
 
-Questa repo contiene due livelli che vanno governati separatamente, anche se condividono lo stesso codebase:
+Questa repo è il **runtime del bot LinkedIn** (browser, risk engine, antiban, scheduler, proxy, dashboard, n8n workflow). Vive in `src/`. Il backlog applicativo è `docs/LINKEDIN_IMPLEMENTATION_LIST.md` + `todos/workflow-architecture-hardening.md`.
 
-1. **Sistema AI globale (ADK)** — l'AI come **programmatore autonomo riusabile**. Regole, skill, hook, subagent, audit, plugin packaging e output styles user-scope. Vive principalmente in `~/.claude/` (globale) + `.claude/rules/`, `.claude-plugin/plugin.json`, `docs/AI_*.md`, `src/scripts/*Audit.ts` (project-side). Gli output styles riusabili vivono in `~/.claude/output-styles/`. E' **portabile su altri progetti** dello stesso utente o di team via `docs/tracking/AI_ADK_DISTRIBUTION.md`. Il backlog di questo livello e' `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md` (13 item).
-2. **LinkedIn Bot applicativo** — il runtime del bot (browser, risk engine, antiban, scheduler, proxy, dashboard, n8n workflow). Vive in `src/` (eccetto `src/scripts/*Audit.ts`). E' **specifico di questo dominio**. Il backlog applicativo e' `docs/LINKEDIN_IMPLEMENTATION_LIST.md` + `todos/workflow-architecture-hardening.md`.
+Il **sistema AI globale (ADK)** — regole di ragionamento, skill, hook, subagent, audit di governance, plugin packaging, output styles — **NON vive più in questo repo**: è stato estratto (adk-split) e vive in `~/.claude/` (SSOT viva: regole, hook, skill, router) + `AI-Control-Plane/` (audit di governance eseguibili + spec del sistema AI). È portabile su qualsiasi progetto. Restano qui solo: `docs/AI_RUNTIME_BRIEF.md` (digest runtime del progetto) e gli `src/scripts/*Audit.ts` che verificano i canonici DI QUESTO repo (es. `aiControlPlaneAudit` = "meta A" dei soli canonici del progetto; la governance ADK pura è in `AI-Control-Plane/06-audit`).
 
 **Implicazione per le decisioni**:
-- Tool/skill/capability candidato → valutarlo contro **entrambi i livelli** prima di scartare. Una risorsa "fuori scope LinkedIn" puo' essere ottima per il sistema AI globale (es. usabile su altri progetti) e va tracciata come candidate-out-of-current-repo, non scartata.
-- Best practice canoniche → vivono nel livello AI globale, applicate ovunque.
-- Anti-ban / proxy / LinkedIn-specific → restano nel livello applicativo, non inquinano l'AI globale.
-- Audit cross-domain L7 → verifica che ogni file tocchi entrambi i livelli correttamente.
-
-L'utente puo' usare lo stesso sistema AI globale anche su progetti non-LinkedIn (es. chatbot personale, content automation, altri bot/agenti). Quel caso d'uso resta legittimo e va considerato nelle decisioni di capability governance.
+- Capability candidata utile all'ADK ma "fuori scope LinkedIn" → tracciarla per `~/.claude`/`AI-Control-Plane`, non scartarla.
+- Anti-ban / proxy / LinkedIn-specific → restano nel bot, non inquinano l'ADK globale.
+- Best practice canoniche di ragionamento → vivono nell'ADK globale (`~/.claude`), applicate ovunque.
 
 ## Fonte di verita' e routing strumenti
 
@@ -39,13 +35,9 @@ Se una capability manca in un ambiente, documentare il gap e chiuderlo; non acce
 ## File canonici da leggere e mantenere allineati
 
 - `README.md`: overview tecnica del progetto e struttura principale.
-- `docs/AI_MASTER_SYSTEM_SPEC.md`: sistema AI desiderato completo.
-- `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md`: backlog strutturato primario del mancante.
-- `docs/AI_IMPLEMENTATION_LIST_GLOBAL.md`: lista lineare item AI/globali per review e pruning.
 - `docs/LINKEDIN_IMPLEMENTATION_LIST.md`: lista lineare item LinkedIn-specifici per review e pruning.
-- `docs/AI_OPERATING_MODEL.md`: roadmap esplicita su prompt, modelli, skill, agenti, workflow e automazioni.
-- `docs/AI_RUNTIME_BRIEF.md`: digest runtime compatto usato dai hook per reiniettare le regole davvero critiche. Non sostituisce i canonici; deve restare allineato a loro.
-- `docs/tracking/AI_ORCHESTRATOR_CONTRACT.md`: contratto auditabile per ragionamento AI, capability routing, hook coverage, continuation e truthful completion.
+- `docs/AI_RUNTIME_BRIEF.md`: digest runtime compatto del progetto usato dai hook per reiniettare le regole davvero critiche. Non sostituisce i canonici; deve restare allineato a loro.
+- **Canonici ADK universali** (sistema AI desiderato, backlog ADK, operating model, orchestrator contract, implementation list globale) → estratti in `AI-Control-Plane/spec/` + `~/.claude` (adk-split), **NON più in questo repo**.
 - `todos/active.md`: priorita' correnti ad alto livello.
 - `todos/workflow-architecture-hardening.md`: backlog tecnico operativo su workflow e hardening.
 - `docs/tracking/ENGINEERING_WORKLOG.md`: log cronologico delle analisi, verifiche e refactor.

@@ -39,7 +39,6 @@ function checkRepoAgents(): CheckResult {
         '## Automazione: ordine di promozione',
         '## File canonici da leggere e mantenere allineati',
         '## Loop di completamento',
-        'docs/AI_IMPLEMENTATION_LIST_GLOBAL.md',
         'docs/LINKEDIN_IMPLEMENTATION_LIST.md',
         'Procedura cognitiva ripetibile → skill. Regola non dimenticabile → hook. Controllo deterministico → script/test/lint. Automazione durevole → n8n/workflow persistente.',
         'Documenti, audit e stato reale divergono → bug operativo da correggere subito.',
