@@ -111,12 +111,9 @@ function run(): void {
         detail: 'AI_RUNTIME_BRIEF.md deve citare L7-L9 e /verification-protocol.',
     });
 
-    const operatingModel = readText(resolve('docs', 'AI_OPERATING_MODEL.md'));
-    checks.push({
-        name: 'Operating model dichiara routing advisory implementato',
-        passed: containsAll(operatingModel, ['routing operativo advisory implementato', 'L2-L6 audit-assisted']),
-        detail: 'AI_OPERATING_MODEL.md deve esplicitare routing advisory e L2-L6 audit-assisted.',
-    });
+    // (adk-split T11.5b) Check su AI_OPERATING_MODEL rimosso: doc ADK migrato in
+    // AI-Control-Plane/spec → la sua coerenza la verifica un audit ACP, non questo audit del repo.
+    // levelEnforcement resta sui livelli del progetto (RUNTIME_BRIEF del repo + registro JSON).
 
     let allPassed = true;
     for (const check of checks) {
