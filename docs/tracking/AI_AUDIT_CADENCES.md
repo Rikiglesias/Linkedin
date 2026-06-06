@@ -64,7 +64,7 @@ Modificare `~/.claude/hooks/session-start.ps1` per controllare last-run timestam
 - Monthly: audit di salute architetturale (registry, governance, schema).
 - Mai aggiungere audit che richiedono input utente — solo audit programmatici idempotenti.
 
-## Stato corrente (aggiornato 2026-06-05)
+## Stato corrente (aggiornato 2026-06-06)
 
 - Bundle script: presenti in `package.json` (tutti e 5: `audit:daily/weekly/biweekly/monthly/quarterly`).
 - **Task Scheduler — 5 cadenze REGISTRATE e funzionanti** (2026-06-05, fix finding 4B-1/4B-2):
@@ -77,6 +77,7 @@ Modificare `~/.claude/hooks/session-start.ps1` per controllare last-run timestam
   | `LinkedIn-AI-Audit-Quarterly` | lun ogni 4 sett. 09:00 | `audit:quarterly` (security + build profondo) |
 - **Fix 4B-1 applicato** (era: Weekly/Monthly fallivano con HRESULT 0x800710E0): tutti i task ora hanno `DisallowStartIfOnBatteries=false`, `StopIfGoingOnBatteries=false`, `StartWhenAvailable=true` (recupera i run mancati). Verificato: `/Run` Daily → State=Running, LastResult=0x41301 (running, NON più 0x800710E0 respinto).
 - **LogonType=InteractiveToken** (registrati via `schtasks /Create /XML`, senza admin): i task partono quando l'utente è loggato (PC personale, quasi sempre) + `StartWhenAvailable` recupera al login i run saltati.
+- **Fix popup terminale 2026-06-06**: i task usano `wscript.exe //B scripts/run-audit-hidden.vbs <bundle>` invece di `cmd.exe`, quindi recuperano i run mancati al login senza aprire una finestra terminale. `run-audit-hidden.vbs` e' solo il launcher nascosto; `scripts/run-audit-task.cmd` esegue audit + log. Log invariati in `%USERPROFILE%\memory\audit-<bundle>.log`.
 - **Opzionale — S4U "run whether logged on or not"**: richiede PowerShell **admin** (`Set-ScheduledTask -Principal (New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType S4U)`). Non applicato (il mio shell non è elevato); da eseguire manualmente se serve esecuzione da sloggato. Leva utente.
 - `audit:daily` validato 2026-06-04 (security:scan + 1430 test verdi). `biweekly`/`quarterly` eseguono `npx madge` (scarica madge al primo run).
 - ⚠️ **Collegato — finding 6-2/6-3 (cascata `&&` fragile)**: quando i task girano, le cascate `audit:weekly`/`monthly`/`biweekly`/`quarterly` possono abortire all'80% se una sub-audit di stato (handoff-staleness/obsidian-vault) fallisce. Fix cascata (runner ts no-`&&` + hard-fail vs soft-state) = prossimo blocco prima che lo scheduling dia copertura piena.
