@@ -930,3 +930,8 @@ A8 geo-coerenza exit-IP (feature mancante, opt-in), A9 challenge gate persistent
 - T1 csvImporter-tx: RISOLTO senza cambio — premessa audit (shared-tx PG abort) falsa; design per-riga indipendente (addLead withTransaction + addCompanyTarget atomico) = partial-success corretto; wrapping sarebbe regressione. Bounded già fatto.
 - Verifica: conta-problemi exit 0 (1501 test) ad ogni commit. Scope autonomo del goal backend-antiban-hardening COMPLETO (16 fix: A1-A9, C1, B1-B4, S2).
 - Carve-out (richiedono utente): C2 (migration leads.account_id), S1 (priorità secret prod), B5 (vision click jitter, verifica live), B6 (navigazione/proxy comandi, verifica live). Push OFF (branch condiviso, coordinamento).
+
+### Aggiornamento (sessione 2026-06-07, cont.2): B5 + valutazione B6
+- B5 varianza ±3px sul click computer-use (jitterCoord, salesnav/computerUse) `4b42a3f`. Path principale salesnav (bulkSaveHelpers.smartClick) già jitterava proporzionalmente; captcha NON toccato (rischio miss-cella). Vision-model coords main = verifica-live residua.
+- B6 VALUTATO (zero-M): --no-proxy/noProxy è feature INTENZIONALE documentata (CLI help, test-connection --no-proxy) → NO change (zero-B+zero-I, romperebbe workflow di test). companyEnrichment.ts:158 page.goto su LinkedIn search URL = teletrasporto reale, ma il fix (digitare query in search box) è riscrittura comportamentale → verifica-live. salesNav/util/syncSearch = solo flag --no-proxy intenzionale.
+- Scope autonomo-safe ESAURITO: 17 fix (A1-A9, C1, B1-B5, S2) + T1 risolto-no-change. conta-problemi exit 0 (1501 test). Restano carve-out: C2/S1 (conferma utente), B5-main/B6-companyEnrichment (verifica live), push (coordinamento branch condiviso).
