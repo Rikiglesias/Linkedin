@@ -3,6 +3,7 @@ import { randomElement } from '../utils/random';
 import {
     BrowserSession,
     checkLogin,
+    clickLocatorHumanLike,
     closeBrowser,
     dismissKnownOverlays,
     humanDelay,
@@ -66,7 +67,19 @@ async function runSingleActivity(
             return;
         }
         const profileUrl = pickRandom(profiles);
-        await page.goto(profileUrl, { waitUntil: 'domcontentloaded' });
+        // B3 (2026-06-07): navigazione UMANA — clicca il link del profilo sulla pagina corrente
+        // invece di page.goto (teletrasporto su profilo = signal di scraping, vietato da browser-antiban).
+        // Fail-safe: se il link non è più nel DOM, SALTA — mai fallback su goto verso un profilo.
+        const slug = profileUrl.split('/in/')[1]?.replace(/\/+$/, '') ?? '';
+        if (!slug) {
+            return;
+        }
+        const profileLink = page.locator(`a[href*="/in/${slug}"]`).first();
+        if ((await profileLink.count()) === 0) {
+            return;
+        }
+        await clickLocatorHumanLike(page, profileLink, { selectorForDwell: 'a[href*="/in/"]' });
+        await page.waitForLoadState('domcontentloaded').catch(() => undefined);
         await dismissKnownOverlays(page);
         report.visitedUrls.push(profileUrl);
         report.profileVisits += 1;
