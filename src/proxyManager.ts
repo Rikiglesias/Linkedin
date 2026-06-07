@@ -276,20 +276,36 @@ function prioritizeProxyPool(pool: ProxyConfig[], options: GetProxyChainOptions)
           })()
         : pool;
 
-    // Anti-ban (A6, 2026-06-07): deprioritizza i proxy rilevati DATACENTER dall'ultimo quality
-    // check (i DC IP sono flaggati da LinkedIn). NON li rimuove (no rischio pool vuoto/halt): li
-    // spinge in fondo come ultimo ricorso, dietro residential/mobile/unknown. Se nessun check e'
-    // ancora girato (report null) il comportamento e' invariato.
-    const datacenterServers = new Set(
-        (getLastQualityReport()?.proxies ?? []).filter((p) => p.type === 'datacenter').map((p) => p.server),
+    // Anti-ban (A6/A8, 2026-06-07): deprioritizza nella selezione i proxy con segnali deboli rilevati
+    // dall'ultimo quality check: DATACENTER (DC IP flaggati) e GEO-MISMATCH (country exit-IP fuori dai
+    // PROXY_EXPECTED_COUNTRIES, se configurati — opt-in). NON li rimuove (no rischio pool vuoto/halt):
+    // li spinge in fondo come ultimo ricorso. Se nessun check e' girato (report null) o nessun paese
+    // atteso e' configurato, il comportamento e' invariato.
+    const lastReport = getLastQualityReport();
+    const reportProxies = lastReport?.proxies ?? [];
+    const datacenterServers = new Set(reportProxies.filter((p) => p.type === 'datacenter').map((p) => p.server));
+    const expectedCountries = new Set(
+        config.proxyExpectedCountries
+            .split(',')
+            .map((c) => c.trim().toUpperCase())
+            .filter(Boolean),
     );
-    const datacenterPenalty = (proxy: ProxyConfig): number => (datacenterServers.has(proxy.server) ? 1000 : 0);
+    const geoMismatchServers =
+        expectedCountries.size === 0
+            ? new Set<string>()
+            : new Set(
+                  reportProxies
+                      .filter((p) => p.country && !expectedCountries.has(p.country.toUpperCase()))
+                      .map((p) => p.server),
+              );
+    const selectionPenalty = (proxy: ProxyConfig): number =>
+        (datacenterServers.has(proxy.server) ? 1000 : 0) + (geoMismatchServers.has(proxy.server) ? 2000 : 0);
 
     return sourcePool
         .map((proxy, index) => ({
             proxy,
             index,
-            score: proxyTypeScore(proxy, options) + datacenterPenalty(proxy),
+            score: proxyTypeScore(proxy, options) + selectionPenalty(proxy),
         }))
         .sort((a, b) => a.score - b.score || a.index - b.index)
         .map((entry) => entry.proxy);

@@ -324,6 +324,11 @@ export function buildProxyDomainConfig() {
         // IP pubblici/datacenter flaggati da LinkedIn -> instradarci LinkedIn = ban. Anche se
         // TOR_SOCKS5_URL e' configurato, il fallback parte SOLO se esplicitamente abilitato.
         proxyTorFallbackEnabled: parseBoolEnv('PROXY_TOR_FALLBACK_ENABLED', false),
+        // Anti-ban (A8, 2026-06-07): geo-coerenza exit-IP. Lista ISO country code attesi
+        // (CSV, es. "IT,US"); vuoto = disabilitato (opt-in, nessun cambio di default). Quando
+        // configurato, i proxy con country del report di qualita' fuori lista vengono deprioritizzati
+        // nella selezione (geo mismatch IP/profilo = signal forte per LinkedIn).
+        proxyExpectedCountries: parseStringEnv('PROXY_EXPECTED_COUNTRIES', ''),
         fingerprintApiEndpoint: parseStringEnv('FINGERPRINT_API_ENDPOINT'),
         mobileProbability: Math.min(1, Math.max(0, parseFloatEnv('MOBILE_PROBABILITY', 0))),
         useJa3Proxy: parseBoolEnv('USE_JA3_PROXY', false),
