@@ -297,6 +297,10 @@ export function buildCommsAndBusinessDomainConfig() {
         followUpMax: Math.max(1, parseIntEnv('FOLLOW_UP_MAX', 1)),
         followUpDailyCap: Math.max(1, parseIntEnv('FOLLOW_UP_DAILY_CAP', 10)),
         profileViewDailyCap: Math.max(1, parseIntEnv('PROFILE_VIEW_DAILY_CAP', 80)),
+        // Anti-ban (A4, 2026-06-07): cap giornaliero LIKE/FOLLOW (prima illimitati = rischio
+        // engagement eccessivo). Default difensivi; i follow sono piu' rischiosi dei like. Override via env.
+        likeDailyCap: Math.max(1, parseIntEnv('LIKE_DAILY_CAP', 30)),
+        followDailyCap: Math.max(1, parseIntEnv('FOLLOW_DAILY_CAP', 15)),
     };
 }
 

@@ -1,11 +1,11 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { buildLimitsAndRiskDomainConfig } from '../config/domains';
+import { buildLimitsAndRiskDomainConfig, buildCommsAndBusinessDomainConfig } from '../config/domains';
 
 /**
  * Invarianti anti-ban DIFENSIVI (Gruppo A hardening 2026-06-07).
  * Lock dei default che proteggono l'account: un cambio futuro che li allenta
- * (es. alza il pending stop sopra il red-flag) deve far fallire questo test.
- * Tutti restano env-overridable: questi sono i DEFAULT, non hard-cap.
+ * (es. alza il pending stop sopra il red-flag, o rende illimitati like/follow)
+ * deve far fallire questo test. Tutti restano env-overridable: sono DEFAULT, non hard-cap.
  */
 describe('anti-ban defensive defaults — pending ratio', () => {
     const KEYS = ['PENDING_RATIO_STOP', 'PENDING_RATIO_WARN'] as const;
@@ -47,5 +47,44 @@ describe('anti-ban defensive defaults — pending ratio', () => {
         process.env.PENDING_RATIO_STOP = '0.7';
         const cfg = buildLimitsAndRiskDomainConfig();
         expect(cfg.pendingRatioStop).toBe(0.7);
+    });
+});
+
+describe('anti-ban defensive defaults — interaction caps (A4)', () => {
+    const KEYS = ['LIKE_DAILY_CAP', 'FOLLOW_DAILY_CAP'] as const;
+    const saved: Record<string, string | undefined> = {};
+
+    function withCleanEnv(): ReturnType<typeof buildCommsAndBusinessDomainConfig> {
+        for (const k of KEYS) {
+            saved[k] = process.env[k];
+            delete process.env[k];
+        }
+        return buildCommsAndBusinessDomainConfig();
+    }
+
+    afterEach(() => {
+        for (const k of KEYS) {
+            if (saved[k] === undefined) delete process.env[k];
+            else process.env[k] = saved[k];
+        }
+    });
+
+    it('default likeDailyCap = 30 (prima illimitato)', () => {
+        expect(withCleanEnv().likeDailyCap).toBe(30);
+    });
+
+    it('default followDailyCap = 15 (prima illimitato, più conservativo dei like)', () => {
+        expect(withCleanEnv().followDailyCap).toBe(15);
+    });
+
+    it('invariante: follow cap <= like cap (i follow sono più rischiosi)', () => {
+        const cfg = withCleanEnv();
+        expect(cfg.followDailyCap).toBeLessThanOrEqual(cfg.likeDailyCap);
+    });
+
+    it('resta env-overridable (LIKE_DAILY_CAP ha precedenza)', () => {
+        saved.LIKE_DAILY_CAP = process.env.LIKE_DAILY_CAP;
+        process.env.LIKE_DAILY_CAP = '50';
+        expect(buildCommsAndBusinessDomainConfig().likeDailyCap).toBe(50);
     });
 });

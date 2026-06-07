@@ -211,6 +211,8 @@ export interface AppConfig {
     followUpMax: number;
     followUpDailyCap: number;
     profileViewDailyCap: number;
+    likeDailyCap: number;
+    followDailyCap: number;
     proxyUrl: string;
     proxyUsername: string;
     proxyPassword: string;

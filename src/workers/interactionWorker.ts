@@ -145,14 +145,23 @@ export async function processInteractionJob(
         return workerResult(0);
     }
 
-    // Enforce profile view daily cap
-    if (actionType === 'VIEW_PROFILE') {
+    // Enforce per-action daily caps (anti-ban A4, 2026-06-07): VIEW_PROFILE c'era gia';
+    // LIKE_POST/FOLLOW erano illimitati (rischio engagement eccessivo). Cap difensivi env-overridable.
+    const dailyCap: { field: 'profile_views' | 'likes_given' | 'follows_given'; max: number } | null =
+        actionType === 'VIEW_PROFILE'
+            ? { field: 'profile_views', max: config.profileViewDailyCap }
+            : actionType === 'LIKE_POST'
+              ? { field: 'likes_given', max: config.likeDailyCap }
+              : actionType === 'FOLLOW'
+                ? { field: 'follows_given', max: config.followDailyCap }
+                : null;
+    if (dailyCap) {
         const localDate = getLocalDateString();
-        const dailyViews = await getDailyStat(localDate, 'profile_views');
-        if (dailyViews >= config.profileViewDailyCap) {
-            await logWarn('interaction.profile_view_cap_reached', { dailyViews, cap: config.profileViewDailyCap });
+        const dailyCount = await getDailyStat(localDate, dailyCap.field);
+        if (dailyCount >= dailyCap.max) {
+            await logWarn('interaction.daily_cap_reached', { actionType, dailyCount, cap: dailyCap.max });
             return workerResult(0, [
-                { leadId, message: `Profile view daily cap raggiunto (${dailyViews}/${config.profileViewDailyCap})` },
+                { leadId, message: `Daily cap ${actionType} raggiunto (${dailyCount}/${dailyCap.max})` },
             ]);
         }
     }
