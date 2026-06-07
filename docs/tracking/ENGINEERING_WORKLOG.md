@@ -4,6 +4,26 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-07 — Prod-readiness HIGH: 10 prod-blocker del Backend Deep Audit (`/goal prod-readiness`)
+
+### Obiettivo
+Prod-readiness a 360° del workflow del bot (anti-ban first, correttezza prod, GDPR, security, vendibilità). Verifica ALLA FONTE di C1+H1-H24 (zero-M: non assumere "già fatti") → fix degli OPEN in ordine di rischio.
+
+### Metodo
+WAVE 0 — verifica-stato in fan-out (Workflow `audit-prodblocker-status`, 25 agenti sonnet read-only): **6 FIXED** da sessioni precedenti (C1, H2, H7, H9, H10, H16), **3 PARTIAL** (H6, H8, H24), **16 OPEN**. Fix INLINE per wave (zero-C.2); file anti-ban gated via protocollo antiban-approved + antiban-review SICURO. `conta-problemi`=0 (1500 test) ad ogni commit; pathspec, zero file peer.
+
+### 10 fix committati (4 commit)
+- `3be2219` anti-ban: H4 preflight headless blocca sui warning CRITICAL (prod PM2); H5 hot-reload valida config + rollback; H12 lock takeover atomico (anti doppio-runner).
+- `53d564a` anti-ban: H1 renderer WebGL per device-class (mobile Adreno/Mali, Linux Mesa — elimina contraddizione GPU/UA, stringhe reali via web); H3 sessione SalesNav default conservativi; H15 proxy fallback d'emergenza onorato (signature api-injected).
+- `0194c03` data-integrity: H13 `PRAGMA foreign_keys=ON` (root cause meccanica di C1, nessuna FK violation latente nei test); H14 purge GDPR cancella `outbox_event_deliveries` prima della FK.
+- `037d839` security: H6 telegram listener fail-closed senza allowlist; H8 sentry `sendDefaultPii=false`.
+
+### Restano (tracciati in `todos/prod-readiness.md`)
+H11 (tx PG illusorie, prod-breaking), H17 (gate `gdpr_opt_out` enrichment), H18 (registro Art.30), H19 (redaction fail-fast), H20-H24 (test superfici a rischio), wave E (workflow runtime hardening), G (prod-readiness operativa: SQLite→Postgres, health, alerting, CI/CD).
+
+### Verifica finale
+`conta-problemi`=0 ad ogni commit (typecheck BE+FE + lint 0-warn + 1500 test, con FK ON attivo). Branch `refactor/adk-split` (condiviso col peer codex): commit via pathspec, zero file peer.
+
 ## 2026-06-07 — Low-triage: 66 LOW del Backend Deep Audit (`/goal backend-low-triage`)
 
 ### Obiettivo
