@@ -748,27 +748,29 @@ export function releaseStickyProxy(sessionId: string): void {
     stickyProxySessions.delete(sessionId);
 }
 
+// H22 fix: estratta come funzione PURA (testabile direttamente, senza flakiness da Date.now) +
+// esportata. Comportamento identico a prima. M34: cooldown differenziato per tipo di errore —
+// ban IP e timeout hanno gravità molto diverse (prima era 10min fissi per qualsiasi errore).
+export function computeProxyCooldownMs(
+    errorType?: 'timeout' | 'connection_refused' | 'ban' | 'unknown',
+): number {
+    switch (errorType) {
+        case 'ban':
+            return 120 * 60_000; // 2h — IP bannato, serve rotazione
+        case 'connection_refused':
+            return 15 * 60_000; // 15min — proxy potrebbe riprendersi
+        case 'timeout':
+            return 5 * 60_000; // 5min — rete lenta, retry rapido
+        default:
+            return config.proxyFailureCooldownMinutes * 60_000;
+    }
+}
+
 export function markProxyFailed(
     proxy: ProxyConfig,
     errorType?: 'timeout' | 'connection_refused' | 'ban' | 'unknown',
 ): void {
-    // M34: Cooldown differenziato per tipo di errore.
-    // Prima: 10min fissi per qualsiasi errore. Ban IP e timeout hanno gravità molto diverse.
-    let cooldownMs: number;
-    switch (errorType) {
-        case 'ban':
-            cooldownMs = 120 * 60_000; // 2h — IP bannato, serve rotazione
-            break;
-        case 'connection_refused':
-            cooldownMs = 15 * 60_000; // 15min — proxy potrebbe riprendersi
-            break;
-        case 'timeout':
-            cooldownMs = 5 * 60_000; // 5min — rete lenta, retry rapido
-            break;
-        default:
-            cooldownMs = config.proxyFailureCooldownMinutes * 60_000;
-    }
-    proxyFailureUntil.set(proxyKey(proxy), Date.now() + cooldownMs);
+    proxyFailureUntil.set(proxyKey(proxy), Date.now() + computeProxyCooldownMs(errorType));
 }
 
 export function markProxyHealthy(proxy: ProxyConfig): void {
