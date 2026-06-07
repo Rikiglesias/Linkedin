@@ -18,8 +18,13 @@ Triage dei 142 finding MEDIUM del Backend Deep Audit: classificare (FIX-NOW/CONF
   - `telemetry/logger.ts`: `recordRunLog` isolato in try/catch → un errore di scrittura DB non rompe più `publishLiveEvent`/il chiamante.
   - `cloud/telegramAiImporter.ts`: validazione URL Sales Navigator via `new URL()`+hostname esatto (era `includes('linkedin.com/sales')` aggirabile).
 
+- **Ondata 2 (3 fix correttezza leadsCore, non anti-ban)**:
+  - `hasOtherAccountTargeted`: match `leadId` delimitato (`,%`/`}%`) → niente collisione substring 42↔420 nella deconfliction multi-account.
+  - `promoteNewLeadsToReadyInvite`: `UPDATE ... AND status='NEW'` → niente clobber se lo status cambia tra SELECT e UPDATE.
+  - `appendLeadEvent`: `JSON.stringify` del metadata in try/catch (fallback `{}`) → niente crash su riferimenti circolari.
+
 ### Stato reale
-- Triage 142/142 classificato. Ondata 1 applicata + 9 test mirati. Commit dedicato. Ondate 2-4 pianificate nel tracker. Nessun file anti-ban/peer toccato. Push da coordinare col peer.
+- Triage 142/142 classificato. Ondata 1 (5 fix, +9 test) e Ondata 2 parziale (3 fix, +3 test) applicate e committate. Restano: Ondata 2 residua (addLead/leadsLearning/featureStore — richiedono infra DB-test), Ondate 3-4. Nessun file anti-ban/peer toccato. Push da coordinare col peer.
 
 ### Verifica
 - `npm run conta-problemi`: exit 0 (typecheck BE+FE + lint + 1471 test). Suite mirata Ondata 1: 22/22.

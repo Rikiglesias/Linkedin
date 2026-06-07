@@ -613,7 +613,9 @@ export async function promoteNewLeadsToReadyInvite(limit: number): Promise<numbe
         const batch = ids.slice(offset, offset + BATCH_SIZE);
         const placeholders = batch.map(() => '?').join(', ');
         const result = await db.run(
-            `UPDATE leads SET status = 'READY_INVITE', updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`,
+            // AND status = 'NEW': evita il clobber se un altro processo ha cambiato lo status del
+            // lead tra il SELECT e questo UPDATE (race) -> ripromuoverebbe a READY_INVITE per errore.
+            `UPDATE leads SET status = 'READY_INVITE', updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders}) AND status = 'NEW'`,
             batch,
         );
         totalChanged += result.changes ?? 0;
@@ -1230,18 +1232,24 @@ export async function appendLeadEvent(
 
     const enrichedMetadata = durationSeconds !== null ? { ...metadata, duration_seconds: durationSeconds } : metadata;
 
+    // Serializzazione protetta: un metadata con riferimenti circolari farebbe lanciare JSON.stringify
+    // e abortire l'append dell'evento (evento di stato perso). Fallback a '{}' + logWarn.
+    let metadataJson: string;
+    try {
+        metadataJson = JSON.stringify(enrichedMetadata);
+    } catch (serErr) {
+        void logWarn('leads_core.append_event.metadata_serialize_failed', {
+            error: serErr instanceof Error ? serErr.message : String(serErr),
+        });
+        metadataJson = '{}';
+    }
+
     await db.run(
         `
         INSERT INTO lead_events (lead_id, from_status, to_status, reason, metadata_json)
         VALUES (?, ?, ?, ?, ?)
     `,
-        [
-            leadId,
-            normalizeLegacyStatus(fromStatus),
-            normalizeLegacyStatus(toStatus),
-            reason,
-            JSON.stringify(enrichedMetadata),
-        ],
+        [leadId, normalizeLegacyStatus(fromStatus), normalizeLegacyStatus(toStatus), reason, metadataJson],
     );
 }
 
@@ -1358,7 +1366,7 @@ export async function hasOtherAccountTargeted(
               AND j.account_id != ?
               AND j.status IN ('QUEUED', 'RUNNING', 'SUCCEEDED')
               AND j.created_at >= DATETIME('now', '-' || ? || ' days')
-              AND j.payload_json LIKE '%"leadId":' || l.id || '%'
+              AND (j.payload_json LIKE '%"leadId":' || l.id || ',%' OR j.payload_json LIKE '%"leadId":' || l.id || '}%')
           )
     `,
         [normalizedUrl, safeLookbackDays, excludeAccountId, safeLookbackDays],
