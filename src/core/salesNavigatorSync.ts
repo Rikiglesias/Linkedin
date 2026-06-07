@@ -732,9 +732,18 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
         // (non l'indice numerico che è fragile se le liste cambiano ordine/quantità).
         const checkpointKey = `sync_list_checkpoint:${account.id}:${options.listName ?? 'all'}`;
         const lastCheckpointRaw = await getRuntimeFlag(checkpointKey).catch(() => null);
-        const completedListNames = new Set<string>(
-            lastCheckpointRaw ? (JSON.parse(lastCheckpointRaw) as string[]) : [],
-        );
+        let completedListNames: Set<string>;
+        try {
+            const parsed = lastCheckpointRaw ? JSON.parse(lastCheckpointRaw) : [];
+            completedListNames = new Set<string>(Array.isArray(parsed) ? (parsed as string[]) : []);
+        } catch (parseErr) {
+            console.warn(
+                `[SYNC] Checkpoint corrotto (${checkpointKey}) — riparto da zero: ${
+                    parseErr instanceof Error ? parseErr.message : String(parseErr)
+                }`,
+            );
+            completedListNames = new Set<string>();
+        }
 
         for (let listIdx = 0; listIdx < targetLists.length; listIdx++) {
             const targetList = targetLists[listIdx];

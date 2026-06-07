@@ -81,6 +81,13 @@ Esempio:
 }
 
 const listTarget = args[0];
-const dayTarget = parseInt(args[1], 10) || 1;
+const rawDay = args[1];
+const dayTarget = Number(rawDay);
+if (!Number.isInteger(dayTarget) || dayTarget < 1 || dayTarget > RAMP_UP_SCHEDULE.length) {
+    console.error(
+        `[Ramp-Up] ❌ Giorno non valido: "${rawDay ?? ''}". Inserire un intero tra 1 e ${RAMP_UP_SCHEDULE.length}.`,
+    );
+    process.exit(1);
+}
 
 runRampUp(listTarget, dayTarget).catch(console.error);

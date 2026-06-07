@@ -1177,6 +1177,7 @@ async function runQueuedJobsForAccount(
                 session = rotated;
                 processedOnCurrentSession = 0;
                 sessionStartedAtMs = Date.now();
+                windDownActive = false; // reset: la sessione ruotata riparte col pacing normale (no umano-stanco permanente)
                 // A12 SHOULD: timestamp sessione dopo rotazione periodica
                 await setRuntimeFlag(
                     `browser_session_started_at:${account.id}`,
