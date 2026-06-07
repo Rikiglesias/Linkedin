@@ -134,7 +134,12 @@ async function releaseWorkflowRunnerLock(ownerId: string): Promise<void> {
     console.log(`[LOCK] released key = ${getWorkflowRunnerLockKey()} owner = ${ownerId} released = ${released} `);
 }
 
-async function sleepWithLockHeartbeat(totalMs: number, ownerId: string, ttlSeconds: number): Promise<void> {
+async function sleepWithLockHeartbeat(
+    totalMs: number,
+    ownerId: string,
+    ttlSeconds: number,
+    onProgress?: (remainingMs: number) => void,
+): Promise<void> {
     let remaining = Math.max(0, totalMs);
     while (remaining > 0) {
         const chunk = Math.min(WORKFLOW_RUNNER_HEARTBEAT_MS, remaining);
@@ -142,6 +147,9 @@ async function sleepWithLockHeartbeat(totalMs: number, ownerId: string, ttlSecon
         remaining -= chunk;
         if (remaining > 0) {
             await heartbeatWorkflowRunnerLock(ownerId, ttlSeconds);
+            // CL17: feedback opzionale durante attese lunghe (es. login jitter fino a 30 min),
+            // altrimenti l'utente vede il bot "fermo" senza sapere che sta aspettando.
+            onProgress?.(remaining);
         }
     }
 }
@@ -861,7 +869,16 @@ export async function runLoopCommand(args: string[]): Promise<void> {
         if (jitterMs > 60_000) {
             const jitterMin = (jitterMs / 60_000).toFixed(1);
             console.log(`[LOOP] Login jitter: attesa ${jitterMin} minuti prima del primo ciclo`);
-            await sleepWithLockHeartbeat(jitterMs, lockOwnerId ?? '', lockTtlSeconds);
+            // CL17: countdown periodico (~ogni 5 min) durante l'attesa, altrimenti fino a 30 min di
+            // silenzio fanno sembrare il bot bloccato. Non cambia la durata del jitter (solo log).
+            let lastJitterLogMin = Math.ceil(jitterMs / 60_000);
+            await sleepWithLockHeartbeat(jitterMs, lockOwnerId ?? '', lockTtlSeconds, (remainingMs) => {
+                const remMin = Math.ceil(remainingMs / 60_000);
+                if (remMin > 0 && remMin <= lastJitterLogMin - 5) {
+                    lastJitterLogMin = remMin;
+                    console.log(`[LOOP] Login jitter: ~${remMin} min al primo ciclo...`);
+                }
+            });
         }
     }
 
