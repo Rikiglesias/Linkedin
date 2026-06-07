@@ -90,15 +90,16 @@ export async function setQuarantine(enabled: boolean): Promise<void> {
 export async function pauseAutomation(
     type: string,
     details: Record<string, unknown>,
-    baseMinutes: number,
+    baseMinutes: number | null,
 ): Promise<number> {
+    // baseMinutes === null => pausa indefinita (manual resume): usata dal challenge gate persistente (A9).
     let finalMinutes = baseMinutes;
 
-    // Exponential Backoff implementation
+    // Exponential Backoff implementation (solo per 429, che passa sempre un numero).
     if (type.includes('429') || type === 'HTTP_429_RATE_LIMIT') {
         const recentIncidents = await countRecentIncidents(type, 24); // count same incidents in last 24h
         const backoffMultiplier = Math.pow(2, recentIncidents);
-        finalMinutes = Math.min(24 * 60, Math.floor(baseMinutes * backoffMultiplier)); // max 24h
+        finalMinutes = Math.min(24 * 60, Math.floor((baseMinutes ?? 0) * backoffMultiplier)); // max 24h
         details = {
             ...details,
             recentIncidents,
@@ -233,7 +234,11 @@ export async function handleChallengeDetected(input: ChallengeDetectionInput): P
         ...(input.extra ?? {}),
     };
 
-    const incidentId = await pauseAutomation('CHALLENGE_DETECTED', details, config.challengePauseMinutes);
+    // Anti-ban (A9): account flaggato da challenge → gate PERSISTENTE (pausa indefinita, manual
+    // resume via dashboard/API dopo verifica umana) se challengePersistentGate; altrimenti pausa
+    // temporizzata legacy. Niente auto-resume su account flaggato = niente escalation ban.
+    const challengePauseValue = config.challengePersistentGate ? null : config.challengePauseMinutes;
+    const incidentId = await pauseAutomation('CHALLENGE_DETECTED', details, challengePauseValue);
 
     if (typeof input.leadId === 'number' && Number.isFinite(input.leadId)) {
         try {

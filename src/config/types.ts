@@ -55,6 +55,7 @@ export interface AppConfig {
     accountHealthAlertMinProcessed: number;
     autoPauseMinutesOnFailureBurst: number;
     challengePauseMinutes: number;
+    challengePersistentGate: boolean;
     retentionDays: number;
     profileContextExtractionEnabled: boolean;
     softInviteCap: number;

@@ -62,6 +62,11 @@ export function buildRuntimeDomainConfig(accountProfiles: AccountProfileConfig[]
         accountHealthAlertMinProcessed: Math.max(1, parseIntEnv('ACCOUNT_HEALTH_ALERT_MIN_PROCESSED', 5)),
         autoPauseMinutesOnFailureBurst: Math.max(1, parseIntEnv('AUTO_PAUSE_MINUTES_ON_FAILURE_BURST', 180)),
         challengePauseMinutes: Math.max(5, parseIntEnv('CHALLENGE_PAUSE_MINUTES', 180)),
+        // Anti-ban (A9, 2026-06-07): su challenge/CAPTCHA (account flaggato) NON auto-resumere dopo
+        // challengePauseMinutes. Gate persistente: pausa indefinita finche' un umano verifica e
+        // riprende manualmente (resumeAutomation via dashboard/API). Default true (difensivo);
+        // false = comportamento legacy (auto-resume dopo challengePauseMinutes).
+        challengePersistentGate: parseBoolEnv('CHALLENGE_PERSISTENT_GATE', true),
         retentionDays: Math.max(7, parseIntEnv('RETENTION_DAYS', 90)),
         profileContextExtractionEnabled: parseBoolEnv('PROFILE_CONTEXT_EXTRACTION_ENABLED', false),
         sessionDir: resolvePathFromEnv('SESSION_DIR', path.join('data', 'session')),
