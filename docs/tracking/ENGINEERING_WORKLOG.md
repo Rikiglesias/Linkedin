@@ -891,3 +891,25 @@ Migrare la regola di cambio chat dal metodo legacy `SESSION_HANDOFF.md` / `.clau
 - `npm run audit:hooks`: 18/18.
 - `npm run audit:ai-control-plane`: verde.
 - `npm run conta-problemi`: typecheck, lint e 1430 test Vitest passati.
+
+## 2026-06-07 — Anti-ban hardening difensivo (Gruppo A, autorizzazione «decidi tu»)
+
+### Obiettivo
+Applicare i rinforzi DIFENSIVI anti-ban dal triage backend (riducono il rischio ban, reversibili via env/config), decisi autonomamente sotto la regola difensivo+reversibile+/antiban-review-SAFE -> applico io (memory feedback_antiban_decide_vs_confirm). Binding: ~/todos/backend-antiban-hardening.md.
+
+### Interventi (Gruppo A 7/9, ognuno /antiban-review SICURO + gate verde + commit pathspec)
+- A1 config/domains.ts: pendingRatioStop 0.8->0.65, pendingRatioWarn 0.65->0.55 (hard STOP al red-flag). +4 test. 355868e.
+- A2 core/scheduler.ts: re-clamp budget a weeklyRemaining DOPO moltiplicatori strategy/mood (impediva di superare il weekly cap). efe2835.
+- A3 workers/inboxWorker.ts: auto-reply conta in messages_sent via checkAndIncrementDailyLimit atomico + compensazione (era guard non-atomico). bcbb5b5.
+- A4 workers/interactionWorker.ts + config: LIKE/FOLLOW daily cap (30/15, erano illimitati). +4 test. 00ffe35.
+- A5 proxyManager.ts + config: Tor fallback opt-in (default false; era default-ON) + alert pool esaurito. +2 test. 4a1bf71.
+- A6 proxyManager.ts: deprioritizza proxy datacenter nella selezione (mai rimossi -> no halt). 876f972.
+- A7 fingerprint/pool.ts: fingerprint stabile per account (rimossa rotazione settimanale con downgrade/cambio famiglia). ac46e0f.
+
+### Verifica
+- npm run conta-problemi: typecheck BE+FE + lint max-warnings 0 + 1496 test, exit 0 ad ogni commit.
+- +10 test regressione difensivi in src/tests/antibanDefensiveDefaults.vitest.ts.
+- Zero file anti-ban senza /antiban-review; zero file peer (separata via reset+pathspec una delete del peer risucchiata: errors/2026-06-07-commit-swept-peer-staged-delete).
+
+### Residui (turno successivo / /goal backend-antiban-hardening)
+A8 geo-coerenza exit-IP (feature mancante, opt-in), A9 challenge gate persistente, C1/C2 de-correlazione multi-account, B1-B6 comportamentali, S1/S2 (env secret priority, /metrics auth), T1 csvImporter tx-batch. Auto-push OFF (branch condiviso + anti-ban -> coordinamento/PR). Flaky pre-esistente: unhandled-rejection in appContextAndCloudBridge (~1/3 run).
