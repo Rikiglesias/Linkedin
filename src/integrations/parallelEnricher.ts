@@ -60,6 +60,7 @@ export async function enrichLeadsParallel(opts: ParallelEnrichmentOptions): Prom
          FROM leads l
          LEFT JOIN lead_enrichment_data e ON e.lead_id = l.id
          WHERE l.status IN ('NEW', 'READY_INVITE', 'INVITED', 'ACCEPTED', 'READY_MESSAGE')
+           AND (l.gdpr_opt_out IS NULL OR l.gdpr_opt_out != 1)
            AND l.first_name IS NOT NULL AND TRIM(l.first_name) != ''
            AND (
              e.lead_id IS NULL

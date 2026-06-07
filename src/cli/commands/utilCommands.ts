@@ -354,6 +354,14 @@ export async function runEnrichDeepCommand(args: string[]): Promise<void> {
             continue;
         }
 
+        // CL10 fix (GDPR Art.21): enrich-deep chiama findPersonData (scraping web + DNS) bypassando
+        // il gate gdpr_opt_out di enrichLeadAuto (H17). Va replicato qui: nessuna raccolta PII per
+        // chi ha esercitato l'opposizione. SELECT * carica gdpr_opt_out a runtime (non nel tipo LeadRecord).
+        if ((lead as { gdpr_opt_out?: number | null }).gdpr_opt_out === 1) {
+            console.log(`  [SKIP] Lead ${lead.id}: gdpr_opt_out attivo (Art.21) — enrichment saltato`);
+            continue;
+        }
+
         try {
             const result = await findPersonData({
                 firstName,
