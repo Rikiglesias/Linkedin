@@ -921,3 +921,12 @@ A8 geo-coerenza exit-IP (feature mancante, opt-in), A9 challenge gate persistent
 - S2 /metrics auth opt-in (METRICS_AUTH_TOKEN Bearer timing-safe, default scraping aperto, secureEquals esportato da wsAuth) — `032b959`.
 - Verifica: conta-problemi exit 0 (1496 test) ad ogni commit. Totale sessione: 11 fix (A1-A9, C1, S2) + worklog, tutti review SICURO, zero file peer.
 - Residui CONFERMA-UTENTE: C2 (migration leads.account_id), S1 (priorità secret prod). ALTA-CURA: B1-B6 (comportamentali browser/stealth), T1 (csvImporter tx). Auto-push OFF (branch condiviso + anti-ban).
+
+### Aggiornamento (sessione 2026-06-07, cont.): Gruppo B-safe + T1
+- B2 inter-keystroke log-normale (utils/random logNormalDelayMs +5 test) `e0e01bd`.
+- B1 freeze chrome.loadTimes/csi (valori stabili per pagina) `7f80ba4`.
+- B3 warm-up profilo via click umano invece di page.goto (fail-safe skip) `e83036a`.
+- B4 follow-up anti-burst (pausa lunga periodica, riuso config noBurst) `b89f8a0`.
+- T1 csvImporter-tx: RISOLTO senza cambio — premessa audit (shared-tx PG abort) falsa; design per-riga indipendente (addLead withTransaction + addCompanyTarget atomico) = partial-success corretto; wrapping sarebbe regressione. Bounded già fatto.
+- Verifica: conta-problemi exit 0 (1501 test) ad ogni commit. Scope autonomo del goal backend-antiban-hardening COMPLETO (16 fix: A1-A9, C1, B1-B4, S2).
+- Carve-out (richiedono utente): C2 (migration leads.account_id), S1 (priorità secret prod), B5 (vision click jitter, verifica live), B6 (navigazione/proxy comandi, verifica live). Push OFF (branch condiviso, coordinamento).
