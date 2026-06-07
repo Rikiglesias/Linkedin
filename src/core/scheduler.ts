@@ -559,6 +559,12 @@ export async function scheduleJobs(
     inviteBudget = inviteBudget > 0 ? Math.max(1, Math.round(inviteBudget * inviteMoodFactor)) : 0;
     messageBudget = messageBudget > 0 ? Math.max(1, Math.round(messageBudget * messageMoodFactor)) : 0;
 
+    // Anti-ban (re-clamp difensivo, 2026-06-07): i moltiplicatori daily strategy (>1.0) e mood
+    // (fino a ~1.35) possono aver rialzato il budget sopra il residuo settimanale clampato a ~riga 489.
+    // Riapplico il tetto settimanale come ultimo step: il weekly cap LinkedIn non va mai superato.
+    inviteBudget = Math.min(inviteBudget, weeklyRemaining);
+    messageBudget = Math.min(messageBudget, weeklyMessageRemaining);
+
     // Session limit: cap budget per singola sessione workflow
     if (options.sessionLimit !== null && options.sessionLimit !== undefined && options.sessionLimit > 0) {
         inviteBudget = Math.min(inviteBudget, options.sessionLimit);
