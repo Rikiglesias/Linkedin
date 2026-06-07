@@ -276,8 +276,21 @@ function prioritizeProxyPool(pool: ProxyConfig[], options: GetProxyChainOptions)
           })()
         : pool;
 
+    // Anti-ban (A6, 2026-06-07): deprioritizza i proxy rilevati DATACENTER dall'ultimo quality
+    // check (i DC IP sono flaggati da LinkedIn). NON li rimuove (no rischio pool vuoto/halt): li
+    // spinge in fondo come ultimo ricorso, dietro residential/mobile/unknown. Se nessun check e'
+    // ancora girato (report null) il comportamento e' invariato.
+    const datacenterServers = new Set(
+        (getLastQualityReport()?.proxies ?? []).filter((p) => p.type === 'datacenter').map((p) => p.server),
+    );
+    const datacenterPenalty = (proxy: ProxyConfig): number => (datacenterServers.has(proxy.server) ? 1000 : 0);
+
     return sourcePool
-        .map((proxy, index) => ({ proxy, index, score: proxyTypeScore(proxy, options) }))
+        .map((proxy, index) => ({
+            proxy,
+            index,
+            score: proxyTypeScore(proxy, options) + datacenterPenalty(proxy),
+        }))
         .sort((a, b) => a.score - b.score || a.index - b.index)
         .map((entry) => entry.proxy);
 }
