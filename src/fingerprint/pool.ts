@@ -275,20 +275,22 @@ export const mobileFingerprintPool: Fingerprint[] = [
 ];
 
 /**
- * Selezione deterministica dal pool basata su accountId + settimana corrente.
- * Lo stesso account ottiene lo stesso fingerprint per ~1 settimana, poi cambia
- * (simula aggiornamento browser naturale). Usa FNV-1a come hash veloce.
+ * Selezione deterministica dal pool basata SOLO su accountId → fingerprint STABILE per account.
+ *
+ * Anti-ban (A7, 2026-06-07): rimossa la rotazione settimanale. Il pool e' MISTO (mobile/desktop,
+ * device e versioni Chrome diverse): ruotare l'indice ogni settimana poteva (a) fare DOWNGRADE di
+ * versione browser e (b) cambiare OS/famiglia/viewport dello stesso account — entrambi IMPOSSIBILI
+ * su un device reale (i browser si auto-aggiornano, mai downgrade; il device non cambia famiglia) →
+ * red flag per il behavioral fingerprinting di LinkedIn. Un device reale mantiene OS/famiglia/
+ * viewport stabili nel tempo. La rotazione version-monotonic-within-family (ruotare solo a versioni
+ * >= della stessa famiglia) richiede metadata version/family sul pool → tracciata come enhancement.
+ * Usa FNV-1a come hash veloce senza dipendenze crypto.
  */
 export function pickDeterministicFingerprint(pool: ReadonlyArray<Fingerprint>, accountId: string): Fingerprint {
     const safePool = pool.length > 0 ? pool : desktopFingerprintPool;
     if (safePool.length === 1) return safePool[0] as Fingerprint;
 
-    // Week number: cambia ogni ~7 giorni → il fingerprint ruota settimanalmente
-    const now = new Date();
-    const weekNumber = Math.floor(
-        (now.getTime() - new Date(now.getFullYear(), 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000),
-    );
-    const seed = `${accountId}:week${weekNumber}`;
+    const seed = accountId;
 
     // FNV-1a 32-bit hash per determinismo veloce senza dipendenze crypto
     let hash = 0x811c9dc5;

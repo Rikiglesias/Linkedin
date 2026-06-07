@@ -39,9 +39,10 @@ describe('Fingerprint Pool — advanced', () => {
         }
     });
 
-    it('pickDeterministicFingerprint cambia con settimana diversa (simulazione)', () => {
-        // Non possiamo cambiare la settimana facilmente, ma verifichiamo che
-        // account diversi producono fingerprint diversi (la rotazione settimanale funziona)
+    it('pickDeterministicFingerprint: account diversi → fingerprint diversi (buona distribuzione)', () => {
+        // A7 (2026-06-07): fingerprint STABILE per account (rimossa la rotazione settimanale che
+        // poteva fare downgrade versione / cambio OS-famiglia). Qui verifichiamo la distribuzione:
+        // account diversi producono fingerprint diversi (de-correlazione).
         const results = new Set<string>();
         for (let i = 0; i < desktopFingerprintPool.length + 5; i++) {
             results.add(pickDeterministicFingerprint(desktopFingerprintPool, `acc-${i}`).id);
