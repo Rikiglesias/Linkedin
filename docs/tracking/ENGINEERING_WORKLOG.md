@@ -4,7 +4,7 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
-## 2026-06-07 — Prod-readiness HIGH: 10 prod-blocker del Backend Deep Audit (`/goal prod-readiness`)
+## 2026-06-07 — Prod-readiness HIGH: 18 finding HIGH/PARTIAL del Backend Deep Audit (`/goal prod-readiness`)
 
 ### Obiettivo
 Prod-readiness a 360° del workflow del bot (anti-ban first, correttezza prod, GDPR, security, vendibilità). Verifica ALLA FONTE di C1+H1-H24 (zero-M: non assumere "già fatti") → fix degli OPEN in ordine di rischio.
@@ -12,14 +12,19 @@ Prod-readiness a 360° del workflow del bot (anti-ban first, correttezza prod, G
 ### Metodo
 WAVE 0 — verifica-stato in fan-out (Workflow `audit-prodblocker-status`, 25 agenti sonnet read-only): **6 FIXED** da sessioni precedenti (C1, H2, H7, H9, H10, H16), **3 PARTIAL** (H6, H8, H24), **16 OPEN**. Fix INLINE per wave (zero-C.2); file anti-ban gated via protocollo antiban-approved + antiban-review SICURO. `conta-problemi`=0 (1500 test) ad ogni commit; pathspec, zero file peer.
 
-### 10 fix committati (4 commit)
+### 18 finding risolti+committati (9 commit, ogni conta-problemi=0)
 - `3be2219` anti-ban: H4 preflight headless blocca sui warning CRITICAL (prod PM2); H5 hot-reload valida config + rollback; H12 lock takeover atomico (anti doppio-runner).
 - `53d564a` anti-ban: H1 renderer WebGL per device-class (mobile Adreno/Mali, Linux Mesa — elimina contraddizione GPU/UA, stringhe reali via web); H3 sessione SalesNav default conservativi; H15 proxy fallback d'emergenza onorato (signature api-injected).
 - `0194c03` data-integrity: H13 `PRAGMA foreign_keys=ON` (root cause meccanica di C1, nessuna FK violation latente nei test); H14 purge GDPR cancella `outbox_event_deliveries` prima della FK.
 - `037d839` security: H6 telegram listener fail-closed senza allowlist; H8 sentry `sendDefaultPii=false`.
+- `6262ba2` correttezza PG: H11 transazioni leadsCore atomiche (`getDatabase()` tx-client via ALS dentro il callback, non il pool autocommit).
+- `c6c709d` GDPR: H17 gate `gdpr_opt_out` (enrichLeadAuto + worker); H18 registro Art.30 allineato ai processor US reali; H19 redaction fail-fast (no screenshot PII non redatti verso OpenAI).
+- `6c9a69a` test (P1): H20 worker azione (18 test), H23 auth detection (15 test), H24 leadsCore tx rollback (SQLite in-memory) — generati via fan-out auto-verificato.
+- `5d8b70b` test (P1): H22 `computeProxyCooldownMs` funzione pura + test reali del cooldown differenziato (no più tautologie).
 
-### Restano (tracciati in `todos/prod-readiness.md`)
-H11 (tx PG illusorie, prod-breaking), H17 (gate `gdpr_opt_out` enrichment), H18 (registro Art.30), H19 (redaction fail-fast), H20-H24 (test superfici a rischio), wave E (workflow runtime hardening), G (prod-readiness operativa: SQLite→Postgres, health, alerting, CI/CD).
+### Restano — tracciati con motivo in `todos/prod-readiness.md`
+- **H21** test `humanBehavior` (1423 LOC, cuore anti-ban): richiede refactor strutturale (estrazione funzioni pure timing/varianza) → blocco DEDICATO con verifica comportamentale A/B (valori pre-post identici, altrimenti rischio ban). Eccezione zero-J legittima (rischio anti-ban non valutabile a fine sessione lunga).
+- **Wave E** workflow runtime hardening (backlog non-audit, scope ampio). **Wave G** prod-readiness operativa (SQLite→Postgres, health-check, alerting, CI/CD = infra + leve utente).
 
 ### Verifica finale
 `conta-problemi`=0 ad ogni commit (typecheck BE+FE + lint 0-warn + 1500 test, con FK ON attivo). Branch `refactor/adk-split` (condiviso col peer codex): commit via pathspec, zero file peer.
