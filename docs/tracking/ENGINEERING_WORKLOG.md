@@ -4,6 +4,30 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-07 — Low-triage: 66 LOW del Backend Deep Audit (`/goal backend-low-triage`)
+
+### Obiettivo
+Triage + fix dei 66 finding LOW del Backend Deep Audit, sotto la regola decide-vs-confirm (difensivo+reversibile+antiban-review-SAFE → applico io). Verifica zero-M alla fonte (il med-triage aveva già chiuso alcune aree).
+
+### Metodo
+Triage in fan-out (Workflow chunked, 46 file-unit) → 67 finding: **33 APPLY · 18 DEFER · 8 NO_CHANGE · 8 ALREADY_FIXED**. Fix applicati INLINE in wave (zero-C.2), anti-ban via protocollo antiban-approved + antiban-review SICURO. `conta-problemi`=0 (1501 test) ad ogni commit; pathspec, zero file peer.
+> Nota di processo: il 1° run Workflow (46 agenti in burst) è stato rate-limited lato server → fix (chunk sequenziali da 4) + **regola globale anti-burst** in `~/.claude/ZERO_RULES.md` zero-C.2 + error memory `workflow-fanout-burst-throttle`.
+
+### 33 APPLY committati (7 commit)
+- `dc04bbd` W1 — 11 hygiene/correctness: preflight `_accountId` dead-data; jobRunner ETA clamp + progress isTTY; riskEngine.vitest de-tautologia; migration 059 commento; securityAdvisor TOCTOU; aiControlPlaneRegistry regex try/catch; config/validation 2 warn ridondanti; shared/types `AI_ABORT`; linkedinChangeAlert zod; rename proxyAndNoise→proxyManager.vitest.
+- `d78c927` W2a — leadsCore LIKE escape; webSearchEnricher phone validation; companyEnrichment accountId; stats clamp(8); export Art.20 filtro per-soggetto.
+- `630851a` W2b — gdprRetentionCleanup: computeLastActivity guard + URL PII→hash in 7 log.
+- `b41d2a6` W2c-db — db.ts: pg_dump PGPASSWORD; DDL identifier allowlist; init-race promise-memo; pool/timeout configurabili + SET LOCAL nelle migration.
+- `b11953d` W2c-rest — stats getRiskInputs Promise.all + identifier allowlist; aiQuality try/catch→FAILED.
+- `7d2853e` W3a — jobRunner windDown reset; salesNavigatorSync checkpoint guard; scripts/rampUp day-target (anti-ban-content, antiban-review SICURO).
+- `83cae6b` W3-gated — inviteWorker scroll randomizzato; messageWorker dry-run; visionProviderFactory configHash; proxyManager 7 log strutturati; sendInvitesService limit guard (protocollo antiban-approved + antiban-review SICURO).
+
+### Carve-out (non applicati, per design)
+18 DEFER (migration DB / decisione prod-segreti / P2-decomposition god-module / riscritture comportamentali anti-ban da verifica-live), 8 NO_CHANGE (by-design), 8 ALREADY_FIXED (med-triage). Restano in `BACKEND_DEEP_AUDIT_2026-06-06.md` come P1/P2.
+
+### Verifica finale
+`conta-problemi`=0 (typecheck BE+FE + lint 0-warn + 1501 test) su ogni commit. Branch `refactor/adk-split` (condiviso): tutti i commit via pathspec, zero file peer.
+
 ## 2026-06-07 — Med-triage: classificazione 142 medium + Ondata 1 fix (`/goal backend-med-triage`)
 
 ### Obiettivo
