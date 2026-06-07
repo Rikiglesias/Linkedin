@@ -11,7 +11,12 @@ const mocks = vi.hoisted(() => ({ getDatabase: vi.fn(), logInfo: vi.fn(), logWar
 vi.mock('../db', () => ({ getDatabase: mocks.getDatabase }));
 vi.mock('../telemetry/logger', () => ({ logInfo: mocks.logInfo, logWarn: mocks.logWarn, logError: mocks.logError }));
 
-import { promoteNewLeadsToReadyInvite, hasOtherAccountTargeted, appendLeadEvent } from '../core/repositories/leadsCore';
+import {
+    promoteNewLeadsToReadyInvite,
+    hasOtherAccountTargeted,
+    appendLeadEvent,
+    addLead,
+} from '../core/repositories/leadsCore';
 
 describe('leadsCore correttezza (Ondata-2)', () => {
     beforeEach(() => {
@@ -63,5 +68,28 @@ describe('leadsCore correttezza (Ondata-2)', () => {
         const insert = db.run.mock.calls.find((c) => String(c[0]).includes('INSERT INTO lead_events'));
         expect(insert, 'deve inserire comunque l-evento').toBeTruthy();
         expect(insert?.[1]?.[4]).toBe('{}'); // metadata_json a fallback, non crash
+    });
+
+    test('addLead: INSERT lead + list_leads dentro una transazione (atomicità)', async () => {
+        const db = {
+            withTransaction: vi.fn(async (fn: () => Promise<unknown>) => fn()),
+            get: vi.fn().mockResolvedValue({ id: 1 }),
+            run: vi.fn().mockResolvedValue({ changes: 1 }),
+        };
+        mocks.getDatabase.mockResolvedValue(db);
+
+        await addLead({
+            accountName: 'ACME',
+            firstName: 'Mario',
+            lastName: 'Rossi',
+            jobTitle: 'CTO',
+            website: 'acme.com',
+            linkedinUrl: 'https://www.linkedin.com/in/mario/',
+            listName: 'default',
+        });
+
+        expect(db.withTransaction).toHaveBeenCalledTimes(1);
+        expect(db.run.mock.calls.find((c) => String(c[0]).includes('INSERT OR IGNORE INTO leads'))).toBeTruthy();
+        expect(db.run.mock.calls.find((c) => String(c[0]).includes('INSERT OR IGNORE INTO list_leads'))).toBeTruthy();
     });
 });

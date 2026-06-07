@@ -38,6 +38,9 @@ Triage dei 142 finding MEDIUM del Backend Deep Audit: classificare (FIX-NOW/CONF
   - `sync/supabaseSyncWorker.ts`: alert Telegram dedicato sui `PERMANENT_FAILURE` (escono dal conteggio `pending` → l'alert backlog era cieco) — evento perso verso il cloud ora notificato.
   - `scripts/restoreDb.ts`: `runPostgresRestore`/`pgRestoreToDb` da `execSync` con redirection shell a `execFileSync` + stdin (args non interpolati) → no command injection; rimosso import `execSync` orfano.
   - `api/routes/metrics.ts`: il catch non fa più echo di `err.message` su `/metrics` (endpoint non autenticato) → messaggio generico + `logError` interno (no info leak). [Auth/rate-limit su /metrics = CONFIRM-USER: romperebbe lo scraping Prometheus.]
+- **Residui Ondata 2 (correttezza leadsCore/leadsLearning, non anti-ban)**:
+  - `core/repositories/leadsCore.ts addLead`: i 4 statement (INSERT lead + lookup + INSERT list_leads) ora in `withTransaction` → atomicità (no lead senza membership o viceversa). +test.
+  - `core/repositories/leadsLearning.ts appendLeadReplyDraft`: read-modify-write del JSON metadata in `withTransaction` → no lost update su SQLite (FOR UPDATE per PG = follow-up).
   - **`config/env.ts resolveSecret` riclassificato CONFIRM-USER**: invertire la priorità Docker-secret vs `process.env` cambia il secret-loading in produzione (rischio/irreversibile, zero-G) → richiede conferma utente, non fix-now.
 
 ### Stato reale

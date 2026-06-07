@@ -312,40 +312,47 @@ export async function getSalesNavListByName(name: string): Promise<SalesNavListR
 
 export async function addLead(input: AddLeadInput): Promise<boolean> {
     const db = await getDatabase();
-    await ensureLeadList(input.listName);
     const normalizedLinkedinUrl = normalizeLinkedInUrl(input.linkedinUrl);
 
-    const result = await db.run(
-        `
+    // Atomicità: ensureLeadList + INSERT lead + lookup + INSERT list_leads in UNA transazione,
+    // così un crash a metà non lascia il lead senza membership di lista (o viceversa).
+    return withTransaction(db, async () => {
+        await ensureLeadList(input.listName);
+        const result = await db.run(
+            `
         INSERT OR IGNORE INTO leads
             (account_name, first_name, last_name, job_title, website, linkedin_url, status, list_name, lead_score, confidence_score, consent_basis, consent_recorded_at)
         VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, 'NEW'), ?, ?, ?, COALESCE(?, 'legitimate_interest'), ?)
     `,
-        [
-            input.accountName,
-            input.firstName,
-            input.lastName,
-            input.jobTitle,
-            input.website,
+            [
+                input.accountName,
+                input.firstName,
+                input.lastName,
+                input.jobTitle,
+                input.website,
+                normalizedLinkedinUrl,
+                input.status ?? null,
+                input.listName,
+                input.leadScore ?? null,
+                input.confidenceScore ?? null,
+                input.consentBasis ?? null,
+                input.consentRecordedAt ?? null,
+            ],
+        );
+
+        const leadRow = await db.get<{ id: number }>(`SELECT id FROM leads WHERE linkedin_url = ?`, [
             normalizedLinkedinUrl,
-            input.status ?? null,
-            input.listName,
-            input.leadScore ?? null,
-            input.confidenceScore ?? null,
-            input.consentBasis ?? null,
-            input.consentRecordedAt ?? null,
-        ],
-    );
+        ]);
+        const listRow = await db.get<{ id: number }>(`SELECT id FROM lead_lists WHERE name = ?`, [input.listName]);
+        if (leadRow?.id && listRow?.id) {
+            await db.run(`INSERT OR IGNORE INTO list_leads (list_id, lead_id) VALUES (?, ?)`, [
+                listRow.id,
+                leadRow.id,
+            ]);
+        }
 
-    const leadRow = await db.get<{ id: number }>(`SELECT id FROM leads WHERE linkedin_url = ?`, [
-        normalizedLinkedinUrl,
-    ]);
-    const listRow = await db.get<{ id: number }>(`SELECT id FROM lead_lists WHERE name = ?`, [input.listName]);
-    if (leadRow?.id && listRow?.id) {
-        await db.run(`INSERT OR IGNORE INTO list_leads (list_id, lead_id) VALUES (?, ?)`, [listRow.id, leadRow.id]);
-    }
-
-    return (result.changes ?? 0) > 0;
+        return (result.changes ?? 0) > 0;
+    });
 }
 
 export async function getLeadByLinkedinUrl(linkedinUrl: string): Promise<LeadRecord | null> {

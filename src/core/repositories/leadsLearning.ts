@@ -1,4 +1,5 @@
 import { getDatabase } from '../../db';
+import { withTransaction } from './shared';
 import type { SelectorLearningRollbackSnapshotEntry, SelectorLearningRunRecord } from '../repositories.types';
 
 export async function storeMessageHash(leadId: number, contentHash: string, messageText?: string): Promise<void> {
@@ -148,27 +149,31 @@ async function writeLeadMetadataForLead(
 
 export async function appendLeadReplyDraft(leadId: number, input: LeadReplyDraftInput): Promise<void> {
     const db = await getDatabase();
-    const readResult = await readLeadMetadataForLead(db, leadId);
-    const metadata = readResult.metadata;
+    // Read-modify-write del JSON metadata in transazione: senza, su SQLite (BEGIN IMMEDIATE) due
+    // append concorrenti causano lost update. (Per PG, FOR UPDATE sarebbe l'evoluzione: follow-up.)
+    await withTransaction(db, async () => {
+        const readResult = await readLeadMetadataForLead(db, leadId);
+        const metadata = readResult.metadata;
 
-    const existingDrafts = Array.isArray(metadata.reply_drafts)
-        ? metadata.reply_drafts.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
-        : [];
-    const nextDraft = {
-        draft: input.draft.slice(0, 500),
-        confidence: Math.max(0, Math.min(1, input.confidence)),
-        source: input.source,
-        intent: input.intent,
-        subIntent: input.subIntent,
-        entities: input.entities.slice(0, 20),
-        reasoning: input.reasoning.slice(0, 300),
-        autoReplySent: input.autoReplySent,
-        createdAt: new Date().toISOString(),
-    };
-    metadata.reply_drafts = [nextDraft, ...existingDrafts].slice(0, 20);
-    metadata.reply_draft_last_updated_at = new Date().toISOString();
+        const existingDrafts = Array.isArray(metadata.reply_drafts)
+            ? metadata.reply_drafts.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+            : [];
+        const nextDraft = {
+            draft: input.draft.slice(0, 500),
+            confidence: Math.max(0, Math.min(1, input.confidence)),
+            source: input.source,
+            intent: input.intent,
+            subIntent: input.subIntent,
+            entities: input.entities.slice(0, 20),
+            reasoning: input.reasoning.slice(0, 300),
+            autoReplySent: input.autoReplySent,
+            createdAt: new Date().toISOString(),
+        };
+        metadata.reply_drafts = [nextDraft, ...existingDrafts].slice(0, 20);
+        metadata.reply_draft_last_updated_at = new Date().toISOString();
 
-    await writeLeadMetadataForLead(db, leadId, metadata);
+        await writeLeadMetadataForLead(db, leadId, metadata);
+    });
 }
 
 export type CommentSuggestionReviewStatus = 'REVIEW_PENDING' | 'APPROVED' | 'REJECTED';
