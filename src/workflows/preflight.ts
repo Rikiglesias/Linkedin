@@ -59,6 +59,15 @@ export async function runPreflight<TAnswers extends object = Record<string, stri
             return buildResult({ dbStats, configStatus, warnings, confirmed: false, riskAssessment });
         }
 
+        // H4 fix (anti-ban): il path non-interattivo (scheduler/PM2 = produzione reale, non-TTY)
+        // deve bloccare anche sui warning CRITICAL, non solo su risk==STOP. Proxy IP BLACKLISTED,
+        // "Nessun proxy" e noLoginAccounts sono condizioni anti-ban gravi che non raggiungono mai
+        // la soglia STOP (=60). Allinea il branch headless al branch interattivo (vedi sotto, stesso
+        // check su warnings.some(level==='critical')), così la protezione esiste anche in prod.
+        if (warnings.some((w) => w.level === 'critical')) {
+            return buildResult({ dbStats, configStatus, warnings, confirmed: false, riskAssessment });
+        }
+
         return buildResult({ dbStats, configStatus, warnings, confirmed: true, riskAssessment });
     }
 

@@ -406,18 +406,15 @@ export async function acquireRuntimeLock(
             };
         }
 
-        const isStaleRow = await db.get<{ stale: number }>(
+        // H12 fix (resilience/anti-ban): takeover ATOMICO del lock stale. Prima un SELECT separato
+        // valutava la staleness e l'UPDATE aveva solo WHERE lock_key=? → due runner concorrenti
+        // potevano entrambi superare il SELECT e sovrascrivere il lock = DOPPIO workflow runner
+        // sullo stesso account (volume doppio, azioni concorrenti = rischio ban). Ora l'UPDATE e'
+        // condizionale e atomico (AND expires_at <= CURRENT_TIMESTAMP): solo il primo runner ottiene
+        // changes>0; il secondo, dopo il row-lock, rivaluta il WHERE e trova expires_at gia'
+        // rinnovato → changes=0 → acquired:false. Nessun SELECT-then-UPDATE TOCTOU.
+        const takeover = await db.run(
             `
-            SELECT CASE WHEN expires_at <= CURRENT_TIMESTAMP THEN 1 ELSE 0 END AS stale
-            FROM runtime_locks
-            WHERE lock_key = ?
-        `,
-            [lockKey],
-        );
-
-        if ((isStaleRow?.stale ?? 0) === 1) {
-            await db.run(
-                `
                 UPDATE runtime_locks
                 SET owner_id = ?,
                     acquired_at = CURRENT_TIMESTAMP,
@@ -425,10 +422,12 @@ export async function acquireRuntimeLock(
                     expires_at = DATETIME('now', '+' || ? || ' seconds'),
                     metadata_json = ?,
                     updated_at = CURRENT_TIMESTAMP
-                WHERE lock_key = ?
+                WHERE lock_key = ? AND expires_at <= CURRENT_TIMESTAMP
             `,
-                [ownerId, safeTtl, metadataJson, lockKey],
-            );
+            [ownerId, safeTtl, metadataJson, lockKey],
+        );
+
+        if ((takeover?.changes ?? 0) > 0) {
             await incrementLockMetric(lockKey, 'acquire_stale_takeover');
             const takenOver = await db.get<RuntimeLockRecord>(
                 `SELECT ${RUNTIME_LOCK_SELECT_COLUMNS} FROM runtime_locks WHERE lock_key = ?`,

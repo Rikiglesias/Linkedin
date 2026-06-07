@@ -19,6 +19,7 @@ import {
     buildBehaviorDomainConfig,
 } from './domains';
 import { AppConfig } from './types';
+import { validateConfigFull } from './validation';
 
 type ConfigListener = (changedKeys: string[]) => void;
 const listeners: ConfigListener[] = [];
@@ -68,6 +69,7 @@ export function reloadConfig(): string[] {
     }
 
     const changedKeys: string[] = [];
+    const previousValues: Record<string, unknown> = {};
 
     const mutableConfig = config as unknown as Record<string, unknown>;
     for (const builder of RELOAD_DOMAINS) {
@@ -76,20 +78,42 @@ export function reloadConfig(): string[] {
             if (FROZEN_KEYS.has(key)) continue;
             const current = mutableConfig[key];
             if (current !== value) {
+                previousValues[key] = current; // snapshot PRIMA di mutare (per rollback)
                 mutableConfig[key] = value;
                 changedKeys.push(key);
             }
         }
     }
 
-    if (changedKeys.length > 0) {
-        console.log(`[CONFIG] Hot-reloaded ${changedKeys.length} keys: ${changedKeys.join(', ')}`);
-        for (const listener of listeners) {
-            try {
-                listener(changedKeys);
-            } catch (e) {
-                console.warn('[CONFIG] Listener error:', e instanceof Error ? e.message : e);
-            }
+    if (changedKeys.length === 0) {
+        return changedKeys;
+    }
+
+    // H5 fix (anti-ban): valida la config DOPO il merge. Le regole che a startup bloccano
+    // (es. hardInviteCap>50 = error) devono valere anche a runtime; senza, modificando il .env
+    // si spingono volumi/timing oltre le soglie LinkedIn-safe bypassando il gate di validazione.
+    // Su errori → rollback dei changedKeys ai valori precedenti + alert, NON si applica nulla.
+    const validation = validateConfigFull(config);
+    if (validation.errors.length > 0) {
+        for (const key of changedKeys) {
+            mutableConfig[key] = previousValues[key];
+        }
+        console.error(
+            `[CONFIG] Hot-reload RIFIUTATO: config non valida dopo il merge — ${validation.errors.join('; ')}. ` +
+                `Valori precedenti ripristinati (nessuna modifica applicata).`,
+        );
+        return [];
+    }
+    if (validation.warnings.length > 0) {
+        console.warn(`[CONFIG] Hot-reload con warning: ${validation.warnings.join('; ')}`);
+    }
+
+    console.log(`[CONFIG] Hot-reloaded ${changedKeys.length} keys: ${changedKeys.join(', ')}`);
+    for (const listener of listeners) {
+        try {
+            listener(changedKeys);
+        } catch (e) {
+            console.warn('[CONFIG] Listener error:', e instanceof Error ? e.message : e);
         }
     }
 
