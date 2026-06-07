@@ -20,6 +20,9 @@ const TOTP_PERIOD = 30;
 const TOTP_DIGITS = 6;
 const TOTP_ALGORITHM = 'SHA1';
 const TOTP_WINDOW = 1;
+// Anti-replay: ultimo timestep TOTP validato con successo. Ogni codice (timestep) è usabile UNA
+// sola volta; senza, lo stesso codice resta valido ~90s (finestra ±1) e riutilizzabile se intercettato.
+let _lastValidatedTimestep = -1;
 
 /**
  * Verifica se il TOTP è configurato (secret presente).
@@ -51,7 +54,16 @@ export function validateTotpCode(code: string): boolean {
         });
 
         const delta = totp.validate({ token: cleanCode, window: TOTP_WINDOW });
-        return delta !== null;
+        if (delta === null) return false;
+
+        // Anti-replay: il timestep assoluto del codice accettato deve superare l'ultimo validato,
+        // altrimenti è un riuso dello stesso codice nella finestra ~90s.
+        const currentTimestep = Math.floor(Date.now() / 1000 / TOTP_PERIOD) + delta;
+        if (currentTimestep <= _lastValidatedTimestep) {
+            return false;
+        }
+        _lastValidatedTimestep = currentTimestep;
+        return true;
     } catch {
         return false;
     }

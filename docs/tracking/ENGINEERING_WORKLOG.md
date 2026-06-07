@@ -34,6 +34,8 @@ Triage dei 142 finding MEDIUM del Backend Deep Audit: classificare (FIX-NOW/CONF
 - **Ondata 4 parziale (2 fix security/correttezza, non anti-ban)**:
   - `api/helpers/audit.ts`: `auditSecurityEvent` logga (`logError`) il fallimento di scrittura invece di inghiottirlo (`.catch(()=>null)`) — un audit di sicurezza droppato è esso stesso un evento di sicurezza.
   - `workflows/preflight/statsCollector.ts`: trend "vs ieri" deriva 'oggi' e 'ieri' dalla stessa base locale (`getLocalDateString`) → niente off-by-one a mezzanotte (era ieri-UTC vs oggi-locale).
+  - `security/totp.ts`: anti-replay — ogni codice TOTP (timestep) è validabile UNA sola volta (prima restava valido ~90s e riutilizzabile se intercettato).
+  - `sync/supabaseSyncWorker.ts`: alert Telegram dedicato sui `PERMANENT_FAILURE` (escono dal conteggio `pending` → l'alert backlog era cieco) — evento perso verso il cloud ora notificato.
   - **`config/env.ts resolveSecret` riclassificato CONFIRM-USER**: invertire la priorità Docker-secret vs `process.env` cambia il secret-loading in produzione (rischio/irreversibile, zero-G) → richiede conferma utente, non fix-now.
 
 ### Stato reale

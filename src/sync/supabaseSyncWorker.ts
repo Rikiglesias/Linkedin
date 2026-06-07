@@ -210,4 +210,15 @@ export async function runSupabaseSyncOnce(): Promise<void> {
             'warn',
         );
     }
+
+    // I PERMANENT_FAILURE escono dal conteggio `pending` -> l'alert backlog è cieco ad essi.
+    // Alert dedicato: ogni evento perso definitivamente verso il cloud va notificato (verifica DLQ).
+    if (permanentFailures > 0) {
+        await logWarn('supabase.sync.permanent_failures', { permanentFailures, sent, failed });
+        await sendTelegramAlert(
+            `${permanentFailures} eventi in PERMANENT_FAILURE verso Supabase: non verranno più ritentati. Verifica la DLQ.`,
+            'Supabase Sync - Permanent Failures',
+            'critical',
+        );
+    }
 }
