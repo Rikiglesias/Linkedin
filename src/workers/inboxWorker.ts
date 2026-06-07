@@ -17,7 +17,8 @@ import {
     getLeadByLinkedinUrl,
     storeLeadIntent,
     storeMessageHash,
-    getDailyStat,
+    checkAndIncrementDailyLimit,
+    incrementDailyStat,
 } from '../core/repositories';
 import { hashMessage } from '../validation/messageValidator';
 import { transitionLead } from '../core/leadStateService';
@@ -248,15 +249,16 @@ export async function processInboxJob(
                             const replyHash = hashMessage(resolution.responseDraft);
                             const replyDuplicateCount = await countRecentMessageHash(replyHash, 24);
 
-                            // M30: Cap giornaliero auto-reply — le auto-reply sono messaggi e contano
-                            // nel budget giornaliero. Senza questo, N esecuzioni/giorno portano
-                            // a N×maxPerRun risposte senza limite globale.
-                            const dailyMessagesSent = await getDailyStat(today, 'messages_sent').catch(() => 0);
+                            // M30/A3 (2026-06-07): le auto-reply sono messaggi e contano nel budget
+                            // giornaliero messages_sent. Il cap va applicato ATOMICAMENTE (come
+                            // messageWorker/inviteWorker), non con un getDailyStat non-atomico che
+                            // run/lead concorrenti vedevano stale → si superava hardMsgCap e si
+                            // undercount-ava il totale messaggi (messageWorker inviava di piu' = ban).
+                            // namespace 'default' coerente con messageWorker.
                             const canAutoReply =
                                 config.inboxAutoReplyEnabled &&
                                 !context.dryRun &&
                                 autoRepliesSent < config.inboxAutoReplyMaxPerRun &&
-                                dailyMessagesSent < config.hardMsgCap &&
                                 resolution.confidence >= config.inboxAutoReplyMinConfidence &&
                                 resolution.responseDraft.trim().length > 0 &&
                                 resolution.intent !== 'NOT_INTERESTED' &&
@@ -264,33 +266,50 @@ export async function processInboxJob(
                                 replyDuplicateCount === 0;
 
                             if (canAutoReply) {
-                                try {
-                                    await page.waitForTimeout(
-                                        Math.min(24_000, estimateReadingDelayMs(rawText.trim()) + 1500),
-                                    );
-                                    await typeWithFallback(
-                                        page,
-                                        SELECTORS.messageTextbox,
-                                        resolution.responseDraft,
-                                        'messageTextbox',
-                                        5000,
-                                    );
-                                    await humanDelay(page, 350, 900);
-                                    await clickWithFallback(page, SELECTORS.messageSendButton, 'messageSendButton', {
-                                        timeoutPerSelector: 5000,
-                                    });
-                                    autoReplySent = true;
-                                    autoRepliesSent += 1;
-                                    await storeMessageHash(lead.id, replyHash);
-                                } catch (autoReplyError: unknown) {
-                                    await logWarn('inbox.auto_reply_failed', {
+                                // Pre-incremento atomico del cap giornaliero PRIMA del send.
+                                const withinDailyCap = await checkAndIncrementDailyLimit(
+                                    today,
+                                    'messages_sent',
+                                    config.hardMsgCap,
+                                );
+                                if (!withinDailyCap) {
+                                    await logInfo('inbox.auto_reply_daily_cap_reached', {
                                         accountId: payload.accountId,
                                         leadId: lead.id,
-                                        error:
-                                            autoReplyError instanceof Error
-                                                ? autoReplyError.message
-                                                : String(autoReplyError),
+                                        cap: config.hardMsgCap,
                                     });
+                                } else {
+                                    try {
+                                        await page.waitForTimeout(
+                                            Math.min(24_000, estimateReadingDelayMs(rawText.trim()) + 1500),
+                                        );
+                                        await typeWithFallback(
+                                            page,
+                                            SELECTORS.messageTextbox,
+                                            resolution.responseDraft,
+                                            'messageTextbox',
+                                            5000,
+                                        );
+                                        await humanDelay(page, 350, 900);
+                                        await clickWithFallback(page, SELECTORS.messageSendButton, 'messageSendButton', {
+                                            timeoutPerSelector: 5000,
+                                        });
+                                        autoReplySent = true;
+                                        autoRepliesSent += 1;
+                                        await storeMessageHash(lead.id, replyHash);
+                                    } catch (autoReplyError: unknown) {
+                                        // Compensazione phantom increment: send fallito dopo il
+                                        // pre-incremento → decremento messages_sent (come messageWorker).
+                                        await incrementDailyStat(today, 'messages_sent', -1).catch(() => undefined);
+                                        await logWarn('inbox.auto_reply_failed', {
+                                            accountId: payload.accountId,
+                                            leadId: lead.id,
+                                            error:
+                                                autoReplyError instanceof Error
+                                                    ? autoReplyError.message
+                                                    : String(autoReplyError),
+                                        });
+                                    }
                                 }
                             }
 
