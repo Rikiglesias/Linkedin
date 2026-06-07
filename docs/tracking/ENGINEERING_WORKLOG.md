@@ -4,6 +4,26 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-07 — Collaudo uso-reale dei workflow del bot (`/goal workflow-collaudo`)
+
+### Obiettivo
+Collaudare a 360° TUTTO l'uso analizzabile del bot (non solo i 5 comandi-esempio citati — meta-reasoning #11) su 4 dimensioni: UX uso-reale, anti-ban/movimento mouse, intelligenza AI, sistema. Bug + migliorie PRIMA dell'uso utente. NESSUNA esecuzione live LinkedIn (solo analisi del codice).
+
+### Metodo
+3 Workflow fan-out: `woq8oa9nq` (5 funnel, 62 find) + `wc8raqgjq` (aree B-H: azioni/setup/salesnav/enrichment/controllo/dashboard, 73 find) + sintesi `wjf45cnxd` → **135 find (1 critical, 32 high, 67 med, 35 low) → 1 critical + 18 cluster root-cause**. Fix INLINE per cluster, anti-ban via antiban-approved + antiban-review SAFE. Ogni fix verificato alla fonte (zero-M): scartato CL19 come FALSO POSITIVO, corretto il path errato di CL10.
+
+### Fix committati
+- `bbc7930` **C1** (critical): preflight-env filename mismatch — `META_FILENAME` esportata (check sessione falliva sempre dopo login).
+- `dbab8b5` **CL5** (anti-ban) random-activity ora passa il doctor-gate; **CL11** (security) XSS stored nel lead-detail dashboard (escapeHtml + href http-only).
+- `66706ed` **CL8** (bug) dry-run non contamina piu il DB (messageWorker gate hash/stat/cloud; audit resta).
+- **CL19** scartato: FALSO POSITIVO (hash sempre calcolato a messageWorker:140/450, verificato alla fonte).
+
+### Restano (piano completo in `todos/workflow-collaudo.md`)
+12 cluster DECIDE (CL2 AI fail-open, CL3 create-profile stealth, CL4 sessioni browser spurie, CL6/7/9/10/12/13/14/17/18) + 3 CONFIRM leva-utente (CL1 NavHelper anti-teletrasporto ~10 file, CL15 auth dashboard SSE/WS, CL16 privacy-cleanup dry-run) + triage medium/low (102 find). I cluster grossi anti-ban core (CL2/CL3/CL4/CL1) da blocco DEDICATO con verifica comportamentale A/B.
+
+### Verifica
+conta-problemi=0 (typecheck BE+FE, lint 0-warn, 1538 test) su ogni commit. Branch refactor/adk-split (condiviso col peer codex): pathspec, lock orfano git rimosso in sicurezza (nessun processo git attivo).
+
 ## 2026-06-07 — Prod-readiness HIGH: 18 finding HIGH/PARTIAL del Backend Deep Audit (`/goal prod-readiness`)
 
 ### Obiettivo
