@@ -180,11 +180,22 @@ async function captureScreenshot(page: Page): Promise<string> {
 
 // ── Action execution ───────────────────────────────────────────
 
+/**
+ * B5 (2026-06-07): piccola varianza posizionale (±3px) sul punto di click del modello computer-use.
+ * Un umano non clicca il pixel esatto ogni volta; il cap piccolo resta dentro il target (bottoni/link
+ * sono > qualche px). Guard c<=0 (coord assente/origine) per non spostare un click verso valori negativi.
+ */
+function jitterCoord(c: number): number {
+    if (c <= 0) return c;
+    return Math.max(0, Math.round(c + (Math.random() * 6 - 3)));
+}
+
 async function executeAction(page: Page, action: ComputerAction): Promise<void> {
     switch (action.type) {
         case 'click': {
-            const x = action.x ?? 0;
-            const y = action.y ?? 0;
+            // B5: varianza posizionale ±3px sul click (move e click allo stesso punto jitterato).
+            const x = jitterCoord(action.x ?? 0);
+            const y = jitterCoord(action.y ?? 0);
             await humanMouseMoveToCoords(page, x, y);
             await pulseVisualCursorOverlay(page);
             await pauseInputBlock(page);
@@ -200,8 +211,9 @@ async function executeAction(page: Page, action: ComputerAction): Promise<void> 
         }
 
         case 'double_click': {
-            const x = action.x ?? 0;
-            const y = action.y ?? 0;
+            // B5: varianza posizionale ±3px (move e dblclick allo stesso punto jitterato).
+            const x = jitterCoord(action.x ?? 0);
+            const y = jitterCoord(action.y ?? 0);
             await humanMouseMoveToCoords(page, x, y);
             await pauseInputBlock(page);
             try {
