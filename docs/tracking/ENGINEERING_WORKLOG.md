@@ -37,6 +37,7 @@ Triage dei 142 finding MEDIUM del Backend Deep Audit: classificare (FIX-NOW/CONF
   - `security/totp.ts`: anti-replay — ogni codice TOTP (timestep) è validabile UNA sola volta (prima restava valido ~90s e riutilizzabile se intercettato).
   - `sync/supabaseSyncWorker.ts`: alert Telegram dedicato sui `PERMANENT_FAILURE` (escono dal conteggio `pending` → l'alert backlog era cieco) — evento perso verso il cloud ora notificato.
   - `scripts/restoreDb.ts`: `runPostgresRestore`/`pgRestoreToDb` da `execSync` con redirection shell a `execFileSync` + stdin (args non interpolati) → no command injection; rimosso import `execSync` orfano.
+  - `api/routes/metrics.ts`: il catch non fa più echo di `err.message` su `/metrics` (endpoint non autenticato) → messaggio generico + `logError` interno (no info leak). [Auth/rate-limit su /metrics = CONFIRM-USER: romperebbe lo scraping Prometheus.]
   - **`config/env.ts resolveSecret` riclassificato CONFIRM-USER**: invertire la priorità Docker-secret vs `process.env` cambia il secret-loading in produzione (rischio/irreversibile, zero-G) → richiede conferma utente, non fix-now.
 
 ### Stato reale

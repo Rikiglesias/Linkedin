@@ -7,6 +7,7 @@
 
 import { Router } from 'express';
 import { getDatabase } from '../../db';
+import { logError } from '../../telemetry/logger';
 import { evaluateRisk } from '../../risk/riskEngine';
 import { getLocalDateString, config } from '../../config';
 import { getProxyPoolStatus, getProxyQualityStatus } from '../../proxyManager';
@@ -141,7 +142,9 @@ router.get('/', async (_req, res) => {
         res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
         res.send(lines.join('\n'));
     } catch (err: unknown) {
-        res.status(500).send(`# error generating metrics: ${err instanceof Error ? err.message : 'unknown'}\n`);
+        // /metrics non è autenticato: non esporre err.message (può leakare dettagli interni).
+        void logError('metrics.generation_failed', { error: err instanceof Error ? err.message : String(err) });
+        res.status(500).send('# error generating metrics\n');
     }
 });
 
