@@ -13,6 +13,10 @@ export function initSentry(): void {
         environment: parseStringEnv('NODE_ENV', 'production'),
         tracesSampleRate: 0,
         defaultIntegrations: false,
+        // H8 fix (security/privacy): difesa-in-profondita a livello SDK. Il payload e' gia'
+        // sanitizzato al choke-point captureError (sanitizeForLogs), ma sendDefaultPii:false
+        // impedisce a Sentry di allegare automaticamente PII (IP, cookie, headers) agli eventi.
+        sendDefaultPii: false,
     });
     _initialized = true;
 }

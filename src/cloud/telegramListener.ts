@@ -60,6 +60,14 @@ export async function startTelegramListener(): Promise<void> {
         await logWarn('telegram.listener_not_started', { reason: 'missing_bot_token' });
         return;
     }
+    // H6 fix (security): fail-closed all'avvio. Senza allowlist (telegramChatId vuoto) il gate
+    // comandi e' gia' fail-closed in processTelegramMessage, ma il listener partirebbe comunque
+    // (polling attivo, superficie esposta). Se il token c'e' ma manca l'allowlist, NON avviare il
+    // polling: meglio nessun canale di controllo remoto che uno potenzialmente mal-configurato.
+    if (!config.telegramChatId) {
+        await logWarn('telegram.listener_not_started', { reason: 'missing_chat_id_allowlist' });
+        return;
+    }
     if (isPolling) return;
     isPolling = true;
 
