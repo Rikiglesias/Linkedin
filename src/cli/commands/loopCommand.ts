@@ -1092,13 +1092,25 @@ export async function runAutopilotCommand(args: string[]): Promise<void> {
     if (wizardBudgetReduced) {
         const originalInviteCap = config.hardInviteCap;
         const originalMsgCap = config.hardMsgCap;
+        const originalSoftInvite = config.softInviteCap;
+        const originalSoftMsg = config.softMsgCap;
         const reducedInviteCap = Math.max(1, Math.floor(originalInviteCap / 2));
         const reducedMsgCap = Math.max(1, Math.floor(originalMsgCap / 2));
+        // CL7 fix: dimezzare ANCHE i soft cap, mantenendo l'invariante soft <= hard (via Math.min).
+        // Prima si dimezzava solo l'hard cap: se hard scendeva sotto soft, il doctor compliance gate
+        // rilevava soft>hard (doctor.ts:112) e abortiva TUTTI i cicli -> la feature di sicurezza
+        // "budget ridotto" causava un blocco totale invece di una riduzione.
+        const reducedSoftInvite = Math.min(reducedInviteCap, Math.max(1, Math.floor(originalSoftInvite / 2)));
+        const reducedSoftMsg = Math.min(reducedMsgCap, Math.max(1, Math.floor(originalSoftMsg / 2)));
         // Mutazione runtime temporanea (non persiste nel .env)
-        (config as unknown as Record<string, unknown>).hardInviteCap = reducedInviteCap;
-        (config as unknown as Record<string, unknown>).hardMsgCap = reducedMsgCap;
+        const mutable = config as unknown as Record<string, unknown>;
+        mutable.hardInviteCap = reducedInviteCap;
+        mutable.hardMsgCap = reducedMsgCap;
+        mutable.softInviteCap = reducedSoftInvite;
+        mutable.softMsgCap = reducedSoftMsg;
         console.log(
-            `  [WIZARD] Budget ridotto: inviti ${originalInviteCap} -> ${reducedInviteCap}, messaggi ${originalMsgCap} -> ${reducedMsgCap}`,
+            `  [WIZARD] Budget ridotto: inviti ${originalInviteCap}/${originalSoftInvite} -> ${reducedInviteCap}/${reducedSoftInvite}, ` +
+                `messaggi ${originalMsgCap}/${originalSoftMsg} -> ${reducedMsgCap}/${reducedSoftMsg}`,
         );
     }
 
