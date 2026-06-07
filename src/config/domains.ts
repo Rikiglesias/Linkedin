@@ -320,6 +320,10 @@ export function buildProxyDomainConfig() {
         proxyProviderApiEndpoint: parseStringEnv('PROXY_PROVIDER_API_ENDPOINT'),
         proxyProviderApiKey: parseStringEnv('PROXY_PROVIDER_API_KEY'),
         proxyTorSocks5Url: parseStringEnv('TOR_SOCKS5_URL', 'socks5://127.0.0.1:9050'),
+        // Anti-ban (A5, 2026-06-07): Tor fallback OPT-IN (default off). Gli exit-node Tor sono
+        // IP pubblici/datacenter flaggati da LinkedIn -> instradarci LinkedIn = ban. Anche se
+        // TOR_SOCKS5_URL e' configurato, il fallback parte SOLO se esplicitamente abilitato.
+        proxyTorFallbackEnabled: parseBoolEnv('PROXY_TOR_FALLBACK_ENABLED', false),
         fingerprintApiEndpoint: parseStringEnv('FINGERPRINT_API_ENDPOINT'),
         mobileProbability: Math.min(1, Math.max(0, parseFloatEnv('MOBILE_PROBABILITY', 0))),
         useJa3Proxy: parseBoolEnv('USE_JA3_PROXY', false),

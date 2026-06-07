@@ -395,8 +395,10 @@ export async function getProxyFailoverChainAsync(options: GetProxyChainOptions =
         }
     }
 
-    // Tor before cooling proxies: fresh circuit is better than hammering a cooling proxy
-    if (config.proxyTorSocks5Url) {
+    // Tor before cooling proxies: fresh circuit is better than hammering a cooling proxy.
+    // Anti-ban (A5, 2026-06-07): SOLO se il fallback Tor e' esplicitamente abilitato (default off) —
+    // gli exit-node Tor sono IP pubblici/datacenter flaggati da LinkedIn.
+    if (config.proxyTorFallbackEnabled && config.proxyTorSocks5Url) {
         const torParsed = parseProxyEntry(config.proxyTorSocks5Url);
         if (torParsed) {
             console.warn(
@@ -406,6 +408,12 @@ export async function getProxyFailoverChainAsync(options: GetProxyChainOptions =
         }
     }
 
+    // Pool esaurito, nessun provider esterno, Tor non abilitato: niente IP fresco. Alert
+    // operativo (L5-LI) e ripiego sulle cooling residenziali (NON Tor/datacenter).
+    await logWarn('proxy.pool_exhausted_no_fresh_ip', {
+        poolSize: pool.length,
+        torFallbackEnabled: config.proxyTorFallbackEnabled,
+    });
     return prioritizeProxyPool(rotated, options);
 }
 
@@ -434,8 +442,9 @@ export async function getIntegrationProxyFailoverChainAsync(
         }
     }
 
-    // Tor before cooling proxies: fresh circuit is better than hammering a cooling proxy
-    if (config.proxyTorSocks5Url) {
+    // Tor before cooling proxies: fresh circuit is better than hammering a cooling proxy.
+    // Anti-ban (A5, 2026-06-07): SOLO se il fallback Tor e' esplicitamente abilitato (default off).
+    if (config.proxyTorFallbackEnabled && config.proxyTorSocks5Url) {
         const torParsed = parseProxyEntry(config.proxyTorSocks5Url);
         if (torParsed) {
             console.warn(
@@ -445,6 +454,11 @@ export async function getIntegrationProxyFailoverChainAsync(
         }
     }
 
+    // Pool esaurito, nessun provider esterno, Tor non abilitato: alert operativo + ripiego cooling.
+    await logWarn('proxy.integration_pool_exhausted_no_fresh_ip', {
+        poolSize: pool.length,
+        torFallbackEnabled: config.proxyTorFallbackEnabled,
+    });
     return prioritizeProxyPool(rotated, options);
 }
 

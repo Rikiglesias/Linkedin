@@ -1,10 +1,14 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { buildLimitsAndRiskDomainConfig, buildCommsAndBusinessDomainConfig } from '../config/domains';
+import {
+    buildLimitsAndRiskDomainConfig,
+    buildCommsAndBusinessDomainConfig,
+    buildProxyDomainConfig,
+} from '../config/domains';
 
 /**
  * Invarianti anti-ban DIFENSIVI (Gruppo A hardening 2026-06-07).
  * Lock dei default che proteggono l'account: un cambio futuro che li allenta
- * (es. alza il pending stop sopra il red-flag, o rende illimitati like/follow)
+ * (pending stop sopra il red-flag, like/follow illimitati, Tor fallback default-on)
  * deve far fallire questo test. Tutti restano env-overridable: sono DEFAULT, non hard-cap.
  */
 describe('anti-ban defensive defaults — pending ratio', () => {
@@ -86,5 +90,27 @@ describe('anti-ban defensive defaults — interaction caps (A4)', () => {
         saved.LIKE_DAILY_CAP = process.env.LIKE_DAILY_CAP;
         process.env.LIKE_DAILY_CAP = '50';
         expect(buildCommsAndBusinessDomainConfig().likeDailyCap).toBe(50);
+    });
+});
+
+describe('anti-ban defensive defaults — Tor fallback opt-in (A5)', () => {
+    const KEY = 'PROXY_TOR_FALLBACK_ENABLED';
+    let saved: string | undefined;
+
+    afterEach(() => {
+        if (saved === undefined) delete process.env[KEY];
+        else process.env[KEY] = saved;
+    });
+
+    it('default proxyTorFallbackEnabled = false (Tor NON instradato di default)', () => {
+        saved = process.env[KEY];
+        delete process.env[KEY];
+        expect(buildProxyDomainConfig().proxyTorFallbackEnabled).toBe(false);
+    });
+
+    it('resta env-overridable (PROXY_TOR_FALLBACK_ENABLED=true lo abilita)', () => {
+        saved = process.env[KEY];
+        process.env[KEY] = 'true';
+        expect(buildProxyDomainConfig().proxyTorFallbackEnabled).toBe(true);
     });
 });
