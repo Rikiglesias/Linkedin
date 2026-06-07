@@ -39,6 +39,7 @@ import {
     resolveIncident,
     clearAutomationPause as clearPauseState,
     setAutomationPause,
+    recordSecurityAuditEvent,
     upsertSecretRotation,
     updateLeadCampaignConfig,
     computeFeatureDatasetSignature,
@@ -434,17 +435,40 @@ export async function runPauseCommand(args: string[]): Promise<void> {
     const minutes = minutesRaw ? parsePauseMinutes(minutesRaw, '--minutes') : config.autoPauseMinutesOnFailureBurst;
     const pausedUntil = await setAutomationPause(minutes, reasonRaw);
     const renderedUntil = pausedUntil ?? 'manual resume';
+    // CL12 fix (security): le azioni di controllo da CLI vanno tracciate nel security audit come fa
+    // gia' l'API. Prima nessuna traccia: chiunque con accesso shell poteva pausare/sbloccare senza log.
+    await recordSecurityAuditEvent({
+        category: 'runtime_control',
+        action: 'pause',
+        actor: 'cli',
+        result: 'ALLOW',
+        metadata: { minutes, reason: reasonRaw },
+    }).catch(() => null);
     console.log(`Automazione in pausa.pausedUntil=${renderedUntil} reason = ${reasonRaw} `);
 }
 
 export async function runResumeCommand(): Promise<void> {
     await clearPauseState();
+    await recordSecurityAuditEvent({
+        category: 'runtime_control',
+        action: 'resume',
+        actor: 'cli',
+        result: 'ALLOW',
+    }).catch(() => null);
     console.log('Pausa automazione rimossa.');
 }
 
 export async function runUnquarantineCommand(): Promise<void> {
     await setQuarantine(false);
     await clearPauseState();
+    // CL12 fix (security): unquarantine sblocca una protezione impostata dal risk engine durante un
+    // incidente -> deve sempre lasciare traccia nel security audit (actor cli).
+    await recordSecurityAuditEvent({
+        category: 'runtime_control',
+        action: 'unquarantine',
+        actor: 'cli',
+        result: 'ALLOW',
+    }).catch(() => null);
     console.log('Quarantine disattivata e pausa rimossa.');
 }
 
