@@ -91,6 +91,13 @@ function computeLastActivity(row: {
         .map((d) => new Date(d as string).getTime())
         .filter((t) => !isNaN(t));
 
+    // Tutte le date assenti/invalide: evita Math.max(...[]) = -Infinity -> Invalid Date.
+    // Fallback "adesso": daysInactive ~0 -> il lead viene SALTATO (mai cancellato/anonimizzato
+    // su dati corrotti — fail-safe GDPR/anti-perdita-dati).
+    if (candidates.length === 0) {
+        return new Date();
+    }
+
     return new Date(Math.max(...candidates));
 }
 
@@ -167,9 +174,9 @@ async function anonymizeLead(
             });
         });
 
-        console.log(`[ANONYMIZED] Lead #${lead.id} (${originalUrl.slice(0, 40)}...)`);
+        console.log(`[ANONYMIZED] Lead #${lead.id} (urlHash ${urlHash.slice(0, 12)})`);
     } else {
-        console.log(`[DRY-RUN] Lead #${lead.id} sarebbe anonimizzato (${originalUrl.slice(0, 40)}...)`);
+        console.log(`[DRY-RUN] Lead #${lead.id} sarebbe anonimizzato (urlHash ${urlHash.slice(0, 12)})`);
     }
 }
 
@@ -209,9 +216,9 @@ async function deleteLead(
             });
         });
 
-        console.log(`[DELETED] Lead #${lead.id} (${leadIdentifier.slice(0, 40)}...)`);
+        console.log(`[DELETED] Lead #${lead.id}`);
     } else {
-        console.log(`[DRY-RUN] Lead #${lead.id} sarebbe cancellato (${leadIdentifier.slice(0, 40)}...)`);
+        console.log(`[DRY-RUN] Lead #${lead.id} sarebbe cancellato`);
     }
 }
 
@@ -393,9 +400,9 @@ export async function runRightToErasure(linkedinUrl: string, dryRun = false): Pr
             );
         });
 
-        console.log(`[ERASURE] Lead ${linkedinUrl.slice(0, 40)}... anonimizzato ovunque.`);
+        console.log(`[ERASURE] Lead ${anonIdentifier} anonimizzato ovunque.`);
     } else {
-        console.log(`[DRY-RUN] Erasure per: ${linkedinUrl.slice(0, 40)}...`);
+        console.log(`[DRY-RUN] Erasure per: ${anonIdentifier}`);
     }
 }
 
@@ -410,7 +417,7 @@ if (require.main === module) {
 
     if (erasureIdx !== -1 && args[erasureIdx + 1]) {
         const url = args[erasureIdx + 1];
-        console.log(`=== GDPR Right to Erasure: ${url} ===`);
+        console.log(`=== GDPR Right to Erasure: anon:${sha256(url).slice(0, 12)} ===`);
         if (dryRun) console.log('[DRY-RUN] Nessuna modifica verrà applicata.');
         runRightToErasure(url, dryRun)
             .then(() => console.log('Erasure completato.'))
