@@ -134,7 +134,10 @@ function checkOrchestratorContract(): CheckResult {
     return checkFileContains(
         'Contratto',
         'AI_ORCHESTRATOR_CONTRACT completo',
-        resolve('docs', 'tracking', 'AI_ORCHESTRATOR_CONTRACT.md'),
+        // (adk-split T11.5b) doc ADK migrato in AI-Control-Plane/spec: il contratto orchestratore
+        // è una spec ADK, non un canonico del bot → letto dalla sede ACP. aiReasoning resta in
+        // LinkedIn (verifica codex-parity/ragionamento del repo); solo questo check punta all'ADK.
+        join(homedir(), 'Desktop', 'Programmi', 'AI-Control-Plane', 'spec', 'AI_ORCHESTRATOR_CONTRACT.md'),
         [
             '## Scope',
             '## Trigger',
