@@ -469,13 +469,26 @@ async function postSyncEnrichment(
                     lead.job_title ?? null,
                     { scoringCriteria },
                 );
-                await updateLeadScores(leadId, scoreResult.leadScore, scoreResult.confidenceScore);
-                lead.lead_score = scoreResult.leadScore;
-                enrichReport.scored += 1;
-                const label = wasEnriched && !needsScore ? 'RE-SCORE' : 'SCORE';
-                console.log(
-                    `  ${progress} [${label}] ${maskName(fullName)}: score=${scoreResult.leadScore} confidence=${scoreResult.confidenceScore} (${scoreResult.reason})`,
-                );
+                if (scoreResult.reason === 'API_ERROR_FALLBACK') {
+                    // CL2 fail-open fix: lo scoring AI è fallito (API down/timeout) e ha prodotto un
+                    // punteggio fittizio (50/50). NON persisterlo: (a) bloccherebbe il re-scoring futuro
+                    // (needsScore resterebbe false perché lead_score != null), (b) auto-promuoverebbe a
+                    // READY_INVITE (gate `>= 30` sotto) un lead MAI realmente qualificato dall'AI →
+                    // inviti a target non verificati → acceptance basso → pending ratio → rischio ban.
+                    // Lasciamo lead_score null: verrà ri-scorato quando l'AI torna disponibile.
+                    console.log(
+                        `  ${progress} [SCORE-SKIP] ${maskName(fullName)}: AI scoring non disponibile (fallback), re-scoring rimandato`,
+                    );
+                } else {
+                    await updateLeadScores(leadId, scoreResult.leadScore, scoreResult.confidenceScore);
+                    lead.lead_score = scoreResult.leadScore;
+                    lead.confidence_score = scoreResult.confidenceScore;
+                    enrichReport.scored += 1;
+                    const label = wasEnriched && !needsScore ? 'RE-SCORE' : 'SCORE';
+                    console.log(
+                        `  ${progress} [${label}] ${maskName(fullName)}: score=${scoreResult.leadScore} confidence=${scoreResult.confidenceScore} (${scoreResult.reason})`,
+                    );
+                }
             }
 
             // 4. Promozione NEW → READY_INVITE se ha score sufficiente
