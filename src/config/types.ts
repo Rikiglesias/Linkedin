@@ -56,6 +56,7 @@ export interface AppConfig {
     autoPauseMinutesOnFailureBurst: number;
     challengePauseMinutes: number;
     challengePersistentGate: boolean;
+    metricsAuthToken: string;
     retentionDays: number;
     profileContextExtractionEnabled: boolean;
     softInviteCap: number;

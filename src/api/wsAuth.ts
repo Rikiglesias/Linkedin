@@ -14,8 +14,8 @@ import { timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import { config } from '../config';
 
-/** Confronto timing-safe: stessa primitiva usata dall'auth HTTP in server.ts. */
-function secureEquals(a: string, b: string): boolean {
+/** Confronto timing-safe: stessa primitiva usata dall'auth HTTP in server.ts. Esportata per riuso (es. /metrics). */
+export function secureEquals(a: string, b: string): boolean {
     const aBuffer = Buffer.from(a);
     const bBuffer = Buffer.from(b);
     if (aBuffer.length !== bBuffer.length) return false;

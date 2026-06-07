@@ -172,6 +172,10 @@ export function buildLimitsAndRiskDomainConfig() {
         selectorLearningAutoRollbackEnabled: parseBoolEnv('SELECTOR_LEARNING_AUTO_ROLLBACK_ENABLED', true),
         selectorCacheKpiMinBaselineFailures: Math.max(0, parseIntEnv('SELECTOR_CACHE_KPI_MIN_BASELINE_FAILURES', 5)),
         outboxAlertBacklog: Math.max(1, parseIntEnv('OUTBOX_ALERT_BACKLOG', 1000)),
+        // Sicurezza (S2, 2026-06-07): token OPT-IN per /metrics. Vuoto (default) = scraping aperto
+        // (backward-compat con i Prometheus scraper esistenti). Se settato, /metrics richiede
+        // Authorization: Bearer <token> (confronto timing-safe).
+        metricsAuthToken: parseStringEnv('METRICS_AUTH_TOKEN', ''),
         observabilitySloWindowShortDays: Math.max(1, parseIntEnv('OBSERVABILITY_SLO_WINDOW_SHORT_DAYS', 7)),
         observabilitySloWindowLongDays: Math.max(1, parseIntEnv('OBSERVABILITY_SLO_WINDOW_LONG_DAYS', 30)),
         observabilitySloErrorRateWarn: Math.min(

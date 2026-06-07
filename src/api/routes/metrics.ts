@@ -11,12 +11,25 @@ import { logError } from '../../telemetry/logger';
 import { evaluateRisk } from '../../risk/riskEngine';
 import { getLocalDateString, config } from '../../config';
 import { getProxyPoolStatus, getProxyQualityStatus } from '../../proxyManager';
+import { secureEquals } from '../wsAuth';
 
 const router = Router();
 
 const RISK_ACTION_MAP: Record<string, number> = { GO: 0, SLOW: 1, STOP: 2 };
 
-router.get('/', async (_req, res) => {
+router.get('/', async (req, res) => {
+    // S2 (2026-06-07): auth OPT-IN. Se METRICS_AUTH_TOKEN e' configurato, /metrics richiede
+    // Authorization: Bearer <token> (confronto timing-safe). Vuoto (default) = scraping aperto
+    // (backward-compat con i Prometheus scraper esistenti).
+    const requiredToken = config.metricsAuthToken;
+    if (requiredToken) {
+        const authz = (req.headers.authorization ?? '').toString();
+        const provided = authz.toLowerCase().startsWith('bearer ') ? authz.slice('bearer '.length).trim() : '';
+        if (!provided || !secureEquals(provided, requiredToken)) {
+            res.status(401).send('# unauthorized\n');
+            return;
+        }
+    }
     try {
         const localDate = getLocalDateString();
         const db = await getDatabase();
