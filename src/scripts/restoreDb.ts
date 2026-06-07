@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { execSync, execFileSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 import { config } from '../config';
@@ -137,13 +137,17 @@ function runSqliteRestore(backupPath: string): void {
 }
 
 function runPostgresRestore(backupPath: string): void {
+    // execFileSync + stdin invece di execSync con redirection shell: backupPath/databaseUrl come
+    // argomenti, niente interpolazione in stringa shell (no command injection, path robusto).
+    const content = fs.readFileSync(backupPath, 'utf8');
     if (config.databaseUrl.includes('@db:')) {
-        const command = `docker exec -i linkedin-pg psql -U bot_user -d linkedin_bot < "${backupPath}"`;
-        execSync(command, { stdio: 'inherit' });
+        execFileSync('docker', ['exec', '-i', 'linkedin-pg', 'psql', '-U', 'bot_user', '-d', 'linkedin_bot'], {
+            input: content,
+            stdio: ['pipe', 'inherit', 'inherit'],
+        });
         return;
     }
-    const command = `psql "${config.databaseUrl}" < "${backupPath}"`;
-    execSync(command, { stdio: 'inherit' });
+    execFileSync('psql', [config.databaseUrl], { input: content, stdio: ['pipe', 'inherit', 'inherit'] });
 }
 
 export async function runRestoreCommand(options: RestoreCommandOptions): Promise<void> {
@@ -329,15 +333,16 @@ function pgExecOnDb(sql: string, dbName: string): string {
 
 function pgRestoreToDb(backupPath: string, dbName: string): void {
     const content = fs.readFileSync(backupPath, 'utf8');
+    // execFileSync con args (dbName/url come argomenti, non interpolati in shell): no injection.
     if (config.databaseUrl.includes('@db:')) {
-        execSync(`docker exec -i linkedin-pg psql -U bot_user -d ${dbName}`, {
+        execFileSync('docker', ['exec', '-i', 'linkedin-pg', 'psql', '-U', 'bot_user', '-d', dbName], {
             input: content,
             timeout: 120_000,
         });
     } else {
         const url = new URL(config.databaseUrl);
         url.pathname = `/${dbName}`;
-        execSync(`psql "${url.toString()}"`, {
+        execFileSync('psql', [url.toString()], {
             input: content,
             timeout: 120_000,
         });
