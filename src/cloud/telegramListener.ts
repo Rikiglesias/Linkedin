@@ -123,12 +123,21 @@ interface TelegramMessage {
     };
 }
 
-async function processTelegramMessage(message: TelegramMessage): Promise<void> {
+export async function processTelegramMessage(message: TelegramMessage): Promise<void> {
     const text = (message.text || '').trim();
     if (!text.startsWith('/')) return; // Solo comandi
 
-    // Verifica sicurezza (solo la chat autorizzata)
-    if (config.telegramChatId && String(message.chat.id) !== config.telegramChatId) {
+    // Verifica sicurezza FAIL-CLOSED: se la chat autorizzata non e' configurata,
+    // rifiuta OGNI comando (altrimenti chiunque potrebbe pilotare il bot).
+    if (!config.telegramChatId) {
+        await logWarn('telegram.unauthorized_access', {
+            reason: 'telegramChatId_not_configured',
+            chatId: message.chat.id,
+            text,
+        });
+        return;
+    }
+    if (String(message.chat.id) !== config.telegramChatId) {
         await logWarn('telegram.unauthorized_access', { chatId: message.chat.id, text });
         return;
     }

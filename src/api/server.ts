@@ -38,6 +38,7 @@ import { config } from '../config';
 import { subscribeLiveEvents, getLiveEventSubscribersCount, type LiveEventMessage } from '../telemetry/liveEvents';
 import { resolveCorrelationId, runWithCorrelationId } from '../telemetry/correlation';
 import { WebSocketServer, WebSocket } from 'ws';
+import { isWebSocketAuthorized } from './wsAuth';
 
 export const app = express();
 app.set('trust proxy', false);
@@ -906,14 +907,13 @@ export function startServer(port: number = 3000) {
     const wss = new WebSocketServer({ server, path: '/ws' });
 
     wss.on('connection', (ws, req) => {
-        // CC-10: Auth token-based per WebSocket
-        if (config.dashboardAuthEnabled && config.dashboardApiKey) {
-            const url = new URL(req.url ?? '', `http://${req.headers.host ?? 'localhost'}`);
-            const token = url.searchParams.get('token') ?? '';
-            if (!secureEquals(token, config.dashboardApiKey)) {
-                ws.close(4401, 'Unauthorized');
-                return;
-            }
+        // CC-10 / T6: il WS richiede auth ogni volta che la dashboard auth e' attiva, NON solo
+        // quando e' configurata un'apiKey. Prima, con basic-auth-only (apiKey vuota), il guard
+        // veniva saltato e /ws restava aperto a chiunque (fail-open). isWebSocketAuthorized copre
+        // token query, Bearer/x-api-key e Basic.
+        if (config.dashboardAuthEnabled && !isWebSocketAuthorized(req)) {
+            ws.close(4401, 'Unauthorized');
+            return;
         }
         const onEvent = (event: LiveEventMessage): void => {
             if (ws.readyState === WebSocket.OPEN) {

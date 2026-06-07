@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     setOverrideAccountId: vi.fn(),
+    getOverrideAccountId: vi.fn(),
     getRuntimeAccountProfiles: vi.fn(),
     getWeekStartDate: vi.fn(),
     pauseAutomation: vi.fn(),
@@ -31,6 +32,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../accountManager', () => ({
     setOverrideAccountId: mocks.setOverrideAccountId,
+    getOverrideAccountId: mocks.getOverrideAccountId,
     getRuntimeAccountProfiles: mocks.getRuntimeAccountProfiles,
 }));
 
@@ -211,6 +213,21 @@ describe('orchestrator blocked outcomes', () => {
             }),
             60,
         );
+    });
+
+    test('T8: ripristina override account anche su early return (no leak cross-account)', async () => {
+        mocks.getOverrideAccountId.mockReturnValue('prev-acc');
+        mocks.evaluateWorkflowEntryGuards.mockResolvedValue({
+            allowed: false,
+            blocked: { reason: 'ENTRY_GUARD', message: 'stop', details: {} },
+        });
+
+        const result = await runWorkflow({ workflow: 'invite', dryRun: false, accountId: 'acc-override' });
+
+        expect(result.status).toBe('blocked');
+        // 1ª chiamata: set con l'accountId della run; 2ª (nel finally): ripristino del precedente
+        expect(mocks.setOverrideAccountId).toHaveBeenNthCalledWith(1, 'acc-override');
+        expect(mocks.setOverrideAccountId).toHaveBeenNthCalledWith(2, 'prev-acc');
     });
 
     test('ritorna RISK_COOLDOWN quando la risk snapshot richiede cooldown', async () => {

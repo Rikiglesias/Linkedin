@@ -967,6 +967,21 @@ export async function cleanupPrivacyData(retentionDays: number): Promise<Privacy
             `DELETE FROM message_history WHERE lead_id IN (${staleLeadsSubquery})`,
             [daysParam],
         );
+        // Pulizia FK-completa delle tabelle figlie di leads PRIMA di cancellare il padre.
+        // Senza questo, su Postgres (FK enforced) la DELETE FROM leads viola la foreign key e
+        // l'intera transazione va in rollback -> il purge GDPR non avviene mai. Set allineato a
+        // deleteLead() in gdprRetentionCleanup.ts (fonte autoritativa delle figlie di leads).
+        for (const childTable of [
+            'lead_intents',
+            'lead_enrichment_data',
+            'prebuilt_messages',
+            'salesnav_list_items',
+            'ml_feature_store',
+            'challenge_events',
+            'lead_campaign_state',
+        ]) {
+            await db.run(`DELETE FROM ${childTable} WHERE lead_id IN (${staleLeadsSubquery})`, [daysParam]);
+        }
         const staleLeads = await db.run(`DELETE FROM leads WHERE id IN (${staleLeadsSubquery})`, [daysParam]);
 
         return {

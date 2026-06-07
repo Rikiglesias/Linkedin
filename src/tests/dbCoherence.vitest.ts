@@ -41,6 +41,23 @@ describe('SQLite → PostgreSQL SQL normalization', () => {
         expect(result).toContain('$1');
     });
 
+    test("T1: DATE('now', '-' || $N || ' days') → dynamic interval (prima non tradotto)", () => {
+        const result = normalizeSqlForPg("SELECT * FROM t WHERE date >= DATE('now', '-' || ? || ' days')");
+        expect(result).toContain('CURRENT_DATE');
+        expect(result).toContain('::interval');
+        expect(result).toContain('$1');
+        expect(result).not.toMatch(/DATE\('now'/i);
+    });
+
+    test('T1: STRFTIME(%H)/STRFTIME(%w) → EXTRACT (regressione: mancavano in normalizeSqlForPg)', () => {
+        const h = normalizeSqlForPg("SELECT CAST(STRFTIME('%H', created_at) AS INTEGER) AS hour FROM t");
+        expect(h).toContain('EXTRACT(HOUR FROM created_at)::integer');
+        expect(h).not.toMatch(/STRFTIME/i);
+        const w = normalizeSqlForPg("SELECT CAST(STRFTIME('%w', created_at) AS INTEGER) AS dow FROM t");
+        expect(w).toContain('EXTRACT(DOW FROM created_at)::integer');
+        expect(w).not.toMatch(/STRFTIME/i);
+    });
+
     test('INSERT OR IGNORE → INSERT INTO ... ON CONFLICT DO NOTHING', () => {
         const result = normalizeSqlForPg('INSERT OR IGNORE INTO blacklist (url) VALUES (?);');
         expect(result).toContain('INSERT INTO');

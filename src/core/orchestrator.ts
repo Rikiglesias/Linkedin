@@ -1,4 +1,4 @@
-import { getRuntimeAccountProfiles, setOverrideAccountId } from '../accountManager';
+import { getOverrideAccountId, getRuntimeAccountProfiles, setOverrideAccountId } from '../accountManager';
 import { getSessionMaturity } from '../browser/sessionCookieMonitor';
 import { config, getWeekStartDate } from '../config';
 import { pauseAutomation, quarantineAccount } from '../risk/incidentManager';
@@ -231,10 +231,23 @@ async function evaluateComplianceHealthGuard(
 }
 
 export async function runWorkflow(options: RunWorkflowOptions): Promise<RunWorkflowOutcome> {
+    // T8: l'override account e' uno stato globale di modulo. Lo salviamo e ripristiniamo in
+    // try/finally per evitare leak cross-account quando runWorkflow esce (return early o throw)
+    // a meta': senza ripristino, la run successiva senza accountId erediterebbe l'override.
+    const previousOverride = getOverrideAccountId();
     if (options.accountId) {
         setOverrideAccountId(options.accountId);
     }
+    try {
+        return await runWorkflowInternal(options);
+    } finally {
+        if (options.accountId) {
+            setOverrideAccountId(previousOverride);
+        }
+    }
+}
 
+async function runWorkflowInternal(options: RunWorkflowOptions): Promise<RunWorkflowOutcome> {
     if (!options.skipEntryGuards) {
         const entryGuardDecision = await evaluateWorkflowEntryGuards({
             workflow: options.workflow,

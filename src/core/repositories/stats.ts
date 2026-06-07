@@ -1044,7 +1044,7 @@ export async function getABTestingStats(): Promise<ABTestStats[]> {
 
 export async function getAccountAgeDays(): Promise<number> {
     const db = await getDatabase();
-    const row = await db.get<{ firstDate: string }>(`
+    const row = await db.get<{ firstDate: string | Date }>(`
         SELECT MIN(created_at) as firstDate FROM leads
     `);
 
@@ -1052,7 +1052,11 @@ export async function getAccountAgeDays(): Promise<number> {
         return 0;
     }
 
-    const firstDate = new Date(row.firstDate + 'Z');
+    // SQLite ritorna una stringa ("YYYY-MM-DD HH:MM:SS", UTC implicito); node-postgres
+    // ritorna gia' un oggetto Date. Concatenare 'Z' a un Date lo coerce in una stringa
+    // malformata -> Invalid Date -> NaN. Normalizziamo entrambi i casi.
+    const raw = row.firstDate;
+    const firstDate = raw instanceof Date ? raw : new Date(/[zZ]|[+-]\d{2}:?\d{2}$/.test(raw) ? raw : `${raw}Z`);
     const now = new Date();
     const diffMs = now.getTime() - firstDate.getTime();
     return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));

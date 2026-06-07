@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/node';
 import { parseStringEnv } from '../config/env';
+import { sanitizeForLogs } from '../security/redaction';
 
 let _initialized = false; // true dopo initSentry() con DSN valido
 
@@ -19,7 +20,10 @@ export function initSentry(): void {
 export function captureError(event: string, payload: Record<string, unknown>): void {
     if (!_initialized) return;
     const err = new Error(event);
-    Sentry.captureException(err, { extra: payload });
+    // Choke-point unico: ogni payload diretto a Sentry passa da redaction (PII/secret),
+    // a prescindere dal chiamante. logError() passa il payload raw (vedi logger.ts).
+    const safePayload = sanitizeForLogs(payload);
+    Sentry.captureException(err, { extra: safePayload });
 }
 
 export async function flushSentry(): Promise<void> {

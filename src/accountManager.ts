@@ -80,6 +80,9 @@ let _cliOverrideAccountId: string | null = null;
 export function setOverrideAccountId(id: string | null) {
     _cliOverrideAccountId = id;
 }
+export function getOverrideAccountId(): string | null {
+    return _cliOverrideAccountId;
+}
 
 function getConfiguredRuntimeProfiles(): RuntimeAccountProfile[] {
     const runtime = config.accountProfiles.map(toRuntimeProfile);

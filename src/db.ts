@@ -148,66 +148,16 @@ class PostgresManager implements DatabaseManager {
     }
 
     // Adattatore sintassi: converte i `?` di SQLite in `$1`, `$2` di Postgres
-    private adaptParams(sql: string): string {
-        let count = 1;
-        return sql.replace(/\?/g, () => `$${count++}`);
-    }
-
     private normalizeSql(sql: string): string {
         const cached = this.sqlCache.get(sql);
         if (cached) return cached;
 
-        let normalized = this.adaptParams(sql);
+        // Trasformazione SQLite→Postgres centralizzata in normalizeSqlForPg (single source of
+        // truth, testata in dbCoherence.vitest.ts). Qui resta solo il caching delle query ripetute,
+        // così il path runtime e la funzione testata non possono piu' divergere (era un bug latente:
+        // STRFTIME→EXTRACT esisteva solo nel metodo, le regex DATE-param solo a meta').
+        const normalized = normalizeSqlForPg(sql);
 
-        normalized = normalized.replace(
-            /strftime\('%Y-%m-%dT%H:%M:%f',\s*'now'\)/gi,
-            `TO_CHAR(CURRENT_TIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS.MS')`,
-        );
-        normalized = normalized.replace(/\bDATETIME\('now'\)/gi, 'CURRENT_TIMESTAMP');
-        normalized = normalized.replace(/\bDATE\('now'\)/gi, 'CURRENT_DATE');
-
-        normalized = normalized.replace(
-            /\bDATETIME\('now',\s*'([+-])\s*(\d+)\s*(seconds?|minutes?|hours?|days?)'\s*\)/gi,
-            (_match, sign: string, amount: string, unit: string) => {
-                const op = sign === '+' ? '+' : '-';
-                return `CURRENT_TIMESTAMP ${op} INTERVAL '${amount} ${unit.toLowerCase()}'`;
-            },
-        );
-        normalized = normalized.replace(
-            /\bDATE\('now',\s*'([+-])\s*(\d+)\s*(days?)'\s*\)/gi,
-            (_match, sign: string, amount: string, unit: string) => {
-                const op = sign === '+' ? '+' : '-';
-                return `CURRENT_DATE ${op} INTERVAL '${amount} ${unit.toLowerCase()}'`;
-            },
-        );
-        normalized = normalized.replace(
-            /\bDATETIME\('now',\s*'([+-])'\s*\|\|\s*(\$\d+)\s*\|\|\s*'\s*(seconds?|minutes?|hours?|days?)'\s*\)/gi,
-            (_match, sign: string, paramRef: string, unit: string) => {
-                const op = sign === '+' ? '+' : '-';
-                return `CURRENT_TIMESTAMP ${op} ((${paramRef} || ' ${unit.toLowerCase()}')::interval)`;
-            },
-        );
-
-        // A21: STRFTIME → EXTRACT per PostgreSQL (STRFTIME è SQLite-only)
-        // CAST(STRFTIME('%H', col) AS INTEGER) → EXTRACT(HOUR FROM col)::integer
-        // CAST(STRFTIME('%w', col) AS INTEGER) → EXTRACT(DOW FROM col)::integer
-        normalized = normalized.replace(
-            /CAST\s*\(\s*STRFTIME\s*\(\s*'%H'\s*,\s*(\w+)\s*\)\s*AS\s+INTEGER\s*\)/gi,
-            'EXTRACT(HOUR FROM $1)::integer',
-        );
-        normalized = normalized.replace(
-            /CAST\s*\(\s*STRFTIME\s*\(\s*'%w'\s*,\s*(\w+)\s*\)\s*AS\s+INTEGER\s*\)/gi,
-            'EXTRACT(DOW FROM $1)::integer',
-        );
-
-        const hadInsertOrIgnore = /\bINSERT\s+OR\s+IGNORE\s+INTO\b/i.test(normalized);
-        normalized = normalized.replace(/\bINSERT\s+OR\s+IGNORE\s+INTO\b/gi, 'INSERT INTO');
-        if (hadInsertOrIgnore && !/\bON\s+CONFLICT\b/i.test(normalized)) {
-            normalized = normalized.replace(/;\s*$/, '');
-            normalized = `${normalized} ON CONFLICT DO NOTHING`;
-        }
-
-        // Cache il risultato per evitare 8 regex ad ogni query ripetuta
         if (this.sqlCache.size >= PostgresManager.SQL_CACHE_MAX) {
             const firstKey = this.sqlCache.keys().next().value;
             if (firstKey !== undefined) this.sqlCache.delete(firstKey);
@@ -397,6 +347,25 @@ export function normalizeSqlForPg(sql: string): string {
             const op = sign === '+' ? '+' : '-';
             return `CURRENT_TIMESTAMP ${op} ((${paramRef} || ' ${unit.toLowerCase()}')::interval)`;
         },
+    );
+    // DATE('now', '±' || $n || ' days') con parametro bound (es. sessionMemory.getSessionHistory,
+    // stats.ts). Senza questa regola la sintassi SQLite arriva grezza a Postgres e rompe la query.
+    normalized = normalized.replace(
+        /\bDATE\('now',\s*'([+-])'\s*\|\|\s*(\$\d+)\s*\|\|\s*'\s*(days?)'\s*\)/gi,
+        (_match: string, sign: string, paramRef: string, unit: string) => {
+            const op = sign === '+' ? '+' : '-';
+            return `CURRENT_DATE ${op} ((${paramRef} || ' ${unit.toLowerCase()}')::interval)`;
+        },
+    );
+
+    // STRFTIME → EXTRACT per PostgreSQL (STRFTIME è SQLite-only)
+    normalized = normalized.replace(
+        /CAST\s*\(\s*STRFTIME\s*\(\s*'%H'\s*,\s*(\w+)\s*\)\s*AS\s+INTEGER\s*\)/gi,
+        'EXTRACT(HOUR FROM $1)::integer',
+    );
+    normalized = normalized.replace(
+        /CAST\s*\(\s*STRFTIME\s*\(\s*'%w'\s*,\s*(\w+)\s*\)\s*AS\s+INTEGER\s*\)/gi,
+        'EXTRACT(DOW FROM $1)::integer',
     );
 
     const hadInsertOrIgnore = /\bINSERT\s+OR\s+IGNORE\s+INTO\b/i.test(normalized);
