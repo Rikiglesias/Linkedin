@@ -354,9 +354,28 @@ export async function runSiteCheck(options: SiteCheckOptions): Promise<SiteCheck
                 return report;
             }
 
+            // CL1 (collaudo): spezza il pattern "N visite profilo dirette di fila" del site-check con
+            // un interleave organico (feed + scroll) ogni 5-7 lead. Un umano che rivede le proprie
+            // connessioni ogni tanto guarda il feed, non teletrasporta su decine di profili in fila.
+            // (Il site-check e' una verifica di stato: il goto diretto al profilo resta necessario per
+            // leggere il badge/connessione — qui rendiamo solo piu' credibile la sequenza di visite.)
+            let sinceOrganicBreak = 0;
+            let organicBreakEvery = 5 + Math.floor(Math.random() * 3);
             for (const lead of accountLeads) {
                 report.scanned += 1;
+                if (sinceOrganicBreak >= organicBreakEvery) {
+                    await session.page
+                        .goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 15_000 })
+                        .catch(() => null);
+                    await session.page
+                        .evaluate(() => window.scrollBy({ top: 150 + Math.random() * 300, behavior: 'smooth' }))
+                        .catch(() => null);
+                    await humanDelay(session.page, 2000, 5000);
+                    sinceOrganicBreak = 0;
+                    organicBreakEvery = 5 + Math.floor(Math.random() * 3);
+                }
                 const signals = await inspectLeadOnSite(lead, session.page);
+                sinceOrganicBreak += 1;
                 await touchLeadSiteCheckAt(lead.id);
 
                 if (await detectChallenge(session.page)) {
