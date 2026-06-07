@@ -7,7 +7,8 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $RuntimeBriefPath = Join-Path $RepoRoot "docs\AI_RUNTIME_BRIEF.md"
-$ContractPath = Join-Path $RepoRoot "docs\tracking\AI_ORCHESTRATOR_CONTRACT.md"
+# (adk-split T11.5b) contratto orchestratore = spec ADK, migrato in AI-Control-Plane/spec
+$ContractPath = Join-Path $env:USERPROFILE "Desktop\Programmi\AI-Control-Plane\spec\AI_ORCHESTRATOR_CONTRACT.md"
 $ContinuationPath = Join-Path $RepoRoot ".claude\CONTINUATION.md"
 $ParityMatrixPath = Join-Path $RepoRoot "docs\PARITY_MATRIX.md"
 $MemoryDir = Join-Path $env:USERPROFILE "memory"
@@ -116,7 +117,7 @@ $contextLines = @(
 ) + $obsidianLines + @(
     "",
     "=== CODEX_OPERATIVO [contratti + chiusura] ===",
-    "- Applica docs/tracking/AI_ORCHESTRATOR_CONTRACT.md prima di pianificare o modificare.",
+    "- Applica AI-Control-Plane/spec/AI_ORCHESTRATOR_CONTRACT.md prima di pianificare o modificare.",
     "- Prima di dichiarare DONE: prove, audit/test, limiti residui, prossimo passo esatto.",
     "- Per modifiche: blast radius, file diretti/indiretti, L2-L9 proporzionati, cross-domain.",
     "- Interpreta intento reale, input come ipotesi, esempi come pattern, decomposizione ricorsiva."
