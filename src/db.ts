@@ -647,6 +647,11 @@ async function initializeDatabaseInstance(): Promise<DatabaseManager> {
     await sqliteDb.exec(`PRAGMA busy_timeout = 5000;`);
     await sqliteDb.exec(`PRAGMA synchronous = NORMAL;`);
     await sqliteDb.exec(`PRAGMA auto_vacuum = INCREMENTAL;`);
+    // H13 fix (data-integrity/GDPR): abilita l'enforcement delle foreign key (default OFF in SQLite,
+    // per-connessione). Senza, ogni ON DELETE CASCADE (migration 045/058/...) e' un no-op silenzioso →
+    // righe figlie PII orfane su delete lead (root cause meccanica di C1) e divergenza dev/prod (su
+    // Postgres le FK sono sempre enforced). Va eseguito subito dopo l'open, prima di ogni operazione.
+    await sqliteDb.exec(`PRAGMA foreign_keys = ON;`);
     ensureFilePrivate(config.dbPath);
 
     dbInstance = new SQLiteManager(sqliteDb);

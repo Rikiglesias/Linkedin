@@ -937,6 +937,19 @@ export async function cleanupPrivacyData(retentionDays: number): Promise<Privacy
             `DELETE FROM message_history WHERE sent_at < DATETIME('now', '-' || ? || ' days')`,
             [daysParam],
         );
+        // H14 fix (data-integrity/GDPR): cancellare prima le righe figlie outbox_event_deliveries.
+        // La FK event_id -> outbox_events(id) (migration 058) NON ha ON DELETE CASCADE: con
+        // foreign_keys ON (H13) o su Postgres, il DELETE da outbox_events viola la FK e fa ROLLBACK
+        // dell'INTERA transazione di purge GDPR (retention silenziosamente non funzionante in prod).
+        await db.run(
+            `DELETE FROM outbox_event_deliveries
+             WHERE event_id IN (
+                 SELECT id FROM outbox_events
+                 WHERE delivered_at IS NOT NULL
+                   AND created_at < DATETIME('now', '-' || ? || ' days')
+             )`,
+            [daysParam],
+        );
         const deliveredOutboxEvents = await db.run(
             `DELETE FROM outbox_events
              WHERE delivered_at IS NOT NULL
