@@ -673,51 +673,13 @@ function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
     // Prima apriva un browser separato per il warmup, poi lo chiudeva, poi il jobRunner
     // ne apriva un altro — LinkedIn vedeva 2 sessioni separate. Ora è una sessione unica.
 
-    // 13d. C14/R03: Inbox check PRIMA del workflow — rileva risposte lead PRIMA di fare follow-up.
-    // Senza questo step, il follow-up worker potrebbe inviare a lead che hanno già risposto
-    // perché l'inboxWorker non girava automaticamente (C09). Ora gira ad ogni ciclo.
-    tasks.push({
-        name: 'inbox_check',
-        shouldRun: (ctx) => {
-            if (ctx.dryRun) return false;
-            const w = buildCtx.workflow;
-            return w === 'all' || w === 'message';
-        },
-        execute: async () => {
-            const { processInboxJob } = await import('../../workers/inboxWorker');
-            const accounts = getRuntimeAccountProfiles();
-            for (const account of accounts) {
-                let inboxSession;
-                try {
-                    inboxSession = await launchBrowser({
-                        sessionDir: account.sessionDir,
-                        proxy: account.proxy,
-                        forceDesktop: true,
-                    });
-                    const inboxContext: import('../../workers/context').WorkerContext = {
-                        session: inboxSession,
-                        dryRun: false,
-                        localDate: getLocalDateString(),
-                        accountId: account.id,
-                    };
-                    const result = await processInboxJob({ accountId: account.id }, inboxContext);
-                    if (result.processedCount > 0) {
-                        console.log(
-                            `[LOOP] inbox-check: ${result.processedCount} conversazioni processate (account: ${account.id})`,
-                        );
-                    }
-                } catch (inboxErr) {
-                    console.warn(
-                        `[LOOP] inbox-check fallito (account: ${account.id}):`,
-                        inboxErr instanceof Error ? inboxErr.message : inboxErr,
-                    );
-                } finally {
-                    if (inboxSession) await closeBrowserSession(inboxSession);
-                }
-            }
-        },
-        onError: 'skip',
-    });
+    // 13d. CL4 (collaudo) — RIMOSSO. La task 'inbox_check' apriva un browser SEPARATO per processare
+    // l'inbox subito prima del workflow principale → LinkedIn vedeva 2 sessioni distinte per ciclo
+    // (stesso anti-pattern del warmup rimosso sopra, 13b). Il jobRunner ora esegue processInboxJob
+    // nella STESSA sessione del workflow e PRIMA del follow-up (jobRunner.ts:1197, GAP4-C09):
+    // l'invariante "inbox prima del follow-up" resta garantita — se i guard bloccano il workflow non
+    // gira nemmeno il follow-up, quindi non c'è alcuna risposta da intercettare in anticipo. Rimossa
+    // la sessione browser ridondante (meno sessioni/ciclo = meno superficie di detection).
 
     // 14. Main workflow
     tasks.push({
