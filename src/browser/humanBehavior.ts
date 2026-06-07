@@ -16,7 +16,7 @@ import { computeSessionTypoRate, determineNextKeystroke, getWordFlowMultiplier }
 import { shouldAccidentalNav, performAccidentalNavigation } from './missclick';
 // dismissKnownOverlays importato dinamicamente per rompere circular dep
 // humanBehavior → overlayDismisser → humanBehavior (humanMouseMoveToCoords)
-import { randomElement, randomInt } from '../utils/random';
+import { randomElement, randomInt, logNormalDelayMs } from '../utils/random';
 
 // ─── Stato Memoria Mouse ─────────────────────────────────────────────────────
 
@@ -889,9 +889,13 @@ export async function humanType(page: Page, selector: string, text: string): Pro
         // AD-11: Implementazione Delay Bimodale + context-aware per lunghezza testo
         // + Typing Flow State (6.3): parole comuni più veloci, parole rare più lente
         const isSpaceOrPunctuation = /[\s.,!?-]/.test(typedChar);
+        // B2 (2026-06-07): delay inter-keystroke LOG-NORMALE (right-skew = biometric umano reale)
+        // invece di uniforme (Math.random()*range = istogramma piatto rilevabile dall'ML di LinkedIn).
+        // Mediana ≈ media vecchia → throughput preservato; coda destra naturale. Fonti: keystroke
+        // dynamics (flight time log-normale/ex-gaussian).
         const rawDelay = isSpaceOrPunctuation
-            ? Math.floor(Math.random() * 150) + 150
-            : Math.floor(Math.random() * 50) + 40;
+            ? logNormalDelayMs(200, 0.42, 90, 650)
+            : logNormalDelayMs(60, 0.42, 28, 240);
         const delayBase = Math.round(rawDelay * lengthSlowFactor * currentWordMultiplier);
 
         await element.pressSequentially(typedChar, { delay: delayBase });
