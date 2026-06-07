@@ -51,9 +51,14 @@ export function parseWorkflow(input: string | undefined): WorkflowSelection {
 }
 
 export function parseIntStrict(raw: string, optionName: string): number {
-    const parsed = Number.parseInt(raw, 10);
+    const trimmed = raw.trim();
+    // Match completo: '12abc' deve fallire, non essere troncato a 12 (Number.parseInt lo accetterebbe).
+    if (!/^-?\d+$/.test(trimmed)) {
+        throw new Error(`Valore non valido per ${optionName}: ${raw}`);
+    }
+    const parsed = Number.parseInt(trimmed, 10);
     if (!Number.isFinite(parsed)) {
-        throw new Error(`Valore non valido per ${optionName}: ${raw} `);
+        throw new Error(`Valore non valido per ${optionName}: ${raw}`);
     }
     return parsed;
 }

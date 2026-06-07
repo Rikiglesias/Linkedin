@@ -23,8 +23,13 @@ Triage dei 142 finding MEDIUM del Backend Deep Audit: classificare (FIX-NOW/CONF
   - `promoteNewLeadsToReadyInvite`: `UPDATE ... AND status='NEW'` → niente clobber se lo status cambia tra SELECT e UPDATE.
   - `appendLeadEvent`: `JSON.stringify` del metadata in try/catch (fallback `{}`) → niente crash su riferimenti circolari.
 
+- **Ondata 3 parziale (3 fix hygiene, non anti-ban)**:
+  - `cli/cliParser.ts`: `parseIntStrict` con match regex completo (`/^-?\d+$/`) → `'12abc'` ora rifiutato, non troncato a 12.
+  - `cli/stdinHelper.ts`: `readLineFromStdin` rimuove anche i listener `close`/`error` in cleanup → niente accumulo cross-chiamata.
+  - `ai/aiDecisionEngine.ts`: `clearTimeout` via `.finally` sulla `Promise.race` → il timer non resta pendente quando l'AI risponde in tempo.
+
 ### Stato reale
-- Triage 142/142 classificato. Ondata 1 (5 fix, +9 test) e Ondata 2 parziale (3 fix, +3 test) applicate e committate. Restano: Ondata 2 residua (addLead/leadsLearning/featureStore — richiedono infra DB-test), Ondate 3-4. Nessun file anti-ban/peer toccato. Push da coordinare col peer.
+- Triage 142/142 classificato. Ondate 1 (5 fix), 2 parziale (3 fix), 3 parziale (3 fix) applicate e committate; +15 test mirati totali. Restano (DEFER/turni successivi): residui Ondata 2 (addLead/leadsLearning/featureStore — infra DB-test), residui Ondata 3 (alerts/messageValidator/semanticChecker/csvImporter/...), Ondata 4 (security medi). Nessun file anti-ban/peer toccato. Push da coordinare col peer.
 
 ### Verifica
 - `npm run conta-problemi`: exit 0 (typecheck BE+FE + lint + 1471 test). Suite mirata Ondata 1: 22/22.

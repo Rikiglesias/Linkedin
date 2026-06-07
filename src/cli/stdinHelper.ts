@@ -22,6 +22,8 @@ export async function readLineFromStdin(prompt: string): Promise<string> {
             if (resolved) return;
             resolved = true;
             process.stdin.removeListener('data', onData);
+            process.stdin.removeListener('close', onClose);
+            process.stdin.removeListener('error', onError);
             process.stdin.pause();
         };
         let buffer = '';
@@ -33,15 +35,19 @@ export async function readLineFromStdin(prompt: string): Promise<string> {
                 resolve(buffer.slice(0, newlineIndex).replace(/\r/g, '').trim());
             }
         };
+        // Listener nominati: cleanup deve poterli rimuovere TUTTI (prima close/error once restavano
+        // attaccati dopo una risoluzione via data -> accumulo cross-chiamata / MaxListeners warning).
+        const onClose = () => {
+            cleanup();
+            resolve('');
+        };
+        const onError = () => {
+            cleanup();
+            resolve('');
+        };
         process.stdin.on('data', onData);
-        process.stdin.once('close', () => {
-            cleanup();
-            resolve('');
-        });
-        process.stdin.once('error', () => {
-            cleanup();
-            resolve('');
-        });
+        process.stdin.once('close', onClose);
+        process.stdin.once('error', onError);
     });
 }
 

@@ -104,9 +104,16 @@ export async function aiDecide(request: AIDecisionRequest): Promise<AIDecisionRe
             maxOutputTokens: 200,
             temperature: 0.3,
         });
-        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), DECISION_TIMEOUT_MS));
+        let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+        const timeoutPromise = new Promise<null>((resolve) => {
+            timeoutHandle = setTimeout(() => resolve(null), DECISION_TIMEOUT_MS);
+        });
 
-        const response = await Promise.race([aiPromise, timeoutPromise]);
+        // clearTimeout sempre (sia se aiPromise vince sia se rigetta): senza, il timer resta pendente
+        // e tiene vivo l'event loop fino a DECISION_TIMEOUT_MS.
+        const response = await Promise.race([aiPromise, timeoutPromise]).finally(() => {
+            if (timeoutHandle) clearTimeout(timeoutHandle);
+        });
 
         if (!response) {
             return fallbackDecision(request, response === null ? 'timeout' : 'empty_ai_response');
