@@ -550,19 +550,26 @@ export async function processMessageJob(
         messageLength: message.length,
         isCampaignDriven,
     });
-    await storeMessageHash(lead.id, messageHash, message);
-    // messages_sent gia' incrementata atomicamente da checkAndIncrementDailyLimit (solo non dry-run).
-    // In dry-run NON si incrementa la stat reale messages_sent (allineato a invite/follow-up):
-    // nessun invio reale, quindi non deve consumare il budget/cap ne' gonfiare il report.
-    await incrementListDailyStat(context.localDate, lead.list_name, 'messages_sent');
-    // Audit trail GDPR — non bloccante
+    // CL8 fix (bug): in dry-run NON persistere hash/stat/cloud. Prima storeMessageHash girava sempre:
+    // un dry-run scriveva il content_hash nel DB e il run reale successivo scartava il messaggio
+    // identico come "duplicato" (countRecentMessageHash) -> 0 messaggi inviati senza spiegazione.
+    // Idem per incrementListDailyStat (gonfiava il contatore per-lista) e i bridge cloud (dati spuri).
+    // writeAuditEntry resta SEMPRE attivo: traccia anche i dry-run, ha gia' il flag dry_run nel payload.
+    if (!context.dryRun) {
+        await storeMessageHash(lead.id, messageHash, message);
+        // messages_sent gia' incrementata atomicamente da checkAndIncrementDailyLimit (non dry-run).
+        await incrementListDailyStat(context.localDate, lead.list_name, 'messages_sent');
+    }
+    // Audit trail GDPR — non bloccante (attivo anche in dry-run, con flag dry_run nel payload)
     void writeAuditEntry(isCampaignDriven ? 'follow_up_sent' : 'message_sent', lead.id, lead.linkedin_url, 'bot', {
         list_name: lead.list_name,
         message_length: message.length,
         dry_run: context.dryRun,
     });
-    // Cloud sync non-bloccante
-    bridgeLeadStatus(lead.linkedin_url, 'MESSAGED', { messaged_at: new Date().toISOString() });
-    bridgeDailyStat(context.localDate, context.accountId, 'messages_sent');
+    // Cloud sync non-bloccante (solo non dry-run)
+    if (!context.dryRun) {
+        bridgeLeadStatus(lead.linkedin_url, 'MESSAGED', { messaged_at: new Date().toISOString() });
+        bridgeDailyStat(context.localDate, context.accountId, 'messages_sent');
+    }
     return workerResult(1);
 }
