@@ -189,7 +189,7 @@ function checkReasoningTrace(): CheckResult {
         [
             resolve('AGENTS.md'),
             [
-                'docs/tracking/AI_ORCHESTRATOR_CONTRACT.md',
+                // (adk-split T11.5b) AGENTS non linka più il contratto orchestratore: migrato in ACP/spec.
                 'Procedura cognitiva ripetibile',
                 'Regola non dimenticabile',
                 'Controllo deterministico',
