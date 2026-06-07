@@ -24,6 +24,7 @@ import { getDatabase } from '../../db';
 import type { LeadRecord } from '../../types/domain';
 import { runRandomLinkedinActivity } from '../../workers/randomActivityWorker';
 import { createPersistentProfile, resolveProfileDir } from '../../scripts/createProfile';
+import { recordSuccessfulAuth } from '../../browser/sessionCookieMonitor';
 import { getAccountProfileById, getRuntimeAccountProfiles } from '../../accountManager';
 import {
     checkProxyHealth,
@@ -88,6 +89,10 @@ export async function runLoginCommand(args: string[]): Promise<void> {
             if (await isLoggedIn(session.page)) {
                 const confirmed = await checkLogin(session.page);
                 if (confirmed) {
+                    // CL-setup: registra la baseline di freshness della sessione al login reale
+                    // (allinea il comando login a jobRunner/create-profile: il countdown di rotazione
+                    // 7gg parte da ora, non dalla prima run di automazione).
+                    recordSuccessfulAuth(selectedAccount.sessionDir, 'login');
                     console.log('Login sessione completato con successo.');
                     return;
                 }
@@ -105,6 +110,7 @@ export async function runLoginCommand(args: string[]): Promise<void> {
         if (!loggedIn) {
             throw new Error(`Login non rilevato entro ${timeoutSeconds} secondi.`);
         }
+        recordSuccessfulAuth(selectedAccount.sessionDir, 'login');
         console.log('Login sessione completato con successo.');
     } finally {
         await closeBrowserSession(session);

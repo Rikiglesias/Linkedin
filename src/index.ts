@@ -293,7 +293,9 @@ async function main(): Promise<void> {
         console.error('');
         // Blocca solo se non stiamo lanciando comandi non-operativi
         const args0 = process.argv[2];
-        const safeCommands = ['doctor', 'help', '--help', 'login', 'create-profile', undefined];
+        // CL-setup: 'preflight-env' e' un diagnostico read-only dell'ambiente: deve poter girare
+        // ANCHE con config errors critici (e' lo strumento che aiuta a diagnosticarli), come 'doctor'.
+        const safeCommands = ['doctor', 'help', '--help', 'login', 'create-profile', 'preflight-env', undefined];
         if (!safeCommands.includes(args0)) {
             process.exit(1);
         }
