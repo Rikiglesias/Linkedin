@@ -53,9 +53,12 @@ export async function collectDbStats(listFilter?: string): Promise<PreflightDbSt
 
     let trend: PreflightDbStats['trend'] = null;
     try {
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yStr = yesterday.toISOString().slice(0, 10);
+        // 'oggi' e 'ieri' derivati dalla STESSA base locale (config.timezone): evita l'off-by-one a
+        // mezzanotte tra 'ieri' calcolato in UTC (toISOString) e 'oggi' calcolato nel timezone locale.
+        const todayStr = getLocalDateString();
+        const yDate = new Date(`${todayStr}T00:00:00Z`);
+        yDate.setUTCDate(yDate.getUTCDate() - 1);
+        const yStr = yDate.toISOString().slice(0, 10);
         const yRow = await db.get<{
             invites_sent: number;
             messages_sent: number;
@@ -68,7 +71,6 @@ export async function collectDbStats(listFilter?: string): Promise<PreflightDbSt
             [yStr],
         );
         if (yRow && (yRow.invites_sent > 0 || yRow.messages_sent > 0 || yRow.acceptances > 0)) {
-            const todayStr = getLocalDateString();
             const createdToday = await db.get<{ cnt: number }>(
                 `SELECT COUNT(*) as cnt FROM leads WHERE DATE(created_at) = ?`,
                 [todayStr],

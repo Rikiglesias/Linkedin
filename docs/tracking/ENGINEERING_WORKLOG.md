@@ -31,8 +31,13 @@ Triage dei 142 finding MEDIUM del Backend Deep Audit: classificare (FIX-NOW/CONF
   - `ai/semanticChecker.ts`: eviction FIFO delle chiavi della Map statica (cap 500 lead) → niente memory leak illimitato.
   - `validation/messageValidator.ts`: il catch del semantic check ora logga (`logWarn`) invece di essere muto (fail-open silenzioso).
 
+- **Ondata 4 parziale (2 fix security/correttezza, non anti-ban)**:
+  - `api/helpers/audit.ts`: `auditSecurityEvent` logga (`logError`) il fallimento di scrittura invece di inghiottirlo (`.catch(()=>null)`) — un audit di sicurezza droppato è esso stesso un evento di sicurezza.
+  - `workflows/preflight/statsCollector.ts`: trend "vs ieri" deriva 'oggi' e 'ieri' dalla stessa base locale (`getLocalDateString`) → niente off-by-one a mezzanotte (era ieri-UTC vs oggi-locale).
+  - **`config/env.ts resolveSecret` riclassificato CONFIRM-USER**: invertire la priorità Docker-secret vs `process.env` cambia il secret-loading in produzione (rischio/irreversibile, zero-G) → richiede conferma utente, non fix-now.
+
 ### Stato reale
-- Triage 142/142 classificato. Ondate 1 (5 fix), 2 parziale (3 fix), 3 parziale (3 fix) applicate e committate; +15 test mirati totali. Restano (DEFER/turni successivi): residui Ondata 2 (addLead/leadsLearning/featureStore — infra DB-test), residui Ondata 3 (alerts/messageValidator/semanticChecker/csvImporter/...), Ondata 4 (security medi). Nessun file anti-ban/peer toccato. Push da coordinare col peer.
+- Triage 142/142 classificato. Applicati e committati: Ondata 1 (5 fix), 2 parziale (3 fix), 3 (6 fix), 4 parziale (2 fix) = **16 fix medium** + 8 HIGH del Batch B; +21 test mirati. Restano (turni successivi): residui Ondata 2 (addLead/leadsLearning/featureStore — infra DB-test), residui Ondata 4 (totp/restoreDb/metrics/filesystem) + sparsi (supabaseSyncWorker/csvImporter/leadEnricher). env.ts = CONFIRM-USER. Nessun file anti-ban/peer toccato. Push da coordinare col peer.
 
 ### Verifica
 - `npm run conta-problemi`: exit 0 (typecheck BE+FE + lint + 1471 test). Suite mirata Ondata 1: 22/22.
