@@ -505,74 +505,75 @@ export async function runAiValidationPipeline(triggeredBy: string = 'manual'): P
         throw new Error('Impossibile creare ai_validation_run');
     }
 
-    for (const sample of samples) {
-        const input = parseJsonObject(sample.input_json);
-        const expected = parseJsonObject(sample.expected_json);
-        let predictedPayload: Record<string, unknown> = {};
-        let similarity = 0;
-        let isMatch = false;
-        let errorMessage: string | null = null;
+    try {
+        for (const sample of samples) {
+            const input = parseJsonObject(sample.input_json);
+            const expected = parseJsonObject(sample.expected_json);
+            let predictedPayload: Record<string, unknown> = {};
+            let similarity = 0;
+            let isMatch = false;
+            let errorMessage: string | null = null;
 
-        try {
-            if (sample.task_type === 'sentiment') {
-                const messageText = normalizeText(input.text) || normalizeText(input.message) || '';
-                const { analyzeIncomingMessage } = await import('../../ai/sentimentAnalysis');
-                const predicted = await analyzeIncomingMessage(messageText);
-                predictedPayload = {
-                    intent: predicted.intent,
-                    subIntent: predicted.subIntent,
-                    entities: predicted.entities,
-                    confidence: predicted.confidence,
-                    reasoning: predicted.reasoning,
-                };
-                const sentimentScore = calculateSentimentSimilarity(
-                    {
+            try {
+                if (sample.task_type === 'sentiment') {
+                    const messageText = normalizeText(input.text) || normalizeText(input.message) || '';
+                    const { analyzeIncomingMessage } = await import('../../ai/sentimentAnalysis');
+                    const predicted = await analyzeIncomingMessage(messageText);
+                    predictedPayload = {
                         intent: predicted.intent,
                         subIntent: predicted.subIntent,
                         entities: predicted.entities,
                         confidence: predicted.confidence,
-                    },
-                    expected,
-                );
-                similarity = sentimentScore.similarity;
-                isMatch = sentimentScore.isMatch;
-            } else if (sample.task_type === 'invite') {
-                const lead = makeSyntheticLead(input, sample.id);
-                const { buildPersonalizedInviteNote } = await import('../../ai/inviteNotePersonalizer');
-                const generated = await buildPersonalizedInviteNote(lead);
+                        reasoning: predicted.reasoning,
+                    };
+                    const sentimentScore = calculateSentimentSimilarity(
+                        {
+                            intent: predicted.intent,
+                            subIntent: predicted.subIntent,
+                            entities: predicted.entities,
+                            confidence: predicted.confidence,
+                        },
+                        expected,
+                    );
+                    similarity = sentimentScore.similarity;
+                    isMatch = sentimentScore.isMatch;
+                } else if (sample.task_type === 'invite') {
+                    const lead = makeSyntheticLead(input, sample.id);
+                    const { buildPersonalizedInviteNote } = await import('../../ai/inviteNotePersonalizer');
+                    const generated = await buildPersonalizedInviteNote(lead);
+                    predictedPayload = {
+                        text: generated.note,
+                        source: generated.source,
+                        model: generated.model,
+                        variant: generated.variant,
+                    };
+                    const scored = scoreTextQuality(generated.note, expected, 300);
+                    similarity = scored.similarity;
+                    isMatch = scored.isMatch;
+                } else {
+                    const lead = makeSyntheticLead(input, sample.id);
+                    const { buildPersonalizedFollowUpMessage } = await import('../../ai/messagePersonalizer');
+                    const generated = await buildPersonalizedFollowUpMessage(lead);
+                    predictedPayload = {
+                        text: generated.message,
+                        source: generated.source,
+                        model: generated.model,
+                    };
+                    const scored = scoreTextQuality(generated.message, expected, config.aiMessageMaxChars);
+                    similarity = scored.similarity;
+                    isMatch = scored.isMatch;
+                }
+            } catch (error) {
+                errorMessage = error instanceof Error ? error.message : String(error);
                 predictedPayload = {
-                    text: generated.note,
-                    source: generated.source,
-                    model: generated.model,
-                    variant: generated.variant,
+                    error: errorMessage,
                 };
-                const scored = scoreTextQuality(generated.note, expected, 300);
-                similarity = scored.similarity;
-                isMatch = scored.isMatch;
-            } else {
-                const lead = makeSyntheticLead(input, sample.id);
-                const { buildPersonalizedFollowUpMessage } = await import('../../ai/messagePersonalizer');
-                const generated = await buildPersonalizedFollowUpMessage(lead);
-                predictedPayload = {
-                    text: generated.message,
-                    source: generated.source,
-                    model: generated.model,
-                };
-                const scored = scoreTextQuality(generated.message, expected, config.aiMessageMaxChars);
-                similarity = scored.similarity;
-                isMatch = scored.isMatch;
+                similarity = 0;
+                isMatch = false;
             }
-        } catch (error) {
-            errorMessage = error instanceof Error ? error.message : String(error);
-            predictedPayload = {
-                error: errorMessage,
-            };
-            similarity = 0;
-            isMatch = false;
-        }
 
-        await db.run(
-            `
+            await db.run(
+                `
             INSERT INTO ai_validation_results (run_id, sample_id, predicted_json, similarity, is_match, error_message)
             VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(run_id, sample_id) DO UPDATE SET
@@ -582,43 +583,63 @@ export async function runAiValidationPipeline(triggeredBy: string = 'manual'): P
                 error_message = excluded.error_message,
                 created_at = datetime('now')
         `,
-            [runId, sample.id, JSON.stringify(predictedPayload), similarity, isMatch ? 1 : 0, errorMessage],
-        );
-    }
+                [runId, sample.id, JSON.stringify(predictedPayload), similarity, isMatch ? 1 : 0, errorMessage],
+            );
+        }
 
-    const summaryRows = await db.query<{ task_type: string; similarity: number; is_match: number }>(
-        `
+        const summaryRows = await db.query<{ task_type: string; similarity: number; is_match: number }>(
+            `
         SELECT s.task_type as task_type, r.similarity as similarity, r.is_match as is_match
         FROM ai_validation_results r
         JOIN ai_validation_samples s ON s.id = r.sample_id
         WHERE r.run_id = ?
     `,
-        [runId],
-    );
-    const summary = summarizeValidationRows(summaryRows);
-    await db.run(
-        `
+            [runId],
+        );
+        const summary = summarizeValidationRows(summaryRows);
+        await db.run(
+            `
         UPDATE ai_validation_runs
         SET status = 'COMPLETED',
             summary_json = ?,
             finished_at = datetime('now')
         WHERE id = ?
     `,
-        [JSON.stringify(summary), runId],
-    );
+            [JSON.stringify(summary), runId],
+        );
 
-    const completed = await db.get<AiValidationRunRecord>(
-        `
+        const completed = await db.get<AiValidationRunRecord>(
+            `
         SELECT id, status, triggered_by, summary_json, started_at, finished_at
         FROM ai_validation_runs
         WHERE id = ?
     `,
-        [runId],
-    );
-    if (!completed) {
-        throw new Error('Impossibile leggere ai_validation_run completata');
+            [runId],
+        );
+        if (!completed) {
+            throw new Error('Impossibile leggere ai_validation_run completata');
+        }
+        return completed;
+    } catch (pipelineError) {
+        // Finalizza il run come FAILED se ancora RUNNING (un throw mid-pipeline lo lasciava
+        // orfano in RUNNING per sempre). Guard status='RUNNING' per non sovrascrivere un COMPLETED.
+        await db.run(
+            `
+            UPDATE ai_validation_runs
+            SET status = 'FAILED',
+                summary_json = ?,
+                finished_at = datetime('now')
+            WHERE id = ? AND status = 'RUNNING'
+        `,
+            [
+                JSON.stringify({
+                    error: pipelineError instanceof Error ? pipelineError.message : String(pipelineError),
+                }),
+                runId,
+            ],
+        );
+        throw pipelineError;
     }
-    return completed;
 }
 
 async function getIntentFalsePositiveMetrics(

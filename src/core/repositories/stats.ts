@@ -18,6 +18,33 @@ import {
 import { countLeadsByStatuses } from './leadsCore';
 import { countPendingOutboxEvents, getLockContentionSummary } from './system';
 
+// Allowlist runtime degli identificatori di colonna interpolati nelle query stats.
+// I `field` sono union TS (i caller passano literal), ma TS e' erased a runtime: l'allowlist
+// e' difesa in profondita' contro interpolazione di identificatori non sicuri nel SQL.
+const DAILY_STATS_COLUMNS = new Set<string>([
+    'invites_sent',
+    'messages_sent',
+    'acceptances',
+    'challenges_count',
+    'selector_failures',
+    'run_errors',
+    'follow_ups_sent',
+    'profile_views',
+    'likes_given',
+    'follows_given',
+]);
+const LIST_DAILY_STATS_COLUMNS = new Set<string>(['invites_sent', 'messages_sent']);
+function assertDailyStatColumn(field: string): void {
+    if (!DAILY_STATS_COLUMNS.has(field)) {
+        throw new Error(`stats: colonna daily_stats non valida "${field}"`);
+    }
+}
+function assertListDailyStatColumn(field: string): void {
+    if (!LIST_DAILY_STATS_COLUMNS.has(field)) {
+        throw new Error(`stats: colonna list_daily_stats non valida "${field}"`);
+    }
+}
+
 export async function getDailyStat(
     dateString: string,
     field:
@@ -33,6 +60,7 @@ export async function getDailyStat(
         | 'follows_given',
     accountId: string = 'default',
 ): Promise<number> {
+    assertDailyStatColumn(field);
     const db = await getDatabase();
     const row = await db.get<Record<string, number>>(
         `SELECT ${field} FROM daily_stats WHERE date = ? AND account_id = ?`,
@@ -618,6 +646,7 @@ export async function getListDailyStat(
     listName: string,
     field: 'invites_sent' | 'messages_sent',
 ): Promise<number> {
+    assertListDailyStatColumn(field);
     const db = await getDatabase();
     const row = await db.get<Record<string, number>>(
         `SELECT ${field} FROM list_daily_stats WHERE date = ? AND list_name = ?`,
@@ -630,6 +659,7 @@ export async function getListDailyStatsBatch(
     dateString: string,
     field: 'invites_sent' | 'messages_sent',
 ): Promise<Map<string, number>> {
+    assertListDailyStatColumn(field);
     const db = await getDatabase();
     const rows = await db.query<{ list_name: string } & Record<string, number>>(
         `SELECT list_name, ${field} FROM list_daily_stats WHERE date = ?`,
@@ -658,6 +688,7 @@ export async function incrementDailyStat(
     amount: number = 1,
     accountId: string = 'default',
 ): Promise<void> {
+    assertDailyStatColumn(field);
     const db = await getDatabase();
     await db.run(
         `
@@ -680,6 +711,7 @@ export async function checkAndIncrementDailyLimit(
     hardCap: number,
     accountId: string = 'default',
 ): Promise<boolean> {
+    assertDailyStatColumn(field);
     const db = await getDatabase();
 
     // Upsert atomico: INSERT o UPDATE solo se il valore corrente < hardCap.
@@ -707,6 +739,7 @@ export async function incrementListDailyStat(
     field: 'invites_sent' | 'messages_sent',
     amount: number = 1,
 ): Promise<void> {
+    assertListDailyStatColumn(field);
     const db = await getDatabase();
     await db.run(
         `
@@ -737,38 +770,41 @@ export async function countWeeklyMessages(weekStartDate: string, accountId: stri
 
 export async function getRiskInputs(localDate: string, hardInviteCap: number): Promise<RiskInputs> {
     const db = await getDatabase();
-    const pendingInvites = await countLeadsByStatuses(['INVITED']);
-    const invitedTotalRow = await db.get<{ total: number }>(
-        `SELECT COUNT(*) as total FROM leads WHERE invited_at IS NOT NULL`,
-    );
+
+    // Perf: letture parallele (pattern gia' usato in getComplianceHealthMetrics) + le 3
+    // getDailyStat accorpate in una SELECT. Behavior-preserving: stessi valori di RiskInputs.
+    const [pendingInvites, invitedTotalRow, attemptsRow, failedRow, dailyRow] = await Promise.all([
+        countLeadsByStatuses(['INVITED']),
+        db.get<{ total: number }>(`SELECT COUNT(*) as total FROM leads WHERE invited_at IS NOT NULL`),
+        db.get<{ total: number }>(
+            `SELECT COUNT(*) as total FROM job_attempts WHERE started_at >= DATETIME('now', '-24 hours')`,
+        ),
+        db.get<{ total: number }>(
+            `SELECT COUNT(*) as total FROM job_attempts WHERE started_at >= DATETIME('now', '-24 hours') AND success = 0`,
+        ),
+        db.get<{ selector_failures: number; challenges_count: number; invites_sent: number }>(
+            `SELECT
+                COALESCE(selector_failures, 0) AS selector_failures,
+                COALESCE(challenges_count, 0) AS challenges_count,
+                COALESCE(invites_sent, 0) AS invites_sent
+             FROM daily_stats WHERE date = ? AND account_id = ?`,
+            [localDate, 'default'],
+        ),
+    ]);
+
     const invitedTotal = invitedTotalRow?.total ?? 0;
     const pendingRatio = invitedTotal > 0 ? pendingInvites / invitedTotal : 0;
 
-    const attemptsRow = await db.get<{ total: number }>(
-        `
-        SELECT COUNT(*) as total
-        FROM job_attempts
-        WHERE started_at >= DATETIME('now', '-24 hours')
-    `,
-    );
-    const failedRow = await db.get<{ total: number }>(
-        `
-        SELECT COUNT(*) as total
-        FROM job_attempts
-        WHERE started_at >= DATETIME('now', '-24 hours')
-          AND success = 0
-    `,
-    );
     const totalAttempts = attemptsRow?.total ?? 0;
     const failedAttempts = failedRow?.total ?? 0;
     const errorRate = totalAttempts > 0 ? failedAttempts / totalAttempts : 0;
 
-    const selectorFailures = await getDailyStat(localDate, 'selector_failures');
+    const selectorFailures = dailyRow?.selector_failures ?? 0;
     const denominator = Math.max(1, totalAttempts);
     const selectorFailureRate = selectorFailures / denominator;
 
-    const challengeCount = await getDailyStat(localDate, 'challenges_count');
-    const invitesSent = await getDailyStat(localDate, 'invites_sent');
+    const challengeCount = dailyRow?.challenges_count ?? 0;
+    const invitesSent = dailyRow?.invites_sent ?? 0;
     const inviteVelocityRatio = hardInviteCap > 0 ? invitesSent / hardInviteCap : 0;
 
     return {
