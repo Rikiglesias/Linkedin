@@ -196,6 +196,8 @@ export async function processMessageJob(
         lead.linkedin_url,
         context.accountId,
         navigationDecision.navigationStrategy as NavigationStrategy | undefined,
+        // CL9: passa i dati lead -> ricerca organica del profilo per nome/titolo reale (non slug URL)
+        { name: `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim(), job_title: lead.job_title, company: lead.account_name },
     );
     if (!navigationResult.success) {
         throw new RetryableWorkerError(

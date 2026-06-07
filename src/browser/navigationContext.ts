@@ -475,7 +475,7 @@ export async function navigateToProfile(
     }
 
     // 'message' e 'follow_up' usano la stessa logica
-    return navigateToProfileForMessage(page, profileUrl, accountId, preferredStrategy);
+    return navigateToProfileForMessage(page, profileUrl, accountId, preferredStrategy, lead);
 }
 
 export async function navigateToProfileForMessage(
@@ -483,10 +483,16 @@ export async function navigateToProfileForMessage(
     profileUrl: string,
     accountId: string,
     preferredStrategy?: NavigationStrategy,
+    lead?: { name?: string | null; job_title?: string | null; company?: string | null },
 ): Promise<NavigationResult> {
+    // CL9 (collaudo): passiamo i dati lead (nome/titolo/azienda) alle strategie organiche, cosi' la
+    // ricerca del profilo usa il nome reale invece di ripiegare sulle keyword derivate dallo slug URL.
+    // Allinea la navigazione message/follow-up a quella invite (navigateToProfileWithContext):
+    // ricerca organica piu' accurata e credibile (profilo trovato al primo colpo, meno nav fallite).
+    const leadCtx = lead ?? {};
     if (preferredStrategy) {
         for (const strategy of buildFallbackChain(preferredStrategy)) {
-            const result = await navigateByStrategy(page, strategy, profileUrl, {});
+            const result = await navigateByStrategy(page, strategy, profileUrl, leadCtx);
             if (result.success) {
                 await logInfo('navigation_context.message_profile_arrived', {
                     accountId,
@@ -526,7 +532,7 @@ export async function navigateToProfileForMessage(
                 await humanDelay(page, 1500, 3000);
             }
 
-            const searchResult = await openProfileViaSearchResults(page, profileUrl, {});
+            const searchResult = await openProfileViaSearchResults(page, profileUrl, leadCtx);
             result = {
                 strategy: 'feed_organic',
                 success: searchResult.success,
@@ -536,7 +542,7 @@ export async function navigateToProfileForMessage(
             result = { strategy: 'feed_organic', success: false, stepsCompleted: 1 };
         }
     } else {
-        const searchResult = await openProfileViaSearchResults(page, profileUrl, {});
+        const searchResult = await openProfileViaSearchResults(page, profileUrl, leadCtx);
         result = {
             strategy: 'direct',
             success: searchResult.success,
