@@ -6,9 +6,20 @@ interface MemoryItem {
 }
 
 const MAX_MEMORY_PER_LEAD = 10;
+// Cap sul numero di lead tracciati: senza, la Map statica cresce illimitata (memory leak).
+const MAX_LEADS_TRACKED = 500;
 
 export class SemanticChecker {
     private static memory: Map<number, MemoryItem[]> = new Map();
+
+    // Eviction FIFO delle chiavi piu' vecchie al superamento del cap (la persistenza vera e' su DB).
+    private static evictLeadsIfNeeded(): void {
+        while (this.memory.size >= MAX_LEADS_TRACKED) {
+            const oldest = this.memory.keys().next().value;
+            if (oldest === undefined) break;
+            this.memory.delete(oldest);
+        }
+    }
 
     /**
      * Calcola la Jaccard similarity (0-1) tra due stringhe,
@@ -66,6 +77,7 @@ export class SemanticChecker {
             const { getRecentMessageTexts } = await import('../core/repositories/leadsLearning');
             const texts = await getRecentMessageTexts(leadId, MAX_MEMORY_PER_LEAD);
             if (texts.length > 0) {
+                this.evictLeadsIfNeeded();
                 this.memory.set(
                     leadId,
                     texts.map((t) => ({ text: t })),
@@ -130,6 +142,7 @@ export class SemanticChecker {
 
         let entries = this.memory.get(leadId);
         if (!entries) {
+            this.evictLeadsIfNeeded();
             entries = [];
             this.memory.set(leadId, entries);
         }

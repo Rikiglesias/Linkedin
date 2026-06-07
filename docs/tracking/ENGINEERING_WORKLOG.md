@@ -23,10 +23,13 @@ Triage dei 142 finding MEDIUM del Backend Deep Audit: classificare (FIX-NOW/CONF
   - `promoteNewLeadsToReadyInvite`: `UPDATE ... AND status='NEW'` → niente clobber se lo status cambia tra SELECT e UPDATE.
   - `appendLeadEvent`: `JSON.stringify` del metadata in try/catch (fallback `{}`) → niente crash su riferimenti circolari.
 
-- **Ondata 3 parziale (3 fix hygiene, non anti-ban)**:
+- **Ondata 3 (6 fix hygiene+resilience, non anti-ban)**:
   - `cli/cliParser.ts`: `parseIntStrict` con match regex completo (`/^-?\d+$/`) → `'12abc'` ora rifiutato, non troncato a 12.
   - `cli/stdinHelper.ts`: `readLineFromStdin` rimuove anche i listener `close`/`error` in cleanup → niente accumulo cross-chiamata.
   - `ai/aiDecisionEngine.ts`: `clearTimeout` via `.finally` sulla `Promise.race` → il timer non resta pendente quando l'AI risponde in tempo.
+  - `telemetry/alerts.ts`: `escapeTelegramHtml` su title/message prima del `parse_mode: HTML` → caratteri `<>&` nei dati non rompono più l'alert (era drop silenzioso).
+  - `ai/semanticChecker.ts`: eviction FIFO delle chiavi della Map statica (cap 500 lead) → niente memory leak illimitato.
+  - `validation/messageValidator.ts`: il catch del semantic check ora logga (`logWarn`) invece di essere muto (fail-open silenzioso).
 
 ### Stato reale
 - Triage 142/142 classificato. Ondate 1 (5 fix), 2 parziale (3 fix), 3 parziale (3 fix) applicate e committate; +15 test mirati totali. Restano (DEFER/turni successivi): residui Ondata 2 (addLead/leadsLearning/featureStore — infra DB-test), residui Ondata 3 (alerts/messageValidator/semanticChecker/csvImporter/...), Ondata 4 (security medi). Nessun file anti-ban/peer toccato. Push da coordinare col peer.

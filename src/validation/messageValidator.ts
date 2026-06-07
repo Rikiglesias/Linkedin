@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { MessageValidationResult } from '../types/domain';
+import { logWarn } from '../telemetry/logger';
 
 export interface MessageValidationContext {
     duplicateCountLast24h: number;
@@ -67,8 +68,13 @@ export async function validateMessageContentAsync(
                     ],
                 };
             }
-        } catch {
-            // Se il semantic checker non è disponibile, prosegui con validazione sincrona
+        } catch (err) {
+            // Best-effort: se il semantic checker non è disponibile, prosegui con la validazione
+            // sincrona — ma logga (prima il catch era muto → fallimenti del check invisibili).
+            void logWarn('message_validator.semantic_check_failed', {
+                leadId: context.leadId,
+                error: err instanceof Error ? err.message : String(err),
+            });
         }
     }
 

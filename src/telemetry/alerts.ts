@@ -3,6 +3,12 @@ import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 
 export type AlertSeverity = 'info' | 'warn' | 'critical';
 
+// Escape per Telegram parse_mode HTML: solo &, <, > (gli unici speciali in HTML mode). Senza,
+// caratteri nei dati (title/message) rompono il markup -> Telegram 400 -> alert perso.
+export function escapeTelegramHtml(s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 // ─── Rate Limiter (CC-21) ────────────────────────────────────────────────
 // Sliding window: max RATE_LIMIT_MAX alert per RATE_LIMIT_WINDOW_MS.
 // Previene flooding del bot Telegram durante cascading failures.
@@ -43,8 +49,9 @@ export async function sendTelegramAlert(
         critical: '🚨',
     };
 
-    const header = title ? `${icons[severity]} <b>${title}</b>\n\n` : `${icons[severity]} `;
-    const text = `${header}${message}`;
+    const safeTitle = title ? escapeTelegramHtml(title) : title;
+    const header = safeTitle ? `${icons[severity]} <b>${safeTitle}</b>\n\n` : `${icons[severity]} `;
+    const text = `${header}${escapeTelegramHtml(message)}`;
 
     const endpoint = `https://api.telegram.org/bot${config.telegramBotToken}/sendMessage`;
     try {
