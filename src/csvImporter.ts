@@ -33,13 +33,23 @@ function normalizeWebsite(raw: string): string {
     return trimmed;
 }
 
+// Cap di sicurezza per non accumulare un CSV illimitato in memoria (rischio OOM).
+const MAX_CSV_ROWS = 50_000;
+
 export async function importLeadsFromCSV(filePath: string, listName: string): Promise<ImportResult> {
     const rows: Array<Record<string, string>> = [];
 
     await new Promise<void>((resolve, reject) => {
-        fs.createReadStream(filePath)
-            .pipe(csv())
-            .on('data', (row: Record<string, string>) => rows.push(row))
+        const stream = fs.createReadStream(filePath).pipe(csv());
+        stream
+            .on('data', (row: Record<string, string>) => {
+                rows.push(row);
+                // Bounded: oltre il cap fermati esplicitamente invece di rischiare OOM su file enormi.
+                if (rows.length > MAX_CSV_ROWS) {
+                    stream.destroy();
+                    reject(new Error(`CSV troppo grande (> ${MAX_CSV_ROWS} righe): dividi il file in batch più piccoli.`));
+                }
+            })
             .on('end', resolve)
             .on('error', reject);
     });
