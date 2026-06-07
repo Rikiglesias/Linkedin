@@ -44,6 +44,8 @@ Triage dei 142 finding MEDIUM del Backend Deep Audit: classificare (FIX-NOW/CONF
   - `core/repositories/featureStore.ts importFeatureDatasetVersion`: eliminata la verifica signature tautologica (default `|| computedSignature` rendeva il check sempre vero) → verifica reale se la signature è fornita, `logWarn` esplicito se l'import è non firmato (throw invariato per signature errata).
   - `core/repositories/leadsCore.ts searchLeads`: `normalizeLegacyStatus(opts.status)` → ricerca per status legacy ora trova i lead migrati. +test.
   - `csvImporter.ts importLeadsFromCSV`: cap `MAX_CSV_ROWS` con stop esplicito (no OOM su file enormi). [Parte transazionale-batch = DEFER: edge-case PG transaction-abort su errore per-riga senza savepoint per addCompanyTarget.]
+  - `integrations/leadEnricher.ts enrichLead`: il flag `deep` ora ha effetto (`deep=false` salta l'OSINT pesante di findPersonData); default invariato. Prima era documentato ma mai applicato.
+  - `security/filesystem.ts chmodSafe`: avviso una-tantum quando l'hardening permessi è no-op su Windows (DB/backup/sessioni senza ACL) — prima silenzioso. [ACL reali via icacls/DPAPI = evoluzione.]
   - **`config/env.ts resolveSecret` riclassificato CONFIRM-USER**: invertire la priorità Docker-secret vs `process.env` cambia il secret-loading in produzione (rischio/irreversibile, zero-G) → richiede conferma utente, non fix-now.
 
 ### Stato reale

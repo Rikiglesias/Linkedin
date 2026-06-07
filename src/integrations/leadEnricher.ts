@@ -435,9 +435,11 @@ export async function enrichLead(
     }
 
     // 5. Person Data Finder (OSINT — scraping, DNS, social)
-    //    Sempre attivo se abbiamo un dominio (zero API cost).
-    //    Il flag --deep controlla se eseguire tutte le 7 fasi o solo company intel.
-    if (domain) {
+    //    Attivo se c'è un dominio e `deep` non è esplicitamente disabilitato (zero API cost).
+    //    Prima il flag `deep` era documentato ma MAI applicato: ora deep=false salta l'OSINT pesante;
+    //    il default (deep undefined) resta invariato. [Mode "solo company intel" = evoluzione futura:
+    //    richiede un parametro dedicato a findPersonData.]
+    if (domain && opts?.deep !== false) {
         try {
             const personData = await findPersonData({
                 firstName,
