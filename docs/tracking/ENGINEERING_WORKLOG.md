@@ -41,6 +41,7 @@ Triage dei 142 finding MEDIUM del Backend Deep Audit: classificare (FIX-NOW/CONF
 - **Residui Ondata 2 (correttezza leadsCore/leadsLearning, non anti-ban)**:
   - `core/repositories/leadsCore.ts addLead`: i 4 statement (INSERT lead + lookup + INSERT list_leads) ora in `withTransaction` → atomicità (no lead senza membership o viceversa). +test.
   - `core/repositories/leadsLearning.ts appendLeadReplyDraft`: read-modify-write del JSON metadata in `withTransaction` → no lost update su SQLite (FOR UPDATE per PG = follow-up).
+  - `core/repositories/featureStore.ts importFeatureDatasetVersion`: eliminata la verifica signature tautologica (default `|| computedSignature` rendeva il check sempre vero) → verifica reale se la signature è fornita, `logWarn` esplicito se l'import è non firmato (throw invariato per signature errata).
   - **`config/env.ts resolveSecret` riclassificato CONFIRM-USER**: invertire la priorità Docker-secret vs `process.env` cambia il secret-loading in produzione (rischio/irreversibile, zero-G) → richiede conferma utente, non fix-now.
 
 ### Stato reale

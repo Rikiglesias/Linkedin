@@ -14,6 +14,7 @@
  */
 import { createHash } from 'crypto';
 import { getDatabase } from '../../db';
+import { logWarn } from '../../telemetry/logger';
 import { inferLeadSegment } from '../../ml/segments';
 import type {
     BuildFeatureDatasetOptions,
@@ -505,9 +506,16 @@ export async function importFeatureDatasetVersion(
     const seed = normalizeTextValue(input.seed || FEATURE_SEED_DEFAULT) || FEATURE_SEED_DEFAULT;
     const rows = [...input.rows].sort((left, right) => left.sampleKey.localeCompare(right.sampleKey));
     const computedSignature = computeFeatureDatasetSignature(rows);
-    const expectedSignature = normalizeTextValue(input.signatureSha256 || computedSignature) || computedSignature;
-    if (computedSignature !== expectedSignature) {
-        throw new Error('Signature dataset non valida: contenuto rows non coerente con signature dichiarata');
+    const providedSignature = normalizeTextValue(input.signatureSha256 || '');
+    if (providedSignature) {
+        // Signature fornita: verifica REALE. Prima il default `|| computedSignature` rendeva il
+        // check tautologico (sempre uguale) e quindi bypassabile non passando la signature.
+        if (computedSignature !== providedSignature) {
+            throw new Error('Signature dataset non valida: contenuto rows non coerente con signature dichiarata');
+        }
+    } else {
+        // Import non firmato: nessuna verifica possibile -> esplicitalo invece di mascherarlo da check OK.
+        void logWarn('feature_store.import.unsigned', { datasetName, datasetVersion });
     }
 
     const existing = await getExistingDatasetVersion(datasetName, datasetVersion);
