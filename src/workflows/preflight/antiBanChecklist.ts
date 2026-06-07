@@ -1,4 +1,5 @@
 import { getRuntimeAccountProfiles } from '../../accountManager';
+import { config } from '../../config';
 import { askConfirmation } from '../../cli/stdinHelper';
 import { getRuntimeFlag } from '../../core/repositories';
 import type { PreflightConfigStatus, PreflightDbStats } from '../types';
@@ -59,10 +60,30 @@ export async function runAntiBanChecklist(
         }
     }
 
-    if (isOutreach && pendingRatio > 0.5 && pendingCount > 10) {
+    // CL6 (collaudo): il pending ratio e' una metrica anti-ban primaria (browser-antiban #4:
+    // "pending ratio sotto controllo, mai bypass"). Prima qui c'era SOLO un warning stampato e il
+    // flusso proseguiva: inviare nuovi inviti con pending gia' oltre la soglia di STOP lo peggiora
+    // -> rischio flag/ban. Ora, oltre config.pendingRatioStop, chiediamo conferma esplicita
+    // (default NO) e abortiamo se l'utente non forza. Sotto la soglia di stop ma sopra quella di
+    // warn resta il warning informativo. Soglie canoniche da config (no magic number hardcoded).
+    if (isOutreach && pendingCount > 10 && pendingRatio >= config.pendingRatioStop) {
+        console.log(
+            `    [!!!] Pending ratio: ${Math.round(pendingRatio * 100)}% (${pendingCount} inviti in attesa) — oltre la soglia di STOP (${Math.round(config.pendingRatioStop * 100)}%).`,
+        );
+        console.log('        LinkedIn flagga gli account con pending ratio alto: inviare ora peggiora il rischio.');
+        console.log('        Consiglio: ritira gli inviti vecchi con "bot.ps1 run check" prima di inviarne di nuovi.');
+        const proceedAnyway = await askConfirmation(
+            '    [!] Inviare COMUNQUE nonostante il pending ratio oltre soglia? [y/N] ',
+        );
+        if (!proceedAnyway) {
+            console.log('      -> Sessione interrotta. Lancia "bot.ps1 run check" per abbassare il pending ratio.');
+            return false;
+        }
+    } else if (isOutreach && pendingCount > 10 && pendingRatio > config.pendingRatioWarn) {
         console.log(`    [!] Pending ratio: ${Math.round(pendingRatio * 100)}% (${pendingCount} inviti in attesa)`);
-        console.log(`        LinkedIn flagga account con pending ratio >65%.`);
-        console.log(`        Consiglio: ritira inviti vecchi con "bot.ps1 run check" prima di inviare nuovi.`);
+        console.log(
+            `        Soglia di stop a ${Math.round(config.pendingRatioStop * 100)}%. Consiglio: ritira inviti vecchi con "bot.ps1 run check" prima di inviare nuovi.`,
+        );
         console.log('');
     }
 
