@@ -253,32 +253,37 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
         };
     }
     if (!_isFirefox && window.chrome && !window.chrome.loadTimes) {
+        // B1 (2026-06-07): FREEZE. Il Chrome reale ritorna gli STESSI load time ad ogni chiamata
+        // (sono i tempi registrati del page-load, non cambiano). Prima ricalcolavamo Date.now() ad
+        // ogni call -> due chiamate ravvicinate davano valori diversi = signal di detection.
+        // Calcolo una sola volta all'injection (≈ page load) con ordinamento plausibile.
+        var _ltBase = Date.now() / 1000;
+        var _frozenLoadTimes = {
+            requestTime: _ltBase - 0.6,
+            startLoadTime: _ltBase - 0.5,
+            commitLoadTime: _ltBase - 0.4,
+            connectionInfo: 'h2',
+            firstPaintTime: _ltBase - 0.2,
+            firstPaintAfterLoadTime: 0,
+            finishDocumentLoadTime: _ltBase - 0.1,
+            finishLoadTime: _ltBase,
+            navigationType: 'Other',
+            npnNegotiatedProtocol: 'h2',
+            wasAlternateProtocolAvailable: false,
+            wasFetchedViaSpdy: true,
+            wasNpnNegotiated: true,
+        };
         window.chrome.loadTimes = function() {
-            return {
-                commitLoadTime: Date.now() / 1000,
-                connectionInfo: 'h2',
-                finishDocumentLoadTime: Date.now() / 1000 + 0.1,
-                finishLoadTime: Date.now() / 1000 + 0.2,
-                firstPaintAfterLoadTime: 0,
-                firstPaintTime: Date.now() / 1000 + 0.05,
-                navigationType: 'Other',
-                npnNegotiatedProtocol: 'h2',
-                requestTime: Date.now() / 1000 - 0.3,
-                startLoadTime: Date.now() / 1000 - 0.2,
-                wasAlternateProtocolAvailable: false,
-                wasFetchedViaSpdy: true,
-                wasNpnNegotiated: true,
-            };
+            return _frozenLoadTimes;
         };
     }
     if (!_isFirefox && window.chrome && !window.chrome.csi) {
+        // B1 (2026-06-07): FREEZE csi() — valori stabili per pagina (come Chrome reale), non Date.now()
+        // + Math.random() ad ogni call.
+        var _csiStartE = Date.now() - (Math.floor(Math.random() * 500) + 200);
+        var _frozenCsi = { startE: _csiStartE, onloadT: Date.now(), pageT: Date.now() - _csiStartE, tran: 15 };
         window.chrome.csi = function() {
-            return {
-                onloadT: Date.now(),
-                pageT: Math.random() * 1000 + 500,
-                startE: Date.now() - Math.floor(Math.random() * 500),
-                tran: 15
-            };
+            return _frozenCsi;
         };
     }
 
