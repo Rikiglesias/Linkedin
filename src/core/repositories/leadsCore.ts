@@ -149,8 +149,14 @@ export async function applyControlPlaneCampaignConfigs(
         return result;
     }
 
-    const db = await getDatabase();
-    await withTransaction(db, async () => {
+    const outerDb = await getDatabase();
+    // H11 fix (data-integrity prod): aprire la tx sul manager (outerDb), ma DENTRO il callback usare
+    // il client TRANSAZIONALE. getDatabase() legge l'AsyncLocalStorage settato da withTransaction e
+    // ritorna il client tx; il `db` che prima veniva catturato FUORI era il pool PostgresManager
+    // (autocommit), quindi i suoi .get/.run giravano su connessioni pool diverse, FUORI dalla
+    // transazione (atomicita'/rollback illusori su Postgres). Lo shadowing di `db` col tx risolve.
+    await withTransaction(outerDb, async () => {
+        const db = await getDatabase();
         for (const configItem of configs) {
             const listName = configItem.name.trim();
             if (!listName) {
@@ -369,11 +375,14 @@ export async function getLeadByLinkedinUrl(linkedinUrl: string): Promise<LeadRec
 export async function upsertSalesNavigatorLead(
     input: UpsertSalesNavigatorLeadInput,
 ): Promise<UpsertSalesNavigatorLeadResult> {
-    const db = await getDatabase();
+    const outerDb = await getDatabase();
     const listName = normalizeTextValue(input.listName) || 'default';
     const linkedinUrl = normalizeLinkedInUrl(input.linkedinUrl);
 
-    return withTransaction(db, async () => {
+    // H11 fix (data-integrity prod): vedi applyControlPlaneCampaignConfigs — dentro la tx serve il
+    // client transazionale (getDatabase() via ALS), non il pool catturato fuori. Lo shadowing di `db`.
+    return withTransaction(outerDb, async () => {
+        const db = await getDatabase();
         await ensureLeadList(listName);
         const existing = await db.get<LeadRecord>(`SELECT ${LEAD_SELECT_COLUMNS} FROM leads WHERE linkedin_url = ?`, [
             linkedinUrl,
