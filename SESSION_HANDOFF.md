@@ -1,4 +1,20 @@
 > [!WARNING]
+> **CONTINUITY STALE** - commit nuovo $sha (2026-06-07 02:36:04). Working tree e' avanti rispetto al contenuto di questo file. Prima di riprendere o cambiare chat, aggiorna .claude/CONTINUATION.md, ~/memory, 	odos/active.md se necessario e risincronizza Obsidian. SESSION_HANDOFF.md / SESSION_PROMPT.md sono fallback legacy.
+
+<!-- STALE-AFTER-COMMIT: 1555a60 -->
+> [!WARNING]
+> **CONTINUITY STALE** - commit nuovo $sha (2026-06-07 01:13:30). Working tree e' avanti rispetto al contenuto di questo file. Prima di riprendere o cambiare chat, aggiorna .claude/CONTINUATION.md, ~/memory, 	odos/active.md se necessario e risincronizza Obsidian. SESSION_HANDOFF.md / SESSION_PROMPT.md sono fallback legacy.
+
+<!-- STALE-AFTER-COMMIT: 7e53278 -->
+> [!WARNING]
+> **CONTINUITY STALE** - commit nuovo $sha (2026-06-07 01:10:17). Working tree e' avanti rispetto al contenuto di questo file. Prima di riprendere o cambiare chat, aggiorna .claude/CONTINUATION.md, ~/memory, 	odos/active.md se necessario e risincronizza Obsidian. SESSION_HANDOFF.md / SESSION_PROMPT.md sono fallback legacy.
+
+<!-- STALE-AFTER-COMMIT: 4877b82 -->
+> [!WARNING]
+> **CONTINUITY STALE** - commit nuovo $sha (2026-06-07 00:50:37). Working tree e' avanti rispetto al contenuto di questo file. Prima di riprendere o cambiare chat, aggiorna .claude/CONTINUATION.md, ~/memory, 	odos/active.md se necessario e risincronizza Obsidian. SESSION_HANDOFF.md / SESSION_PROMPT.md sono fallback legacy.
+
+<!-- STALE-AFTER-COMMIT: a114baa -->
+> [!WARNING]
 > **CONTINUITY STALE** - commit nuovo $sha (2026-06-07 00:34:47). Working tree e' avanti rispetto al contenuto di questo file. Prima di riprendere o cambiare chat, aggiorna .claude/CONTINUATION.md, ~/memory, 	odos/active.md se necessario e risincronizza Obsidian. SESSION_HANDOFF.md / SESSION_PROMPT.md sono fallback legacy.
 
 <!-- STALE-AFTER-COMMIT: 03db037 -->

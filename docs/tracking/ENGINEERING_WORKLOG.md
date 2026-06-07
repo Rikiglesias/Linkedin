@@ -4,6 +4,33 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-07 — Batch B audit backend: 8 bug HIGH non-anti-ban (prod-DB + security)
+
+### Obiettivo
+
+Remediation degli 8 bug HIGH non-anti-ban del Backend Deep Audit 2026-06-06 (`/goal backend-bugs`): fix + test mirato per ognuno, `npm run conta-problemi` a 0, senza toccare file anti-ban (`src/browser|risk|proxy|salesnav|fingerprint`, `scheduler.ts`).
+
+### Interventi eseguiti
+
+- **T1** `db.ts`: `normalizeSqlForPg` ora traduce `DATE('now','±'||$n||' days')` con parametro bound (sbloccava `sessionMemory.getSessionHistory` su Postgres) e include `STRFTIME→EXTRACT`. **Root cause**: il metodo runtime `normalizeSql` e la funzione testata `normalizeSqlForPg` erano due copie divergenti (STRFTIME solo nel metodo) → rischio falso-verde test-vs-runtime. Unificato: `normalizeSql` ora delega a `normalizeSqlForPg` (rimosso `adaptParams` orfano, −55 righe duplicate).
+- **T2** `stats.ts`: `getAccountAgeDays` gestisce `string | Date` (`raw instanceof Date ? raw : new Date(...Z)`) → niente NaN su Postgres (node-postgres ritorna Date).
+- **T3** `leadsCore.ts`: GIÀ risolto in codebase (`upsertSalesNavigatorLead`/`applyControlPlaneCampaignConfigs` usano `withTransaction`; rollback reale in `PostgresManager.withTransaction`). Spec stale. Aggiunto test di copertura.
+- **T4** `system.ts`: `cleanupPrivacyData` cancella le 7 tabelle figlie di `leads` mancanti (salesnav_list_items, ml_feature_store, challenge_events, lead_campaign_state, lead_intents, lead_enrichment_data, prebuilt_messages) PRIMA del padre, dentro la transazione (su Postgres la FK bloccava la DELETE → rollback → purge mai eseguito). Set allineato a `deleteLead()`.
+- **T5** `telegramListener.ts`: `processTelegramMessage` fail-closed (chatId non configurato → rifiuta). Esportata per test.
+- **T6** `server.ts` + nuovo `api/wsAuth.ts`: `/ws` richiede auth quando `dashboardAuthEnabled` (prima gated solo su apiKey → basic-auth-only lasciava il WS aperto). `isWebSocketAuthorized` (token query/Bearer/x-api-key/Basic) estratta per SRP+testabilità.
+- **T7** `sentry.ts`: `captureError` sanitizza il payload via `sanitizeForLogs` prima di `Sentry.captureException` (choke-point unico) → niente PII/secret a Sentry.
+- **T8** `orchestrator.ts` + `accountManager.ts`: `runWorkflow` salva/ripristina l'override account in `try/finally` (estratto `runWorkflowInternal`); aggiunto getter `getOverrideAccountId`. Niente leak cross-account su early return/throw.
+
+### Stato reale dopo il blocco
+
+- 8/8 fix applicati inline. +24 test mirati (costruiti per fallire senza il fix). Commit `1555a60` (17 file, +538/−70). Nessun file anti-ban toccato.
+- Push NON eseguito: branch `refactor/adk-split` condiviso col peer adk-split/codex + aree security/DB ad alto rischio → coordinamento/PR richiesti.
+
+### Verifica
+
+- `npm run conta-problemi`: exit 0 (typecheck BE+FE + lint `--max-warnings 0` + 1462 test).
+- Suite mirata dei fix: 43/43 verdi.
+
 ## 2026-06-04 — Chiusura sottopunti backlog AI punto 8 (parità) e punto 10 (git/review)
 
 ### Obiettivo
