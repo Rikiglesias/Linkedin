@@ -913,3 +913,11 @@ Applicare i rinforzi DIFENSIVI anti-ban dal triage backend (riducono il rischio 
 
 ### Residui (turno successivo / /goal backend-antiban-hardening)
 A8 geo-coerenza exit-IP (feature mancante, opt-in), A9 challenge gate persistente, C1/C2 de-correlazione multi-account, B1-B6 comportamentali, S1/S2 (env secret priority, /metrics auth), T1 csvImporter tx-batch. Auto-push OFF (branch condiviso + anti-ban -> coordinamento/PR). Flaky pre-esistente: unhandled-rejection in appContextAndCloudBridge (~1/3 run).
+
+### Aggiornamento (stessa sessione 2026-06-07): Gruppo A completato + C1 + S2
+- A8 geo-coerenza exit-IP opt-in (proxyExpectedCountries, deprioritize geo-mismatch in prioritizeProxyPool) — `54f3162`.
+- A9 challenge gate persistente (no auto-resume su account flaggato; challengePersistentGate default true; pauseAutomation→number|null) — `1744d59`.
+- C1 mood/ratio seed per primaryAccountId (de-correlazione multi-account) — `f92362b`.
+- S2 /metrics auth opt-in (METRICS_AUTH_TOKEN Bearer timing-safe, default scraping aperto, secureEquals esportato da wsAuth) — `032b959`.
+- Verifica: conta-problemi exit 0 (1496 test) ad ogni commit. Totale sessione: 11 fix (A1-A9, C1, S2) + worklog, tutti review SICURO, zero file peer.
+- Residui CONFERMA-UTENTE: C2 (migration leads.account_id), S1 (priorità secret prod). ALTA-CURA: B1-B6 (comportamentali browser/stealth), T1 (csvImporter tx). Auto-push OFF (branch condiviso + anti-ban).
