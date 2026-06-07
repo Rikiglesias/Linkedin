@@ -176,6 +176,17 @@ function loadProxyPool(): ProxyConfig[] {
         return cachedPool.proxies;
     }
 
+    // H15 fix (anti-ban/correctness): un pool con proxy d'emergenza iniettato dal provider e'
+    // marcato signature 'api-injected:*' (vedi fetchFallbackProxyFromProvider, che fa unshift
+    // dell'IP fresco). Quella signature NON eguaglia mai quella file-based: senza questa guardia
+    // il codice ricaricava dal file SCARTANDO l'IP appena iniettato -> fallback d'emergenza morto
+    // (la sessione ripiegava su cooling/Tor o falliva). Onora l'intento del commento in
+    // fetchFallbackProxyFromProvider ("precludere ri-load dal file"): tiene il pool in memoria
+    // finche' resta iniettato (un cambio reale del file sorgente lo sovrascrivera' al prossimo set).
+    if (cachedPool.signature.startsWith('api-injected:')) {
+        return cachedPool.proxies;
+    }
+
     let proxies: ProxyConfig[] = [];
     if (proxyListPath) {
         proxies = loadProxiesFromList(proxyListPath);

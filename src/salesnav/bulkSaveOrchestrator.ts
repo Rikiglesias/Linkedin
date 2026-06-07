@@ -1338,7 +1338,7 @@ export async function runSalesNavBulkSave(
                 currentPageNumber = pageNumber;
                 searchReport.finalPage = pageNumber;
 
-                if (safeSessionLimit !== null && report.pagesProcessed >= safeSessionLimit) {
+                if (report.pagesProcessed >= safeSessionLimit) {
                     report.sessionLimitHit = true;
                     report.status = 'PAUSED';
                     report.lastError = 'Session limit raggiunto';

@@ -584,7 +584,32 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                                 { vendor: 'Apple', renderer: 'Apple M2' },
                                 { vendor: 'Apple', renderer: 'Apple M3' },
                             ];
-                            const pool = isApple ? appleRenderers : desktopRenderers;
+                            // H1 fix (anti-ban): renderer coerenti con la device-class del fingerprint.
+                            // Prima il pool era isApple ? appleRenderers : desktopRenderers, e
+                            // desktopRenderers contiene SOLO renderer Windows (Direct3D11): un UA
+                            // Android (Mali/Adreno) o Linux-desktop (Mesa) otteneva un renderer
+                            // Windows-D3D11 = contraddizione hard GPU/UA/platform = marker di spoofing
+                            // per FingerprintJS/LinkedIn. Stringhe renderer reali (Chrome via ANGLE).
+                            const mobileRenderers = [
+                                { vendor: 'Google Inc. (Qualcomm)', renderer: 'ANGLE (Qualcomm, Adreno (TM) 740, OpenGL ES 3.2)' },
+                                { vendor: 'Google Inc. (Qualcomm)', renderer: 'ANGLE (Qualcomm, Adreno (TM) 730, OpenGL ES 3.2)' },
+                                { vendor: 'Google Inc. (Qualcomm)', renderer: 'ANGLE (Qualcomm, Adreno (TM) 650, OpenGL ES 3.2)' },
+                                { vendor: 'Google Inc. (Qualcomm)', renderer: 'ANGLE (Qualcomm, Adreno (TM) 710, OpenGL ES 3.2)' },
+                                { vendor: 'Google Inc. (ARM)', renderer: 'ANGLE (ARM, Mali-G78, OpenGL ES 3.2)' },
+                                { vendor: 'Google Inc. (ARM)', renderer: 'ANGLE (ARM, Mali-G68, OpenGL ES 3.2)' },
+                                { vendor: 'Google Inc. (ARM)', renderer: 'ANGLE (ARM, Mali-G610 MC4, OpenGL ES 3.2)' },
+                            ];
+                            const linuxRenderers = [
+                                { vendor: 'Google Inc. (Intel)', renderer: 'ANGLE (Intel, Mesa Intel(R) UHD Graphics 620 (KBL GT2), OpenGL 4.6)' },
+                                { vendor: 'Google Inc. (Intel)', renderer: 'ANGLE (Intel, Mesa Intel(R) Iris(R) Xe Graphics (TGL GT2), OpenGL 4.6)' },
+                                { vendor: 'Google Inc. (AMD)', renderer: 'ANGLE (AMD, AMD Radeon RX 6600 (radeonsi, navi23, LLVM 17.0.6, DRM 3.54, 6.8.0), OpenGL 4.6)' },
+                            ];
+                            const isAndroidUa = /Android/i.test(${JSON.stringify(fingerprint.userAgent)});
+                            const isLinuxDesktopUa = /Linux/i.test(${JSON.stringify(fingerprint.userAgent)}) && !isAndroidUa && !isApple;
+                            let pool = desktopRenderers;
+                            if (isApple) { pool = appleRenderers; }
+                            else if (isAndroidUa) { pool = mobileRenderers; }
+                            else if (isLinuxDesktopUa) { pool = linuxRenderers; }
                             const rendererIdx = Math.abs(webglNoise * 1e6 | 0) % pool.length;
                             const selected = pool[rendererIdx];
                             ctx.getParameter = function(parameter) {

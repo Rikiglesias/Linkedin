@@ -44,16 +44,24 @@ export function clampNumber(value: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, value));
 }
 
+// H3 fix (anti-ban): default conservativi. Un valore null/invalid NON deve mai significare
+// "scraping illimitato" (maratona meccanica = pattern non umano, viola "sessioni corte e credibili").
+// Prima getSafeMaxSearches ritornava Number.MAX_SAFE_INTEGER e getSafeSessionLimit ritornava null
+// (che il caller interpretava come "nessun limite di sessione"). Ora il default e' conservativo;
+// l'operatore puo' sempre passare un valore esplicito piu' alto, ma il default e' safe-by-default.
+const DEFAULT_SAFE_MAX_SEARCHES = 15;
+const DEFAULT_SAFE_SESSION_LIMIT_PAGES = 30;
+
 export function getSafeMaxSearches(value: number | null | undefined): number {
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 1) {
-        return Number.MAX_SAFE_INTEGER;
+        return DEFAULT_SAFE_MAX_SEARCHES;
     }
     return Math.max(1, Math.floor(value));
 }
 
-export function getSafeSessionLimit(value: number | null | undefined): number | null {
+export function getSafeSessionLimit(value: number | null | undefined): number {
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 1) {
-        return null;
+        return DEFAULT_SAFE_SESSION_LIMIT_PAGES;
     }
     return Math.max(1, Math.floor(value));
 }
