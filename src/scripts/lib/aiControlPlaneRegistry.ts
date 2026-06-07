@@ -134,7 +134,14 @@ function normalizePrompt(prompt: string): string {
 function countPatternMatches(prompt: string, patterns: string[]): number {
     let score = 0;
     for (const pattern of patterns) {
-        const regex = new RegExp(pattern, 'i');
+        let regex: RegExp;
+        try {
+            regex = new RegExp(pattern, 'i');
+        } catch {
+            // Pattern regex malformato: skip per non crashare la classificazione.
+            // La segnalazione loud avviene in validateRoutingRegistry (audit:routing).
+            continue;
+        }
         if (regex.test(prompt)) {
             score += 1;
         }
@@ -209,6 +216,23 @@ export function validateRoutingRegistry(registry: RoutingRegistry): ValidationIs
                 domain.intentPatterns.length > 0 &&
                 domain.intentPatterns.every((pattern) => typeof pattern === 'string' && pattern.trim().length > 0),
             'intentPatterns deve contenere almeno un pattern valido',
+        );
+        pushIssue(
+            issues,
+            scope,
+            !Array.isArray(domain.intentPatterns) ||
+                domain.intentPatterns.every((pattern) => {
+                    if (typeof pattern !== 'string') {
+                        return true;
+                    }
+                    try {
+                        new RegExp(pattern, 'i');
+                        return true;
+                    } catch {
+                        return false;
+                    }
+                }),
+            'intentPatterns contiene un pattern regex non compilabile',
         );
         pushIssue(
             issues,

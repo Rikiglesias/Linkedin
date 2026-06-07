@@ -67,7 +67,9 @@ describe('Risk Engine', () => {
             inviteVelocityRatio: 0.2,
         });
         expect(result.score).toBeGreaterThan(0);
-        expect(['NORMAL', 'WARN', 'LOW_ACTIVITY', 'STOP']).toContain(result.action);
+        // (prima qui c'era una tautologia: l'array elencava TUTTI i valori dell'union `action`)
+        // Con questi input (pendingRatio 0.4 < soglia stop, challengeCount 0) STOP e' impossibile.
+        expect(result.action).not.toBe('STOP');
     });
 
     it('gestisce NaN e Infinity nei input', () => {

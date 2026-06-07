@@ -85,9 +85,6 @@ export async function runPreflight<TAnswers extends object = Record<string, stri
     }
 
     const selectedAccountId = await selectAccount(pfConfig.cliAccountId);
-    if (selectedAccountId) {
-        answers['_accountId'] = selectedAccountId;
-    }
 
     const earlyListFilter = pfConfig.cliOverrides?.['listName'] ?? pfConfig.listFilter;
     const dbStats = await collectDbStats(earlyListFilter);

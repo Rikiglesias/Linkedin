@@ -36,6 +36,7 @@ export type WorkflowBlockedReason =
     | 'COMPLIANCE_HEALTH_BLOCKED'
     | 'RISK_STOP_THRESHOLD'
     | 'AI_GUARDIAN_PREEMPTIVE'
+    | 'AI_ABORT'
     | 'RISK_COOLDOWN'
     | 'LOGIN_REQUIRED'
     | 'WORKFLOW_ERROR';

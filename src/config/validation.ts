@@ -322,11 +322,6 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
         message: '[CONFIG] HARD_INVITE_CAP deve essere >= 1',
         when: (cfg) => cfg.hardInviteCap < 1,
     },
-    {
-        message: '[CONFIG] HARD_INVITE_CAP > 50 è pericoloso — LinkedIn può bannare per volumi anomali',
-        when: (cfg) => cfg.hardInviteCap > 50,
-        severity: 'warn',
-    },
     // M01: Strict range checks — values above the safe range should block startup
     {
         message:
@@ -356,12 +351,6 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
     {
         message: '[CONFIG] FOLLOW_UP_MAX > 20 — valore assurdo, rischio ban per spam (safe range: 1-5)',
         when: (cfg) => cfg.followUpMax > 20,
-    },
-    {
-        message:
-            '[CONFIG] WEEKLY_INVITE_LIMIT > 200 è pericoloso — LinkedIn può bannare per volumi settimanali anomali',
-        when: (cfg) => cfg.weeklyInviteLimit > 200,
-        severity: 'warn',
     },
     {
         message: '[CONFIG] SOFT_INVITE_CAP deve essere <= HARD_INVITE_CAP',

@@ -100,3 +100,12 @@ export const PublicAutomationCommandRequestSchema = z.discriminatedUnion('kind',
         idempotencyKey: AutomationIdempotencyKeySchema,
     }),
 ]);
+
+export const LinkedinChangeAlertSchema = z.object({
+    severity: z.enum(['critical', 'high', 'medium']).default('medium'),
+    source: z.string().trim().min(1).max(120).default('n8n_monitor'),
+    title: z.string().trim().min(1).max(500).default('LinkedIn change detected'),
+    url: z.string().trim().max(1000).default(''),
+    action: z.enum(['pause', 'warn', 'log']).default('log'),
+    details: z.string().trim().max(2000).default(''),
+});

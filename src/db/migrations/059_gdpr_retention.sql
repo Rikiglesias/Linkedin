@@ -1,6 +1,8 @@
 -- Migration 059: GDPR Retention Policy & Audit Trail
 -- Aggiunge colonne per retention tracking e tabella audit_log per conformità GDPR.
--- Tutte le operazioni sono additive (IF NOT EXISTS / ADD COLUMN ignorato se già esiste).
+-- Idempotenza garantita a livello di FILE dalla tabella _migrations (ogni migration gira una sola volta).
+-- CREATE TABLE/INDEX usano IF NOT EXISTS; gli ADD COLUMN sotto NON usano IF NOT EXISTS (sintassi non
+-- supportata da SQLite) e NON sono ignorati se la colonna esiste già — non rieseguono grazie a _migrations.
 
 -- ─── Retention tracking su leads ─────────────────────────────────────────────
 -- last_activity_at: timestamp dell'ultima interazione (messaggio, follow-up, cambio stato)

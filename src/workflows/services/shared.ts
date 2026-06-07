@@ -60,16 +60,24 @@ export function buildPreflightBlockedResult<TAnswers extends object>(
 ): WorkflowExecutionResult {
     const hasCriticalWarnings = preflight.warnings.some((warning) => warning.level === 'critical');
     const riskStop = preflight.riskAssessment?.level === 'STOP';
-    const blocked: WorkflowBlockedState =
-        hasCriticalWarnings || riskStop
-            ? {
-                  reason: 'PRECONDITION_FAILED',
-                  message: 'Preflight non superato: condizioni critiche o rischio troppo alto',
-              }
-            : {
-                  reason: 'USER_CANCELLED',
-                  message: "Operazione annullata dall'utente",
-              };
+    const aiAbort = preflight.aiAdvice?.available === true && preflight.aiAdvice.recommendation === 'ABORT';
+    let blocked: WorkflowBlockedState;
+    if (hasCriticalWarnings || riskStop) {
+        blocked = {
+            reason: 'PRECONDITION_FAILED',
+            message: 'Preflight non superato: condizioni critiche o rischio troppo alto',
+        };
+    } else if (aiAbort) {
+        blocked = {
+            reason: 'AI_ABORT',
+            message: 'AI Advisor ha consigliato di NON procedere (ABORT); override non forzato',
+        };
+    } else {
+        blocked = {
+            reason: 'USER_CANCELLED',
+            message: "Operazione annullata dall'utente",
+        };
+    }
 
     return buildBlockedResult(workflow, blocked, {
         riskAssessment: preflight.riskAssessment,

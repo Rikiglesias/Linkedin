@@ -15,27 +15,21 @@ import { pauseAutomation } from '../../risk/incidentManager';
 import { broadcast } from '../../telemetry/broadcaster';
 import { logInfo, logWarn } from '../../telemetry/logger';
 import { createIncident, pushOutboxEvent } from '../../core/repositories';
+import { LinkedinChangeAlertSchema } from '../schemas';
 
 export const linkedinChangeAlertRouter = Router();
 
-interface ChangeAlertBody {
-    severity?: 'critical' | 'high' | 'medium';
-    source?: string;
-    title?: string;
-    url?: string;
-    action?: 'pause' | 'warn' | 'log';
-    details?: string;
-}
-
 linkedinChangeAlertRouter.post('/', async (req, res) => {
     try {
-        const body = req.body as ChangeAlertBody;
-        const severity = body.severity ?? 'medium';
-        const source = body.source ?? 'n8n_monitor';
-        const title = body.title ?? 'LinkedIn change detected';
-        const url = body.url ?? '';
-        const action = body.action ?? 'log';
-        const details = body.details ?? '';
+        const parsed = LinkedinChangeAlertSchema.safeParse(req.body ?? {});
+        if (!parsed.success) {
+            await logWarn('linkedin_change_alert.validation', {
+                error: parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; '),
+            });
+            res.status(400).json({ ok: false, error: 'Invalid alert payload' });
+            return;
+        }
+        const { severity, source, title, url, action, details } = parsed.data;
 
         await logInfo('linkedin_change_alert.received', {
             severity,

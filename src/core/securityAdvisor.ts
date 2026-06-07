@@ -76,9 +76,8 @@ const THREAT_MODEL_PATH = path.resolve(process.cwd(), 'THREAT_MODEL.md');
 const SECURITY_DOC_PATH = path.resolve(process.cwd(), 'SECURITY.md');
 
 function ensureDir(dirPath: string): void {
-    if (!fs.existsSync(dirPath)) {
-        fs.mkdirSync(dirPath, { recursive: true });
-    }
+    // mkdirSync con recursive:true e' idempotente: niente existsSync (rimuove TOCTOU)
+    fs.mkdirSync(dirPath, { recursive: true });
 }
 
 function renderTimestampToken(date: Date = new Date()): string {
@@ -99,10 +98,13 @@ function toIntOrNull(raw: string | null): number | null {
 }
 
 function getFileAgeDays(filePath: string, nowMs: number = Date.now()): number | null {
-    if (!fs.existsSync(filePath)) {
+    let stat: fs.Stats;
+    try {
+        stat = fs.statSync(filePath);
+    } catch {
+        // file mancante o non leggibile: trattato come assente (rimuove TOCTOU existsSync/statSync)
         return null;
     }
-    const stat = fs.statSync(filePath);
     const ageMs = Math.max(0, nowMs - stat.mtimeMs);
     return Number.parseFloat((ageMs / 86_400_000).toFixed(2));
 }

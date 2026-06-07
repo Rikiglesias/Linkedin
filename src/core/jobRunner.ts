@@ -1104,14 +1104,16 @@ async function runQueuedJobsForAccount(
                 // Progress bar con ETA dinamico (terminale in-place)
                 const elapsedSec = Math.floor((Date.now() - accountHealthMetrics.startedAtMs) / 1000);
                 const avgSecPerJob = processedThisRun > 0 ? elapsedSec / processedThisRun : 0;
-                const remainingJobs = maxJobsPerRun - processedThisRun;
+                const remainingJobs = Math.max(0, maxJobsPerRun - processedThisRun);
                 const etaSec = Math.ceil(avgSecPerJob * remainingJobs);
                 const etaMin = Math.floor(etaSec / 60);
                 const etaStr = etaMin > 0 ? `~${etaMin}m${etaSec % 60}s` : `~${etaSec}s`;
                 const bar = `[${'█'.repeat(Math.min(20, Math.floor((processedThisRun / maxJobsPerRun) * 20)))}${'░'.repeat(Math.max(0, 20 - Math.floor((processedThisRun / maxJobsPerRun) * 20)))}]`;
-                process.stdout.write(
-                    `\r  ${bar} ${processedThisRun}/${maxJobsPerRun} | I:${accountHealthMetrics.inviteSuccesses} M:${accountHealthMetrics.messageSuccesses} C:${accountHealthMetrics.checkSuccesses} | ETA ${etaStr}   `,
-                );
+                if (process.stdout.isTTY) {
+                    process.stdout.write(
+                        `\r  ${bar} ${processedThisRun}/${maxJobsPerRun} | I:${accountHealthMetrics.inviteSuccesses} M:${accountHealthMetrics.messageSuccesses} C:${accountHealthMetrics.checkSuccesses} | ETA ${etaStr}   `,
+                    );
+                }
 
                 // A12 NICE: telegram progress — pura informazione, perdita non critica
                 if (processedThisRun > 0 && processedThisRun % 5 === 0) {
