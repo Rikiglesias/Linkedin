@@ -578,7 +578,7 @@ export async function importFeatureDatasetVersion(
                 splitConfig.validationPct,
                 seed,
                 rows.length,
-                expectedSignature,
+                computedSignature,
                 JSON.stringify(sourceStats),
                 JSON.stringify(metadata),
             ],
