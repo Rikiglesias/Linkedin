@@ -64,6 +64,7 @@ import {
     parsePauseMinutes,
     getPositionalArgs,
 } from '../cliParser';
+import { askConfirmation } from '../stdinHelper';
 
 const WORKFLOW_RUNNER_LOCK_KEY = 'workflow.runner';
 const AUTO_SITE_CHECK_LAST_RUN_KEY = 'site_check.last_run_at';
@@ -488,8 +489,33 @@ export async function runResolveIncidentCommand(args: string[]): Promise<void> {
 
 export async function runPrivacyCleanupCommand(args: string[]): Promise<void> {
     const positional = getPositionalArgs(args);
-    const daysRaw = getOptionValue(args, '--days') ?? positional[0];
+    const daysRaw = getOptionValue(args, '--days') ?? positional.find((value) => /^\d+$/.test(value));
     const days = daysRaw ? Math.max(7, parseIntStrict(daysRaw, '--days')) : config.retentionDays;
+    const dryRun = hasOption(args, '--dry-run') || positional.includes('dry-run');
+
+    // CL16 (collaudo): privacy-cleanup e' un DELETE IRREVERSIBILE su molte tabelle (run_logs,
+    // lead_events, message_history, leads stale, ...). Prima il comando manuale cancellava subito,
+    // senza anteprima ne conferma -> un "privacy-cleanup 7" accidentale azzerava lo storico.
+    // Ora: --dry-run mostra cosa verrebbe cancellato (nessuna scrittura); il run reale chiede conferma
+    // esplicita (default NO). Il path autonomo (loop scheduler) chiama cleanupPrivacyData direttamente
+    // senza prompt -> retention GDPR non interattiva invariata.
+    if (dryRun) {
+        const preview = await cleanupPrivacyData(days, { dryRun: true });
+        console.log(
+            `[DRY-RUN] privacy-cleanup (retentionDays=${days}) — righe che VERREBBERO cancellate (nessuna cancellazione eseguita):`,
+        );
+        console.log(JSON.stringify(preview, null, 2));
+        return;
+    }
+
+    const confirmed = await askConfirmation(
+        `Cancellare DEFINITIVAMENTE i dati piu' vecchi di ${days} giorni? Operazione IRREVERSIBILE (usa --dry-run per l'anteprima). [y/N] `,
+    );
+    if (!confirmed) {
+        console.log('privacy-cleanup annullato. Nessun dato cancellato.');
+        return;
+    }
+
     const result = await cleanupPrivacyData(days);
     console.log(JSON.stringify({ retentionDays: days, ...result }, null, 2));
 }

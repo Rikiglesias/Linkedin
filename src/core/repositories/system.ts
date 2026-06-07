@@ -916,24 +916,42 @@ export async function listSecretRotationStatus(maxAgeDays: number, warnDays: num
     });
 }
 
-export async function cleanupPrivacyData(retentionDays: number): Promise<PrivacyCleanupStats> {
+export async function cleanupPrivacyData(
+    retentionDays: number,
+    options: { dryRun?: boolean } = {},
+): Promise<PrivacyCleanupStats> {
     const db = await getDatabase();
     const safeDays = Math.max(7, retentionDays);
     const daysParam = String(safeDays);
+    const dryRun = options.dryRun === true;
+
+    // CL16 (collaudo): in dryRun NON cancelliamo nulla — convertiamo ogni DELETE in SELECT COUNT(*)
+    // per mostrare quante righe verrebbero eliminate (preview di un'operazione IRREVERSIBILE).
+    // Tutte le query partono con "DELETE FROM <tabella> WHERE ...": la sostituzione e' affidabile.
+    const runDeleteOrCount = async (sql: string, params: unknown[]): Promise<number> => {
+        if (dryRun) {
+            const countSql = sql.replace(/^\s*DELETE\s+FROM/i, 'SELECT COUNT(*) AS n FROM');
+            const row = await db.get<{ n: number }>(countSql, params);
+            return Number(row?.n ?? 0);
+        }
+        const res = await db.run(sql, params);
+        return res.changes ?? 0;
+    };
 
     return withTransaction(db, async () => {
-        const runLogs = await db.run(`DELETE FROM run_logs WHERE created_at < DATETIME('now', '-' || ? || ' days')`, [
-            daysParam,
-        ]);
-        const jobAttempts = await db.run(
+        const runLogs = await runDeleteOrCount(
+            `DELETE FROM run_logs WHERE created_at < DATETIME('now', '-' || ? || ' days')`,
+            [daysParam],
+        );
+        const jobAttempts = await runDeleteOrCount(
             `DELETE FROM job_attempts WHERE started_at < DATETIME('now', '-' || ? || ' days')`,
             [daysParam],
         );
-        const leadEvents = await db.run(
+        const leadEvents = await runDeleteOrCount(
             `DELETE FROM lead_events WHERE created_at < DATETIME('now', '-' || ? || ' days')`,
             [daysParam],
         );
-        const messageHistory = await db.run(
+        const messageHistory = await runDeleteOrCount(
             `DELETE FROM message_history WHERE sent_at < DATETIME('now', '-' || ? || ' days')`,
             [daysParam],
         );
@@ -941,22 +959,25 @@ export async function cleanupPrivacyData(retentionDays: number): Promise<Privacy
         // La FK event_id -> outbox_events(id) (migration 058) NON ha ON DELETE CASCADE: con
         // foreign_keys ON (H13) o su Postgres, il DELETE da outbox_events viola la FK e fa ROLLBACK
         // dell'INTERA transazione di purge GDPR (retention silenziosamente non funzionante in prod).
-        await db.run(
-            `DELETE FROM outbox_event_deliveries
+        // (In dryRun nessun DELETE viene eseguito: questo COUNT non e' nelle stats di ritorno.)
+        if (!dryRun) {
+            await db.run(
+                `DELETE FROM outbox_event_deliveries
              WHERE event_id IN (
                  SELECT id FROM outbox_events
                  WHERE delivered_at IS NOT NULL
                    AND created_at < DATETIME('now', '-' || ? || ' days')
              )`,
-            [daysParam],
-        );
-        const deliveredOutboxEvents = await db.run(
+                [daysParam],
+            );
+        }
+        const deliveredOutboxEvents = await runDeleteOrCount(
             `DELETE FROM outbox_events
              WHERE delivered_at IS NOT NULL
                AND created_at < DATETIME('now', '-' || ? || ' days')`,
             [daysParam],
         );
-        const resolvedIncidents = await db.run(
+        const resolvedIncidents = await runDeleteOrCount(
             `DELETE FROM account_incidents
              WHERE status = 'RESOLVED'
                AND resolved_at < DATETIME('now', '-' || ? || ' days')`,
@@ -969,13 +990,15 @@ export async function cleanupPrivacyData(retentionDays: number): Promise<Privacy
             WHERE status IN ('SKIPPED', 'BLOCKED', 'DEAD', 'WITHDRAWN', 'REPLIED', 'CONNECTED')
               AND COALESCE(updated_at, created_at) < DATETIME('now', '-' || ? || ' days')
         `;
-        const staleListMemberships = await db.run(`DELETE FROM list_leads WHERE lead_id IN (${staleLeadsSubquery})`, [
-            daysParam,
-        ]);
-        const staleLeadEvents = await db.run(`DELETE FROM lead_events WHERE lead_id IN (${staleLeadsSubquery})`, [
-            daysParam,
-        ]);
-        const staleMessageHistory = await db.run(
+        const staleListMemberships = await runDeleteOrCount(
+            `DELETE FROM list_leads WHERE lead_id IN (${staleLeadsSubquery})`,
+            [daysParam],
+        );
+        const staleLeadEvents = await runDeleteOrCount(
+            `DELETE FROM lead_events WHERE lead_id IN (${staleLeadsSubquery})`,
+            [daysParam],
+        );
+        const staleMessageHistory = await runDeleteOrCount(
             `DELETE FROM message_history WHERE lead_id IN (${staleLeadsSubquery})`,
             [daysParam],
         );
@@ -983,30 +1006,33 @@ export async function cleanupPrivacyData(retentionDays: number): Promise<Privacy
         // Senza questo, su Postgres (FK enforced) la DELETE FROM leads viola la foreign key e
         // l'intera transazione va in rollback -> il purge GDPR non avviene mai. Set allineato a
         // deleteLead() in gdprRetentionCleanup.ts (fonte autoritativa delle figlie di leads).
-        for (const childTable of [
-            'lead_intents',
-            'lead_enrichment_data',
-            'prebuilt_messages',
-            'salesnav_list_items',
-            'ml_feature_store',
-            'challenge_events',
-            'lead_campaign_state',
-        ]) {
-            await db.run(`DELETE FROM ${childTable} WHERE lead_id IN (${staleLeadsSubquery})`, [daysParam]);
+        // (In dryRun saltiamo i DELETE figli: nessun conteggio nelle stats e nessuna scrittura.)
+        if (!dryRun) {
+            for (const childTable of [
+                'lead_intents',
+                'lead_enrichment_data',
+                'prebuilt_messages',
+                'salesnav_list_items',
+                'ml_feature_store',
+                'challenge_events',
+                'lead_campaign_state',
+            ]) {
+                await db.run(`DELETE FROM ${childTable} WHERE lead_id IN (${staleLeadsSubquery})`, [daysParam]);
+            }
         }
-        const staleLeads = await db.run(`DELETE FROM leads WHERE id IN (${staleLeadsSubquery})`, [daysParam]);
+        const staleLeads = await runDeleteOrCount(`DELETE FROM leads WHERE id IN (${staleLeadsSubquery})`, [daysParam]);
 
         return {
-            runLogs: runLogs.changes ?? 0,
-            jobAttempts: jobAttempts.changes ?? 0,
-            leadEvents: leadEvents.changes ?? 0,
-            messageHistory: messageHistory.changes ?? 0,
-            deliveredOutboxEvents: deliveredOutboxEvents.changes ?? 0,
-            resolvedIncidents: resolvedIncidents.changes ?? 0,
-            staleListMemberships: staleListMemberships.changes ?? 0,
-            staleLeadEvents: staleLeadEvents.changes ?? 0,
-            staleMessageHistory: staleMessageHistory.changes ?? 0,
-            staleLeads: staleLeads.changes ?? 0,
+            runLogs,
+            jobAttempts,
+            leadEvents,
+            messageHistory,
+            deliveredOutboxEvents,
+            resolvedIncidents,
+            staleListMemberships,
+            staleLeadEvents,
+            staleMessageHistory,
+            staleLeads,
         };
     });
 }
