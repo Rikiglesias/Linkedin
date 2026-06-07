@@ -1,4 +1,4 @@
-import { byId, clearChildren, createCell, formatDate, formatPercent, setText } from './dom';
+import { byId, clearChildren, createCell, escapeHtml, formatDate, formatPercent, setText } from './dom';
 import {
     AbLeaderboardRow,
     CampaignRunRecord,
@@ -687,14 +687,19 @@ export function renderLeadDetail(lead: LeadSearchRecord, timeline: LeadTimelineE
 
     const meta = document.createElement('div');
     meta.className = 'lead-detail-meta';
+    // CL11 fix (security/XSS): ogni campo lead (importabile via CSV o scrapato da LinkedIn) puo'
+    // contenere payload HTML. escapeHtml su tutti i campi + l'href accettato solo se http(s)
+    // (blocca javascript:/data: URL). escapeHtml e' la stessa utility gia' in dom.ts.
+    const safeUrl =
+        lead.linkedin_url && /^https?:\/\//i.test(lead.linkedin_url) ? lead.linkedin_url : '';
     meta.innerHTML = `
-        <p><strong>Azienda:</strong> ${lead.account_name ?? '—'}</p>
-        <p><strong>Titolo:</strong> ${lead.job_title ?? '—'}</p>
-        <p><strong>Stato:</strong> ${lead.status}</p>
-        <p><strong>Lista:</strong> ${lead.list_name ?? '—'}</p>
-        <p><strong>Score:</strong> ${lead.lead_score ?? '—'}</p>
-        <p><strong>Email:</strong> ${lead.email ?? '—'}</p>
-        <p><strong>LinkedIn:</strong> <a href="${lead.linkedin_url}" target="_blank" rel="noopener">${lead.linkedin_url}</a></p>
+        <p><strong>Azienda:</strong> ${escapeHtml(lead.account_name ?? '—')}</p>
+        <p><strong>Titolo:</strong> ${escapeHtml(lead.job_title ?? '—')}</p>
+        <p><strong>Stato:</strong> ${escapeHtml(lead.status)}</p>
+        <p><strong>Lista:</strong> ${escapeHtml(lead.list_name ?? '—')}</p>
+        <p><strong>Score:</strong> ${escapeHtml(String(lead.lead_score ?? '—'))}</p>
+        <p><strong>Email:</strong> ${escapeHtml(lead.email ?? '—')}</p>
+        <p><strong>LinkedIn:</strong> ${safeUrl ? `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener">${escapeHtml(safeUrl)}</a>` : '—'}</p>
     `;
     container.appendChild(meta);
 

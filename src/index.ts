@@ -267,7 +267,10 @@ function printHelp(): void {
 
 function shouldRunMandatoryPreflight(command: string | undefined): boolean {
     if (!command) return false;
-    const guardedCommands = new Set(['run', 'run-loop', 'autopilot', 'connect', 'check', 'message', 'warmup']);
+    // CL5 fix (anti-ban): random-activity esegue azioni reali su LinkedIn (browser) → deve passare
+    // il preflight obbligatorio (doctor gate: sessione/quarantine/compliance) come gli altri comandi
+    // d'azione. Prima ne era escluso: un account in quarantena/sessione scaduta poteva agire comunque.
+    const guardedCommands = new Set(['run', 'run-loop', 'autopilot', 'connect', 'check', 'message', 'warmup', 'random-activity']);
     return guardedCommands.has(command);
 }
 
