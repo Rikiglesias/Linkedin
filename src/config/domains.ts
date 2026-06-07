@@ -119,8 +119,11 @@ export function buildLimitsAndRiskDomainConfig() {
         lowActivityBudgetFactor: Math.min(1, Math.max(0.01, parseFloatEnv('LOW_ACTIVITY_BUDGET_FACTOR', 0.2))),
         lowActivityMinBudget: Math.max(1, parseIntEnv('LOW_ACTIVITY_MIN_BUDGET', 2)),
         riskStopThreshold: parseIntEnv('RISK_STOP_THRESHOLD', 80),
-        pendingRatioWarn: parseFloatEnv('PENDING_RATIO_WARN', 0.65),
-        pendingRatioStop: parseFloatEnv('PENDING_RATIO_STOP', 0.8),
+        // Anti-ban (difensivo 2026-06-07): hard STOP outbound al red-flag 65% invece di 80%,
+        // così il pending ratio non sale oltre la soglia che LinkedIn flagga. WARN anticipato a 55%
+        // per mantenere l'escalation warn<stop (allineato ad adaptiveCapsPendingWarn). Override via env.
+        pendingRatioWarn: parseFloatEnv('PENDING_RATIO_WARN', 0.55),
+        pendingRatioStop: parseFloatEnv('PENDING_RATIO_STOP', 0.65),
         adaptiveCapsEnabled: parseBoolEnv('ADAPTIVE_CAPS_ENABLED', true),
         adaptiveCapsPendingWarn: Math.min(1, Math.max(0, parseFloatEnv('ADAPTIVE_CAPS_PENDING_WARN', 0.55))),
         adaptiveCapsPendingStop: Math.min(1, Math.max(0, parseFloatEnv('ADAPTIVE_CAPS_PENDING_STOP', 0.72))),
