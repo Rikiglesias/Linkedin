@@ -7,7 +7,7 @@
 | Bundle | Quando | Copre (domini) | Cosa esegue |
 |---|---|---|---|
 | `npm run audit:daily` | Ogni giorno | sicurezza + qualità + backend/frontend | security:scan (secret) + conta-problemi (typecheck BE+FE + lint + test) |
-| `npm run audit:weekly` | Settimanale (lun) | AI-meta: drift/log/handoff | miss-metrics + handoff-staleness + continuation + violations + memory-staleness + docs-size + obsidian-vault + output-styles + mcp-config + json-schemas + rules-coverage + skill-filenames + auto-track |
+| `npm run audit:weekly` | Settimanale (lun) | AI-meta: drift/log | miss-metrics + violations + docs-size + output-styles + mcp-config + json-schemas + rules-coverage + auto-track |
 | `npm run audit:biweekly` | Ogni 2 settimane | + architettura + build E2E | audit:weekly + `madge --circular src/` + build (backend+frontend) |
 | `npm run audit:monthly` | Mensile (1° del mese) | AI-meta: salute control plane | ai-control-plane + adk-capabilities + rule-enforcement + ledger + skills |
 | `npm run audit:quarterly` | Ogni 4 settimane | profondo: sicurezza + architettura + build | audit:monthly + security:scan + build + `madge --circular src/` |
@@ -48,7 +48,6 @@ Modificare `~/.claude/hooks/session-start.ps1` per controllare last-run timestam
 
 ### Weekly review (5 min)
 - Output `audit:miss-metrics`: ci sono candidate forti per promozione blocking (miss veri sopra soglia)? Se sì, valutare promozione.
-- Output `audit:handoff-staleness`: se fallisce, aggiornare `.claude/CONTINUATION.md`, memoria/todos se serve, poi eseguire sync Obsidian; usare `/session-prompt` solo come fallback legacy richiesto.
 - Output `audit:violations`: pattern di warning ricorrenti (worklog non aggiornato, hard blocks)?
 
 ### Monthly review (15 min)

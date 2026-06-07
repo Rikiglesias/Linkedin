@@ -29,7 +29,6 @@ const NPX = 'npx';
 const a = (name: string, hard: boolean): Step => ({ name, file: NPM, args: ['run', `audit:${name}`], hard });
 
 const WEEKLY: Step[] = [
-  a('handoff-staleness', false),
   // (adk-split T11.5b) continuation-completeness rimosso: scope ADK di aiReasoningHardening,
   // in migrazione verso AI-Control-Plane. Gli audit ADK escono dai cascade del repo applicativo.
   a('violations', false),

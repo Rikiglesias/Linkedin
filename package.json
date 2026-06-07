@@ -45,7 +45,6 @@
         "test:vitest:coverage": "vitest run --coverage",
         "audit": "ts-node src/scripts/codebaseAudit.ts",
         "audit:json": "ts-node src/scripts/codebaseAudit.ts --json",
-        "audit:handoff-staleness": "ts-node src/scripts/handoffStalenessAudit.ts",
         "audit:docs-size": "ts-node src/scripts/docsSizeAudit.ts",
         "audit:weekly": "ts-node src/scripts/auditRunner.ts weekly",
         "audit:monthly": "ts-node src/scripts/auditRunner.ts monthly",

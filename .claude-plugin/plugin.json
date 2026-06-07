@@ -82,7 +82,6 @@
         "audit:ledger",
         "audit:skills",
         "audit:ai-list-completeness",
-        "audit:handoff-staleness",
         "audit:miss-metrics",
         "audit:weekly",
         "audit:monthly"
