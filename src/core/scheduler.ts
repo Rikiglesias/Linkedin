@@ -536,7 +536,11 @@ export async function scheduleJobs(
     // Un umano ha giorni dove fa di più e giorni dove fa di meno — la media settimanale resta uguale.
     // Il factor è deterministico per data (stessa giornata = stesso factor) ma diverso tra giorni.
     // Usa due seed separati: uno per il volume complessivo, uno per lo sbilancio invite/message.
-    const moodSeed = `mood:${localDate}`;
+    // Anti-ban (C1, 2026-06-07): seed per-account. Era `mood:${localDate}` → tutti gli account
+    // nella stessa data avevano lo STESSO mood factor = pattern di volume giornaliero CORRELATO tra
+    // account (fingerprint multi-account). Includendo primaryAccountId la varianza giornaliera e'
+    // indipendente per account (de-correlazione). Range mood identico → volume aggregato invariato.
+    const moodSeed = `mood:${primaryAccountId}:${localDate}`;
     let moodHash = 0x811c9dc5;
     for (let i = 0; i < moodSeed.length; i++) {
         moodHash ^= moodSeed.charCodeAt(i);
@@ -546,7 +550,7 @@ export async function scheduleJobs(
 
     // Ratio mood: sbilancia invite vs message indipendentemente.
     // Es. oggi "mood inviti" (invite ×1.15, message ×0.85), domani il contrario.
-    const ratioSeed = `ratio:${localDate}`;
+    const ratioSeed = `ratio:${primaryAccountId}:${localDate}`;
     let ratioHash = 0x811c9dc5;
     for (let i = 0; i < ratioSeed.length; i++) {
         ratioHash ^= ratioSeed.charCodeAt(i);
