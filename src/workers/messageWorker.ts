@@ -551,10 +551,9 @@ export async function processMessageJob(
         isCampaignDriven,
     });
     await storeMessageHash(lead.id, messageHash, message);
-    // messages_sent already incremented atomically by checkAndIncrementDailyLimit (non dry-run)
-    if (context.dryRun) {
-        await incrementDailyStat(context.localDate, 'messages_sent');
-    }
+    // messages_sent gia' incrementata atomicamente da checkAndIncrementDailyLimit (solo non dry-run).
+    // In dry-run NON si incrementa la stat reale messages_sent (allineato a invite/follow-up):
+    // nessun invio reale, quindi non deve consumare il budget/cap ne' gonfiare il report.
     await incrementListDailyStat(context.localDate, lead.list_name, 'messages_sent');
     // Audit trail GDPR — non bloccante
     void writeAuditEntry(isCampaignDriven ? 'follow_up_sent' : 'message_sent', lead.id, lead.linkedin_url, 'bot', {

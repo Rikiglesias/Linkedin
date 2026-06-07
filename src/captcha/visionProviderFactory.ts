@@ -181,7 +181,7 @@ let _cachedProvider: VisionProvider | null = null;
 let _cachedConfigHash = '';
 
 function configHash(cfg: VisionProviderConfig): string {
-    return `${cfg.provider}:${cfg.ollamaEndpoint}:${cfg.ollamaModel}:${cfg.openaiModel}:${cfg.budgetMaxUsd}`;
+    return `${cfg.provider}:${cfg.ollamaEndpoint}:${cfg.ollamaModel}:${cfg.openaiModel}:${cfg.budgetMaxUsd}:${cfg.temperature}:${cfg.redactScreenshots}:${cfg.openaiApiKey ? 'haskey' : 'nokey'}`;
 }
 
 /**

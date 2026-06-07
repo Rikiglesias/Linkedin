@@ -510,11 +510,20 @@ export async function processInviteJob(
     const activityBaseProb = 0.1 + Math.random() * 0.2; // 10-30% per lead
     const activityDecay = Math.max(0.05, activityBaseProb - (context.sessionActionCount ?? 0) * 0.02);
     if (Math.random() < activityDecay) {
-        await context.session.page.evaluate(() => window.scrollBy({ top: 900, behavior: 'smooth' })).catch(() => null);
+        const scrollDelta1 = Math.round(700 + Math.random() * 400); // ~700-1100px
+        const scrollDelta2 = Math.round(350 + Math.random() * 350); // ~350-700px
+        const scrollUpDelta = -Math.round(500 + Math.random() * 400); // ~ -500..-900px
+        await context.session.page
+            .evaluate((px) => window.scrollBy({ top: px, behavior: 'smooth' }), scrollDelta1)
+            .catch(() => null);
         await humanDelay(context.session.page, 900, 1800);
-        await context.session.page.evaluate(() => window.scrollBy({ top: 500, behavior: 'smooth' })).catch(() => null);
+        await context.session.page
+            .evaluate((px) => window.scrollBy({ top: px, behavior: 'smooth' }), scrollDelta2)
+            .catch(() => null);
         await simulateHumanReading(context.session.page);
-        await context.session.page.evaluate(() => window.scrollBy({ top: -700, behavior: 'smooth' })).catch(() => null);
+        await context.session.page
+            .evaluate((px) => window.scrollBy({ top: px, behavior: 'smooth' }), scrollUpDelta)
+            .catch(() => null);
         await humanDelay(context.session.page, 500, 1500);
     }
 

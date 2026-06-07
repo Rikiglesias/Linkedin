@@ -319,7 +319,7 @@ function prioritizeProxyPool(pool: ProxyConfig[], options: GetProxyChainOptions)
 export async function fetchFallbackProxyFromProvider(): Promise<boolean> {
     if (!config.proxyProviderApiEndpoint) return false;
 
-    console.log(`[PROXY] Fetching proxy d'emergenza da: ${config.proxyProviderApiEndpoint}`);
+    await logInfo('proxy.api.fetch_start', { endpoint: maskUrl(config.proxyProviderApiEndpoint) });
     try {
         const headers: Record<string, string> = { Accept: 'application/json' };
         if (config.proxyProviderApiKey) {
@@ -366,9 +366,9 @@ export async function fetchFallbackProxyFromProvider(): Promise<boolean> {
             const auth = json.username ? `${json.username}:${json.password}@` : '';
             newProxyRaw = `http://${auth}${json.ip}:${json.port}`;
         } else {
-            console.warn(
-                `[PROXY] Payload API sconosciuto: keys=${Object.keys(json as Record<string, unknown>).join(',')}`,
-            );
+            await logWarn('proxy.api.unknown_payload', {
+                keys: Object.keys(json as Record<string, unknown>).join(','),
+            });
             return false;
         }
 
@@ -430,9 +430,7 @@ export async function getProxyFailoverChainAsync(options: GetProxyChainOptions =
     if (config.proxyTorFallbackEnabled && config.proxyTorSocks5Url) {
         const torParsed = parseProxyEntry(config.proxyTorSocks5Url);
         if (torParsed) {
-            console.warn(
-                `[PROXY] Pool esaurito e API provider non disp. Fallback su rete Tor: ${maskUrl(config.proxyTorSocks5Url)}`,
-            );
+            await logWarn('proxy.tor_fallback', { torUrl: maskUrl(config.proxyTorSocks5Url) });
             return [torParsed].concat(prioritizeProxyPool(rotated, options));
         }
     }
@@ -476,9 +474,7 @@ export async function getIntegrationProxyFailoverChainAsync(
     if (config.proxyTorFallbackEnabled && config.proxyTorSocks5Url) {
         const torParsed = parseProxyEntry(config.proxyTorSocks5Url);
         if (torParsed) {
-            console.warn(
-                `[PROXY-INT] Pool esaurito e API provider non disp. Fallback su rete Tor: ${maskUrl(config.proxyTorSocks5Url)}`,
-            );
+            await logWarn('proxy.integration_tor_fallback', { torUrl: maskUrl(config.proxyTorSocks5Url) });
             return [torParsed].concat(prioritizeProxyPool(rotated, options));
         }
     }
@@ -602,7 +598,7 @@ export async function getProxyAsync(options: GetProxyChainOptions = {}): Promise
             markProxyHealthy(proxy); // Resetta penalty su successo
             return proxy;
         } else {
-            console.warn(`[PROXY] Health check fallito per proxy: ${proxy.server}`);
+            await logWarn('proxy.health_check_failed', { server: maskUrl(proxy.server) });
             markProxyFailed(proxy);
         }
     }
@@ -622,7 +618,7 @@ export async function getIntegrationProxyAsync(options: GetProxyChainOptions = {
             markIntegrationProxyHealthy(proxy);
             return proxy;
         } else {
-            console.warn(`[PROXY] Health check fallito per integration proxy: ${proxy.server}`);
+            await logWarn('proxy.integration_health_check_failed', { server: maskUrl(proxy.server) });
             markIntegrationProxyFailed(proxy);
         }
     }
@@ -718,9 +714,10 @@ export async function getStickyProxy(
             if (isHealthy) {
                 return existing;
             } else {
-                console.warn(
-                    `[PROXY] Sticky proxy ${existing.server} per sessione ${sessionId} fallito health check. Ne cerco uno nuovo.`,
-                );
+                await logWarn('proxy.sticky_health_check_failed', {
+                    server: maskUrl(existing.server),
+                    sessionId,
+                });
                 markProxyFailed(existing);
                 stickyProxySessions.delete(sessionId);
             }

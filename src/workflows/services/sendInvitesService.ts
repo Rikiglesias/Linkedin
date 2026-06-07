@@ -216,14 +216,24 @@ export async function executeSendInvitesWorkflow(
         skipPreflight: request.skipPreflight,
         cliOverrides: buildCliOverrides(request),
         cliAccountId: request.accountId,
-        parseAnswers: (answers) => ({
-            listName: answers['listName'] ?? '',
-            limit: parseInt(answers['limit'] ?? String(config.hardInviteCap), 10),
-            noteMode:
-                answers['noteMode'] === 'ai' || answers['noteMode'] === 'template' ? answers['noteMode'] : 'none',
-            enrichment: answers['enrichment'] !== 'false',
-            _accountId: answers['_accountId'],
-        }),
+        parseAnswers: (answers) => {
+            const rawLimit = answers['limit'] ?? String(config.hardInviteCap);
+            let limit = parseInt(rawLimit, 10);
+            if (!Number.isFinite(limit)) {
+                console.warn(
+                    `[send-invites] limit non numerico ("${rawLimit}") — uso fallback hardInviteCap=${config.hardInviteCap}`,
+                );
+                limit = config.hardInviteCap;
+            }
+            return {
+                listName: answers['listName'] ?? '',
+                limit,
+                noteMode:
+                    answers['noteMode'] === 'ai' || answers['noteMode'] === 'template' ? answers['noteMode'] : 'none',
+                enrichment: answers['enrichment'] !== 'false',
+                _accountId: answers['_accountId'],
+            };
+        },
     });
 
     if (!preflight.confirmed) {
