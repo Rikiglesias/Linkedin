@@ -511,6 +511,23 @@ export async function runFollowUpWorker(context: WorkerContext, dailySentSoFar =
 
         // Pausa umana tra un profilo e l'altro
         await humanDelay(context.session.page, 4000, 8000);
+
+        // B4 (2026-06-07): anti-burst — ogni N follow-up una pausa LUNGA (riuso config noBurst dello
+        // scheduler). Senza, una serie di follow-up procede a cadenza ~fissa 4-8s = pattern di burst
+        // rilevabile. Solo aggiunge pause (stesso volume). Guard %0 su noBurstLongBreakEvery.
+        if (
+            config.noBurstEnabled &&
+            config.noBurstLongBreakEvery > 0 &&
+            attempted > 0 &&
+            attempted % config.noBurstLongBreakEvery === 0
+        ) {
+            await logInfo('follow_up.long_break', { afterActions: attempted });
+            await humanDelay(
+                context.session.page,
+                config.noBurstLongBreakMinSec * 1000,
+                config.noBurstLongBreakMaxSec * 1000,
+            );
+        }
     }
 
     await logInfo('follow_up.done', { sent, attempted, errors: errors.length, total: leads.length });
