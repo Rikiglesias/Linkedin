@@ -16,7 +16,9 @@ import {
     hasOtherAccountTargeted,
     appendLeadEvent,
     addLead,
+    searchLeads,
 } from '../core/repositories/leadsCore';
+import type { LeadStatus } from '../types/domain';
 
 describe('leadsCore correttezza (Ondata-2)', () => {
     beforeEach(() => {
@@ -91,5 +93,16 @@ describe('leadsCore correttezza (Ondata-2)', () => {
         expect(db.withTransaction).toHaveBeenCalledTimes(1);
         expect(db.run.mock.calls.find((c) => String(c[0]).includes('INSERT OR IGNORE INTO leads'))).toBeTruthy();
         expect(db.run.mock.calls.find((c) => String(c[0]).includes('INSERT OR IGNORE INTO list_leads'))).toBeTruthy();
+    });
+
+    test('searchLeads normalizza opts.status legacy (PENDING -> READY_INVITE)', async () => {
+        const db = { get: vi.fn().mockResolvedValue({ total: 0 }), query: vi.fn().mockResolvedValue([]) };
+        mocks.getDatabase.mockResolvedValue(db);
+
+        await searchLeads({ status: 'PENDING' as LeadStatus });
+
+        const countParams = db.get.mock.calls[0][1] as unknown[];
+        expect(countParams).toContain('READY_INVITE');
+        expect(countParams).not.toContain('PENDING');
     });
 });

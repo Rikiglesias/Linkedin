@@ -1292,8 +1292,10 @@ export async function searchLeads(opts: SearchLeadsOptions): Promise<SearchLeads
         params.push(like, like, like, like, like, like);
     }
     if (opts.status) {
+        // Normalizza lo status legacy (es. 'PENDING' -> 'READY_INVITE') coerentemente con i sibling
+        // e con i dati migrati: senza, una ricerca per status legacy non troverebbe nulla.
         conditions.push(`status = ?`);
-        params.push(opts.status);
+        params.push(normalizeLegacyStatus(opts.status));
     }
     if (opts.listName) {
         conditions.push(`list_name = ?`);
