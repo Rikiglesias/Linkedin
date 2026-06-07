@@ -109,45 +109,13 @@ Regola estratta in `.claude/rules/workflow-linkedin.md` (path-scoped `src/**`, `
 
 ## Cambio chat e continuita' — Obsidian come vista operativa
 
-Fonte primaria per ripartire in nuova chat:
+Fonte UNICA per ripartire in nuova chat: **`/lastchat`** (legge `~/.claude/LASTCHAT.md`). Per salvare prima di chiudere/compattare: **`/lastchat save`**.
 
-1. `C:\Users\albie\memory\` = memoria vera.
-2. `C:\Users\albie\todos\active.md` = priorita correnti.
-3. `.claude/CONTINUATION.md` = stato operativo del progetto corrente.
-4. Obsidian `C:\Users\albie\Desktop\AI brain\Resources\continuita\START-NEXT-CHAT.md` = vista navigabile di ripartenza.
+`C:\Users\albie\memory\` (memoria) e `C:\Users\albie\todos\active.md` (priorità) restano fonti di stato/priorità, NON il sistema di continuità chat. Obsidian `Resources/continuita/` è vista navigabile (proiezione), non procedura.
 
-`SESSION_HANDOFF.md` e `.claude/SESSION_PROMPT.md` sono fallback legacy/storico. Non sono piu' la procedura primaria e non vanno rigenerati come passaggio obbligatorio se `CONTINUATION.md` + Obsidian sono freschi.
+**ELIMINATI (2026-06-07, regola forte)**: `.claude/CONTINUATION.md`, `SESSION_HANDOFF.md`, `.claude/SESSION_PROMPT.md` e skill `resume-context`. La continuità è **UN SOLO sistema = LASTCHAT** (`~/memory/decisions_secondo_cervello.md`). Gli hook `session-start-continuation` / `pre-compact-handoff` puntano a LASTCHAT; `post-bash-handoff-invalidate` disattivato.
 
-`.claude/CONTINUATION.md` deve sempre contenere queste sezioni. Nessuna opzionale.
-
-```markdown
-## PROBLEMA CHE STAVAMO RISOLVENDO
-[problema reale, non solo task tecnico]
-
-## COSA E STATO COMPLETATO
-[punti precisi, con verifica eseguita o mancante]
-
-## DECISIONI CHIAVE (non derivabili dal codice)
-[decisioni motivate, non ovvieta]
-
-## DA NON RIPETERE
-[tentativi falliti, errori corretti dall'utente, approcci scartati]
-
-## STATO TECNICO ESATTO
-[file/stato/git/test/verifiche]
-
-## PROSSIMO PASSO ESATTO
-[azione concreta con comando/file/verifica]
-
-## CORREZIONI UTENTE QUESTA SESSIONE
-[feedback operativo da salvare o "nessuno"]
-```
-
-**Regola di sync**: prima di cambiare chat, aggiornare memoria/todos/worklog se serve, compilare `CONTINUATION.md` senza TODO e sincronizzare Obsidian (`node C:\Users\albie\.claude\scripts\sync-memory-to-obsidian.mjs --verbose`).
-
-**Quando generare/aggiornare**: ctx >85%, fine sessione lunga, compact imminente, cambio progetto/tema, soglie costo-token superate o prima di nuova chat.
-
-**Verifica**: `npm run audit:handoff-staleness` deve passare. Se fallisce, non dichiarare la continuita' pronta.
+**Quando salvare** (`/lastchat save`): ctx alto, fine sessione lunga, compact imminente, cambio tema, prima di nuova chat.
 
 ## Loop di completamento
 

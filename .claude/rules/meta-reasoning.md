@@ -21,9 +21,7 @@ Test: "disabilita il delay" → antiban check, non eseguire · "cancella X" (log
 ## 2. Context degradation e cambio chat → preferences + zero-H
 Soglia cambio chat: **avviso SOLO >750k token su 1M** (`preferences.md`); sotto, nessun consiglio.
 Segnali di degrado oltre i token: domande ripetute, dimenticanza decisioni di sessione, constraint ignorati → handoff.
-**Procedura continuità progetto** (pre-nuova-chat): aggiorna `todos/active.md` + `docs/tracking/ENGINEERING_WORKLOG.md`
-+ `~/memory` (se cambiate decisioni) → compila `.claude/CONTINUATION.md` (no TODO) → `node ~/.claude/scripts/sync-memory-to-obsidian.mjs`
-→ `npm run audit:handoff-staleness` verde → commit se L1 verde. `SESSION_HANDOFF.md`/`SESSION_PROMPT.md` = fallback legacy.
+**Procedura continuità** (pre-nuova-chat/compact): **`/lastchat save`** (scrive `~/.claude/LASTCHAT.md`, sistema UNICO di continuità — 2026-06-07) + aggiorna `~/memory`/`todos/active.md`/`ENGINEERING_WORKLOG.md` se cambiati → commit se L1 verde. CONTINUATION/SESSION_HANDOFF/SESSION_PROMPT + skill resume-context ELIMINATI (vedi `~/memory/decisions_secondo_cervello.md`).
 
 ## 3. Best practice per ogni modifica → zero-D + L1/L2
 Ordine: blast radius → contratti (input/output/side-effect) → dipendenze/caller → test impattati → niente modifica
