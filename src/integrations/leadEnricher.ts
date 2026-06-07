@@ -588,9 +588,14 @@ export async function enrichLeadAuto(
         linkedin_url?: string | null;
         company_domain?: string | null;
         location?: string | null;
+        gdpr_opt_out?: number | null;
     },
     opts?: { deep?: boolean },
 ): Promise<EnrichmentResult> {
+    // H17 fix (GDPR Art.21): gate centralizzato. Un lead con gdpr_opt_out=1 ha esercitato
+    // l'opposizione → NESSUNA raccolta ne trasferimento PII (l'enrichment chiama processor US:
+    // Apollo/Hunter/Clearbit/personDataFinder). Copre tutti i path che passano da enrichLeadAuto.
+    if (lead.gdpr_opt_out) return EMPTY_RESULT;
     const firstName = (lead.first_name || '').trim();
     const lastName = (lead.last_name || '').trim();
     if (!firstName) return EMPTY_RESULT;

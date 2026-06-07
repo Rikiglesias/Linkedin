@@ -422,12 +422,18 @@ Respond with ONLY a single integer number of milliseconds between 1000 and 12000
      * Nota: riduce l'accuratezza del modello ma protegge dati PII.
      */
     private async applyRedaction(base64Image: string): Promise<string> {
-        // Redaction semplificata: il modello non ha bisogno dei nomi/titoli
-        // per navigare l'UI. Sostituiamo le aree di testo dei profili con blur.
-        // Per ora loghiamo che la redaction è attiva — l'implementazione completa
-        // richiede canvas manipulation che va fatto lato browser prima dello screenshot.
-        void logInfo('vision.openai.redaction_active', { mode: 'logged' });
-        return base64Image;
+        // H19 fix (GDPR): la redaction reale (blur delle aree PII) NON e' implementata — richiede
+        // canvas manipulation lato browser PRIMA dello screenshot. Finche' non c'e', restituire
+        // l'immagine intera spacciandola per redatta era un inganno: lo screenshot di profili
+        // LinkedIn (PII di terzi) veniva inviato per intero a OpenAI (US) con un log che asseriva
+        // "redaction_active". Fail-fast: chi attiva redactScreenshots ottiene un errore esplicito,
+        // non un falso senso di sicurezza. Disattivare redactScreenshots o implementare il blur.
+        void base64Image;
+        throw new Error(
+            'redactScreenshots=true ma la redaction degli screenshot non risulta implementata: ' +
+                'invio a OpenAI bloccato per non trasferire PII non redatte. Disattiva redactScreenshots ' +
+                'oppure implementa il blur lato browser prima di catturare lo screenshot.',
+        );
     }
 }
 

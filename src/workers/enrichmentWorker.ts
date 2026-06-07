@@ -25,14 +25,23 @@ export async function processEnrichmentJob(
         linkedin_url: string | null;
         company_domain: string | null;
         location: string | null;
+        gdpr_opt_out: number | null;
     }>(
-        `SELECT id, first_name, last_name, account_name, website, linkedin_url, company_domain, location FROM leads WHERE id = ?`,
+        `SELECT id, first_name, last_name, account_name, website, linkedin_url, company_domain, location, gdpr_opt_out FROM leads WHERE id = ?`,
         [payload.leadId],
     );
 
     if (!lead) {
         await logError('enrichment.worker.missing_lead', { leadId: payload.leadId });
         return workerResult(0, [{ leadId: payload.leadId, message: 'Lead non trovato in database' }]);
+    }
+
+    // H17 fix (GDPR Art.21): se il lead ha esercitato l'opposizione (gdpr_opt_out=1), NON arricchire
+    // (nessuna raccolta ne trasferimento PII a processor terzi). Difesa esplicita oltre al gate
+    // centrale in enrichLeadAuto: evita anche di caricare/processare il lead per nulla.
+    if (lead.gdpr_opt_out) {
+        await logInfo('enrichment.worker.skipped_opt_out', { leadId: payload.leadId });
+        return workerResult(0, [{ leadId: payload.leadId, message: 'Lead con gdpr_opt_out: enrichment saltato' }]);
     }
 
     if (context.dryRun) {

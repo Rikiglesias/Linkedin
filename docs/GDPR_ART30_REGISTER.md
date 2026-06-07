@@ -2,7 +2,7 @@
 
 > Registro delle attività di trattamento ai sensi dell'art. 30 del Reg. UE 2016/679 (GDPR).
 > Titolare del trattamento: Riccardo (uso personale / professionale B2B).
-> Aggiornato: 2026-04-09
+> Aggiornato: 2026-06-07
 
 ---
 
@@ -25,8 +25,8 @@
 | **Categorie di interessati** | Professionisti aziendali (decision maker, manager, founder) |
 | **Categorie di dati** | Nome, cognome, job title, azienda, URL profilo LinkedIn, descrizione profilo, messaggi inviati, timestamp interazioni |
 | **Base giuridica** | Interesse legittimo B2B — art. 6.1.f GDPR (outreach professionale verso destinatari con ruolo rilevante) |
-| **Destinatari** | Nessun destinatario terzo. Dati trattati solo localmente sul dispositivo del titolare |
-| **Trasferimenti extra-UE** | Anthropic API (US): contesto profilo per generazione messaggi — pseudonimizzare se scala supera uso personale. Oxylabs (proxy): vede solo metadati sessione, nessun dato PII |
+| **Destinatari** | Trattamento locale di default. **Se configurati** (API key presenti) provider di enrichment terzi ricevono nome/cognome/dominio/URL LinkedIn: Apollo.io (US), Hunter.io (IE/US), Clearbit·HubSpot (US) via `leadEnricher`; GitHub e Gravatar via `personDataFinder`; motori di ricerca (DuckDuckGo) via `webSearchEnricher`. **Senza le rispettive API key NON vengono contattati** (gate per-provider). Gate `gdpr_opt_out` applicato (H17): nessun enrichment per soggetti che hanno esercitato l'opposizione |
+| **Trasferimenti extra-UE** | Anthropic API (US): contesto profilo per generazione messaggi — pseudonimizzare se scala supera uso personale. Oxylabs (proxy): solo metadati sessione, nessun PII. OpenAI (US): screenshot vision per captcha/anomalie — invio **bloccato** se `redactScreenshots=true` finché la redaction reale non è implementata (H19). Provider di enrichment US/extra-UE (Apollo/Hunter/Clearbit/Gravatar) **solo se configurati**. ⚠️ **DA FORMALIZZARE (azione del titolare):** base giuridica + meccanismo di trasferimento (SCC/decisione di adeguatezza) + DPA firmato per ciascun processor extra-UE; in alternativa tenerli disattivati (nessuna API key) |
 | **Termini di cancellazione** | 180gg inattività → anonimizzazione; 365gg → cancellazione completa. Lead opt-out → cancellazione immediata su richiesta |
 | **Misure di sicurezza** | DB PostgreSQL su rete interna docker (porta 5432 non esposta); credenziali solo in `.env`; audit trail su ogni azione rilevante in `audit_log`; anonimizzazione SHA-256 post-retention |
 | **Strumento di enforcement** | `src/scripts/gdprRetentionCleanup.ts`; migrazione `059_gdpr_retention.sql`; workflow n8n `gdpr-retention-cleanup.json` (cron lunedì 9:00) |
