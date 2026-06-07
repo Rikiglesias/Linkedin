@@ -1,8 +1,9 @@
 import path from 'path';
-import { chromium, firefox } from 'playwright';
 import { config } from '../config';
 import { ensureDirectoryPrivate } from '../security/filesystem';
 import { getProxyFailoverChainAsync, getStickyProxy, type ProxyConfig } from '../proxyManager';
+import { launchBrowser, closeBrowser } from '../browser/launcher';
+import { recordSuccessfulAuth } from '../browser/sessionCookieMonitor';
 
 export interface CreateProfileOptions {
     profileDir: string;
@@ -31,9 +32,10 @@ export async function createPersistentProfile(options: Partial<CreateProfileOpti
     // AB-24 (anti-ban — finding HIGH): il browser di login NON deve mai partire su IP diretto
     // quando un proxy gestito e' configurato. Il login setta il cookie li_at: eseguirlo sull'IP
     // reale = de-anonimizzazione totale nel momento piu' sensibile, e crea un mismatch geo
-    // login-IP vs automation-IP (segnale di detection). createProfile e' l'unico altro punto, oltre
-    // a launchBrowser(), che lancia un browser direttamente: applichiamo qui lo stesso gate
-    // fail-closed di launcher.ts:271-279, riusando le primitive di risoluzione proxy.
+    // login-IP vs automation-IP (segnale di detection). Risolviamo il proxy in fail-closed (throw
+    // se il pool e' vuoto) e lo passiamo ESPLICITO a launchBrowser piu' sotto: cosi' il login non
+    // puo' mai ripiegare su IP diretto (a differenza del path managed interno di launchBrowser,
+    // launcher.ts:271-273, che ripiega su undefined). CL3.
     const managedProxyEnabled =
         config.proxyUrl.trim().length > 0 ||
         config.proxyListPath.trim().length > 0 ||
@@ -54,24 +56,23 @@ export async function createPersistentProfile(options: Partial<CreateProfileOpti
         }
     }
 
-    const isFirefox = config.browserEngine === 'firefox' || config.browserEngine === 'camoufox';
-    const engine = isFirefox ? firefox : chromium;
-    const contextOptions: Parameters<typeof chromium.launchPersistentContext>[1] = {
+    // CL3 anti-ban fix: riusare launchBrowser() invece di un launchPersistentContext "nudo".
+    // Prima il login partiva senza stealth (canvas/WebGL/navigator/JA3 reali) -> il fingerprint del
+    // login era DIVERSO da quello stealth usato dall'automazione (deterministico per accountId =
+    // profileDir): mismatch login-vs-automation = forte segnale di detection nel momento piu'
+    // sensibile (setting del cookie li_at). Ora login e automazione condividono lo STESSO fingerprint.
+    // - proxy ESPLICITO: launchBrowser con options.proxy usa solo quel proxy (launchPlan=[proxy]) e
+    //   NON ripiega su IP diretto, preservando il fail-closed AB-24 risolto sopra.
+    // - headless:false per il login manuale. launchBrowser NON abilita il window click-through (lo
+    //   fanno solo i flussi di automazione) -> la finestra resta interattiva per l'utente.
+    const session = await launchBrowser({
+        sessionDir: profileDir,
         headless: false,
-        viewport: { width: 1366, height: 768 },
-        locale: 'it-IT',
-    };
-    if (proxy) {
-        contextOptions.proxy = {
-            server: proxy.server,
-            username: proxy.username,
-            password: proxy.password,
-        };
-    }
-    const context = await engine.launchPersistentContext(profileDir, contextOptions);
+        proxy,
+    });
 
     try {
-        const page = context.pages()[0] ?? (await context.newPage());
+        const page = session.page;
         await page.goto(loginUrl, { waitUntil: 'domcontentloaded' });
 
         console.log(`[PROFILE] Directory: ${profileDir}`);
@@ -82,7 +83,7 @@ export async function createPersistentProfile(options: Partial<CreateProfileOpti
         const timeoutAt = Date.now() + timeoutSeconds * 1000;
         let loginDetected = false;
         while (Date.now() < timeoutAt) {
-            const cookies = await context.cookies();
+            const cookies = await session.browser.cookies();
             if (cookies.some((cookie) => cookie.name === 'li_at')) {
                 loginDetected = true;
                 break;
@@ -91,11 +92,14 @@ export async function createPersistentProfile(options: Partial<CreateProfileOpti
         }
 
         if (loginDetected) {
+            // CL3: registra la baseline di freshness al momento del login reale, cosi' il countdown
+            // di rotazione sessione (7gg) parte da ora e non dalla prima run di automazione.
+            recordSuccessfulAuth(profileDir, 'create-profile');
             console.log('[PROFILE] Login rilevato e profilo persistente aggiornato.');
         } else {
             console.log('[PROFILE] Timeout raggiunto. Il profilo è stato comunque salvato con lo stato corrente.');
         }
     } finally {
-        await context.close().catch(() => {});
+        await closeBrowser(session).catch(() => {});
     }
 }

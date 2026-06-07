@@ -5,10 +5,17 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
  * Il browser di login (che setta il cookie li_at) non deve mai partire su IP diretto quando un
  * proxy gestito e' configurato. Stesso gate fail-closed di launchBrowser(): managed proxy ON +
  * nessun proxy risolto -> HALT (throw), mai login su IP reale. Nessun browser reale viene lanciato.
+ *
+ * CL3 (collaudo): createProfile ora RIUSA launchBrowser() (stesso fingerprint stealth di login e
+ * automazione, no mismatch di detection) passandogli il proxy risolto in modo ESPLICITO (cosi'
+ * launchBrowser non puo' ripiegare su IP diretto). Il test mocka launchBrowser e verifica che
+ * (a) su pool vuoto NON venga chiamato, (b) altrimenti riceva il proxy corretto.
  */
 
 const mocks = vi.hoisted(() => ({
-    launchPersistentContext: vi.fn(),
+    launchBrowser: vi.fn(),
+    closeBrowser: vi.fn(),
+    recordSuccessfulAuth: vi.fn(),
     getStickyProxy: vi.fn(),
     getProxyFailoverChainAsync: vi.fn(),
     ensureDirectoryPrivate: vi.fn(),
@@ -32,24 +39,28 @@ vi.mock('../security/filesystem', () => ({
     ensureDirectoryPrivate: mocks.ensureDirectoryPrivate,
 }));
 
-vi.mock('playwright', () => ({
-    chromium: { launchPersistentContext: mocks.launchPersistentContext },
-    firefox: { launchPersistentContext: mocks.launchPersistentContext },
+vi.mock('../browser/launcher', () => ({
+    launchBrowser: mocks.launchBrowser,
+    closeBrowser: mocks.closeBrowser,
+}));
+
+vi.mock('../browser/sessionCookieMonitor', () => ({
+    recordSuccessfulAuth: mocks.recordSuccessfulAuth,
 }));
 
 import { createPersistentProfile } from '../scripts/createProfile';
 
-function fakeContext() {
+function fakeSession() {
     const page = {
         goto: vi.fn().mockResolvedValue(undefined),
         waitForTimeout: vi.fn().mockResolvedValue(undefined),
     };
     return {
-        pages: vi.fn().mockReturnValue([page]),
-        newPage: vi.fn().mockResolvedValue(page),
+        page,
         // li_at presente al primo giro -> loginDetected, esce subito (niente loop da 900s).
-        cookies: vi.fn().mockResolvedValue([{ name: 'li_at' }]),
-        close: vi.fn().mockResolvedValue(undefined),
+        browser: {
+            cookies: vi.fn().mockResolvedValue([{ name: 'li_at' }]),
+        },
     };
 }
 
@@ -63,36 +74,40 @@ describe('createProfile AB-24 — login mai su IP diretto', () => {
         mocks.config.proxyMobilePriorityEnabled = false;
         mocks.getStickyProxy.mockResolvedValue(undefined);
         mocks.getProxyFailoverChainAsync.mockResolvedValue([]);
-        mocks.launchPersistentContext.mockResolvedValue(fakeContext());
+        mocks.launchBrowser.mockResolvedValue(fakeSession());
+        mocks.closeBrowser.mockResolvedValue(undefined);
     });
 
     test('managed proxy ON + pool vuoto -> HALT (throw AB-24), nessun browser lanciato', async () => {
         mocks.config.proxyListPath = './proxies.txt'; // managed proxy ON
         await expect(createPersistentProfile({ timeoutSeconds: 60 })).rejects.toThrow(/AB-24/);
-        expect(mocks.launchPersistentContext).not.toHaveBeenCalled();
+        expect(mocks.launchBrowser).not.toHaveBeenCalled();
     });
 
-    test('managed proxy ON + proxy risolto -> login lanciato CON quel proxy', async () => {
+    test('managed proxy ON + proxy risolto -> launchBrowser CON quel proxy esplicito', async () => {
         mocks.config.proxyListPath = './proxies.txt';
         mocks.getProxyFailoverChainAsync.mockResolvedValue([
             { server: 'http://p1.example:8080', username: 'u', password: 'p' },
         ]);
         await createPersistentProfile({ timeoutSeconds: 60 });
-        expect(mocks.launchPersistentContext).toHaveBeenCalledTimes(1);
-        const ctxOptions = mocks.launchPersistentContext.mock.calls[0][1];
-        expect(ctxOptions.proxy).toEqual({
+        expect(mocks.launchBrowser).toHaveBeenCalledTimes(1);
+        const launchOptions = mocks.launchBrowser.mock.calls[0][0];
+        expect(launchOptions.proxy).toEqual({
             server: 'http://p1.example:8080',
             username: 'u',
             password: 'p',
         });
+        expect(launchOptions.headless).toBe(false);
+        // login riuscito -> baseline freshness registrata
+        expect(mocks.recordSuccessfulAuth).toHaveBeenCalledWith(expect.any(String), 'create-profile');
     });
 
-    test('managed proxy OFF (nessun proxy configurato) -> launch senza proxy (dev/test legittimo)', async () => {
+    test('managed proxy OFF (nessun proxy configurato) -> launchBrowser senza proxy (dev/test legittimo)', async () => {
         // tutte le 3 sorgenti proxy vuote -> managedProxyEnabled = false
         await createPersistentProfile({ timeoutSeconds: 60 });
-        expect(mocks.launchPersistentContext).toHaveBeenCalledTimes(1);
-        const ctxOptions = mocks.launchPersistentContext.mock.calls[0][1];
-        expect(ctxOptions.proxy).toBeUndefined();
+        expect(mocks.launchBrowser).toHaveBeenCalledTimes(1);
+        const launchOptions = mocks.launchBrowser.mock.calls[0][0];
+        expect(launchOptions.proxy).toBeUndefined();
     });
 
     test('preferisce lo sticky proxy quando disponibile', async () => {
@@ -100,8 +115,8 @@ describe('createProfile AB-24 — login mai su IP diretto', () => {
         mocks.getStickyProxy.mockResolvedValue({ server: 'http://sticky.example:9000' });
         mocks.getProxyFailoverChainAsync.mockResolvedValue([{ server: 'http://other.example:8080' }]);
         await createPersistentProfile({ timeoutSeconds: 60 });
-        const ctxOptions = mocks.launchPersistentContext.mock.calls[0][1];
-        expect(ctxOptions.proxy.server).toBe('http://sticky.example:9000');
+        const launchOptions = mocks.launchBrowser.mock.calls[0][0];
+        expect(launchOptions.proxy.server).toBe('http://sticky.example:9000');
         expect(mocks.getProxyFailoverChainAsync).not.toHaveBeenCalled();
     });
 });
