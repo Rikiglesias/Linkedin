@@ -8,6 +8,7 @@
  */
 
 import { load as cheerioLoad } from 'cheerio';
+import { parsePhoneNumberFromString } from 'libphonenumber-js';
 import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 import { logInfo } from '../telemetry/logger';
 
@@ -213,17 +214,23 @@ async function extractDataFromPage(
         // ── Phones from tel: links ──
         $('a[href^="tel:"]').each((_, el) => {
             const tel = ($(el).attr('href') || '').replace(/^tel:/i, '').trim();
-            if (tel && tel.replace(/\D/g, '').length >= 8) {
-                phones.push({ value: tel, sourceUrl: pageUrl, confidence: 80 });
+            const parsed = parsePhoneNumberFromString(tel, 'IT');
+            if (parsed?.isValid()) {
+                const normalized = parsed.number;
+                if (!phones.some((p) => p.value === normalized)) {
+                    phones.push({ value: normalized, sourceUrl: pageUrl, confidence: 80 });
+                }
             }
         });
 
         // ── Phones from schema.org ──
         $('[itemprop="telephone"]').each((_, el) => {
             const tel = ($(el).text().trim() || $(el).attr('content') || '').trim();
-            if (tel && tel.replace(/\D/g, '').length >= 8) {
-                if (!phones.some((p) => p.value === tel)) {
-                    phones.push({ value: tel, sourceUrl: pageUrl, confidence: 75 });
+            const parsed = parsePhoneNumberFromString(tel, 'IT');
+            if (parsed?.isValid()) {
+                const normalized = parsed.number;
+                if (!phones.some((p) => p.value === normalized)) {
+                    phones.push({ value: normalized, sourceUrl: pageUrl, confidence: 75 });
                 }
             }
         });

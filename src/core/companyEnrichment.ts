@@ -13,6 +13,8 @@ import {
 import { scoreLeadProfile } from '../ai/leadScorer';
 import { isOpenAIConfigured } from '../ai/openaiClient';
 
+const ENRICHMENT_ACCOUNT_ID = 'company-enrichment';
+
 export interface CompanyEnrichmentOptions {
     limit?: number;
     maxProfilesPerCompany?: number;
@@ -164,7 +166,7 @@ async function processCompanyTarget(
             if (!resolved) {
                 await handleChallengeDetected({
                     source: 'company_enrichment',
-                    accountId: 'default',
+                    accountId: ENRICHMENT_ACCOUNT_ID,
                     message: 'Challenge rilevato durante enrichment',
                     extra: {
                         targetId: target.id,
@@ -271,11 +273,12 @@ export async function runCompanyEnrichmentBatch(
         return report;
     }
 
-    const session = await launchBrowser({ forceDesktop: true, accountId: 'company-enrichment' });
+    const session = await launchBrowser({ forceDesktop: true, accountId: ENRICHMENT_ACCOUNT_ID });
     try {
         const loggedIn = await checkLogin(session.page);
         if (!loggedIn) {
             await quarantineAccount('COMPANY_ENRICHMENT_LOGIN_MISSING', {
+                accountId: ENRICHMENT_ACCOUNT_ID,
                 reason: 'Sessione non autenticata durante enrichment automatico',
             });
             await logWarn('company_enrichment.skipped.login_missing', { targets: targets.length });

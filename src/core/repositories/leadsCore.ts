@@ -1285,9 +1285,12 @@ export async function searchLeads(opts: SearchLeadsOptions): Promise<SearchLeads
     const params: unknown[] = [];
 
     if (opts.query) {
-        const like = `%${opts.query}%`;
+        // Escapa i metacaratteri LIKE (\ % _) nella query utente cosi' non vengono interpretati
+        // come wildcard. ESCAPE '\' e' valido sia su SQLite che Postgres.
+        const escapedQuery = opts.query.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+        const like = `%${escapedQuery}%`;
         conditions.push(
-            `(first_name LIKE ? OR last_name LIKE ? OR account_name LIKE ? OR linkedin_url LIKE ? OR job_title LIKE ? OR email LIKE ?)`,
+            `(first_name LIKE ? ESCAPE '\\' OR last_name LIKE ? ESCAPE '\\' OR account_name LIKE ? ESCAPE '\\' OR linkedin_url LIKE ? ESCAPE '\\' OR job_title LIKE ? ESCAPE '\\' OR email LIKE ? ESCAPE '\\')`,
         );
         params.push(like, like, like, like, like, like);
     }

@@ -798,7 +798,10 @@ export async function computeListPerformanceMultiplier(
     lookbackDays: number = 30,
 ): Promise<{ multiplier: number; acceptanceRatePct: number; sampleSize: number }> {
     const db = await getDatabase();
-    const safeLookbackDays = Math.max(1, Math.floor(lookbackDays));
+    // Clamp a 8: la query richiede invited_at <= now-7d, quindi la finestra
+    // [now-lookback, now-7d] e' non vuota solo per lookback >= 8 (altrimenti range invertito
+    // -> 0 inviti -> penalty disattivato per lookback<7). Tutti i caller passano 30: no-op sull'uso attuale.
+    const safeLookbackDays = Math.max(8, Math.floor(lookbackDays));
 
     // Query sulla tabella leads: count inviti e accettazioni per questa lista.
     // IMPORTANTE: contiamo solo lead invitati da almeno 7 giorni per dare tempo

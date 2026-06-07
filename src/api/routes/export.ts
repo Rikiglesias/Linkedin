@@ -86,7 +86,7 @@ router.get('/leads', async (req: Request, res: Response) => {
             handleApiError(res, parsed.error, 'api.export.leads.validation');
             return;
         }
-        const { format, status, listName } = parsed.data;
+        const { format, status, listName, linkedinUrl } = parsed.data;
         const limit = Math.min(parsed.data.limit ?? 500, 500);
 
         const db = await getDatabase();
@@ -101,6 +101,10 @@ router.get('/leads', async (req: Request, res: Response) => {
         if (listName) {
             conditions.push('list_name = ?');
             params.push(listName);
+        }
+        if (linkedinUrl) {
+            conditions.push('linkedin_url = ?');
+            params.push(linkedinUrl);
         }
 
         const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -124,7 +128,7 @@ router.get('/leads', async (req: Request, res: Response) => {
             action: 'export_leads',
             actor: requestIp,
             result: 'ALLOW',
-            metadata: { format, status: status ?? null, listName: listName ?? null, count: rows.length, limit },
+            metadata: { format, status: status ?? null, listName: listName ?? null, linkedinUrl: linkedinUrl ?? null, count: rows.length, limit },
         }).catch(() => null);
 
         if (format === 'csv') {
