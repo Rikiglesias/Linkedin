@@ -15,7 +15,9 @@ import path from 'path';
 import { Page } from 'playwright';
 import { logInfo, logWarn } from '../telemetry/logger';
 
-const META_FILENAME = '.session-meta.json';
+// Esportata (C1 fix audit collaudo): preflight-env e altri consumer devono usare LO STESSO nome
+// file, non una stringa hardcoded divergente (era il bug 'session_meta.json' vs '.session-meta.json').
+export const META_FILENAME = '.session-meta.json';
 
 export interface BehavioralProfile {
     avgScrollSpeedPxPerSec: number;

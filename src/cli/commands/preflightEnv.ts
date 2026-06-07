@@ -3,6 +3,7 @@ import { getRuntimeAccountProfiles } from '../../accountManager';
 import { checkProxyHealth } from '../../proxyManager';
 import fs from 'fs';
 import path from 'path';
+import { META_FILENAME } from '../../browser/sessionCookieMonitor';
 
 interface PreflightCheck {
     name: string;
@@ -95,7 +96,7 @@ export async function runPreflightEnvCommand(): Promise<void> {
     // 5. LinkedIn session cookie validation
     for (const account of accounts) {
         const sessionDir = path.resolve(account.sessionDir);
-        const metaPath = path.join(sessionDir, 'session_meta.json');
+        const metaPath = path.join(sessionDir, META_FILENAME);
         const hasSessionMeta = fs.existsSync(metaPath);
         if (hasSessionMeta) {
             try {
@@ -106,7 +107,7 @@ export async function runPreflightEnvCommand(): Promise<void> {
                     status: lastVerified ? 'OK' : 'WARN',
                     detail: lastVerified
                         ? `Ultimo login verificato: ${lastVerified}`
-                        : 'session_meta.json presente ma lastVerifiedAt mancante',
+                        : `${META_FILENAME} presente ma lastVerifiedAt mancante`,
                 });
             } catch {
                 checks.push({
