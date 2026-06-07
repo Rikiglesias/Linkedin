@@ -4,6 +4,26 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-07 — Med-triage: classificazione 142 medium + Ondata 1 fix (`/goal backend-med-triage`)
+
+### Obiettivo
+Triage dei 142 finding MEDIUM del Backend Deep Audit: classificare (FIX-NOW/CONFIRM-USER/DEFER/ALREADY-FIXED) e fixare i FIX-NOW non-anti-ban con test, `conta-problemi`=0, senza toccare file anti-ban né del peer.
+
+### Interventi
+- **Triage completo** dei 142 medium per categoria → `~/todos/backend-med-triage.md` (self-contained, con regole e ondate). La maggior parte degli anti-ban è CONFIRM-USER; refactor grandi DEFER.
+- **Ondata 1 (5 fix FIX-NOW)**:
+  - `security/redaction.ts`: `API_KEY_PATTERN` ora copre il separatore trattino (`sk-`, `sk-ant-`, `sk-proj-`) oltre all'underscore → niente leak di chiavi OpenAI/Anthropic nei log/Sentry.
+  - `ai/leadDataCleaner.ts`: `escapeRegExp` sul nome non fidato prima di `new RegExp()` nel fallback → niente crash su metacaratteri.
+  - `scripts/gdprRetentionCleanup.ts`: `deleteLead`/`anonymizeLead`/`runRightToErasure` avvolti in `withTransaction` → atomicità (chiude il follow-up "wrap transazionale erasure" tracciato dal Batch A).
+  - `telemetry/logger.ts`: `recordRunLog` isolato in try/catch → un errore di scrittura DB non rompe più `publishLiveEvent`/il chiamante.
+  - `cloud/telegramAiImporter.ts`: validazione URL Sales Navigator via `new URL()`+hostname esatto (era `includes('linkedin.com/sales')` aggirabile).
+
+### Stato reale
+- Triage 142/142 classificato. Ondata 1 applicata + 9 test mirati. Commit dedicato. Ondate 2-4 pianificate nel tracker. Nessun file anti-ban/peer toccato. Push da coordinare col peer.
+
+### Verifica
+- `npm run conta-problemi`: exit 0 (typecheck BE+FE + lint + 1471 test). Suite mirata Ondata 1: 22/22.
+
 ## 2026-06-07 — Batch B audit backend: 8 bug HIGH non-anti-ban (prod-DB + security)
 
 ### Obiettivo

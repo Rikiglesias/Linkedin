@@ -28,7 +28,12 @@ const consoleMethods: Record<LogLevel, (...args: unknown[]) => void> = {
 async function log(level: LogLevel, event: string, payload: Record<string, unknown>): Promise<void> {
     const safePayload = sanitizeForLogs(enrichWithCorrelation(payload));
     consoleMethods[level](`[${level}] ${event}`, safePayload);
-    await recordRunLog(level, event, safePayload);
+    // Isola il fallimento della scrittura DB: non deve impedire publishLiveEvent (best-effort).
+    try {
+        await recordRunLog(level, event, safePayload);
+    } catch (err) {
+        console.warn(`[logger] recordRunLog fallito (${event}):`, err instanceof Error ? err.message : err);
+    }
     publishLiveEvent('run.log', { level, event, payload: safePayload });
 }
 

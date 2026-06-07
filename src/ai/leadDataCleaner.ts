@@ -22,6 +22,12 @@ function isGarbageValue(value: string | null | undefined): boolean {
     return CONNECTION_DEGREE_RE.test(v) || DEGREE_ONLY_RE.test(v);
 }
 
+// rawFirst arriva da dati lead non fidati e veniva passato grezzo a new RegExp() -> crash su
+// nomi con metacaratteri ('(', '+', '[', ...). Escape difensivo prima di costruire la regex.
+function escapeRegExp(s: string): string {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /**
  * Pulisce e arricchisce i dati di un lead usando GPT.
  * Corregge nomi duplicati, rimuove valori spazzatura (gradi di connessione),
@@ -130,7 +136,7 @@ Rispondi SOLO con JSON:
         // Fallback: pulisci solo con regex locali senza AI
         return {
             firstName: rawFirst || null,
-            lastName: nameDuplicated ? rawLast.replace(new RegExp(rawFirst, 'gi'), '').trim() : rawLast || null,
+            lastName: nameDuplicated ? rawLast.replace(new RegExp(escapeRegExp(rawFirst), 'gi'), '').trim() : rawLast || null,
             jobTitle: titleDirty ? null : rawTitle || null,
             accountName: companyDirty ? null : rawCompany || null,
             inferredEmail: null,

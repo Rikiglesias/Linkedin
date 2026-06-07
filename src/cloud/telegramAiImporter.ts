@@ -2,6 +2,19 @@ import { runSalesNavigatorListSync } from '../core/salesNavigatorSync';
 import { sendTelegramAlert } from '../telemetry/alerts';
 import { config } from '../config';
 
+// Validazione robusta dell'URL Sales Navigator: `includes('linkedin.com/sales')` era aggirabile
+// (es. evil.com/linkedin.com/sales o linkedin.com/sales.evil.com come sottodominio/path).
+export function isSalesNavigatorUrl(raw: string): boolean {
+    try {
+        const u = new URL(raw.trim());
+        if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
+        const host = u.hostname.toLowerCase();
+        return (host === 'www.linkedin.com' || host === 'linkedin.com') && u.pathname.startsWith('/sales');
+    } catch {
+        return false;
+    }
+}
+
 export async function processTelegramImportCommand(accountId: string, args: string): Promise<void> {
     const parts = args.trim().split(/\s+/);
     if (parts.length < 2) {
@@ -23,7 +36,7 @@ export async function processTelegramImportCommand(accountId: string, args: stri
     );
 
     try {
-        if (listUrl.includes('linkedin.com/sales')) {
+        if (isSalesNavigatorUrl(listUrl)) {
             const report = await runSalesNavigatorListSync({
                 listName,
                 listUrl,

@@ -25,7 +25,9 @@ function isSensitiveKey(key: string): boolean {
 
 const JWT_PATTERN = /\b[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\b/g;
 const SUPABASE_KEY_PATTERN = /\bsb_(publishable|secret)_[A-Za-z0-9_-]{20,}\b/gi;
-const API_KEY_PATTERN = /\b(sk|pk|rk)_[A-Za-z0-9_-]{16,}\b/gi;
+// Copre sia il separatore underscore (sk_live_...) sia il trattino usato da OpenAI/Anthropic
+// (sk-..., sk-proj-..., sk-ant-api03-...): il resto della chiave include gia' '-' nella classe.
+const API_KEY_PATTERN = /\b(sk|pk|rk)[-_][A-Za-z0-9_-]{16,}\b/gi;
 const TELEGRAM_BOT_TOKEN_PATTERN = /\b\d{8,}:[A-Za-z0-9_-]{20,}\b/g;
 
 const EMAIL_PATTERN = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/gi;

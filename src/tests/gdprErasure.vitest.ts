@@ -27,6 +27,8 @@ function makeDb() {
         run: vi.fn().mockResolvedValue(undefined),
         query: vi.fn().mockResolvedValue([]),
         get: vi.fn().mockResolvedValue(undefined),
+        // shared.withTransaction(db, cb) -> db.withTransaction(() => cb()): esegue la callback.
+        withTransaction: vi.fn(async (fn: () => Promise<unknown>) => fn()),
     };
 }
 
@@ -131,5 +133,21 @@ describe('GDPR erasure — pulizia PII nelle tabelle collegate', () => {
         expect(pre?.[1]).toEqual([55]);
         // il lead NON viene cancellato in modalita' anonymize
         expect(findRun(db, 'DELETE FROM leads WHERE id')).toBeUndefined();
+    });
+
+    test('Ondata-1: delete gira dentro una transazione (atomicita)', async () => {
+        const db = makeDb();
+        db.query.mockResolvedValue([oldLead(11, 400)]);
+        mocks.getDatabase.mockResolvedValue(db);
+        await runGdprRetentionCleanup({ deleteOnly: true });
+        expect(db.withTransaction).toHaveBeenCalled();
+    });
+
+    test('Ondata-1: runRightToErasure gira dentro una transazione', async () => {
+        const db = makeDb();
+        db.query.mockResolvedValue([{ id: 5 }]);
+        mocks.getDatabase.mockResolvedValue(db);
+        await runRightToErasure('https://www.linkedin.com/in/z/', false);
+        expect(db.withTransaction).toHaveBeenCalledTimes(1);
     });
 });

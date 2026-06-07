@@ -19,6 +19,7 @@
 
 import { createHash } from 'crypto';
 import { getDatabase } from '../db';
+import { withTransaction } from '../core/repositories/shared';
 import { logInfo, logWarn } from '../telemetry/logger';
 
 // ─── Costanti policy ──────────────────────────────────────────────────────────
@@ -127,40 +128,43 @@ async function anonymizeLead(
     const urlHash = sha256(originalUrl);
 
     if (!dryRun) {
-        await db.run(
-            `UPDATE leads SET
-                first_name     = ?,
-                last_name      = ?,
-                account_name   = ?,
-                email          = NULL,
-                phone          = NULL,
-                about          = NULL,
-                experience     = NULL,
-                business_email = NULL,
-                linkedin_url   = ?,
-                anonymized_at  = datetime('now'),
-                updated_at     = datetime('now')
-             WHERE id = ? AND anonymized_at IS NULL`,
-            ['[ANONIMIZZATO]', '[ANONIMIZZATO]', '[ANONIMIZZATO]', `anon:${urlHash}`, lead.id],
-        );
+        // Atomicita': UPDATE leads + pulizia PII tabelle collegate + audit in UNA transazione.
+        await withTransaction(db, async () => {
+            await db.run(
+                `UPDATE leads SET
+                    first_name     = ?,
+                    last_name      = ?,
+                    account_name   = ?,
+                    email          = NULL,
+                    phone          = NULL,
+                    about          = NULL,
+                    experience     = NULL,
+                    business_email = NULL,
+                    linkedin_url   = ?,
+                    anonymized_at  = datetime('now'),
+                    updated_at     = datetime('now')
+                 WHERE id = ? AND anonymized_at IS NULL`,
+                ['[ANONIMIZZATO]', '[ANONIMIZZATO]', '[ANONIMIZZATO]', `anon:${urlHash}`, lead.id],
+            );
 
-        // Pulizia PII nelle tabelle collegate: il cascade FK e' inattivo (PRAGMA foreign_keys
-        // non abilitato), quindi NON ci si puo' affidare a ON DELETE CASCADE -> pulizia esplicita.
-        // lead_enrichment_data: azzera i blob PII (telefoni/social/company), tiene gli aggregati non-PII.
-        await db.run(
-            `UPDATE lead_enrichment_data
-                SET company_json = NULL, phones_json = NULL, socials_json = NULL, sources_json = NULL,
-                    updated_at = datetime('now')
-              WHERE lead_id = ?`,
-            [lead.id],
-        );
-        // prebuilt_messages: il testo contiene PII personalizzata (nome/azienda) -> rimuovi.
-        await db.run(`DELETE FROM prebuilt_messages WHERE lead_id = ?`, [lead.id]);
+            // Pulizia PII nelle tabelle collegate: il cascade FK e' inattivo (PRAGMA foreign_keys
+            // non abilitato), quindi NON ci si puo' affidare a ON DELETE CASCADE -> pulizia esplicita.
+            // lead_enrichment_data: azzera i blob PII (telefoni/social/company), tiene gli aggregati non-PII.
+            await db.run(
+                `UPDATE lead_enrichment_data
+                    SET company_json = NULL, phones_json = NULL, socials_json = NULL, sources_json = NULL,
+                        updated_at = datetime('now')
+                  WHERE lead_id = ?`,
+                [lead.id],
+            );
+            // prebuilt_messages: il testo contiene PII personalizzata (nome/azienda) -> rimuovi.
+            await db.run(`DELETE FROM prebuilt_messages WHERE lead_id = ?`, [lead.id]);
 
-        await writeAuditLog(db, 'lead_anonymized', lead.id, originalUrl, {
-            status: lead.status,
-            last_activity_at: lead.last_activity_at,
-            days_inactive: Math.floor(daysSince(computeLastActivity(lead))),
+            await writeAuditLog(db, 'lead_anonymized', lead.id, originalUrl, {
+                status: lead.status,
+                last_activity_at: lead.last_activity_at,
+                days_inactive: Math.floor(daysSince(computeLastActivity(lead))),
+            });
         });
 
         console.log(`[ANONYMIZED] Lead #${lead.id} (${originalUrl.slice(0, 40)}...)`);
@@ -182,24 +186,27 @@ async function deleteLead(
 
     if (!dryRun) {
         // Cancella prima TUTTE le tabelle dipendenti (FK cascade inattivo: PRAGMA foreign_keys off).
-        // Ordine: figli -> padre. Nessuna riga lead-linked deve restare orfana dopo la cancellazione.
-        await db.run(`DELETE FROM message_history WHERE lead_id = ?`, [lead.id]);
-        await db.run(`DELETE FROM lead_events WHERE lead_id = ?`, [lead.id]);
-        await db.run(`DELETE FROM list_leads WHERE lead_id = ?`, [lead.id]);
-        await db.run(`DELETE FROM lead_intents WHERE lead_id = ?`, [lead.id]);
-        await db.run(`DELETE FROM lead_enrichment_data WHERE lead_id = ?`, [lead.id]);
-        await db.run(`DELETE FROM prebuilt_messages WHERE lead_id = ?`, [lead.id]);
-        await db.run(`DELETE FROM salesnav_list_items WHERE lead_id = ?`, [lead.id]);
-        await db.run(`DELETE FROM ml_feature_store WHERE lead_id = ?`, [lead.id]);
-        await db.run(`DELETE FROM challenge_events WHERE lead_id = ?`, [lead.id]);
-        await db.run(`DELETE FROM lead_campaign_state WHERE lead_id = ?`, [lead.id]);
-        await db.run(`DELETE FROM leads WHERE id = ?`, [lead.id]);
+        // Ordine: figli -> padre. Atomicita': figli + padre + audit in UNA transazione, cosi' un
+        // crash a meta' non lascia il lead parzialmente cancellato e senza riga di audit.
+        await withTransaction(db, async () => {
+            await db.run(`DELETE FROM message_history WHERE lead_id = ?`, [lead.id]);
+            await db.run(`DELETE FROM lead_events WHERE lead_id = ?`, [lead.id]);
+            await db.run(`DELETE FROM list_leads WHERE lead_id = ?`, [lead.id]);
+            await db.run(`DELETE FROM lead_intents WHERE lead_id = ?`, [lead.id]);
+            await db.run(`DELETE FROM lead_enrichment_data WHERE lead_id = ?`, [lead.id]);
+            await db.run(`DELETE FROM prebuilt_messages WHERE lead_id = ?`, [lead.id]);
+            await db.run(`DELETE FROM salesnav_list_items WHERE lead_id = ?`, [lead.id]);
+            await db.run(`DELETE FROM ml_feature_store WHERE lead_id = ?`, [lead.id]);
+            await db.run(`DELETE FROM challenge_events WHERE lead_id = ?`, [lead.id]);
+            await db.run(`DELETE FROM lead_campaign_state WHERE lead_id = ?`, [lead.id]);
+            await db.run(`DELETE FROM leads WHERE id = ?`, [lead.id]);
 
-        await writeAuditLog(db, 'lead_deleted', null, leadIdentifier, {
-            status: lead.status,
-            last_activity_at: lead.last_activity_at,
-            days_inactive: Math.floor(daysSince(computeLastActivity(lead))),
-            was_anonymized: lead.anonymized_at !== null,
+            await writeAuditLog(db, 'lead_deleted', null, leadIdentifier, {
+                status: lead.status,
+                last_activity_at: lead.last_activity_at,
+                days_inactive: Math.floor(daysSince(computeLastActivity(lead))),
+                was_anonymized: lead.anonymized_at !== null,
+            });
         });
 
         console.log(`[DELETED] Lead #${lead.id} (${leadIdentifier.slice(0, 40)}...)`);
@@ -346,42 +353,45 @@ export async function runRightToErasure(linkedinUrl: string, dryRun = false): Pr
         ]);
         const leadIds = matched.map((r) => r.id);
 
-        // 1. Anonimizza il lead se ancora presente
-        await db.run(
-            `UPDATE leads SET
-                first_name = '[ANONIMIZZATO]', last_name = '[ANONIMIZZATO]',
-                email = NULL, phone = NULL, about = NULL, experience = NULL,
-                business_email = NULL, linkedin_url = ?,
-                anonymized_at = datetime('now'), updated_at = datetime('now')
-             WHERE linkedin_url = ? AND anonymized_at IS NULL`,
-            [anonIdentifier, linkedinUrl],
-        );
-
-        // 1b. Pulizia PII nelle tabelle collegate (cascade FK inattivo -> esplicita):
-        //     lead_enrichment_data (telefoni/social/company) + prebuilt_messages (testo personalizzato).
-        for (const id of leadIds) {
+        // Atomicita': anonimizzazione lead + pulizia PII collegate + audit_log in UNA transazione.
+        await withTransaction(db, async () => {
+            // 1. Anonimizza il lead se ancora presente
             await db.run(
-                `UPDATE lead_enrichment_data
-                    SET company_json = NULL, phones_json = NULL, socials_json = NULL, sources_json = NULL,
-                        updated_at = datetime('now')
-                  WHERE lead_id = ?`,
-                [id],
+                `UPDATE leads SET
+                    first_name = '[ANONIMIZZATO]', last_name = '[ANONIMIZZATO]',
+                    email = NULL, phone = NULL, about = NULL, experience = NULL,
+                    business_email = NULL, linkedin_url = ?,
+                    anonymized_at = datetime('now'), updated_at = datetime('now')
+                 WHERE linkedin_url = ? AND anonymized_at IS NULL`,
+                [anonIdentifier, linkedinUrl],
             );
-            await db.run(`DELETE FROM prebuilt_messages WHERE lead_id = ?`, [id]);
-        }
 
-        // 2. Anonimizza lead_identifier in audit_log per questo lead (GDPR Right to Erasure)
-        await db.run(`UPDATE audit_log SET lead_identifier = ? WHERE lead_identifier = ?`, [
-            anonIdentifier,
-            linkedinUrl,
-        ]);
+            // 1b. Pulizia PII nelle tabelle collegate (cascade FK inattivo -> esplicita):
+            //     lead_enrichment_data (telefoni/social/company) + prebuilt_messages (testo personalizzato).
+            for (const id of leadIds) {
+                await db.run(
+                    `UPDATE lead_enrichment_data
+                        SET company_json = NULL, phones_json = NULL, socials_json = NULL, sources_json = NULL,
+                            updated_at = datetime('now')
+                      WHERE lead_id = ?`,
+                    [id],
+                );
+                await db.run(`DELETE FROM prebuilt_messages WHERE lead_id = ?`, [id]);
+            }
 
-        // 3. Scrivi evento erasure in audit_log
-        await db.run(
-            `INSERT INTO audit_log (action, lead_id, lead_identifier, performed_by, metadata_json)
-             VALUES ('erasure_requested', NULL, ?, 'gdpr_erasure', '{"source":"right_to_erasure"}')`,
-            [anonIdentifier],
-        );
+            // 2. Anonimizza lead_identifier in audit_log per questo lead (GDPR Right to Erasure)
+            await db.run(`UPDATE audit_log SET lead_identifier = ? WHERE lead_identifier = ?`, [
+                anonIdentifier,
+                linkedinUrl,
+            ]);
+
+            // 3. Scrivi evento erasure in audit_log
+            await db.run(
+                `INSERT INTO audit_log (action, lead_id, lead_identifier, performed_by, metadata_json)
+                 VALUES ('erasure_requested', NULL, ?, 'gdpr_erasure', '{"source":"right_to_erasure"}')`,
+                [anonIdentifier],
+            );
+        });
 
         console.log(`[ERASURE] Lead ${linkedinUrl.slice(0, 40)}... anonimizzato ovunque.`);
     } else {

@@ -32,6 +32,16 @@ describe('security/redaction — sanitizeForLogs', () => {
         expect(result.apiKey).not.toBe('sk-abc123def456');
     });
 
+    it('API key con trattino nel testo → redacted (sk-, sk-ant-, sk-proj-, legacy sk_)', () => {
+        const r1 = sanitizeForLogs({ note: 'chiave sk-ant-api03-AAAABBBBCCCCDDDD1234efgh' }) as { note: string };
+        expect(r1.note).not.toContain('sk-ant-api03');
+        expect(r1.note).toContain('[REDACTED]');
+        const r2 = sanitizeForLogs({ note: 'tok sk-proj-AAAABBBBCCCCDDDD1234efgh' }) as { note: string };
+        expect(r2.note).toContain('[REDACTED]');
+        const r3 = sanitizeForLogs({ note: 'legacy sk_live_AAAABBBBCCCCDDDD1234' }) as { note: string };
+        expect(r3.note).toContain('[REDACTED]');
+    });
+
     it('oggetto con token → redacted', () => {
         const input = { id: 1, token: 'eyJhbGciOiJIUzI1NiJ9.test' };
         const result = sanitizeForLogs(input);
