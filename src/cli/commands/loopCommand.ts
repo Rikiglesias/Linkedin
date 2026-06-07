@@ -221,8 +221,14 @@ async function evaluateLoopDoctorGate(dryRun: boolean): Promise<LoopDoctorGate> 
         return { proceed: true, reason: 'dry_run' };
     }
 
-    const report = await runDoctor();
+    // CL4b: skipBrowserSessionCheck -> il gate del loop (ogni ciclo) NON apre un browser solo per
+    // checkLogin. Il login lo verifica jobRunner all'avvio della sessione di lavoro (e mette in
+    // quarantena se manca -> i cicli dopo sono bloccati dal check quarantine sotto). Restano i
+    // check economici (sync/quarantine/compliance). Una sessione browser in meno per ciclo.
+    const report = await runDoctor({ skipBrowserSessionCheck: true });
     const syncOk = !report.sync.enabled || report.sync.configured;
+    // sessionLoginOk e' true quando il check browser e' skippato (login delegato a jobRunner):
+    // questo branch resta come difesa se in futuro il gate tornasse a verificare il login qui.
     if (!report.sessionLoginOk) {
         return { proceed: false, reason: 'doctor_login_missing' };
     }

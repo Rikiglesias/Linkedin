@@ -257,7 +257,20 @@ async function runDbIntegrityCheckAndRestoreIfNeeded(): Promise<{
     };
 }
 
-export async function runDoctor(): Promise<DoctorReport> {
+export interface RunDoctorOptions {
+    /**
+     * CL4b (collaudo): se true, salta il check di login via browser (apertura di una sessione
+     * per account solo per checkLogin). Usato dal loop gate dell'autopilot, che gira a OGNI ciclo:
+     * aprire un browser per ciclo solo per verificare il login era una sessione ridondante (il
+     * jobRunner verifica gia il login all'apertura della sessione di lavoro, jobRunner.ts:199, e
+     * mette in quarantena se manca -> i cicli successivi sono bloccati a costo zero dal flag
+     * quarantine). I check economici (DB/quarantine/sync/compliance/isolation) restano attivi.
+     * I comandi one-shot (preflight, comando `doctor`) NON passano questo flag -> check completo.
+     */
+    skipBrowserSessionCheck?: boolean;
+}
+
+export async function runDoctor(options: RunDoctorOptions = {}): Promise<DoctorReport> {
     const dbHealth = await runDbIntegrityCheckAndRestoreIfNeeded();
     const [
         quarantineFlag,
@@ -297,21 +310,35 @@ export async function runDoctor(): Promise<DoctorReport> {
 
     const accountSessions: DoctorAccountSessionReport[] = [];
     const accounts = getRuntimeAccountProfiles();
-    for (const account of accounts) {
-        const session = await launchBrowser({
-            sessionDir: account.sessionDir,
-            proxy: account.proxy,
-            forceDesktop: true,
-        });
-        try {
-            const sessionLoginOk = await checkLogin(session.page);
+    if (options.skipBrowserSessionCheck) {
+        // CL4b: niente browser per ciclo. Popoliamo i metadati account (per accountIsolation, che
+        // dipende solo da sessionDir/proxy in config, non dal browser) senza aprire sessioni; il
+        // login reale lo verifica jobRunner all'avvio della sessione di lavoro. sessionLoginOk=true
+        // = "non verificato qui, delegato a jobRunner", così il gate del loop non falsa-blocca.
+        for (const account of accounts) {
             accountSessions.push({
                 accountId: account.id,
                 sessionDir: account.sessionDir,
-                sessionLoginOk,
+                sessionLoginOk: true,
             });
-        } finally {
-            await closeBrowser(session);
+        }
+    } else {
+        for (const account of accounts) {
+            const session = await launchBrowser({
+                sessionDir: account.sessionDir,
+                proxy: account.proxy,
+                forceDesktop: true,
+            });
+            try {
+                const sessionLoginOk = await checkLogin(session.page);
+                accountSessions.push({
+                    accountId: account.id,
+                    sessionDir: account.sessionDir,
+                    sessionLoginOk,
+                });
+            } finally {
+                await closeBrowser(session);
+            }
         }
     }
     const sessionLoginOk = accountSessions.every((entry) => entry.sessionLoginOk);
