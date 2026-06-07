@@ -138,12 +138,17 @@ class PostgresManager implements DatabaseManager {
     private static readonly SQL_CACHE_MAX = 500;
 
     constructor(connectionString: string) {
+        const parsedMax = Number.parseInt(process.env.PG_POOL_MAX ?? '10', 10);
+        const poolMax = Number.isFinite(parsedMax) && parsedMax > 0 ? parsedMax : 10;
+        const parsedTimeout = Number.parseInt(process.env.PG_STATEMENT_TIMEOUT_MS ?? '30000', 10);
+        // >= 0: 0 = disabilitato. NON usare `|| 30000` (azzererebbe il valore 0 valido).
+        const statementTimeout = Number.isFinite(parsedTimeout) && parsedTimeout >= 0 ? parsedTimeout : 30_000;
         this.pool = new Pool({
             connectionString,
-            max: 10,
+            max: poolMax,
             idleTimeoutMillis: 30_000,
             connectionTimeoutMillis: 5_000,
-            statement_timeout: 30_000,
+            statement_timeout: statementTimeout,
         });
     }
 
@@ -382,6 +387,7 @@ export function normalizeSqlForPg(sql: string): string {
 // ISTANZA E INIZIALIZZAZIONE
 // ------------------------------------------------------------------
 let dbInstance: DatabaseManager | null = null;
+let dbInitPromise: Promise<DatabaseManager> | null = null;
 let isPostgres = false;
 
 function resolveMigrationDirectory(): string {
@@ -396,12 +402,24 @@ function resolveMigrationDirectory(): string {
     throw new Error('Cartella migrazioni non trovata.');
 }
 
+// Contratto: tableName/columnName devono essere identificatori SQL semplici. Mai input utente,
+// solo letterali hardcoded da applyMigrations(). Allowlist = difesa in profondita' (i DDL non
+// accettano parametri bindabili sugli identificatori).
+const SAFE_SQL_IDENTIFIER = /^[a-zA-Z0-9_]+$/;
+function assertSafeSqlIdentifier(identifier: string): void {
+    if (!SAFE_SQL_IDENTIFIER.test(identifier)) {
+        throw new Error(`Identificatore SQL non sicuro rifiutato: ${JSON.stringify(identifier)}`);
+    }
+}
+
 async function ensureColumnPg(
     database: DatabaseManager,
     tableName: string,
     columnName: string,
     definition: string,
 ): Promise<void> {
+    assertSafeSqlIdentifier(tableName);
+    assertSafeSqlIdentifier(columnName);
     const exists = await database.get(
         `SELECT column_name FROM information_schema.columns WHERE table_name=$1 AND column_name=$2`,
         [tableName, columnName],
@@ -419,6 +437,8 @@ async function ensureColumnSqlite(
     columnName: string,
     definition: string,
 ): Promise<void> {
+    assertSafeSqlIdentifier(tableName);
+    assertSafeSqlIdentifier(columnName);
     const columns = await database.query<{ name: string }>(`PRAGMA table_info(${tableName})`);
     const exists = columns.some((column) => column.name === columnName);
     if (!exists) {
@@ -475,6 +495,11 @@ async function applyMigrations(database: DatabaseManager): Promise<void> {
 
         try {
             await database.withTransaction(async (tx) => {
+                if (isPostgres) {
+                    // Le migration possono superare statement_timeout (index/backfill grandi).
+                    // SET LOCAL azzera il timeout solo per QUESTA transazione (reset a COMMIT/ROLLBACK).
+                    await tx.exec('SET LOCAL statement_timeout = 0');
+                }
                 // Eseguiamo il file SQL intero: evita parser naive su ';'
                 // che rompe blocchi complessi (es. funzioni/DO blocks in Postgres).
                 await tx.exec(sql);
@@ -571,6 +596,19 @@ export async function getDatabase(): Promise<DatabaseManager> {
 
     if (dbInstance) return dbInstance;
 
+    // Anti-race: memoizza la PROMISE di init (non l'istanza), cosi' chiamate concorrenti al primo
+    // boot condividono la stessa init e non creano pool/handle SQLite duplicati e orfani.
+    if (dbInitPromise) return dbInitPromise;
+    dbInitPromise = initializeDatabaseInstance();
+    try {
+        return await dbInitPromise;
+    } catch (error) {
+        dbInitPromise = null; // reset su errore -> retry pulito
+        throw error;
+    }
+}
+
+async function initializeDatabaseInstance(): Promise<DatabaseManager> {
     // Controlla se abbiamo il DATABASE_URL configurato (Postgres)
     if (config.databaseUrl && config.databaseUrl.startsWith('postgres')) {
         isPostgres = true;
@@ -702,6 +740,7 @@ export async function closeDatabase(): Promise<void> {
         await dbInstance.close();
         dbInstance = null;
     }
+    dbInitPromise = null;
 }
 
 export async function backupDatabase(): Promise<string> {
@@ -714,12 +753,27 @@ export async function backupDatabase(): Promise<string> {
         const dateStr = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
         const backupPath = path.join(backupsDir, `pg_backup_${dateStr}.sql`);
         try {
+            // Sicurezza: non passare la password come argv (visibile in ps / /proc/<pid>/cmdline).
+            // La password va in PGPASSWORD; la connection string resta come --dbname ma senza la
+            // password, cosi' si preservano i query param (sslmode, ecc.) senza esporre il segreto.
+            const dumpEnv: NodeJS.ProcessEnv = { ...process.env };
+            let dbnameArg = config.databaseUrl;
+            try {
+                const dbUrl = new URL(config.databaseUrl);
+                if (dbUrl.password) {
+                    dumpEnv.PGPASSWORD = decodeURIComponent(dbUrl.password);
+                    dbUrl.password = '';
+                    dbnameArg = dbUrl.toString();
+                }
+            } catch {
+                // URL non parsabile: fallback al comportamento precedente
+            }
             await new Promise<void>((resolve, reject) => {
                 execFile(
                     'pg_dump',
                     [
                         '--dbname',
-                        config.databaseUrl,
+                        dbnameArg,
                         '--format',
                         'plain',
                         '--no-owner',
@@ -727,7 +781,7 @@ export async function backupDatabase(): Promise<string> {
                         '--file',
                         backupPath,
                     ],
-                    { timeout: 120_000 },
+                    { timeout: 120_000, env: dumpEnv },
                     (error) => {
                         if (error) reject(error);
                         else resolve();
