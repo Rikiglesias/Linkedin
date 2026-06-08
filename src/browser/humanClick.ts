@@ -19,19 +19,37 @@ export async function clickCoordinatesHumanLike(page: Page, x: number, y: number
     await pauseInputBlock(page);
 
     try {
-        await page.waitForTimeout(30);
+        // Pre-click non uniforme (right-skew): un umano non aspetta esattamente 30ms prima di
+        // cliccare. random*random = distribuzione asimmetrica verso valori bassi, coda variabile.
+        await page.waitForTimeout(40 + Math.floor(Math.random() * Math.random() * 220));
         await page.mouse.click(x, y, { delay: 40 + Math.floor(Math.random() * 70) });
     } finally {
         await resumeInputBlock(page);
     }
 }
 
+/** Campione gaussiano standard N(0,1) via Box-Muller (guardia su log(0)). */
+function gaussianStd(): number {
+    let u1 = Math.random();
+    const u2 = Math.random();
+    if (u1 < 1e-9) u1 = 1e-9;
+    return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+
 function buildHumanClickPoint(box: { x: number; y: number; width: number; height: number }): { x: number; y: number } {
-    const maxJitterX = Math.min(3, box.width * 0.15);
-    const maxJitterY = box.height < 40 ? 0 : Math.min(2, box.height * 0.15);
+    // Dispersione GAUSSIANA 2D attorno al centro su ENTRAMBI gli assi (sigma ~18% della
+    // dimensione), MAI collassata a 0. Il vecchio jitter uniforme cap 3px/2px con jitterY=0
+    // sotto i 40px di altezza dava coordinata Y costante al pixel sui bottoni Connetti/Invia
+    // (~32-36px) = firma robotica netta. Offset clampato a ±42% per restare DENTRO il target.
+    const sigmaX = Math.max(2, box.width * 0.18);
+    const sigmaY = Math.max(2, box.height * 0.18);
+    const clampX = box.width * 0.42;
+    const clampY = box.height * 0.42;
+    const offX = Math.max(-clampX, Math.min(clampX, gaussianStd() * sigmaX));
+    const offY = Math.max(-clampY, Math.min(clampY, gaussianStd() * sigmaY));
     return {
-        x: box.x + box.width / 2 + (Math.random() * maxJitterX * 2 - maxJitterX),
-        y: box.y + box.height / 2 + (Math.random() * maxJitterY * 2 - maxJitterY),
+        x: box.x + box.width / 2 + offX,
+        y: box.y + box.height / 2 + offY,
     };
 }
 

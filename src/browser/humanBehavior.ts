@@ -627,13 +627,17 @@ export async function humanMouseMove(page: Page, targetSelector: string): Promis
         // Un umano reale non va mai diretto al target — prima si muove nell'area generale.
         const startPt = pageMouseState.get(page) ?? getStartingPoint(page);
         const path = MouseGenerator.generateHumanPath(startPt, { x: finalX, y: finalY }, viewport);
-        // Delay per punto: ~12-20ms per punto, totale proporzionale al path length
-        const baseDelay = Math.max(8, Math.min(20, 300 / path.length));
+        // Durata ∝ legge di Fitts (più lontano = più tempo, sub-lineare), NON budget fisso ~300ms
+        // (che dava l'OPPOSTO: path lunghi = MENO ms/punto = scatto robotico). Timing inter-punto
+        // log-normale (right-skew biometrico), non uniforme (istogramma piatto = firma bot).
+        const moveDistPx = Math.hypot(finalX - startPt.x, finalY - startPt.y);
+        const moveTotalMs = 350 + 90 * Math.log2(moveDistPx / 40 + 1);
+        const baseDelay = Math.max(10, Math.min(45, moveTotalMs / Math.max(1, path.length)));
 
         await withMouseTimeout(async () => {
             for (const point of path) {
                 await page.mouse.move(point.x, point.y);
-                const jitter = baseDelay * (0.6 + Math.random() * 0.8);
+                const jitter = logNormalDelayMs(baseDelay, 0.35, baseDelay * 0.5, baseDelay * 2);
                 await page.waitForTimeout(Math.round(jitter));
             }
         });
@@ -661,12 +665,15 @@ export async function humanMouseMoveToCoords(page: Page, targetX: number, target
         const startPoint = getStartingPoint(page);
         const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
         const path = MouseGenerator.generateHumanPath(startPoint, { x: targetX, y: targetY }, viewport);
-        const baseDelay = Math.max(8, Math.min(20, 300 / path.length));
+        // Durata ∝ Fitts + timing inter-punto log-normale (vedi humanMouseMove).
+        const moveDistPx = Math.hypot(targetX - startPoint.x, targetY - startPoint.y);
+        const moveTotalMs = 350 + 90 * Math.log2(moveDistPx / 40 + 1);
+        const baseDelay = Math.max(10, Math.min(45, moveTotalMs / Math.max(1, path.length)));
 
         await withMouseTimeout(async () => {
             for (const point of path) {
                 await page.mouse.move(point.x, point.y);
-                const jitter = baseDelay * (0.6 + Math.random() * 0.8);
+                const jitter = logNormalDelayMs(baseDelay, 0.35, baseDelay * 0.5, baseDelay * 2);
                 await page.waitForTimeout(Math.round(jitter));
             }
         });
@@ -895,8 +902,13 @@ export async function humanType(page: Page, selector: string, text: string): Pro
         // dynamics (flight time log-normale/ex-gaussian).
         const rawDelay = isSpaceOrPunctuation
             ? logNormalDelayMs(200, 0.42, 90, 650)
-            : logNormalDelayMs(60, 0.42, 28, 240);
-        const delayBase = Math.round(rawDelay * lengthSlowFactor * currentWordMultiplier);
+            : logNormalDelayMs(95, 0.42, 45, 320);
+        // Floor ASSOLUTO post-moltiplicatore: lengthSlowFactor*currentWordMultiplier può scendere
+        // a 0.595x e, applicato DOPO il clamp di logNormalDelayMs, bypassava il floor → keystroke
+        // <28ms = oltre il record mondiale (firma key-injection). Il floor fisico umano va imposto
+        // QUI, sull'effettivo. char ≥40ms (~migliore dattilografo umano), spazio/punteggiatura ≥80ms.
+        const keystrokeFloorMs = isSpaceOrPunctuation ? 80 : 40;
+        const delayBase = Math.max(keystrokeFloorMs, Math.round(rawDelay * lengthSlowFactor * currentWordMultiplier));
 
         await element.pressSequentially(typedChar, { delay: delayBase });
 
@@ -970,6 +982,27 @@ export async function humanType(page: Page, selector: string, text: string): Pro
 }
 
 /**
+ * Scroll con MOMENTUM: decompone un delta totale in una raffica di tick wheel
+ * decrescenti (ease-out), come una rotellina/trackpad reale. Un singolo
+ * page.mouse.wheel(0, big) sposta la scrollbar in un frame = firma robotica (teletrasporto),
+ * il pattern #1 che la behavioral-biometrics cerca sullo scroll.
+ */
+async function wheelWithMomentum(page: Page, totalDeltaY: number): Promise<void> {
+    const ticks = 4 + Math.floor(Math.random() * 5); // 4-8 tick
+    let remaining = totalDeltaY;
+    for (let i = 0; i < ticks; i++) {
+        const isLast = i === ticks - 1;
+        // ease-out: i primi tick spostano di più, gli ultimi rallentano (decelerazione naturale)
+        const step = isLast ? remaining : Math.round(remaining * (0.35 + Math.random() * 0.25));
+        remaining -= step;
+        await page.mouse.wheel(0, step);
+        if (!isLast) {
+            await page.waitForTimeout(12 + Math.floor(Math.random() * 28)); // 12-40ms tra tick
+        }
+    }
+}
+
+/**
  * Scrolling variabile con 3-7 movimenti, velocità diversa e 30% di probabilità
  * di tornare in cima (comportamento dei lettori reali).
  */
@@ -1016,7 +1049,7 @@ export async function simulateHumanReading(page: Page): Promise<void> {
             }
         }
 
-        await page.mouse.wheel(0, deltaY);
+        await wheelWithMomentum(page, deltaY);
         if (mobile && Math.random() < 0.4) {
             await humanSwipe(page, 'up');
         }
@@ -1164,7 +1197,7 @@ export async function computeProfileDwellTime(page: Page): Promise<void> {
                     richness > 0.5
                         ? 100 + Math.random() * 200 // Profilo ricco: scroll lento per leggere
                         : 300 + Math.random() * 300; // Profilo sparse: scroll veloce
-                await page.mouse.wheel(0, deltaY);
+                await wheelWithMomentum(page, deltaY);
                 if (mobile && Math.random() < 0.3) await humanSwipe(page, 'up');
                 // Pausa tra scroll proporzionale a richness
                 const pauseMs = 400 + Math.floor(richness * 1200) + Math.floor(Math.random() * 600);
