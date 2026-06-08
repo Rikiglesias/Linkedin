@@ -38,7 +38,8 @@ import { config } from '../config';
 import { subscribeLiveEvents, getLiveEventSubscribersCount, type LiveEventMessage } from '../telemetry/liveEvents';
 import { resolveCorrelationId, runWithCorrelationId } from '../telemetry/correlation';
 import { WebSocketServer, WebSocket } from 'ws';
-import { isWebSocketAuthorized } from './wsAuth';
+import { isWebSocketAuthorizedAsync } from './wsAuth';
+import { validateDashboardSessionToken } from './dashboardSession';
 
 export const app = express();
 app.set('trust proxy', false);
@@ -283,12 +284,11 @@ function hashDashboardSessionToken(token: string): string {
 function buildDashboardSessionCookie(token: string, maxAgeSec: number, req?: Request): string {
     const isSecure = req ? req.secure || req.headers['x-forwarded-proto'] === 'https' : Boolean(config.databaseUrl);
     const secureFlag = isSecure ? '; Secure' : '';
-    return `${DASHBOARD_SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/api; HttpOnly; SameSite=Strict; Max-Age=${maxAgeSec}${secureFlag}`;
-}
-
-interface DashboardSessionRow {
-    expires_at: string;
-    revoked_at: string | null;
+    // CL15: Path=/ (non /api) cosi' il browser invia il cookie ANCHE all'handshake WebSocket su /ws
+    // (il cookie matcha solo i path sotto il suo Path), abilitando l'auth WS via session cookie senza
+    // passare la API key nella query. HttpOnly + SameSite=Strict + Secure invariati: il cookie resta
+    // non leggibile da JS e non inviato cross-site (mitiga CSWSH anche col Path piu' ampio).
+    return `${DASHBOARD_SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAgeSec}${secureFlag}`;
 }
 
 interface DashboardAuthAttemptRow {
@@ -310,37 +310,11 @@ async function revokeDashboardSession(token: string): Promise<void> {
 }
 
 async function hasValidDashboardSession(req: Request): Promise<boolean> {
+    // CL15: delega al validatore condiviso (dashboardSession.ts) — STESSA logica usata anche dal WS
+    // auth, niente drift. refresh:true preserva lo sliding-window dell'auth HTTP (estende la scadenza
+    // della sessione a ogni richiesta autenticata). Behavior-identico al codice precedente.
     const token = getDashboardSessionTokenFromRequest(req);
-    if (!token) return false;
-
-    const tokenHash = hashDashboardSessionToken(token);
-    const db = await getDatabase();
-    const row = await db.get<DashboardSessionRow>(
-        `SELECT expires_at, revoked_at
-           FROM dashboard_sessions
-          WHERE token_hash = ?
-          LIMIT 1`,
-        [tokenHash],
-    );
-
-    if (!row || row.revoked_at) {
-        return false;
-    }
-
-    const expiresAtMs = Date.parse(row.expires_at);
-    if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
-        return false;
-    }
-
-    const nowIso = new Date().toISOString();
-    const refreshedExpiry = new Date(Date.now() + DASHBOARD_SESSION_TTL_MS).toISOString();
-    await db.run(
-        `UPDATE dashboard_sessions
-            SET last_seen_at = ?, expires_at = ?
-          WHERE token_hash = ?`,
-        [nowIso, refreshedExpiry, tokenHash],
-    );
-    return true;
+    return validateDashboardSessionToken(token, { refresh: true });
 }
 
 const MAX_ACTIVE_DASHBOARD_SESSIONS = 5;
@@ -397,7 +371,7 @@ function clearDashboardSessionCookie(req: Request, res: Response): void {
     const secureFlag = isSecure ? '; Secure' : '';
     res.setHeader(
         'Set-Cookie',
-        `${DASHBOARD_SESSION_COOKIE}=; Path=/api; HttpOnly; SameSite=Strict; Max-Age=0${secureFlag}`,
+        `${DASHBOARD_SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secureFlag}`,
     );
 }
 
@@ -906,12 +880,15 @@ export function startServer(port: number = 3000) {
     // ── WebSocket server (real-time push, same port) ─────────────────────────
     const wss = new WebSocketServer({ server, path: '/ws' });
 
-    wss.on('connection', (ws, req) => {
+    const handleWsConnection = async (ws: WebSocket, req: import('node:http').IncomingMessage): Promise<void> => {
         // CC-10 / T6: il WS richiede auth ogni volta che la dashboard auth e' attiva, NON solo
         // quando e' configurata un'apiKey. Prima, con basic-auth-only (apiKey vuota), il guard
-        // veniva saltato e /ws restava aperto a chiunque (fail-open). isWebSocketAuthorized copre
-        // token query, Bearer/x-api-key e Basic.
-        if (config.dashboardAuthEnabled && !isWebSocketAuthorized(req)) {
+        // veniva saltato e /ws restava aperto a chiunque (fail-open).
+        // CL15: isWebSocketAuthorizedAsync copre token query, Bearer/x-api-key, Basic E il session
+        // cookie `dashboard_session` (inviato dal browser nell'handshake) -> la dashboard non passa
+        // piu' la API key in chiaro nella query `?token=`. Il check e' la PRIMA azione: nessun evento
+        // viene sottoscritto/inviato prima dell'esito (su fail si chiude prima di attaccare i listener).
+        if (config.dashboardAuthEnabled && !(await isWebSocketAuthorizedAsync(req))) {
             ws.close(4401, 'Unauthorized');
             return;
         }
@@ -962,6 +939,17 @@ export function startServer(port: number = 3000) {
         ws.on('error', () => {
             clearInterval(heartbeat);
             unsubscribe();
+        });
+    };
+    wss.on('connection', (ws, req) => {
+        // CL15: l'auth WS e' async (valida anche il session cookie via DB). L'handler di .on deve
+        // restare void (no-misused-promises): voidiamo la Promise gestendo eventuali errori con close.
+        handleWsConnection(ws, req).catch(() => {
+            try {
+                ws.close(1011, 'Internal error');
+            } catch {
+                /* ws gia' chiuso */
+            }
         });
     });
 

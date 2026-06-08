@@ -13,6 +13,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import { config } from '../config';
+import { extractDashboardSessionCookie, validateDashboardSessionToken } from './dashboardSession';
 
 /** Confronto timing-safe: stessa primitiva usata dall'auth HTTP in server.ts. Esportata per riuso (es. /metrics). */
 export function secureEquals(a: string, b: string): boolean {
@@ -74,4 +75,21 @@ export function isWebSocketAuthorized(req: IncomingMessage): boolean {
     }
 
     return false;
+}
+
+/**
+ * CL15: variante async di isWebSocketAuthorized.
+ * Prova prima i check SINCRONI (token query / x-api-key / Bearer / basic — invariati, coperti dai test),
+ * poi — se nessuno matcha — valida il SESSION COOKIE `dashboard_session` che il browser invia
+ * automaticamente nell'handshake WebSocket (header Cookie). Cosi' la dashboard browser NON deve passare
+ * la API key in chiaro nella query `?token=` (che finirebbe nei log di server/proxy/cronologia).
+ * Fail-closed: validateDashboardSessionToken ritorna false su qualsiasi problema (cookie assente,
+ * sessione scaduta/revocata, errore DB).
+ */
+export async function isWebSocketAuthorizedAsync(req: IncomingMessage): Promise<boolean> {
+    if (isWebSocketAuthorized(req)) {
+        return true;
+    }
+    const sessionToken = extractDashboardSessionCookie(req.headers.cookie);
+    return validateDashboardSessionToken(sessionToken);
 }
