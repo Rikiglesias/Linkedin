@@ -112,13 +112,16 @@ export async function runWebrtcLeakCheck(args: string[] = []): Promise<boolean> 
 
     let proxy: ProxyConfig | undefined;
     let managed = false;
-    try {
+    if (allowDirect) {
+        // Bypass TOTALE del proxy: salta del tutto la risoluzione (e quindi il path camoufox publicIP-attraverso-proxy
+        // che fallisce con 407 se l'auth proxy ha problemi). Isola il test WebRTC dal proxy: verifica SOLO il kill RTC
+        // (RTCPeerConnection undefined). NB: l'IP di uscita sara' quello reale, NON il proxy → la dimensione
+        // "leak-dietro-proxy" non e' coperta, ma se l'RTC e' killato non c'e' alcun canale da leakare comunque.
+        console.warn('[WEBRTC_LEAK] --allow-direct: bypass TOTALE del proxy → IP diretto. Verifico SOLO il kill RTC, non il leak-dietro-proxy.');
+    } else {
         const resolved = await resolveTestProxy(sessionDir);
         proxy = resolved.proxy;
         managed = resolved.managed;
-    } catch (error) {
-        if (!allowDirect) throw error;
-        console.warn('[WEBRTC_LEAK] --allow-direct: proseguo su IP diretto (verifico solo il kill RTC, NON il leak-dietro-proxy).');
     }
 
     console.log('[WEBRTC_LEAK] ── Diagnostico #7 WebRTC leak ──────────────────────────');
