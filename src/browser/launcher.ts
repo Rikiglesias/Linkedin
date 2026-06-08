@@ -345,6 +345,12 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             headless,
             viewport,
             locale: fingerprint.locale ?? config.browserLocale,
+            // #8/GAP-2: coerenza timezone↔geo. PATH CAMOUFOX (prod): camoufox auto-deriva
+            // timezone/locale/geolocation dal `geoip` (= IP del proxy via resolveProxyGeoip, sotto)
+            // → la tz segue SEMPRE il paese del proxy, coerente. PATH CHROMIUM (qui): usa
+            // fingerprint.timezone ?? config.timezone — per deploy IT-only (proxy IT) Europe/Rome è
+            // coerente; per chromium MULTI-GEO impostare TIMEZONE env o la timezone per-account M18
+            // (accountManager) coerente col paese del proxy (proxy-rules.md #3, geo coherence).
             timezoneId: fingerprint.timezone ?? config.timezone,
             userAgent: fingerprint.userAgent,
             handleSIGINT: true,
