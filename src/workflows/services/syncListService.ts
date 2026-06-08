@@ -1,11 +1,13 @@
 import { config } from '../../config';
 import { runSalesNavigatorListSync } from '../../core/salesNavigatorSync';
+import { listSalesNavLists } from '../../core/repositories/leadsCore';
 import { evaluateWorkflowEntryGuards } from '../../core/workflowEntryGuards';
 import { runPreflight } from '../preflight';
 import { appendProxyReputationWarning } from '../preflight/configInspector';
 import type {
     PreflightConfigStatus,
     PreflightDbStats,
+    PreflightQuestion,
     PreflightWarning,
     SyncListWorkflowRequest,
     WorkflowExecutionResult,
@@ -63,20 +65,73 @@ function buildCliOverrides(request: Omit<SyncListWorkflowRequest, 'workflow'>): 
     return overrides;
 }
 
+const ALL_LISTS_CHOICE = '(tutte le liste)';
+
+/**
+ * Selezione lista INTELLIGENTE: deriva la domanda dalle liste REALI gia' note al bot
+ * (salesnav_lists), invece di un default cieco 'Default' (che non e' una lista esistente).
+ *   - lista/URL esplicita da CLI -> rispetta la scelta dell'utente
+ *   - 0 liste in DB              -> nessun default fantasma; INVIO = scopri/sincronizza tutte live
+ *   - 1 lista                    -> quella, come default reale (nessuna scelta a vuoto)
+ *   - >1 liste                   -> scelta tra le liste vere (+ "tutte"), tipo 'choice'
+ */
+async function buildListQuestion(
+    request: Omit<SyncListWorkflowRequest, 'workflow'>,
+): Promise<PreflightQuestion> {
+    if (request.listName || request.listUrl) {
+        return {
+            id: 'listName',
+            prompt: 'Nome della lista SalesNav da sincronizzare?',
+            type: 'string',
+            defaultValue: request.listName ?? '',
+            required: false,
+        };
+    }
+    const savedLists = await listSalesNavLists().catch(() => []);
+    if (savedLists.length === 0) {
+        return {
+            id: 'listName',
+            prompt: 'Nessuna lista in DB — INVIO per scoprire e sincronizzare TUTTE le liste su SalesNav',
+            type: 'string',
+            defaultValue: '',
+            required: false,
+        };
+    }
+    if (savedLists.length === 1) {
+        return {
+            id: 'listName',
+            prompt: `Lista da sincronizzare (INVIO = "${savedLists[0].name}")`,
+            type: 'string',
+            defaultValue: savedLists[0].name,
+            required: false,
+        };
+    }
+    return {
+        id: 'listName',
+        prompt: 'Quale lista SalesNav vuoi sincronizzare?',
+        type: 'choice',
+        choices: [...savedLists.map((l) => l.name), ALL_LISTS_CHOICE],
+        defaultValue: savedLists[0].name,
+        required: false,
+    };
+}
+
+/** '(tutte le liste)' -> '' (= nessun filtro: il sync scopre/sincronizza tutte le liste). */
+function normalizeListChoice(value: string): string {
+    return value.trim() === ALL_LISTS_CHOICE ? '' : value.trim();
+}
+
 export async function executeSyncListWorkflow(
     request: Omit<SyncListWorkflowRequest, 'workflow'>,
 ): Promise<WorkflowExecutionResult> {
     const startedAt = new Date();
+
+    // Lista derivata dallo stato reale (vedi buildListQuestion) invece del default cieco 'Default'.
+    const listQuestion = await buildListQuestion(request);
     const preflight = await runPreflight<SyncListPreflightAnswers>({
         workflowName: 'sync-list',
         questions: [
-            {
-                id: 'listName',
-                prompt: 'Nome della lista SalesNav da sincronizzare?',
-                type: 'string',
-                defaultValue: request.listName ?? config.salesNavSyncListName ?? 'Default',
-                required: true,
-            },
+            listQuestion,
             {
                 id: 'listUrl',
                 prompt: 'URL della lista SalesNav (opzionale, premi INVIO per skippare)?',
@@ -108,7 +163,7 @@ export async function executeSyncListWorkflow(
         cliOverrides: buildCliOverrides(request),
         cliAccountId: request.accountId,
         parseAnswers: (answers) => ({
-            listName: answers['listName'] ?? config.salesNavSyncListName ?? 'Default',
+            listName: normalizeListChoice(answers['listName'] ?? listQuestion.defaultValue ?? ''),
             listUrl: answers['listUrl'] ?? '',
             maxPages: parseInt(answers['maxPages'] ?? String(config.salesNavSyncMaxPages), 10),
             maxLeads: parseInt(answers['maxLeads'] ?? String(config.salesNavSyncLimit), 10),
