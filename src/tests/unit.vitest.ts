@@ -39,6 +39,7 @@ import { getSchedulingAccountIds, pickAccountIdForLead } from '../accountManager
 import { generateInviteNote } from '../ai/inviteNotePersonalizer';
 import { classifySiteMismatch, isMismatchAmbiguous, isSiteSignalsReliable } from '../core/audit';
 import { SALESNAV_SAVE_TO_LIST_SELECTOR } from '../salesnav/selectors';
+import { nextScraperDriftState } from '../browser/linkedinProfileScraper';
 import { SELECTORS } from '../selectors';
 import { computeTwoProportionSignificance } from '../core/repositories/aiQuality';
 import { resolveWorkerRetryPolicy, RetryableWorkerError } from '../workers/errors';
@@ -143,6 +144,12 @@ describe('Legacy Core Domain Unit Tests', () => {
         assert.ok(SALESNAV_SAVE_TO_LIST_SELECTOR.includes('Save in list'));
         assert.ok(SALESNAV_SAVE_TO_LIST_SELECTOR.includes('Salva in lista'));
         assert.ok(SALESNAV_SAVE_TO_LIST_SELECTOR.includes("Salva nell'elenco"));
+
+        // #12: drift-tracking scraper classic — la logica pura del counter consecutivi-vuoti
+        assert.deepEqual(nextScraperDriftState(0, false, 5), { consecutive: 0, alert: false }); // dati presenti -> reset
+        assert.deepEqual(nextScraperDriftState(3, true, 5), { consecutive: 4, alert: false }); // vuoto, sotto soglia
+        assert.deepEqual(nextScraperDriftState(4, true, 5), { consecutive: 0, alert: true }); // soglia -> alert + reset
+        assert.deepEqual(nextScraperDriftState(2, false, 5), { consecutive: 0, alert: false }); // un dato presente azzera
 
         assert.deepEqual(workflowToJobTypes('warmup'), []);
         assert.deepEqual(workflowToJobTypes('check'), ['ACCEPTANCE_CHECK', 'HYGIENE']);

@@ -24,6 +24,24 @@ export interface LinkedinProfileData {
 
 // ─── Public Profile Scraper (/in/) ──────────────────────────────────────────────
 
+// #12: drift-tracking dello scraper classic. I selettori utility (.text-body-medium/.pvs-entity/
+// .t-bold/.t-14) sono volatili: su un rename UI ritornano null in modo SOFT (dati mancanti, non crash)
+// e la qualità della personalization si degrada in silenzio. Contiamo gli scrape consecutivi tutti-vuoti
+// e allertiamo a soglia (probabile cambio UI). Logica pura -> testabile senza mockare la pagina.
+let consecutiveEmptyScrapes = 0;
+const SCRAPER_DRIFT_THRESHOLD = 5;
+
+export function nextScraperDriftState(
+    consecutive: number,
+    allClassicEmpty: boolean,
+    threshold: number,
+): { consecutive: number; alert: boolean } {
+    if (!allClassicEmpty) return { consecutive: 0, alert: false };
+    const next = consecutive + 1;
+    if (next >= threshold) return { consecutive: 0, alert: true }; // reset dopo l'alert: ri-allerta dopo un altro blocco, no spam
+    return { consecutive: next, alert: false };
+}
+
 export async function scrapeLinkedinProfile(page: Page, profileUrl: string): Promise<LinkedinProfileData | null> {
     if (!profileUrl || !profileUrl.includes('/in/')) return null;
 
@@ -84,6 +102,16 @@ export async function scrapeLinkedinProfile(page: Page, profileUrl: string): Pro
             hasTitle: !!data.currentTitle,
             hasCompany: !!data.currentCompany,
         });
+
+        const allClassicEmpty = !data.headline && !data.currentTitle && !data.currentCompany;
+        const drift = nextScraperDriftState(consecutiveEmptyScrapes, allClassicEmpty, SCRAPER_DRIFT_THRESHOLD);
+        consecutiveEmptyScrapes = drift.consecutive;
+        if (drift.alert) {
+            await logWarn('linkedin_profile.scraper_drift_suspected', {
+                consecutiveEmptyScrapes: SCRAPER_DRIFT_THRESHOLD,
+                hint: 'Scraper classic senza dati (headline/title/company) su profili consecutivi: selettori utility (.text-body-medium/.pvs-entity/.t-bold/.t-14) probabilmente stale (cambio UI LinkedIn). Personalization degradata.',
+            });
+        }
 
         return { ...data, publicProfileUrl: profileUrl, source: 'linkedin_profile' as const };
     } catch (err) {
