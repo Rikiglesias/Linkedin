@@ -7,7 +7,7 @@ import { logInfo, logWarn } from '../telemetry/logger';
 import { pushOutboxEvent, getAutomationPauseState, getDailyStat, getRuntimeFlag, setRuntimeFlag } from './repositories';
 import { getSessionVarianceFactor, runPreventiveGuards } from './preventiveGuards';
 import type { WorkflowSelection } from './workflowSelection';
-import type { GuardDecision, WorkflowKind } from '../workflows/types';
+import type { GuardDecision, WorkflowBlockedReason, WorkflowKind } from '../workflows/types';
 
 export type WorkflowEntryKind = WorkflowSelection | WorkflowKind;
 
@@ -15,14 +15,24 @@ function touchesUi(workflow: WorkflowEntryKind): boolean {
     return workflow === 'all' || workflow === 'check' || workflow === 'invite' || workflow === 'message' || workflow === 'sync-list' || workflow === 'sync-search';
 }
 
-async function runCanaryIfNeeded(workflow: WorkflowEntryKind): Promise<boolean> {
+/**
+ * Esito del canary, discriminato per CAUSA. Evita di collassare 4 modi di fallimento
+ * diversi (logout / restricted / challenge / selettori) in un unico booleano: era la
+ * fonte della diagnosi fuorviante "SELECTOR_CANARY_FAILED" anche quando il problema
+ * reale era una sessione sloggata (cookie li_at assente).
+ */
+type CanaryOutcome =
+    | { ok: true }
+    | { ok: false; blockReason: WorkflowBlockedReason; quarantineType: string | null; message: string };
+
+async function runCanaryIfNeeded(workflow: WorkflowEntryKind): Promise<CanaryOutcome> {
     if (!config.selectorCanaryEnabled || !touchesUi(workflow)) {
-        return true;
+        return { ok: true };
     }
 
     const lastCanaryOk = await getRuntimeFlag('canary_last_ok_at').catch(() => null);
     if (lastCanaryOk && Date.now() - Date.parse(lastCanaryOk) < 4 * 60 * 60 * 1000) {
-        return true;
+        return { ok: true };
     }
 
     const canaryWorkflow: WorkflowSelection =
@@ -38,7 +48,14 @@ async function runCanaryIfNeeded(workflow: WorkflowEntryKind): Promise<boolean> 
         try {
             const loggedIn = await checkLogin(session.page);
             if (!loggedIn) {
-                return false;
+                // Sessione sloggata (li_at assente / redirect a /login): NON è un selector-fail.
+                // Reason dedicato LOGIN_REQUIRED → diagnosi corretta + azione chiara (`bot.ps1 login`).
+                return {
+                    ok: false,
+                    blockReason: 'LOGIN_REQUIRED',
+                    quarantineType: 'LOGIN_REQUIRED',
+                    message: 'Sessione LinkedIn non autenticata (cookie li_at assente) — eseguire `bot.ps1 login`',
+                };
             }
 
             const restrictionIndicators = [
@@ -60,7 +77,13 @@ async function runCanaryIfNeeded(workflow: WorkflowEntryKind): Promise<boolean> 
                     indicator: restriction,
                     url: session.page.url(),
                 });
-                return false;
+                // Già quarantinato sopra con reason proprio: il caller NON deve ri-quarantinare.
+                return {
+                    ok: false,
+                    blockReason: 'ACCOUNT_QUARANTINED',
+                    quarantineType: null,
+                    message: 'Account LinkedIn limitato / sotto revisione',
+                };
             }
             const currentUrl = session.page.url();
             if (/\/(checkpoint|challenge)\b/.test(currentUrl)) {
@@ -68,7 +91,13 @@ async function runCanaryIfNeeded(workflow: WorkflowEntryKind): Promise<boolean> 
                     accountId: account.id,
                     url: currentUrl,
                 });
-                return false;
+                // Già quarantinato sopra con reason proprio: il caller NON deve ri-quarantinare.
+                return {
+                    ok: false,
+                    blockReason: 'ACCOUNT_QUARANTINED',
+                    quarantineType: null,
+                    message: 'Challenge/checkpoint LinkedIn al login',
+                };
             }
 
             const report = await runSelectorCanaryDetailed(session.page, canaryWorkflow);
@@ -101,7 +130,12 @@ async function runCanaryIfNeeded(workflow: WorkflowEntryKind): Promise<boolean> 
                     criticalFailed: report.criticalFailed,
                     steps: report.steps.filter((step) => step.required && !step.ok),
                 });
-                return false;
+                return {
+                    ok: false,
+                    blockReason: 'SELECTOR_CANARY_FAILED',
+                    quarantineType: 'SELECTOR_CANARY_FAILED',
+                    message: 'Selector canary fallito (selettori critici non trovati sul DOM LinkedIn)',
+                };
             }
 
             await logInfo('selector.canary.ok', {
@@ -117,7 +151,7 @@ async function runCanaryIfNeeded(workflow: WorkflowEntryKind): Promise<boolean> 
     }
 
     await setRuntimeFlag('canary_last_ok_at', new Date().toISOString()).catch(() => null);
-    return true;
+    return { ok: true };
 }
 
 export interface EvaluateWorkflowEntryGuardsOptions {
@@ -271,12 +305,14 @@ export async function evaluateWorkflowEntryGuards(
         });
     }
 
-    const canaryOk = await runCanaryIfNeeded(options.workflow);
-    if (!canaryOk) {
-        await quarantineAccount('SELECTOR_CANARY_FAILED', { workflow: options.workflow });
+    const canary = await runCanaryIfNeeded(options.workflow);
+    if (!canary.ok) {
+        if (canary.quarantineType) {
+            await quarantineAccount(canary.quarantineType, { workflow: options.workflow });
+        }
         return block({
-            reason: 'SELECTOR_CANARY_FAILED',
-            message: 'Selector canary fallito',
+            reason: canary.blockReason,
+            message: canary.message,
             details: { workflow: options.workflow },
         });
     }

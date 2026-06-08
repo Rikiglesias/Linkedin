@@ -160,6 +160,20 @@ describe('workflowEntryGuards', () => {
         });
     });
 
+    test('blocca con LOGIN_REQUIRED (non SELECTOR_CANARY_FAILED) quando la sessione è sloggata', async () => {
+        // Regressione: una sessione sloggata (li_at assente → checkLogin=false) veniva quarantinata
+        // ed etichettata SELECTOR_CANARY_FAILED, mandando la diagnosi a caccia di selettori inesistenti.
+        mocks.checkLogin.mockResolvedValue(false);
+
+        const result = await evaluateWorkflowEntryGuards({ workflow: 'sync-list', dryRun: false });
+
+        expect(result.allowed).toBe(false);
+        expect(result.blocked?.reason).toBe('LOGIN_REQUIRED');
+        expect(mocks.quarantineAccount).toHaveBeenCalledWith('LOGIN_REQUIRED', { workflow: 'sync-list' });
+        // Il selector canary non deve nemmeno essere valutato se non siamo loggati.
+        expect(mocks.runSelectorCanaryDetailed).not.toHaveBeenCalled();
+    });
+
     test('salta la sessione quando la varianza giornaliera è zero', async () => {
         mocks.getSessionVarianceFactor.mockReturnValue(0);
 
