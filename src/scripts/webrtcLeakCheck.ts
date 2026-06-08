@@ -189,7 +189,9 @@ async function main(): Promise<void> {
     process.exitCode = pass ? 0 : 1;
 }
 
-// Eseguito solo se invocato direttamente (ts-node src/scripts/webrtcLeakCheck.ts), non se importato.
+// Eseguito solo se invocato direttamente (node dist/scripts/webrtcLeakCheck.js via `npm run webrtc:leak-check`),
+// non se importato. NB: gira COMPILATO, non con ts-node — ts-node intercetta i require('.js') dei loader nativi
+// (impit, tirato da camoufox-js) e rompe il binding; il bot lancia il browser sempre da dist/ (come create-profile).
 if (require.main === module) {
     main().catch((error) => {
         console.error('[WEBRTC_LEAK_ERROR]', error);

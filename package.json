@@ -34,7 +34,7 @@
         "db:migrate": "ts-node scripts/migrate-to-postgres.ts",
         "security:advisor": "ts-node src/scripts/securityAdvisor.ts",
         "ai:quality": "ts-node src/scripts/aiQualityPipeline.ts",
-        "webrtc:leak-check": "ts-node src/scripts/webrtcLeakCheck.ts",
+        "webrtc:leak-check": "npm run build:backend && node dist/scripts/webrtcLeakCheck.js",
         "feature-store": "ts-node src/index.ts feature-store",
         "secrets:rotate": "ts-node src/scripts/rotateSecrets.ts --interval-days 7",
         "security:scan": "node scripts/security/check-no-secrets.mjs",
