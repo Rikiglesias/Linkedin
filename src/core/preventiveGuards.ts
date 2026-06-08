@@ -123,10 +123,11 @@ export async function alertCircuitBreakerStatus(): Promise<void> {
         const { getDatabase } = await import('../db');
         const db = await getDatabase();
 
-        // I circuit breaker sono persistiti in runtime_flags con chiave 'cb:*'
-        // Il prefisso circuit breaker in integrationPolicy.ts è 'cb::' (doppio due punti)
+        // I circuit breaker sono persistiti in sync_state (via setRuntimeFlag) con prefisso 'cb::'
+        // (integrationPolicy.ts CB_FLAG_PREFIX). NB: la tabella è sync_state, NON runtime_flags
+        // (che non esiste): getRuntimeFlag/setRuntimeFlag usano sync_state.
         const rows = await db.query<{ key: string; value: string }>(
-            `SELECT key, value FROM runtime_flags WHERE key LIKE 'cb::%' AND value LIKE '%OPEN%'`,
+            `SELECT key, value FROM sync_state WHERE key LIKE 'cb::%' AND value LIKE '%OPEN%'`,
         );
 
         if (rows.length === 0) return;

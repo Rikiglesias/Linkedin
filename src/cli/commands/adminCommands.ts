@@ -531,7 +531,7 @@ export async function runDbAnalyzeCommand(): Promise<void> {
         'SELECT * FROM daily_stats WHERE date = ?',
         'SELECT * FROM campaign_runs ORDER BY start_time DESC LIMIT 10',
         'SELECT * FROM leads WHERE linkedin_url = ?',
-        'SELECT * FROM runtime_flags WHERE key = ?',
+        'SELECT * FROM sync_state WHERE key = ?',
         'SELECT name, applied_at FROM _migrations ORDER BY name',
         'SELECT * FROM incidents WHERE status = ? ORDER BY opened_at DESC LIMIT 10',
         'SELECT * FROM session_patterns WHERE account_id = ? ORDER BY date DESC LIMIT 7',
