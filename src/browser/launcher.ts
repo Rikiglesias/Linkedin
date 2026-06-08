@@ -19,6 +19,7 @@ import {
     markProxyHealthy,
     releaseStickyProxy,
 } from '../proxyManager';
+import { isSameProxy, buildProxyLaunchPlan } from './proxyLaunchPlan';
 import {
     CloudFingerprint,
     BrowserFingerprint,
@@ -191,12 +192,8 @@ export interface LaunchBrowserOptions {
     accountId?: string;
 }
 
-function isSameProxy(a: ProxyConfig | undefined, b: ProxyConfig | undefined): boolean {
-    if (!a || !b) return false;
-    return (
-        a.server === b.server && (a.username ?? '') === (b.username ?? '') && (a.password ?? '') === (b.password ?? '')
-    );
-}
+// isSameProxy + buildProxyLaunchPlan (FAIL-CLOSED AB-24) estratti in ./proxyLaunchPlan
+// (logica pura, testabile in isolamento senza dipendenze Playwright).
 
 /**
  * GAP7-H30: Risolve l'IP del proxy per usarlo come geoip in Camoufox.
@@ -251,29 +248,18 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             ? await getStickyProxy(sessionDir, proxySelection, sessionDir)
             : undefined;
 
-    let launchPlan: Array<ProxyConfig | undefined> = [];
+    const failoverChain =
+        !explicitProxy && managedProxyEnabled
+            ? await getProxyFailoverChainAsync({
+                  ...proxySelection,
+                  preferredType:
+                      proxySelection.preferredType ?? (config.proxyMobilePriorityEnabled ? 'mobile' : undefined),
+              })
+            : [];
+    // FAIL-CLOSED sul leak IP (AB-24): managed-proxy senza proxy disponibili -> throw, mai IP diretto.
+    // const: il plan viene poi solo MUTATO (push per mobile-escalation a valle), mai riassegnato.
+    const launchPlan = buildProxyLaunchPlan({ explicitProxy, managedProxyEnabled, stickyProxy, failoverChain });
     let mobileEscalationAppended = false;
-    if (explicitProxy) {
-        launchPlan = [explicitProxy];
-    } else if (managedProxyEnabled) {
-        const failoverChain = await getProxyFailoverChainAsync({
-            ...proxySelection,
-            preferredType: proxySelection.preferredType ?? (config.proxyMobilePriorityEnabled ? 'mobile' : undefined),
-        });
-        if (stickyProxy) {
-            launchPlan.push(stickyProxy);
-        }
-        for (const candidate of failoverChain) {
-            if (!isSameProxy(candidate, stickyProxy)) {
-                launchPlan.push(candidate);
-            }
-        }
-        if (launchPlan.length === 0) {
-            launchPlan = [undefined];
-        }
-    } else {
-        launchPlan = [undefined];
-    }
     let lastError: unknown = null;
     let retriedProxy = false;
 
