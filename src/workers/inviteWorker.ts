@@ -9,6 +9,7 @@ import {
 } from '../browser';
 import { ensureViewportDwell, computeProfileDwellTime } from '../browser/humanBehavior';
 import { navigateToProfileWithContext } from '../browser/navigationContext';
+import { clickWithFallback } from '../browser/uiFallback';
 import {
     checkAndIncrementDailyLimit,
     incrementDailyStat,
@@ -20,7 +21,7 @@ import {
 import { getLeadById } from '../core/repositories/leadsCore';
 import { isBlacklisted } from '../core/repositories/blacklist';
 import { isValidLeadTransition, transitionLead } from '../core/leadStateService';
-import { joinSelectors } from '../selectors';
+import { joinSelectors, SELECTORS } from '../selectors';
 import { InviteJobPayload, LeadRecord } from '../types/domain';
 import { WorkerContext } from './context';
 import { ChallengeDetectedError, RetryableWorkerError } from './errors';
@@ -88,7 +89,20 @@ async function clickConnectOnProfile(page: Page): Promise<boolean> {
         }
     }
 
-    return false;
+    // Layer-Z (ultima risorsa): primario + overflow non hanno trovato Connect. Invece dello SKIP
+    // silenzioso "connect_not_found" su un cambio UI, passa dal self-healing engine (chain
+    // drift-aware + Vision/LLaVA). Su fallimento totale fa trackSelectorFailure (drift visibile)
+    // e throw. verify: il modal invito DEVE comparire -> Vision non clicca per errore Follow/Message.
+    try {
+        await clickWithFallback(page, SELECTORS.connectButtonPrimary, 'connect-button', {
+            verify: async (p) =>
+                (await p.locator(joinSelectors('addNoteButton')).count()) > 0 ||
+                (await p.locator(joinSelectors('sendWithoutNote')).count()) > 0,
+        });
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 async function detectInviteProof(page: Page): Promise<boolean> {
