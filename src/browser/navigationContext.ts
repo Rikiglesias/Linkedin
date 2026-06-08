@@ -20,6 +20,7 @@ import { clickLocatorHumanLike } from './humanClick';
 import { isInputBlockSuspended } from '../salesnav/bulkSaveHelpers';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { randomInt } from '../utils/random';
+import { pauseAutomation } from '../risk/incidentManager';
 import type { NavigationStrategy } from '../core/navigationStrategy';
 
 // ─── Tipi ────────────────────────────────────────────────────────────────────
@@ -119,6 +120,20 @@ async function reInjectOverlays(page: Page): Promise<void> {
     await ensureInputBlock(page);
 }
 
+/**
+ * Rileva il Commercial Use Limit (CUL): LinkedIn blocca i risultati di ricerca quando un account
+ * free supera il limite mensile di ricerche (reset il 1 del mese). Senza questa detection il CUL è
+ * indistinguibile da "profilo non trovato" e il bot continua a cercare su pagine bloccate (pattern-bot).
+ * Pattern allineato a detectWeeklyInviteLimit (body-text regex EN+IT, robusto ai rename di classe).
+ */
+export async function detectCommercialUseLimit(page: Page): Promise<boolean> {
+    const pageText = await page.textContent('body').catch(() => '');
+    if (!pageText) return false;
+    return /commercial use limit|reached (the|your) (monthly|weekly|commercial) limit|limite di utilizzo commerciale|limite mensile (di|delle) ricerc/i.test(
+        pageText,
+    );
+}
+
 async function openProfileViaSearchResults(
     page: Page,
     profileUrl: string,
@@ -140,6 +155,23 @@ async function openProfileViaSearchResults(
     await simulateHumanReading(page);
     await humanDelay(page, 1000, 2500);
     stepsCompleted++;
+
+    // CUL (Commercial Use Limit): se la ricerca è bloccata, NON è un "profilo non trovato" ->
+    // fermarsi invece di continuare a cercare su pagine bloccate (pattern-bot). Alert + pausa.
+    if (await detectCommercialUseLimit(page)) {
+        await logWarn('navigation_context.commercial_use_limit_reached', {
+            what: 'Commercial Use Limit raggiunto: LinkedIn ha bloccato i risultati di ricerca.',
+            why: 'Superato il limite mensile di ricerche (account free; reset il 1 del mese).',
+            action: 'Fermare ricerche/visite automatiche fino al reset mensile o passare a Premium. Automazione in pausa (resume manuale).',
+            profileSlug: targetSlug,
+        });
+        await pauseAutomation(
+            'COMMERCIAL_USE_LIMIT',
+            { profileSlug: targetSlug, keywords: keywords.substring(0, 80) },
+            null,
+        );
+        return { success: false, stepsCompleted };
+    }
 
     const targetLink = page.locator(`a[href*="/in/${targetSlug}"]`).first();
     if (!(await targetLink.isVisible({ timeout: 2000 }).catch(() => false))) {

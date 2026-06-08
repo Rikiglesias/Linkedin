@@ -21,7 +21,11 @@ vi.mock('../telemetry/logger', () => ({
 }));
 
 import { clickLocatorHumanLike } from '../browser/humanClick';
-import { navigateToProfileForMessage, navigateToProfileWithContext } from '../browser/navigationContext';
+import {
+    detectCommercialUseLimit,
+    navigateToProfileForMessage,
+    navigateToProfileWithContext,
+} from '../browser/navigationContext';
 
 function createFakePage(targetVisible: boolean) {
     const gotoCalls: string[] = [];
@@ -42,6 +46,7 @@ function createFakePage(targetVisible: boolean) {
             locator: (selector: string) => createLocator(selector),
             waitForURL: async () => undefined,
             waitForTimeout: async () => undefined,
+            textContent: async () => 'Risultati di ricerca persone',
         },
     };
 }
@@ -98,5 +103,16 @@ describe('navigationContext anti-direct-profile policy', () => {
         expect(result.strategy).toBe('direct');
         expect(gotoCalls).not.toContain(profileUrl);
         expect(gotoCalls.some((url) => url.includes('/search/results/people/'))).toBe(true);
+    });
+
+    test('detectCommercialUseLimit rileva il CUL e non i risultati normali (#6)', async () => {
+        const culEn = { textContent: async () => "You've reached the commercial use limit for search this month" };
+        expect(await detectCommercialUseLimit(culEn as never)).toBe(true);
+        const culIt = { textContent: async () => 'Hai raggiunto il limite mensile delle ricerche' };
+        expect(await detectCommercialUseLimit(culIt as never)).toBe(true);
+        const normalPage = { textContent: async () => 'Risultati di ricerca persone' };
+        expect(await detectCommercialUseLimit(normalPage as never)).toBe(false);
+        const emptyPage = { textContent: async () => null };
+        expect(await detectCommercialUseLimit(emptyPage as never)).toBe(false);
     });
 });
