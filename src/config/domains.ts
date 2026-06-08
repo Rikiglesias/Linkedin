@@ -420,7 +420,10 @@ export function buildBehaviorDomainConfig() {
             return 'template' as const;
         })(),
         salesNavSyncEnabled: parseBoolEnv('SALESNAV_SYNC_ENABLED', false),
-        salesNavSyncListName: parseStringEnv('SALESNAV_SYNC_LIST_NAME', 'default'),
+        // Vuoto = nessun filtro = sincronizza TUTTE le liste reali scoperte live (salesNavigatorSync
+        // riga ~739: listFilter null -> targetLists = discovered). Un default 'default' fantasma
+        // filtrerebbe per una lista che non esiste -> throw garantito dopo aver gia' aperto il browser.
+        salesNavSyncListName: parseStringEnv('SALESNAV_SYNC_LIST_NAME'),
         salesNavSyncListUrl: parseStringEnv('SALESNAV_SYNC_LIST_URL'),
         salesNavSyncMaxPages: Math.max(1, parseIntEnv('SALESNAV_SYNC_MAX_PAGES', 3)),
         salesNavSyncIntervalHours: Math.max(1, parseIntEnv('SALESNAV_SYNC_INTERVAL_HOURS', 24)),

@@ -52,7 +52,7 @@ async function maybeRunSyncSearchFallback(
 
     const searchName = await readLineFromStdin('  Nome della ricerca salvata (lascia vuoto per farle tutte): ');
     const targetList = await readLineFromStdin(
-        `  Nome della lista in cui aggiungere i nuovi lead (default: ${opts.listName || config.salesNavSyncListName || 'default'}): `,
+        `  Nome della lista in cui aggiungere i nuovi lead (default: ${opts.listName || config.salesNavSyncListName || '(tutte le liste)'}): `,
     );
     const selectedAccountId =
         result.artifacts?.preflight?.selectedAccountId && typeof result.artifacts.preflight.selectedAccountId === 'string'
@@ -62,7 +62,8 @@ async function maybeRunSyncSearchFallback(
     console.log('\n  Passaggio automatico al flow sync-search...\n');
     await runSyncSearchWorkflow({
         searchName: searchName || undefined,
-        listName: targetList || opts.listName || config.salesNavSyncListName || 'default',
+        // Nessun ghost 'default': vuoto -> sync-search deriva la destinazione (vedi buildDestinationListDefault).
+        listName: targetList || opts.listName || config.salesNavSyncListName || undefined,
         enrichment: true,
         dryRun: false,
         accountId: selectedAccountId,

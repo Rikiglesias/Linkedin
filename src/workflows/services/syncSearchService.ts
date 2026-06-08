@@ -9,6 +9,7 @@ import {
 } from '../../browser/windowInputBlock';
 import { runSalesNavBulkSave } from '../../salesnav/bulkSaveOrchestrator';
 import { runSalesNavigatorListSync } from '../../core/salesNavigatorSync';
+import { listSalesNavLists } from '../../core/repositories/leadsCore';
 import { evaluateWorkflowEntryGuards } from '../../core/workflowEntryGuards';
 import { runPreflight } from '../preflight';
 import { appendProxyReputationWarning } from '../preflight/configInspector';
@@ -72,11 +73,31 @@ function buildCliOverrides(request: Omit<SyncSearchWorkflowRequest, 'workflow'>)
     return overrides;
 }
 
+/**
+ * Default INTELLIGENTE della lista DESTINAZIONE (dove salvare i lead estratti dalla ricerca):
+ * la lista reale usata piu' di recente (last_synced_at), invece del fantasma 'Default'.
+ *   - listName esplicito da CLI -> rispetta la scelta
+ *   - >=1 lista in DB           -> la piu' recentemente sincronizzata (fallback: la prima esistente)
+ *   - 0 liste                   -> '' (l'utente digita il nome; verra' creata)
+ * NB: a differenza di sync-list (sorgente, dove vuoto = "tutte"), qui serve UNA destinazione.
+ */
+async function buildDestinationListDefault(request: Omit<SyncSearchWorkflowRequest, 'workflow'>): Promise<string> {
+    if (request.listName) return request.listName;
+    const lists = await listSalesNavLists().catch(() => []);
+    if (lists.length === 0) return '';
+    const mostRecent = lists
+        .filter((l) => l.last_synced_at)
+        .sort((a, b) => String(b.last_synced_at).localeCompare(String(a.last_synced_at)))[0];
+    return (mostRecent ?? lists[0]).name;
+}
+
 export async function executeSyncSearchWorkflow(
     request: Omit<SyncSearchWorkflowRequest, 'workflow'>,
 ): Promise<WorkflowExecutionResult> {
     const startedAt = new Date();
 
+    // Destinazione derivata dallo stato reale (vedi buildDestinationListDefault) invece del fantasma 'Default'.
+    const destinationDefault = await buildDestinationListDefault(request);
     const preflight = await runPreflight<SyncSearchPreflightAnswers>({
         workflowName: 'sync-search',
         questions: [
@@ -90,7 +111,7 @@ export async function executeSyncSearchWorkflow(
                 id: 'listName',
                 prompt: 'In quale lista vuoi salvare i risultati?',
                 type: 'string',
-                defaultValue: request.listName ?? config.salesNavSyncListName ?? 'Default',
+                defaultValue: destinationDefault,
                 required: true,
             },
             {
@@ -118,7 +139,7 @@ export async function executeSyncSearchWorkflow(
         cliAccountId: request.accountId,
         parseAnswers: (answers) => ({
             searchName: answers['searchName'] ?? '',
-            listName: answers['listName'] ?? config.salesNavSyncListName ?? 'Default',
+            listName: answers['listName'] ?? destinationDefault,
             maxPages: parseInt(answers['maxPages'] ?? String(config.salesNavSyncMaxPages), 10),
             limit: parseInt(answers['limit'] ?? String(config.salesNavSyncLimit), 10),
             enrichment: answers['enrichment'] !== 'false',

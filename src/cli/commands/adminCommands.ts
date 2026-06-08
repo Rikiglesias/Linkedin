@@ -205,7 +205,7 @@ export async function runStatusCommand(): Promise<void> {
         },
         salesNavSync: {
             enabled: config.salesNavSyncEnabled,
-            listName: config.salesNavSyncListName,
+            listName: config.salesNavSyncListName || null,
             listUrlConfigured: !!config.salesNavSyncListUrl.trim(),
             maxPages: config.salesNavSyncMaxPages,
             intervalHours: config.salesNavSyncIntervalHours,

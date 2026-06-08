@@ -381,11 +381,8 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
     },
 
     // ─── Cross-domain validation rules ───────────────────────────────────────
-    {
-        message:
-            '[CONFIG] SALESNAV_SYNC_ENABLED=true ma SALESNAV_LIST_NAME è vuoto — specificare il nome della lista SalesNav',
-        when: (cfg) => cfg.salesNavSyncEnabled && !cfg.salesNavSyncListName,
-    },
+    // NB: SALESNAV_LIST_NAME vuoto NON è un errore — significa "sincronizza TUTTE le liste reali"
+    // (salesNavigatorSync: listFilter null -> targetLists = discovered). Nessuna regola lo segnala.
     {
         message:
             '[CONFIG] PROXY_URL configurato ma USE_JA3_PROXY=false — gap stealth: il proxy non simula fingerprint TLS',
