@@ -491,16 +491,26 @@ async function postSyncEnrichment(
                 }
             }
 
-            // 4. Promozione NEW → READY_INVITE se ha score sufficiente
+            // 4. Promozione NEW → READY_INVITE se score sufficiente E confidence affidabile.
+            // CL2b (collaudo): allineato a companyEnrichment.ts:213 — un lead con confidence < 70 NON
+            // e' abbastanza verificato (l'AI non e' sicura che lavori davvero nell'azienda target) per
+            // l'auto-invito: inviare a target non verificati abbassa l'acceptance e alza il pending
+            // ratio (rischio ban). Score>=30 ma confidence bassa → REVIEW_REQUIRED (revisione umana),
+            // non auto-invito. REVIEW_REQUIRED può tornare a READY_INVITE dopo l'OK umano (no limbo).
             if (lead.status === 'NEW' && lead.lead_score !== null && lead.lead_score >= 30) {
                 const { transitionLead } = await import('./leadStateService');
-                await transitionLead(leadId, 'READY_INVITE', 'enrichment_score_threshold', {
-                    score: lead.lead_score,
-                    listName,
-                });
-                enrichReport.promoted += 1;
+                const confident = (lead.confidence_score ?? 0) >= 70;
+                const target = confident ? 'READY_INVITE' : 'REVIEW_REQUIRED';
+                await transitionLead(
+                    leadId,
+                    target,
+                    confident ? 'enrichment_score_threshold' : 'low_confidence_needs_review',
+                    { score: lead.lead_score, confidence: lead.confidence_score ?? null, listName },
+                );
+                if (confident) enrichReport.promoted += 1;
                 console.log(
-                    `  ${progress} [PROMOTE] ${maskName(fullName)}: NEW → READY_INVITE (score=${lead.lead_score})`,
+                    `  ${progress} [${confident ? 'PROMOTE' : 'REVIEW'}] ${maskName(fullName)}: NEW → ${target} ` +
+                        `(score=${lead.lead_score}, confidence=${lead.confidence_score ?? 'n/a'})`,
                 );
             }
         } catch (err) {
