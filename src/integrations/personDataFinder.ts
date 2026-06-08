@@ -27,6 +27,7 @@ import { parsePhoneNumberFromString, type PhoneNumber } from 'libphonenumber-js'
 import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 import { logInfo } from '../telemetry/logger';
 import { cleanText } from '../utils/text';
+import { BoundedMap } from '../utils/boundedCache';
 
 // ─── Types (public — all backward-compatible) ────────────────────────────────
 
@@ -135,7 +136,8 @@ const CIRCUIT_KEY = 'person_data_finder.web';
 const RATE_LIMIT_DELAY_MS = 250;
 const MAX_SUBPAGES = 5;
 
-const companyCache = new Map<string, PersonDataCompany | null>();
+// Cap LRU: evita crescita illimitata su processi long-running (slow leak). Vedi utils/boundedCache.
+const companyCache = new BoundedMap<string, PersonDataCompany | null>(500);
 
 // ─── Utility ─────────────────────────────────────────────────────────────────
 

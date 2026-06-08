@@ -12,6 +12,7 @@
 import * as dns from 'node:dns';
 import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 import { logInfo } from '../telemetry/logger';
+import { BoundedMap } from '../utils/boundedCache';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -26,8 +27,9 @@ export interface DomainDiscoveryResult {
 
 // ─── Cache (session-scoped) ──────────────────────────────────────────────────
 
-const domainCache = new Map<string, DomainDiscoveryResult | null>();
-const mxCache = new Map<string, string | null>();
+// Cache session-scoped con cap LRU (no leak su processi long-running). Vedi utils/boundedCache.
+const domainCache = new BoundedMap<string, DomainDiscoveryResult | null>(1000);
+const mxCache = new BoundedMap<string, string | null>(2000);
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

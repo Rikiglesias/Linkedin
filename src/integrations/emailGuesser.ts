@@ -9,6 +9,7 @@
 
 import * as dns from 'node:dns';
 import * as net from 'node:net';
+import { BoundedMap, BoundedSet } from '../utils/boundedCache';
 
 // ─── Tipi ────────────────────────────────────────────────────────────────────
 
@@ -34,11 +35,11 @@ const SMTP_PORT = 25;
 const SMTP_SUBMISSION_PORT = 587;
 const EHLO_DOMAIN = 'mail-check.local';
 
-/** Cache MX per dominio — evita query DNS ripetute nella stessa sessione */
-const mxCache = new Map<string, string | null>();
+/** Cache MX per dominio — evita query DNS ripetute nella stessa sessione (LRU bounded: no leak long-run) */
+const mxCache = new BoundedMap<string, string | null>(2000);
 
 /** H29: Cache domini con porta 25 bloccata — evita 40s di timeout inutile per ogni lead dello stesso dominio */
-const port25BlockedCache = new Set<string>();
+const port25BlockedCache = new BoundedSet<string>(1000);
 
 // ─── Pattern Generation ──────────────────────────────────────────────────────
 
