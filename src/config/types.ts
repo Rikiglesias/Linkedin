@@ -30,6 +30,7 @@ export interface AppConfig {
     dashboardTrustedIps: string[];
     workingHoursStart: number;
     workingHoursEnd: number;
+    bypassWorkingHours: boolean;
     jobStuckMinutes: number;
     retryMaxAttempts: number;
     retryBaseMs: number;

@@ -28,6 +28,10 @@ export function buildRuntimeDomainConfig(accountProfiles: AccountProfileConfig[]
         dashboardTrustedIps: parseCsvEnv('DASHBOARD_TRUSTED_IPS'),
         workingHoursStart: parseIntEnv('HOUR_START', 9),
         workingHoursEnd: parseIntEnv('HOUR_END', 18),
+        // Override ESPLICITO per testing: bypassa il guard orario (default OFF = protezione anti-ban
+        // attiva). Se attivo fuori orario, il guard logga un WARNING (visibile). NB: NON è nel .env
+        // di default, così un `$env:BYPASS_WORKING_HOURS=true` inline NON viene sovrascritto da reloadConfig.
+        bypassWorkingHours: parseBoolEnv('BYPASS_WORKING_HOURS', false),
         jobStuckMinutes: Math.max(1, parseIntEnv('JOB_STUCK_MINUTES', 30)),
         retryMaxAttempts: Math.max(1, parseIntEnv('RETRY_MAX_ATTEMPTS', 3)),
         retryBaseMs: Math.max(100, parseIntEnv('RETRY_BASE_MS', 1200)),

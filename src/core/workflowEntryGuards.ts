@@ -202,20 +202,31 @@ export async function evaluateWorkflowEntryGuards(
     }
 
     if (!isWorkingHour()) {
-        await logInfo('workflow.skipped.out_of_hours', {
-            workflow: options.workflow,
-            startHour: config.workingHoursStart,
-            endHour: config.workingHoursEnd,
-        });
-        return block({
-            reason: 'OUT_OF_HOURS',
-            message: 'Workflow fuori orario lavorativo',
-            details: {
+        if (config.bypassWorkingHours) {
+            // Override ESPLICITO (BYPASS_WORKING_HOURS=true): solo per testing. Logga un WARNING
+            // perché operare fuori orario è un pattern anti-ban rischioso in produzione (ritmo circadiano).
+            await logWarn('workflow.working_hours_bypassed', {
                 workflow: options.workflow,
                 startHour: config.workingHoursStart,
                 endHour: config.workingHoursEnd,
-            },
-        });
+                note: 'BYPASS_WORKING_HOURS attivo — fuori orario lavorativo, anti-ban-rischioso in produzione',
+            });
+        } else {
+            await logInfo('workflow.skipped.out_of_hours', {
+                workflow: options.workflow,
+                startHour: config.workingHoursStart,
+                endHour: config.workingHoursEnd,
+            });
+            return block({
+                reason: 'OUT_OF_HOURS',
+                message: 'Workflow fuori orario lavorativo',
+                details: {
+                    workflow: options.workflow,
+                    startHour: config.workingHoursStart,
+                    endHour: config.workingHoursEnd,
+                },
+            });
+        }
     }
 
     const localDate = getLocalDateString();
