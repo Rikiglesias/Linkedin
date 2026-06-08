@@ -82,7 +82,27 @@ export async function runLoginCommand(args: string[]): Promise<void> {
         forceDesktop: true,
     });
     try {
-        await session.page.goto('https://www.linkedin.com/login', { waitUntil: 'load' });
+        // Navigazione robusta come checkLogin: il 'load' completo su proxy residenziale lento
+        // (Oxylabs, latenza 10-30s) spesso non scatta entro i 30s di default → 'domcontentloaded'
+        // + timeout ampio + 1 retry. E NON abortiamo se resta lento: la finestra è già aperta,
+        // l'utente può completare il login manualmente e il loop sotto lo rileva comunque.
+        for (const attempt of [1, 2]) {
+            try {
+                await session.page.goto('https://www.linkedin.com/login', {
+                    waitUntil: 'domcontentloaded',
+                    timeout: attempt === 1 ? 60_000 : 90_000,
+                });
+                break;
+            } catch {
+                if (attempt === 2) {
+                    console.warn(
+                        '[LOGIN] Navigazione a /login ancora lenta dopo 2 tentativi — la finestra resta aperta, completa il login manualmente.',
+                    );
+                } else {
+                    console.warn('[LOGIN] Timeout navigazione a /login (tentativo 1/2) — riprovo...');
+                }
+            }
+        }
         console.log(
             `Completa il login LinkedIn nella finestra aperta(account = ${selectedAccount.id}, timeout ${timeoutSeconds}s)...`,
         );
