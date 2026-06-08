@@ -37,7 +37,7 @@ import {
 } from '../proxyManager';
 import { getSchedulingAccountIds, pickAccountIdForLead } from '../accountManager';
 import { generateInviteNote } from '../ai/inviteNotePersonalizer';
-import { classifySiteMismatch, isMismatchAmbiguous } from '../core/audit';
+import { classifySiteMismatch, isMismatchAmbiguous, isSiteSignalsReliable } from '../core/audit';
 import { SELECTORS } from '../selectors';
 import { computeTwoProportionSignificance } from '../core/repositories/aiQuality';
 import { resolveWorkerRetryPolicy, RetryableWorkerError } from '../workers/errors';
@@ -108,6 +108,33 @@ describe('Legacy Core Domain Unit Tests', () => {
         });
         assert.equal(reconcilableMismatch, 'invited_but_connect_available');
         assert.equal(reconcilableMismatch ? isMismatchAmbiguous(reconcilableMismatch) : true, false);
+
+        // SR-1: gate anti-corruzione stato lead. Pagina senza ALCUN segnale d'azione = selettori
+        // probabilmente stale (cambio UI LinkedIn) o pagina non caricata -> inaffidabile -> il
+        // site-check la SALTA invece di scrivere uno stato falso nel DB.
+        assert.equal(
+            isSiteSignalsReliable({ pendingInvite: false, connected: false, messageButton: false, canConnect: false }),
+            false,
+        );
+        assert.equal(
+            isSiteSignalsReliable({ pendingInvite: false, connected: false, messageButton: false, canConnect: true }),
+            true,
+        );
+        assert.equal(
+            isSiteSignalsReliable({ pendingInvite: true, connected: false, messageButton: false, canConnect: false }),
+            true,
+        );
+        // Narrativa di sicurezza: con tutti i segnali assenti classifySiteMismatch produrrebbe il
+        // verdetto AMBIGUO pericoloso (READY_MESSAGE -> ready_message_but_not_connected -> REVIEW di
+        // massa), ma il gate lo intercetta PRIMA perche' i segnali sono inaffidabili.
+        const driftWouldMisclassify = classifySiteMismatch('READY_MESSAGE', {
+            pendingInvite: false,
+            connected: false,
+            messageButton: false,
+            canConnect: false,
+        });
+        assert.equal(driftWouldMisclassify, 'ready_message_but_not_connected');
+
         assert.deepEqual(workflowToJobTypes('warmup'), []);
         assert.deepEqual(workflowToJobTypes('check'), ['ACCEPTANCE_CHECK', 'HYGIENE']);
         assert.deepEqual(workflowToJobTypes('invite'), ['INVITE']);

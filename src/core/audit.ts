@@ -6,6 +6,7 @@ import { handleChallengeDetected, quarantineAccount } from '../risk/incidentMana
 import { joinSelectors } from '../selectors';
 import { LeadRecord } from '../types/domain';
 import { reconcileLeadStatus, transitionLead } from './leadStateService';
+import { logWarn } from '../telemetry/logger';
 import {
     countCompanyTargets,
     countCompanyTargetsByStatuses,
@@ -65,6 +66,8 @@ export interface SiteCheckReport {
     mismatches: number;
     fixed: number;
     reviewRequired: number;
+    /** Lead saltati perche' la pagina non esponeva alcun segnale d'azione affidabile (selettori probabilmente stale). */
+    suspectedDrift: number;
     items: SiteCheckItem[];
 }
 
@@ -118,6 +121,18 @@ async function inspectLeadOnSite(lead: LeadRecord, sessionPage: Page): Promise<S
         messageButton,
         canConnect,
     };
+}
+
+/**
+ * Una pagina profilo realmente caricata espone almeno UN segnale d'azione positivo
+ * (message, connect o pending). Se sono TUTTI assenti, i selettori sono probabilmente
+ * stale (LinkedIn rinomina le classi periodicamente) o la pagina non e' caricata: i verdetti
+ * basati sull'ASSENZA di un segnale (es. READY_MESSAGE senza message-button -> *_but_not_connected
+ * -> REVIEW_REQUIRED) sarebbero FALSI. In quel caso NON ci si fida dei segnali, per non corrompere
+ * in modo silenzioso lo stato lead nel DB.
+ */
+export function isSiteSignalsReliable(signals: SiteSignals): boolean {
+    return signals.messageButton || signals.canConnect || signals.pendingInvite;
 }
 
 async function tryAutoFix(lead: LeadRecord, mismatch: SiteMismatch): Promise<boolean> {
@@ -315,6 +330,7 @@ export async function runSiteCheck(options: SiteCheckOptions): Promise<SiteCheck
             mismatches: 0,
             fixed: 0,
             reviewRequired: 0,
+            suspectedDrift: 0,
             items: [],
         };
     }
@@ -324,6 +340,7 @@ export async function runSiteCheck(options: SiteCheckOptions): Promise<SiteCheck
         mismatches: 0,
         fixed: 0,
         reviewRequired: 0,
+        suspectedDrift: 0,
         items: [],
     };
 
@@ -397,6 +414,14 @@ export async function runSiteCheck(options: SiteCheckOptions): Promise<SiteCheck
                     await humanDelay(session.page, 1500, 3000);
                 }
 
+                if (!isSiteSignalsReliable(signals)) {
+                    // Tutti i segnali d'azione assenti -> selettori probabilmente stale (LinkedIn ha
+                    // rinominato le classi) o pagina non caricata. NON classificare/auto-fixare/mettere
+                    // in REVIEW su segnali inaffidabili: corromperebbe lo stato lead in modo silenzioso.
+                    report.suspectedDrift += 1;
+                    continue;
+                }
+
                 const mismatch = classifySiteMismatch(lead.status, signals);
 
                 if (!mismatch) {
@@ -451,6 +476,16 @@ export async function runSiteCheck(options: SiteCheckOptions): Promise<SiteCheck
         if (challengeDetected) {
             break;
         }
+    }
+
+    if (report.suspectedDrift > 0) {
+        const driftRatio = report.scanned > 0 ? report.suspectedDrift / report.scanned : 0;
+        await logWarn('site_check_selector_drift_suspected', {
+            suspectedDrift: report.suspectedDrift,
+            scanned: report.scanned,
+            driftRatio: Number(driftRatio.toFixed(2)),
+            hint: 'Lead senza alcun segnale d-azione: possibile cambio UI LinkedIn. Rivedere i selettori messageButton/connectButtonPrimary/distanceBadge/invitePendingIndicators.',
+        }).catch(() => undefined);
     }
 
     return report;
