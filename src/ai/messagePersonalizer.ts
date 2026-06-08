@@ -47,7 +47,7 @@ export async function buildPersonalizedFollowUpMessage(
     lang?: string,
     aiContext?: string,
 ): Promise<PersonalizedMessageResult> {
-    const template = buildFollowUpMessage(lead);
+    const template = buildFollowUpMessage(lead, lang);
     if (!config.aiPersonalizationEnabled || !isOpenAIConfigured()) {
         return {
             message: trimToMaxChars(template, config.aiMessageMaxChars),

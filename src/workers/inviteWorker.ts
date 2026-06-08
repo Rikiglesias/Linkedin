@@ -30,6 +30,7 @@ import { isSalesNavigatorUrl } from '../linkedinUrl';
 import { config } from '../config';
 import { isLoggedIn } from '../browser/auth';
 import { buildPersonalizedInviteNote } from '../ai/inviteNotePersonalizer';
+import { resolveLeadLanguage } from '../ai/leadLanguage';
 import { pauseAutomation } from '../risk/incidentManager';
 import { bridgeDailyStat, bridgeLeadStatus } from '../cloud/cloudBridge';
 import { recordSent, inferHourBucket } from '../ml/abBandit';
@@ -179,7 +180,7 @@ async function handleInviteModal(
             if (campaignOverrideNote) {
                 generatedNote = { note: campaignOverrideNote, source: 'template', variant: 'campaign_metadata' };
             } else {
-                generatedNote = await buildPersonalizedInviteNote(lead);
+                generatedNote = await buildPersonalizedInviteNote(lead, resolveLeadLanguage(lead));
                 if (generatedNote.variant) {
                     await updateLeadPromptVariant(lead.id, generatedNote.variant);
                     lead.invite_prompt_variant = generatedNote.variant;

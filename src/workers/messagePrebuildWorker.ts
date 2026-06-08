@@ -18,6 +18,7 @@ import {
     expireOldPrebuiltMessages,
 } from '../core/repositories/prebuiltMessages';
 import { buildPersonalizedFollowUpMessage } from '../ai/messagePersonalizer';
+import { resolveLeadLanguage } from '../ai/leadLanguage';
 import { hashMessage } from '../validation/messageValidator';
 import { logInfo, logWarn } from '../telemetry/logger';
 
@@ -53,7 +54,7 @@ export async function runMessagePrebuild(limit: number = 10): Promise<MessagePre
                 continue;
             }
 
-            const result = await buildPersonalizedFollowUpMessage(lead);
+            const result = await buildPersonalizedFollowUpMessage(lead, resolveLeadLanguage(lead));
             if (!result.message) {
                 report.skipped++;
                 continue;

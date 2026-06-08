@@ -33,6 +33,7 @@ import { isLoggedIn } from '../browser/auth';
 import { navigateToProfileForMessage } from '../browser/navigationContext';
 import { ensureViewportDwell } from '../browser/humanBehavior';
 import { buildPersonalizedFollowUpMessage } from '../ai/messagePersonalizer';
+import { resolveLeadLanguage } from '../ai/leadLanguage';
 import { getUnusedPrebuiltMessage, markPrebuiltMessageUsed } from '../core/repositories/prebuiltMessages';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { writeAuditEntry } from '../core/repositories/auditLog';
@@ -88,7 +89,8 @@ export async function processMessageJob(
     let messageSource: 'template' | 'ai' = 'ai';
     let messageModel: string | null = null;
 
-    let lang: string | undefined;
+    // Default = lingua inferita dal paese del lead (messaging-rules #5); meta.lang la sovrascrive sotto.
+    let lang: string | undefined = resolveLeadLanguage(lead);
     let forceTemplate = false;
     if (payload.metadata_json) {
         try {
@@ -113,7 +115,7 @@ export async function processMessageJob(
         if (forceTemplate) {
             // L'utente ha scelto 'template' nel preflight — usa solo il template, niente AI
             const { buildFollowUpMessage } = await import('../messages');
-            message = buildFollowUpMessage(lead);
+            message = buildFollowUpMessage(lead, lang);
             messageSource = 'template';
             messageModel = null;
         } else {
