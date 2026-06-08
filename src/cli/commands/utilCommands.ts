@@ -40,11 +40,16 @@ import { getOptionValue, hasOption, parseIntStrict, getPositionalArgs } from '..
 export async function runImportCommand(args: string[]): Promise<void> {
     const legacyPath = args[0] && !args[0].startsWith('--') ? args[0] : undefined;
     const filePath = getOptionValue(args, '--file') ?? legacyPath;
-    const listName = getOptionValue(args, '--list') ?? 'default';
 
     if (!filePath) {
         throw new Error('Specifica il CSV: npm start -- import --file path/to/file.csv --list nome_lista');
     }
+
+    // Lista destinazione: --list esplicito, altrimenti derivata dal nome del file CSV
+    // (no bucket cieco 'default' che non corrisponde a nessuna lista reale).
+    const explicitList = getOptionValue(args, '--list')?.trim();
+    const listName =
+        explicitList || (filePath.split(/[\\/]/).pop() ?? '').replace(/\.[^.]+$/, '').trim() || 'import';
 
     const result = await importLeadsFromCSV(filePath, listName);
     console.log(

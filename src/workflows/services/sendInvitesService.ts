@@ -202,7 +202,9 @@ export async function executeSendInvitesWorkflow(
                 prompt: 'Nota di connessione?',
                 type: 'choice',
                 choices: ['none', 'template', 'ai'],
-                defaultValue: request.noteMode ?? 'none',
+                // Default dalla config reale: se l'utente ha abilitato le note usa la modalità
+                // configurata, altrimenti 'none' (= default di fabbrica), invece di un cieco fisso.
+                defaultValue: request.noteMode ?? (config.inviteWithNote ? config.inviteNoteMode : 'none'),
             },
             {
                 id: 'enrichment',
@@ -228,8 +230,15 @@ export async function executeSendInvitesWorkflow(
             return {
                 listName: answers['listName'] ?? '',
                 limit,
+                // Risposta valida → usala; altrimenti default dalla config reale (non un cieco 'none').
                 noteMode:
-                    answers['noteMode'] === 'ai' || answers['noteMode'] === 'template' ? answers['noteMode'] : 'none',
+                    answers['noteMode'] === 'ai' ||
+                    answers['noteMode'] === 'template' ||
+                    answers['noteMode'] === 'none'
+                        ? answers['noteMode']
+                        : config.inviteWithNote
+                          ? config.inviteNoteMode
+                          : 'none',
                 enrichment: answers['enrichment'] !== 'false',
                 _accountId: answers['_accountId'],
             };

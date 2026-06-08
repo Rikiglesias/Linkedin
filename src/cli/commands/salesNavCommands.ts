@@ -711,11 +711,14 @@ export async function runSalesNavUnifiedCommand(args: string[]): Promise<void> {
         const subArgs = args.filter((a) => a.toLowerCase() !== subCommand);
         await handler(subArgs);
     } else if (subCommand && !subCommand.startsWith('http') && !/^\d+$/.test(subCommand)) {
-        // Primo argomento non è un sotto-comando valido, né un URL né un numero
+        // Primo argomento non è un sotto-comando valido, né un URL né un numero.
+        // Anti-ban: un typo (es. "synct") NON deve degradare a 'salesnav save' = azione browser
+        // reale su SalesNav non voluta. Stampa i comandi validi ed esci, senza aprire il browser.
         const validSubs = Object.keys(SALESNAV_SUBCOMMANDS).join(', ');
-        console.warn(`[WARN] Sotto-comando sconosciuto: "${subCommand}". Comandi validi: ${validSubs}`);
-        console.warn('[WARN] Fallback → salesnav save');
-        await runSalesNavBulkSaveCommand(args);
+        console.error(`[ERRORE] Sotto-comando sconosciuto: "${subCommand}". Comandi validi: ${validSubs}`);
+        console.error('Nessuna azione eseguita. Specifica un sotto-comando valido (o "--list" per il bulk save).');
+        process.exitCode = 1;
+        return;
     } else {
         // Nessun sotto-comando → default bulk-save con tutti gli args
         await runSalesNavBulkSaveCommand(args);
