@@ -111,6 +111,10 @@ export const CONFIG_PROFILES: Record<string, ConfigProfile> = {
     aggressive: {
         name: 'aggressive',
         description: 'Account maturi (1+ anno, 5000+ connessioni) — volumi alti, delay corti',
+        // GUARD anti-ban 2026 (#11): usare SOLO su account ad ALTA salute (SSI>65, acceptance>40%, età>6 mesi).
+        // pendingRatioStop=0.7 è SOPRA la zona-rischio 2026 (red-flag già ~0.65, silent reach-drop ~200 pending);
+        // weeklyInviteLimit=180 è vicino al cap dinamico massimo (~200), raggiungibile solo da account ad alta salute.
+        // NON attivare su account nuovi / a bassa salute. Vedi docs/research/LINKEDIN_STUDY_2026.md (GAP-5).
         caps: {
             softInviteCap: 25,
             hardInviteCap: 40,
