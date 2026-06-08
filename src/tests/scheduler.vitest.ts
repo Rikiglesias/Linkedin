@@ -482,15 +482,28 @@ describe('createNoBurstPlanner', () => {
         }
     });
 
-    it('long break al 5° job (longBreakEvery=5)', () => {
+    it('long break STOCASTICO (~1/longBreakEvery), non periodico esatto', () => {
+        // beforeAll fissa: minDelay=30, maxDelay=90, longBreakEvery=5, longBreak 120-300.
+        // Il long-break non è più al 5° job ESATTO (pattern matematico rilevabile) ma stocastico
+        // con probabilità ~1/5: frequenza media invariata, posizione casuale.
         const planner = createNoBurstPlanner();
-        const delays: number[] = [];
-        for (let i = 0; i < 6; i++) {
-            delays.push(planner.nextDelaySec());
+        const N = 2000;
+        let prev = 0;
+        const longBreakJobs: number[] = [];
+        for (let i = 0; i < N; i++) {
+            const cur = planner.nextDelaySec();
+            const gap = cur - prev;
+            prev = cur;
+            // floor minDelay preservato (anti-burst); base spacing <= maxDelay (90),
+            // il long-break aggiunge >= 120 → un gap > 90 segnala un long-break occorso.
+            expect(gap).toBeGreaterThanOrEqual(30);
+            if (gap > 90) longBreakJobs.push(i + 1);
         }
-        // Il 5° delay ha il long break aggiuntivo → gap tra 4° e 5° è maggiore
-        const gap4to5 = delays[4] - delays[3];
-        const gap3to4 = delays[3] - delays[2];
-        expect(gap4to5).toBeGreaterThan(gap3to4);
+        // (a) i long-break OCCORRONO, frequenza media ~1/5 (tolleranza ampia: anti-flake su crypto random)
+        const freq = longBreakJobs.length / N;
+        expect(freq).toBeGreaterThan(1 / 15);
+        expect(freq).toBeLessThan(1 / 2);
+        // (b) NON periodico esatto: non tutte le posizioni sono multipli di longBreakEvery (era il `% N`)
+        expect(longBreakJobs.every((p) => p % 5 === 0)).toBe(false);
     });
 });

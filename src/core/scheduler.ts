@@ -1,5 +1,5 @@
 import { config, getLocalDateString, getWeekStartDate, getWorkingHourIntensity, isGreenModeWindow } from '../config';
-import { randomInt } from '../utils/random';
+import { randomInt, logNormalDelaySec } from '../utils/random';
 import { getSessionBudgetFactor } from './sessionWarmer';
 import { getSessionMaturity } from '../browser/sessionCookieMonitor';
 import { applyGrowthModel, calculateAccountTrustScore } from '../risk/accountBehaviorModel';
@@ -337,14 +337,20 @@ export function createNoBurstPlanner(): NoBurstPlanner {
     const longBreakMax = toNonNegativeInt(config.noBurstLongBreakMaxSec);
 
     let totalDelaySec = 0;
-    let queuedJobs = 0;
 
     return {
         nextDelaySec: () => {
-            queuedJobs += 1;
-            totalDelaySec += randomInt(minDelay, maxDelay);
+            // Inter-arrival LOG-NORMALE (right-skew) invece di uniforme: l'istogramma piatto del
+            // randomInt è rilevabile dal behavioral fingerprinting 2026. Mediana nel terzo inferiore
+            // del range, coda destra naturale, floor minDelay PRESERVATO dal clamp (anti-burst intatto).
+            const span = Math.max(0, maxDelay - minDelay);
+            const medianDelay = minDelay + span * 0.35;
+            totalDelaySec += logNormalDelaySec(medianDelay, 0.5, minDelay, maxDelay);
 
-            if (longBreakEvery > 0 && queuedJobs % longBreakEvery === 0) {
+            // Long-break STOCASTICO (Bernoulli ~1/longBreakEvery) invece di periodico esatto (% N):
+            // una pausa lunga ESATTAMENTE ogni N° azione è un pattern matematico rilevabile (red-flag
+            // 2026). Stessa frequenza media, posizione casuale (a volte prima, a volte dopo).
+            if (longBreakEvery > 0 && randomInt(1, longBreakEvery) === 1) {
                 totalDelaySec += randomInt(longBreakMin, longBreakMax);
             }
 

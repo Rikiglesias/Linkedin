@@ -51,3 +51,13 @@ export function logNormalDelayMs(medianMs: number, sigma: number, minMs: number,
     const sample = medianMs * Math.exp(sigma * sampleStandardNormal());
     return Math.round(Math.max(minMs, Math.min(maxMs, sample)));
 }
+
+/**
+ * Gemella in SECONDI di {@link logNormalDelayMs}: stessa forma log-normale (right-skew), clampata a
+ * [minSec, maxSec]. Per gli spacing anti-burst dello scheduler, dove l'inter-arrival tra azioni
+ * consecutive NON è uniforme (istogramma piatto rilevabile) ma right-skewed come i tempi umani reali.
+ */
+export function logNormalDelaySec(medianSec: number, sigma: number, minSec: number, maxSec: number): number {
+    const sample = medianSec * Math.exp(sigma * sampleStandardNormal());
+    return Math.round(Math.max(minSec, Math.min(maxSec, sample)));
+}
