@@ -34,6 +34,9 @@ export const SALESNAV_SELECT_ALL_SELECTOR = [
 
 export const SALESNAV_SAVE_TO_LIST_SELECTOR = [
     'button:has-text("Save to list")',
+    // Varianti consolidate da listActions (#9): erano una "seconda verità" divergente
+    'button:has-text("Save in list")',
+    'button:has-text("Salva in lista")',
     'button:has-text("Salva nell\'elenco")',
     'button:has-text("Salva nella lista")',
     'button:has-text("Salva in elenco")',

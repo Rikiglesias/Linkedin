@@ -6,6 +6,7 @@ import { blockUserInput, pauseInputBlock, resumeInputBlock } from '../browser/hu
 import { enableWindowClickThrough, disableWindowClickThrough } from '../browser/windowInputBlock';
 import { normalizeLinkedInUrl } from '../linkedinUrl';
 import { navigateToSavedLists, SalesNavSavedList } from './listScraper';
+import { SALESNAV_SAVE_TO_LIST_SELECTOR } from './selectors';
 
 export interface SalesNavActionResult {
     ok: boolean;
@@ -35,12 +36,9 @@ const CREATE_LIST_CONFIRM_SELECTOR = [
     'button.artdeco-button--primary',
 ].join(', ');
 
-const SAVE_TO_LIST_BUTTON_SELECTOR = [
-    'button:has-text("Save in list")',
-    'button:has-text("Salva in lista")',
-    'button:has-text("Save")',
-    'button:has-text("Salva")',
-].join(', ');
+// #9: consolidato sulla definizione centrale (salesnav/selectors) per eliminare la "seconda
+// verità" divergente. Le varianti "Save in list"/"Salva in lista" sono ora nel selettore centrale.
+const SAVE_TO_LIST_BUTTON_SELECTOR = SALESNAV_SAVE_TO_LIST_SELECTOR;
 
 const ADD_TO_LIST_CONFIRM_SELECTOR = [
     'button:has-text("Save")',

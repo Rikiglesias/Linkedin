@@ -38,6 +38,7 @@ import {
 import { getSchedulingAccountIds, pickAccountIdForLead } from '../accountManager';
 import { generateInviteNote } from '../ai/inviteNotePersonalizer';
 import { classifySiteMismatch, isMismatchAmbiguous, isSiteSignalsReliable } from '../core/audit';
+import { SALESNAV_SAVE_TO_LIST_SELECTOR } from '../salesnav/selectors';
 import { SELECTORS } from '../selectors';
 import { computeTwoProportionSignificance } from '../core/repositories/aiQuality';
 import { resolveWorkerRetryPolicy, RetryableWorkerError } from '../workers/errors';
@@ -134,6 +135,14 @@ describe('Legacy Core Domain Unit Tests', () => {
             canConnect: false,
         });
         assert.equal(driftWouldMisclassify, 'ready_message_but_not_connected');
+
+        // #9: il selettore save-to-list centrale consolida le varianti prima divergenti (listActions
+        // usava "Save in list"/"Salva in lista", il centrale "Save to list"/"Salva nell'elenco"):
+        // ora una sola fonte include ENTRAMBE -> niente "seconda verità" che resta stale su un cambio UI.
+        assert.ok(SALESNAV_SAVE_TO_LIST_SELECTOR.includes('Save to list'));
+        assert.ok(SALESNAV_SAVE_TO_LIST_SELECTOR.includes('Save in list'));
+        assert.ok(SALESNAV_SAVE_TO_LIST_SELECTOR.includes('Salva in lista'));
+        assert.ok(SALESNAV_SAVE_TO_LIST_SELECTOR.includes("Salva nell'elenco"));
 
         assert.deepEqual(workflowToJobTypes('warmup'), []);
         assert.deepEqual(workflowToJobTypes('check'), ['ACCEPTANCE_CHECK', 'HYGIENE']);
