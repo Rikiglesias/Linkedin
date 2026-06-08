@@ -68,7 +68,12 @@ async function clickConnectOnProfile(page: Page): Promise<boolean> {
     const moreBtn = page.locator(joinSelectors('moreActionsButton')).first();
     if ((await moreBtn.count()) > 0) {
         await clickLocatorHumanLike(page, moreBtn, { selectorForDwell: joinSelectors('moreActionsButton') });
-        await humanDelay(page, 700, 1300);
+        // Il dropdown è lazy-rendered: attendi il RENDER del menu item invece di un delay fisso
+        // (un render lento faceva tornare count()=0 e abbandonare l'invito = SKIP silenzioso).
+        // humanDelay breve = pausa naturale di apertura menu (varianza preservata); waitForSelector
+        // con timeout esplicito = robustezza sul lazy-render (no attesa infinita).
+        await humanDelay(page, 350, 700);
+        await page.waitForSelector(joinSelectors('connectInMoreMenu'), { timeout: 3000 }).catch(() => null);
         const connectInMenu = page.locator(joinSelectors('connectInMoreMenu')).first();
         if ((await connectInMenu.count()) > 0) {
             const menuText = await connectInMenu.innerText().catch(() => '');

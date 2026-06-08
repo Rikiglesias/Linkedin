@@ -24,10 +24,15 @@ export const SELECTORS = {
     moreActionsButton: [
         'button[aria-label="More actions"]',
         'button[aria-label="Altre azioni"]',
+        // LinkedIn ha rinominato l'overflow "More" -> "Resources" su alcuni profili (da ott-2024)
+        'button[aria-label="Resources"]',
+        'button[aria-label="Risorse"]',
         'button.artdeco-dropdown__trigger:has-text("More")',
         'button.artdeco-dropdown__trigger:has-text("Altro")',
+        'button.artdeco-dropdown__trigger:has-text("Resources")',
+        'button.artdeco-dropdown__trigger:has-text("Risorse")',
         // XPath fallback – last resort
-        '//button[contains(@aria-label,"More") or contains(@aria-label,"Altre")]',
+        '//button[contains(@aria-label,"More") or contains(@aria-label,"Altre") or contains(@aria-label,"Resources") or contains(@aria-label,"Risorse")]',
     ],
 
     connectInMoreMenu: [
