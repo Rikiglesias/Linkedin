@@ -446,8 +446,12 @@ export function buildBehaviorDomainConfig() {
         contextualPauseMaxMs: Math.max(200, parseIntEnv('CONTEXTUAL_PAUSE_MAX_MS', 4200)),
         sessionMemoryProtectionMinJobs: Math.max(50, parseIntEnv('SESSION_MEMORY_PROTECTION_MIN_JOBS', 300)),
         sessionMemoryProtectionMaxJobs: Math.max(100, parseIntEnv('SESSION_MEMORY_PROTECTION_MAX_JOBS', 600)),
-        sessionMemoryProtectionMinMinutes: Math.max(10, parseIntEnv('SESSION_MEMORY_PROTECTION_MIN_MINUTES', 35)),
-        sessionMemoryProtectionMaxMinutes: Math.max(15, parseIntEnv('SESSION_MEMORY_PROTECTION_MAX_MINUTES', 70)),
+        // #2/GAP-3: durata-sessione allineata a scheduler-rules.md ("5-45min, non maratone"). Il cap
+        // wall-clock esiste già in jobRunner (sessionMaxMs = randomInt(min,max) + wind-down + rotazione
+        // con re-login a fine sessione). Il default era 35-70 (max 70 SOPRA il limite 45 della regola)
+        // → portato a 25-45min randomizzato (più corto, più vario, niente maratone). Override via env.
+        sessionMemoryProtectionMinMinutes: Math.max(10, parseIntEnv('SESSION_MEMORY_PROTECTION_MIN_MINUTES', 25)),
+        sessionMemoryProtectionMaxMinutes: Math.max(15, parseIntEnv('SESSION_MEMORY_PROTECTION_MAX_MINUTES', 45)),
         sessionWindDownPct: Math.min(0.5, Math.max(0.05, parseFloatEnv('SESSION_WIND_DOWN_PCT', 0.15))),
         sessionWindDownDelayMultiplier: Math.max(1, parseFloatEnv('SESSION_WIND_DOWN_DELAY_MULTIPLIER', 1.5)),
         sessionWindDownSpeedReduction: Math.min(
