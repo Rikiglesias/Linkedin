@@ -593,8 +593,18 @@ async function postSyncEnrichment(
 }
 
 export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptions): Promise<SalesNavigatorSyncReport> {
-    const listFilter = cleanText(options.listName) || null;
-    const explicitListUrl = cleanText(options.listUrl) || null;
+    const rawListUrl = cleanText(options.listUrl) || null;
+    // Robustezza: SOLO un URL http(s) valido può finire in page.goto. Se nel campo URL arriva un
+    // valore non-URL (es. l'utente ha digitato il NOME della lista nel prompt URL) NON ci si naviga
+    // sopra — causava "page.goto: Invalid url" e crash dell'intero sync. Lo si usa invece come
+    // filtro-nome sulle liste scoperte live.
+    const explicitListUrl = rawListUrl && /^https?:\/\//i.test(rawListUrl) ? rawListUrl : null;
+    if (rawListUrl && !explicitListUrl) {
+        console.warn(
+            `[SYNC] "${rawListUrl}" non è un URL valido — lo uso come filtro-nome della lista, non come URL di navigazione.`,
+        );
+    }
+    const listFilter = cleanText(options.listName) || (rawListUrl && !explicitListUrl ? rawListUrl : '') || null;
     const maxPages = Math.max(1, options.maxPages);
     const maxLeadsPerList = Math.max(1, options.maxLeadsPerList);
     const account = getAccountProfileById(options.accountId);
