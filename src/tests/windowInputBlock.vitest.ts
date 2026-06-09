@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildPowerShellScript } from '../browser/windowInputBlock';
+import { buildPowerShellScript } from '../browser/windowInputBlockScript';
 
 // [WINDOW-BLOCK] fix (2026-06-09): lo script PowerShell contiene un here-string C# (Add-Type @"..."@)
 // con virgolette interne. Va passato via -EncodedCommand (base64 UTF-16LE), NON via -Command "..."
