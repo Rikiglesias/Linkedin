@@ -4,6 +4,30 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-09 — Workflow-hardening: audit anti-ban + fix architetturali (`/goal workflow-hardening`)
+
+### Obiettivo
+3 pilastri: (1) 4 workflow E2E col proxy, (2) bug di ogni workflow fixati + gate=0, (3) anti-ban SOTA 2026. Parte AI-side (#2, #3) chiusa; #1 = leva utente (re-login mobile). Ogni finding verificato alla fonte (zero-M).
+
+### Fix committati (9, gate fino a 1592 test + madge 0 circular)
+- `27626ca` **A1** guardian fail-open (critical+pauseMinutes:0 ora pausa sempre >=30min), **A3** ACCEPTANCE/HYGIENE non accodati in risk STOP, **A5** applyAdaptiveFactor no invito-fantasma.
+- `94a2f3f` **A2** weekly invite cap enforced anche in esecuzione (inviteWorker, con compensazione).
+- `b3cc1d7` **R1** comando automation fallito/bloccato non piu' marcato SUCCEEDED (loopCommand branching).
+- `c4fdabe` **W3** keystroke floor 40->55ms (fuori zona-bot <50ms, SOTA 2026 keystroke dynamics).
+- `27d14d2`+`01fba0a` **R6**+**R6-bis** hook auto-push: non pusha i commit anti-ban (controlla l'intero backlog @{u}..HEAD, non solo HEAD).
+- `1f99e08` **D1** mutex withTransaction SQLite (serializza le transazioni concorrenti, factory di test).
+- `746294e` **A4** cancella i job accodati se un guard blocca dopo lo scheduling (enqueueJob->ID + deleteQueuedJobsByIds + cleanup ai 4 return blocked).
+- `f5915dc` **D2** il drain outbox ri-applica l'operazione cloud (3 upsert idempotenti; cloud.daily_stat escluso: increment non-idempotente).
+
+### Verificati e declassati con evidenza (zero-M, non fixati a vuoto)
+D3 (RPC atomica gia' primaria), R1c (workerResult.success=errors.length===0 corretto), R1d (edge), USE_JA3_PROXY (camoufox gestisce il TLS nativamente). Correzione di direzione anti-ban: mobile > residential su LinkedIn 2026 (~85% vs ~50% survival) — NON comprare residential.
+
+### Restano (tracciati, non-critici o leva-utente)
+M1-M3 medium (M1 multi-account/no-op su singolo, M2 Win32/[WINDOW-BLOCK], M3 snapshot env bootstrap), cloud.daily_stat idempotency, W1(B) resource-blocking (da fare con E2E per misurare), pilastro #1 E2E (leva utente: re-login mobile). Piano architetturale: `~/.claude/plans/vast-inventing-engelbart.md`; binding: `todos/audit-orchestrator-fix.md` + `todos/workflow-hardening.md`.
+
+### Verifica
+typecheck (BE+FE) + lint 0-warn + 1592 test + madge 0 circular su ogni commit. Branch refactor/adk-split. Commit anti-ban (A4 `746294e`) trattenuto dall'hook auto-push (review di branch obbligatoria); push = leva utente.
+
 ## 2026-06-07 — Collaudo uso-reale dei workflow del bot (`/goal workflow-collaudo`)
 
 ### Obiettivo
