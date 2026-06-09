@@ -40,7 +40,10 @@ function buildSelectorCanaryPlan(workflow: CanaryWorkflow): SelectorCanaryStepDe
             url: 'https://www.linkedin.com/feed/',
             selectors: [joinSelectors('globalNav')],
             required: true,
-            timeoutMs: 4000,
+            // La global-nav del feed è React-rendered e compare a ~4-6s anche su connessione
+            // veloce: 4s davano falsi negativi (selettore presente ma non ancora montato). 10s
+            // copre il render senza rendere il canary lento (gira max 1×/4h, cache).
+            timeoutMs: 10000,
         },
     ];
 
@@ -50,7 +53,7 @@ function buildSelectorCanaryPlan(workflow: CanaryWorkflow): SelectorCanaryStepDe
             url: 'https://www.linkedin.com/search/results/people/?keywords=manager',
             selectors: [joinSelectors('connectButtonPrimary'), 'a[href*="/in/"]'],
             required: false,
-            timeoutMs: 3000,
+            timeoutMs: 6000,
         });
     }
 
@@ -64,7 +67,7 @@ function buildSelectorCanaryPlan(workflow: CanaryWorkflow): SelectorCanaryStepDe
                 '[data-control-name="compose_message"]',
             ],
             required: false,
-            timeoutMs: 3000,
+            timeoutMs: 6000,
         });
     }
 
@@ -78,7 +81,7 @@ function buildSelectorCanaryPlan(workflow: CanaryWorkflow): SelectorCanaryStepDe
                 joinSelectors('globalNav'),
             ],
             required: false,
-            timeoutMs: 3000,
+            timeoutMs: 6000,
         });
     }
 
