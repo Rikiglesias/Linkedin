@@ -906,8 +906,12 @@ export async function humanType(page: Page, selector: string, text: string): Pro
         // Floor ASSOLUTO post-moltiplicatore: lengthSlowFactor*currentWordMultiplier può scendere
         // a 0.595x e, applicato DOPO il clamp di logNormalDelayMs, bypassava il floor → keystroke
         // <28ms = oltre il record mondiale (firma key-injection). Il floor fisico umano va imposto
-        // QUI, sull'effettivo. char ≥40ms (~migliore dattilografo umano), spazio/punteggiatura ≥80ms.
-        const keystrokeFloorMs = isSpaceOrPunctuation ? 80 : 40;
+        // QUI, sull'effettivo.
+        // W3/SOTA-2026 (keystroke dynamics): i keystroke <50ms (0.05s) sono la "zona bot" — la ricerca
+        // mostra ~21% dei keystroke bot sotto 0.05s contro solo ~5.8% umani. Il floor char a 40ms
+        // cadeva ancora in quella zona → alzato a 55ms (sopra 0.05s con margine). Spazio/punteggiatura
+        // ≥80ms (flight time naturalmente più lungo, già ben sopra la soglia).
+        const keystrokeFloorMs = isSpaceOrPunctuation ? 80 : 55;
         const delayBase = Math.max(keystrokeFloorMs, Math.round(rawDelay * lengthSlowFactor * currentWordMultiplier));
 
         await element.pressSequentially(typedChar, { delay: delayBase });
