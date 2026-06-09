@@ -1,4 +1,5 @@
 import { checkLogin, closeBrowser, launchBrowser, runSelectorCanaryDetailed } from '../browser';
+import { enableWindowClickThrough, disableWindowClickThrough } from '../browser/windowInputBlock';
 import { getRuntimeAccountProfiles } from '../accountManager';
 import { config, getLocalDateString, isWorkingHour } from '../config';
 import { checkDiskSpace } from '../db';
@@ -49,6 +50,12 @@ async function runCanaryIfNeeded(workflow: WorkflowEntryKind, noProxy = false): 
             bypassProxy: noProxy,
             forceDesktop: true,
         });
+        // [WINDOW-BLOCK] Proteggi ANCHE la finestra del canary: lancia il proprio browser e va su
+        // LinkedIn, quindi il mouse fisico dell'utente deve passarci attraverso come per la sessione
+        // sync. Senza, la finestra del canary resta cliccabile → un click la chiude e il workflow
+        // muore più avanti ("Target page closed"). Solo click-through OS (no overlay DOM: il canary
+        // testa i selettori e non va disturbato nel DOM).
+        enableWindowClickThrough(session.browser);
         try {
             const loggedIn = await checkLogin(session.page);
             if (!loggedIn) {
@@ -150,7 +157,11 @@ async function runCanaryIfNeeded(workflow: WorkflowEntryKind, noProxy = false): 
                 optionalFailed: report.optionalFailed,
             });
         } finally {
+            // Il click-through resta attivo per tutto il wind-down di closeBrowser (la finestra è
+            // ancora visibile e cliccabile); dopo la chiusura rimuovo il PID del canary dal set
+            // protetto — la finestra sync (PID diverso) resta protetta grazie allo stato multi-PID.
             await closeBrowser(session);
+            disableWindowClickThrough(session.browser);
         }
     }
 
