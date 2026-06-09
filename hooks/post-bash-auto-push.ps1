@@ -99,7 +99,15 @@ try {
 #    Test-AntibanFile (pattern keyword di _lib.ps1) NON cattura i file anti-ban-per-SEMANTICA il
 #    cui nome non contiene keyword (scheduler/orchestrator/guardian/jobRunner): li aggiungo per path.
 try {
-    $committedFiles = git -C $cwd diff-tree --no-commit-id --name-only -r HEAD 2>$null
+    # git push invia TUTTI i commit non ancora su upstream, non solo HEAD: controllo l'INTERO
+    # backlog @{u}..HEAD. Altrimenti un commit anti-ban "trattenuto" verrebbe comunque spinto da
+    # un commit SUCCESSIVO non-anti-ban che fa partire il push (buco scoperto 2026-06-09: 94a2f3f
+    # anti-ban finito su origin perché seguito da b3cc1d7 non-anti-ban).
+    $committedFiles = git -C $cwd diff --name-only '@{u}..HEAD' 2>$null
+    if (-not $committedFiles) {
+        # Fallback (upstream assente o diff vuoto): almeno l'ultimo commit.
+        $committedFiles = git -C $cwd diff-tree --no-commit-id --name-only -r HEAD 2>$null
+    }
     $antibanHits = @()
     foreach ($f in $committedFiles) {
         if ([string]::IsNullOrWhiteSpace($f)) { continue }
