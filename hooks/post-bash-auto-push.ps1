@@ -93,6 +93,35 @@ try {
     }
 } catch {}
 
+# 6. Area anti-ban / alto rischio: la regola .claude/rules/git-commit-push.md vieta l'auto-push
+#    DIRETTO quando il commit tocca anti-ban / stealth / fingerprint / proxy / scheduling-rischio /
+#    risk engine / migration DB -> serve review di branch (PR), mai push automatico.
+#    Test-AntibanFile (pattern keyword di _lib.ps1) NON cattura i file anti-ban-per-SEMANTICA il
+#    cui nome non contiene keyword (scheduler/orchestrator/guardian/jobRunner): li aggiungo per path.
+try {
+    $committedFiles = git -C $cwd diff-tree --no-commit-id --name-only -r HEAD 2>$null
+    $antibanHits = @()
+    foreach ($f in $committedFiles) {
+        if ([string]::IsNullOrWhiteSpace($f)) { continue }
+        $isSensitive = (Test-AntibanFile $f) -or
+            ($f -match 'src/(browser|risk|salesnav|captcha|proxy|workers|automation)/') -or
+            ($f -match 'src/core/(scheduler|orchestrator|jobRunner|dispatcher)\.ts') -or
+            ($f -match 'src/ai/guardian\.ts') -or
+            ($f -match '\.sql$') -or
+            ($f -match '(^|/)migrations?/')
+        if ($isSensitive) { $antibanHits += $f }
+    }
+    if ($antibanHits.Count -gt 0) {
+        $maxShow = 6
+        $shown = if ($antibanHits.Count -gt $maxShow) {
+            (($antibanHits | Select-Object -First $maxShow) -join ', ') + " (+$($antibanHits.Count - $maxShow) altri)"
+        } else {
+            $antibanHits -join ', '
+        }
+        $reasons += "commit tocca area anti-ban/alto-rischio -> review di branch obbligatoria (no auto-push): $shown"
+    }
+} catch {}
+
 if ($reasons.Count -gt 0) {
     $reasonText = $reasons -join '; '
     Write-HookLog -File $LOG -Message "Auto-push SKIP su ${branch}: $reasonText"
