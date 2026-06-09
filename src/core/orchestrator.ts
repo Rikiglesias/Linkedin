@@ -17,6 +17,7 @@ import { runSiteCheck } from './audit';
 import { runQueuedJobs } from './jobRunner';
 import {
     countWeeklyInvites,
+    deleteQueuedJobsByIds,
     getAutomationPauseState,
     getComplianceHealthMetrics,
     getDailyStat,
@@ -272,6 +273,21 @@ async function runWorkflowInternal(options: RunWorkflowOptions): Promise<RunWork
         messageMode: options.messageMode,
     });
 
+    // A4: se un guard di sicurezza blocca DOPO scheduleJobs (che ha già accodato i job), cancella i
+    // job outreach di questo run così non vengono eseguiti alla scadenza della pausa senza ri-validazione.
+    const cleanupEnqueuedOnBlock = async (): Promise<void> => {
+        const ids = schedule.enqueuedJobIds ?? [];
+        if (ids.length === 0) return;
+        const deleted = await deleteQueuedJobsByIds(ids);
+        if (deleted > 0) {
+            await logWarn('workflow.blocked.enqueued_jobs_cleaned', {
+                workflow: options.workflow,
+                localDate: schedule.localDate,
+                deleted,
+            });
+        }
+    };
+
     if (!options.dryRun) {
         const touchesOutreach =
             options.workflow === 'all' || options.workflow === 'invite' || options.workflow === 'message';
@@ -284,6 +300,7 @@ async function runWorkflowInternal(options: RunWorkflowOptions): Promise<RunWork
                 schedule.listBreakdown,
             );
             if (!canProceed) {
+                await cleanupEnqueuedOnBlock();
                 return {
                     status: 'blocked',
                     blocked: {
@@ -412,6 +429,7 @@ async function runWorkflowInternal(options: RunWorkflowOptions): Promise<RunWork
             workflow: options.workflow,
             riskSnapshot: schedule.riskSnapshot,
         });
+        await cleanupEnqueuedOnBlock();
         return {
             status: 'blocked',
             blocked: {
@@ -461,6 +479,7 @@ async function runWorkflowInternal(options: RunWorkflowOptions): Promise<RunWork
                 pauseMinutes: effectivePauseMinutes,
                 summary: guardian.decision.summary,
             });
+            await cleanupEnqueuedOnBlock();
             return {
                 status: 'blocked',
                 blocked: {
@@ -517,6 +536,7 @@ async function runWorkflowInternal(options: RunWorkflowOptions): Promise<RunWork
             score: schedule.riskSnapshot.score,
             pendingRatio: schedule.riskSnapshot.pendingRatio,
         });
+        await cleanupEnqueuedOnBlock();
         return {
             status: 'blocked',
             blocked: {

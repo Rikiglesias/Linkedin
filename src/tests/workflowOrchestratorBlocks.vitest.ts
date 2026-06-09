@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
     getRuntimeFlag: vi.fn(),
     pushOutboxEvent: vi.fn(),
     setRuntimeFlag: vi.fn(),
+    deleteQueuedJobsByIds: vi.fn(),
     evaluateAiGuardian: vi.fn(),
     runRandomLinkedinActivity: vi.fn(),
     sendTelegramAlert: vi.fn(),
@@ -102,6 +103,7 @@ vi.mock('../core/repositories', () => ({
     getRuntimeFlag: mocks.getRuntimeFlag,
     pushOutboxEvent: mocks.pushOutboxEvent,
     setRuntimeFlag: mocks.setRuntimeFlag,
+    deleteQueuedJobsByIds: mocks.deleteQueuedJobsByIds,
 }));
 
 vi.mock('../ai/guardian', () => ({
@@ -166,6 +168,7 @@ describe('orchestrator blocked outcomes', () => {
         mocks.evaluateWorkflowEntryGuards.mockResolvedValue({ allowed: true, blocked: null });
         mocks.scheduleJobs.mockResolvedValue(buildSchedule());
         mocks.countWeeklyInvites.mockResolvedValue(0);
+        mocks.deleteQueuedJobsByIds.mockResolvedValue(0);
         mocks.getComplianceHealthMetrics.mockResolvedValue(buildComplianceMetrics());
         mocks.getDailyStat.mockResolvedValue(0);
         mocks.getRecentDailyStats.mockResolvedValue([]);
@@ -376,5 +379,20 @@ describe('orchestrator blocked outcomes', () => {
             }),
             30,
         );
+    });
+
+    test('A4: blocco DOPO scheduleJobs → i job accodati di questo run vengono cancellati', async () => {
+        mocks.scheduleJobs.mockResolvedValue({ ...buildSchedule(), enqueuedJobIds: [101, 102] });
+        mocks.evaluateAiGuardian.mockResolvedValue({
+            executed: true,
+            reason: 'guardian-critical',
+            decision: { severity: 'critical', pauseMinutes: 60, summary: 'stop', recommendations: [] },
+        });
+
+        const result = await runWorkflow({ workflow: 'invite', dryRun: false });
+
+        expect(result.status).toBe('blocked');
+        // i job accodati prima del blocco non devono restare eseguibili → cancellati per ID
+        expect(mocks.deleteQueuedJobsByIds).toHaveBeenCalledWith([101, 102]);
     });
 });

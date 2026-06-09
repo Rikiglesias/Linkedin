@@ -54,6 +54,10 @@ export interface ScheduleResult {
     dryRun: boolean;
     moodFactor?: number;
     ratioShift?: number;
+    /** A4: ID dei job (outreach) accodati in questo run — l'orchestrator li cancella se un guard
+     *  di sicurezza blocca DOPO l'enqueue (evita l'esecuzione di job stantii). Opzionale: i builder
+     *  di test non sono obbligati a popolarlo. */
+    enqueuedJobIds?: number[];
 }
 
 export interface ScheduleOptions {
@@ -593,6 +597,9 @@ export async function scheduleJobs(
     let queuedInviteJobs = 0;
     let queuedCheckJobs = 0;
     let queuedMessageJobs = 0;
+    // A4: ID dei job outreach (INVITE/ACCEPTANCE_CHECK/MESSAGE) accodati in questo run; l'orchestrator
+    // li cancella se un guard di sicurezza blocca DOPO questo enqueue.
+    const enqueuedJobIds: number[] = [];
     await syncLeadListsFromLeads();
     let listConfigs = await listLeadCampaignConfigs(true);
     if (listConfigs.length === 0) {
@@ -796,7 +803,7 @@ export async function scheduleJobs(
                 }
                 // R07: priorità 30 — gli inviti sono ULTIMI tra i job outreach.
                 // Ordine: HYGIENE(5) → ACCEPTANCE_CHECK(10) → MESSAGE(20) → INVITE(30)
-                const inserted = await enqueueJob(
+                const insertedId = await enqueueJob(
                     'INVITE',
                     invitePayload,
                     buildInviteKey(lead.id, localDate),
@@ -805,7 +812,8 @@ export async function scheduleJobs(
                     initialDelaySec,
                     accountId,
                 );
-                if (inserted) {
+                if (insertedId !== null) {
+                    enqueuedJobIds.push(insertedId);
                     insertedForList += 1;
                     queuedInviteJobs += 1;
                     accountInviteRemaining.set(accountId, remainingForAccount - 1);
@@ -835,7 +843,7 @@ export async function scheduleJobs(
                 const accountId = pickAccountIdForLead(lead.id);
                 // R07: priorità 10 — acceptance check PRIMA di message e invite.
                 // Scopre chi ha accettato → abilita MESSAGE ai lead appena accettati.
-                const inserted = await enqueueJob(
+                const insertedId = await enqueueJob(
                     'ACCEPTANCE_CHECK',
                     { leadId: lead.id },
                     buildCheckKey(lead.id, localDate),
@@ -844,7 +852,8 @@ export async function scheduleJobs(
                     initialDelaySec,
                     accountId,
                 );
-                if (inserted) {
+                if (insertedId !== null) {
+                    enqueuedJobIds.push(insertedId);
                     insertedForList += 1;
                     queuedCheckJobs += 1;
                     breakdown.maxScheduledDelaySec = Math.max(breakdown.maxScheduledDelaySec, initialDelaySec);
@@ -971,7 +980,7 @@ export async function scheduleJobs(
                 if (Object.keys(msgMeta).length > 0) {
                     messagePayload.metadata_json = JSON.stringify(msgMeta);
                 }
-                const inserted = await enqueueJob(
+                const insertedId = await enqueueJob(
                     'MESSAGE',
                     messagePayload,
                     buildMessageKey(lead.id, acceptedAtDate),
@@ -980,7 +989,8 @@ export async function scheduleJobs(
                     initialDelaySec,
                     accountId,
                 );
-                if (inserted) {
+                if (insertedId !== null) {
+                    enqueuedJobIds.push(insertedId);
                     insertedForList += 1;
                     queuedMessageJobs += 1;
                     accountMessageRemaining.set(accountId, remainingForAccount - 1);
@@ -1070,6 +1080,7 @@ export async function scheduleJobs(
         queuedInviteJobs,
         queuedCheckJobs,
         queuedMessageJobs,
+        enqueuedJobIds,
         listBreakdown: Array.from(listBreakdown.values()),
         dryRun,
         moodFactor: Math.round(inviteMoodFactor * 100) / 100,

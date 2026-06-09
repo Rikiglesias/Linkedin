@@ -18,7 +18,7 @@ export async function enqueueJob(
     maxAttempts: number,
     initialDelaySeconds: number = 0,
     accountId: string = 'default',
-): Promise<boolean> {
+): Promise<number | null> {
     const db = await getDatabase();
     const safeDelay = Math.max(0, Math.floor(initialDelaySeconds));
     const normalizedAccountId = accountId.trim() || 'default';
@@ -29,7 +29,33 @@ export async function enqueueJob(
     `,
         [type, normalizedAccountId, JSON.stringify(payload), idempotencyKey, priority, maxAttempts, safeDelay],
     );
-    return (result.changes ?? 0) > 0;
+    // A4: ritorna l'ID del job appena accodato (null se l'INSERT OR IGNORE non ha inserito, es.
+    // idempotency_key duplicata). Permette a scheduleJobs di tracciarlo e all'orchestrator di
+    // cancellarlo se un guard di sicurezza blocca DOPO l'enqueue. I caller esistenti usano un
+    // truthy-check (`if (inserted)`) → compatibile (gli ID SQLite partono da 1).
+    if ((result.changes ?? 0) > 0 && typeof result.lastID === 'number') {
+        return result.lastID;
+    }
+    return null;
+}
+
+/**
+ * A4: cancella i job ancora in stato QUEUED tra gli `ids` dati. Chiamato dall'orchestrator quando un
+ * guard di sicurezza (compliance/STOP/guardian/cooldown) blocca il workflow DOPO che scheduleJobs ha
+ * già accodato, per evitare che i job "stantii" vengano eseguiti alla scadenza della pausa senza
+ * ri-validazione. Cancella SOLO per ID + status='QUEUED' (non tocca job RUNNING né job di altri run).
+ * Ritorna il numero di job cancellati.
+ */
+export async function deleteQueuedJobsByIds(ids: number[]): Promise<number> {
+    const validIds = ids.filter((id) => Number.isInteger(id) && id > 0);
+    if (validIds.length === 0) return 0;
+    const db = await getDatabase();
+    const placeholders = validIds.map(() => '?').join(', ');
+    const result = await db.run(
+        `DELETE FROM jobs WHERE status = 'QUEUED' AND id IN (${placeholders})`,
+        validIds,
+    );
+    return result.changes ?? 0;
 }
 
 export async function lockNextQueuedJob(
