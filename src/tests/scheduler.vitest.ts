@@ -251,8 +251,13 @@ describe('applyAdaptiveFactor', () => {
         expect(applyAdaptiveFactor(0, 0.8)).toBe(0);
     });
 
-    it('factor molto piccolo → almeno 1 (se budget > 0)', () => {
-        expect(applyAdaptiveFactor(10, 0.01)).toBe(1);
+    it('A5: factor penalizzante (<1) che arrotonda a 0 → 0 (no invito-fantasma su lista a rischio)', () => {
+        expect(applyAdaptiveFactor(10, 0.01)).toBe(0);
+        expect(applyAdaptiveFactor(3, 0.2)).toBe(0); // lista pending-high
+    });
+
+    it('factor >= 1 con budget intero > 0 → mai sotto 1 (floor preservato senza penalità)', () => {
+        expect(applyAdaptiveFactor(2, 1)).toBe(2);
     });
 
     it('budget negativo → 0', () => {

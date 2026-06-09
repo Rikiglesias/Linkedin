@@ -106,6 +106,7 @@ vi.mock('../core/repositories', () => ({
 
 vi.mock('../ai/guardian', () => ({
     evaluateAiGuardian: mocks.evaluateAiGuardian,
+    MIN_CRITICAL_PAUSE_MINUTES: 30,
 }));
 
 vi.mock('../workers/randomActivityWorker', () => ({
@@ -333,6 +334,45 @@ describe('orchestrator blocked outcomes', () => {
                 workflow: 'invite',
                 localDate: '2026-04-01',
                 reason: 'predictive-anomaly',
+            }),
+            30,
+        );
+    });
+
+    test('A1 fail-closed: severity critical con pauseMinutes 0 → pausa comunque al floor MIN (30)', async () => {
+        mocks.evaluateAiGuardian.mockResolvedValue({
+            executed: true,
+            reason: 'guardian-critical-zero-pause',
+            decision: {
+                severity: 'critical',
+                pauseMinutes: 0,
+                summary: 'Critico senza pausa esplicita',
+                recommendations: ['attendere'],
+            },
+        });
+
+        const result = await runWorkflow({ workflow: 'invite', dryRun: false });
+
+        expect(result).toEqual({
+            status: 'blocked',
+            blocked: {
+                reason: 'AI_GUARDIAN_PREEMPTIVE',
+                message: 'Critico senza pausa esplicita',
+                details: {
+                    workflow: 'invite',
+                    localDate: '2026-04-01',
+                    pauseMinutes: 30,
+                    reason: 'guardian-critical-zero-pause',
+                },
+            },
+            localDate: '2026-04-01',
+        });
+        expect(mocks.pauseAutomation).toHaveBeenCalledWith(
+            'AI_GUARDIAN_PREEMPTIVE',
+            expect.objectContaining({
+                workflow: 'invite',
+                localDate: '2026-04-01',
+                reason: 'guardian-critical-zero-pause',
             }),
             30,
         );

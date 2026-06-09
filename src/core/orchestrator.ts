@@ -25,7 +25,7 @@ import {
     pushOutboxEvent,
     setRuntimeFlag,
 } from './repositories';
-import { evaluateAiGuardian } from '../ai/guardian';
+import { evaluateAiGuardian, MIN_CRITICAL_PAUSE_MINUTES } from '../ai/guardian';
 import { runRandomLinkedinActivity } from '../workers/randomActivityWorker';
 import { sendTelegramAlert } from '../telemetry/alerts';
 import { evaluateWorkflowEntryGuards } from './workflowEntryGuards';
@@ -440,7 +440,10 @@ async function runWorkflowInternal(options: RunWorkflowOptions): Promise<RunWork
             },
             `ai.guardian.decision:${schedule.localDate}:${options.workflow}:${Date.now()}`,
         );
-        if (guardian.decision.severity === 'critical' && guardian.decision.pauseMinutes > 0) {
+        // A1 fail-closed: severity 'critical' DEVE sempre pausare+bloccare.
+        // Non fidarsi del pauseMinutes emesso dall'LLM (può essere 0) → floor enforced dal codice.
+        if (guardian.decision.severity === 'critical') {
+            const effectivePauseMinutes = Math.max(guardian.decision.pauseMinutes, MIN_CRITICAL_PAUSE_MINUTES);
             await pauseAutomation(
                 'AI_GUARDIAN_PREEMPTIVE',
                 {
@@ -449,13 +452,13 @@ async function runWorkflowInternal(options: RunWorkflowOptions): Promise<RunWork
                     reason: guardian.reason,
                     decision: guardian.decision,
                 },
-                guardian.decision.pauseMinutes,
+                effectivePauseMinutes,
             );
             await logWarn('ai.guardian.preemptive_pause', {
                 workflow: options.workflow,
                 localDate: schedule.localDate,
                 reason: guardian.reason,
-                pauseMinutes: guardian.decision.pauseMinutes,
+                pauseMinutes: effectivePauseMinutes,
                 summary: guardian.decision.summary,
             });
             return {
@@ -466,7 +469,7 @@ async function runWorkflowInternal(options: RunWorkflowOptions): Promise<RunWork
                     details: {
                         workflow: options.workflow,
                         localDate: schedule.localDate,
-                        pauseMinutes: guardian.decision.pauseMinutes,
+                        pauseMinutes: effectivePauseMinutes,
                         reason: guardian.reason,
                     },
                 },

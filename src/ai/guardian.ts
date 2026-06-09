@@ -60,6 +60,27 @@ export function clampPauseMinutes(value: number): number {
     return Math.min(24 * 60, parsed);
 }
 
+/**
+ * Pausa minima (minuti) enforced per QUALSIASI decisione 'critical'.
+ * Allineata al contratto del prompt AI ("pauseMinutes ... between 30-480 for critical").
+ * Difesa fail-closed (bug A1): l'LLM — o un AI_GUARDIAN_PAUSE_MINUTES mal configurato — non deve poter
+ * emettere severity 'critical' con pauseMinutes 0, altrimenti il consumer non pausa e il bot prosegue
+ * in stato di rischio elevato (rischio ban).
+ */
+export const MIN_CRITICAL_PAUSE_MINUTES = 30;
+
+/**
+ * Invariante single-source: severity 'critical' ⇒ pauseMinutes >= MIN_CRITICAL_PAUSE_MINUTES.
+ * Applicata a ogni decision finale che può risultare 'critical' (heuristic critical + decisione AI).
+ */
+/** @internal */
+export function enforceCriticalPauseFloor(decision: AiGuardianDecision): AiGuardianDecision {
+    if (decision.severity === 'critical' && decision.pauseMinutes < MIN_CRITICAL_PAUSE_MINUTES) {
+        return { ...decision, pauseMinutes: MIN_CRITICAL_PAUSE_MINUTES };
+    }
+    return decision;
+}
+
 /** @internal */
 export function heuristics(schedule: ScheduleResult): AiGuardianDecision {
     const criticalList = schedule.listBreakdown.find((list) => list.pendingRatio >= 0.78 || list.blockedRatio >= 0.35);
@@ -189,7 +210,7 @@ export async function evaluateAiGuardian(
         return {
             executed: true,
             reason: 'heuristic_critical_block',
-            decision: heuristicDecision,
+            decision: enforceCriticalPauseFloor(heuristicDecision),
         };
     }
 
@@ -254,13 +275,13 @@ export async function evaluateAiGuardian(
         return {
             executed: true,
             reason: runCheck.reason,
-            decision: {
+            decision: enforceCriticalPauseFloor({
                 source: 'ai',
                 severity: enforced.severity,
                 summary: enforced.summary,
                 recommendations: enforced.recommendations,
                 pauseMinutes: enforced.pauseMinutes,
-            },
+            }),
         };
     } catch {
         return {

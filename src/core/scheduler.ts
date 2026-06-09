@@ -202,7 +202,10 @@ export function applyAdaptiveFactor(rawBudget: number, factor: number): number {
     }
     const computed = Math.floor(rawBudget * factor);
     if (computed <= 0) {
-        return 1;
+        // A5: floor a 1 SOLO se il factor non penalizza (>= 1, nessuna riduzione di rischio).
+        // Con factor < 1 (penalità adattiva: WARN/LOW_ACTIVITY/pending_high/blocked) un budget
+        // che arrotonda a 0 DEVE restare 0 — una lista a rischio non deve ricevere 1 invito-fantasma.
+        return factor >= 1 ? 1 : 0;
     }
     return Math.min(rawBudget, computed);
 }
@@ -814,7 +817,7 @@ export async function scheduleJobs(
         }
     }
 
-    if (workflow === 'all' || workflow === 'check') {
+    if ((workflow === 'all' || workflow === 'check') && riskSnapshot.action !== 'STOP') {
         const checkLimitPerList = Math.max(25, config.hardInviteCap * 3);
         for (const listName of activeListNames) {
             const breakdown = listBreakdown.get(listName);
@@ -989,7 +992,7 @@ export async function scheduleJobs(
         }
     }
 
-    if (!dryRun && config.withdrawInvitesEnabled && workflow !== 'warmup') {
+    if (!dryRun && config.withdrawInvitesEnabled && workflow !== 'warmup' && riskSnapshot.action !== 'STOP') {
         const hygieneAccounts = getRuntimeAccountProfiles();
         for (const acc of hygieneAccounts) {
             await enqueueJob(

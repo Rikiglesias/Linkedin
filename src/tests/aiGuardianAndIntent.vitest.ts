@@ -4,7 +4,10 @@ import {
     tryExtractJsonBlock,
     parseAiDecision,
     enforceHeuristicFloor,
+    enforceCriticalPauseFloor,
     clampPauseMinutes,
+    MIN_CRITICAL_PAUSE_MINUTES,
+    type AiGuardianDecision,
 } from '../ai/guardian';
 import { clampConfidence, normalizeIntent, normalizeSubIntent, buildFallbackDraft } from '../ai/intentResolver';
 import type { ScheduleResult } from '../core/scheduler';
@@ -298,6 +301,43 @@ describe('guardian — clampPauseMinutes', () => {
     it('> 24h → 1440', () => expect(clampPauseMinutes(2000)).toBe(1440));
     it('NaN → 0', () => expect(clampPauseMinutes(NaN)).toBe(0));
     it('Infinity → 0', () => expect(clampPauseMinutes(Infinity)).toBe(0));
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GUARDIAN — enforceCriticalPauseFloor (A1 fail-closed: critical non deve mai avere pausa 0)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('guardian — enforceCriticalPauseFloor', () => {
+    const base = { source: 'ai' as const, summary: 'test', recommendations: [] as string[] };
+
+    it('critical + pauseMinutes 0 → alzato a MIN_CRITICAL_PAUSE_MINUTES (bug A1)', () => {
+        const d: AiGuardianDecision = { ...base, severity: 'critical', pauseMinutes: 0 };
+        expect(enforceCriticalPauseFloor(d).pauseMinutes).toBe(MIN_CRITICAL_PAUSE_MINUTES);
+    });
+
+    it('critical + pauseMinutes sotto il floor → alzato a MIN', () => {
+        const d: AiGuardianDecision = { ...base, severity: 'critical', pauseMinutes: 5 };
+        expect(enforceCriticalPauseFloor(d).pauseMinutes).toBe(MIN_CRITICAL_PAUSE_MINUTES);
+    });
+
+    it('critical + pauseMinutes valido (>= MIN) → invariato', () => {
+        const d: AiGuardianDecision = { ...base, severity: 'critical', pauseMinutes: 120 };
+        expect(enforceCriticalPauseFloor(d).pauseMinutes).toBe(120);
+    });
+
+    it('watch + pauseMinutes 0 → invariato (nessun floor sotto critical)', () => {
+        const d: AiGuardianDecision = { ...base, severity: 'watch', pauseMinutes: 0 };
+        expect(enforceCriticalPauseFloor(d).pauseMinutes).toBe(0);
+    });
+
+    it('normal + pauseMinutes 0 → invariato', () => {
+        const d: AiGuardianDecision = { ...base, severity: 'normal', pauseMinutes: 0 };
+        expect(enforceCriticalPauseFloor(d).pauseMinutes).toBe(0);
+    });
+
+    it('MIN_CRITICAL_PAUSE_MINUTES allineato al contratto del prompt (>= 30)', () => {
+        expect(MIN_CRITICAL_PAUSE_MINUTES).toBeGreaterThanOrEqual(30);
+    });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
