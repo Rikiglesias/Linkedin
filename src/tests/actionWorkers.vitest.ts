@@ -18,6 +18,7 @@ vi.mock('../telemetry/logger', () => ({
 // Repositories — DB mockato
 vi.mock('../core/repositories', () => ({
     checkAndIncrementDailyLimit: vi.fn().mockResolvedValue(true),
+    countWeeklyInvites: vi.fn().mockResolvedValue(0),
     incrementDailyStat: vi.fn().mockResolvedValue(undefined),
     incrementListDailyStat: vi.fn().mockResolvedValue(undefined),
     recordLeadTimingAttribution: vi.fn().mockResolvedValue(undefined),
@@ -139,10 +140,12 @@ vi.mock('../config', () => ({
     config: {
         hardInviteCap: 20,
         hardMsgCap: 20,
+        weeklyInviteLimit: 80,
         inviteWithNote: false,
         profileContextExtractionEnabled: false,
         aiPersonalizationEnabled: false,
     },
+    getWeekStartDate: vi.fn(() => '2026-06-08'),
 }));
 
 // AI personalization — template fallback
@@ -220,7 +223,7 @@ import { processAcceptanceJob } from '../workers/acceptanceWorker';
 import type { LeadRecord, InviteJobPayload, MessageJobPayload, AcceptanceJobPayload } from '../types/domain';
 import type { WorkerContext } from '../workers/context';
 import { transitionLead, transitionLeadAtomic } from '../core/leadStateService';
-import { checkAndIncrementDailyLimit, getDailyStat } from '../core/repositories';
+import { checkAndIncrementDailyLimit, countWeeklyInvites, incrementDailyStat, getDailyStat } from '../core/repositories';
 // leadsCore è usato da inviteWorker per getLeadById
 import { getLeadById as getLeadByIdCore } from '../core/repositories/leadsCore';
 // repositories ha anche getLeadById usato da messageWorker e acceptanceWorker
@@ -406,6 +409,20 @@ describe('inviteWorker — processInviteJob', () => {
         const result = await processInviteJob(basePayload, ctx);
 
         expect(result.processedCount).toBe(0);
+        expect(vi.mocked(transitionLead)).not.toHaveBeenCalledWith(42, 'INVITED', expect.any(String), expect.anything());
+    });
+
+    // (2b) A2 weekly cap: daily ok ma countWeeklyInvites > weeklyInviteLimit → stop + compensa
+    it('weekly cap (A2): countWeeklyInvites > weeklyInviteLimit → stop + compensa invites_sent', async () => {
+        vi.mocked(checkAndIncrementDailyLimit).mockResolvedValue(true); // daily sotto cap
+        vi.mocked(countWeeklyInvites).mockResolvedValue(81); // > weeklyInviteLimit (80)
+        const ctx = makeContext({ dryRun: false });
+
+        const result = await processInviteJob(basePayload, ctx);
+
+        expect(result.processedCount).toBe(0);
+        // compensazione: l'incremento daily appena fatto viene annullato (-1)
+        expect(vi.mocked(incrementDailyStat)).toHaveBeenCalledWith(expect.any(String), 'invites_sent', -1);
         expect(vi.mocked(transitionLead)).not.toHaveBeenCalledWith(42, 'INVITED', expect.any(String), expect.anything());
     });
 

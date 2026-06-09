@@ -12,6 +12,7 @@ import { navigateToProfileWithContext } from '../browser/navigationContext';
 import { clickWithFallback } from '../browser/uiFallback';
 import {
     checkAndIncrementDailyLimit,
+    countWeeklyInvites,
     incrementDailyStat,
     incrementListDailyStat,
     recordLeadTimingAttribution,
@@ -27,7 +28,7 @@ import { WorkerContext } from './context';
 import { ChallengeDetectedError, RetryableWorkerError } from './errors';
 import { attemptChallengeResolution } from './challengeHandler';
 import { isSalesNavigatorUrl } from '../linkedinUrl';
-import { config } from '../config';
+import { config, getWeekStartDate } from '../config';
 import { isLoggedIn } from '../browser/auth';
 import { buildPersonalizedInviteNote } from '../ai/inviteNotePersonalizer';
 import { resolveLeadLanguage } from '../ai/leadLanguage';
@@ -591,6 +592,24 @@ export async function processInviteJob(
         const withinCap = await checkAndIncrementDailyLimit(context.localDate, 'invites_sent', config.hardInviteCap);
         if (!withinCap) {
             await logInfo('invite.daily_cap_reached', { leadId: lead.id, cap: config.hardInviteCap });
+            return workerResult(0);
+        }
+
+        // A2 — Weekly cap enforced ANCHE in esecuzione (non solo allo scheduling).
+        // Lo scheduler conta solo gli invites ESEGUITI per il weeklyRemaining: su loop multipli
+        // (job accodati ma non ancora eseguiti) può sforare il cap settimanale. Qui, dopo l'incremento
+        // daily atomico (che ha già aggiornato invites_sent di oggi), verifichiamo la SOMMA settimanale
+        // e, se supera il tetto hard, compensiamo l'incremento e saltiamo (stessa logica di compensazione
+        // usata sui fallimenti). config.weeklyInviteLimit è il ceiling assoluto (il budget dinamico,
+        // sempre <= di questo, resta enforced a monte nello scheduler).
+        const weeklyCount = await countWeeklyInvites(getWeekStartDate());
+        if (weeklyCount > config.weeklyInviteLimit) {
+            await incrementDailyStat(context.localDate, 'invites_sent', -1).catch(() => {});
+            await logInfo('invite.weekly_cap_reached', {
+                leadId: lead.id,
+                weeklyCount,
+                weeklyLimit: config.weeklyInviteLimit,
+            });
             return workerResult(0);
         }
     }
