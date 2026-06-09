@@ -63,6 +63,12 @@ export interface DatabaseManager {
 class SQLiteManager implements DatabaseManager {
     readonly isPostgres = false;
     private db: SQLiteDatabase;
+    // D1: mutex Promise-chain per serializzare le transazioni TOP-LEVEL sulla connessione SQLite
+    // singola. Due transazioni "fratelle" concorrenti (context AsyncLocalStorage diverso, es.
+    // Promise.allSettled) farebbero BEGIN sovrapposti sulla stessa connessione → interlacciamento
+    // (COMMIT/ROLLBACK di una chiude la transazione dell'altra). Le nested (SAVEPOINT) NON usano
+    // questo lock: girano dentro la parent che lo detiene già.
+    private txTail: Promise<unknown> = Promise.resolve();
 
     constructor(db: SQLiteDatabase) {
         this.db = db;
@@ -112,20 +118,42 @@ class SQLiteManager implements DatabaseManager {
                 throw error;
             }
         }
-        await this.exec('BEGIN');
-        try {
-            const result = await transactionContext.run(this, () => callback(this));
-            await this.exec('COMMIT');
-            return result;
-        } catch (error) {
-            await this.exec('ROLLBACK');
-            throw error;
-        }
+        // Top-level: serializza sulla connessione singola via mutex Promise-chain (D1).
+        const runTx = async (): Promise<T> => {
+            await this.exec('BEGIN');
+            try {
+                const result = await transactionContext.run(this, () => callback(this));
+                await this.exec('COMMIT');
+                return result;
+            } catch (error) {
+                await this.exec('ROLLBACK');
+                throw error;
+            }
+        };
+        // Incatena al tail: questa transazione parte solo quando la precedente è conclusa (COMMIT o
+        // ROLLBACK). `then(runTx, runTx)` → runTx gira comunque dopo la precedente, sia che essa sia
+        // andata a buon fine sia che abbia fallito.
+        const result = this.txTail.then(runTx, runTx);
+        // Il nuovo tail si risolve SEMPRE (assorbe l'eventuale rejection) per non bloccare la coda né
+        // generare unhandled rejection; il chiamante riceve comunque il `result` reale (con il throw).
+        this.txTail = result.then(
+            () => undefined,
+            () => undefined,
+        );
+        return result;
     }
 
     async close(): Promise<void> {
         await this.db.close();
     }
+}
+
+/**
+ * @internal Factory per i test: crea un SQLiteManager attorno a una connessione `sqlite` esistente,
+ * così il mutex di transazione (D1) si verifica sul codice reale, non su una copia ri-implementata.
+ */
+export function createSqliteManager(sqliteDb: SQLiteDatabase): DatabaseManager {
+    return new SQLiteManager(sqliteDb);
 }
 
 // ------------------------------------------------------------------
