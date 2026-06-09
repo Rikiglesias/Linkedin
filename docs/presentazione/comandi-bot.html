@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bot LinkedIn — Cheat-sheet comandi</title>
+<style>
+  :root{--blue:#0a66c2;--ink:#16202a;--muted:#5b6b7b;--bg:#f4f7fb;--card:#fff;--line:#e4eaf0;--warn:#ea580c}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);padding:26px 26px 50px;font-size:14px}
+  header{max-width:1100px;margin:0 auto 18px}
+  h1{font-size:26px;font-weight:800}
+  header p{color:var(--muted);margin-top:4px}
+  .wrap{max-width:1100px;margin:0 auto}
+  .run{background:#0b1b2b;color:#dbe7f4;border-radius:12px;padding:16px 18px;margin-bottom:20px;font-family:Consolas,"Courier New",monospace;font-size:13px;line-height:1.7;overflow:auto}
+  .run .c{color:#7ee0a3}.run .f{color:#ffd98a}.run .h{color:#7e93a8}
+  h2{font-size:15px;font-weight:800;margin:22px 0 8px;display:flex;align-items:center;gap:8px}
+  .tag{font-size:10.5px;font-weight:700;border-radius:6px;padding:2px 8px}
+  .tag.safe{background:#e7f6ec;color:#16a34a}.tag.ab{background:#fff1e8;color:var(--warn)}
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  td{padding:9px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  td.cmd{font-family:Consolas,"Courier New",monospace;font-size:12.5px;color:var(--blue);white-space:nowrap;width:46%}
+  td.desc{color:var(--muted)}
+  .note{font-size:12.5px;color:var(--muted);margin-top:18px;line-height:1.5}
+  code{background:#eef3f8;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-family:Consolas,monospace;font-size:12px;color:var(--ink)}
+  @media print{body{background:#fff;padding:8px}.run{background:#0b1b2b !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}table{box-shadow:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>🤖 Bot LinkedIn — Cheat-sheet comandi</h1>
+  <p>Si lanciano con <code>.\bot.ps1 &lt;comando&gt;</code> · bot.ps1 ricompila da solo quando serve.</p>
+</header>
+
+<div class="run">
+<span class="h"># Come l'hai fatto girare (config attuale: no-proxy, canary off, fuori orario)</span><br>
+.\bot.ps1 <span class="c">unquarantine</span><br>
+<span class="f">$env:BYPASS_WORKING_HOURS</span>='true'; <span class="f">$env:SELECTOR_CANARY_ENABLED</span>='false'; .\bot.ps1 <span class="c">sync-list</span> <span class="f">--no-proxy</span>
+</div>
+
+<h2>🔑 Setup / accesso</h2>
+<table>
+  <tr><td class="cmd">.\bot.ps1 login</td><td class="desc">Login manuale LinkedIn (apre il browser)</td></tr>
+  <tr><td class="cmd">.\bot.ps1 doctor</td><td class="desc">Diagnostica: proxy, cookie, login, salute account</td></tr>
+  <tr><td class="cmd">.\bot.ps1 test-connection [--no-proxy]</td><td class="desc">Testa latenza proxy + raggiungibilità LinkedIn</td></tr>
+  <tr><td class="cmd">.\bot.ps1 proxy-status</td><td class="desc">Stato del proxy (config + failover chain)</td></tr>
+</table>
+
+<h2>⚙️ I workflow <span class="tag ab">azioni su LinkedIn · anti-ban</span></h2>
+<table>
+  <tr><td class="cmd">.\bot.ps1 sync-list</td><td class="desc">Importa una lista SalesNav → DB + email + score</td></tr>
+  <tr><td class="cmd">.\bot.ps1 sync-search</td><td class="desc">Estrae dalle ricerche salvate</td></tr>
+  <tr><td class="cmd">.\bot.ps1 send-invites</td><td class="desc">Invia richieste di collegamento (nota AI)</td></tr>
+  <tr><td class="cmd">.\bot.ps1 send-messages</td><td class="desc">Follow-up a chi ha accettato</td></tr>
+  <tr><td class="cmd">.\bot.ps1 autopilot</td><td class="desc">Pilota automatico (cicla tutto) · alias <code>run-loop</code></td></tr>
+  <tr><td class="cmd">.\bot.ps1 random-activity --max-actions 3</td><td class="desc">Azioni leggere (scroll feed), zero inviti</td></tr>
+</table>
+
+<h2>📊 Stato / controllo <span class="tag safe">read-only · sicuri</span></h2>
+<table>
+  <tr><td class="cmd">.\bot.ps1 status</td><td class="desc">Stato del sistema</td></tr>
+  <tr><td class="cmd">.\bot.ps1 kpi</td><td class="desc">Metriche / numeri</td></tr>
+  <tr><td class="cmd">.\bot.ps1 funnel</td><td class="desc">Stato del funnel lead</td></tr>
+  <tr><td class="cmd">.\bot.ps1 daily-report</td><td class="desc">Report giornaliero</td></tr>
+  <tr><td class="cmd">.\bot.ps1 lists  /  review-queue</td><td class="desc">Liste e coda di revisione</td></tr>
+  <tr><td class="cmd">.\bot.ps1 dashboard</td><td class="desc">Avvia la dashboard di controllo</td></tr>
+  <tr><td class="cmd">.\bot.ps1 pause  /  resume</td><td class="desc">Pausa / riprendi l'automazione</td></tr>
+  <tr><td class="cmd">.\bot.ps1 unquarantine</td><td class="desc">Togli la quarantena</td></tr>
+</table>
+
+<h2>🗄️ Dati / DB / manutenzione</h2>
+<table>
+  <tr><td class="cmd">.\bot.ps1 enrich-fast / enrich-deep / enrich-targets</td><td class="desc">Arricchimento dati lead</td></tr>
+  <tr><td class="cmd">.\bot.ps1 db-backup / db-analyze / db-rollback</td><td class="desc">Gestione database</td></tr>
+  <tr><td class="cmd">.\bot.ps1 sync-status / sync-run-once</td><td class="desc">Sync verso il cloud</td></tr>
+  <tr><td class="cmd">.\bot.ps1 security-advisor / secrets-status / privacy-cleanup</td><td class="desc">Sicurezza &amp; privacy</td></tr>
+</table>
+
+<div class="note">
+  <b>Flag utili:</b> <code>--no-proxy</code> opera dal tuo IP reale (no proxy) · <code>$env:BYPASS_WORKING_HOURS='true'</code> opera fuori orario · <code>$env:SELECTOR_CANARY_ENABLED='false'</code> salta il canary pre-sessione.<br>
+  <b>Quality gate sviluppo:</b> <code>npm run conta-problemi</code> (typecheck + lint + test).<br>
+  <span style="color:var(--warn)"><b>Anti-ban:</b></span> i comandi <span class="tag ab" style="font-size:10px">azioni su LinkedIn</span> aprono il browser e agiscono sull'account — usali con criterio (orari plausibili, proxy coerente, volumi sotto i cap).
+</div>
+</div>
+</body>
+</html>
