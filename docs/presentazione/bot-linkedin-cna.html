@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Assistente Digitale LinkedIn — Presentazione</title>
+<style>
+  :root{
+    --blue:#0a66c2; --blue-dark:#004182; --ink:#1b1f23; --muted:#5b6b7b;
+    --bg:#f3f6f9; --card:#ffffff; --accent:#16a34a; --warn:#ea580c;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--ink); overflow:hidden;
+  }
+  .deck{height:100vh;width:100vw;position:relative}
+  .slide{
+    position:absolute;inset:0;display:none;flex-direction:column;
+    justify-content:center;align-items:center;text-align:center;
+    padding:6vh 8vw;opacity:0;transition:opacity .4s ease;
+  }
+  .slide.active{display:flex;opacity:1}
+  .eyebrow{
+    text-transform:uppercase;letter-spacing:.18em;font-size:clamp(11px,1.3vw,15px);
+    color:var(--blue);font-weight:700;margin-bottom:18px;
+  }
+  h1{font-size:clamp(30px,5.4vw,68px);line-height:1.05;font-weight:800;letter-spacing:-.02em}
+  h2{font-size:clamp(26px,4.2vw,52px);line-height:1.08;font-weight:800;letter-spacing:-.02em;margin-bottom:10px}
+  .sub{font-size:clamp(17px,2.2vw,28px);color:var(--muted);margin-top:22px;max-width:18ch;line-height:1.35}
+  .sub.wide{max-width:30ch}
+  .lead{font-size:clamp(18px,2.4vw,30px);color:var(--ink);max-width:24ch;line-height:1.4;margin-top:8px}
+  .big-num{font-size:clamp(44px,9vw,120px);font-weight:800;color:var(--blue);line-height:1}
+  .cover{background:linear-gradient(135deg,#0a66c2 0%,#004182 100%);color:#fff}
+  .cover .eyebrow{color:#bcd9f5}
+  .cover .sub{color:#dcebf9}
+  .cover .pill{
+    margin-top:34px;display:inline-block;background:rgba(255,255,255,.14);
+    border:1px solid rgba(255,255,255,.35);border-radius:999px;
+    padding:10px 22px;font-size:clamp(13px,1.6vw,18px);
+  }
+  /* flow */
+  .flow{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;margin-top:40px;max-width:1100px}
+  .step{
+    background:var(--card);border:1px solid #e1e7ec;border-radius:18px;
+    padding:26px 22px;width:230px;box-shadow:0 8px 26px rgba(10,30,60,.07);
+    display:flex;flex-direction:column;align-items:center;gap:10px;
+  }
+  .step .ico{font-size:40px}
+  .step .t{font-weight:800;font-size:clamp(17px,1.9vw,22px)}
+  .step .d{color:var(--muted);font-size:clamp(13px,1.5vw,16px);line-height:1.35}
+  .arrow{align-self:center;font-size:30px;color:var(--blue);font-weight:800}
+  /* feature grid */
+  .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:34px;max-width:980px;width:100%}
+  .card{
+    background:var(--card);border:1px solid #e1e7ec;border-radius:16px;padding:24px 26px;text-align:left;
+    box-shadow:0 6px 20px rgba(10,30,60,.06);display:flex;gap:16px;align-items:flex-start;
+  }
+  .card .ci{font-size:30px;line-height:1}
+  .card h3{font-size:clamp(17px,2vw,22px);margin-bottom:6px}
+  .card p{color:var(--muted);font-size:clamp(13px,1.5vw,17px);line-height:1.4}
+  .pills{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;margin-top:36px}
+  .kpi{background:var(--card);border:1px solid #e1e7ec;border-radius:16px;padding:22px 30px;box-shadow:0 6px 20px rgba(10,30,60,.06)}
+  .kpi .n{font-size:clamp(28px,4vw,48px);font-weight:800;color:var(--blue)}
+  .kpi .l{color:var(--muted);font-size:clamp(12px,1.4vw,16px);margin-top:4px}
+  .safe h2{color:var(--blue-dark)}
+  .checklist{list-style:none;margin-top:30px;max-width:22ch;text-align:left}
+  .checklist li{font-size:clamp(17px,2.2vw,26px);margin:14px 0;display:flex;gap:14px;align-items:center}
+  .checklist .c{color:var(--accent);font-weight:800}
+  .footer{
+    position:fixed;bottom:18px;left:0;right:0;display:flex;justify-content:space-between;
+    align-items:center;padding:0 26px;font-size:13px;color:var(--muted);pointer-events:none;
+  }
+  .progress{position:fixed;top:0;left:0;height:4px;background:var(--blue);transition:width .3s ease;z-index:10}
+  .nav{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);display:flex;gap:8px;pointer-events:auto}
+  .nav button{
+    border:1px solid #cdd6df;background:#fff;border-radius:10px;width:42px;height:34px;
+    font-size:16px;cursor:pointer;color:var(--ink)
+  }
+  .nav button:hover{background:#eef3f8}
+  .cover .footer{color:#cfe3f6}
+  .hint{position:fixed;top:14px;right:18px;font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="progress" id="prog"></div>
+<div class="hint">← → per navigare · F = schermo intero</div>
+<div class="deck" id="deck">
+
+  <!-- 1 COVER -->
+  <section class="slide cover active">
+    <div class="eyebrow">Automazione intelligente · LinkedIn</div>
+    <h1>Un assistente digitale<br>che trova e contatta<br>i tuoi clienti su LinkedIn</h1>
+    <div class="sub wide">Genera contatti B2B in automatico — come farebbe una persona, ma instancabile e sicuro.</div>
+    <div class="pill">Dimostrazione · CNA Bologna</div>
+  </section>
+
+  <!-- 2 PROBLEMA -->
+  <section class="slide">
+    <div class="eyebrow">Il problema</div>
+    <h2>Trovare clienti su LinkedIn<br>è un lavoro enorme</h2>
+    <div class="lead">Cercare i profili giusti, scrivere a ognuno, ricordarsi i follow-up, non sbagliare i tempi.<br><br><strong>Fatto a mano non scala.</strong> Ore di lavoro per pochi contatti al giorno.</div>
+  </section>
+
+  <!-- 3 SOLUZIONE -->
+  <section class="slide">
+    <div class="eyebrow">La soluzione</div>
+    <h2>Un collaboratore digitale<br>che lo fa per te</h2>
+    <div class="sub wide">Lavora al posto tuo sui contatti giusti, scrive messaggi personalizzati e tiene tutto sotto controllo — comportandosi come una persona reale.</div>
+  </section>
+
+  <!-- 4 COME FUNZIONA (mappa) -->
+  <section class="slide">
+    <div class="eyebrow">Come funziona · in 4 passi</div>
+    <h2>Dal contatto giusto<br>alla conversazione</h2>
+    <div class="flow">
+      <div class="step"><div class="ico">🔍</div><div class="t">1. Trova</div><div class="d">Pesca i profili giusti dalle liste LinkedIn (Sales Navigator).</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="ico">⭐</div><div class="t">2. Qualifica</div><div class="d">Arricchisce i dati e dà un punteggio: chi vale davvero la pena.</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="ico">✉️</div><div class="t">3. Contatta</div><div class="d">Invito + messaggi personalizzati, anche nella lingua del contatto.</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="ico">📊</div><div class="t">4. Monitora</div><div class="d">Traccia risposte e risultati, con avvisi in tempo reale.</div></div>
+    </div>
+  </section>
+
+  <!-- 5 SICUREZZA -->
+  <section class="slide safe">
+    <div class="eyebrow">Il cuore del sistema</div>
+    <h2>Si comporta come<br>un essere umano</h2>
+    <div class="sub wide">LinkedIn blocca i "robot". Questo assistente no: orari realistici, pause, ritmo sempre diverso, movimenti naturali. <strong>Mai meccanico, mai sospetto.</strong></div>
+    <div class="pills">
+      <div class="kpi"><div class="n">⏱️</div><div class="l">Orari e pause umane</div></div>
+      <div class="kpi"><div class="n">🎲</div><div class="l">Ritmo sempre variabile</div></div>
+      <div class="kpi"><div class="n">🛡️</div><div class="l">Si ferma se rileva rischi</div></div>
+    </div>
+  </section>
+
+  <!-- 6 CERVELLO AI -->
+  <section class="slide">
+    <div class="eyebrow">L'intelligenza artificiale</div>
+    <h2>Un cervello che decide<br>e protegge</h2>
+    <div class="grid">
+      <div class="card"><div class="ci">✍️</div><div><h3>Scrive per te</h3><p>Messaggi e inviti personalizzati sul profilo della persona, nella sua lingua.</p></div></div>
+      <div class="card"><div class="ci">🎯</div><div><h3>Sceglie i migliori</h3><p>Valuta ogni contatto e dà priorità a chi conta di più per te.</p></div></div>
+      <div class="card"><div class="ci">🚦</div><div><h3>Valuta il rischio</h3><p>Controlla in tempo reale se è sicuro continuare, e in caso si ferma da solo.</p></div></div>
+      <div class="card"><div class="ci">🔔</div><div><h3>Ti avvisa</h3><p>Notifiche immediate (anche su Telegram) su cosa succede e cosa fare.</p></div></div>
+    </div>
+  </section>
+
+  <!-- 7 DASHBOARD -->
+  <section class="slide">
+    <div class="eyebrow">Cosa vedi tu</div>
+    <h2>Tutto sotto controllo,<br>da un'unica schermata</h2>
+    <div class="pills">
+      <div class="kpi"><div class="n">✅</div><div class="l">Contatti raggiunti</div></div>
+      <div class="kpi"><div class="n">💬</div><div class="l">Risposte ottenute</div></div>
+      <div class="kpi"><div class="n">📈</div><div class="l">Andamento giornaliero</div></div>
+      <div class="kpi"><div class="n">⚠️</div><div class="l">Avvisi e stato</div></div>
+    </div>
+    <div class="sub wide">Una dashboard semplice mostra risultati e stato in tempo reale — senza dover capire nulla di tecnico.</div>
+  </section>
+
+  <!-- 8 VALORE -->
+  <section class="slide">
+    <div class="eyebrow">In sintesi</div>
+    <h2>Più clienti, meno fatica,<br>in totale sicurezza</h2>
+    <ul class="checklist">
+      <li><span class="c">✓</span> Contatti qualificati ogni giorno, in automatico</li>
+      <li><span class="c">✓</span> Messaggi personalizzati, non spam</li>
+      <li><span class="c">✓</span> Comportamento umano: niente blocchi</li>
+      <li><span class="c">✓</span> Tutto tracciato e sotto controllo</li>
+    </ul>
+  </section>
+
+  <!-- 9 CHIUSURA -->
+  <section class="slide cover">
+    <div class="eyebrow">La visione</div>
+    <h1>Un commerciale digitale<br>che non dorme mai</h1>
+    <div class="sub wide">Pensato per le imprese che vogliono crescere su LinkedIn senza perderci le giornate.</div>
+    <div class="pill">Grazie · Domande?</div>
+  </section>
+
+</div>
+
+<div class="footer">
+  <span>Assistente Digitale LinkedIn</span>
+  <span id="counter">1 / 9</span>
+</div>
+<div class="nav">
+  <button onclick="go(-1)" aria-label="precedente">‹</button>
+  <button onclick="go(1)" aria-label="successivo">›</button>
+</div>
+
+<script>
+  const slides=[...document.querySelectorAll('.slide')];
+  let i=0;
+  function render(){
+    slides.forEach((s,n)=>s.classList.toggle('active',n===i));
+    document.getElementById('counter').textContent=(i+1)+' / '+slides.length;
+    document.getElementById('prog').style.width=((i+1)/slides.length*100)+'%';
+  }
+  function go(d){i=Math.min(slides.length-1,Math.max(0,i+d));render();}
+  document.addEventListener('keydown',e=>{
+    if(e.key==='ArrowRight'||e.key===' '||e.key==='PageDown')go(1);
+    else if(e.key==='ArrowLeft'||e.key==='PageUp')go(-1);
+    else if(e.key==='Home'){i=0;render();}
+    else if(e.key==='End'){i=slides.length-1;render();}
+    else if(e.key.toLowerCase()==='f'){
+      if(!document.fullscreenElement)document.documentElement.requestFullscreen();
+      else document.exitFullscreen();
+    }
+  });
+  document.getElementById('deck').addEventListener('click',e=>{
+    if(e.target.closest('.nav'))return;
+    const x=e.clientX/window.innerWidth; go(x>0.4?1:-1);
+  });
+  render();
+</script>
+</body>
+</html>
