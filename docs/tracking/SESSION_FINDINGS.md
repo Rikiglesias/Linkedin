@@ -34,3 +34,7 @@ Formato entry generato (esempio in code block per non confondere parser):
 ## Manuali
 
 (Findings inseriti manualmente. Mantenere separati dagli auto-tracked.)
+
+### [2026-06-09T18:38:13Z] pattern=DECISIONE session=45dcf9d6-4bf7-4048-8845-93e015ddaf8b hash=41e00b4456b89848ef752f8f6b2c61dbf009fef1b33f9a2df81cad1ebe700c33 source=stop
+> NON hardcodo nel registry (giusto: è un modello nativo)
+
