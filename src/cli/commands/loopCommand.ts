@@ -396,10 +396,29 @@ function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
                 const result = await runWithCorrelationId(correlationId, async () => {
                     return dispatchAutomationCommand(command);
                 });
-                await markAutomationCommandSucceeded(command.id, result);
-                console.log(
-                    `[LOOP] automation-command completed requestId=${command.requestId} kind=${command.kind} summary=${JSON.stringify(result.summary)}`,
-                );
+                // R1: il dispatcher NON rilancia — su errore/blocco ritorna { success:false }.
+                // Marcare SUCCEEDED incondizionatamente nascondeva fallimenti e blocchi (job fallito = "completato").
+                if (result.success) {
+                    await markAutomationCommandSucceeded(command.id, result);
+                    console.log(
+                        `[LOOP] automation-command completed requestId=${command.requestId} kind=${command.kind} summary=${JSON.stringify(result.summary)}`,
+                    );
+                } else if (result.blocked?.reason === 'WORKFLOW_ERROR') {
+                    // Errore tecnico runtime (catturato dal dispatcher) → FAILED.
+                    const message = result.blocked?.message ?? result.errors[0] ?? 'workflow_error';
+                    await markAutomationCommandFailed(command.id, message);
+                    console.error(
+                        `[LOOP] automation-command failed requestId=${command.requestId} kind=${command.kind} reason=${message}`,
+                    );
+                } else {
+                    // Bloccato da una protezione (risk/guardian/compliance/cooldown): non è errore tecnico
+                    // né successo → SKIPPED, così non risulta "completato con successo".
+                    const reason = result.blocked?.reason ?? result.errors[0] ?? 'workflow_not_success';
+                    await markAutomationCommandSkipped(command.id, String(reason));
+                    console.warn(
+                        `[LOOP] automation-command skipped requestId=${command.requestId} kind=${command.kind} reason=${reason}`,
+                    );
+                }
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
                 await markAutomationCommandFailed(command.id, message);
