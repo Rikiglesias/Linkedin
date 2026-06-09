@@ -188,6 +188,7 @@ export async function executeSyncListWorkflow(
         workflow: 'sync-list',
         dryRun: request.dryRun ?? false,
         accountId: preflight.selectedAccountId ?? request.accountId,
+        noProxy: request.noProxy ?? false,
     });
     if (!guardDecision.allowed && guardDecision.blocked) {
         return buildBlockedResult('sync-list', guardDecision.blocked, {

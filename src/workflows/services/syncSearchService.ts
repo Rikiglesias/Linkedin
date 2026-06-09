@@ -164,6 +164,7 @@ export async function executeSyncSearchWorkflow(
         workflow: 'sync-search',
         dryRun,
         accountId,
+        noProxy: request.noProxy ?? false,
     });
     if (!guardDecision.allowed && guardDecision.blocked) {
         return buildBlockedResult('sync-search', guardDecision.blocked, {

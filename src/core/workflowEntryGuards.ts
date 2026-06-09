@@ -25,7 +25,7 @@ type CanaryOutcome =
     | { ok: true }
     | { ok: false; blockReason: WorkflowBlockedReason; quarantineType: string | null; message: string };
 
-async function runCanaryIfNeeded(workflow: WorkflowEntryKind): Promise<CanaryOutcome> {
+async function runCanaryIfNeeded(workflow: WorkflowEntryKind, noProxy = false): Promise<CanaryOutcome> {
     if (!config.selectorCanaryEnabled || !touchesUi(workflow)) {
         return { ok: true };
     }
@@ -42,7 +42,11 @@ async function runCanaryIfNeeded(workflow: WorkflowEntryKind): Promise<CanaryOut
     for (const account of accounts) {
         const session = await launchBrowser({
             sessionDir: account.sessionDir,
-            proxy: account.proxy,
+            // Coerenza IP: se l'operazione gira --no-proxy, anche il canary deve usare lo stesso
+            // IP (reale), altrimenti la pre-verifica va sul proxy (lento/diverso) e fallisce o
+            // crea un mismatch login-IP vs canary-IP.
+            proxy: noProxy ? undefined : account.proxy,
+            bypassProxy: noProxy,
             forceDesktop: true,
         });
         try {
@@ -158,6 +162,8 @@ export interface EvaluateWorkflowEntryGuardsOptions {
     workflow: WorkflowEntryKind;
     dryRun: boolean;
     accountId?: string;
+    /** Se true, anche il selector canary gira senza proxy (coerenza IP con l'operazione --no-proxy). */
+    noProxy?: boolean;
 }
 
 function block(reason: GuardDecision['blocked']): GuardDecision {
@@ -305,7 +311,7 @@ export async function evaluateWorkflowEntryGuards(
         });
     }
 
-    const canary = await runCanaryIfNeeded(options.workflow);
+    const canary = await runCanaryIfNeeded(options.workflow, options.noProxy ?? false);
     if (!canary.ok) {
         if (canary.quarantineType) {
             await quarantineAccount(canary.quarantineType, { workflow: options.workflow });
