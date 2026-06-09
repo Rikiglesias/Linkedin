@@ -4,6 +4,21 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-09 — backlog-operativo: mouse «più solido» ([WINDOW-BLOCK] hardening, `/goal backlog-operativo`)
+
+### Obiettivo
+Richiesta utente post-compact: «se clicco si chiude il browser, è giusto così ma deve essere più solido». Il run E2E `br98xrwq6` aveva PROVATO che la pipeline gira (login+canary OK, scrape 6 pagine×25) ma moriva con `WORKFLOW_ERROR: Target page closed` — il click utente chiudeva il browser.
+
+### Root cause (diagnosi evidence-based, Workflow `w9pjoafcp`, 2 agenti alta-conf; 3° = ricerca SOTA bloccata dai safeguard cyber)
+Il click-through OS aveva buchi di copertura (l'unico layer che protegge la *chrome* — X chiusura; l'overlay DOM copre solo la pagina): (1) la finestra del **selector-canary** non era MAI protetta (`workflowEntryGuards.ts` lancia il suo browser, zero click-through); (2) stato **singleton** `_lastPid` + reapply solo-on-navigation throttle 1200ms lasciava scoperte le finestre/child nate da `page.goto`; (3) rumore: `execSync` inoltrava lo stderr CLIXML della PS a node → `bot.ps1` falliva a deserializzarlo (`Cannot process the XML`).
+
+### Fix committati (antiban SICURO, gate verde 1595 test, trattenuti dall'auto-push: review di branch)
+- `70d3c17` **windowInputBlock.ts**: stato **multi-PID (Set)** (protegge canary+sync insieme); **timer async ~1s** (`execFile` non-bloccante → timing anti-ban intatto) per re-apply continuo; **stdio pipe/execFile** elimina lo stderr CLIXML. **workflowEntryGuards.ts**: enable click-through sul canary dopo launch + disable dopo closeBrowser.
+- `5a5abe8` **split SRP**: estratto `buildPowerShellScript` (template Win32/C#) in `windowInputBlockScript.ts` → `windowInputBlock.ts` 328→255 righe (<300).
+
+### Verifica (E2E reale, run `b9di2t2u0`)
+Scrape **8 pagine / 100 lead**, **chiusura browser NORMALE** (`[OK] Browser chiuso. Avvio enrichment`), **ZERO `Target page closed`**, **ZERO errori CLIXML**; login manuale durante il run sopravvissuto (ciclo enable/disable OK). + conta-problemi verde (typecheck BE+FE, lint 0-warn, 1595 test). Residuo tracciato: acceleratori tastiera (Ctrl+W/Alt+F4) non coperti (serve keyboard-hook, fuori scope «click»).
+
 ## 2026-06-09 — Workflow-hardening: audit anti-ban + fix architetturali (`/goal workflow-hardening`)
 
 ### Obiettivo
