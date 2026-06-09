@@ -158,6 +158,13 @@ function buildMatrix(): RuleResult[] {
         (turnGovernorScript?.includes('credits') ?? false) &&
         (turnGovernorScript?.includes('costUsd') ?? false);
 
+    // post-edit-verify-checklist FUSO in post-edit-checks.ps1 (2026-06-05): la checklist L2-L7
+    // vive lì, non in un file separato. L'audit credita l'implementazione REALE, non il nome pre-fusione.
+    const postEditChecksScript = readText(join(HOME, '.claude', 'hooks', 'post-edit-checks.ps1'));
+    const postEditChecklist =
+        hookExists(settings, 'PostToolUse', 'post-edit-checks.ps1') &&
+        (postEditChecksScript?.includes('VERIFICA L2') ?? false);
+
     const results: RuleResult[] = [
         hookRule(
             'antiban-pre-edit',
@@ -258,9 +265,9 @@ function buildMatrix(): RuleResult[] {
             'Cambio chat basato su contesto, token e crediti/costo',
             'Advisory hook',
             'advisory-hook',
-            turnGovernorCostAware && hookExists(settings, 'UserPromptSubmit', 'token-cost-context.ps1'),
-            'UserPromptSubmit → turn-governor-hook.ps1 + token-cost-context.ps1 con TOKEN_COST_CHAT_SWITCH',
-            'Rendere turn-governor cost-aware e aggiungere token-cost-context.ps1 in UserPromptSubmit',
+            turnGovernorCostAware,
+            'UserPromptSubmit → turn-governor-hook.ps1 cost-aware (TOKEN_COST_CHAT_SWITCH + token-cost-state.json + transcript advice compact/lastchat)',
+            'turn-governor-hook.ps1 deve restare cost-aware (TOKEN_COST_CHAT_SWITCH + token-cost-state.json + credits + costUsd)',
         ),
         hookRule(
             'multi-file-recap-hook',
@@ -339,9 +346,9 @@ function buildMatrix(): RuleResult[] {
             'Checklist L2-L6 dopo edit codice',
             'Advisory hook',
             'advisory-hook',
-            hookExists(settings, 'PostToolUse', 'post-edit-verify-checklist.ps1'),
-            'PostToolUse Edit/Write → post-edit-verify-checklist.ps1',
-            'Aggiungere post-edit-verify-checklist.ps1 in PostToolUse Edit/Write',
+            postEditChecklist,
+            'PostToolUse Edit/Write → post-edit-checks.ps1 (checklist L2-L7 fusa, 2026-06-05)',
+            'post-edit-checks.ps1 deve contenere la checklist VERIFICA L2-L7 in PostToolUse Edit/Write',
         ),
         hookRule(
             'request-action-gated',

@@ -70,6 +70,7 @@
         "audit:git-automation:strict:push": "ts-node src/scripts/gitAutomationAudit.ts --strict=push",
         "audit:json-schemas": "ts-node src/scripts/jsonSchemasAudit.ts",
         "audit:rules-coverage": "ts-node src/scripts/rulesCoverageAudit.ts",
+        "audit:routing": "ts-node src/scripts/routingAudit.ts",
         "audit:auto-track": "ts-node src/scripts/autoTrackAudit.ts",
         "audit:l2-l6": "ts-node src/scripts/levelEnforcementAudit.ts",
         "audit:rule-enforcement": "ts-node src/scripts/ruleEnforcementMatrix.ts",
