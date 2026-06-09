@@ -68,7 +68,8 @@ export function getFirefoxLikePids(): number[] {
  * non solo a MainWindowHandle. Firefox/Camoufox ha finestre child separate
  * (content area, chrome) che ricevono eventi mouse indipendentemente.
  */
-function buildPowerShellScript(pid: number, enable: boolean): string {
+/** @internal Esportata per il test del fix [WINDOW-BLOCK] (here-string + encoding). */
+export function buildPowerShellScript(pid: number, enable: boolean): string {
     return `
 Add-Type -TypeDefinition @"
 using System;
@@ -193,7 +194,15 @@ export function reapplyWindowClickThrough(): void {
 function _applyClickThrough(pid: number, enable: boolean): boolean {
     try {
         const script = buildPowerShellScript(pid, enable);
-        const result = execSync(`powershell -NoProfile -NonInteractive -Command "${script.replace(/"/g, '\\"')}"`, {
+        // [WINDOW-BLOCK] fix (2026-06-09): lo script contiene un here-string C# (Add-Type @"..."@) con
+        // virgolette interne ([DllImport("user32.dll")]). Passarlo via -Command "..." inline ed escapare
+        // TUTTE le virgolette (\") distruggeva sia il delimitatore here-string (@" → @\") sia il C# →
+        // PowerShell non parsava → SetClickThrough falliva → il click-through non si applicava → il mouse
+        // dell'utente non veniva bloccato e si incartava passando sul 2° monitor.
+        // -EncodedCommand (base64 dello script in UTF-16LE) incapsula l'intero script: nessun escaping,
+        // here-string e virgolette intatte, nessun file temporaneo su disco.
+        const encoded = Buffer.from(script, 'utf16le').toString('base64');
+        const result = execSync(`powershell -NoProfile -NonInteractive -EncodedCommand ${encoded}`, {
             timeout: 10_000,
             encoding: 'utf-8',
             windowsHide: true,
