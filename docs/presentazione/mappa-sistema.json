@@ -1,0 +1,165 @@
+{
+  "name": "Bot LinkedIn: Guida ai Workflow",
+  "children": [
+    {
+      "name": "5 Workflow Principali",
+      "children": [
+        {
+          "name": "sync-list (Importazione)",
+          "children": [
+            {
+              "name": "Estrae da liste Sales Navigator"
+            },
+            {
+              "name": "Arricchimento email (Apollo/Hunter)"
+            },
+            {
+              "name": "AI Scoring del lead"
+            },
+            {
+              "name": "Status: READY_INVITE"
+            }
+          ]
+        },
+        {
+          "name": "sync-search (Estrazione Massa)",
+          "children": [
+            {
+              "name": "Bulk Save da ricerche salvate"
+            },
+            {
+              "name": "Vision AI per superare blocchi"
+            },
+            {
+              "name": "Deduplicazione automatica"
+            }
+          ]
+        },
+        {
+          "name": "send-invites (Invito)",
+          "children": [
+            {
+              "name": "Note personalizzate con AI"
+            },
+            {
+              "name": "Cronometria Disfasica"
+            },
+            {
+              "name": "Simulazione digitazione umana"
+            },
+            {
+              "name": "Status: INVITED"
+            }
+          ]
+        },
+        {
+          "name": "send-messages (Follow-up)",
+          "children": [
+            {
+              "name": "Iper-personalizzazione multilingua"
+            },
+            {
+              "name": "Messaggi Prebuilt per efficienza"
+            },
+            {
+              "name": "Check Anti-Doppione"
+            },
+            {
+              "name": "Status: MESSAGED"
+            }
+          ]
+        },
+        {
+          "name": "autopilot (Pilota Automatico)",
+          "children": [
+            {
+              "name": "Orchestratore di dipendenze"
+            },
+            {
+              "name": "Mood Factor (ritmi variabili)"
+            },
+            {
+              "name": "Azioni distrazione (feed/notifiche)"
+            },
+            {
+              "name": "Hygiene: ritiro inviti vecchi"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Sicurezza e Anti-Ban",
+      "children": [
+        {
+          "name": "Preflight Dashboard",
+          "children": [
+            {
+              "name": "Checklist Anti-Ban"
+            },
+            {
+              "name": "Risk Assessment (0-100)"
+            },
+            {
+              "name": "Preview Lead e stima tempi"
+            }
+          ]
+        },
+        {
+          "name": "Comportamento Umanoide",
+          "children": [
+            {
+              "name": "Delay asimmetrici"
+            },
+            {
+              "name": "Errori di battitura (Backspace)"
+            },
+            {
+              "name": "Wind-down (rallentamento finale)"
+            },
+            {
+              "name": "Circuit Breaker per liste"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Funnel del Lead",
+      "children": [
+        {
+          "name": "NEW / READY_INVITE"
+        },
+        {
+          "name": "INVITED / ACCEPTED"
+        },
+        {
+          "name": "READY_MESSAGE / MESSAGED"
+        },
+        {
+          "name": "REPLIED (Intervento umano)"
+        },
+        {
+          "name": "Stati negativi: SKIPPED / BLOCKED"
+        }
+      ]
+    },
+    {
+      "name": "Infrastruttura AI",
+      "children": [
+        {
+          "name": "Generazione contenuti personalizzati"
+        },
+        {
+          "name": "Vision AI per navigazione"
+        },
+        {
+          "name": "Pre-enrichment rapido"
+        },
+        {
+          "name": "Monitoraggio Telegram in tempo reale"
+        }
+      ]
+    }
+  ]
+}

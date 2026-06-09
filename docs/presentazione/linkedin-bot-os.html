@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LinkedIn Bot OS — Centro di Controllo</title>
+<style>
+  :root{
+    --nav:#0b1b2b; --nav2:#12263a; --accent:#2f8fff; --accent2:#0a66c2;
+    --bg:#f4f7fb; --card:#ffffff; --ink:#16202a; --muted:#5b6b7b; --line:#e4eaf0;
+    --green:#16a34a; --orange:#ea580c; --violet:#7c3aed; --cyan:#0891b2;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);display:flex;min-height:100vh}
+  /* SIDEBAR */
+  .sidebar{width:248px;background:linear-gradient(180deg,var(--nav),var(--nav2));color:#cbd9e8;flex-shrink:0;display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+  .brand{padding:22px 22px 18px;border-bottom:1px solid rgba(255,255,255,.08)}
+  .brand .logo{display:flex;align-items:center;gap:11px}
+  .brand .mark{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:18px}
+  .brand .name{font-weight:800;color:#fff;font-size:15px;line-height:1.1}
+  .brand .sub{font-size:11px;color:#7e93a8;margin-top:2px}
+  nav{padding:14px 12px;flex:1}
+  .nav-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.14em;color:#5d738a;padding:8px 12px 6px}
+  .navi{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:10px;cursor:pointer;font-size:14px;color:#bcd0e4;transition:.15s;margin-bottom:2px}
+  .navi:hover{background:rgba(255,255,255,.06);color:#fff}
+  .navi.active{background:linear-gradient(135deg,var(--accent2),#0850a0);color:#fff;box-shadow:0 6px 16px rgba(10,80,160,.35)}
+  .navi .i{font-size:17px;width:20px;text-align:center}
+  .status{padding:16px 22px;border-top:1px solid rgba(255,255,255,.08);font-size:12px}
+  .status .dot{width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block;margin-right:7px;box-shadow:0 0 0 3px rgba(34,197,94,.2)}
+  /* MAIN */
+  main{flex:1;min-width:0;display:flex;flex-direction:column}
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:16px 30px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+  .topbar h1{font-size:19px;font-weight:800}
+  .topbar .chip{font-size:12px;color:var(--muted);background:#eef3f8;border:1px solid var(--line);border-radius:999px;padding:6px 14px}
+  .content{padding:30px;max-width:1180px;width:100%}
+  .section{display:none;animation:fade .35s ease}
+  .section.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .eyebrow{text-transform:uppercase;letter-spacing:.16em;color:var(--accent2);font-weight:700;font-size:12px}
+  h2{font-size:30px;font-weight:800;letter-spacing:-.02em;margin:6px 0 6px}
+  .intro{color:var(--muted);font-size:17px;line-height:1.5;max-width:62ch;margin-bottom:24px}
+  .grid{display:grid;gap:16px}
+  .g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:0 4px 14px rgba(10,30,60,.05)}
+  .card.top{border-top:4px solid var(--accent2)}
+  .card h3{font-size:16px;margin-bottom:8px;display:flex;gap:9px;align-items:center}
+  .card h3 .i{font-size:19px}
+  .card p,.card li{color:var(--muted);font-size:13.5px;line-height:1.45}
+  .card ul{list-style:none;margin-top:8px;display:flex;flex-direction:column;gap:5px}
+  .card li{padding-left:15px;position:relative}
+  .card li::before{content:"";position:absolute;left:0;top:7px;width:5px;height:5px;border-radius:50%;background:var(--accent)}
+  .st{display:inline-block;font-size:10.5px;font-weight:700;color:var(--accent2);background:#e8f1fb;border-radius:6px;padding:2px 8px;margin-top:8px}
+  .flow{display:flex;gap:10px;flex-wrap:wrap;align-items:stretch;margin:8px 0 26px}
+  .fstep{flex:1;min-width:150px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;text-align:center}
+  .fstep .ico{font-size:28px}.fstep .t{font-weight:800;margin-top:6px;font-size:15px}.fstep .d{color:var(--muted);font-size:12.5px;margin-top:4px;line-height:1.3}
+  .farrow{align-self:center;color:var(--accent2);font-weight:800;font-size:22px}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:26px}
+  .kpi{background:linear-gradient(135deg,#fff,#f3f8ff);border:1px solid var(--line);border-radius:14px;padding:18px}
+  .kpi .n{font-size:30px;font-weight:800;color:var(--accent2)}
+  .kpi .l{color:var(--muted);font-size:12.5px;margin-top:3px}
+  .banner{background:linear-gradient(135deg,var(--accent2),#003a78);color:#fff;border-radius:16px;padding:24px 26px;margin-top:8px}
+  .banner h3{color:#fff;font-size:18px;margin-bottom:14px}
+  .banner .feats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+  .banner .f b{display:block;color:#cfe3fb;font-size:13.5px;margin-bottom:3px}
+  .banner .f{font-size:12.5px;line-height:1.4;color:#e6f0fb}
+  .pipe{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+  .stage{display:flex;align-items:center;gap:10px}
+  .stage .b{flex:1;background:#fff6ef;border:1px solid #fcd9c2;border-radius:9px;padding:9px 13px;color:#9a3412;font-weight:600;font-size:13px}
+  .stage .ar{color:var(--orange);font-weight:800}
+  .imgwrap{margin-top:10px;border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 6px 20px rgba(10,30,60,.08)}
+  .imgwrap img{width:100%;display:block}
+  .imgcap{font-size:12.5px;color:var(--muted);margin-top:8px;text-align:center}
+  .tag{display:inline-block;font-size:11px;font-weight:700;border-radius:6px;padding:3px 9px;margin:0 4px 4px 0}
+  .road{display:flex;flex-direction:column;gap:12px}
+  .ritem{display:flex;gap:14px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .ritem .num{width:30px;height:30px;border-radius:8px;background:var(--accent2);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;flex-shrink:0}
+  @media(max-width:1100px){.g4,.kpis,.banner .feats{grid-template-columns:1fr 1fr}.g3{grid-template-columns:1fr}}
+  @media(max-width:720px){.sidebar{display:none}.g2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="brand">
+    <div class="logo"><div class="mark">in</div><div><div class="name">LinkedIn Bot OS</div><div class="sub">Centro di Controllo</div></div></div>
+  </div>
+  <nav id="nav">
+    <div class="nav-label">Sistema</div>
+    <div class="navi active" data-s="overview"><span class="i">🏠</span> Panoramica</div>
+    <div class="navi" data-s="workflow"><span class="i">⚙️</span> I Workflow</div>
+    <div class="navi" data-s="eco"><span class="i">🧩</span> Ecosistema</div>
+    <div class="nav-label">Qualità</div>
+    <div class="navi" data-s="security"><span class="i">🛡️</span> Sicurezza & Anti-ban</div>
+    <div class="navi" data-s="arch"><span class="i">🏗️</span> Architettura & Qualità</div>
+    <div class="navi" data-s="road"><span class="i">🚀</span> Roadmap</div>
+  </nav>
+  <div class="status"><span class="dot"></span> Sistema operativo · online</div>
+</aside>
+
+<main>
+  <div class="topbar">
+    <h1 id="topTitle">Panoramica</h1>
+    <span class="chip">Assistente Digitale LinkedIn · B2B</span>
+  </div>
+  <div class="content">
+
+    <!-- OVERVIEW -->
+    <section class="section active" id="overview">
+      <div class="eyebrow">Il progetto in generale</div>
+      <h2>Un commerciale digitale che non dorme mai</h2>
+      <p class="intro">Trova, qualifica e contatta clienti B2B su LinkedIn in automatico — comportandosi come una persona reale, così da non essere mai bloccato. Tu definisci l'obiettivo, il sistema lavora.</p>
+      <div class="kpis">
+        <div class="kpi"><div class="n">4+1</div><div class="l">Workflow (4 manuali + autopilot)</div></div>
+        <div class="kpi"><div class="n">100%</div><div class="l">Comportamento umano</div></div>
+        <div class="kpi"><div class="n">5</div><div class="l">Lingue per i messaggi</div></div>
+        <div class="kpi"><div class="n">24/7</div><div class="l">Monitoraggio + alert</div></div>
+      </div>
+      <div class="eyebrow">Come funziona · in 4 passi</div>
+      <div class="flow">
+        <div class="fstep"><div class="ico">🔍</div><div class="t">Trova</div><div class="d">I profili giusti dalle liste e ricerche di Sales Navigator</div></div>
+        <div class="farrow">→</div>
+        <div class="fstep"><div class="ico">⭐</div><div class="t">Qualifica</div><div class="d">Arricchisce e dà un punteggio a ogni contatto</div></div>
+        <div class="farrow">→</div>
+        <div class="fstep"><div class="ico">✉️</div><div class="t">Contatta</div><div class="d">Inviti e messaggi personalizzati, nella lingua giusta</div></div>
+        <div class="farrow">→</div>
+        <div class="fstep"><div class="ico">📊</div><div class="t">Monitora</div><div class="d">Traccia accettazioni, risposte e numeri in tempo reale</div></div>
+      </div>
+      <div class="imgwrap"><img src="infografica-sistema.png" alt="Infografica sistema"></div>
+      <div class="imgcap">Vista d'insieme: il ciclo operativo e i protocolli di sicurezza human-first.</div>
+    </section>
+
+    <!-- WORKFLOW -->
+    <section class="section" id="workflow">
+      <div class="eyebrow">Le procedure operative</div>
+      <h2>I 4 Workflow nel dettaglio</h2>
+      <p class="intro">Quattro flussi manuali, guidati passo-passo con controlli di sicurezza (il "Preflight"), più un pilota automatico che li orchestra.</p>
+      <div class="grid g2">
+        <div class="card top">
+          <h3><span class="i">🔍</span> sync-list — Estrai da una lista</h3>
+          <p>Importa nel database una lista già salvata su Sales Navigator.</p>
+          <ul>
+            <li>Scorre SalesNav come un umano e salva nome, ruolo, località</li>
+            <li>Arricchisce con l'email (Apollo/Hunter) e dà un punteggio AI al prospect</li>
+          </ul>
+          <span class="st">Risultato → READY_INVITE</span>
+        </div>
+        <div class="card top">
+          <h3><span class="i">🎣</span> sync-search — Estrai dalle ricerche</h3>
+          <p>Estrae in massa i risultati delle ricerche salvate in una nuova lista.</p>
+          <ul>
+            <li>Se LinkedIn cambia i pulsanti, usa la "Vision AI" (screenshot + AI)</li>
+            <li>Deduplica i contatti già salvati, poi richiama il sync</li>
+          </ul>
+          <span class="st">Risultato → READY_INVITE</span>
+        </div>
+        <div class="card top">
+          <h3><span class="i">✉️</span> send-invites — Invia inviti</h3>
+          <p>Invia le richieste di collegamento ai lead pronti, con nota scritta dall'AI.</p>
+          <ul>
+            <li>"Cronometria disfasica": tempi caotici e umani, non 5 secondi fissi</li>
+            <li>Digita simulando veri tasti, a volte sbaglia e si corregge</li>
+          </ul>
+          <span class="st">Risultato → INVITED</span>
+        </div>
+        <div class="card top">
+          <h3><span class="i">💬</span> send-messages — Follow-up</h3>
+          <p>Manda il primo messaggio a chi ha accettato, iper-personalizzato.</p>
+          <ul>
+            <li>Usa messaggi pre-calcolati di notte per risparmiare tempo di sessione</li>
+            <li>Check anti-doppione prima di scrivere a mano sulla tastiera</li>
+          </ul>
+          <span class="st">Risultato → MESSAGED</span>
+        </div>
+      </div>
+      <div style="margin-top:16px" class="card top">
+        <h3><span class="i">🤖</span> autopilot — Il pilota automatico</h3>
+        <p>Gira in background e orchestra tutto: controlla gli orari, aspetta un tempo casuale (come se ti fossi appena seduto), verifica la salute dell'account, scansiona chi ha accettato, prepara i messaggi, fa azioni "distrazione" (scrolla il feed) e ti manda il report su Telegram.</p>
+      </div>
+    </section>
+
+    <!-- ECOSYSTEM -->
+    <section class="section" id="eco">
+      <div class="eyebrow">I pezzi e come si connettono</div>
+      <h2>L'Ecosistema</h2>
+      <p class="intro">Ogni componente ha un ruolo preciso. Il filo che li unisce: Sales Navigator → Browser stealth → Workflow → Database → Cloud, Dashboard e Telegram. Cervello AI e motore di rischio avvolgono ogni azione.</p>
+      <div class="grid g3">
+        <div class="card"><h3><span class="i">🌐</span> Browser stealth</h3><p>Un browser "invisibile" (Camoufox) con impronta digitale coerente, guidato da un proxy residenziale italiano per sembrare un utente reale.</p></div>
+        <div class="card"><h3><span class="i">🗄️</span> Database (SSOT)</h3><p>La memoria unica del sistema: lead, stati, statistiche e storico in un solo posto. Locale, con <b>sincronizzazione cloud automatica</b>.</p></div>
+        <div class="card"><h3><span class="i">🧠</span> Cervello AI</h3><p>Scrive messaggi personalizzati, dà punteggi ai lead, "vede" la pagina quando i pulsanti cambiano e decide la reazione giusta.</p></div>
+        <div class="card"><h3><span class="i">🚦</span> Motore di rischio</h3><p>Valuta in tempo reale (punteggio 0–100) se è sicuro continuare; mette in pausa o ferma l'automazione se qualcosa non va.</p></div>
+        <div class="card"><h3><span class="i">🔌</span> Integrazioni</h3><p>Apollo/Hunter per le email, Telegram per gli avvisi, n8n per le automazioni, sync verso il cloud per i backup.</p></div>
+        <div class="card"><h3><span class="i">📊</span> Dashboard</h3><p>Il centro di controllo: stato del sistema, contatti raggiunti, tasso di accettazione, risposte e avvisi — tutto in tempo reale.</p></div>
+      </div>
+      <div style="margin-top:18px">
+        <div class="eyebrow">Il funnel del lead — dal contatto alla conversazione</div>
+        <div class="pipe" style="margin-top:10px">
+          <div class="stage"><span class="b">NEW → READY_INVITE</span></div>
+          <div class="stage"><span class="ar">↓</span><span class="b">INVITED → ACCEPTED</span></div>
+          <div class="stage"><span class="ar">↓</span><span class="b">READY_MESSAGE → MESSAGED</span></div>
+          <div class="stage"><span class="ar">↓</span><span class="b">REPLIED — intervento umano</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECURITY -->
+    <section class="section" id="security">
+      <div class="eyebrow">Il differenziatore</div>
+      <h2>Sicurezza & Anti-ban</h2>
+      <p class="intro">LinkedIn blocca i comportamenti "da robot". Questo sistema è progettato attorno a un principio: <b>comportarsi come un essere umano reale</b>. È ciò che lo rende sostenibile nel tempo.</p>
+      <div class="grid g3">
+        <div class="card"><h3><span class="i">⏱️</span> Tempi umani</h3><p>Orari realistici (non di notte), pause pranzo, sessioni brevi. Tempi tra le azioni sempre diversi e caotici, mai fissi.</p></div>
+        <div class="card"><h3><span class="i">⌨️</span> Digitazione reale</h3><p>Scrive lettera per lettera, con qualche errore di battitura e correzione, come una persona vera.</p></div>
+        <div class="card"><h3><span class="i">🖱️</span> Navigazione naturale</h3><p>Scorre, legge, muove il mouse e fa azioni "distrazione". Mai teletrasporti o click ciechi.</p></div>
+        <div class="card"><h3><span class="i">🛰️</span> Proxy residenziale</h3><p>Si presenta con un indirizzo italiano reale e un'impronta coerente: niente segnali da datacenter.</p></div>
+        <div class="card"><h3><span class="i">🚦</span> Si ferma sui rischi</h3><p>Controlla il "pending ratio", i limiti giornalieri e lo stato dell'account; in caso di rischio mette tutto in pausa.</p></div>
+        <div class="card"><h3><span class="i">🔄</span> Recupero automatico</h3><p>Circuit breaker, ritiro degli inviti vecchi e rallentamento finale (wind-down) per chiudere la sessione in modo credibile.</p></div>
+      </div>
+    </section>
+
+    <!-- ARCHITECTURE -->
+    <section class="section" id="arch">
+      <div class="eyebrow">Perché è fatto bene</div>
+      <h2>Architettura & Qualità</h2>
+      <p class="intro">Non uno script raffazzonato, ma un sistema ingegnerizzato: pulito, automatizzato e che si mantiene aggiornato da solo. È ciò che lo rende affidabile e scalabile.</p>
+      <div class="banner">
+        <h3>⚙️ Pulito · Automatizzato · Auto-aggiornato</h3>
+        <div class="feats">
+          <div class="f"><b>Sistema modulare</b>Ogni pezzo una sola responsabilità: facile da capire, estendere e mantenere.</div>
+          <div class="f"><b>Controlli automatici</b>Test, qualità e verifiche girano da soli prima di ogni modifica: niente sorprese.</div>
+          <div class="f"><b>Si auto-protegge</b>Impara i pulsanti che cambiano, si ferma sui rischi e recupera dagli errori da solo.</div>
+          <div class="f"><b>Sempre aggiornato</b>Si mantiene da solo: monitoraggio continuo, report e sincronizzazioni automatiche.</div>
+        </div>
+      </div>
+      <div class="grid g2" style="margin-top:16px">
+        <div class="card"><h3><span class="i">✅</span> Qualità garantita</h3><p>Prima di ogni modifica il sistema esegue automaticamente i controlli (test, analisi, verifiche). Si procede solo se è tutto verde.</p></div>
+        <div class="card"><h3><span class="i">🔐</span> Privacy & GDPR</h3><p>Gestione conforme dei dati dei contatti: cancellazione su richiesta, retention configurata, attenzione costante alla privacy.</p></div>
+      </div>
+    </section>
+
+    <!-- ROADMAP -->
+    <section class="section" id="road">
+      <div class="eyebrow">Dove stiamo andando</div>
+      <h2>Roadmap</h2>
+      <p class="intro">Il sistema è già operativo. Lo stiamo rendendo ancora più intelligente e autonomo.</p>
+      <div class="road">
+        <div class="ritem"><div class="num">1</div><div><b>Cervello esterno "Supervisore"</b><p>Un'AI che osserva il bot mentre opera: velocissima nel capire la pagina e gli imprevisti, ma sempre lenta e umana nell'agire.</p></div></div>
+        <div class="ritem"><div class="num">2</div><div><b>Modelli AI più potenti</b><p>Messaggi e comprensione delle pagine ancora migliori, con attenzione ai costi e alla privacy dei dati.</p></div></div>
+        <div class="ritem"><div class="num">3</div><div><b>Dashboard di controllo avanzata</b><p>Questo stesso centro di controllo, arricchito con metriche live e gestione completa del sistema.</p></div></div>
+        <div class="ritem"><div class="num">4</div><div><b>Conformità rafforzata</b><p>Procedure GDPR/privacy ancora più solide man mano che il volume cresce.</p></div></div>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<script>
+  const navis=[...document.querySelectorAll('.navi')];
+  const sections=[...document.querySelectorAll('.section')];
+  const titles={overview:'Panoramica',workflow:'I Workflow',eco:'Ecosistema',security:'Sicurezza & Anti-ban',arch:'Architettura & Qualità',road:'Roadmap'};
+  function show(id){
+    navis.forEach(n=>n.classList.toggle('active',n.dataset.s===id));
+    sections.forEach(s=>s.classList.toggle('active',s.id===id));
+    document.getElementById('topTitle').textContent=titles[id]||'';
+    document.querySelector('.content').scrollTo?.(0,0);
+    window.scrollTo(0,0);
+  }
+  navis.forEach(n=>n.addEventListener('click',()=>show(n.dataset.s)));
+</script>
+</body>
+</html>
