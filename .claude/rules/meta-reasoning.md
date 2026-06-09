@@ -10,7 +10,7 @@ enforcement:
 # Meta-reasoning rules — delta LinkedIn delle regole globali
 
 > Path-scoped (`**`, sempre attiva). Il PRINCIPIO di ogni punto vive nelle regole globali
-> `~/.claude/ZERO_RULES.md` (zero-A..L) e `~/.claude/L_LEVELS.md` (L1-L9), caricate ogni sessione.
+> `~/.claude/ZERO_RULES.md` (zero-A..P, 16 regole — incl. M verifica-premessa, N checklist-360, O coerenza, P best-practice-retroattiva) e `~/.claude/L_LEVELS.md` (L1-L9), caricate ogni sessione.
 > Qui SOLO il **delta specifico-progetto** (anti-ban, continuità, cadenze LinkedIn): non si ri-spiega il globale.
 > 11 meta-regole (riferite per nome in `AGENTS.md` — mantenere il count se si modifica).
 

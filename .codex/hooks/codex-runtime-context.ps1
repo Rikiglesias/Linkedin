@@ -21,6 +21,10 @@ $behavioralLines = @(
     "  aggiungi valore con cose in più non chieste ma utili. Lavora di testa tua, vedi ampio.",
     "- P0: intento reale > input letterale > esempi come pattern > decomposizione ricorsiva",
     "  > visione 360 > root cause > fonte/capability/verifica > continuità proattiva.",
+    "- VERIFICA LA PREMESSA (zero-M): ogni 'fatto/attivo/rotto/funziona/già' va citato da fonte reale",
+    "  (comando+exit, file:riga, test PASS, dump), mai per assunzione/abitudine; se assunto, verifica PRIMA.",
+    "- BEST-PRACTICE RETROATTIVA (zero-P): sul codice ESISTENTE/legacy 'funziona' NON è il metro — vale",
+    "  anche all'indietro: è la forma più solida/idiomatica/coerente? se no, segnala e proponi (fix chirurgico).",
     "- Decomposizione: argomento → albero → sottopunti → sotto-sottopunti; per ogni ramo rivaluta",
     "  fonte, web/MCP, skill, rischi, verifiche, done criteria. Non fermarti alla superficie.",
     "- Domanda guida: lo consegneresti cosi al capo che ti paga?"
