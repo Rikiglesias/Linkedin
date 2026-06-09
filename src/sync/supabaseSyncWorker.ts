@@ -13,6 +13,12 @@ import {
     markOutboxDeliveryRetryClaimed,
     setRuntimeFlag,
 } from '../core/repositories';
+import {
+    upsertCloudLead,
+    updateCloudLeadStatus,
+    updateCloudAccountHealth,
+    type CloudLeadUpsert,
+} from '../cloud/supabaseDataClient';
 import { clampBackpressureLevel, computeBackpressureBatchSize, computeNextBackpressureLevel } from './backpressure';
 
 let client: SupabaseClient | null = null;
@@ -37,6 +43,57 @@ function getClient(): SupabaseClient | null {
         });
     }
     return client;
+}
+
+/**
+ * D2: ri-applica l'OPERAZIONE cloud originale associata a un evento outbox `cloud.*`, oltre a
+ * loggarlo in cp_events. Senza questo, il fallback outbox scriveva solo l'evento in cp_events
+ * (event-log) e il dato (lead/status/health) non arrivava MAI alle tabelle cloud → dato perso.
+ *
+ * Idempotenza: ri-applica SOLO le operazioni di upsert (idempotenti via onConflict), perché il drain
+ * usa executeWithRetryPolicy e un re-apply al retry deve essere safe. `cloud.daily_stat` è ESCLUSO:
+ * incrementCloudDailyStat è un INCREMENTO non idempotente → un re-apply causerebbe doppio-conteggio.
+ * Recuperarlo richiede un increment idempotente (idempotency_key) — follow-up separato.
+ * Gli altri topic (risk.*, scheduler.*, ai.*) sono eventi di telemetria: solo log in cp_events.
+ */
+export async function applyOutboxOperation(topic: string, rawPayload: unknown): Promise<void> {
+    if (!rawPayload || typeof rawPayload !== 'object') return;
+    const p = rawPayload as Record<string, unknown>;
+    switch (topic) {
+        case 'cloud.lead.upsert': {
+            if (p.lead && typeof p.lead === 'object') {
+                await upsertCloudLead(p.lead as CloudLeadUpsert);
+            }
+            return;
+        }
+        case 'cloud.lead.status': {
+            if (typeof p.linkedinUrl === 'string' && typeof p.status === 'string') {
+                await updateCloudLeadStatus(
+                    p.linkedinUrl,
+                    p.status,
+                    (p.timestamps as Parameters<typeof updateCloudLeadStatus>[2]) ?? undefined,
+                );
+            }
+            return;
+        }
+        case 'cloud.account.health': {
+            if (
+                typeof p.accountId === 'string' &&
+                (p.health === 'GREEN' || p.health === 'YELLOW' || p.health === 'RED')
+            ) {
+                await updateCloudAccountHealth(
+                    p.accountId,
+                    p.health,
+                    (p.quarantineReason as string | null | undefined) ?? null,
+                    (p.quarantineUntil as string | null | undefined) ?? null,
+                );
+            }
+            return;
+        }
+        default:
+            // cloud.daily_stat (increment non-idempotente) + eventi di telemetria → solo cp_events.
+            return;
+    }
 }
 
 import { parseOutboxPayload } from './outboxUtils';
@@ -100,6 +157,9 @@ export async function runSupabaseSyncOnce(): Promise<void> {
         try {
             await executeWithRetryPolicy(
                 async () => {
+                    // D2: ri-applica l'operazione cloud originale (upsert idempotenti) PRIMA di loggare
+                    // l'evento in cp_events — altrimenti il dato (lead/status/health) andrebbe perso.
+                    await applyOutboxOperation(payload.topic, payload.payload);
                     const { error } = await supabase.from('cp_events').upsert(payload, {
                         onConflict: 'idempotency_key',
                         ignoreDuplicates: false,
