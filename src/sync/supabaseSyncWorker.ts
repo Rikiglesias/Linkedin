@@ -17,7 +17,9 @@ import {
     upsertCloudLead,
     updateCloudLeadStatus,
     updateCloudAccountHealth,
+    incrementCloudDailyStatIdem,
     type CloudLeadUpsert,
+    type CloudDailyStatIncrement,
 } from '../cloud/supabaseDataClient';
 import { clampBackpressureLevel, computeBackpressureBatchSize, computeNextBackpressureLevel } from './backpressure';
 
@@ -50,13 +52,28 @@ function getClient(): SupabaseClient | null {
  * loggarlo in cp_events. Senza questo, il fallback outbox scriveva solo l'evento in cp_events
  * (event-log) e il dato (lead/status/health) non arrivava MAI alle tabelle cloud → dato perso.
  *
- * Idempotenza: ri-applica SOLO le operazioni di upsert (idempotenti via onConflict), perché il drain
- * usa executeWithRetryPolicy e un re-apply al retry deve essere safe. `cloud.daily_stat` è ESCLUSO:
- * incrementCloudDailyStat è un INCREMENTO non idempotente → un re-apply causerebbe doppio-conteggio.
- * Recuperarlo richiede un increment idempotente (idempotency_key) — follow-up separato.
+ * Idempotenza: ri-applica le operazioni di upsert (idempotenti via onConflict) e — dal follow-up D2
+ * — anche `cloud.daily_stat` via incrementCloudDailyStatIdem: la RPC claima l'idempotency_key
+ * dell'evento outbox e fa l'increment nella stessa transazione, quindi un re-apply al retry è no-op
+ * (il drain usa executeWithRetryPolicy: il re-apply DEVE essere safe). Senza idempotencyKey
+ * (caller legacy) il topic resta solo-log: mai increment non-idempotente.
  * Gli altri topic (risk.*, scheduler.*, ai.*) sono eventi di telemetria: solo log in cp_events.
  */
-export async function applyOutboxOperation(topic: string, rawPayload: unknown): Promise<void> {
+const DAILY_STAT_FIELDS: ReadonlyArray<CloudDailyStatIncrement['field']> = [
+    'invites_sent',
+    'messages_sent',
+    'acceptances',
+    'replies',
+    'challenges_count',
+    'selector_failures',
+    'run_errors',
+];
+
+export async function applyOutboxOperation(
+    topic: string,
+    rawPayload: unknown,
+    idempotencyKey?: string,
+): Promise<void> {
     if (!rawPayload || typeof rawPayload !== 'object') return;
     const p = rawPayload as Record<string, unknown>;
     switch (topic) {
@@ -90,8 +107,26 @@ export async function applyOutboxOperation(topic: string, rawPayload: unknown): 
             }
             return;
         }
+        case 'cloud.daily_stat': {
+            if (
+                typeof idempotencyKey === 'string' &&
+                idempotencyKey.length > 0 &&
+                typeof p.localDate === 'string' &&
+                typeof p.accountId === 'string' &&
+                DAILY_STAT_FIELDS.includes(p.field as CloudDailyStatIncrement['field'])
+            ) {
+                await incrementCloudDailyStatIdem({
+                    local_date: p.localDate,
+                    account_id: p.accountId,
+                    field: p.field as CloudDailyStatIncrement['field'],
+                    amount: typeof p.amount === 'number' ? p.amount : 1,
+                    idempotencyKey,
+                });
+            }
+            return;
+        }
         default:
-            // cloud.daily_stat (increment non-idempotente) + eventi di telemetria → solo cp_events.
+            // Eventi di telemetria → solo cp_events.
             return;
     }
 }
@@ -157,9 +192,10 @@ export async function runSupabaseSyncOnce(): Promise<void> {
         try {
             await executeWithRetryPolicy(
                 async () => {
-                    // D2: ri-applica l'operazione cloud originale (upsert idempotenti) PRIMA di loggare
-                    // l'evento in cp_events — altrimenti il dato (lead/status/health) andrebbe perso.
-                    await applyOutboxOperation(payload.topic, payload.payload);
+                    // D2: ri-applica l'operazione cloud originale PRIMA di loggare l'evento in
+                    // cp_events — altrimenti il dato (lead/status/health/daily_stat) andrebbe perso.
+                    // L'idempotency_key permette il recupero di cloud.daily_stat senza doppio conteggio.
+                    await applyOutboxOperation(payload.topic, payload.payload, payload.idempotency_key);
                     const { error } = await supabase.from('cp_events').upsert(payload, {
                         onConflict: 'idempotency_key',
                         ignoreDuplicates: false,

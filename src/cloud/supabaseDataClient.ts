@@ -189,6 +189,32 @@ export async function incrementCloudDailyStat(opts: CloudDailyStatIncrement): Pr
     }
 }
 
+/**
+ * Variante IDEMPOTENTE per il recupero outbox (D2): la RPC claima l'idempotency_key e fa
+ * l'increment nella STESSA transazione plpgsql → un re-apply al retry è no-op (niente doppio
+ * conteggio). Su errore THROW deliberato, NESSUN fallback read-modify-write (non-idempotente):
+ * meglio l'evento che resta in outbox e si ritenta al prossimo drain che un conteggio doppio.
+ * Se la RPC non è ancora deployata → errore → retry più tardi: degradazione sicura.
+ * Deploy: src/sync/migrations/cloud_001_daily_stat_idempotent.sql.
+ */
+export async function incrementCloudDailyStatIdem(
+    opts: CloudDailyStatIncrement & { idempotencyKey: string },
+): Promise<void> {
+    const sb = getClient();
+    if (!sb) return;
+
+    const { error } = await sb.rpc('increment_daily_stat_cloud_idem', {
+        p_idempotency_key: opts.idempotencyKey,
+        p_local_date: opts.local_date,
+        p_account_id: opts.account_id,
+        p_field: opts.field,
+        p_amount: opts.amount ?? 1,
+    });
+    if (error) {
+        throw new Error(`increment_daily_stat_cloud_idem failed: ${error.message}`);
+    }
+}
+
 // ──────────────────────────────────────────────────────────────
 // Telegram Command polling (Control Plane)
 // ──────────────────────────────────────────────────────────────

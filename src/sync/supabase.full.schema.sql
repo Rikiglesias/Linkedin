@@ -18,6 +18,14 @@ create table if not exists public.cp_events (
 );
 create index if not exists idx_cp_events_created_at on public.cp_events(created_at desc);
 
+-- Registro eventi outbox APPLICATI (claim idempotenza per il recupero cloud.daily_stat — D2).
+-- Il claim della idempotency_key e l'increment avvengono nella stessa transazione plpgsql
+-- (increment_daily_stat_cloud_idem): un re-drain dello stesso evento è no-op.
+create table if not exists public.cp_applied_events (
+    idempotency_key text primary key,
+    applied_at timestamptz not null default now()
+);
+
 create table if not exists public.cp_daily_kpis (
     id bigserial primary key,
     local_date date not null,
@@ -243,6 +251,49 @@ begin
 end;
 $$;
 
+-- Increment atomico di una statistica giornaliera (path primario di incrementCloudDailyStat).
+-- Whitelist esplicita dei field: niente identifier dinamico non validato.
+create or replace function public.increment_daily_stat_cloud(
+    p_local_date date,
+    p_account_id text,
+    p_field text,
+    p_amount integer default 1
+) returns void language plpgsql as $$
+begin
+    if p_field not in ('invites_sent','messages_sent','acceptances','replies','challenges_count','selector_failures','run_errors') then
+        raise exception 'increment_daily_stat_cloud: campo non ammesso: %', p_field;
+    end if;
+    execute format(
+        'insert into public.daily_stats_cloud (local_date, account_id, %I, updated_at)
+         values ($1, $2, $3, now())
+         on conflict (local_date, account_id)
+         do update set %I = public.daily_stats_cloud.%I + $3, updated_at = now()',
+        p_field, p_field, p_field
+    ) using p_local_date, p_account_id, p_amount;
+end;
+$$;
+
+-- Variante IDEMPOTENTE per il recupero outbox (D2): claim della idempotency_key + increment
+-- nella stessa transazione. true = applicato ora; false = già applicato (no-op, niente doppio conteggio).
+create or replace function public.increment_daily_stat_cloud_idem(
+    p_idempotency_key text,
+    p_local_date date,
+    p_account_id text,
+    p_field text,
+    p_amount integer default 1
+) returns boolean language plpgsql as $$
+begin
+    insert into public.cp_applied_events (idempotency_key)
+    values (p_idempotency_key)
+    on conflict (idempotency_key) do nothing;
+    if not found then
+        return false;
+    end if;
+    perform public.increment_daily_stat_cloud(p_local_date, p_account_id, p_field, p_amount);
+    return true;
+end;
+$$;
+
 -- Applica il trigger a tutte le tabelle con updated_at
 do $$
 declare
@@ -332,3 +383,4 @@ alter table public.daily_stats_cloud disable row level security;
 alter table public.proxy_ips disable row level security;
 alter table public.telegram_commands disable row level security;
 alter table public.salesnav_list_members disable row level security;
+alter table public.cp_applied_events disable row level security;

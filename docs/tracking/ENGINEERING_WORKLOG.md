@@ -4,6 +4,23 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-10 — outbox-dailystat: recupero `cloud.daily_stat` idempotente (`/goal outbox-dailystat`, FOLLOW-UP D2)
+
+### Obiettivo
+Chiudere il gap dato-cloud-perso: il dispatcher outbox (D2, `f5915dc`) escludeva `cloud.daily_stat` perché l'increment non era idempotente → al fallimento del path diretto la statistica finiva solo in `cp_events` (0 consumer) e non arrivava MAI a `daily_stats_cloud`.
+
+### Design (zero-C.10, dichiarato)
+Claim-table + RPC plpgsql transazionale: `cp_applied_events(idempotency_key PK)` + `increment_daily_stat_cloud_idem` che claima la chiave (`INSERT … ON CONFLICT DO NOTHING`, semantica `FOUND` verificata su docs PostgreSQL ufficiali) e fa l'increment NELLA STESSA transazione → re-apply al retry = no-op. Scartati: cp_events come registro (claim non atomico con l'increment nel flusso apply→log) e event_id sulla riga stats (riga aggregata, non per-evento). Bonus: RPC base `increment_daily_stat_cloud` aggiunta allo schema canonico (era chiamata dal client ma ASSENTE — chiude il residuo D3) con whitelist dei 7 field.
+
+### Interventi
+- `src/sync/migrations/cloud_001_daily_stat_idempotent.sql` (+`.down.sql` con caveat re-count) — NUOVA dir migrations cloud; mirror in `supabase.full.schema.sql` (tabella + 2 RPC + RLS disable).
+- `src/cloud/supabaseDataClient.ts`: `incrementCloudDailyStatIdem` — su errore THROW deliberato, NESSUN fallback read-modify-write (meglio retry outbox che doppio conteggio; degradazione sicura se RPC non deployata).
+- `src/sync/supabaseSyncWorker.ts`: `applyOutboxOperation(topic, payload, idempotencyKey?)` (param opzionale, L2 retro-compat) + case `cloud.daily_stat` (richiede chiave + payload valido + field in whitelist); drain passa `payload.idempotency_key`.
+- `src/tests/outboxDispatch.vitest.ts`: 6→10 test (chiave passata, re-apply stessa chiave, no-key→no-op, whitelist/payload invalido, errore RPC propagato).
+
+### Verifica
+outboxDispatch 10/10 PASS · `conta-problemi` exit 0 (typecheck+lint+**1599** test). ⚠️ RESIDUO leva utente: APPLY della migration su Supabase (progetto in timeout 3/3 — probabilmente in pausa) — SQL pronto, applicabile anche via MCP `apply_migration` con conferma.
+
 ## 2026-06-10 — context-burn: protocollo gestione contesto/burn a tier (`/goal context-burn-rules`, chiusura T2-T4)
 
 ### Obiettivo
