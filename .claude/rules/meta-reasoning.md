@@ -10,7 +10,7 @@ enforcement:
 # Meta-reasoning rules — delta LinkedIn delle regole globali
 
 > Path-scoped (`**`, sempre attiva). Il PRINCIPIO di ogni punto vive nelle regole globali
-> `~/.claude/ZERO_RULES.md` (zero-A..P, 16 regole — incl. M verifica-premessa, N checklist-360, O coerenza, P best-practice-retroattiva) e `~/.claude/L_LEVELS.md` (L1-L9), caricate ogni sessione.
+> `~/.claude/ZERO_RULES.md` (zero-A..Q, 17 regole — incl. M verifica-premessa, N checklist-360, O coerenza, P best-practice-retroattiva, Q cleanup regression-safe) e `~/.claude/L_LEVELS.md` (L1-L9), caricate ogni sessione.
 > Qui SOLO il **delta specifico-progetto** (anti-ban, continuità, cadenze LinkedIn): non si ri-spiega il globale.
 > 11 meta-regole (riferite per nome in `AGENTS.md` — mantenere il count se si modifica).
 
@@ -19,7 +19,7 @@ Delta LinkedIn: richiesta che può causare ban → **domanda zero anti-ban PRIMA
 Test: "disabilita il delay" → antiban check, non eseguire · "cancella X" (log critico) → rischio + conferma.
 
 ## 2. Context degradation e cambio chat → preferences + zero-H
-Soglia cambio chat: **avviso SOLO >750k token su 1M** (`preferences.md`); sotto, nessun consiglio.
+Gestione contesto: **protocollo a TIER 40/60/75% di 1M** (`~/.claude/rules/context-burn.md`, 2026-06-09 — supersede «avviso SOLO >750k»); **compact MAX 1×/sessione**; quality-guard: mai reset a metà operazione atomica.
 Segnali di degrado oltre i token: domande ripetute, dimenticanza decisioni di sessione, constraint ignorati → handoff.
 **Procedura continuità** (pre-nuova-chat/compact): **`/lastchat save`** (scrive `~/.claude/LASTCHAT.md`, sistema UNICO di continuità — 2026-06-07) + aggiorna `~/memory`/`todos/active.md`/`ENGINEERING_WORKLOG.md` se cambiati → commit se L1 verde. CONTINUATION/SESSION_HANDOFF/SESSION_PROMPT + skill resume-context ELIMINATI (vedi `~/memory/decisions_secondo_cervello.md`).
 

@@ -4,6 +4,19 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-10 — context-burn: protocollo gestione contesto/burn a tier (`/goal context-burn-rules`, chiusura T2-T4)
+
+### Obiettivo
+Chiudere il residuo del goal: protocollo burn A–G (approvato dall'utente 2026-06-09) scritto come regola nei canonici globali + hook ai tier + parità.
+
+### Interventi
+- **T2** nuova regola always-on `~/.claude/rules/context-burn.md`: 1M sempre; tier 40/60/75% di 1M (niente / lastchat+new al confine naturale / cerca confine / reset OBBLIGATORIO); compact MAX 1×/sessione; quality-guard (mai reset a metà operazione atomica); cache-TTL 5min; modello-per-task; UltraCode selettivo; micro-regole burn. Pointer 1-riga in `~/.claude/CLAUDE.md` («Qualità > token»).
+- **T3** `~/.claude/hooks/user-prompt-session-advisor.ps1`: tier 40/60/75 + `compacts>=1` (era `>=2`, regola compact-max-1×) + quality-guard nei messaggi; `~/.claude/scripts/turn-governor-hook.ps1`: backstop >750k allineato (anche su Stop), tier NON duplicati.
+- **T4** parità: `~/memory/preferences.md` (riga tier supersede 750k-only + fix blocco stale CONTINUATION→LASTCHAT), `direttive_utente_log.md` (SUPERSEDED), `feedback_consigli_con_criterio.md` (nota tier), `.claude/rules/meta-reasoning.md` §2 (pointer). Bonus coerenza: count «16 regole A-P»→«17 A-Q» in meta-reasoning.md + ZERO_RULES.md description.
+
+### Verifica
+Test hook 6/6 PASS (transcript finti 200k/450k/650k/800k × 0/1 compact: messaggi tier corretti, silente <400k, backstop governor solo >750k). `audit:rule-enforcement` 43/56, 0 gap meccanizzabili. `conta-problemi` exit 0 (1595 test).
+
 ## 2026-06-09 — backlog-operativo: mouse «più solido» ([WINDOW-BLOCK] hardening, `/goal backlog-operativo`)
 
 ### Obiettivo
