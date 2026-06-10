@@ -944,6 +944,10 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
 
         // Chiudi browser SUBITO dopo scraping (non serve piu per enrichment)
         if (ownsBrowser) {
+            // disable PRIMA di close (pattern canonico jobRunner/syncSearchService): senza, il
+            // success-path imposta browserClosed=true e il finally salta il disable → click-through
+            // orfano (PID nel set + timer attivo + mouse utente bloccato) in scenari loop/daemon.
+            disableWindowClickThrough(session.browser);
             await closeBrowser(session);
             browserClosed = true;
             await setRuntimeFlag(`browser_session_ended_at:${account.id}`, new Date().toISOString()).catch(() => null);

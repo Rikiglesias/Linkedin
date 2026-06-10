@@ -1,4 +1,4 @@
-import { checkLogin, closeBrowser, launchBrowser, runSelectorCanaryDetailed } from '../browser';
+import { checkLogin, closeBrowser, launchBrowser, runSelectorCanaryDetailed, type BrowserSession } from '../browser';
 import { enableWindowClickThrough, disableWindowClickThrough } from '../browser/windowInputBlock';
 import { getRuntimeAccountProfiles } from '../accountManager';
 import { config, getLocalDateString, isWorkingHour } from '../config';
@@ -23,10 +23,14 @@ function touchesUi(workflow: WorkflowEntryKind): boolean {
  * reale era una sessione sloggata (cookie li_at assente).
  */
 type CanaryOutcome =
-    | { ok: true }
+    | { ok: true; session?: BrowserSession }
     | { ok: false; blockReason: WorkflowBlockedReason; quarantineType: string | null; message: string };
 
-async function runCanaryIfNeeded(workflow: WorkflowEntryKind, noProxy = false): Promise<CanaryOutcome> {
+async function runCanaryIfNeeded(
+    workflow: WorkflowEntryKind,
+    noProxy = false,
+    reuseAccountId?: string,
+): Promise<CanaryOutcome> {
     if (!config.selectorCanaryEnabled || !touchesUi(workflow)) {
         return { ok: true };
     }
@@ -56,6 +60,11 @@ async function runCanaryIfNeeded(workflow: WorkflowEntryKind, noProxy = false): 
         // muore più avanti ("Target page closed"). Solo click-through OS (no overlay DOM: il canary
         // testa i selettori e non va disturbato nel DOM).
         enableWindowClickThrough(session.browser);
+        // Handoff opt-in: se questo è l'account operativo da riusare (reuseAccountId), a check superati
+        // NON chiudere la sessione — passala al workflow per evitare il 2o launch sullo stesso profilo
+        // persistente (lock conflict → timeout 180s). Per gli altri account il canary chiude come sempre.
+        const reuseThisSession = reuseAccountId !== undefined && account.id === reuseAccountId;
+        let handedOff = false;
         try {
             const loggedIn = await checkLogin(session.page);
             if (!loggedIn) {
@@ -156,12 +165,23 @@ async function runCanaryIfNeeded(workflow: WorkflowEntryKind, noProxy = false): 
                 steps: report.steps.length,
                 optionalFailed: report.optionalFailed,
             });
+
+            if (reuseThisSession) {
+                // Check superati per l'account operativo → handoff: mantieni il click-through ATTIVO
+                // (il workflow riusa la stessa finestra) e NON chiudere la sessione; la chiuderà il
+                // caller (syncListService) nel suo finally. Setta qui il flag canary perché ritorniamo.
+                handedOff = true;
+                await setRuntimeFlag('canary_last_ok_at', new Date().toISOString()).catch(() => null);
+                return { ok: true, session };
+            }
         } finally {
-            // Il click-through resta attivo per tutto il wind-down di closeBrowser (la finestra è
-            // ancora visibile e cliccabile); dopo la chiusura rimuovo il PID del canary dal set
-            // protetto — la finestra sync (PID diverso) resta protetta grazie allo stato multi-PID.
-            await closeBrowser(session);
-            disableWindowClickThrough(session.browser);
+            if (!handedOff) {
+                // Il click-through resta attivo per tutto il wind-down di closeBrowser (la finestra è
+                // ancora visibile e cliccabile); dopo la chiusura rimuovo il PID del canary dal set
+                // protetto — la finestra sync (PID diverso) resta protetta grazie allo stato multi-PID.
+                await closeBrowser(session);
+                disableWindowClickThrough(session.browser);
+            }
         }
     }
 
@@ -175,6 +195,18 @@ export interface EvaluateWorkflowEntryGuardsOptions {
     accountId?: string;
     /** Se true, anche il selector canary gira senza proxy (coerenza IP con l'operazione --no-proxy). */
     noProxy?: boolean;
+    /**
+     * Se true, il canary NON chiude la sessione dell'account operativo (`accountId`) ma la ritorna in
+     * `GuardDecisionWithSession.session`, così il workflow la riusa invece di aprire un 2° browser sullo
+     * stesso profilo (lock conflict). Il CALLER è responsabile di chiuderla. Default false → comportamento
+     * invariato per tutti gli altri workflow.
+     */
+    reuseSession?: boolean;
+}
+
+/** GuardDecision esteso con la sessione del canary da riusare (handoff opt-in, solo se `reuseSession`). */
+export interface GuardDecisionWithSession extends GuardDecision {
+    session?: BrowserSession;
 }
 
 function block(reason: GuardDecision['blocked']): GuardDecision {
@@ -183,7 +215,7 @@ function block(reason: GuardDecision['blocked']): GuardDecision {
 
 export async function evaluateWorkflowEntryGuards(
     options: EvaluateWorkflowEntryGuardsOptions,
-): Promise<GuardDecision> {
+): Promise<GuardDecisionWithSession> {
     if (options.dryRun) {
         return { allowed: true, blocked: null };
     }
@@ -322,7 +354,12 @@ export async function evaluateWorkflowEntryGuards(
         });
     }
 
-    const canary = await runCanaryIfNeeded(options.workflow, options.noProxy ?? false);
+    const canary = await runCanaryIfNeeded(
+        options.workflow,
+        options.noProxy ?? false,
+        // Handoff opt-in: passa l'account operativo SOLO se il caller ha chiesto reuseSession.
+        options.reuseSession ? options.accountId : undefined,
+    );
     if (!canary.ok) {
         if (canary.quarantineType) {
             await quarantineAccount(canary.quarantineType, { workflow: options.workflow });
@@ -334,5 +371,7 @@ export async function evaluateWorkflowEntryGuards(
         });
     }
 
-    return { allowed: true, blocked: null };
+    // canary.session è definita solo nel caso handoff (reuseSession + account match + check ok);
+    // altrimenti undefined → il workflow apre la sua sessione (comportamento invariato).
+    return { allowed: true, blocked: null, session: canary.session };
 }

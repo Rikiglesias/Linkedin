@@ -170,6 +170,13 @@ async function fetchCloudFingerprints(): Promise<CloudFingerprint[]> {
     return [];
 }
 
+/**
+ * Timeout esplicito sul launch del browser (ms). Il default Playwright per
+ * launchPersistentContext su profilo persistente lockato è 180s — troppo lungo.
+ * 60s = fail-fast su lock conflict (parent.lock ancora preso), poi retry (retriedLock).
+ */
+const LAUNCH_TIMEOUT_MS = 60_000;
+
 export interface BrowserSession {
     browser: BrowserContext;
     page: Page;
@@ -262,6 +269,7 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
     let mobileEscalationAppended = false;
     let lastError: unknown = null;
     let retriedProxy = false;
+    let retriedLock = false;
 
     for (let attempt = 0; attempt < launchPlan.length; attempt++) {
         const currentProxy = launchPlan[attempt];
@@ -342,6 +350,10 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             handleSIGINT: true,
             handleSIGTERM: true,
             handleSIGHUP: true,
+            // Timeout esplicito sul launch: il default Playwright per launchPersistentContext su
+            // profilo persistente lockato è 180s — troppo lungo. 60s = fail-fast su lock conflict
+            // (parent.lock ancora preso da un processo precedente), poi il loop ritenta (retriedLock).
+            timeout: LAUNCH_TIMEOUT_MS,
             ...(useFirefox ? { firefoxUserPrefs } : { args: chromiumArgs }),
         };
         // Proxy provider HTTPS handling: ignoreHTTPSErrors SOLO per domini proxy noti.
@@ -439,6 +451,9 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                 browser = await Camoufox({
                     user_data_dir: sessionDir,
                     headless: headless,
+                    // Timeout esplicito (propagato a Playwright launchPersistentContext via catch-all):
+                    // fail-fast a 60s su lock conflict invece dei 180s di default, poi retry (retriedLock).
+                    timeout: LAUNCH_TIMEOUT_MS,
                     // humanize DISABILITATO: il nostro MouseGenerator (Bézier + fractal noise +
                     // micro-tremor + Fitts's Law) è più sofisticato. humanize di Camoufox
                     // causa freeze quando il mouse reale dell'utente compete con Playwright CDP
@@ -728,6 +743,24 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                 console.warn(`[PROXY] Errore transiente — retry in ${Math.round(backoffMs / 1000)}s...`);
                 await new Promise((r) => setTimeout(r, backoffMs));
                 attempt--; // Ripeti stesso tentativo
+                continue;
+            }
+
+            // Lock/timeout del profilo persistente (es. parent.lock ancora preso da un processo browser
+            // precedente che muore async): retryable UNA volta anche SENZA proxy. Il backoff dà tempo al
+            // processo precedente di rilasciare il lock. Flag separato da retriedProxy per evitare loop.
+            const isProfileLockError =
+                /Timeout \d+ms exceeded|parent\.lock|ProcessSingleton|profile.*(in use|locked)|Could not create profile/i.test(
+                    errMsg,
+                );
+            if (isProfileLockError && !retriedLock) {
+                retriedLock = true;
+                const backoffMs = 3_000 + Math.floor(Math.random() * 3_000);
+                console.warn(
+                    `[BROWSER] Lock/timeout profilo persistente — retry in ${Math.round(backoffMs / 1000)}s...`,
+                );
+                await new Promise((r) => setTimeout(r, backoffMs));
+                attempt--; // Ripeti stesso tentativo (stesso profilo/proxy)
                 continue;
             }
 

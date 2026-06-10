@@ -1,4 +1,6 @@
 import { config } from '../../config';
+import { closeBrowser } from '../../browser';
+import { disableWindowClickThrough } from '../../browser/windowInputBlock';
 import { runSalesNavigatorListSync } from '../../core/salesNavigatorSync';
 import { listSalesNavLists } from '../../core/repositories/leadsCore';
 import { evaluateWorkflowEntryGuards } from '../../core/workflowEntryGuards';
@@ -189,6 +191,8 @@ export async function executeSyncListWorkflow(
         dryRun: request.dryRun ?? false,
         accountId: preflight.selectedAccountId ?? request.accountId,
         noProxy: request.noProxy ?? false,
+        // Riusa la sessione del canary nel sync (evita il 2° browser sullo stesso profilo = lock conflict).
+        reuseSession: true,
     });
     if (!guardDecision.allowed && guardDecision.blocked) {
         return buildBlockedResult('sync-list', guardDecision.blocked, {
@@ -200,6 +204,10 @@ export async function executeSyncListWorkflow(
         });
     }
 
+    // Handoff: se il canary ha lasciato aperta la sessione dell'account operativo, il sync la RIUSA
+    // (existingSession) invece di aprire un 2° browser sullo stesso profilo. In quel caso
+    // runSalesNavigatorListSync NON chiude (ownsBrowser=false) → la chiude questo caller nel finally.
+    const canarySession = guardDecision.session;
     let syncError: string | null = null;
     let report: Awaited<ReturnType<typeof runSalesNavigatorListSync>> | null = null;
     try {
@@ -213,9 +221,17 @@ export async function executeSyncListWorkflow(
             interactive: request.interactive ?? false,
             noProxy: request.noProxy ?? false,
             skipEnrichment: !enrichment,
+            existingSession: canarySession,
         });
     } catch (err) {
         syncError = err instanceof Error ? err.message : String(err);
+    } finally {
+        // Chiusura della sessione del canary riusata (il sync non la possiede). disable PRIMA di close
+        // (pattern canonico). Se non c'è handoff (canarySession undefined) il sync ha già chiuso la sua.
+        if (canarySession) {
+            disableWindowClickThrough(canarySession.browser);
+            await closeBrowser(canarySession);
+        }
     }
 
     if (syncError) {
