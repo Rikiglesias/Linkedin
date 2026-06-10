@@ -840,6 +840,20 @@ export async function closeBrowser(session: BrowserSession): Promise<void> {
         /* best-effort */
     }
     await session.browser.close().catch(() => {});
+
+    // Attendi la terminazione REALE del processo camoufox/firefox prima di ritornare: browser.close()
+    // chiude il context Playwright ma NON garantisce che il processo OS sia morto né che il parent.lock
+    // del profilo persistente sia rilasciato. Un lancio successivo sullo STESSO profilo (es. canary →
+    // workflow) troverebbe il lock ancora preso → launchPersistentContext timeout 180s. Bounded (~8s) +
+    // no-op se il PID è ignoto → degrada al comportamento precedente, mai peggio (regression-safe).
+    if (config.browserEngine === 'camoufox' || config.browserEngine === 'firefox') {
+        try {
+            const { waitForBrowserProcessExit } = await import('./windowInputBlock');
+            await waitForBrowserProcessExit(session.browser, 8_000);
+        } catch {
+            /* best-effort: se l'attesa fallisce, la chiusura procede comunque */
+        }
+    }
 }
 
 export async function performBrowserGC(session: BrowserSession): Promise<void> {

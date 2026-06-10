@@ -80,6 +80,41 @@ function getBrowserPid(browserContext: BrowserContext): number | null {
     }
 }
 
+/**
+ * Attende che il processo OS del browser sia REALMENTE terminato, fino a `timeoutMs`.
+ * `browser.close()` di Playwright chiude il context ma NON garantisce che il processo
+ * camoufox/firefox sia morto né che il `parent.lock` del profilo persistente sia rilasciato.
+ * Un lancio successivo sullo STESSO profilo (es. canary → workflow) troverebbe il lock ancora
+ * preso → `launchPersistentContext` timeout. Poll leggero via `process.kill(pid, 0)` (probe di
+ * esistenza, NON termina il processo). No-op (`false`) se il PID è ignoto → degrada al
+ * comportamento precedente, mai peggio.
+ *
+ * @returns true se il processo è morto entro il timeout, false se PID assente o timeout scaduto.
+ */
+export async function waitForBrowserProcessExit(
+    browserContext: BrowserContext,
+    timeoutMs = 8_000,
+): Promise<boolean> {
+    const pid = getBrowserPid(browserContext);
+    if (!pid) return false;
+
+    const deadline = Date.now() + timeoutMs;
+    const POLL_MS = 200;
+    while (Date.now() < deadline) {
+        let alive: boolean;
+        try {
+            process.kill(pid, 0); // signal 0 = probe esistenza, non termina il processo
+            alive = true;
+        } catch (err) {
+            // ESRCH = processo inesistente (morto). EPERM = esiste ma senza permessi (vivo).
+            alive = (err as NodeJS.ErrnoException).code === 'EPERM';
+        }
+        if (!alive) return true;
+        await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+    }
+    return false;
+}
+
 // ── Apply helpers ─────────────────────────────────────────────────
 
 /**
