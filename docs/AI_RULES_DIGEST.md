@@ -12,7 +12,7 @@ INIZIO (SessionStart): memoria+digest+routing. DURANTE (UserPromptSubmit+Pre/Pos
 Definizione canonica: `~/.claude/L_LEVELS.md` (splittato da CLAUDE.md per leggibilità). Non ridefinire qui.
 Proporzione: Quick=L1-L4 | Bug=L1-L6 | Feature=L1-L9.
 
-## 10 Regole zero (canoniche globali)
+## 17 Regole zero (canoniche globali, A→Q)
 
 Definizione canonica completa: `~/.claude/ZERO_RULES.md`. Sintesi tabellare in `~/.claude/CLAUDE.md`.
 
@@ -26,6 +26,13 @@ Definizione canonica completa: `~/.claude/ZERO_RULES.md`. Sintesi tabellare in `
 - **zero-H**: light ogni volta vs deep periodico
 - **zero-I**: simplicity first / surgical changes (counterbalance overengineering)
 - **zero-J**: completamento totale 360°, mai chiusura "abbastanza"
+- **zero-K**: secondo cervello distaccato (zoom-out + zoom-in su ogni azione)
+- **zero-L**: top-down — quadro/mappa completa PRIMA, dettaglio DOPO; esempi ≠ lista
+- **zero-M**: verifica la premessa — fonte reale, mai assunzione
+- **zero-N**: checklist 360° (esiste già? best practice esatta? premessa vera?)
+- **zero-O**: coerenza con l'insieme e la direzione, mai intervento isolato
+- **zero-P**: best-practice retroattiva sull'esistente («funziona» ≠ giusto)
+- **zero-Q**: pulizia/refactor regression-safe (dopo ≥ prima, con evidenza)
 
 ## Checklist operativa
 
