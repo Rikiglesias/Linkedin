@@ -19,13 +19,19 @@ import { config } from '../config';
 import { logInfo, logWarn } from '../telemetry/logger';
 import type { PageObservation } from '../browser/observePageContext';
 import { normalizeNavigationStrategy, type NavigationStrategy } from '../core/navigationStrategy';
+import { pseudonymizeLead, distillChatSignals } from './leadPseudonymizer';
 
 // ─── Tipi ────────────────────────────────────────────────────────────────────
 
 export interface AIDecisionRequest {
     /** Tipo di decisione richiesta */
     point: 'pre_invite' | 'pre_message' | 'pre_follow_up' | 'inbox_reply' | 'navigation';
-    /** Dati lead dal DB */
+    /**
+     * Dati lead dal DB. F0.5 zero-PII: i campi identificativi (name/company/email/
+     * phone/about/location raw) restano nel request per log/feedback per id, ma NON
+     * escono MAI nel prompt — buildDecisionPrompt li pseudonimizza in feature anonime
+     * (leadPseudonymizer; garanzia: test sentinella in aiDecisionEngine.vitest).
+     */
     lead?: {
         id: number;
         name?: string;
@@ -222,35 +228,38 @@ function buildDecisionPrompt(request: AIDecisionRequest): string {
         '',
     ];
 
-    // Enrichment context condiviso tra tutti i decision point
-    if (request.lead) {
+    // F0.5 zero-PII: nel prompt escono SOLO feature anonime (enum/boolean/numeri) —
+    // mai nome/email/telefono/URL/azienda/testo libero del lead o della chat.
+    const features = request.lead ? pseudonymizeLead(request.lead, request.pageObservation) : undefined;
+    const chat = distillChatSignals(request.chatMessages);
+
+    // Enrichment context condiviso tra tutti i decision point (solo categorie/boolean)
+    if (features) {
         const enrichParts: string[] = [];
-        if (request.lead.seniority) enrichParts.push(`Seniority: ${request.lead.seniority}`);
-        if (request.lead.industry) enrichParts.push(`Industry: ${request.lead.industry}`);
-        if (request.lead.location) enrichParts.push(`Location: ${request.lead.location}`);
-        if (request.lead.email || request.lead.businessEmail) enrichParts.push('Has verified email');
-        if (request.lead.phone) enrichParts.push('Has phone');
+        if (features.seniority) enrichParts.push(`Seniority: ${features.seniority}`);
+        if (features.industry !== 'unknown') enrichParts.push(`Industry: ${features.industry}`);
+        if (features.region) enrichParts.push(`Region: ${features.region}`);
+        if (features.hasVerifiedEmail) enrichParts.push('Has verified email');
+        if (features.hasPhone) enrichParts.push('Has phone');
         if (enrichParts.length > 0) {
             parts.push(`Enrichment: ${enrichParts.join(', ')}`);
         }
     }
 
+    const leadProfileLine = features
+        ? `Lead profile: segment=${features.segment}, industry=${features.industry}${features.leadScore ? `, score=${features.leadScore}/100` : ''}`
+        : null;
+    const conversationLine = chat
+        ? `Conversation: ${chat.messageCount} messages, last from ${chat.lastFrom}, lead replied: ${chat.leadHasReplied ? 'yes' : 'no'}`
+        : null;
+
     switch (request.point) {
         case 'pre_invite':
             parts.push('DECISION: Should we send a connection invite to this person?');
-            if (request.lead) {
+            if (leadProfileLine) parts.push(leadProfileLine);
+            if (request.pageObservation && features) {
                 parts.push(
-                    `Lead: ${request.lead.name ?? 'Unknown'}, ${request.lead.title ?? 'Unknown title'} at ${request.lead.company ?? 'Unknown company'}`,
-                );
-                if (request.lead.score) parts.push(`Lead score: ${request.lead.score}/100`);
-                if (request.lead.about) parts.push(`About: ${request.lead.about.substring(0, 200)}`);
-            }
-            if (request.pageObservation) {
-                parts.push(
-                    `Profile page: name="${request.pageObservation.profileName}", headline="${request.pageObservation.profileHeadline}"`,
-                );
-                parts.push(
-                    `Connection: ${request.pageObservation.connectionDegree ?? 'unknown'}, Connect button: ${request.pageObservation.hasConnectButton}`,
+                    `Connection: ${features.connectionDegree ?? 'unknown'}, Connect button: ${request.pageObservation.hasConnectButton}`,
                 );
             }
             if (request.session) {
@@ -265,35 +274,25 @@ function buildDecisionPrompt(request: AIDecisionRequest): string {
 
         case 'pre_message':
             parts.push('DECISION: Should we send a message to this person? What context should we use?');
-            if (request.lead) {
-                parts.push(
-                    `Lead: ${request.lead.name ?? 'Unknown'}, ${request.lead.title ?? 'Unknown title'} at ${request.lead.company ?? 'Unknown company'}`,
-                );
-            }
-            if (request.chatMessages && request.chatMessages.length > 0) {
-                parts.push(`Recent chat messages: ${request.chatMessages.slice(-3).join(' | ')}`);
-            }
+            if (leadProfileLine) parts.push(leadProfileLine);
+            if (conversationLine) parts.push(conversationLine);
             parts.push(
-                'If they already replied → SKIP (they started a conversation). Add "messageContext" with suggested approach.',
+                'If the lead already replied → SKIP (they started a conversation). Add "messageContext" with suggested approach.',
             );
             break;
 
         case 'pre_follow_up':
             parts.push('DECISION: Should we send a follow-up to this person?');
-            if (request.lead) {
-                parts.push(`Lead: ${request.lead.name ?? 'Unknown'}, ${request.lead.title ?? 'Unknown title'}`);
-            }
-            if (request.chatMessages && request.chatMessages.length > 0) {
-                parts.push(`Last messages: ${request.chatMessages.slice(-3).join(' | ')}`);
-                parts.push('If the last message is FROM THEM → SKIP (they replied, no follow-up needed).');
+            if (leadProfileLine) parts.push(leadProfileLine);
+            if (conversationLine) {
+                parts.push(conversationLine);
+                parts.push('If lead replied: yes → SKIP (no follow-up needed).');
             }
             break;
 
         case 'inbox_reply':
             parts.push('DECISION: How should we handle this inbox conversation?');
-            if (request.chatMessages && request.chatMessages.length > 0) {
-                parts.push(`Full conversation: ${request.chatMessages.join(' | ')}`);
-            }
+            if (conversationLine) parts.push(conversationLine);
             parts.push(
                 'PROCEED for positive/questions intent. NOTIFY_HUMAN for complex situations. SKIP for spam/irrelevant.',
             );

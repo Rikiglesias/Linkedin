@@ -10,7 +10,8 @@
 import { requestOpenAIText } from './openaiClient';
 import { requestAnthropicText } from './anthropicClient';
 import { resolveAiProvider, AiTextPurpose } from './providerRegistry';
-import { logInfo } from '../telemetry/logger';
+import { logInfo, logWarn } from '../telemetry/logger';
+import { sanitizeForLogs } from '../security/redaction';
 
 export interface AiTextRequest {
     purpose: AiTextPurpose;
@@ -48,7 +49,15 @@ export async function requestAiText(input: AiTextRequest): Promise<string> {
     };
 
     switch (resolution.provider) {
-        case 'anthropic':
+        case 'anthropic': {
+            // Guard difensiva data-residency (osserva, NON muta — F0.5): rileva SOLO PII
+            // regex-detectable (email/URL LinkedIn/telefono/secrets via sanitizeForLogs).
+            // La difesa primaria contro regressioni name/company è il test sentinella
+            // sul prompt (aiDecisionEngine.vitest) — questo è un segnale "suspect".
+            const combined = `${input.system}\n${input.user}`;
+            if (sanitizeForLogs(combined) !== combined) {
+                await logWarn('ai_text.cloud_pii_suspect', { purpose: input.purpose });
+            }
             // Audit esplicito di OGNI uscita verso cloud (osservabilità + traccia data-residency):
             // scatta solo su purpose no-PII per la guard del registry.
             await logInfo('ai_text.cloud_dispatch', {
@@ -58,6 +67,7 @@ export async function requestAiText(input: AiTextRequest): Promise<string> {
                 reason: resolution.reason,
             });
             return requestAnthropicText(request);
+        }
         case 'openai':
         case 'ollama':
             // Delega a requestOpenAIText che si auto-risolve endpoint/model (green mode incluso):

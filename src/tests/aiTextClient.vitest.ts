@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
     requestOpenAIText: vi.fn(),
     requestAnthropicText: vi.fn(),
     logInfo: vi.fn(async () => {}),
+    logWarn: vi.fn(async () => {}),
 }));
 
 vi.mock('../ai/providerRegistry', async (importOriginal) => {
@@ -28,7 +29,7 @@ vi.mock('../ai/anthropicClient', () => ({
 
 vi.mock('../telemetry/logger', () => ({
     logInfo: mocks.logInfo,
-    logWarn: async () => {},
+    logWarn: mocks.logWarn,
     logError: async () => {},
 }));
 
@@ -58,6 +59,7 @@ beforeEach(() => {
     mocks.requestOpenAIText.mockReset();
     mocks.requestAnthropicText.mockReset();
     mocks.logInfo.mockClear();
+    mocks.logWarn.mockClear();
 });
 
 describe('aiTextClient — dispatch', () => {
@@ -100,6 +102,27 @@ describe('aiTextClient — dispatch', () => {
         });
         expect(mocks.requestOpenAIText).not.toHaveBeenCalled();
         expect(mocks.requestAnthropicText).not.toHaveBeenCalled();
+    });
+
+    it('guard F0.5: prompt cloud con PII regex-detectable → warn cloud_pii_suspect (senza mutare)', async () => {
+        mocks.resolution = resolution({ provider: 'anthropic' });
+        mocks.requestAnthropicText.mockResolvedValue('ok');
+        await requestAiText({ ...baseRequest, user: 'contatta mario.rossi@acme.com per il follow-up' });
+        expect(mocks.logWarn).toHaveBeenCalledWith('ai_text.cloud_pii_suspect', { purpose: 'guardian' });
+        // il prompt arriva al provider INALTERATO (la guard osserva, non muta)
+        expect(mocks.requestAnthropicText).toHaveBeenCalledWith(
+            expect.objectContaining({ user: 'contatta mario.rossi@acme.com per il follow-up' }),
+        );
+    });
+
+    it('guard F0.5: prompt cloud pulito → NESSUN warn (baseline anti-falsi-positivi)', async () => {
+        mocks.resolution = resolution({ provider: 'anthropic' });
+        mocks.requestAnthropicText.mockResolvedValue('ok');
+        await requestAiText({
+            ...baseRequest,
+            user: 'Session: 3 invites sent, risk=20/100, pending=30%. Lead profile: segment=c_level, industry=tech',
+        });
+        expect(mocks.logWarn).not.toHaveBeenCalled();
     });
 
     it('errore del client sottostante propagato al caller (fallback template nei catch)', async () => {
