@@ -1,6 +1,7 @@
 import {
     clearAutomationPause,
     createIncident,
+    countDistinctIncidentAccounts,
     countRecentIncidents,
     pushOutboxEvent,
     recordSecurityAuditEvent,
@@ -8,6 +9,7 @@ import {
     setAutomationPause,
     setRuntimeFlag,
 } from '../core/repositories';
+import { logWarn } from '../telemetry/logger';
 import { sanitizeForLogs } from '../security/redaction';
 import { broadcastCritical, broadcastWarning } from '../telemetry/broadcaster';
 import { bridgeAccountHealth } from '../cloud/cloudBridge';
@@ -37,6 +39,9 @@ export async function quarantineAccount(type: string, details: Record<string, un
     // es. SELECTOR_FAILURE_BURST platform-wide) resolveAccountId → 'default' → flag GLOBALE
     // legacy che blocca tutti gli account (fail-safe).
     await setAccountQuarantine(resolveAccountId(details), true);
+    // F3 ai-stack: classifica la sorgente DOPO l'insert (l'incident corrente è incluso nel conteggio).
+    // La classificazione arricchisce alert/dashboard (WHAT/WHY/DO), NON cambia il fail-safe sopra.
+    const source = await classifyIncidentSource(type);
     await recordAuditSafe({
         category: 'incident',
         action: 'quarantine_account',
@@ -45,7 +50,7 @@ export async function quarantineAccount(type: string, details: Record<string, un
         entityType: 'account_incident',
         entityId: String(incidentId),
         result: 'ALLOW',
-        metadata: { type, details },
+        metadata: { type, details, sourceClassification: source.classification },
     });
     await pushOutboxEvent(
         'incident.opened',
@@ -54,6 +59,8 @@ export async function quarantineAccount(type: string, details: Record<string, un
             type,
             severity: 'CRITICAL',
             details,
+            sourceClassification: source.classification,
+            affectedAccounts: source.affectedAccounts,
         },
         `incident.opened:${incidentId}`,
     );
@@ -61,7 +68,7 @@ export async function quarantineAccount(type: string, details: Record<string, un
     // Prima c'era anche sendTelegramAlert diretto → doppio messaggio Telegram per ogni evento.
     broadcastCritical(
         `CRITICAL incident #${incidentId}: ${type}`,
-        `Account messo in quarantena.\n\nDettagli:\n${JSON.stringify(sanitizeForLogs(details), null, 2).substring(0, 600)}`,
+        `Account messo in quarantena.\n\n${source.recommendation}\n\nDettagli:\n${JSON.stringify(sanitizeForLogs(details), null, 2).substring(0, 600)}`,
         details,
     ).catch(() => {});
     // Replica cloud: aggiorna health account a RED (non-bloccante)
@@ -72,6 +79,8 @@ export async function quarantineAccount(type: string, details: Record<string, un
         severity: 'CRITICAL',
         details,
         quarantined: true,
+        sourceClassification: source.classification,
+        affectedAccounts: source.affectedAccounts,
     });
     return incidentId;
 }
@@ -170,10 +179,12 @@ export async function resumeAutomation(): Promise<void> {
 }
 
 /**
- * A13: Classifica un incident come "account-specific" o "platform-wide".
- * Euristica: se lo stesso tipo di errore è avvenuto su 3+ account nelle ultime 24h,
- * è probabilmente un cambiamento LinkedIn (selettori, UI, rate limit).
- * Se solo su 1 account → specifico dell'account (bug nostro, stato account, ban).
+ * A13 + F3 ai-stack: classifica un incident come "account-specific" o "platform-wide".
+ * Euristica: stesso type su 3+ account distinti nelle ultime 24h → probabile cambiamento
+ * LinkedIn (selettori, UI, rate limit); su 1-2 account → problema specifico dell'account.
+ * F3: riscritta sopra la repository PG-portabile (la versione storica era ORFANA e rotta:
+ * interrogava la tabella inesistente `incidents`/`created_at` → catch silenzioso → sempre
+ * 'unknown'). Wired in quarantineAccount: arricchisce alert/dashboard, mai il fail-safe.
  */
 export async function classifyIncidentSource(incidentType: string): Promise<{
     classification: 'account_specific' | 'platform_wide' | 'unknown';
@@ -181,29 +192,19 @@ export async function classifyIncidentSource(incidentType: string): Promise<{
     recommendation: string;
 }> {
     try {
-        const { getDatabase } = await import('../db');
-        const db = await getDatabase();
-        const row = await db.get<{ cnt: number; accounts: string }>(
-            `SELECT COUNT(DISTINCT COALESCE(json_extract(details_json, '$.accountId'), 'default')) as cnt,
-                    GROUP_CONCAT(DISTINCT COALESCE(json_extract(details_json, '$.accountId'), 'default')) as accounts
-             FROM incidents
-             WHERE type = ?
-               AND created_at >= DATETIME('now', '-24 hours')`,
-            [incidentType],
-        );
-        const affectedAccounts = row?.cnt ?? 0;
+        const { count: affectedAccounts } = await countDistinctIncidentAccounts(incidentType, 24);
         if (affectedAccounts >= 3) {
             return {
                 classification: 'platform_wide',
                 affectedAccounts,
-                recommendation: `Stesso errore "${incidentType}" su ${affectedAccounts} account — probabile cambiamento LinkedIn. Verificare selettori e UI.`,
+                recommendation: `Stesso errore "${incidentType}" su ${affectedAccounts} account nelle ultime 24h — probabile cambiamento LinkedIn. DO: verificare selettori e UI prima di riattivare gli account.`,
             };
         }
         if (affectedAccounts >= 1) {
             return {
                 classification: 'account_specific',
                 affectedAccounts,
-                recommendation: `Errore "${incidentType}" su ${affectedAccounts} account — probabile problema specifico dell'account.`,
+                recommendation: `Errore "${incidentType}" su ${affectedAccounts} account nelle ultime 24h — probabile problema specifico dell'account. DO: verificare stato/credenziali/proxy dell'account colpito.`,
             };
         }
         return {
@@ -211,7 +212,13 @@ export async function classifyIncidentSource(incidentType: string): Promise<{
             affectedAccounts: 0,
             recommendation: 'Nessun incident recente di questo tipo.',
         };
-    } catch {
+    } catch (error) {
+        // F3: niente catch silenzioso — il fallimento della classificazione è osservabile,
+        // ma non blocca mai la gestione dell'incident (best-effort by-design).
+        await logWarn('incident.classification_failed', {
+            incidentType,
+            error: error instanceof Error ? error.message : String(error),
+        }).catch(() => {});
         return { classification: 'unknown', affectedAccounts: 0, recommendation: 'Classificazione non disponibile.' };
     }
 }

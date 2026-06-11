@@ -31,6 +31,38 @@ export async function countRecentIncidents(type: string, sinceHours: number): Pr
     return row ? Number(row.count) : 0;
 }
 
+/**
+ * F3 ai-stack: conta gli account DISTINTI colpiti da un type di incident nelle ultime ore.
+ * Estrazione accountId in JS (non json_extract): portabile SQLite+Postgres senza dialetti.
+ * Le righe filtrate per type+finestra sono poche per costruzione (burst cap giornalieri).
+ */
+export async function countDistinctIncidentAccounts(
+    type: string,
+    sinceHours: number,
+): Promise<{ count: number; accounts: string[] }> {
+    const db = await getDatabase();
+    const since = new Date(Date.now() - sinceHours * 3600000).toISOString();
+    const rows = await db.query<{ details_json: string | null }>(
+        `SELECT details_json FROM account_incidents WHERE type = ? AND opened_at >= ?`,
+        [type, since],
+    );
+    const accounts = new Set<string>();
+    for (const row of rows) {
+        let accountId = 'default';
+        try {
+            const details: unknown = row.details_json ? JSON.parse(row.details_json) : null;
+            const candidate = (details as Record<string, unknown> | null)?.accountId;
+            if (typeof candidate === 'string' && candidate.trim().length > 0) {
+                accountId = candidate.trim();
+            }
+        } catch {
+            // details_json corrotto → l'incident conta come 'default' (non perde il segnale)
+        }
+        accounts.add(accountId);
+    }
+    return { count: accounts.size, accounts: Array.from(accounts).sort() };
+}
+
 export async function listOpenIncidents(): Promise<
     Array<{ id: number; type: string; severity: string; opened_at: string; details_json: string | null }>
 > {
