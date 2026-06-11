@@ -265,7 +265,45 @@ export async function processInboxJob(
                                 resolution.intent !== 'NEGATIVE' &&
                                 replyDuplicateCount === 0;
 
+                            // F3 ai-stack: 5° decision point del cervello (inbox_reply — era l'unico
+                            // senza caller prod). Gate ADDITIVO sopra i rule-based: può solo BLOCCARE
+                            // una auto-reply che sarebbe partita, mai mandarne di più. strict=true:
+                            // risposta AI invalida/errore → NOTIFY_HUMAN, mai PROCEED cieco.
+                            // Valutato PRIMA del pre-incremento cap: un blocco AI non consuma budget.
+                            let aiInboxBlocked = false;
                             if (canAutoReply) {
+                                const { aiDecide } = await import('../ai/aiDecisionEngine');
+                                const { buildSessionSnapshot } = await import('./sessionDataHelper');
+                                const inboxDecision = await aiDecide({
+                                    point: 'inbox_reply',
+                                    strict: true,
+                                    lead: {
+                                        id: lead.id,
+                                        name:
+                                            `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim() || undefined,
+                                        title: lead.job_title ?? undefined,
+                                        company: lead.account_name ?? undefined,
+                                        score: lead.lead_score ?? undefined,
+                                    },
+                                    session: await buildSessionSnapshot(context),
+                                    // Tag reali del prompt distillato (F0.5): qui abbiamo solo i
+                                    // messaggi del lead (theirMessages) → tutti THEM.
+                                    chatMessages: conversationTexts.map((text) => `THEM: ${text}`),
+                                    extra: { intent: resolution.intent, draftConfidence: resolution.confidence },
+                                });
+                                if (inboxDecision.action !== 'PROCEED') {
+                                    aiInboxBlocked = true;
+                                    await logInfo('inbox.auto_reply_ai_blocked', {
+                                        accountId: payload.accountId,
+                                        leadId: lead.id,
+                                        action: inboxDecision.action,
+                                        reason: inboxDecision.reason.substring(0, 80),
+                                        confidence: inboxDecision.confidence,
+                                    });
+                                }
+                            }
+
+                            if (canAutoReply && !aiInboxBlocked) {
                                 // Pre-incremento atomico del cap giornaliero PRIMA del send.
                                 const withinDailyCap = await checkAndIncrementDailyLimit(
                                     today,
