@@ -164,9 +164,10 @@ Per ogni file in `n8n-workflows/`:
 3. `watchdog.json` (monitoring e recovery)
 4. `weekly-lead-report-v2.json` (report settimanale)
 5. `gdpr-retention-cleanup.json` (pulizia automatica lunedì)
-6. `linkedin-detection-monitor.json`
+6. `weekly-safety-reminder.json` (promemoria anti-ban settimanale, lunedì 09:00)
 7. `quality-gate-check.json`
 8. `lead-pipeline-health.json`
+9. `linkedin-detection-sentinel.json` (sentinella detection-news, ogni giorno 06:30 — richiede anche `ANTHROPIC_API_KEY` e `DASHBOARD_API_KEY` nelle env n8n)
 
 ### Configurare la credenziale Telegram in n8n
 

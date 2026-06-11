@@ -92,7 +92,7 @@
 - [ ] n8n installato e configurato (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`)
 - [ ] Workflow DevOps: quality-gate-check, bot-health-check, gdpr-retention-cleanup, weekly-report
 - [ ] Workflow LinkedIn: antiban-review, campaign-analyzer, pre-production-checklist
-- [ ] Workflow monitoring: linkedin-detection-monitor (lunedì 09:00)
+- [ ] Workflow monitoring: weekly-safety-reminder (lunedì 09:00), linkedin-detection-sentinel (detection-news, ogni giorno 06:30)
 - [ ] Nessuna credenziale hardcoded nei JSON — usare `$env.VAR_NAME`
 - [ ] Pre-hook in ogni workflow (valida env, filtra weekend)
 - [ ] Post-hook in ogni workflow (log timestamp + durata + esito)

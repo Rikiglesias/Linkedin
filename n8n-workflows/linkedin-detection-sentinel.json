@@ -1,0 +1,461 @@
+{
+  "name": "LinkedIn — Detection Sentinel",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 6 * * *"
+            }
+          ]
+        }
+      },
+      "id": "ds-trigger",
+      "name": "Trigger: ogni giorno 06:30",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [0, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pre-hook: verifica env vars (pattern repo)\nconst startedAt = new Date().toISOString();\nconst missingVars = [];\nif (!$env.TELEGRAM_BOT_TOKEN) missingVars.push('TELEGRAM_BOT_TOKEN');\nif (!$env.TELEGRAM_CHAT_ID) missingVars.push('TELEGRAM_CHAT_ID');\nif (!$env.DASHBOARD_API_KEY) missingVars.push('DASHBOARD_API_KEY');\nif (!$env.ANTHROPIC_API_KEY) missingVars.push('ANTHROPIC_API_KEY');\nif (missingVars.length > 0) {\n  throw new Error('Pre-hook FAIL — env vars mancanti: ' + missingVars.join(', '));\n}\nreturn [{ json: { startedAt, workflow: 'linkedin-detection-sentinel', ok: true } }];"
+      },
+      "id": "ds-prehook",
+      "name": "Pre-hook: valida env",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [200, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fonti RSS/Atom verificate VIVE 2026-06-11 (goal detection-news, wf_c13bbb76-897).\n// NB Reddit: usare .rss — le varianti .json rispondono 403 a richieste non autenticate (verificato giu 2026).\nconst feeds = [\n  { source: 'expandi', url: 'https://expandi.io/feed/' },\n  { source: 'phantombuster', url: 'https://phantombuster.com/blog/feed/' },\n  { source: 'dux-soup', url: 'https://www.dux-soup.com/blog/rss.xml' },\n  { source: 'dripify', url: 'https://dripify.com/feed/' },\n  { source: 'reddit-banwave-radar', url: 'https://www.reddit.com/search.rss?q=linkedin+%28restricted+OR+banned+OR+%22ban+wave%22+OR+%22account+restricted%22+OR+%22automation+detected%22%29&sort=new&t=week&limit=25' },\n  { source: 'reddit-r-linkedin', url: 'https://www.reddit.com/r/linkedin/search.rss?q=restricted+OR+banned+OR+%22ban+wave%22+OR+automation+OR+detected&restrict_sr=1&sort=new&limit=25' },\n  { source: 'stackoverflow-linkedin-api', url: 'https://stackoverflow.com/feeds/tag?tagnames=linkedin-api&sort=newest' },\n  { source: 'patchright-releases', url: 'https://github.com/Kaliiiiiiiiii-Vinyzu/patchright/releases.atom' },\n  { source: 'phantombuster-status', url: 'https://status.phantombuster.com/history.rss' },\n  { source: 'google-news-detection', url: 'https://news.google.com/rss/search?q=LinkedIn+(scraping+OR+lawsuit+OR+%22account+restricted%22+OR+%22mass+ban%22+OR+automation+detection)&hl=en-US&gl=US&ceid=US:en' },\n  { source: 'courtlistener-linkedin', url: 'https://www.courtlistener.com/feed/search/?q=linkedin&type=r' },\n  { source: 'castle-blog', url: 'https://blog.castle.io/rss/' },\n  { source: 'fingerprint-blog', url: 'https://fingerprint.com/rss.xml' },\n  { source: 'scrapfly-blog', url: 'https://scrapfly.io/blog/feed.xml' }\n];\nreturn feeds.map((f) => ({ json: f }));"
+      },
+      "id": "ds-rss-list",
+      "name": "Fonti RSS (14)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 260]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {}
+      },
+      "id": "ds-rss-fetch",
+      "name": "Fetch RSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [600, 260],
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalizza item RSS → {title, link, guid, date, source}\n// source: derivato dall'hostname del link (i nodi RSS non propagano l'input).\nconst out = [];\nfor (const item of $input.all()) {\n  const j = item.json;\n  const link = j.link || j.guid || '';\n  let host = '';\n  try { host = new URL(link).hostname.replace(/^www\\./, ''); } catch (e) { host = 'unknown'; }\n  out.push({\n    json: {\n      title: String(j.title || '').slice(0, 300),\n      link: String(link).slice(0, 800),\n      guid: String(j.guid || j.id || link || j.title || '').slice(0, 500),\n      date: j.isoDate || j.pubDate || j.pubdate || '',\n      snippet: String(j.contentSnippet || j.content || '').slice(0, 400),\n      source: host,\n      isError: false\n    }\n  });\n}\nreturn out;"
+      },
+      "id": "ds-rss-norm",
+      "name": "Normalizza RSS",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [800, 260]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fonti JSON/scrape verificate VIVE 2026-06-11.\n// HN: query QUOTATA %22linkedin%22 (la typo-tolerance Algolia inquina i risultati senza quote).\nconst apis = [\n  { source: 'hn-linkedin-quoted', url: 'https://hn.algolia.com/api/v1/search_by_date?query=%22linkedin%22&tags=story&numericFilters=points%3E5' },\n  { source: 'hn-linkedin-ban', url: 'https://hn.algolia.com/api/v1/search_by_date?query=linkedin%20ban&tags=story&hitsPerPage=20' },\n  { source: 'github-openoutreach-issues', url: 'https://api.github.com/repos/eracle/OpenOutreach/issues?state=all&sort=created&direction=desc&per_page=20' },\n  { source: 'github-linkedin-mcp-issues', url: 'https://api.github.com/repos/stickerdaniel/linkedin-mcp-server/issues?state=all&sort=created&direction=desc&per_page=20' },\n  { source: 'linkedhelper-wp', url: 'https://www.linkedhelper.com/blog/wp-json/wp/v2/posts?per_page=10&orderby=date&_fields=title,link,date' },\n  { source: 'linkedin-tos', url: 'https://www.linkedin.com/legal/user-agreement' }\n];\nreturn apis.map((a) => ({ json: a }));"
+      },
+      "id": "ds-api-list",
+      "name": "Fonti API (6)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 540]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json, text/html;q=0.9, */*;q=0.8"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "ds-api-fetch",
+      "name": "Fetch API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [600, 540],
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalizza risposte API per SHAPE (nessuna dipendenza dal pairing input/output):\n// - {hits:[...]} → Hacker News Algolia\n// - {html_url, number} → GitHub issue (esclude le PR)\n// - {title:{rendered}} → WordPress REST (LinkedHelper)\n// - string con 'Effective on <data>' → LinkedIn ToS (guid = data: item nuovo SOLO quando la data cambia)\nconst out = [];\nconst push = (o) => out.push({ json: { isError: false, snippet: '', ...o } });\nfor (const item of $input.all()) {\n  const j = item.json;\n  if (j && Array.isArray(j.hits)) {\n    for (const h of j.hits.slice(0, 20)) {\n      push({\n        title: String(h.title || h.story_title || '').slice(0, 300),\n        link: h.url || ('https://news.ycombinator.com/item?id=' + h.objectID),\n        guid: 'hn-' + h.objectID,\n        date: h.created_at || '',\n        source: 'hackernews'\n      });\n    }\n    continue;\n  }\n  if (j && j.html_url && typeof j.number !== 'undefined') {\n    if (j.pull_request) continue;\n    let repo = 'github';\n    try { repo = new URL(j.html_url).pathname.split('/').slice(1, 3).join('/'); } catch (e) { /* keep default */ }\n    push({\n      title: String(j.title || '').slice(0, 300),\n      link: j.html_url,\n      guid: 'gh-' + repo + '-' + j.number,\n      date: j.created_at || '',\n      source: 'github:' + repo\n    });\n    continue;\n  }\n  if (j && j.title && typeof j.title === 'object' && j.title.rendered) {\n    push({\n      title: String(j.title.rendered).slice(0, 300),\n      link: j.link || '',\n      guid: j.link || j.title.rendered,\n      date: j.date || '',\n      source: 'linkedhelper'\n    });\n    continue;\n  }\n  const html = typeof j === 'string' ? j : (typeof j.data === 'string' ? j.data : '');\n  if (html && /user.?agreement|effective on/i.test(html)) {\n    const m = html.match(/Effective on ([A-Z][a-z]+ \\d{1,2}, \\d{4})/);\n    const effective = m ? m[1] : 'unknown';\n    push({\n      title: 'LinkedIn User Agreement — Effective on ' + effective,\n      link: 'https://www.linkedin.com/legal/user-agreement',\n      guid: 'linkedin-tos-' + effective,\n      date: effective,\n      source: 'linkedin-tos'\n    });\n  }\n}\nreturn out;"
+      },
+      "id": "ds-api-norm",
+      "name": "Normalizza API",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [800, 540]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fonte morta: l'error output dei fetch arriva qui. 1 item/giorno per fonte (guid con data)\n// così la fonte rotta resta VISIBILE nel digest senza spammare (fail-visible, non silent).\nconst day = new Date().toISOString().slice(0, 10);\nconst out = [];\nfor (const item of $input.all()) {\n  const j = item.json;\n  const src = (j && (j.source || j.url)) || 'unknown';\n  out.push({\n    json: {\n      title: 'Fonte non raggiungibile: ' + src,\n      link: String(j && j.url ? j.url : ''),\n      guid: 'fetch-error-' + src + '-' + day,\n      date: day,\n      snippet: String((j && (j.error && j.error.message ? j.error.message : j.error)) || 'fetch failed').slice(0, 200),\n      source: src,\n      isError: true\n    }\n  });\n}\nreturn out;"
+      },
+      "id": "ds-dead-source",
+      "name": "Fonte morta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [800, 400]
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "id": "ds-merge",
+      "name": "Merge item",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [1020, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filtro keyword PRE-AI: abbatte il rumore misurato (76-87% su alcune fonti) → token AI solo su item plausibili.\n// Gli item isError passano sempre (devono arrivare al digest).\nconst RX = /(detect|ban\\b|banned|ban wave|restrict|limit|safe|safety|fingerprint|selector|captcha|checkpoint|lawsuit|litigat|court|scrap|automat|\\bbot\\b|bots\\b|stealth|suspend|flagged|lockout|locked|warning|enforce|crackdown|voyager|challenge|anti-?bot|user agreement|effective on)/i;\nconst out = [];\nfor (const item of $input.all()) {\n  const j = item.json;\n  if (j.isError) { out.push(item); continue; }\n  const text = (j.title || '') + ' ' + (j.snippet || '');\n  if (RX.test(text)) out.push(item);\n}\nreturn out;"
+      },
+      "id": "ds-keyword-filter",
+      "name": "Filtro keyword",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1240, 400]
+    },
+    {
+      "parameters": {
+        "operation": "removeItemsSeenInPreviousExecutions",
+        "logic": "removeItemsWithAlreadySeenKeyValues",
+        "dedupeValue": "={{ $json.guid }}",
+        "options": {}
+      },
+      "id": "ds-dedup",
+      "name": "Dedup: solo item mai visti",
+      "type": "n8n-nodes-base.removeDuplicates",
+      "typeVersion": 2,
+      "position": [1460, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggrega gli item NUOVI in un'unica richiesta di classificazione per Claude.\n// Vincolo di prodotto (binding detection-news): la sentinella SEGNALA, non modifica parametri.\nconst items = $input.all().map((i) => i.json);\nconst content = items.filter((j) => !j.isError).slice(0, 60);\nconst dead = items.filter((j) => j.isError);\nconst model = $env.SENTINEL_AI_MODEL || 'claude-sonnet-4-6';\nconst listing = content.map((j, i) => `${i}. [${j.source}] (${j.date}) ${j.title} — ${j.link}`).join('\\n');\nconst body = {\n  model,\n  max_tokens: 4000,\n  system: 'You are a LinkedIn anti-detection news classifier for a self-hosted LinkedIn outreach bot (Playwright-based, residential proxies). Given news/forum/issue items, identify ONLY those signaling changes in LinkedIn bot-detection, enforcement, ban waves, DOM/selector changes, policy/ToS updates, or relevant legal rulings. Respond with ONLY a JSON array (no prose, no markdown fences), one object per RELEVANT item: {\"i\": <index>, \"severity\": \"critical\"|\"high\"|\"medium\"|\"low\", \"impact\": [\"timing\"|\"fingerprint\"|\"proxy\"|\"volume\"|\"selectors\"|\"policy\"|\"legal\"], \"summary\": \"<one line, Italian>\"}. severity=critical ONLY for strong evidence of an ACTIVE enforcement change hitting similar tools NOW (e.g. ongoing ban wave, confirmed new detection rollout). Marketing posts, generic tips, old news: omit. Be conservative: when in doubt, lower severity.',\n  messages: [{ role: 'user', content: listing || '(no items)' }]\n};\nreturn [{ json: {\n  hasContent: content.length > 0,\n  contentItems: content,\n  deadSources: dead,\n  aiRequestBody: body\n} }];"
+      },
+      "id": "ds-prepare-ai",
+      "name": "Prepara analisi",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1680, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "caseSensitive": true,
+            "typeValidation": "strict",
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "ds-hascontent",
+              "leftValue": "={{ $json.hasContent }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "ds-if-content",
+      "name": "Ha item da analizzare?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [1900, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $env.ANTHROPIC_API_KEY }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.aiRequestBody) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "ds-claude",
+      "name": "Claude: classifica",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [2120, 300],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse risposta AI + clamp severity→action (difesa in profondità sul vincolo:\n// pause SOLO per critical; il modello NON può comandare azioni oltre questo mapping).\nconst prep = $('Prepara analisi').first().json;\nconst resp = $input.first().json;\nlet findings = [];\nlet aiError = '';\ntry {\n  if (resp && resp.error) throw new Error(resp.error.message || 'Anthropic API error');\n  let text = resp && resp.content && resp.content[0] ? String(resp.content[0].text || '') : '';\n  text = text.replace(/^```(json)?/m, '').replace(/```\\s*$/m, '').trim();\n  const arr = JSON.parse(text);\n  if (!Array.isArray(arr)) throw new Error('AI response is not a JSON array');\n  const actionOf = { critical: 'pause', high: 'warn', medium: 'log' };\n  findings = arr\n    .filter((f) => f && typeof f.i === 'number' && prep.contentItems[f.i])\n    .filter((f) => ['critical', 'high', 'medium'].includes(f.severity))\n    .map((f) => ({\n      severity: f.severity,\n      action: actionOf[f.severity],\n      impact: Array.isArray(f.impact) ? f.impact.slice(0, 7) : [],\n      summary: String(f.summary || '').slice(0, 300),\n      title: prep.contentItems[f.i].title,\n      url: prep.contentItems[f.i].link,\n      source: prep.contentItems[f.i].source,\n      date: prep.contentItems[f.i].date\n    }));\n} catch (e) {\n  // Fail-VISIBLE: errore di analisi nel digest, NESSUN POST al bot (niente azioni su dati non analizzati).\n  aiError = e.message || String(e);\n}\nconst order = { critical: 0, high: 1, medium: 2 };\nfindings.sort((a, b) => order[a.severity] - order[b.severity]);\nreturn [{ json: { findings, aiError, analyzedCount: prep.contentItems.length, deadSources: prep.deadSources } }];"
+      },
+      "id": "ds-parse-ai",
+      "name": "Parse AI",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2340, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Componi digest WHAT/WHY/DO (L5-LI.1). Arriva o da Parse AI (ramo true) o dall'IF (ramo false).\nconst j = $input.first().json;\nconst findings = j.findings || [];\nconst deadSources = j.deadSources || [];\nconst aiError = j.aiError || '';\nconst analyzedCount = typeof j.analyzedCount === 'number' ? j.analyzedCount : 0;\nconst hasAnything = findings.length > 0 || deadSources.length > 0 || !!aiError;\nconst icon = { critical: '\\uD83D\\uDED1', high: '\\u26A0\\uFE0F', medium: '\\u2139\\uFE0F' };\nlet text = '\\uD83D\\uDEF0 *LinkedIn Detection Sentinel — ' + new Date().toISOString().slice(0, 10) + '*\\n';\nif (findings.length > 0) {\n  text += '\\n*WHAT — segnali rilevati (' + findings.length + ' su ' + analyzedCount + ' nuovi item):*\\n';\n  for (const f of findings.slice(0, 10)) {\n    text += icon[f.severity] + ' *' + f.severity.toUpperCase() + '* [' + f.source + '] ' + f.summary + '\\n' + f.url + '\\n';\n  }\n  text += '\\n*WHY:* fonti monitorate (vendor, community, detection-vendor, legale) segnalano i cambi PRIMA che colpiscano il bot.\\n';\n  const hasPause = findings.some((f) => f.action === 'pause');\n  text += '\\n*DO:* ' + (hasPause\n    ? 'CRITICAL \\u2192 il bot riceve PAUSE difensiva automatica. Verifica subito i link e decidi se prolungare lo stop.'\n    : 'verifica i link entro 24h; se confermati, valuta riduzione volumi / aggiornamento selettori.') + '\\n';\n}\nif (aiError) {\n  text += '\\n\\u274C *Analisi AI fallita:* ' + aiError + ' \\u2192 nessun alert inviato al bot. Controlla ANTHROPIC_API_KEY / il run n8n.\\n';\n}\nif (deadSources.length > 0) {\n  text += '\\n\\uD83D\\uDD0C *Fonti non raggiungibili (' + deadSources.length + '):* ' + deadSources.map((d) => d.source).join(', ') + '\\n*DO:* se persiste per giorni, aggiorna la fonte nel workflow.\\n';\n}\nif (!hasAnything) {\n  text += '\\nNessuna novit\\u00E0 rilevante oggi.';\n}\nreturn [{ json: { hasAnything, digestText: text, findings } }];"
+      },
+      "id": "ds-digest",
+      "name": "Componi digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2560, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "caseSensitive": true,
+            "typeValidation": "strict",
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "ds-hasanything",
+              "leftValue": "={{ $json.hasAnything }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "ds-if-notify",
+      "name": "C'è qualcosa da notificare?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [2780, 400]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ $json.digestText }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "ds-telegram",
+      "name": "Telegram: digest",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [3000, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot",
+          "name": "Telegram Bot"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Un item per finding da inviare al bot (cap 5 anti-flood, ordinati per severity).\n// Vincolo: action gi\\u00E0 clampata in Parse AI (pause solo critical). digest-only se nessun finding.\nconst findings = ($input.first().json.findings || []).slice(0, 5);\nreturn findings.map((f) => ({ json: f }));"
+      },
+      "id": "ds-split-alerts",
+      "name": "Alert per il bot",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3000, 500]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3000/api/linkedin-change-alert",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Api-Key", "value": "={{ $env.DASHBOARD_API_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ severity: $json.severity, source: 'n8n_detection_sentinel:' + $json.source, title: $json.title, url: $json.url, action: $json.action, details: $json.summary }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "ds-post-bot",
+      "name": "POST alert al bot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [3220, 500],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "// Post-hook: logga completamento (pattern repo)\nconst ts = new Date().toISOString();\nconst startedAt = $('Pre-hook: valida env').first().json.startedAt;\nconst durationMs = new Date(ts).getTime() - new Date(startedAt).getTime();\nconsole.log(`[${ts}] linkedin-detection-sentinel completato in ${durationMs}ms`);\nreturn [{ json: { completedAt: ts, durationMs, status: 'ok' } }];"
+      },
+      "id": "ds-posthook",
+      "name": "Post-hook: log completamento",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3220, 300]
+    }
+  ],
+  "connections": {
+    "Trigger: ogni giorno 06:30": {
+      "main": [
+        [{ "node": "Pre-hook: valida env", "type": "main", "index": 0 }]
+      ]
+    },
+    "Pre-hook: valida env": {
+      "main": [
+        [
+          { "node": "Fonti RSS (14)", "type": "main", "index": 0 },
+          { "node": "Fonti API (6)", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Fonti RSS (14)": {
+      "main": [
+        [{ "node": "Fetch RSS", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch RSS": {
+      "main": [
+        [{ "node": "Normalizza RSS", "type": "main", "index": 0 }],
+        [{ "node": "Fonte morta", "type": "main", "index": 0 }]
+      ]
+    },
+    "Normalizza RSS": {
+      "main": [
+        [{ "node": "Merge item", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fonti API (6)": {
+      "main": [
+        [{ "node": "Fetch API", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch API": {
+      "main": [
+        [{ "node": "Normalizza API", "type": "main", "index": 0 }],
+        [{ "node": "Fonte morta", "type": "main", "index": 0 }]
+      ]
+    },
+    "Normalizza API": {
+      "main": [
+        [{ "node": "Merge item", "type": "main", "index": 1 }]
+      ]
+    },
+    "Fonte morta": {
+      "main": [
+        [{ "node": "Merge item", "type": "main", "index": 2 }]
+      ]
+    },
+    "Merge item": {
+      "main": [
+        [{ "node": "Filtro keyword", "type": "main", "index": 0 }]
+      ]
+    },
+    "Filtro keyword": {
+      "main": [
+        [{ "node": "Dedup: solo item mai visti", "type": "main", "index": 0 }]
+      ]
+    },
+    "Dedup: solo item mai visti": {
+      "main": [
+        [{ "node": "Prepara analisi", "type": "main", "index": 0 }]
+      ]
+    },
+    "Prepara analisi": {
+      "main": [
+        [{ "node": "Ha item da analizzare?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Ha item da analizzare?": {
+      "main": [
+        [{ "node": "Claude: classifica", "type": "main", "index": 0 }],
+        [{ "node": "Componi digest", "type": "main", "index": 0 }]
+      ]
+    },
+    "Claude: classifica": {
+      "main": [
+        [{ "node": "Parse AI", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse AI": {
+      "main": [
+        [{ "node": "Componi digest", "type": "main", "index": 0 }]
+      ]
+    },
+    "Componi digest": {
+      "main": [
+        [{ "node": "C'è qualcosa da notificare?", "type": "main", "index": 0 }]
+      ]
+    },
+    "C'è qualcosa da notificare?": {
+      "main": [
+        [
+          { "node": "Telegram: digest", "type": "main", "index": 0 },
+          { "node": "Alert per il bot", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Telegram: digest": {
+      "main": [
+        [{ "node": "Post-hook: log completamento", "type": "main", "index": 0 }]
+      ]
+    },
+    "Alert per il bot": {
+      "main": [
+        [{ "node": "POST alert al bot", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": ["linkedin", "security", "antiban", "daily"]
+}
