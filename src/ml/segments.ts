@@ -30,7 +30,7 @@ export function inferLeadIndustry(
     const combined = `${companyName ?? ''} ${jobTitle ?? ''}`.toLowerCase().trim();
     if (!combined) return 'unknown';
 
-    if (/\b(software|saas|tech|digital|cloud|ai|data|cyber|devops|engineering)\b/.test(combined)) return 'tech';
+    if (/\b(software|saas|tech|technology|digital|cloud|ai|data|cyber|devops|engineering)\b/.test(combined)) return 'tech';
     if (/\b(bank|finance|fintech|insurance|investment|capital|asset|fund)\b/.test(combined)) return 'finance';
     if (/\b(health|medical|pharma|biotech|hospital|clinic|wellness)\b/.test(combined)) return 'healthcare';
     if (/\b(university|school|education|academy|learning|training)\b/.test(combined)) return 'education';
