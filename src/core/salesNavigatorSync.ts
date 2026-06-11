@@ -923,15 +923,25 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
                 }
             }
 
-            if (listRow && !options.dryRun) {
+            if (scraped.scrapeDegraded) {
+                // Scrape fallito (probabile cambio DOM LinkedIn): NON marcare synced né avanzare il
+                // checkpoint, altrimenti la lista verrebbe saltata per SEMPRE nei run futuri. Conta come
+                // errore → success=false + alert, e la lista viene ri-tentata al prossimo run.
+                listReport.errors += 1;
+                report.errors += 1;
+                console.warn(
+                    `[SYNC] Lista "${listName}" NON marcata synced: scrape degradato (0 lead, nessun indicatore di lista-vuota).`,
+                );
+            } else if (listRow && !options.dryRun) {
                 await markSalesNavListSynced(listRow.id);
             }
 
             report.lists.push(listReport);
             allSyncedLeadIds.push(...syncedLeadIds.map((id) => ({ id, listName })));
 
-            // Checkpoint (4.1 fix): persisti nomi liste completate
-            if (!options.dryRun) {
+            // Checkpoint (4.1 fix): persisti nomi liste completate — SOLO se lo scrape non è degradato,
+            // così una lista con scrape fallito resta fuori dal checkpoint e viene ri-tentata.
+            if (!options.dryRun && !scraped.scrapeDegraded) {
                 completedListNames.add(listName);
                 await setRuntimeFlag(checkpointKey, JSON.stringify([...completedListNames])).catch(() => null);
             }

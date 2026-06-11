@@ -35,6 +35,12 @@ export interface SalesNavListScrapeResult {
     candidatesDiscovered: number;
     uniqueCandidates: number;
     leads: SalesNavLeadCandidate[];
+    /**
+     * true se lo scrape è probabilmente FALLITO (selettori LinkedIn cambiati): 0 lead estratti E
+     * nessun indicatore esplicito di lista-vuota. Il caller NON deve marcare la lista come synced né
+     * avanzare il checkpoint (altrimenti la lista verrebbe saltata per sempre) → conta come errore.
+     */
+    scrapeDegraded: boolean;
 }
 
 interface RawLeadCandidate {
@@ -48,6 +54,31 @@ const SALESNAV_LISTS_URL = 'https://www.linkedin.com/sales/lists/people/';
 
 /** Selector combinato per lead card SalesNav (lead + people + profili standard) */
 const LEAD_ANCHOR_SELECTOR = 'a[href*="/sales/lead/"], a[href*="/sales/people/"], a[href*="/in/"]';
+
+/**
+ * Indicatori testuali di lista REALMENTE vuota (multi-locale), per distinguerla da uno scrape FALLITO
+ * (selettori cambiati). Testo > selettore CSS qui: l'empty-state SalesNav cambia markup ma il testo
+ * resta stabile. Se 0 lead ma uno di questi è presente → lista legittimamente vuota, non degradata.
+ */
+const EMPTY_LIST_INDICATORS = [
+    'no results',
+    'no leads',
+    'list is empty',
+    'this list is empty',
+    "you haven't saved any leads",
+    'nessun risultato',
+    'nessun lead',
+    'lista vuota',
+    'aucun résultat',
+    'keine ergebnisse',
+];
+
+/** true se la pagina mostra un indicatore esplicito di lista vuota (vs scrape fallito per DOM cambiato). */
+async function hasEmptyListIndicator(page: Page): Promise<boolean> {
+    const bodyText = (await page.textContent('body').catch(() => '')) ?? '';
+    const lower = bodyText.toLowerCase();
+    return EMPTY_LIST_INDICATORS.some((indicator) => lower.includes(indicator));
+}
 
 /**
  * Log-normal scroll increment: media ~400px con varianza naturale.
@@ -638,8 +669,10 @@ export async function scrapeLeadsFromSalesNavList(
 
     // Re-inject overlay dopo navigazione (DOM distrutto da page.goto) — skip in interactive
     if (!options.interactive) await blockUserInput(page);
-    // Attendi che almeno una lead card appaia prima di iniziare
-    await page.waitForSelector(LEAD_ANCHOR_SELECTOR, { timeout: 15_000 }).catch(() => null);
+    // Attendi che almeno una lead card appaia prima di iniziare. Cattura l'esito: se NON appare,
+    // è un segnale (insieme a 0 lead finali) di scrape degradato / cambio DOM LinkedIn.
+    const anchorAppeared =
+        (await page.waitForSelector(LEAD_ANCHOR_SELECTOR, { timeout: 15_000 }).catch(() => null)) !== null;
 
     const byUrl = new Map<string, SalesNavLeadCandidate>();
     let pagesVisited = 0;
@@ -704,10 +737,20 @@ export async function scrapeLeadsFromSalesNavList(
         if (!options.interactive) await blockUserInput(page);
     }
 
+    // Distingui "lista realmente vuota" da "scrape fallito" (selettori LinkedIn cambiati): degradato se
+    // 0 lead E nessun indicatore esplicito di lista-vuota. anchorAppeared=false rafforza il segnale (log).
+    const scrapeDegraded = byUrl.size === 0 && !(await hasEmptyListIndicator(page));
+    if (scrapeDegraded) {
+        console.warn(
+            `[SYNC] Scrape DEGRADATO: 0 lead e nessun indicatore di lista-vuota ` +
+                `(anchor ${anchorAppeared ? 'apparso' : 'NON apparso'}). Probabile cambio DOM LinkedIn.`,
+        );
+    }
     return {
         pagesVisited,
         candidatesDiscovered,
         uniqueCandidates: byUrl.size,
         leads: Array.from(byUrl.values()).slice(0, leadLimit),
+        scrapeDegraded,
     };
 }
