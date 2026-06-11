@@ -4,6 +4,25 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-11 — ai-stack F2: matrice modello per-tier + vision/computer-use zero-PII di default (`/goal ai-stack`)
+
+### Obiettivo
+F2 del binding `~/todos/ai-stack.md`: modello ottimale per OGNI call-site AI via routing centralizzato config-driven (requisito prodotto multi-tenant), zero model id hardcoded, e applicazione della matrice al ramo vision/computer-use (decisione zero-PII 2026-06-11: gli screenshot NON escono di default). F1 (vision→Fable cloud) dichiarata SUPERSEDED dalla stessa decisione: vision resta locale, la migrazione cloud è opzione futura spenta.
+
+### Interventi (3 chunk L1-verdi)
+- **A `c5f860f`**: tier qualità-prezzo per-purpose — `ANTHROPIC_MODEL_LIGHT` (default Haiku 4.5) per `decoy_terms`/`post_content`; cervello (`decision_engine`/`guardian`/`ai_advisor`) resta su `ANTHROPIC_MODEL` (default Opus 4.8, Fable via env). `resolveAnthropicModelForPurpose` nel registry; `requestAnthropicText` accetta `model` per-richiesta e `aiTextClient` passa `resolution.model` (prima la resolution era solo telemetria). Rimosso default embeddings duplicato in openaiClient. `COMPUTER_USE_MODEL` e `VISION_ALLOW_CLOUD` aggiunti al config.
+- **B `2c81742`** (antiban SICURO): gate `VISION_ALLOW_CLOUD` (default false) + `AI_ALLOW_REMOTE_ENDPOINT` su factory vision e computer-use — PRIMA bastava `OPENAI_API_KEY` e gli screenshot (PII visiva di massa) uscivano verso OpenAI bypassando il gate remoto F0 (zero-P, violazione latente della decisione). Con gate off restano le strategie DOM storiche. `computerUse` legge il model da config + guard difensiva nel task entry; `OpenAIVisionProvider.model` required (rimosso default divergente `gpt-4o`); `VisionSolver` default da config centrale (niente `process.env` diretto); factory su import statico di config (il lazy `require` rompeva ESM nei test; madge 0 cicli). Test sentinella `visionCloudGate` (4 case).
+- **C**: generatore `generate-config-docs.mjs` riparato (regex richiedeva return type esplicito → con `build...() {` generava il doc VUOTO) + reso marker-aware: blocco manuale (`<!-- MANUAL-SECTION-START/END -->`, esempi + note operative) preservato alla rigenerazione invece di distrutto. CONFIG_REFERENCE rigenerato: 8 sezioni allineate al codice (drift recuperato), note operative regen-safe per AI_PROVIDER/ANTHROPIC_*/COMPUTER_USE_MODEL/VISION_ALLOW_CLOUD.
+
+### Costo/1000-azioni (stima, prezzi matrice binding)
+- Tier light (decoy/post, ~1k in + 300 out per call): Opus $12.5 → Haiku **$2.5** (−80%).
+- Cervello: invariato (Opus default, volume basso by-design).
+- Screenshot cloud di default: prima fino a ~$6/giorno di CU (cap 2M token input) + vision per-call con sola `OPENAI_API_KEY`; dopo **$0** (locale) salvo opt-in esplicito.
+- Testi/batch PII: invariati, locali da F0.5.
+
+### Verifica
+conta-problemi exit 0 ad ogni chunk; finale **172 file / 1698 test** (da 171/1690: +1 file sentinella, +8 test). `madge --circular` = 0. Grep model id hardcoded in prod fuori da `config/domains.ts` = **0** (criterio F2 del binding). antiban-review: **SICURO** (nessun timing/volume/fingerprint toccato; di default meno traffico verso terzi durante la sessione LinkedIn).
+
 ## 2026-06-11 — ai-stack F0.5: pseudonimizzazione del cervello, decision_engine cloud-eligible (`/goal ai-stack`)
 
 ### Obiettivo

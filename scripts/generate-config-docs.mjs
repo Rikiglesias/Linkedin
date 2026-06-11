@@ -9,8 +9,24 @@ const outputPath = path.resolve(rootDir, 'docs', 'CONFIG_REFERENCE.md');
 const domainsSource = fs.readFileSync(domainsPath, 'utf8');
 const envSource = fs.readFileSync(envPath, 'utf8');
 
+// Blocco manuale regen-safe: tutto ciò che sta tra i marker nel doc esistente (esempi pratici,
+// note operative) viene preservato alla rigenerazione invece di essere distrutto.
+const MANUAL_START = '<!-- MANUAL-SECTION-START -->';
+const MANUAL_END = '<!-- MANUAL-SECTION-END -->';
+let manualBlock = '';
+if (fs.existsSync(outputPath)) {
+    const existing = fs.readFileSync(outputPath, 'utf8');
+    const startIdx = existing.indexOf(MANUAL_START);
+    const endIdx = existing.indexOf(MANUAL_END);
+    if (startIdx !== -1 && endIdx > startIdx) {
+        manualBlock = existing.slice(startIdx, endIdx + MANUAL_END.length);
+    }
+}
+
 const sections = [];
-const headers = Array.from(domainsSource.matchAll(/export function (build\w+DomainConfig)\([^)]*\):[^\{]*\{/g));
+// Return type opzionale: domains.ts dichiara `build...DomainConfig() {` senza annotazione —
+// la vecchia regex richiedeva `): Tipo {` e con zero match il doc veniva generato VUOTO.
+const headers = Array.from(domainsSource.matchAll(/export function (build\w+DomainConfig)\([^)]*\)\s*(?::[^{]*)?\{/g));
 for (let i = 0; i < headers.length; i += 1) {
     const header = headers[i];
     const functionName = header[1];
@@ -58,6 +74,11 @@ for (const section of sections) {
             lines.push(`- \`${key}\``);
         }
     }
+    lines.push('');
+}
+
+if (manualBlock) {
+    lines.push(manualBlock);
     lines.push('');
 }
 
