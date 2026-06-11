@@ -68,6 +68,32 @@ export function isPiiSensitivePurpose(purpose: AiTextPurpose): boolean {
     return PII_SENSITIVE_PURPOSES[purpose];
 }
 
+/**
+ * F2 ai-stack: tier qualità-prezzo per-purpose sul provider cloud (matrice del binding).
+ * 'brain' = decisioni anti-ban/strategia (qualità critica, volume basso) → anthropicModel (Opus default).
+ * 'light' = generazione no-PII a basso valore decisionale (decoy, warmup post) → anthropicModelLight (Haiku default).
+ * I purpose PII non raggiungono mai il cloud (guard sopra): tier nominale 'brain' per totalità del Record.
+ * Ollama locale resta a modello unico (aiModel): nessun delta di costo da differenziare.
+ */
+const ANTHROPIC_TIER_BY_PURPOSE: Record<AiTextPurpose, 'brain' | 'light'> = {
+    invite_note: 'brain',
+    follow_up: 'brain',
+    reminder: 'brain',
+    lead_scoring: 'brain',
+    lead_cleaning: 'brain',
+    decision_engine: 'brain',
+    sentiment: 'brain',
+    intent: 'brain',
+    decoy_terms: 'light',
+    guardian: 'brain',
+    ai_advisor: 'brain',
+    post_content: 'light',
+};
+
+export function resolveAnthropicModelForPurpose(purpose: AiTextPurpose): string {
+    return ANTHROPIC_TIER_BY_PURPOSE[purpose] === 'light' ? config.anthropicModelLight : config.anthropicModel;
+}
+
 export interface AiProviderResolution {
     provider: AiProviderType;
     reason: string;
@@ -186,11 +212,12 @@ export function resolveAiProvider(purpose: AiTextPurpose): AiProviderResolution 
             };
         }
         // endpoint null = default SDK (api.anthropic.com), non configurabile per design.
+        // F2: model risolto per-tier (brain=Opus default, light=Haiku default).
         return {
             provider: 'anthropic',
             reason: 'anthropic_selected',
             endpoint: null,
-            model: config.anthropicModel,
+            model: resolveAnthropicModelForPurpose(purpose),
             ...base,
         };
     }

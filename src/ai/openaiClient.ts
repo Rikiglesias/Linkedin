@@ -137,7 +137,8 @@ export async function requestOpenAIEmbeddings(input: string): Promise<number[]> 
             method: 'POST',
             headers,
             body: JSON.stringify({
-                model: config.aiEmbeddingModel || 'nomic-embed-text',
+                // F2: default unico in domains.ts (AI_EMBEDDING_MODEL) — niente literal duplicato qui.
+                model: config.aiEmbeddingModel,
                 input: input,
             }),
         },

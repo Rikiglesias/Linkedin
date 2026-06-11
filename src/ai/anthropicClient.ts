@@ -21,6 +21,8 @@ interface AnthropicTextRequest {
     maxOutputTokens: number;
     temperature: number;
     responseFormat?: 'json_object' | 'text';
+    /** F2: model per-tier dal providerRegistry; assente → default config.anthropicModel. */
+    model?: string;
 }
 
 export function isAnthropicConfigured(): boolean {
@@ -82,7 +84,7 @@ export async function requestAnthropicText(input: AnthropicTextRequest): Promise
                 maxRetries: 0,
             });
             return client.messages.create({
-                model: config.anthropicModel,
+                model: input.model ?? config.anthropicModel,
                 max_tokens: input.maxOutputTokens,
                 system,
                 messages: [{ role: 'user', content: input.user }],

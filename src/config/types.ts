@@ -172,6 +172,7 @@ export interface AppConfig {
     aiProvider: AiProviderSelection;
     anthropicApiKey: string;
     anthropicModel: string;
+    anthropicModelLight: string;
     anthropicTimeoutMs: number;
     aiPersonalizationEnabled: boolean;
     aiSentimentEnabled: boolean;
@@ -330,6 +331,8 @@ export interface AppConfig {
     visionProvider: 'auto' | 'local-first' | 'openai' | 'ollama';
     visionModelOpenai: string;
     visionModelOllama: string;
+    computerUseModel: string;
+    visionAllowCloud: boolean;
     visionBudgetMaxUsd: number;
     visionRedactScreenshots: boolean;
     visionTemperature: number;

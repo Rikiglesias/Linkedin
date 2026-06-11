@@ -92,6 +92,15 @@ describe('aiTextClient — dispatch', () => {
             'ai_text.cloud_dispatch',
             expect.objectContaining({ purpose: 'guardian', provider: 'anthropic', model: 'claude-opus-4-8' }),
         );
+        // F2: il model per-tier della resolution viene passato al client (eseguito, non solo loggato)
+        expect(mocks.requestAnthropicText).toHaveBeenCalledWith(expect.objectContaining({ model: 'claude-opus-4-8' }));
+    });
+
+    it('F2: resolution senza model (null) → client chiamato senza override (default config)', async () => {
+        mocks.resolution = resolution({ provider: 'anthropic', model: null });
+        mocks.requestAnthropicText.mockResolvedValue('ok');
+        await requestAiText(baseRequest);
+        expect(mocks.requestAnthropicText).toHaveBeenCalledWith(expect.objectContaining({ model: undefined }));
     });
 
     it('provider template → throw AiProviderUnavailableError tipizzato con reason', async () => {

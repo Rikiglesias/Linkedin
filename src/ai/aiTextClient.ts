@@ -66,7 +66,8 @@ export async function requestAiText(input: AiTextRequest): Promise<string> {
                 model: resolution.model,
                 reason: resolution.reason,
             });
-            return requestAnthropicText(request);
+            // F2: il model per-tier risolto dal registry viene eseguito davvero (non solo telemetria).
+            return requestAnthropicText({ ...request, model: resolution.model ?? undefined });
         }
         case 'openai':
         case 'ollama':

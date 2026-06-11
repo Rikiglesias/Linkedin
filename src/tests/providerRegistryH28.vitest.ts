@@ -13,6 +13,7 @@ const { mockConfig, mockState } = vi.hoisted(() => ({
         aiProvider: 'auto' as string,
         anthropicApiKey: '',
         anthropicModel: 'claude-opus-4-8',
+        anthropicModelLight: 'claude-haiku-4-5-20251001',
     },
     mockState: {
         openAIConfigured: true,
@@ -56,6 +57,7 @@ beforeEach(() => {
     mockConfig.aiProvider = 'auto';
     mockConfig.anthropicApiKey = '';
     mockConfig.anthropicModel = 'claude-opus-4-8';
+    mockConfig.anthropicModelLight = 'claude-haiku-4-5-20251001';
     mockState.openAIConfigured = true;
     mockState.circuitOpen = false;
     mockState.anthropicConfigured = false;
@@ -282,6 +284,33 @@ describe('providerRegistry — AI_PROVIDER anthropic/esplicito', () => {
         const result = resolveAiProvider('guardian');
         expect(result.provider).toBe('ollama');
         expect(result.reason).toBe('explicit_ollama');
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// F2 ai-stack: tier qualità-prezzo per-purpose sul ramo anthropic
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('providerRegistry — F2 tier per-purpose (anthropic)', () => {
+    beforeEach(() => {
+        mockConfig.aiProvider = 'anthropic';
+        mockState.anthropicConfigured = true;
+    });
+
+    it('cervello (decision_engine, guardian, ai_advisor) → anthropicModel (tier brain)', () => {
+        expect(resolveAiProvider('decision_engine').model).toBe('claude-opus-4-8');
+        expect(resolveAiProvider('guardian').model).toBe('claude-opus-4-8');
+        expect(resolveAiProvider('ai_advisor').model).toBe('claude-opus-4-8');
+    });
+
+    it('generazione no-PII a basso valore (decoy_terms, post_content) → anthropicModelLight', () => {
+        expect(resolveAiProvider('decoy_terms').model).toBe('claude-haiku-4-5-20251001');
+        expect(resolveAiProvider('post_content').model).toBe('claude-haiku-4-5-20251001');
+    });
+
+    it('override env del tier light rispettato (config-driven, multi-tenant)', () => {
+        mockConfig.anthropicModelLight = 'claude-sonnet-4-6';
+        expect(resolveAiProvider('decoy_terms').model).toBe('claude-sonnet-4-6');
     });
 });
 

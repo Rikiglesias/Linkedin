@@ -259,6 +259,9 @@ export function buildAiDomainConfig() {
         aiProvider: parseAiProviderEnv('AI_PROVIDER', 'auto'),
         anthropicApiKey: parseStringEnv('ANTHROPIC_API_KEY'),
         anthropicModel: parseStringEnv('ANTHROPIC_MODEL', 'claude-opus-4-8'),
+        // F2 ai-stack: tier "light" per i purpose no-PII a basso valore decisionale
+        // (decoy_terms, post_content): qualità sufficiente a ~1/5 del costo del cervello.
+        anthropicModelLight: parseStringEnv('ANTHROPIC_MODEL_LIGHT', 'claude-haiku-4-5-20251001'),
         // Timeout dedicato: il default 12s di AI_REQUEST_TIMEOUT_MS è tarato su Ollama locale,
         // troppo stretto per reasoning cloud. Applicato dal costruttore SDK (executeWithRetryPolicy non ha timeout).
         anthropicTimeoutMs: Math.max(5000, parseIntEnv('ANTHROPIC_TIMEOUT_MS', 60000)),
@@ -392,6 +395,12 @@ export function buildVisionDomainConfig() {
         })(),
         visionModelOpenai: parseStringEnv('VISION_MODEL_OPENAI', 'gpt-5.4'),
         visionModelOllama: parseStringEnv('VISION_MODEL_OLLAMA', parseStringEnv('VISION_MODEL', 'llava-llama3:8b')),
+        // F2 ai-stack: model id computer-use centralizzato (era costante hardcoded in computerUse.ts).
+        computerUseModel: parseStringEnv('COMPUTER_USE_MODEL', 'gpt-5.4'),
+        // F2 ai-stack (decisione zero-PII 2026-06-11): gli screenshot LinkedIn/SalesNav sono PII
+        // visiva di massa — NON escono verso cloud di default. Vision/computer-use cloud = opt-in
+        // esplicito (oltre ad AI_ALLOW_REMOTE_ENDPOINT), attivabile solo con DPA/zero-retention a posto.
+        visionAllowCloud: parseBoolEnv('VISION_ALLOW_CLOUD', false),
         visionBudgetMaxUsd: Math.max(0, parseFloatEnv('VISION_BUDGET_MAX_USD', 0)),
         visionRedactScreenshots: parseBoolEnv('VISION_REDACT_SCREENSHOTS', false),
         visionTemperature: Math.min(1, Math.max(0, parseFloatEnv('VISION_TEMPERATURE', 0.1))),
