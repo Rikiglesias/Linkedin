@@ -12,9 +12,9 @@
  * resta nei call-site: qui un gate globale regredirebbe i consumer non-personalization.
  *
  * H28: circuit breaker OpenAI aperto → fallback Ollama/template senza retry inutili.
- * LIMITE NOTO (fix in F4): il ramo openai_circuit_open_ollama_fallback con
- * OLLAMA_FALLBACK_URL separato è risolvibile ma NON eseguibile da requestOpenAIText
- * (baseUrl hardcoded + circuitKey 'openai.chat' condiviso → CircuitOpenError immediato).
+ * F4 (2026-06-11): il ramo openai_circuit_open_ollama_fallback è ESEGUIBILE — aiTextClient
+ * passa endpoint/model della resolution a requestOpenAIText, che usa il fallback URL con
+ * integration/circuitKey dedicate ('ollama.fallback.chat', non più strangolato da openai.chat).
  *
  * NOTA: importa da integrationPolicy per lo stato del circuit breaker.
  * Nessuna circular dependency (integrationPolicy non importa da ai/).

@@ -74,8 +74,26 @@ describe('aiTextClient — dispatch', () => {
             maxOutputTokens: 200,
             temperature: 0.3,
             responseFormat: 'json_object',
+            // F4: resolution senza endpoint/model → nessun override, il client usa i default config
+            baseUrl: undefined,
+            model: undefined,
         });
         expect(mocks.requestAnthropicText).not.toHaveBeenCalled();
+    });
+
+    it('F4 H28: resolution con endpoint/model (fallback Ollama) → passati al client ed ESEGUITI', async () => {
+        mocks.resolution = resolution({
+            provider: 'ollama',
+            reason: 'openai_circuit_open_ollama_fallback',
+            endpoint: 'http://127.0.0.1:11434/v1',
+            model: 'llama3.1:8b',
+        });
+        mocks.requestOpenAIText.mockResolvedValue('ok-fallback');
+        const out = await requestAiText(baseRequest);
+        expect(out).toBe('ok-fallback');
+        expect(mocks.requestOpenAIText).toHaveBeenCalledWith(
+            expect.objectContaining({ baseUrl: 'http://127.0.0.1:11434/v1', model: 'llama3.1:8b' }),
+        );
     });
 
     it('provider anthropic → delega a requestAnthropicText + audit cloud_dispatch', async () => {

@@ -71,10 +71,14 @@ export async function requestAiText(input: AiTextRequest): Promise<string> {
         }
         case 'openai':
         case 'ollama':
-            // Delega a requestOpenAIText che si auto-risolve endpoint/model (green mode incluso):
-            // resolution.endpoint/model qui sono telemetria. Il ramo H28 con OLLAMA_FALLBACK_URL
-            // separato resta non eseguibile in F0 (vedi nota in providerRegistry, fix F4).
-            return requestOpenAIText(request);
+            // F4: endpoint/model della resolution vengono ESEGUITI (prima erano solo telemetria).
+            // Abilita il ramo H28 openai_circuit_open_ollama_fallback: il client usa il fallback
+            // URL con circuit key dedicata invece di morire sul breaker openai.chat aperto.
+            return requestOpenAIText({
+                ...request,
+                baseUrl: resolution.endpoint ?? undefined,
+                model: resolution.model ?? undefined,
+            });
         case 'template':
             throw new AiProviderUnavailableError(input.purpose, resolution.reason);
     }

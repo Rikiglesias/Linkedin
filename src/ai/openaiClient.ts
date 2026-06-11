@@ -7,6 +7,10 @@ interface OpenAITextRequest {
     maxOutputTokens: number;
     temperature: number;
     responseFormat?: 'json_object' | 'text';
+    /** F4: endpoint risolto dal registry (es. ramo H28 OLLAMA_FALLBACK_URL); assente → config.openaiBaseUrl. */
+    baseUrl?: string;
+    /** F4: model risolto dal registry; assente → resolveAiModel() (green mode incluso). */
+    model?: string;
 }
 
 function isLocalAiEndpoint(baseUrl: string): boolean {
@@ -55,7 +59,11 @@ export function isOpenAIConfigured(): boolean {
 }
 
 export async function requestOpenAIText(input: OpenAITextRequest): Promise<string> {
-    const localEndpoint = isLocalAiEndpoint(config.openaiBaseUrl);
+    // F4: endpoint/model della resolution vengono eseguiti davvero. Il ramo H28
+    // (breaker openai.chat aperto → OLLAMA_FALLBACK_URL) era irraggiungibile: baseUrl
+    // hardcoded su config + circuitKey condiviso → CircuitOpenError immediato.
+    const baseUrl = input.baseUrl?.trim() || config.openaiBaseUrl;
+    const localEndpoint = isLocalAiEndpoint(baseUrl);
     if (!config.aiAllowRemoteEndpoint && !localEndpoint) {
         throw new Error(
             'Endpoint AI remoto bloccato: imposta OPENAI_BASE_URL su localhost oppure AI_ALLOW_REMOTE_ENDPOINT=true.',
@@ -72,15 +80,18 @@ export async function requestOpenAIText(input: OpenAITextRequest): Promise<strin
         headers.authorization = `Bearer ${config.openaiApiKey}`;
     }
 
-    const model = resolveAiModel();
+    const model = input.model?.trim() || resolveAiModel();
     // GPT-4o+ / GPT-5+ richiedono max_completion_tokens; modelli legacy usano max_tokens
     const usesCompletionTokens = /^(gpt-[45]\.|o[1-9]|chatgpt-)/i.test(model);
     const tokenParam = usesCompletionTokens
         ? { max_completion_tokens: input.maxOutputTokens }
         : { max_tokens: input.maxOutputTokens };
 
+    // F4: l'endpoint di fallback ha integration/circuitKey DEDICATE — il breaker aperto
+    // di openai.chat non deve strangolare il fallback, e il fallback ha il SUO breaker.
+    const isFallbackEndpoint = baseUrl !== config.openaiBaseUrl;
     const response = await fetchWithRetryPolicy(
-        safeJoinUrl(config.openaiBaseUrl, '/chat/completions'),
+        safeJoinUrl(baseUrl, '/chat/completions'),
         {
             method: 'POST',
             headers,
@@ -96,8 +107,8 @@ export async function requestOpenAIText(input: OpenAITextRequest): Promise<strin
             }),
         },
         {
-            integration: 'openai.chat_completion',
-            circuitKey: 'openai.chat',
+            integration: isFallbackEndpoint ? 'ollama.fallback_chat_completion' : 'openai.chat_completion',
+            circuitKey: isFallbackEndpoint ? 'ollama.fallback.chat' : 'openai.chat',
             timeoutMs: config.aiRequestTimeoutMs,
         },
     );
