@@ -106,6 +106,9 @@ docs/archive/TODO.md
 # Added by code-review-graph
 .code-review-graph/
 
+# Knowledge graph generato (rigenerabile con `graphify update .`)
+graphify-out/
+
 # Tool di sviluppo AI/Claude (non fanno parte del progetto LinkedIn)
 tools/
 

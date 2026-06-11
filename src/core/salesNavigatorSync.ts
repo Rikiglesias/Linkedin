@@ -599,7 +599,20 @@ async function postSyncEnrichment(
     return enrichReport;
 }
 
-export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptions): Promise<SalesNavigatorSyncReport> {
+// ── G5-F3 Tier1: setup estratto da runSalesNavigatorListSync (split god-function) ──────────
+// Helper con contratto esplicito e zero stato condiviso: ricevono ciò che usano, ritornano ciò
+// che producono. Comportamento INVARIATO (move-only, zero-Q regression-safe).
+
+interface ResolvedSyncTarget {
+    /** URL http(s) valido da navigare direttamente; null se l'input non era un URL. */
+    explicitListUrl: string | null;
+    /** Filtro-nome sulle liste scoperte (anche quando l'utente digita un nome nel campo URL). */
+    listFilter: string | null;
+    maxPages: number;
+    maxLeadsPerList: number;
+}
+
+function resolveSyncTarget(options: SalesNavigatorSyncOptions): ResolvedSyncTarget {
     const rawListUrl = cleanText(options.listUrl) || null;
     // Robustezza: SOLO un URL http(s) valido può finire in page.goto. Se nel campo URL arriva un
     // valore non-URL (es. l'utente ha digitato il NOME della lista nel prompt URL) NON ci si naviga
@@ -612,17 +625,26 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
         );
     }
     const listFilter = cleanText(options.listName) || (rawListUrl && !explicitListUrl ? rawListUrl : '') || null;
-    const maxPages = Math.max(1, options.maxPages);
-    const maxLeadsPerList = Math.max(1, options.maxLeadsPerList);
-    const account = getAccountProfileById(options.accountId);
-
-    const report: SalesNavigatorSyncReport = {
-        accountId: account.id,
-        dryRun: options.dryRun,
+    return {
+        explicitListUrl,
         listFilter,
+        maxPages: Math.max(1, options.maxPages),
+        maxLeadsPerList: Math.max(1, options.maxLeadsPerList),
+    };
+}
+
+function initSalesNavigatorSyncReport(
+    accountId: string,
+    dryRun: boolean,
+    target: ResolvedSyncTarget,
+): SalesNavigatorSyncReport {
+    return {
+        accountId,
+        dryRun,
+        listFilter: target.listFilter,
         listDiscoveryCount: 0,
-        maxPages,
-        maxLeadsPerList,
+        maxPages: target.maxPages,
+        maxLeadsPerList: target.maxLeadsPerList,
         pagesVisited: 0,
         candidatesDiscovered: 0,
         uniqueCandidates: 0,
@@ -648,12 +670,14 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
         dbAfter: null,
         durationMs: 0,
     };
+}
 
-    const startTime = Date.now();
-    report.dbBefore = await takeDbSnapshot().catch(() => null);
-
-    const interactive = options.interactive === true;
-    const noProxy = options.noProxy === true;
+async function launchOrReuseSession(
+    options: SalesNavigatorSyncOptions,
+    account: ReturnType<typeof getAccountProfileById>,
+    interactive: boolean,
+    noProxy: boolean,
+): Promise<{ session: BrowserSession; ownsBrowser: boolean }> {
     // Se una sessione esistente è fornita dall'esterno, riusala (evita doppio browser)
     const ownsBrowser = !options.existingSession;
     const session =
@@ -665,55 +689,83 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
             bypassProxy: noProxy,
             forceDesktop: true,
         }));
+    return { session, ownsBrowser };
+}
+
+/** Verifica login; su cookie scaduti con utente al terminale attende il login manuale. Throw se non autenticato. */
+async function ensureLoggedInOrAwaitManual(
+    session: BrowserSession,
+    accountId: string,
+    interactive: boolean,
+): Promise<void> {
+    let loggedIn = await checkLogin(session.page);
+    if (!loggedIn) {
+        // Cookie scaduti: se c'è un utente davanti al terminale, aspetta il login manuale.
+        // Non serve il flag --interactive — basta che sia un TTY.
+        const { isInteractiveTTY } = await import('../cli/stdinHelper');
+        if (interactive || isInteractiveTTY()) {
+            const currentUrl = session.page.url().toLowerCase();
+            if (!currentUrl.includes('/login')) {
+                await session.page
+                    .goto('https://www.linkedin.com/login', { waitUntil: 'domcontentloaded', timeout: 15_000 })
+                    .catch(() => null);
+            }
+            console.log('\n  [LOGIN] Cookie scaduti. Fai login nel browser — hai 5 minuti.\n');
+            loggedIn = await awaitManualLogin(session.page, 'salesnav-sync', { timeoutMs: 5 * 60 * 1000 });
+        }
+    }
+    if (!loggedIn) {
+        throw new Error(`Sales Navigator sync: sessione non autenticata (account=${accountId}).`);
+    }
+}
+
+async function applyWarmupAndInputBlock(session: BrowserSession, accountId: string, interactive: boolean): Promise<void> {
+    // Warmup sessione: simula navigazione umana (feed, notifiche) prima di operare su SalesNav.
+    // Un utente reale non apre LinkedIn e va dritto su una lista SalesNav.
+    if (!interactive) {
+        try {
+            const { warmupSession } = await import('./sessionWarmer');
+            const lastSessionEndedAt = await getRuntimeFlag(`browser_session_ended_at:${accountId}`).catch(
+                () => null,
+            );
+            await warmupSession(session.page, lastSessionEndedAt);
+        } catch (warmupErr) {
+            console.warn(
+                `[WARN] Warmup fallito: ${warmupErr instanceof Error ? warmupErr.message : String(warmupErr)}`,
+            );
+        }
+    }
+
+    // blockUserInput solo in modalità automatica — in interactive l'utente deve poter usare il mouse
+    if (!interactive) {
+        enableWindowClickThrough(session.browser);
+        await blockUserInput(session.page);
+    }
+    if (interactive) {
+        console.log('[OK] Login rilevato. Avvio sync lista (mouse libero)...');
+    }
+}
+
+export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptions): Promise<SalesNavigatorSyncReport> {
+    const target = resolveSyncTarget(options);
+    const { explicitListUrl, listFilter, maxPages, maxLeadsPerList } = target;
+    const account = getAccountProfileById(options.accountId);
+
+    const report = initSalesNavigatorSyncReport(account.id, options.dryRun, target);
+
+    const startTime = Date.now();
+    report.dbBefore = await takeDbSnapshot().catch(() => null);
+
+    const interactive = options.interactive === true;
+    const noProxy = options.noProxy === true;
+    const { session, ownsBrowser } = await launchOrReuseSession(options, account, interactive, noProxy);
 
     let browserClosed = false;
     const allSyncedLeadIds: Array<{ id: number; listName: string }> = [];
 
     try {
-        let loggedIn = await checkLogin(session.page);
-        if (!loggedIn) {
-            // Cookie scaduti: se c'è un utente davanti al terminale, aspetta il login manuale.
-            // Non serve il flag --interactive — basta che sia un TTY.
-            const { isInteractiveTTY } = await import('../cli/stdinHelper');
-            if (interactive || isInteractiveTTY()) {
-                const currentUrl = session.page.url().toLowerCase();
-                if (!currentUrl.includes('/login')) {
-                    await session.page
-                        .goto('https://www.linkedin.com/login', { waitUntil: 'domcontentloaded', timeout: 15_000 })
-                        .catch(() => null);
-                }
-                console.log('\n  [LOGIN] Cookie scaduti. Fai login nel browser — hai 5 minuti.\n');
-                loggedIn = await awaitManualLogin(session.page, 'salesnav-sync', { timeoutMs: 5 * 60 * 1000 });
-            }
-        }
-        if (!loggedIn) {
-            throw new Error(`Sales Navigator sync: sessione non autenticata (account=${account.id}).`);
-        }
-
-        // Warmup sessione: simula navigazione umana (feed, notifiche) prima di operare su SalesNav.
-        // Un utente reale non apre LinkedIn e va dritto su una lista SalesNav.
-        if (!interactive) {
-            try {
-                const { warmupSession } = await import('./sessionWarmer');
-                const lastSessionEndedAt = await getRuntimeFlag(`browser_session_ended_at:${account.id}`).catch(
-                    () => null,
-                );
-                await warmupSession(session.page, lastSessionEndedAt);
-            } catch (warmupErr) {
-                console.warn(
-                    `[WARN] Warmup fallito: ${warmupErr instanceof Error ? warmupErr.message : String(warmupErr)}`,
-                );
-            }
-        }
-
-        // blockUserInput solo in modalità automatica — in interactive l'utente deve poter usare il mouse
-        if (!interactive) {
-            enableWindowClickThrough(session.browser);
-            await blockUserInput(session.page);
-        }
-        if (interactive) {
-            console.log('[OK] Login rilevato. Avvio sync lista (mouse libero)...');
-        }
+        await ensureLoggedInOrAwaitManual(session, account.id, interactive);
+        await applyWarmupAndInputBlock(session, account.id, interactive);
 
         let targetLists: SalesNavSavedList[] = [];
         let allDiscoveredNames: string[] = [];
