@@ -4,6 +4,20 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-11 — sync-list-fix G5-F3 + G4-parte2 + G3-LOW: split god-function + characterization (`/goal sync-list-fix`)
+
+### Obiettivo
+Chiudere i residui del piano groovy-coalescing-bachman: split di `runSalesNavigatorListSync` (Tier1+Tier2), characterization test sulle unità estratte, decisione sui conteggi G3-LOW.
+
+### Interventi
+- **F3 split (4 commit move-only, ogni chunk L1-verde a 166/1610 = baseline)**: Tier1 `fc67b5c` (resolveSyncTarget, initSalesNavigatorSyncReport, launchOrReuseSession, ensureLoggedInOrAwaitManual, applyWarmupAndInputBlock) + `64b210f` (restoreListCheckpoint, closeOwnedBrowser — dedup success-path/finally, capturePostSyncMetrics); Tier2 `83af88f` (discoverAndFilterLists, orchestrateEnrichmentByList) + `14a5e88` (processSingleListSync con contratto `SingleListSyncOutcome {challengeAborted, scrapeDegraded}`, upsertLeadBatch unit-testabile). La funzione è ora orchestratore sottile (~95 righe); aggregazione report spostata al caller (totali identici — su throw il report non è osservabile). Nota zero-M: «994 righe» dell'audit era il FILE, la funzione era ~414.
+- **G4-parte2** `92d7b37`: `salesNavSyncSplit.vitest.ts` (15 test) su resolveSyncTarget / restoreListCheckpoint / upsertLeadBatch / processSingleListSync; export mirati marcati "characterization".
+- **G3-LOW** (zero-C.10): consumer verificati = SOLO display/telemetria (formatFinalReport + `candidati_trovati/unici` syncListService:280) → JSDoc semantica esplicita sui campi (lordo anchor DOM; unici per-lista non cross-lista); scartati campo-dedup nuovo e cambio numeri (comparabilità storica).
+- Igiene: `graphify-out/` → .gitignore (artefatto rigenerabile).
+
+### Verifica
+6× `conta-problemi` exit 0 nel blocco; finale **167 file / 1625 test** (+1 file, +15 vs baseline). antiban SICURO su tutti i chunk (refactor puro move-only). Residui goal = SOLO leve utente: repro E2E G1 (LinkedIn-live) + decisione Vision.
+
 ## 2026-06-11 — sync-list-fix G5-F2: quarantena per-account (`/goal sync-list-fix`, piano groovy-coalescing-bachman)
 
 ### Obiettivo

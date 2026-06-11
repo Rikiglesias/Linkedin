@@ -52,7 +52,9 @@ export interface SalesNavigatorSyncListReport {
     listName: string;
     listUrl: string;
     pagesVisited: number;
+    /** Conteggio LORDO degli anchor DOM visti durante lo scrape (può superare i lead reali). Solo telemetria/display. */
     candidatesDiscovered: number;
+    /** Dedup per linkedinUrl DENTRO la singola lista. Solo telemetria/display. */
     uniqueCandidates: number;
     inserted: number;
     updated: number;
@@ -97,7 +99,13 @@ export interface SalesNavigatorSyncReport {
     maxPages: number;
     maxLeadsPerList: number;
     pagesVisited: number;
+    /** Somma dei lordi per-lista (anchor DOM, può superare i lead reali). Solo telemetria/display (G3-LOW). */
     candidatesDiscovered: number;
+    /**
+     * Somma degli unici PER-LISTA: un lead presente in 2+ liste è contato una volta per lista
+     * (NON è un dedup cross-lista). Solo telemetria/display — nessun consumer decisionale (G3-LOW:
+     * verificato 2026-06-11, consumer = formatFinalReport + payload candidati_unici di syncListService).
+     */
     uniqueCandidates: number;
     inserted: number;
     updated: number;
