@@ -1,6 +1,7 @@
 import path from 'path';
 import { AccountProfileConfig } from './types';
 import {
+    parseAiProviderEnv,
     parseBoolEnv,
     parseCsvEnv,
     parseEventSyncSinkEnv,
@@ -254,6 +255,13 @@ export function buildAiDomainConfig() {
         ollamaFallbackUrl: parseStringEnv('OLLAMA_FALLBACK_URL', ''),
         aiAllowRemoteEndpoint: parseBoolEnv('AI_ALLOW_REMOTE_ENDPOINT', false),
         aiRequestTimeoutMs: Math.max(1000, parseIntEnv('AI_REQUEST_TIMEOUT_MS', 12000)),
+        // F0 ai-stack: selezione provider per-deployment + credenziali Anthropic (mai hardcoded).
+        aiProvider: parseAiProviderEnv('AI_PROVIDER', 'auto'),
+        anthropicApiKey: parseStringEnv('ANTHROPIC_API_KEY'),
+        anthropicModel: parseStringEnv('ANTHROPIC_MODEL', 'claude-opus-4-8'),
+        // Timeout dedicato: il default 12s di AI_REQUEST_TIMEOUT_MS è tarato su Ollama locale,
+        // troppo stretto per reasoning cloud. Applicato dal costruttore SDK (executeWithRetryPolicy non ha timeout).
+        anthropicTimeoutMs: Math.max(5000, parseIntEnv('ANTHROPIC_TIMEOUT_MS', 60000)),
         aiPersonalizationEnabled: parseBoolEnv('AI_PERSONALIZATION_ENABLED', false),
         aiSentimentEnabled: parseBoolEnv('AI_SENTIMENT_ENABLED', false),
         inboxAutoReplyEnabled: parseBoolEnv('INBOX_AUTO_REPLY_ENABLED', false),

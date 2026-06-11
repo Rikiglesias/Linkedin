@@ -89,6 +89,7 @@
     "license": "UNLICENSED",
     "type": "commonjs",
     "dependencies": {
+        "@anthropic-ai/sdk": "^0.104.1",
         "@sentry/node": "^10.46.0",
         "@supabase/supabase-js": "^2.100.1",
         "camoufox-js": "^0.9.3",

@@ -1,6 +1,8 @@
 export type EventSyncTarget = 'SUPABASE' | 'WEBHOOK';
 export type EventSyncSink = EventSyncTarget | 'NONE' | 'BOTH';
 export type ProxyType = 'mobile' | 'residential' | 'unknown';
+/** Selezione provider AI testuale per-deployment. 'auto' = chain dinamica (comportamento storico). */
+export type AiProviderSelection = 'auto' | 'anthropic' | 'openai' | 'ollama' | 'template';
 
 export interface AccountProfileConfig {
     id: string;
@@ -167,6 +169,10 @@ export interface AppConfig {
     ollamaFallbackUrl: string;
     aiAllowRemoteEndpoint: boolean;
     aiRequestTimeoutMs: number;
+    aiProvider: AiProviderSelection;
+    anthropicApiKey: string;
+    anthropicModel: string;
+    anthropicTimeoutMs: number;
     aiPersonalizationEnabled: boolean;
     aiSentimentEnabled: boolean;
     inboxAutoReplyEnabled: boolean;

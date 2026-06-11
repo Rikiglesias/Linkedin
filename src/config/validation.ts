@@ -59,6 +59,15 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
         when: (cfg) => cfg.inviteNoteMode === 'ai' && !cfg.aiPersonalizationEnabled,
     },
     {
+        message: '[CONFIG] AI_PROVIDER=anthropic ma ANTHROPIC_API_KEY è mancante',
+        when: (cfg) => cfg.aiProvider === 'anthropic' && !cfg.anthropicApiKey,
+    },
+    {
+        message:
+            '[CONFIG] AI_PROVIDER=anthropic richiede AI_ALLOW_REMOTE_ENDPOINT=true (Anthropic è un endpoint cloud)',
+        when: (cfg) => cfg.aiProvider === 'anthropic' && !cfg.aiAllowRemoteEndpoint,
+    },
+    {
         message: '[CONFIG] USE_JA3_PROXY=true ma JA3_FINGERPRINT è vuoto',
         when: (cfg) => cfg.useJa3Proxy && !cfg.ja3Fingerprint,
     },

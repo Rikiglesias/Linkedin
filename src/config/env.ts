@@ -1,7 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
-import { AccountProfileConfig, EventSyncSink, ProxyType } from './types';
+import { AccountProfileConfig, AiProviderSelection, EventSyncSink, ProxyType } from './types';
 
 const DOCKER_SECRETS_DIR = '/run/secrets';
 
@@ -109,6 +109,14 @@ export function resolvePathFromEnv(name: string, fallbackRelativePath: string): 
 export function parseEventSyncSinkEnv(name: string, fallback: EventSyncSink): EventSyncSink {
     const raw = parseStringEnv(name, fallback).toUpperCase();
     if (raw === 'SUPABASE' || raw === 'WEBHOOK' || raw === 'NONE' || raw === 'BOTH') {
+        return raw;
+    }
+    return fallback;
+}
+
+export function parseAiProviderEnv(name: string, fallback: AiProviderSelection): AiProviderSelection {
+    const raw = parseStringEnv(name, fallback).toLowerCase();
+    if (raw === 'auto' || raw === 'anthropic' || raw === 'openai' || raw === 'ollama' || raw === 'template') {
         return raw;
     }
     return fallback;
