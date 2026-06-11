@@ -746,6 +746,49 @@ async function applyWarmupAndInputBlock(session: BrowserSession, accountId: stri
     }
 }
 
+/**
+ * Carica il checkpoint liste-completate. Salva i NOMI delle liste (4.1 fix), non l'indice
+ * numerico che è fragile se le liste cambiano ordine/quantità. Checkpoint corrotto → riparte
+ * da zero con warning (mai crash).
+ */
+async function restoreListCheckpoint(
+    accountId: string,
+    listName: string | null | undefined,
+): Promise<{ checkpointKey: string; completedListNames: Set<string> }> {
+    const checkpointKey = `sync_list_checkpoint:${accountId}:${listName ?? 'all'}`;
+    const lastCheckpointRaw = await getRuntimeFlag(checkpointKey).catch(() => null);
+    let completedListNames: Set<string>;
+    try {
+        const parsed = lastCheckpointRaw ? JSON.parse(lastCheckpointRaw) : [];
+        completedListNames = new Set<string>(Array.isArray(parsed) ? (parsed as string[]) : []);
+    } catch (parseErr) {
+        console.warn(
+            `[SYNC] Checkpoint corrotto (${checkpointKey}) — riparto da zero: ${
+                parseErr instanceof Error ? parseErr.message : String(parseErr)
+            }`,
+        );
+        completedListNames = new Set<string>();
+    }
+    return { checkpointKey, completedListNames };
+}
+
+/**
+ * Teardown del browser di proprietà del sync: disable click-through PRIMA di close (pattern
+ * canonico jobRunner/syncSearchService — senza, il click-through resta orfano: PID nel set +
+ * timer attivo + mouse utente bloccato in scenari loop/daemon) + flag `browser_session_ended_at`.
+ */
+async function closeOwnedBrowser(session: BrowserSession, accountId: string): Promise<void> {
+    disableWindowClickThrough(session.browser);
+    await closeBrowser(session);
+    await setRuntimeFlag(`browser_session_ended_at:${accountId}`, new Date().toISOString()).catch(() => null);
+}
+
+/** Snapshot DB post-sync + durata totale nel report (best-effort, mai blocca il return). */
+async function capturePostSyncMetrics(report: SalesNavigatorSyncReport, startTime: number): Promise<void> {
+    report.dbAfter = await takeDbSnapshot().catch(() => null);
+    report.durationMs = Date.now() - startTime;
+}
+
 export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptions): Promise<SalesNavigatorSyncReport> {
     const target = resolveSyncTarget(options);
     const { explicitListUrl, listFilter, maxPages, maxLeadsPerList } = target;
@@ -820,22 +863,8 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
             );
         }
 
-        // Checkpoint/Resume (4.1 fix): salva i NOMI delle liste già completate
-        // (non l'indice numerico che è fragile se le liste cambiano ordine/quantità).
-        const checkpointKey = `sync_list_checkpoint:${account.id}:${options.listName ?? 'all'}`;
-        const lastCheckpointRaw = await getRuntimeFlag(checkpointKey).catch(() => null);
-        let completedListNames: Set<string>;
-        try {
-            const parsed = lastCheckpointRaw ? JSON.parse(lastCheckpointRaw) : [];
-            completedListNames = new Set<string>(Array.isArray(parsed) ? (parsed as string[]) : []);
-        } catch (parseErr) {
-            console.warn(
-                `[SYNC] Checkpoint corrotto (${checkpointKey}) — riparto da zero: ${
-                    parseErr instanceof Error ? parseErr.message : String(parseErr)
-                }`,
-            );
-            completedListNames = new Set<string>();
-        }
+        // Checkpoint/Resume: nomi liste già completate (vedi restoreListCheckpoint).
+        const { checkpointKey, completedListNames } = await restoreListCheckpoint(account.id, options.listName);
 
         for (let listIdx = 0; listIdx < targetLists.length; listIdx++) {
             const targetList = targetLists[listIdx];
@@ -1013,13 +1042,8 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
 
         // Chiudi browser SUBITO dopo scraping (non serve piu per enrichment)
         if (ownsBrowser) {
-            // disable PRIMA di close (pattern canonico jobRunner/syncSearchService): senza, il
-            // success-path imposta browserClosed=true e il finally salta il disable → click-through
-            // orfano (PID nel set + timer attivo + mouse utente bloccato) in scenari loop/daemon.
-            disableWindowClickThrough(session.browser);
-            await closeBrowser(session);
+            await closeOwnedBrowser(session, account.id);
             browserClosed = true;
-            await setRuntimeFlag(`browser_session_ended_at:${account.id}`, new Date().toISOString()).catch(() => null);
         }
 
         if (options.skipEnrichment) {
@@ -1054,14 +1078,11 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
             }
         }
 
-        report.dbAfter = await takeDbSnapshot().catch(() => null);
-        report.durationMs = Date.now() - startTime;
+        await capturePostSyncMetrics(report, startTime);
         return report;
     } finally {
         if (ownsBrowser && !browserClosed) {
-            disableWindowClickThrough(session.browser);
-            await closeBrowser(session);
-            await setRuntimeFlag(`browser_session_ended_at:${account.id}`, new Date().toISOString()).catch(() => null);
+            await closeOwnedBrowser(session, account.id);
         }
     }
 }
