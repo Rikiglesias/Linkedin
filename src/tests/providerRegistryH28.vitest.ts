@@ -166,12 +166,29 @@ describe('providerRegistry — gate per-feature NEI call-site, non nel registry'
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('providerRegistry — guard zero-PII', () => {
-    it('classificazione purpose: lead-data=PII, aggregati=no-PII', () => {
+    it('classificazione purpose: lead-data=PII, aggregati e pseudonimizzati=no-PII', () => {
         expect(isPiiSensitivePurpose('invite_note')).toBe(true);
         expect(isPiiSensitivePurpose('sentiment')).toBe(true);
-        expect(isPiiSensitivePurpose('decision_engine')).toBe(true);
+        // F0.5: prompt pseudonimizzato by-design (test sentinella in aiDecisionEngine.vitest)
+        expect(isPiiSensitivePurpose('decision_engine')).toBe(false);
         expect(isPiiSensitivePurpose('guardian')).toBe(false);
         expect(isPiiSensitivePurpose('decoy_terms')).toBe(false);
+    });
+
+    it('F0.5: decision_engine + AI_PROVIDER=anthropic → anthropic (cervello cloud-eligible)', () => {
+        mockConfig.aiProvider = 'anthropic';
+        mockState.anthropicConfigured = true;
+        const result = resolveAiProvider('decision_engine');
+        expect(result.provider).toBe('anthropic');
+        expect(result.reason).toBe('anthropic_selected');
+    });
+
+    it('F0.5 dichiarato: decision_engine + auto + OpenAI key remota → openai (guard sul DATO, non sul vendor)', () => {
+        // Il flip apre il cloud anche a OpenAI remoto in auto: il prompt è anonimo,
+        // quindi la policy zero-PII è rispettata indipendentemente dal provider.
+        const result = resolveAiProvider('decision_engine');
+        expect(result.provider).toBe('openai');
+        expect(result.reason).toBe('cloud_configured');
     });
 
     it('purpose PII + AI_PROVIDER=anthropic configurato → locale, MAI anthropic', () => {

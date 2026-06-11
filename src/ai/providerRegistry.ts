@@ -45,6 +45,9 @@ export type AiTextPurpose =
 /**
  * purpose → vede PII del lead? (nome/email/telefono/URL/azienda o testo scritto dal lead).
  * sentiment/intent analizzano il TESTO dei messaggi del lead → PII per decisione binding.
+ * decision_engine: no-PII da F0.5 — il prompt è pseudonimizzato by-design (leadPseudonymizer
+ * + buildDecisionPrompt: solo enum/boolean/numeri); prova meccanica = test sentinella in
+ * aiDecisionEngine.vitest.ts. Riclassificare a true se il prompt torna a contenere dati raw.
  */
 const PII_SENSITIVE_PURPOSES: Record<AiTextPurpose, boolean> = {
     invite_note: true,
@@ -52,7 +55,7 @@ const PII_SENSITIVE_PURPOSES: Record<AiTextPurpose, boolean> = {
     reminder: true,
     lead_scoring: true,
     lead_cleaning: true,
-    decision_engine: true,
+    decision_engine: false,
     sentiment: true,
     intent: true,
     decoy_terms: false,
