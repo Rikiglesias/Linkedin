@@ -4,6 +4,19 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-11 — ai-stack F0.5: pseudonimizzazione del cervello, decision_engine cloud-eligible (`/goal ai-stack`)
+
+### Obiettivo
+Decisione utente ZERO-PII: il decision engine può andare su Claude cloud SOLO con prompt pseudonimizzato. Oggi `buildDecisionPrompt` iniettava name/title/company/about/location, profileName/profileHeadline e chat grezza → purpose `decision_engine` classificato PII (mai cloud). F0.5 = prompt dimostrabilmente anonimo ⇒ flip a no-PII. Piano (riuso `swirling-chasing-moonbeam`) passato da review adversariale: 10 finding integrati (2 ALTA: tag chat reale `ME:` non `YOU:`; detector PII su STRINGA, non su oggetto — il confronto reference-based sarebbe sempre-true).
+
+### Interventi (3 chunk L1-verdi)
+- **A `e386d8b`**: `src/ai/leadPseudonymizer.ts` — REGOLA D'ORO: output solo enum chiusi/boolean/numeri (+region coarse alfabetica). `pseudonymizeLead` riusa `inferLeadSegment`/`inferLeadIndustry` (ml/segments; enrichment free-text = solo INPUT dell'inferenza, mai emesso raw); `normalizeSeniority` whitelist (vp PRIMA di c_suite: "vice president" contiene "president" — bug trovato dal test, fixato alla radice); `coarseRegion` scarta componenti con cifre; `distillChatSignals` sui tag reali `THEM:`/`ME:`. Property test anti-PII (15 test). Fix classificatore: pattern tech ora matcha "technology" (`\btech\b` falliva su "Information Technology" — zero-P, consumer verificati).
+- **B `02dfe21`**: `buildDecisionPrompt` riscritto su feature anonime per i 5 decision point (riga Conversation = segnali count/lastFrom/replied, emessa solo se chatMessages fornito — oggi MAI dai worker: ramo vivo solo per inbox_reply orfano, wire in F3); istruzione pre_follow_up riscritta su "lead replied: yes → SKIP"; JSDoc: i campi identificativi del request non escono mai nel prompt. Guard difensiva in aiTextClient (ramo cloud): `sanitizeForLogs` su stringa come detector → `ai_text.cloud_pii_suspect` (osserva, non muta; rileva solo PII regex-detectable — difesa primaria = test sentinella). Test: sentinelle PII sui 5 punti + feature anonime attese + guard warn/no-warn. Worker INTATTI.
+- **C `2652ed9`**: flip `PII_SENSITIVE_PURPOSES.decision_engine → false` (commento → test sentinella + condizione di riclassificazione inversa); test dichiarativi (anthropic esplicito → `anthropic_selected`; auto+OpenAI-key-remota → `cloud_configured`: guard sul DATO non sul vendor, comportamento dichiarato); registro GDPR art.30 allineato allo stato reale (Anthropic riceve solo feature pseudonimizzate, enforcement meccanico, generazione messaggi locale).
+
+### Verifica
+conta-problemi exit 0 ad ogni chunk; finale **171 file / 1690 test** (da 170/1663 post-F0: +1 file, +27 test). antiban-review: **SICURO** (worker/timing/volumi intatti; il decision engine può solo SKIP/DEFER in più, mai aumentare). Accuracy decisioni monitorata dal feedback loop esistente (decisionFeedback): eventuale degrado da prompt più povero → rivedere in F3 con evidenza.
+
 ## 2026-06-11 — ai-stack F0: provider Anthropic + providerRegistry cablato + guard zero-PII (`/goal ai-stack`)
 
 ### Obiettivo
