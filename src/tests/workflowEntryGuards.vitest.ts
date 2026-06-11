@@ -183,4 +183,52 @@ describe('workflowEntryGuards', () => {
         expect(result.blocked?.reason).toBe('SESSION_VARIANCE_SKIP_DAY');
         expect(mocks.getAutomationPauseState).not.toHaveBeenCalled();
     });
+
+    test('handoff (G1): reuseSession ritorna la sessione del canary e NON la chiude', async () => {
+        // Regressione G1 (doppio-lancio): con reuseSession il canary passa la sua sessione al workflow
+        // invece di chiuderla → il workflow riusa quel browser e NON ne apre un 2° sullo stesso profilo
+        // persistente (era il lock conflict → timeout 180s al 1° run di ogni finestra 4h).
+        const session = createSession();
+        mocks.launchBrowser.mockResolvedValue(session);
+
+        const result = await evaluateWorkflowEntryGuards({
+            workflow: 'sync-list',
+            dryRun: false,
+            accountId: 'acc-1',
+            reuseSession: true,
+        });
+
+        expect(result.allowed).toBe(true);
+        expect(result.session).toBe(session); // sessione passata al caller per il riuso
+        expect(mocks.closeBrowser).not.toHaveBeenCalled(); // NON chiusa: la chiude il caller (syncListService)
+    });
+
+    test('senza reuseSession il canary chiude la sessione e non la ritorna (comportamento invariato)', async () => {
+        // Anti-regressione per gli altri 4 workflow: default reuseSession=false → comportamento di prima.
+        const result = await evaluateWorkflowEntryGuards({
+            workflow: 'sync-list',
+            dryRun: false,
+            accountId: 'acc-1',
+        });
+
+        expect(result.allowed).toBe(true);
+        expect(result.session).toBeUndefined();
+        expect(mocks.closeBrowser).toHaveBeenCalledTimes(1);
+    });
+
+    test('reuseSession ma login fallito: blocca e chiude la sessione (nessun handoff di sessione sloggata)', async () => {
+        mocks.checkLogin.mockResolvedValue(false);
+
+        const result = await evaluateWorkflowEntryGuards({
+            workflow: 'sync-list',
+            dryRun: false,
+            accountId: 'acc-1',
+            reuseSession: true,
+        });
+
+        expect(result.allowed).toBe(false);
+        expect(result.blocked?.reason).toBe('LOGIN_REQUIRED');
+        expect(result.session).toBeUndefined();
+        expect(mocks.closeBrowser).toHaveBeenCalledTimes(1); // chiusa, non passata
+    });
 });
