@@ -140,11 +140,15 @@ Questo file è generato automaticamente da `scripts/generate-config-docs.mjs` le
 - `AI_MESSAGE_MAX_CHARS`
 - `AI_MODEL`
 - `AI_PERSONALIZATION_ENABLED`
+- `AI_PROVIDER` (F0 ai-stack: `auto` | `anthropic` | `openai` | `ollama` | `template`; default `auto` = chain storica)
 - `AI_QUALITY_MIN_SAMPLE_SIZE`
 - `AI_QUALITY_SIGNIFICANCE_ALPHA`
 - `AI_REQUEST_TIMEOUT_MS`
 - `AI_SENTIMENT_ENABLED`
 - `AI_VALIDATION_AUTO_SEED_ENABLED`
+- `ANTHROPIC_API_KEY` (richiesta se `AI_PROVIDER=anthropic`; insieme a `AI_ALLOW_REMOTE_ENDPOINT=true`)
+- `ANTHROPIC_MODEL` (default `claude-opus-4-8`)
+- `ANTHROPIC_TIMEOUT_MS` (default 60000 — applicato dal costruttore SDK)
 - `OPENAI_API_KEY`
 - `OPENAI_BASE_URL`
 
@@ -409,6 +413,13 @@ AI_MODEL=gpt-4o-mini
 AI_ALLOW_REMOTE_ENDPOINT=true
 AI_PERSONALIZATION_ENABLED=true
 AI_SENTIMENT_ENABLED=true
+
+# Provider AI per-deployment (F0 ai-stack). Guard zero-PII attiva: i purpose con dati
+# lead restano comunque su endpoint locale anche con provider cloud esplicito.
+# AI_PROVIDER=anthropic
+# ANTHROPIC_API_KEY=sk-ant-...
+# ANTHROPIC_MODEL=claude-opus-4-8
+# ANTHROPIC_TIMEOUT_MS=60000
 INVITE_WITH_NOTE=true
 INVITE_NOTE_MODE=ai
 
