@@ -118,3 +118,6 @@ tools/
 .obsidian/
 Linkedin/
 Obsidian/
+
+# Artefatti sessione Playwright MCP (snapshot navigazione browser, rigenerabili)
+.playwright-mcp/
