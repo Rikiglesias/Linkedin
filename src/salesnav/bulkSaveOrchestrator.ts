@@ -1,7 +1,6 @@
 import type { Page } from 'playwright';
 import { createHash } from 'crypto';
 import { clickLocatorHumanLike, detectChallenge, dismissKnownOverlays, humanDelay, isLoggedIn } from '../browser';
-import { config } from '../config';
 import { cleanText } from '../utils/text';
 import { attemptChallengeResolution } from '../workers/challengeHandler';
 import {
@@ -36,7 +35,7 @@ import {
 import type { SalesNavSyncRunRecord } from '../core/repositories.types';
 import { visionReadTotalResults, visionVerify } from './visionNavigator';
 import { checkDuplicates, extractProfileUrlsFromPage, saveExtractedProfiles } from './salesnavDedup';
-import { computerUseTask } from './computerUse';
+import { computerUseTask, isComputerUseEnabled } from './computerUse';
 import {
     SALESNAV_SELECT_ALL_SELECTOR as SELECT_ALL_SELECTOR,
     SALESNAV_SAVE_TO_LIST_SELECTOR as SAVE_TO_LIST_SELECTOR,
@@ -734,8 +733,8 @@ async function preSyncListToDb(
         }
     }
 
-    // Fallback: Computer Use se DOM non ha trovato la lista (nome diverso, non visibile, ecc.)
-    if (!listClicked && config.openaiApiKey) {
+    // Fallback: Computer Use se DOM non ha trovato la lista (F2: opt-in esplicito, zero-PII di default)
+    if (!listClicked && isComputerUseEnabled()) {
         console.log('[PRE-SYNC] DOM non ha trovato la lista — provo Computer Use...');
         const cuResult = await computerUseTask(
             page,

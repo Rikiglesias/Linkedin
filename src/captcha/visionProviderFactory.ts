@@ -10,6 +10,7 @@
  * visionClick/visionVerify/visionWaitFor deve cambiare.
  */
 
+import { config } from '../config';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { OllamaVisionProvider } from './ollamaVisionProvider';
 import { BudgetExceededError, OpenAIVisionProvider } from './openaiVisionProvider';
@@ -181,7 +182,7 @@ let _cachedProvider: VisionProvider | null = null;
 let _cachedConfigHash = '';
 
 function configHash(cfg: VisionProviderConfig): string {
-    return `${cfg.provider}:${cfg.ollamaEndpoint}:${cfg.ollamaModel}:${cfg.openaiModel}:${cfg.budgetMaxUsd}:${cfg.temperature}:${cfg.redactScreenshots}:${cfg.openaiApiKey ? 'haskey' : 'nokey'}`;
+    return `${cfg.provider}:${cfg.ollamaEndpoint}:${cfg.ollamaModel}:${cfg.openaiModel}:${cfg.budgetMaxUsd}:${cfg.temperature}:${cfg.redactScreenshots}:${cfg.openaiApiKey ? 'haskey' : 'nokey'}:${cfg.allowCloud}`;
 }
 
 /**
@@ -189,8 +190,8 @@ function configHash(cfg: VisionProviderConfig): string {
  * Valori di default conservativi: Ollama locale, nessun budget.
  */
 export function getVisionConfig(): VisionProviderConfig {
-    // Lazy-import to avoid circular dependency at module init
-    const { config } = require('../config') as typeof import('../config');
+    // F2: import statico — verificato nessun ciclo (src/config importa solo moduli interni;
+    // madge --circular = 0). Il lazy require storico rompeva la risoluzione ESM nei test.
     return {
         provider: config.visionProvider,
         ollamaEndpoint: config.ollamaEndpoint,
@@ -200,6 +201,8 @@ export function getVisionConfig(): VisionProviderConfig {
         temperature: config.visionTemperature,
         budgetMaxUsd: config.visionBudgetMaxUsd,
         redactScreenshots: config.visionRedactScreenshots,
+        // F2 zero-PII: doppio gate — master remoto globale + opt-in dedicato agli screenshot.
+        allowCloud: config.aiAllowRemoteEndpoint && config.visionAllowCloud,
     };
 }
 
@@ -217,9 +220,16 @@ export function createVisionProvider(overrideConfig?: Partial<VisionProviderConf
 
     let provider: VisionProvider;
 
+    // F2 zero-PII: il cloud vision è eleggibile SOLO con key presente E opt-in esplicito
+    // (VISION_ALLOW_CLOUD + AI_ALLOW_REMOTE_ENDPOINT). Default: gli screenshot restano locali.
+    const cloudEligible = Boolean(cfg.openaiApiKey) && cfg.allowCloud;
+    if (cfg.openaiApiKey && !cfg.allowCloud) {
+        void logInfo('vision.factory.cloud_blocked_zero_pii', { provider: cfg.provider });
+    }
+
     switch (cfg.provider) {
         case 'openai': {
-            if (!cfg.openaiApiKey) {
+            if (!cloudEligible) {
                 void logWarn('vision.factory.no_openai_key_fallback_ollama');
                 provider = new OllamaVisionProvider({
                     endpoint: cfg.ollamaEndpoint,
@@ -251,7 +261,7 @@ export function createVisionProvider(overrideConfig?: Partial<VisionProviderConf
                 model: cfg.ollamaModel,
                 temperature: cfg.temperature,
             });
-            if (cfg.openaiApiKey) {
+            if (cloudEligible) {
                 const cloudFallback = new OpenAIVisionProvider({
                     apiKey: cfg.openaiApiKey,
                     model: cfg.openaiModel,
@@ -273,7 +283,7 @@ export function createVisionProvider(overrideConfig?: Partial<VisionProviderConf
         }
         case 'auto':
         default: {
-            if (cfg.openaiApiKey) {
+            if (cloudEligible) {
                 const primary = new OpenAIVisionProvider({
                     apiKey: cfg.openaiApiKey,
                     model: cfg.openaiModel,

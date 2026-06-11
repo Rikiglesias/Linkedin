@@ -75,11 +75,19 @@ function getApiKey(): string {
     return config.openaiApiKey;
 }
 
-/** Modello per Computer Use — GPT-5.4 con tool 'computer' (sostituisce il deprecato 'computer-use-preview'). */
-const COMPUTER_USE_MODEL = 'gpt-5.4';
-
+/** F2: model id centralizzato in config (COMPUTER_USE_MODEL, default gpt-5.4 con tool 'computer'). */
 function getModel(): string {
-    return COMPUTER_USE_MODEL;
+    return config.computerUseModel;
+}
+
+/**
+ * F2 zero-PII (decisione 2026-06-11): il computer-use invia SCREENSHOT di LinkedIn/SalesNav
+ * al cloud — PII visiva di massa. Consentito SOLO con opt-in esplicito (VISION_ALLOW_CLOUD)
+ * oltre al gate remoto globale (AI_ALLOW_REMOTE_ENDPOINT) e alla key. Default: spento,
+ * i flussi usano le strategie DOM esistenti.
+ */
+export function isComputerUseEnabled(): boolean {
+    return Boolean(config.openaiApiKey) && config.aiAllowRemoteEndpoint && config.visionAllowCloud;
 }
 
 // ── Session Token Tracker ───────────────────────────────────────
@@ -357,6 +365,18 @@ export async function computerUseTask(
             `Execute the task precisely. If you see an error or unexpected state, stop and explain.`;
 
     console.log(`[COMPUTER USE] Task: "${task.substring(0, 80)}..." (max ${maxTurns} turns)`);
+
+    // F2 zero-PII: difesa in profondità — anche se un caller dimentica isComputerUseEnabled(),
+    // nessuno screenshot esce senza opt-in esplicito.
+    if (!isComputerUseEnabled()) {
+        void logWarn('computer_use.cloud_disabled_zero_pii', {});
+        return {
+            success: false,
+            turns: 0,
+            totalActions: 0,
+            error: 'Computer use cloud disabilitato (richiede VISION_ALLOW_CLOUD=true + AI_ALLOW_REMOTE_ENDPOINT=true)',
+        };
+    }
 
     // Daily cap check: evita spese eccessive se il modello è stato chiamato troppe volte oggi
     if (isDailyCapReached()) {

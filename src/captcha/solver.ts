@@ -1,5 +1,6 @@
 import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 import { logError } from '../telemetry/logger';
+import { config } from '../config';
 
 export interface VisionSolverOptions {
     model?: string;
@@ -23,8 +24,10 @@ export class VisionSolver {
     private temperature: number;
 
     constructor(options?: VisionSolverOptions) {
-        this.endpoint = options?.endpoint ?? process.env.OLLAMA_ENDPOINT ?? 'http://127.0.0.1:11434';
-        this.model = options?.model ?? process.env.VISION_MODEL ?? 'llava-llama3:8b';
+        // F2: default dal config centrale (stesse env OLLAMA_ENDPOINT/VISION_MODEL, parsing in domains.ts)
+        // — niente lettura diretta di process.env fuori da config.
+        this.endpoint = options?.endpoint ?? config.ollamaEndpoint;
+        this.model = options?.model ?? config.visionModelOllama;
         this.temperature = options?.temperature ?? 0.1; // Bassa "creatività" = maggiore fedeltà ai pixel
     }
 

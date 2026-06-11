@@ -13,7 +13,6 @@
 
 import type { Page } from 'playwright';
 import { clickLocatorHumanLike, humanDelay } from '../browser';
-import { config } from '../config';
 import {
     hasLocator,
     locatorBoundingBox,
@@ -23,7 +22,7 @@ import {
     findVisibleClickTarget,
 } from './bulkSaveHelpers';
 import { visionVerify, visionWaitFor } from './visionNavigator';
-import { computerUseSelectList } from './computerUse';
+import { computerUseSelectList, isComputerUseEnabled } from './computerUse';
 import {
     SALESNAV_SELECT_ALL_SELECTOR as SELECT_ALL_SELECTOR,
     SALESNAV_SAVE_TO_LIST_SELECTOR as SAVE_TO_LIST_SELECTOR,
@@ -391,9 +390,9 @@ export async function chooseTargetList(page: Page, targetListName: string, dryRu
         }
     }
 
-    // ── Strategia 0 (PRIMARIA): GPT-5.4 Computer Use ──
+    // ── Strategia 0: Computer Use cloud (F2: opt-in esplicito, zero-PII di default) ──
     // Il modello vede lo screenshot del dialog e decide autonomamente dove cliccare.
-    if (config.openaiApiKey) {
+    if (isComputerUseEnabled()) {
         console.log('[CHOOSE LIST] Strategia 0: GPT-5.4 Computer Use...');
         const cuResult = await computerUseSelectList(page, targetListName);
         if (cuResult.success) {

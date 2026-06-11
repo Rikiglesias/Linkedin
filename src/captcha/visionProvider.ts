@@ -28,6 +28,11 @@ export interface VisionProviderConfig {
     budgetMaxUsd: number;
     /** Whether to blur sensitive areas before sending to OpenAI */
     redactScreenshots: boolean;
+    /**
+     * F2 zero-PII (decisione 2026-06-11): gli screenshot LinkedIn sono PII visiva — l'uscita
+     * verso provider cloud richiede opt-in esplicito (VISION_ALLOW_CLOUD + AI_ALLOW_REMOTE_ENDPOINT).
+     */
+    allowCloud: boolean;
 }
 
 export interface VisionAnalysisResult {

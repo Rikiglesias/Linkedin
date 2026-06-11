@@ -42,13 +42,14 @@ export class OpenAIVisionProvider implements VisionProvider {
 
     constructor(options: {
         apiKey: string;
-        model?: string;
+        /** F2: sempre fornito dal factory da config (VISION_MODEL_OPENAI) — niente default divergente qui. */
+        model: string;
         temperature?: number;
         budgetMaxUsd?: number;
         redactScreenshots?: boolean;
     }) {
         this.apiKey = options.apiKey;
-        this.model = options.model ?? 'gpt-4o';
+        this.model = options.model;
         this.temperature = options.temperature ?? 0.1;
         this.budgetMaxUsd = options.budgetMaxUsd ?? 0;
         this.redactScreenshots = options.redactScreenshots ?? false;
