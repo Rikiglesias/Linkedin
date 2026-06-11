@@ -789,6 +789,120 @@ async function capturePostSyncMetrics(report: SalesNavigatorSyncReport, startTim
     report.durationMs = Date.now() - startTime;
 }
 
+// ── G5-F3 Tier2: discovery + enrichment estratti dal core di runSalesNavigatorListSync ─────
+
+/**
+ * Scopre le liste salvate SalesNav e applica il filtro nome (o usa l'URL esplicito senza
+ * navigare la pagina liste). Gestisce la sessione SalesNav scaduta (SALESNAV_LOGIN_REQUIRED)
+ * con UN retry dopo login manuale. Throw se nessuna lista corrisponde al filtro, con hint dei
+ * nomi scoperti (evita una seconda navigazione diagnostica).
+ */
+async function discoverAndFilterLists(
+    session: BrowserSession,
+    explicitListUrl: string | null,
+    listFilter: string | null,
+    interactive: boolean,
+): Promise<{ targetLists: SalesNavSavedList[]; listDiscoveryCount: number }> {
+    if (explicitListUrl) {
+        return {
+            targetLists: [
+                {
+                    name: listFilter || 'default',
+                    url: explicitListUrl,
+                },
+            ],
+            listDiscoveryCount: 0,
+        };
+    }
+
+    let discovered: SalesNavSavedList[];
+    try {
+        discovered = await navigateToSavedLists(session.page);
+    } catch (navErr) {
+        const isSalesNavLogin = navErr instanceof Error && navErr.message.includes('SALESNAV_LOGIN_REQUIRED');
+        if (!isSalesNavLogin) throw navErr;
+
+        // Sessione SalesNav scaduta — disabilita click-through per login manuale
+        console.warn('[SYNC] Sessione SalesNav scaduta — in attesa del login manuale...');
+        if (!interactive) disableWindowClickThrough(session.browser);
+        const relogged = await awaitManualLogin(session.page, 'salesnav-list-sync', {
+            timeoutMs: 3 * 60 * 1000,
+        });
+        if (!relogged) throw navErr;
+        if (!interactive) {
+            enableWindowClickThrough(session.browser);
+            await blockUserInput(session.page);
+        }
+        // Retry dopo login manuale
+        discovered = await navigateToSavedLists(session.page);
+    }
+    // Re-inject overlay dopo navigazione (il DOM viene distrutto da page.goto)
+    if (!interactive) await blockUserInput(session.page);
+
+    const allDiscoveredNames = discovered.map((l) => l.name);
+    const targetLists = listFilter ? discovered.filter((entry) => matchesListNameFilter(entry, listFilter)) : discovered;
+
+    if (targetLists.length === 0) {
+        // Riusa i nomi già scoperti — evita una seconda navigazione alla pagina liste
+        const hint =
+            allDiscoveredNames.length > 0
+                ? ` Liste trovate: [${allDiscoveredNames.join(', ')}]. Usa --list "NOME" o --url <url>.`
+                : ' Nessuna lista trovata nella pagina SalesNav.';
+        throw new Error(
+            `Sales Navigator sync: nessuna lista corrisponde al filtro "${listFilter || '(nessuno)'}".${hint}`,
+        );
+    }
+
+    return { targetLists, listDiscoveryCount: discovered.length };
+}
+
+/**
+ * Enrichment offline post-sync (nessun browser): dedup cross-lista (un lead presente in 2+
+ * liste viene arricchito una sola volta), raggruppa per lista e somma i risultati di
+ * postSyncEnrichment. Ritorna i totali aggregati; NON muta il report (contratto esplicito).
+ */
+async function orchestrateEnrichmentByList(
+    allSyncedLeadIds: Array<{ id: number; listName: string }>,
+    dryRun: boolean,
+): Promise<SalesNavigatorSyncReport['enrichment']> {
+    const totals: SalesNavigatorSyncReport['enrichment'] = {
+        leadsProcessed: 0,
+        dataCleaned: 0,
+        scored: 0,
+        enriched: 0,
+        promoted: 0,
+        errors: 0,
+        cloudSynced: 0,
+        cloudErrors: 0,
+    };
+
+    // Dedup: un lead che appare in 2+ liste viene arricchito una sola volta
+    const seenLeadIds = new Set<number>();
+    const uniqueSyncedLeads = allSyncedLeadIds.filter((entry) => {
+        if (seenLeadIds.has(entry.id)) return false;
+        seenLeadIds.add(entry.id);
+        return true;
+    });
+    const byList = new Map<string, number[]>();
+    for (const entry of uniqueSyncedLeads) {
+        const arr = byList.get(entry.listName) ?? [];
+        arr.push(entry.id);
+        byList.set(entry.listName, arr);
+    }
+    for (const [ln, ids] of byList) {
+        const enrichResult = await postSyncEnrichment(ids, ln, dryRun);
+        totals.leadsProcessed += enrichResult.leadsProcessed;
+        totals.dataCleaned += enrichResult.dataCleaned;
+        totals.scored += enrichResult.scored;
+        totals.enriched += enrichResult.enriched;
+        totals.promoted += enrichResult.promoted;
+        totals.errors += enrichResult.errors;
+        totals.cloudSynced += enrichResult.cloudSynced;
+        totals.cloudErrors += enrichResult.cloudErrors;
+    }
+    return totals;
+}
+
 export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptions): Promise<SalesNavigatorSyncReport> {
     const target = resolveSyncTarget(options);
     const { explicitListUrl, listFilter, maxPages, maxLeadsPerList } = target;
@@ -810,58 +924,9 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
         await ensureLoggedInOrAwaitManual(session, account.id, interactive);
         await applyWarmupAndInputBlock(session, account.id, interactive);
 
-        let targetLists: SalesNavSavedList[] = [];
-        let allDiscoveredNames: string[] = [];
-        if (explicitListUrl) {
-            targetLists = [
-                {
-                    name: listFilter || 'default',
-                    url: explicitListUrl,
-                },
-            ];
-        } else {
-            let discovered: SalesNavSavedList[];
-            try {
-                discovered = await navigateToSavedLists(session.page);
-            } catch (navErr) {
-                const isSalesNavLogin = navErr instanceof Error && navErr.message.includes('SALESNAV_LOGIN_REQUIRED');
-                if (!isSalesNavLogin) throw navErr;
-
-                // Sessione SalesNav scaduta — disabilita click-through per login manuale
-                console.warn('[SYNC] Sessione SalesNav scaduta — in attesa del login manuale...');
-                if (!interactive) disableWindowClickThrough(session.browser);
-                const relogged = await awaitManualLogin(session.page, 'salesnav-list-sync', {
-                    timeoutMs: 3 * 60 * 1000,
-                });
-                if (!relogged) throw navErr;
-                if (!interactive) {
-                    enableWindowClickThrough(session.browser);
-                    await blockUserInput(session.page);
-                }
-                // Retry dopo login manuale
-                discovered = await navigateToSavedLists(session.page);
-            }
-            // Re-inject overlay dopo navigazione (il DOM viene distrutto da page.goto)
-            if (!interactive) await blockUserInput(session.page);
-            report.listDiscoveryCount = discovered.length;
-            allDiscoveredNames = discovered.map((l) => l.name);
-            if (listFilter) {
-                targetLists = discovered.filter((entry) => matchesListNameFilter(entry, listFilter));
-            } else {
-                targetLists = discovered;
-            }
-        }
-
-        if (targetLists.length === 0) {
-            // Riusa i nomi già scoperti — evita una seconda navigazione alla pagina liste
-            const hint =
-                allDiscoveredNames.length > 0
-                    ? ` Liste trovate: [${allDiscoveredNames.join(', ')}]. Usa --list "NOME" o --url <url>.`
-                    : ' Nessuna lista trovata nella pagina SalesNav.';
-            throw new Error(
-                `Sales Navigator sync: nessuna lista corrisponde al filtro "${listFilter || '(nessuno)'}".${hint}`,
-            );
-        }
+        const discovery = await discoverAndFilterLists(session, explicitListUrl, listFilter, interactive);
+        const targetLists = discovery.targetLists;
+        report.listDiscoveryCount = discovery.listDiscoveryCount;
 
         // Checkpoint/Resume: nomi liste già completate (vedi restoreListCheckpoint).
         const { checkpointKey, completedListNames } = await restoreListCheckpoint(account.id, options.listName);
@@ -1050,32 +1115,9 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
             console.log('[OK] Browser chiuso. Enrichment saltato (--no-enrich).');
         } else {
             console.log('[OK] Browser chiuso. Avvio enrichment offline...');
-
-            // Post-sync enrichment per tutti i lead estratti (no browser needed)
-            // Dedup: un lead che appare in 2+ liste viene arricchito una sola volta
-            const seenLeadIds = new Set<number>();
-            const uniqueSyncedLeads = allSyncedLeadIds.filter((entry) => {
-                if (seenLeadIds.has(entry.id)) return false;
-                seenLeadIds.add(entry.id);
-                return true;
-            });
-            const byList = new Map<string, number[]>();
-            for (const entry of uniqueSyncedLeads) {
-                const arr = byList.get(entry.listName) ?? [];
-                arr.push(entry.id);
-                byList.set(entry.listName, arr);
-            }
-            for (const [ln, ids] of byList) {
-                const enrichResult = await postSyncEnrichment(ids, ln, options.dryRun);
-                report.enrichment.leadsProcessed += enrichResult.leadsProcessed;
-                report.enrichment.dataCleaned += enrichResult.dataCleaned;
-                report.enrichment.scored += enrichResult.scored;
-                report.enrichment.enriched += enrichResult.enriched;
-                report.enrichment.promoted += enrichResult.promoted;
-                report.enrichment.errors += enrichResult.errors;
-                report.enrichment.cloudSynced += enrichResult.cloudSynced;
-                report.enrichment.cloudErrors += enrichResult.cloudErrors;
-            }
+            // report.enrichment parte azzerato da initSalesNavigatorSyncReport: l'assegnazione
+            // diretta dei totali equivale alla somma in-place del codice pre-split.
+            report.enrichment = await orchestrateEnrichmentByList(allSyncedLeadIds, options.dryRun);
         }
 
         await capturePostSyncMetrics(report, startTime);
