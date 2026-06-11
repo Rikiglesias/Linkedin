@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const requestOpenAIText = vi.fn();
+const requestAiText = vi.fn();
 const getDecisionAccuracy = vi.fn();
 const recordDecision = vi.fn();
 
-vi.mock('../ai/openaiClient', () => ({
-    requestOpenAIText,
+vi.mock('../ai/aiTextClient', () => ({
+    requestAiText,
 }));
 
 vi.mock('../ai/decisionFeedback', () => ({
@@ -37,7 +37,7 @@ describe('aiDecisionEngine', () => {
 
     it('strict con risposta non parsabile su punto critico fa DEFER', async () => {
         config.aiPersonalizationEnabled = true;
-        requestOpenAIText.mockResolvedValue('questa non è una risposta JSON');
+        requestAiText.mockResolvedValue('questa non è una risposta JSON');
 
         const decision = await aiDecide({ point: 'pre_message', strict: true });
         expect(decision.action).toBe('DEFER');
@@ -48,7 +48,7 @@ describe('aiDecisionEngine', () => {
         vi.useFakeTimers();
         try {
             config.aiPersonalizationEnabled = true;
-            requestOpenAIText.mockImplementation(() => new Promise(() => undefined));
+            requestAiText.mockImplementation(() => new Promise(() => undefined));
 
             const decisionPromise = aiDecide({ point: 'pre_invite', strict: true });
             await vi.advanceTimersByTimeAsync(8_100);
@@ -63,7 +63,7 @@ describe('aiDecisionEngine', () => {
 
     it('strict su inbox_reply con risposta invalida fa NOTIFY_HUMAN', async () => {
         config.aiPersonalizationEnabled = true;
-        requestOpenAIText.mockResolvedValue('{ "action": "BOH", "reason": "x" }');
+        requestAiText.mockResolvedValue('{ "action": "BOH", "reason": "x" }');
 
         const decision = await aiDecide({ point: 'inbox_reply', strict: true });
         expect(decision.action).toBe('NOTIFY_HUMAN');
@@ -72,7 +72,7 @@ describe('aiDecisionEngine', () => {
 
     it('normalizza i nomi legacy della navigation strategy', async () => {
         config.aiPersonalizationEnabled = true;
-        requestOpenAIText.mockResolvedValue(
+        requestAiText.mockResolvedValue(
             '{ "action": "PROCEED", "confidence": 0.9, "reason": "ok", "navigationStrategy": "organic_search" }',
         );
 
@@ -83,7 +83,7 @@ describe('aiDecisionEngine', () => {
 
     it('in modalita permissiva un errore AI mantiene il fallback storico', async () => {
         config.aiPersonalizationEnabled = true;
-        requestOpenAIText.mockRejectedValue(new Error('boom'));
+        requestAiText.mockRejectedValue(new Error('boom'));
 
         const decision = await aiDecide({ point: 'pre_follow_up' });
         expect(decision.action).toBe('PROCEED');

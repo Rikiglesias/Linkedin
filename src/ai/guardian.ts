@@ -1,7 +1,7 @@
 import { config } from '../config';
 import { ScheduleResult } from '../core/scheduler';
 import { getRuntimeFlag, setRuntimeFlag } from '../core/repositories';
-import { isOpenAIConfigured, requestOpenAIText } from './openaiClient';
+import { isAiTextConfigured, requestAiText } from './aiTextClient';
 import { logWarn as guardianLogWarn } from '../telemetry/logger';
 import type { WorkflowSelection } from '../core/workflowSelection';
 
@@ -214,7 +214,7 @@ export async function evaluateAiGuardian(
         };
     }
 
-    if (!config.aiGuardianEnabled || !isOpenAIConfigured()) {
+    if (!config.aiGuardianEnabled || !isAiTextConfigured('guardian')) {
         return {
             executed: true,
             reason: 'heuristic_only',
@@ -253,7 +253,8 @@ export async function evaluateAiGuardian(
     });
 
     try {
-        const text = await requestOpenAIText({
+        const text = await requestAiText({
+            purpose: 'guardian',
             system: systemPrompt,
             user: `Evaluate this operational context and make a risk decision: ${userPrompt}`,
             maxOutputTokens: 400,

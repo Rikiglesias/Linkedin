@@ -1,7 +1,7 @@
 import { config } from '../config';
 import { LeadRecord } from '../types/domain';
 import { logWarn } from '../telemetry/logger';
-import { isOpenAIConfigured, requestOpenAIText } from './openaiClient';
+import { isAiTextConfigured, requestAiText } from './aiTextClient';
 import { SemanticChecker } from './semanticChecker';
 import { selectVariant, inferHourBucket } from '../ml/abBandit';
 import { inferLeadSegment } from '../ml/segments';
@@ -190,7 +190,7 @@ export async function buildPersonalizedInviteNote(
         : generateInviteNote(lead.first_name ?? '', lang);
     const templateText = trimToMaxChars(tplResult.note, INVITE_NOTE_MAX_CHARS);
 
-    if (config.inviteNoteMode !== 'ai' || !config.aiPersonalizationEnabled || !isOpenAIConfigured()) {
+    if (config.inviteNoteMode !== 'ai' || !config.aiPersonalizationEnabled || !isAiTextConfigured('invite_note')) {
         return {
             note: templateText,
             source: 'template',
@@ -243,7 +243,8 @@ export async function buildPersonalizedInviteNote(
     while (attempt < 3) {
         attempt++;
         try {
-            const generated = await requestOpenAIText({
+            const generated = await requestAiText({
+                purpose: 'invite_note',
                 system: systemPrompt,
                 user: `Dati lead: ${userPrompt}`,
                 maxOutputTokens: 120,

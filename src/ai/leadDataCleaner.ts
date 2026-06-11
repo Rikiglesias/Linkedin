@@ -1,4 +1,4 @@
-import { requestOpenAIText } from './openaiClient';
+import { requestAiText } from './aiTextClient';
 import { logWarn } from '../telemetry/logger';
 
 export interface CleanedLeadData {
@@ -102,7 +102,8 @@ Rispondi SOLO con JSON:
     });
 
     try {
-        const generated = await requestOpenAIText({
+        const generated = await requestAiText({
+            purpose: 'lead_cleaning',
             system: systemPrompt,
             user: userPrompt,
             maxOutputTokens: 250,

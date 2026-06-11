@@ -93,12 +93,13 @@ export async function aiDecide(request: AIDecisionRequest): Promise<AIDecisionRe
     try {
         const accuracyCtx = await getAccuracyContext();
         const prompt = buildDecisionPrompt(request) + accuracyCtx;
-        const { requestOpenAIText } = await import('./openaiClient');
+        const { requestAiText } = await import('./aiTextClient');
 
         // Timeout reale con Promise.race: se l'AI non risponde entro DECISION_TIMEOUT_MS,
         // fallback meccanico. Il timeout di fetchWithRetryPolicy (config.aiRequestTimeoutMs)
         // potrebbe essere più lungo — questo è il cap specifico per le decisioni.
-        const aiPromise = requestOpenAIText({
+        const aiPromise = requestAiText({
+            purpose: 'decision_engine',
             system: 'You are a LinkedIn outreach decision engine. Respond ONLY with valid JSON.',
             user: prompt,
             maxOutputTokens: 200,

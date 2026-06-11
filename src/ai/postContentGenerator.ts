@@ -5,7 +5,7 @@
  * a template predefiniti. Supporta topic custom per campagna.
  */
 
-import { isOpenAIConfigured, requestOpenAIText } from './openaiClient';
+import { isAiTextConfigured, requestAiText } from './aiTextClient';
 import { logWarn } from '../telemetry/logger';
 import { config } from '../config';
 import { randomElement } from '../utils/random';
@@ -65,7 +65,7 @@ export async function generatePostContent(request: PostContentRequest = {}): Pro
     const maxLength = request.maxLength || 1300;
     const language = request.language || 'italiano';
 
-    if (!isOpenAIConfigured()) {
+    if (!isAiTextConfigured('post_content')) {
         return pickTemplatePost();
     }
 
@@ -93,7 +93,8 @@ ${request.accountContext ? `\nContesto account: ${request.accountContext}` : ''}
 Rispondi SOLO con il testo del post, senza virgolette o prefissi.`;
 
     try {
-        const content = await requestOpenAIText({
+        const content = await requestAiText({
+            purpose: 'post_content',
             system: systemPrompt,
             user: `Scrivi un post LinkedIn sul tema: ${topic}`,
             temperature: 0.7,

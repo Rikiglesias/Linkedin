@@ -11,7 +11,7 @@ import {
     setCompanyTargetStatus,
 } from './repositories';
 import { scoreLeadProfile } from '../ai/leadScorer';
-import { isOpenAIConfigured } from '../ai/openaiClient';
+import { isAiTextConfigured } from '../ai/aiTextClient';
 
 const ENRICHMENT_ACCOUNT_ID = 'company-enrichment';
 
@@ -199,7 +199,7 @@ async function processCompanyTarget(
             let leadScore = null;
             let leadStatus: 'NEW' | 'REVIEW_REQUIRED' = 'NEW';
 
-            if (isOpenAIConfigured()) {
+            if (isAiTextConfigured('lead_scoring')) {
                 try {
                     const scoreResult = await scoreLeadProfile(
                         target.account_name,

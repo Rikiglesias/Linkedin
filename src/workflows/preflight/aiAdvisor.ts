@@ -19,8 +19,8 @@ export async function runAiAdvisor(
     }
 
     try {
-        const { isOpenAIConfigured, requestOpenAIText } = await import('../../ai/openaiClient');
-        if (!isOpenAIConfigured()) {
+        const { isAiTextConfigured, requestAiText } = await import('../../ai/aiTextClient');
+        if (!isAiTextConfigured('ai_advisor')) {
             return { available: false, recommendation: 'PROCEED', reasoning: '', suggestedActions: [] };
         }
 
@@ -109,7 +109,8 @@ Regole:
 - suggestedActions: max 3 suggerimenti concreti e brevi
 - suggestedParams: suggerisci valori concreti SOLO se pensi che i parametri attuali siano troppo aggressivi. null = non modificare. Se risk score > 40, riduci il budget. Se pending ratio > 40%, riduci il limit.`;
 
-        const response = await requestOpenAIText({
+        const response = await requestAiText({
+            purpose: 'ai_advisor',
             system: 'Sei un esperto di automazione LinkedIn e anti-detection. Rispondi solo in JSON valido.',
             user: prompt,
             maxOutputTokens: 300,

@@ -1,4 +1,4 @@
-import { isOpenAIConfigured, requestOpenAIText } from './openaiClient';
+import { isAiTextConfigured, requestAiText } from './aiTextClient';
 import { analyzeIncomingMessage, type MessageIntent, type MessageSubIntent } from './sentimentAnalysis';
 
 export interface IntentResolutionResult {
@@ -85,7 +85,7 @@ export async function resolveIntentAndDraft(messageText: string): Promise<Intent
         };
     }
 
-    if (!isOpenAIConfigured()) {
+    if (!isAiTextConfigured('intent')) {
         const sentiment = await analyzeIncomingMessage(trimmed);
         return {
             intent: sentiment.intent,
@@ -99,7 +99,8 @@ export async function resolveIntentAndDraft(messageText: string): Promise<Intent
     }
 
     try {
-        const output = await requestOpenAIText({
+        const output = await requestAiText({
+            purpose: 'intent',
             system: SYSTEM_PROMPT,
             user: `Messaggio:\n${trimmed}`,
             maxOutputTokens: 320,

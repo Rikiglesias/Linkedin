@@ -1,7 +1,7 @@
 import { config } from '../config';
 import { buildFollowUpMessage } from '../messages';
 import { LeadRecord } from '../types/domain';
-import { isOpenAIConfigured, requestOpenAIText } from './openaiClient';
+import { isAiTextConfigured, requestAiText } from './aiTextClient';
 import { logWarn } from '../telemetry/logger';
 import { SemanticChecker } from './semanticChecker';
 
@@ -48,7 +48,7 @@ export async function buildPersonalizedFollowUpMessage(
     aiContext?: string,
 ): Promise<PersonalizedMessageResult> {
     const template = buildFollowUpMessage(lead, lang);
-    if (!config.aiPersonalizationEnabled || !isOpenAIConfigured()) {
+    if (!config.aiPersonalizationEnabled || !isAiTextConfigured('follow_up')) {
         return {
             message: trimToMaxChars(template, config.aiMessageMaxChars),
             source: 'template',
@@ -81,7 +81,8 @@ export async function buildPersonalizedFollowUpMessage(
     while (attempt < 3) {
         attempt++;
         try {
-            const generated = await requestOpenAIText({
+            const generated = await requestAiText({
+                purpose: 'follow_up',
                 system: systemPrompt,
                 user: `Dati lead: ${userPrompt}`,
                 maxOutputTokens: 220,
@@ -164,7 +165,7 @@ export async function buildFollowUpReminderMessage(
     }
     const fallbackTrimmed = trimToMaxChars(fallback, FOLLOW_UP_MAX_CHARS);
 
-    if (!config.aiPersonalizationEnabled || !isOpenAIConfigured()) {
+    if (!config.aiPersonalizationEnabled || !isAiTextConfigured('reminder')) {
         return { message: fallbackTrimmed, source: 'template', model: null };
     }
 
@@ -188,7 +189,8 @@ export async function buildFollowUpReminderMessage(
     });
 
     try {
-        const generated = await requestOpenAIText({
+        const generated = await requestAiText({
+            purpose: 'reminder',
             system: systemPrompt,
             user: `Dati lead: ${userPrompt}`,
             maxOutputTokens: 120,

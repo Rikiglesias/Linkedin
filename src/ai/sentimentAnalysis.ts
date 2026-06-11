@@ -1,5 +1,5 @@
 import { config } from '../config';
-import { isOpenAIConfigured, requestOpenAIText } from './openaiClient';
+import { isAiTextConfigured, requestAiText } from './aiTextClient';
 import { logWarn } from '../telemetry/logger';
 
 export type MessageIntent = 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL' | 'QUESTIONS' | 'NOT_INTERESTED' | 'UNKNOWN';
@@ -47,7 +47,7 @@ DEFINIZIONI DEI SUB-INTENT (granulari, si abbinano all'intent macro):
 Regola fondamentale: NESSUN TESTO FUORI DAL JSON. Il tuo output DEVE essere parsabile da JSON.parse().`;
 
 export async function analyzeIncomingMessage(messageText: string): Promise<SentimentAnalysisResult> {
-    if (!config.aiSentimentEnabled || !isOpenAIConfigured()) {
+    if (!config.aiSentimentEnabled || !isAiTextConfigured('sentiment')) {
         return {
             intent: 'UNKNOWN',
             subIntent: 'NONE',
@@ -68,7 +68,8 @@ export async function analyzeIncomingMessage(messageText: string): Promise<Senti
     }
 
     try {
-        const responseText = await requestOpenAIText({
+        const responseText = await requestAiText({
+            purpose: 'sentiment',
             system: SYSTEM_PROMPT,
             user: `Analizza questo messaggio: "${messageText}"`,
             maxOutputTokens: 200,

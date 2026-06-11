@@ -53,7 +53,7 @@ import { setQuarantine } from '../../risk/incidentManager';
 import { getEventSyncStatus } from '../../sync/eventSync';
 import { getRuntimeAccountProfiles } from '../../accountManager';
 import { getIntegrationProxyPoolStatus, getProxyPoolStatus } from '../../proxyManager';
-import { isOpenAIConfigured } from '../../ai/openaiClient';
+import { isAiTextConfigured } from '../../ai/aiTextClient';
 import { runRestoreDrill } from '../../scripts/restoreDb';
 import { getSecurityAdvisorPosture, runSecurityAdvisor } from '../../core/securityAdvisor';
 import {
@@ -266,7 +266,8 @@ export async function runStatusCommand(): Promise<void> {
             sentimentEnabled: config.aiSentimentEnabled,
             guardianEnabled: config.aiGuardianEnabled,
             model: config.aiModel,
-            openaiConfigured: isOpenAIConfigured(),
+            aiProvider: config.aiProvider,
+            aiTextConfigured: isAiTextConfigured('guardian'),
             guardianMinIntervalMinutes: config.aiGuardianMinIntervalMinutes,
             guardianPauseMinutes: config.aiGuardianPauseMinutes,
         },

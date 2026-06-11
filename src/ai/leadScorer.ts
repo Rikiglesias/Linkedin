@@ -1,4 +1,4 @@
-import { requestOpenAIText } from './openaiClient';
+import { requestAiText } from './aiTextClient';
 import { logWarn } from '../telemetry/logger';
 
 export interface LeadScoreResult {
@@ -53,7 +53,8 @@ Rispondi SOLO con JSON. Esempio:
     });
 
     try {
-        const generated = await requestOpenAIText({
+        const generated = await requestAiText({
+            purpose: 'lead_scoring',
             system: systemPrompt,
             user: userPrompt,
             maxOutputTokens: 150,

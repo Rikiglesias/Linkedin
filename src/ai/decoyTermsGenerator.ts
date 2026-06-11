@@ -9,7 +9,7 @@
  * - Zero regressione: se tutto fallisce, ritorna undefined (i decoy usano la lista hardcoded)
  */
 
-import { isOpenAIConfigured, requestOpenAIText } from './openaiClient';
+import { isAiTextConfigured, requestAiText } from './aiTextClient';
 import { config } from '../config';
 import { logInfo, logWarn } from '../telemetry/logger';
 
@@ -123,7 +123,7 @@ export async function generateContextualDecoyTerms(
     }
 
     // Tenta AI, poi fallback meccanico
-    if (config.aiPersonalizationEnabled && isOpenAIConfigured()) {
+    if (config.aiPersonalizationEnabled && isAiTextConfigured('decoy_terms')) {
         try {
             const aiTerms = await generateWithAI(titles, companies);
             if (aiTerms && aiTerms.length >= 5) {
@@ -170,7 +170,8 @@ ${companiesBlock ? `Target companies: ${companiesBlock}` : ''}
 Generate 12-15 search terms coherent with this sector.`;
 
     const raw = await Promise.race([
-        requestOpenAIText({
+        requestAiText({
+            purpose: 'decoy_terms',
             system,
             user,
             maxOutputTokens: 300,
