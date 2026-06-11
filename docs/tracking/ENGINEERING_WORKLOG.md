@@ -4,6 +4,27 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-11 — ai-stack F3+F4: cervello connesso ai segnali, ramo H28 eseguibile (`/goal ai-stack`)
+
+### Obiettivo
+F3: segnali live → decisioni che cambiano il comportamento (non solo log). F4: root cause del breaker `openai.chat` e ramo fallback H28 morto.
+
+### Interventi (3 commit L1-verdi)
+- **F3.1 `97f65cb`** (antiban SICURO): `classifyIncidentSource` era ORFANA e ROTTA (query su tabella inesistente `incidents`/`created_at`; reale: `account_incidents`/`opened_at` → catch silenzioso → sempre 'unknown'). Riscritta su repository PG-portabile `countDistinctIncidentAccounts` (accountId estratto in JS, niente `json_extract` dialect-specific) e WIRED in `quarantineAccount`: alert CRITICAL con recommendation WHAT/WHY/DO, outbox+liveEvent con `sourceClassification`/`affectedAccounts`. Fail-safe quarantena INVARIATO (la classificazione arricchisce, mai ammorbidisce). Catch → `logWarn incident.classification_failed`. Residuo dichiarato: counter `selector_failures` per-account = prerequisito del classificatore account-aware pieno.
+- **F3.4 `d6cbb14`** (antiban SICURO): 5° decision point `inbox_reply` wired nell'inboxWorker — gate ADDITIVO sopra i rule-based dell'auto-reply (può solo bloccare, mai mandare di più; strict=true → NOTIFY_HUMAN su risposta invalida). Valutato PRIMA del pre-incremento cap atomico (blocco AI = zero budget consumato). chatMessages taggati `THEM:` (distillatore F0.5, prompt pseudonimizzato). Event `inbox.auto_reply_ai_blocked`.
+- **F4 `e0239d5`**: ramo H28 `openai_circuit_open_ollama_fallback` ESEGUIBILE — `requestOpenAIText` accetta baseUrl/model dalla resolution (pattern F2: il registry risolve, il client esegue); endpoint fallback con integration/circuitKey DEDICATE (`ollama.fallback.chat`). Gate remoto invariato (override remoto bloccato con `AI_ALLOW_REMOTE_ENDPOINT=false`, testato). Causa storica del breaker aperto: endpoint AI configurato (default Ollama locale) non raggiungibile → ambientale; run sano verificabile con Ollama attivo (leva ambiente).
+
+### Già esistenti, verificati alla fonte (zero-A: niente da costruire)
+- **F3.2 P(accept)**: `scheduler.ts:740-759` riordina già i candidati invite con `predictAcceptanceBatch` (composito Bayesiano, fallback lead_score). Anti-ban-positivo attivo.
+- **F3.3 self-healing selettori**: loop completo `uiFallback` (VisionSolver LLaVA locale + verify post-azione) → `recordSelectorFallbackSuccess` → `selectors/learner.ts` (promozione con dry-run, valutazione, AUTO-ROLLBACK su degradazione, config `SELECTOR_LEARNING_*`).
+- **Feedback loop decisioni**: `recordDecision` interno ad `aiDecide` + accuracy re-iniettata nel prompt (`getAccuracyContext`).
+
+### Residuo con causa (non eseguibile ora)
+Accuracy post-anonimizzazione (F0.5) e "breaker chiuso in run sano": richiedono RUN LIVE (decisionFeedback con outcome reali; Ollama/provider attivo). Il monitoraggio è già cablato.
+
+### Verifica
+conta-problemi exit 0 a ogni commit; finale **174 file / 1710 test** (da 172/1698: +incidentClassification 8, +openaiClientH28 4... ricontato dal runner). antiban-review SICURO su F3.1/F3.4 (5 domande in conversazione); volumi/cap/timing INVARIATI ovunque (il cervello può solo ridurre).
+
 ## 2026-06-11 — ai-stack F2: matrice modello per-tier + vision/computer-use zero-PII di default (`/goal ai-stack`)
 
 ### Obiettivo
