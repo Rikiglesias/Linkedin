@@ -556,9 +556,16 @@ async function postSyncEnrichment(
                 });
             }
             if (cloudLeads.length > 0) {
-                await batchUpsertCloudLeads(cloudLeads);
-                enrichReport.cloudSynced = cloudLeads.length;
-                console.log(`  [CLOUD] ${cloudLeads.length} lead sincronizzati su Supabase.`);
+                const synced = await batchUpsertCloudLeads(cloudLeads);
+                enrichReport.cloudSynced = synced; // conteggio REALE (non length): no-client e chunk falliti esclusi
+                if (synced < cloudLeads.length) {
+                    enrichReport.cloudErrors += 1;
+                    console.warn(
+                        `  [CLOUD] Solo ${synced}/${cloudLeads.length} lead sincronizzati su Supabase (client assente o chunk falliti).`,
+                    );
+                } else {
+                    console.log(`  [CLOUD] ${synced} lead sincronizzati su Supabase.`);
+                }
             }
 
             // Sync anche salesnav_list_members

@@ -262,7 +262,13 @@ export async function executeSyncListWorkflow(
         workflow: 'sync-list',
         startedAt,
         finishedAt: new Date(),
-        success: report.errors === 0 && !report.challengeDetected,
+        // success veritiero: NON solo lo scraping/upsert core, ma anche enrichment e cloud sync.
+        // Prima ignorava enrichment.errors/cloudErrors → success=true con cloud non sincronizzato.
+        success:
+            report.errors === 0 &&
+            report.enrichment.errors === 0 &&
+            report.enrichment.cloudErrors === 0 &&
+            !report.challengeDetected,
         summary: {
             lista: listName || '(tutte)',
             pagine_visitate: report.pagesVisited,
@@ -276,7 +282,16 @@ export async function executeSyncListWorkflow(
             promossi_ready_invite: report.enrichment.promoted,
             cloud_sync: report.enrichment.cloudSynced,
         },
-        errors: report.challengeDetected ? ['Challenge LinkedIn rilevato durante sync'] : [],
+        // errors[] veritiero: elenca TUTTI i tipi di errore (scraping/upsert, enrichment, cloud), non
+        // solo il challenge. Così il report non tace fallimenti parziali (es. cloud non sincronizzato).
+        errors: [
+            ...(report.challengeDetected ? ['Challenge LinkedIn rilevato durante sync'] : []),
+            ...(report.errors > 0 ? [`${report.errors} errori durante scraping/upsert delle liste`] : []),
+            ...(report.enrichment.errors > 0 ? [`${report.enrichment.errors} errori durante l'enrichment`] : []),
+            ...(report.enrichment.cloudErrors > 0
+                ? [`${report.enrichment.cloudErrors} errori di sync cloud (Supabase) — retry via outbox`]
+                : []),
+        ],
         nextAction:
             report.enrichment.promoted > 0
                 ? `Step 3/4: esegui 'send-invites --list "${listName}"' per invitare i ${report.enrichment.promoted} lead pronti`

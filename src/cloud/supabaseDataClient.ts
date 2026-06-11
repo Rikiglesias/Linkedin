@@ -122,13 +122,16 @@ export async function updateCloudLeadStatus(
  * Batch upsert di un array di lead. Usare nella prima sync
  * o durante l'importazione CSV massiva.
  */
-export async function batchUpsertCloudLeads(leads: CloudLeadUpsert[]): Promise<void> {
-    if (leads.length === 0) return;
+/** @returns numero di lead REALMENTE upsertati (esclude client assente e chunk falliti) — il caller
+ *  deve usarlo come cloudSynced veritiero invece di assumere leads.length. */
+export async function batchUpsertCloudLeads(leads: CloudLeadUpsert[]): Promise<number> {
+    if (leads.length === 0) return 0;
     const sb = getClient();
-    if (!sb) return;
+    if (!sb) return 0; // Supabase non configurato → 0 sincronizzati (NON contarli come synced)
 
     const records = leads.map((l) => ({ ...l, updated_at: new Date().toISOString() }));
     const CHUNK_SIZE = 200;
+    let synced = 0;
 
     for (let i = 0; i < records.length; i += CHUNK_SIZE) {
         const chunk = records.slice(i, i + CHUNK_SIZE);
@@ -139,8 +142,11 @@ export async function batchUpsertCloudLeads(leads: CloudLeadUpsert[]): Promise<v
                 count: chunk.length,
                 error: error.message,
             });
+        } else {
+            synced += chunk.length; // conta solo i chunk realmente upsertati
         }
     }
+    return synced;
 }
 
 // ──────────────────────────────────────────────────────────────
