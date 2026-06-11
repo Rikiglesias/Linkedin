@@ -1,6 +1,7 @@
 import { config } from '../../config';
 import { closeBrowser } from '../../browser';
 import { disableWindowClickThrough } from '../../browser/windowInputBlock';
+import { releaseRuntimeLock } from '../../core/repositories';
 import { runSalesNavigatorListSync } from '../../core/salesNavigatorSync';
 import { listSalesNavLists } from '../../core/repositories/leadsCore';
 import { evaluateWorkflowEntryGuards } from '../../core/workflowEntryGuards';
@@ -231,6 +232,10 @@ export async function executeSyncListWorkflow(
         if (canarySession) {
             disableWindowClickThrough(canarySession.browser);
             await closeBrowser(canarySession);
+        }
+        // F1: rilascia il lock anti-concorrenza per-account acquisito dal guard (se presente).
+        if (guardDecision.accountLock) {
+            await releaseRuntimeLock(guardDecision.accountLock.lockKey, guardDecision.accountLock.ownerId);
         }
     }
 

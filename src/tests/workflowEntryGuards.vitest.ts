@@ -18,6 +18,8 @@ const mocks = vi.hoisted(() => ({
     getDailyStat: vi.fn(),
     getRuntimeFlag: vi.fn(),
     setRuntimeFlag: vi.fn(),
+    acquireRuntimeLock: vi.fn(),
+    releaseRuntimeLock: vi.fn(),
     getSessionVarianceFactor: vi.fn(),
     runPreventiveGuards: vi.fn(),
 }));
@@ -66,6 +68,8 @@ vi.mock('../core/repositories', () => ({
     getDailyStat: mocks.getDailyStat,
     getRuntimeFlag: mocks.getRuntimeFlag,
     setRuntimeFlag: mocks.setRuntimeFlag,
+    acquireRuntimeLock: mocks.acquireRuntimeLock,
+    releaseRuntimeLock: mocks.releaseRuntimeLock,
 }));
 
 vi.mock('../core/preventiveGuards', () => ({
@@ -110,6 +114,8 @@ describe('workflowEntryGuards', () => {
         mocks.getDailyStat.mockResolvedValue(0);
         mocks.getRuntimeFlag.mockResolvedValue(null);
         mocks.setRuntimeFlag.mockResolvedValue(undefined);
+        mocks.acquireRuntimeLock.mockResolvedValue({ acquired: true, lock: { owner_id: 'self' } });
+        mocks.releaseRuntimeLock.mockResolvedValue(true);
         mocks.getSessionVarianceFactor.mockReturnValue(1);
         mocks.runPreventiveGuards.mockResolvedValue(undefined);
     });
@@ -230,5 +236,28 @@ describe('workflowEntryGuards', () => {
         expect(result.blocked?.reason).toBe('LOGIN_REQUIRED');
         expect(result.session).toBeUndefined();
         expect(mocks.closeBrowser).toHaveBeenCalledTimes(1); // chiusa, non passata
+    });
+
+    test('blocca un sync concorrente sullo stesso account quando il lock per-account non è acquisibile (F1)', async () => {
+        mocks.acquireRuntimeLock.mockResolvedValue({ acquired: false, lock: { owner_id: 'other-run' } });
+
+        const result = await evaluateWorkflowEntryGuards({ workflow: 'sync-list', dryRun: false, accountId: 'acc-1' });
+
+        expect(result.allowed).toBe(false);
+        expect(result.blocked?.reason).toBe('SYNC_CONCURRENT_ON_ACCOUNT');
+        expect(mocks.launchBrowser).not.toHaveBeenCalled(); // il canary non parte → niente 2° browser
+    });
+
+    test('acquisisce il lock per-account e lo espone per il release del caller (F1)', async () => {
+        const result = await evaluateWorkflowEntryGuards({ workflow: 'sync-list', dryRun: false, accountId: 'acc-1' });
+
+        expect(result.allowed).toBe(true);
+        expect(mocks.acquireRuntimeLock).toHaveBeenCalledWith(
+            'sync.account:acc-1',
+            expect.any(String),
+            expect.any(Number),
+            expect.objectContaining({ workflow: 'sync-list', accountId: 'acc-1' }),
+        );
+        expect(result.accountLock).toMatchObject({ lockKey: 'sync.account:acc-1' });
     });
 });

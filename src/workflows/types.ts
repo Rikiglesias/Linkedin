@@ -39,6 +39,7 @@ export type WorkflowBlockedReason =
     | 'AI_ABORT'
     | 'RISK_COOLDOWN'
     | 'LOGIN_REQUIRED'
+    | 'SYNC_CONCURRENT_ON_ACCOUNT'
     | 'WORKFLOW_ERROR';
 
 export interface WorkflowBlockedState {

@@ -5,7 +5,15 @@ import { config, getLocalDateString, isWorkingHour } from '../config';
 import { checkDiskSpace } from '../db';
 import { quarantineAccount, pauseAutomation } from '../risk/incidentManager';
 import { logInfo, logWarn } from '../telemetry/logger';
-import { pushOutboxEvent, getAutomationPauseState, getDailyStat, getRuntimeFlag, setRuntimeFlag } from './repositories';
+import {
+    pushOutboxEvent,
+    getAutomationPauseState,
+    getDailyStat,
+    getRuntimeFlag,
+    setRuntimeFlag,
+    acquireRuntimeLock,
+    releaseRuntimeLock,
+} from './repositories';
 import { getSessionVarianceFactor, runPreventiveGuards } from './preventiveGuards';
 import type { WorkflowSelection } from './workflowSelection';
 import type { GuardDecision, WorkflowBlockedReason, WorkflowKind } from '../workflows/types';
@@ -207,7 +215,15 @@ export interface EvaluateWorkflowEntryGuardsOptions {
 /** GuardDecision esteso con la sessione del canary da riusare (handoff opt-in, solo se `reuseSession`). */
 export interface GuardDecisionWithSession extends GuardDecision {
     session?: BrowserSession;
+    /**
+     * Lock per-account acquisito dal guard (F1 anti-concorrenza): il CALLER lo rilascia nel `finally`
+     * con `releaseRuntimeLock(lockKey, ownerId)`. Null se il workflow non usa il lock per-account.
+     */
+    accountLock?: { lockKey: string; ownerId: string } | null;
 }
+
+/** Contatore per ownerId univoco del lock per-account intra-processo (evita renew-as-acquire). */
+let _syncLockCounter = 0;
 
 function block(reason: GuardDecision['blocked']): GuardDecision {
     return { allowed: false, blocked: reason };
@@ -354,6 +370,34 @@ export async function evaluateWorkflowEntryGuards(
         });
     }
 
+    // Guard anti-concorrenza per-account (F1): impedisce 2 sync-list/sync-search sullo STESSO account
+    // in parallelo (2 CLI dirette o 2 comandi automation) che aprirebbero lo stesso profilo persistente
+    // camoufox → lock conflict 180s. Riusa il lock distribuito atomico esistente (acquireRuntimeLock,
+    // anti-TOCTOU H12); il CALLER lo rilascia nel finally. Acquisito PRIMA del canary (che apre il browser).
+    let accountLock: { lockKey: string; ownerId: string } | null = null;
+    if (options.workflow === 'sync-list' || options.workflow === 'sync-search') {
+        const lockAccountId = options.accountId ?? accounts[0]?.id ?? 'default';
+        const lockKey = `sync.account:${lockAccountId}`;
+        const ownerId = `sync:${lockAccountId}:${process.pid}:${++_syncLockCounter}`;
+        const lockResult = await acquireRuntimeLock(lockKey, ownerId, 1800, {
+            workflow: options.workflow,
+            accountId: lockAccountId,
+        });
+        if (!lockResult.acquired) {
+            await logWarn('workflow.skipped.concurrent_sync', {
+                workflow: options.workflow,
+                accountId: lockAccountId,
+                lockHolder: lockResult.lock?.owner_id ?? null,
+            });
+            return block({
+                reason: 'SYNC_CONCURRENT_ON_ACCOUNT',
+                message: `Sync già in esecuzione sullo stesso account (${lockAccountId})`,
+                details: { workflow: options.workflow, accountId: lockAccountId },
+            });
+        }
+        accountLock = { lockKey, ownerId };
+    }
+
     const canary = await runCanaryIfNeeded(
         options.workflow,
         options.noProxy ?? false,
@@ -361,6 +405,8 @@ export async function evaluateWorkflowEntryGuards(
         options.reuseSession ? options.accountId : undefined,
     );
     if (!canary.ok) {
+        // Il workflow non procede → rilascia subito il lock (non aspettare il TTL).
+        if (accountLock) await releaseRuntimeLock(accountLock.lockKey, accountLock.ownerId);
         if (canary.quarantineType) {
             await quarantineAccount(canary.quarantineType, { workflow: options.workflow });
         }
@@ -371,7 +417,6 @@ export async function evaluateWorkflowEntryGuards(
         });
     }
 
-    // canary.session è definita solo nel caso handoff (reuseSession + account match + check ok);
-    // altrimenti undefined → il workflow apre la sua sessione (comportamento invariato).
-    return { allowed: true, blocked: null, session: canary.session };
+    // canary.session definita solo nel caso handoff; accountLock va rilasciato dal caller nel finally.
+    return { allowed: true, blocked: null, session: canary.session, accountLock };
 }

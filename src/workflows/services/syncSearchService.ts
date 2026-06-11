@@ -2,6 +2,7 @@ import { config, isWorkingHour } from '../../config';
 import { getAccountProfileById } from '../../accountManager';
 import { awaitManualLogin, blockUserInput } from '../../browser/humanBehavior';
 import { closeBrowser, launchBrowser, checkLogin } from '../../browser';
+import { releaseRuntimeLock } from '../../core/repositories';
 import {
     cleanupWindowClickThrough,
     disableWindowClickThrough,
@@ -258,6 +259,10 @@ export async function executeSyncSearchWorkflow(
         process.off('exit', exitCleanupHandler);
         disableWindowClickThrough(session.browser);
         await closeBrowser(session);
+        // F1: rilascia il lock anti-concorrenza per-account acquisito dal guard (se presente).
+        if (guardDecision.accountLock) {
+            await releaseRuntimeLock(guardDecision.accountLock.lockKey, guardDecision.accountLock.ownerId);
+        }
     }
 
     const errors: string[] = [];
