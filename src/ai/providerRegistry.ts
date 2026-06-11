@@ -1,12 +1,20 @@
 /**
  * ai/providerRegistry.ts
- * Registry centralizzato per la risoluzione del provider AI.
- * Decide quale provider usare (OpenAI cloud, Ollama locale, template fallback)
- * basandosi su config, disponibilità, green mode e stato circuit breaker.
+ * Registry centralizzato per la risoluzione del provider AI testuale.
+ * SOLO risoluzione (pura, testabile): l'esecuzione/dispatch è in aiTextClient.ts (F0 ai-stack).
  *
- * H28: Switch dinamico — se il circuit breaker di OpenAI è aperto, il sistema
- * fallback automaticamente a Ollama (se OLLAMA_FALLBACK_URL configurato) o template.
- * Elimina i 10+ retry inutili prima dello switch.
+ * Decide il provider per OGNI richiesta in base a: purpose (guard zero-PII),
+ * AI_PROVIDER per-deployment, green mode, gate endpoint remoto e circuit breaker.
+ *
+ * Guard zero-PII (decisione utente 2026-06-11): i purpose che vedono dati personali
+ * del lead NON risolvono MAI a un provider cloud — solo endpoint locale o template.
+ * Il gating per-feature (aiPersonalizationEnabled, aiGuardianEnabled, aiSentimentEnabled)
+ * resta nei call-site: qui un gate globale regredirebbe i consumer non-personalization.
+ *
+ * H28: circuit breaker OpenAI aperto → fallback Ollama/template senza retry inutili.
+ * LIMITE NOTO (fix in F4): il ramo openai_circuit_open_ollama_fallback con
+ * OLLAMA_FALLBACK_URL separato è risolvibile ma NON eseguibile da requestOpenAIText
+ * (baseUrl hardcoded + circuitKey 'openai.chat' condiviso → CircuitOpenError immediato).
  *
  * NOTA: importa da integrationPolicy per lo stato del circuit breaker.
  * Nessuna circular dependency (integrationPolicy non importa da ai/).
@@ -14,15 +22,56 @@
 
 import { config, isGreenModeWindow } from '../config';
 import { isOpenAIConfigured } from './openaiClient';
+import { isAnthropicConfigured } from './anthropicClient';
 import { isCircuitOpenForKey } from '../core/integrationPolicy';
 
-export type AiProviderType = 'openai' | 'ollama' | 'template';
+export type AiProviderType = 'openai' | 'ollama' | 'anthropic' | 'template';
+
+/** Purpose tipizzato per ogni call-site testuale: abilita la guard PII e il routing per-tier (F2). */
+export type AiTextPurpose =
+    | 'invite_note'
+    | 'follow_up'
+    | 'reminder'
+    | 'lead_scoring'
+    | 'lead_cleaning'
+    | 'decision_engine'
+    | 'sentiment'
+    | 'intent'
+    | 'decoy_terms'
+    | 'guardian'
+    | 'ai_advisor'
+    | 'post_content';
+
+/**
+ * purpose → vede PII del lead? (nome/email/telefono/URL/azienda o testo scritto dal lead).
+ * sentiment/intent analizzano il TESTO dei messaggi del lead → PII per decisione binding.
+ */
+const PII_SENSITIVE_PURPOSES: Record<AiTextPurpose, boolean> = {
+    invite_note: true,
+    follow_up: true,
+    reminder: true,
+    lead_scoring: true,
+    lead_cleaning: true,
+    decision_engine: true,
+    sentiment: true,
+    intent: true,
+    decoy_terms: false,
+    guardian: false,
+    ai_advisor: false,
+    post_content: false,
+};
+
+export function isPiiSensitivePurpose(purpose: AiTextPurpose): boolean {
+    return PII_SENSITIVE_PURPOSES[purpose];
+}
 
 export interface AiProviderResolution {
     provider: AiProviderType;
     reason: string;
     endpoint: string | null;
     model: string | null;
+    purpose: AiTextPurpose;
+    piiSensitive: boolean;
 }
 
 /**
@@ -57,26 +106,32 @@ function isLocalUrl(baseUrl: string): boolean {
 
 /**
  * Risolve quale provider AI usare per la generazione testo.
- * Chain: green mode → Ollama | cloud OpenAI → Ollama fallback → template
+ * Ordine: template esplicito → green mode (locale) → gate remoto → guard PII →
+ * provider esplicito (anthropic/ollama) → chain storica (openai/H28 → ollama → template).
  */
-export function resolveAiProvider(): AiProviderResolution {
-    if (!config.aiPersonalizationEnabled) {
-        return { provider: 'template', reason: 'ai_personalization_disabled', endpoint: null, model: null };
-    }
-
+export function resolveAiProvider(purpose: AiTextPurpose): AiProviderResolution {
+    const piiSensitive = isPiiSensitivePurpose(purpose);
+    const base = { purpose, piiSensitive };
     const ollamaAvailable = isOllamaConfigured();
     const openaiAvailable = isOpenAIConfigured();
 
+    if (config.aiProvider === 'template') {
+        return { provider: 'template', reason: 'explicit_template', endpoint: null, model: null, ...base };
+    }
+
+    // Green mode vince anche su AI_PROVIDER esplicito: è la direttiva più specifica
+    // (finestra oraria a basso impatto → locale). model = aiGreenModel, coerente col client.
     if (isGreenModeWindow()) {
         if (ollamaAvailable) {
             return {
                 provider: 'ollama',
                 reason: 'green_mode_local',
                 endpoint: config.openaiBaseUrl,
-                model: config.aiModel,
+                model: config.aiGreenModel,
+                ...base,
             };
         }
-        return { provider: 'template', reason: 'green_mode_no_ollama', endpoint: null, model: null };
+        return { provider: 'template', reason: 'green_mode_no_ollama', endpoint: null, model: null, ...base };
     }
 
     if (!config.aiAllowRemoteEndpoint) {
@@ -86,14 +141,73 @@ export function resolveAiProvider(): AiProviderResolution {
                 reason: 'remote_disabled_local_only',
                 endpoint: config.openaiBaseUrl,
                 model: config.aiModel,
+                ...base,
             };
         }
-        return { provider: 'template', reason: 'remote_disabled_no_ollama', endpoint: null, model: null };
+        return { provider: 'template', reason: 'remote_disabled_no_ollama', endpoint: null, model: null, ...base };
     }
 
+    // Guard zero-PII: purpose con dati lead → MAI cloud, anche con AI_PROVIDER esplicito.
+    if (piiSensitive) {
+        if (ollamaAvailable) {
+            return {
+                provider: 'ollama',
+                reason: 'pii_cloud_blocked_local_only',
+                endpoint: config.openaiBaseUrl,
+                model: config.aiModel,
+                ...base,
+            };
+        }
+        return { provider: 'template', reason: 'pii_cloud_blocked_no_local', endpoint: null, model: null, ...base };
+    }
+
+    // Anthropic SOLO su selezione esplicita (in F0 'auto' non lo sceglie mai:
+    // comportamento storico preservato; la preferenza per-tier arriva in F2).
+    if (config.aiProvider === 'anthropic' && isAnthropicConfigured()) {
+        if (isCircuitOpenForKey('anthropic.messages')) {
+            if (ollamaAvailable) {
+                return {
+                    provider: 'ollama',
+                    reason: 'anthropic_circuit_open_local_fallback',
+                    endpoint: config.openaiBaseUrl,
+                    model: config.aiModel,
+                    ...base,
+                };
+            }
+            return {
+                provider: 'template',
+                reason: 'anthropic_circuit_open_no_fallback',
+                endpoint: null,
+                model: null,
+                ...base,
+            };
+        }
+        // endpoint null = default SDK (api.anthropic.com), non configurabile per design.
+        return {
+            provider: 'anthropic',
+            reason: 'anthropic_selected',
+            endpoint: null,
+            model: config.anthropicModel,
+            ...base,
+        };
+    }
+
+    if (config.aiProvider === 'ollama') {
+        if (ollamaAvailable) {
+            return {
+                provider: 'ollama',
+                reason: 'explicit_ollama',
+                endpoint: config.openaiBaseUrl,
+                model: config.aiModel,
+                ...base,
+            };
+        }
+        return { provider: 'template', reason: 'explicit_ollama_unavailable', endpoint: null, model: null, ...base };
+    }
+
+    // 'auto' | 'openai' | anthropic-non-configurato → chain storica (H28).
     if (openaiAvailable) {
-        // H28: Se il circuit breaker di OpenAI è aperto, switch immediato al fallback.
-        // Evita 10+ retry inutili — il CB si è già aperto dopo 3+ failure consecutive.
+        // H28: circuit breaker aperto → switch immediato al fallback, niente retry inutili.
         if (isCircuitOpenForKey('openai.chat')) {
             if (isOllamaFallbackConfigured()) {
                 return {
@@ -101,16 +215,24 @@ export function resolveAiProvider(): AiProviderResolution {
                     reason: 'openai_circuit_open_ollama_fallback',
                     endpoint: config.ollamaFallbackUrl,
                     model: config.aiGreenModel,
+                    ...base,
                 };
             }
             // Nessun Ollama fallback → degrade a template (meglio che bloccare)
-            return { provider: 'template', reason: 'openai_circuit_open_no_fallback', endpoint: null, model: null };
+            return {
+                provider: 'template',
+                reason: 'openai_circuit_open_no_fallback',
+                endpoint: null,
+                model: null,
+                ...base,
+            };
         }
         return {
             provider: 'openai',
             reason: 'cloud_configured',
             endpoint: config.openaiBaseUrl,
             model: config.aiModel,
+            ...base,
         };
     }
 
@@ -120,8 +242,9 @@ export function resolveAiProvider(): AiProviderResolution {
             reason: 'cloud_unavailable_local_fallback',
             endpoint: config.openaiBaseUrl,
             model: config.aiModel,
+            ...base,
         };
     }
 
-    return { provider: 'template', reason: 'no_ai_provider_available', endpoint: null, model: null };
+    return { provider: 'template', reason: 'no_ai_provider_available', endpoint: null, model: null, ...base };
 }
