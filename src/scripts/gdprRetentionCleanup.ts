@@ -19,13 +19,16 @@
 
 import { createHash } from 'crypto';
 import { getDatabase } from '../db';
+import { config } from '../config';
 import { withTransaction } from '../core/repositories/shared';
 import { logInfo, logWarn } from '../telemetry/logger';
 
 // ─── Costanti policy ──────────────────────────────────────────────────────────
 
-const ANONYMIZE_AFTER_DAYS = 180;
-const DELETE_AFTER_DAYS = 365;
+// T4 preset-profili: soglie env-driven (GDPR_ANONYMIZE_AFTER_DAYS / GDPR_DELETE_AFTER_DAYS,
+// default 180/365 in config/domains.ts). delete mai sotto anonymize (clamp difensivo).
+const ANONYMIZE_AFTER_DAYS = config.gdprAnonymizeAfterDays;
+const DELETE_AFTER_DAYS = Math.max(config.gdprDeleteAfterDays, config.gdprAnonymizeAfterDays);
 // Lead in stati "caldi" hanno soglia raddoppiata per non perdere dati di lead attivi
 const WARM_STATUSES = ['ACCEPTED', 'REPLIED', 'CONNECTED'];
 const WARM_MULTIPLIER = 2;

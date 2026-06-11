@@ -59,8 +59,11 @@ export interface AppConfig {
     autoPauseMinutesOnFailureBurst: number;
     challengePauseMinutes: number;
     challengePersistentGate: boolean;
+    challengeAutoResolveEnabled: boolean;
     metricsAuthToken: string;
     retentionDays: number;
+    gdprAnonymizeAfterDays: number;
+    gdprDeleteAfterDays: number;
     profileContextExtractionEnabled: boolean;
     softInviteCap: number;
     hardInviteCap: number;

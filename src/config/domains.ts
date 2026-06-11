@@ -72,7 +72,15 @@ export function buildRuntimeDomainConfig(accountProfiles: AccountProfileConfig[]
         // riprende manualmente (resumeAutomation via dashboard/API). Default true (difensivo);
         // false = comportamento legacy (auto-resume dopo challengePauseMinutes).
         challengePersistentGate: parseBoolEnv('CHALLENGE_PERSISTENT_GATE', true),
+        // Preset max-stealth (T4 preset-profili): opt-out dell'auto-risoluzione captcha via
+        // vision (challengeHandler). Default true = comportamento invariato; false = ogni
+        // challenge resta SEMPRE all'intervento umano (gate persistente + alert).
+        challengeAutoResolveEnabled: parseBoolEnv('CHALLENGE_AUTO_RESOLVE_ENABLED', true),
         retentionDays: Math.max(7, parseIntEnv('RETENTION_DAYS', 90)),
+        // GDPR (T4 preset-profili): soglie retention lead di gdprRetentionCleanup, prima
+        // costanti hardcoded 180/365 — esposte per differenziarle per preset (floor difensivi).
+        gdprAnonymizeAfterDays: Math.max(30, parseIntEnv('GDPR_ANONYMIZE_AFTER_DAYS', 180)),
+        gdprDeleteAfterDays: Math.max(60, parseIntEnv('GDPR_DELETE_AFTER_DAYS', 365)),
         profileContextExtractionEnabled: parseBoolEnv('PROFILE_CONTEXT_EXTRACTION_ENABLED', false),
         sessionDir: resolvePathFromEnv('SESSION_DIR', path.join('data', 'session')),
         multiAccountEnabled: parseBoolEnv('MULTI_ACCOUNT_ENABLED', accountProfiles.length > 1),

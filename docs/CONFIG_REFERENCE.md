@@ -14,6 +14,7 @@ Questo file è generato automaticamente da `scripts/generate-config-docs.mjs` le
 - `AUTO_PAUSE_MINUTES_ON_FAILURE_BURST`
 - `BROWSER_ENGINE`
 - `BYPASS_WORKING_HOURS`
+- `CHALLENGE_AUTO_RESOLVE_ENABLED`
 - `CHALLENGE_PAUSE_MINUTES`
 - `CHALLENGE_PERSISTENT_GATE`
 - `COMPANY_ENRICHMENT_BATCH`
@@ -26,6 +27,8 @@ Questo file è generato automaticamente da `scripts/generate-config-docs.mjs` le
 - `DASHBOARD_TRUSTED_IPS`
 - `DATABASE_URL`
 - `EVENT_SYNC_SINK`
+- `GDPR_ANONYMIZE_AFTER_DAYS`
+- `GDPR_DELETE_AFTER_DAYS`
 - `HEADLESS`
 - `HOUR_END`
 - `HOUR_START`

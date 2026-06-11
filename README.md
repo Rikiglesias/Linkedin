@@ -62,6 +62,10 @@ copy .env.example .env
 npm run build
 ```
 
+> Scorciatoia consigliata: invece del `.env.example` generico, parti da un **preset
+> d'uso** già coerente e anti-ban-sicuro — `presets/{starter,pro,scale,max-stealth}.env.example`
+> (guida e combinazioni vietate: `docs/PRESET_PROFILES.md`).
+
 ### Verifica minima
 
 ```bash

@@ -17,7 +17,7 @@ import { clickCoordinatesHumanLike, clickLocatorHumanLike } from '../browser';
 import { humanDelay } from '../browser/humanBehavior';
 import { logInfo, logWarn, logError } from '../telemetry/logger';
 import { getDailyStat, incrementDailyStat } from '../core/repositories/stats';
-import { getLocalDateString } from '../config';
+import { config, getLocalDateString } from '../config';
 
 const MAX_ATTEMPTS = 2;
 const MAX_AUTO_CHALLENGE_RESOLUTIONS_PER_DAY = 3;
@@ -72,6 +72,15 @@ async function persistLastAttemptMs(timestampMs: number): Promise<void> {
  * @returns true se il challenge è stato risolto, false altrimenti
  */
 export async function attemptChallengeResolution(page: Page): Promise<boolean> {
+    // Opt-out via config (preset max-stealth): con CHALLENGE_AUTO_RESOLVE_ENABLED=false
+    // ogni challenge resta all'intervento umano — l'auto-solve è esso stesso un segnale.
+    if (!config.challengeAutoResolveEnabled) {
+        await logInfo('challenge.auto_resolve_disabled', {
+            reason: 'CHALLENGE_AUTO_RESOLVE_ENABLED=false',
+        });
+        return false;
+    }
+
     // Cap giornaliero persistente (DB): troppi CAPTCHA risolti automaticamente in un giorno
     // sono più sospetti di non risolverli. Limita a 3/giorno, persistente cross-riavvii.
     const today = getLocalDateString();

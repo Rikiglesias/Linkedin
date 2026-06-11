@@ -4,6 +4,20 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-12 — preset-profili: 4 preset d'uso + mappa assi A-I + 3 env nuove (`/goal preset-profili`)
+
+### Obiettivo
+4 preset `.env` coerenti e anti-ban-sicuri (starter/pro/scale/max-stealth) + mappa completa aspetti×opzioni e assi d'uso, con i gap reali documentati. Binding: `~/todos/preset-profili.md`.
+
+### Interventi
+- **T1b fan-out `wf_70cfaf15-f8d`** (9 agenti, 108 finding con file:riga): mappa assi d'uso A-I (obiettivo, lifecycle, recovery, profilo-utente, compliance, lingua, scala, budget, reporting). Scoperte chiave: vincolo UI account EN/IT (selettori); erasure GDPR non propagata a Supabase + RLS off su `public.leads`; cap daily/weekly su bucket unico (migration 055 non wired); zero-cloud $0 è il default del codice; nessun env per disattivare l'auto-solve captcha.
+- **T3 preset**: `presets/{starter,pro,scale,max-stealth}.env.example` — nomi `.env.example` per restare nel gate secrets (template, segreti vuoti). VERIFY deterministico: 279 var, tutte esistenti in `src/config/` (script grep, incl. template-literal `ACCOUNT_${slot}_*`). Antiban-review max-stealth: SICURO (solo restringe).
+- **T4 codice (additivo, default invariati)**: `CHALLENGE_AUTO_RESOLVE_ENABLED` (gate in `challengeHandler.ts`, default true; max-stealth=false — l'auto-solve è esso stesso un segnale) + `GDPR_ANONYMIZE_AFTER_DAYS`/`GDPR_DELETE_AFTER_DAYS` (soglie `gdprRetentionCleanup.ts` prima hardcoded 180/365, floor 30/60, clamp delete≥anonymize). Test nuovi `configPresetEnvs.vitest.ts` (4).
+- **T5 doc**: `docs/PRESET_PROFILES.md` (tabella profili, mappa 12 aspetti, assi A-I, gap per profilo con file:riga, 16 combinazioni vietate) + pointer README + `CONFIG_REFERENCE.md` rigenerato.
+
+### Verifica finale
+`npm run conta-problemi` exit 0 — 175 file test / 1714 test passati (+1 file, +4 test). Decisione architetturale: preset = file `.env` (asse USO), ortogonali a `CONFIG_PROFILE` (asse AMBIENTE) — niente duplicazione SSOT in `profiles.ts`. Gap grandi tracciati in PRESET_PROFILES.md (slot N account, cap per-account, spend-cap testo cloud, erasure→Supabase, locale per-account).
+
 ## 2026-06-11 — ai-stack F3+F4: cervello connesso ai segnali, ramo H28 eseguibile (`/goal ai-stack`)
 
 ### Obiettivo
