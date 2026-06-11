@@ -82,6 +82,37 @@ export async function runPreflightEnvCommand(): Promise<void> {
         }
     }
 
+    // 3b. Anthropic reachability + validità key (F0 ai-stack — solo se configurato)
+    if (config.anthropicApiKey) {
+        const required = config.aiProvider === 'anthropic';
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 5000);
+            // GET /v1/models: endpoint di metadata, valida key e raggiungibilità senza consumare token.
+            const res = await fetch('https://api.anthropic.com/v1/models?limit=1', {
+                headers: {
+                    'x-api-key': config.anthropicApiKey,
+                    'anthropic-version': '2023-06-01',
+                },
+                signal: controller.signal,
+            });
+            clearTimeout(timeout);
+            if (res.ok) {
+                checks.push({ name: 'Anthropic', status: 'OK', detail: `key valida, modello ${config.anthropicModel}` });
+            } else if (res.status === 401) {
+                checks.push({ name: 'Anthropic', status: required ? 'FAIL' : 'WARN', detail: 'ANTHROPIC_API_KEY non valida (401)' });
+            } else {
+                checks.push({ name: 'Anthropic', status: 'WARN', detail: `Status ${res.status}` });
+            }
+        } catch {
+            checks.push({
+                name: 'Anthropic',
+                status: required ? 'FAIL' : 'WARN',
+                detail: 'api.anthropic.com NON raggiungibile',
+            });
+        }
+    }
+
     // 4. Session directories exist
     for (const account of accounts) {
         const sessionDir = path.resolve(account.sessionDir);

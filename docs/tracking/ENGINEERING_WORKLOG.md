@@ -4,6 +4,20 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-11 — ai-stack F0: provider Anthropic + providerRegistry cablato + guard zero-PII (`/goal ai-stack`)
+
+### Obiettivo
+F0 del goal `ai-stack` (binding `~/todos/ai-stack.md`): aggiungere il provider Anthropic dietro un'astrazione e CABLARE `providerRegistry.resolveAiProvider` (era dead code: 12 call-site chiamavano direttamente `requestOpenAIText`, il fallback H28 non scattava mai). Vincoli utente: ZERO PII al cloud (guard meccanica), config-driven per-deployment (requisito prodotto multi-tenant). Piano `swirling-chasing-moonbeam` passato da review adversariale (11 finding integrati, 4 ALTA: gate globale regressivo nel registry, timeout assente in executeWithRetryPolicy, ramo H28 risoluzione-senza-esecuzione, 2 test con mock-factory parziali).
+
+### Interventi (4 chunk L1-verdi, commit separati)
+- **A `7655398`**: `@anthropic-ai/sdk` + config (`AI_PROVIDER` auto|anthropic|openai|ollama|template, `ANTHROPIC_API_KEY/MODEL/TIMEOUT_MS`) + validazione boot (anthropic ⇒ key + remote-endpoint) + `src/ai/anthropicClient.ts` (Messages API, stessa shape di requestOpenAIText; timeout dal costruttore SDK perché `executeWithRetryPolicy` NON applica timeoutMs; `maxRetries: 0` = retry policy unica in integrationPolicy; circuitKey `anthropic.messages`; classify transient su classi tipizzate SDK; json_object via istruzione system + strip fence) + 13 unit test.
+- **B `d66e1cf`**: `resolveAiProvider(purpose)` con purpose tipizzato (12 valori) e mappa PII; **guard zero-PII**: purpose con dati lead MAI su cloud, anche con AI_PROVIDER esplicito; gate `aiPersonalizationEnabled` RIMOSSO dal registry (avrebbe regredito intentResolver/leadScorer/leadDataCleaner/aiAdvisor/postContent che girano con personalization OFF — regression test dedicato); `auto` NON seleziona mai anthropic in F0 (storico esatto); green mode prioritario + metadata `aiGreenModel` coerente col client.
+- **C `3675efb`**: facade `src/ai/aiTextClient.ts` (`requestAiText`/`isAiTextConfigured`/`AiProviderUnavailableError` + audit `ai_text.cloud_dispatch` su ogni uscita cloud) + sweep 13 file (11 call-site + companyEnrichment gate + adminCommands status `aiProvider`/`aiTextConfigured`); semanticChecker INTOCCATO (embeddings su openaiClient by-design); 2 test ripuntati su aiTextClient; madge src/ai = 0 circolari.
+- **D+E**: `aiProviderFallbackChain.vitest.ts` (5 test: registry+dispatch REALI — anthropic→locale su CB aperto, →AiProviderUnavailableError senza locale, guard PII nel dispatch, recovery CB) + check `Anthropic` in `preflightEnv` (GET /v1/models, valida key senza consumare token; FAIL solo se AI_PROVIDER=anthropic).
+
+### Verifica
+conta-problemi exit 0 ad OGNI chunk; finale **170 file / 1663 test** (baseline 167/1625; +3 file, +38 test). Grep sweep: `requestOpenAIText|isOpenAIConfigured` = 0 fuori da {aiTextClient, openaiClient, providerRegistry, semanticChecker}+mock test. antiban-review: **SICURO** (no browser/timing/volumi; egress api.anthropic.com diretto e separato dal proxy LinkedIn). Limite noto documentato: ramo H28 `OLLAMA_FALLBACK_URL` separato = risoluzione-only (fix F4). **Leva utente E2E live**: env nel binding (key + AI_PROVIDER=anthropic + remote + flag call-site) → atteso log `ai_text.cloud_dispatch {provider: anthropic}`.
+
 ## 2026-06-11 — sync-list-fix G5-F3 + G4-parte2 + G3-LOW: split god-function + characterization (`/goal sync-list-fix`)
 
 ### Obiettivo
