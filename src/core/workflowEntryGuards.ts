@@ -9,6 +9,7 @@ import {
     pushOutboxEvent,
     getAutomationPauseState,
     getDailyStat,
+    getAccountQuarantine,
     getRuntimeFlag,
     setRuntimeFlag,
     acquireRuntimeLock,
@@ -32,7 +33,18 @@ function touchesUi(workflow: WorkflowEntryKind): boolean {
  */
 type CanaryOutcome =
     | { ok: true; session?: BrowserSession }
-    | { ok: false; blockReason: WorkflowBlockedReason; quarantineType: string | null; message: string };
+    | {
+          ok: false;
+          blockReason: WorkflowBlockedReason;
+          quarantineType: string | null;
+          message: string;
+          /**
+           * Account a cui attribuire la quarantena (G5-F2). Presente SOLO per fallimenti
+           * account-specific (es. LOGIN_REQUIRED); assente per fallimenti platform-wide
+           * (SELECTOR_CANARY_FAILED) → quarantena GLOBALE fail-safe su tutti gli account.
+           */
+          accountId?: string;
+      };
 
 async function runCanaryIfNeeded(
     workflow: WorkflowEntryKind,
@@ -83,6 +95,8 @@ async function runCanaryIfNeeded(
                     blockReason: 'LOGIN_REQUIRED',
                     quarantineType: 'LOGIN_REQUIRED',
                     message: 'Sessione LinkedIn non autenticata (cookie li_at assente) — eseguire `bot.ps1 login`',
+                    // Account-specific: è QUESTA sessione a essere sloggata → quarantena sul suo account.
+                    accountId: account.id,
                 };
             }
 
@@ -253,13 +267,15 @@ export async function evaluateWorkflowEntryGuards(
         });
     }
 
-    const quarantine = (await getRuntimeFlag('account_quarantine')) === 'true';
+    // G5-F2: quarantena PER-ACCOUNT dell'account operativo (include il flag globale legacy,
+    // che blocca ogni account). Un incidente su un altro account non ferma questo workflow.
+    const quarantine = await getAccountQuarantine(varianceAccountId);
     if (quarantine) {
-        await logWarn('workflow.skipped.quarantine', { workflow: options.workflow });
+        await logWarn('workflow.skipped.quarantine', { workflow: options.workflow, accountId: varianceAccountId });
         return block({
             reason: 'ACCOUNT_QUARANTINED',
             message: 'Account in quarantina',
-            details: { workflow: options.workflow },
+            details: { workflow: options.workflow, accountId: varianceAccountId },
         });
     }
 
@@ -408,7 +424,13 @@ export async function evaluateWorkflowEntryGuards(
         // Il workflow non procede → rilascia subito il lock (non aspettare il TTL).
         if (accountLock) await releaseRuntimeLock(accountLock.lockKey, accountLock.ownerId);
         if (canary.quarantineType) {
-            await quarantineAccount(canary.quarantineType, { workflow: options.workflow });
+            // G5-F2: attribuisci la quarantena all'account SOLO se il canary l'ha identificato
+            // (fallimento account-specific, es. LOGIN_REQUIRED). Senza accountId → quarantena
+            // globale fail-safe (fallimenti platform-wide come SELECTOR_CANARY_FAILED).
+            await quarantineAccount(canary.quarantineType, {
+                workflow: options.workflow,
+                ...(canary.accountId ? { accountId: canary.accountId } : {}),
+            });
         }
         return block({
             reason: canary.blockReason,

@@ -228,7 +228,7 @@ function printHelp(): void {
     console.log('  enrich-fast [--list <nome>] [--limit 50] [--concurrency 5]  (parallelo, zero LinkedIn)');
     console.log('  pause [minutes|indefinite] [reason]');
     console.log('  resume');
-    console.log('  unquarantine');
+    console.log('  unquarantine [--account <id>]');
     console.log('  incidents [open]');
     console.log('  incident-resolve <id>');
     console.log('  privacy-cleanup [days]');
@@ -623,7 +623,7 @@ async function main(): Promise<void> {
             await runResumeCommand();
             break;
         case 'unquarantine':
-            await runUnquarantineCommand();
+            await runUnquarantineCommand(commandArgs);
             break;
         case 'incidents': {
             const positional = commandArgs.filter((v) => !v.startsWith('--'));

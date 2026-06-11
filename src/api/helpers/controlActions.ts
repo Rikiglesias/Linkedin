@@ -26,11 +26,12 @@ function auditSecurityEvent(event: {
     }).catch(() => null);
 }
 
-function resolveQuarantineEnabled(payload: unknown): boolean {
+function resolveQuarantineRequest(payload: unknown): { enabled: boolean; accountId?: string } {
     const parsed = QuarantineSchema.safeParse(payload);
     if (!parsed.success) throw parsed.error;
-    if ('enabled' in parsed.data) return parsed.data.enabled;
-    return parsed.data.action === 'set';
+    const enabled = 'enabled' in parsed.data ? parsed.data.enabled : parsed.data.action === 'set';
+    // G5-F2: accountId opzionale (validato da zod) → quarantena per-account; assente = flag globale.
+    return { enabled, accountId: parsed.data.accountId };
 }
 
 export async function handlePauseAction(
@@ -65,15 +66,18 @@ export async function handleResumeAction(req: Request, source: string): Promise<
     });
 }
 
-export async function handleQuarantineAction(req: Request, source: string): Promise<{ enabled: boolean }> {
-    const enabled = resolveQuarantineEnabled(req.body);
-    await setQuarantine(enabled);
+export async function handleQuarantineAction(
+    req: Request,
+    source: string,
+): Promise<{ enabled: boolean; accountId: string }> {
+    const { enabled, accountId } = resolveQuarantineRequest(req.body);
+    await setQuarantine(enabled, accountId);
     auditSecurityEvent({
         category: 'runtime_control',
         action: enabled ? 'quarantine_enable' : 'quarantine_disable',
         actor: resolveRequestIp(req),
         result: 'ALLOW',
-        metadata: { enabled, source },
+        metadata: { enabled, source, accountId: accountId ?? 'default' },
     });
-    return { enabled };
+    return { enabled, accountId: accountId ?? 'default' };
 }

@@ -7,6 +7,7 @@ import {
     getAccountAgeDays,
     getComplianceHealthMetrics,
     getDailyStat,
+    getQuarantineStatus,
     getRuntimeFlag,
     getRiskInputs,
     listOpenIncidents,
@@ -36,6 +37,8 @@ export interface DoctorReport {
         warnings: string[];
     };
     quarantine: boolean;
+    /** G5-F2: account con quarantena per-account attiva (il boolean sopra = globale O per-account). */
+    quarantinedAccounts: string[];
     sync: {
         activeSink: 'SUPABASE' | 'WEBHOOK' | 'NONE' | 'BOTH';
         enabled: boolean;
@@ -273,7 +276,7 @@ export interface RunDoctorOptions {
 export async function runDoctor(options: RunDoctorOptions = {}): Promise<DoctorReport> {
     const dbHealth = await runDbIntegrityCheckAndRestoreIfNeeded();
     const [
-        quarantineFlag,
+        quarantineStatus,
         sync,
         incidents,
         compliance,
@@ -282,7 +285,7 @@ export async function runDoctor(options: RunDoctorOptions = {}): Promise<DoctorR
         drLastReportPath,
         securityAdvisor,
     ] = await Promise.all([
-        getRuntimeFlag('account_quarantine'),
+        getQuarantineStatus(),
         getEventSyncStatus(),
         listOpenIncidents(),
         evaluateCompliance(),
@@ -291,7 +294,8 @@ export async function runDoctor(options: RunDoctorOptions = {}): Promise<DoctorR
         getRuntimeFlag('dr_restore_test_last_report_path'),
         getSecurityAdvisorPosture(),
     ]);
-    const quarantine = quarantineFlag === 'true';
+    // G5-F2: `any` = globale O almeno un account — il preflight resta conservativo come prima.
+    const quarantine = quarantineStatus.any;
     const drLastRunAt =
         drLastRunAtRaw && Number.isFinite(Date.parse(drLastRunAtRaw)) ? new Date(drLastRunAtRaw).toISOString() : null;
     const drStale = (() => {
@@ -369,6 +373,7 @@ export async function runDoctor(options: RunDoctorOptions = {}): Promise<DoctorR
             warnings: isolationWarnings,
         },
         quarantine,
+        quarantinedAccounts: quarantineStatus.accounts,
         sync: {
             activeSink: sync.activeSink,
             enabled: sync.enabled,

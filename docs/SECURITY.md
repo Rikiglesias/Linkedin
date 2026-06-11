@@ -68,7 +68,7 @@ Il sistema integra l'AI (OpenAI GPT-5.4 o Ollama) per diverse funzionalità. È 
 ## Emergency controls
 - Pause immediately: `.\bot.ps1 pause 180 suspicious_activity`
 - Resume: `.\bot.ps1 resume`
-- Remove quarantine after manual checks: `.\bot.ps1 unquarantine`
+- Remove quarantine after manual checks: `.\bot.ps1 unquarantine` (global flag) or `.\bot.ps1 unquarantine --account <id>` (per-account, G5-F2)
 - Inspect incidents: `.\bot.ps1 incidents`
 - Resolve incident: `.\bot.ps1 incident-resolve <id>`
 

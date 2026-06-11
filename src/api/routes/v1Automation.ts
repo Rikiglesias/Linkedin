@@ -13,6 +13,7 @@ import {
     getGlobalKPIData,
     getOperationalObservabilitySnapshot,
     getRiskInputs,
+    getQuarantineStatus,
     getRuntimeFlag,
     listAutomationCommands,
     listOpenIncidents,
@@ -60,19 +61,20 @@ router.get('/meta', (_req, res) => {
 router.get('/automation/snapshot', async (_req, res) => {
     try {
         const localDate = getLocalDateString();
-        const [kpi, riskInputs, runtimePause, isQuarantinedRaw, incidents, observability, commandSummary, sync] =
+        const [kpi, riskInputs, runtimePause, quarantineStatus, incidents, observability, commandSummary, sync] =
             await Promise.all([
             getGlobalKPIData(),
             getRiskInputs(localDate, config.hardInviteCap),
             getRuntimeFlag('automation_paused_until'),
-            getRuntimeFlag('account_quarantine'),
+            getQuarantineStatus(),
             listOpenIncidents(),
             getOperationalObservabilitySnapshot(localDate),
             getAutomationCommandSummary(),
             getEventSyncStatus(),
         ]);
         const risk = evaluateRisk(riskInputs);
-        const isQuarantined = isQuarantinedRaw === 'true';
+        // G5-F2: true se globale O almeno un account in quarantena (consumer invariati).
+        const isQuarantined = quarantineStatus.any;
         const criticalIncidents = incidents.filter((incident) => incident.severity === 'CRITICAL');
 
         sendApiV1(res, {
@@ -80,6 +82,8 @@ router.get('/automation/snapshot', async (_req, res) => {
             system: {
                 pausedUntil: runtimePause ?? null,
                 quarantined: isQuarantined,
+                quarantineGlobal: quarantineStatus.global,
+                quarantinedAccounts: quarantineStatus.accounts,
             },
             commands: {
                 pending: commandSummary.pending,
@@ -246,7 +250,7 @@ router.post('/automation/controls/resume', async (req, res) => {
 router.post('/automation/controls/quarantine', async (req, res) => {
     try {
         const result = await handleQuarantineAction(req, 'api_v1');
-        sendApiV1(res, { success: true, action: 'quarantine', enabled: result.enabled });
+        sendApiV1(res, { success: true, action: 'quarantine', enabled: result.enabled, accountId: result.accountId });
     } catch (err: unknown) {
         handleApiError(res, err, 'api.v1.automation.controls.quarantine');
     }

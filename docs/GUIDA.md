@@ -143,7 +143,7 @@ Puoi controllare il bot da Telegram:
 1. Sei fuori orario (9-19)? → Aspetta o cambia HOUR_START/HOUR_END
 2. Il login è scaduto? → `.\bot.ps1 doctor` → se `sessionLoginOk: false` → `.\bot.ps1 login`
 3. Il proxy è morto? → Controlla Telegram per alert "Proxy Morto"
-4. L'account è in quarantine? → `.\bot.ps1 unquarantine`
+4. L'account è in quarantine? → `.\bot.ps1 unquarantine` (quarantena globale) o `.\bot.ps1 unquarantine --account <id>` (singolo account; lo stato è in `.\bot.ps1 status` → `quarantinedAccounts`)
 
 ### "Non ricevo Telegram"
 1. Verifica TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID nel .env

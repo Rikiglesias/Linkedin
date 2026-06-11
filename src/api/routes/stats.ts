@@ -5,6 +5,7 @@ import {
     getDailyStat,
     getGlobalKPIData,
     getOperationalObservabilitySnapshot,
+    getQuarantineStatus,
     getRecentDailyStats,
     getRiskInputs,
     getRuntimeFlag,
@@ -56,7 +57,8 @@ statsRouter.get('/kpis', async (_req, res) => {
         const riskInputs = await getRiskInputs(localDate, config.hardInviteCap);
         const risk = evaluateRisk(riskInputs);
         const runtimePause = await getRuntimeFlag('automation_paused_until');
-        const isQuarantined = await getRuntimeFlag('account_quarantine');
+        // G5-F2: true se globale O almeno un account in quarantena (consumer invariati).
+        const quarantineStatus = await getQuarantineStatus();
         res.json({
             funnel: {
                 totalLeads: kpi.totalLeads,
@@ -71,7 +73,9 @@ statsRouter.get('/kpis', async (_req, res) => {
             activeCampaigns: kpi.activeCampaigns,
             system: {
                 pausedUntil: runtimePause ?? null,
-                quarantined: isQuarantined === 'true',
+                quarantined: quarantineStatus.any,
+                quarantineGlobal: quarantineStatus.global,
+                quarantinedAccounts: quarantineStatus.accounts,
             },
         });
     } catch (err: unknown) {

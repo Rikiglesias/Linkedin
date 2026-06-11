@@ -30,6 +30,7 @@ import {
     listLockMetricsByDate,
     listOpenSelectorFailures,
     listSelectorFallbackAggregates,
+    getQuarantineStatus,
     getRuntimeFlag,
     getRuntimeLock,
     listLatestAccountHealthSnapshots,
@@ -138,7 +139,7 @@ function parseSelectorJson(raw: string): string[] {
 export async function runStatusCommand(): Promise<void> {
     const localDate = getLocalDateString();
     const [
-        quarantineFlag,
+        quarantineStatus,
         pauseState,
         incidents,
         jobStatusCounts,
@@ -154,7 +155,7 @@ export async function runStatusCommand(): Promise<void> {
         secretRotationStatus,
         securityAdvisorPosture,
     ] = await Promise.all([
-        getRuntimeFlag('account_quarantine'),
+        getQuarantineStatus(),
         getAutomationPauseState(),
         listOpenIncidents(),
         getJobStatusCounts(),
@@ -173,7 +174,10 @@ export async function runStatusCommand(): Promise<void> {
 
     const payload = {
         localDate,
-        quarantine: quarantineFlag === 'true',
+        // G5-F2: true se globale O almeno un account in quarantena (stessa severità di prima).
+        quarantine: quarantineStatus.any,
+        quarantineGlobal: quarantineStatus.global,
+        quarantinedAccounts: quarantineStatus.accounts,
         accounts: getRuntimeAccountProfiles().map((account) => ({
             id: account.id,
             sessionDir: account.sessionDir,
@@ -459,8 +463,11 @@ export async function runResumeCommand(): Promise<void> {
     console.log('Pausa automazione rimossa.');
 }
 
-export async function runUnquarantineCommand(): Promise<void> {
-    await setQuarantine(false);
+export async function runUnquarantineCommand(args: string[] = []): Promise<void> {
+    // G5-F2: `--account <id>` sblocca SOLO quell'account; senza opzione sblocca il flag
+    // globale legacy (comportamento storico, single-account).
+    const accountId = getOptionValue(args, '--account') ?? undefined;
+    await setQuarantine(false, accountId);
     await clearPauseState();
     // CL12 fix (security): unquarantine sblocca una protezione impostata dal risk engine durante un
     // incidente -> deve sempre lasciare traccia nel security audit (actor cli).
@@ -469,8 +476,18 @@ export async function runUnquarantineCommand(): Promise<void> {
         action: 'unquarantine',
         actor: 'cli',
         result: 'ALLOW',
+        metadata: { accountId: accountId ?? 'default' },
     }).catch(() => null);
-    console.log('Quarantine disattivata e pausa rimossa.');
+    console.log(`Quarantine disattivata (${accountId ?? 'globale'}) e pausa rimossa.`);
+    // L5: se restano altre quarantene attive l'operatore deve saperlo subito, non scoprirlo al
+    // prossimo run bloccato.
+    const residual = await getQuarantineStatus();
+    if (residual.any) {
+        console.warn(
+            `ATTENZIONE: quarantena ancora attiva — globale=${residual.global} account=[${residual.accounts.join(', ')}]. ` +
+                'Usa `unquarantine --account <id>` (o senza opzione per il flag globale).',
+        );
+    }
 }
 
 export async function runResolveIncidentCommand(args: string[]): Promise<void> {

@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
     getComplianceHealthMetrics: vi.fn(),
     getDailyStat: vi.fn(),
     getRecentDailyStats: vi.fn(),
+    getQuarantineStatus: vi.fn(),
     getRuntimeFlag: vi.fn(),
     pushOutboxEvent: vi.fn(),
     setRuntimeFlag: vi.fn(),
@@ -100,6 +101,7 @@ vi.mock('../core/repositories', () => ({
     getComplianceHealthMetrics: mocks.getComplianceHealthMetrics,
     getDailyStat: mocks.getDailyStat,
     getRecentDailyStats: mocks.getRecentDailyStats,
+    getQuarantineStatus: mocks.getQuarantineStatus,
     getRuntimeFlag: mocks.getRuntimeFlag,
     pushOutboxEvent: mocks.pushOutboxEvent,
     setRuntimeFlag: mocks.setRuntimeFlag,
@@ -173,6 +175,7 @@ describe('orchestrator blocked outcomes', () => {
         mocks.getDailyStat.mockResolvedValue(0);
         mocks.getRecentDailyStats.mockResolvedValue([]);
         mocks.getRuntimeFlag.mockResolvedValue(null);
+        mocks.getQuarantineStatus.mockResolvedValue({ global: false, accounts: [], any: false });
         mocks.pushOutboxEvent.mockResolvedValue(undefined);
         mocks.setRuntimeFlag.mockResolvedValue(undefined);
         mocks.evaluateComplianceHealthScore.mockReturnValue({ score: 90 });

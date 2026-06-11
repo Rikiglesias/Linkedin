@@ -21,6 +21,7 @@ import {
     getAutomationPauseState,
     getComplianceHealthMetrics,
     getDailyStat,
+    getQuarantineStatus,
     getRecentDailyStats,
     getRuntimeFlag,
     pushOutboxEvent,
@@ -624,6 +625,11 @@ async function runWorkflowInternal(options: RunWorkflowOptions): Promise<RunWork
         }
     }
 
+    // G5-F2: snapshot PRE-run per distinguere una quarantena NUOVA (scattata dentro
+    // runQueuedJobs) da una pre-esistente su un altro account (che non deve bloccare
+    // l'esito della run degli account sani).
+    const preRunQuarantine = await getQuarantineStatus();
+
     await runQueuedJobs({
         localDate: schedule.localDate,
         allowedTypes: workflowToJobTypes(options.workflow),
@@ -631,13 +637,22 @@ async function runWorkflowInternal(options: RunWorkflowOptions): Promise<RunWork
     });
 
     // Propagate mid-run pause/quarantine triggered inside runQueuedJobs
-    const quarantinedMidRun = (await getRuntimeFlag('account_quarantine')) === 'true';
+    const postRunQuarantine = await getQuarantineStatus();
+    const newlyQuarantinedAccounts = postRunQuarantine.accounts.filter(
+        (accountId) => !preRunQuarantine.accounts.includes(accountId),
+    );
+    const quarantinedMidRun =
+        (postRunQuarantine.global && !preRunQuarantine.global) || newlyQuarantinedAccounts.length > 0;
     if (quarantinedMidRun) {
         return {
             status: 'blocked',
             blocked: {
                 reason: 'ACCOUNT_QUARANTINED',
                 message: 'Account messo in quarantena durante la run',
+                details: {
+                    global: postRunQuarantine.global && !preRunQuarantine.global,
+                    accounts: newlyQuarantinedAccounts,
+                },
             },
             localDate: schedule.localDate,
         };

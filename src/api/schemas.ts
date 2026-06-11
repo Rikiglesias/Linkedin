@@ -14,9 +14,12 @@ export const PauseSchema = z.object({
 export const QuarantineSchema = z.union([
     z.object({
         enabled: z.boolean(),
+        // G5-F2: quarantena per-account opzionale; assente = flag globale legacy.
+        accountId: z.string().trim().min(1).max(128).optional(),
     }),
     z.object({
         action: z.enum(['set', 'clear']),
+        accountId: z.string().trim().min(1).max(128).optional(),
     }),
 ]);
 

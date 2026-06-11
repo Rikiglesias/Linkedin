@@ -503,6 +503,70 @@ export async function getRuntimeFlag(key: string): Promise<string | null> {
     return row?.value ?? null;
 }
 
+// ── Quarantena per-account (G5-F2) ─────────────────────────────────────────
+// Chiave composta `account_quarantine:<accountId>` (stesso pattern di
+// `browser_session_ended_at:<id>`). Il flag GLOBALE legacy `account_quarantine`
+// resta valido e blocca TUTTI gli account: è sia backward-compat (quarantene
+// scritte prima del per-account) sia fail-safe per incidenti non attribuibili
+// a un account specifico (meglio fermare tutto che non fermare quello giusto).
+
+const ACCOUNT_QUARANTINE_FLAG = 'account_quarantine';
+
+function accountQuarantineKey(accountId: string): string {
+    return `${ACCOUNT_QUARANTINE_FLAG}:${accountId}`;
+}
+
+function normalizeQuarantineAccountId(accountId: string | null | undefined): string {
+    const trimmed = (accountId ?? '').trim();
+    return trimmed.length > 0 ? trimmed : 'default';
+}
+
+/**
+ * Attiva/disattiva la quarantena per un account. `accountId` assente o 'default'
+ * (incidente non attribuibile) scrive il flag GLOBALE legacy → blocca tutti.
+ */
+export async function setAccountQuarantine(accountId: string | null | undefined, enabled: boolean): Promise<void> {
+    const normalized = normalizeQuarantineAccountId(accountId);
+    const key = normalized === 'default' ? ACCOUNT_QUARANTINE_FLAG : accountQuarantineKey(normalized);
+    await setRuntimeFlag(key, enabled ? 'true' : 'false');
+}
+
+/**
+ * True se l'account è in quarantena: flag per-account O flag globale legacy
+ * (un flag globale attivo blocca OGNI account, qualunque sia il suo id).
+ */
+export async function getAccountQuarantine(accountId: string | null | undefined): Promise<boolean> {
+    const normalized = normalizeQuarantineAccountId(accountId);
+    if (normalized !== 'default') {
+        const perAccount = await getRuntimeFlag(accountQuarantineKey(normalized));
+        if (perAccount === 'true') {
+            return true;
+        }
+    }
+    return (await getRuntimeFlag(ACCOUNT_QUARANTINE_FLAG)) === 'true';
+}
+
+export interface QuarantineStatus {
+    /** Flag globale legacy / non attribuito: blocca TUTTI gli account. */
+    global: boolean;
+    /** Account con quarantena per-account attiva. */
+    accounts: string[];
+    /** Almeno una quarantena attiva (globale o per-account). */
+    any: boolean;
+}
+
+/** Stato aggregato per doctor/admin/API: flag globale + elenco account in quarantena. */
+export async function getQuarantineStatus(): Promise<QuarantineStatus> {
+    const db = await getDatabase();
+    const rows = await db.query<{ key: string }>(
+        `SELECT key FROM sync_state WHERE key LIKE ? AND value = 'true'`,
+        [`${ACCOUNT_QUARANTINE_FLAG}:%`],
+    );
+    const accounts = rows.map((row) => row.key.slice(ACCOUNT_QUARANTINE_FLAG.length + 1));
+    const global = (await getRuntimeFlag(ACCOUNT_QUARANTINE_FLAG)) === 'true';
+    return { global, accounts, any: global || accounts.length > 0 };
+}
+
 export async function setAutomationPause(minutes: number | null, reason: string): Promise<string | null> {
     await setRuntimeFlag('automation_paused', 'true');
     await setRuntimeFlag('automation_pause_reason', reason.trim() || 'manual_pause');

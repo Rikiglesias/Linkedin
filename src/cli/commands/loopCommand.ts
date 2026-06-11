@@ -14,6 +14,7 @@ import { checkSessionFreshness } from '../../browser/sessionCookieMonitor';
 import {
     acquireRuntimeLock,
     claimNextAutomationCommand,
+    getAccountQuarantine,
     getAutomationPauseState,
     getDailyStatsSnapshot,
     getGlobalKPIData,
@@ -367,11 +368,14 @@ function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
             buildCtx.automationCommandHandledRef.handled = true;
             buildCtx.automationCommandHandledRef.requestId = command.requestId;
 
-            const quarantineFlag = await getRuntimeFlag('account_quarantine');
-            if (quarantineFlag === 'true') {
+            // G5-F2: quarantena per-account. I comandi automation non sono (ancora) account-scoped
+            // → si controlla l'account operativo di default (stessa convenzione dei guard:
+            // accounts[0]). getAccountQuarantine include anche il flag globale legacy.
+            const commandAccountId = getRuntimeAccountProfiles()[0]?.id ?? 'default';
+            if (await getAccountQuarantine(commandAccountId)) {
                 await markAutomationCommandSkipped(command.id, 'account_quarantine');
                 console.warn(
-                    `[LOOP] automation-command skipped requestId=${command.requestId} reason=account_quarantine`,
+                    `[LOOP] automation-command skipped requestId=${command.requestId} reason=account_quarantine accountId=${commandAccountId}`,
                 );
                 return;
             }

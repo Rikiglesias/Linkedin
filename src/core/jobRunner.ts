@@ -47,6 +47,7 @@ import {
     createJobAttempt,
     getDailyStat,
     getAutomationPauseState,
+    getAccountQuarantine,
     getLeadById,
     getRuntimeFlag,
     setRuntimeFlag,
@@ -1375,15 +1376,19 @@ async function runQueuedJobsForAccount(
 }
 
 export async function runQueuedJobs(options: RunJobsOptions): Promise<void> {
-    const quarantineFlag = await getRuntimeFlag('account_quarantine');
-    if (quarantineFlag === 'true') {
-        await logWarn('job_runner.skipped_quarantine', { reason: 'account_quarantine=true' });
-        return;
-    }
-
     const accounts = getRuntimeAccountProfiles();
     for (let index = 0; index < accounts.length; index++) {
         const account = accounts[index];
+        // G5-F2: quarantena PER-ACCOUNT — salta SOLO l'account quarantinato (il flag globale
+        // legacy li blocca tutti via getAccountQuarantine). Il check a inizio iterazione copre
+        // sia la quarantena pre-esistente sia quella scattata mid-run su un account precedente.
+        if (await getAccountQuarantine(account.id)) {
+            await logWarn('job_runner.skipped_quarantine', {
+                accountId: account.id,
+                reason: 'account_quarantine',
+            });
+            continue;
+        }
         const includeLegacyDefaultQueue =
             config.accountLegacyDefaultQueueFallback &&
             isMultiAccountRuntimeEnabled() &&
@@ -1410,9 +1415,8 @@ export async function runQueuedJobs(options: RunJobsOptions): Promise<void> {
             });
             await new Promise((r) => setTimeout(r, gapMs));
         }
-        const latestQuarantineFlag = await getRuntimeFlag('account_quarantine');
-        if (latestQuarantineFlag === 'true') {
-            break;
-        }
+        // G5-F2: il vecchio break globale mid-run è sostituito dal check per-account a inizio
+        // iterazione: una quarantena scattata sull'account corrente NON ferma i successivi
+        // (un flag globale invece li salta tutti, come prima).
     }
 }

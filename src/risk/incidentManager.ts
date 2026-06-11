@@ -4,6 +4,7 @@ import {
     countRecentIncidents,
     pushOutboxEvent,
     recordSecurityAuditEvent,
+    setAccountQuarantine,
     setAutomationPause,
     setRuntimeFlag,
 } from '../core/repositories';
@@ -32,7 +33,10 @@ async function recordAuditSafe(payload: Parameters<typeof recordSecurityAuditEve
 
 export async function quarantineAccount(type: string, details: Record<string, unknown>): Promise<number> {
     const incidentId = await createIncident(type, 'CRITICAL', details);
-    await setRuntimeFlag('account_quarantine', 'true');
+    // G5-F2: quarantena per-account. Se `details.accountId` manca (incidente non attribuibile,
+    // es. SELECTOR_FAILURE_BURST platform-wide) resolveAccountId → 'default' → flag GLOBALE
+    // legacy che blocca tutti gli account (fail-safe).
+    await setAccountQuarantine(resolveAccountId(details), true);
     await recordAuditSafe({
         category: 'incident',
         action: 'quarantine_account',
@@ -72,8 +76,10 @@ export async function quarantineAccount(type: string, details: Record<string, un
     return incidentId;
 }
 
-export async function setQuarantine(enabled: boolean): Promise<void> {
-    await setRuntimeFlag('account_quarantine', enabled ? 'true' : 'false');
+export async function setQuarantine(enabled: boolean, accountId?: string): Promise<void> {
+    // G5-F2: senza accountId opera sul flag GLOBALE legacy (comportamento storico di
+    // unquarantine/API). Con accountId opera sul flag del singolo account.
+    await setAccountQuarantine(accountId, enabled);
     if (!enabled) {
         await setRuntimeFlag('challenge_review_pending', 'false');
     }
@@ -82,9 +88,9 @@ export async function setQuarantine(enabled: boolean): Promise<void> {
         action: enabled ? 'quarantine_enable' : 'quarantine_disable',
         actor: 'system',
         result: 'ALLOW',
-        metadata: { enabled },
+        metadata: { enabled, accountId: accountId ?? 'default' },
     });
-    publishLiveEvent('system.quarantine', { enabled });
+    publishLiveEvent('system.quarantine', { enabled, accountId: accountId ?? 'default' });
 }
 
 export async function pauseAutomation(

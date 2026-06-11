@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
     pushOutboxEvent: vi.fn(),
     getAutomationPauseState: vi.fn(),
     getDailyStat: vi.fn(),
+    getAccountQuarantine: vi.fn(),
     getRuntimeFlag: vi.fn(),
     setRuntimeFlag: vi.fn(),
     acquireRuntimeLock: vi.fn(),
@@ -66,6 +67,7 @@ vi.mock('../core/repositories', () => ({
     pushOutboxEvent: mocks.pushOutboxEvent,
     getAutomationPauseState: mocks.getAutomationPauseState,
     getDailyStat: mocks.getDailyStat,
+    getAccountQuarantine: mocks.getAccountQuarantine,
     getRuntimeFlag: mocks.getRuntimeFlag,
     setRuntimeFlag: mocks.setRuntimeFlag,
     acquireRuntimeLock: mocks.acquireRuntimeLock,
@@ -112,6 +114,7 @@ describe('workflowEntryGuards', () => {
             remainingSeconds: 0,
         });
         mocks.getDailyStat.mockResolvedValue(0);
+        mocks.getAccountQuarantine.mockResolvedValue(false);
         mocks.getRuntimeFlag.mockResolvedValue(null);
         mocks.setRuntimeFlag.mockResolvedValue(undefined);
         mocks.acquireRuntimeLock.mockResolvedValue({ acquired: true, lock: { owner_id: 'self' } });
@@ -140,13 +143,31 @@ describe('workflowEntryGuards', () => {
     });
 
     test('blocca il workflow quando l account è in quarantena', async () => {
-        mocks.getRuntimeFlag.mockImplementation(async (key: string) => (key === 'account_quarantine' ? 'true' : null));
+        mocks.getAccountQuarantine.mockResolvedValue(true);
 
         const result = await evaluateWorkflowEntryGuards({ workflow: 'message', dryRun: false });
 
         expect(result.allowed).toBe(false);
         expect(result.blocked?.reason).toBe('ACCOUNT_QUARANTINED');
+        expect(result.blocked?.details).toEqual({ workflow: 'message', accountId: 'acc-1' });
+        // G5-F2: il guard interroga la quarantena dell'account OPERATIVO, non un flag globale.
+        expect(mocks.getAccountQuarantine).toHaveBeenCalledWith('acc-1');
         expect(mocks.launchBrowser).not.toHaveBeenCalled();
+    });
+
+    test('G5-F2: quarantena su un ALTRO account non blocca il workflow di questo', async () => {
+        mocks.getRuntimeAccountProfiles.mockReturnValue([
+            { id: 'acc-1', sessionDir: 'session-1', proxy: null },
+            { id: 'acc-2', sessionDir: 'session-2', proxy: null },
+        ]);
+        // Solo acc-1 è quarantinato; il workflow gira su acc-2.
+        mocks.getAccountQuarantine.mockImplementation(async (accountId: string) => accountId === 'acc-1');
+
+        const result = await evaluateWorkflowEntryGuards({ workflow: 'sync-list', dryRun: false, accountId: 'acc-2' });
+
+        expect(mocks.getAccountQuarantine).toHaveBeenCalledWith('acc-2');
+        // Non deve essere bloccato per quarantena (procede oltre quel guard).
+        expect(result.blocked?.reason).not.toBe('ACCOUNT_QUARANTINED');
     });
 
     test('blocca il workflow quando il selector canary fallisce', async () => {
@@ -175,7 +196,11 @@ describe('workflowEntryGuards', () => {
 
         expect(result.allowed).toBe(false);
         expect(result.blocked?.reason).toBe('LOGIN_REQUIRED');
-        expect(mocks.quarantineAccount).toHaveBeenCalledWith('LOGIN_REQUIRED', { workflow: 'sync-list' });
+        // G5-F2: LOGIN_REQUIRED è account-specific → la quarantena è attribuita all'account del canary.
+        expect(mocks.quarantineAccount).toHaveBeenCalledWith('LOGIN_REQUIRED', {
+            workflow: 'sync-list',
+            accountId: 'acc-1',
+        });
         // Il selector canary non deve nemmeno essere valutato se non siamo loggati.
         expect(mocks.runSelectorCanaryDetailed).not.toHaveBeenCalled();
     });

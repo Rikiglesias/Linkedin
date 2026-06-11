@@ -4,6 +4,24 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-11 — sync-list-fix G5-F2: quarantena per-account (`/goal sync-list-fix`, piano groovy-coalescing-bachman)
+
+### Obiettivo
+`account_quarantine` era un flag GLOBALE: un incidente su 1 account fermava TUTTI (bloccante per il multi-account imminente). Scoping per-account con chiave composta, senza MAI rendere più permissivi i segnali globali.
+
+### Design (zero-C.10, dichiarato)
+Helper in `repositories/system.ts`: `setAccountQuarantine`/`getAccountQuarantine` su chiave `account_quarantine:<accountId>` + `getQuarantineStatus()` aggregato. **Fail-safe a 2 vie**: (a) incidente NON attribuibile (`accountId` assente → 'default') scrive il flag GLOBALE legacy che blocca tutti; (b) reader = per-account OR globale legacy (backward-compat: quarantene pre-F2 restano efficaci). Segnali platform-wide (SELECTOR_FAILURE_BURST, SELECTOR_CANARY_FAILED, RISK_STOP_THRESHOLD, LOGIN_2FA in checkLogin senza account in scope) restano DELIBERATAMENTE globali; account-specific (RESTRICTED/CHALLENGE/LOGIN_MISSING/COOKIE/WEEKLY_LIMIT/LOGIN_REQUIRED canary) attribuiti. Scartato: quarantinare sempre per-account (un selector-burst avrebbe lasciato girare gli altri account su selettori rotti = rischio detection).
+
+### Interventi (13 file src + 3 test + 2 docs)
+- Writer: `incidentManager.ts` (`quarantineAccount` → `setAccountQuarantine(resolveAccountId(details))`; `setQuarantine(enabled, accountId?)` L2 retro-compat); canary `LOGIN_REQUIRED` ora ritorna `accountId` (CanaryOutcome esteso) e il caller lo passa nei details.
+- Reader per-account: `workflowEntryGuards.ts` (account operativo `varianceAccountId`), `jobRunner.ts` (`runQueuedJobs`: check DENTRO il loop → skip del solo account quarantinato, niente break globale; flag globale li salta tutti come prima), `loopCommand.ts` (convenzione `accounts[0]`), `orchestrator.ts` (snapshot pre/post `runQueuedJobs` → blocked SOLO su quarantena NUOVA mid-run, non pre-esistente di altri account).
+- Aggregati (additivi, boolean invariati = `any`): `doctor.ts` (+`quarantinedAccounts` nel report → preflight `index.ts` invariato e conservativo), `adminCommands.ts` status, `v1Automation.ts` snapshot, `stats.ts` kpis.
+- Admin/API: `unquarantine [--account <id>]` (CLI + help; warning se restano quarantene residue), `QuarantineSchema` zod + `controlActions.ts` con `accountId` opzionale validato (min1/max128).
+- Test: NUOVO `accountQuarantine.vitest.ts` (5 test semantica helper su sync_state finto: isolamento A/B, legacy globale, fail-safe default, spegnimento, aggregato); `workflowEntryGuards.vitest.ts` (+1 test per-account, quarantine/LOGIN_REQUIRED aggiornati); `workflowOrchestratorBlocks.vitest.ts` (mock `getQuarantineStatus`).
+
+### Verifica
+antiban-review ✅ SICURO (6/6: nessun timing/fingerprint/azione toccata; segnali globali mai indeboliti) · `conta-problemi` exit 0: typecheck FE+BE, eslint 0-warn, **166 file / 1610 test** (baseline 1604, +6). Docs allineati (GUIDA.md, SECURITY.md).
+
 ## 2026-06-10 — outbox-dailystat: recupero `cloud.daily_stat` idempotente (`/goal outbox-dailystat`, FOLLOW-UP D2)
 
 ### Obiettivo
