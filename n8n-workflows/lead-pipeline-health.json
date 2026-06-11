@@ -46,7 +46,7 @@
       "onError": "continueRegularOutput",
       "parameters": {
         "method": "GET",
-        "url": "http://localhost:3000/api/v1/automation/snapshot",
+        "url": "={{ ($env.DASHBOARD_URL || 'http://localhost:3000') + '/api/v1/automation/snapshot' }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

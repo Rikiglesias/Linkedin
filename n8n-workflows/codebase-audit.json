@@ -45,7 +45,7 @@
       "onError": "continueRegularOutput",
       "parameters": {
         "method": "GET",
-        "url": "http://localhost:3000/api/controls/codebase-audit",
+        "url": "={{ ($env.DASHBOARD_URL || 'http://localhost:3000') + '/api/controls/codebase-audit' }}",
         "options": { "timeout": 60000 }
       }
     },

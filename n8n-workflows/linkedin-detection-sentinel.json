@@ -308,7 +308,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://localhost:3000/api/linkedin-change-alert",
+        "url": "={{ ($env.DASHBOARD_URL || 'http://localhost:3000') + '/api/linkedin-change-alert' }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

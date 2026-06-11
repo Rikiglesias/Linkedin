@@ -43,7 +43,8 @@ Il webhook `POST /api/linkedin-change-alert` (`src/api/routes/linkedinChangeAler
 
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` — digest.
 - `ANTHROPIC_API_KEY` — classificazione AI (news pubbliche = zero PII → cloud ok).
-- `DASHBOARD_API_KEY` — header `X-Api-Key` verso il webhook locale (stesso valore di `DASHBOARD_API_KEY` del bot; il middleware è fail-closed).
+- `DASHBOARD_API_KEY` — header `X-Api-Key` verso il webhook del bot (stesso valore di `DASHBOARD_API_KEY` del bot; il middleware è fail-closed).
+- `DASHBOARD_URL` (opzionale ma necessario in Docker) — base URL del bot. Dentro un container n8n `http://localhost:3000` punta al container stesso, NON all'host: impostare `http://host.docker.internal:3000` (Win/Mac) o l'IP host. Fallback `http://localhost:3000` se non settato (n8n fuori Docker). Stessa env usata dagli altri workflow che chiamano il bot.
 - `SENTINEL_AI_MODEL` (opzionale) — default `claude-sonnet-4-6`; impostare `claude-haiku-4-5-20251001` per ridurre i costi.
 
 ### Runbook di attivazione
@@ -51,7 +52,7 @@ Il webhook `POST /api/linkedin-change-alert` (`src/api/routes/linkedinChangeAler
 1. Importare `linkedin-detection-sentinel.json` in n8n.
 2. Collegare la credenziale `Telegram Bot` (stessa degli altri workflow).
 3. Impostare le 4 env vars sopra nell'istanza n8n (NON nel JSON: zero segreti versionati).
-4. Avviare il bot (deve esporre `http://localhost:3000` con `DASHBOARD_API_KEY` configurata).
+4. Avviare il bot (deve esporre la sua API con `DASHBOARD_API_KEY` configurata) e impostare `DASHBOARD_URL` in n8n se gira in Docker (vedi sopra).
 5. **Test end-to-end in sicurezza**: eseguire un **run manuale**. Al primo run il dedup è vuoto → arrivano molti item; verificare che (a) il digest Telegram arrivi, (b) gli eventuali POST al bot creino incident (`action=log`/`warn` non mettono in pausa; solo `critical` → pause). Se si vuole un primo giro a impatto zero sul bot, lasciare `DASHBOARD_API_KEY` non configurata in n8n: i POST falliranno (gestiti da `onError: continueRegularOutput`) ma il digest Telegram funziona comunque.
 6. Solo dopo un run pulito → attivare il workflow.
 
