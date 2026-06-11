@@ -603,7 +603,7 @@ async function postSyncEnrichment(
 // Helper con contratto esplicito e zero stato condiviso: ricevono ciò che usano, ritornano ciò
 // che producono. Comportamento INVARIATO (move-only, zero-Q regression-safe).
 
-interface ResolvedSyncTarget {
+export interface ResolvedSyncTarget {
     /** URL http(s) valido da navigare direttamente; null se l'input non era un URL. */
     explicitListUrl: string | null;
     /** Filtro-nome sulle liste scoperte (anche quando l'utente digita un nome nel campo URL). */
@@ -612,7 +612,8 @@ interface ResolvedSyncTarget {
     maxLeadsPerList: number;
 }
 
-function resolveSyncTarget(options: SalesNavigatorSyncOptions): ResolvedSyncTarget {
+// export: characterization test (G4-parte2, salesNavSyncSplit.vitest.ts)
+export function resolveSyncTarget(options: SalesNavigatorSyncOptions): ResolvedSyncTarget {
     const rawListUrl = cleanText(options.listUrl) || null;
     // Robustezza: SOLO un URL http(s) valido può finire in page.goto. Se nel campo URL arriva un
     // valore non-URL (es. l'utente ha digitato il NOME della lista nel prompt URL) NON ci si naviga
@@ -751,7 +752,8 @@ async function applyWarmupAndInputBlock(session: BrowserSession, accountId: stri
  * numerico che è fragile se le liste cambiano ordine/quantità. Checkpoint corrotto → riparte
  * da zero con warning (mai crash).
  */
-async function restoreListCheckpoint(
+// export: characterization test (G4-parte2)
+export async function restoreListCheckpoint(
     accountId: string,
     listName: string | null | undefined,
 ): Promise<{ checkpointKey: string; completedListNames: Set<string> }> {
@@ -908,7 +910,8 @@ async function orchestrateEnrichmentByList(
  * (samples + contatori — contratto dichiarato, unit-testabile con mock DB); ritorna gli id
  * dei lead sincronizzati (>0). In dryRun conta would-insert/would-update senza scrivere.
  */
-async function upsertLeadBatch(
+// export: characterization test (G4-parte2)
+export async function upsertLeadBatch(
     candidates: SalesNavLeadCandidate[],
     listRow: Awaited<ReturnType<typeof upsertSalesNavList>> | null,
     listName: string,
@@ -971,7 +974,7 @@ async function upsertLeadBatch(
     return syncedLeadIds;
 }
 
-interface SingleListSyncOutcome {
+export interface SingleListSyncOutcome {
     listReport: SalesNavigatorSyncListReport;
     syncedLeadIds: number[];
     /** true = challenge NON risolto: il caller deve fermare il loop liste (già notificato). */
@@ -985,7 +988,8 @@ interface SingleListSyncOutcome {
  * check, upsert batch, marcatura synced (solo scrape sano). NON muta il report aggregato né il
  * checkpoint: l'aggregazione resta al caller (contratto esplicito, zero stato condiviso).
  */
-async function processSingleListSync(
+// export: characterization test (G4-parte2)
+export async function processSingleListSync(
     session: BrowserSession,
     accountId: string,
     targetList: SalesNavSavedList,
