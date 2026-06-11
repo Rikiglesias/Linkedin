@@ -903,9 +903,187 @@ async function orchestrateEnrichmentByList(
     return totals;
 }
 
+/**
+ * Upsert in DB di un batch di candidati scrapati da una lista. Muta SOLO `listReport`
+ * (samples + contatori — contratto dichiarato, unit-testabile con mock DB); ritorna gli id
+ * dei lead sincronizzati (>0). In dryRun conta would-insert/would-update senza scrivere.
+ */
+async function upsertLeadBatch(
+    candidates: SalesNavLeadCandidate[],
+    listRow: Awaited<ReturnType<typeof upsertSalesNavList>> | null,
+    listName: string,
+    dryRun: boolean,
+    listReport: SalesNavigatorSyncListReport,
+): Promise<number[]> {
+    const syncedLeadIds: number[] = [];
+    for (const candidate of candidates) {
+        if (listReport.samples.length < 10) {
+            listReport.samples.push(toSample(candidate));
+        }
+        try {
+            if (dryRun) {
+                const existing = await getLeadByLinkedinUrl(candidate.linkedinUrl);
+                if (existing) {
+                    listReport.wouldUpdate += 1;
+                } else {
+                    listReport.wouldInsert += 1;
+                }
+                continue;
+            }
+
+            // Preferisci URL pubblico /in/ se disponibile; preserva SalesNav URL separatamente
+            const isSalesNavUrl = /\/sales\/lead\//.test(candidate.linkedinUrl);
+            const primaryUrl = candidate.publicProfileUrl || candidate.linkedinUrl;
+            const salesnavUrl = isSalesNavUrl ? candidate.linkedinUrl : undefined;
+            const upserted = await upsertSalesNavigatorLead({
+                listName,
+                linkedinUrl: primaryUrl,
+                accountName: candidate.accountName,
+                firstName: candidate.firstName,
+                lastName: candidate.lastName,
+                jobTitle: candidate.jobTitle,
+                website: candidate.website,
+                location: candidate.location || undefined,
+                salesnavUrl,
+            });
+
+            if (listRow && upserted.leadId > 0) {
+                await linkLeadToSalesNavList(listRow.id, upserted.leadId);
+            }
+
+            if (upserted.leadId > 0) {
+                syncedLeadIds.push(upserted.leadId);
+            }
+
+            if (upserted.action === 'inserted') {
+                listReport.inserted += 1;
+            } else if (upserted.action === 'updated') {
+                listReport.updated += 1;
+            } else {
+                listReport.unchanged += 1;
+            }
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.error(`[SYNC] Errore upsert lead ${candidate.linkedinUrl}: ${msg}`);
+            listReport.errors += 1;
+        }
+    }
+    return syncedLeadIds;
+}
+
+interface SingleListSyncOutcome {
+    listReport: SalesNavigatorSyncListReport;
+    syncedLeadIds: number[];
+    /** true = challenge NON risolto: il caller deve fermare il loop liste (già notificato). */
+    challengeAborted: boolean;
+    /** true = scrape degradato: il caller NON deve avanzare il checkpoint (lista da ri-tentare). */
+    scrapeDegraded: boolean;
+}
+
+/**
+ * Sincronizza UNA lista SalesNav: scrape (con retry su sessione SalesNav scaduta), challenge
+ * check, upsert batch, marcatura synced (solo scrape sano). NON muta il report aggregato né il
+ * checkpoint: l'aggregazione resta al caller (contratto esplicito, zero stato condiviso).
+ */
+async function processSingleListSync(
+    session: BrowserSession,
+    accountId: string,
+    targetList: SalesNavSavedList,
+    limits: ResolvedSyncTarget,
+    dryRun: boolean,
+    interactive: boolean,
+): Promise<SingleListSyncOutcome> {
+    const listName = cleanText(targetList.name) || 'default';
+    const listUrl = cleanText(targetList.url);
+    const listReport: SalesNavigatorSyncListReport = {
+        listName,
+        listUrl,
+        pagesVisited: 0,
+        candidatesDiscovered: 0,
+        uniqueCandidates: 0,
+        inserted: 0,
+        updated: 0,
+        unchanged: 0,
+        wouldInsert: 0,
+        wouldUpdate: 0,
+        errors: 0,
+        samples: [],
+    };
+
+    let scraped: Awaited<ReturnType<typeof scrapeLeadsFromSalesNavList>>;
+    try {
+        scraped = await scrapeLeadsFromSalesNavList(session.page, {
+            listUrl,
+            maxPages: limits.maxPages,
+            leadLimit: limits.maxLeadsPerList,
+            interactive,
+        });
+    } catch (scrapeErr) {
+        const isSalesNavLogin = scrapeErr instanceof Error && scrapeErr.message.includes('SALESNAV_LOGIN_REQUIRED');
+        if (!isSalesNavLogin) throw scrapeErr;
+
+        // Sessione SalesNav scaduta durante scraping lista — attendi login manuale
+        console.warn(`[SYNC] Sessione SalesNav scaduta su lista "${listName}" — in attesa del login manuale...`);
+        if (!interactive) disableWindowClickThrough(session.browser);
+        const relogged = await awaitManualLogin(session.page, 'salesnav-list-scrape', {
+            timeoutMs: 3 * 60 * 1000,
+        });
+        if (!relogged) throw scrapeErr;
+        if (!interactive) {
+            enableWindowClickThrough(session.browser);
+            await blockUserInput(session.page);
+        }
+        // Retry dopo login manuale
+        scraped = await scrapeLeadsFromSalesNavList(session.page, {
+            listUrl,
+            maxPages: limits.maxPages,
+            leadLimit: limits.maxLeadsPerList,
+            interactive,
+        });
+    }
+    listReport.pagesVisited = scraped.pagesVisited;
+    listReport.candidatesDiscovered = scraped.candidatesDiscovered;
+    listReport.uniqueCandidates = scraped.uniqueCandidates;
+
+    if (await detectChallenge(session.page)) {
+        const resolved = await attemptChallengeResolution(session.page).catch(() => false);
+        if (!resolved) {
+            await handleChallengeDetected({
+                source: 'salesnav_sync',
+                accountId,
+                linkedinUrl: listUrl,
+                message: 'Challenge rilevato durante sincronizzazione Sales Navigator',
+                extra: {
+                    listName,
+                    listUrl,
+                },
+            });
+            return { listReport, syncedLeadIds: [], challengeAborted: true, scrapeDegraded: false };
+        }
+        await humanDelay(session.page, 1500, 3000);
+    }
+
+    const listRow = dryRun ? null : await upsertSalesNavList(listName, listUrl);
+    const syncedLeadIds = await upsertLeadBatch(scraped.leads, listRow, listName, dryRun, listReport);
+
+    if (scraped.scrapeDegraded) {
+        // Scrape fallito (probabile cambio DOM LinkedIn): NON marcare synced né avanzare il
+        // checkpoint, altrimenti la lista verrebbe saltata per SEMPRE nei run futuri. Conta come
+        // errore → success=false + alert, e la lista viene ri-tentata al prossimo run.
+        listReport.errors += 1;
+        console.warn(
+            `[SYNC] Lista "${listName}" NON marcata synced: scrape degradato (0 lead, nessun indicatore di lista-vuota).`,
+        );
+    } else if (listRow && !dryRun) {
+        await markSalesNavListSynced(listRow.id);
+    }
+
+    return { listReport, syncedLeadIds, challengeAborted: false, scrapeDegraded: scraped.scrapeDegraded };
+}
+
 export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptions): Promise<SalesNavigatorSyncReport> {
     const target = resolveSyncTarget(options);
-    const { explicitListUrl, listFilter, maxPages, maxLeadsPerList } = target;
+    const { explicitListUrl, listFilter } = target;
     const account = getAccountProfileById(options.accountId);
 
     const report = initSalesNavigatorSyncReport(account.id, options.dryRun, target);
@@ -931,170 +1109,43 @@ export async function runSalesNavigatorListSync(options: SalesNavigatorSyncOptio
         // Checkpoint/Resume: nomi liste già completate (vedi restoreListCheckpoint).
         const { checkpointKey, completedListNames } = await restoreListCheckpoint(account.id, options.listName);
 
-        for (let listIdx = 0; listIdx < targetLists.length; listIdx++) {
-            const targetList = targetLists[listIdx];
+        for (const targetList of targetLists) {
+            // Skip liste già completate nel run precedente (stessa normalizzazione del listReport)
             const listName = cleanText(targetList.name) || 'default';
-            const listUrl = cleanText(targetList.url);
-
-            // Skip liste già completate nel run precedente
             if (completedListNames.has(listName)) continue;
-            const listReport: SalesNavigatorSyncListReport = {
-                listName,
-                listUrl,
-                pagesVisited: 0,
-                candidatesDiscovered: 0,
-                uniqueCandidates: 0,
-                inserted: 0,
-                updated: 0,
-                unchanged: 0,
-                wouldInsert: 0,
-                wouldUpdate: 0,
-                errors: 0,
-                samples: [],
-            };
 
-            let scraped: Awaited<ReturnType<typeof scrapeLeadsFromSalesNavList>>;
-            try {
-                scraped = await scrapeLeadsFromSalesNavList(session.page, {
-                    listUrl,
-                    maxPages,
-                    leadLimit: maxLeadsPerList,
-                    interactive,
-                });
-            } catch (scrapeErr) {
-                const isSalesNavLogin =
-                    scrapeErr instanceof Error && scrapeErr.message.includes('SALESNAV_LOGIN_REQUIRED');
-                if (!isSalesNavLogin) throw scrapeErr;
+            const outcome = await processSingleListSync(
+                session,
+                account.id,
+                targetList,
+                target,
+                options.dryRun,
+                interactive,
+            );
 
-                // Sessione SalesNav scaduta durante scraping lista — attendi login manuale
-                console.warn(
-                    `[SYNC] Sessione SalesNav scaduta su lista "${listName}" — in attesa del login manuale...`,
-                );
-                if (!interactive) disableWindowClickThrough(session.browser);
-                const relogged = await awaitManualLogin(session.page, 'salesnav-list-scrape', {
-                    timeoutMs: 3 * 60 * 1000,
-                });
-                if (!relogged) throw scrapeErr;
-                if (!interactive) {
-                    enableWindowClickThrough(session.browser);
-                    await blockUserInput(session.page);
-                }
-                // Retry dopo login manuale
-                scraped = await scrapeLeadsFromSalesNavList(session.page, {
-                    listUrl,
-                    maxPages,
-                    leadLimit: maxLeadsPerList,
-                    interactive,
-                });
-            }
-            listReport.pagesVisited = scraped.pagesVisited;
-            listReport.candidatesDiscovered = scraped.candidatesDiscovered;
-            listReport.uniqueCandidates = scraped.uniqueCandidates;
+            // Aggregazione nel report globale (era inline nel loop pre-split: i totali finali
+            // sono identici — su throw il report non è comunque osservabile).
+            report.pagesVisited += outcome.listReport.pagesVisited;
+            report.candidatesDiscovered += outcome.listReport.candidatesDiscovered;
+            report.uniqueCandidates += outcome.listReport.uniqueCandidates;
+            report.inserted += outcome.listReport.inserted;
+            report.updated += outcome.listReport.updated;
+            report.unchanged += outcome.listReport.unchanged;
+            report.wouldInsert += outcome.listReport.wouldInsert;
+            report.wouldUpdate += outcome.listReport.wouldUpdate;
+            report.errors += outcome.listReport.errors;
+            report.lists.push(outcome.listReport);
 
-            report.pagesVisited += scraped.pagesVisited;
-            report.candidatesDiscovered += scraped.candidatesDiscovered;
-            report.uniqueCandidates += scraped.uniqueCandidates;
-
-            if (await detectChallenge(session.page)) {
-                const resolved = await attemptChallengeResolution(session.page).catch(() => false);
-                if (!resolved) {
-                    report.challengeDetected = true;
-                    await handleChallengeDetected({
-                        source: 'salesnav_sync',
-                        accountId: account.id,
-                        linkedinUrl: listUrl,
-                        message: 'Challenge rilevato durante sincronizzazione Sales Navigator',
-                        extra: {
-                            listName,
-                            listUrl,
-                        },
-                    });
-                    report.lists.push(listReport);
-                    break;
-                }
-                await humanDelay(session.page, 1500, 3000);
+            if (outcome.challengeAborted) {
+                report.challengeDetected = true;
+                break;
             }
 
-            const listRow = options.dryRun ? null : await upsertSalesNavList(listName, listUrl);
-            const syncedLeadIds: number[] = [];
-            for (const candidate of scraped.leads) {
-                if (listReport.samples.length < 10) {
-                    listReport.samples.push(toSample(candidate));
-                }
-                try {
-                    if (options.dryRun) {
-                        const existing = await getLeadByLinkedinUrl(candidate.linkedinUrl);
-                        if (existing) {
-                            listReport.wouldUpdate += 1;
-                            report.wouldUpdate += 1;
-                        } else {
-                            listReport.wouldInsert += 1;
-                            report.wouldInsert += 1;
-                        }
-                        continue;
-                    }
-
-                    // Preferisci URL pubblico /in/ se disponibile; preserva SalesNav URL separatamente
-                    const isSalesNavUrl = /\/sales\/lead\//.test(candidate.linkedinUrl);
-                    const primaryUrl = candidate.publicProfileUrl || candidate.linkedinUrl;
-                    const salesnavUrl = isSalesNavUrl ? candidate.linkedinUrl : undefined;
-                    const upserted = await upsertSalesNavigatorLead({
-                        listName,
-                        linkedinUrl: primaryUrl,
-                        accountName: candidate.accountName,
-                        firstName: candidate.firstName,
-                        lastName: candidate.lastName,
-                        jobTitle: candidate.jobTitle,
-                        website: candidate.website,
-                        location: candidate.location || undefined,
-                        salesnavUrl,
-                    });
-
-                    if (listRow && upserted.leadId > 0) {
-                        await linkLeadToSalesNavList(listRow.id, upserted.leadId);
-                    }
-
-                    if (upserted.leadId > 0) {
-                        syncedLeadIds.push(upserted.leadId);
-                    }
-
-                    if (upserted.action === 'inserted') {
-                        listReport.inserted += 1;
-                        report.inserted += 1;
-                    } else if (upserted.action === 'updated') {
-                        listReport.updated += 1;
-                        report.updated += 1;
-                    } else {
-                        listReport.unchanged += 1;
-                        report.unchanged += 1;
-                    }
-                } catch (err) {
-                    const msg = err instanceof Error ? err.message : String(err);
-                    console.error(`[SYNC] Errore upsert lead ${candidate.linkedinUrl}: ${msg}`);
-                    listReport.errors += 1;
-                    report.errors += 1;
-                }
-            }
-
-            if (scraped.scrapeDegraded) {
-                // Scrape fallito (probabile cambio DOM LinkedIn): NON marcare synced né avanzare il
-                // checkpoint, altrimenti la lista verrebbe saltata per SEMPRE nei run futuri. Conta come
-                // errore → success=false + alert, e la lista viene ri-tentata al prossimo run.
-                listReport.errors += 1;
-                report.errors += 1;
-                console.warn(
-                    `[SYNC] Lista "${listName}" NON marcata synced: scrape degradato (0 lead, nessun indicatore di lista-vuota).`,
-                );
-            } else if (listRow && !options.dryRun) {
-                await markSalesNavListSynced(listRow.id);
-            }
-
-            report.lists.push(listReport);
-            allSyncedLeadIds.push(...syncedLeadIds.map((id) => ({ id, listName })));
+            allSyncedLeadIds.push(...outcome.syncedLeadIds.map((id) => ({ id, listName })));
 
             // Checkpoint (4.1 fix): persisti nomi liste completate — SOLO se lo scrape non è degradato,
             // così una lista con scrape fallito resta fuori dal checkpoint e viene ri-tentata.
-            if (!options.dryRun && !scraped.scrapeDegraded) {
+            if (!options.dryRun && !outcome.scrapeDegraded) {
                 completedListNames.add(listName);
                 await setRuntimeFlag(checkpointKey, JSON.stringify([...completedListNames])).catch(() => null);
             }
