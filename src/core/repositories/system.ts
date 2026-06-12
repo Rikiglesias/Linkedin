@@ -1083,6 +1083,20 @@ export async function cleanupPrivacyData(
             ]) {
                 await db.run(`DELETE FROM ${childTable} WHERE lead_id IN (${staleLeadsSubquery})`, [daysParam]);
             }
+            // salesnav_list_members: keyed su linkedin_url (NON lead_id) -> match separato sui lead
+            // stale. 4° percorso del perimetro erasure GDPR (anonymizeLead/deleteLead/runRightToErasure
+            // + qui): senza, la PII del membro (profile_name/company/message_text) resta dopo il purge.
+            // PRIMA del DELETE leads sotto, altrimenti la subquery non troverebbe piu' i lead.
+            await db.run(
+                `DELETE FROM salesnav_list_members
+                 WHERE linkedin_url IN (
+                     SELECT linkedin_url FROM leads
+                     WHERE status IN ('SKIPPED', 'BLOCKED', 'DEAD', 'WITHDRAWN', 'REPLIED', 'CONNECTED')
+                       AND COALESCE(updated_at, created_at) < DATETIME('now', '-' || ? || ' days')
+                       AND linkedin_url IS NOT NULL
+                 )`,
+                [daysParam],
+            );
         }
         const staleLeads = await runDeleteOrCount(`DELETE FROM leads WHERE id IN (${staleLeadsSubquery})`, [daysParam]);
 
