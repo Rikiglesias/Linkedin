@@ -91,6 +91,12 @@ describe('GDPR erasure — pulizia PII nelle tabelle collegate', () => {
         const pre = findRun(db, 'DELETE FROM prebuilt_messages');
         expect(pre, 'deve cancellare prebuilt_messages (testo PII)').toBeTruthy();
         expect(pre?.[1]).toEqual([42]);
+
+        // Perimetro erasure esteso (goal gdpr-erasure-cloud): salesnav_list_members ha PII del
+        // membro (profile_name/company/message_text) e match su linkedin_url originale, non lead_id.
+        const sln = findRun(db, 'DELETE FROM salesnav_list_members');
+        expect(sln, 'deve cancellare i membri salesnav per quel linkedin_url (PII residua Art.17)').toBeTruthy();
+        expect(sln?.[1]).toEqual(['https://www.linkedin.com/in/x/']);
     });
 
     test('runRightToErasure in dryRun non scrive nulla', async () => {

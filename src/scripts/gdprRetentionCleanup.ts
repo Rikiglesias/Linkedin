@@ -169,6 +169,10 @@ async function anonymizeLead(
             );
             // prebuilt_messages: il testo contiene PII personalizzata (nome/azienda) -> rimuovi.
             await db.run(`DELETE FROM prebuilt_messages WHERE lead_id = ?`, [lead.id]);
+            // salesnav_list_members (perimetro erasure esteso): keyed su linkedin_url, non lead_id;
+            // l'URL ORIGINALE è ancora disponibile qui (l'UPDATE lo riscrive ad anon: ma originalUrl
+            // lo conserva) — dopo l'anonimizzazione il link sarebbe perso. DELETE = no PII residua.
+            await db.run(`DELETE FROM salesnav_list_members WHERE linkedin_url = ?`, [originalUrl]);
 
             await writeAuditLog(db, 'lead_anonymized', lead.id, originalUrl, {
                 status: lead.status,
@@ -206,6 +210,10 @@ async function deleteLead(
             await db.run(`DELETE FROM lead_enrichment_data WHERE lead_id = ?`, [lead.id]);
             await db.run(`DELETE FROM prebuilt_messages WHERE lead_id = ?`, [lead.id]);
             await db.run(`DELETE FROM salesnav_list_items WHERE lead_id = ?`, [lead.id]);
+            // salesnav_list_members (perimetro erasure esteso): keyed su linkedin_url, non lead_id.
+            // leadIdentifier = lead.linkedin_url (originale se non anonimizzato; se gia' anon:hash i
+            // membri sono gia' stati rimossi dall'anonimizzazione precedente -> qui no-match, safe).
+            await db.run(`DELETE FROM salesnav_list_members WHERE linkedin_url = ?`, [leadIdentifier]);
             await db.run(`DELETE FROM ml_feature_store WHERE lead_id = ?`, [lead.id]);
             await db.run(`DELETE FROM challenge_events WHERE lead_id = ?`, [lead.id]);
             await db.run(`DELETE FROM lead_campaign_state WHERE lead_id = ?`, [lead.id]);
@@ -389,6 +397,15 @@ export async function runRightToErasure(linkedinUrl: string, dryRun = false): Pr
                 );
                 await db.run(`DELETE FROM prebuilt_messages WHERE lead_id = ?`, [id]);
             }
+
+            // 1c. Perimetro erasure esteso a salesnav_list_members (goal gdpr-erasure-cloud):
+            //     tabella indipendente da leads (no lead_id, match su linkedin_url) — contiene
+            //     PII del membro (profile_name, company, message_text/reply_text dalle migration
+            //     042/043). NON la toccava nessun percorso erasure → PII residua dopo Art.17.
+            //     DELETE (non anonymize-per-colonna): rimuove TUTTA la PII senza enumerare colonne,
+            //     usa l'URL ORIGINALE (i membri non sono mai riscritti ad anon:). Tabella indipendente,
+            //     nessun FK rotto. Coerente con la pulizia DELETE di prebuilt_messages sopra.
+            await db.run(`DELETE FROM salesnav_list_members WHERE linkedin_url = ?`, [linkedinUrl]);
 
             // 2. Anonimizza lead_identifier in audit_log per questo lead (GDPR Right to Erasure)
             await db.run(`UPDATE audit_log SET lead_identifier = ? WHERE lead_identifier = ?`, [
