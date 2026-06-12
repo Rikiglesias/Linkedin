@@ -84,7 +84,7 @@ Le 11 meta-regole comportamentali (intento non letterale, fallback context degra
 
 ## Workflow autonomi continui — `/goal`, `/loop`, Stop hook
 
-Regola estratta in `.claude/rules/autonomous-workflows.md` (path-scoped `**`). Contiene: tabella confronto `/goal` vs `/loop` vs Stop hook, quando usare `/goal` (end state misurabile multi-turno; forma `/goal <keyword>` + binding `~/todos/<keyword>.md`, spec in `~/.claude/GOAL_TASK_BINDING.md`), quando NON usare, comportamento operativo, requisiti, combinazione con auto mode. Modifica lì, non duplicare qui.
+Regola GLOBALE: `~/.claude/rules/autonomous-workflows.md` (always-on `**`; estratta dal progetto con adk-split, NON è più file locale). Contiene: tabella confronto `/goal` vs `/loop` vs Stop hook, quando usare `/goal` (end state misurabile multi-turno; forma `/goal <keyword>` + binding `~/todos/<keyword>.md`, spec in `~/.claude/GOAL_TASK_BINDING.md`), quando NON usare, comportamento operativo, requisiti, combinazione con auto mode. Modifica lì, non duplicare qui.
 
 ### Hook attivi, skill pre/post-conditions, hook n8n futuri
 

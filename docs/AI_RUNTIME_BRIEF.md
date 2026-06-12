@@ -11,7 +11,7 @@
 5. Visione 360/lungo termine: modello della situazione, domini direttamente e indirettamente correlati, problemi prevedibili specifici dell'argomento.
 6. Root cause/soluzione migliore: niente primo workaround se esiste soluzione migliore verificabile; spiegare root cause, alternative considerate e criterio.
 7. Fonte/primitive/verifica: Identificare la fonte di verita' corretta e la primitive giusta: skill, MCP, plugin, hook, script, audit, subagent, loop o workflow n8n.
-8. Continuita' proattiva: completare il completabile, poi lasciare prossimo passo o domanda specifica; lo Stop hook `stop-proactive-next-step.ps1` deve ricordarlo.
+8. Continuita' proattiva: completare il completabile, poi lasciare prossimo passo o domanda specifica; gli Stop hook attivi `stop-continuity.ps1` + `stop-completion-gate.ps1` lo ricordano.
 9. Chiusura proattiva: Truthful completion; DONE solo con prove, PARTIAL/BLOCKED se mancano verifiche, permessi, contesto, tool, crediti o ambiente.
 
 ## Requirement ledger obbligatorio per prompt lunghi o densi
@@ -72,7 +72,7 @@ Monitorare segnali di degrado del contesto: omissioni ripetute, ledger scoperto,
 
 Cambio chat non dipende solo dal context window: valutare anche token e crediti. Se ultima richiesta e' >180k token, >3cr Codex, >$0.50 Claude router, oppure ultima ora >200cr Codex, consigliare nuova chat o handoff prima di nuovo tema. Se stesso tema e cache alta, continuare puo' essere piu' efficiente; se cambia tema, nuova chat riduce contesto, costo futuro e rischio di degrado.
 
-Prima di nuova chat: aggiornare memoria/todos/worklog se serve, compilare `.claude/CONTINUATION.md` senza TODO, sincronizzare Obsidian in `Resources/continuita/` e leggere `START-NEXT-CHAT.md`. `SESSION_HANDOFF.md` e `.claude/SESSION_PROMPT.md` sono fallback legacy, non procedura primaria.
+Prima di nuova chat: aggiornare memoria/todos/worklog se serve, poi **`/lastchat save`** (scrive il file per-progetto `~/.claude/lastchat/<slug-cwd>.md` — sistema UNICO di continuità, 2026-06-07). CONTINUATION/SESSION_HANDOFF/SESSION_PROMPT/START-NEXT-CHAT sono ELIMINATI; Obsidian `Resources/continuita/` è proiezione navigabile, non procedura.
 
 ## L1-L9
 
