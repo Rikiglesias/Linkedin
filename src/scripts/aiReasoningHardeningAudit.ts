@@ -251,7 +251,10 @@ function checkClaudeHookCoverage(): CheckResult {
         ['PostToolUse', 'post-websearch-log.ps1'],
         ['PreCompact', 'pre-compact-handoff.ps1'],
         ['Stop', 'pre-stop-commit-gate.ps1'],
-        ['Stop', 'stop-proactive-next-step.ps1'],
+        // stop-proactive-next-step archiviato (2026): la funzione "prossimo passo concreto"
+        // vive negli Stop hook attivi stop-completion-gate + stop-continuity.
+        ['Stop', 'stop-completion-gate.ps1'],
+        ['Stop', 'stop-continuity.ps1'],
         ['Stop', 'stop-session.ps1'],
     ];
 
