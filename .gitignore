@@ -121,3 +121,8 @@ Obsidian/
 
 # Artefatti sessione Playwright MCP (snapshot navigazione browser, rigenerabili)
 .playwright-mcp/
+
+# Skill esterne installate via `npx skills add` (target reale in .agents/, gitignorato):
+# i symlink in .claude/skills/ sono tool-generati e rigenerabili, non versionare.
+.claude/skills/supabase
+.claude/skills/supabase-postgres-best-practices
