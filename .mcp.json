@@ -1,5 +1,4 @@
 {
-  "_note": "code-review-graph e' definito anche in tools/code-review-graph/.mcp.json e tools/skills/.mcp.json. NON sono duplicati da accorpare: quelle due cartelle sono repo git standalone vendored (tools/code-review-graph -> github.com/tirth8205/code-review-graph, tools/skills -> github.com/vercel-labs/skills), ognuna col proprio .mcp.json project-scoped. Questo file (root) e' l'unica config MCP attiva del progetto LinkedIn. Non cancellare le copie nei subrepo: appartengono al loro upstream. Chiave _note ignorata dal loader Claude Code (legge solo mcpServers).",
   "mcpServers": {
     "code-review-graph": {
       "command": "uvx",
@@ -16,13 +15,22 @@
     },
     "symdex": {
       "command": "uvx",
-      "args": ["symdex", "serve"],
+      "args": [
+        "symdex",
+        "serve"
+      ],
       "type": "stdio"
     },
     "claude-peers": {
       "command": "${BUN_PATH:-C:\\Users\\albie\\.bun\\bin\\bun.exe}",
-      "args": ["${CLAUDE_PEERS_SERVER_PATH:-C:\\Users\\albie\\AppData\\Local\\claude-peers-mcp\\server.ts}"],
+      "args": [
+        "${CLAUDE_PEERS_SERVER_PATH:-C:\\Users\\albie\\AppData\\Local\\claude-peers-mcp\\server.ts}"
+      ],
       "type": "stdio"
+    },
+    "supabase": {
+      "type": "http",
+      "url": "https://mcp.supabase.com/mcp?project_ref=ztaarthuizziaqyykuiv&features=storage%2Cbranching%2Cfunctions%2Cdevelopment%2Cdebugging%2Cdatabase%2Caccount%2Cdocs"
     }
   }
 }
