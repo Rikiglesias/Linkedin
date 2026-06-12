@@ -10,7 +10,14 @@ create table if not exists public.cp_applied_events (
     idempotency_key text primary key,
     applied_at timestamptz not null default now()
 );
-alter table public.cp_applied_events disable row level security;
+-- RLS ON dalla nascita (goal gdpr-erasure-cloud T5, 2026-06-12: era `disable`, ma questa
+-- migration NON è mai stata applicata al cloud → correggibile senza regressione). Il bot
+-- usa service_role (BYPASSRLS): nessun impatto runtime.
+alter table public.cp_applied_events enable row level security;
+drop policy if exists cp_applied_events_service_role_all on public.cp_applied_events;
+create policy cp_applied_events_service_role_all on public.cp_applied_events
+    for all to service_role using (true) with check (true);
+revoke all privileges on table public.cp_applied_events from anon, authenticated;
 
 -- 2. RPC base. Era GIÀ chiamata dal client (supabaseDataClient.incrementCloudDailyStat) ma
 --    ASSENTE dallo schema canonico (gap D3: "garantire l'RPC deployata via migration").
@@ -20,7 +27,7 @@ create or replace function public.increment_daily_stat_cloud(
     p_account_id text,
     p_field text,
     p_amount integer default 1
-) returns void language plpgsql as $$
+) returns void language plpgsql set search_path = public as $$
 begin
     if p_field not in ('invites_sent','messages_sent','acceptances','replies','challenges_count','selector_failures','run_errors') then
         raise exception 'increment_daily_stat_cloud: campo non ammesso: %', p_field;
@@ -43,7 +50,7 @@ create or replace function public.increment_daily_stat_cloud_idem(
     p_account_id text,
     p_field text,
     p_amount integer default 1
-) returns boolean language plpgsql as $$
+) returns boolean language plpgsql set search_path = public as $$
 begin
     insert into public.cp_applied_events (idempotency_key)
     values (p_idempotency_key)
