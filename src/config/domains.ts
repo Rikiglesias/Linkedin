@@ -368,6 +368,11 @@ export function buildProxyDomainConfig() {
         // Trade-off accettato da chi lo attiva: se restano SOLO DC, il pool è vuoto e il workflow
         // si ferma con alert (preferibile a un IP datacenter su account attivo = signal forte).
         proxyBlockDatacenter: parseBoolEnv('PROXY_BLOCK_DATACENTER', false),
+        // Anti-ban (AB1, backend-audit 2026-06-13): se ON, il bypass proxy esplicito (--no-proxy /
+        // bypassProxy) è RIFIUTATO da launchBrowser quando un proxy gestito è configurato e il
+        // chiamante non passa allowDirectIp → niente IP reale esposto su sessione autenticata.
+        // Default OFF = comportamento attuale (--no-proxy continua a funzionare ovunque).
+        requireProxyForAuth: parseBoolEnv('REQUIRE_PROXY_FOR_AUTH', false),
         fingerprintApiEndpoint: parseStringEnv('FINGERPRINT_API_ENDPOINT'),
         mobileProbability: Math.min(1, Math.max(0, parseFloatEnv('MOBILE_PROBABILITY', 0))),
         useJa3Proxy: parseBoolEnv('USE_JA3_PROXY', false),

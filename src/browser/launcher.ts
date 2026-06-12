@@ -195,6 +195,13 @@ export interface LaunchBrowserOptions {
     forceDesktop?: boolean;
     /** Se true, ignora qualsiasi proxy configurato e usa connessione diretta. */
     bypassProxy?: boolean;
+    /**
+     * Override esplicito per AB1: consente la connessione diretta (bypassProxy) anche quando
+     * REQUIRE_PROXY_FOR_AUTH è ON. Da impostare SOLO per flussi legittimamente senza proxy
+     * (diagnostica, create-profile su IP fresco). Senza, bypassProxy + proxy configurato è
+     * rifiutato quando l'enforcement è attivo (evita leak IP reale su sessione autenticata).
+     */
+    allowDirectIp?: boolean;
     /** Account identifier used for deterministic fingerprint IDs. */
     accountId?: string;
 }
@@ -239,12 +246,25 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
     ensureDirectoryPrivate(sessionDir);
 
     const headless = options.headless ?? config.headless;
-    const managedProxyEnabled =
-        !options.bypassProxy &&
-        !options.proxy &&
-        (config.proxyUrl.trim().length > 0 ||
-            config.proxyListPath.trim().length > 0 ||
-            !!config.proxyProviderApiEndpoint);
+    const proxyInfraConfigured =
+        config.proxyUrl.trim().length > 0 ||
+        config.proxyListPath.trim().length > 0 ||
+        !!config.proxyProviderApiEndpoint;
+    // AB1 (backend-audit 2026-06-13, antiban-review SICURO): con REQUIRE_PROXY_FOR_AUTH ON,
+    // rifiuta il bypass proxy esplicito quando un proxy gestito È configurato e il chiamante NON
+    // ha dichiarato allowDirectIp (flussi legittimamente diretti: create-profile su IP fresco,
+    // diagnostica). Estende il fail-closed AB-24 (pool vuoto) al caso bypass-su-sessione-autenticata:
+    // una connessione diretta con cookie autenticato espone l'IP residenziale reale dell'utente a
+    // LinkedIn (leak peggiore). Default OFF = comportamento attuale invariato.
+    if (config.requireProxyForAuth && options.bypassProxy && !options.allowDirectIp && proxyInfraConfigured) {
+        throw new Error(
+            'AB1: bypass proxy (--no-proxy) rifiutato su sessione potenzialmente autenticata con ' +
+                'REQUIRE_PROXY_FOR_AUTH=true e proxy gestito configurato — una connessione diretta ' +
+                "esporrebbe l'IP reale a LinkedIn. Rimuovi --no-proxy, oppure usa un flusso con " +
+                'allowDirectIp (create-profile / diagnostica) o disattiva REQUIRE_PROXY_FOR_AUTH.',
+        );
+    }
+    const managedProxyEnabled = !options.bypassProxy && !options.proxy && proxyInfraConfigured;
     const explicitProxy = options.proxy;
     const proxySelection = {
         preferredType: options.preferredProxyType,
