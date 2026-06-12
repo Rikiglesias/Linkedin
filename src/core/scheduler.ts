@@ -532,8 +532,12 @@ export async function scheduleJobs(
         messageBudget = applyHourIntensityToBudget(messageBudget, sessionHistory.pacingFactor);
     }
 
-    // Weekly strategy: per-day-of-week activity multipliers
-    const todayStrategy = getTodayStrategy();
+    // Weekly strategy: per-day-of-week activity multipliers.
+    // Anti-ban (AB7, backend-audit 2026-06-13): passare primaryAccountId attiva il jitter ±15%
+    // per-account-per-settimana già implementato in getTodayStrategy (era chiamato senza accountId
+    // → tutti gli account avevano il MEDESIMO day-of-week factor = pattern settimanale correlato).
+    // Jitter centrato su 1.0 + re-clamp weekly sotto → cap invariato, volumi de-correlati.
+    const todayStrategy = getTodayStrategy(primaryAccountId);
     if (todayStrategy.inviteFactor < 1.0) {
         inviteBudget = applyHourIntensityToBudget(inviteBudget, todayStrategy.inviteFactor);
     } else if (todayStrategy.inviteFactor > 1.0) {

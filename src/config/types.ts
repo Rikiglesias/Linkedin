@@ -242,6 +242,7 @@ export interface AppConfig {
     proxyTorSocks5Url: string;
     proxyTorFallbackEnabled: boolean;
     proxyExpectedCountries: string;
+    proxyBlockDatacenter: boolean;
     fingerprintApiEndpoint: string;
     mobileProbability: number;
     useJa3Proxy: boolean;

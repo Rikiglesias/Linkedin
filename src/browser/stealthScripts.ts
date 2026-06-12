@@ -489,30 +489,34 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
     // il browser engine lo gestisce meglio di noi. Nessuna azione necessaria per Firefox.
     try {
         if (typeof performance !== 'undefined' && !performance.memory) {
-            const startHeap = 18_000_000 + Math.floor(Math.random() * 12_000_000);
+            // AB8 (backend-audit 2026-06-13, antiban-review SICURO): il valore è una funzione
+            // DETERMINISTICA del tempo, NON di Math.random() per-call. Prima il getter randomizzava
+            // a OGNI lettura → due read ravvicinate davano usedJSHeapSize diverso e non-monotono
+            // (Chrome reale: monotono + quantizzato + stabile tra read ravvicinate) e lo stato
+            // accumulato dipendeva dal NUMERO di accessi (signal correlabile). Ora: trend monotono +
+            // 2 oscillazioni lente (periodi in minuti) che simulano i cicli GC senza randomicità
+            // per-call. Quantizzato a 100KB come Chrome (granularità anti side-channel). Seed
+            // per-SESSIONE (un solo Math.random all'init → sessioni diverse = heap diversi).
+            const sessionSeed = Math.floor(Math.random() * 0xffffffff) >>> 0;
+            const startHeap = 18_000_000 + (sessionSeed % 12_000_000);
             const pageStartTime = Date.now();
-            let lastGcDropAt = 0;
-            let accumulatedSpike = 0;
+            const growthRate = 600_000 + (((sessionSeed >>> 8) % 400) * 1000); // 600-1000 KB/min
+            const oscAmp = 1_500_000 + (((sessionSeed >>> 16) % 2000) * 1000); // ampiezza GC ±1.5-3.5MB
+            const phase = (sessionSeed % 360) * (Math.PI / 180);
+            const quantize = (n) => Math.floor(n / 100_000) * 100_000;
             Object.defineProperty(performance, 'memory', {
                 get: () => {
                     const elapsedMin = (Date.now() - pageStartTime) / 60000;
-                    // M31: Crescita NON lineare — un browser reale ha picchi e GC drops.
-                    // Prima: crescita costante 800KB/min → pattern rilevabile.
-                    const baseGrowth = Math.floor(elapsedMin * 800_000 * (0.8 + Math.random() * 0.4));
-                    // 8% probabilità di picco (+2-5MB) — apertura tab, caricamento pagina pesante
-                    if (Math.random() < 0.08) {
-                        accumulatedSpike += 2_000_000 + Math.floor(Math.random() * 3_000_000);
-                    }
-                    // 5% probabilità di GC drop (-15-35%) — garbage collector
-                    const now = Date.now();
-                    if (Math.random() < 0.05 && now - lastGcDropAt > 30_000) {
-                        accumulatedSpike = Math.floor(accumulatedSpike * (0.65 + Math.random() * 0.20));
-                        lastGcDropAt = now;
-                    }
-                    const used = startHeap + baseGrowth + accumulatedSpike;
+                    // Trend monotono + 2 sinusoidi lente sfasate: l'heap "respira" coi cicli GC,
+                    // deterministico nel tempo (stesso istante → stesso valore, niente per-call random).
+                    const trend = elapsedMin * growthRate;
+                    const osc =
+                        oscAmp * 0.6 * Math.sin(elapsedMin * 7 + phase) +
+                        oscAmp * 0.4 * Math.sin(elapsedMin * 1.7 + phase * 2);
+                    const used = Math.max(startHeap, quantize(startHeap + trend + osc));
                     return {
                         jsHeapSizeLimit: 2_197_815_296,
-                        totalJSHeapSize: used + 4_000_000 + Math.floor(Math.random() * 2_000_000),
+                        totalJSHeapSize: quantize(used + 5_000_000),
                         usedJSHeapSize: used,
                     };
                 },

@@ -312,7 +312,20 @@ function prioritizeProxyPool(pool: ProxyConfig[], options: GetProxyChainOptions)
     const selectionPenalty = (proxy: ProxyConfig): number =>
         (datacenterServers.has(proxy.server) ? 1000 : 0) + (geoMismatchServers.has(proxy.server) ? 2000 : 0);
 
-    return sourcePool
+    // Anti-ban (AB4, 2026-06-13, antiban-review SICURO): blocco DURO opt-in dei proxy datacenter.
+    // Se PROXY_BLOCK_DATACENTER è ON, i DC vengono ESCLUSI dal pool (non solo deprioritizzati +1000).
+    // Se l'esclusione svuota il pool (restano SOLO DC) NON forziamo il vuoto: torniamo il pool
+    // deprioritizzato e lasciamo decidere/allertare al quality gate a valle (jobRunner) — meglio un
+    // fallback visibile che un crash silenzioso nel path di selezione. Default OFF = identico ad oggi.
+    const candidatePool =
+        config.proxyBlockDatacenter && datacenterServers.size > 0
+            ? (() => {
+                  const filtered = sourcePool.filter((proxy) => !datacenterServers.has(proxy.server));
+                  return filtered.length > 0 ? filtered : sourcePool;
+              })()
+            : sourcePool;
+
+    return candidatePool
         .map((proxy, index) => ({
             proxy,
             index,

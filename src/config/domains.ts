@@ -361,6 +361,13 @@ export function buildProxyDomainConfig() {
         // configurato, i proxy con country del report di qualita' fuori lista vengono deprioritizzati
         // nella selezione (geo mismatch IP/profilo = signal forte per LinkedIn).
         proxyExpectedCountries: parseStringEnv('PROXY_EXPECTED_COUNTRIES', ''),
+        // Anti-ban (AB4, backend-audit 2026-06-13): blocco DURO dei proxy datacenter OPT-IN
+        // (default off = comportamento attuale, deprioritizzazione soft +1000). Quando ON, i
+        // proxy classificati 'datacenter' dall'ultimo quality report vengono ESCLUSI dal pool di
+        // selezione (mai usati neppure come ultimo ricorso, coerente con proxy-rules «Mai DC IP»).
+        // Trade-off accettato da chi lo attiva: se restano SOLO DC, il pool è vuoto e il workflow
+        // si ferma con alert (preferibile a un IP datacenter su account attivo = signal forte).
+        proxyBlockDatacenter: parseBoolEnv('PROXY_BLOCK_DATACENTER', false),
         fingerprintApiEndpoint: parseStringEnv('FINGERPRINT_API_ENDPOINT'),
         mobileProbability: Math.min(1, Math.max(0, parseFloatEnv('MOBILE_PROBABILITY', 0))),
         useJa3Proxy: parseBoolEnv('USE_JA3_PROXY', false),
