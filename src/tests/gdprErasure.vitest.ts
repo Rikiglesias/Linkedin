@@ -73,6 +73,14 @@ describe('GDPR erasure — pulizia PII nelle tabelle collegate', () => {
 
         await runRightToErasure('https://www.linkedin.com/in/x/', false);
 
+        // GDPR Art.17: l'UPDATE leads deve anonimizzare ANCHE account_name (nome azienda = PII).
+        // Drift fixato 2026-06-12: runRightToErasure lo ometteva mentre anonymizeLead lo includeva.
+        const ano = findRun(db, 'UPDATE leads SET');
+        expect(ano, 'deve anonimizzare il lead').toBeTruthy();
+        expect(String(ano?.[0]), 'account_name deve essere anonimizzato (no PII residua)').toMatch(
+            /account_name\s*=\s*'\[ANONIMIZZATO\]'/,
+        );
+
         const enr = findRun(db, 'UPDATE lead_enrichment_data');
         expect(enr, 'deve azzerare la PII in lead_enrichment_data').toBeTruthy();
         expect(enr?.[1]).toEqual([42]);

@@ -369,6 +369,7 @@ export async function runRightToErasure(linkedinUrl: string, dryRun = false): Pr
             await db.run(
                 `UPDATE leads SET
                     first_name = '[ANONIMIZZATO]', last_name = '[ANONIMIZZATO]',
+                    account_name = '[ANONIMIZZATO]',
                     email = NULL, phone = NULL, about = NULL, experience = NULL,
                     business_email = NULL, linkedin_url = ?,
                     anonymized_at = datetime('now'), updated_at = datetime('now')
