@@ -1100,6 +1100,18 @@ export async function cleanupPrivacyData(
         }
         const staleLeads = await runDeleteOrCount(`DELETE FROM leads WHERE id IN (${staleLeadsSubquery})`, [daysParam]);
 
+        // Accountability GDPR Art.5(2): il purge dei lead stale va tracciato. anonymizeLead/deleteLead
+        // scrivono audit_log, cleanupPrivacyData non lasciava traccia (gap di accountability).
+        // Riga AGGREGATA (il purge e' batch, non lead-per-lead -> nessun refactor performance):
+        // conteggio + retention applicata. Solo su scrittura reale (!dryRun) e se qualcosa e' stato purgato.
+        if (!dryRun && staleLeads > 0) {
+            await db.run(
+                `INSERT INTO audit_log (action, lead_id, lead_identifier, performed_by, metadata_json)
+                 VALUES ('stale_leads_purged', NULL, ?, 'privacy_cleanup', ?)`,
+                [`stale_purge:${staleLeads}`, JSON.stringify({ count: staleLeads, retentionDays: daysParam })],
+            );
+        }
+
         return {
             runLogs,
             jobAttempts,
