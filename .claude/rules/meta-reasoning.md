@@ -19,9 +19,9 @@ Delta LinkedIn: richiesta che può causare ban → **domanda zero anti-ban PRIMA
 Test: "disabilita il delay" → antiban check, non eseguire · "cancella X" (log critico) → rischio + conferma.
 
 ## 2. Context degradation e cambio chat → preferences + zero-H
-Gestione contesto: **protocollo a TIER 40/60/75% di 1M** (`~/.claude/rules/context-burn.md`, 2026-06-09 — supersede «avviso SOLO >750k»); **compact MAX 1×/sessione**; quality-guard: mai reset a metà operazione atomica.
-Segnali di degrado oltre i token: domande ripetute, dimenticanza decisioni di sessione, constraint ignorati → handoff.
-**Procedura continuità** (pre-nuova-chat/compact): **`/lastchat save`** (scrive `~/.claude/LASTCHAT.md`, sistema UNICO di continuità — 2026-06-07) + aggiorna `~/memory`/`todos/active.md`/`ENGINEERING_WORKLOG.md` se cambiati → commit se L1 verde. CONTINUATION/SESSION_HANDOFF/SESSION_PROMPT + skill resume-context ELIMINATI (vedi `~/memory/decisions_secondo_cervello.md`).
+Gestione contesto: protocollo CANONICO `~/.claude/rules/context-burn.md` (always-on: tier 40/60/75, compact MAX 1×, quality-guard — non ri-spiegato qui).
+Delta progetto — segnali di degrado oltre i token: domande ripetute, dimenticanza decisioni di sessione, constraint ignorati → handoff.
+**Procedura continuità** (pre-nuova-chat/compact): **`/lastchat save`** (scrive il file per-progetto `~/.claude/lastchat/<slug-cwd>.md`, fallback legacy LASTCHAT.md — sistema UNICO di continuità, 2026-06-07) + aggiorna `~/memory`/`todos/active.md`/`ENGINEERING_WORKLOG.md` se cambiati → commit se L1 verde. CONTINUATION/SESSION_HANDOFF/SESSION_PROMPT + skill resume-context ELIMINATI (vedi `~/memory/decisions_secondo_cervello.md`).
 
 ## 3. Best practice per ogni modifica → zero-D + L1/L2
 Ordine: blast radius → contratti (input/output/side-effect) → dipendenze/caller → test impattati → niente modifica

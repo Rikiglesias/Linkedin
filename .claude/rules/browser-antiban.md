@@ -25,16 +25,19 @@ Si attiva quando l'AI tocca codice browser/sessione/timing/stealth LinkedIn.
 5. **Navigazione umana**: prima di azionare bottoni, leggere la pagina (mouse move, hover, scroll naturale). Non click ciechi a coordinate fisse.
 6. **Fingerprint stabile per sessione**: niente cambi UA/viewport/timezone mid-session.
 7. **Cookie/session**: non resettare cookie senza motivo. Una volta loggati, mantenere la sessione per le run brevi.
+8. **Azioni sicure con verify pre/post**: ogni azione LinkedIn verifica lo stato prima e dopo (mai click ciechi su esito assunto).
+9. **Monitoring attivo con alert chiari**: ogni nuovo failure mode ha log + alert attivabile (WHAT/WHY/DO), mai silent.
 
-## 5 domande pre-merge (obbligatorie)
+## 6 domande pre-codice e pre-merge (obbligatorie — lista UNICA, fonde le ex "5 domande" di AGENTS.md)
 
-Prima di approvare modifica a file in questo glob, rispondere a:
+Prima di scrivere/approvare modifiche a file in questo glob, rispondere a:
 
 1. Aumenta il rischio di detection?
 2. Riduce la varianza dei pattern azione?
-3. Introduce delay precisi o azioni a coordinate fisse?
-4. Tocca pending ratio / quota / scheduling?
-5. Modifica fingerprint, UA, viewport, JA3 o cookie session?
+3. Introduce delay precisi, timing fissi o azioni a coordinate fisse?
+4. Tocca pending ratio / quota / volumi / cap / scheduling?
+5. Modifica fingerprint, UA, viewport, JA3, cookie, stealth o sessione?
+6. Cambia il comportamento browser o aggiunge azioni LinkedIn nuove (click, navigazione, typing)?
 
 Se anche una risposta è ambigua, invocare `/antiban-review` per audit dedicato.
 

@@ -9,7 +9,7 @@ enforcement:
 # Commit e push — delta LinkedIn (comandi concreti)
 
 > **Principi, enforcement globale (hook `~/.claude`), livelli review, auto-push, fallback** sono nella
-> regola UNIVERSALE globale `~/.claude/rules/git-commit-push.md` (attiva su ogni progetto).
+> regola UNIVERSALE globale `~/.claude/on-demand/git-commit-push.md` (lettura on-demand quando si committa/pusha).
 > Qui SOLO il **mapping ai comandi concreti di questo repo** (estratto da adk-split T6b).
 
 ## Mapping comandi del progetto

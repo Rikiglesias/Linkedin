@@ -7,7 +7,7 @@ paths:
 enforcement:
   - audit:hooks
   - audit:ai-control-plane
-  - post-edit-codebase-hygiene.ps1
+  - post-edit-checks.ps1
 ---
 
 # Regole per script di audit e hook
@@ -35,7 +35,7 @@ Si attiva quando l'AI tocca script di audit, hook Claude Code o registri canonic
 
 - `npm run audit:hooks` — conformità hook
 - `npm run audit:ai-control-plane` — composito (docs + hooks + routing + ADK + L2-L6 + list completeness)
-- `~/.claude/hooks/post-edit-codebase-hygiene.ps1` — controllo cleanup file diretti/indiretti
+- `~/.claude/hooks/post-edit-checks.ps1` — controllo cleanup file diretti/indiretti (assorbe l'ex post-edit-codebase-hygiene, fuso 2026; vedi commento in testa all'hook)
 
 ## Fonti di verità
 

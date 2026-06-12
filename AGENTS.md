@@ -66,30 +66,17 @@ Regola estratta in `.claude/rules/git-commit-push.md` (path-scoped `**`). Contie
 
 ## Selezione modello AI per task — regola dura
 
-Regola estratta in `.claude/rules/model-selection.md` (path-scoped `**`). Contiene: principio dichiarazione proattiva, contesto router locale, matrice task → modello, condizioni di switch, formato raccomandazione, anti-pattern. Modifica lì, non duplicare qui.
+Regola globale on-demand: `~/.claude/on-demand/model-selection.md` (nudge automatico: `user-prompt-session-advisor.ps1`). Contiene: principio dichiarazione proattiva, contesto router locale, matrice task → modello, condizioni di switch, formato raccomandazione, anti-pattern. Modifica lì, non duplicare qui.
 
 ## Priorita' assoluta: anti-ban e anti-detect
 
 Ogni modifica alla codebase del bot deve essere valutata prima di tutto dal punto di vista anti-ban.
 La domanda zero e': "questa modifica puo' farci bannare o farci rilevare da LinkedIn?"
 
-Prima di scrivere codice, chiedersi sempre:
-
-1. cambia comportamento browser su LinkedIn?
-2. cambia timing, delay o ordine delle azioni?
-3. tocca fingerprint, stealth, cookie o sessione?
-4. aggiunge azioni LinkedIn come click, navigazione o typing?
-5. cambia volumi, budget, cap o limiti?
-
-Principi anti-ban non negoziabili:
-
-- varianza su tutto, niente pattern fissi
-- sessioni corte e credibili, niente maratone meccaniche
-- pending ratio sotto controllo
-- fingerprint coerente e non contraddittorio
-- azioni sicure con verify pre/post
-- navigazione umana e non teletrasportata
-- monitoring attivo con alert chiari
+Le **6 domande pre-codice/pre-merge** (lista UNICA) e i **9 principi non negoziabili** vivono in
+`.claude/rules/browser-antiban.md` (enforced: `pre-edit-antiban.ps1` blocking + skill `/antiban-review`).
+La domanda zero qui sopra vale per OGNI task del progetto (anche n8n/docs/config che toccano volumi
+o comportamento), non solo per i file nel glob della regola.
 
 ## Meta-reasoning — interpretazione, verifica, proattività
 
@@ -97,7 +84,7 @@ Le 11 meta-regole comportamentali (intento non letterale, fallback context degra
 
 ## Workflow autonomi continui — `/goal`, `/loop`, Stop hook
 
-Regola estratta in `.claude/rules/autonomous-workflows.md` (path-scoped `**`). Contiene: tabella confronto `/goal` vs `/loop` vs Stop hook, quando usare `/goal` (end state misurabile multi-turno), come scrivere condizione efficace (3 componenti + bounded mode), quando NON usare, comportamento operativo, requisiti, combinazione con auto mode. Modifica lì, non duplicare qui.
+Regola estratta in `.claude/rules/autonomous-workflows.md` (path-scoped `**`). Contiene: tabella confronto `/goal` vs `/loop` vs Stop hook, quando usare `/goal` (end state misurabile multi-turno; forma `/goal <keyword>` + binding `~/todos/<keyword>.md`, spec in `~/.claude/GOAL_TASK_BINDING.md`), quando NON usare, comportamento operativo, requisiti, combinazione con auto mode. Modifica lì, non duplicare qui.
 
 ### Hook attivi, skill pre/post-conditions, hook n8n futuri
 
@@ -109,7 +96,7 @@ Regola estratta in `.claude/rules/workflow-linkedin.md` (path-scoped `src/**`, `
 
 ## Cambio chat e continuita' — Obsidian come vista operativa
 
-Fonte UNICA per ripartire in nuova chat: **`/lastchat`** (legge `~/.claude/LASTCHAT.md`). Per salvare prima di chiudere/compattare: **`/lastchat save`**.
+Fonte UNICA per ripartire in nuova chat: **`/lastchat`** (legge il file per-progetto `~/.claude/lastchat/<slug-cwd>.md`, fallback legacy `~/.claude/LASTCHAT.md`). Per salvare prima di chiudere/compattare: **`/lastchat save`**.
 
 `C:\Users\albie\memory\` (memoria) e `C:\Users\albie\todos\active.md` (priorità) restano fonti di stato/priorità, NON il sistema di continuità chat. Obsidian `Resources/continuita/` è vista navigabile (proiezione), non procedura.
 
