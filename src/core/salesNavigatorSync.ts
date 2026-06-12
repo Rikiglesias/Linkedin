@@ -540,6 +540,11 @@ async function postSyncEnrichment(
             for (const leadId of leadIds) {
                 const lead = await getLeadById(leadId);
                 if (!lead) continue;
+                // GDPR anti-reintroduzione (goal gdpr-erasure-cloud T4): un lead anonimizzato
+                // (linkedin_url riscritto ad 'anon:<sha256>' da runRightToErasure/anonymizeLead)
+                // NON deve essere ri-upsertato al cloud — altrimenti l'erasure locale viene
+                // vanificato dal primo up-sync che lo reincontra in una lista.
+                if (lead.linkedin_url?.startsWith('anon:')) continue;
                 cloudLeads.push({
                     local_id: lead.id,
                     linkedin_url: lead.linkedin_url,
