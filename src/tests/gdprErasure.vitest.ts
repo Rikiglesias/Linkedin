@@ -99,6 +99,15 @@ describe('GDPR erasure — pulizia PII nelle tabelle collegate', () => {
         const sln = findRun(db, 'DELETE FROM salesnav_list_members');
         expect(sln, 'deve cancellare i membri salesnav per quel linkedin_url (PII residua Art.17)').toBeTruthy();
         expect(sln?.[1]).toEqual(['https://www.linkedin.com/in/x/']);
+
+        // P0c (backend-audit): l'erasure Art.17 deve azzerare anche il TESTO dei messaggi
+        // (message_history.message_text + lead_intents.raw_message), tenendo content_hash.
+        const mh = findRun(db, 'UPDATE message_history SET message_text = NULL');
+        expect(mh, 'deve azzerare message_history.message_text (testo PII)').toBeTruthy();
+        expect(mh?.[1]).toEqual([42]);
+        const li = findRun(db, 'UPDATE lead_intents SET raw_message = NULL');
+        expect(li, 'deve azzerare lead_intents.raw_message (snippet PII)').toBeTruthy();
+        expect(li?.[1]).toEqual([42]);
     });
 
     test('runRightToErasure in dryRun non scrive nulla', async () => {
@@ -147,6 +156,9 @@ describe('GDPR erasure — pulizia PII nelle tabelle collegate', () => {
         expect(enr?.[1]).toEqual([55]);
         const pre = findRun(db, 'DELETE FROM prebuilt_messages');
         expect(pre?.[1]).toEqual([55]);
+        // P0c: anche anonymize (180gg) azzera il testo dei messaggi (message_history + lead_intents).
+        expect(findRun(db, 'UPDATE message_history SET message_text = NULL')?.[1]).toEqual([55]);
+        expect(findRun(db, 'UPDATE lead_intents SET raw_message = NULL')?.[1]).toEqual([55]);
         // il lead NON viene cancellato in modalita' anonymize
         expect(findRun(db, 'DELETE FROM leads WHERE id')).toBeUndefined();
     });

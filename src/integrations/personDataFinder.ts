@@ -163,6 +163,10 @@ async function fetchPage(url: string): Promise<ScrapedPage | null> {
                 circuitKey: CIRCUIT_KEY,
                 timeoutMs: SCRAPE_TIMEOUT_MS,
                 maxAttempts: 2,
+                // SSRF (SEC4): `url` deriva dal dominio del lead (https://${domain}, /sitemap.xml) →
+                // host NON fidato. Blocca IP privati/metadata. I provider host-fissi (GitHub/Gravatar/SO)
+                // non passano di qui e non attivano il flag.
+                blockPrivateHosts: true,
             },
         );
         if (!res.ok) return null;

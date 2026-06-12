@@ -151,6 +151,9 @@ async function extractDataFromPage(
                 integration: 'web_search.page_fetch',
                 circuitKey: 'web_search.pages',
                 timeoutMs: 8_000,
+                // SSRF (SEC4): pageUrl proviene dai risultati di ricerca (host NON fidato) → blocca
+                // IP privati/metadata. La query DuckDuckGo (:108) usa host fisso e non attiva il flag.
+                blockPrivateHosts: true,
             },
         );
 

@@ -9,6 +9,7 @@ import {
 } from '../proxyManager';
 import { getRuntimeFlag, setRuntimeFlag } from './repositories';
 import { logWarn } from '../telemetry/logger';
+import { assertSafeOutboundUrl } from '../security/ssrfGuard';
 
 export type RetryClassification = 'transient' | 'terminal';
 export type CircuitBreakerStatus = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
@@ -143,6 +144,13 @@ export interface RetryPolicyOptions {
     proxyMode?: 'none' | 'integration_pool';
     proxyPreferredType?: ProxyType;
     proxyForceMobile?: boolean;
+    /**
+     * SSRF guard (backend-audit SEC4): se true, l'URL viene validato prima del fetch e
+     * RIFIUTATO se punta a un host interno / IP privato / endpoint metadata. Attivare SOLO per
+     * fetch verso URL NON fidati (derivati da dati lead: personDataFinder, webSearchEnricher),
+     * MAI per i fetch interni legittimi (LLM locale, dashboard, telegram) che usano lo stesso path.
+     */
+    blockPrivateHosts?: boolean;
 }
 
 const DEFAULT_TRANSIENT_HTTP_STATUS = new Set<number>([408, 425, 429, 500, 502, 503, 504]);
@@ -489,6 +497,12 @@ export async function fetchWithRetryPolicy(
 
     return executeWithRetryPolicy<Response>(
         async () => {
+            // SSRF guard (SEC4): solo per fetch verso URL non fidati (blockPrivateHosts=true).
+            // Dentro il task così l'abort/timeout copre anche la lookup DNS; il block è terminale
+            // (classifyError default lo tratta non-transient → niente retry su un URL malevolo).
+            if (options.blockPrivateHosts) {
+                await assertSafeOutboundUrl(url);
+            }
             const controller = createTimedAbortController(init.signal, timeoutMs);
             let selectedProxy: ProxyConfig | undefined;
             let proxyDispatcherClose: (() => Promise<void>) | null = null;

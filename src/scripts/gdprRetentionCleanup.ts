@@ -160,8 +160,10 @@ async function anonymizeLead(
                 ['[ANONIMIZZATO]', '[ANONIMIZZATO]', '[ANONIMIZZATO]', `anon:${urlHash}`, lead.id],
             );
 
-            // Pulizia PII nelle tabelle collegate: il cascade FK e' inattivo (PRAGMA foreign_keys
-            // non abilitato), quindi NON ci si puo' affidare a ON DELETE CASCADE -> pulizia esplicita.
+            // Pulizia PII nelle tabelle collegate. L'anonimizzazione NON cancella la riga padre
+            // (a differenza di deleteLead), quindi nessun ON DELETE CASCADE scatterebbe comunque
+            // sulle figlie -> pulizia esplicita obbligatoria. Le righe che CONSERVIAMO (no DELETE)
+            // vengono ripulite per-colonna dei soli campi PII, tenendo gli aggregati non-PII.
             // lead_enrichment_data: azzera i blob PII (telefoni/social/company), tiene gli aggregati non-PII.
             await db.run(
                 `UPDATE lead_enrichment_data
@@ -170,6 +172,12 @@ async function anonymizeLead(
                   WHERE lead_id = ?`,
                 [lead.id],
             );
+            // message_history: message_text (migration 057) contiene il TESTO integrale del messaggio
+            // col nome del lead -> azzera, tenendo content_hash (hash non-PII per il dedup semantico).
+            // lead_intents.raw_message: snippet del messaggio analizzato (PII) -> azzera.
+            // Senza questi due, dopo l'anonimizzazione a 180gg il testo personale sopravvive (gap P0c).
+            await db.run(`UPDATE message_history SET message_text = NULL WHERE lead_id = ?`, [lead.id]);
+            await db.run(`UPDATE lead_intents SET raw_message = NULL WHERE lead_id = ?`, [lead.id]);
             // prebuilt_messages: il testo contiene PII personalizzata (nome/azienda) -> rimuovi.
             await db.run(`DELETE FROM prebuilt_messages WHERE lead_id = ?`, [lead.id]);
             // salesnav_list_members (perimetro erasure esteso): keyed su linkedin_url, non lead_id;
@@ -207,9 +215,11 @@ async function deleteLead(
     const leadIdentifier = lead.linkedin_url; // può essere già `anon:hash` se anonimizzato
 
     if (!dryRun) {
-        // Cancella prima TUTTE le tabelle dipendenti (FK cascade inattivo: PRAGMA foreign_keys off).
-        // Ordine: figli -> padre. Atomicita': figli + padre + audit in UNA transazione, cosi' un
-        // crash a meta' non lascia il lead parzialmente cancellato e senza riga di audit.
+        // Cancella prima TUTTE le tabelle dipendenti, poi il padre. Le FK NON hanno ON DELETE
+        // CASCADE (migration), quindi anche con PRAGMA foreign_keys=ON (attivo, db.ts) la DELETE
+        // del padre violerebbe la FK se le figlie esistono ancora -> ordine figli->padre obbligatorio.
+        // Atomicita': figli + padre + audit in UNA transazione, cosi' un crash a meta' non lascia
+        // il lead parzialmente cancellato e senza riga di audit.
         await withTransaction(db, async () => {
             await db.run(`DELETE FROM message_history WHERE lead_id = ?`, [lead.id]);
             await db.run(`DELETE FROM lead_events WHERE lead_id = ?`, [lead.id]);
@@ -398,8 +408,11 @@ export async function runRightToErasure(linkedinUrl: string, dryRun = false): Pr
                 [anonIdentifier, linkedinUrl],
             );
 
-            // 1b. Pulizia PII nelle tabelle collegate (cascade FK inattivo -> esplicita):
-            //     lead_enrichment_data (telefoni/social/company) + prebuilt_messages (testo personalizzato).
+            // 1b. Pulizia PII nelle tabelle collegate (la riga padre NON viene cancellata ma
+            //     anonimizzata -> nessun CASCADE scatterebbe -> pulizia esplicita per-colonna):
+            //     lead_enrichment_data (telefoni/social/company) + prebuilt_messages (testo personalizzato)
+            //     + message_history.message_text (testo integrale, tieni content_hash) + lead_intents.raw_message
+            //     (snippet). Senza gli ultimi due, l'erasure Art.17 on-demand lasciava il testo personale (gap P0c).
             for (const id of leadIds) {
                 await db.run(
                     `UPDATE lead_enrichment_data
@@ -409,6 +422,8 @@ export async function runRightToErasure(linkedinUrl: string, dryRun = false): Pr
                     [id],
                 );
                 await db.run(`DELETE FROM prebuilt_messages WHERE lead_id = ?`, [id]);
+                await db.run(`UPDATE message_history SET message_text = NULL WHERE lead_id = ?`, [id]);
+                await db.run(`UPDATE lead_intents SET raw_message = NULL WHERE lead_id = ?`, [id]);
             }
 
             // 1c. Perimetro erasure esteso a salesnav_list_members (goal gdpr-erasure-cloud):
