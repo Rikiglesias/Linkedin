@@ -45,10 +45,10 @@
       ],
       "parameters": {
         "method": "POST",
-        "url": "http://bot-api:3000/api/controls/trigger-run",
+        "url": "http://bot-api:3000/api/controls/gdpr-cleanup",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "{\"workflow\": \"gdpr-dry-run\"}",
+        "jsonBody": "{\"dryRun\": true}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -153,10 +153,10 @@
       ],
       "parameters": {
         "method": "POST",
-        "url": "http://bot-api:3000/api/controls/trigger-run",
+        "url": "http://bot-api:3000/api/controls/gdpr-cleanup",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "{\"workflow\": \"gdpr-cleanup\"}",
+        "jsonBody": "{\"dryRun\": false}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

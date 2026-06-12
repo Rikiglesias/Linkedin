@@ -13,6 +13,7 @@ import { handlePauseAction, handleResumeAction, handleQuarantineAction } from '.
 import { resolveRequestIp } from '../helpers/requestIp';
 import { mapLegacyTriggerRunWorkflow } from '../../automation/types';
 import { runCodebaseAudit } from '../../scripts/codebaseAudit';
+import { runGdprRetentionCleanup } from '../../scripts/gdprRetentionCleanup';
 
 const router = Router();
 
@@ -77,6 +78,33 @@ router.post('/trigger-run', async (req, res) => {
         });
     } catch (err: unknown) {
         handleApiError(res, err, 'api.controls.trigger-run');
+    }
+});
+
+// GDPR retention cleanup on-demand (goal gdpr-erasure-cloud T6): canale per il workflow n8n
+// `gdpr-retention-cleanup` che prima POSTava workflow inesistenti a /trigger-run -> 400 silenziato
+// (onError:continue mandava un Telegram "✅" FALSO). Endpoint DEDICATO sincrono: esegue
+// runGdprRetentionCleanup e ritorna il report reale (n8n ha timeout lunghi; admin-only, dietro
+// l'auth+rate-limit del controls router). dryRun=true => solo conteggio, nessuna scrittura.
+router.post('/gdpr-cleanup', async (req, res) => {
+    try {
+        const dryRun = req.body?.dryRun === true || req.query?.dryRun === 'true';
+        const report = await runGdprRetentionCleanup({ dryRun });
+        void recordSecurityAuditEvent({
+            category: 'runtime_control',
+            action: 'gdpr_cleanup',
+            actor: resolveRequestIp(req),
+            result: 'ALLOW',
+            metadata: { dryRun, anonymized: report.anonymized, deleted: report.deleted, errors: report.errors.length },
+        }).catch(() => null);
+        res.json({
+            success: true,
+            dryRun,
+            report,
+            message: `GDPR retention ${dryRun ? '(dry-run) ' : ''}completata: ${report.anonymized} anonimizzati, ${report.deleted} cancellati.`,
+        });
+    } catch (err: unknown) {
+        handleApiError(res, err, 'api.controls.gdpr-cleanup');
     }
 });
 
