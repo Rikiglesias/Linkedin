@@ -445,6 +445,142 @@ export async function syncEnrichmentDataToCloud(localDb: {
 }
 
 // ──────────────────────────────────────────────────────────────
+// GDPR erasure (cloud) — goal gdpr-erasure-cloud
+// ──────────────────────────────────────────────────────────────
+
+/**
+ * Scrub di cp_events: i payload storici di cloud.lead.upsert ({lead:{...}}) e
+ * cloud.lead.status ({linkedinUrl}) depositano PII in chiaro nel log eventi cloud,
+ * e le idempotency_key degli upsert incorporano l'URL raw. Redazione → stub hash-only.
+ * Le key redatte preservano l'unicità (resto della key: topic + timestamp).
+ */
+async function scrubCpEventsForUrl(sb: SupabaseClient, linkedinUrl: string, urlHash: string): Promise<void> {
+    const anonUrl = `anon:${urlHash}`;
+
+    const [byLead, byField, byKey] = await Promise.all([
+        sb.from('cp_events').select('id').eq('payload->lead->>linkedin_url', linkedinUrl),
+        sb.from('cp_events').select('id').eq('payload->>linkedinUrl', linkedinUrl),
+        sb.from('cp_events').select('id, idempotency_key').like('idempotency_key', `%${linkedinUrl}%`),
+    ]);
+    const scanError = byLead.error ?? byField.error ?? byKey.error;
+    if (scanError) {
+        throw new Error(`eraseCloudLead: scan cp_events fallito: ${scanError.message}`);
+    }
+
+    const redactIds = new Set<number>();
+    for (const row of [...(byLead.data ?? []), ...(byField.data ?? [])]) {
+        redactIds.add(row.id as number);
+    }
+    if (redactIds.size > 0) {
+        const { error } = await sb
+            .from('cp_events')
+            .update({ payload: { gdpr_redacted: true, linkedinUrl: anonUrl } })
+            .in('id', [...redactIds]);
+        if (error) {
+            throw new Error(`eraseCloudLead: redazione payload cp_events fallita: ${error.message}`);
+        }
+    }
+
+    for (const row of byKey.data ?? []) {
+        const newKey = String(row.idempotency_key).split(linkedinUrl).join(anonUrl);
+        const { error } = await sb
+            .from('cp_events')
+            .update({ idempotency_key: newKey })
+            .eq('id', row.id as number);
+        if (error) {
+            throw new Error(`eraseCloudLead: redazione idempotency_key cp_events fallita: ${error.message}`);
+        }
+    }
+}
+
+/**
+ * Propaga l'erasure GDPR (Art.17) alla copia cloud per un lead.
+ * UPDATE-only su leads (.eq linkedin_url — MAI upsert: non resuscita righe cancellate),
+ * DELETE dei membri SalesNav, azzeramento dei blob PII di lead_enrichment_data
+ * (mirror del percorso locale), scrub di cp_events.
+ * Perimetro colonne = schema cloud REALE (T1 2026-06-12), incluse le colonne che il
+ * file schema del repo non ha (email/phone/business_email/company_domain/
+ * enrichment_sources/location/salesnav_url).
+ *
+ * FAIL-LOUD deliberato (a differenza delle altre funzioni del client, che swallow-loggano):
+ * un errore qui = erasure cloud NON avvenuta per un obbligo legale → THROW → il drain
+ * outbox ritenta e, a esaurimento, DLQ + alert Telegram. Mai swallow.
+ * Idempotente: il re-apply (retry o ri-drain) su riga già riscritta ad anon:<hash> è no-op.
+ */
+export async function eraseCloudLead(linkedinUrl: string, urlHash: string): Promise<void> {
+    const sb = getClient();
+    if (!sb) {
+        throw new Error('eraseCloudLead: client Supabase non configurato — erasure cloud non applicabile');
+    }
+    const anonUrl = `anon:${urlHash}`;
+
+    // 1. Risolvi gli id cloud PRIMA del rewrite (servono per lead_enrichment_data).
+    //    Include anon:<hash> per i re-apply dopo un erase parziale già passato dal rewrite.
+    const { data: rows, error: selErr } = await sb
+        .from('leads')
+        .select('id, linkedin_url')
+        .in('linkedin_url', [linkedinUrl, anonUrl]);
+    if (selErr) {
+        throw new Error(`eraseCloudLead: select leads fallita: ${selErr.message}`);
+    }
+    const cloudIds = (rows ?? []).map((r) => r.id as number);
+
+    // 2. leads: UPDATE-only, anonimizzazione speculare al locale + colonne drift cloud-only.
+    const { error: updErr } = await sb
+        .from('leads')
+        .update({
+            first_name: '[ANONIMIZZATO]',
+            last_name: '[ANONIMIZZATO]',
+            account_name: '[ANONIMIZZATO]',
+            email: null,
+            phone: null,
+            about: null,
+            experience: null,
+            business_email: null,
+            business_email_confidence: null,
+            company_domain: null,
+            enrichment_sources: null,
+            location: null,
+            salesnav_url: null,
+            invite_note_sent: null,
+            last_reply_snippet: null,
+            linkedin_url: anonUrl,
+            updated_at: new Date().toISOString(),
+        })
+        .eq('linkedin_url', linkedinUrl);
+    if (updErr) {
+        throw new Error(`eraseCloudLead: update leads fallito: ${updErr.message}`);
+    }
+
+    // 3. salesnav_list_members: PII del membro (profile_name/company/message_text/reply_text),
+    //    keyed su linkedin_url → DELETE, come nel percorso locale.
+    const { error: snmErr } = await sb.from('salesnav_list_members').delete().eq('linkedin_url', linkedinUrl);
+    if (snmErr) {
+        throw new Error(`eraseCloudLead: delete salesnav_list_members fallito: ${snmErr.message}`);
+    }
+
+    // 4. lead_enrichment_data: azzera i blob PII, tiene gli aggregati non-PII (mirror locale).
+    if (cloudIds.length > 0) {
+        const { error: enrErr } = await sb
+            .from('lead_enrichment_data')
+            .update({
+                company_json: null,
+                phones_json: null,
+                socials_json: null,
+                sources_json: null,
+                updated_at: new Date().toISOString(),
+            })
+            .in('lead_id', cloudIds);
+        if (enrErr) {
+            throw new Error(`eraseCloudLead: scrub lead_enrichment_data fallito: ${enrErr.message}`);
+        }
+    }
+
+    // 5. cp_events: redazione dei payload/key storici che contengono l'URL raw.
+    await scrubCpEventsForUrl(sb, linkedinUrl, urlHash);
+}
+
+// ──────────────────────────────────────────────────────────────
 // Health check
 // ──────────────────────────────────────────────────────────────
 

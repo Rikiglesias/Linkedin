@@ -21,6 +21,7 @@ import { createHash } from 'crypto';
 import { getDatabase } from '../db';
 import { config } from '../config';
 import { withTransaction } from '../core/repositories/shared';
+import { emitCloudLeadEraseEvent } from '../core/repositories/system';
 import { logInfo, logWarn } from '../telemetry/logger';
 
 // ─── Costanti policy ──────────────────────────────────────────────────────────
@@ -150,6 +151,8 @@ async function anonymizeLead(
                     about          = NULL,
                     experience     = NULL,
                     business_email = NULL,
+                    invite_note_sent   = NULL,
+                    last_reply_snippet = NULL,
                     linkedin_url   = ?,
                     anonymized_at  = datetime('now'),
                     updated_at     = datetime('now')
@@ -173,6 +176,11 @@ async function anonymizeLead(
             // l'URL ORIGINALE è ancora disponibile qui (l'UPDATE lo riscrive ad anon: ma originalUrl
             // lo conserva) — dopo l'anonimizzazione il link sarebbe perso. DELETE = no PII residua.
             await db.run(`DELETE FROM salesnav_list_members WHERE linkedin_url = ?`, [originalUrl]);
+
+            // Propagazione erasure alla copia cloud (goal gdpr-erasure-cloud): evento outbox
+            // nella STESSA transazione (SAVEPOINT: rollback locale ⇒ nessuna emissione),
+            // con l'URL ORIGINALE catturato prima del rewrite anon:<hash>.
+            await emitCloudLeadEraseEvent(originalUrl);
 
             await writeAuditLog(db, 'lead_anonymized', lead.id, originalUrl, {
                 status: lead.status,
@@ -218,6 +226,10 @@ async function deleteLead(
             await db.run(`DELETE FROM challenge_events WHERE lead_id = ?`, [lead.id]);
             await db.run(`DELETE FROM lead_campaign_state WHERE lead_id = ?`, [lead.id]);
             await db.run(`DELETE FROM leads WHERE id = ?`, [lead.id]);
+
+            // Propagazione erasure cloud: se il lead era già anonimizzato (identifier anon:<hash>)
+            // l'evento è già stato emesso da quel percorso → l'helper no-opa da solo.
+            await emitCloudLeadEraseEvent(leadIdentifier);
 
             await writeAuditLog(db, 'lead_deleted', null, leadIdentifier, {
                 status: lead.status,
@@ -379,7 +391,8 @@ export async function runRightToErasure(linkedinUrl: string, dryRun = false): Pr
                     first_name = '[ANONIMIZZATO]', last_name = '[ANONIMIZZATO]',
                     account_name = '[ANONIMIZZATO]',
                     email = NULL, phone = NULL, about = NULL, experience = NULL,
-                    business_email = NULL, linkedin_url = ?,
+                    business_email = NULL, invite_note_sent = NULL, last_reply_snippet = NULL,
+                    linkedin_url = ?,
                     anonymized_at = datetime('now'), updated_at = datetime('now')
                  WHERE linkedin_url = ? AND anonymized_at IS NULL`,
                 [anonIdentifier, linkedinUrl],
@@ -406,6 +419,11 @@ export async function runRightToErasure(linkedinUrl: string, dryRun = false): Pr
             //     usa l'URL ORIGINALE (i membri non sono mai riscritti ad anon:). Tabella indipendente,
             //     nessun FK rotto. Coerente con la pulizia DELETE di prebuilt_messages sopra.
             await db.run(`DELETE FROM salesnav_list_members WHERE linkedin_url = ?`, [linkedinUrl]);
+
+            // 1d. Propagazione erasure alla copia cloud (goal gdpr-erasure-cloud): evento outbox
+            //     in-transaction con l'URL originale (il rewrite anon: è già avvenuto sopra ma
+            //     linkedinUrl — il parametro — conserva l'originale).
+            await emitCloudLeadEraseEvent(linkedinUrl);
 
             // 2. Anonimizza lead_identifier in audit_log per questo lead (GDPR Right to Erasure)
             await db.run(`UPDATE audit_log SET lead_identifier = ? WHERE lead_identifier = ?`, [

@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     updateCloudAccountHealth: vi.fn().mockResolvedValue(undefined),
     incrementCloudDailyStat: vi.fn().mockResolvedValue(undefined),
     incrementCloudDailyStatIdem: vi.fn().mockResolvedValue(undefined),
+    eraseCloudLead: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('../cloud/supabaseDataClient', () => ({
     upsertCloudLead: mocks.upsertCloudLead,
@@ -17,6 +18,7 @@ vi.mock('../cloud/supabaseDataClient', () => ({
     updateCloudAccountHealth: mocks.updateCloudAccountHealth,
     incrementCloudDailyStat: mocks.incrementCloudDailyStat,
     incrementCloudDailyStatIdem: mocks.incrementCloudDailyStatIdem,
+    eraseCloudLead: mocks.eraseCloudLead,
 }));
 
 import { applyOutboxOperation } from '../sync/supabaseSyncWorker';
@@ -27,6 +29,19 @@ describe('D2 — applyOutboxOperation dispatch per topic', () => {
     test('cloud.lead.upsert → upsertCloudLead', async () => {
         await applyOutboxOperation('cloud.lead.upsert', { lead: { linkedin_url: 'x' }, error: 'e' });
         expect(mocks.upsertCloudLead).toHaveBeenCalledWith({ linkedin_url: 'x' });
+    });
+
+    test('cloud.lead.erase → eraseCloudLead (goal gdpr-erasure-cloud)', async () => {
+        await applyOutboxOperation('cloud.lead.erase', { linkedinUrl: 'https://l.in/x', urlHash: 'abc123' });
+        expect(mocks.eraseCloudLead).toHaveBeenCalledWith('https://l.in/x', 'abc123');
+    });
+
+    test('cloud.lead.erase con payload malformato → THROW fail-loud (mai erasure persa in silenzio)', async () => {
+        await expect(applyOutboxOperation('cloud.lead.erase', { linkedinUrl: 'https://l.in/x' })).rejects.toThrow(
+            /payload non valido/,
+        );
+        await expect(applyOutboxOperation('cloud.lead.erase', { urlHash: 'abc' })).rejects.toThrow();
+        expect(mocks.eraseCloudLead).not.toHaveBeenCalled();
     });
 
     test('cloud.lead.status → updateCloudLeadStatus', async () => {

@@ -18,6 +18,7 @@ import {
     updateCloudLeadStatus,
     updateCloudAccountHealth,
     incrementCloudDailyStatIdem,
+    eraseCloudLead,
     type CloudLeadUpsert,
     type CloudDailyStatIncrement,
 } from '../cloud/supabaseDataClient';
@@ -105,6 +106,21 @@ export async function applyOutboxOperation(
                     (p.quarantineUntil as string | null | undefined) ?? null,
                 );
             }
+            return;
+        }
+        case 'cloud.lead.erase': {
+            // GDPR Art.17 (goal gdpr-erasure-cloud): propaga l'erasure alla copia cloud.
+            // FAIL-LOUD: payload malformato o errore cloud → throw → retry e, a esaurimento,
+            // DLQ + alert Telegram. Un'erasure persa in silenzio = violazione, mai swallow.
+            if (
+                typeof p.linkedinUrl !== 'string' ||
+                p.linkedinUrl.length === 0 ||
+                typeof p.urlHash !== 'string' ||
+                p.urlHash.length === 0
+            ) {
+                throw new Error('cloud.lead.erase: payload non valido (attesi linkedinUrl e urlHash)');
+            }
+            await eraseCloudLead(p.linkedinUrl, p.urlHash);
             return;
         }
         case 'cloud.daily_stat': {
@@ -196,7 +212,20 @@ export async function runSupabaseSyncOnce(): Promise<void> {
                     // cp_events — altrimenti il dato (lead/status/health/daily_stat) andrebbe perso.
                     // L'idempotency_key permette il recupero di cloud.daily_stat senza doppio conteggio.
                     await applyOutboxOperation(payload.topic, payload.payload, payload.idempotency_key);
-                    const { error } = await supabase.from('cp_events').upsert(payload, {
+                    // GDPR: l'evento erase trasporta l'URL raw (serve alla query cloud) ma il LOG
+                    // in cp_events non deve ri-depositare la PII appena cancellata → redazione
+                    // hash-only del payload (la key è già hash-based all'emissione).
+                    const loggedPayload =
+                        payload.topic === 'cloud.lead.erase' && payload.payload && typeof payload.payload === 'object'
+                            ? {
+                                  ...payload,
+                                  payload: {
+                                      gdpr_redacted: true,
+                                      urlHash: (payload.payload as Record<string, unknown>).urlHash ?? null,
+                                  },
+                              }
+                            : payload;
+                    const { error } = await supabase.from('cp_events').upsert(loggedPayload, {
                         onConflict: 'idempotency_key',
                         ignoreDuplicates: false,
                     });

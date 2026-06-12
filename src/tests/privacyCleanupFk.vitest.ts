@@ -13,6 +13,11 @@ function makeDb() {
     return {
         withTransaction: vi.fn(async (fn: () => Promise<unknown>) => fn()),
         run: vi.fn().mockResolvedValue({ changes: 0 }),
+        // SELECT degli URL in purge (emissione cloud.lead.erase, goal gdpr-erasure-cloud):
+        // lista vuota = nessuna emissione, il perimetro FK resta l'oggetto del test.
+        query: vi.fn().mockResolvedValue([]),
+        // pushOutboxEvent rilegge l'evento via db.get (usato solo se query ritorna URL).
+        get: vi.fn().mockResolvedValue({ id: 1 }),
     };
 }
 

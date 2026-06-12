@@ -3,7 +3,9 @@
  * Domain queries: outbox, runtime locks/flags, logs, privacy cleanup, cloud downsync.
  */
 
+import { createHash } from 'crypto';
 import { getDatabase } from '../../db';
+import { config } from '../../config';
 import { OutboxEventRecord } from '../../types/domain';
 import type { CloudAccount, CloudLeadUpsert } from '../../cloud/types';
 import { getCorrelationId } from '../../telemetry/correlation';
@@ -119,6 +121,38 @@ export async function pushOutboxEvent(
 
         await ensureOutboxEventDeliveries(db, eventRow.id, activeSinks);
     });
+}
+
+/**
+ * Emissione outbox dell'erasure cloud (GDPR Art.17 — goal gdpr-erasure-cloud).
+ * Da chiamare DENTRO la transazione locale che anonimizza/cancella il lead
+ * (pushOutboxEvent annidato = SAVEPOINT: rollback locale ⇒ nessun evento emesso),
+ * con l'URL ORIGINALE catturato PRIMA del rewrite `anon:<hash>` (la chiave cloud è
+ * linkedin_url: dopo il rewrite il join è perso per sempre).
+ * Payload minimale: URL solo nel campo necessario alla query cloud, MAI snapshot del
+ * lead; idempotency_key HASH-based (la key finisce in cp_events in chiaro → niente URL
+ * raw) + timestamp (un lead ri-aggiunto e ri-cancellato deve poter ri-emettere).
+ * Fail-loud a valle: il consumer eraseCloudLead THROWa su errore → retry/DLQ + alert.
+ */
+export async function emitCloudLeadEraseEvent(linkedinUrl: string): Promise<void> {
+    // Identifier già anonimizzato (es. delete a 365gg di lead già anonimizzato a 180gg):
+    // l'erasure cloud è già stata emessa dal percorso che ha riscritto l'URL → no-op.
+    if (!linkedinUrl || linkedinUrl.startsWith('anon:')) return;
+    const urlHash = createHash('sha256').update(linkedinUrl).digest('hex');
+    await pushOutboxEvent('cloud.lead.erase', { linkedinUrl, urlHash }, `cloud.lead.erase:${urlHash}:${Date.now()}`);
+    // Edge sink: la delivery nasce solo per i sink ATTIVI al momento del push. Con sink
+    // SUPABASE spento ma copia cloud esistente, l'erasure non arriverebbe MAI: traccia
+    // durevole in audit_log (Art.5(2)) + warn operatore. Niente telemetry/logger qui:
+    // logger importa da questo modulo (recordRunLog) → sarebbe dipendenza circolare.
+    if (!config.supabaseSyncEnabled) {
+        const db = await getDatabase();
+        await db.run(
+            `INSERT INTO audit_log (action, lead_id, lead_identifier, performed_by, metadata_json)
+             VALUES ('cloud_erase_sink_inactive', NULL, ?, 'gdpr_erasure', '{"reason":"SUPABASE_SYNC_ENABLED=false"}')`,
+            [`anon:${urlHash}`],
+        );
+        console.warn(`[GDPR] cloud.lead.erase emesso ma sink SUPABASE inattivo (anon:${urlHash.slice(0, 12)})`);
+    }
 }
 
 export async function getPendingOutboxEvents(limit: number): Promise<OutboxEventRecord[]> {
@@ -1097,6 +1131,20 @@ export async function cleanupPrivacyData(
                  )`,
                 [daysParam],
             );
+            // Propagazione erasure alla copia cloud (goal gdpr-erasure-cloud): cattura gli URL
+            // ORIGINALI dei lead in purge PRIMA del DELETE leads sotto (dopo, persi per sempre)
+            // ed emette un evento outbox per ciascuno, nella STESSA transazione del purge.
+            const purgedUrls = await db.query<{ linkedin_url: string }>(
+                `SELECT linkedin_url FROM leads
+                 WHERE status IN ('SKIPPED', 'BLOCKED', 'DEAD', 'WITHDRAWN', 'REPLIED', 'CONNECTED')
+                   AND COALESCE(updated_at, created_at) < DATETIME('now', '-' || ? || ' days')
+                   AND linkedin_url IS NOT NULL
+                   AND linkedin_url NOT LIKE 'anon:%'`,
+                [daysParam],
+            );
+            for (const row of purgedUrls) {
+                await emitCloudLeadEraseEvent(row.linkedin_url);
+            }
         }
         const staleLeads = await runDeleteOrCount(`DELETE FROM leads WHERE id IN (${staleLeadsSubquery})`, [daysParam]);
 

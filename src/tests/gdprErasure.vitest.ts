@@ -26,7 +26,9 @@ function makeDb() {
     return {
         run: vi.fn().mockResolvedValue(undefined),
         query: vi.fn().mockResolvedValue([]),
-        get: vi.fn().mockResolvedValue(undefined),
+        // pushOutboxEvent (emissione cloud.lead.erase, goal gdpr-erasure-cloud) rilegge l'evento
+        // appena inserito via db.get: deve trovare un id, altrimenti throw "Outbox event non trovato".
+        get: vi.fn().mockResolvedValue({ id: 1 }),
         // shared.withTransaction(db, cb) -> db.withTransaction(() => cb()): esegue la callback.
         withTransaction: vi.fn(async (fn: () => Promise<unknown>) => fn()),
     };
@@ -162,6 +164,89 @@ describe('GDPR erasure — pulizia PII nelle tabelle collegate', () => {
         db.query.mockResolvedValue([{ id: 5 }]);
         mocks.getDatabase.mockResolvedValue(db);
         await runRightToErasure('https://www.linkedin.com/in/z/', false);
-        expect(db.withTransaction).toHaveBeenCalledTimes(1);
+        // 2 chiamate: la transazione esterna + il SAVEPOINT annidato di pushOutboxEvent
+        // (emissione cloud.lead.erase in-transaction — goal gdpr-erasure-cloud).
+        expect(db.withTransaction).toHaveBeenCalledTimes(2);
+    });
+});
+
+describe('GDPR erasure — propagazione cloud via outbox (goal gdpr-erasure-cloud)', () => {
+    const URL = 'https://www.linkedin.com/in/cloud-x/';
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.logInfo.mockResolvedValue(undefined);
+        mocks.logWarn.mockResolvedValue(undefined);
+    });
+
+    test('runRightToErasure emette cloud.lead.erase: URL originale nel payload, key hash-based senza URL raw', async () => {
+        const db = makeDb();
+        db.query.mockResolvedValue([{ id: 42 }]);
+        mocks.getDatabase.mockResolvedValue(db);
+
+        await runRightToErasure(URL, false);
+
+        const emit = findRun(db, 'INSERT OR IGNORE INTO outbox_events');
+        expect(emit, 'deve emettere un evento outbox per la copia cloud').toBeTruthy();
+        const [topic, payloadJson, idemKey] = emit?.[1] as [string, string, string];
+        expect(topic).toBe('cloud.lead.erase');
+        const payload = JSON.parse(payloadJson) as { linkedinUrl: string; urlHash: string };
+        expect(payload.linkedinUrl, 'serve l URL ORIGINALE per la query cloud (chiave linkedin_url)').toBe(URL);
+        expect(payload.urlHash).toMatch(/^[0-9a-f]{64}$/);
+        // La key finisce in cp_events in chiaro: hash-based, MAI l'URL raw.
+        expect(idemKey).toMatch(/^cloud\.lead\.erase:[0-9a-f]{64}:\d+$/);
+        expect(idemKey).not.toContain(URL);
+    });
+
+    test('anonymize (retention) emette cloud.lead.erase con l URL originale pre-rewrite', async () => {
+        const db = makeDb();
+        db.query.mockResolvedValue([oldLead(55, 200)]);
+        mocks.getDatabase.mockResolvedValue(db);
+
+        await runGdprRetentionCleanup({ anonymizeOnly: true });
+
+        const emit = findRun(db, 'INSERT OR IGNORE INTO outbox_events');
+        expect(emit, 'anonymize deve propagare l erasure al cloud').toBeTruthy();
+        const payload = JSON.parse(String((emit?.[1] as unknown[])[1])) as { linkedinUrl: string };
+        expect(payload.linkedinUrl).toBe('https://www.linkedin.com/in/lead-55/');
+    });
+
+    test('rollback: se l UPDATE leads fallisce, NESSUN evento outbox viene emesso', async () => {
+        const db = makeDb();
+        db.query.mockResolvedValue([{ id: 9 }]);
+        db.run.mockImplementation(async (sql: string) => {
+            if (String(sql).includes('UPDATE leads SET')) throw new Error('disk I/O error');
+            return undefined;
+        });
+        mocks.getDatabase.mockResolvedValue(db);
+
+        await expect(runRightToErasure(URL, false)).rejects.toThrow('disk I/O error');
+        expect(
+            findRun(db, 'INSERT OR IGNORE INTO outbox_events'),
+            'emissione DOPO la mutazione locale, nella stessa transazione: fallimento ⇒ niente evento',
+        ).toBeUndefined();
+    });
+
+    test('delete di lead GIA anonimizzato (identifier anon:) NON ri-emette verso il cloud', async () => {
+        const db = makeDb();
+        const lead = { ...oldLead(77, 800), linkedin_url: 'anon:abcdef123456', anonymized_at: '2026-01-01' };
+        db.query.mockResolvedValue([lead]);
+        mocks.getDatabase.mockResolvedValue(db);
+
+        await runGdprRetentionCleanup({ deleteOnly: true });
+
+        expect(findRun(db, 'INSERT OR IGNORE INTO outbox_events')).toBeUndefined();
+    });
+
+    test('anonymize azzera anche invite_note_sent e last_reply_snippet (PII residua, fix stessa-classe)', async () => {
+        const db = makeDb();
+        db.query.mockResolvedValue([oldLead(56, 200)]);
+        mocks.getDatabase.mockResolvedValue(db);
+
+        await runGdprRetentionCleanup({ anonymizeOnly: true });
+
+        const ano = findRun(db, 'UPDATE leads SET');
+        expect(String(ano?.[0])).toMatch(/invite_note_sent\s*=\s*NULL/);
+        expect(String(ano?.[0])).toMatch(/last_reply_snippet\s*=\s*NULL/);
     });
 });
