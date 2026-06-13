@@ -24,5 +24,5 @@ enforcement:
 
 ## Note LinkedIn
 
-- Aree ad **alto rischio** che ROMPONO l'auto-push (oltre alle universali): anti-ban, stealth/fingerprint, proxy, migration DB → richiedono review di branch, mai auto-push diretto.
+- Aree ad **alto rischio** (anti-ban, stealth/fingerprint, proxy, migration DB) → NON delegare il controllo all'utente: l'AI esegue una **review approfondita PRIMA del push** — `antiban-review` con verdetto SICURO + quality gate verde + (rischio alto/ultracode) review indipendente multi-lente sul diff (Workflow fan-out). Review verde → l'AI **pusha** (repo personale non condiviso). Review con problema reale → l'AI lo risolve, non lo rimanda. Conferma utente SOLO se il branch è condiviso o serve una decisione di business. (Principio canonico: `~/.claude/on-demand/git-commit-push.md` §"Alto rischio".)
 - `npm run conta-problemi` / `npm run audit:git-automation` sono npm script cross-environment (validi anche in Codex/Cloud Code per il fallback manuale dei gate).
