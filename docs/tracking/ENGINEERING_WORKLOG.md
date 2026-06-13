@@ -4,6 +4,18 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-13 — A6-3 + A11-1-pop: alert WHAT/WHY/DO completati (audit-bot FASE 3 bounded) (`/goal audit-bot`)
+
+### Obiettivo
+Chiudere gli ultimi 2 residui **bounded** dell'audit-bot 360°: A6-3 (alert proattivo su circuit-breaker provider aperto pre-outreach) e A11-1-pop (popolare il campo `action`/DO negli alert broadcast restanti). Gli item GRANDI (A12 EPIC, A11-2, A13) restano tracciati per chat dedicata + Plan Mode.
+
+### Interventi
+- **A6-3** (`sendInvitesService.ts:352`, commit `7100872`): dove `enrichmentDegraded=true` (enrichment <20% = sintomo CB Apollo/Hunter/OpenAI aperto) aggiunto `await broadcastWarning` WHAT/WHY/DO oltre al `console.warn` esistente (A6-2). `declassedToTemplate` calcolato PRIMA della mutazione `noteMode`. `broadcast()` è never-throw (`Promise.allSettled`) → non blocca né rompe l'invio. File gated → antiban-review SICURO + flag.
+- **A11-1-pop** (commit `f64e758`): campo `action` strutturato su 5 call-site con un DO operativo — `incidentManager.ts:153` (pausa automazione: cosa fare a fine pausa / pausa indefinita), `jobRunner.ts:368` (proxy quality: ruota pool Oxylabs), `preventiveGuards.ts:156` (circuit breaker open: controlla provider), `linkedinChangeAlert.ts:64/72` (LinkedIn change: verifica selettori/DOM; il :72 sposta il DO dal body al campo). **Escluso** `preventiveGuards.ts:40` (heartbeat INFO: informativo di routine, nessun DO sensato).
+
+### Verifica finale
+`npm run conta-problemi` exit 0 su entrambi i commit — typecheck backend+frontend, lint zero-warning, **178 file / 1770 test** verdi (test `incidentClassification` non rotto dal 4° arg `action`). `/antiban-review` → **SICURO** per entrambi (observability-only: zero cambiamento a browser/timing/fingerprint/volumi/navigazione). Push manuale dopo review (repo personale, area anti-ban). LIST + binding `audit-bot.md` aggiornati.
+
 ## 2026-06-13 — SEC5: password proxy sticky non più persistita in chiaro in `.session-meta.json` (`/goal sec5`)
 
 ### Obiettivo
