@@ -48,9 +48,15 @@ export async function writeAuditEntry(
              VALUES (?, ?, ?, ?, ?)`,
             [action, leadId, leadIdentifier, performedBy, JSON.stringify(metadata)],
         );
-    } catch {
-        // Non propagare — un errore di audit non deve bloccare il bot
-        // logWarn viene omesso per non creare dipendenza circolare logger→db→auditLog
+    } catch (err) {
+        // Non propagare — un errore di audit non deve bloccare il bot.
+        // console.warn (NON logWarn, che scriverebbe su db => dipendenza circolare logger->db->auditLog):
+        // dà osservabilità al data-loss GDPR senza toccare il db (A11-3 audit-bot).
+        console.warn(
+            `[audit] writeAuditEntry FALLITO (action=${action}, lead=${leadIdentifier}, by=${performedBy}): ${
+                err instanceof Error ? err.message : String(err)
+            } — entry GDPR non registrata`,
+        );
     }
 }
 
