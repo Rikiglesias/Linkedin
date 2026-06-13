@@ -12,6 +12,7 @@ import { CloudLeadUpsert } from '../cloud/types';
 import { config } from '../config';
 import { getDatabase } from '../db';
 import { enrichLeadAuto } from '../integrations/leadEnricher';
+import { triggerLiveEnrichment } from '../integrations/liveEnrichmentTrigger';
 import { handleChallengeDetected } from '../risk/incidentManager';
 import {
     getLeadById,
@@ -983,6 +984,11 @@ export async function upsertLeadBatch(
             console.error(`[SYNC] Errore upsert lead ${candidate.linkedinUrl}: ${msg}`);
             listReport.errors += 1;
         }
+    }
+    // Live enrichment (post-scraping): salvati lead reali → arricchisci in background i mancanti
+    // (parallelo, solo fonti gratuite). Fire-and-forget, non blocca il sync, mai in dry-run.
+    if (!dryRun && syncedLeadIds.length > 0) {
+        triggerLiveEnrichment(listName);
     }
     return syncedLeadIds;
 }

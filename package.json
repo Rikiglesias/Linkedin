@@ -37,6 +37,7 @@
         "webrtc:leak-check": "npm run build:backend && node dist/scripts/webrtcLeakCheck.js",
         "mouse:demo": "ts-node src/scripts/mouseDemo.ts",
         "feature-store": "ts-node src/index.ts feature-store",
+        "enrich:live": "ts-node src/index.ts enrich-live",
         "secrets:rotate": "ts-node src/scripts/rotateSecrets.ts --interval-days 7",
         "security:scan": "node scripts/security/check-no-secrets.mjs",
         "setup:git-hooks": "git config core.hooksPath .githooks",

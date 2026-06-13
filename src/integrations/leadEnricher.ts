@@ -367,7 +367,7 @@ export async function enrichLead(
     firstName: string,
     lastName: string,
     domain: string,
-    opts?: { linkedinUrl?: string; deep?: boolean; organizationName?: string },
+    opts?: { linkedinUrl?: string; deep?: boolean; organizationName?: string; paidProviders?: boolean },
 ): Promise<EnrichmentResult> {
     if (!firstName || !lastName) return EMPTY_RESULT;
 
@@ -376,23 +376,29 @@ export async function enrichLead(
 
     let result: EnrichmentResult | null = null;
 
-    // 1. Apollo.io (più completo: email, phone, job title, company, industry, location)
-    result = await enrichViaApollo(firstName, lastName, {
-        domain,
-        linkedinUrl: opts?.linkedinUrl,
-        organizationName: opts?.organizationName,
-    });
+    // Live enrichment: paidProviders=false salta i provider a pagamento (Apollo/Hunter/Clearbit)
+    // e usa solo le fonti gratuite (EmailGuesser/PersonDataFinder/WebSearch). Default true = invariato.
+    const usePaid = opts?.paidProviders !== false;
 
-    if (result) {
-        if (result.email) sources.email = 'apollo';
-        if (result.phone) sources.phone = 'apollo';
-        if (result.jobTitle) sources.job_title = 'apollo';
-        if (result.companyName) sources.company = 'apollo';
-        if (result.location) sources.location = 'apollo';
+    // 1. Apollo.io (più completo: email, phone, job title, company, industry, location)
+    if (usePaid) {
+        result = await enrichViaApollo(firstName, lastName, {
+            domain,
+            linkedinUrl: opts?.linkedinUrl,
+            organizationName: opts?.organizationName,
+        });
+
+        if (result) {
+            if (result.email) sources.email = 'apollo';
+            if (result.phone) sources.phone = 'apollo';
+            if (result.jobTitle) sources.job_title = 'apollo';
+            if (result.companyName) sources.company = 'apollo';
+            if (result.location) sources.location = 'apollo';
+        }
     }
 
     // 2. Hunter.io (fallback)
-    if (!result) {
+    if (usePaid && !result) {
         result = await enrichViaHunter(firstName, lastName, domain);
         if (result?.email) sources.email = 'hunter';
         if (result?.jobTitle) sources.job_title = 'hunter';
@@ -423,7 +429,7 @@ export async function enrichLead(
     }
 
     // 4. Clearbit (fallback)
-    if (!result) {
+    if (usePaid && !result) {
         result = await enrichViaClearbit(firstName, lastName, domain);
         if (result?.email) sources.email = 'clearbit';
         if (result?.phone) sources.phone = 'clearbit';
@@ -590,7 +596,7 @@ export async function enrichLeadAuto(
         location?: string | null;
         gdpr_opt_out?: number | null;
     },
-    opts?: { deep?: boolean },
+    opts?: { deep?: boolean; paidProviders?: boolean },
 ): Promise<EnrichmentResult> {
     // H17 fix (GDPR Art.21): gate centralizzato. Un lead con gdpr_opt_out=1 ha esercitato
     // l'opposizione → NESSUNA raccolta ne trasferimento PII (l'enrichment chiama processor US:
@@ -632,13 +638,16 @@ export async function enrichLeadAuto(
         }
     }
 
-    // Se non abbiamo né dominio, né LinkedIn URL, né Apollo → skip
-    if (!domain && !linkedinUrl && !config.apolloApiKey) return EMPTY_RESULT;
+    // Se non abbiamo né dominio, né LinkedIn URL, né Apollo → skip.
+    // Con paidProviders=false Apollo non gira, quindi la sua chiave non "salva" il lead dallo skip.
+    const apolloAvailable = opts?.paidProviders !== false && !!config.apolloApiKey;
+    if (!domain && !linkedinUrl && !apolloAvailable) return EMPTY_RESULT;
 
     const result = await enrichLead(lead.id, firstName, lastName, domain, {
         linkedinUrl,
         deep: opts?.deep,
         organizationName,
+        paidProviders: opts?.paidProviders,
     });
     result.domainSource = domainSource;
     // Assicura che companyDomain sia sempre popolato se abbiamo scoperto un dominio

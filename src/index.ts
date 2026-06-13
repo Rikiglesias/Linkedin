@@ -226,6 +226,7 @@ function printHelp(): void {
     console.log('  enrich-deep --lead <id> | --list <nome> [--limit N] [--dry-run]');
     console.log('  enrich-profiles --list <nome> [--limit 15] [--dry-run] [--no-proxy]');
     console.log('  enrich-fast [--list <nome>] [--limit 50] [--concurrency 5]  (parallelo, zero LinkedIn)');
+    console.log('  enrich-live [--list <nome>]                                 (background, solo fonti gratuite, drena i mancanti)');
     console.log('  pause [minutes|indefinite] [reason]');
     console.log('  resume');
     console.log('  unquarantine [--account <id>]');
@@ -590,6 +591,17 @@ async function main(): Promise<void> {
         case 'enrich-fast':
             await runEnrichFastCommand(commandArgs);
             break;
+        case 'enrich-live': {
+            // Enrichment live: parallelo, in background, SOLO fonti gratuite (--free), drena
+            // tutti i mancanti (--drain). Default concurrency/limit dalla config (override via flag).
+            const liveArgs = [...commandArgs, '--free', '--drain'];
+            if (!hasOption(commandArgs, '--limit')) liveArgs.push('--limit', String(config.liveEnrichLimit));
+            if (!hasOption(commandArgs, '--concurrency')) {
+                liveArgs.push('--concurrency', String(config.liveEnrichConcurrency));
+            }
+            await runEnrichFastCommand(liveArgs);
+            break;
+        }
         case 'status':
             await runStatusCommand();
             break;

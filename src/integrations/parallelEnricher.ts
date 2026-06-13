@@ -1,8 +1,10 @@
 /**
  * Parallel Enrichment Engine
  *
- * Arricchisce lead in parallelo usando solo fonti internet gratuite (zero visite LinkedIn).
- * Pipeline per lead: Domain Discovery → EmailGuesser → PersonDataFinder → WebSearch
+ * Arricchisce lead in parallelo, ZERO visite LinkedIn (solo fonti esterne HTTP/DNS).
+ * Pipeline per lead: Domain Discovery → [Apollo/Hunter/Clearbit se paidProviders] →
+ * EmailGuesser → PersonDataFinder → WebSearch.
+ * Con paidProviders=false (default del live enrichment) usa solo le fonti gratuite.
  *
  * Concurrency controllata per evitare rate-limiting dalle fonti.
  */
@@ -21,6 +23,8 @@ export interface ParallelEnrichmentOptions {
     concurrency: number;
     /** Callback progresso opzionale */
     onProgress?: (done: number, total: number, lastLead: string) => void;
+    /** Se false, salta i provider a pagamento (Apollo/Hunter/Clearbit) e usa solo le fonti gratuite. Default: true */
+    paidProviders?: boolean;
 }
 
 export interface ParallelEnrichmentReport {
@@ -103,7 +107,9 @@ export async function enrichLeadsParallel(opts: ParallelEnrichmentOptions): Prom
     for (let i = 0; i < leads.length; i += opts.concurrency) {
         const batch = leads.slice(i, i + opts.concurrency);
 
-        const results = await Promise.allSettled(batch.map((lead) => enrichSingleLead(db, lead)));
+        const results = await Promise.allSettled(
+            batch.map((lead) => enrichSingleLead(db, lead, opts.paidProviders)),
+        );
 
         for (let j = 0; j < results.length; j++) {
             done++;
@@ -142,9 +148,10 @@ export async function enrichLeadsParallel(opts: ParallelEnrichmentOptions): Prom
 async function enrichSingleLead(
     db: Awaited<ReturnType<typeof getDatabase>>,
     lead: LeadRow,
+    paidProviders?: boolean,
 ): Promise<EnrichmentResult | null> {
     try {
-        const result = await enrichLeadAuto(lead);
+        const result = await enrichLeadAuto(lead, { paidProviders });
 
         if (!result.email && !result.phone && !result.companyDomain && !result.jobTitle) {
             // Nessun dato trovato — registra comunque per evitare re-enrichment

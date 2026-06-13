@@ -327,6 +327,12 @@ export function buildCommsAndBusinessDomainConfig() {
         apolloApiKey: parseStringEnv('APOLLO_API_KEY'),
         hunterApiKey: parseStringEnv('HUNTER_API_KEY'),
         clearbitApiKey: parseStringEnv('CLEARBIT_API_KEY'),
+        // Live enrichment (2026-06-13): enrichment parallelo in background lanciato
+        // post-scraping. Usa SOLO fonti gratuite (EmailGuesser/PersonDataFinder/WebSearch);
+        // Apollo/Hunter/Clearbit (a pagamento) restano nel ciclo scheduler col cap giornaliero.
+        liveEnrichEnabled: parseBoolEnv('LIVE_ENRICH_ENABLED', true),
+        liveEnrichConcurrency: Math.max(1, parseIntEnv('LIVE_ENRICH_CONCURRENCY', 8)),
+        liveEnrichLimit: Math.max(1, parseIntEnv('LIVE_ENRICH_LIMIT', 200)),
         followUpDelayDays: Math.max(1, parseIntEnv('FOLLOW_UP_DELAY_DAYS', 5)),
         followUpQuestionsDelayDays: Math.max(1, parseIntEnv('FOLLOW_UP_QUESTIONS_DELAY_DAYS', 3)),
         followUpNegativeDelayDays: Math.max(1, parseIntEnv('FOLLOW_UP_NEGATIVE_DELAY_DAYS', 30)),

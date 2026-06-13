@@ -215,6 +215,9 @@ export interface AppConfig {
     apolloApiKey: string;
     hunterApiKey: string;
     clearbitApiKey: string;
+    liveEnrichEnabled: boolean;
+    liveEnrichConcurrency: number;
+    liveEnrichLimit: number;
     followUpDelayDays: number;
     followUpQuestionsDelayDays: number;
     followUpNegativeDelayDays: number;

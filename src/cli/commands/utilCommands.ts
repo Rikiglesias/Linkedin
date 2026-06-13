@@ -748,31 +748,56 @@ export async function runEnrichFastCommand(args: string[]): Promise<void> {
     const concurrencyRaw = getOptionValue(args, '--concurrency');
     const limit = limitRaw ? Math.max(1, parseIntStrict(limitRaw, '--limit')) : 50;
     const concurrency = concurrencyRaw ? Math.max(1, Math.min(20, parseIntStrict(concurrencyRaw, '--concurrency'))) : 5;
+    // --free: salta i provider a pagamento (Apollo/Hunter/Clearbit) → solo fonti gratuite (live enrichment).
+    const paidProviders = !args.includes('--free');
+    // --drain: ripete finché restano lead da arricchire (usato dal trigger live post-scraping).
+    const drain = args.includes('--drain');
 
     console.log(
-        `[ENRICH-FAST] Avvio enrichment parallelo: limit=${limit}, concurrency=${concurrency}${listName ? `, list=${listName}` : ''}`,
+        `[ENRICH-FAST] Avvio enrichment parallelo: limit=${limit}, concurrency=${concurrency}` +
+            `${listName ? `, list=${listName}` : ''}${paidProviders ? '' : ', solo-gratis'}${drain ? ', drain' : ''}`,
     );
-    console.log(`[ENRICH-FAST] Fonti: Domain Discovery + EmailGuesser + PersonDataFinder + WebSearch (zero LinkedIn)`);
+    console.log(
+        `[ENRICH-FAST] Fonti: ${paidProviders ? 'Apollo/Hunter/Clearbit + ' : ''}` +
+            `Domain Discovery + EmailGuesser + PersonDataFinder + WebSearch (zero LinkedIn)`,
+    );
 
-    const report = await enrichLeadsParallel({
-        listName,
-        limit,
-        concurrency,
-        onProgress: (done, total, lastLead) => {
-            const pct = Math.round((done / total) * 100);
-            console.log(`  [${done}/${total}] ${pct}% — ${lastLead}`);
-        },
-    });
+    const onProgress = (done: number, total: number, lastLead: string): void => {
+        const pct = Math.round((done / total) * 100);
+        console.log(`  [${done}/${total}] ${pct}% — ${lastLead}`);
+    };
 
-    const durationSec = Math.round(report.durationMs / 1000);
-    const avgSec = report.total > 0 ? Math.round(report.durationMs / report.total / 1000) : 0;
-    console.log(`\n[ENRICH-FAST] Completato in ${durationSec}s (media ${avgSec}s/lead)`);
-    console.log(`  Lead processati: ${report.total}`);
-    console.log(`  Arricchiti:      ${report.enriched}`);
-    console.log(`  Email trovate:   ${report.emailsFound}`);
-    console.log(`  Business email:  ${report.businessEmailsFound}`);
-    console.log(`  Telefoni:        ${report.phonesFound}`);
-    console.log(`  Falliti:         ${report.failed}`);
+    // Drain-loop (--drain): la query diff ordina i mai-arricchiti per primi → progresso monotòno.
+    // Stop a coda vuota (total=0) o stallo (enriched=0: i restanti sono irrisolvibili dalle fonti
+    // gratuite in questo run, evita di insistere sui lead senza business_email). Cap iter+durata.
+    const MAX_ITER = drain ? 20 : 1;
+    const MAX_DURATION_MS = 15 * 60_000;
+    const startMs = Date.now();
+    const totals = { total: 0, enriched: 0, emailsFound: 0, businessEmailsFound: 0, phonesFound: 0, failed: 0 };
+    let iter = 0;
+
+    while (iter < MAX_ITER && Date.now() - startMs < MAX_DURATION_MS) {
+        iter++;
+        const report = await enrichLeadsParallel({ listName, limit, concurrency, paidProviders, onProgress });
+        totals.total += report.total;
+        totals.enriched += report.enriched;
+        totals.emailsFound += report.emailsFound;
+        totals.businessEmailsFound += report.businessEmailsFound;
+        totals.phonesFound += report.phonesFound;
+        totals.failed += report.failed;
+        if (!drain || report.total === 0 || report.enriched === 0) break;
+    }
+
+    const durationMs = Date.now() - startMs;
+    const durationSec = Math.round(durationMs / 1000);
+    const avgSec = totals.total > 0 ? Math.round(durationMs / totals.total / 1000) : 0;
+    console.log(`\n[ENRICH-FAST] Completato in ${durationSec}s${drain ? ` (${iter} cicli)` : ''} (media ${avgSec}s/lead)`);
+    console.log(`  Lead processati: ${totals.total}`);
+    console.log(`  Arricchiti:      ${totals.enriched}`);
+    console.log(`  Email trovate:   ${totals.emailsFound}`);
+    console.log(`  Business email:  ${totals.businessEmailsFound}`);
+    console.log(`  Telefoni:        ${totals.phonesFound}`);
+    console.log(`  Falliti:         ${totals.failed}`);
 }
 
 export async function runCreateProfileCommand(args: string[]): Promise<void> {
