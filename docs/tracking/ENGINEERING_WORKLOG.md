@@ -4,6 +4,18 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-13 — fix(observability): window-block failure mode strutturati via logWarn (`367b1af`)
+
+**Follow-up ① dell'audit mouse-block** (`improvements-proposed.md` 2026-06-13, gap anti-ban più rilevante). Il finding originale ("no-op SENZA warning") era **impreciso** (zero-M, verificato alla fonte): un `console.warn` c'era già a `windowInputBlock.ts:213`. Il gap reale è che quel warning è **raw** → bypassa il sistema di observability (DB run-log + dashboard live `publishLiveEvent` + Sentry) = *silent* per la regola anti-ban #9.
+
+**Catena root cause**: Camoufox non espone `browser.process()` → PID solo via diff pre/post lancio (`launcher.ts:496-508`); se `newPid` non trovato (altra istanza Firefox/Camoufox aperta, o race) → solo `logInfo`, PID non registrato → `enableWindowClickThrough` → `getBrowserPid`=null → `console.warn`+`return false` → **i ~10 caller ignorano il `false`** → sessione continua con finestra non click-through → il mouse fisico dell'utente può raggiungere il browser = azione doppia umana+bot (segnale comportamentale anomalo).
+
+**Fix** (chirurgico, observability-only): `console.warn` raw → `void logWarn(...)` strutturato con `impact`/`action` (WHAT/WHY/DO) su `window_block.pid_unavailable` / `no_windows` / `apply_error`; `launcher.ts` `camoufox_pid_not_found` da `logInfo`→`logWarn` (primo domino). Toccati **solo i path sync rari** (enable/disable espliciti), NON `_applyClickThroughAsync`/re-apply timer (genererebbe log+DB-write ogni 1s). "Verifica post-enable" del finding già coperta da `windowCount` (il C# `SetClickThrough` ritorna il count di finestre processate).
+
+**Verifica**: `/antiban-review` **SICURO** (6 domande tutte ✅; zero cambio comportamento browser/timing, `void logWarn` fire-and-forget non blocca l'event-loop). typecheck+lint exit 0, vitest **1788/1788** invariati, `madge --circular src/browser/`=0. Igiene: `windowInputBlock.ts` 291→304 righe (deroga L1-LI.4 motivata: modulo coeso già splittato in `windowInputBlockScript.ts`, +13 righe = observability anti-ban, secondo split frammenterebbe SRP). Commit `367b1af`.
+
+**Follow-up ② rimanenti** (improvements-proposed, basso valore): `process.on('exit')` anche in jobRunner; metric `enrichment_transient_retries`; test runtime `windowInputBlock.vitest.ts` (multi-PID/re-apply/process-exit). Leva utente: `poolSize≥2` o `PROXY_PROVIDER_API_ENDPOINT` (contaminazione IP browser↔enrichment).
+
 ## 2026-06-13 — fix(enrichment): non marcare i lead falliti-transient → ri-arricchibili (`b4b551b`)
 
 **Follow-up del fix proxy** (`8271470`): durante proxy exhaustion gli enrichment falliscono transient ma i lead venivano persi.
