@@ -157,6 +157,8 @@ export async function alertCircuitBreakerStatus(): Promise<void> {
             level: 'WARNING',
             title: 'Circuit Breaker OPEN',
             body: `${openBreakers.length} circuit breaker aperti:\n${breakerList}\n\nServizi degradati — il bot sta usando fallback meccanici.`,
+            // L5-LI.1 "DO" (A11-1-pop): azione operativa sui provider degradati.
+            action: 'Controlla i provider degradati (Apollo/OpenAI/DDG/Telegram). Il bot usa fallback meccanici; se un provider critico resta down a lungo, valuta di sospendere enrichment/note AI finché non rientra.',
         });
 
         await logWarn('preventive.circuit_breaker_open', {

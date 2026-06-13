@@ -154,6 +154,10 @@ export async function pauseAutomation(
         `WARN incident #${incidentId}: ${type}`,
         `Automazione in pausa fino a ${pausedUntil ?? 'manual resume'}.\n\nDettagli:\n${JSON.stringify(sanitizeForLogs(details), null, 2).substring(0, 600)}`,
         details,
+        // L5-LI.1 "DO" (A11-1-pop): azione operativa strutturata, non annegata nel body.
+        pausedUntil
+            ? 'Nessuna azione necessaria: l\'automazione riprende a fine pausa. Se l\'incidente è ricorrente, indaga la causa (account/proxy/pending ratio) prima di un resume anticipato.'
+            : 'Pausa indefinita (manual resume): risolvi la causa dell\'incidente, poi riattiva l\'automazione manualmente.',
     ).catch(() => {});
     // Replica cloud: aggiorna health account a YELLOW (non-bloccante)
     bridgeAccountHealth(resolveAccountId(details), 'YELLOW', type, pausedUntil ?? null);

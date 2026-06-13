@@ -369,6 +369,8 @@ async function runQueuedJobsForAccount(
                         level: 'WARNING',
                         title: 'Proxy Quality Degradata',
                         body: `Quality score ${qualityReport.overallScore}/100 (soglia: ${config.proxyQualityMinScore}). Datacenter: ${qualityReport.datacenterCount}/${qualityReport.proxies.length}`,
+                        // L5-LI.1 "DO" (A11-1-pop): IP datacenter alzano il rischio detection.
+                        action: 'Verifica/ruota il pool proxy residenziale (Oxylabs): troppi IP datacenter aumentano il rischio detection LinkedIn. Se lo score resta basso, sostituisci i proxy degradati prima del prossimo ciclo.',
                     });
                 }
             } catch {
