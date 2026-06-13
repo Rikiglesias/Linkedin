@@ -1,6 +1,6 @@
 # AI Runtime Brief
 
-> Digest operativo caricato dai hook. Non e' la fonte di verita' primaria. Fonti complete: `~/.claude/CLAUDE.md`, `AGENTS.md`, `docs/AI_MASTER_SYSTEM_SPEC.md`, `docs/AI_MASTER_IMPLEMENTATION_BACKLOG.md`, `docs/AI_OPERATING_MODEL.md`, `docs/tracking/AI_ORCHESTRATOR_CONTRACT.md`, `docs/tracking/AI_CAPABILITY_ROUTING.json`, `docs/tracking/AI_ADK_CAPABILITY_GOVERNANCE.json`, `docs/tracking/AI_LEVEL_ENFORCEMENT.json`.
+> Digest operativo caricato dai hook — **derivato dalla SSOT del ragionamento `~/.claude/ZERO_RULES.md` + `~/.claude/L_LEVELS.md` + `~/.claude/CLAUDE.md`**: la Gerarchia P0 e i livelli qui sotto sono una PARAFRASI iniettabile (auto-contenuta per l'iniezione runtime), NON la fonte primaria; **in caso di divergenza vince `~/.claude`**. Spec del sistema AI (master spec, backlog, operating model) → `AI-Control-Plane/spec/` (i vecchi `docs/AI_MASTER_*.md`/`AI_OPERATING_MODEL.md` sono ora stub-redirect). Altre fonti runtime del progetto: `AGENTS.md`, `docs/tracking/AI_ORCHESTRATOR_CONTRACT.md`, `docs/tracking/AI_CAPABILITY_ROUTING.json`, `docs/tracking/AI_ADK_CAPABILITY_GOVERNANCE.json`, `docs/tracking/AI_LEVEL_ENFORCEMENT.json`.
 
 ## Gerarchia P0 prima di ogni ragionamento
 

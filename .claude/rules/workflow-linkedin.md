@@ -24,6 +24,8 @@ enforcement:
 
 ## Passi obbligatori
 
+> Delta LinkedIn del workflow generico in `~/.claude/CLAUDE.md` ("Workflow obbligatorio per ogni modifica": quick-fix/bug/feature/refactor → L proporzionali). Qui si aggiunge solo la **review anti-ban** (passo 2) e la classificazione di dominio sopra; non si ridefinisce il workflow globale.
+
 1. pre-modifica
 2. review anti-ban e security se il perimetro lo richiede
 3. planning se il task è lungo o l'approccio non è ovvio
