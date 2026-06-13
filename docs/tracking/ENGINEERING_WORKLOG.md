@@ -4,6 +4,22 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-13 — A11-2: replay eventi critici al reconnect dashboard (audit-bot FASE 3) (`/goal audit-bot`)
+
+### Obiettivo
+A11-2 (`[Observability][medio]`): la dashboard offline perdeva gli eventi critici dal live-feed SSE. Item GRANDE residuo dell'audit-bot, implementato localmente mentre A12 gira su Ultraplan/cloud.
+
+### Scoperta (verifica alla fonte, cambio di approccio vs design)
+Il design originale (LIST) diceva "accodare a `outbox_events` per replay post-crash". Verificando alla fonte: (1) `outbox_events` è **sink-based single-delivery worker→cloud** (`claimPendingOutboxEvents`/`markOutboxDeliveredClaimed` con lease+owner) — semantica errata per un replay SSE multi-client; (2) gli eventi critici **non sono persi**: vanno già in outbox→cloud + `audit_log` + broadcast Telegram (A11-1). Il gap reale era SOLO il live-feed SSE al reconnect (lo stato è recuperabile da DB al reload). → approccio cambiato a **ring buffer in-memory** (zero-I, proporzionato al gap reale).
+
+### Interventi (`src/telemetry/liveEvents.ts`, commit `d9c738f`)
+- Ring buffer (ultimi 50) dei soli tipi CRITICI (incident.opened/resolved, system.quarantine, automation.paused/resumed, challenge.review_queued); effimeri ad alto volume (lead.transition/reconciled, run.log) esclusi.
+- `subscribeLiveEvents`: replay del buffer al (ri)connect → la dashboard recupera il live-feed. Eventi replayed marcati `_replayed:true` (client dedupa per `timestamp`). Replay non-bloccante (try/catch come la publish).
+- Firme pubbliche invariate (zero breaking change su `server.ts` SSE e i call-site `publishLiveEvent`). +5 test `src/tests/liveEvents.vitest.ts` (critico→replay, effimero→no, live-no-marker, unsubscribe, count).
+
+### Verifica finale
+`npm run conta-problemi` exit 0 — typecheck backend+frontend, lint zero-warning, **179 file / 1775 test** (+1 file, +5 test). NON anti-ban (telemetry) → auto-push abilitato. Buffer in-memory NON è la SSOT: documentato in-code che la persistenza durevole vive in outbox→cloud + audit_log + Telegram.
+
 ## 2026-06-13 — A6-3 + A11-1-pop: alert WHAT/WHY/DO completati (audit-bot FASE 3 bounded) (`/goal audit-bot`)
 
 ### Obiettivo
