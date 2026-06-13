@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
     closeBrowser: vi.fn(),
     checkLogin: vi.fn(),
     runSelectorCanaryDetailed: vi.fn(),
+    humanDelay: vi.fn(),
     getRuntimeAccountProfiles: vi.fn(),
     getLocalDateString: vi.fn(),
     isWorkingHour: vi.fn(),
@@ -30,6 +31,10 @@ vi.mock('../browser', () => ({
     closeBrowser: mocks.closeBrowser,
     checkLogin: mocks.checkLogin,
     runSelectorCanaryDetailed: mocks.runSelectorCanaryDetailed,
+}));
+
+vi.mock('../browser/humanBehavior', () => ({
+    humanDelay: mocks.humanDelay,
 }));
 
 vi.mock('../accountManager', () => ({
@@ -103,6 +108,7 @@ describe('workflowEntryGuards', () => {
             criticalFailed: 0,
             steps: [],
         });
+        mocks.humanDelay.mockResolvedValue(undefined);
         mocks.getRuntimeAccountProfiles.mockReturnValue([{ id: 'acc-1', sessionDir: 'session-1', proxy: null }]);
         mocks.getLocalDateString.mockReturnValue('2026-04-01');
         mocks.isWorkingHour.mockReturnValue(true);
@@ -171,7 +177,9 @@ describe('workflowEntryGuards', () => {
         expect(result.blocked?.reason).not.toBe('ACCOUNT_QUARANTINED');
     });
 
-    test('blocca il workflow quando il selector canary fallisce', async () => {
+    test('quarantina solo su selector canary fallito in modo PERSISTENTE (fail + retry fail)', async () => {
+        // Il fail critico viene ritentato 1× sulla stessa sessione prima di quarantinare: qui
+        // entrambi i tentativi falliscono → quarantena legittima (selettori davvero rotti).
         mocks.runSelectorCanaryDetailed.mockResolvedValue({
             ok: false,
             optionalFailed: 0,
@@ -186,6 +194,24 @@ describe('workflowEntryGuards', () => {
         expect(mocks.quarantineAccount).toHaveBeenCalledWith('SELECTOR_CANARY_FAILED', {
             workflow: 'sync-search',
         });
+        // Retry effettuato: canary valutato 2× + una pausa a varianza umana tra i tentativi.
+        expect(mocks.runSelectorCanaryDetailed).toHaveBeenCalledTimes(2);
+        expect(mocks.humanDelay).toHaveBeenCalledTimes(1);
+    });
+
+    test('NON quarantina se il canary fallisce 1× ma il retry recupera (falso positivo transitorio)', async () => {
+        // Caso falso-positivo (es. global-nav React non montata al 1° tentativo): il 1° canary
+        // fallisce, il retry sulla STESSA sessione passa → il workflow procede, nessuna quarantena.
+        mocks.runSelectorCanaryDetailed
+            .mockResolvedValueOnce({ ok: false, optionalFailed: 0, criticalFailed: 1, steps: [{ required: true, ok: false }] })
+            .mockResolvedValueOnce({ ok: true, optionalFailed: 0, criticalFailed: 0, steps: [] });
+
+        const result = await evaluateWorkflowEntryGuards({ workflow: 'sync-search', dryRun: false });
+
+        expect(result.blocked?.reason).not.toBe('SELECTOR_CANARY_FAILED');
+        expect(mocks.quarantineAccount).not.toHaveBeenCalledWith('SELECTOR_CANARY_FAILED', expect.anything());
+        expect(mocks.runSelectorCanaryDetailed).toHaveBeenCalledTimes(2);
+        expect(mocks.humanDelay).toHaveBeenCalledTimes(1);
     });
 
     test('blocca con LOGIN_REQUIRED (non SELECTOR_CANARY_FAILED) quando la sessione è sloggata', async () => {

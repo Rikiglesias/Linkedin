@@ -1,5 +1,6 @@
 import { checkLogin, closeBrowser, launchBrowser, runSelectorCanaryDetailed, type BrowserSession } from '../browser';
 import { enableWindowClickThrough, disableWindowClickThrough } from '../browser/windowInputBlock';
+import { humanDelay } from '../browser/humanBehavior';
 import { getRuntimeAccountProfiles } from '../accountManager';
 import { config, getLocalDateString, isWorkingHour } from '../config';
 import { checkDiskSpace } from '../db';
@@ -152,7 +153,25 @@ async function runCanaryIfNeeded(
                 };
             }
 
-            const report = await runSelectorCanaryDetailed(session.page, canaryWorkflow);
+            // Retry anti-falso-positivo: il fail critico più comune è transitorio (es. la global-nav
+            // React del feed non ancora montata al 1° tentativo, glitch di rete). Prima di quarantinare
+            // — azione GLOBALE e PERMANENTE (non si auto-rilascia, blocca ogni account) — ritenta UNA
+            // volta sulla STESSA sessione già loggata: nessun nuovo launch/IP/fingerprint (no pattern
+            // anti-ban), solo una ri-verifica del DOM con pausa a varianza umana. Solo un fail
+            // PERSISTENTE su 2 tentativi quarantina. Riduce i falsi positivi che bloccavano il bot a
+            // tempo indefinito su un singolo glitch di timing.
+            let report = await runSelectorCanaryDetailed(session.page, canaryWorkflow);
+            if (!report.ok) {
+                await logWarn('selector.canary.critical_retry', {
+                    localDate,
+                    workflow,
+                    accountId: account.id,
+                    criticalFailed: report.criticalFailed,
+                    steps: report.steps.filter((step) => step.required && !step.ok),
+                });
+                await humanDelay(session.page, 2500, 5000);
+                report = await runSelectorCanaryDetailed(session.page, canaryWorkflow);
+            }
             await pushOutboxEvent(
                 'selector.canary.report',
                 {
