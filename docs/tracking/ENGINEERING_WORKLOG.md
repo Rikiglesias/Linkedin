@@ -4,6 +4,12 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-14 — test+verifica: windowInputBlock runtime + persistCircuitStateAsync già-coperto (`5523f9c`)
+
+Chiusura dei follow-up audit a basso valore. **(1) test runtime `windowInputBlock`** (`5523f9c`): nuovo describe che blinda il fix observability `367b1af` — `enableWindowClickThrough` con PID null → `logWarn window_block.pid_unavailable`; 0 finestre → `window_block.no_windows` — + stato multi-PID (enable→protetto→disable), `cleanupWindowClickThrough`, branch non-win32. Mock `child_process`/`process.platform`/logger (no PowerShell reale). vitest **1797/1797** (+5). *Limite dichiarato*: l'effetto OS reale (`WS_EX_TRANSPARENT`, `EnumThreadWindows` su Camoufox) non è testabile senza Windows+finestra → resta verifica manuale/integrazione. **(2) `persistCircuitStateAsync`** (verificato alla fonte, zero-M — NESSUN fix): finding **stale**, `integrationPolicy.ts:69-75` ha già `.catch()` + `logWarn('circuit_breaker.persist_failed')` (A04/A07) → non è silent; in-memory resta SSOT. Marcato già-coperto in improvements-proposed.
+
+**Follow-up audit mouse-block/enrichment: TUTTI chiusi.** Restano solo leve utente (proxy `poolSize≥2`/`PROXY_PROVIDER_API_ENDPOINT`).
+
 ## 2026-06-13 — refactor(antiban): SSOT daily cap enrichment, copre anche il path live (`f0fc9f0`)
 
 **Follow-up di `3dfd51d`** (autorizzato "ok ssot"): il cap `enrichment_count` era applicato solo al path schedulato (`processEnrichmentJob`); il live-enrichment `parallelEnricher` (`jobRunner:793`, concurrency 1) lo **bypassava** → budget query/die ancora superabile (finding tracciato in improvements-proposed).
