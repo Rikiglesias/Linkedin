@@ -19,6 +19,7 @@ import type {
     WorkflowReportListBreakdown,
 } from '../types';
 import { appendProxyReputationWarning } from '../preflight/configInspector';
+import { broadcastWarning } from '../../telemetry/broadcaster';
 import {
     buildBlockedResult,
     buildPreflightBlockedResult,
@@ -351,12 +352,27 @@ export async function executeSendInvitesWorkflow(
         });
         if (enrichReport.total > 5 && enrichReport.enriched / enrichReport.total < 0.2) {
             enrichmentDegraded = true;
+            const declassedToTemplate = noteMode === 'ai';
             // A6-2 audit-bot: degrado provider (es. Apollo circuit-breaker aperto) era silenzioso —
             // ora osservabile nei log. enrichmentDegraded è già nel report (extra), questo dà traccia immediata.
             console.warn(
                 `[invite] enrichment DEGRADATO: ${enrichReport.enriched}/${enrichReport.total} lead arricchiti (<20%, probabile provider/circuit-breaker down)${
-                    noteMode === 'ai' ? ' — note AI declassate a template' : ''
+                    declassedToTemplate ? ' — note AI declassate a template' : ''
                 }`,
+            );
+            // A6-3 audit-bot: alert proattivo PRE-outreach (Telegram/Discord/Slack), non solo log.
+            // Enrichment <20% = sintomo di circuit-breaker provider aperto (Apollo/Hunter/OpenAI):
+            // l'operatore va avvisato PRIMA di lanciare gli inviti con note degradate. broadcast()
+            // è never-throw (Promise.allSettled) → non blocca né rompe l'invio se un canale è down.
+            await broadcastWarning(
+                'Enrichment degradato prima degli inviti',
+                `Solo ${enrichReport.enriched}/${enrichReport.total} lead arricchiti (<20%): probabile provider o circuit-breaker down (Apollo/Hunter/OpenAI).${
+                    declassedToTemplate ? ' Note AI declassate a template per questo run.' : ''
+                }`,
+                { enriched: enrichReport.enriched, total: enrichReport.total, list: listFilter || 'tutte', noteMode },
+                declassedToTemplate
+                    ? 'Verifica lo stato dei provider di enrichment prima del prossimo run: le note di questo invio sono fallback template. Rilancia con enrichment funzionante o accetta i template.'
+                    : 'Verifica lo stato dei provider di enrichment (Apollo/Hunter/OpenAI) prima del prossimo run.',
             );
             if (noteMode === 'ai') {
                 noteMode = 'template';
