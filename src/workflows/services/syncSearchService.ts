@@ -1,4 +1,4 @@
-import { config, isWorkingHour } from '../../config';
+import { config } from '../../config';
 import { getAccountProfileById } from '../../accountManager';
 import { awaitManualLogin, blockUserInput } from '../../browser/humanBehavior';
 import { closeBrowser, launchBrowser, checkLogin } from '../../browser';
@@ -269,9 +269,9 @@ export async function executeSyncSearchWorkflow(
     if (bulkReport?.status === 'FAILED') errors.push('Bulk save fallito');
     if (syncError) errors.push(`Sync lista: ${syncError}`);
 
-    if (!isWorkingHour()) {
-        errors.push('Workflow avviato fuori orario lavorativo');
-    }
+    // sync-search è scraping/sync DB: l'orario NON è un rischio anti-ban (nessuna azione inviata a
+    // LinkedIn) → niente errore "fuori orario". Il working-hours guard resta attivo per l'outreach
+    // (workflowEntryGuards), che è l'attività sensibile all'orario.
 
     const workflowReport: WorkflowReport = {
         workflow: 'sync-search',

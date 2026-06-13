@@ -350,7 +350,13 @@ export async function evaluateWorkflowEntryGuards(
         await logWarn('workflow.disk_warn', { freeMb: diskStatus.freeMb, message: diskStatus.message });
     }
 
-    if (!isWorkingHour()) {
+    // Working-hours guard: protegge dall'OUTREACH off-hours (invite/message/all/check a orari
+    // implausibili nel fuso = segnale comportamentale anti-ban reale — LinkedIn 2026 flagga "50
+    // connection request a mezzanotte"). Lo SCRAPING (sync-list/sync-search) è lettura/sync DB: non
+    // invia azioni a LinkedIn, quindi l'orario è irrilevante per il rischio ban → esente (altrimenti
+    // blocca l'operatore senza ridurre il rischio reale).
+    const isScrapingOnlyWorkflow = options.workflow === 'sync-list' || options.workflow === 'sync-search';
+    if (!isScrapingOnlyWorkflow && !isWorkingHour()) {
         if (config.bypassWorkingHours) {
             // Override ESPLICITO (BYPASS_WORKING_HOURS=true): solo per testing. Logga un WARNING
             // perché operare fuori orario è un pattern anti-ban rischioso in produzione (ritmo circadiano).

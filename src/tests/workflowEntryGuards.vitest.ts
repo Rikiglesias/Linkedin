@@ -149,6 +149,24 @@ describe('workflowEntryGuards', () => {
         });
     });
 
+    test('OUT_OF_HOURS: blocca l outreach (invite) fuori orario lavorativo', async () => {
+        mocks.isWorkingHour.mockReturnValue(false);
+
+        const result = await evaluateWorkflowEntryGuards({ workflow: 'invite', dryRun: false });
+
+        expect(result.allowed).toBe(false);
+        expect(result.blocked?.reason).toBe('OUT_OF_HOURS');
+        expect(mocks.launchBrowser).not.toHaveBeenCalled();
+    });
+
+    test('scraping (sync-list) NON bloccato fuori orario (esente: lettura/sync DB, non outreach)', async () => {
+        mocks.isWorkingHour.mockReturnValue(false);
+
+        const result = await evaluateWorkflowEntryGuards({ workflow: 'sync-list', dryRun: false });
+
+        expect(result.blocked?.reason).not.toBe('OUT_OF_HOURS');
+    });
+
     test('blocca il workflow quando l account è in quarantena', async () => {
         mocks.getAccountQuarantine.mockResolvedValue(true);
 
