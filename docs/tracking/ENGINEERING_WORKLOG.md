@@ -4,6 +4,16 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-13 — fix(antiban): daily cap enrichment reso effettivo (`enrichment_count`) (`3dfd51d`)
+
+**Bug preesistente scoperto** indagando il follow-up ②.2-metric (zero-M alla fonte). `scheduler.ts:1057` legge `getRuntimeFlag('enrichment_count:'+localDate)` per calcolare `enrichmentRemaining = ENRICHMENT_DAILY_HARD_CAP − done` (M19: 200/die, 140 se risk>40, safety-margin 30% su ~300 query/die LinkedIn), ma **nessun punto in tutta la codebase incrementava quel flag** (grep esaustivo su `setRuntimeFlag` → 0 setter) → `done` sempre 0 → `remaining` sempre = cap pieno → il cap **non frenava mai** → possibile superamento del budget query/die = rischio detection.
+
+**Fix**: `enrichmentWorker.processEnrichmentJob` incrementa `enrichment_count:${context.localDate}` sul ramo `done`. `context.localDate` = stessa data del reader (`loopCommand:943 getLocalDateString()`, condivisa con `buildSchedule` e `runQueuedJobs` nello stesso ciclo → chiave identica garantita). **Conta solo i completati**: `transient`/`opt-out`/`dryRun` NON consumano cap (coerente con `b4b551b` — i transient sono ri-tentabili). Increment **best-effort** (try/catch + `logWarn enrichment.worker.cap_increment_failed`): un errore del counter non fa fallire un enrichment già persistito (eviterebbe un retry inutile).
+
+**Decisione design** (incremento nel worker-done, NON all'enqueue dello scheduler): semantica corretta = "query consumate"; evita la sovrastima da dedup-key dell'enqueue. **Limiti noti dichiarati**: (1) race read-modify-write su completamenti concorrenti → sottostima minima (mai più aggressivo del dovuto; pattern coerente col progetto, es. `proxy_failure_count`); (2) `enrichLeadsParallel` (path inline `jobRunner:793`, concurrency 1) bypassa questo cap → tracciato in improvements-proposed.
+
+**Verifica**: `/antiban-review` **SICURO** (6 domande; riduce volumi nella direzione anti-ban corretta). typecheck+lint exit 0, vitest **1788/1788** (+3 asserzioni in `enrichmentWorker.vitest.ts`: `done` incrementa di 1, `transient` NON incrementa — blindano il fix + la semantica). `madge --circular`(workers+core)=0. Autorizzato dall'utente ("ok cap"). Commit `3dfd51d`.
+
 ## 2026-06-13 — fix(lifecycle): jobRunner registra exit-cleanup handler click-through (`745dabb`)
 
 **Follow-up ②.1 dell'audit mouse-block** (basso valore, simmetria). `runQueuedJobsForAccount` (`jobRunner.ts`) ora registra `process.on('exit', cleanupWindowClickThrough)` dopo `enableWindowClickThrough` e lo deregistra (`process.off`) come **prima istruzione del finally** — pattern identico a `syncSearchService:195/216/259` (zero-O). Copre l'exit brusco (crash/SIGINT) dove il finally non gira → la finestra resterebbe click-through orfana; il safety-net globale idempotente la sblocca. Il `process.off` nel finally evita l'accumulo di listener sui run per-account (loop in `runQueuedJobs`). Lifecycle-only, antiban SICURO (zero timing/behavior). typecheck+lint exit 0, vitest **1788/1788**, `madge --circular`(core+browser)=0.
