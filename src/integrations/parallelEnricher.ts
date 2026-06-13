@@ -153,6 +153,13 @@ async function enrichSingleLead(
     try {
         const result = await enrichLeadAuto(lead, { paidProviders });
 
+        if (result.transientFailure) {
+            // Fallimento TRANSIENT (proxy esausto/timeout/circuit): NON marcare in lead_enrichment_data
+            // → il lead resta ri-arricchibile dopo il recovery, invece di essere "bruciato" come
+            // no-data. La marcatura CC-23 vale SOLO per i no-data veri (sotto), non per i blip di rete.
+            return null;
+        }
+
         if (!result.email && !result.phone && !result.companyDomain && !result.jobTitle) {
             // Nessun dato trovato — registra comunque per evitare re-enrichment
             await db.run(

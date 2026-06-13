@@ -20,7 +20,7 @@
 
 import { config } from '../config';
 import { logInfo } from '../telemetry/logger';
-import { fetchWithRetryPolicy } from '../core/integrationPolicy';
+import { fetchWithRetryPolicy, isLikelyTransientError, CircuitOpenError } from '../core/integrationPolicy';
 import { guessBusinessEmail } from './emailGuesser';
 import { findPersonData, type PersonDataResult } from './personDataFinder';
 import { discoverCompanyDomain, type DomainSource } from './domainDiscovery';
@@ -52,6 +52,13 @@ export interface EnrichmentResult {
     webSearchData?: WebSearchResult | null;
     /** Per-field source provenance — JSON for DB storage */
     enrichmentSources?: Record<string, string>;
+    /**
+     * True se l'enrichment è fallito per causa TRANSIENT (timeout / circuit aperto / proxy integration
+     * esausto) e NON per assenza reale di dati. Il consumer (enrichmentWorker / parallelEnricher) NON
+     * deve marcare il lead come "arricchito": va ri-tentato dopo il recovery, altrimenti un blip del
+     * proxy perde il lead per sempre (i lead senza account_name non rientrano nella query di re-enrichment).
+     */
+    transientFailure?: boolean;
 }
 
 // ─── Personal Email Detection ────────────────────────────────────────────────
@@ -221,7 +228,10 @@ async function enrichViaApollo(
             seniority: p.seniority || null,
             source: 'apollo',
         };
-    } catch {
+    } catch (e) {
+        // Transient (timeout / circuit aperto / proxy esausto) → propaga: il chiamante lo distingue
+        // da "nessun dato" e NON marca il lead come arricchito. Errori permanenti → null (come prima).
+        if (isLikelyTransientError(e) || e instanceof CircuitOpenError) throw e;
         return null;
     }
 }
@@ -270,7 +280,8 @@ async function enrichViaHunter(firstName: string, lastName: string, domain: stri
             seniority: null,
             source: 'hunter',
         };
-    } catch {
+    } catch (e) {
+        if (isLikelyTransientError(e) || e instanceof CircuitOpenError) throw e;
         return null;
     }
 }
@@ -327,7 +338,8 @@ async function enrichViaClearbit(
             seniority: null,
             source: 'clearbit',
         };
-    } catch {
+    } catch (e) {
+        if (isLikelyTransientError(e) || e instanceof CircuitOpenError) throw e;
         return null;
     }
 }
@@ -375,6 +387,21 @@ export async function enrichLead(
     const sources: Record<string, string> = {};
 
     let result: EnrichmentResult | null = null;
+    // Distingue il fallimento TRANSIENT (timeout/circuit/proxy esausto) dall'assenza reale di dati: le
+    // fonti a pagamento ri-lanciano i transient, tryFetch li cattura QUI e marca il flag senza
+    // propagarli ai caller (salesNavigatorSync/utilCommands non gestiscono throw da enrichLeadAuto).
+    let transientFailure = false;
+    const tryFetch = async (fn: () => Promise<EnrichmentResult | null>): Promise<EnrichmentResult | null> => {
+        try {
+            return await fn();
+        } catch (e) {
+            if (isLikelyTransientError(e) || e instanceof CircuitOpenError) {
+                transientFailure = true;
+                return null;
+            }
+            throw e;
+        }
+    };
 
     // Live enrichment: paidProviders=false salta i provider a pagamento (Apollo/Hunter/Clearbit)
     // e usa solo le fonti gratuite (EmailGuesser/PersonDataFinder/WebSearch). Default true = invariato.
@@ -382,11 +409,13 @@ export async function enrichLead(
 
     // 1. Apollo.io (più completo: email, phone, job title, company, industry, location)
     if (usePaid) {
-        result = await enrichViaApollo(firstName, lastName, {
-            domain,
-            linkedinUrl: opts?.linkedinUrl,
-            organizationName: opts?.organizationName,
-        });
+        result = await tryFetch(() =>
+            enrichViaApollo(firstName, lastName, {
+                domain,
+                linkedinUrl: opts?.linkedinUrl,
+                organizationName: opts?.organizationName,
+            }),
+        );
 
         if (result) {
             if (result.email) sources.email = 'apollo';
@@ -399,7 +428,7 @@ export async function enrichLead(
 
     // 2. Hunter.io (fallback)
     if (usePaid && !result) {
-        result = await enrichViaHunter(firstName, lastName, domain);
+        result = await tryFetch(() => enrichViaHunter(firstName, lastName, domain));
         if (result?.email) sources.email = 'hunter';
         if (result?.jobTitle) sources.job_title = 'hunter';
     }
@@ -430,7 +459,7 @@ export async function enrichLead(
 
     // 4. Clearbit (fallback)
     if (usePaid && !result) {
-        result = await enrichViaClearbit(firstName, lastName, domain);
+        result = await tryFetch(() => enrichViaClearbit(firstName, lastName, domain));
         if (result?.email) sources.email = 'clearbit';
         if (result?.phone) sources.phone = 'clearbit';
         if (result?.jobTitle) sources.job_title = 'clearbit';
@@ -496,8 +525,9 @@ export async function enrichLead(
             if (!result.companyDomain && personData.company?.domain) {
                 result.companyDomain = personData.company.domain;
             }
-        } catch {
+        } catch (e) {
             result.deepEnrichment = null;
+            if (isLikelyTransientError(e) || e instanceof CircuitOpenError) transientFailure = true;
         }
     }
 
@@ -527,8 +557,9 @@ export async function enrichLead(
                 result.phone = best.value;
                 sources.phone = `web_search:${best.sourceUrl}`;
             }
-        } catch {
+        } catch (e) {
             result.webSearchData = null;
+            if (isLikelyTransientError(e) || e instanceof CircuitOpenError) transientFailure = true;
         }
     }
 
@@ -563,6 +594,20 @@ export async function enrichLead(
     }
 
     result.enrichmentSources = sources;
+
+    // Marca il fallimento transient SOLO se non è stato recuperato alcun dato (nemmeno da OSINT/web):
+    // un enrichment parziale riuscito va comunque persistito. Il flag impedisce di "bruciare" come
+    // arricchiti i lead azzerati da un blip del proxy, così rientrano nel ciclo di re-enrichment.
+    const hasAnyData = !!(
+        result.email ||
+        result.phone ||
+        result.companyDomain ||
+        result.jobTitle ||
+        result.businessEmail
+    );
+    if (transientFailure && !hasAnyData) {
+        result.transientFailure = true;
+    }
 
     if (result.email && leadId > 0) {
         await logInfo('lead_enricher.email_found', {

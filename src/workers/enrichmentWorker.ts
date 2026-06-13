@@ -51,6 +51,19 @@ export async function processEnrichmentJob(
     try {
         const result = await enrichLeadAuto(lead);
 
+        // Fallimento TRANSIENT (proxy integration esausto / timeout / circuit aperto): NON persistere.
+        // Scrivere ora un record vuoto in lead_enrichment_data marcherebbe il lead come "arricchito":
+        // i lead senza account_name non rientrano nella query di re-enrichment (leadsCore.ts) → persi
+        // per sempre. Skip pulito → il lead resta needs-enrichment e lo scheduler lo ri-accoda dopo il
+        // recovery del proxy. workerResult(0) senza error = skip (nessun retry-on-error che brucia i tentativi).
+        if (result.transientFailure) {
+            await logInfo('enrichment.worker.transient_skip', {
+                leadId: payload.leadId,
+                accountId: context.accountId,
+            });
+            return workerResult(0);
+        }
+
         await persistEnrichmentResult({
             leadId: payload.leadId,
             email: result.email,
