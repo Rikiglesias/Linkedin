@@ -21,6 +21,9 @@ Lo sticky proxy è SEMPRE una entry del pool (`getProxyAsync`), e `getStickyProx
 ### Verifica finale
 `npm run conta-problemi` exit 0 — typecheck backend+frontend, lint zero-warning, **vitest 1761/1761** (177 file; +7 test `proxyStickyPersist.vitest.ts`: no-password-scritta, no-password-letta, retro-compat, re-persist ripulisce, preserva altre chiavi, edge null). `/antiban-review` → **SICURO** (nessun cambio a quale IP/proxy viene riusato — stickiness/geo/rotazione invariati; solo niente-segreto-su-disco + credenziali sempre correnti dal config). **SEC5-parte2** (ASN-lookup HTTP→HTTPS, `proxyQualityChecker.ts:210`) resta leva utente (piano provider ip-api Pro).
 
+### Fix correlato (emerso dalla review pre-push multi-lente di AB11+SEC5, `wf_fe73121a-2f1`)
+`writeMeta` (`sessionCookieMonitor.ts`) sovrascriveva l'intero `.session-meta.json` con il solo `SessionMeta`, **cancellando `stickyProxy`** (scritto da `persistStickyProxy`, AB-2) e `behavioralProfile` quando il caller non lo ripassava. Poiché `recordSuccessfulAuth` gira dopo OGNI login, lo sticky proxy persistito veniva azzerato → AB-2 di fatto non sopravviveva ai riavvii (bug pre-esistente, non introdotto da SEC5). Fix: `writeMeta` legge il file e fa merge `{ ...existing, ...meta }` (campi SessionMeta vincono, chiavi extra preservate). `/antiban-review` SICURO (ripara due funzioni anti-ban: sticky-IP persistente + behavioralProfile non azzerato). +1 test d'integrazione (`recordSuccessfulAuth` non cancella lo sticky + invariante SEC5 password-off-disk dopo il giro completo). 1762/1762 test.
+
 ## 2026-06-13 — AB11: handoff sessione canary→jobRunner per invite/message/check/all (`/goal ab11`)
 
 ### Obiettivo

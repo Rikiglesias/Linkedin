@@ -57,7 +57,20 @@ function readMeta(sessionDir: string): SessionMeta | null {
 function writeMeta(sessionDir: string, meta: SessionMeta): void {
     const metaPath = getMetaPath(sessionDir);
     try {
-        fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf8');
+        // Preserva le chiavi del file NON gestite da SessionMeta — in particolare `stickyProxy` scritto
+        // da proxyManager.persistStickyProxy (AB-2). Un overwrite cieco le cancellava: recordSuccessfulAuth
+        // (dopo ogni login) azzerava lo sticky proxy persistito (la persistenza non sopravviveva ai riavvii)
+        // e il behavioralProfile quando il caller non lo ripassava. Merge: i campi SessionMeta vincono,
+        // le chiavi extra restano. I caller che partono già da `{...meta}` sono idempotenti.
+        let existing: Record<string, unknown> = {};
+        if (fs.existsSync(metaPath)) {
+            try {
+                existing = JSON.parse(fs.readFileSync(metaPath, 'utf8')) as Record<string, unknown>;
+            } catch {
+                existing = {};
+            }
+        }
+        fs.writeFileSync(metaPath, JSON.stringify({ ...existing, ...meta }, null, 2), 'utf8');
     } catch {
         // Non bloccare il flusso se la scrittura fallisce
     }
