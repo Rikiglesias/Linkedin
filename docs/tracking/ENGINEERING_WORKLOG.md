@@ -4,6 +4,21 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-13 — A13 split humanBehavior COMPLETO: 6 moduli timing + facade (chunk 5-11, `0db75c9`→`c2606fb`)
+
+Completato lo split SRP di `humanBehavior.ts` estraendo i moduli con componenti **TIMING** (chat fresca, contesto pulito = priorità anti-ban). DAG leaf-first, regression-safe (zero-Q), copia **VERBATIM** delle formule.
+
+### Decisione di design (deviazione motivata dal binding)
+Il raggruppamento del binding metteva `interJobDelay`/`computeProfileDwellTime` in `humanDelay.ts`, ma sono **orchestratori** (cima del DAG) → creavano cicli `humanDelay↔readingSimulation↔decoyActions`. Risolto con un **DAG stretto, zero dynamic-import nuovi**: `computeProfileDwellTime`→`readingSimulation.ts` (è profile-reading), `interJobDelay` TENUTO nel facade insieme a `awaitManualLogin` (orchestratori di sessione; zero-I: no `sessionPacing.ts` single-use dato che il facade è già 195<300).
+
+### Moduli estratti (`src/browser/human/`, tutti <300)
+touchGestures (99, `0db75c9`) · humanDelay (84, `c936b99`, ⚠️TIMING-CORE log-normale) · mouseMovement (186, `bd6aec9`, ⚠️TIMING-CORE Bézier/Fitts) · readingSimulation (231, `f670307`, momentum/fasi/dwell) · humanTyping (142, `b043f66`, ⚠️TIMING-CORE keystroke floor 55/80ms) · decoyActions (234, `3f0bbab`, behavioral-pattern) · **facade humanBehavior (195, `c2606fb`)**.
+
+### Metodo + verifica per chunk
+Per ogni modulo: flag `antiban-approved.txt` per Edit gated → Write verbatim + correzione path import (`../`/`../../` da `human/`, dynamic import overlayBridge `./`→`../`) → facade re-export + potatura import orfani → `tsc --noEmit` exit 0 + `madge --circular`=0 → `/antiban-review` SICURO → commit. Milestone post-TIMING-CORE + finale: `conta-problemi` exit 0 (**181f/1783t = baseline invariato** = comportamento identico). Spot-check costanti anti-ban (floor 55/80, `logNormalDelayMs(200,0.42,90,650)`/`(95,0.42,45,320)`, Fitts `350+90·log2`, asimmetria 0.15, momentum 0.35+0.25, decoy 0.7/0.2) = **zero drift**.
+
+**humanBehavior 1464→195 righe.** ~30 caller invariati (facade re-export). Restano A13: `bulkSaveOrchestrator.ts` (1839, salesnav, prossima chat) + borderline `proxyManager`/`launcher` (binding `~/todos/a13.md`).
+
 ## 2026-06-13 — A13 split humanBehavior: cursorOverlay + inputBlock (chunk 3-4, `b52d3cc`/`c53624d`)
 
 Continuato lo split SRP di `humanBehavior.ts` (stealth-core anti-ban) leaf-first, regression-safe (zero-Q). Estratti i 2 moduli **NON-timing** rimanenti in `src/browser/human/`: **cursorOverlay.ts** (170 righe — ensure/sync/enable/removeAll/pulse VisualCursorOverlay; `syncVisualCursorOverlay` reso export per humanTap/humanSwipe) e **inputBlock.ts** (243 righe — overlay full-screen blocco input + pause/resume click/move + blockUserInput; dynamic import `../windowInputBlock`/`../overlayBridge`). Metodo: **copia VERBATIM** (zero cambio formule/timing — il `waitForTimeout(90)` del pulse e i `setTimeout` 150ms/2500ms di inputBlock copiati esatti), facade re-export → ~30 caller esterni invariati, potatura import overlayIds. **humanBehavior 1464→1063 righe** (4/9 moduli estratti col chunk 1-2 mouseState/overlayIds). Verifica per chunk: `madge --circular`=0, `conta-problemi` exit 0 (181f/1783t invariati = comportamento identico), `/antiban-review` SICURO (NON-browser-behavior, refactor puro). Review di branch eseguita prima del push (area anti-ban). **Restano i 5 moduli con componenti TIMING** (humanDelay/mouseMovement/humanTyping = TIMING-CORE log-normale/Bézier/keystroke + touchGestures/readingSimulation/decoyActions) + facade finale → **chat fresca** per binding `~/todos/a13.md` (contesto pulito = priorità anti-ban sulle formule).
