@@ -40,7 +40,7 @@ A11-1. `[Observability][medio]` **Alert senza "DO"** (broadcaster.ts:25-30, aler
 
 A11-2. `[Observability][medio]` **liveEvents persi su crash** (liveEvents.ts:11-30). pub/sub in-memory + `catch{}` su listener → incidente critico (quarantine) perso se dashboard offline. **Cosa**: accodare eventi critici a `outbox_events` per replay post-crash.
 
-A5-1. `[Compliance][medio]` **GDPR erasure non arriva a cloud se sink Supabase disabilitato** (system.ts:137-150). Con `supabaseSyncEnabled=false` l'evento erase fa early-return → mai propagato. **Cosa**: scrivere comunque in outbox + warn esplicito se il cloud era l'unico sink. Collegata alla leva utente "region Supabase".
+~~A5-1.~~ **SMENTITO** (verifica alla fonte 2026-06-13): system.ts:142 emette SEMPRE l'outbox `cloud.lead.erase`; :147-155 se `supabaseSyncEnabled=false` scrive traccia durevole in `audit_log` (cloud_erase_sink_inactive) + warn operatore. Già GDPR-compliant — l'explorer descriveva codice vecchio. Nessun fix necessario.
 
 A13-igiene. `[Refactor][medio]` **Split 4 file anti-ban >300** (bulkSaveOrchestrator 1839, humanBehavior 1464, proxyManager 932, launcher 932) — review anti-ban PRIMA (timing/stealth-touch). madge=0 già verde.
 
