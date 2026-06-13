@@ -27,6 +27,8 @@ export interface BroadcastPayload {
     level: BroadcastLevel;
     title: string;
     body: string;
+    /** L5-LI.1 "DO": azione operativa concreta che l'operatore deve fare ORA (es. comando, link). Opzionale. */
+    action?: string;
     metadata?: Record<string, unknown>;
 }
 
@@ -49,13 +51,14 @@ async function sendToDiscord(payload: BroadcastPayload): Promise<void> {
     const metaBlock = safeMetadata
         ? '\n```json\n' + JSON.stringify(safeMetadata, null, 2).substring(0, 800) + '\n```'
         : '';
+    const actionBlock = payload.action ? `\n\n🛠 **Azione:** ${payload.action}` : '';
 
     const discordBody = {
         username: 'LinkedIn Bot',
         embeds: [
             {
                 title: `${emoji} [${payload.level}] ${payload.title}`,
-                description: payload.body + metaBlock,
+                description: payload.body + actionBlock + metaBlock,
                 color: payload.level === 'CRITICAL' ? 0xff0000 : payload.level === 'WARNING' ? 0xffa500 : 0x00bfff,
                 timestamp: new Date().toISOString(),
             },
@@ -91,9 +94,10 @@ async function sendToSlack(payload: BroadcastPayload): Promise<void> {
     const emoji = LEVEL_EMOJI[payload.level];
     const safeMetadata = payload.metadata ? sanitizeForLogs(payload.metadata) : undefined;
     const metaText = safeMetadata ? '\n```' + JSON.stringify(safeMetadata, null, 2).substring(0, 600) + '```' : '';
+    const actionText = payload.action ? `\n🛠 *Azione:* ${payload.action}` : '';
 
     const slackBody = {
-        text: `${emoji} *[${payload.level}] ${payload.title}*\n${payload.body}${metaText}`,
+        text: `${emoji} *[${payload.level}] ${payload.title}*\n${payload.body}${actionText}${metaText}`,
     };
 
     const response = await fetchWithRetryPolicy(
@@ -131,7 +135,10 @@ async function sendToTelegram(payload: BroadcastPayload): Promise<void> {
           '</pre>'
         : '';
 
-    const text = `${emoji} <b>[${payload.level}] ${payload.title}</b>\n${payload.body}${metaText}`;
+    const actionText = payload.action
+        ? `\n🛠 <b>Azione:</b> ${payload.action.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}`
+        : '';
+    const text = `${emoji} <b>[${payload.level}] ${payload.title}</b>\n${payload.body}${actionText}${metaText}`;
 
     const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
     const response = await fetchWithRetryPolicy(
@@ -186,10 +193,20 @@ export async function broadcast(payload: BroadcastPayload): Promise<void> {
  * Convenience wrappers for common severity levels.
  * These also never throw.
  */
-export function broadcastCritical(title: string, body: string, metadata?: Record<string, unknown>): Promise<void> {
-    return broadcast({ level: 'CRITICAL', title, body, metadata });
+export function broadcastCritical(
+    title: string,
+    body: string,
+    metadata?: Record<string, unknown>,
+    action?: string,
+): Promise<void> {
+    return broadcast({ level: 'CRITICAL', title, body, action, metadata });
 }
 
-export function broadcastWarning(title: string, body: string, metadata?: Record<string, unknown>): Promise<void> {
-    return broadcast({ level: 'WARNING', title, body, metadata });
+export function broadcastWarning(
+    title: string,
+    body: string,
+    metadata?: Record<string, unknown>,
+    action?: string,
+): Promise<void> {
+    return broadcast({ level: 'WARNING', title, body, action, metadata });
 }

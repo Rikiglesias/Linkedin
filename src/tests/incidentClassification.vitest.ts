@@ -112,8 +112,10 @@ describe('quarantineAccount — wire della classificazione (fail-safe INVARIATO)
         await quarantineAccount('SELECTOR_FAILURE_BURST', { workflow: 'invites' });
         expect(mocks.broadcastCritical).toHaveBeenCalledWith(
             expect.stringContaining('SELECTOR_FAILURE_BURST'),
-            expect.stringContaining('probabile cambiamento LinkedIn'),
+            expect.stringContaining('Account messo in quarantena'),
             expect.anything(),
+            // A11-1: la recommendation (DO) ora è il 4° arg `action` strutturato, non più annegata nel body.
+            expect.stringContaining('probabile cambiamento LinkedIn'),
         );
         expect(mocks.publishLiveEvent).toHaveBeenCalledWith(
             'incident.opened',

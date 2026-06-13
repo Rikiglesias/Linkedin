@@ -68,8 +68,9 @@ export async function quarantineAccount(type: string, details: Record<string, un
     // Prima c'era anche sendTelegramAlert diretto → doppio messaggio Telegram per ogni evento.
     broadcastCritical(
         `CRITICAL incident #${incidentId}: ${type}`,
-        `Account messo in quarantena.\n\n${source.recommendation}\n\nDettagli:\n${JSON.stringify(sanitizeForLogs(details), null, 2).substring(0, 600)}`,
+        `Account messo in quarantena.\n\nDettagli:\n${JSON.stringify(sanitizeForLogs(details), null, 2).substring(0, 600)}`,
         details,
+        source.recommendation, // L5-LI.1 "DO": recommendation come azione strutturata, non annegata nel body (A11-1)
     ).catch(() => {});
     // Replica cloud: aggiorna health account a RED (non-bloccante)
     bridgeAccountHealth(resolveAccountId(details), 'RED', type);

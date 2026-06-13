@@ -36,7 +36,7 @@ A12. `[Anti-ban][EPIC]` **Correlazione budget multi-account** (scheduler.ts:519-
 
 A6-3. `[Anti-ban][medio]` **Alert proattivo su circuit-breaker provider aperto** (sendInvitesService.ts:346, leadEnricher.ts:224). Oggi il degrado note (Apollo/OpenAI CB) è loggato (A6-2 console.warn) + nel report, ma NON c'è alert Telegram prima di lanciare gli inviti. **Cosa**: broadcast WARN se CB aperto su provider critico pre-outreach. **Criterio done**: alert WHAT/WHY/DO quando enrichment/AI degradati da CB.
 
-A11-1. `[Observability][medio]` **Alert senza "DO"** (broadcaster.ts:25-30, alerts.ts:32-80). Gli alert hanno WHAT/WHY ma non un campo AZIONE strutturato (viola L5-LI.1). **Cosa**: campo `action`/`action_url` in BroadcastPayload + template. **Blast-radius**: tutti i call-site broadcast.
+A11-1. `[Observability][PARZIALE]` **Alert WHAT/WHY/DO** — **INFRA FATTA** (2026-06-13): campo `action` in `BroadcastPayload` + render Discord/Slack/Telegram + wrapper `broadcastCritical/Warning(...,action?)` retrocompat; alert critico quarantena popolato (`incidentManager.ts:72`, recommendation → action). **Residuo (incrementale)**: popolare `action` negli altri alert che hanno bisogno di un DO (`preventiveGuards`, `jobRunner`, `linkedinChangeAlert`) — ognuno decide l'azione concreta, alcuni gated.
 
 A11-2. `[Observability][medio]` **liveEvents persi su crash** (liveEvents.ts:11-30). pub/sub in-memory + `catch{}` su listener → incidente critico (quarantine) perso se dashboard offline. **Cosa**: accodare eventi critici a `outbox_events` per replay post-crash.
 
