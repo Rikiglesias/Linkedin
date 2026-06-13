@@ -4,6 +4,10 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-13 — A13 split humanBehavior: cursorOverlay + inputBlock (chunk 3-4, `b52d3cc`/`c53624d`)
+
+Continuato lo split SRP di `humanBehavior.ts` (stealth-core anti-ban) leaf-first, regression-safe (zero-Q). Estratti i 2 moduli **NON-timing** rimanenti in `src/browser/human/`: **cursorOverlay.ts** (170 righe — ensure/sync/enable/removeAll/pulse VisualCursorOverlay; `syncVisualCursorOverlay` reso export per humanTap/humanSwipe) e **inputBlock.ts** (243 righe — overlay full-screen blocco input + pause/resume click/move + blockUserInput; dynamic import `../windowInputBlock`/`../overlayBridge`). Metodo: **copia VERBATIM** (zero cambio formule/timing — il `waitForTimeout(90)` del pulse e i `setTimeout` 150ms/2500ms di inputBlock copiati esatti), facade re-export → ~30 caller esterni invariati, potatura import overlayIds. **humanBehavior 1464→1063 righe** (4/9 moduli estratti col chunk 1-2 mouseState/overlayIds). Verifica per chunk: `madge --circular`=0, `conta-problemi` exit 0 (181f/1783t invariati = comportamento identico), `/antiban-review` SICURO (NON-browser-behavior, refactor puro). Review di branch eseguita prima del push (area anti-ban). **Restano i 5 moduli con componenti TIMING** (humanDelay/mouseMovement/humanTyping = TIMING-CORE log-normale/Bézier/keystroke + touchGestures/readingSimulation/decoyActions) + facade finale → **chat fresca** per binding `~/todos/a13.md` (contesto pulito = priorità anti-ban sulle formule).
+
 ## 2026-06-13 — Live enrichment parallelo in background post-scraping (commit `c523cea`)
 
 ### Obiettivo (richiesta utente, fuori dal goal audit-bot)
