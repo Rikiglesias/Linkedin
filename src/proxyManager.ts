@@ -643,7 +643,9 @@ export async function getIntegrationProxyAsync(options: GetProxyChainOptions = {
             return proxy;
         } else {
             await logWarn('proxy.integration_health_check_failed', { server: maskUrl(proxy.server) });
-            markIntegrationProxyFailed(proxy);
+            // Health-check fallito = ping/connessione non riuscita → cooldown breve (timeout, 5min),
+            // non penalizzare l'unico proxy con 30min su un blip di rete.
+            markIntegrationProxyFailed(proxy, 'timeout');
         }
     }
 
@@ -818,9 +820,16 @@ export function markProxyHealthy(proxy: ProxyConfig): void {
     proxyFailureUntil.delete(proxyKey(proxy));
 }
 
-export function markIntegrationProxyFailed(proxy: ProxyConfig): void {
-    const cooldownMs = config.proxyFailureCooldownMinutes * 60_000;
-    integrationProxyFailureUntil.set(proxyKey(proxy), Date.now() + cooldownMs);
+export function markIntegrationProxyFailed(
+    proxy: ProxyConfig,
+    errorType?: 'timeout' | 'connection_refused' | 'ban' | 'unknown',
+): void {
+    // M34 esteso all'integration pool (2026-06-13): cooldown differenziato per tipo errore, come
+    // markProxyFailed (browser). I fallimenti dell'enrichment sono transient (timeout / health-check
+    // fallito / HTTP 4xx-5xx), MAI ban confermati: con poolSize=1 il vecchio cooldown FISSO di
+    // proxyFailureCooldownMinutes (default 30min) bloccava l'unico proxy integration per 30min su un
+    // singolo timeout → ready=0 → proxy.integration_pool_exhausted_no_fresh_ip → degradazione enrichment.
+    integrationProxyFailureUntil.set(proxyKey(proxy), Date.now() + computeProxyCooldownMs(errorType));
 }
 
 export function markIntegrationProxyHealthy(proxy: ProxyConfig): void {

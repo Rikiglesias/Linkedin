@@ -531,7 +531,9 @@ export async function fetchWithRetryPolicy(
                 const classification = classifyResponse(response);
                 if (classification === 'transient') {
                     if (selectedProxy) {
-                        markIntegrationProxyFailed(selectedProxy);
+                        // HTTP transient (429/5xx) = servizio remoto sovraccarico/rate-limit, non IP
+                        // bruciato → cooldown medio (connection_refused, 15min), non 30min fissi.
+                        markIntegrationProxyFailed(selectedProxy, 'connection_refused');
                     }
                     throw new Error(`HTTP transient ${response.status}`);
                 }
@@ -541,7 +543,13 @@ export async function fetchWithRetryPolicy(
                 return response;
             } catch (error) {
                 if (selectedProxy && isLikelyTransientError(error)) {
-                    markIntegrationProxyFailed(selectedProxy);
+                    // Errore di rete transient: ECONNREFUSED → connection_refused (15min),
+                    // altrimenti timeout/reset/DNS → timeout (5min). Mai 'ban' sull'enrichment.
+                    const normalized = (error instanceof Error ? error.message : String(error)).toLowerCase();
+                    const proxyErrorType = normalized.includes('econnrefused') || normalized.includes('refused')
+                        ? 'connection_refused'
+                        : 'timeout';
+                    markIntegrationProxyFailed(selectedProxy, proxyErrorType);
                 }
                 throw error;
             } finally {
