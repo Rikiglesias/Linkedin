@@ -13,6 +13,8 @@ import { logInfo, logWarn } from '../telemetry/logger';
 import { runEventSyncOnce } from '../sync/eventSync';
 import { ListScheduleBreakdown, scheduleJobs, workflowToJobTypes } from './scheduler';
 import { runSiteCheck } from './audit';
+import { closeBrowser, type BrowserSession } from '../browser';
+import { disableWindowClickThrough } from '../browser/windowInputBlock';
 
 import { runQueuedJobs } from './jobRunner';
 import {
@@ -232,6 +234,11 @@ async function evaluateComplianceHealthGuard(
     return true;
 }
 
+/** Workflow eseguiti via jobRunner (runQueuedJobs): possono riusare la sessione del canary (AB11). */
+function isJobRunnerBoundWorkflow(workflow: WorkflowSelection): boolean {
+    return workflow === 'invite' || workflow === 'message' || workflow === 'check' || workflow === 'all';
+}
+
 export async function runWorkflow(options: RunWorkflowOptions): Promise<RunWorkflowOutcome> {
     // T8: l'override account e' uno stato globale di modulo. Lo salviamo e ripristiniamo in
     // try/finally per evitare leak cross-account quando runWorkflow esce (return early o throw)
@@ -240,21 +247,36 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<RunWorkf
     if (options.accountId) {
         setOverrideAccountId(options.accountId);
     }
+    // AB11: la sessione handoff (canary→jobRunner) deve sopravvivere ai molti `return` di blocco di
+    // runWorkflowInternal. La teniamo in un holder e la chiudiamo QUI se non è stata consegnata a
+    // runQueuedJobs (che ne assume l'ownership e azzera l'holder). Evita un browser orfano quando un
+    // guard blocca tra il canary e l'esecuzione dei job.
+    const handoffGuard: { session?: BrowserSession } = {};
     try {
-        return await runWorkflowInternal(options);
+        return await runWorkflowInternal(options, handoffGuard);
     } finally {
         if (options.accountId) {
             setOverrideAccountId(previousOverride);
         }
+        if (handoffGuard.session) {
+            disableWindowClickThrough(handoffGuard.session.browser);
+            await closeBrowser(handoffGuard.session).catch(() => undefined);
+        }
     }
 }
 
-async function runWorkflowInternal(options: RunWorkflowOptions): Promise<RunWorkflowOutcome> {
+async function runWorkflowInternal(
+    options: RunWorkflowOptions,
+    handoffGuard: { session?: BrowserSession } = {},
+): Promise<RunWorkflowOutcome> {
+    let handoffAccountId: string | undefined;
     if (!options.skipEntryGuards) {
         const entryGuardDecision = await evaluateWorkflowEntryGuards({
             workflow: options.workflow,
             dryRun: options.dryRun,
             accountId: options.accountId,
+            // AB11: i workflow jobRunner-bound possono riusare la sessione del canary (single-account).
+            reuseSession: isJobRunnerBoundWorkflow(options.workflow),
         });
         if (!entryGuardDecision.allowed) {
             return {
@@ -262,7 +284,21 @@ async function runWorkflowInternal(options: RunWorkflowOptions): Promise<RunWork
                 blocked: entryGuardDecision.blocked,
             };
         }
+        handoffGuard.session = entryGuardDecision.session;
+        handoffAccountId = entryGuardDecision.sessionAccountId;
     }
+
+    // AB11: chiude la sessione handoff PRIMA che un satellite (random-activity di warm-up/low-activity)
+    // apra un browser sullo STESSO profilo persistente — altrimenti lock conflict che farebbe fallire
+    // il warm-up anti-ban. Nel caso dominante (nessun satellite) la sessione arriva intatta a jobRunner.
+    const releaseHandoffBeforeSatellite = async (): Promise<void> => {
+        if (handoffGuard.session) {
+            disableWindowClickThrough(handoffGuard.session.browser);
+            await closeBrowser(handoffGuard.session).catch(() => undefined);
+            handoffGuard.session = undefined;
+            handoffAccountId = undefined;
+        }
+    };
 
     const schedule = await scheduleJobs(options.workflow, {
         dryRun: options.dryRun,
@@ -570,6 +606,8 @@ async function runWorkflowInternal(options: RunWorkflowOptions): Promise<RunWork
             messageBudget: schedule.messageBudget,
         });
         if (options.workflow === 'all' || options.workflow === 'invite' || options.workflow === 'message') {
+            // AB11: la random-activity apre un browser sullo stesso profilo → rilascia l'handoff prima.
+            await releaseHandoffBeforeSatellite();
             const accounts = getRuntimeAccountProfiles();
             for (const acc of accounts) {
                 await runRandomLinkedinActivity({
@@ -609,6 +647,8 @@ async function runWorkflowInternal(options: RunWorkflowOptions): Promise<RunWork
             for (const acc of allAccounts) {
                 const maturity = getSessionMaturity(acc.sessionDir);
                 if (maturity.forceRandomActivityFirst) {
+                    // AB11: la random-activity apre un browser sullo stesso profilo → rilascia l'handoff prima.
+                    await releaseHandoffBeforeSatellite();
                     await logInfo('workflow.maturity.force_random_first', {
                         accountId: acc.id,
                         maturity: maturity.maturity,
@@ -630,10 +670,19 @@ async function runWorkflowInternal(options: RunWorkflowOptions): Promise<RunWork
     // l'esito della run degli account sani).
     const preRunQuarantine = await getQuarantineStatus();
 
+    // AB11: consegna la sessione del canary (handoff) a runQueuedJobs, che la riusa per l'account che
+    // matcha e ne assume l'ownership (chiusura/rotazione). Azzeriamo l'holder PRIMA della chiamata: se
+    // runQueuedJobs lancia, il finally di runWorkflow NON deve richiuderla (jobRunner la chiude comunque).
+    const handoffInitialSession =
+        handoffGuard.session && handoffAccountId
+            ? { accountId: handoffAccountId, session: handoffGuard.session }
+            : undefined;
+    handoffGuard.session = undefined;
     await runQueuedJobs({
         localDate: schedule.localDate,
         allowedTypes: workflowToJobTypes(options.workflow),
         dryRun: options.dryRun,
+        initialSession: handoffInitialSession,
     });
 
     // Propagate mid-run pause/quarantine triggered inside runQueuedJobs

@@ -18,6 +18,7 @@ import {
 import { getSessionVarianceFactor, runPreventiveGuards } from './preventiveGuards';
 import type { WorkflowSelection } from './workflowSelection';
 import type { GuardDecision, WorkflowBlockedReason, WorkflowKind } from '../workflows/types';
+import type { ProxyType } from '../config/types';
 
 export type WorkflowEntryKind = WorkflowSelection | WorkflowKind;
 
@@ -50,6 +51,7 @@ async function runCanaryIfNeeded(
     workflow: WorkflowEntryKind,
     noProxy = false,
     reuseAccountId?: string,
+    reusePreferredProxyType?: ProxyType,
 ): Promise<CanaryOutcome> {
     if (!config.selectorCanaryEnabled || !touchesUi(workflow)) {
         return { ok: true };
@@ -65,6 +67,11 @@ async function runCanaryIfNeeded(
     const localDate = getLocalDateString();
     const accounts = getRuntimeAccountProfiles();
     for (const account of accounts) {
+        // Handoff opt-in: se questo è l'account operativo da riusare (reuseAccountId), a check superati
+        // NON chiudere la sessione — passala al workflow per evitare il 2o launch sullo stesso profilo
+        // persistente (lock conflict → timeout 180s). Per gli altri account il canary chiude come sempre.
+        // Calcolato PRIMA del launch perché determina le opzioni proxy della sessione riusata.
+        const reuseThisSession = reuseAccountId !== undefined && account.id === reuseAccountId;
         const session = await launchBrowser({
             sessionDir: account.sessionDir,
             // Coerenza IP: se l'operazione gira --no-proxy, anche il canary deve usare lo stesso
@@ -73,6 +80,13 @@ async function runCanaryIfNeeded(
             proxy: noProxy ? undefined : account.proxy,
             bypassProxy: noProxy,
             forceDesktop: true,
+            // Quando la sessione sarà RIUSATA dal consumer (handoff), nascerla con le STESSE opzioni
+            // proxy che il consumer userebbe lanciando da solo — così il tipo di proxy verificato dal
+            // canary è quello su cui gira l'outreach (no mismatch silenzioso). Per jobRunner è
+            // mobile-priority (jobRunner.ts:194); per gli account non riusati è irrilevante.
+            ...(reuseThisSession && reusePreferredProxyType
+                ? { preferredProxyType: reusePreferredProxyType }
+                : {}),
         });
         // [WINDOW-BLOCK] Proteggi ANCHE la finestra del canary: lancia il proprio browser e va su
         // LinkedIn, quindi il mouse fisico dell'utente deve passarci attraverso come per la sessione
@@ -80,10 +94,6 @@ async function runCanaryIfNeeded(
         // muore più avanti ("Target page closed"). Solo click-through OS (no overlay DOM: il canary
         // testa i selettori e non va disturbato nel DOM).
         enableWindowClickThrough(session.browser);
-        // Handoff opt-in: se questo è l'account operativo da riusare (reuseAccountId), a check superati
-        // NON chiudere la sessione — passala al workflow per evitare il 2o launch sullo stesso profilo
-        // persistente (lock conflict → timeout 180s). Per gli altri account il canary chiude come sempre.
-        const reuseThisSession = reuseAccountId !== undefined && account.id === reuseAccountId;
         let handedOff = false;
         try {
             const loggedIn = await checkLogin(session.page);
@@ -229,6 +239,11 @@ export interface EvaluateWorkflowEntryGuardsOptions {
 /** GuardDecision esteso con la sessione del canary da riusare (handoff opt-in, solo se `reuseSession`). */
 export interface GuardDecisionWithSession extends GuardDecision {
     session?: BrowserSession;
+    /**
+     * Account a cui appartiene `session` (handoff). Il CALLER lo usa per riusare la sessione SOLO
+     * per quell'account (es. jobRunner riusa per l'account che matcha). Presente solo se `session`.
+     */
+    sessionAccountId?: string;
     /**
      * Lock per-account acquisito dal guard (F1 anti-concorrenza): il CALLER lo rilascia nel `finally`
      * con `releaseRuntimeLock(lockKey, ownerId)`. Null se il workflow non usa il lock per-account.
@@ -414,11 +429,37 @@ export async function evaluateWorkflowEntryGuards(
         accountLock = { lockKey, ownerId };
     }
 
+    // Handoff opt-in. reuseAccountId = account operativo di cui RIUSARE la sessione canary:
+    //  - accountId esplicito (sync-list/sync-search) → quello (comportamento invariato);
+    //  - altrimenti SOLO se c'è un unico account → accounts[0]. Con >1 account NON si fa handoff:
+    //    il loop canary fa `return` al primo handoff, quindi non verificherebbe gli account successivi.
+    let reuseAccountId: string | undefined;
+    let reusePreferredProxyType: ProxyType | undefined;
+    if (options.reuseSession) {
+        if (options.accountId) {
+            reuseAccountId = options.accountId;
+        } else if (accounts.length === 1) {
+            reuseAccountId = accounts[0]?.id;
+        }
+        // La sessione riusata nasce con le STESSE opzioni proxy del consumer:
+        //  - jobRunner-bound (invite/message/check/all) → preferredProxyType mobile-priority come
+        //    jobRunner (jobRunner.ts:194); - sync-list/sync-search → undefined (salesNavigatorSync
+        //    lancia senza preferredProxyType). Evita un mismatch silenzioso del tipo di proxy.
+        const jobRunnerBound =
+            options.workflow === 'invite' ||
+            options.workflow === 'message' ||
+            options.workflow === 'check' ||
+            options.workflow === 'all';
+        if (reuseAccountId !== undefined && jobRunnerBound) {
+            reusePreferredProxyType = config.proxyMobilePriorityEnabled ? 'mobile' : undefined;
+        }
+    }
+
     const canary = await runCanaryIfNeeded(
         options.workflow,
         options.noProxy ?? false,
-        // Handoff opt-in: passa l'account operativo SOLO se il caller ha chiesto reuseSession.
-        options.reuseSession ? options.accountId : undefined,
+        reuseAccountId,
+        reusePreferredProxyType,
     );
     if (!canary.ok) {
         // Il workflow non procede → rilascia subito il lock (non aspettare il TTL).
@@ -440,5 +481,11 @@ export async function evaluateWorkflowEntryGuards(
     }
 
     // canary.session definita solo nel caso handoff; accountLock va rilasciato dal caller nel finally.
-    return { allowed: true, blocked: null, session: canary.session, accountLock };
+    return {
+        allowed: true,
+        blocked: null,
+        session: canary.session,
+        sessionAccountId: canary.session ? reuseAccountId : undefined,
+        accountLock,
+    };
 }

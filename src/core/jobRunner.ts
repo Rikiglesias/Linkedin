@@ -64,6 +64,14 @@ export interface RunJobsOptions {
     localDate: string;
     allowedTypes: JobType[];
     dryRun: boolean;
+    /**
+     * AB11 — sessione browser già aperta (handoff dal canary) da RIUSARE per l'account indicato,
+     * invece di aprirne una nuova sullo stesso profilo persistente (evita il 2° launch ravvicinato →
+     * lock conflict + pattern open/close/open). `runQueuedJobs` la consegna a `runQueuedJobsForAccount`
+     * per l'account che matcha; se quell'account viene saltato (quarantena) la chiude nel finally.
+     * Da quel momento l'ownership (chiusura, rotazione) è interamente del jobRunner.
+     */
+    initialSession?: { accountId: string; session: BrowserSession };
 }
 
 interface AccountRunHealthMetrics {
@@ -177,6 +185,7 @@ async function runQueuedJobsForAccount(
     options: RunJobsOptions,
     account: RuntimeAccountProfile,
     includeLegacyDefaultQueue: boolean,
+    initialSession?: BrowserSession,
 ): Promise<void> {
     const accountHealthMetrics: AccountRunHealthMetrics = {
         processed: 0,
@@ -188,12 +197,18 @@ async function runQueuedJobsForAccount(
         messageSuccesses: 0,
         checkSuccesses: 0,
     };
-    let session = await launchBrowser({
-        sessionDir: account.sessionDir,
-        proxy: account.proxy,
-        preferredProxyType: config.proxyMobilePriorityEnabled ? 'mobile' : undefined,
-        forceDesktop: true,
-    });
+    // AB11: riusa la sessione del canary (handoff) se fornita per questo account, altrimenti lancia.
+    // La sessione handoff nasce già con le stesse opzioni proxy (mobile-priority) → vedi
+    // workflowEntryGuards. checkLogin più sotto ri-verifica il login (safety sul gap canary→job);
+    // enableWindowClickThrough è idempotente; rotazione e finally trattano `session` uniformemente.
+    let session =
+        initialSession ??
+        (await launchBrowser({
+            sessionDir: account.sessionDir,
+            proxy: account.proxy,
+            preferredProxyType: config.proxyMobilePriorityEnabled ? 'mobile' : undefined,
+            forceDesktop: true,
+        }));
     let sessionClosed = false;
     const perfTracker = new SessionPerformanceTracker(); // A20: tracking granulare per fase
     try {
@@ -1377,46 +1392,66 @@ async function runQueuedJobsForAccount(
 
 export async function runQueuedJobs(options: RunJobsOptions): Promise<void> {
     const accounts = getRuntimeAccountProfiles();
-    for (let index = 0; index < accounts.length; index++) {
-        const account = accounts[index];
-        // G5-F2: quarantena PER-ACCOUNT — salta SOLO l'account quarantinato (il flag globale
-        // legacy li blocca tutti via getAccountQuarantine). Il check a inizio iterazione copre
-        // sia la quarantena pre-esistente sia quella scattata mid-run su un account precedente.
-        if (await getAccountQuarantine(account.id)) {
-            await logWarn('job_runner.skipped_quarantine', {
+    // AB11: la sessione handoff (canary) viene consegnata UNA sola volta, all'account che matcha.
+    let initialSessionConsumed = false;
+    try {
+        for (let index = 0; index < accounts.length; index++) {
+            const account = accounts[index];
+            // G5-F2: quarantena PER-ACCOUNT — salta SOLO l'account quarantinato (il flag globale
+            // legacy li blocca tutti via getAccountQuarantine). Il check a inizio iterazione copre
+            // sia la quarantena pre-esistente sia quella scattata mid-run su un account precedente.
+            if (await getAccountQuarantine(account.id)) {
+                await logWarn('job_runner.skipped_quarantine', {
+                    accountId: account.id,
+                    reason: 'account_quarantine',
+                });
+                continue;
+            }
+            const includeLegacyDefaultQueue =
+                config.accountLegacyDefaultQueueFallback &&
+                isMultiAccountRuntimeEnabled() &&
+                index === 0 &&
+                account.id !== 'default';
+            await logInfo('job_runner.account.start', {
                 accountId: account.id,
-                reason: 'account_quarantine',
+                includeLegacyDefaultQueue,
+                sessionDir: account.sessionDir,
             });
-            continue;
+
+            // AB11: riusa la sessione handoff SOLO per l'account che matcha (una volta). Da qui in poi
+            // l'ownership è di runQueuedJobsForAccount (la chiude nel suo finally come ogni sessione).
+            const initialSessionForAccount =
+                options.initialSession && !initialSessionConsumed && options.initialSession.accountId === account.id
+                    ? options.initialSession.session
+                    : undefined;
+            if (initialSessionForAccount) initialSessionConsumed = true;
+
+            await runQueuedJobsForAccount(options, account, includeLegacyDefaultQueue, initialSessionForAccount);
+
+            await logInfo('job_runner.account.done', { accountId: account.id });
+
+            // Anti-correlazione: delay 2-5 min tra account per evitare che LinkedIn
+            // veda due account dallo stesso IP nello stesso minuto (pattern rilevabile).
+            if (index < accounts.length - 1) {
+                const gapMs = (120 + Math.floor(Math.random() * 180)) * 1000;
+                await logInfo('job_runner.inter_account_gap', {
+                    accountId: account.id,
+                    nextAccountId: accounts[index + 1]?.id,
+                    gapMs,
+                });
+                await new Promise((r) => setTimeout(r, gapMs));
+            }
+            // G5-F2: il vecchio break globale mid-run è sostituito dal check per-account a inizio
+            // iterazione: una quarantena scattata sull'account corrente NON ferma i successivi
+            // (un flag globale invece li salta tutti, come prima).
         }
-        const includeLegacyDefaultQueue =
-            config.accountLegacyDefaultQueueFallback &&
-            isMultiAccountRuntimeEnabled() &&
-            index === 0 &&
-            account.id !== 'default';
-        await logInfo('job_runner.account.start', {
-            accountId: account.id,
-            includeLegacyDefaultQueue,
-            sessionDir: account.sessionDir,
-        });
-
-        await runQueuedJobsForAccount(options, account, includeLegacyDefaultQueue);
-
-        await logInfo('job_runner.account.done', { accountId: account.id });
-
-        // Anti-correlazione: delay 2-5 min tra account per evitare che LinkedIn
-        // veda due account dallo stesso IP nello stesso minuto (pattern rilevabile).
-        if (index < accounts.length - 1) {
-            const gapMs = (120 + Math.floor(Math.random() * 180)) * 1000;
-            await logInfo('job_runner.inter_account_gap', {
-                accountId: account.id,
-                nextAccountId: accounts[index + 1]?.id,
-                gapMs,
-            });
-            await new Promise((r) => setTimeout(r, gapMs));
+    } finally {
+        // AB11: se la sessione handoff non è stata consegnata (account quarantinato/assente, o loop
+        // interrotto da un'eccezione prima di raggiungerlo), chiudila qui — altrimenti resterebbe un
+        // browser orfano che tiene il lock sul profilo persistente. Best-effort, non deve rilanciare.
+        if (options.initialSession && !initialSessionConsumed) {
+            disableWindowClickThrough(options.initialSession.session.browser);
+            await closeBrowser(options.initialSession.session).catch(() => undefined);
         }
-        // G5-F2: il vecchio break globale mid-run è sostituito dal check per-account a inizio
-        // iterazione: una quarantena scattata sull'account corrente NON ferma i successivi
-        // (un flag globale invece li salta tutti, come prima).
     }
 }

@@ -30,6 +30,10 @@ const mocks = vi.hoisted(() => ({
     runRandomLinkedinActivity: vi.fn(),
     sendTelegramAlert: vi.fn(),
     evaluateWorkflowEntryGuards: vi.fn(),
+    closeBrowser: vi.fn(),
+    disableWindowClickThrough: vi.fn(),
+    getSessionMaturity: vi.fn(),
+    getAutomationPauseState: vi.fn(),
 }));
 
 vi.mock('../accountManager', () => ({
@@ -39,7 +43,15 @@ vi.mock('../accountManager', () => ({
 }));
 
 vi.mock('../browser/sessionCookieMonitor', () => ({
-    getSessionMaturity: vi.fn(),
+    getSessionMaturity: mocks.getSessionMaturity,
+}));
+
+vi.mock('../browser', () => ({
+    closeBrowser: mocks.closeBrowser,
+}));
+
+vi.mock('../browser/windowInputBlock', () => ({
+    disableWindowClickThrough: mocks.disableWindowClickThrough,
 }));
 
 vi.mock('../config', () => ({
@@ -106,6 +118,7 @@ vi.mock('../core/repositories', () => ({
     pushOutboxEvent: mocks.pushOutboxEvent,
     setRuntimeFlag: mocks.setRuntimeFlag,
     deleteQueuedJobsByIds: mocks.deleteQueuedJobsByIds,
+    getAutomationPauseState: mocks.getAutomationPauseState,
 }));
 
 vi.mock('../ai/guardian', () => ({
@@ -192,6 +205,15 @@ describe('orchestrator blocked outcomes', () => {
         mocks.runSiteCheck.mockResolvedValue(undefined);
         mocks.runEventSyncOnce.mockResolvedValue(undefined);
         mocks.sendTelegramAlert.mockResolvedValue(undefined);
+        mocks.closeBrowser.mockResolvedValue(undefined);
+        mocks.disableWindowClickThrough.mockReturnValue(true);
+        mocks.getSessionMaturity.mockReturnValue({ forceRandomActivityFirst: false });
+        mocks.getAutomationPauseState.mockResolvedValue({
+            paused: false,
+            reason: null,
+            pausedUntil: null,
+            remainingSeconds: 0,
+        });
     });
 
     test('ritorna COMPLIANCE_HEALTH_BLOCKED quando il compliance guard ferma il workflow', async () => {
@@ -397,5 +419,56 @@ describe('orchestrator blocked outcomes', () => {
         expect(result.status).toBe('blocked');
         // i job accodati prima del blocco non devono restare eseguibili → cancellati per ID
         expect(mocks.deleteQueuedJobsByIds).toHaveBeenCalledWith([101, 102]);
+    });
+
+    test('AB11: un blocco tra il canary e runQueuedJobs chiude la sessione handoff (no browser orfano)', async () => {
+        // Il guard ritorna una sessione handoff (single-account); poi il compliance guard blocca.
+        // La sessione NON arriva a runQueuedJobs → deve essere chiusa dal finally di runWorkflow.
+        const handoffSession = { browser: {} };
+        mocks.evaluateWorkflowEntryGuards.mockResolvedValue({
+            allowed: true,
+            blocked: null,
+            session: handoffSession,
+            sessionAccountId: 'acc-1',
+        });
+        mocks.evaluateComplianceHealthScore.mockReturnValue({ score: 40 }); // → COMPLIANCE_HEALTH_BLOCKED
+
+        const result = await runWorkflow({ workflow: 'invite', dryRun: false });
+
+        expect(result.status).toBe('blocked');
+        expect(mocks.runQueuedJobs).not.toHaveBeenCalled();
+        expect(mocks.closeBrowser).toHaveBeenCalledWith(handoffSession);
+        expect(mocks.disableWindowClickThrough).toHaveBeenCalledWith(handoffSession.browser);
+    });
+
+    test('AB11: path felice consegna la sessione handoff a runQueuedJobs e NON la chiude nell orchestrator', async () => {
+        const handoffSession = { browser: {} };
+        mocks.evaluateWorkflowEntryGuards.mockResolvedValue({
+            allowed: true,
+            blocked: null,
+            session: handoffSession,
+            sessionAccountId: 'acc-1',
+        });
+
+        const result = await runWorkflow({ workflow: 'invite', dryRun: false });
+
+        expect(result.status).toBe('completed');
+        // Ownership trasferita a runQueuedJobs via initialSession…
+        expect(mocks.runQueuedJobs).toHaveBeenCalledWith(
+            expect.objectContaining({ initialSession: { accountId: 'acc-1', session: handoffSession } }),
+        );
+        // …quindi l'orchestrator NON la chiude (la chiude il jobRunner nel suo finally).
+        expect(mocks.closeBrowser).not.toHaveBeenCalled();
+    });
+
+    test('AB11: senza handoff (guard senza session) runQueuedJobs riceve initialSession undefined', async () => {
+        // Anti-regressione: il default (nessun handoff) non passa initialSession e non chiude nulla.
+        const result = await runWorkflow({ workflow: 'invite', dryRun: false });
+
+        expect(result.status).toBe('completed');
+        expect(mocks.runQueuedJobs).toHaveBeenCalledWith(
+            expect.objectContaining({ initialSession: undefined }),
+        );
+        expect(mocks.closeBrowser).not.toHaveBeenCalled();
     });
 });

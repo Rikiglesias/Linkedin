@@ -44,6 +44,7 @@ vi.mock('../config', () => ({
         autoPauseMinutesOnFailureBurst: 60,
         workingHoursStart: 8,
         workingHoursEnd: 20,
+        proxyMobilePriorityEnabled: true,
     },
     getLocalDateString: mocks.getLocalDateString,
     isWorkingHour: mocks.isWorkingHour,
@@ -261,6 +262,72 @@ describe('workflowEntryGuards', () => {
         expect(result.blocked?.reason).toBe('LOGIN_REQUIRED');
         expect(result.session).toBeUndefined();
         expect(mocks.closeBrowser).toHaveBeenCalledTimes(1); // chiusa, non passata
+    });
+
+    test('AB11: handoff jobRunner-bound (invite) single-account ritorna session + sessionAccountId e lancia con proxy mobile', async () => {
+        // AB11: estende l'handoff a invite/message/check/all. Con un solo account e senza accountId
+        // esplicito, il canary riusa la sessione dell'unico account e la passa al jobRunner (initialSession).
+        const session = createSession();
+        mocks.launchBrowser.mockResolvedValue(session);
+
+        const result = await evaluateWorkflowEntryGuards({
+            workflow: 'invite',
+            dryRun: false,
+            reuseSession: true,
+        });
+
+        expect(result.allowed).toBe(true);
+        expect(result.session).toBe(session);
+        expect(result.sessionAccountId).toBe('acc-1');
+        expect(mocks.closeBrowser).not.toHaveBeenCalled();
+        // La sessione riusata nasce con le STESSE opzioni proxy del jobRunner (mobile-priority):
+        // niente mismatch silenzioso del tipo di proxy tra canary e outreach.
+        expect(mocks.launchBrowser).toHaveBeenCalledWith(
+            expect.objectContaining({ preferredProxyType: 'mobile' }),
+        );
+    });
+
+    test('AB11: multi-account NON fa handoff (canary verifica tutti gli account, nessuna sessione ritornata)', async () => {
+        // Con >1 account il loop canary farebbe `return` al primo handoff e salterebbe le verifiche
+        // degli account successivi: per sicurezza l'handoff è disattivato → comportamento invariato.
+        mocks.getRuntimeAccountProfiles.mockReturnValue([
+            { id: 'acc-1', sessionDir: 'session-1', proxy: null },
+            { id: 'acc-2', sessionDir: 'session-2', proxy: null },
+        ]);
+
+        const result = await evaluateWorkflowEntryGuards({
+            workflow: 'invite',
+            dryRun: false,
+            reuseSession: true,
+        });
+
+        expect(result.allowed).toBe(true);
+        expect(result.session).toBeUndefined();
+        expect(result.sessionAccountId).toBeUndefined();
+        // Entrambi gli account verificati e chiusi (nessun handoff).
+        expect(mocks.launchBrowser).toHaveBeenCalledTimes(2);
+        expect(mocks.closeBrowser).toHaveBeenCalledTimes(2);
+        const firstLaunchArgs = mocks.launchBrowser.mock.calls[0][0];
+        expect(firstLaunchArgs).not.toHaveProperty('preferredProxyType');
+    });
+
+    test('AB11: sync-list con reuseSession NON usa preferredProxyType (coerenza con salesNavigatorSync)', async () => {
+        // sync-list riusa la sessione via salesNavigatorSync, che lancia SENZA preferredProxyType:
+        // la sessione handoff deve ereditare le opzioni del suo consumer, non quelle del jobRunner.
+        const session = createSession();
+        mocks.launchBrowser.mockResolvedValue(session);
+
+        const result = await evaluateWorkflowEntryGuards({
+            workflow: 'sync-list',
+            dryRun: false,
+            accountId: 'acc-1',
+            reuseSession: true,
+        });
+
+        expect(result.allowed).toBe(true);
+        expect(result.session).toBe(session);
+        const launchArgs = mocks.launchBrowser.mock.calls[0][0];
+        expect(launchArgs).not.toHaveProperty('preferredProxyType');
     });
 
     test('blocca un sync concorrente sullo stesso account quando il lock per-account non è acquisibile (F1)', async () => {

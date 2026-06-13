@@ -4,6 +4,22 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-13 — AB11: handoff sessione canary→jobRunner per invite/message/check/all (`/goal ab11`)
+
+### Obiettivo
+Eliminare il doppio-lancio browser canary→jobRunner anche per i workflow jobRunner-bound (prima solo sync-list, commit `95c77a3`). Al 1° run di ogni finestra 4h il selector-canary apriva+chiudeva un browser sul profilo persistente e jobRunner ne rilanciava subito un altro (lock conflict + pattern open/close/open). Binding: `~/todos/ab11.md`. Residuo M-size AB11 di backend-audit-2026-06-06.
+
+### Ricerca (workflow fan-out `wf_c2936fdf-636`, 24 agenti, 19 claim verificati adversarialmente)
+Mappa di tutti i launch-site del ciclo. Scoperte che hanno cambiato il design vs piano originario: (a) jobRunner lancia con `preferredProxyType: 'mobile'` (`jobRunner.ts:194`), il canary no → l'handoff naive avrebbe fatto girare l'outreach su proxy non-mobile in silenzio; (b) tra guard e `runQueuedJobs` ci sono 2 satelliti (`LOW_ACTIVITY` `orchestrator.ts:564` + maturity warm-up `:602`) che aprono un browser sullo stesso profilo → lock conflict se la sessione handoff è tenuta aperta.
+
+### Interventi (3 file src/core, chirurgici)
+- **`workflowEntryGuards.ts`**: canary, per i workflow jobRunner-bound SU SINGOLO account, ritorna la sessione (`GuardDecisionWithSession.session`+`sessionAccountId`) invece di chiuderla; lanciata con `preferredProxyType` mobile-priority (match jobRunner) — derivato dal consumer (sync-list resta `undefined` come `salesNavigatorSync`). Multi-account → nessun handoff (il loop canary `return`erebbe al 1° handoff saltando le verifiche degli altri).
+- **`orchestrator.ts`**: `runWorkflow` tiene la sessione in un holder e la chiude nel `finally` esistente se un guard blocca prima di `runQueuedJobs`; `releaseHandoffBeforeSatellite()` la cede prima dei 2 satelliti (warm-up anti-ban non fallisce per lock); ownership trasferita a `runQueuedJobs` azzerando l'holder PRIMA della chiamata (no doppia chiusura su throw).
+- **`jobRunner.ts`**: `RunJobsOptions.initialSession`; `runQueuedJobs` consegna all'account matching + `finally` chiude la non-consumata (account quarantinato/assente); `runQueuedJobsForAccount(…, initialSession?)` riusa invece di lanciare. `checkLogin` resta safety sul gap canary→job; `enableWindowClickThrough` idempotente (Set multi-PID).
+
+### Verifica finale
+`npm run conta-problemi` exit 0 — typecheck backend+frontend, lint zero-warning, **vitest 1754/1754** (176 file; baseline 1748 + 6 nuovi test: 3 guard handoff jobRunner-bound, 3 orchestrator handoff). `/antiban-review` → **SICURO** (solo lifecycle browser; sessione continua canary→outreach + meno aperture ravvicinate = migliore; proxy coerente col consumer; warm-up sessioni fresche preservato). **Resta T5**: test integrazione staging con account LinkedIn reale (canary forzato → verificare 1 solo launch, zero `parent.lock` retry) = leva utente runtime (anti-ban).
+
 ## 2026-06-12 — preset-profili: 4 preset d'uso + mappa assi A-I + 3 env nuove (`/goal preset-profili`)
 
 ### Obiettivo
