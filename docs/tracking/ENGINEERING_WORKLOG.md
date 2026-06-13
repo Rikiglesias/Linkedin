@@ -4,6 +4,14 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-13 — A13 File 2 bulkSaveOrchestrator: estratti navigation + searchDiscovery (Opzione A, `d245245`/`3b4b51d`)
+
+Split SRP di `bulkSaveOrchestrator.ts` (1839r, salesnav save-to-list). Analisi decomposizione via subagent code-explorer (il design `tasks/wub0irtla.output` era andato perso): **finding** = `runSalesNavBulkSave` (943r) ha un for-loop interno (411r) con stato anti-ban intrecciato (early-stop duplicati, health-check AI, challenge-detect, backoff) NON splittabile regression-safe. **Decisione utente: Opzione A** — estrarre solo gli helper safe, orchestratore resta >300 = eccezione giustificata L1.6 (anti-ban). Estratti VERBATIM (path import identici, stessa dir `src/salesnav/`):
+- **bulkSaveNavigation.ts** (282r, `d245245`) — waitForManualLogin + navigateToSavedSearches + SEARCHES_URL (re-esportata backward-compat) + VIEW_SAVED_SEARCH_SELECTOR. ALTO anti-ban (nav 3-step humanDelay/clickLocatorHumanLike/smartClick), copia letterale.
+- **bulkSaveSearchDiscovery.ts** (197r, `3b4b51d`) — waitForSearchResultsReady, normalizeSearchName, extractSavedSearches (re-esportata), ensureNoChallenge, verifyVisionSurface, clickSavedSearchView. Importa VIEW_SAVED_SEARCH_SELECTOR da navigation (DAG, no ciclo).
+
+Potatura import orfani (cleanText, isPageClosedError, hasLocator, locatorBoundingBox, findVisibleClickTarget, getViewButtonLocator, visionVerify, selectors, VIEW_SAVED_SEARCH_SELECTOR, humanBehavior pause/removeAll/release, setInputBlockSuspended). **orchestrator 1839→1409** (−430r). Verifica per chunk: `tsc --noEmit` exit 0, `madge --circular src/salesnav/`=0, `conta-problemi` exit 0 (**181f/1783t = baseline invariato**). Antiban SICURO (refactor puro). `preSyncListToDb` (287r) e `processSearchPage` (40r, retry loop ALTO rischio) LASCIATI nell'orchestratore: estrarli creerebbe altri file >300 senza win <300 (zero-I). **Restano A13**: File 3-4 `proxyManager`(933)/`launcher`(932) BORDERLINE opzionali (binding `~/todos/a13.md`).
+
 ## 2026-06-13 — A13 split humanBehavior COMPLETO: 6 moduli timing + facade (chunk 5-11, `0db75c9`→`c2606fb`)
 
 Completato lo split SRP di `humanBehavior.ts` estraendo i moduli con componenti **TIMING** (chat fresca, contesto pulito = priorità anti-ban). DAG leaf-first, regression-safe (zero-Q), copia **VERBATIM** delle formule.
