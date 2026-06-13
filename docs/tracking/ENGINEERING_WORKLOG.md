@@ -4,6 +4,10 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-13 — fix(lifecycle): jobRunner registra exit-cleanup handler click-through (`745dabb`)
+
+**Follow-up ②.1 dell'audit mouse-block** (basso valore, simmetria). `runQueuedJobsForAccount` (`jobRunner.ts`) ora registra `process.on('exit', cleanupWindowClickThrough)` dopo `enableWindowClickThrough` e lo deregistra (`process.off`) come **prima istruzione del finally** — pattern identico a `syncSearchService:195/216/259` (zero-O). Copre l'exit brusco (crash/SIGINT) dove il finally non gira → la finestra resterebbe click-through orfana; il safety-net globale idempotente la sblocca. Il `process.off` nel finally evita l'accumulo di listener sui run per-account (loop in `runQueuedJobs`). Lifecycle-only, antiban SICURO (zero timing/behavior). typecheck+lint exit 0, vitest **1788/1788**, `madge --circular`(core+browser)=0.
+
 ## 2026-06-13 — fix(observability): window-block failure mode strutturati via logWarn (`367b1af`)
 
 **Follow-up ① dell'audit mouse-block** (`improvements-proposed.md` 2026-06-13, gap anti-ban più rilevante). Il finding originale ("no-op SENZA warning") era **impreciso** (zero-M, verificato alla fonte): un `console.warn` c'era già a `windowInputBlock.ts:213`. Il gap reale è che quel warning è **raw** → bypassa il sistema di observability (DB run-log + dashboard live `publishLiveEvent` + Sentry) = *silent* per la regola anti-ban #9.
