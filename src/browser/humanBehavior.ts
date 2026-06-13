@@ -18,21 +18,17 @@ import { shouldAccidentalNav, performAccidentalNavigation } from './missclick';
 // humanBehavior → overlayDismisser → humanBehavior (humanMouseMoveToCoords)
 import { randomElement, randomInt, logNormalDelayMs } from '../utils/random';
 
-// ─── Stato Memoria Mouse ─────────────────────────────────────────────────────
-
-// Mantiene l'ultima posizione nota del mouse per ogni pagina attiva.
-// L'uso di WeakMap assicura l'assenza di memory leak quando la Page viene chiusa.
-const pageMouseState = new WeakMap<Page, Point>();
-
-/** Inizializza la posizione mouse per una pagina nuova (centro viewport con varianza).
- *  Evita il pattern rilevabile "mouse entra dal bordo" al primo movimento. */
-export function initializeMouseState(page: Page): void {
-    if (pageMouseState.has(page)) return;
-    const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
-    const initialX = viewport.width * (0.3 + Math.random() * 0.4);
-    const initialY = viewport.height * (0.15 + Math.random() * 0.25);
-    pageMouseState.set(page, { x: initialX, y: initialY });
-}
+// ─── Stato Memoria Mouse (estratto in human/mouseState.ts, A13) ───────────────
+// pageMouseState/getStartingPoint/updateMouseState usati internamente qui;
+// initializeMouseState/releaseMouseConfinement re-esportati → API pubblica invariata.
+import {
+    pageMouseState,
+    getStartingPoint,
+    updateMouseState,
+    initializeMouseState,
+    releaseMouseConfinement,
+} from './human/mouseState';
+export { initializeMouseState, releaseMouseConfinement };
 
 /** Timeout globale per movimenti mouse: protegge da hang quando il mouse reale
  *  dell'utente interferisce con Camoufox humanize o il browser perde focus.
@@ -486,14 +482,7 @@ export async function resumeInputBlock(page: Page): Promise<void> {
     }
 }
 
-/**
- * Funzione di rilascio cursore (no-op dopo rimozione ClipCursor).
- * Mantenuta per retrocompatibilità — chiamata da awaitManualLogin, closeBrowser, SIGINT.
- */
-export function releaseMouseConfinement(): void {
-    // No-op: il confinamento ClipCursor è stato rimosso.
-    // L'isolamento mouse è gestito interamente via CSS overlay nel browser.
-}
+// releaseMouseConfinement estratta in human/mouseState.ts (A13), re-esportata sopra.
 
 export async function blockUserInput(page: Page): Promise<void> {
     initializeMouseState(page);
@@ -524,30 +513,7 @@ export async function pulseVisualCursorOverlay(page: Page): Promise<void> {
     await syncVisualCursorOverlay(page, point, false);
 }
 
-/**
- * Ottiene l'attuale o genera un nuovo punto di partenza organico (dai bordi o angoli)
- * per il primissimo movimento nella vista.
- */
-function getStartingPoint(page: Page): Point {
-    const lastPoint = pageMouseState.get(page);
-    if (lastPoint) {
-        return { ...lastPoint };
-    }
-
-    const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
-    // Ingresso predefinito fluido: parte da uno dei margini
-    const entryPoints: Point[] = [
-        { x: Math.random() * viewport.width, y: 0 }, // top
-        { x: 0, y: Math.random() * viewport.height }, // left
-        { x: viewport.width, y: Math.random() * viewport.height }, // right
-        { x: Math.random() * (viewport.width * 0.4), y: Math.random() * (viewport.height * 0.4) }, // top-left area
-    ];
-    return randomElement(entryPoints);
-}
-
-function updateMouseState(page: Page, point: Point): void {
-    pageMouseState.set(page, { x: point.x, y: point.y });
-}
+// getStartingPoint/updateMouseState estratti in human/mouseState.ts (A13), importati sopra.
 
 // ─── Utility Generali (importate da ../utils/random) ─────────────────────────
 
