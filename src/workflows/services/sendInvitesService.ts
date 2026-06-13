@@ -351,6 +351,13 @@ export async function executeSendInvitesWorkflow(
         });
         if (enrichReport.total > 5 && enrichReport.enriched / enrichReport.total < 0.2) {
             enrichmentDegraded = true;
+            // A6-2 audit-bot: degrado provider (es. Apollo circuit-breaker aperto) era silenzioso —
+            // ora osservabile nei log. enrichmentDegraded è già nel report (extra), questo dà traccia immediata.
+            console.warn(
+                `[invite] enrichment DEGRADATO: ${enrichReport.enriched}/${enrichReport.total} lead arricchiti (<20%, probabile provider/circuit-breaker down)${
+                    noteMode === 'ai' ? ' — note AI declassate a template' : ''
+                }`,
+            );
             if (noteMode === 'ai') {
                 noteMode = 'template';
             }

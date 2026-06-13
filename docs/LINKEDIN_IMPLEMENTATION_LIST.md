@@ -20,6 +20,24 @@ Le regole di comportamento AI automatico (recap, cross-domain check, anti-compia
 
 ## Aperti
 
+### Audit-bot 360° 2026-06-13 — residui anti-ban-core (NON bounded)
+
+> Esito audit `docs/tracking/AUDIT_BOT_360_2026-06-13.md`. Bounded GIÀ fatti (A1 askConfirmation, A7-2 doc soglie,
+> A11-3 auditLog log, A6-2 enrichment-degraded log). Questi residui NON sono quick-fix: alto blast-radius anti-ban
+> o design change → richiedono Plan Mode + antiban-review dedicati, uno alla volta. Verificati alla fonte (non assunzioni).
+
+A12. `[Anti-ban][alto]` **Correlazione budget multi-account** (scheduler.ts:519-533). `worstMaturityFactor=Math.min(...)` e `getSessionHistory(primaryAccountId)` applicano maturity/pacing al budget GLOBALE basandosi su 1 account (worst/primo) → con ≥2 account le riduzioni sono correlate (fingerprint cluster). **Cosa**: spostare maturity/pacing DOPO `computeAccountBudgetShares` (per-account). **Blast-radius**: scheduler core + `scheduler.vitest.ts`. **Criterio done**: budget per-account indipendente + test 2-account che verifica de-correlazione. **NB**: rilevante solo multi-account (con 1 account worst==primary, già corretto) → hardening pre-scale.
+
+A6-3. `[Anti-ban][medio]` **Alert proattivo su circuit-breaker provider aperto** (sendInvitesService.ts:346, leadEnricher.ts:224). Oggi il degrado note (Apollo/OpenAI CB) è loggato (A6-2 console.warn) + nel report, ma NON c'è alert Telegram prima di lanciare gli inviti. **Cosa**: broadcast WARN se CB aperto su provider critico pre-outreach. **Criterio done**: alert WHAT/WHY/DO quando enrichment/AI degradati da CB.
+
+A11-1. `[Observability][medio]` **Alert senza "DO"** (broadcaster.ts:25-30, alerts.ts:32-80). Gli alert hanno WHAT/WHY ma non un campo AZIONE strutturato (viola L5-LI.1). **Cosa**: campo `action`/`action_url` in BroadcastPayload + template. **Blast-radius**: tutti i call-site broadcast.
+
+A11-2. `[Observability][medio]` **liveEvents persi su crash** (liveEvents.ts:11-30). pub/sub in-memory + `catch{}` su listener → incidente critico (quarantine) perso se dashboard offline. **Cosa**: accodare eventi critici a `outbox_events` per replay post-crash.
+
+A5-1. `[Compliance][medio]` **GDPR erasure non arriva a cloud se sink Supabase disabilitato** (system.ts:137-150). Con `supabaseSyncEnabled=false` l'evento erase fa early-return → mai propagato. **Cosa**: scrivere comunque in outbox + warn esplicito se il cloud era l'unico sink. Collegata alla leva utente "region Supabase".
+
+A13-igiene. `[Refactor][medio]` **Split 4 file anti-ban >300** (bulkSaveOrchestrator 1839, humanBehavior 1464, proxyManager 932, launcher 932) — review anti-ban PRIMA (timing/stealth-touch). madge=0 già verde.
+
 ### Fase 4 — Runbook sistema
 
 69. `[Local tools][medio]` Documentare e testare il runbook di spegnimento sicuro del sistema (bot, PM2, DB, dashboard, n8n) prima di staccare l'alimentatore o riavviare il computer, per evitare corruzione dati, lock file rimasti o daemon zombie.
