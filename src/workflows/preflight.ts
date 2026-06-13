@@ -183,6 +183,7 @@ export async function runPreflight<TAnswers extends object = Record<string, stri
             console.log('');
             const forceOverride = await askConfirmation(
                 "  [!!!] L'AI consiglia di NON procedere. Vuoi forzare comunque? [y/N] ",
+                false,
             );
             if (!forceOverride) {
                 return buildResult({

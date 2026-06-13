@@ -528,6 +528,7 @@ export async function runPrivacyCleanupCommand(args: string[]): Promise<void> {
 
     const confirmed = await askConfirmation(
         `Cancellare DEFINITIVAMENTE i dati piu' vecchi di ${days} giorni? Operazione IRREVERSIBILE (usa --dry-run per l'anteprima). [y/N] `,
+        false,
     );
     if (!confirmed) {
         console.log('privacy-cleanup annullato. Nessun dato cancellato.');

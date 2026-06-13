@@ -52,11 +52,29 @@ export async function readLineFromStdin(prompt: string): Promise<string> {
 }
 
 /**
- * Chiede conferma Y/n. Default: yes.
+ * Logica pura: interpreta la risposta a una conferma Y/n rispettando il default.
+ * Estratta da askConfirmation per essere testabile senza mockare stdin.
+ * Empty (solo INVIO) -> defaultValue; 'y'/'yes'/'s'/'si' -> true; tutto il resto -> false.
  */
-export async function askConfirmation(prompt: string = 'Procedo? [Y/n] '): Promise<boolean> {
+export function parseConfirmationAnswer(answer: string, defaultValue: boolean): boolean {
+    const normalized = answer.trim().toLowerCase();
+    if (normalized === '') return defaultValue;
+    return normalized.startsWith('y') || normalized.startsWith('s');
+}
+
+/**
+ * Chiede conferma Y/n.
+ * `defaultValue` governa SOLO la pressione di INVIO a vuoto e DEVE riflettere il prompt:
+ *   prompt "[Y/n]" -> defaultValue=true (default);  prompt "[y/N]" -> defaultValue=false.
+ * In ambiente non-TTY (cron/automazione) stdin chiude vuoto -> ritorna defaultValue:
+ * per i gate rischiosi ([y/N]) questo significa NON forzare l'azione (anti-ban / dati safe).
+ */
+export async function askConfirmation(
+    prompt: string = 'Procedo? [Y/n] ',
+    defaultValue: boolean = true,
+): Promise<boolean> {
     const answer = await readLineFromStdin(prompt);
-    return answer === '' || answer.toLowerCase().startsWith('y') || answer.toLowerCase().startsWith('s');
+    return parseConfirmationAnswer(answer, defaultValue);
 }
 
 /**

@@ -53,6 +53,7 @@ export async function runAntiBanChecklist(
         const minLeft = Math.ceil((minHours - recentSessionHours) * 60);
         const proceedAnyway = await askConfirmation(
             `    [!] Ultima sessione ${recentSessionHours.toFixed(1)}h fa (consigliato ${minHours}h). Procedere comunque? [y/N] `,
+            false,
         );
         if (!proceedAnyway) {
             console.log(`      -> Attendi ~${minLeft} minuti prima della prossima sessione.`);
@@ -74,6 +75,7 @@ export async function runAntiBanChecklist(
         console.log('        Consiglio: ritira gli inviti vecchi con "bot.ps1 run check" prima di inviarne di nuovi.');
         const proceedAnyway = await askConfirmation(
             '    [!] Inviare COMUNQUE nonostante il pending ratio oltre soglia? [y/N] ',
+            false,
         );
         if (!proceedAnyway) {
             console.log('      -> Sessione interrotta. Lancia "bot.ps1 run check" per abbassare il pending ratio.');
