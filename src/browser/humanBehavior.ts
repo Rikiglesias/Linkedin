@@ -1,9 +1,11 @@
 /**
  * browser/humanBehavior.ts
  * ─────────────────────────────────────────────────────────────────
- * Simula comportamento umano nel browser: delay log-normale,
- * movimenti mouse con curva Bézier, digitazione con typo,
- * reading scroll, decoy actions, inter-job delay.
+ * Facade del comportamento umano nel browser (A13, split SRP): re-esporta le primitive
+ * estratte in human/* (delay log-normale, mouse Bézier/Fitts, typing keystroke, reading
+ * scroll, gesture touch, overlay cursore, input-block, decoy) mantenendo invariati gli
+ * import dei ~30 caller. Definisce qui i 2 orchestratori di sessione: awaitManualLogin
+ * (attesa login manuale) e interJobDelay (pacing tra job con throttle reattivo).
  */
 
 import { Page } from 'playwright';
@@ -118,12 +120,6 @@ export async function awaitManualLogin(
     console.error(`[${context}] Timeout: login manuale non completato entro ${Math.round(maxWaitMs / 60_000)} minuti.`);
     return false;
 }
-
-// ─── Input Blocking Overlay (ID in human/overlayIds.ts, A13) ──────────────────
-
-// getStartingPoint/updateMouseState estratti in human/mouseState.ts (A13), importati sopra.
-
-// ─── Utility Generali (importate da ../utils/random) ─────────────────────────
 
 /**
  * Pausa randomizzata tra un job e il successivo per evitare il pattern burst.
