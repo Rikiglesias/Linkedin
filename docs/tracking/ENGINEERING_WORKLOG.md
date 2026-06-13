@@ -4,6 +4,24 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-13 — Live enrichment parallelo in background post-scraping (commit `c523cea`)
+
+### Obiettivo (richiesta utente, fuori dal goal audit-bot)
+Quando un workflow raccoglie persone, arricchire SUBITO in parallelo e in background i soli lead NON ancora arricchiti (diff col DB), lanciando processi da terminale, senza bloccare il workflow. Scelte utente confermate: **scope = tutti gli scraping** (SalesNav/syncSearch/syncList); **live = solo fonti gratuite** (Apollo/Hunter/Clearbit restano nel ciclo scheduler col cap).
+
+### Scoperta (zero-A: il ~90% esisteva già)
+`enrichLeadsParallel()` (`parallelEnricher.ts`) era già un motore batch-parallelo che **fa il diff col DB** (LEFT JOIN `lead_enrichment_data`) e persiste — ma non usato dallo scheduler (accoda sequenziale) e di default chiama i provider a pagamento (commento d'intestazione fuorviante, corretto). `enrich-fast` (dispatcher) già lo invocava. Gap reali: (1) flag per saltare i paid; (2) trigger reattivo post-scraping; (3) runner background. Anti-ban verificato: l'enrichment usa SOLO fonti esterne HTTP/DNS (zero browser/LinkedIn).
+
+### Interventi
+- `leadEnricher.ts`/`parallelEnricher.ts`: flag `paidProviders` (default `true` = invariato); `false` salta Apollo/Hunter/Clearbit, tiene EmailGuesser/PersonDataFinder/WebSearch + domain discovery (gratis). Guard `enrichLeadAuto` aggiornata (apollo key non "salva" il lead se paid disabilitati).
+- `liveEnrichmentTrigger.ts` (NUOVO): spawn detached fire-and-forget + lock single-instance by-child-PID (orfano se il PID muore; stale 20min). Funzione **sincrona** → niente race tra workflow nel daemon single-thread. Mai propaga eccezioni (non rompe il sync).
+- `enrich-fast` esteso con `--free`/`--drain`; nuovo comando dispatcher `enrich-live` (= `enrich-fast --free --drain`) + `npm run enrich:live`. Drain-loop: stop a coda vuota o stallo (`enriched=0`) + cap iter(20)/durata(15min); la diff-query ordina i mai-arricchiti per primi → progresso monotòno.
+- Aggancio DRY al choke point `upsertLeadBatch` (`salesNavigatorSync.ts`): tutti e 3 i workflow vi convergono via `runSalesNavigatorListSync`. Trigger gated `!dryRun && syncedLeadIds>0`.
+- Config: `LIVE_ENRICH_ENABLED`/`CONCURRENCY`(8)/`LIMIT`(200).
+
+### Verifica finale
+`npm run conta-problemi` exit 0 (typecheck backend+frontend, lint zero-warning, **181 file / 1783 test**, +2 file/+8 test). `madge --circular`=0. `/antiban-review` **SICURO** (6 domande tutte ✅: zero browser, trigger post-scraping detached, nessun impatto timing/fingerprint/volumi/sessione). Commit `c523cea` auto-pushato (`ba1447c..c523cea`). **Follow-up qualità funnel** (non risolti, pre-esistenti): domain_discovery confidence 20 (`domainDiscovery.ts:271`), proxy pool exhausted (poolSize 1), nome-dupe AI cleaning.
+
 ## 2026-06-13 — A12: chiusa nel cloud (Ultraplan), tracker allineati (`/goal audit-bot`)
 
 A12 (pacing budget per-account, EPIC anti-ban) è stata **implementata e revisionata nella sessione cloud Ultraplan / Claude Code web** e l'utente l'ha dichiarata chiusa ("considerala chiusa nel cloud"). **Non verificata localmente**: al momento della chiusura il codice NON era nel repo (`gh pr list` = solo dependabot; `git log --all` = solo `c4ca43e` docs, zero commit di implementazione pacing/scheduler; nessun branch A12). Tracker allineati (LIST/binding/lastchat) marcando A12 ☁️ chiusa-cloud, **non-verificata-localmente**, con design+infra-test conservati in LIST come riferimento se servirà riconciliare la PR cloud col branch locale `refactor/adk-split`. Lavoro locale di questa sessione (verificato): A6-3, A11-1-pop, A11-2 — committati, gate verde 179f/1775t. A13 resta EPIC igiene tracciato (opzionale, zero-I).
