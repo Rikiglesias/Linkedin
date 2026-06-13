@@ -4,6 +4,18 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-13 — fix(antiban): cooldown integration pool differenziato per errorType (`8271470`)
+
+**Sintomo** (follow-up enrichment dal lastchat): `proxy.integration_pool_exhausted_no_fresh_ip` (`proxyManager.ts:507`) con poolSize 1→0 durante enrichment email.
+
+**Diagnosi**: Workflow fan-out 5 lenti (`wf_4a3ed3fe`, 6 agent, 363k tok) + lettura diretta indipendente (zero-K, non confermo i subagent ciecamente). Root cause CONVERGENTE: `markIntegrationProxyFailed` (`L821`) applicava cooldown FISSO `proxyFailureCooldownMinutes` (default **30min**) per OGNI errore transient (timeout / HTTP 429-5xx / health-check fallito), mentre il path browser `markProxyFailed` usa `computeProxyCooldownMs(errorType)` differenziato (timeout 5min / connection_refused 15min / ban 120min). Con poolSize=1 (Oxylabs sticky) un singolo timeout → ready=0 per 30min → ripiego sul proxy bruciato (`L511`) → email NULL salvate silenziosamente. (Nota: baseline "181f/1783t" = 181 **file** test / 1783 test, tutti verdi — non "fail".)
+
+**Fix** (chirurgico, riusa `computeProxyCooldownMs` esistente — zero-A/zero-O, no duplicazione): `markIntegrationProxyFailed(proxy, errorType?)` parametro opzionale (backward-compat). 3 call site derivano il tipo: health-check (`proxyManager.ts:646`)→`timeout`; HTTP transient (`integrationPolicy.ts:534`)→`connection_refused`; JS transient error (`:544`)→`timeout`/`connection_refused` dal messaggio. `ban`=120min invariato. NON tocca browser pool / sticky / fingerprint / timing / volumi.
+
+**Verifica**: typecheck+lint exit 0, vitest **1785/1785** (181 file; +2 test: smoke markIntegrationProxyFailed + invariante durate cooldown), `madge --circular`=0. `/antiban-review` SICURO (solo integration pool verso API esterne Hunter/Apollo/Clearbit/DuckDuckGo, NON browser LinkedIn). Commit pushato a `origin/refactor/adk-split`.
+
+**Follow-up tracciati** (`improvements-proposed.md` 2026-06-13, fuori scope del fix chirurgico): contaminazione IP browser↔enrichment con poolSize=1 (leva utente: pool dedicato o poolSize≥2), `L511` ritorna cooling senza re-health-check (gated), `fetchFallbackProxyFromProvider` inerte se endpoint vuoto (leva utente), `enrichmentWorker` salva NULL senza guardia, log `integration_pool_exhausted` povero.
+
 ## 2026-06-13 — A13 File 2 bulkSaveOrchestrator: estratti navigation + searchDiscovery (Opzione A, `d245245`/`3b4b51d`)
 
 Split SRP di `bulkSaveOrchestrator.ts` (1839r, salesnav save-to-list). Analisi decomposizione via subagent code-explorer (il design `tasks/wub0irtla.output` era andato perso): **finding** = `runSalesNavBulkSave` (943r) ha un for-loop interno (411r) con stato anti-ban intrecciato (early-stop duplicati, health-check AI, challenge-detect, backoff) NON splittabile regression-safe. **Decisione utente: Opzione A** — estrarre solo gli helper safe, orchestratore resta >300 = eccezione giustificata L1.6 (anti-ban). Estratti VERBATIM (path import identici, stessa dir `src/salesnav/`):
