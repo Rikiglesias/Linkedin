@@ -4,6 +4,23 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-13 — SEC5: password proxy sticky non più persistita in chiaro in `.session-meta.json` (`/goal sec5`)
+
+### Obiettivo
+Rimuovere il segreto (password proxy) dal disco. `persistStickyProxy` (`proxyManager.ts`) scriveva `{ server, username, password, type, weekNumber }` in `.session-meta.json` (mitigato solo da session-dir 0700). Binding: `~/todos/sec5.md`. Residuo M-size SEC5-parte1 di backend-audit-2026-06-06.
+
+### Ricerca (read-only, fonte reale)
+Lo sticky proxy è SEMPRE una entry del pool (`getProxyAsync`), e `getStickyProxy` già verifica che il server sia nel pool prima di riusarlo → le credenziali sono ri-derivabili dal pool (config), la password nel file è ridondante. Unico writer/reader del segreto nel file = `proxyManager.ts` (i reader runtime in launcher/proxyLaunchPlan usano l'oggetto in memoria, non il file). Blast radius minimo.
+
+### Interventi (`proxyManager.ts` + test)
+- `persistStickyProxy`: persiste solo `{ server, username, type, weekNumber }` — **password RIMOSSA**. `username` TENUTO (non è il segreto critico; su gateway Oxylabs condiviso identifica sessione/geo → serve a ri-matchare la entry esatta del pool).
+- `loadPersistedStickyProxy`: ritorna `PersistedStickyProxy` (no password dal file). Entrambe `export` per testabilità (pattern `computeProxyCooldownMs`).
+- `getStickyProxy`: al riuso del persistito, match ESATTO `pool.find(server === ... && username === ...)` e usa quella entry (password fresca dal config). Match esatto, NO fallback solo-server: su gateway condiviso eviterebbe un IP/geo diverso (regressione anti-ban). Nessun match → alloca nuovo (come prima con `stillInPool=false`).
+- Retro-compatibile: il load ignora la password dei file legacy; il primo re-persist la rimuove dal file (test dedicato).
+
+### Verifica finale
+`npm run conta-problemi` exit 0 — typecheck backend+frontend, lint zero-warning, **vitest 1761/1761** (177 file; +7 test `proxyStickyPersist.vitest.ts`: no-password-scritta, no-password-letta, retro-compat, re-persist ripulisce, preserva altre chiavi, edge null). `/antiban-review` → **SICURO** (nessun cambio a quale IP/proxy viene riusato — stickiness/geo/rotazione invariati; solo niente-segreto-su-disco + credenziali sempre correnti dal config). **SEC5-parte2** (ASN-lookup HTTP→HTTPS, `proxyQualityChecker.ts:210`) resta leva utente (piano provider ip-api Pro).
+
 ## 2026-06-13 — AB11: handoff sessione canary→jobRunner per invite/message/check/all (`/goal ab11`)
 
 ### Obiettivo

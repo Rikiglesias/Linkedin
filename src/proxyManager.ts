@@ -664,19 +664,34 @@ function currentWeekNumber(): number {
     return Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000));
 }
 
-/** AB-2: Persistenza sticky proxy su file per sopravvivere ai riavvii. */
-function loadPersistedStickyProxy(sessionDir: string | undefined): { proxy: ProxyConfig; weekNumber: number } | null {
+/** Identità del proxy sticky persistito (SEC5: senza la password — ri-derivata dal pool al load). */
+export interface PersistedStickyProxy {
+    server: string;
+    username?: string;
+    type?: ProxyType;
+    weekNumber: number;
+}
+
+/**
+ * AB-2: Persistenza sticky proxy su file per sopravvivere ai riavvii.
+ * SEC5: legge SOLO l'identità (server+username+type+weekNumber), MAI la password. La password
+ * viene ri-derivata dal pool/config al riuso (vedi getStickyProxy) → nessun segreto letto dal disco.
+ * `export` per testabilità diretta (pattern `computeProxyCooldownMs`).
+ */
+export function loadPersistedStickyProxy(sessionDir: string | undefined): PersistedStickyProxy | null {
     if (!sessionDir) return null;
     try {
         const metaPath = path.join(sessionDir, '.session-meta.json');
         if (!fs.existsSync(metaPath)) return null;
         const raw = JSON.parse(fs.readFileSync(metaPath, 'utf8')) as Record<string, unknown>;
         const sp = raw.stickyProxy as
-            | { server?: string; username?: string; password?: string; type?: string; weekNumber?: number }
+            | { server?: string; username?: string; type?: string; weekNumber?: number }
             | undefined;
         if (!sp?.server || typeof sp.weekNumber !== 'number') return null;
         return {
-            proxy: { server: sp.server, username: sp.username, password: sp.password, type: sp.type as ProxyType },
+            server: sp.server,
+            username: sp.username,
+            type: sp.type as ProxyType | undefined,
             weekNumber: sp.weekNumber,
         };
     } catch {
@@ -684,7 +699,13 @@ function loadPersistedStickyProxy(sessionDir: string | undefined): { proxy: Prox
     }
 }
 
-function persistStickyProxy(sessionDir: string | undefined, proxy: ProxyConfig, weekNumber: number): void {
+/**
+ * SEC5: persiste SOLO l'identità del proxy sticky (server+username+type+weekNumber), MAI la password.
+ * La password è già nel config/pool: scriverla in chiaro su `.session-meta.json` (anche se la dir è 0700)
+ * è un'esposizione inutile. Al riuso viene ri-derivata dal pool matchando server+username (getStickyProxy).
+ * `export` per testabilità diretta.
+ */
+export function persistStickyProxy(sessionDir: string | undefined, proxy: ProxyConfig, weekNumber: number): void {
     if (!sessionDir) return;
     try {
         const metaPath = path.join(sessionDir, '.session-meta.json');
@@ -692,10 +713,11 @@ function persistStickyProxy(sessionDir: string | undefined, proxy: ProxyConfig, 
         if (fs.existsSync(metaPath)) {
             meta = JSON.parse(fs.readFileSync(metaPath, 'utf8')) as Record<string, unknown>;
         }
+        // username TENUTO (non è il segreto critico): su gateway condivisi identifica la sessione/geo →
+        // serve per ri-matchare la entry ESATTA del pool. password RIMOSSA (segreto → solo config/pool).
         meta.stickyProxy = {
             server: proxy.server,
             username: proxy.username,
-            password: proxy.password,
             type: proxy.type,
             weekNumber,
         };
@@ -716,11 +738,17 @@ export async function getStickyProxy(
     if (!stickyProxySessions.has(sessionId) && sessionDir) {
         const persisted = loadPersistedStickyProxy(sessionDir);
         if (persisted && persisted.weekNumber === week) {
-            // Verifica che il proxy persistito sia ancora nel pool
+            // SEC5: la password NON è persistita in chiaro — ri-derivala dal pool/config matchando la
+            // entry ESATTA (server+username). Match esatto (no fallback solo-server): su gateway condiviso
+            // l'username porta sessione/geo, quindi un match solo-server riuserebbe un IP/geo diverso
+            // (regressione anti-ban: stickiness rotta). Nessun match → non riusare (alloca nuovo, come prima
+            // quando il proxy non era più nel pool). Le credenziali sono sempre quelle correnti del config.
             const pool = loadProxyPool();
-            const stillInPool = pool.some((p) => p.server === persisted.proxy.server);
-            if (stillInPool) {
-                stickyProxySessions.set(sessionId, persisted.proxy);
+            const match = pool.find(
+                (p) => p.server === persisted.server && (p.username ?? '') === (persisted.username ?? ''),
+            );
+            if (match) {
+                stickyProxySessions.set(sessionId, match);
             }
         }
     }
