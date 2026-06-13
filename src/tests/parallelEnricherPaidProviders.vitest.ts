@@ -4,15 +4,17 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 // dal motore parallelo fino a enrichLeadAuto, e che la diff-query a vuoto non arricchisca nulla.
 
 // vi.hoisted: variabili usate nei factory di vi.mock (hoisted), inizializzate qui.
-const { enrichLeadAutoMock, queryMock, runMock } = vi.hoisted(() => ({
+const { enrichLeadAutoMock, queryMock, runMock, incrementCapMock } = vi.hoisted(() => ({
     enrichLeadAutoMock: vi.fn(),
     queryMock: vi.fn(),
     runMock: vi.fn(async () => undefined),
+    incrementCapMock: vi.fn(async () => undefined),
 }));
 
 vi.mock('../integrations/leadEnricher', () => ({
     enrichLeadAuto: enrichLeadAutoMock,
 }));
+vi.mock('../integrations/enrichmentDailyCap', () => ({ incrementEnrichmentDailyCount: incrementCapMock }));
 
 vi.mock('../db', () => ({
     getDatabase: vi.fn(async () => ({ query: queryMock, run: runMock })),
@@ -38,6 +40,7 @@ describe('enrichLeadsParallel — propagazione paidProviders', () => {
         enrichLeadAutoMock.mockReset();
         queryMock.mockReset();
         runMock.mockClear();
+        incrementCapMock.mockClear();
     });
 
     test('paidProviders=false è passato a enrichLeadAuto (live = solo fonti gratuite)', async () => {
@@ -60,6 +63,8 @@ describe('enrichLeadsParallel — propagazione paidProviders', () => {
         expect(report.total).toBe(1);
         expect(report.enriched).toBe(1);
         expect(report.emailsFound).toBe(1);
+        // Il path live consuma il daily cap come quello schedulato (SSOT enrichmentDailyCap).
+        expect(incrementCapMock).toHaveBeenCalledTimes(1);
     });
 
     test('default (nessun flag) = paidProviders undefined → comportamento invariato', async () => {

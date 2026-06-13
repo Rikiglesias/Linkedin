@@ -3,8 +3,8 @@ import { WorkerExecutionResult, workerResult } from './result';
 import { enrichLeadAuto } from '../integrations/leadEnricher';
 import { persistEnrichmentResult } from '../integrations/persistEnrichment';
 import { getDatabase } from '../db';
-import { getRuntimeFlag, setRuntimeFlag } from '../core/repositories';
-import { logError, logInfo, logWarn } from '../telemetry/logger';
+import { incrementEnrichmentDailyCount } from '../integrations/enrichmentDailyCap';
+import { logError, logInfo } from '../telemetry/logger';
 
 export interface EnrichmentJobPayload {
     leadId: number;
@@ -91,21 +91,10 @@ export async function processEnrichmentJob(
             businessEmailFound: !!result.businessEmail,
         });
 
-        // Daily-cap fix (M19): incrementa il contatore giornaliero che lo scheduler legge per applicare
-        // ENRICHMENT_DAILY_HARD_CAP. Era MAI scritto → il cap non frenava mai (rischio superamento budget
-        // query/die). context.localDate = stessa data del reader (loopCommand getLocalDateString, condivisa
-        // con buildSchedule). Conta solo i completati: transient/opt-out/dryRun NON consumano cap (b4b551b).
-        // Best-effort: un errore qui NON deve far fallire un enrichment già persistito (eviterebbe un retry inutile).
-        try {
-            const capKey = `enrichment_count:${context.localDate}`;
-            const priorCount = parseInt((await getRuntimeFlag(capKey)) ?? '0', 10) || 0;
-            await setRuntimeFlag(capKey, String(priorCount + 1));
-        } catch (capError) {
-            await logWarn('enrichment.worker.cap_increment_failed', {
-                leadId: payload.leadId,
-                error: capError instanceof Error ? capError.message : String(capError),
-            });
-        }
+        // Daily-cap (M19): conta questo enrichment completato sul contatore che lo scheduler legge.
+        // SSOT in enrichmentDailyCap (condiviso col path live parallelEnricher) → il cap copre TUTTE
+        // le query consumate. I transient NON arrivano qui (return sopra) → non bruciano il cap (b4b551b).
+        await incrementEnrichmentDailyCount(context.localDate);
 
         return workerResult(1);
     } catch (error) {

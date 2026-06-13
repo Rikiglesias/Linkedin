@@ -11,6 +11,7 @@
 
 import { getDatabase } from '../db';
 import { enrichLeadAuto, EnrichmentResult } from './leadEnricher';
+import { incrementEnrichmentDailyCount } from './enrichmentDailyCap';
 import { bridgeLeadUpsert } from '../cloud/cloudBridge';
 import { logInfo, logError, logWarn } from '../telemetry/logger';
 
@@ -168,6 +169,8 @@ async function enrichSingleLead(
                  VALUES (?, 0, 0, '[]', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
                 [lead.id],
             );
+            // No-data VERO: persistito (marca CC-23) → enrichment completato → consuma 1 sul daily cap.
+            await incrementEnrichmentDailyCount();
             return null;
         }
 
@@ -254,6 +257,8 @@ async function enrichSingleLead(
             });
         }
 
+        // Enrichment completato con dati → consuma 1 sul daily cap (SSOT condiviso col worker schedulato).
+        await incrementEnrichmentDailyCount();
         return result;
     } catch (error) {
         const errMsg = error instanceof Error ? error.message : String(error);

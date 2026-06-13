@@ -5,18 +5,17 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 // questo skip, i lead senza account_name verrebbero persi per sempre (non rientrano nella query di
 // re-enrichment). I no-data VERI (senza transient) restano marcati (CC-23). Vedi improvements-proposed.
 
-const { enrichLeadAutoMock, persistMock, getMock, getRuntimeFlagMock, setRuntimeFlagMock } = vi.hoisted(() => ({
+const { enrichLeadAutoMock, persistMock, getMock, incrementCapMock } = vi.hoisted(() => ({
     enrichLeadAutoMock: vi.fn(),
     persistMock: vi.fn(async () => undefined),
     getMock: vi.fn(),
-    getRuntimeFlagMock: vi.fn(async () => '0'),
-    setRuntimeFlagMock: vi.fn(async () => undefined),
+    incrementCapMock: vi.fn(async () => undefined),
 }));
 
 vi.mock('../integrations/leadEnricher', () => ({ enrichLeadAuto: enrichLeadAutoMock }));
 vi.mock('../integrations/persistEnrichment', () => ({ persistEnrichmentResult: persistMock }));
 vi.mock('../db', () => ({ getDatabase: vi.fn(async () => ({ get: getMock })) }));
-vi.mock('../core/repositories', () => ({ getRuntimeFlag: getRuntimeFlagMock, setRuntimeFlag: setRuntimeFlagMock }));
+vi.mock('../integrations/enrichmentDailyCap', () => ({ incrementEnrichmentDailyCount: incrementCapMock }));
 vi.mock('../telemetry/logger', () => ({ logInfo: vi.fn(), logError: vi.fn(), logWarn: vi.fn() }));
 
 import { processEnrichmentJob } from '../workers/enrichmentWorker';
@@ -58,9 +57,7 @@ describe('processEnrichmentJob — skip persist su transientFailure', () => {
         enrichLeadAutoMock.mockReset();
         persistMock.mockClear();
         getMock.mockReset();
-        getRuntimeFlagMock.mockClear();
-        getRuntimeFlagMock.mockResolvedValue('0');
-        setRuntimeFlagMock.mockClear();
+        incrementCapMock.mockClear();
     });
 
     test('transientFailure=true → NON persiste (lead ri-tentabile), skip pulito', async () => {
@@ -73,7 +70,7 @@ describe('processEnrichmentJob — skip persist su transientFailure', () => {
         expect(res.success).toBe(true);
         expect(res.processedCount).toBe(0);
         // I transient NON consumano il daily cap (il lead sarà ri-tentato) — niente incremento.
-        expect(setRuntimeFlagMock).not.toHaveBeenCalled();
+        expect(incrementCapMock).not.toHaveBeenCalled();
     });
 
     test('enrichment riuscito → persiste normalmente', async () => {
@@ -89,8 +86,8 @@ describe('processEnrichmentJob — skip persist su transientFailure', () => {
 
         expect(persistMock).toHaveBeenCalledTimes(1);
         expect(res.processedCount).toBe(1);
-        // Enrichment completato → consuma 1 sul daily cap (rende effettivo ENRICHMENT_DAILY_HARD_CAP).
-        expect(setRuntimeFlagMock).toHaveBeenCalledWith('enrichment_count:2026-06-13', '1');
+        // Enrichment completato → consuma 1 sul daily cap (passa context.localDate all'helper SSOT).
+        expect(incrementCapMock).toHaveBeenCalledWith('2026-06-13');
     });
 
     test('no-data senza transient → persiste comunque (marca per evitare re-enrichment, CC-23)', async () => {
@@ -102,6 +99,6 @@ describe('processEnrichmentJob — skip persist su transientFailure', () => {
         expect(persistMock).toHaveBeenCalledTimes(1);
         expect(res.processedCount).toBe(1);
         // Anche il no-data VERO persiste (CC-23) → completato → consuma 1 sul daily cap.
-        expect(setRuntimeFlagMock).toHaveBeenCalledWith('enrichment_count:2026-06-13', '1');
+        expect(incrementCapMock).toHaveBeenCalledWith('2026-06-13');
     });
 });
