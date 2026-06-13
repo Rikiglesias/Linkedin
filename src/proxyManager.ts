@@ -463,6 +463,9 @@ export async function getProxyFailoverChainAsync(options: GetProxyChainOptions =
     // operativo (L5-LI) e ripiego sulle cooling residenziali (NON Tor/datacenter).
     await logWarn('proxy.pool_exhausted_no_fresh_ip', {
         poolSize: pool.length,
+        ready: ready.length,
+        cooling: cooling.length,
+        providerFallbackConfigured: !!config.proxyProviderApiEndpoint,
         torFallbackEnabled: config.proxyTorFallbackEnabled,
     });
     return prioritizeProxyPool(rotated, options);
@@ -506,6 +509,9 @@ export async function getIntegrationProxyFailoverChainAsync(
     // Pool esaurito, nessun provider esterno, Tor non abilitato: alert operativo + ripiego cooling.
     await logWarn('proxy.integration_pool_exhausted_no_fresh_ip', {
         poolSize: pool.length,
+        ready: ready.length,
+        cooling: cooling.length,
+        providerFallbackConfigured: !!config.proxyProviderApiEndpoint,
         torFallbackEnabled: config.proxyTorFallbackEnabled,
     });
     return prioritizeProxyPool(rotated, options);
