@@ -143,6 +143,13 @@ export function buildLimitsAndRiskDomainConfig() {
         pendingRatioWarn: parseFloatEnv('PENDING_RATIO_WARN', 0.55),
         pendingRatioStop: parseFloatEnv('PENDING_RATIO_STOP', 0.65),
         adaptiveCapsEnabled: parseBoolEnv('ADAPTIVE_CAPS_ENABLED', true),
+        // Soglie DISTINTE da pendingRatioStop/Warn (sopra). Questi cap adattivi agiscono sul pending ratio
+        // PER-LISTA (scheduler.evaluateAdaptiveBudgetContext, su statusCounts della singola lista), NON sul
+        // pending GLOBALE dell'account. Il blocco globale è già gestito da pendingRatioStop=0.65 -> riskAction
+        // STOP -> factor 0 (applicato nello stesso evaluateAdaptiveBudgetContext, ramo riskAction==='STOP').
+        // Lo STOP per-lista è volutamente più alto (0.72): una singola lista tollera più pending prima del cap
+        // aggressivo (adaptiveCapsMinFactor), perché la rete di sicurezza primaria è la soglia globale 0.65.
+        // WARN allineati (0.55=0.55). NON unificare i due STOP: governano livelli diversi (account vs lista).
         adaptiveCapsPendingWarn: Math.min(1, Math.max(0, parseFloatEnv('ADAPTIVE_CAPS_PENDING_WARN', 0.55))),
         adaptiveCapsPendingStop: Math.min(1, Math.max(0, parseFloatEnv('ADAPTIVE_CAPS_PENDING_STOP', 0.72))),
         adaptiveCapsBlockedWarn: Math.min(1, Math.max(0, parseFloatEnv('ADAPTIVE_CAPS_BLOCKED_WARN', 0.25))),
