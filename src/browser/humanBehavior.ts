@@ -72,12 +72,14 @@ async function withMouseTimeout<T>(
         if (timer) clearTimeout(timer);
     }
 }
-import crypto from 'crypto';
-
-const _cursorHex = crypto.randomBytes(8).toString('hex');
-const VISUAL_CURSOR_STYLE_ID = `__lk_style_${_cursorHex}__`;
-const VISUAL_CURSOR_ELEMENT_ID = `__lk_cursor_${_cursorHex}__`;
-const VISUAL_CURSOR_ROOT_CLASS = `__lk_root_${_cursorHex}__`;
+// ID overlay estratti in human/overlayIds.ts (A13) — randomizzati a runtime, condivisi cursor/input.
+import {
+    VISUAL_CURSOR_STYLE_ID,
+    VISUAL_CURSOR_ELEMENT_ID,
+    VISUAL_CURSOR_ROOT_CLASS,
+    INPUT_BLOCK_TOAST_ID,
+    INPUT_BLOCK_OVERLAY_ID,
+} from './human/overlayIds';
 
 export async function ensureVisualCursorOverlay(page: Page): Promise<void> {
     if (page.isClosed() || isMobilePage(page)) {
@@ -267,10 +269,7 @@ export async function awaitManualLogin(
     return false;
 }
 
-// ─── Input Blocking Overlay ──────────────────────────────────────────────────
-
-const INPUT_BLOCK_TOAST_ID = `__lk_toast_${_cursorHex}__`;
-const INPUT_BLOCK_OVERLAY_ID = `__lk_block_${_cursorHex}__`;
+// ─── Input Blocking Overlay (ID in human/overlayIds.ts, A13) ──────────────────
 
 /**
  * Inietta un overlay trasparente full-screen che blocca click/tastiera dell'utente.
