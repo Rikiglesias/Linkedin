@@ -4,6 +4,10 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-13 — A12: chiusa nel cloud (Ultraplan), tracker allineati (`/goal audit-bot`)
+
+A12 (pacing budget per-account, EPIC anti-ban) è stata **implementata e revisionata nella sessione cloud Ultraplan / Claude Code web** e l'utente l'ha dichiarata chiusa ("considerala chiusa nel cloud"). **Non verificata localmente**: al momento della chiusura il codice NON era nel repo (`gh pr list` = solo dependabot; `git log --all` = solo `c4ca43e` docs, zero commit di implementazione pacing/scheduler; nessun branch A12). Tracker allineati (LIST/binding/lastchat) marcando A12 ☁️ chiusa-cloud, **non-verificata-localmente**, con design+infra-test conservati in LIST come riferimento se servirà riconciliare la PR cloud col branch locale `refactor/adk-split`. Lavoro locale di questa sessione (verificato): A6-3, A11-1-pop, A11-2 — committati, gate verde 179f/1775t. A13 resta EPIC igiene tracciato (opzionale, zero-I).
+
 ## 2026-06-13 — A11-2: replay eventi critici al reconnect dashboard (audit-bot FASE 3) (`/goal audit-bot`)
 
 ### Obiettivo
