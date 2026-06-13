@@ -4,6 +4,16 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-13 — refactor(antiban): SSOT daily cap enrichment, copre anche il path live (`f0fc9f0`)
+
+**Follow-up di `3dfd51d`** (autorizzato "ok ssot"): il cap `enrichment_count` era applicato solo al path schedulato (`processEnrichmentJob`); il live-enrichment `parallelEnricher` (`jobRunner:793`, concurrency 1) lo **bypassava** → budget query/die ancora superabile (finding tracciato in improvements-proposed).
+
+**Design** (verificato alla fonte, zero-M): i due path NON condividono un punto di persistenza unico — `enrichmentWorker`→`persistEnrichmentResult`, `parallelEnricher`→`INSERT OR REPLACE` diretti (righe 166/201/265). Quindi "SSOT in persistEnrichmentResult" NON copriva il live. L'SSOT corretto = la **logica di incremento**: nuovo helper `incrementEnrichmentDailyCount(localDate?)` in `src/integrations/enrichmentDailyCap.ts`, chiamato dai punti di completamento di entrambi i path. Default `getLocalDateString()` = chiave identica al reader (`scheduler.ts:1057`). Conta solo i **completati** (no-data + successo); transient ed errori NON consumano cap (coerente con `b4b551b` e col worker). Best-effort (try/catch + `logWarn`).
+
+**Modifiche**: `enrichmentWorker` inline→helper (DRY, rimossi import `getRuntimeFlag`/`setRuntimeFlag`/`logWarn`); `parallelEnricher.enrichSingleLead` chiama l'helper sui rami no-data (`:172`) e successo (prima di `return result`), NON sul transient (`:160`) né sul catch error (CC-23, coerente col worker). Ora il cap copre **tutte** le query enrichment verso le API esterne.
+
+**Verifica**: `/antiban-review` **SICURO** (riduce volumi). typecheck+lint exit 0, vitest **1792/1792** (+4 test nuovi `enrichmentDailyCap.vitest.ts` su chiave/default/null/best-effort; `enrichmentWorker.vitest.ts` e `parallelEnricherPaidProviders.vitest.ts` aggiornati a mockare l'helper + asserire l'incremento). `madge --circular`(integrations+workers+core)=0. Commit `f0fc9f0`. **Cap enrichment ora completo su entrambi i path.**
+
 ## 2026-06-13 — fix(antiban): daily cap enrichment reso effettivo (`enrichment_count`) (`3dfd51d`)
 
 **Bug preesistente scoperto** indagando il follow-up ②.2-metric (zero-M alla fonte). `scheduler.ts:1057` legge `getRuntimeFlag('enrichment_count:'+localDate)` per calcolare `enrichmentRemaining = ENRICHMENT_DAILY_HARD_CAP − done` (M19: 200/die, 140 se risk>40, safety-margin 30% su ~300 query/die LinkedIn), ma **nessun punto in tutta la codebase incrementava quel flag** (grep esaustivo su `setRuntimeFlag` → 0 setter) → `done` sempre 0 → `remaining` sempre = cap pieno → il cap **non frenava mai** → possibile superamento del budget query/die = rischio detection.
