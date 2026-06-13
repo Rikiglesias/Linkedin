@@ -14,7 +14,11 @@ import {
     detectSessionCookieAnomaly,
 } from '../browser/sessionCookieMonitor';
 import { blockUserInput } from '../browser/humanBehavior';
-import { enableWindowClickThrough, disableWindowClickThrough } from '../browser/windowInputBlock';
+import {
+    enableWindowClickThrough,
+    disableWindowClickThrough,
+    cleanupWindowClickThrough,
+} from '../browser/windowInputBlock';
 import {
     updateAccountBackpressure,
     getAccountBackpressureLevel,
@@ -211,6 +215,10 @@ async function runQueuedJobsForAccount(
         }));
     let sessionClosed = false;
     const perfTracker = new SessionPerformanceTracker(); // A20: tracking granulare per fase
+    // Safety-net: se il processo esce bruscamente (crash/SIGINT) il finally non gira → la finestra
+    // resterebbe click-through orfana. cleanupWindowClickThrough() (globale, idempotente) la sblocca.
+    // Simmetria con syncSearchService; deregistrato nel finally per non accumulare listener su run multipli.
+    const exitCleanupHandler = () => cleanupWindowClickThrough();
     try {
         const loggedIn = await checkLogin(session.page);
         if (!loggedIn) {
@@ -256,6 +264,7 @@ async function runQueuedJobsForAccount(
         // Previene click accidentali durante warmup, decoy, e inter-job delay.
         // I navigation context re-iniettano l'overlay dopo ogni page.goto.
         enableWindowClickThrough(session.browser);
+        process.on('exit', exitCleanupHandler);
         await blockUserInput(session.page);
 
         // ── Session cookie anomaly detection ──────────────────────────────
@@ -1327,6 +1336,9 @@ async function runQueuedJobsForAccount(
             });
         }
     } finally {
+        // Path pulito: il finally fa il cleanup; deregistra subito il safety-net exit per non accumulare
+        // listener su run multipli (runQueuedJobsForAccount è chiamato in loop per account).
+        process.off('exit', exitCleanupHandler);
         // H15: Wind-down SEMPRE — un umano non chiude il browser dalla pagina profilo.
         // Torna al feed, scrolla un po', poi chiude. Il 30% precedente lasciava il 70%
         // delle sessioni chiuse bruscamente dall'ultima azione — pattern rilevabile.
