@@ -4,6 +4,18 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-06-13 — fix(enrichment): non marcare i lead falliti-transient → ri-arricchibili (`b4b551b`)
+
+**Follow-up del fix proxy** (`8271470`): durante proxy exhaustion gli enrichment falliscono transient ma i lead venivano persi.
+
+**Root cause** (verifica diretta — il finding del subagent era impreciso su 2 punti): NON è "NULL su leads" (`persistEnrichment` usa `COALESCE`, protetta). È che `enrichViaApollo/Hunter/Clearbit` (`leadEnricher.ts:224/273/330`) facevano `catch { return null }` → **ingoiavano i transient** → `enrichLeadAuto` ritornava vuoto senza lanciare → `enrichmentWorker` persisteva `data_points=0` → la query `getLeadsNeedingEnrichment` (`leadsCore.ts:1408`) ri-tenta solo con `account_name` → i lead senza account_name persi per sempre. Il marker `data_points=-1` di parallelEnricher (CC-23) era inefficace (scatta solo su eccezione propagata, che le fonti impedivano ingoiando).
+
+**Fix** (scelta utente: completo; meccanismo a flag per blast-radius minimo): `EnrichmentResult.transientFailure?` (opzionale, backward-compat). Le 3 fonti ri-lanciano i transient (`isLikelyTransientError||CircuitOpenError`); `enrichLead` li cattura via helper `tryFetch` + catch OSINT/websearch → setta il flag se nessun dato recuperato. `enrichmentWorker`+`parallelEnricher` skippano il persist su `transientFailure` → lead ri-accodato dallo scheduler dopo il recovery. no-data VERI restano marcati (CC-23 invariato). Caller che ignorano il flag (`salesNavigatorSync`/`utilCommands`) invariati: scelto il flag invece del throw apposta per non propagare eccezioni a chi non le gestisce.
+
+**Verifica**: typecheck+lint exit 0, vitest **1788/1788** (+3 test `enrichmentWorker.vitest.ts`, prima non coperto), madge circular=0. `/antiban-review` SICURO (integration pool verso API esterne, non browser LinkedIn; più re-enrichment = trade-off accettato dall'utente). Commit pushato.
+
+**Limite noto**: il flag si attiva quando le fonti propagano il transient; fonti gratuite che ingoiano internamente non lo settano (best-effort). Contaminazione IP poolSize=1 resta tracciata (improvements-proposed).
+
 ## 2026-06-13 — fix(antiban): cooldown integration pool differenziato per errorType (`8271470`)
 
 **Sintomo** (follow-up enrichment dal lastchat): `proxy.integration_pool_exhausted_no_fresh_ip` (`proxyManager.ts:507`) con poolSize 1→0 durante enrichment email.
