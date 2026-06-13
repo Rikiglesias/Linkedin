@@ -8,7 +8,7 @@ import path from 'path';
 import { execSync } from 'child_process';
 import { chromium, firefox, BrowserContext, Page } from 'playwright';
 import { config, ProxyType } from '../config';
-import { logInfo } from '../telemetry/logger';
+import { logInfo, logWarn } from '../telemetry/logger';
 import { ensureDirectoryPrivate } from '../security/filesystem';
 import { pauseAutomation } from '../risk/incidentManager';
 import {
@@ -501,9 +501,12 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                             windowBlock.registerBrowserPid(browser, newPid);
                             void logInfo('browser.camoufox_pid_registered', { pid: newPid });
                         } else {
-                            void logInfo('browser.camoufox_pid_not_found', {
+                            // Primo domino del fallimento click-through: senza PID, enableWindowClickThrough
+                            // non potrà proteggere la finestra → WARN (non INFO) così risale ad alert/dashboard.
+                            void logWarn('browser.camoufox_pid_not_found', {
                                 preLaunchCount: preLaunchPids.size,
                                 postLaunchCount: postPids.length,
+                                impact: 'PID Camoufox non identificato: la finestra non sarà protetta dal mouse utente',
                             });
                         }
                     } catch {

@@ -12,6 +12,7 @@
 import { execSync, execFile } from 'child_process';
 import { BrowserContext } from 'playwright';
 import { buildPowerShellScript } from './windowInputBlockScript';
+import { logWarn } from '../telemetry/logger';
 
 /** PID delle finestre browser del bot attualmente protette (click-through ON). */
 const _activePids = new Set<number>();
@@ -146,11 +147,19 @@ function _applyClickThroughSync(pid: number, enable: boolean): boolean {
             return true;
         }
         if (enable) {
-            console.warn(`[WINDOW-BLOCK] Nessuna finestra trovata per PID ${pid} (risultato: ${result})`);
+            void logWarn('window_block.no_windows', {
+                pid,
+                result,
+                impact: 'click-through non applicato: finestra browser non protetta dal mouse utente',
+            });
         }
         return false;
     } catch (err) {
-        console.warn(`[WINDOW-BLOCK] Errore: ${err instanceof Error ? err.message : String(err)}`);
+        void logWarn('window_block.apply_error', {
+            pid,
+            enable,
+            error: err instanceof Error ? err.message : String(err),
+        });
         return false;
     }
 }
@@ -210,7 +219,12 @@ export function enableWindowClickThrough(browserContext: BrowserContext): boolea
 
     const pid = getBrowserPid(browserContext);
     if (!pid) {
-        console.warn('[WINDOW-BLOCK] Impossibile ottenere PID del browser');
+        // Failure mode anti-ban: senza PID la finestra non è click-through → mouse utente interferisce col bot.
+        // logWarn struttura l'evento (DB run-log + dashboard live + Sentry), a differenza di console.warn raw.
+        void logWarn('window_block.pid_unavailable', {
+            impact: 'finestra browser NON protetta: il mouse utente può interferire con le azioni del bot',
+            action: 'non usare mouse/tastiera sulla finestra del bot finché la sessione non riparte',
+        });
         return false;
     }
 
