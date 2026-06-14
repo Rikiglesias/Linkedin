@@ -286,6 +286,15 @@ export async function executeSyncSearchWorkflow(
     const errors: string[] = [];
     if (bulkReport?.status === 'FAILED') errors.push('Bulk save fallito');
     if (syncError) errors.push(`Sync lista: ${syncError}`);
+    // T5: rompe il silent-failure DOM-drift — syncReport.errors aggrega anche scrapeDegraded
+    // (salesNavigatorSync:1096, lista NON marcata synced su cambio DOM). Senza questo, un drift
+    // restava silenzioso e success=true. WHAT/WHY/DO per l'alert Telegram (reportFormatter critical).
+    if (syncReport && syncReport.errors > 0) {
+        errors.push(
+            `Sync lista SalesNav: ${syncReport.errors} errori durante scrape/upsert ` +
+                `(possibile DOM-drift / cambio selettori SalesNav). DO: verifica i selettori lista su SalesNav reale.`,
+        );
+    }
 
     // sync-search è scraping/sync DB: l'orario NON è un rischio anti-ban (nessuna azione inviata a
     // LinkedIn) → niente errore "fuori orario". Il working-hours guard resta attivo per l'outreach
@@ -295,7 +304,9 @@ export async function executeSyncSearchWorkflow(
         workflow: 'sync-search',
         startedAt,
         finishedAt: new Date(),
-        success: !!bulkReport && bulkReport.status !== 'FAILED' && !syncError,
+        // T5: errori interni del sync (incl. DOM-drift/scrapeDegraded) NON devono più essere
+        // mascherati come success → severity Telegram critical (reportFormatter:169).
+        success: !!bulkReport && bulkReport.status !== 'FAILED' && !syncError && (syncReport?.errors ?? 0) === 0,
         summary: {
             ricerca: searchName || '(tutte)',
             lista_target: targetList,
