@@ -2,7 +2,7 @@ import { config } from '../../config';
 import { getAccountProfileById } from '../../accountManager';
 import { awaitManualLogin, blockUserInput } from '../../browser/humanBehavior';
 import { closeBrowser, launchBrowser, checkLogin } from '../../browser';
-import { releaseRuntimeLock } from '../../core/repositories';
+import { releaseRuntimeLock, getRuntimeFlag, setRuntimeFlag } from '../../core/repositories';
 import {
     cleanupWindowClickThrough,
     disableWindowClickThrough,
@@ -218,7 +218,13 @@ export async function executeSyncSearchWorkflow(
 
         try {
             const { warmupSession } = await import('../../core/sessionWarmer');
-            await warmupSession(session.page);
+            // H25: passa il timestamp di fine ultima sessione → se < 30min fa, warmup RIDOTTO
+            // (un umano che riapre LinkedIn dopo pochi minuti non riscorre feed+notifiche da capo).
+            // Chiave coerente con salesNavigatorSync (browser_session_ended_at), scritta nel finally sotto.
+            const lastSessionEndedAt = await getRuntimeFlag(`browser_session_ended_at:${account.id}`).catch(
+                () => null,
+            );
+            await warmupSession(session.page, lastSessionEndedAt);
             await blockUserInput(session.page);
         } catch {
             // best-effort
@@ -259,6 +265,9 @@ export async function executeSyncSearchWorkflow(
         process.off('exit', exitCleanupHandler);
         disableWindowClickThrough(session.browser);
         await closeBrowser(session);
+        // H25: registra la fine sessione → la prossima run sync-search legge questo flag e fa
+        // warmup ridotto se < 30min (pattern identico a salesNavigatorSync.closeOwnedBrowser:799).
+        await setRuntimeFlag(`browser_session_ended_at:${account.id}`, new Date().toISOString()).catch(() => null);
         // F1: rilascia il lock anti-concorrenza per-account acquisito dal guard (se presente).
         if (guardDecision.accountLock) {
             await releaseRuntimeLock(guardDecision.accountLock.lockKey, guardDecision.accountLock.ownerId);
