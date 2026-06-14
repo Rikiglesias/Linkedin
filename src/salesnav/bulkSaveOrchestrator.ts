@@ -494,6 +494,10 @@ export async function runSalesNavBulkSave(
     const safeMaxPages = Math.max(1, Math.floor(options.maxPages));
     const safeMaxSearches = getSafeMaxSearches(options.maxSearches);
     const safeSessionLimit = getSafeSessionLimit(options.sessionLimit);
+    // T7 (anti-ban rule #3: sessioni 5-45min): durata massima 32-45min JITTERATA (varianza, non
+    // soglia fissa). Oltre → PAUSE col meccanismo resume esistente. Affianca il cap pagine
+    // (safeSessionLimit) e copre il caso in cui sessionLimit sia configurato alto.
+    const maxSessionMs = (32 + Math.random() * 13) * 60_000;
     const normalizedRequestedSearchName = normalizeSearchName(options.searchName);
     let run: SalesNavSyncRunRecord | null = null;
     let currentAbsoluteSearchIndex = 0;
@@ -907,10 +911,13 @@ export async function runSalesNavBulkSave(
                 currentPageNumber = pageNumber;
                 searchReport.finalPage = pageNumber;
 
-                if (report.pagesProcessed >= safeSessionLimit) {
+                const sessionOverTime = Date.now() - Date.parse(report.startedAt) > maxSessionMs;
+                if (report.pagesProcessed >= safeSessionLimit || sessionOverTime) {
                     report.sessionLimitHit = true;
                     report.status = 'PAUSED';
-                    report.lastError = 'Session limit raggiunto';
+                    report.lastError = sessionOverTime
+                        ? 'Durata massima sessione raggiunta (anti-ban rule #3)'
+                        : 'Session limit raggiunto';
                     if (run) {
                         await pauseSyncRun(run.id, report.lastError, {
                             searchName: search.name,
