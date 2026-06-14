@@ -21,7 +21,25 @@ import { Page } from 'playwright';
 import { simulateHumanReading, humanType, humanDelay, dismissKnownOverlays } from '../browser';
 import { ensureInputBlock } from '../browser/humanBehavior';
 import { logInfo, logWarn } from '../telemetry/logger';
-import { config } from '../config';
+import { config, isWorkingHour } from '../config';
+
+/** T2b: sotto questa età (giorni) un account è "nuovo" → warmup completo garantito (engagement credibile). */
+const WARMUP_NEW_ACCOUNT_MAX_DAYS = 7;
+
+/**
+ * Opzioni opt-in per il warmup condizionale (T2b). Se non passate, il comportamento
+ * resta IDENTICO (i call-site jobRunner/salesNavigatorSync non le passano → nessuna regressione).
+ */
+export interface WarmupOptions {
+    /** Livello di rischio dell'account (da riskAssessment.level). CAUTION/STOP → warmup ridotto. */
+    riskLevel?: 'GO' | 'CAUTION' | 'STOP' | string;
+    /** Età account in giorni (getAccountAgeDays). < WARMUP_NEW_ACCOUNT_MAX_DAYS → feed garantito. */
+    accountAgeDays?: number;
+    /** Timezone IANA dell'account per il gate orario (fallback config.timezone). */
+    accountTimezone?: string;
+    /** Se true, fuori orario lavorativo il warmup è ridotto a feed-only (no browsing notturno). */
+    respectWorkingHours?: boolean;
+}
 
 /**
  * Determina se la sessione corrente è nella prima o seconda finestra
@@ -64,8 +82,19 @@ export function getSessionBudgetFactor(): number {
     return window === 'first' ? 0.6 : 0.4;
 }
 
-export async function warmupSession(page: Page, lastSessionEndedAt?: string | null): Promise<void> {
+export async function warmupSession(
+    page: Page,
+    lastSessionEndedAt?: string | null,
+    options?: WarmupOptions,
+): Promise<void> {
     const sessionWindow = getSessionWindow();
+
+    // T2b: condizioni opt-in (calcolate solo se il caller passa `options`; gli altri
+    // call-site senza options → tutte false → comportamento INVARIATO).
+    const offHours = !!options?.respectWorkingHours && !isWorkingHour(new Date(), options.accountTimezone);
+    const highRisk = options?.riskLevel === 'CAUTION' || options?.riskLevel === 'STOP';
+    const newAccount =
+        typeof options?.accountAgeDays === 'number' && options.accountAgeDays < WARMUP_NEW_ACCOUNT_MAX_DAYS;
 
     // H25: Se l'ultima sessione è finita da meno di 30 minuti, warmup RIDOTTO.
     // Un umano che riapre LinkedIn dopo 5 minuti non riscorre feed + notifiche da capo.
@@ -92,6 +121,30 @@ export async function warmupSession(page: Page, lastSessionEndedAt?: string | nu
             }
             return;
         }
+    }
+
+    // T2b: fuori orario lavorativo o rischio elevato → warmup RIDOTTO (solo feed).
+    // Navigare feed+notifiche+messaging a notte fonda o sotto rischio alto amplifica
+    // il pattern bot; lo skip TOTALE però è sospetto (browser che apre e va dritto su
+    // SalesNav), quindi si tiene la passata minima sul feed — come il branch `gap`.
+    if (offHours || highRisk) {
+        await logInfo('session_warmer.reduced_conditional', {
+            reason: offHours ? 'off_working_hours' : 'elevated_risk',
+            riskLevel: options?.riskLevel,
+        });
+        try {
+            await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
+            await ensureInputBlock(page);
+            await dismissKnownOverlays(page);
+            await humanDelay(page, 2000, 4000);
+            await simulateHumanReading(page);
+            await humanDelay(page, 1000, 2000);
+        } catch (e) {
+            await logWarn('session_warmer.reduced_conditional_error', {
+                error: e instanceof Error ? e.message : String(e),
+            });
+        }
+        return;
     }
 
     await logInfo('session_warmer.start', {
@@ -125,8 +178,10 @@ export async function warmupSession(page: Page, lastSessionEndedAt?: string | nu
     const stepsExecuted: string[] = [];
 
     try {
-        // Step 1: Feed — SEMPRE primo (90% lo visita, 10% skip raro es. clic diretto su notifica)
-        if (Math.random() < 0.9) {
+        // Step 1: Feed — SEMPRE primo (90% lo visita, 10% skip raro es. clic diretto su notifica).
+        // T2b: account nuovi (< WARMUP_NEW_ACCOUNT_MAX_DAYS) → feed SEMPRE, niente skip 10%:
+        // un account giovane deve costruire un pattern di engagement credibile fin da subito.
+        if (newAccount || Math.random() < 0.9) {
             await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
             await ensureInputBlock(page);
             await dismissKnownOverlays(page);

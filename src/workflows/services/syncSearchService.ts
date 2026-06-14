@@ -3,6 +3,7 @@ import { getAccountProfileById } from '../../accountManager';
 import { awaitManualLogin, blockUserInput } from '../../browser/humanBehavior';
 import { closeBrowser, launchBrowser, checkLogin } from '../../browser';
 import { releaseRuntimeLock, getRuntimeFlag, setRuntimeFlag } from '../../core/repositories';
+import { getAccountAgeDays } from '../../core/repositories/stats';
 import {
     cleanupWindowClickThrough,
     disableWindowClickThrough,
@@ -224,7 +225,15 @@ export async function executeSyncSearchWorkflow(
             const lastSessionEndedAt = await getRuntimeFlag(`browser_session_ended_at:${account.id}`).catch(
                 () => null,
             );
-            await warmupSession(session.page, lastSessionEndedAt);
+            // T2b: warmup condizionale — fuori orario o rischio CAUTION/STOP → feed-only;
+            // account nuovo → feed garantito. Riusa risk/età/timezone già disponibili.
+            const accountAgeDays = await getAccountAgeDays().catch(() => undefined);
+            await warmupSession(session.page, lastSessionEndedAt, {
+                riskLevel: preflight.riskAssessment?.level,
+                accountAgeDays,
+                accountTimezone: account.timezone,
+                respectWorkingHours: true,
+            });
             await blockUserInput(session.page);
         } catch {
             // best-effort
