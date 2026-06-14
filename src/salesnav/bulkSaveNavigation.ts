@@ -11,6 +11,7 @@
 import type { Page } from 'playwright';
 import { clickLocatorHumanLike, dismissKnownOverlays, humanDelay, isLoggedIn } from '../browser';
 import { pauseInputBlock, removeAllOverlays, releaseMouseConfinement } from '../browser/humanBehavior';
+import { enableWindowClickThrough, disableWindowClickThrough } from '../browser/windowInputBlock';
 import { reInjectOverlays, setInputBlockSuspended, smartClick } from './bulkSaveHelpers';
 import { dismissTransientUi } from './bulkSavePagination';
 
@@ -38,6 +39,12 @@ export async function waitForManualLogin(page: Page, context: string): Promise<v
     // DEVE essere PRIMA di removeAllOverlays: così il page.on('load') non ri-inietta durante la rimozione.
     setInputBlockSuspended(page, true);
     await pauseInputBlock(page);
+
+    // Sblocca il click-through OS (WS_EX_TRANSPARENT): senza questo la finestra resta
+    // bot-only (impostata da syncSearchService:215 enableWindowClickThrough prima del bulk-save)
+    // e il mouse fisico dell'utente passa SOTTO la finestra → non può cliccare per loggarsi.
+    // DEVE precedere removeAllOverlays. Pattern identico a listActions.ts:150 / salesNavigatorSync.ts:843.
+    disableWindowClickThrough(page.context());
 
     // Rimuovi completamente TUTTI gli overlay dal DOM usando gli ID dinamici corretti.
     // removeAllOverlays conosce gli ID generati da crypto.randomBytes (a differenza di ID hardcoded).
@@ -70,6 +77,9 @@ export async function waitForManualLogin(page: Page, context: string): Promise<v
         throw new Error(`Timeout: login manuale non completato entro 3 minuti. URL: ${page.url()}`);
     } finally {
         setInputBlockSuspended(page, false);
+        // Ri-protegge la finestra a livello OS (bot-only) prima di re-iniettare gli overlay DOM:
+        // ripristina lo stato click-through attivo prima del login (simmetrico a disableWindowClickThrough sopra).
+        enableWindowClickThrough(page.context());
         // Re-inject overlays COMPLETAMENTE — la pagina è cambiata durante il login
         await reInjectOverlays(page).catch(() => {});
         await dismissKnownOverlays(page).catch(() => {});
