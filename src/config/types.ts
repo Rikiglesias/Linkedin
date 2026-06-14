@@ -282,6 +282,8 @@ export interface AppConfig {
     salesNavSyncIntervalHours: number;
     salesNavSyncLimit: number;
     salesNavSyncAccountId: string;
+    /** Cap anti-ban sul volume giornaliero di lead salvati via SalesNav (cross-sessione). 0 = disabilitato. */
+    salesNavSyncMaxSavesPerDay: number;
     rampUpEnabled: boolean;
     rampUpDailyIncrease: number;
     rampUpMaxCap: number;

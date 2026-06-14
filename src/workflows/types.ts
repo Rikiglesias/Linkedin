@@ -40,6 +40,7 @@ export type WorkflowBlockedReason =
     | 'RISK_COOLDOWN'
     | 'LOGIN_REQUIRED'
     | 'SYNC_CONCURRENT_ON_ACCOUNT'
+    | 'DAILY_SAVE_CAP_REACHED'
     | 'WORKFLOW_ERROR';
 
 export interface WorkflowBlockedState {

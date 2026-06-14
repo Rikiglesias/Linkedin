@@ -10,6 +10,7 @@ import {
     enableWindowClickThrough,
 } from '../../browser/windowInputBlock';
 import { runSalesNavBulkSave } from '../../salesnav/bulkSaveOrchestrator';
+import { isSalesNavSaveDailyCapReached, incrementSalesNavSaveDailyCount } from '../../salesnav/salesNavSaveDailyCap';
 import { runSalesNavigatorListSync } from '../../core/salesNavigatorSync';
 import { listSalesNavLists } from '../../core/repositories/leadsCore';
 import { evaluateWorkflowEntryGuards } from '../../core/workflowEntryGuards';
@@ -178,6 +179,26 @@ export async function executeSyncSearchWorkflow(
         });
     }
 
+    // T4: cap anti-ban sul volume giornaliero di save SalesNav (cross-sessione). Check PRIMA
+    // di launchBrowser → se il cap è raggiunto non apriamo nemmeno il browser. Opt-in: con
+    // config.salesNavSyncMaxSavesPerDay = 0 (default) isSalesNavSaveDailyCapReached() è sempre false.
+    if (await isSalesNavSaveDailyCapReached()) {
+        return buildBlockedResult(
+            'sync-search',
+            {
+                reason: 'DAILY_SAVE_CAP_REACHED',
+                message: `Cap giornaliero save SalesNav raggiunto (${config.salesNavSyncMaxSavesPerDay}). Riprendi domani o aumenta SALESNAV_SYNC_MAX_SAVES_PER_DAY.`,
+            },
+            {
+                riskAssessment: preflight.riskAssessment,
+                artifacts: buildWorkflowArtifacts({
+                    preflight,
+                    estimatedMinutes: estimateExecutionMinutes(dryRun, maxPages, 90, 20),
+                }),
+            },
+        );
+    }
+
     let bulkReport: Awaited<ReturnType<typeof runSalesNavBulkSave>> | null = null;
     let syncReport: Awaited<ReturnType<typeof runSalesNavigatorListSync>> | null = null;
     let syncInserted = 0;
@@ -248,6 +269,11 @@ export async function executeSyncSearchWorkflow(
             sessionLimit: limit,
             resume: true,
         });
+
+        // T4: consuma il cap giornaliero coi lead effettivamente salvati (no dry-run).
+        if (!dryRun && bulkReport && bulkReport.totalLeadsSaved > 0) {
+            await incrementSalesNavSaveDailyCount(bulkReport.totalLeadsSaved);
+        }
 
         if (!dryRun && bulkReport && bulkReport.status !== 'FAILED') {
             try {

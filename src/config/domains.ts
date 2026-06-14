@@ -483,6 +483,8 @@ export function buildBehaviorDomainConfig() {
         salesNavSyncIntervalHours: Math.max(1, parseIntEnv('SALESNAV_SYNC_INTERVAL_HOURS', 24)),
         salesNavSyncLimit: Math.max(1, parseIntEnv('SALESNAV_SYNC_LIMIT', 30)),
         salesNavSyncAccountId: parseStringEnv('SALESNAV_SYNC_ACCOUNT_ID'),
+        // Cap anti-ban opt-in sul volume giornaliero di save SalesNav (cross-sessione). 0 = disabilitato.
+        salesNavSyncMaxSavesPerDay: Math.max(0, parseIntEnv('SALESNAV_SYNC_MAX_SAVES_PER_DAY', 0)),
         rampUpEnabled: parseBoolEnv('RAMPUP_ENABLED', true),
         rampUpDailyIncrease: Math.max(0.01, Math.min(0.5, parseFloatEnv('RAMPUP_DAILY_INCREASE', 0.05))),
         rampUpMaxCap: Math.max(1, parseIntEnv('RAMPUP_MAX_CAP', 80)),
