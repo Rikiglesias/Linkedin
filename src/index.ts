@@ -83,7 +83,8 @@ import { printCommandHelp } from './cli/commandHelp';
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 
-import { isShuttingDown, setShuttingDown, runShutdownCallbacks } from './core/lifecycle';
+import { isShuttingDown, setShuttingDown, runShutdownCallbacks, onShutdown } from './core/lifecycle';
+import { ensureOllamaRunning, stopOllamaIfStarted } from './ai/ollamaLifecycle';
 
 const SHUTDOWN_TIMEOUT_MS = 30_000;
 
@@ -517,6 +518,31 @@ async function main(): Promise<void> {
         console.log('[PREFLIGHT] OK');
     }
 
+    // ── Ollama on-demand ──────────────────────────────────────────────────────
+    // Punto UNICO di aggancio a monte del run operativo: qui converge OGNI modalità
+    // di lancio (bot.ps1, npm start, start:dev, autopilot). Per i comandi che usano
+    // l'AI locale (outreach + scoring) assicura che il server Ollama sia su; a fine
+    // run lo ferma SOLO se l'ha avviato lui. Best-effort: non blocca mai il run
+    // (il registry ha il fallback template). Vedi ai/ollamaLifecycle.ts.
+    const AI_OPERATIONAL_COMMANDS = new Set([
+        'run',
+        'dry-run',
+        'run-loop',
+        'autopilot',
+        'send-invites',
+        'send-messages',
+        'sync-list',
+        'sync-search',
+        'connect',
+        'check',
+        'message',
+        'warmup',
+    ]);
+    if (command && AI_OPERATIONAL_COMMANDS.has(command)) {
+        onShutdown(stopOllamaIfStarted);
+        await ensureOllamaRunning();
+    }
+
     switch (command) {
         case 'import':
             await runImportCommand(commandArgs);
@@ -759,6 +785,7 @@ main()
     })
     .finally(async () => {
         if (isShuttingDown()) return;
+        await stopOllamaIfStarted().catch(() => {});
         await pluginRegistry.shutdown().catch(() => {});
         await closeDatabase();
     });
