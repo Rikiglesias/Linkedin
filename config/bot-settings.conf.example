@@ -1,0 +1,31 @@
+# bot-settings.conf.example — template della configurazione NON segreta
+# ============================================================================
+# Copia questo file in `config/bot-settings.conf` (che resta fuori da git) e adatta i valori.
+#
+#   cp config/bot-settings.conf.example config/bot-settings.conf
+#
+# DIVISIONE DEI DUE FILE (regola di progetto, 2026-08-01):
+#
+#   .env                      SEGRETI     valori delle chiavi: *_API_KEY, *_TOKEN, *_PASSWORD,
+#                                         *_SECRET, SENTRY_DSN, credenziali proxy, cookie di sessione.
+#                                         Gestito solo dall'utente.
+#   config/bot-settings.conf  CONFIG      soglie anti-ban, cap giornalieri, timing, feature flag,
+#                                         intervalli, modelli AI, parametri di rischio.
+#                                         Modificabile anche dall'assistente AI.
+#
+# PRECEDENZA: `.env` e' caricato per primo da `src/config/env.ts`; dotenv non sovrascrive una
+# variabile gia' presente (override:false), quindi in caso di chiave duplicata vince il `.env`.
+#
+# L'elenco completo delle chiavi disponibili resta `.env.example` (~330 chiavi). Qui vanno solo
+# quelle NON segrete che si vogliono gestire separatamente.
+# ============================================================================
+
+# --- Sales Navigator ------------------------------------------------------------
+# Cap giornaliero di salvataggi durante il bulk-save. 0 = disattivato.
+SALESNAV_SYNC_MAX_SAVES_PER_DAY=0
+
+# --- Esempi di altri parametri non segreti che possono vivere qui ----------------
+# PENDING_RATIO_STOP=0.65
+# HARD_INVITE_CAP=20
+# INTER_JOB_MIN_DELAY_SEC=45
+# INTER_JOB_MAX_DELAY_SEC=180

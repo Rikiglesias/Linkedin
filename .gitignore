@@ -18,6 +18,11 @@ data/security-advisor/
 .env.backup
 *.env.bak
 *.env.backup
+
+# Configurazione operativa non segreta (soglie anti-ban, cap, timing): fuori da git perche'
+# il repo e' PUBBLICO — i parametri operativi del bot non vanno pubblicati. Template tracciato.
+config/bot-settings.conf
+!config/bot-settings.conf.example
 # Key material e credenziali — mai committare
 *.pem
 *.key

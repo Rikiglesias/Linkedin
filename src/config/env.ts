@@ -29,10 +29,25 @@ export function resolveSecret(key: string, fallback: string = ''): string {
     return fallback;
 }
 
+/**
+ * Carica la configurazione da due file separati per RESPONSABILITA' (regola 2026-08-01):
+ *   1. `.env`                     -> SEGRETI (chiavi API, token, password). Gestito solo dall'utente.
+ *   2. `config/bot-settings.conf` -> parametri operativi NON segreti (soglie, cap, timing, flag).
+ *
+ * L'ordine NON e' arbitrario: dotenv non sovrascrive una variabile gia' presente in `process.env`
+ * (`override` default false, dotenv 17 `lib/main.js:380`), quindi il file caricato per PRIMO vince.
+ * `.env` va per primo affinche' il file dell'utente abbia sempre l'ultima parola su una chiave
+ * definita in entrambi. Entrambi i file sono opzionali: se mancano, valgono i default del codice.
+ */
 export function loadDotEnv(): void {
     const envPath = path.resolve(process.cwd(), '.env');
     if (fs.existsSync(envPath)) {
         dotenv.config({ path: envPath });
+    }
+
+    const settingsPath = path.resolve(process.cwd(), 'config', 'bot-settings.conf');
+    if (fs.existsSync(settingsPath)) {
+        dotenv.config({ path: settingsPath });
     }
 }
 
