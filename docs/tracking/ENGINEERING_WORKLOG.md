@@ -4,6 +4,41 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-08-01 — goal env-split fase 2: il `.env` ora è protetto davvero, non per convenzione (`2fd20ae` qui, il resto nel control-plane)
+
+Chiusura della fase 2 del binding `~/todos/env-split.md`. **La parte di codice vive fuori da questo repo**
+(`~/.claude/hooks/pre-bash-secrets.ps1`, gate della postazione di sviluppo): qui resta il commit di
+documentazione `2fd20ae` e questa nota, perché il comportamento cambia per chi lavora sul bot.
+
+**Il problema, misurato non supposto**: la tabella «due file di configurazione» del README diceva chi
+*dovrebbe* modificare cosa, ma niente lo imponeva. Verificato il 2026-08-01: `Read`/`Edit`/`Write` sul `.env`
+erano bloccati, ma da shell `cat .env` e `rm .env` passavano — il file era protetto **al contrario** di come
+lo si voleva. Causa: una scelta esplicita del 2026-06-22 («i `.env` dei progetti restano leggibili, servono
+per lavorare»), revocata dall'utente.
+
+**Perché il primo piano è stato buttato**: review avversariale cross-model (Codex, `REVISE`, 12 obiezioni
+bloccanti). Le due che contano per questo repo:
+- l'end-state «l'AI non **può** leggere né cancellare» **non è raggiungibile**: l'assistente gira con la
+  stessa utenza Windows dell'utente. Riscritto in forma verificabile, con i residui dichiarati;
+- il pattern proposto avrebbe bloccato il lavoro quotidiano *su questa codebase*: `rg -n '\.env' src` e
+  `git grep '\.env'` CERCANO la stringa, non aprono il file. Da qui un parser che distingue l'operando dal
+  pattern di ricerca.
+
+**Cosa cambia per chi lavora qui**: l'assistente non può più leggere il `.env` né cancellarlo, troncarlo,
+rinominarlo o sovrascriverlo — nemmeno con comandi che non lo nominano (`git clean -x`, cancellazione
+ricorsiva della cartella che lo contiene). Può ancora crearlo, aggiungerci righe e cercare la stringa `.env`
+nei sorgenti. `config/bot-settings.conf` è fuori dal perimetro di proposito: resta leggibile e scrivibile,
+ed è lì che vanno soglie, cap e timing. Conseguenza pratica: il `copy .env.example .env` della guida di setup
+lo esegue l'utente. `scripts/setup-vps.sh` gira sul VPS e non passa dai gate → deploy non toccato.
+
+**Verifica**: `conta-problemi` exit 0 (typecheck + lint 0-warning + **1817/1817** test, 187 file) ·
+`graphify update` exit 0 (7277 nodi) · lato control-plane 89 check sul gate (erano 7), ognuno su Bash **e**
+PowerShell, più canary eseguiti dal vivo su un `.env` fittizio. Rosso di controllo prima del fix: 40 fail su 77.
+
+**Residui DICHIARATI** (non chiudibili con un parser di comandi; li chiude solo togliere i segreti dal disco,
+che è una decisione dell'utente perché cambia come si avvia il bot): indirezione via variabile
+(`$p=.env; cat "$p"`), offuscamento, script intermedio, **esfiltrazione via rete** (`curl -T .env`).
+
 ## 2026-06-14 — goal syncsearch: hardening anti-ban workflow sync-search (5 commit)
 
 Esecuzione del binding `~/todos/syncsearch.md` (audit Workflow `wolk4iwtp`). Ogni fix INLINE, un task per volta, `/antiban-review` SICURO + `conta-problemi` verde, NO big-bang.
