@@ -78,6 +78,13 @@ npm run build
 già definita, quindi su una chiave presente in entrambi i file **vince sempre il `.env`**. Entrambi sono
 opzionali — se mancano valgono i default del codice.
 
+La separazione non è solo una convenzione: dal 2026-08-01 un gate della postazione di sviluppo **nega
+all'assistente AI** ogni comando che legge il contenuto del `.env` o che lo cancella, tronca, rinomina o
+sovrascrive — anche quando non lo nomina (`git clean -x`, cancellazione ricorsiva della cartella). Restano
+permessi crearlo, aggiungerci righe e **cercare la stringa** `.env` nei sorgenti. Il `.conf` è fuori dal
+perimetro di proposito e resta pienamente leggibile e scrivibile.
+Conseguenza pratica: il `copy .env.example .env` qui sopra lo esegue **l'utente**, non l'assistente.
+
 ⚠️ **In Docker** il file è disponibile grazie al mount `./config:/app/config:ro` (`docker-compose.yml`):
 il `Dockerfile` non copia `config/` nell'immagine, quindi senza quel mount i parametri tornerebbero
 ai default **senza alcun messaggio d'errore**.
