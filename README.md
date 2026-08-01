@@ -59,12 +59,28 @@ Nota runtime:
 ```bash
 npm install
 copy .env.example .env
+copy config\bot-settings.conf.example config\bot-settings.conf
 npm run build
 ```
 
 > Scorciatoia consigliata: invece del `.env.example` generico, parti da un **preset
 > d'uso** già coerente e anti-ban-sicuro — `presets/{starter,pro,scale,max-stealth}.env.example`
 > (guida e combinazioni vietate: `docs/PRESET_PROFILES.md`).
+
+#### Due file di configurazione, non uno
+
+| File | Contenuto | Chi lo modifica |
+|---|---|---|
+| `.env` | **segreti**: `*_API_KEY`, `*_TOKEN`, `*_PASSWORD`, `*_SECRET`, `SENTRY_DSN`, credenziali proxy | solo l'utente |
+| `config/bot-settings.conf` | parametri operativi **non segreti**: soglie anti-ban, cap giornalieri, timing, feature flag | utente e assistente AI |
+
+`loadDotEnv()` (`src/config/env.ts`) carica il `.env` **per primo**: dotenv non sovrascrive una variabile
+già definita, quindi su una chiave presente in entrambi i file **vince sempre il `.env`**. Entrambi sono
+opzionali — se mancano valgono i default del codice.
+
+⚠️ **In Docker** il file è disponibile grazie al mount `./config:/app/config:ro` (`docker-compose.yml`):
+il `Dockerfile` non copia `config/` nell'immagine, quindi senza quel mount i parametri tornerebbero
+ai default **senza alcun messaggio d'errore**.
 
 ### Verifica minima
 

@@ -50,6 +50,10 @@ services:
         condition: service_healthy
     volumes:
       - ./.env:/app/.env
+      # Configurazione non segreta (soglie, cap, timing): il Dockerfile NON copia `config/`
+      # e senza questo mount `loadDotEnv()` non troverebbe il file DENTRO il container -> i
+      # parametri (es. il cap giornaliero dei save) tornerebbero ai default IN SILENZIO.
+      - ./config:/app/config:ro
       - ./data:/app/data
       - ./plugins:/app/plugins
       - ./public:/app/public
@@ -89,6 +93,10 @@ services:
         condition: service_healthy
     volumes:
       - ./.env:/app/.env
+      # Configurazione non segreta (soglie, cap, timing): il Dockerfile NON copia `config/`
+      # e senza questo mount `loadDotEnv()` non troverebbe il file DENTRO il container -> i
+      # parametri (es. il cap giornaliero dei save) tornerebbero ai default IN SILENZIO.
+      - ./config:/app/config:ro
       - ./data:/app/data
       - ./plugins:/app/plugins
     # Worker non espone porte — comunica solo via DB (job queue)
