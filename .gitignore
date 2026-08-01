@@ -19,10 +19,6 @@ data/security-advisor/
 *.env.bak
 *.env.backup
 
-# Configurazione operativa non segreta (soglie anti-ban, cap, timing): fuori da git perche'
-# il repo e' PUBBLICO — i parametri operativi del bot non vanno pubblicati. Template tracciato.
-config/bot-settings.conf
-!config/bot-settings.conf.example
 # Key material e credenziali — mai committare
 *.pem
 *.key
@@ -131,3 +127,10 @@ Obsidian/
 # i symlink in .claude/skills/ sono tool-generati e rigenerabili, non versionare.
 .claude/skills/supabase
 .claude/skills/supabase-postgres-best-practices
+
+# Configurazione operativa NON segreta (soglie anti-ban, cap, timing, feature flag).
+# Non e' un segreto — sta fuori da git per un altro motivo: il repo e' PUBBLICO e i
+# parametri operativi del bot non vanno pubblicati. I SEGRETI stanno nel `.env` (sezione
+# in alto): non metterli qui. Template versionato: `config/bot-settings.conf.example`.
+config/bot-settings.conf
+!config/bot-settings.conf.example
