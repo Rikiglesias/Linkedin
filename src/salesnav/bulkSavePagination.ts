@@ -18,7 +18,7 @@ import type { Page } from 'playwright';
 import { clickLocatorHumanLike, humanDelay, randomMouseMove } from '../browser';
 import { config } from '../config';
 import { hasLocator, locatorBoundingBox, buildClipAroundLocator, smartClick, safeVisionClick } from './bulkSaveHelpers';
-import { humanMouseMoveToCoords } from '../browser/humanBehavior';
+import { botWheel, humanMouseMoveToCoords } from '../browser/humanBehavior';
 import { visionRead } from './visionNavigator';
 import { SALESNAV_NEXT_PAGE_SELECTOR as NEXT_PAGE_SELECTOR } from './selectors';
 import type { ScrollCollectedProfile } from './bulkSaveTypes';
@@ -416,7 +416,8 @@ export async function scrollAndReadPage(page: Page, fast: boolean = false): Prom
                 { d: delta, idx: containerIndex },
             );
         } else {
-            await page.mouse.wheel(0, delta);
+            // botWheel e non page.mouse.wheel: l'overlay di input-block cancella il wheel grezzo.
+            await botWheel(page, 0, delta);
         }
     };
 
@@ -541,7 +542,7 @@ export async function scrollAndReadPage(page: Page, fast: boolean = false): Prom
         }, containerIndex);
     } else {
         for (let i = 0; i < 12; i++) {
-            await page.mouse.wheel(0, -800);
+            await botWheel(page, 0, -800);
             await page.waitForTimeout(30);
         }
     }

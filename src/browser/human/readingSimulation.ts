@@ -14,6 +14,7 @@ import { isMobilePage } from '../deviceProfile';
 import { randomInt } from '../../utils/random';
 import { humanSwipe } from './touchGestures';
 import { humanDelay } from './humanDelay';
+import { pauseInputBlockForMove, resumeInputBlockForMove } from './inputBlock';
 
 /**
  * AD-04: Simulazione sfocamento tab (cambio scheda utente).
@@ -68,17 +69,26 @@ export async function simulateTabSwitch(page: Page, maxAwayTimeMs: number): Prom
  * il pattern #1 che la behavioral-biometrics cerca sullo scroll.
  */
 async function wheelWithMomentum(page: Page, totalDeltaY: number): Promise<void> {
-    const ticks = 4 + Math.floor(Math.random() * 5); // 4-8 tick
-    let remaining = totalDeltaY;
-    for (let i = 0; i < ticks; i++) {
-        const isLast = i === ticks - 1;
-        // ease-out: i primi tick spostano di più, gli ultimi rallentano (decelerazione naturale)
-        const step = isLast ? remaining : Math.round(remaining * (0.35 + Math.random() * 0.25));
-        remaining -= step;
-        await page.mouse.wheel(0, step);
-        if (!isLast) {
-            await page.waitForTimeout(12 + Math.floor(Math.random() * 28)); // 12-40ms tra tick
+    // L'overlay di inputBlock cancella gli eventi wheel con preventDefault per bloccare
+    // l'utente fisico, e non sa distinguere il wheel del bot da quello dell'utente. Senza
+    // questo flag lo scroll del bot veniva annullato: misurato scrollY=0 con overlay attivo
+    // (harnessInputBlockEvents.ts). Il bot "leggeva" senza che la pagina si muovesse mai.
+    await pauseInputBlockForMove(page);
+    try {
+        const ticks = 4 + Math.floor(Math.random() * 5); // 4-8 tick
+        let remaining = totalDeltaY;
+        for (let i = 0; i < ticks; i++) {
+            const isLast = i === ticks - 1;
+            // ease-out: i primi tick spostano di più, gli ultimi rallentano (decelerazione naturale)
+            const step = isLast ? remaining : Math.round(remaining * (0.35 + Math.random() * 0.25));
+            remaining -= step;
+            await page.mouse.wheel(0, step);
+            if (!isLast) {
+                await page.waitForTimeout(12 + Math.floor(Math.random() * 28)); // 12-40ms tra tick
+            }
         }
+    } finally {
+        await resumeInputBlockForMove(page);
     }
 }
 

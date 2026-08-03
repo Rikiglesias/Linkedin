@@ -27,7 +27,7 @@ export async function ensureInputBlock(page: Page): Promise<void> {
 
     try {
         await page.evaluate(
-            ({ toastId, overlayId }) => {
+            ({ toastId, overlayId, showToast }) => {
                 // Overlay full-screen trasparente che blocca click + scroll + keyboard utente
                 if (!document.getElementById(overlayId)) {
                     const overlay = document.createElement('div');
@@ -55,19 +55,27 @@ export async function ensureInputBlock(page: Page): Promise<void> {
                     document.documentElement.style.cursor = 'none';
                     if (document.body) document.body.style.cursor = 'none';
 
-                    // Blocca TUTTI gli eventi utente: scroll, keyboard, touch, click, mousemove
+                    // Lo stato "il bot sta agendo" vive come property JS sull'elemento, NON come
+                    // dataset: `el.dataset.x` genera l'attributo `data-x` nell'HTML, cioè una firma
+                    // leggibile da LinkedIn (misurata: `data-bot-moving` presente durante il movimento).
+                    // Una property JS non compare nel DOM. Stesso pattern già usato per __restoreTimer.
+                    const botActing = (): boolean => {
+                        const ov = document.getElementById(overlayId) as unknown as Record<string, unknown> | null;
+                        return !!ov && (ov.__botClicking === true || ov.__botMoving === true);
+                    };
+                    // Blocca TUTTI gli eventi utente: scroll, keyboard, touch, click, mousemove.
+                    // La via di fuga vale per ENTRAMBI i flag: prima `blockEvent` guardava solo
+                    // botClicking, quindi il `wheel` del bot (page.mouse.wheel in simulateHumanReading)
+                    // veniva cancellato da preventDefault → la pagina non scrollava MAI (misurato: scrollY 0).
                     const blockEvent = (e: Event) => {
-                        const ov = document.getElementById(overlayId);
-                        if (ov && ov.dataset.botClicking === 'true') return;
+                        if (botActing()) return;
                         e.preventDefault();
                         e.stopPropagation();
                     };
                     // mousemove: blocca quando l'utente muove il mouse fisico (no flag bot).
-                    // Quando il bot muove il mouse, setta dataset.botMoving='true' → handler lascia passare.
                     // stopImmediatePropagation: blocca ANCHE listener registrati da LinkedIn sullo stesso nodo.
                     const blockMouseMove = (e: Event) => {
-                        const ov = document.getElementById(overlayId);
-                        if (ov && (ov.dataset.botClicking === 'true' || ov.dataset.botMoving === 'true')) return;
+                        if (botActing()) return;
                         e.preventDefault();
                         e.stopImmediatePropagation();
                     };
@@ -101,8 +109,12 @@ export async function ensureInputBlock(page: Page): Promise<void> {
                     document.addEventListener('mouseenter', blockMouseMove, blockOpts);
                 }
 
-                // Toast notifica
-                if (!document.getElementById(toastId)) {
+                // Toast notifica — OPT-IN (default OFF).
+                // Il testo finiva nel DOM della pagina LinkedIn: una stringa fissa e identica fra
+                // installazioni identifica il SOFTWARE, non la sessione (misurato dall'harness:
+                // "Automazione in corso — input bloccato" leggibile in document.outerHTML).
+                // Per riaverlo in sviluppo: SHOW_AUTOMATION_TOAST=true.
+                if (showToast && !document.getElementById(toastId)) {
                     const toast = document.createElement('div');
                     toast.id = toastId;
                     toast.textContent = 'Automazione in corso — input bloccato';
@@ -137,7 +149,11 @@ export async function ensureInputBlock(page: Page): Promise<void> {
                     );
                 }
             },
-            { toastId: INPUT_BLOCK_TOAST_ID, overlayId: INPUT_BLOCK_OVERLAY_ID },
+            {
+                toastId: INPUT_BLOCK_TOAST_ID,
+                overlayId: INPUT_BLOCK_OVERLAY_ID,
+                showToast: process.env.SHOW_AUTOMATION_TOAST === 'true',
+            },
         );
     } catch {
         // Best effort.
@@ -153,11 +169,28 @@ export async function pauseInputBlockForMove(page: Page): Promise<void> {
     if (page.isClosed()) return;
     try {
         await page.evaluate((id) => {
-            const el = document.getElementById(id);
-            if (el) el.dataset.botMoving = 'true';
+            const el = document.getElementById(id) as unknown as Record<string, unknown> | null;
+            if (el) el.__botMoving = true;
         }, INPUT_BLOCK_OVERLAY_ID);
     } catch {
         /* best effort */
+    }
+}
+
+/**
+ * Porta UNICA per lo scroll del bot.
+ *
+ * `page.mouse.wheel` diretto viene cancellato dall'overlay di input-block (che fa
+ * preventDefault sul wheel per fermare l'utente fisico e non sa distinguere i due).
+ * Chi scrolla senza passare da qui produce zero movimento reale, in silenzio.
+ * Misurato con `src/tests/harnessInputBlockEvents.ts`: 0 px prima, 1023 px dopo.
+ */
+export async function botWheel(page: Page, deltaX: number, deltaY: number): Promise<void> {
+    await pauseInputBlockForMove(page);
+    try {
+        await page.mouse.wheel(deltaX, deltaY);
+    } finally {
+        await resumeInputBlockForMove(page);
     }
 }
 
@@ -168,8 +201,8 @@ export async function resumeInputBlockForMove(page: Page): Promise<void> {
     if (page.isClosed()) return;
     try {
         await page.evaluate((id) => {
-            const el = document.getElementById(id);
-            if (el) delete el.dataset.botMoving;
+            const el = document.getElementById(id) as unknown as Record<string, unknown> | null;
+            if (el) delete el.__botMoving;
         }, INPUT_BLOCK_OVERLAY_ID);
     } catch {
         /* best effort */
@@ -188,13 +221,13 @@ export async function pauseInputBlock(page: Page): Promise<void> {
             const el = document.getElementById(id);
             if (el) {
                 el.style.pointerEvents = 'none';
-                el.dataset.botClicking = 'true';
                 const elRec = el as unknown as Record<string, unknown>;
+                elRec.__botClicking = true;
                 const prev = elRec.__restoreTimer as ReturnType<typeof setTimeout> | undefined;
                 if (prev) clearTimeout(prev);
                 elRec.__restoreTimer = setTimeout(() => {
                     el.style.pointerEvents = 'auto';
-                    delete el.dataset.botClicking;
+                    delete elRec.__botClicking;
                 }, 150);
             }
         }, INPUT_BLOCK_OVERLAY_ID);
@@ -216,7 +249,7 @@ export async function resumeInputBlock(page: Page): Promise<void> {
                 const prev = elRec.__restoreTimer as ReturnType<typeof setTimeout> | undefined;
                 if (prev) clearTimeout(prev);
                 el.style.pointerEvents = 'auto';
-                delete el.dataset.botClicking;
+                delete elRec.__botClicking;
             }
         }, INPUT_BLOCK_OVERLAY_ID);
     } catch {

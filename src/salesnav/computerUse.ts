@@ -16,6 +16,7 @@ import { config } from '../config';
 import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 import { logInfo, logWarn } from '../telemetry/logger';
 import {
+    botWheel,
     humanMouseMoveToCoords,
     pulseVisualCursorOverlay,
     pauseInputBlock,
@@ -297,7 +298,7 @@ async function executeAction(page: Page, action: ComputerAction): Promise<void> 
             if (action.x !== undefined && action.y !== undefined) {
                 await humanMouseMoveToCoords(page, action.x, action.y);
             }
-            await page.mouse.wheel(sx, sy);
+            await botWheel(page, sx, sy);
             break;
         }
 

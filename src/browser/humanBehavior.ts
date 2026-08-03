@@ -44,8 +44,17 @@ import {
     pauseInputBlock,
     resumeInputBlock,
     blockUserInput,
+    botWheel,
 } from './human/inputBlock';
-export { ensureInputBlock, pauseInputBlockForMove, resumeInputBlockForMove, pauseInputBlock, resumeInputBlock, blockUserInput };
+export {
+    ensureInputBlock,
+    pauseInputBlockForMove,
+    resumeInputBlockForMove,
+    pauseInputBlock,
+    resumeInputBlock,
+    blockUserInput,
+    botWheel,
+};
 
 // Overlay cursore visuale estratto in human/cursorOverlay.ts (A13). Funzioni pubbliche re-esportate
 // → i caller non cambiano import.
