@@ -62,7 +62,11 @@ export async function processHygieneJob(
                 break; // Esce dal loop — sessione non più valida
             }
 
-            const navigationResult = await navigateToProfileForCheck(page, lead.linkedin_url, payload.accountId);
+            const navigationResult = await navigateToProfileForCheck(page, lead.linkedin_url, payload.accountId, {
+                name: `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim() || undefined,
+                job_title: lead.job_title ?? undefined,
+                company: lead.account_name ?? undefined,
+            });
             if (!navigationResult.success) {
                 throw new RetryableWorkerError('Navigazione organica al profilo hygiene fallita', 'PROFILE_NAVIGATION_FAILED');
             }

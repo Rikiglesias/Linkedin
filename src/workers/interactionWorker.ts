@@ -28,16 +28,38 @@ export interface InteractionJobPayload {
 
 // ─── Helpers Interni ────────────────────────────────────────────────────────────
 
-async function getLeadLinkedinUrl(leadId: number): Promise<string | null> {
+/** Dati minimi del lead per la navigazione organica (nome/titolo/azienda per la ricerca). */
+type LeadNavContext = { name?: string; job_title?: string; company?: string };
+
+/**
+ * Legge URL + dati identificativi del lead. I dati servono a `navigateToProfileForCheck`:
+ * senza, la ricerca del profilo ripiega sulle keyword derivate dallo slug URL — che per i
+ * lead SalesNav (`/sales/lead/...`) non esiste, quindi la navigazione fallisce sempre.
+ */
+async function getLeadNavContext(leadId: number): Promise<{ url: string; lead: LeadNavContext } | null> {
     const db = await getDatabase();
-    const row = await db.get<{ linkedin_url: string }>(`SELECT linkedin_url FROM leads WHERE id = ?`, [leadId]);
-    return row?.linkedin_url ?? null;
+    const row = await db.get<{
+        linkedin_url: string;
+        first_name: string | null;
+        last_name: string | null;
+        job_title: string | null;
+        account_name: string | null;
+    }>(`SELECT linkedin_url, first_name, last_name, job_title, account_name FROM leads WHERE id = ?`, [leadId]);
+    if (!row?.linkedin_url) return null;
+    return {
+        url: row.linkedin_url,
+        lead: {
+            name: `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim() || undefined,
+            job_title: row.job_title ?? undefined,
+            company: row.account_name ?? undefined,
+        },
+    };
 }
 
 // ─── VIEW PROFILE ───────────────────────────────────────────────────────────────
 
-async function performViewProfile(page: Page, linkedinUrl: string, accountId: string): Promise<void> {
-    const navigationResult = await navigateToProfileForCheck(page, linkedinUrl, accountId);
+async function performViewProfile(page: Page, linkedinUrl: string, accountId: string, lead: LeadNavContext): Promise<void> {
+    const navigationResult = await navigateToProfileForCheck(page, linkedinUrl, accountId, lead);
     if (!navigationResult.success) {
         throw new RetryableWorkerError('Navigazione organica al profilo interazione fallita', 'PROFILE_NAVIGATION_FAILED');
     }
@@ -53,10 +75,10 @@ async function performViewProfile(page: Page, linkedinUrl: string, accountId: st
 
 // ─── LIKE POST ──────────────────────────────────────────────────────────────────
 
-async function performLikePost(page: Page, linkedinUrl: string, accountId: string): Promise<void> {
+async function performLikePost(page: Page, linkedinUrl: string, accountId: string, lead: LeadNavContext): Promise<void> {
     // Naviga al profilo con context chain e resta sul profilo.
     // Evita teletrasporti su /recent-activity/all/ che rompono la narrativa umana della sessione.
-    const navigationResult = await navigateToProfileForCheck(page, linkedinUrl, accountId);
+    const navigationResult = await navigateToProfileForCheck(page, linkedinUrl, accountId, lead);
     if (!navigationResult.success) {
         throw new RetryableWorkerError('Navigazione organica al profilo interazione fallita', 'PROFILE_NAVIGATION_FAILED');
     }
@@ -92,8 +114,8 @@ async function performLikePost(page: Page, linkedinUrl: string, accountId: strin
 
 // ─── FOLLOW ─────────────────────────────────────────────────────────────────────
 
-async function performFollow(page: Page, linkedinUrl: string, accountId: string): Promise<void> {
-    const navigationResult = await navigateToProfileForCheck(page, linkedinUrl, accountId);
+async function performFollow(page: Page, linkedinUrl: string, accountId: string, lead: LeadNavContext): Promise<void> {
+    const navigationResult = await navigateToProfileForCheck(page, linkedinUrl, accountId, lead);
     if (!navigationResult.success) {
         throw new RetryableWorkerError('Navigazione organica al profilo interazione fallita', 'PROFILE_NAVIGATION_FAILED');
     }
@@ -134,7 +156,9 @@ export async function processInteractionJob(
 ): Promise<WorkerExecutionResult> {
     const { leadId, actionType } = payload;
 
-    const linkedinUrl = await getLeadLinkedinUrl(leadId);
+    const navContext = await getLeadNavContext(leadId);
+    const linkedinUrl = navContext?.url ?? null;
+    const leadNav = navContext?.lead ?? {};
     if (!linkedinUrl) {
         await logError('interaction.lead_not_found', { leadId });
         return workerResult(0, [{ leadId, message: 'Lead URL non trovato' }]);
@@ -177,15 +201,15 @@ export async function processInteractionJob(
         const effectiveAccountId = context.accountId ?? 'default';
         switch (actionType) {
             case 'VIEW_PROFILE':
-                await performViewProfile(page, linkedinUrl, effectiveAccountId);
+                await performViewProfile(page, linkedinUrl, effectiveAccountId, leadNav);
                 await incrementDailyStat(getLocalDateString(), 'profile_views');
                 break;
             case 'LIKE_POST':
-                await performLikePost(page, linkedinUrl, effectiveAccountId);
+                await performLikePost(page, linkedinUrl, effectiveAccountId, leadNav);
                 await incrementDailyStat(getLocalDateString(), 'likes_given');
                 break;
             case 'FOLLOW':
-                await performFollow(page, linkedinUrl, effectiveAccountId);
+                await performFollow(page, linkedinUrl, effectiveAccountId, leadNav);
                 await incrementDailyStat(getLocalDateString(), 'follows_given');
                 break;
             default:

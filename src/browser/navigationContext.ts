@@ -417,7 +417,13 @@ export async function navigateToProfileForCheck(
     page: Page,
     profileUrl: string,
     accountId: string,
+    lead?: { name?: string | null; job_title?: string | null; company?: string | null },
 ): Promise<NavigationResult> {
+    // CL9 esteso al percorso 'check' (2026-08-04): senza i dati del lead la ricerca ripiegava
+    // sulle keyword derivate dallo slug URL. Con lead SalesNav (`/sales/lead/...`) lo slug non
+    // esiste proprio → ricerca a vuoto → PROFILE_NAVIGATION_FAILED → dead-letter → REVIEW_REQUIRED.
+    // Il fix era già applicato a message/follow-up e mancava qui, in acceptance/hygiene/interaction.
+    const leadCtx = lead ?? {};
     const roll = Math.random();
     let result: NavigationResult;
 
@@ -427,7 +433,7 @@ export async function navigateToProfileForCheck(
             await reInjectOverlays(page);
             await humanDelay(page, 1200, 2800);
             await simulateHumanReading(page);
-            const searchResult = await openProfileViaSearchResults(page, profileUrl, {});
+            const searchResult = await openProfileViaSearchResults(page, profileUrl, leadCtx);
             result = {
                 strategy: 'feed_organic',
                 success: searchResult.success,
@@ -444,7 +450,7 @@ export async function navigateToProfileForCheck(
             });
             await reInjectOverlays(page);
             await humanDelay(page, 1500, 3000);
-            const searchResult = await openProfileViaSearchResults(page, profileUrl, {});
+            const searchResult = await openProfileViaSearchResults(page, profileUrl, leadCtx);
             result = {
                 strategy: 'feed_organic',
                 success: searchResult.success,
@@ -454,7 +460,7 @@ export async function navigateToProfileForCheck(
             result = { strategy: 'feed_organic', success: false, stepsCompleted: 1 };
         }
     } else {
-        const searchResult = await openProfileViaSearchResults(page, profileUrl, {});
+        const searchResult = await openProfileViaSearchResults(page, profileUrl, leadCtx);
         result = {
             strategy: 'direct',
             success: searchResult.success,

@@ -51,6 +51,11 @@ export async function processAcceptanceJob(
         context.session.page,
         lead.linkedin_url,
         context.accountId ?? 'default',
+        {
+            name: `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim() || undefined,
+            job_title: lead.job_title ?? undefined,
+            company: lead.account_name ?? undefined,
+        },
     );
     if (!navigationResult.success) {
         throw new RetryableWorkerError('Navigazione organica al profilo fallita', 'PROFILE_NAVIGATION_FAILED');
