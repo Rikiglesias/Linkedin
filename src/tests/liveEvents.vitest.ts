@@ -17,9 +17,7 @@ describe('liveEvents — replay degli eventi critici (A11-2)', () => {
         const unsub = subscribeLiveEvents((e) => received.push(e));
         unsub();
 
-        const replayed = received.find(
-            (e) => e.type === 'incident.opened' && e.payload.incidentId === 99901,
-        );
+        const replayed = received.find((e) => e.type === 'incident.opened' && e.payload.incidentId === 99901);
         expect(replayed).toBeDefined();
         expect(replayed?.payload._replayed).toBe(true);
     });

@@ -31,9 +31,7 @@ async function creaConsegna(stato: string, scadenzaLease: string | null): Promis
          VALUES ('test.lease', '{}', ?, DATETIME('now', '-1 hour'))`,
         [chiave],
     );
-    const evento = await db.get<{ id: number }>(`SELECT id FROM outbox_events WHERE idempotency_key = ?`, [
-        chiave,
-    ]);
+    const evento = await db.get<{ id: number }>(`SELECT id FROM outbox_events WHERE idempotency_key = ?`, [chiave]);
     const eventId = Number(evento?.id);
     idsCreati.eventi.push(eventId);
 
@@ -43,10 +41,9 @@ async function creaConsegna(stato: string, scadenzaLease: string | null): Promis
          VALUES (?, 'WEBHOOK', ?, DATETIME('now', '-1 hour'), ?, ?)`,
         [eventId, stato, stato === 'RUNNING' ? 'processo-morto' : null, scadenzaLease],
     );
-    const consegna = await db.get<{ id: number }>(
-        `SELECT id FROM outbox_event_deliveries WHERE event_id = ?`,
-        [eventId],
-    );
+    const consegna = await db.get<{ id: number }>(`SELECT id FROM outbox_event_deliveries WHERE event_id = ?`, [
+        eventId,
+    ]);
     const deliveryId = Number(consegna?.id);
     idsCreati.consegne.push(deliveryId);
     return deliveryId;

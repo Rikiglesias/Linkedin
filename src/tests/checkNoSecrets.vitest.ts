@@ -100,7 +100,7 @@ describe('gate segreti — il nome del file non deve poter eseguire comandi', ()
 });
 
 describe('gate segreti — senza file staged non deve dichiarare un PASS a vuoto', () => {
-    it('scansiona i file tracciati quando l\'area di stage è vuota', () => {
+    it("scansiona i file tracciati quando l'area di stage è vuota", () => {
         // È il contesto dell'audit schedulato (`auditRunner`): commit già fatto, nulla in stage.
         writeFileSync(path.join(repo, 'leaked.ts'), `const key = '${FAKE_AWS_KEY}';\n`);
         git('add', '-A');
@@ -129,14 +129,7 @@ describe('gate segreti — la posizione riportata deve essere quella vera', () =
     it('riporta la riga di ogni occorrenza dello stesso segreto, non due volte la prima', () => {
         // Con due segreti DIVERSI `indexOf` era già corretto: il difetto si vede solo
         // quando lo stesso valore compare più volte.
-        const content = [
-            `const a = '${FAKE_AWS_KEY}';`,
-            '',
-            '',
-            '',
-            `const b = '${FAKE_AWS_KEY}';`,
-            '',
-        ].join('\n');
+        const content = [`const a = '${FAKE_AWS_KEY}';`, '', '', '', `const b = '${FAKE_AWS_KEY}';`, ''].join('\n');
         writeFileSync(path.join(repo, 'due.ts'), content);
         git('add', '-A');
 

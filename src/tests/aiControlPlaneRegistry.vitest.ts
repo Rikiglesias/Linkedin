@@ -69,7 +69,11 @@ describe('ai control plane registry', () => {
     });
 
     it('dichiara capability gap su prompt ambiguo', () => {
-        const decision = classifyPrompt('Fammi una cosa generica senza contesto', loadRoutingRegistry(), loadLevelRegistry());
+        const decision = classifyPrompt(
+            'Fammi una cosa generica senza contesto',
+            loadRoutingRegistry(),
+            loadLevelRegistry(),
+        );
         expect(decision.capabilityGap).toBe(true);
         expect(decision.matchedDomains).toHaveLength(0);
     });

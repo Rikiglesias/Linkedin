@@ -71,9 +71,7 @@ describe('webhook n8n — un evento non firmato non deve entrare', () => {
     });
 
     it('rifiuta un evento senza alcuna firma', () => {
-        expect(() => runNode([makeItem(body)], { WEBHOOK_SYNC_SECRET: SECRET })).toThrow(
-            /Invalid webhook signature/,
-        );
+        expect(() => runNode([makeItem(body)], { WEBHOOK_SYNC_SECRET: SECRET })).toThrow(/Invalid webhook signature/);
     });
 
     it('rifiuta un payload manomesso dopo la firma', () => {

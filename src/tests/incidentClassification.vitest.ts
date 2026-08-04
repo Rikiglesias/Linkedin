@@ -82,7 +82,7 @@ describe('classifyIncidentSource — soglie', () => {
         expect(result.recommendation).toContain('selettori');
     });
 
-    it('1 account → account_specific con DO sull\'account', async () => {
+    it("1 account → account_specific con DO sull'account", async () => {
         mocks.countDistinctIncidentAccounts.mockResolvedValue({ count: 1, accounts: ['a'] });
         const result = await classifyIncidentSource('LOGIN_MISSING');
         expect(result.classification).toBe('account_specific');

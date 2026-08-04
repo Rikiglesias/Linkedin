@@ -70,11 +70,7 @@ const DAILY_STAT_FIELDS: ReadonlyArray<CloudDailyStatIncrement['field']> = [
     'run_errors',
 ];
 
-export async function applyOutboxOperation(
-    topic: string,
-    rawPayload: unknown,
-    idempotencyKey?: string,
-): Promise<void> {
+export async function applyOutboxOperation(topic: string, rawPayload: unknown, idempotencyKey?: string): Promise<void> {
     if (!rawPayload || typeof rawPayload !== 'object') return;
     const p = rawPayload as Record<string, unknown>;
     switch (topic) {
@@ -284,7 +280,13 @@ export async function runSupabaseSyncOnce(): Promise<void> {
                 });
             } else {
                 const delay = retryDelayMs(attempts, config.supabaseSyncIntervalMs);
-                const marked = await markOutboxDeliveryRetryClaimed(event.delivery_id, ownerId, attempts, delay, message);
+                const marked = await markOutboxDeliveryRetryClaimed(
+                    event.delivery_id,
+                    ownerId,
+                    attempts,
+                    delay,
+                    message,
+                );
                 if (!marked) {
                     await logWarn('supabase.sync.event.claim_lost', {
                         eventId: event.id,

@@ -117,7 +117,9 @@ export async function runWebrtcLeakCheck(args: string[] = []): Promise<boolean> 
         // che fallisce con 407 se l'auth proxy ha problemi). Isola il test WebRTC dal proxy: verifica SOLO il kill RTC
         // (RTCPeerConnection undefined). NB: l'IP di uscita sara' quello reale, NON il proxy → la dimensione
         // "leak-dietro-proxy" non e' coperta, ma se l'RTC e' killato non c'e' alcun canale da leakare comunque.
-        console.warn('[WEBRTC_LEAK] --allow-direct: bypass TOTALE del proxy → IP diretto. Verifico SOLO il kill RTC, non il leak-dietro-proxy.');
+        console.warn(
+            '[WEBRTC_LEAK] --allow-direct: bypass TOTALE del proxy → IP diretto. Verifico SOLO il kill RTC, non il leak-dietro-proxy.',
+        );
     } else {
         const resolved = await resolveTestProxy(sessionDir);
         proxy = resolved.proxy;
@@ -125,7 +127,9 @@ export async function runWebrtcLeakCheck(args: string[] = []): Promise<boolean> 
     }
 
     console.log('[WEBRTC_LEAK] ── Diagnostico #7 WebRTC leak ──────────────────────────');
-    console.log(`[WEBRTC_LEAK] engine=${config.browserEngine} headless=${headless} proxy=${managed ? 'managed' : 'DIRETTO (nessun proxy gestito)'}`);
+    console.log(
+        `[WEBRTC_LEAK] engine=${config.browserEngine} headless=${headless} proxy=${managed ? 'managed' : 'DIRETTO (nessun proxy gestito)'}`,
+    );
 
     const session = await launchBrowser({
         sessionDir,
@@ -150,7 +154,7 @@ export async function runWebrtcLeakCheck(args: string[] = []): Promise<boolean> 
         }
         console.log(`[WEBRTC_LEAK] IP di uscita (visto dal mondo): ${egressIp}`);
         if (managed) {
-            console.log('[WEBRTC_LEAK]   ^ DEVE corrispondere all\'IP del proxy, non al tuo IP reale.');
+            console.log("[WEBRTC_LEAK]   ^ DEVE corrispondere all'IP del proxy, non al tuo IP reale.");
         }
 
         // 2) Test WebRTC autorevole sulla pagina browserleaks (init-script stealth gia' attivo nel context).
@@ -158,7 +162,9 @@ export async function runWebrtcLeakCheck(args: string[] = []): Promise<boolean> 
         probe = (await page.evaluate(buildProbeScript(STUN_GATHER_MS))) as WebrtcProbe;
 
         if (!headless) {
-            console.log(`[WEBRTC_LEAK] Finestra aperta su browserleaks per ${Math.round(HEADFUL_DWELL_MS / 1000)}s — controlla a occhio la sezione "WebRTC".`);
+            console.log(
+                `[WEBRTC_LEAK] Finestra aperta su browserleaks per ${Math.round(HEADFUL_DWELL_MS / 1000)}s — controlla a occhio la sezione "WebRTC".`,
+            );
             await page.waitForTimeout(HEADFUL_DWELL_MS);
         }
     } finally {
@@ -171,17 +177,26 @@ export async function runWebrtcLeakCheck(args: string[] = []): Promise<boolean> 
     const pass = probe.rtcAvailable === false && probe.candidates.length === 0;
 
     console.log('[WEBRTC_LEAK] ── Risultato ───────────────────────────────────────────');
-    console.log(`[WEBRTC_LEAK] RTCPeerConnection disponibile nella pagina: ${probe.rtcAvailable ? 'SI (REGRESSIONE)' : 'no (killato ✓)'}`);
+    console.log(
+        `[WEBRTC_LEAK] RTCPeerConnection disponibile nella pagina: ${probe.rtcAvailable ? 'SI (REGRESSIONE)' : 'no (killato ✓)'}`,
+    );
     console.log(`[WEBRTC_LEAK] ICE candidate raccolti: ${probe.candidates.length}`);
     if (probe.ips.length > 0) console.log(`[WEBRTC_LEAK] IP esposti via WebRTC: ${probe.ips.join(', ')}`);
-    if (leakedIps.length > 0) console.log(`[WEBRTC_LEAK] ⚠ IP che NON sono l'egress del proxy (possibile IP reale leakato): ${leakedIps.join(', ')}`);
+    if (leakedIps.length > 0)
+        console.log(
+            `[WEBRTC_LEAK] ⚠ IP che NON sono l'egress del proxy (possibile IP reale leakato): ${leakedIps.join(', ')}`,
+        );
     if (probe.error) console.log(`[WEBRTC_LEAK] note: ${probe.error}`);
 
     if (pass) {
         console.log('[WEBRTC_LEAK] ✅ PASS — WebRTC neutralizzato, nessun leak. La protezione tiene a runtime.');
     } else {
-        console.log('[WEBRTC_LEAK] 🔴 FAIL — WebRTC NON neutralizzato a runtime. Verificare versione camoufox (v146-beta),');
-        console.log('[WEBRTC_LEAK]            block_webrtc (launcher.ts:465) e lo stealth init-script (stealthScripts.ts:82-101).');
+        console.log(
+            '[WEBRTC_LEAK] 🔴 FAIL — WebRTC NON neutralizzato a runtime. Verificare versione camoufox (v146-beta),',
+        );
+        console.log(
+            '[WEBRTC_LEAK]            block_webrtc (launcher.ts:465) e lo stealth init-script (stealthScripts.ts:82-101).',
+        );
     }
     return pass;
 }

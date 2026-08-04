@@ -216,7 +216,13 @@ export async function runWebhookSyncOnce(): Promise<void> {
                 });
             } else {
                 const delay = retryDelayMs(attempts, Math.max(1000, config.webhookSyncTimeoutMs));
-                const marked = await markOutboxDeliveryRetryClaimed(event.delivery_id, ownerId, attempts, delay, message);
+                const marked = await markOutboxDeliveryRetryClaimed(
+                    event.delivery_id,
+                    ownerId,
+                    attempts,
+                    delay,
+                    message,
+                );
                 if (!marked) {
                     await logWarn('webhook.sync.event.claim_lost', {
                         eventId: event.id,

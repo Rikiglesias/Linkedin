@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-    pseudonymizeLead,
-    coarseRegion,
-    distillChatSignals,
-    normalizeSeniority,
-} from '../ai/leadPseudonymizer';
+import { pseudonymizeLead, coarseRegion, distillChatSignals, normalizeSeniority } from '../ai/leadPseudonymizer';
 
 // F0.5 ai-stack: la garanzia meccanica della regola d'oro — l'output del
 // pseudonymizer non contiene MAI i valori PII di input (property test).
@@ -33,8 +28,8 @@ const PII_SENTINELS = [
     'C-Suite Executive Leadership',
 ];
 
-describe('pseudonymizeLead — property anti-PII (regola d\'oro)', () => {
-    it('l\'output serializzato non contiene alcun valore PII di input', () => {
+describe("pseudonymizeLead — property anti-PII (regola d'oro)", () => {
+    it("l'output serializzato non contiene alcun valore PII di input", () => {
         const features = pseudonymizeLead(PII_LEAD, {
             connectionDegree: '2nd',
             hasConnectButton: true,
@@ -85,7 +80,7 @@ describe('pseudonymizeLead — property anti-PII (regola d\'oro)', () => {
         expect(features.seniority).toBeUndefined();
     });
 
-    it('enrichment industry free-text alimenta l\'inferenza senza uscire raw', () => {
+    it("enrichment industry free-text alimenta l'inferenza senza uscire raw", () => {
         const features = pseudonymizeLead({
             title: 'Analyst',
             company: 'XYZ Holding',

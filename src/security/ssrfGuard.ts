@@ -27,12 +27,7 @@ export class SsrfBlockedError extends Error {
     }
 }
 
-const BLOCKED_HOSTNAMES = new Set([
-    'localhost',
-    'metadata',
-    'metadata.google.internal',
-    'metadata.goog',
-]);
+const BLOCKED_HOSTNAMES = new Set(['localhost', 'metadata', 'metadata.google.internal', 'metadata.goog']);
 
 /**
  * true se l'IP (v4 o v6) NON è instradabile pubblicamente: loopback, RFC1918 private,

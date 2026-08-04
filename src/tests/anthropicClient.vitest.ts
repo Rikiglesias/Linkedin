@@ -75,7 +75,7 @@ describe('anthropicClient — gating', () => {
         expect(isAnthropicConfigured()).toBe(false);
     });
 
-    it('senza ANTHROPIC_API_KEY lancia prima di toccare l\'SDK', async () => {
+    it("senza ANTHROPIC_API_KEY lancia prima di toccare l'SDK", async () => {
         config.anthropicApiKey = '';
         await expect(
             requestAnthropicText({ system: 's', user: 'u', maxOutputTokens: 100, temperature: 0.5 }),
@@ -117,7 +117,7 @@ describe('anthropicClient — request shape', () => {
         );
     });
 
-    it('responseFormat json_object aggiunge l\'istruzione JSON al system', async () => {
+    it("responseFormat json_object aggiunge l'istruzione JSON al system", async () => {
         mocks.create.mockResolvedValue(textResponse('{"a":1}'));
         await requestAnthropicText({
             system: 'sys',

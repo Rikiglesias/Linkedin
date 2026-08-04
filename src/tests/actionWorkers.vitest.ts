@@ -231,7 +231,12 @@ import { processAcceptanceJob } from '../workers/acceptanceWorker';
 import type { LeadRecord, InviteJobPayload, MessageJobPayload, AcceptanceJobPayload } from '../types/domain';
 import type { WorkerContext } from '../workers/context';
 import { transitionLead, transitionLeadAtomic } from '../core/leadStateService';
-import { checkAndIncrementDailyLimit, countWeeklyInvites, incrementDailyStat, getDailyStat } from '../core/repositories';
+import {
+    checkAndIncrementDailyLimit,
+    countWeeklyInvites,
+    incrementDailyStat,
+    getDailyStat,
+} from '../core/repositories';
 // leadsCore è usato da inviteWorker per getLeadById
 import { getLeadById as getLeadByIdCore } from '../core/repositories/leadsCore';
 // repositories ha anche getLeadById usato da messageWorker e acceptanceWorker
@@ -282,18 +287,15 @@ function makeLead(overrides: Partial<LeadRecord> = {}): LeadRecord {
  *   textboxValue   — contenuto restituito da innerText della textbox msg (default '')
  *   distanceBadge  — testo del badge distanza (default '' = non trovato)
  */
-function makePage(opts: {
-    connectCount?: number;
-    modalVisible?: boolean;
-    textboxValue?: string;
-    distanceBadge?: string;
-} = {}) {
-    const {
-        connectCount = 0,
-        modalVisible = false,
-        textboxValue = '',
-        distanceBadge = '',
-    } = opts;
+function makePage(
+    opts: {
+        connectCount?: number;
+        modalVisible?: boolean;
+        textboxValue?: string;
+        distanceBadge?: string;
+    } = {},
+) {
+    const { connectCount = 0, modalVisible = false, textboxValue = '', distanceBadge = '' } = opts;
 
     // NB: nessun `inputValue` nel mock, di proposito. La textbox dei messaggi LinkedIn e' un
     // div[contenteditable] e Playwright vi solleva "Node is not an <input>...": se il mock lo
@@ -389,7 +391,12 @@ describe('inviteWorker — processInviteJob', () => {
 
         // Non deve transitionare, non deve sprecare azioni
         expect(result.processedCount).toBe(0);
-        expect(vi.mocked(transitionLead)).not.toHaveBeenCalledWith(42, 'INVITED', expect.any(String), expect.anything());
+        expect(vi.mocked(transitionLead)).not.toHaveBeenCalledWith(
+            42,
+            'INVITED',
+            expect.any(String),
+            expect.anything(),
+        );
     });
 
     // (4) verify pre/post: lead non trovato → throw RetryableWorkerError con code LEAD_NOT_FOUND
@@ -409,7 +416,12 @@ describe('inviteWorker — processInviteJob', () => {
         const result = await processInviteJob(basePayload, ctx);
 
         expect(result.processedCount).toBe(0);
-        expect(vi.mocked(transitionLead)).not.toHaveBeenCalledWith(42, 'INVITED', expect.any(String), expect.anything());
+        expect(vi.mocked(transitionLead)).not.toHaveBeenCalledWith(
+            42,
+            'INVITED',
+            expect.any(String),
+            expect.anything(),
+        );
     });
 
     // (2) budget gate: checkAndIncrementDailyLimit false → si ferma (dryRun=false per attivare il gate reale)
@@ -421,7 +433,12 @@ describe('inviteWorker — processInviteJob', () => {
         const result = await processInviteJob(basePayload, ctx);
 
         expect(result.processedCount).toBe(0);
-        expect(vi.mocked(transitionLead)).not.toHaveBeenCalledWith(42, 'INVITED', expect.any(String), expect.anything());
+        expect(vi.mocked(transitionLead)).not.toHaveBeenCalledWith(
+            42,
+            'INVITED',
+            expect.any(String),
+            expect.anything(),
+        );
     });
 
     // (2b) A2 weekly cap: daily ok ma countWeeklyInvites > weeklyInviteLimit → stop + compensa
@@ -435,7 +452,12 @@ describe('inviteWorker — processInviteJob', () => {
         expect(result.processedCount).toBe(0);
         // compensazione: l'incremento daily appena fatto viene annullato (-1)
         expect(vi.mocked(incrementDailyStat)).toHaveBeenCalledWith(expect.any(String), 'invites_sent', -1);
-        expect(vi.mocked(transitionLead)).not.toHaveBeenCalledWith(42, 'INVITED', expect.any(String), expect.anything());
+        expect(vi.mocked(transitionLead)).not.toHaveBeenCalledWith(
+            42,
+            'INVITED',
+            expect.any(String),
+            expect.anything(),
+        );
     });
 
     // (3) state transition: dryRun=true → transitionLead chiamato con 'INVITED'
@@ -490,7 +512,12 @@ describe('messageWorker — processMessageJob', () => {
         const result = await processMessageJob(basePayload, makeContext());
 
         expect(result.processedCount).toBe(0);
-        expect(vi.mocked(transitionLead)).not.toHaveBeenCalledWith(42, 'MESSAGED', expect.any(String), expect.anything());
+        expect(vi.mocked(transitionLead)).not.toHaveBeenCalledWith(
+            42,
+            'MESSAGED',
+            expect.any(String),
+            expect.anything(),
+        );
     });
 
     it('status guard: lead con status INVITED (non READY_MESSAGE) → no-op', async () => {
@@ -508,7 +535,12 @@ describe('messageWorker — processMessageJob', () => {
         const result = await processMessageJob(basePayload, makeContext());
 
         expect(result.processedCount).toBe(0);
-        expect(vi.mocked(transitionLead)).not.toHaveBeenCalledWith(42, 'MESSAGED', expect.any(String), expect.anything());
+        expect(vi.mocked(transitionLead)).not.toHaveBeenCalledWith(
+            42,
+            'MESSAGED',
+            expect.any(String),
+            expect.anything(),
+        );
     });
 
     // (2) budget gate: getDailyStat >= hardMsgCap → stop (pre-flight read-only check)
@@ -519,7 +551,12 @@ describe('messageWorker — processMessageJob', () => {
         const result = await processMessageJob(basePayload, ctx);
 
         expect(result.processedCount).toBe(0);
-        expect(vi.mocked(transitionLead)).not.toHaveBeenCalledWith(42, 'MESSAGED', expect.any(String), expect.anything());
+        expect(vi.mocked(transitionLead)).not.toHaveBeenCalledWith(
+            42,
+            'MESSAGED',
+            expect.any(String),
+            expect.anything(),
+        );
     });
 
     // (2) budget gate: checkAndIncrementDailyLimit false → stop DOPO content verification
@@ -536,7 +573,12 @@ describe('messageWorker — processMessageJob', () => {
         const result = await processMessageJob(basePayload, ctx);
 
         expect(result.processedCount).toBe(0);
-        expect(vi.mocked(transitionLead)).not.toHaveBeenCalledWith(42, 'MESSAGED', expect.any(String), expect.anything());
+        expect(vi.mocked(transitionLead)).not.toHaveBeenCalledWith(
+            42,
+            'MESSAGED',
+            expect.any(String),
+            expect.anything(),
+        );
     });
 
     // (3) state transition: successo dry-run → transitionLead con MESSAGED
@@ -552,12 +594,7 @@ describe('messageWorker — processMessageJob', () => {
         const result = await processMessageJob(basePayload, ctx);
 
         expect(result.processedCount).toBe(1);
-        expect(vi.mocked(transitionLead)).toHaveBeenCalledWith(
-            42,
-            'MESSAGED',
-            expect.any(String),
-            expect.anything(),
-        );
+        expect(vi.mocked(transitionLead)).toHaveBeenCalledWith(42, 'MESSAGED', expect.any(String), expect.anything());
     });
 
     // (4) linkedin_url mancante → REVIEW_REQUIRED

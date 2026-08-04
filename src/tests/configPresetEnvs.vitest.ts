@@ -33,7 +33,7 @@ describe('config preset envs (T4 preset-profili)', () => {
         expect(cfg.gdprDeleteAfterDays).toBe(365);
     });
 
-    it('CHALLENGE_AUTO_RESOLVE_ENABLED=false disattiva l\'auto-solve (preset max-stealth)', () => {
+    it("CHALLENGE_AUTO_RESOLVE_ENABLED=false disattiva l'auto-solve (preset max-stealth)", () => {
         process.env.CHALLENGE_AUTO_RESOLVE_ENABLED = 'false';
         const cfg = buildRuntimeDomainConfig([]);
         expect(cfg.challengeAutoResolveEnabled).toBe(false);
