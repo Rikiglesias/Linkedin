@@ -4,6 +4,59 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-08-04 — remediation audit-codebase, blocco 5: comandi rotti fuori da Windows, processi che morivano in silenzio, e un piano di ripristino che non reggeva (`179b492`, `9eb508a`, `63a6ec6`)
+
+Sei item di Fase 0, tutti verificati alla fonte prima di toccarli — e due premesse dell'audit sono state
+corrette dai numeri.
+
+**`npm run docs` avrebbe cancellato la cartella dei canonici.** L'output era `--out docs`, cioè la cartella
+dei documenti scritti a mano, e typedoc pulisce la cartella di output prima di scrivere: `cleanOutputDir` ha
+`defaultValue: true`, letto nel pacchetto installato. Un solo comando avrebbe portato via i 106 file tracciati
+sotto `docs/`, 90 dei quali `.md` citati come fonte in AGENTS. Ora scrive in `docs/api`, gitignorata perché
+rigenerabile. Di rimbalzo: gli argomenti erano tra apici singoli, che cmd non interpreta, quindi `--exclude` e
+`--name` arrivavano a typedoc con le virgolette dentro. Eseguito dal vivo dopo il fix: 0 errori, html in
+`docs/api`, i 106 file intatti.
+
+**Il lint copriva tutto solo su Windows, per caso.** Il pattern `src/**/*.ts` non era quotato, quindi lo
+espandeva la shell. Su Windows cmd non espande nulla e il pattern arriva intero a eslint, che lo risolve
+ricorsivamente; su una shell POSIX come quella della CI, senza globstar, `**` vale `*` e si ferma a un livello.
+Misurato: `sh` vede 425 file, bash con globstar 509, il totale reale è 509. In CI **84 file non venivano
+lintati affatto**, in silenzio. La premessa dell'audit («81 file mai lintati») era giusta nella sostanza e
+sbagliata nella causa: non è la sintassi del comando, è chi espande il glob.
+
+**n8n non è mai partito, e il motivo era in chiaro nei log.** La voce PM2 puntava a `npx`, che su Windows è
+`npx.cmd`, un file batch; PM2 passa ogni app a node, node prova a interpretarlo come JavaScript e muore sulla
+prima riga di commento — `SyntaxError: Unexpected token ':'` su `NPX.CMD:1`, ripetuto fino a far crescere
+`logs/n8n-error.log` a 1,8 MB. `interpreter: 'none'` non risolve (fa fallire lo spawn con EFTYPE): la via
+documentata è puntare al CLI JavaScript. Ora il percorso di `npx-cli.js` viene risolto per layout di sistema
+operativo e, se non lo si trova, la app **non viene registrata affatto** — meglio nessun processo che uno che
+riparte all'infinito. Nota emersa strada facendo: n8n è definito **anche** in `docker-compose.yml` sulla stessa
+porta 5678, quindi sono due modi di avviare lo stesso servizio; annotato nel file, perché quale tenere è una
+scelta di come far girare lo stack, non un bug.
+
+**La dashboard riavviata a vuoto 3084 volte.** `startServer` chiamava `app.listen` senza handler sull'evento
+`error`: un EADDRINUSE è quindi un evento non gestito, il processo muore con lo stack, PM2 riavvia, la porta è
+ancora occupata, si ripete. Ora c'è un messaggio che dice cosa è successo, perché, e il comando per trovare chi
+occupa la porta; un errore di altra natura viene rilanciato invece di essere mascherato. La logica sta in un
+file suo (`api/serverListenError.ts`) perché importare `server.ts` costruisce l'intera app Express, e così si
+prova da sola: rimettendo il comportamento precedente il test fallisce, come deve.
+
+**Il piano di ripristino: tre difetti in fila.** Il backup automatico usava `copyFileSync` sul solo `.sqlite`
+mentre il database gira in WAL, quindi poteva nascere già indietro rispetto al vivo — ora lo scrive SQLite con
+`VACUUM INTO`, e il percorso passa come parametro legato invece che incollato nella stringa SQL (SQLite accetta
+il segnaposto: verificato dal vivo). La prova di ripristino accettava solo `.sqlite` mentre il backup
+automatico scrive `.db`: i cinque backup presenti erano **invisibili** al comando che avrebbe dovuto provarli.
+E la prova stessa crashava con EPERM, perché `data/restore-drill` era rimasta con una **ACL vuota** — zero
+permessi per chiunque, nemmeno per il proprietario — lasciata da un vecchio hardening su Windows: esattamente
+l'incidente descritto nel commento di `security/filesystem.ts:9`, dove il codice era già stato corretto ma la
+cartella no. Permessi ripristinati; e ora un report non scrivibile non butta via la prova, ma registra l'esito
+e dice il comando per rimediare. Dopo: drill `SUCCEEDED`, integrità ok, 348 lead nella copia.
+
+**Una mia affermazione intermedia, corretta.** Avevo detto che nel database non esisteva nessun flag
+`dr_restore`, basandomi su una query alla tabella `runtime_flags`, che **non esiste** — i flag stanno in
+`sync_state`. Da lì non si può dedurre se la prova avesse mai girato prima, perché i valori si sovrascrivono
+per chiave. Resta provato solo ciò che ho osservato: prima crashava, ora registra SUCCEEDED.
+
 ## 2026-08-04 — remediation audit-codebase, blocco 4: il canary controllava la pagina sbagliata, e non sapeva cosa stava guardando (`1166a2e`, `a81f0e5`)
 
 Due difetti dello stesso controllo, chiusi in fila. Il canary è la verifica che gira prima di ogni sessione
