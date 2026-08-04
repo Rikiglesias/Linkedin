@@ -570,9 +570,19 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                                 // Regioni diverse producono noise diverso, impedendo ai servizi
                                 // di fingerprinting di correlare il pattern tra crop diversi.
                                 // Alpha (i+3) intatto — alterarlo è un marker di bot.
-                                const noiseR = Math.floor(canvasNoise * 255);
-                                const noiseG = Math.floor(canvasNoise * 230);
-                                const noiseB = Math.floor(canvasNoise * 245);
+                                // Ampiezza SEMPRE >= 1: col solo Math.floor un canvasNoise sotto 1/255
+                                // dava 0, e ampiezza 0 significa canvas NON perturbato, cioe' l'hash
+                                // nudo della macchina — che di per se' non e' sospetto (ce l'hanno tutti
+                                // gli utenti veri), ma e' IDENTICO fra tutti gli account che girano di
+                                // qui, quindi li rende correlabili fra loro. Capitava al 39% dei
+                                // fingerprint (canvasNoise < 0.00392 su un dominio uniforme
+                                // [0.000001, 0.009999]): coda no, un terzo abbondante dei casi.
+                                // Si alza solo il pavimento: il tetto resta 2 e il PATTERN dei segni
+                                // non cambia, perche' dipende da prngState (sotto), che resta distinto
+                                // per ogni seed — quindi gli hash restano diversi profilo per profilo.
+                                const noiseR = Math.max(1, Math.floor(canvasNoise * 255));
+                                const noiseG = Math.max(1, Math.floor(canvasNoise * 230));
+                                const noiseB = Math.max(1, Math.floor(canvasNoise * 245));
                                 // Mulberry32 PRNG con seed che incorpora coordinate del crop
                                 let prngState = Math.abs(canvasNoise * 1e9 | 0) || 1;
                                 prngState = (prngState + (x * 7919 + y * 104729 + w * 31337 + h * 65537)) | 0;
