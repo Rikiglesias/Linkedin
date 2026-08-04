@@ -1,3 +1,32 @@
+const path = require('node:path');
+const fs = require('node:fs');
+
+/**
+ * Percorso di `npx-cli.js`, cioè npx come FILE JAVASCRIPT.
+ *
+ * PM2 avvia ogni app passandola a node. Su Windows `npx` è `npx.cmd`, un file batch: node
+ * prova a interpretarlo come JavaScript e muore sulla prima riga di commento
+ * (`SyntaxError: Unexpected token ':'`). È quello che è successo qui dal 2026-03-29 in poi —
+ * `logs/n8n-error.log` è cresciuto fino a 1,8 MB con sempre lo stesso errore, e n8n non è mai
+ * partito. `interpreter: 'none'` non risolve: fa fallire lo spawn con EFTYPE.
+ * La via che funziona, documentata sugli issue PM2, è puntare al CLI JavaScript.
+ *
+ * Ritorna null se non lo trova: in quel caso la app n8n NON viene registrata affatto, invece
+ * di registrarne una che andrebbe solo in crash-loop.
+ */
+function resolveNpxCli() {
+    const nodeDir = path.dirname(process.execPath);
+    const candidates = [
+        // Windows: node.exe e node_modules/npm stanno nella stessa cartella.
+        path.join(nodeDir, 'node_modules', 'npm', 'bin', 'npx-cli.js'),
+        // Linux/macOS: /usr/bin/node -> /usr/lib/node_modules/npm/...
+        path.join(nodeDir, '..', 'lib', 'node_modules', 'npm', 'bin', 'npx-cli.js'),
+    ];
+    return candidates.find((candidate) => fs.existsSync(candidate)) ?? null;
+}
+
+const npxCli = resolveNpxCli();
+
 const cleanInheritedProxyEnv = {
     HTTP_PROXY: "",
     HTTPS_PROXY: "",
@@ -76,9 +105,17 @@ module.exports = {
         // ── n8n — workflow automation ─────────────────────────────────────
         // Avvia n8n sulla porta 5678. Eseguire "pm2 save" dopo il primo start
         // e poi "pm2 startup" per avviarlo automaticamente al boot di Windows.
-        {
+        //
+        // Alternativa già pronta: il servizio `n8n` di docker-compose.yml (immagine
+        // n8nio/n8n:latest, stessa porta 5678, volume n8n_data). Sono due modi di avviare
+        // LO STESSO servizio: usarne uno solo per volta, o litigano sulla porta.
+        //
+        // Se npx-cli.js non si trova, questa voce sparisce dalla lista invece di finire in
+        // crash-loop (vedi resolveNpxCli sopra): meglio nessun processo che un processo che
+        // riparte all'infinito riempiendo i log.
+        ...(npxCli ? [{
             name: "n8n",
-            script: "npx",
+            script: npxCli,
             args: "-y n8n start",
             instances: 1,
             exec_mode: "fork",
@@ -99,6 +136,6 @@ module.exports = {
                 N8N_LOG_LEVEL: "warn",
                 ...cleanInheritedProxyEnv,
             }
-        }
+        }] : [])
     ]
 };

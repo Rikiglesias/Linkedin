@@ -40,6 +40,7 @@ import { resolveCorrelationId, runWithCorrelationId } from '../telemetry/correla
 import { WebSocketServer, WebSocket } from 'ws';
 import { isWebSocketAuthorizedAsync } from './wsAuth';
 import { validateDashboardSessionToken } from './dashboardSession';
+import { handleServerListenError } from './serverListenError';
 
 export const app = express();
 app.set('trust proxy', false);
@@ -876,6 +877,8 @@ export function startServer(port: number = 3000) {
         const effectivePort = typeof address === 'object' && address ? address.port : port;
         console.log(`\n🚀 Dashboard & Web API is running on http://localhost:${effectivePort}\n`);
     });
+
+    server.on('error', (error: NodeJS.ErrnoException) => handleServerListenError(error, port));
 
     // ── WebSocket server (real-time push, same port) ─────────────────────────
     const wss = new WebSocketServer({ server, path: '/ws' });
