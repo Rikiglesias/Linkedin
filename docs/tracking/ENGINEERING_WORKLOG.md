@@ -4,6 +4,36 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-08-04 — remediation audit-codebase, blocco 6: la transazione chiedeva il lock quando SQLite non aspetta più (`08eb8cc`)
+
+Le transazioni si aprivano con `BEGIN`, che SQLite tratta come di sola lettura finché non arriva una scrittura.
+Quando poi la transazione prova a passare in scrittura e trova il database occupato, SQLite risponde
+`SQLITE_BUSY` **immediatamente, senza rispettare il `busy_timeout`**: attendere a metà transazione
+rischierebbe un blocco incrociato, quindi il gestore di attesa non viene nemmeno invocato. Il
+`PRAGMA busy_timeout = 5000` che il progetto imposta all'avvio non copriva perciò proprio il caso per cui
+esiste. Verificato su quattro fonti indipendenti e convergenti (documentazione SQLite su `lang_transaction`,
+forum ufficiale, e due analisi indipendenti del problema).
+
+Non è un caso teorico qui: bot, server della dashboard e worker aprono ognuno la propria connessione allo
+stesso file, e il mutex interno serializza solo dentro un processo. I punti più esposti sono proprio quelli che
+*sembrano* letture — `repositories/jobs.ts:70` e `outboxDeliveries.ts:132` leggono i candidati e poi li
+prendono: «leggi-poi-scrivi» è esattamente la forma che con `BEGIN` fallisce di netto.
+
+Ora l'apertura è `BEGIN IMMEDIATE`, con un solo ritentativo e **solo** sull'errore «occupato»: ripetere un
+errore di sintassi o di vincolo vorrebbe dire rifare lo stesso sbaglio nascondendo la causa dietro un ritardo.
+
+**Seconda passata cross-model, e cosa ne è uscito.** Trattandosi di concorrenza, il diff è passato da una
+review indipendente (Codex, sandbox in sola lettura) prima del commit. Verdetto: *da correggere*, con un
+rilievo di gravità media — prendendo il lock all'inizio, anche una transazione che poi si limita a leggere
+occupa l'unico posto da scrittore, e con tre tentativi l'attesa massima arrivava a circa 15 secondi. La parte
+vera è stata accolta: i tentativi scendono a due, quindi il tetto è circa 10 secondi. Il ritorno al
+comportamento precedente no, e con una misura a supporto: i punti che usano `withTransaction` sono quasi tutti
+mutazioni. Il compromesso è scritto nel codice, insieme alla mossa giusta se un giorno la contesa diventasse
+misurabile: un'opzione esplicita per le transazioni di sola lettura.
+
+Rosso di controllo provato sui tre test nuovi, e coperto anche il caso che mancava: se il database resta
+occupato, la transazione si arrende restituendo l'errore e non lascia niente di aperto.
+
 ## 2026-08-04 — remediation audit-codebase, blocco 5: comandi rotti fuori da Windows, processi che morivano in silenzio, e un piano di ripristino che non reggeva (`179b492`, `9eb508a`, `63a6ec6`)
 
 Sei item di Fase 0, tutti verificati alla fonte prima di toccarli — e due premesse dell'audit sono state
