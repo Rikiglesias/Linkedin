@@ -2,8 +2,16 @@
  * Suite H20 — Unit test per i 3 worker d'azione.
  * Tutti i moduli con I/O reale (DB, browser, AI, network) sono mockati.
  * Si testa solo la logica di controllo: status guard, budget gate, state transition.
+ *
+ * LIMITE NOTO di questa suite (2026-08-04): con i mock NON si vede la classe di bug in cui il
+ * codice usa un metodo Playwright che il nodo reale rifiuta — un mock risponde comunque.
+ * È così che il bug dei messaggi mai inviati è passato: `.inputValue()` su un div contenteditable
+ * viene rifiutato dal browser, ma il mock lo serviva. Il presidio dinamico è
+ * `src/tests/harnessDomContracts.ts` (browser vero); qui sotto c'è quello statico.
  */
 
+import fs from 'fs';
+import path from 'path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ─── Mock globali PRIMA degli import dei moduli sotto test ───────────────────
@@ -271,7 +279,7 @@ function makeLead(overrides: Partial<LeadRecord> = {}): LeadRecord {
  * Params:
  *   connectCount   — quante volte il bottone Connect è trovato (default 0)
  *   modalVisible   — se il modale di invito è visibile dopo click (default false)
- *   textboxValue   — contenuto restituito da inputValue della textbox msg (default '')
+ *   textboxValue   — contenuto restituito da innerText della textbox msg (default '')
  *   distanceBadge  — testo del badge distanza (default '' = non trovato)
  */
 function makePage(opts: {
@@ -287,7 +295,11 @@ function makePage(opts: {
         distanceBadge = '',
     } = opts;
 
-    const makeLocatorResult = (cnt: number, txt: string, visible: boolean, inputVal: string) => ({
+    // NB: nessun `inputValue` nel mock, di proposito. La textbox dei messaggi LinkedIn e' un
+    // div[contenteditable] e Playwright vi solleva "Node is not an <input>...": se il mock lo
+    // offrisse, un ritorno a inputValue nel codice di produzione passerebbe i test in silenzio —
+    // che e' esattamente come il bug e' sopravvissuto finora (messaggi mai inviati, zero errori).
+    const makeLocatorResult = (cnt: number, txt: string, visible: boolean) => ({
         count: vi.fn().mockResolvedValue(cnt),
         first: () => ({
             count: vi.fn().mockResolvedValue(cnt),
@@ -295,7 +307,6 @@ function makePage(opts: {
             isDisabled: vi.fn().mockResolvedValue(false),
             textContent: vi.fn().mockResolvedValue(txt),
             innerText: vi.fn().mockResolvedValue(txt),
-            inputValue: vi.fn().mockResolvedValue(inputVal),
         }),
         last: () => ({
             isVisible: vi.fn().mockResolvedValue(false),
@@ -307,34 +318,35 @@ function makePage(opts: {
     return {
         locator: vi.fn().mockImplementation((selector: string) => {
             if (selector === '.sel-connectButtonPrimary') {
-                return makeLocatorResult(connectCount, 'Connect', connectCount > 0, '');
+                return makeLocatorResult(connectCount, 'Connect', connectCount > 0);
             }
             if (
                 selector.includes('sel-addNoteButton') ||
                 selector.includes('sel-sendWithoutNote') ||
                 selector.includes('sel-sendFallback')
             ) {
-                return makeLocatorResult(modalVisible ? 1 : 0, '', modalVisible, '');
+                return makeLocatorResult(modalVisible ? 1 : 0, '', modalVisible);
             }
             if (selector === '.sel-messageTextbox') {
-                return makeLocatorResult(1, '', true, textboxValue);
+                // il contenuto della textbox si legge con innerText (div contenteditable)
+                return makeLocatorResult(1, textboxValue, true);
             }
             if (selector === '.sel-messageSendButton') {
-                return makeLocatorResult(1, 'Message', true, '');
+                return makeLocatorResult(1, 'Message', true);
             }
             if (selector === '.sel-messageButton') {
-                return makeLocatorResult(1, 'Message', true, '');
+                return makeLocatorResult(1, 'Message', true);
             }
             if (selector === '.sel-distanceBadge') {
                 const hasBadge = distanceBadge.length > 0;
-                return makeLocatorResult(hasBadge ? 1 : 0, distanceBadge, hasBadge, '');
+                return makeLocatorResult(hasBadge ? 1 : 0, distanceBadge, hasBadge);
             }
             // h1 per identity check
             if (selector === 'h1') {
-                return makeLocatorResult(1, 'Mario Rossi', true, '');
+                return makeLocatorResult(1, 'Mario Rossi', true);
             }
             // default — non trovato
-            return makeLocatorResult(0, '', false, '');
+            return makeLocatorResult(0, '', false);
         }),
         waitForSelector: vi.fn().mockResolvedValue(undefined),
         textContent: vi.fn().mockResolvedValue(''),
@@ -630,5 +642,35 @@ describe('acceptanceWorker — processAcceptanceJob', () => {
 
         // Ripristina il mock
         vi.mocked(isSalesNavigatorUrl).mockReturnValue(false);
+    });
+});
+
+describe('contratto DOM: la casella messaggi non e un input', () => {
+    // Presidio STATICO contro il ritorno del bug dei messaggi mai inviati.
+    // Serve perche' i mock di questa suite non possono catturarlo: nel browser reale
+    // `.inputValue()` su un div[contenteditable] viene rifiutato, nel mock no.
+    it('messageWorker non usa inputValue (la textbox e un div[contenteditable])', () => {
+        const src = fs.readFileSync(path.join(__dirname, '..', 'workers', 'messageWorker.ts'), 'utf8');
+        const offending = src
+            .split('\n')
+            .map((line, i) => ({ line: line.trim(), n: i + 1 }))
+            .filter((l) => l.line.includes('.inputValue(') && !l.line.startsWith('//') && !l.line.startsWith('*'));
+        expect(
+            offending,
+            `usare .inputValue() sulla textbox messaggi la fa sempre risultare vuota → il messaggio non parte mai. Leggere con .innerText(). Righe: ${offending
+                .map((o) => o.n)
+                .join(', ')}`,
+        ).toEqual([]);
+    });
+
+    it('i selettori della textbox messaggi restano contenteditable, non input/textarea', async () => {
+        // importActual e non import: in questa suite `../selectors` e' mockato con '.sel-*',
+        // e leggere il mock qui verificherebbe il finto invece del vero.
+        const { SELECTORS } = await vi.importActual<typeof import('../selectors')>('../selectors');
+        expect(Array.isArray(SELECTORS.messageTextbox)).toBe(true);
+        for (const sel of SELECTORS.messageTextbox) {
+            expect(sel).toMatch(/contenteditable|role="textbox"/);
+            expect(sel).not.toMatch(/^(input|textarea)\b/);
+        }
     });
 });

@@ -380,7 +380,11 @@ export async function processMessageJob(
     // il nuovo messaggio verrebbe CONCATENATO al draft → messaggio corrotto.
     try {
         const textbox = context.session.page.locator(joinSelectors('messageTextbox')).first();
-        const existingContent = await textbox.inputValue({ timeout: 1000 }).catch(() => '');
+        // Stesso motivo di sotto: la textbox e' un div[contenteditable], inputValue solleva sempre.
+        // Effetto finora: existingContent era SEMPRE '', quindi la bonifica della bozza residua
+        // non e' mai stata eseguita — un messaggio lasciato a meta' restava nella casella e il
+        // testo nuovo ci si accodava.
+        const existingContent = await textbox.innerText({ timeout: 1000 }).catch(() => '');
         if (existingContent.trim().length > 0) {
             await clickLocatorHumanLike(context.session.page, textbox, {
                 selectorForDwell: joinSelectors('messageTextbox'),
@@ -479,10 +483,16 @@ export async function processMessageJob(
     // H11: Verifica che il contenuto digitato nel textbox corrisponda al messaggio atteso.
     // Se typing in campo sbagliato o il testo è stato troncato, il contenuto è diverso o vuoto.
     try {
+        // innerText e NON inputValue: la textbox dei messaggi LinkedIn e' un div[contenteditable]
+        // (vedi SELECTORS.messageTextbox), e Playwright su un nodo non-input solleva
+        // "Node is not an <input>, <textarea> or <select> element" — provato dal vivo.
+        // Col .catch(() => '') il contenuto risultava SEMPRE vuoto, quindi la verifica sotto
+        // era sempre vera e il throw scattava PRIMA del blocco di invio: nessun messaggio
+        // e' mai partito (message_history = 0), senza errori visibili.
         const textboxContent = await context.session.page
             .locator(joinSelectors('messageTextbox'))
             .first()
-            .inputValue({ timeout: 2000 })
+            .innerText({ timeout: 2000 })
             .catch(() => '');
         const typed = textboxContent.trim();
         const expected = message.trim();
