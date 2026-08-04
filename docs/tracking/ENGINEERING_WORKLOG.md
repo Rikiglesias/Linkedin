@@ -4,6 +4,38 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-08-04 — remediation audit-codebase, blocco 7: due difetti trovati dalla passata finale, non da un test rosso (`b7e70dd`, `1c3398a`)
+
+Entrambi sono usciti cercando attivamente il meglio prima di chiudere, non da un fallimento che si era
+manifestato: è il motivo per cui quella passata esiste.
+
+**Il canary aspettava selettori su pagine dove non era nemmeno arrivato.** Con tre superfici obbligatorie, un
+redirect all'authwall faceva comunque consumare tutti i timeout dei selettori prima del verdetto — fino a tre
+selettori per dieci secondi su ogni superficie, e il guard ritenta l'intero canary. Sono minuti di browser
+fermo su LinkedIn a fare nulla, cioè esattamente il genere di presenza che non conviene mostrare. L'URL finale
+però non dipende dal rendering, quindi si può guardare subito dopo la navigazione senza rischiare falsi «non
+so» sulle pagine React lente: quello è il motivo per cui il controllo del DOM renderizzato resta invece dopo i
+selettori. Misurato disattivando il controllo: tre ricerche di selettori sull'authwall; con il controllo, zero.
+
+**Una consegna abbandonata restava in coda per sempre.** Quando un worker prende in carico una consegna la
+riga passa a `RUNNING` con una scadenza; se quel processo muore, nessuno rimette lo stato indietro, e il claim
+guardava solo `status = 'PENDING'`. La scadenza del lease esisteva quindi senza servire a niente: quella riga
+non veniva mai più selezionata, pur restando contata come «da fare» da `countPendingOutboxDeliveries` — una
+coda che cresce e non avanza, senza nessun errore da nessuna parte. È un gemello divergente: la stessa idea
+sugli eventi (`repositories/system.ts:174`) è scritta giusta, perché non usa affatto uno stato e filtra su
+`delivered_at IS NULL` più la scadenza. Il claim delle consegne ora si allinea, con la stessa condizione
+ripetuta nella `UPDATE`, che resta la guardia atomica: due worker non possono prendersi la stessa riga.
+Coperto anche il rischio opposto, che sarebbe peggio del problema: una consegna con lease ancora valido non
+deve essere rubata, altrimenti si consegnerebbe due volte. Portata onesta: nel database di oggi ci sono
+tredici consegne, tutte `PENDING` e nessuna `RUNNING`, quindi il difetto non ha ancora morso — è un fix
+preventivo, non un ripristino.
+
+**Due errori miei, corretti mentre scrivevo il test**, annotati perché sono istruttivi: l'id della consegna
+letto da `lastID` non è affidabile con una connessione condivisa (ora si rilegge dal database), e avevo
+guardato il campo `id` del record restituito, che è l'id dell'**evento** per costruzione — quello della
+consegna è `delivery_id`, ed è così che lo usano i worker reali. Per un momento l'avevo scambiato per un
+difetto del prodotto: non lo era.
+
 ## 2026-08-04 — remediation audit-codebase, blocco 6: la transazione chiedeva il lock quando SQLite non aspetta più (`08eb8cc`)
 
 Le transazioni si aprivano con `BEGIN`, che SQLite tratta come di sola lettura finché non arriva una scrittura.
