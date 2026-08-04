@@ -11,6 +11,12 @@ export default defineConfig({
         include: ['src/tests/**/*.vitest.ts'],
         exclude: [],
         testTimeout: 30_000,
+        // I test lavorano su una COPIA del database, mai su quello di produzione:
+        // globalSetup la crea una volta sola, setupFiles la espone a ogni worker
+        // tramite DB_PATH (le due fasi girano in processi diversi e non possono
+        // scambiarsi valori: il percorso è calcolato da entrambe).
+        globalSetup: ['src/tests/setup/globalSetup.ts'],
+        setupFiles: ['src/tests/setup/vitestSetup.ts'],
         coverage: {
             provider: 'v8',
             include: ['src/**/*.ts'],
