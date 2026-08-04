@@ -4,6 +4,59 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-08-04 — remediation audit-codebase, blocco 10: cosa serve davvero, e un'ora di scarto su mezzo mondo (`82c69d0`)
+
+**Tre capability passate al setaccio del criterio «serve davvero?».** Le domande sono sempre le stesse: chi
+la consuma, cosa cambia se la tolgo, gli input sono reali. Gli **alert predittivi** sul rischio falliscono la
+prima: producono un log, un evento in outbox e un messaggio Telegram, e nessuna riga tocca budget, pause o
+volumi — sono un osservatore. Falliscono anche la terza, ma per una causa che sta a monte: la funzione esce
+subito se ha meno di tre giorni di storia, e la tabella da cui la legge ha zero righe, quindi restituisce
+sempre una lista vuota; nei log non c'è un solo evento predittivo su oltre trentunmila righe. Va detto con
+onestà che se il bot girasse quella tabella si popolerebbe da sola: il difetto da correggere è il primo, non
+il terzo.
+
+**JA3 e CycleTLS: qui il verdetto è più severo, perché l'interruttore non è neutro.** Con l'impostazione
+predefinita, che è spenta, i valori JA3 nel pool dei fingerprint non raggiungono mai una connessione — lo
+dice il codice stesso, che annota come lo spoofing vero richieda un proxy CycleTLS o un binario con TLS
+modificato — e i tre consumatori sono un messaggio Telegram, un pannello della dashboard e una metrica
+Prometheus: nessuno agisce. Il punto è cosa succede accendendolo. Il flag fa due cose insieme: disattiva il
+filtro che tiene coerente lo user agent col motore del browser, quindi il bot può presentarsi come Chrome
+mentre gira su Firefox — esattamente l'incoerenza che quel filtro esiste per prevenire — e punta il browser a
+un proxy locale sulla porta 8080, dove non c'è nessuno: lo script che avvierebbe CycleTLS non è agganciato a
+npm, a PM2, a Docker o alla CI. Promette una protezione che non avviene e in cambio ne toglie una che
+funziona. Se invece di rimuoverlo lo si vuole tenere, la forma minima è che il bot non parta quando il flag è
+acceso e la porta non risponde.
+
+**Una capability è invece stata promossa, e la voce dell'audit era vecchia.** `callInteractWithFeed`
+risultava «registrata ma senza chiamanti»: oggi la catena è intera e percorsa a mano, dal ciclo dei job alla
+pausa fra un job e l'altro, fino all'azione civetta che interagisce col feed, e la registrazione avviene nel
+punto di ingresso reale. Di conseguenza anche l'item «registrare il bridge» era rimasto aperto nel tracker
+per pura inerzia: il lavoro c'era, la casella no. Chiudendolo è però emerso che il pezzo «renderlo rumoroso»
+non era mai stato fatto — le tre funzioni del bridge ritornano in silenzio se manca la registrazione, e un
+ritorno silenzioso è indistinguibile dal successo: è la forma che ha tenuto il bridge morto per mesi senza
+che nulla lo dicesse. Scorporato in un item suo, così smette di stare nascosto dentro una casella che parla
+d'altro.
+
+**L'ora legale mancava nel calcolo del fuso del lead, e sbagliava per metà anno su mezzo mondo.** La tabella
+mappava le location su offset costanti, cioè sull'ora standard: da fine marzo a fine ottobre Europa, Regno
+Unito e Nord America sono avanti di un'ora rispetto a quel valore. Non è un dettaglio da poco, perché quel
+numero decide il rinvio dell'invito dentro la finestra lavorativa del lead, e l'errore era nella stessa
+direzione per tutti i lead di quelle zone: un bias condiviso da un'intera popolazione si nota più di uno
+corretto. Ora la tabella porta identificatori IANA e l'offset viene risolto alla data richiesta, così l'ora
+legale la governa il database dei fusi del runtime invece di una costante che invecchia. Sono usciti di
+rimbalzo tre accorpamenti che l'offset unico rendeva invisibili: Phoenix non osserva l'ora legale mentre il
+resto del suo fuso sì, Vancouver stava insieme a Calgary pur essendo un'ora più indietro tutto l'anno, e
+Perth, Brisbane, Adelaide e Sydney erano schiacciate su un unico valore da cui Perth dista due ore e Adelaide
+mezz'ora. Il file di test nuovo fallisce dodici volte sul codice precedente, con l'errore che misura il
+difetto — atteso 2, ottenuto 1 su Milano e Berlino; atteso −4, ottenuto −5 su New York — ed è verde dopo. I
+quattro file di test già esistenti passano invariati, ma vanno guardati con sospetto: asserivano intervalli
+(«Germania più uno oppure più due») e avevano ogni caso dentro una guardia sul valore non nullo, quindi
+sarebbero rimasti verdi anche se la funzione avesse sempre restituito nulla. Un test che non può fallire non
+è una rete. Gli offset sono stati confrontati col database dei fusi su diciotto zone, inverno contro estate,
+incluse le inversioni dell'emisfero sud. La review anti-ban è sicura: il jitter di mezz'ora resta l'unica
+fonte di varianza ed è intatto, non cambiano volumi né sessione, e non esiste storico di invii con cui creare
+una discontinuità, visto che i 348 lead sono ancora tutti nuovi.
+
 ## 2026-08-04 — remediation audit-codebase, blocco 9: due gate che non guardavano, e la CI ferma per metà (`4a4c86b`, `aba22df`, `0b786c8`..`cb75a0e`)
 
 **Chi si era opposto non veniva arricchito, ma veniva contattato.** Il gate dell'Art.21 esisteva già in tre
