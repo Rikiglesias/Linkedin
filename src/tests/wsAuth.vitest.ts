@@ -13,7 +13,10 @@ vi.mock('../config', () => ({ config: h.config }));
 import { isWebSocketAuthorized } from '../api/wsAuth';
 
 function req(opts: { url?: string; headers?: Record<string, string> }): IncomingMessage {
-    return { url: opts.url ?? '/ws', headers: { host: 'localhost', ...(opts.headers ?? {}) } } as unknown as IncomingMessage;
+    return {
+        url: opts.url ?? '/ws',
+        headers: { host: 'localhost', ...(opts.headers ?? {}) },
+    } as unknown as IncomingMessage;
 }
 
 function basic(user: string, pass: string): string {

@@ -58,10 +58,18 @@ async function getLeadNavContext(leadId: number): Promise<{ url: string; lead: L
 
 // ─── VIEW PROFILE ───────────────────────────────────────────────────────────────
 
-async function performViewProfile(page: Page, linkedinUrl: string, accountId: string, lead: LeadNavContext): Promise<void> {
+async function performViewProfile(
+    page: Page,
+    linkedinUrl: string,
+    accountId: string,
+    lead: LeadNavContext,
+): Promise<void> {
     const navigationResult = await navigateToProfileForCheck(page, linkedinUrl, accountId, lead);
     if (!navigationResult.success) {
-        throw new RetryableWorkerError('Navigazione organica al profilo interazione fallita', 'PROFILE_NAVIGATION_FAILED');
+        throw new RetryableWorkerError(
+            'Navigazione organica al profilo interazione fallita',
+            'PROFILE_NAVIGATION_FAILED',
+        );
     }
     await humanDelay(page, 2000, 4000);
     await simulateHumanReading(page);
@@ -75,12 +83,20 @@ async function performViewProfile(page: Page, linkedinUrl: string, accountId: st
 
 // ─── LIKE POST ──────────────────────────────────────────────────────────────────
 
-async function performLikePost(page: Page, linkedinUrl: string, accountId: string, lead: LeadNavContext): Promise<void> {
+async function performLikePost(
+    page: Page,
+    linkedinUrl: string,
+    accountId: string,
+    lead: LeadNavContext,
+): Promise<void> {
     // Naviga al profilo con context chain e resta sul profilo.
     // Evita teletrasporti su /recent-activity/all/ che rompono la narrativa umana della sessione.
     const navigationResult = await navigateToProfileForCheck(page, linkedinUrl, accountId, lead);
     if (!navigationResult.success) {
-        throw new RetryableWorkerError('Navigazione organica al profilo interazione fallita', 'PROFILE_NAVIGATION_FAILED');
+        throw new RetryableWorkerError(
+            'Navigazione organica al profilo interazione fallita',
+            'PROFILE_NAVIGATION_FAILED',
+        );
     }
     await humanDelay(page, 1800, 3200);
     await simulateHumanReading(page);
@@ -117,7 +133,10 @@ async function performLikePost(page: Page, linkedinUrl: string, accountId: strin
 async function performFollow(page: Page, linkedinUrl: string, accountId: string, lead: LeadNavContext): Promise<void> {
     const navigationResult = await navigateToProfileForCheck(page, linkedinUrl, accountId, lead);
     if (!navigationResult.success) {
-        throw new RetryableWorkerError('Navigazione organica al profilo interazione fallita', 'PROFILE_NAVIGATION_FAILED');
+        throw new RetryableWorkerError(
+            'Navigazione organica al profilo interazione fallita',
+            'PROFILE_NAVIGATION_FAILED',
+        );
     }
     await humanDelay(page, 2000, 4000);
 

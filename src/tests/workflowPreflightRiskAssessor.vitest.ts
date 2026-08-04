@@ -94,9 +94,9 @@ describe('preflight riskAssessor', () => {
         };
         mocks.getDatabase.mockResolvedValue(db);
         mocks.getDailyStat.mockResolvedValue(4);
-        mocks.getRuntimeFlag.mockResolvedValueOnce(new Date(Date.now() - 30 * 60 * 1000).toISOString()).mockResolvedValueOnce(
-            JSON.stringify([{ date: '2026-03-31', score: 22 }]),
-        );
+        mocks.getRuntimeFlag
+            .mockResolvedValueOnce(new Date(Date.now() - 30 * 60 * 1000).toISOString())
+            .mockResolvedValueOnce(JSON.stringify([{ date: '2026-03-31', score: 22 }]));
         mocks.checkDiskSpace.mockReturnValue({ level: 'critical', freeMb: 80, message: 'disk critical' });
 
         const result = await computeSessionRiskLevel({

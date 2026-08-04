@@ -77,11 +77,7 @@ describe('proxy sticky persistence (SEC5: no password su disco)', () => {
 
     test('il primo re-persist ripulisce la password di un file legacy', () => {
         const metaPath = path.join(sessionDir, '.session-meta.json');
-        fs.writeFileSync(
-            metaPath,
-            JSON.stringify({ stickyProxy: { ...proxy, weekNumber: 7 } }),
-            'utf8',
-        );
+        fs.writeFileSync(metaPath, JSON.stringify({ stickyProxy: { ...proxy, weekNumber: 7 } }), 'utf8');
         persistStickyProxy(sessionDir, proxy, 8);
         const raw = fs.readFileSync(metaPath, 'utf8');
         expect(raw).not.toContain('super-secret-pw');

@@ -46,7 +46,9 @@ describe('ssrfGuard.assertSafeOutboundUrl', () => {
     });
 
     test('rifiuta IP letterali privati / metadata (nessun DNS)', async () => {
-        await expect(assertSafeOutboundUrl('http://169.254.169.254/latest/meta-data/')).rejects.toThrow(/IP non pubblico/);
+        await expect(assertSafeOutboundUrl('http://169.254.169.254/latest/meta-data/')).rejects.toThrow(
+            /IP non pubblico/,
+        );
         await expect(assertSafeOutboundUrl('http://127.0.0.1:8080/')).rejects.toThrow(/IP non pubblico/);
         await expect(assertSafeOutboundUrl('http://[::1]/')).rejects.toThrow(/IP non pubblico/);
         await expect(assertSafeOutboundUrl('https://192.168.0.1/admin')).rejects.toThrow(/IP non pubblico/);

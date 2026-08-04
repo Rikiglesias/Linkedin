@@ -68,7 +68,10 @@ export async function processHygieneJob(
                 company: lead.account_name ?? undefined,
             });
             if (!navigationResult.success) {
-                throw new RetryableWorkerError('Navigazione organica al profilo hygiene fallita', 'PROFILE_NAVIGATION_FAILED');
+                throw new RetryableWorkerError(
+                    'Navigazione organica al profilo hygiene fallita',
+                    'PROFILE_NAVIGATION_FAILED',
+                );
             }
             await humanDelay(page, 2000, 4000);
 

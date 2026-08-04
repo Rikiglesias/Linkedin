@@ -28,12 +28,7 @@ interface OpzioniPaginaFinta {
  * introducono UN modo di fallire per volta, così ogni test distingue una causa sola.
  */
 function pageFinta(opzioni: OpzioniPaginaFinta = {}) {
-    const {
-        selettoriAssentiSu = [],
-        navigazioneFallitaSu = [],
-        domVuotoSu = [],
-        redirectSu,
-    } = opzioni;
+    const { selettoriAssentiSu = [], navigazioneFallitaSu = [], domVuotoSu = [], redirectSu } = opzioni;
     let urlCorrente = '';
     const combacia = (frammenti: string[]) => frammenti.some((f) => urlCorrente.includes(f));
 

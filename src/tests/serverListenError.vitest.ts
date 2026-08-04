@@ -42,9 +42,7 @@ describe('handleServerListenError', () => {
         vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const exit = vi.fn(() => undefined as never);
 
-        expect(() => handleServerListenError(erroreDiRete('EACCES'), 80, exit)).toThrowError(
-            /EACCES/,
-        );
+        expect(() => handleServerListenError(erroreDiRete('EACCES'), 80, exit)).toThrowError(/EACCES/);
         expect(exit).not.toHaveBeenCalled();
     });
 });

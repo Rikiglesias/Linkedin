@@ -279,8 +279,7 @@ export async function processInboxJob(
                                     strict: true,
                                     lead: {
                                         id: lead.id,
-                                        name:
-                                            `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim() || undefined,
+                                        name: `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim() || undefined,
                                         title: lead.job_title ?? undefined,
                                         company: lead.account_name ?? undefined,
                                         score: lead.lead_score ?? undefined,
@@ -329,9 +328,14 @@ export async function processInboxJob(
                                             5000,
                                         );
                                         await humanDelay(page, 350, 900);
-                                        await clickWithFallback(page, SELECTORS.messageSendButton, 'messageSendButton', {
-                                            timeoutPerSelector: 5000,
-                                        });
+                                        await clickWithFallback(
+                                            page,
+                                            SELECTORS.messageSendButton,
+                                            'messageSendButton',
+                                            {
+                                                timeoutPerSelector: 5000,
+                                            },
+                                        );
                                         autoReplySent = true;
                                         autoRepliesSent += 1;
                                         await storeMessageHash(lead.id, replyHash);

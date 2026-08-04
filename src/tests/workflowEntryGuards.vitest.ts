@@ -361,9 +361,7 @@ describe('workflowEntryGuards', () => {
         expect(mocks.closeBrowser).not.toHaveBeenCalled();
         // La sessione riusata nasce con le STESSE opzioni proxy del jobRunner (mobile-priority):
         // niente mismatch silenzioso del tipo di proxy tra canary e outreach.
-        expect(mocks.launchBrowser).toHaveBeenCalledWith(
-            expect.objectContaining({ preferredProxyType: 'mobile' }),
-        );
+        expect(mocks.launchBrowser).toHaveBeenCalledWith(expect.objectContaining({ preferredProxyType: 'mobile' }));
     });
 
     test('AB11: multi-account NON fa handoff (canary verifica tutti gli account, nessuna sessione ritornata)', async () => {

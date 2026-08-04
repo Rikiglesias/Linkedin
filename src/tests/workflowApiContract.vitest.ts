@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'vitest';
 import type { ParsedAutomationCommandRecord } from '../automation/types';
 import { parseAutomationCommandRecord } from '../core/repositories/automationCommands';
-import { toPublicAutomationCommandExecutionResult, toPublicAutomationCommandRecord } from '../api/helpers/automationReadModel';
+import {
+    toPublicAutomationCommandExecutionResult,
+    toPublicAutomationCommandRecord,
+} from '../api/helpers/automationReadModel';
 
 describe('automation read model pubblico', () => {
     test('rimuove artifacts.extra e riduce il preflight a un summary stabile', () => {

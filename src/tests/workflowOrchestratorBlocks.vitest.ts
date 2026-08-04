@@ -466,9 +466,7 @@ describe('orchestrator blocked outcomes', () => {
         const result = await runWorkflow({ workflow: 'invite', dryRun: false });
 
         expect(result.status).toBe('completed');
-        expect(mocks.runQueuedJobs).toHaveBeenCalledWith(
-            expect.objectContaining({ initialSession: undefined }),
-        );
+        expect(mocks.runQueuedJobs).toHaveBeenCalledWith(expect.objectContaining({ initialSession: undefined }));
         expect(mocks.closeBrowser).not.toHaveBeenCalled();
     });
 });

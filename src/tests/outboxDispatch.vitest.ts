@@ -105,7 +105,7 @@ describe('D2 — applyOutboxOperation dispatch per topic', () => {
         expect(mocks.incrementCloudDailyStatIdem).not.toHaveBeenCalled();
     });
 
-    test('cloud.daily_stat: errore RPC PROPAGATO (l\'evento resta in outbox e si ritenta)', async () => {
+    test("cloud.daily_stat: errore RPC PROPAGATO (l'evento resta in outbox e si ritenta)", async () => {
         mocks.incrementCloudDailyStatIdem.mockRejectedValueOnce(new Error('rpc missing'));
         await expect(
             applyOutboxOperation('cloud.daily_stat', { localDate: 'd', accountId: 'a', field: 'replies' }, 'k'),
