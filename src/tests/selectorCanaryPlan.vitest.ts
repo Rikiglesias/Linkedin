@@ -147,16 +147,31 @@ describe('selectorCanary — «il DOM è cambiato» non è «la pagina non è ar
         expect(report.criticalUnknown).toBe(1);
     });
 
-    it('redirect fuori dalla pagina chiesta (authwall) → «non so», non drift', async () => {
+    it('redirect fuori dalla pagina chiesta (authwall) → «non so» SUBITO, senza aspettare i selettori', async () => {
+        // Il verdetto sarebbe stato lo stesso anche cercando i selettori, ma cercarli significa
+        // tenere il browser fermo su LinkedIn per decine di secondi (fino a 3 selettori × 10 s per
+        // superficie, e il guard ritenta l'intero canary) per concludere ciò che l'URL diceva già.
+        let selettoriCercatiSullAuthwall = 0;
         const page = pageFinta({
             selettoriAssentiSu: ['/authwall'],
             redirectSu: { da: '/mynetwork/', a: 'https://www.linkedin.com/authwall?trk=x' },
         });
+        const waitOriginale = page.waitForSelector;
+        page.waitForSelector = async (...args: []) => {
+            // Conta SOLO le ricerche fatte mentre siamo sull'authwall: gli altri step del piano
+            // (il feed, che qui non viene redirezionato) cercano i loro selettori a ragione.
+            if (page.url().includes('/authwall')) selettoriCercatiSullAuthwall += 1;
+            return waitOriginale(...args);
+        };
 
         const report = await runSelectorCanaryDetailed(page as never, 'check');
 
         expect(report.criticalFailed).toBe(0);
         expect(report.criticalUnknown).toBe(1);
+        // Nessuna attesa sprecata sulla superficie finita sull'authwall.
+        const rete = report.steps.find((s) => s.id === 'check.network_surface');
+        expect(rete?.error).toContain('auth_wall');
+        expect(selettoriCercatiSullAuthwall).toBe(0);
     });
 
     it('selettore assente su pagina ARRIVATA e piena → questo sì è drift di piattaforma', async () => {

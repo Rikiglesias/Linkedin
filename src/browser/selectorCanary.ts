@@ -137,7 +137,16 @@ const MIN_TESTO_PAGINA_RESA = 200;
  * aggiunge né navigazioni né attese (nessun cambiamento del footprint verso LinkedIn — la stessa
  * lettura di `body` gira già oggi nel canary, `core/workflowEntryGuards.ts:124`).
  */
-async function inspectPageArrival(page: Page): Promise<{ arrived: boolean; reason: string }> {
+/**
+ * Primo segnale: siamo finiti sulla pagina che avevamo chiesto?
+ *
+ * Non dipende dal rendering, quindi si può guardare SUBITO dopo la navigazione senza rischiare
+ * falsi «non so» su pagine React lente. Serve anche a non sprecare tempo: senza questo controllo
+ * un redirect all'authwall fa consumare tutti i timeout dei selettori (fino a 30 s per superficie,
+ * e il guard ritenta l'intero canary) prima di arrivare a una conclusione che era già nota — cioè
+ * minuti di browser fermo su LinkedIn a vuoto, che è esattamente ciò che non vogliamo far vedere.
+ */
+function inspectUrlArrival(page: Page): { arrived: boolean; reason: string } {
     const currentUrl = typeof page.url === 'function' ? page.url() : '';
     if (!/^https?:\/\/([a-z0-9-]+\.)*linkedin\.com(\/|$)/i.test(currentUrl)) {
         return { arrived: false, reason: `off_domain:${currentUrl || 'about:blank'}` };
@@ -145,6 +154,13 @@ async function inspectPageArrival(page: Page): Promise<{ arrived: boolean; reaso
     if (/\/(login|authwall|checkpoint|challenge|uas)(\/|\?|$)/i.test(currentUrl)) {
         return { arrived: false, reason: 'auth_wall' };
     }
+    return { arrived: true, reason: 'url_ok' };
+}
+
+/** Secondo segnale, da guardare solo DOPO i selettori: la pagina ha renderizzato qualcosa? */
+async function inspectPageArrival(page: Page): Promise<{ arrived: boolean; reason: string }> {
+    const perUrl = inspectUrlArrival(page);
+    if (!perUrl.arrived) return perUrl;
 
     const text = (await page.textContent('body').catch(() => '')) ?? '';
     if (text.trim().length < MIN_TESTO_PAGINA_RESA) {
@@ -158,6 +174,20 @@ async function evaluateCanaryStep(page: Page, step: SelectorCanaryStepDefinition
     try {
         await page.goto(step.url, { waitUntil: 'domcontentloaded' });
         await humanDelay(page, 800, 1600);
+
+        // Se non siamo nemmeno sulla pagina chiesta (redirect all'authwall, dominio diverso) non
+        // c'è nessun selettore da cercare: cercarlo comunque vorrebbe dire tenere il browser
+        // fermo su LinkedIn per decine di secondi per poi concludere ciò che si sapeva già.
+        const arrivoPerUrl = inspectUrlArrival(page);
+        if (!arrivoPerUrl.arrived) {
+            return {
+                ...base,
+                ok: false,
+                state: 'unknown',
+                matchedSelector: null,
+                error: `page_not_reached:${arrivoPerUrl.reason}`,
+            };
+        }
 
         for (const selector of step.selectors) {
             const normalized = selector.trim();
