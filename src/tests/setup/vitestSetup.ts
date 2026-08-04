@@ -1,4 +1,6 @@
-import { TEST_DB_PATH } from './testDatabase';
+import { inject } from 'vitest';
+
+import { TEST_DB_KEY } from './testDatabase';
 
 /**
  * Dirotta la suite sulla copia del database preparata da `globalSetup`.
@@ -9,4 +11,4 @@ import { TEST_DB_PATH } from './testDatabase';
  * di essi. `dotenv` non sovrascrive le variabili già impostate, quindi questo
  * valore ha la precedenza su quello eventualmente presente nel `.env`.
  */
-process.env.DB_PATH = TEST_DB_PATH;
+process.env.DB_PATH = inject(TEST_DB_KEY);
