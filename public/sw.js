@@ -9,9 +9,28 @@
  */
 
 const CACHE_STATIC = 'lkbot-static-v2';
-const CACHE_API = 'lkbot-api-v2';
+// v3: il nome cambia apposta. All'attivazione le cache non piu' valide vengono cancellate,
+// ed e' l'unico modo di rimuovere dal disco le risposte con dati personali gia' salvate
+// dalla versione precedente, che cacheava qualunque GET sotto /api/.
+const CACHE_API = 'lkbot-api-v3';
 const API_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
 const API_CACHE_MAX_ENTRIES = 50;
+
+/**
+ * Gli UNICI endpoint che possono finire su disco: dati aggregati, nessun dato di persone.
+ * E' una allowlist a corrispondenza esatta, non un prefisso: un endpoint nuovo resta fuori
+ * finche' non lo si aggiunge qui di proposito.
+ *
+ * Fuori da questa lista sta tutto cio' che riguarda persone o sessioni — /api/leads,
+ * /api/export/leads (nome, azienda, URL LinkedIn, email, telefono), /api/review-queue,
+ * /api/blacklist, /api/auth/session — e lo stato live come /api/observability, dove una
+ * copia di cinque minuti fa inganna invece di aiutare.
+ */
+const CACHEABLE_API_PATHS = new Set([
+    '/api/kpis',
+    '/api/runs',
+    '/api/stats/trend',
+]);
 
 const PRECACHE_URLS = [
     '/',
@@ -123,9 +142,14 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // API calls: network-first with stale cache fallback
+    // API: solo gli endpoint aggregati dichiarati sopra vengono messi in cache.
+    // Tutti gli altri escono di qui senza respondWith, cioe' li serve la rete e non
+    // toccano il disco — devono uscire PRIMA della cache statica qui sotto, che non ha
+    // nemmeno una scadenza.
     if (url.pathname.startsWith('/api/')) {
-        event.respondWith(networkFirstApi(event.request));
+        if (CACHEABLE_API_PATHS.has(url.pathname)) {
+            event.respondWith(networkFirstApi(event.request));
+        }
         return;
     }
 
