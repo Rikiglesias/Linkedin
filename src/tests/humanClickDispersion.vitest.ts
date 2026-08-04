@@ -79,8 +79,38 @@ describe('i call-site che partivano dal centro esatto sono stati convertiti', ()
         // conosce il margine entro cui spostarsi, e disperdere "a occhio" rischia di mancare un target
         // piccolo — che è peggio di un click centrato. Il test blocca il numero: se questi call-site
         // cambiano, la decisione va ripresa invece di scivolare via in silenzio.
+        //
+        // ⚠️ Il conteggio qui è di `uiFallback` SOLTANTO, ed è per questo che il residuo scritto nel
+        // commit `8e56fe7` («2 click vision») era SOTTOSTIMATO: il critico avversariale ha contato i
+        // punti veri nel codebase. I due fuori da questo file sono ora coperti dai test qui sotto.
         const puntiVision = src.match(/clickCoordinatesHumanLike\(page, coords\.x, coords\.y\)/g) ?? [];
         expect(puntiVision).toHaveLength(2);
+    });
+
+    it('le coordinate FISSE del fallback vision non sono più lo stesso pixel a ogni sessione', () => {
+        const src = sorgente('salesnav/visionNavigator.ts');
+        // Erano letterali a listino (640,120 / 80,160): identiche su ogni account e ogni sessione,
+        // cioè una firma diretta. Ora il punto passa da humanPointInBox su una finestra stretta.
+        expect(src).toContain('humanPointInBox({');
+        expect(src).not.toMatch(/clickCoordinatesHumanLike\(page, fx, fy\)/);
+    });
+
+    it('il fallback a coordinate fisse si SALTA se il viewport non è quello di calibrazione', () => {
+        const src = sorgente('salesnav/visionNavigator.ts');
+        // Il difetto peggiore non era la firma ma il click CIECO: quelle coordinate valgono per
+        // 1280x800, e il layout di SalesNav è responsive — a 1920x1080 quel punto non è il bottone.
+        // Il clamp ai bordi non protegge da questo: tiene il click dentro lo schermo, non sul target.
+        expect(src).toContain('fallbackViewportCompatibile');
+        expect(src).toContain('VISION_FALLBACK_VIEWPORT');
+    });
+
+    it('il click sul captcha non cade sul pixel esatto restituito dal provider', () => {
+        const src = sorgente('workers/challengeHandler.ts');
+        // Qui le coordinate NON sono fisse (variano con l'immagine), ma per lo stesso captcha il
+        // provider tende a restituire lo stesso punto. Dispersione volutamente minima: un riquadro
+        // di captcha è >=40px, e sbagliarlo costa più della firma che si evita.
+        expect(src).toContain('humanPointInBox({');
+        expect(src).not.toMatch(/Math\.min\(vp\.width - 1, coords\.x\)/);
     });
 
     it('clickLocatorHumanLike continua a disperdere UNA volta sola', () => {

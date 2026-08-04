@@ -2,6 +2,7 @@ import type { Locator, Page } from 'playwright';
 import type { VisionProvider } from '../captcha/visionProvider';
 import { createVisionProvider, getOpenAIProviderFromCurrent } from '../captcha/visionProviderFactory';
 import { clickCoordinatesHumanLike } from '../browser';
+import { humanPointInBox } from '../browser/humanClick';
 
 export interface VisionRegionClip {
     x: number;
@@ -127,7 +128,13 @@ export function getVisionOfflineSkipCount(): number {
 /**
  * H07: Fixed-coordinate fallbacks for common SalesNav buttons.
  * Used as last resort when Vision AI is offline.
- * Coordinates are viewport-relative approximations for a 1280x800 viewport.
+ *
+ * ⚠️ Queste coordinate valgono SOLO per il viewport per cui furono misurate (vedi
+ * `VISION_FALLBACK_VIEWPORT`). Il layout di SalesNav è responsive: la posizione di un bottone non
+ * scala linearmente con la finestra, quindi a 1920x1080 il punto (640,120) non è il bottone — è un
+ * punto qualsiasi della pagina. Prima si cliccava comunque, con il solo clamp ai bordi dello schermo
+ * a fare da rete: un click cieco su LinkedIn, in un punto non osservato. Da qui la guardia in
+ * `fallbackViewportCompatibile`: fuori dal viewport di calibrazione si SALTA, non si tira a indovinare.
  */
 const VISION_FIXED_FALLBACKS: Record<string, { x: number; y: number }> = {
     'Save to list': { x: 640, y: 120 },
@@ -135,6 +142,18 @@ const VISION_FIXED_FALLBACKS: Record<string, { x: number; y: number }> = {
     'save to list': { x: 640, y: 120 },
     'select all': { x: 80, y: 160 },
 };
+
+/** Viewport per cui le coordinate di `VISION_FIXED_FALLBACKS` sono state misurate. */
+const VISION_FALLBACK_VIEWPORT = { width: 1280, height: 800 };
+
+/** Tolleranza stretta (±5%): oltre, il layout può già aver spostato il bottone. */
+const VISION_FALLBACK_TOLLERANZA = 0.05;
+
+function fallbackViewportCompatibile(viewport: { width: number; height: number }): boolean {
+    const deltaW = Math.abs(viewport.width - VISION_FALLBACK_VIEWPORT.width) / VISION_FALLBACK_VIEWPORT.width;
+    const deltaH = Math.abs(viewport.height - VISION_FALLBACK_VIEWPORT.height) / VISION_FALLBACK_VIEWPORT.height;
+    return deltaW <= VISION_FALLBACK_TOLLERANZA && deltaH <= VISION_FALLBACK_TOLLERANZA;
+}
 
 export class VisionParseError extends Error {
     constructor(message: string) {
@@ -344,18 +363,33 @@ export async function visionClick(
                 _visionOfflineSkipCount += 1;
                 const descLower = description.toLowerCase();
                 const fallback = VISION_FIXED_FALLBACKS[description] ?? VISION_FIXED_FALLBACKS[descLower];
-                if (fallback) {
+                const viewport = page.viewportSize() ?? VISION_FALLBACK_VIEWPORT;
+                if (fallback && !fallbackViewportCompatibile(viewport)) {
+                    // Meglio saltare che cliccare alla cieca: fuori dal viewport di calibrazione quel
+                    // punto non e' il bottone, e un click non osservato su LinkedIn costa piu' di una
+                    // pagina saltata.
                     console.warn(
-                        `[VISION-H07] Vision AI offline (skip #${_visionOfflineSkipCount}). Usando coordinate fisse per "${description}": (${fallback.x}, ${fallback.y})`,
+                        `[VISION-H07] Vision AI offline e viewport ${viewport.width}x${viewport.height} diverso da quello di calibrazione ` +
+                            `(${VISION_FALLBACK_VIEWPORT.width}x${VISION_FALLBACK_VIEWPORT.height}): coordinate fisse NON usate per "${description}" — skip.`,
                     );
-                    const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
+                } else if (fallback) {
                     const fx = clampNumber(fallback.x, 0, viewport.width - 1);
                     const fy = clampNumber(fallback.y, 0, viewport.height - 1);
-                    await clickCoordinatesHumanLike(page, fx, fy);
+                    // Dispersione attorno al punto: la coordinata a listino e' identica su ogni account
+                    // e ogni sessione, cioe' una firma. Si riusa humanPointInBox (una sola dispersione,
+                    // dove il "box" diventa coordinata) su una finestra stretta, per non uscire dal
+                    // bottone: ~28x18 px attorno al punto misurato.
+                    const punto = humanPointInBox({ x: fx - 14, y: fy - 9, width: 28, height: 18 });
+                    const px = clampNumber(punto.x, 0, viewport.width - 1);
+                    const py = clampNumber(punto.y, 0, viewport.height - 1);
+                    console.warn(
+                        `[VISION-H07] Vision AI offline (skip #${_visionOfflineSkipCount}). Usando coordinate fisse per "${description}": (${fx}, ${fy}) → click (${Math.round(px)}, ${Math.round(py)})`,
+                    );
+                    await clickCoordinatesHumanLike(page, px, py);
                     await page.waitForTimeout(Math.max(80, options?.postClickDelayMs ?? 700));
                     return {
-                        x: fx,
-                        y: fy,
+                        x: px,
+                        y: py,
                         attempt,
                         region: { x: 0, y: 0, width: viewport.width, height: viewport.height },
                     };

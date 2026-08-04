@@ -14,6 +14,7 @@ import { Page } from 'playwright';
 import { createVisionProvider } from '../captcha/visionProviderFactory';
 import type { VisionProvider } from '../captcha/visionProvider';
 import { clickCoordinatesHumanLike, clickLocatorHumanLike } from '../browser';
+import { humanPointInBox } from '../browser/humanClick';
 import { humanDelay } from '../browser/humanBehavior';
 import { logInfo, logWarn, logError } from '../telemetry/logger';
 import { getDailyStat, incrementDailyStat } from '../core/repositories/stats';
@@ -164,8 +165,14 @@ export async function attemptChallengeResolution(page: Page): Promise<boolean> {
                 }
 
                 const vp = page.viewportSize() ?? { width: 1280, height: 800 };
-                const safeX = Math.max(0, Math.min(vp.width - 1, coords.x));
-                const safeY = Math.max(0, Math.min(vp.height - 1, coords.y));
+                // Dispersione MINIMA attorno al punto scelto dal provider: le coordinate non sono
+                // fisse a listino (variano con l'immagine), ma per lo stesso captcha il provider
+                // tende a restituire lo stesso punto, e cliccarlo al pixel esatto e' ripetibile.
+                // Finestra volutamente piccola (12x12): un riquadro di captcha e' >=40px, quindi non
+                // si rischia di mancarlo — sbagliare un captcha costa piu' della firma che si evita.
+                const punto = humanPointInBox({ x: coords.x - 6, y: coords.y - 6, width: 12, height: 12 });
+                const safeX = Math.max(0, Math.min(vp.width - 1, punto.x));
+                const safeY = Math.max(0, Math.min(vp.height - 1, punto.y));
                 await clickCoordinatesHumanLike(page, safeX, safeY);
                 await humanDelay(page, 1500, 3000);
 
