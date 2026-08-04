@@ -87,7 +87,20 @@ export async function backupDbIfDue(): Promise<void> {
 
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const backupPath = path.join(backupDir, `linkedin_${timestamp}.db`);
-        fs.copyFileSync(dbPath, backupPath);
+
+        // Il database gira in WAL (`db.ts:674`): le transazioni committate di recente vivono nel
+        // file `-wal` finché non c'è un checkpoint. Copiare a mano il solo `.sqlite`, come si
+        // faceva qui con `copyFileSync`, produce quindi un backup che può essere indietro — o
+        // incoerente — rispetto al database vivo, e ce ne si accorge solo il giorno del ripristino.
+        // `VACUUM INTO` fa scrivere la copia a SQLite stesso: contiene tutto ciò che è committato
+        // ed è coerente per costruzione. Stessa scelta già fatta per il database dei test (65d109a).
+        const { getDatabase } = await import('../db');
+        const db = await getDatabase();
+        // Percorso come parametro legato, non incollato nella stringa SQL: SQLite accetta un
+        // segnaposto in `VACUUM INTO` (verificato dal vivo su questo database), quindi non c'è
+        // motivo di comporre SQL a mano — nessun apice da raddoppiare, nessun percorso che possa
+        // diventare sintassi.
+        await db.run('VACUUM INTO ?', [backupPath]);
 
         // Pulizia vecchi backup: mantieni solo MAX_BACKUPS
         const backups = fs

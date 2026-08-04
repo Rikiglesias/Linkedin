@@ -49,6 +49,31 @@ function ensureDir(dirPath: string): void {
     }
 }
 
+/** Estensioni con cui i backup vengono davvero scritti nel progetto. */
+const BACKUP_EXTENSIONS = ['.sqlite', '.db'];
+
+/**
+ * Oltre questa età, un backup scelto automaticamente viene segnalato nel motivo della prova:
+ * il backup automatico gira ogni 6 ore (`core/preventiveGuards.ts`), quindi una settimana di
+ * distanza significa che da giorni non ne viene scritto uno.
+ */
+const MAX_BACKUP_AGE_DAYS = 7;
+
+/**
+ * Un candidato al ripristino è utile solo se è un backup del database di PRODUZIONE.
+ * Vanno esclusi i file che gli somigliano ma non lo sono:
+ *  - `test_*`: database di prova, contengono dati finti;
+ *  - `*.pre-restore.*`: la copia di sicurezza che un ripristino precedente si è messo da parte,
+ *    cioè lo stato *da cui* si scappava.
+ */
+function isUsableBackupName(fileName: string): boolean {
+    const lower = fileName.toLowerCase();
+    if (!BACKUP_EXTENSIONS.some((ext) => lower.endsWith(ext))) return false;
+    if (lower.startsWith('test_')) return false;
+    if (lower.includes('.pre-restore.')) return false;
+    return true;
+}
+
 function resolveSqliteBackupCandidates(): string[] {
     const dbParsed = path.parse(config.dbPath);
     const localDir = dbParsed.dir;
@@ -58,7 +83,12 @@ function resolveSqliteBackupCandidates(): string[] {
     for (const dir of dirs) {
         if (!fs.existsSync(dir)) continue;
         for (const fileName of fs.readdirSync(dir)) {
-            if (!fileName.endsWith('.sqlite')) continue;
+            // Prima si accettava solo `.sqlite`, ma il backup automatico
+            // (`core/preventiveGuards.ts`) scrive `linkedin_<data>.db`: i backup che il bot fa da
+            // solo erano quindi INVISIBILI al ripristino, e la prova di ripristino si chiudeva
+            // «SKIPPED / backup_not_found» come se non esistesse nulla da provare. Nella cartella
+            // ce n'erano cinque.
+            if (!isUsableBackupName(fileName)) continue;
             files.push(path.resolve(dir, fileName));
         }
     }
@@ -197,10 +227,34 @@ export async function runRestoreDrill(options: RestoreDrillOptions = {}): Promis
             durationMs: finishedAtDate.getTime() - startedAtDate.getTime(),
         };
 
-        ensureDir(reportDir);
+        // Il report su file è il RESOCONTO della prova, non la prova: se non si riesce a
+        // scriverlo, l'esito va comunque registrato. Prima un errore qui buttava via tutto il
+        // lavoro appena fatto con uno stack trace — visto dal vivo il 2026-08-04, EPERM sulla
+        // cartella `data/restore-drill`, che era rimasta con una ACL VUOTA (nessun permesso per
+        // nessuno) da un vecchio hardening su Windows; lo stesso incidente descritto nel commento
+        // di `security/filesystem.ts:9`. Il codice è stato corretto allora, la cartella no.
         const reportPath = path.resolve(reportDir, `restore-drill-${renderTimestampToken(finishedAtDate)}.json`);
-        fs.writeFileSync(reportPath, JSON.stringify(report, null, 2), 'utf8');
-        report.reportPath = reportPath;
+        try {
+            ensureDir(reportDir);
+            fs.writeFileSync(reportPath, JSON.stringify(report, null, 2), 'utf8');
+            report.reportPath = reportPath;
+        } catch (writeError) {
+            const message = writeError instanceof Error ? writeError.message : String(writeError);
+            report.reportPath = null;
+            report.errorMessage = [report.errorMessage, `report_write_failed: ${message}`]
+                .filter(Boolean)
+                .join(' | ');
+            console.error(
+                [
+                    '',
+                    `⚠️  La prova di ripristino è stata eseguita, ma il report non è scrivibile in ${reportDir}.`,
+                    `   PERCHÉ: ${message}`,
+                    `   COSA FARE (Windows): icacls "${reportDir}" /grant "%USERNAME%:(OI)(CI)F"`,
+                    "   L'esito della prova resta comunque registrato qui sotto e nello stato del bot.",
+                    '',
+                ].join('\n'),
+            );
+        }
 
         if (persistRuntimeFlags) {
             await persistDrillRuntimeFlags(report);
@@ -251,9 +305,20 @@ export async function runRestoreDrill(options: RestoreDrillOptions = {}): Promis
         const inspection = await inspectSqliteDatabase(tempDbPath);
         const requiredTablesPresent = inspection.tables.every((table) => table.exists);
         const success = inspection.integrity === 'ok' && requiredTablesPresent;
+        // Un backup integro ma vecchio supera ogni controllo tecnico e resta comunque una brutta
+        // notizia: dice da quanto tempo il ripristino riporterebbe indietro. Non cambia l'esito
+        // (il backup è sano davvero), ma lo scrive nel motivo invece di lasciarlo scoprire il
+        // giorno del guasto. Solo per il candidato scelto in automatico: se il file l'ha indicato
+        // una persona, sa cosa sta ripristinando.
+        const backupAgeDays = Math.floor((Date.now() - fs.statSync(backupPath).mtimeMs) / 86_400_000);
+        const staleAuto = !options.backupFile && backupAgeDays > MAX_BACKUP_AGE_DAYS;
         const report = await finalize({
             status: success ? 'SUCCEEDED' : 'FAILED',
-            reason: success ? 'ok' : 'integrity_or_schema_check_failed',
+            reason: success
+                ? staleAuto
+                    ? `ok_but_backup_stale_${backupAgeDays}d`
+                    : 'ok'
+                : 'integrity_or_schema_check_failed',
             backupPath,
             tempDbPath,
             integrityCheck: inspection.integrity,
