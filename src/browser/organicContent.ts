@@ -68,9 +68,9 @@ async function expandPostText(page: Page): Promise<void> {
             const box = await targetBtn.boundingBox();
 
             if (box) {
-                // Muove human-like sul bottone
-                const targetX = box.x + box.width / 2;
-                const targetY = box.y + box.height / 2;
+                // Muove human-like sul bottone. Punto gaussiano, non il centro geometrico: il centro
+                // esatto e' lo stesso pixel a ogni passaggio sullo stesso elemento = firma robotica.
+                const { x: targetX, y: targetY } = (await _hc()).humanPointInBox(box);
                 await (await _hb()).humanMouseMoveToCoords(page, targetX, targetY);
 
                 // Pausa pre-click (Hover ratio decoy - AD-03 partial overlap)
@@ -176,8 +176,8 @@ async function reactToPost(page: Page): Promise<void> {
         const box = await locator.boundingBox();
         if (!box) continue;
 
-        const targetX = box.x + box.width / 2;
-        const targetY = box.y + box.height / 2;
+        // Punto gaussiano dentro il box invece del centro esatto (stessa ragione del punto sopra).
+        const { x: targetX, y: targetY } = (await _hc()).humanPointInBox(box);
         await (await _hb()).humanMouseMoveToCoords(page, targetX, targetY);
 
         // Pausa pre-click

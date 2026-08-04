@@ -16,7 +16,7 @@ import {
     recordSelectorFallbackSuccess,
 } from '../core/selectorLearning';
 import { humanDelay } from './humanBehavior';
-import { clickCoordinatesHumanLike, clickLocatorHumanLike } from './humanClick';
+import { clickCoordinatesHumanLike, clickLocatorHumanLike, humanPointInBox } from './humanClick';
 import { computeSessionTypoRate, determineNextKeystroke } from '../ai/typoGenerator';
 import { VisionSolver } from '../captcha/solver';
 
@@ -581,7 +581,16 @@ export async function clickWithShadowFallback(
                 console.warn(
                     `[FALLBACK-SHADOW] clickWithShadowFallback("${label}"): trovato in Shadow DOM via "${sel.substring(0, 60)}"`,
                 );
-                await clickCoordinatesHumanLike(page, coords.x, coords.y);
+                // `findInShadowDom` restituisce gia' il CENTRO del rect: cliccarlo diretto significa
+                // colpire sempre lo stesso pixel di quell'elemento. Si ricostruisce il box e si prende
+                // un punto gaussiano, come fa il percorso normale via locator.
+                const point = humanPointInBox({
+                    x: coords.x - coords.width / 2,
+                    y: coords.y - coords.height / 2,
+                    width: coords.width,
+                    height: coords.height,
+                });
+                await clickCoordinatesHumanLike(page, point.x, point.y);
                 await trackSelectorSuccess(page, label, `shadow:${sel}`);
                 return;
             }

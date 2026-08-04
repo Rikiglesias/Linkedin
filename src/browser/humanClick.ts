@@ -32,7 +32,22 @@ function gaussianStd(): number {
     return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
 }
 
-function buildHumanClickPoint(box: { x: number; y: number; width: number; height: number }): { x: number; y: number } {
+/**
+ * Punto di click umano dentro un box: centro + dispersione gaussiana 2D, clampata per restare dentro
+ * il target.
+ *
+ * Esportata perché il centro geometrico esatto (`box.x + box.width / 2`) è una firma robotica ovunque
+ * venga calcolato, non solo qui: chi parte da un box e poi chiama `clickCoordinatesHumanLike` deve
+ * passare di qui, altrimenti clicca sempre lo stesso pixel di quell'elemento.
+ *
+ * NB per chi la usa: NON va applicata a coordinate che sono già il risultato di questa funzione —
+ * `clickLocatorHumanLike` la chiama già, e disperdere due volte sfonderebbe il clamp. La regola è:
+ * si disperde una volta sola, nel punto in cui il box diventa una coordinata.
+ */
+export function humanPointInBox(box: { x: number; y: number; width: number; height: number }): {
+    x: number;
+    y: number;
+} {
     // Dispersione GAUSSIANA 2D attorno al centro su ENTRAMBI gli assi (sigma ~18% della
     // dimensione), MAI collassata a 0. Il vecchio jitter uniforme cap 3px/2px con jitterY=0
     // sotto i 40px di altezza dava coordinata Y costante al pixel sui bottoni Connetti/Invia
@@ -69,6 +84,6 @@ export async function clickLocatorHumanLike(
         throw new Error('locator_bounding_box_unavailable');
     }
 
-    const target = buildHumanClickPoint(box);
+    const target = humanPointInBox(box);
     await clickCoordinatesHumanLike(page, target.x, target.y);
 }
