@@ -60,6 +60,33 @@ export interface DatabaseManager {
 // ------------------------------------------------------------------
 // WRAPPER SQLITE
 // ------------------------------------------------------------------
+
+/**
+ * Quante volte provare ad APRIRE una transazione trovata occupata da un altro processo.
+ *
+ * Due, non di più, e il motivo è l'attesa massima: ogni tentativo può restare fermo dentro
+ * SQLite fino al `busy_timeout` (5 s), quindi tre tentativi significherebbero fino a ~15 s di
+ * stallo per una singola operazione — troppo per una richiesta della dashboard. Con due il
+ * limite è ~10 s, e il secondo tentativo serve solo al caso raro in cui i 5 s di attesa non
+ * sono bastati: se non basta neanche il secondo, il problema non è un istante di contesa e
+ * l'errore va restituito invece di essere annegato in altra attesa.
+ * (Rilievo emerso dalla review cross-model del 2026-08-04: il tetto di attesa era troppo alto.)
+ */
+const SQLITE_BUSY_MAX_ATTEMPTS = 2;
+
+/**
+ * «Il database è occupato da qualcun altro» — l'unico errore che ha senso ritentare.
+ * Si guarda il codice quando c'è (il driver `sqlite3` lo valorizza) e in seconda battuta il
+ * testo, perché a seconda del percorso l'errore arriva come `SQLITE_BUSY` o come il più noto
+ * «database is locked».
+ */
+function isDatabaseBusyError(error: unknown): boolean {
+    const code = (error as { code?: unknown } | null | undefined)?.code;
+    if (typeof code === 'string' && code.toUpperCase().includes('SQLITE_BUSY')) return true;
+    const message = error instanceof Error ? error.message : String(error ?? '');
+    return /SQLITE_BUSY|database is locked/i.test(message);
+}
+
 class SQLiteManager implements DatabaseManager {
     readonly isPostgres = false;
     private db: SQLiteDatabase;
@@ -99,6 +126,46 @@ class SQLiteManager implements DatabaseManager {
         };
     }
 
+    /**
+     * Apre la transazione prendendo SUBITO il lock di scrittura, e riprova se il database è
+     * occupato da un altro processo.
+     *
+     * Perché non basta `BEGIN`: una transazione aperta così è considerata di sola lettura finché
+     * non scrive. Quando poi prova a passare in scrittura e trova il database occupato, SQLite
+     * risponde SQLITE_BUSY **immediatamente, senza rispettare il `busy_timeout`** — attendere a
+     * metà transazione rischierebbe un blocco incrociato. Il `PRAGMA busy_timeout = 5000` che
+     * impostiamo all'avvio non copre quindi proprio il caso che conta. Con `BEGIN IMMEDIATE` il
+     * lock si chiede all'inizio, dove l'attesa è sicura e il timeout viene rispettato.
+     * Qui non è teoria: bot, server della dashboard e worker aprono ognuno la propria connessione
+     * allo stesso file, e il mutex interno (D1) serializza solo dentro un processo.
+     *
+     * Il ritentativo copre il residuo (timeout esaurito) ed è sicuro perché la transazione non ha
+     * ancora eseguito nulla. Si ritenta SOLO su «occupato»: ripetere un errore di sintassi o di
+     * vincolo significherebbe rifare lo stesso sbaglio e nascondere la causa dietro un ritardo.
+     *
+     * Compromesso dichiarato: prendendo il lock all'inizio, anche una transazione che poi si
+     * limita a leggere occupa l'unico posto da scrittore. È una perdita accettabile qui perché i
+     * punti che usano `withTransaction` sono quasi tutti mutazioni, e diversi di quelli che
+     * *sembrano* letture (`repositories/jobs.ts:70`, `outboxDeliveries.ts:132`) sono in realtà
+     * «leggi i candidati e poi prendili», cioè proprio il caso che con `BEGIN` fallisce di netto.
+     * Se un giorno la contesa diventasse misurabile, la mossa è un'opzione esplicita per le
+     * transazioni di sola lettura, non tornare al comportamento precedente.
+     */
+    private async beginImmediateWithRetry(): Promise<void> {
+        for (let tentativo = 1; ; tentativo += 1) {
+            try {
+                await this.exec('BEGIN IMMEDIATE');
+                return;
+            } catch (error) {
+                if (tentativo >= SQLITE_BUSY_MAX_ATTEMPTS || !isDatabaseBusyError(error)) throw error;
+                // Attesa crescente con una parte casuale: se due processi vengono respinti insieme,
+                // non devono riprovare nello stesso istante all'infinito.
+                const attesaMs = 25 * tentativo + Math.floor(Math.random() * 50);
+                await new Promise((resolve) => setTimeout(resolve, attesaMs));
+            }
+        }
+    }
+
     async withTransaction<T>(callback: (tx: DatabaseManager) => Promise<T>): Promise<T> {
         // SQLite is single-connection, so BEGIN/COMMIT on `this` is safe.
         // transactionContext permette a getDatabase() di restituire `this`
@@ -120,7 +187,7 @@ class SQLiteManager implements DatabaseManager {
         }
         // Top-level: serializza sulla connessione singola via mutex Promise-chain (D1).
         const runTx = async (): Promise<T> => {
-            await this.exec('BEGIN');
+            await this.beginImmediateWithRetry();
             try {
                 const result = await transactionContext.run(this, () => callback(this));
                 await this.exec('COMMIT');
