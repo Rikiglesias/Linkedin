@@ -48,6 +48,12 @@ type CanaryOutcome =
           accountId?: string;
       };
 
+/**
+ * Raffreddamento dopo un canary che non è riuscito a vedere le pagine (rete/proxy).
+ * Scade da solo: se la rete torna, il bot riparte senza che nessuno resetti niente.
+ */
+const CANARY_UNREACHABLE_PAUSE_MIN = 30;
+
 async function runCanaryIfNeeded(
     workflow: WorkflowEntryKind,
     noProxy = false,
@@ -193,19 +199,62 @@ async function runCanaryIfNeeded(
                 });
             }
 
-            if (!report.ok) {
+            if (report.criticalFailed > 0) {
                 await logWarn('selector.canary.critical_failed', {
                     localDate,
                     workflow,
                     accountId: account.id,
                     criticalFailed: report.criticalFailed,
-                    steps: report.steps.filter((step) => step.required && !step.ok),
+                    steps: report.steps.filter((step) => step.required && step.state === 'unsafe'),
                 });
                 return {
                     ok: false,
                     blockReason: 'SELECTOR_CANARY_FAILED',
                     quarantineType: 'SELECTOR_CANARY_FAILED',
                     message: 'Selector canary fallito (selettori critici non trovati sul DOM LinkedIn)',
+                };
+            }
+
+            if (!report.ok) {
+                // Solo esiti indeterminati: le pagine non sono arrivate, quindi sui selettori non
+                // sappiamo niente. Il ciclo si ferma comunque (senza pagina non si lavora), ma
+                // niente quarantena: quella dice «il DOM di LinkedIn è cambiato», è globale e non
+                // si auto-rilascia — dal 2026-03-30 al 2026-06-13 il bot è rimasto fermo così, per
+                // un proxy rotto.
+                //
+                // Al suo posto una pausa a SCADENZA, che è anche il freno necessario: il flag
+                // `canary_last_ok_at` si scrive solo quando il canary passa, quindi senza pausa il
+                // bot ritenterebbe a ogni ciclo — browser lanciato e 4 pagine LinkedIn aperte ogni
+                // volta, da un IP verosimilmente già problematico (è la forma dei 19 cicli abortiti
+                // di giugno). 30 minuti: pochi tentativi l'ora, e si sblocca da solo quando la rete
+                // torna, senza nessun intervento manuale.
+                const stepsIndeterminati = report.steps.filter(
+                    (step) => step.required && step.state === 'unknown',
+                );
+                await logWarn('selector.canary.page_unreachable', {
+                    localDate,
+                    workflow,
+                    accountId: account.id,
+                    criticalUnknown: report.criticalUnknown,
+                    steps: stepsIndeterminati,
+                });
+                await pauseAutomation(
+                    'CANARY_PAGE_UNREACHABLE',
+                    {
+                        workflow,
+                        accountId: account.id,
+                        criticalUnknown: report.criticalUnknown,
+                        steps: stepsIndeterminati,
+                    },
+                    CANARY_UNREACHABLE_PAUSE_MIN,
+                );
+                return {
+                    ok: false,
+                    blockReason: 'CANARY_PAGE_UNREACHABLE',
+                    // Nessuna quarantena: il canary non ha visto il DOM, non può accusarlo.
+                    quarantineType: null,
+                    message:
+                        'Pagine LinkedIn non raggiungibili durante il canary (rete/proxy): nessuna conclusione sui selettori',
                 };
             }
 

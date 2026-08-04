@@ -16,11 +16,28 @@ interface SelectorCanaryStepDefinition {
     timeoutMs?: number;
 }
 
+/**
+ * Esito di uno step, discriminato per CAUSA.
+ * - `safe`: selettore trovato.
+ * - `unsafe`: pagina arrivata e renderizzata, ma il selettore non c'è → il DOM di LinkedIn è
+ *   cambiato. È platform-wide (riguarda ogni account) e giustifica la quarantena.
+ * - `unknown`: la pagina non è mai arrivata (rete, proxy, redirect fuori) → del DOM non sappiamo
+ *   NULLA. È locale e transitorio: fermare il ciclo sì, incolpare i selettori no.
+ *
+ * Prima esisteva solo il booleano `ok` e i due fallimenti finivano entrambi in
+ * `error: 'selector_not_found'`. Costo reale: il 2026-03-30 un proxy rotto ha prodotto 19 cicli
+ * abortiti in ~11 s l'uno (= il timeout, non un cambio di DOM) e una quarantena GLOBALE
+ * permanente su tutti gli account, rilasciata a mano due mesi e mezzo dopo.
+ */
+export type SelectorCanaryStepState = 'safe' | 'unsafe' | 'unknown';
+
 export interface SelectorCanaryStepResult {
     id: string;
     url: string;
     required: boolean;
+    /** Retro-compatibile: vero solo per `safe`. I consumer nuovi leggano `state`. */
     ok: boolean;
+    state: SelectorCanaryStepState;
     matchedSelector: string | null;
     error: string | null;
 }
@@ -28,7 +45,10 @@ export interface SelectorCanaryStepResult {
 export interface SelectorCanaryReport {
     workflow: CanaryWorkflow;
     ok: boolean;
+    /** Step obbligatori con DOM cambiato su pagina ARRIVATA → quarantena legittima. */
     criticalFailed: number;
+    /** Step obbligatori con esito indeterminato → fermare il ciclo, NON quarantinare. */
+    criticalUnknown: number;
     optionalFailed: number;
     steps: SelectorCanaryStepResult[];
 }
@@ -100,7 +120,41 @@ function buildSelectorCanaryPlan(workflow: CanaryWorkflow): SelectorCanaryStepDe
     return plan;
 }
 
+/** Lunghezza minima del testo di `body` perché la pagina conti come renderizzata. */
+const MIN_TESTO_PAGINA_RESA = 200;
+
+/**
+ * La pagina che stiamo guardando è davvero quella chiesta, ed è arrivata?
+ *
+ * Due segnali INDIPENDENTI dai selettori sotto esame — altrimenti si userebbe la cosa in
+ * discussione per giudicare sé stessa:
+ *  1. l'URL finale è ancora su linkedin.com e non è finito su login/authwall/checkpoint
+ *     (un redirect lì significa «non ho visto la pagina», non «il selettore non c'è più»);
+ *  2. il `body` contiene testo in quantità da pagina vera. Una navigazione fallita, una pagina
+ *     di errore del proxy o un DOM mai renderizzato lasciano un body vuoto o quasi.
+ *
+ * Chiamata SOLO quando nessun selettore ha matchato: sul percorso felice non costa nulla, e non
+ * aggiunge né navigazioni né attese (nessun cambiamento del footprint verso LinkedIn — la stessa
+ * lettura di `body` gira già oggi nel canary, `core/workflowEntryGuards.ts:124`).
+ */
+async function inspectPageArrival(page: Page): Promise<{ arrived: boolean; reason: string }> {
+    const currentUrl = typeof page.url === 'function' ? page.url() : '';
+    if (!/^https?:\/\/([a-z0-9-]+\.)*linkedin\.com(\/|$)/i.test(currentUrl)) {
+        return { arrived: false, reason: `off_domain:${currentUrl || 'about:blank'}` };
+    }
+    if (/\/(login|authwall|checkpoint|challenge|uas)(\/|\?|$)/i.test(currentUrl)) {
+        return { arrived: false, reason: 'auth_wall' };
+    }
+
+    const text = (await page.textContent('body').catch(() => '')) ?? '';
+    if (text.trim().length < MIN_TESTO_PAGINA_RESA) {
+        return { arrived: false, reason: 'empty_dom' };
+    }
+    return { arrived: true, reason: 'rendered' };
+}
+
 async function evaluateCanaryStep(page: Page, step: SelectorCanaryStepDefinition): Promise<SelectorCanaryStepResult> {
+    const base = { id: step.id, url: step.url, required: step.required };
     try {
         await page.goto(step.url, { waitUntil: 'domcontentloaded' });
         await humanDelay(page, 800, 1600);
@@ -111,35 +165,35 @@ async function evaluateCanaryStep(page: Page, step: SelectorCanaryStepDefinition
             const playwrightSelector = normalized.startsWith('//') ? `xpath=${normalized}` : normalized;
             try {
                 await page.waitForSelector(playwrightSelector, { timeout: step.timeoutMs ?? 3000 });
-                return {
-                    id: step.id,
-                    url: step.url,
-                    required: step.required,
-                    ok: true,
-                    matchedSelector: normalized,
-                    error: null,
-                };
+                return { ...base, ok: true, state: 'safe', matchedSelector: normalized, error: null };
             } catch {
                 // Try next candidate selector.
             }
         }
 
-        return {
-            id: step.id,
-            url: step.url,
-            required: step.required,
-            ok: false,
-            matchedSelector: null,
-            error: 'selector_not_found',
-        };
+        // Nessun selettore trovato. Il verdetto dipende da un fatto che finora nessuno chiedeva:
+        // la pagina è arrivata? Se sì il DOM è cambiato davvero; se no non abbiamo visto niente.
+        const arrival = await inspectPageArrival(page);
+        if (!arrival.arrived) {
+            return {
+                ...base,
+                ok: false,
+                state: 'unknown',
+                matchedSelector: null,
+                error: `page_not_reached:${arrival.reason}`,
+            };
+        }
+
+        return { ...base, ok: false, state: 'unsafe', matchedSelector: null, error: 'selector_not_found' };
     } catch (error) {
+        // `goto` fallito (DNS, proxy, timeout di navigazione): la pagina non è mai stata caricata,
+        // quindi sui selettori non c'è nessuna informazione da estrarre. Mai `unsafe` da qui.
         return {
-            id: step.id,
-            url: step.url,
-            required: step.required,
+            ...base,
             ok: false,
+            state: 'unknown',
             matchedSelector: null,
-            error: error instanceof Error ? error.message : String(error),
+            error: `navigation_failed:${error instanceof Error ? error.message : String(error)}`,
         };
     }
 }
@@ -155,12 +209,18 @@ export async function runSelectorCanaryDetailed(
         steps.push(await evaluateCanaryStep(page, step));
     }
 
-    const criticalFailed = steps.filter((step) => step.required && !step.ok).length;
+    // `criticalFailed` conta SOLO il drift accertato: è il numero su cui a valle si decide la
+    // quarantena, e deve restare pulito da tutto ciò che è «non lo so».
+    const criticalFailed = steps.filter((step) => step.required && step.state === 'unsafe').length;
+    const criticalUnknown = steps.filter((step) => step.required && step.state === 'unknown').length;
     const optionalFailed = steps.filter((step) => !step.required && !step.ok).length;
     return {
         workflow,
-        ok: criticalFailed === 0,
+        // Il ciclo si ferma in entrambi i casi (senza pagina non si lavora); a cambiare è la
+        // CONSEGUENZA, che il caller sceglie leggendo i due contatori separati.
+        ok: criticalFailed === 0 && criticalUnknown === 0,
         criticalFailed,
+        criticalUnknown,
         optionalFailed,
         steps,
     };

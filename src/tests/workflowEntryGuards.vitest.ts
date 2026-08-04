@@ -202,7 +202,8 @@ describe('workflowEntryGuards', () => {
             ok: false,
             optionalFailed: 0,
             criticalFailed: 2,
-            steps: [{ required: true, ok: false }],
+            criticalUnknown: 0,
+            steps: [{ required: true, ok: false, state: 'unsafe' }],
         });
 
         const result = await evaluateWorkflowEntryGuards({ workflow: 'sync-search', dryRun: false });
@@ -221,8 +222,14 @@ describe('workflowEntryGuards', () => {
         // Caso falso-positivo (es. global-nav React non montata al 1° tentativo): il 1° canary
         // fallisce, il retry sulla STESSA sessione passa → il workflow procede, nessuna quarantena.
         mocks.runSelectorCanaryDetailed
-            .mockResolvedValueOnce({ ok: false, optionalFailed: 0, criticalFailed: 1, steps: [{ required: true, ok: false }] })
-            .mockResolvedValueOnce({ ok: true, optionalFailed: 0, criticalFailed: 0, steps: [] });
+            .mockResolvedValueOnce({
+                ok: false,
+                optionalFailed: 0,
+                criticalFailed: 1,
+                criticalUnknown: 0,
+                steps: [{ required: true, ok: false, state: 'unsafe' }],
+            })
+            .mockResolvedValueOnce({ ok: true, optionalFailed: 0, criticalFailed: 0, criticalUnknown: 0, steps: [] });
 
         const result = await evaluateWorkflowEntryGuards({ workflow: 'sync-search', dryRun: false });
 
@@ -230,6 +237,34 @@ describe('workflowEntryGuards', () => {
         expect(mocks.quarantineAccount).not.toHaveBeenCalledWith('SELECTOR_CANARY_FAILED', expect.anything());
         expect(mocks.runSelectorCanaryDetailed).toHaveBeenCalledTimes(2);
         expect(mocks.humanDelay).toHaveBeenCalledTimes(1);
+    });
+
+    test('pagina non raggiungibile: ferma il ciclo SENZA quarantena, con una pausa che scade da sola', async () => {
+        // Il caso del 2026-03-30: il proxy era rotto, le pagine non arrivavano, e il canary
+        // chiamava «selettori rotti» ciò che non aveva mai potuto vedere → quarantena globale
+        // permanente. Ora un esito indeterminato ferma il ciclo (senza pagina non si lavora) ma
+        // non accusa i selettori e non lascia niente da resettare a mano.
+        mocks.runSelectorCanaryDetailed.mockResolvedValue({
+            ok: false,
+            optionalFailed: 0,
+            criticalFailed: 0,
+            criticalUnknown: 1,
+            steps: [{ required: true, ok: false, state: 'unknown', error: 'navigation_failed:net::ERR_TUNNEL' }],
+        });
+
+        const result = await evaluateWorkflowEntryGuards({ workflow: 'sync-search', dryRun: false });
+
+        expect(result.allowed).toBe(false);
+        expect(result.blocked?.reason).toBe('CANARY_PAGE_UNREACHABLE');
+        expect(mocks.quarantineAccount).not.toHaveBeenCalled();
+        // Il freno: senza una pausa a scadenza il bot ritenterebbe il canary a OGNI ciclo (il
+        // flag di successo si scrive solo quando passa) — browser e pagine LinkedIn aperte in
+        // continuazione da un IP già problematico. È la forma dei 19 cicli di giugno.
+        expect(mocks.pauseAutomation).toHaveBeenCalledWith(
+            'CANARY_PAGE_UNREACHABLE',
+            expect.objectContaining({ workflow: 'sync-search' }),
+            30,
+        );
     });
 
     test('blocca con LOGIN_REQUIRED (non SELECTOR_CANARY_FAILED) quando la sessione è sloggata', async () => {

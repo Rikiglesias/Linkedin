@@ -33,6 +33,12 @@ export type WorkflowBlockedReason =
     | 'SELECTOR_FAILURE_BURST'
     | 'RUN_ERROR_BURST'
     | 'SELECTOR_CANARY_FAILED'
+    /**
+     * Il canary non ha potuto concludere nulla: le pagine non sono arrivate (rete, proxy,
+     * redirect all'authwall). Distinto da SELECTOR_CANARY_FAILED, che vuol dire «il DOM di
+     * LinkedIn è cambiato»: qui il DOM non è mai stato visto → nessuna quarantena, solo pausa.
+     */
+    | 'CANARY_PAGE_UNREACHABLE'
     | 'COMPLIANCE_HEALTH_BLOCKED'
     | 'RISK_STOP_THRESHOLD'
     | 'AI_GUARDIAN_PREEMPTIVE'
