@@ -4,6 +4,62 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-08-04 — remediation audit-codebase, blocco 4: il canary controllava la pagina sbagliata, e non sapeva cosa stava guardando (`1166a2e`, `a81f0e5`)
+
+Due difetti dello stesso controllo, chiusi in fila. Il canary è la verifica che gira prima di ogni sessione
+per accorgersi se LinkedIn ha cambiato il DOM sotto i piedi del bot.
+
+**Primo: l'unica cosa che poteva fermare il bot era la pagina che il bot non usa.** `feed.global_nav`
+(`https://www.linkedin.com/feed/`) era l'unico step obbligatorio dell'intero piano, e il feed è una pagina
+che nessun workflow visita mai. Gli step che controllano le superfici davvero usate — il bottone «Collegati»
+nei risultati di ricerca, la casella dei messaggi, la pagina rete — erano tutti facoltativi, e `:146` li
+ignora nel calcolo del verdetto. Risultato: un cambio del bottone «Collegati» sarebbe passato inosservato,
+mentre un feed lento fermava tutto. Le tre superfici sono state promosse a obbligatorie **con il timeout
+allineato a 10 s** (correzione vincolante della review: sono pagine React come il feed, dove 6 s ricreerebbero
+i falsi negativi già risolti — stavolta però fermando il bot). Il feed è stato **declassato, non rimosso**:
+togliere lo step cambierebbe numero e ordine delle pagine aperte, cioè il footprint osservabile da LinkedIn.
+Test nuovo `selectorCanaryPlan.vitest.ts` con rosso provato (4/4 falliti sul codice precedente): copriva un
+buco reale, perché `workflowEntryGuards.vitest.ts` **mocka** il canary e quindi il piano non era verificato da
+nulla.
+
+**Secondo, ed è quello che spiega l'incidente di giugno: il canary non distingueva «il DOM è cambiato» da
+«la pagina non è arrivata».** `selectorCanary.ts` restituiva `selector_not_found` allo scadere del timeout,
+lo stesso identico verdetto di un selettore davvero rimosso. Su uno step obbligatorio entrambi aprivano un
+incidente CRITICAL con quarantena **globale e senza scadenza**. Riletti così, i 19 cicli abortiti del
+2026-03-30 — **~11 s ciascuno, cioè la durata del timeout** — non erano un cambio di piattaforma: erano
+timeout causati dal proxy rotto a monte. Il canary ha amplificato un guasto locale in un blocco permanente di
+tutti gli account, rilasciato a mano due mesi e mezzo dopo. È il duale del «fail-open su tre layer» già
+catalogato: qui è fail-closed cieco, che tratta l'incertezza come colpa.
+
+L'esito ora ha **tre stati**. Quando nessun selettore matcha, il canary chiede alla pagina se è arrivata
+davvero, con due segnali **indipendenti dai selettori sotto esame** — altrimenti si userebbe la cosa in
+discussione per giudicare sé stessa: l'URL finale (ancora su linkedin.com, non finito su authwall o
+checkpoint) e la quantità di testo nel `body`. Pagina arrivata e selettore assente = `unsafe`, drift vero,
+quarantena legittima. `goto` fallito o pagina mai renderizzata = `unknown`, nessuna conclusione possibile.
+Il report tiene i due contatori separati (`criticalFailed`, `criticalUnknown`) e il guard sceglie la
+conseguenza; il nuovo motivo di blocco è `CANARY_PAGE_UNREACHABLE`.
+
+**La correzione che la review anti-ban ha imposto, e senza la quale il fix sarebbe stato un peggioramento.**
+Togliere la quarantena al ramo indeterminato toglieva anche l'unico freno esistente: `canary_last_ok_at` si
+scrive **solo** quando il canary passa, quindi con un proxy rotto il bot avrebbe ritentato a ogni ciclo —
+browser lanciato e quattro pagine LinkedIn aperte ogni volta, da un IP verosimilmente già problematico. È la
+forma esatta dei 19 cicli di giugno. Al posto della quarantena c'è una pausa **a scadenza**
+(`pauseAutomation`, 30 minuti): pochi tentativi l'ora, e si sblocca da sola quando la rete torna, senza che
+nessuno debba resettare niente a mano.
+
+Anti-ban: nessuna navigazione, click o attesa in più; il percorso felice è invariato e la sonda gira solo
+quando il canary sta già fallendo. La lettura del `body` è la stessa chiamata che il canary fa già oggi
+(`core/workflowEntryGuards.ts:124`), quindi la superficie verso LinkedIn non cambia.
+
+Rosso di controllo provato anche qui: i quattro test nuovi sul canary falliscono sul codice precedente, e sul
+guard il caso «pagina irraggiungibile» produceva `SELECTOR_CANARY_FAILED` con quarantena.
+Quality gate: 189 file, 1834 test, typecheck backend e frontend, `eslint --max-warnings 0`. Entrambi i commit
+pushati, working tree pulito.
+
+**Onestà sulla priorità**: la quarantena è stata resettata a mano il 2026-06-13, quindi oggi non è lei a
+tenere fermo il bot — il blocco attuale è il proxy, a monte. Questo lavoro previene la ricaduta, non sblocca
+niente adesso; andava fatto prima di rimettere in moto la catena, non per rimetterla in moto.
+
 ## 2026-08-04 — remediation audit-codebase, blocco 3: la suite non tocca più il database vivo, e il flaky ha un nome (`65d109a`, `70ab37f`)
 
 Chiude il criterio C4 (suite deterministica e isolata), rimasto aperto alla fine del blocco 2.
