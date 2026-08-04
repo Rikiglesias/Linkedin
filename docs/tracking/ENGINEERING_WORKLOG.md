@@ -4,6 +4,37 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-08-04 — remediation audit-codebase, blocco 11: il canvas che non veniva sporcato, e un bridge che taceva (`798e59f`, `5105c07`)
+
+**Nel 39% dei profili il canvas non veniva perturbato affatto.** L'ampiezza del rumore sommato a ogni pixel
+nasceva da un `Math.floor(canvasNoise * 255)`, e il rumore vive in un intervallo che parte da un milionesimo:
+sotto un duecentocinquantacinquesimo quel floor restituisce zero. Ampiezza zero significa che il generatore
+pseudocasuale gira, sceglie i segni, e poi somma zero a ogni componente: il canvas resta quello originale. Non
+era un caso di coda, era il 39% dei fingerprint sul canale rosso, il 43% sul verde e il 41% sul blu, perché le
+tre soglie differiscono. Il punto non è che un canvas pulito sia sospetto — ce l'hanno tutti gli utenti veri —
+ma che è **identico per ogni account che gira sulla stessa macchina**, e quindi li rende collegabili fra loro:
+è la stessa famiglia dei tratti costanti fra installazioni, che identificano il software invece della sessione.
+Il rimedio alza solo il pavimento a uno: il tetto resta due come prima, e soprattutto non cambia il modello,
+perché a rendere unico il fingerprint è il pattern dei segni, che dipende da un seme distinto per ogni profilo.
+La ricerca sul tema converge su questo: il rumore va tenuto deterministico per profilo — né randomizzato a ogni
+sessione, né assente.
+
+Una nota su come è stata trovata, perché vale per il resto della lista. L'item diceva «noiseGenerator riga 39,
+il 39% dei seed dà rumore zero». Nel generatore il rumore non è mai zero: c'è un `Math.max` che lo impedisce, e
+su centomila seed i casi a zero sono zero. Il numero era giusto ma il posto no: il 39% stava in **chi consuma**
+quel valore, cioè nel launcher. Quando un item punta a un file e una riga, quella è il sospetto, non il
+colpevole — vanno guardati anche i consumatori prima di dichiararlo.
+
+**Un bridge che non è registrato non lo dice a nessuno.** Le tre funzioni del ponte fra `humanBehavior` e
+`overlayDismisser` uscivano con un ritorno vuoto quando la funzione non era stata registrata: zero per il
+dismiss degli overlay, `undefined` per le altre due — cioè esattamente ciò che restituirebbero avendo lavorato.
+È questa forma ad aver tenuto i tre bridge scollegati per mesi, con le registrazioni in un file mai importato,
+senza che nulla lo segnalasse. Ora ogni chiamata a vuoto viene contata e resa leggibile, con un avviso emesso
+una volta per funzione invece che a ogni ciclo. Il file non ha ricevuto import nuovi, ed è deliberato: esiste
+per rompere una dipendenza circolare, quindi non può dipendere dal logger — chi ha il logger legge il
+contatore. Verificato prima e dopo che i cicli restino zero. Il valore restituito ai chiamanti non cambia: si
+aggiunge una traccia, non un valore che nessun punto di chiamata saprebbe interpretare.
+
 ## 2026-08-04 — remediation audit-codebase, blocco 10: cosa serve davvero, e un'ora di scarto su mezzo mondo (`82c69d0`)
 
 **Tre capability passate al setaccio del criterio «serve davvero?».** Le domande sono sempre le stesse: chi
