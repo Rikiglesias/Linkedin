@@ -22,6 +22,20 @@ import {
 import { LEAD_SELECT_COLUMNS } from './sqlColumns';
 import { mergedLeadValue, normalizeLegacyStatus, normalizeTextValue, withTransaction } from './shared';
 
+/**
+ * GDPR Art.21: chi ha esercitato l'opposizione non va CONTATTATO.
+ *
+ * Va aggiunta a ogni query che sceglie a chi mandare un invito o un messaggio. Il gate
+ * gia' esistente ("H17") copriva solo l'arricchimento, cioe' la raccolta dati: un lead
+ * opposto non veniva arricchito ma veniva comunque contattato, che e' il contrario
+ * dell'ordine di gravita'.
+ *
+ * NON si applica a cio' che non e' un contatto: il ritiro di un invito gia' inviato
+ * (`getExpiredInvitedLeads`) va anzi eseguito, e il controllo del sito aziendale
+ * (`getLeadsByStatusForSiteCheck`) non tocca la persona.
+ */
+export const GDPR_NO_CONTACT_CLAUSE = 'AND (gdpr_opt_out IS NULL OR gdpr_opt_out != 1)';
+
 function normalizeLeadListRow(row: LeadListRow): LeadListCampaignConfig {
     return {
         name: row.name,
@@ -1031,6 +1045,7 @@ export async function getLeadsForFollowUp(
         `SELECT ${LEAD_SELECT_COLUMNS}
          FROM leads
          WHERE status = 'MESSAGED'
+           ${GDPR_NO_CONTACT_CLAUSE}
            AND follow_up_count < ?
            AND messaged_at IS NOT NULL
            AND messaged_at <= DATETIME('now', '-' || ? || ' days')
@@ -1115,6 +1130,7 @@ export async function getLeadsByStatusForList(
         FROM leads
         WHERE status = ?
           AND list_name = ?
+          ${GDPR_NO_CONTACT_CLAUSE}
           ${scoreClause}
           ${invitedAgeClause}
           AND NOT EXISTS (
