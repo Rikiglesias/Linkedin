@@ -4,6 +4,44 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-08-05 — remediation audit-codebase, blocco 13: il tempo di digitazione stava nel posto sbagliato (`01e7e23`)
+
+**Il difetto.** Il valore passato come `delay` a Playwright non è l'intervallo fra un tasto e il successivo.
+Nella libreria installata (`playwright-core/lib/server/input.js`, `Keyboard.press`) la sequenza è
+`down → wait(delay) → up`: quel numero è il **dwell**, cioè quanto il tasto resta premuto. E poiché qui si
+digitava **un carattere per chiamata**, il **flight time** fra i tasti era il solo round-trip del protocollo,
+~0 ms — esattamente la «zona bot» (<50 ms) che le costanti 55/80 ms dicevano di evitare. In più produceva
+pressioni fino a **650 ms su uno spazio**, che non è una battitura umana. Preesistente, non introdotto dai
+refactor precedenti; trovato dal critico avversariale, e la premessa è stata **ri-verificata alla libreria**
+prima di agire, non presa sulla parola.
+
+**Perché l'approccio proposto era sbagliato.** Il finding diceva di pilotare `keyboard.down`/`up` a mano.
+Replicando `buildLayoutClosure` dalla libreria si vede che `à è é ò ù ì` e `€` **non sono nel layout US**:
+`down('à')` solleverebbe `Unknown key`, e per un bot che scrive in italiano è la norma, non il caso limite.
+Playwright li instrada su `insertText`. Quindi i due tempi sono stati separati **restando dentro l'API alta**:
+`delay` = `humanKeystrokeDwellMs()` (nuova, log-normale 62-118 ms), e l'intervallo = `humanKeystrokeDelayMs`
+**invariata**, ora attesa esplicitamente. Il TIMING-CORE non è stato riscritto: è cambiato il suo **ruolo**.
+Log-normale e non uniforme perché un istogramma piatto è a sua volta una firma.
+
+**Gemelli, senza i quali il fix era a metà.** I 4 retype dopo correzione typo dentro `humanType` avevano
+dwell arbitrario e flight 0 → helper `premiTasto`. E il ramo VisionSolver di `uiFallback` aveva il difetto
+**identico** su `page.keyboard.type`, con un commento che dichiarava «la cadenza è la stessa» — cadenza che
+non otteneva.
+
+**Misurato sulla funzione reale, 68.000 campioni**: dwell 55-650 → **62-118 ms** (mediana 85, 57 valori
+distinti) · flight **~0 → 126,6 ms** · ritmo **95 → 56 WPM** (la media umana sta sotto gli 80) · un messaggio
+da 136 caratteri passa da 17,2 s a **29,0 s**. Volumi, cap, pending ratio, scheduling, fingerprint e sessione
+**invariati**: cambia solo come il tempo è distribuito dentro una digitazione.
+
+**Verifica**: rosso di controllo **3/4 prima** del fix (flight assente; dwell 55 ms; 370 ms su uno spazio) —
+il quarto test non prova il difetto, previene una regressione verso un dwell costante, ed è detto nel test.
+Gate `conta-problemi` **exit 0 (202 file, 1939 test)**. `/antiban-review` **SICURO**.
+
+**Residui dichiarati**: rollover fra tasti resta 0 · accentati senza eventi tastiera · il centro del dwell
+(~85 ms) è un ordine di grandezza plausibile, **non** una media empirica (3 ricerche + il paper sulle
+distribuzioni free-text danno definizioni e forma, nessuna media di riferimento) · la log-logistica risulta
+superiore alla log-normale ma da **fonte singola** ⇒ contestato, non applicato.
+
 ## 2026-08-04 — remediation audit-codebase, blocco 12: due item che, presi alla lettera, avrebbero fatto danni (`8e56fe7`, `9458a4b`)
 
 **Il primo item diceva «dispersione gaussiana anche su clickCoordinatesHumanLike», e farlo sarebbe stato un
