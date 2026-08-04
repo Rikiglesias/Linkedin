@@ -221,16 +221,20 @@ export async function executeSyncSearchWorkflow(
         if (!loggedIn) {
             loggedIn = await awaitManualLogin(session.page, 'sync-search');
             if (!loggedIn) {
-                return buildBlockedResult('sync-search', {
-                    reason: 'LOGIN_REQUIRED',
-                    message: 'Login LinkedIn non completato',
-                }, {
-                    riskAssessment: preflight.riskAssessment,
-                    artifacts: buildWorkflowArtifacts({
-                        preflight,
-                        estimatedMinutes: estimateExecutionMinutes(dryRun, maxPages, 90, 20),
-                    }),
-                });
+                return buildBlockedResult(
+                    'sync-search',
+                    {
+                        reason: 'LOGIN_REQUIRED',
+                        message: 'Login LinkedIn non completato',
+                    },
+                    {
+                        riskAssessment: preflight.riskAssessment,
+                        artifacts: buildWorkflowArtifacts({
+                            preflight,
+                            estimatedMinutes: estimateExecutionMinutes(dryRun, maxPages, 90, 20),
+                        }),
+                    },
+                );
             }
         }
 
@@ -243,9 +247,7 @@ export async function executeSyncSearchWorkflow(
             // H25: passa il timestamp di fine ultima sessione → se < 30min fa, warmup RIDOTTO
             // (un umano che riapre LinkedIn dopo pochi minuti non riscorre feed+notifiche da capo).
             // Chiave coerente con salesNavigatorSync (browser_session_ended_at), scritta nel finally sotto.
-            const lastSessionEndedAt = await getRuntimeFlag(`browser_session_ended_at:${account.id}`).catch(
-                () => null,
-            );
+            const lastSessionEndedAt = await getRuntimeFlag(`browser_session_ended_at:${account.id}`).catch(() => null);
             // T2b: warmup condizionale — fuori orario o rischio CAUTION/STOP → feed-only;
             // account nuovo → feed garantito. Riusa risk/età/timezone già disponibili.
             const accountAgeDays = await getAccountAgeDays().catch(() => undefined);

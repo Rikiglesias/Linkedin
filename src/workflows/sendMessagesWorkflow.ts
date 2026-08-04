@@ -33,7 +33,8 @@ function printNoWorkHint(result: WorkflowExecutionResult): void {
     if (result.blocked?.reason !== 'NO_WORK_AVAILABLE') {
         return;
     }
-    const listName = typeof result.blocked.details?.['listName'] === 'string' ? result.blocked.details['listName'] : null;
+    const listName =
+        typeof result.blocked.details?.['listName'] === 'string' ? result.blocked.details['listName'] : null;
     if (listName) {
         console.log(`\n  Nessun lead ACCEPTED/READY_MESSAGE disponibile nella lista "${listName}".\n`);
         return;

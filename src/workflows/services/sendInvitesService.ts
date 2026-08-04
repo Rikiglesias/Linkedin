@@ -1,11 +1,7 @@
 import { config, getLocalDateString } from '../../config';
 import { getDatabase } from '../../db';
 import { runWorkflow } from '../../core/orchestrator';
-import {
-    computeListPerformanceMultiplier,
-    getDailyStat,
-    getListDailyStatsBatch,
-} from '../../core/repositories';
+import { computeListPerformanceMultiplier, getDailyStat, getListDailyStatsBatch } from '../../core/repositories';
 import { enrichLeadsParallel } from '../../integrations/parallelEnricher';
 import { runPreflight } from '../preflight';
 import type {
@@ -36,7 +32,10 @@ interface SendInvitesPreflightAnswers {
     _accountId?: string;
 }
 
-async function getScoreStats(listName?: string | null, minScore?: number): Promise<{ min: number; max: number; avg: number; count: number }> {
+async function getScoreStats(
+    listName?: string | null,
+    minScore?: number,
+): Promise<{ min: number; max: number; avg: number; count: number }> {
     const db = await getDatabase();
     const params: unknown[] = [];
     let where = `status = 'READY_INVITE' AND lead_score IS NOT NULL`;
@@ -233,9 +232,7 @@ export async function executeSendInvitesWorkflow(
                 limit,
                 // Risposta valida → usala; altrimenti default dalla config reale (non un cieco 'none').
                 noteMode:
-                    answers['noteMode'] === 'ai' ||
-                    answers['noteMode'] === 'template' ||
-                    answers['noteMode'] === 'none'
+                    answers['noteMode'] === 'ai' || answers['noteMode'] === 'template' || answers['noteMode'] === 'none'
                         ? answers['noteMode']
                         : config.inviteWithNote
                           ? config.inviteNoteMode
@@ -314,29 +311,33 @@ export async function executeSendInvitesWorkflow(
             // best-effort
         }
 
-        return buildBlockedResult('send-invites', {
-            reason: 'NO_WORK_AVAILABLE',
-            message: 'Nessun lead READY_INVITE disponibile per questo run',
-            details: { listName: listFilter, totalInDb, newCount, minScore },
-        }, {
-            summary: {
-                lead_totali: totalInDb,
-                lead_new: newCount,
-                candidati_ready_invite: candidateCount,
-                score_minimo: minScore,
+        return buildBlockedResult(
+            'send-invites',
+            {
+                reason: 'NO_WORK_AVAILABLE',
+                message: 'Nessun lead READY_INVITE disponibile per questo run',
+                details: { listName: listFilter, totalInDb, newCount, minScore },
             },
-            riskAssessment: preflight.riskAssessment,
-            artifacts: buildWorkflowArtifacts({
-                preflight,
-                previewLeads,
-                candidateCount,
-                extra: { totalInDb, newCount, scoreStats },
-            }),
-            nextAction:
-                newCount > 0
-                    ? 'Esegui enrichment dei lead NEW prima di inviare inviti.'
-                    : 'Sincronizza o arricchisci una lista prima di lanciare send-invites.',
-        });
+            {
+                summary: {
+                    lead_totali: totalInDb,
+                    lead_new: newCount,
+                    candidati_ready_invite: candidateCount,
+                    score_minimo: minScore,
+                },
+                riskAssessment: preflight.riskAssessment,
+                artifacts: buildWorkflowArtifacts({
+                    preflight,
+                    previewLeads,
+                    candidateCount,
+                    extra: { totalInDb, newCount, scoreStats },
+                }),
+                nextAction:
+                    newCount > 0
+                        ? 'Esegui enrichment dei lead NEW prima di inviare inviti.'
+                        : 'Sincronizza o arricchisci una lista prima di lanciare send-invites.',
+            },
+        );
     }
 
     const effectiveLimit = sessionLimit > 0 ? Math.min(sessionLimit, candidateCount) : candidateCount;
@@ -403,14 +404,24 @@ export async function executeSendInvitesWorkflow(
     const invitesSent = invitesAfter - invitesBefore;
 
     if (workflowError) {
-        return buildBlockedResult('send-invites', {
-            reason: 'WORKFLOW_ERROR',
-            message: workflowError,
-        }, {
-            errors: [workflowError],
-            riskAssessment: preflight.riskAssessment,
-            artifacts: buildWorkflowArtifacts({ preflight, previewLeads, candidateCount, estimatedMinutes, extra: { scoreStats } }),
-        });
+        return buildBlockedResult(
+            'send-invites',
+            {
+                reason: 'WORKFLOW_ERROR',
+                message: workflowError,
+            },
+            {
+                errors: [workflowError],
+                riskAssessment: preflight.riskAssessment,
+                artifacts: buildWorkflowArtifacts({
+                    preflight,
+                    previewLeads,
+                    candidateCount,
+                    estimatedMinutes,
+                    extra: { scoreStats },
+                }),
+            },
+        );
     }
 
     if (runOutcome && runOutcome.status === 'blocked' && runOutcome.blocked) {

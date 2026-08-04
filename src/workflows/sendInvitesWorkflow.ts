@@ -19,11 +19,12 @@ function printNoWorkHint(result: WorkflowExecutionResult): void {
     const extra = result.artifacts?.extra;
     const totalInDb = typeof extra?.['totalInDb'] === 'number' ? extra['totalInDb'] : 0;
     const newCount = typeof extra?.['newCount'] === 'number' ? extra['newCount'] : 0;
-    const listName = typeof result.blocked.details?.['listName'] === 'string' ? result.blocked.details['listName'] : null;
+    const listName =
+        typeof result.blocked.details?.['listName'] === 'string' ? result.blocked.details['listName'] : null;
 
     if (newCount > 0) {
         console.log(`\n  ${totalInDb} lead nel DB, ${newCount} ancora in stato NEW.`);
-        console.log("  Esegui enrichment o sync-list prima di rilanciare send-invites.\n");
+        console.log('  Esegui enrichment o sync-list prima di rilanciare send-invites.\n');
         return;
     }
 
@@ -35,10 +36,7 @@ function printNoWorkHint(result: WorkflowExecutionResult): void {
     console.log('\n  Nessun lead READY_INVITE disponibile al momento.\n');
 }
 
-async function maybeRunSyncSearchFallback(
-    result: WorkflowExecutionResult,
-    opts: SendInvitesOptions,
-): Promise<void> {
+async function maybeRunSyncSearchFallback(result: WorkflowExecutionResult, opts: SendInvitesOptions): Promise<void> {
     if (opts.dryRun || result.blocked?.reason !== 'NO_WORK_AVAILABLE' || !isInteractiveTTY()) {
         return;
     }
@@ -55,7 +53,8 @@ async function maybeRunSyncSearchFallback(
         `  Nome della lista in cui aggiungere i nuovi lead (default: ${opts.listName || config.salesNavSyncListName || '(tutte le liste)'}): `,
     );
     const selectedAccountId =
-        result.artifacts?.preflight?.selectedAccountId && typeof result.artifacts.preflight.selectedAccountId === 'string'
+        result.artifacts?.preflight?.selectedAccountId &&
+        typeof result.artifacts.preflight.selectedAccountId === 'string'
             ? result.artifacts.preflight.selectedAccountId
             : opts.accountId;
 

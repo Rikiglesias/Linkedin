@@ -78,9 +78,7 @@ const ALL_LISTS_CHOICE = '(tutte le liste)';
  *   - 1 lista                    -> quella, come default reale (nessuna scelta a vuoto)
  *   - >1 liste                   -> scelta tra le liste vere (+ "tutte"), tipo 'choice'
  */
-async function buildListQuestion(
-    request: Omit<SyncListWorkflowRequest, 'workflow'>,
-): Promise<PreflightQuestion> {
+async function buildListQuestion(request: Omit<SyncListWorkflowRequest, 'workflow'>): Promise<PreflightQuestion> {
     if (request.listName || request.listUrl) {
         return {
             id: 'listName',
@@ -240,27 +238,35 @@ export async function executeSyncListWorkflow(
     }
 
     if (syncError) {
-        return buildBlockedResult('sync-list', {
-            reason: 'WORKFLOW_ERROR',
-            message: syncError,
-        }, {
-            errors: [syncError],
-            riskAssessment: preflight.riskAssessment,
-            artifacts: buildWorkflowArtifacts({
-                preflight,
-                estimatedMinutes: estimateExecutionMinutes(request.dryRun ?? false, maxPages, 60, 15),
-            }),
-        });
+        return buildBlockedResult(
+            'sync-list',
+            {
+                reason: 'WORKFLOW_ERROR',
+                message: syncError,
+            },
+            {
+                errors: [syncError],
+                riskAssessment: preflight.riskAssessment,
+                artifacts: buildWorkflowArtifacts({
+                    preflight,
+                    estimatedMinutes: estimateExecutionMinutes(request.dryRun ?? false, maxPages, 60, 15),
+                }),
+            },
+        );
     }
 
     if (!report) {
-        return buildBlockedResult('sync-list', {
-            reason: 'WORKFLOW_ERROR',
-            message: 'runSalesNavigatorListSync non ha prodotto un report',
-        }, {
-            riskAssessment: preflight.riskAssessment,
-            artifacts: buildWorkflowArtifacts({ preflight }),
-        });
+        return buildBlockedResult(
+            'sync-list',
+            {
+                reason: 'WORKFLOW_ERROR',
+                message: 'runSalesNavigatorListSync non ha prodotto un report',
+            },
+            {
+                riskAssessment: preflight.riskAssessment,
+                artifacts: buildWorkflowArtifacts({ preflight }),
+            },
+        );
     }
 
     const workflowReport: WorkflowReport = {

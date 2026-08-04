@@ -1,11 +1,7 @@
 import { config, getLocalDateString } from '../../config';
 import { getDatabase } from '../../db';
 import { runWorkflow } from '../../core/orchestrator';
-import {
-    computeListPerformanceMultiplier,
-    getDailyStat,
-    getListDailyStatsBatch,
-} from '../../core/repositories';
+import { computeListPerformanceMultiplier, getDailyStat, getListDailyStatsBatch } from '../../core/repositories';
 import { enrichLeadsParallel } from '../../integrations/parallelEnricher';
 import { runPreflight } from '../preflight';
 import type {
@@ -212,24 +208,28 @@ export async function executeSendMessagesWorkflow(
     }
 
     if (readyCount === 0) {
-        return buildBlockedResult('send-messages', {
-            reason: 'NO_WORK_AVAILABLE',
-            message: 'Nessun lead ACCEPTED/READY_MESSAGE disponibile per questo run',
-            details: { listName: listFilter },
-        }, {
-            summary: {
-                lead_messaggiabili: readyCount,
-                lista_target: listFilter,
+        return buildBlockedResult(
+            'send-messages',
+            {
+                reason: 'NO_WORK_AVAILABLE',
+                message: 'Nessun lead ACCEPTED/READY_MESSAGE disponibile per questo run',
+                details: { listName: listFilter },
             },
-            riskAssessment: preflight.riskAssessment,
-            artifacts: buildWorkflowArtifacts({
-                preflight,
-                previewLeads,
-                candidateCount: readyCount,
-                extra: { previewMessage },
-            }),
-            nextAction: 'Attendi nuove accettazioni o verifica la lista target.',
-        });
+            {
+                summary: {
+                    lead_messaggiabili: readyCount,
+                    lista_target: listFilter,
+                },
+                riskAssessment: preflight.riskAssessment,
+                artifacts: buildWorkflowArtifacts({
+                    preflight,
+                    previewLeads,
+                    candidateCount: readyCount,
+                    extra: { previewMessage },
+                }),
+                nextAction: 'Attendi nuove accettazioni o verifica la lista target.',
+            },
+        );
     }
 
     const effectiveLimit = sessionLimit > 0 ? Math.min(sessionLimit, readyCount) : readyCount;
@@ -274,20 +274,24 @@ export async function executeSendMessagesWorkflow(
     const messagesSent = msgAfter - msgBefore;
 
     if (workflowError) {
-        return buildBlockedResult('send-messages', {
-            reason: 'WORKFLOW_ERROR',
-            message: workflowError,
-        }, {
-            errors: [workflowError],
-            riskAssessment: preflight.riskAssessment,
-            artifacts: buildWorkflowArtifacts({
-                preflight,
-                previewLeads,
-                candidateCount: readyCount,
-                estimatedMinutes,
-                extra: { enrichmentDegraded, previewMessage },
-            }),
-        });
+        return buildBlockedResult(
+            'send-messages',
+            {
+                reason: 'WORKFLOW_ERROR',
+                message: workflowError,
+            },
+            {
+                errors: [workflowError],
+                riskAssessment: preflight.riskAssessment,
+                artifacts: buildWorkflowArtifacts({
+                    preflight,
+                    previewLeads,
+                    candidateCount: readyCount,
+                    estimatedMinutes,
+                    extra: { enrichmentDegraded, previewMessage },
+                }),
+            },
+        );
     }
 
     if (runOutcome && runOutcome.status === 'blocked' && runOutcome.blocked) {

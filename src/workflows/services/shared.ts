@@ -1,4 +1,11 @@
-import type { PreflightResult, WorkflowBlockedState, WorkflowExecutionArtifacts, WorkflowExecutionResult, WorkflowKind, WorkflowReport } from '../types';
+import type {
+    PreflightResult,
+    WorkflowBlockedState,
+    WorkflowExecutionArtifacts,
+    WorkflowExecutionResult,
+    WorkflowKind,
+    WorkflowReport,
+} from '../types';
 
 export function estimateExecutionMinutes(
     dryRun: boolean,
@@ -12,9 +19,7 @@ export function estimateExecutionMinutes(
     return Math.ceil((setupSeconds + itemCount * perItemSeconds) / 60);
 }
 
-export function buildWorkflowArtifacts(
-    artifacts?: WorkflowExecutionArtifacts,
-): WorkflowExecutionArtifacts | undefined {
+export function buildWorkflowArtifacts(artifacts?: WorkflowExecutionArtifacts): WorkflowExecutionArtifacts | undefined {
     if (!artifacts) {
         return undefined;
     }
