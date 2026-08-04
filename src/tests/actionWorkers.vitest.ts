@@ -645,6 +645,47 @@ describe('acceptanceWorker — processAcceptanceJob', () => {
     });
 });
 
+describe('inviteWorker — un profilo si segna visitato solo se la navigazione riesce', () => {
+    const basePayload: InviteJobPayload = { leadId: 42, localDate: '2025-06-07' };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        vi.mocked(getLeadByIdCore).mockResolvedValue(makeLead({ status: 'READY_INVITE' }));
+    });
+
+    it('navigazione fallita → il retry RITENTA, non esce dichiarando successo', async () => {
+        const { navigateToProfileWithContext } = await import('../browser/navigationContext');
+        vi.mocked(navigateToProfileWithContext).mockResolvedValue({ success: false } as never);
+
+        // Stessa sessione per i due tentativi: e' il caso reale del retry di un job.
+        const context = makeContext({ dryRun: false });
+
+        await expect(processInviteJob(basePayload, context)).rejects.toThrow(/Navigazione/);
+        // Il secondo tentativo DEVE riprovare la navigazione. Prima del fix il profilo era gia'
+        // segnato come visitato, quindi il worker usciva subito con workerResult(0) e il job
+        // risultava SUCCEEDED senza aver invitato nessuno: fallimento invisibile.
+        await expect(processInviteJob(basePayload, context)).rejects.toThrow(/Navigazione/);
+
+        expect(vi.mocked(navigateToProfileWithContext).mock.calls.length).toBe(2);
+
+        vi.mocked(navigateToProfileWithContext).mockResolvedValue({ success: true } as never);
+    });
+
+    it('navigazione riuscita → il profilo risulta visitato e non viene rivisitato', async () => {
+        const { navigateToProfileWithContext } = await import('../browser/navigationContext');
+        vi.mocked(navigateToProfileWithContext).mockResolvedValue({ success: true } as never);
+
+        const context = makeContext({ dryRun: true });
+        await processInviteJob(basePayload, context);
+        const callsAfterFirst = vi.mocked(navigateToProfileWithContext).mock.calls.length;
+
+        const second = await processInviteJob(basePayload, context);
+
+        expect(second.processedCount).toBe(0);
+        expect(vi.mocked(navigateToProfileWithContext).mock.calls.length).toBe(callsAfterFirst);
+    });
+});
+
 describe('contratto DOM: la casella messaggi non e un input', () => {
     // Presidio STATICO contro il ritorno del bug dei messaggi mai inviati.
     // Serve perche' i mock di questa suite non possono catturarlo: nel browser reale

@@ -336,12 +336,15 @@ export async function processInviteJob(
     // crea un pattern sospetto: browser idle per 30-60s senza interazione → rilevabile.
     // Se il lead non è ancora arricchito, procedi comunque — l'enrichment verrà fatto offline.
 
-    // Skip profili già visitati oggi: evita duplicate profile view sullo stesso target
+    // Skip profili già visitati oggi: evita duplicate profile view sullo stesso target.
+    // Il profilo si segna come visitato DOPO che la navigazione è riuscita (vedi sotto), non qui:
+    // marcarlo prima significava che, se la navigazione falliva e il job veniva ritentato, il retry
+    // usciva subito da questo `if` con workerResult(0) — cioè **il job risultava SUCCEEDED senza
+    // aver inviato nulla**, e il fallimento diventava invisibile a chiunque guardasse i risultati.
     const normalizedUrl = lead.linkedin_url.replace(/\/+$/, '').toLowerCase();
     if (context.visitedProfilesToday?.has(normalizedUrl)) {
         return workerResult(0);
     }
-    context.visitedProfilesToday?.add(normalizedUrl);
 
     const { buildSessionSnapshot } = await import('./sessionDataHelper');
     const navigationSessionSnapshot = await buildSessionSnapshot(context);
@@ -390,6 +393,10 @@ export async function processInviteJob(
     if (!navigationResult.success) {
         throw new RetryableWorkerError('Navigazione organica al profilo fallita', 'PROFILE_NAVIGATION_FAILED');
     }
+    // Da qui la profile view è avvenuta davvero: solo ora il profilo conta come "visitato oggi".
+    // Se il worker fallisce più avanti (click, modale, AI), il profilo resta segnato — corretto:
+    // LinkedIn l'ha comunque registrata, e rivisitarlo sarebbe una view duplicata.
+    context.visitedProfilesToday?.add(normalizedUrl);
     // Content-Aware Profile Reading (3.4 fix): funzione UNIFICATA scroll + dwell
     // in budget totale proporzionale alla ricchezza del profilo (4-20s).
     // Sostituisce simulateHumanReading + contextualReadingPause per i profili.
