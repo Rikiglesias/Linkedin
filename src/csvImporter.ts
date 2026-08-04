@@ -47,7 +47,9 @@ export async function importLeadsFromCSV(filePath: string, listName: string): Pr
                 // Bounded: oltre il cap fermati esplicitamente invece di rischiare OOM su file enormi.
                 if (rows.length > MAX_CSV_ROWS) {
                     stream.destroy();
-                    reject(new Error(`CSV troppo grande (> ${MAX_CSV_ROWS} righe): dividi il file in batch più piccoli.`));
+                    reject(
+                        new Error(`CSV troppo grande (> ${MAX_CSV_ROWS} righe): dividi il file in batch più piccoli.`),
+                    );
                 }
             })
             .on('end', resolve)

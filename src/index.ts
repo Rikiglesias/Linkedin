@@ -227,7 +227,9 @@ function printHelp(): void {
     console.log('  enrich-deep --lead <id> | --list <nome> [--limit N] [--dry-run]');
     console.log('  enrich-profiles --list <nome> [--limit 15] [--dry-run] [--no-proxy]');
     console.log('  enrich-fast [--list <nome>] [--limit 50] [--concurrency 5]  (parallelo, zero LinkedIn)');
-    console.log('  enrich-live [--list <nome>]                                 (background, solo fonti gratuite, drena i mancanti)');
+    console.log(
+        '  enrich-live [--list <nome>]                                 (background, solo fonti gratuite, drena i mancanti)',
+    );
     console.log('  pause [minutes|indefinite] [reason]');
     console.log('  resume');
     console.log('  unquarantine [--account <id>]');
@@ -272,7 +274,16 @@ function shouldRunMandatoryPreflight(command: string | undefined): boolean {
     // CL5 fix (anti-ban): random-activity esegue azioni reali su LinkedIn (browser) → deve passare
     // il preflight obbligatorio (doctor gate: sessione/quarantine/compliance) come gli altri comandi
     // d'azione. Prima ne era escluso: un account in quarantena/sessione scaduta poteva agire comunque.
-    const guardedCommands = new Set(['run', 'run-loop', 'autopilot', 'connect', 'check', 'message', 'warmup', 'random-activity']);
+    const guardedCommands = new Set([
+        'run',
+        'run-loop',
+        'autopilot',
+        'connect',
+        'check',
+        'message',
+        'warmup',
+        'random-activity',
+    ]);
     return guardedCommands.has(command);
 }
 

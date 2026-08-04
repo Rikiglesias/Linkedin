@@ -156,7 +156,9 @@ export async function appendLeadReplyDraft(leadId: number, input: LeadReplyDraft
         const metadata = readResult.metadata;
 
         const existingDrafts = Array.isArray(metadata.reply_drafts)
-            ? metadata.reply_drafts.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+            ? metadata.reply_drafts.filter(
+                  (item): item is Record<string, unknown> => !!item && typeof item === 'object',
+              )
             : [];
         const nextDraft = {
             draft: input.draft.slice(0, 500),

@@ -2,12 +2,7 @@ import type { Page } from 'playwright';
 import { createHash } from 'crypto';
 import { clickLocatorHumanLike, detectChallenge, dismissKnownOverlays, humanDelay, isLoggedIn } from '../browser';
 import { attemptChallengeResolution } from '../workers/challengeHandler';
-import {
-    getSafeMaxSearches,
-    getSafeSessionLimit,
-    reInjectOverlays,
-    smartClick,
-} from './bulkSaveHelpers';
+import { getSafeMaxSearches, getSafeSessionLimit, reInjectOverlays, smartClick } from './bulkSaveHelpers';
 import {
     addSyncItem,
     completeSyncRun,

@@ -365,10 +365,7 @@ export async function addLead(input: AddLeadInput): Promise<boolean> {
         ]);
         const listRow = await db.get<{ id: number }>(`SELECT id FROM lead_lists WHERE name = ?`, [input.listName]);
         if (leadRow?.id && listRow?.id) {
-            await db.run(`INSERT OR IGNORE INTO list_leads (list_id, lead_id) VALUES (?, ?)`, [
-                listRow.id,
-                leadRow.id,
-            ]);
+            await db.run(`INSERT OR IGNORE INTO list_leads (list_id, lead_id) VALUES (?, ?)`, [listRow.id, leadRow.id]);
         }
 
         return (result.changes ?? 0) > 0;

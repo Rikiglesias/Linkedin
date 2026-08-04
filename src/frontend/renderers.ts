@@ -690,8 +690,7 @@ export function renderLeadDetail(lead: LeadSearchRecord, timeline: LeadTimelineE
     // CL11 fix (security/XSS): ogni campo lead (importabile via CSV o scrapato da LinkedIn) puo'
     // contenere payload HTML. escapeHtml su tutti i campi + l'href accettato solo se http(s)
     // (blocca javascript:/data: URL). escapeHtml e' la stessa utility gia' in dom.ts.
-    const safeUrl =
-        lead.linkedin_url && /^https?:\/\//i.test(lead.linkedin_url) ? lead.linkedin_url : '';
+    const safeUrl = lead.linkedin_url && /^https?:\/\//i.test(lead.linkedin_url) ? lead.linkedin_url : '';
     meta.innerHTML = `
         <p><strong>Azienda:</strong> ${escapeHtml(lead.account_name ?? '—')}</p>
         <p><strong>Titolo:</strong> ${escapeHtml(lead.job_title ?? '—')}</p>

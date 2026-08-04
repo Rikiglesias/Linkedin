@@ -108,9 +108,7 @@ export async function enrichLeadsParallel(opts: ParallelEnrichmentOptions): Prom
     for (let i = 0; i < leads.length; i += opts.concurrency) {
         const batch = leads.slice(i, i + opts.concurrency);
 
-        const results = await Promise.allSettled(
-            batch.map((lead) => enrichSingleLead(db, lead, opts.paidProviders)),
-        );
+        const results = await Promise.allSettled(batch.map((lead) => enrichSingleLead(db, lead, opts.paidProviders)));
 
         for (let j = 0; j < results.length; j++) {
             done++;

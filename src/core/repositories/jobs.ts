@@ -51,10 +51,7 @@ export async function deleteQueuedJobsByIds(ids: number[]): Promise<number> {
     if (validIds.length === 0) return 0;
     const db = await getDatabase();
     const placeholders = validIds.map(() => '?').join(', ');
-    const result = await db.run(
-        `DELETE FROM jobs WHERE status = 'QUEUED' AND id IN (${placeholders})`,
-        validIds,
-    );
+    const result = await db.run(`DELETE FROM jobs WHERE status = 'QUEUED' AND id IN (${placeholders})`, validIds);
     return result.changes ?? 0;
 }
 

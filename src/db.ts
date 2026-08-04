@@ -871,16 +871,7 @@ export async function backupDatabase(): Promise<string> {
             await new Promise<void>((resolve, reject) => {
                 execFile(
                     'pg_dump',
-                    [
-                        '--dbname',
-                        dbnameArg,
-                        '--format',
-                        'plain',
-                        '--no-owner',
-                        '--no-privileges',
-                        '--file',
-                        backupPath,
-                    ],
+                    ['--dbname', dbnameArg, '--format', 'plain', '--no-owner', '--no-privileges', '--file', backupPath],
                     { timeout: 120_000, env: dumpEnv },
                     (error) => {
                         if (error) reject(error);

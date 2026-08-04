@@ -800,9 +800,7 @@ export function releaseStickyProxy(sessionId: string): void {
 // H22 fix: estratta come funzione PURA (testabile direttamente, senza flakiness da Date.now) +
 // esportata. Comportamento identico a prima. M34: cooldown differenziato per tipo di errore —
 // ban IP e timeout hanno gravità molto diverse (prima era 10min fissi per qualsiasi errore).
-export function computeProxyCooldownMs(
-    errorType?: 'timeout' | 'connection_refused' | 'ban' | 'unknown',
-): number {
+export function computeProxyCooldownMs(errorType?: 'timeout' | 'connection_refused' | 'ban' | 'unknown'): number {
     switch (errorType) {
         case 'ban':
             return 120 * 60_000; // 2h — IP bannato, serve rotazione

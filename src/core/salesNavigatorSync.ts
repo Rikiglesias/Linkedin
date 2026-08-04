@@ -734,15 +734,17 @@ async function ensureLoggedInOrAwaitManual(
     }
 }
 
-async function applyWarmupAndInputBlock(session: BrowserSession, accountId: string, interactive: boolean): Promise<void> {
+async function applyWarmupAndInputBlock(
+    session: BrowserSession,
+    accountId: string,
+    interactive: boolean,
+): Promise<void> {
     // Warmup sessione: simula navigazione umana (feed, notifiche) prima di operare su SalesNav.
     // Un utente reale non apre LinkedIn e va dritto su una lista SalesNav.
     if (!interactive) {
         try {
             const { warmupSession } = await import('./sessionWarmer');
-            const lastSessionEndedAt = await getRuntimeFlag(`browser_session_ended_at:${accountId}`).catch(
-                () => null,
-            );
+            const lastSessionEndedAt = await getRuntimeFlag(`browser_session_ended_at:${accountId}`).catch(() => null);
             await warmupSession(session.page, lastSessionEndedAt);
         } catch (warmupErr) {
             console.warn(
@@ -856,7 +858,9 @@ async function discoverAndFilterLists(
     if (!interactive) await blockUserInput(session.page);
 
     const allDiscoveredNames = discovered.map((l) => l.name);
-    const targetLists = listFilter ? discovered.filter((entry) => matchesListNameFilter(entry, listFilter)) : discovered;
+    const targetLists = listFilter
+        ? discovered.filter((entry) => matchesListNameFilter(entry, listFilter))
+        : discovered;
 
     if (targetLists.length === 0) {
         // Riusa i nomi già scoperti — evita una seconda navigazione alla pagina liste

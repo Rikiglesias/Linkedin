@@ -24,7 +24,14 @@ import type { ProxyType } from '../config/types';
 export type WorkflowEntryKind = WorkflowSelection | WorkflowKind;
 
 function touchesUi(workflow: WorkflowEntryKind): boolean {
-    return workflow === 'all' || workflow === 'check' || workflow === 'invite' || workflow === 'message' || workflow === 'sync-list' || workflow === 'sync-search';
+    return (
+        workflow === 'all' ||
+        workflow === 'check' ||
+        workflow === 'invite' ||
+        workflow === 'message' ||
+        workflow === 'sync-list' ||
+        workflow === 'sync-search'
+    );
 }
 
 /**
@@ -91,9 +98,7 @@ async function runCanaryIfNeeded(
             // proxy che il consumer userebbe lanciando da solo — così il tipo di proxy verificato dal
             // canary è quello su cui gira l'outreach (no mismatch silenzioso). Per jobRunner è
             // mobile-priority (jobRunner.ts:194); per gli account non riusati è irrilevante.
-            ...(reuseThisSession && reusePreferredProxyType
-                ? { preferredProxyType: reusePreferredProxyType }
-                : {}),
+            ...(reuseThisSession && reusePreferredProxyType ? { preferredProxyType: reusePreferredProxyType } : {}),
         });
         // [WINDOW-BLOCK] Proteggi ANCHE la finestra del canary: lancia il proprio browser e va su
         // LinkedIn, quindi il mouse fisico dell'utente deve passarci attraverso come per la sessione
@@ -228,9 +233,7 @@ async function runCanaryIfNeeded(
                 // volta, da un IP verosimilmente già problematico (è la forma dei 19 cicli abortiti
                 // di giugno). 30 minuti: pochi tentativi l'ora, e si sblocca da solo quando la rete
                 // torna, senza nessun intervento manuale.
-                const stepsIndeterminati = report.steps.filter(
-                    (step) => step.required && step.state === 'unknown',
-                );
+                const stepsIndeterminati = report.steps.filter((step) => step.required && step.state === 'unknown');
                 await logWarn('selector.canary.page_unreachable', {
                     localDate,
                     workflow,
@@ -383,11 +386,7 @@ export async function evaluateWorkflowEntryGuards(
 
     const diskStatus = checkDiskSpace();
     if (diskStatus.level === 'critical') {
-        await pauseAutomation(
-            'DISK_SPACE_CRITICAL',
-            { freeMb: diskStatus.freeMb, message: diskStatus.message },
-            60,
-        );
+        await pauseAutomation('DISK_SPACE_CRITICAL', { freeMb: diskStatus.freeMb, message: diskStatus.message }, 60);
         await logWarn('workflow.skipped.disk_critical', { freeMb: diskStatus.freeMb });
         return block({
             reason: 'DISK_CRITICAL',

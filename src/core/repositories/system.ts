@@ -592,10 +592,9 @@ export interface QuarantineStatus {
 /** Stato aggregato per doctor/admin/API: flag globale + elenco account in quarantena. */
 export async function getQuarantineStatus(): Promise<QuarantineStatus> {
     const db = await getDatabase();
-    const rows = await db.query<{ key: string }>(
-        `SELECT key FROM sync_state WHERE key LIKE ? AND value = 'true'`,
-        [`${ACCOUNT_QUARANTINE_FLAG}:%`],
-    );
+    const rows = await db.query<{ key: string }>(`SELECT key FROM sync_state WHERE key LIKE ? AND value = 'true'`, [
+        `${ACCOUNT_QUARANTINE_FLAG}:%`,
+    ]);
     const accounts = rows.map((row) => row.key.slice(ACCOUNT_QUARANTINE_FLAG.length + 1));
     const global = (await getRuntimeFlag(ACCOUNT_QUARANTINE_FLAG)) === 'true';
     return { global, accounts, any: global || accounts.length > 0 };
