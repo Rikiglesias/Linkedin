@@ -4,6 +4,56 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-08-04 — remediation audit-codebase, blocco 3: la suite non tocca più il database vivo, e il flaky ha un nome (`65d109a`, `70ab37f`)
+
+Chiude il criterio C4 (suite deterministica e isolata), rimasto aperto alla fine del blocco 2.
+
+**I test scrivevano nel database di produzione.** Misura mia, non ereditata: un singolo `npx vitest run`
+aggiungeva **28** righe a `run_logs` e **5** a `security_audit_events` (31374 → 31402). La sorgente non erano
+i test — la maggior parte mocka `../db`, e solo tre file lo importano davvero — ma il **logger applicativo**
+(`core/repositories/system.ts:671` e `:765`), che apriva il database reale semplicemente perché nessuno gli
+diceva di usarne un altro. La leva esisteva già e non era collegata: `config/domains.ts:88` legge `DB_PATH`,
+ma vitest non aveva né `globalSetup` né `setupFiles` (nell'output della suite: `setup 0ms`).
+
+Il fix è in tre file nuovi sotto `src/tests/setup/`. Due scelte non ovvie, entrambe con un perché:
+si copia il database invece di crearne uno vuoto, perché `getDatabase()` **non esegue le migration** e su un
+file vuoto fallirebbe ogni test che interroga una tabella reale; e la copia si fa con `VACUUM INTO` invece di
+`copyFileSync`, perché con il journal in modalità WAL una copia grezza del solo `.sqlite` perde le transazioni
+non ancora sottoposte a checkpoint. `DB_PATH` viene impostato in `setupFiles` e non in `globalSetup`:
+quest'ultimo gira in un contesto separato **prima che i worker esistano**, quindi il suo `process.env` non li
+raggiunge (verificato sulla documentazione vitest, tre fonti convergenti). Per la stessa ragione il percorso
+della copia è *calcolato* dalle due parti e non passato. `dotenv` non sovrascrive le variabili già presenti,
+quindi il valore impostato qui ha la precedenza su quello del `.env`.
+Verifica: 3 esecuzioni consecutive verdi (188 file, 1825 test) con delta **0** su `run_logs`,
+`security_audit_events`, `leads` e `campaign_runs`; `setup` passato da `0ms` a ~9s.
+
+**Il flaky non era misterioso: era un test che misurava l'orologio.** Era
+`asyncUtilsAdvanced.vitest.ts:5` — `expect(Date.now() - start).toBeLessThan(50)` dopo `sleep(0)`. Quella
+asserzione non misura `sleep`, misura quanto è congestionato l'event loop: provato dal vivo, con il thread
+occupato da un altro task `sleep(0)` impiega **121 ms** e l'asserzione cade. Spiega esattamente il sintomo
+osservato — falliva circa una volta su nove a suite piena, con 188 file in parallelo, e mai lanciando il file
+da solo. Gemello della stessa classe in `asyncUtils.vitest.ts:6` (`>= 40`, stesso commento «tolleranza timer»).
+Entrambi riscritti sul **contratto** invece che sul cronometro: `sleep(0)` deve cedere il turno a un timer e
+quindi arrivare dopo una promise già risolta (l'ordine microtask/macrotask è garantito dalle specifiche,
+qualunque sia il carico), e `sleep(50)` non deve risolvere prima del tempo, verificato al millisecondo con i
+timer simulati — più stringente del `>= 40` precedente, che non copriva affatto il caso «risolve troppo presto».
+
+**Nota di metodo, la parte che conta.** Il rosso di controllo è stato eseguito in entrambe le direzioni con un
+file temporaneo poi rimosso: contro due implementazioni rotte di `sleep` (una sincrona, una che ignora il
+delay) le nuove asserzioni devono fallire, contro quella vera devono passare. La **prima stesura**
+dell'asserzione sull'ordine era troppo debole e restava verde anche con la `sleep` sincrona, perché `.then()`
+è comunque un microtask: il controllo l'ha intercettata prima del commit. Senza quel passaggio sarebbe entrato
+in repo un test che non prova nulla — la stessa classe di problema documentata nel blocco 2.
+Stabilità confermata: 3 esecuzioni verdi con 10 processi che saturano la CPU, cioè la condizione che faceva
+cadere la versione precedente.
+
+**Residuo dichiarato.** `sessionPerformanceTracker.vitest.ts:36` ha la stessa forma (`>= 40` dopo un
+`setTimeout` di 50 ms) ma non è instabile: un timer può ritardare, mai anticipare, quindi il carico non può
+farlo fallire. Lasciato com'è per non refactorare ciò che non è rotto.
+
+Quality gate finale: `npm run conta-problemi` exit 0 (typecheck backend e frontend, `eslint --max-warnings 0`,
+1825 test). Due commit pushati, working tree pulito.
+
 ## 2026-08-04 — remediation audit-codebase, blocco 2: messaggi e inviti, e perché i test non vedevano nulla (`7d9f92b`, `5a5d766`)
 
 Chiude il criterio C1 (nessun fallimento silenzioso) su tutti e quattro i percorsi.
