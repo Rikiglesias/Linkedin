@@ -4,6 +4,58 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-08-04 — remediation audit-codebase, blocco 8: tre cose esposte più di quanto servisse (`81f3251`, `08312f7`, `ad540f8`)
+
+Tre item presi insieme perché sono la stessa classe: dati o servizi raggiungibili da più lontano del
+necessario. Ogni premessa è stata verificata alla fonte prima di scrivere una riga, e in due casi su tre la
+descrizione ereditata dall'audit era più mite della realtà.
+
+**Il gate dei segreti eseguiva il nome dei file, e negli audit non leggeva niente.** Erano tre difetti nello
+stesso punto. Il primo: il nome del file finiva interpolato in una stringa passata alla shell, e
+`JSON.stringify().slice(1,-1)` fa l'escape JSON — che non è l'escape della shell, e per giunta toglie le
+virgolette. Provato in un repo isolato con un payload innocuo: un file staged chiamato `a&copy NUL
+INJECTED.txt` ha creato davvero `INJECTED.txt`, perché cmd spezza il comando sulla `&`. Il secondo, nello
+stesso `catch`: quel `git show` fallito veniva ingoiato e il file non veniva scansionato affatto, con uscita
+zero — la stessa forma vale per un file oltre `maxBuffer`, cioè proprio dove un dump di credenziali starebbe.
+Il terzo è quello che dura da più tempo: con l'area di stage vuota lo scanner usciva zero senza leggere un
+byte, ed è uno step `hard` di `auditRunner`, che gira ogni giorno alle nove esattamente in quel contesto. Da
+mesi quel «security-scan PASS» era su zero byte. Ora gli argomenti passano a git in un array senza shell, una
+lettura fallita blocca il commit dicendo quale file e perché, e senza nulla in stage vengono scansionati i
+file versionati, con una riga finale che dichiara quanti ne ha letti e in che modalità. Sul repo vero: 834
+file in 0,73 secondi, zero falsi positivi — il rischio da misurare prima di committare era proprio quello,
+perché un falso positivo qui avrebbe bloccato ogni commit successivo. Sul gate non esisteva alcun test:
+adesso ce n'è uno, con rosso di controllo 4 su 9 e i tre casi di non-regressione già verdi.
+
+**La dashboard salvava sul disco i dati dei lead, e li riserviva anche scaduti.** Il service worker cacheava
+ogni GET sotto `/api/`, e fra quelle c'è `/api/export/leads`, che restituisce nome, azienda, URL LinkedIn,
+email e telefono di cinquecento lead. La Cache API sta su disco e sopravvive alla chiusura del browser; il
+fallback offline poi serviva quella copia anche oltre i cinque minuti dichiarati, senza limite. Ora gli
+endpoint che possono finire in cache sono un elenco esplicito a corrispondenza esatta, e sono solo dati
+aggregati — funnel, contatori di run, serie storica — letti riga per riga per verificare che non contengano
+persone. È una allowlist e non una denylist di proposito: un endpoint nuovo resta fuori finché qualcuno non
+lo dichiara, invece di entrarci in silenzio. La trappola era a valle: togliere quegli endpoint dal ramo
+`/api/` li faceva cadere in `staleWhileRevalidate`, cioè nella cache statica, che non ha nemmeno una
+scadenza — sarebbe stato peggio di prima. Ora ciò che non è ammesso esce dal service worker senza
+`respondWith`, quindi lo serve la rete e non tocca il disco. Il nome della cache è passato a `v3` apposta:
+l'handler `activate` cancella le cache non più valide, ed è l'unico modo di togliere dal disco ciò che la
+versione precedente ci ha già scritto — la pulizia avviene al primo caricamento della dashboard, perché
+`skipWaiting` e `clients.claim` sono già in quel file. Trade-off dichiarato: offline la lista lead non è più
+consultabile, ed è il comportamento voluto.
+
+**Postgres, n8n e la dashboard erano pubblicati su tutte le interfacce.** Tre servizi su cinque avevano la
+porta senza indirizzo, mentre `bot-api` era già legato a `127.0.0.1`: non una scelta, un'incoerenza dentro
+lo stesso file, col modo giusto scritto poche righe sotto. Il caso che pesa è n8n, che ha in ambiente le
+chiavi di Anthropic, Telegram e della dashboard: chi arriva all'interfaccia arriva alle chiavi. La rete
+interna non cambia, perché `ports:` governa solo la pubblicazione verso l'host e i container continuano a
+parlarsi per nome di servizio; verificato inoltre che nessuno dei quattro webhook n8n sia chiamato da fuori.
+Il commento che diceva «porta esposta pubblicamente» è stato corretto invece di lasciarlo lì a mentire.
+`docker compose config` conferma `host_ip: 127.0.0.1` su tutte e quattro le porte pubblicate — letto solo
+filtrato sulle righe delle porte, perché quel comando risolve il `.env`. Aggiunta la sentinella che mancava:
+senza, il file può tornare a esporsi domani senza che nessuno se ne accorga.
+
+**Verifica finale**: `npm run conta-problemi` exit 0 — 194 file, 1871 test, typecheck backend e frontend,
+eslint senza warning. Tre commit, tutti pushati, albero pulito.
+
 ## 2026-08-04 — remediation audit-codebase, blocco 7: due difetti trovati dalla passata finale, non da un test rosso (`b7e70dd`, `1c3398a`)
 
 Entrambi sono usciti cercando attivamente il meglio prima di chiudere, non da un fallimento che si era
