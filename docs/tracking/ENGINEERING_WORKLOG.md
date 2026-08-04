@@ -4,6 +4,33 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-08-05 — remediation audit-codebase, blocco 14: il fallback vision cliccava un pixel fisso, e spesso quello sbagliato (`d19109f`)
+
+**Il finding diceva «coordinate fisse = firma». Vero, ma il difetto peggiore era un altro.**
+`VISION_FIXED_FALLBACKS` teneva coordinate letterali (`640,120` / `80,160`) passate a
+`clickCoordinatesHumanLike`, che **non disperde**: stesso pixel su ogni account e ogni sessione. Fin qui il
+finding. Guardando i **consumatori** — la regola imparata nel blocco 12 — si vede il resto: quelle coordinate
+sono calibrate per **1280x800** (lo dice il commento), ma in headless il viewport è forzato a **1920x1080** e
+i fingerprint ne portano di propri; nel codice ce ne sono **almeno 10 diversi**. Il layout di SalesNav è
+responsive, quindi fuori da 1280x800 il punto `(640,120)` **non è il bottone**: è un punto qualsiasi di una
+pagina LinkedIn. E il `clamp` non proteggeva da questo — teneva il click dentro lo **schermo**, non sul target.
+
+**Due rimedi, in ordine di importanza.** ① Guardia `fallbackViewportCompatibile` (±5%): fuori dal viewport di
+calibrazione si **salta**, con log esplicito, invece di tirare a indovinare. Il criterio è l'asimmetria del
+costo: una pagina saltata non fa danni, un click non osservato su LinkedIn sì. ② Dispersione del punto con
+`humanPointInBox` su finestra stretta (28x18), **riusando** l'helper esistente invece di scrivere una seconda
+formula di dispersione.
+
+**Correzione al finding.** `challengeHandler.ts` **non** aveva coordinate fisse: `coords` arriva dal provider
+AI e varia con l'immagine. Il difetto lì è minore — per lo stesso captcha il provider tende a restituire lo
+stesso punto, cliccato al pixel esatto — e il rimedio è più piccolo: dispersione **12x12**, volutamente
+minima, perché un riquadro di captcha è ≥40 px e sbagliarlo costa più della firma che si evita.
+
+**Test.** Quello che bloccava i click vision a «2» contava **solo** `uiFallback`: è il motivo per cui il
+residuo dichiarato in `8e56fe7` era sottostimato. Ora i due punti fuori da quel file hanno le loro guardie.
+Rosso di controllo provato sul codice precedente (0 match delle `toContain`, 1 match dei pattern ora vietati)
+· `madge --circular` 0 · gate **202 file, 1942 test, exit 0** · `/antiban-review` **SICURO**.
+
 ## 2026-08-05 — remediation audit-codebase, blocco 13: il tempo di digitazione stava nel posto sbagliato (`01e7e23`)
 
 **Il difetto.** Il valore passato come `delay` a Playwright non è l'intervallo fra un tasto e il successivo.
