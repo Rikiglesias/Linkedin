@@ -19,15 +19,25 @@ import { humanDelay } from './humanDelay';
  * Include il 3% di probabilità di errore di battitura + correzione (Backspace).
  */
 /**
- * Ritardo inter-keystroke per un carattere. ESTRATTA da `humanType`, non riscritta: stessi parametri,
- * stessa formula, stesso ordine delle operazioni — l'estrazione serve a poterla riusare dove si digita
- * senza un locator (ramo VisionSolver di `typeWithFallback`, che prima aveva una copia peggiore con
- * delay uniforme e floor 40ms).
+ * Valore passato come `delay` a Playwright per un carattere. ESTRATTA da `humanType`, non riscritta:
+ * stessi parametri, stessa formula, stesso ordine — serve a riusarla dove si digita senza un locator
+ * (ramo VisionSolver di `typeWithFallback`, che prima aveva una copia peggiore, uniforme e con floor
+ * 40ms).
  *
- * Le costanti sono TIMING-CORE e restano quelle: cadenza log-normale (right-skew, come il flight time
- * umano reale) invece che uniforme, e floor ASSOLUTO applicato DOPO i moltiplicatori — 55ms per i
- * caratteri e 80ms per spazi e punteggiatura, per stare sopra la soglia dei 50ms sotto la quale cade
- * circa il 21% dei keystroke bot contro il 5,8% degli umani.
+ * 🔴 ATTENZIONE — il nome storico "cadenza inter-keystroke" e' IMPRECISO, verificato nella libreria
+ * installata (`playwright-core/lib/server/input.js:110-114`): la sequenza e' `down` -> `wait(delay)`
+ * -> `up`, quindi questo valore e' il tempo di PRESSIONE del tasto (dwell), non l'intervallo fra un
+ * tasto e il successivo (flight time), che resta ~0. Le costanti qui sotto erano state scelte
+ * ragionando sul flight time, quindi la difesa che descrivono NON e' quella che ottengono: un dwell di
+ * 650ms su uno spazio non e' umano, e il flight reale resta nella zona <50ms.
+ * NON e' un difetto introdotto dall'estrazione — e' preesistente in `humanType` — ma va corretto
+ * pilotando `keyboard.down`/`up` a mano (dwell 70-110ms, attesa log-normale fra `up` e il `down`
+ * successivo). Tracciato nel binding `~/todos/audit-codebase.md` come item aperto, trovato dal critico
+ * avversariale il 2026-08-04. Fino ad allora: le costanti restano quelle, per non cambiare due cose
+ * insieme.
+ *
+ * Le costanti sono TIMING-CORE: distribuzione log-normale (right-skew) invece che uniforme, e floor
+ * ASSOLUTO applicato DOPO i moltiplicatori — 55ms per i caratteri, 80ms per spazi e punteggiatura.
  *
  * @param lengthSlowFactor rallentamento per testi lunghi (1 = neutro)
  * @param wordMultiplier   flow state della parola corrente (1 = neutro)

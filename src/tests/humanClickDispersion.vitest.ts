@@ -56,10 +56,14 @@ describe('humanPointInBox — dispersione del punto di click', () => {
 });
 
 describe('i call-site che partivano dal centro esatto sono stati convertiti', () => {
-    it('organicContent non calcola più il centro a mano', () => {
+    it('organicContent non calcola più NESSUN centro a mano', () => {
         const src = sorgente('browser/organicContent.ts');
-        expect(src).not.toMatch(/const targetX = box\.x \+ box\.width \/ 2/);
-        expect(src).toContain('humanPointInBox(box)');
+        // Prima l'asserzione cercava la stringa esatta `const targetX = box.x + box.width / 2` e
+        // quindi NON vedeva il terzo punto, che usa `rBox`: verde per il motivo sbagliato, trovato
+        // dal critico avversariale. Ora cerca la FORMA del difetto, non una sua istanza letterale.
+        expect(src).not.toMatch(/\.width \/ 2/);
+        expect(src).not.toMatch(/\.height \/ 2/);
+        expect(src).toContain('humanPointInBox(');
     });
 
     it('il fallback Shadow DOM disperde prima di cliccare', () => {

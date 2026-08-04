@@ -197,7 +197,8 @@ async function reactToPost(page: Page): Promise<void> {
                 const specificReaction = reactionLocator.nth(reactionIndex);
                 const rBox = await specificReaction.boundingBox();
                 if (rBox) {
-                    await (await _hb()).humanMouseMoveToCoords(page, rBox.x + rBox.width / 2, rBox.y + rBox.height / 2);
+                    const rPoint = (await _hc()).humanPointInBox(rBox);
+                    await (await _hb()).humanMouseMoveToCoords(page, rPoint.x, rPoint.y);
                     await (await _hb()).humanDelay(page, 200, 500);
                     await (await _hc()).clickLocatorHumanLike(page, specificReaction);
                     // NEW-12: Dwell time post-reaction (osserva conteggio reazioni)
