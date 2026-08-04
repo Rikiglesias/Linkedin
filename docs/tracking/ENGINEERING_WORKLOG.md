@@ -4,6 +4,48 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-08-04 — remediation audit-codebase, blocco 2: messaggi e inviti, e perché i test non vedevano nulla (`7d9f92b`, `5a5d766`)
+
+Chiude il criterio C1 (nessun fallimento silenzioso) su tutti e quattro i percorsi.
+
+**Messaggi mai inviati.** `SELECTORS.messageTextbox` punta a `div[contenteditable]`, e Playwright su un
+nodo non-input **rifiuta** `.inputValue()` (`Node is not an <input>, <textarea> or <select> element` —
+provato con una sonda dal vivo, non dedotto dalla documentazione). Col `.catch(() => '')` il contenuto
+risultava sempre vuoto, quindi la verifica a `messageWorker.ts:485` era sempre vera e il `throw` scattava
+**prima** del blocco di invio a `:505`. Zero messaggi, zero errori — coerente con `message_history` a 0.
+Gemello non segnalato dall'audit: `:383`, stesso metodo, quindi la bonifica della bozza residua non è mai
+stata eseguita e il testo nuovo si accodava al vecchio. Entrambi passano a `.innerText()`: si sceglie
+`innerText` e non `textContent` perché qui conta il testo **visibile** nella casella (con `textContent` si
+conterebbe anche testo nascosto come se fosse stato digitato).
+
+**Perché nessun test se n'era accorto — vale oltre questo bug.** Il rosso di controllo ha mostrato che, col
+difetto rimesso, la suite restava **verde**: un mock risponde a qualunque metodo, il browser no; e il
+`TypeError` risultante veniva scartato dal `catch` a `:500` perché non è un `RetryableWorkerError`. Questa
+classe di difetto — assunzioni sul DOM reale — non era coperta da nulla. Aggiunti quindi:
+`src/tests/harnessDomContracts.ts` (browser vero, selettori reali, nessuna richiesta a LinkedIn) e, nei test
+unitari, la **rimozione di `inputValue` dal mock** (se resta disponibile, un ritorno al metodo sbagliato passa
+in silenzio) più due guardie statiche che falliscono citando le righe esatte. Trovato di rimbalzo: un test
+sui selettori leggeva il **mock** invece del file vero — corretto con `vi.importActual`. Regola generale: in
+una suite che mocka un modulo, verificarlo con un `import` normale significa controllare il finto.
+
+**Inviti che risultavano riusciti senza invitare.** `inviteWorker.ts:344` segnava il profilo in
+`visitedProfilesToday` **prima** di navigarci (`:382`). Se la navigazione falliva, al retry il worker trovava
+l'URL già presente, usciva con `workerResult(0)` e **il job risultava SUCCEEDED**: nessun invito, nessun
+errore, nessuna traccia. L'`add()` è stato spostato dopo `navigationResult.success`. Due test nuovi con rosso
+provato in entrambe le direzioni (col bug: «promise resolved { success: true } instead of rejecting»; e la
+protezione contro la view duplicata resta intatta).
+
+**Misura su C4, criterio non ancora chiuso.** Confermato con numeri che **la suite scrive nel database di
+produzione**: 8 run consecutivi → `run_logs` 31057 → 31269 (+212) e `security_audit_events` 4330 → 4357 (+27),
+cioè ~26 log e ~3 eventi di audit a ogni esecuzione. La leva esiste già (`config/domains.ts:88` legge `DB_PATH`,
+e `src/tests/e2eDry.ts:11` lo usa) ma vitest non ha `setupFiles`. Attenzione per chi lo implementa:
+`getDatabase()` **non esegue migration**, quindi puntare a un DB vuoto farebbe fallire i test che interrogano
+tabelle reali — va copiato il DB in una directory temporanea. Flakiness: un run fallito su nove, non
+riprodotto negli 8 successivi, **non ancora identificato** → C4 resta aperto.
+
+`conta-problemi` exit 0 (188 file, 1825 test) su ogni commit. Residui dichiarati: 9 empty-catch preesistenti
+(`[skip-sast]` con prova che i diff non ne aggiungono), tutti tracciati in `~/todos/audit-codebase.md`.
+
 ## 2026-08-04 — remediation audit-codebase, blocco 1: il bot non scrollava le pagine e tre funzioni non erano mai state collegate (`fb807a2`, `e14a69a`)
 
 Primo blocco di correzioni dopo l'audit del 2026-08-03 (che era stato read-only). Tracker: `~/todos/audit-codebase.md`.
