@@ -74,9 +74,19 @@ export function humanKeystrokeDwellMs(): number {
  * aveva gia' la sua cadenza. Stessa classe di difetto, stesso rimedio: se si correggesse solo il
  * ciclo principale resterebbero manciate di keystroke a intervallo nullo dopo ogni correzione.
  */
-async function premiTasto(page: Page, element: Locator, char: string): Promise<void> {
+async function premiTasto(
+    page: Page,
+    element: Locator,
+    char: string,
+    lengthSlowFactor = 1,
+    wordMultiplier = 1,
+): Promise<void> {
     await element.pressSequentially(char, { delay: humanKeystrokeDwellMs() });
-    await page.waitForTimeout(humanKeystrokeDelayMs(char));
+    // I moltiplicatori vanno passati anche qui: senza, i caratteri di correzione avrebbero una
+    // cadenza leggermente diversa dal resto del testo, cioe' una discontinuita' misurabile proprio
+    // nei punti in cui l'utente "si corregge". E' il rilievo che il critico aveva mosso al ramo
+    // vision (F-2c6d84fb) — da non ricreare qui.
+    await page.waitForTimeout(humanKeystrokeDelayMs(char, lengthSlowFactor, wordMultiplier));
 }
 
 export interface HumanTypeOptions {
@@ -150,7 +160,7 @@ export async function humanType(
                 await page.waitForTimeout(280 + Math.random() * 420);
                 await element.press('Backspace');
                 await page.waitForTimeout(180 + Math.random() * 250);
-                await premiTasto(page, element, originalChar);
+                await premiTasto(page, element, originalChar, lengthSlowFactor, currentWordMultiplier);
             } else if (correctionStyle < 0.75) {
                 // Stile 2 (20%): Cancella 2-3 char + riscrive (ha visto l'errore tardi)
                 const charsBack = Math.min(i, 1 + Math.floor(Math.random() * 2));
@@ -162,7 +172,7 @@ export async function humanType(
                 await page.waitForTimeout(200 + Math.random() * 300);
                 const retypeFrom = Math.max(0, i - charsBack);
                 for (let r = retypeFrom; r <= i; r++) {
-                    await premiTasto(page, element, text[r] ?? '');
+                    await premiTasto(page, element, text[r] ?? '', lengthSlowFactor, currentWordMultiplier);
                 }
             } else if (correctionStyle < 0.9) {
                 // Stile 3 (15%): Ignora l'errore — un umano a volte non se ne accorge
@@ -174,7 +184,7 @@ export async function humanType(
                 await element.press('ArrowLeft');
                 await page.keyboard.up('Shift');
                 await page.waitForTimeout(100 + Math.random() * 150);
-                await premiTasto(page, element, originalChar);
+                await premiTasto(page, element, originalChar, lengthSlowFactor, currentWordMultiplier);
             }
         }
 
@@ -200,7 +210,7 @@ export async function humanType(
                 const retypeStart = Math.max(0, i - charsToRetype + 1);
                 for (let r = retypeStart; r <= i; r++) {
                     const ch = text[r] ?? '';
-                    await premiTasto(page, element, ch);
+                    await premiTasto(page, element, ch, lengthSlowFactor, currentWordMultiplier);
                 }
             } else {
                 // Tipo 3: Micro-pausa "controllo telefono" (1-3s, nessuna azione)

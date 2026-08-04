@@ -104,6 +104,16 @@ describe('i call-site che partivano dal centro esatto sono stati convertiti', ()
         expect(src).toContain('VISION_FALLBACK_VIEWPORT');
     });
 
+    it('viewport IGNOTO non viene scambiato per viewport buono', () => {
+        const src = sorgente('salesnav/visionNavigator.ts');
+        // Trovato dalla passata avversariale sul MIO stesso fix: `viewportSize()` torna null quando il
+        // context nasce con `viewport: null` (non-headless, launcher.ts:329). Con un `?? {1280x800}`
+        // la guardia avrebbe risposto "compatibile" proprio quando le dimensioni sono IGNOTE — cioè
+        // avrebbe autorizzato il click cieco nel caso peggiore. Non sapere ≠ sapere che va bene.
+        expect(src).not.toMatch(/page\.viewportSize\(\)\s*\?\?\s*VISION_FALLBACK_VIEWPORT/);
+        expect(src).toContain('!viewport || !fallbackViewportCompatibile(viewport)');
+    });
+
     it('il click sul captcha non cade sul pixel esatto restituito dal provider', () => {
         const src = sorgente('workers/challengeHandler.ts');
         // Qui le coordinate NON sono fisse (variano con l'immagine), ma per lo stesso captcha il

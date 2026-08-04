@@ -363,16 +363,22 @@ export async function visionClick(
                 _visionOfflineSkipCount += 1;
                 const descLower = description.toLowerCase();
                 const fallback = VISION_FIXED_FALLBACKS[description] ?? VISION_FIXED_FALLBACKS[descLower];
-                const viewport = page.viewportSize() ?? VISION_FALLBACK_VIEWPORT;
-                if (fallback && !fallbackViewportCompatibile(viewport)) {
+                // ⚠️ `viewportSize()` restituisce null quando il context e' creato con `viewport: null`
+                // (modalita' non-headless, `launcher.ts:329`). Un default a 1280x800 qui sarebbe il
+                // buco peggiore: la guardia direbbe "compatibile" proprio quando le dimensioni sono
+                // IGNOTE, cioe' esattamente il caso in cui non si deve cliccare. Non sapere ≠ sapere
+                // che va bene.
+                const viewport = page.viewportSize();
+                if (fallback && (!viewport || !fallbackViewportCompatibile(viewport))) {
                     // Meglio saltare che cliccare alla cieca: fuori dal viewport di calibrazione quel
                     // punto non e' il bottone, e un click non osservato su LinkedIn costa piu' di una
                     // pagina saltata.
+                    const descrizioneViewport = viewport ? `${viewport.width}x${viewport.height}` : 'IGNOTO (viewport: null)';
                     console.warn(
-                        `[VISION-H07] Vision AI offline e viewport ${viewport.width}x${viewport.height} diverso da quello di calibrazione ` +
+                        `[VISION-H07] Vision AI offline e viewport ${descrizioneViewport} diverso da quello di calibrazione ` +
                             `(${VISION_FALLBACK_VIEWPORT.width}x${VISION_FALLBACK_VIEWPORT.height}): coordinate fisse NON usate per "${description}" — skip.`,
                     );
-                } else if (fallback) {
+                } else if (fallback && viewport) {
                     const fx = clampNumber(fallback.x, 0, viewport.width - 1);
                     const fy = clampNumber(fallback.y, 0, viewport.height - 1);
                     // Dispersione attorno al punto: la coordinata a listino e' identica su ogni account
