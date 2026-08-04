@@ -9,7 +9,7 @@
  * un drift = firma key-injection rilevabile dall'ML keystroke di LinkedIn. NON riscrivere.
  */
 
-import { Page } from 'playwright';
+import { Locator, Page } from 'playwright';
 import { logNormalDelayMs } from '../../utils/random';
 import { computeSessionTypoRate, determineNextKeystroke, getWordFlowMultiplier } from '../../ai/typoGenerator';
 import { humanDelay } from './humanDelay';
@@ -24,20 +24,18 @@ import { humanDelay } from './humanDelay';
  * (ramo VisionSolver di `typeWithFallback`, che prima aveva una copia peggiore, uniforme e con floor
  * 40ms).
  *
- * 🔴 ATTENZIONE — il nome storico "cadenza inter-keystroke" e' IMPRECISO, verificato nella libreria
- * installata (`playwright-core/lib/server/input.js:110-114`): la sequenza e' `down` -> `wait(delay)`
- * -> `up`, quindi questo valore e' il tempo di PRESSIONE del tasto (dwell), non l'intervallo fra un
- * tasto e il successivo (flight time), che resta ~0. Le costanti qui sotto erano state scelte
- * ragionando sul flight time, quindi la difesa che descrivono NON e' quella che ottengono: un dwell di
- * 650ms su uno spazio non e' umano, e il flight reale resta nella zona <50ms.
- * NON e' un difetto introdotto dall'estrazione — e' preesistente in `humanType` — ma va corretto
- * pilotando `keyboard.down`/`up` a mano (dwell 70-110ms, attesa log-normale fra `up` e il `down`
- * successivo). Tracciato nel binding `~/todos/audit-codebase.md` come item aperto, trovato dal critico
- * avversariale il 2026-08-04. Fino ad allora: le costanti restano quelle, per non cambiare due cose
- * insieme.
+ * Questo valore e' il FLIGHT TIME: l'intervallo fra il rilascio di un tasto e la pressione del
+ * successivo. Va atteso ESPLICITAMENTE dal chiamante — NON passato come `delay` a Playwright.
+ * Motivo, verificato nella libreria installata (`playwright-core/lib/server/input.js`, Keyboard.press):
+ * la sequenza e' `down` -> `wait(options.delay)` -> `up`, quindi `delay` e' il tempo di PRESSIONE
+ * (dwell). Passandogli questa distribuzione si otteneva un dwell fino a 650ms su uno spazio — non
+ * umano — e un flight reale di ~0ms, cioe' dentro la zona-bot (<50ms) che le costanti qui sotto
+ * dicevano di evitare: la difesa descritta non era quella ottenuta. Difetto trovato dal critico
+ * avversariale il 2026-08-04, corretto separando i due tempi (vedi `humanKeystrokeDwellMs`).
  *
- * Le costanti sono TIMING-CORE: distribuzione log-normale (right-skew) invece che uniforme, e floor
- * ASSOLUTO applicato DOPO i moltiplicatori — 55ms per i caratteri, 80ms per spazi e punteggiatura.
+ * Le costanti sono TIMING-CORE e NON sono state riscritte: distribuzione log-normale (right-skew)
+ * invece che uniforme, e floor ASSOLUTO applicato DOPO i moltiplicatori — 55ms per i caratteri, 80ms
+ * per spazi e punteggiatura. E' cambiato solo il RUOLO: ora sono davvero l'intervallo fra i tasti.
  *
  * @param lengthSlowFactor rallentamento per testi lunghi (1 = neutro)
  * @param wordMultiplier   flow state della parola corrente (1 = neutro)
@@ -47,6 +45,38 @@ export function humanKeystrokeDelayMs(char: string, lengthSlowFactor = 1, wordMu
     const rawDelay = isSpaceOrPunctuation ? logNormalDelayMs(200, 0.42, 90, 650) : logNormalDelayMs(95, 0.42, 45, 320);
     const keystrokeFloorMs = isSpaceOrPunctuation ? 80 : 55;
     return Math.max(keystrokeFloorMs, Math.round(rawDelay * lengthSlowFactor * wordMultiplier));
+}
+
+/**
+ * DWELL: per quanto il tasto resta premuto — il valore da passare come `delay` a Playwright, che lo
+ * attende fra `down` e `up`.
+ *
+ * Separato dal flight time perche' sono due grandezze fisiche diverse: la pressione dipende dal dito,
+ * l'intervallo fra i tasti dipende anche dal pensiero. Prima erano lo stesso numero, e il risultato
+ * era un tasto tenuto premuto fino a 650ms con l'intervallo successivo a ~0.
+ *
+ * Perche' log-normale e non un uniforme 70-110: un intervallo uniforme produce un istogramma piatto,
+ * che e' a sua volta una firma (le analisi di keystroke dynamics classificano i bot anche per
+ * l'entropia dei tempi). Stessa forma right-skew usata per il resto del timing del progetto.
+ * NB: il valore centrale (~85ms) e' un ordine di grandezza plausibile, NON una media empirica
+ * triangolata — la letteratura consultata definisce dwell e flight ma non pubblica medie di
+ * riferimento. Cio' che e' certo, ed e' il motivo del fix, e' che 650ms di pressione e 0ms di
+ * intervallo non sono umani.
+ */
+export function humanKeystrokeDwellMs(): number {
+    return logNormalDelayMs(85, 0.22, 62, 118);
+}
+
+/**
+ * Preme UN tasto con i due tempi separati: dwell come `delay` di Playwright, poi il flight atteso a
+ * parte. Usata nei rami di correzione (retype dopo un typo, riscrittura dopo una micro-pausa), dove
+ * prima i caratteri partivano a raffica — dwell arbitrario e flight 0 — mentre il ciclo principale
+ * aveva gia' la sua cadenza. Stessa classe di difetto, stesso rimedio: se si correggesse solo il
+ * ciclo principale resterebbero manciate di keystroke a intervallo nullo dopo ogni correzione.
+ */
+async function premiTasto(page: Page, element: Locator, char: string): Promise<void> {
+    await element.pressSequentially(char, { delay: humanKeystrokeDwellMs() });
+    await page.waitForTimeout(humanKeystrokeDelayMs(char));
 }
 
 export interface HumanTypeOptions {
@@ -104,7 +134,12 @@ export async function humanType(
         // locator: valori e ordine delle operazioni identici, nessun ricalcolo.
         const delayBase = humanKeystrokeDelayMs(typedChar, lengthSlowFactor, currentWordMultiplier);
 
-        await element.pressSequentially(typedChar, { delay: delayBase });
+        // `delay` e' il tempo di PRESSIONE (Playwright attende fra down e up), quindi qui va il dwell.
+        await element.pressSequentially(typedChar, { delay: humanKeystrokeDwellMs() });
+        // ...e l'intervallo fra un tasto e il successivo va atteso a parte: e' il flight time, che
+        // prima non esisteva (~0ms, dentro la zona-bot). Le pause di pensiero vivono qui, non nella
+        // pressione: e' il motivo per cui spazi e punteggiatura pesano su questo valore e non sul dwell.
+        await page.waitForTimeout(delayBase);
 
         if (isTypo) {
             // H17: Variare il pattern di correzione typo — un umano non corregge
@@ -115,7 +150,7 @@ export async function humanType(
                 await page.waitForTimeout(280 + Math.random() * 420);
                 await element.press('Backspace');
                 await page.waitForTimeout(180 + Math.random() * 250);
-                await element.pressSequentially(originalChar, { delay: Math.floor(Math.random() * 80) + 60 });
+                await premiTasto(page, element, originalChar);
             } else if (correctionStyle < 0.75) {
                 // Stile 2 (20%): Cancella 2-3 char + riscrive (ha visto l'errore tardi)
                 const charsBack = Math.min(i, 1 + Math.floor(Math.random() * 2));
@@ -127,7 +162,7 @@ export async function humanType(
                 await page.waitForTimeout(200 + Math.random() * 300);
                 const retypeFrom = Math.max(0, i - charsBack);
                 for (let r = retypeFrom; r <= i; r++) {
-                    await element.pressSequentially(text[r] ?? '', { delay: Math.floor(Math.random() * 70) + 50 });
+                    await premiTasto(page, element, text[r] ?? '');
                 }
             } else if (correctionStyle < 0.9) {
                 // Stile 3 (15%): Ignora l'errore — un umano a volte non se ne accorge
@@ -139,7 +174,7 @@ export async function humanType(
                 await element.press('ArrowLeft');
                 await page.keyboard.up('Shift');
                 await page.waitForTimeout(100 + Math.random() * 150);
-                await element.pressSequentially(originalChar, { delay: Math.floor(Math.random() * 80) + 60 });
+                await premiTasto(page, element, originalChar);
             }
         }
 
@@ -165,7 +200,7 @@ export async function humanType(
                 const retypeStart = Math.max(0, i - charsToRetype + 1);
                 for (let r = retypeStart; r <= i; r++) {
                     const ch = text[r] ?? '';
-                    await element.pressSequentially(ch, { delay: Math.floor(Math.random() * 60) + 50 });
+                    await premiTasto(page, element, ch);
                 }
             } else {
                 // Tipo 3: Micro-pausa "controllo telefono" (1-3s, nessuna azione)

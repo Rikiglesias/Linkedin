@@ -17,7 +17,7 @@ import {
 } from '../core/selectorLearning';
 import { humanDelay } from './humanBehavior';
 import { clickCoordinatesHumanLike, clickLocatorHumanLike, humanPointInBox } from './humanClick';
-import { humanKeystrokeDelayMs, humanType } from './human/humanTyping';
+import { humanKeystrokeDelayMs, humanKeystrokeDwellMs, humanType } from './human/humanTyping';
 import { VisionSolver } from '../captcha/solver';
 
 export interface ClickFallbackOptions {
@@ -500,19 +500,22 @@ export async function typeWithFallback(
             await humanDelay(page, 200, 500);
 
             // Qui si scrive sulla tastiera della pagina, senza un locator: non si puo' delegare a
-            // humanType, ma la CADENZA e' la stessa — humanKeystrokeDelayMs e' la formula estratta da
-            // humanTyping, log-normale e con floor 55/80ms. Prima erano delay uniformi con floor 40ms,
-            // cioe' sotto la soglia dei 50ms della zona-bot.
+            // humanType, ma i due tempi si separano allo stesso modo — `delay` di Playwright e' il
+            // DWELL (attesa fra down e up), mentre l'intervallo fra i tasti va atteso a parte.
+            // Passare humanKeystrokeDelayMs come `delay`, come si faceva prima, lasciava il flight a
+            // ~0ms: la zona-bot che quelle costanti dicevano di evitare.
             for (let j = 0; j < text.length; j++) {
                 if (Math.random() < 0.03 && text.length > 3) {
                     const wrongChar = String.fromCharCode(97 + Math.floor(Math.random() * 26));
-                    await page.keyboard.type(wrongChar, { delay: humanKeystrokeDelayMs(wrongChar) });
+                    await page.keyboard.type(wrongChar, { delay: humanKeystrokeDwellMs() });
+                    await page.waitForTimeout(humanKeystrokeDelayMs(wrongChar));
                     await page.waitForTimeout(280 + Math.random() * 420);
                     await page.keyboard.press('Backspace');
                     await page.waitForTimeout(180 + Math.random() * 250);
                 }
                 const char = text[j] ?? '';
-                await page.keyboard.type(char, { delay: humanKeystrokeDelayMs(char) });
+                await page.keyboard.type(char, { delay: humanKeystrokeDwellMs() });
+                await page.waitForTimeout(humanKeystrokeDelayMs(char));
                 if (Math.random() < 0.04) await humanDelay(page, 400, 1100);
             }
             await trackSelectorSuccess(page, label, 'vision-layer-z');
