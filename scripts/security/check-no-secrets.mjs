@@ -1,9 +1,16 @@
 #!/usr/bin/env node
-// Pre-commit secret scanner
-// Esegue: scansiona file staged per pattern di secret reali.
-// Exit 1 se trova match non whitelistati. Exit 0 altrimenti.
+// Gate segreti — pre-commit e audit periodico.
+//
+// Due modalità, scelte da sole:
+//   staged  — ci sono file in area di stage (è un commit): scansiona quelli.
+//   tracked — l'area di stage è vuota (è l'audit schedulato): scansiona i file versionati su disco.
+// Senza la seconda modalità l'audit dichiarava PASS senza aver letto un solo byte.
+//
+// Exit 1 se trova un segreto non whitelistato OPPURE se non riesce a leggere un file che
+// doveva scansionare: da una lettura fallita non si può concludere "nessun segreto".
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
+import { readFileSync, statSync } from 'node:fs';
 
 const SECRET_PATTERNS = [
   { name: 'OpenAI key',       re: /sk-(?:proj-|svcacct-|admin-)?[A-Za-z0-9_-]{40,}/g },
@@ -32,45 +39,133 @@ const SKIP_FILES = [
   /\.(?:exe|dll|so|dylib|png|jpg|jpeg|gif|webp|ico|pdf|zip|tar|gz|7z|woff2?)$/i,
 ];
 
-function getStagedFiles() {
+const MAX_FILE_BYTES = 64 * 1024 * 1024;
+
+/**
+ * Esegue git SENZA shell: gli argomenti arrivano al processo così come sono.
+ * Con execSync + stringa interpolata un nome file che contiene `&` o `;` veniva eseguito
+ * come comando — provato dal vivo: `a&copy NUL INJECTED.txt` creava davvero il file.
+ */
+function git(args, { binary = false } = {}) {
+  return execFileSync('git', args, {
+    encoding: binary ? 'buffer' : 'utf8',
+    maxBuffer: MAX_FILE_BYTES,
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+}
+
+function toFileList(out) {
+  return out.split('\n').map((s) => s.trim()).filter(Boolean);
+}
+
+/** Elenco dei file da scansionare + la modalità con cui è stato ottenuto. */
+function selectFiles() {
+  let staged;
   try {
-    const out = execSync('git diff --cached --name-only --diff-filter=ACM', { encoding: 'utf8' });
-    return out.split('\n').map(s => s.trim()).filter(Boolean);
+    staged = toFileList(git(['diff', '--cached', '--name-only', '--diff-filter=ACM']));
   } catch {
-    return [];
+    console.error('\n❌ GATE SEGRETI NON ESEGUIBILE — git non risponde (siamo dentro un repository?).');
+    console.error('   Un controllo che non puo\' girare non e\' un controllo superato.\n');
+    process.exit(1);
+  }
+  if (staged.length > 0) return { files: staged, mode: 'staged' };
+
+  try {
+    return { files: toFileList(git(['ls-files'])), mode: 'tracked' };
+  } catch {
+    console.error('\n❌ GATE SEGRETI NON ESEGUIBILE — impossibile elencare i file versionati.\n');
+    process.exit(1);
   }
 }
 
-function getStagedContent(file) {
+/** Un buffer con byte NUL e' binario: non contiene segreti in forma leggibile. */
+function decodeText(buf) {
+  if (buf.includes(0)) return null;
+  return buf.toString('utf8');
+}
+
+/**
+ * Contenuto del file. In modalita' staged si legge la versione IN STAGE (e' quella che verrebbe
+ * committata); se git non la restituisce si ripiega sul file su disco.
+ * Ritorna null per cio' che non e' testo da scansionare (directory, binari, file gia' rimosso).
+ * LANCIA se il file esiste ma non si riesce a leggerlo: il chiamante blocca il commit.
+ */
+function readContent(file, mode) {
+  // Se la lettura dallo stage fallisce (gitlink/submodule, o contenuto oltre maxBuffer) si
+  // prova il working tree; il motivo NON viene perso: serve a spiegare l'esito se fallisce
+  // anche quello.
+  let stageError = null;
+
+  if (mode === 'staged') {
+    try {
+      return decodeText(git(['show', `:${file}`], { binary: true }));
+    } catch (err) {
+      stageError = err;
+    }
+  }
+
   try {
-    return execSync(`git show :${JSON.stringify(file).slice(1, -1)}`, { encoding: 'utf8', maxBuffer: 50_000_000 });
-  } catch {
-    return '';
+    const stat = statSync(file);
+    if (stat.isDirectory()) return null;
+    return decodeText(readFileSync(file));
+  } catch (err) {
+    // File versionato ma non piu' sul disco: non c'e' contenuto da controllare, non e' un buco.
+    // In modalita' staged invece qui ci si arriva solo dopo un errore di lettura: quello blocca.
+    if (err?.code === 'ENOENT' && mode === 'tracked') return null;
+    const detail = stageError ? ` (dallo stage: ${stageError.message?.split('\n')[0]})` : '';
+    throw new Error(`${err.message?.split('\n')[0]}${detail}`);
   }
 }
 
 function isWhitelisted(match) {
-  return WHITELIST.some(re => re.test(match));
+  return WHITELIST.some((re) => re.test(match));
 }
 
-const staged = getStagedFiles();
-const findings = [];
+function lineOf(content, index) {
+  let line = 1;
+  for (let i = 0; i < index; i++) {
+    if (content.charCodeAt(i) === 10) line++;
+  }
+  return line;
+}
 
-for (const file of staged) {
-  if (SKIP_FILES.some(re => re.test(file))) continue;
-  const content = getStagedContent(file);
-  if (!content) continue;
+const { files, mode } = selectFiles();
+const findings = [];
+const unreadable = [];
+let scanned = 0;
+
+for (const file of files) {
+  if (SKIP_FILES.some((re) => re.test(file))) continue;
+
+  let content;
+  try {
+    content = readContent(file, mode);
+  } catch (err) {
+    unreadable.push({ file, reason: err?.message ?? String(err) });
+    continue;
+  }
+  if (content === null) continue;
+  scanned++;
 
   for (const { name, re } of SECRET_PATTERNS) {
-    const matches = content.match(re);
-    if (!matches) continue;
-    for (const m of matches) {
-      if (isWhitelisted(m)) continue;
-      const lineNum = content.slice(0, content.indexOf(m)).split('\n').length;
-      const preview = m.length > 30 ? m.slice(0, 12) + '…' + m.slice(-6) : m;
-      findings.push({ file, line: lineNum, name, preview });
+    // matchAll da' la posizione REALE di ogni occorrenza: con indexOf, lo stesso segreto
+    // ripetuto veniva riportato due volte alla riga della prima.
+    for (const m of content.matchAll(re)) {
+      const value = m[0];
+      if (isWhitelisted(value)) continue;
+      const preview = value.length > 30 ? value.slice(0, 12) + '…' + value.slice(-6) : value;
+      findings.push({ file, line: lineOf(content, m.index), name, preview });
     }
   }
+}
+
+if (unreadable.length > 0) {
+  console.error('\n❌ GATE SEGRETI INCOMPLETO — file non leggibili, commit bloccato\n');
+  for (const u of unreadable) {
+    console.error(`  ${u.file}  →  ${u.reason}`);
+  }
+  console.error('\nUn file non letto non e\' un file pulito: sistema l\'accesso e riprova.\n');
+  process.exit(1);
 }
 
 if (findings.length > 0) {
@@ -86,4 +181,5 @@ if (findings.length > 0) {
   process.exit(1);
 }
 
+console.log(`✅ Nessun secret — ${scanned} file scansionati (modalita' ${mode}).`);
 process.exit(0);
