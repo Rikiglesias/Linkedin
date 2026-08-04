@@ -130,12 +130,24 @@ export async function claimPendingOutboxDeliveries(
     const normalizedOwner = ownerId.trim() || 'outbox-worker';
 
     return withTransaction(db, async () => {
+        // Si prendono le consegne mai iniziate (PENDING) E quelle abbandonate: una consegna presa
+        // in carico da un processo che poi muore resta `RUNNING` per sempre, perché nessuno
+        // rimette lo stato indietro. Guardando solo PENDING, la scadenza del lease c'era ma non
+        // serviva a niente: quella riga non veniva più selezionata, restando però contata come
+        // «da fare» da countPendingOutboxDeliveries — una coda che cresce e non avanza.
+        // Il gemello sugli EVENTI (`repositories/system.ts:174`) non ha questo problema perché non
+        // usa uno stato: filtra su `delivered_at IS NULL` più la scadenza. Qui si allinea.
+        const claimableCondition = `(d.status = 'PENDING'
+                     OR (d.status = 'RUNNING'
+                         AND d.processing_expires_at IS NOT NULL
+                         AND d.processing_expires_at <= CURRENT_TIMESTAMP))`;
+
         const candidateRows = await db.query<{ delivery_id: number }>(
             `SELECT d.id AS delivery_id
                FROM outbox_event_deliveries d
                INNER JOIN outbox_events e ON e.id = d.event_id
               WHERE d.sink = ?
-                AND d.status = 'PENDING'
+                AND ${claimableCondition}
                 AND d.next_retry_at <= CURRENT_TIMESTAMP
                 AND (d.processing_expires_at IS NULL OR d.processing_expires_at <= CURRENT_TIMESTAMP)
                 AND e.delivered_at IS NULL
@@ -157,7 +169,10 @@ export async function claimPendingOutboxDeliveries(
                         updated_at = CURRENT_TIMESTAMP
                   WHERE id = ?
                     AND sink = ?
-                    AND status = 'PENDING'
+                    AND (status = 'PENDING'
+                         OR (status = 'RUNNING'
+                             AND processing_expires_at IS NOT NULL
+                             AND processing_expires_at <= CURRENT_TIMESTAMP))
                     AND next_retry_at <= CURRENT_TIMESTAMP
                     AND (processing_expires_at IS NULL OR processing_expires_at <= CURRENT_TIMESTAMP)`,
                 [normalizedOwner, safeLeaseSeconds, candidate.delivery_id, sink],
