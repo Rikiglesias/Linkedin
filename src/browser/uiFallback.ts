@@ -17,7 +17,7 @@ import {
 } from '../core/selectorLearning';
 import { humanDelay } from './humanBehavior';
 import { clickCoordinatesHumanLike, clickLocatorHumanLike, humanPointInBox } from './humanClick';
-import { humanType } from './human/humanTyping';
+import { humanKeystrokeDelayMs, humanType } from './human/humanTyping';
 import { VisionSolver } from '../captcha/solver';
 
 export interface ClickFallbackOptions {
@@ -499,15 +499,20 @@ export async function typeWithFallback(
             await clickCoordinatesHumanLike(page, coords.x, coords.y);
             await humanDelay(page, 200, 500);
 
+            // Qui si scrive sulla tastiera della pagina, senza un locator: non si puo' delegare a
+            // humanType, ma la CADENZA e' la stessa — humanKeystrokeDelayMs e' la formula estratta da
+            // humanTyping, log-normale e con floor 55/80ms. Prima erano delay uniformi con floor 40ms,
+            // cioe' sotto la soglia dei 50ms della zona-bot.
             for (let j = 0; j < text.length; j++) {
                 if (Math.random() < 0.03 && text.length > 3) {
                     const wrongChar = String.fromCharCode(97 + Math.floor(Math.random() * 26));
-                    await page.keyboard.type(wrongChar, { delay: Math.floor(Math.random() * 130) + 40 });
+                    await page.keyboard.type(wrongChar, { delay: humanKeystrokeDelayMs(wrongChar) });
                     await page.waitForTimeout(280 + Math.random() * 420);
                     await page.keyboard.press('Backspace');
                     await page.waitForTimeout(180 + Math.random() * 250);
                 }
-                await page.keyboard.type(text[j] ?? '', { delay: Math.floor(Math.random() * 150) + 40 });
+                const char = text[j] ?? '';
+                await page.keyboard.type(char, { delay: humanKeystrokeDelayMs(char) });
                 if (Math.random() < 0.04) await humanDelay(page, 400, 1100);
             }
             await trackSelectorSuccess(page, label, 'vision-layer-z');

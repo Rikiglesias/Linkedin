@@ -18,6 +18,27 @@ import { humanDelay } from './humanDelay';
  * Digita il testo carattere per carattere con delay variabile.
  * Include il 3% di probabilità di errore di battitura + correzione (Backspace).
  */
+/**
+ * Ritardo inter-keystroke per un carattere. ESTRATTA da `humanType`, non riscritta: stessi parametri,
+ * stessa formula, stesso ordine delle operazioni — l'estrazione serve a poterla riusare dove si digita
+ * senza un locator (ramo VisionSolver di `typeWithFallback`, che prima aveva una copia peggiore con
+ * delay uniforme e floor 40ms).
+ *
+ * Le costanti sono TIMING-CORE e restano quelle: cadenza log-normale (right-skew, come il flight time
+ * umano reale) invece che uniforme, e floor ASSOLUTO applicato DOPO i moltiplicatori — 55ms per i
+ * caratteri e 80ms per spazi e punteggiatura, per stare sopra la soglia dei 50ms sotto la quale cade
+ * circa il 21% dei keystroke bot contro il 5,8% degli umani.
+ *
+ * @param lengthSlowFactor rallentamento per testi lunghi (1 = neutro)
+ * @param wordMultiplier   flow state della parola corrente (1 = neutro)
+ */
+export function humanKeystrokeDelayMs(char: string, lengthSlowFactor = 1, wordMultiplier = 1): number {
+    const isSpaceOrPunctuation = /[\s.,!?-]/.test(char);
+    const rawDelay = isSpaceOrPunctuation ? logNormalDelayMs(200, 0.42, 90, 650) : logNormalDelayMs(95, 0.42, 45, 320);
+    const keystrokeFloorMs = isSpaceOrPunctuation ? 80 : 55;
+    return Math.max(keystrokeFloorMs, Math.round(rawDelay * lengthSlowFactor * wordMultiplier));
+}
+
 export interface HumanTypeOptions {
     /**
      * Salta il click di messa a fuoco iniziale, per chi ha GIA' cliccato il campo in modo umano
@@ -69,24 +90,9 @@ export async function humanType(
 
         // AD-11: Implementazione Delay Bimodale + context-aware per lunghezza testo
         // + Typing Flow State (6.3): parole comuni più veloci, parole rare più lente
-        const isSpaceOrPunctuation = /[\s.,!?-]/.test(typedChar);
-        // B2 (2026-06-07): delay inter-keystroke LOG-NORMALE (right-skew = biometric umano reale)
-        // invece di uniforme (Math.random()*range = istogramma piatto rilevabile dall'ML di LinkedIn).
-        // Mediana ≈ media vecchia → throughput preservato; coda destra naturale. Fonti: keystroke
-        // dynamics (flight time log-normale/ex-gaussian).
-        const rawDelay = isSpaceOrPunctuation
-            ? logNormalDelayMs(200, 0.42, 90, 650)
-            : logNormalDelayMs(95, 0.42, 45, 320);
-        // Floor ASSOLUTO post-moltiplicatore: lengthSlowFactor*currentWordMultiplier può scendere
-        // a 0.595x e, applicato DOPO il clamp di logNormalDelayMs, bypassava il floor → keystroke
-        // <28ms = oltre il record mondiale (firma key-injection). Il floor fisico umano va imposto
-        // QUI, sull'effettivo.
-        // W3/SOTA-2026 (keystroke dynamics): i keystroke <50ms (0.05s) sono la "zona bot" — la ricerca
-        // mostra ~21% dei keystroke bot sotto 0.05s contro solo ~5.8% umani. Il floor char a 40ms
-        // cadeva ancora in quella zona → alzato a 55ms (sopra 0.05s con margine). Spazio/punteggiatura
-        // ≥80ms (flight time naturalmente più lungo, già ben sopra la soglia).
-        const keystrokeFloorMs = isSpaceOrPunctuation ? 80 : 55;
-        const delayBase = Math.max(keystrokeFloorMs, Math.round(rawDelay * lengthSlowFactor * currentWordMultiplier));
+        // Formula spostata in humanKeystrokeDelayMs (sopra) per poterla riusare dove non c'e' un
+        // locator: valori e ordine delle operazioni identici, nessun ricalcolo.
+        const delayBase = humanKeystrokeDelayMs(typedChar, lengthSlowFactor, currentWordMultiplier);
 
         await element.pressSequentially(typedChar, { delay: delayBase });
 
