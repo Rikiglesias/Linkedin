@@ -17,7 +17,7 @@ import {
 } from '../core/selectorLearning';
 import { humanDelay } from './humanBehavior';
 import { clickCoordinatesHumanLike, clickLocatorHumanLike, humanPointInBox } from './humanClick';
-import { computeSessionTypoRate, determineNextKeystroke } from '../ai/typoGenerator';
+import { humanType } from './human/humanTyping';
 import { VisionSolver } from '../captcha/solver';
 
 export interface ClickFallbackOptions {
@@ -461,19 +461,13 @@ export async function typeWithFallback(
             });
             await humanDelay(page, 200, 500);
 
-            const typoRate = computeSessionTypoRate();
-            for (let j = 0; j < text.length; j++) {
-                const originalChar = text[j] ?? '';
-                const { char: typedChar, isTypo } = determineNextKeystroke(originalChar, typoRate);
-                if (isTypo && text.length > 3) {
-                    await loc.first().pressSequentially(typedChar, { delay: Math.floor(Math.random() * 130) + 40 });
-                    await page.waitForTimeout(280 + Math.random() * 420);
-                    await loc.first().press('Backspace');
-                    await page.waitForTimeout(180 + Math.random() * 250);
-                }
-                await loc.first().pressSequentially(originalChar, { delay: Math.floor(Math.random() * 150) + 40 });
-                if (Math.random() < 0.04) await humanDelay(page, 400, 1100);
-            }
+            // Digitazione delegata a humanType invece di riscritta qui. La versione inline che c'era
+            // prima usava un delay UNIFORME con floor 40ms: piatto all'istogramma, e sotto la soglia
+            // dei 50ms che la ricerca sulle keystroke dynamics indica come zona-bot. Aveva anche un
+            // solo stile di correzione del typo, cioe' un pattern fisso. humanType ha cadenza
+            // log-normale, floor assoluto 55/80ms e quattro stili di correzione: quella logica e'
+            // TIMING-CORE e sta in un posto solo, per non divergere di nuovo.
+            await humanType(page, playwrightSel, text, { skipInitialClick: true });
             await trackSelectorSuccess(page, label, sel);
             rememberSelectorForContext(resolution.contextKey, sel);
             if (i > 0) {

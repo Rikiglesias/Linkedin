@@ -18,10 +18,28 @@ import { humanDelay } from './humanDelay';
  * Digita il testo carattere per carattere con delay variabile.
  * Include il 3% di probabilità di errore di battitura + correzione (Backspace).
  */
-export async function humanType(page: Page, selector: string, text: string): Promise<void> {
+export interface HumanTypeOptions {
+    /**
+     * Salta il click di messa a fuoco iniziale, per chi ha GIA' cliccato il campo in modo umano
+     * (es. `typeWithFallback`, che usa `clickLocatorHumanLike` con dwell prima di digitare).
+     * Senza questa opzione la delega produrrebbe un secondo click sullo stesso campo — un'azione in
+     * piu' e un ordine diverso da quello di un utente reale.
+     * Default `false`: i chiamanti esistenti non cambiano comportamento.
+     */
+    skipInitialClick?: boolean;
+}
+
+export async function humanType(
+    page: Page,
+    selector: string,
+    text: string,
+    options: HumanTypeOptions = {},
+): Promise<void> {
     const element = page.locator(selector).first();
-    await element.click();
-    await humanDelay(page, 200, 500);
+    if (!options.skipInitialClick) {
+        await element.click();
+        await humanDelay(page, 200, 500);
+    }
 
     // Context-aware WPM: testi lunghi → ritmo più lento (affaticamento naturale).
     // Testi brevi (< 30 char): veloce. Medi (30-150): normale. Lunghi (> 150): lento.
