@@ -4,6 +4,53 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-08-04 — remediation audit-codebase, blocco 9: due gate che non guardavano, e la CI ferma per metà (`4a4c86b`, `aba22df`, `0b786c8`..`cb75a0e`)
+
+**Chi si era opposto non veniva arricchito, ma veniva contattato.** Il gate dell'Art.21 esisteva già in tre
+punti del codice, tutti sull'arricchimento — cioè sulla raccolta dei dati. Le due query con cui lo scheduler
+sceglie chi invitare e a chi scrivere non lo avevano: `getLeadsByStatusForList`, usata per NEW, READY_INVITE,
+ACCEPTED e READY_MESSAGE, e `getLeadsForFollowUp` per i solleciti. Il risultato era l'inverso dell'ordine di
+gravità, perché l'opposizione riguarda proprio il contatto diretto, non l'arricchimento. La condizione ora è
+una costante unica esportata, così chi scriverà la prossima query di contatto la trova; il commento dice
+anche dove *non* va usata, che è la parte che si dimentica — ritirare un invito già spedito a chi si oppone
+va anzi fatto, e il controllo del sito aziendale non tocca la persona. Rosso di controllo 3 su 4, con già
+verde il caso di non-regressione. Portata onesta: nel database ci sono zero opt-out su 348 lead, quindi è un
+fix preventivo che oggi non cambia nulla.
+
+**Il webhook n8n accettava eventi non firmati.** Il nodo di verifica leggeva il segreto con `|| ''` e teneva
+il controllo dentro `if (secret)`: senza segreto la firma non veniva verificata affatto. E non era ipotetico,
+perché `WEBHOOK_SYNC_SECRET` non veniva passato al container n8n nel compose, quindi quel valore era sempre
+vuoto e la verifica sempre saltata — mentre il bot firma davvero e il segreto è presente nel `.env`
+(verificato come booleano, senza mai leggerne il valore). Mancava solo il passaggio al container. Ora il
+segreto assente fa rifiutare l'evento invece di far passare tutto, il confronto usa `timingSafeEqual`, e la
+variabile arriva al container come obbligatoria, così il fail-closed non può trasformarsi in un blocco
+misterioso. Il workflow non aveva alcun test: ora ne ha uno che estrae il codice vero dal JSON e lo esegue,
+con rosso di controllo 2 su 6 — esattamente i due casi «senza segreto».
+
+**La CI era ferma per due motivi, non per uno.** Il primo è risolto: `prettier --check` falliva su 84 file,
+quindi `quality-fast` era rosso e `quality-extended` — e2e, a11y, docker — che dipende da lui, non partiva
+mai. Che prettier non fosse mai stato nel flusso di lavoro si vede da un dettaglio: fra i file non formattati
+c'era anche `serverListenError.ts`, creato il giorno prima. Prima di riformattare è stato verificato su un
+file isolato che prettier ed eslint non si contraddicano, altrimenti sarebbe stato un ciclo senza fine. Su
+file come `humanClick`, `messageWorker` e `workflowEntryGuards` «è solo formattazione» non è una prova
+accettabile: l'albero sintattico di ogni file è stato confrontato prima e dopo col parser TypeScript,
+ignorando spaziatura e posizioni, ed è identico su 82 file su 82. Le due sole differenze emerse erano
+parentesi attorno a un `return` spezzato su più righe e una stringa passata da apici singoli con escape a
+virgolette doppie: entrambe pura sintassi, guardate una per una invece che assunte. A conferma, una seconda
+lente indipendente dal mio stesso script: tutti i letterali numerici dei dodici file LinkedIn-touch sono
+identici, quindi nessun timing, cap o soglia è cambiato. `/antiban-review`: **SICURO**. La consegna è divisa
+in sei commit solo perché il gate git non accetta più di quindici file per volta.
+
+Il secondo motivo resta, ed è una decisione di Riccardo: `npm audit --audit-level=high` esce 1 con trenta
+vulnerabilità, una critical e quindici high. `npm audit fix` senza `--force` non risolve nulla — provato in
+dry-run, zero pacchetti cambiati — e con `--force` npm installerebbe `camoufox-js@0.12.0`, che è il browser
+anti-detect: leva anti-ban, non una scelta da fare dentro un commit di manutenzione. Le tre strade e la
+raccomandazione sono nel binding.
+
+**Verifica finale**: `npm run conta-problemi` exit 0 — 196 file, 1881 test — con l'exit code catturato
+davvero. Vale la pena annotarlo: la prima esecuzione era stata mandata a `tail`, e la pipe restituiva 0
+mentre eslint stava fallendo. Un gate letto attraverso una pipe non è un gate.
+
 ## 2026-08-04 — remediation audit-codebase, blocco 8: tre cose esposte più di quanto servisse (`81f3251`, `08312f7`, `ad540f8`)
 
 Tre item presi insieme perché sono la stessa classe: dati o servizi raggiungibili da più lontano del
