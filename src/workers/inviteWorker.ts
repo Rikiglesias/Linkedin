@@ -343,6 +343,16 @@ export async function processInviteJob(
     // aver inviato nulla**, e il fallimento diventava invisibile a chiunque guardasse i risultati.
     const normalizedUrl = lead.linkedin_url.replace(/\/+$/, '').toLowerCase();
     if (context.visitedProfilesToday?.has(normalizedUrl)) {
+        // Lo skip NON deve essere muto. Se il job fallisce DOPO la navigazione (modale non
+        // apparso :706, send non trovato, proof-of-send mancante :760), al retry si finisce
+        // qui: l'invito non parte e senza questo log il job risulterebbe di nuovo riuscito
+        // in silenzio. Ritentare comporterebbe una view duplicata sullo stesso profilo:
+        // e' un trade-off anti-ban, tracciato in ~/todos/audit-codebase.md, non deciso qui.
+        await logWarn('invite.skipped_profile_already_visited', {
+            leadId: lead.id,
+            url: normalizedUrl,
+            note: 'nessun invito inviato per questo lead in questo ciclo',
+        });
         return workerResult(0);
     }
 
