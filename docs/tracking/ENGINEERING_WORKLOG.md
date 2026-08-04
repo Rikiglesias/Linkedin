@@ -4,6 +4,53 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-08-04 — remediation audit-codebase, blocco 1: il bot non scrollava le pagine e tre funzioni non erano mai state collegate (`fb807a2`, `e14a69a`)
+
+Primo blocco di correzioni dopo l'audit del 2026-08-03 (che era stato read-only). Tracker: `~/todos/audit-codebase.md`.
+Ordine di lavoro deciso in sede di audit e rispettato: **prima rendere visibili i fallimenti e togliere le firme,
+poi sbloccare la catena** — il primo run che arriva in fondo con contratti rotti è il momento più pericoloso.
+
+**Il bot non scrollava mai le pagine.** `browser/human/inputBlock.ts` inietta un overlay che blocca l'utente
+fisico registrando handler `passive:false` in capture sul document. Gli eventi del bot arrivano via CDP e per
+quegli handler sono indistinguibili da quelli dell'utente: `blockEvent` guardava solo il flag `botClicking`, e
+`simulateHumanReading` non ne setta nessuno, quindi ogni `page.mouse.wheel` di lettura veniva annullato da
+`preventDefault`. Il bot apriva i profili e restava fermo in cima, in silenzio, da sempre.
+Non è un difetto di timing: è il bot che sabotava se stesso.
+
+Misurato con un harness nuovo (`src/tests/harnessInputBlockEvents.ts`: browser vero, pagina locale, **nessuna
+richiesta a LinkedIn**) — è l'item «E2E eventi reali» della Fase 1 del piano, costruito prima del fix perché il
+piano stesso vieta di toccare l'anti-ban senza la baseline che lo misura. Risultato: **scrollY 0 prima,
+1087-3364 px dopo** su 5 esecuzioni consecutive. Lo scroll dell'**utente** resta a 0: c'è una misura di
+non-regressione apposta, la protezione non è stata aperta.
+Chiusa la classe e non l'istanza: `botWheel` è ora la porta unica per lo scroll del bot, e ci passano anche i tre
+punti scoperti in SalesNav (`bulkSavePagination.ts:419/:544`, `computerUse.ts:300`).
+
+**I tre bridge non erano mai stati collegati.** `src/browser.ts` (il file) oscura `src/browser/` (la directory)
+nella risoluzione dei moduli: ogni `from '../browser'` prende il file, quindi il barrel `browser/index.ts` —
+unico registrante — non è importato da nessuno (verificato con ricerca ricorsiva: **zero** occorrenze in `src/`).
+Conseguenza silenziosa: `callDismissOverlays` tornava sempre 0, cioè i modali LinkedIn non venivano chiusi da
+`blockUserInput`, e `callMouseMove` era un no-op dentro `overlayDismisser`. Registrazioni spostate nell'entry
+point reale, con `src/tests/browserBridgeRegistration.vitest.ts` a presidiare: **rosso di controllo provato**,
+4/4 falliti senza il fix (`expected [] to include 'isClosed'` — la page finta non veniva toccata affatto).
+
+**Due firme rimosse dal DOM di LinkedIn**: lo stato «il bot sta agendo» stava in `el.dataset`, che genera
+l'attributo `data-bot-moving` nell'HTML — ora è una property JS, che nel DOM non compare; e il toast
+«Automazione in corso — input bloccato» iniettava una stringa fissa e identica fra installazioni (un tratto
+costante identifica il software, non la sessione) — ora è opt-in con `SHOW_AUTOMATION_TOAST=true`, default spento.
+
+**Dati del lead nella navigazione 'check'**: `navigationContext.ts:416` passava `{}` in tutti e tre i rami, quindi
+la ricerca ripiegava sulle keyword derivate dallo slug URL — che per i lead SalesNav non esiste. Il fix era già
+applicato a message/follow-up (CL9) e mancava qui. Sistemati tutti e **cinque** i call-site, non solo quello
+segnalato: acceptance, hygiene e i tre di interaction (dove la query leggeva solo `linkedin_url`).
+
+**Verifiche**: `npm run conta-problemi` exit 0 (188 file, 1821 test) · `madge --circular` 0 su 503 file ·
+`security:scan` pulito · backup del DB con `VACUUM INTO` prima di qualunque esecuzione di test.
+**Residui dichiarati, non nascosti**: 8 empty-catch preesistenti in quei file bloccavano il SAST gate —
+`[skip-sast]` con prova che il diff non ne aggiunge nessuno, e sono tracciati come blocco a sé; il *nuclear
+fallback* di `dismissKnownOverlays:189` (rimozione overlay via `el.remove()`) è preesistente ma col bridge
+riparato diventa raggiungibile da un percorso in più; il refactor R04 (`navigateToProfile` unificata, esiste ma
+nessuno la usa) resta per una finestra dedicata, non va fatto di straforo.
+
 ## 2026-08-01 — goal env-split fase 2: il `.env` ora è protetto davvero, non per convenzione (`2fd20ae` qui, il resto nel control-plane)
 
 Chiusura della fase 2 del binding `~/todos/env-split.md`. **La parte di codice vive fuori da questo repo**
