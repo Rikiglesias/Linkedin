@@ -4,6 +4,39 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-08-04 — remediation audit-codebase, blocco 12: due item che, presi alla lettera, avrebbero fatto danni (`8e56fe7`, `9458a4b`)
+
+**Il primo item diceva «dispersione gaussiana anche su clickCoordinatesHumanLike», e farlo sarebbe stato un
+errore.** Quella funzione è già il punto d'arrivo del percorso normale, che sceglie un punto gaussiano dentro
+il box e glielo passa: aggiungere lì la dispersione l'avrebbe applicata due volte, sfondando il limite del 42%
+che tiene il click dentro l'elemento. Il difetto vero stava nei chiamanti che calcolavano il centro a mano —
+l'espansione dei post e la reazione al feed in `organicContent`, più il ramo Shadow DOM di `uiFallback`. Il
+centro geometrico di un box è lo stesso pixel a ogni passaggio sullo stesso elemento, e un umano non centra
+mai al pixel. La regola applicata è che si disperde una volta sola, nel punto in cui il box diventa una
+coordinata: la funzione che lo faceva è stata esportata e riusata invece di duplicata. Restano centrati i due
+click che ricevono le coordinate dalla vision, ed è una scelta: quel percorso restituisce un punto e non un
+rettangolo, quindi non si conosce il margine entro cui spostarsi, e disperdere a occhio rischia di mancare un
+bersaglio piccolo — peggio di un click centrato. Un test blocca quel conteggio a due, così il residuo resta
+visibile.
+
+**Il secondo item era una delega, e la copia era peggiore dell'originale in modo misurabile.**
+`typeWithFallback` riscriveva la digitazione invece di chiamare `humanType`, e la sua versione usava un delay
+uniforme — un istogramma piatto, cioè la forma che i sistemi di analisi della dinamica di battitura cercano —
+con un pavimento di 40 millisecondi, che cade sotto la soglia dei 50 sotto la quale la ricerca colloca i bot,
+e proprio la soglia per cui il pavimento dell'originale era stato alzato a 55. In più aveva un solo modo di
+correggere gli errori di battitura, contro i quattro dell'originale: un pattern fisso, che il codice stesso
+altrove dichiara di voler evitare. La delega ha richiesto un'opzione nuova per non ri-cliccare il campo, che
+era già stato cliccato in modo umano poco prima — senza, si sarebbe aggiunto un secondo click e cambiato
+l'ordine delle azioni. Il default lascia i quattro chiamanti esistenti identici, e la logica di timing non è
+stata toccata.
+
+Da qui è saltato fuori un gemello che nessuno aveva segnalato: il ramo che entra in gioco quando tutti i
+selettori falliscono e si passa al riconoscimento visivo digita ancora con lo stesso pavimento di 40
+millisecondi. Non è lo stesso intervento — lì si scrive sulla tastiera della pagina senza un selettore,
+quindi delegare richiede prima di estrarre la formula del ritardo, che è marcata come da non riscrivere e
+merita una prova di invarianza sui chiamanti esistenti. È tracciato come voce a sé, e un test ne blocca il
+conteggio perché non sembri finito.
+
 ## 2026-08-04 — remediation audit-codebase, blocco 11: il canvas che non veniva sporcato, e un bridge che taceva (`798e59f`, `5105c07`)
 
 **Nel 39% dei profili il canvas non veniva perturbato affatto.** L'ampiezza del rumore sommato a ogni pixel
