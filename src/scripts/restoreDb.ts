@@ -241,9 +241,7 @@ export async function runRestoreDrill(options: RestoreDrillOptions = {}): Promis
         } catch (writeError) {
             const message = writeError instanceof Error ? writeError.message : String(writeError);
             report.reportPath = null;
-            report.errorMessage = [report.errorMessage, `report_write_failed: ${message}`]
-                .filter(Boolean)
-                .join(' | ');
+            report.errorMessage = [report.errorMessage, `report_write_failed: ${message}`].filter(Boolean).join(' | ');
             console.error(
                 [
                     '',

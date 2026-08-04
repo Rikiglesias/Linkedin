@@ -1,7 +1,17 @@
 import { existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
 
-export type CapabilityKind = 'repo' | 'web' | 'mcp' | 'hook' | 'skill' | 'script' | 'workflow' | 'plugin' | 'agent' | 'cli';
+export type CapabilityKind =
+    | 'repo'
+    | 'web'
+    | 'mcp'
+    | 'hook'
+    | 'skill'
+    | 'script'
+    | 'workflow'
+    | 'plugin'
+    | 'agent'
+    | 'cli';
 export type WebPolicy = 'required' | 'conditional' | 'not-needed';
 export type PreferredEnvironment = 'claude-code' | 'codex' | 'either' | 'n8n';
 export type SourceOfTruth =

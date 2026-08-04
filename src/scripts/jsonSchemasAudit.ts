@@ -84,7 +84,11 @@ function validatePluginJson(data: JsonObject, issues: SchemaIssue[]): void {
         const layers = ['rules', 'skills', 'hooks'];
         for (const layer of layers) {
             if (!data.contents[layer]) {
-                issues.push({ file: rel, severity: 'warn', message: `contents.${layer} assente (atteso per ADK 5-layer)` });
+                issues.push({
+                    file: rel,
+                    severity: 'warn',
+                    message: `contents.${layer} assente (atteso per ADK 5-layer)`,
+                });
             }
         }
     }
@@ -103,7 +107,19 @@ function validateRoutingJson(data: JsonObject, issues: SchemaIssue[]): void {
         issues.push({ file: rel, severity: 'error', message: 'domains deve essere array' });
         return;
     }
-    const validKinds = new Set(['repo', 'web', 'cli', 'mcp', 'tool', 'skill', 'plugin', 'hook', 'script', 'workflow', 'agent']);
+    const validKinds = new Set([
+        'repo',
+        'web',
+        'cli',
+        'mcp',
+        'tool',
+        'skill',
+        'plugin',
+        'hook',
+        'script',
+        'workflow',
+        'agent',
+    ]);
     const validStatuses = new Set(['active', 'planned', 'deprecated', 'experimental', 'candidate', 'missing']);
     const seenIds = new Set<string>();
     for (let i = 0; i < data.capabilities.length; i++) {
@@ -222,7 +238,11 @@ function validateLevelJson(data: JsonObject, issues: SchemaIssue[]): void {
             issues.push({ file: rel, severity: 'error', message: `${tag}.focusChecks deve essere array non vuoto` });
         }
         if (!Array.isArray(lvl.expectedEvidence) || lvl.expectedEvidence.length === 0) {
-            issues.push({ file: rel, severity: 'error', message: `${tag}.expectedEvidence deve essere array non vuoto` });
+            issues.push({
+                file: rel,
+                severity: 'error',
+                message: `${tag}.expectedEvidence deve essere array non vuoto`,
+            });
         }
         if (typeof lvl.advisoryPrompt !== 'string' || lvl.advisoryPrompt.length === 0) {
             issues.push({ file: rel, severity: 'error', message: `${tag}.advisoryPrompt mancante` });
@@ -287,7 +307,9 @@ function run(): void {
             console.log(`✅ ${check.relativePath}${warns.length > 0 ? ` (${warns.length} warn)` : ''}`);
             passed += 1;
         } else {
-            console.log(`❌ ${check.relativePath} (${errs.length} error${errs.length > 1 ? 's' : ''}${warns.length > 0 ? `, ${warns.length} warn` : ''})`);
+            console.log(
+                `❌ ${check.relativePath} (${errs.length} error${errs.length > 1 ? 's' : ''}${warns.length > 0 ? `, ${warns.length} warn` : ''})`,
+            );
         }
     }
 

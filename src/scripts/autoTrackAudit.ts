@@ -20,13 +20,7 @@ import * as path from 'path';
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const FINDINGS_PATH = path.join(REPO_ROOT, 'docs', 'tracking', 'SESSION_FINDINGS.md');
 
-const VALID_PATTERNS = new Set([
-    'TODO_FUTURO',
-    'FIX_TRACCIATO',
-    'SPRINT_DEDICATO',
-    'BLOCKED',
-    'DECISIONE',
-]);
+const VALID_PATTERNS = new Set(['TODO_FUTURO', 'FIX_TRACCIATO', 'SPRINT_DEDICATO', 'BLOCKED', 'DECISIONE']);
 
 const VALID_SOURCES = new Set(['stop', 'subagent-stop', 'session-end']);
 
@@ -50,7 +44,8 @@ function parseEntries(content: string): { entries: Entry[]; parseErrors: AuditIs
     const entries: Entry[] = [];
     const parseErrors: AuditIssue[] = [];
     const lines = content.split(/\r?\n/);
-    const headerRe = /^### \[(?<ts>[^\]]+)\] pattern=(?<pattern>\S+) session=(?<session>\S+) hash=(?<hash>\S+) source=(?<source>\S+)/;
+    const headerRe =
+        /^### \[(?<ts>[^\]]+)\] pattern=(?<pattern>\S+) session=(?<session>\S+) hash=(?<hash>\S+) source=(?<source>\S+)/;
 
     let insideCodeBlock = false;
     for (let i = 0; i < lines.length; i++) {
@@ -103,7 +98,11 @@ function validateEntry(e: Entry, issues: AuditIssue[]): void {
     }
     const placeholderRe = /\b(TODO|PLACEHOLDER|FIXME|XXX)\b/i;
     if (placeholderRe.test(e.content) && e.pattern !== 'TODO_FUTURO') {
-        issues.push({ line: e.line, severity: 'warn', message: `content contiene placeholder: ${e.content.substring(0, 60)}` });
+        issues.push({
+            line: e.line,
+            severity: 'warn',
+            message: `content contiene placeholder: ${e.content.substring(0, 60)}`,
+        });
     }
     if (e.content.length === 0) {
         issues.push({ line: e.line, severity: 'error', message: 'content vuoto' });

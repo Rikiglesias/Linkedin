@@ -388,9 +388,7 @@ export async function runRightToErasure(linkedinUrl: string, dryRun = false): Pr
     if (!dryRun) {
         // 0. Risolvi gli id PRIMA di mutare linkedin_url (lo step 1 lo riscrive ad anon:hash),
         //    cosi' la pulizia delle tabelle collegate puo' usare lead_id in modo affidabile.
-        const matched = await db.query<{ id: number }>(`SELECT id FROM leads WHERE linkedin_url = ?`, [
-            linkedinUrl,
-        ]);
+        const matched = await db.query<{ id: number }>(`SELECT id FROM leads WHERE linkedin_url = ?`, [linkedinUrl]);
         const leadIds = matched.map((r) => r.id);
 
         // Atomicita': anonimizzazione lead + pulizia PII collegate + audit_log in UNA transazione.

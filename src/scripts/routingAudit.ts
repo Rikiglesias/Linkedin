@@ -65,7 +65,5 @@ if (errors.length > 0) {
     process.exit(1);
 }
 
-console.log(
-    `✅ [audit:routing] AI_CAPABILITY_ROUTING.json valido: ${caps.length} capability, ${ids.size} id univoci.`,
-);
+console.log(`✅ [audit:routing] AI_CAPABILITY_ROUTING.json valido: ${caps.length} capability, ${ids.size} id univoci.`);
 process.exit(0);

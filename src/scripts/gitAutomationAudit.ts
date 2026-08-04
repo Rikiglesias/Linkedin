@@ -100,7 +100,10 @@ function uniqueSorted(values: string[]): string[] {
 
 function normalizeChangedPath(rawPath: string): string {
     const target = rawPath.includes(' -> ') ? (rawPath.split(' -> ').pop() ?? rawPath) : rawPath;
-    return target.trim().replace(/^"+|"+$/g, '').replace(/\\/g, '/');
+    return target
+        .trim()
+        .replace(/^"+|"+$/g, '')
+        .replace(/\\/g, '/');
 }
 
 function parseChangedFiles(): ChangedFile[] {
@@ -172,7 +175,7 @@ function detectGitOperationsInProgress(gitDir: string): string[] {
 function readRepoState(): RepoState {
     const insideWorkTree = runGit(['rev-parse', '--is-inside-work-tree']);
     if (insideWorkTree !== 'true') {
-        throw new Error('La cartella corrente non e\' un repository git valido.');
+        throw new Error("La cartella corrente non e' un repository git valido.");
     }
 
     const rootDir = runGit(['rev-parse', '--show-toplevel']);
@@ -192,7 +195,7 @@ function readRepoState(): RepoState {
     if (upstream) {
         const divergence = runGit(['rev-list', '--left-right', '--count', '@{upstream}...HEAD']);
         if (!divergence) {
-            throw new Error('Impossibile calcolare ahead/behind rispetto all\'upstream.');
+            throw new Error("Impossibile calcolare ahead/behind rispetto all'upstream.");
         }
         const [behindRaw, aheadRaw] = divergence.split(/\s+/);
         behind = Number.parseInt(behindRaw ?? '0', 10);
@@ -229,8 +232,9 @@ function isSharedBranch(branch: string | null): boolean {
     if (!branch) {
         return false;
     }
-    return /^(main|master|develop|development|staging|prod|production)$/.test(branch) ||
-        /^(release|hotfix)\//.test(branch);
+    return (
+        /^(main|master|develop|development|staging|prod|production)$/.test(branch) || /^(release|hotfix)\//.test(branch)
+    );
 }
 
 function buildCommitDecision(state: RepoState): Decision {
@@ -248,7 +252,7 @@ function buildCommitDecision(state: RepoState): Decision {
     if (!state.branch) {
         return {
             status: 'blocked',
-            reasons: ['HEAD detached: manca un branch esplicito su cui chiudere l\'unità di lavoro.'],
+            reasons: ["HEAD detached: manca un branch esplicito su cui chiudere l'unità di lavoro."],
             nextSteps: ['Passa a un branch esplicito prima di considerare il commit automatico.'],
         };
     }
@@ -259,7 +263,7 @@ function buildCommitDecision(state: RepoState): Decision {
             reasons: [
                 `Operazione git in corso: ${state.gitOperationsInProgress.join(', ')}. Il commit automatico non deve sovrapporsi.`,
             ],
-            nextSteps: ['Chiudi o annulla l\'operazione git in corso, poi riesegui l\'audit.'],
+            nextSteps: ["Chiudi o annulla l'operazione git in corso, poi riesegui l'audit."],
         };
     }
 
@@ -277,14 +281,16 @@ function buildCommitDecision(state: RepoState): Decision {
         reasons.push(
             'Index e working tree sono misti: ci sono file staged e anche modifiche unstaged. Serve confermare lo scope reale del commit.',
         );
-        nextSteps.push('Allinea index e working tree: o stage completo dell\'unità logica o separazione delle modifiche residue.');
+        nextSteps.push(
+            "Allinea index e working tree: o stage completo dell'unità logica o separazione delle modifiche residue.",
+        );
     }
 
     if (state.stagedCount === 0 && state.changedFiles.length > 3) {
         reasons.push(
-            'Nessun file staged e working tree ampio: il sistema non deve decidere da solo quali file appartengono davvero all\'unità logica corrente.',
+            "Nessun file staged e working tree ampio: il sistema non deve decidere da solo quali file appartengono davvero all'unità logica corrente.",
         );
-        nextSteps.push('Stage solo i file dell\'unità verificata, poi rilancia l\'audit o usa la skill `git-commit`.');
+        nextSteps.push("Stage solo i file dell'unità verificata, poi rilancia l'audit o usa la skill `git-commit`.");
     }
 
     if (state.topLevelAreas.length > 3) {
@@ -295,7 +301,9 @@ function buildCommitDecision(state: RepoState): Decision {
     }
 
     if (state.changedFiles.length > 15) {
-        reasons.push(`Working tree esteso (${state.changedFiles.length} file): il commit va trattato come review assistita, non come auto-chiusura cieca.`);
+        reasons.push(
+            `Working tree esteso (${state.changedFiles.length} file): il commit va trattato come review assistita, non come auto-chiusura cieca.`,
+        );
         nextSteps.push('Riduci il perimetro oppure conferma che il blocco sia davvero unico e già verificato.');
     }
 
@@ -331,27 +339,31 @@ function buildPushDecision(state: RepoState): Decision {
             reasons: [
                 `Operazione git in corso: ${state.gitOperationsInProgress.join(', ')}. Il push automatico deve fermarsi finche' il repository non torna stabile.`,
             ],
-            nextSteps: ['Chiudi l\'operazione git in corso e rilancia l\'audit.'],
+            nextSteps: ["Chiudi l'operazione git in corso e rilancia l'audit."],
         };
     }
 
     if (state.changedFiles.length > 0) {
         return {
             status: 'blocked',
-            reasons: ['Ci sono ancora modifiche non committate: il push non deve partire prima di una chiusura locale coerente.'],
+            reasons: [
+                'Ci sono ancora modifiche non committate: il push non deve partire prima di una chiusura locale coerente.',
+            ],
             nextSteps: ['Completa commit e quality gate del blocco prima di valutare il push.'],
         };
     }
 
     if (!state.upstream) {
         const reason = state.originUrl
-            ? 'Branch senza upstream: il remote esiste ma la strategia di push non e\' ancora esplicita.'
-            : 'Nessun upstream e nessun remote origin rilevato: il contesto remote non e\' abbastanza chiaro.';
+            ? "Branch senza upstream: il remote esiste ma la strategia di push non e' ancora esplicita."
+            : "Nessun upstream e nessun remote origin rilevato: il contesto remote non e' abbastanza chiaro.";
         return {
             status: state.originUrl ? 'review' : 'blocked',
             reasons: [reason],
             nextSteps: state.originUrl
-                ? [`Se il branch e' corretto, usa \`git push -u origin ${state.branch}\` o apri PR se la policy lo richiede.`]
+                ? [
+                      `Se il branch e' corretto, usa \`git push -u origin ${state.branch}\` o apri PR se la policy lo richiede.`,
+                  ]
                 : ['Configura il remote corretto prima di considerare qualsiasi push automatico.'],
         };
     }
@@ -359,7 +371,9 @@ function buildPushDecision(state: RepoState): Decision {
     if (state.behind > 0) {
         return {
             status: 'blocked',
-            reasons: [`Il branch locale e' indietro di ${state.behind} commit rispetto a ${state.upstream}: push automatico vietato per rischio divergenza.`],
+            reasons: [
+                `Il branch locale e' indietro di ${state.behind} commit rispetto a ${state.upstream}: push automatico vietato per rischio divergenza.`,
+            ],
             nextSteps: ['Riallinea il branch con il remote e risolvi eventuali conflitti prima di pushare.'],
         };
     }
@@ -387,7 +401,7 @@ function buildPushDecision(state: RepoState): Decision {
         reasons: [
             `Branch pulito, upstream presente (${state.upstream}), ahead ${state.ahead}, behind ${state.behind}: il push e' tecnicamente pronto.`,
         ],
-        nextSteps: ['Se la policy di integrazione lo consente, il push puo\' partire in modo assistito.'],
+        nextSteps: ["Se la policy di integrazione lo consente, il push puo' partire in modo assistito."],
     };
 }
 

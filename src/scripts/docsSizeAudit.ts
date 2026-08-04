@@ -91,7 +91,13 @@ function countBytes(path: string): number {
     }
 }
 
-function analyzeFile(absPath: string, displayPath: string, softLimit: number, hardLimit: number, rationale: string): SizeResult | null {
+function analyzeFile(
+    absPath: string,
+    displayPath: string,
+    softLimit: number,
+    hardLimit: number,
+    rationale: string,
+): SizeResult | null {
     const lines = countLines(absPath);
     if (lines < 0) return null;
     const bytes = countBytes(absPath);
@@ -128,7 +134,9 @@ function run(): void {
         }
         results.push(r);
         const icon = r.status === 'OK' ? '✅' : r.status === 'WARN' ? '⚠️' : '❌';
-        console.log(`${icon} ${r.file}: ${r.lines} righe (soft ${r.softLimit} / hard ${r.hardLimit}) [${spec.category}]`);
+        console.log(
+            `${icon} ${r.file}: ${r.lines} righe (soft ${r.softLimit} / hard ${r.hardLimit}) [${spec.category}]`,
+        );
         if (r.status !== 'OK') {
             console.log(`   → ${r.rationale}`);
         }
@@ -138,7 +146,13 @@ function run(): void {
     const trackingFiles = listTrackingFiles();
     for (const file of trackingFiles) {
         const absPath = join(TRACKING_DIR, file);
-        const r = analyzeFile(absPath, `docs/tracking/${file}`, TRACKING_SOFT, TRACKING_HARD, 'Tracking docs: soft 400, hard 800');
+        const r = analyzeFile(
+            absPath,
+            `docs/tracking/${file}`,
+            TRACKING_SOFT,
+            TRACKING_HARD,
+            'Tracking docs: soft 400, hard 800',
+        );
         if (!r) continue;
         results.push(r);
         const icon = r.status === 'OK' ? '✅' : r.status === 'WARN' ? '⚠️' : '❌';

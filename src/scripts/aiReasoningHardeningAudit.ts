@@ -459,12 +459,22 @@ function checkGlobalCodexTurnGovernor(): CheckResult {
         missing.push(`${hooksPath} -> UserPromptSubmit token-cost-context.ps1`);
     }
 
-    const turnMissing = missingSnippets(turnGovernorText, ['TOKEN_COST_CHAT_SWITCH', 'token-cost-state.json', 'credits', 'costUsd']);
+    const turnMissing = missingSnippets(turnGovernorText, [
+        'TOKEN_COST_CHAT_SWITCH',
+        'token-cost-state.json',
+        'credits',
+        'costUsd',
+    ]);
     if (turnMissing.length > 0) {
         missing.push(`${turnGovernorPath} incompleto: mancano ${turnMissing.join(', ')}`);
     }
 
-    const tokenMissing = missingSnippets(tokenCostText, ['Costo:', 'codex-token-cost-status.mjs', 'crediti ufficiali', 'Claude Code']);
+    const tokenMissing = missingSnippets(tokenCostText, [
+        'Costo:',
+        'codex-token-cost-status.mjs',
+        'crediti ufficiali',
+        'Claude Code',
+    ]);
     if (tokenMissing.length > 0) {
         missing.push(`${tokenCostPath} incompleto: mancano ${tokenMissing.join(', ')}`);
     }

@@ -58,9 +58,7 @@ function parseFrontmatter(content: string): { fm: RuleFrontmatter | null; error?
                 fm.name = val.replace(/^["']|["']$/g, '');
                 currentKey = null;
             } else if (key === 'paths') {
-                fm.paths = val
-                    ? [val.replace(/^["']|["']$/g, '')]
-                    : [];
+                fm.paths = val ? [val.replace(/^["']|["']$/g, '')] : [];
                 currentKey = 'paths';
             } else if (key === 'enforcement') {
                 fm.enforcement = val ? [val] : [];
@@ -105,7 +103,7 @@ function loadPluginJsonRulesFiles(): { files: string[]; error?: string } {
         const parsed = JSON.parse(raw);
         const files = parsed?.contents?.rules?.files;
         if (!Array.isArray(files)) {
-            return { files: [], error: 'plugin.json contents.rules.files non e\' array' };
+            return { files: [], error: "plugin.json contents.rules.files non e' array" };
         }
         return { files };
     } catch (e: unknown) {

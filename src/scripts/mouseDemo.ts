@@ -35,8 +35,7 @@ const BUTTON_POSITIONS: ReadonlyArray<{ x: number; y: number; label: string }> =
 
 function buildHtml(): string {
     const buttons = BUTTON_POSITIONS.map(
-        (b, i) =>
-            `<button class="btn" id="b${i}" style="left:${b.x}px;top:${b.y}px">${i + 1}. ${b.label}</button>`,
+        (b, i) => `<button class="btn" id="b${i}" style="left:${b.x}px;top:${b.y}px">${i + 1}. ${b.label}</button>`,
     ).join('\n');
     // Contenuto alto e scrollabile (per la demo scroll) + textarea (per la demo typing).
     const filler = Array.from({ length: 24 })

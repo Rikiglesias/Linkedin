@@ -285,7 +285,7 @@ function run(): void {
         process.exit(0);
     }
 
-    console.log("\n❌ I canonici del progetto non sono ancora completamente coerenti.");
+    console.log('\n❌ I canonici del progetto non sono ancora completamente coerenti.');
     checks
         .filter((check) => !check.passed)
         .forEach((check) => console.log(`  - [${check.area}] ${check.name}: ${check.detail}`));

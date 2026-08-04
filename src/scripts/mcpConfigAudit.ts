@@ -177,7 +177,10 @@ function checkMachinePathExpansion(config: McpConfig | null): CheckResult {
     for (const [field, snippet] of required) {
         const [serverName, property] = field.split('.');
         const server = servers[serverName];
-        const value = property === 'args[0]' && Array.isArray(server?.args) ? server.args[0] : server?.[property as keyof McpServerConfig];
+        const value =
+            property === 'args[0]' && Array.isArray(server?.args)
+                ? server.args[0]
+                : server?.[property as keyof McpServerConfig];
         if (typeof value !== 'string' || !value.includes(snippet)) {
             failures.push(`${field}: manca ${snippet}`);
         }
