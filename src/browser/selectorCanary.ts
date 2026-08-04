@@ -39,7 +39,12 @@ function buildSelectorCanaryPlan(workflow: CanaryWorkflow): SelectorCanaryStepDe
             id: 'feed.global_nav',
             url: 'https://www.linkedin.com/feed/',
             selectors: [joinSelectors('globalNav')],
-            required: true,
+            // DECLASSATO (era `true`, ed era l'unico obbligatorio dell'intero piano): il feed è una
+            // pagina che nessun workflow visita, quindi un suo problema non dice niente sulla capacità
+            // del bot di lavorare — eppure bastava a fermarlo del tutto. Resta nel piano come segnale
+            // di salute generale: rimuoverlo cambierebbe numero e ordine delle pagine aperte, cioè il
+            // footprint osservabile da LinkedIn, e non è quello che serve qui.
+            required: false,
             // La global-nav del feed è React-rendered e compare a ~4-6s anche su connessione
             // veloce: 4s davano falsi negativi (selettore presente ma non ancora montato). 10s
             // copre il render senza rendere il canary lento (gira max 1×/4h, cache).
@@ -47,13 +52,20 @@ function buildSelectorCanaryPlan(workflow: CanaryWorkflow): SelectorCanaryStepDe
         },
     ];
 
+    // Gli step qui sotto controllano i selettori da cui dipendono davvero le azioni del bot, quindi
+    // sono loro gli obbligatori: se cambia il bottone «Collegati», il canary deve accorgersene.
+    // Il timeout è allineato a quello del feed (10s) e non lasciato a 6s: queste pagine sono
+    // React-rendered allo stesso modo, e promuoverle a obbligatorie tenendo 6s ricreerebbe i falsi
+    // negativi già risolti sul feed — con la differenza che ora fermerebbero il bot.
+    const TIMEOUT_SUPERFICI_MS = 10000;
+
     if (workflow === 'all' || workflow === 'invite') {
         plan.push({
             id: 'invite.search_surface',
             url: 'https://www.linkedin.com/search/results/people/?keywords=manager',
             selectors: [joinSelectors('connectButtonPrimary'), 'a[href*="/in/"]'],
-            required: false,
-            timeoutMs: 6000,
+            required: true,
+            timeoutMs: TIMEOUT_SUPERFICI_MS,
         });
     }
 
@@ -66,8 +78,8 @@ function buildSelectorCanaryPlan(workflow: CanaryWorkflow): SelectorCanaryStepDe
                 '.msg-overlay-list-bubble',
                 '[data-control-name="compose_message"]',
             ],
-            required: false,
-            timeoutMs: 6000,
+            required: true,
+            timeoutMs: TIMEOUT_SUPERFICI_MS,
         });
     }
 
@@ -80,8 +92,8 @@ function buildSelectorCanaryPlan(workflow: CanaryWorkflow): SelectorCanaryStepDe
                 joinSelectors('invitePendingIndicators'),
                 joinSelectors('globalNav'),
             ],
-            required: false,
-            timeoutMs: 6000,
+            required: true,
+            timeoutMs: TIMEOUT_SUPERFICI_MS,
         });
     }
 
