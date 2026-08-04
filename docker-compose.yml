@@ -135,6 +135,9 @@ services:
       N8N_BASIC_AUTH_USER: "${N8N_BASIC_AUTH_USER:?Set N8N_BASIC_AUTH_USER in .env}"
       N8N_BASIC_AUTH_PASSWORD: "${N8N_BASIC_AUTH_PASSWORD:?Set N8N_BASIC_AUTH_PASSWORD in .env}"
       TZ: "Europe/Rome"
+      # Senza questo il nodo "Verify + Normalize" non ha il segreto e rifiuta ogni evento
+      # (fail-closed voluto). Il bot firma gia' con lo stesso valore in webhookSyncWorker.
+      WEBHOOK_SYNC_SECRET: "${WEBHOOK_SYNC_SECRET:?Set WEBHOOK_SYNC_SECRET in .env}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
       TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}"
       TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID}"
