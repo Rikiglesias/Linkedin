@@ -114,6 +114,19 @@ describe('i call-site che partivano dal centro esatto sono stati convertiti', ()
         expect(src).toContain('!viewport || !fallbackViewportCompatibile(viewport)');
     });
 
+    it('...ma la guardia non deve uccidere la capability che protegge', () => {
+        const src = sorgente('salesnav/visionNavigator.ts');
+        // Secondo giro del critico: `headless` è false di DEFAULT e in non-headless il launcher mette
+        // apposta `viewport: null`, quindi `viewportSize()` è sempre null in configurazione normale.
+        // Una guardia sul solo viewportSize() scatterebbe SEMPRE → fallback H07 = codice morto, cioè
+        // capability persa in silenzio (zero-Q). Le dimensioni vere si chiedono al DOM prima di
+        // arrendersi. Il test tiene insieme i due errori opposti: non fidarsi dell'ignoto, ma nemmeno
+        // dichiararlo ignoto quando è conoscibile.
+        expect(src).toContain('dimensioniFinestra');
+        expect(src).toContain('window.innerWidth');
+        expect(src).toMatch(/const viewport = await dimensioniFinestra\(page\)/);
+    });
+
     it('il click sul captcha non cade sul pixel esatto restituito dal provider', () => {
         const src = sorgente('workers/challengeHandler.ts');
         // Qui le coordinate NON sono fisse (variano con l'immagine), ma per lo stesso captcha il

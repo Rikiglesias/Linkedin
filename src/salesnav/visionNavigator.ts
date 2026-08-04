@@ -149,6 +149,32 @@ const VISION_FALLBACK_VIEWPORT = { width: 1280, height: 800 };
 /** Tolleranza stretta (±5%): oltre, il layout può già aver spostato il bottone. */
 const VISION_FALLBACK_TOLLERANZA = 0.05;
 
+/**
+ * Dimensioni REALI della finestra, non solo quelle del viewport dichiarato.
+ *
+ * 🔴 Perche' esiste: `page.viewportSize()` restituisce null quando il context nasce con
+ * `viewport: null`, e quello e' il caso di DEFAULT — `headless` e' `false` di default
+ * (`config/domains.ts`), e in non-headless `launcher.ts` mette apposta `viewport = null` per far
+ * riempire lo schermo al browser. Quindi una guardia basata sul solo `viewportSize()` non
+ * "protegge": scatta SEMPRE, e trasforma la capability che protegge in codice morto (zero-Q,
+ * "piu' pulito ma perde" = fallimento). Trovato dal critico avversariale subito dopo che il
+ * problema opposto — il `??` che dava per buone dimensioni ignote — era stato chiuso.
+ *
+ * Ordine: viewport dichiarato, altrimenti la finestra vera dal DOM, altrimenti null (davvero ignote
+ * → chi chiama decide, e la decisione presa qui e' saltare).
+ */
+async function dimensioniFinestra(page: Page): Promise<{ width: number; height: number } | null> {
+    const dichiarato = page.viewportSize();
+    if (dichiarato) return dichiarato;
+    try {
+        const reale = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
+        return reale && reale.width > 0 && reale.height > 0 ? reale : null;
+    } catch {
+        // Pagina chiusa o contesto distrutto: dimensioni non conoscibili.
+        return null;
+    }
+}
+
 function fallbackViewportCompatibile(viewport: { width: number; height: number }): boolean {
     const deltaW = Math.abs(viewport.width - VISION_FALLBACK_VIEWPORT.width) / VISION_FALLBACK_VIEWPORT.width;
     const deltaH = Math.abs(viewport.height - VISION_FALLBACK_VIEWPORT.height) / VISION_FALLBACK_VIEWPORT.height;
@@ -368,7 +394,7 @@ export async function visionClick(
                 // buco peggiore: la guardia direbbe "compatibile" proprio quando le dimensioni sono
                 // IGNOTE, cioe' esattamente il caso in cui non si deve cliccare. Non sapere ≠ sapere
                 // che va bene.
-                const viewport = page.viewportSize();
+                const viewport = await dimensioniFinestra(page);
                 if (fallback && (!viewport || !fallbackViewportCompatibile(viewport))) {
                     // Meglio saltare che cliccare alla cieca: fuori dal viewport di calibrazione quel
                     // punto non e' il bottone, e un click non osservato su LinkedIn costa piu' di una
