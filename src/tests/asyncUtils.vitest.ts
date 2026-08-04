@@ -1,12 +1,27 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { sleep, retryDelayMs } from '../utils/async';
 
 describe('utils/async', () => {
-    it('sleep risolve dopo il delay', async () => {
-        const start = Date.now();
-        await sleep(50);
-        const elapsed = Date.now() - start;
-        expect(elapsed).toBeGreaterThanOrEqual(40); // tolleranza timer
+    it('sleep non risolve prima del delay richiesto', async () => {
+        // Timer simulati invece dell'orologio reale: il vecchio assert (elapsed >= 40)
+        // dipendeva dal carico della macchina. Così il contratto è verificato al
+        // millisecondo esatto, ed è più stringente di prima.
+        vi.useFakeTimers();
+        try {
+            let resolved = false;
+            const pending = sleep(50).then(() => {
+                resolved = true;
+            });
+
+            await vi.advanceTimersByTimeAsync(49);
+            expect(resolved).toBe(false); // a 49 ms non deve ancora essere risolta
+
+            await vi.advanceTimersByTimeAsync(1);
+            await pending;
+            expect(resolved).toBe(true); // a 50 ms sì
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it('retryDelayMs cresce esponenzialmente', () => {

@@ -2,10 +2,27 @@ import { describe, it, expect } from 'vitest';
 import { sleep, retryDelayMs } from '../utils/async';
 
 describe('utils/async — advanced', () => {
-    it('sleep 0ms → risolve immediatamente', async () => {
-        const start = Date.now();
-        await sleep(0);
-        expect(Date.now() - start).toBeLessThan(50);
+    it('sleep 0ms → cede il turno al timer, non risolve fra i microtask', async () => {
+        // Volutamente senza misurare il tempo trascorso: un'asserzione su Date.now()
+        // qui misurerebbe quanto è congestionato l'event loop, non il comportamento di
+        // sleep — ed è il motivo per cui questo test falliva a intermittenza a suite piena
+        // (misurato: con il thread occupato, sleep(0) impiega oltre 120 ms).
+        //
+        // Il controllo è sull'ORDINE, che le specifiche garantiscono a prescindere dal
+        // carico: un timer è un macrotask, quindi deve arrivare dopo una promise già
+        // risolta. Un `sleep` che risolvesse subito passerebbe per primo e fallirebbe qui.
+        const ordine: string[] = [];
+
+        const conSleep = sleep(0).then(() => {
+            ordine.push('sleep');
+        });
+        const microtask = Promise.resolve().then(() => {
+            ordine.push('microtask');
+        });
+
+        await Promise.all([conSleep, microtask]);
+
+        expect(ordine).toEqual(['microtask', 'sleep']);
     });
 
     it('retryDelayMs attempt 5 con base 100 → >= 1600', () => {
