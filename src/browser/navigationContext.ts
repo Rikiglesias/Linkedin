@@ -93,11 +93,7 @@ function buildSearchKeywordsForProfile(
     }
 
     const slug = profileUrl.match(/\/in\/([^/?#]+)/i)?.[1] ?? '';
-    const slugKeywords = slug
-        .replace(/[-_]+/g, ' ')
-        .replace(/\d+/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
+    const slugKeywords = slug.replace(/[-_]+/g, ' ').replace(/\d+/g, ' ').replace(/\s+/g, ' ').trim();
 
     if (slugKeywords.length >= 3) {
         return slugKeywords;
@@ -505,7 +501,14 @@ export async function navigateToProfile(
     const { purpose, lead, accountId, sessionActionCount = 0, preferredStrategy } = options;
 
     if (purpose === 'invite') {
-        return navigateToProfileWithContext(page, profileUrl, lead ?? {}, accountId, sessionActionCount, preferredStrategy);
+        return navigateToProfileWithContext(
+            page,
+            profileUrl,
+            lead ?? {},
+            accountId,
+            sessionActionCount,
+            preferredStrategy,
+        );
     }
 
     if (purpose === 'check') {

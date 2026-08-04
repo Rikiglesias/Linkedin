@@ -92,10 +92,7 @@ function getBrowserPid(browserContext: BrowserContext): number | null {
  *
  * @returns true se il processo è morto entro il timeout, false se PID assente o timeout scaduto.
  */
-export async function waitForBrowserProcessExit(
-    browserContext: BrowserContext,
-    timeoutMs = 8_000,
-): Promise<boolean> {
+export async function waitForBrowserProcessExit(browserContext: BrowserContext, timeoutMs = 8_000): Promise<boolean> {
     const pid = getBrowserPid(browserContext);
     if (!pid) return false;
 

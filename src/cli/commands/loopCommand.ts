@@ -1059,7 +1059,10 @@ export async function runAutopilotCommand(args: string[]): Promise<void> {
         );
 
         // 2. Budget ridotto?
-        wizardBudgetReduced = await askConfirmation('  Budget ridotto per oggi? (dimezza inviti e messaggi) [y/N] ', false);
+        wizardBudgetReduced = await askConfirmation(
+            '  Budget ridotto per oggi? (dimezza inviti e messaggi) [y/N] ',
+            false,
+        );
 
         // 3. Intervallo personalizzato?
         const defaultIntervalSec = Math.floor(config.workflowLoopIntervalMs / 1000);

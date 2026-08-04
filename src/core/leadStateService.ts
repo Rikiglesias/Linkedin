@@ -1,9 +1,4 @@
-import {
-    adjustLeadScore,
-    appendLeadEvent,
-    getLeadById,
-    setLeadStatus,
-} from './repositories/leadsCore';
+import { adjustLeadScore, appendLeadEvent, getLeadById, setLeadStatus } from './repositories/leadsCore';
 import { getDatabase } from '../db';
 import { pushOutboxEvent, recordSecurityAuditEvent } from './repositories/system';
 import { withTransaction } from './repositories/shared';

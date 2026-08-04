@@ -1,9 +1,5 @@
 import type { Locator, Page } from 'playwright';
-import {
-    ensureViewportDwell,
-    humanMouseMoveToCoords,
-    pulseVisualCursorOverlay,
-} from './humanBehavior';
+import { ensureViewportDwell, humanMouseMoveToCoords, pulseVisualCursorOverlay } from './humanBehavior';
 import { pauseInputBlock, resumeInputBlock } from './humanBehavior';
 
 export interface HumanLocatorClickOptions {

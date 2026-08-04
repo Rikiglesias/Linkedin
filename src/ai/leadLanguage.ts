@@ -61,11 +61,7 @@ const COUNTRY_TO_LANG: Record<string, string> = {
 
 /** lowercase + trim + rimozione accenti (combining marks U+0300-U+036F), per match robusto. */
 function normalizeCountry(raw: string): string {
-    return raw
-        .trim()
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[̀-ͯ]/g, '');
+    return raw.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
 
 /**

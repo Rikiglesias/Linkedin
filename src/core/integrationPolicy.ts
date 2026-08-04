@@ -546,9 +546,10 @@ export async function fetchWithRetryPolicy(
                     // Errore di rete transient: ECONNREFUSED → connection_refused (15min),
                     // altrimenti timeout/reset/DNS → timeout (5min). Mai 'ban' sull'enrichment.
                     const normalized = (error instanceof Error ? error.message : String(error)).toLowerCase();
-                    const proxyErrorType = normalized.includes('econnrefused') || normalized.includes('refused')
-                        ? 'connection_refused'
-                        : 'timeout';
+                    const proxyErrorType =
+                        normalized.includes('econnrefused') || normalized.includes('refused')
+                            ? 'connection_refused'
+                            : 'timeout';
                     markIntegrationProxyFailed(selectedProxy, proxyErrorType);
                 }
                 throw error;

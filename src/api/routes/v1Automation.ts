@@ -63,15 +63,15 @@ router.get('/automation/snapshot', async (_req, res) => {
         const localDate = getLocalDateString();
         const [kpi, riskInputs, runtimePause, quarantineStatus, incidents, observability, commandSummary, sync] =
             await Promise.all([
-            getGlobalKPIData(),
-            getRiskInputs(localDate, config.hardInviteCap),
-            getRuntimeFlag('automation_paused_until'),
-            getQuarantineStatus(),
-            listOpenIncidents(),
-            getOperationalObservabilitySnapshot(localDate),
-            getAutomationCommandSummary(),
-            getEventSyncStatus(),
-        ]);
+                getGlobalKPIData(),
+                getRiskInputs(localDate, config.hardInviteCap),
+                getRuntimeFlag('automation_paused_until'),
+                getQuarantineStatus(),
+                listOpenIncidents(),
+                getOperationalObservabilitySnapshot(localDate),
+                getAutomationCommandSummary(),
+                getEventSyncStatus(),
+            ]);
         const risk = evaluateRisk(riskInputs);
         // G5-F2: true se globale O almeno un account in quarantena (consumer invariati).
         const isQuarantined = quarantineStatus.any;

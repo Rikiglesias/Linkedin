@@ -24,8 +24,7 @@ export function handleServerListenError(
         throw error;
     }
 
-    const comandoDiagnosi =
-        process.platform === 'win32' ? `netstat -ano | findstr :${port}` : `lsof -i :${port}`;
+    const comandoDiagnosi = process.platform === 'win32' ? `netstat -ano | findstr :${port}` : `lsof -i :${port}`;
 
     console.error(
         [

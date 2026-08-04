@@ -137,7 +137,9 @@ Rispondi SOLO con JSON:
         // Fallback: pulisci solo con regex locali senza AI
         return {
             firstName: rawFirst || null,
-            lastName: nameDuplicated ? rawLast.replace(new RegExp(escapeRegExp(rawFirst), 'gi'), '').trim() : rawLast || null,
+            lastName: nameDuplicated
+                ? rawLast.replace(new RegExp(escapeRegExp(rawFirst), 'gi'), '').trim()
+                : rawLast || null,
             jobTitle: titleDirty ? null : rawTitle || null,
             accountName: companyDirty ? null : rawCompany || null,
             inferredEmail: null,

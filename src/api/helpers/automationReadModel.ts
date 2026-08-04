@@ -1,7 +1,4 @@
-import type {
-    AutomationCommandExecutionResult,
-    ParsedAutomationCommandRecord,
-} from '../../automation/types';
+import type { AutomationCommandExecutionResult, ParsedAutomationCommandRecord } from '../../automation/types';
 import type {
     SessionRiskAssessment,
     WorkflowBlockedState,

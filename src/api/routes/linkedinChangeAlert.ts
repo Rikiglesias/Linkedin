@@ -66,7 +66,7 @@ linkedinChangeAlertRouter.post('/', async (req, res) => {
                 title: `LinkedIn Change: ${title.substring(0, 100)}`,
                 body: `Automazione in pausa per ${pauseMinutes} min.\nFonte: ${source}\n${url ? `Link: ${url}` : ''}${details ? `\nDettagli: ${details.substring(0, 300)}` : ''}`,
                 // L5-LI.1 "DO" (A11-1-pop): cambiamento LinkedIn → verifica selettori/DOM prima del resume.
-                action: 'Verifica il cambiamento LinkedIn segnalato (selettori/DOM/policy) e aggiorna i selettori se rotti. L\'automazione è in pausa: fai resume manuale SOLO dopo la verifica.',
+                action: "Verifica il cambiamento LinkedIn segnalato (selettori/DOM/policy) e aggiorna i selettori se rotti. L'automazione è in pausa: fai resume manuale SOLO dopo la verifica.",
             });
             res.json({ ok: true, action: 'paused', incidentId, pauseMinutes });
         } else if (action === 'warn') {
@@ -76,7 +76,7 @@ linkedinChangeAlertRouter.post('/', async (req, res) => {
                 title: `LinkedIn Change: ${title.substring(0, 100)}`,
                 body: `Fonte: ${source}\n${url ? `Link: ${url}` : ''}${details ? `\nDettagli: ${details.substring(0, 300)}` : ''}`,
                 // L5-LI.1 "DO" (A11-1-pop): DO spostato dal body al campo strutturato (coerenza A11-1).
-                action: 'Verifica il cambiamento LinkedIn segnalato entro 24h (selettori/DOM/policy). Non bloccante: l\'automazione prosegue.',
+                action: "Verifica il cambiamento LinkedIn segnalato entro 24h (selettori/DOM/policy). Non bloccante: l'automazione prosegue.",
             });
             res.json({ ok: true, action: 'warned', incidentId });
         } else {

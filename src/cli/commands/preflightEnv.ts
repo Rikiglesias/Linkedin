@@ -98,9 +98,17 @@ export async function runPreflightEnvCommand(): Promise<void> {
             });
             clearTimeout(timeout);
             if (res.ok) {
-                checks.push({ name: 'Anthropic', status: 'OK', detail: `key valida, modello ${config.anthropicModel}` });
+                checks.push({
+                    name: 'Anthropic',
+                    status: 'OK',
+                    detail: `key valida, modello ${config.anthropicModel}`,
+                });
             } else if (res.status === 401) {
-                checks.push({ name: 'Anthropic', status: required ? 'FAIL' : 'WARN', detail: 'ANTHROPIC_API_KEY non valida (401)' });
+                checks.push({
+                    name: 'Anthropic',
+                    status: required ? 'FAIL' : 'WARN',
+                    detail: 'ANTHROPIC_API_KEY non valida (401)',
+                });
             } else {
                 checks.push({ name: 'Anthropic', status: 'WARN', detail: `Status ${res.status}` });
             }

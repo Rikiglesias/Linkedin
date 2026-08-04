@@ -128,7 +128,14 @@ router.get('/leads', async (req: Request, res: Response) => {
             action: 'export_leads',
             actor: requestIp,
             result: 'ALLOW',
-            metadata: { format, status: status ?? null, listName: listName ?? null, linkedinUrl: linkedinUrl ?? null, count: rows.length, limit },
+            metadata: {
+                format,
+                status: status ?? null,
+                listName: listName ?? null,
+                linkedinUrl: linkedinUrl ?? null,
+                count: rows.length,
+                limit,
+            },
         }).catch(() => null);
 
         if (format === 'csv') {

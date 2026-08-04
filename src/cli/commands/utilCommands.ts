@@ -48,8 +48,7 @@ export async function runImportCommand(args: string[]): Promise<void> {
     // Lista destinazione: --list esplicito, altrimenti derivata dal nome del file CSV
     // (no bucket cieco 'default' che non corrisponde a nessuna lista reale).
     const explicitList = getOptionValue(args, '--list')?.trim();
-    const listName =
-        explicitList || (filePath.split(/[\\/]/).pop() ?? '').replace(/\.[^.]+$/, '').trim() || 'import';
+    const listName = explicitList || (filePath.split(/[\\/]/).pop() ?? '').replace(/\.[^.]+$/, '').trim() || 'import';
 
     const result = await importLeadsFromCSV(filePath, listName);
     console.log(
@@ -791,7 +790,9 @@ export async function runEnrichFastCommand(args: string[]): Promise<void> {
     const durationMs = Date.now() - startMs;
     const durationSec = Math.round(durationMs / 1000);
     const avgSec = totals.total > 0 ? Math.round(durationMs / totals.total / 1000) : 0;
-    console.log(`\n[ENRICH-FAST] Completato in ${durationSec}s${drain ? ` (${iter} cicli)` : ''} (media ${avgSec}s/lead)`);
+    console.log(
+        `\n[ENRICH-FAST] Completato in ${durationSec}s${drain ? ` (${iter} cicli)` : ''} (media ${avgSec}s/lead)`,
+    );
     console.log(`  Lead processati: ${totals.total}`);
     console.log(`  Arricchiti:      ${totals.enriched}`);
     console.log(`  Email trovate:   ${totals.emailsFound}`);
