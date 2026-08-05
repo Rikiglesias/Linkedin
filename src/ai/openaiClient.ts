@@ -47,7 +47,13 @@ function extractOutputText(payload: unknown): string {
     return '';
 }
 
-function resolveAiModel(): string {
+/**
+ * Modello effettivamente inviato dalla chiamata di chat (green mode incluso).
+ * Esportata perché il preflight (`modelPreflight.ts`) deve validare ESATTAMENTE questo nome:
+ * una seconda copia della regola qui sopra renderebbe possibile un preflight verde su un
+ * modello diverso da quello poi usato davvero.
+ */
+export function resolveAiModel(): string {
     if (isGreenModeWindow() && config.aiGreenModel.trim().length > 0) {
         return config.aiGreenModel.trim();
     }

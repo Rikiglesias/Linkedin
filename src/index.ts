@@ -510,6 +510,9 @@ async function main(): Promise<void> {
         if (!preflight.accountIsolation.ok) failures.push('account_isolation_failed');
         if (preflight.quarantine) failures.push('account_quarantine_enabled');
         if (preflight.compliance.enforced && !preflight.compliance.ok) failures.push('compliance_guardrail_violated');
+        // NON è un failure: un modello assente degrada a template, non giustifica un blocco.
+        // Ma va DETTO qui, altrimenti resta visibile solo come fallback per-lead nei log.
+        if (preflight.ai.warning) console.warn(`[PREFLIGHT] ${preflight.ai.warning}`);
 
         if (failures.length > 0) {
             console.error('[PREFLIGHT] Bloccato: condizioni critiche rilevate.');

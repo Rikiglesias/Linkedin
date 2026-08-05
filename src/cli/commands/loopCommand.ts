@@ -250,6 +250,10 @@ async function evaluateLoopDoctorGate(dryRun: boolean): Promise<LoopDoctorGate> 
     if (!report.compliance.ok) {
         return { proceed: false, reason: 'doctor_compliance_violation' };
     }
+    // Il ciclo PROSEGUE: senza modello l'AI degrada a template, il bot resta operativo. Ma il
+    // guasto va detto a ogni ciclo finché dura — è una misconfigurazione persistente, non un
+    // fallimento di routine (quelli si tacciono, questo no).
+    if (report.ai.warning) console.warn(`[DOCTOR] ${report.ai.warning}`);
     return { proceed: true, reason: 'doctor_ok' };
 }
 

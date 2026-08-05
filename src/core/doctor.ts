@@ -17,6 +17,7 @@ import fs from 'fs';
 import path from 'path';
 import { calculateDynamicWeeklyInviteLimit, evaluateComplianceHealthScore } from '../risk/riskEngine';
 import { getSecurityAdvisorPosture } from './securityAdvisor';
+import { descriviEsitoModelloAi, verificaModelloAi, type StatoModelloAi } from '../ai/modelPreflight';
 
 export interface DoctorAccountSessionReport {
     accountId: string;
@@ -89,6 +90,18 @@ export interface DoctorReport {
         lastBacklogCount: number | null;
         stale: boolean;
         elapsedDaysSinceRun: number | null;
+        warning: string | null;
+    };
+    /**
+     * Disponibilità del modello AI configurato. È un WARNING, mai una violazione: un modello
+     * assente degrada a template (lo fa già il registry), quindi abortire il run per questo
+     * sarebbe fail-closed cieco. Serve a rendere DICHIARATO un guasto che oggi si vede solo
+     * come fallback per-lead.
+     */
+    ai: {
+        stato: StatoModelloAi;
+        modello: string | null;
+        disponibili: string[];
         warning: string | null;
     };
     openIncidents: number;
@@ -284,6 +297,7 @@ export async function runDoctor(options: RunDoctorOptions = {}): Promise<DoctorR
         drLastStatus,
         drLastReportPath,
         securityAdvisor,
+        modelloAi,
     ] = await Promise.all([
         getQuarantineStatus(),
         getEventSyncStatus(),
@@ -293,6 +307,7 @@ export async function runDoctor(options: RunDoctorOptions = {}): Promise<DoctorR
         getRuntimeFlag('dr_restore_test_last_status'),
         getRuntimeFlag('dr_restore_test_last_report_path'),
         getSecurityAdvisorPosture(),
+        verificaModelloAi(),
     ]);
     // G5-F2: `any` = globale O almeno un account — il preflight resta conservativo come prima.
     const quarantine = quarantineStatus.any;
@@ -404,6 +419,14 @@ export async function runDoctor(options: RunDoctorOptions = {}): Promise<DoctorR
             stale: securityAdvisor.stale,
             elapsedDaysSinceRun: securityAdvisor.elapsedDaysSinceRun,
             warning: securityAdvisor.warning,
+        },
+        ai: {
+            stato: modelloAi.stato,
+            modello: modelloAi.modello,
+            disponibili: modelloAi.disponibili,
+            // Solo `mancante` è un guasto: `sconosciuto` significa che non l'abbiamo potuto sapere,
+            // e trattarlo come colpa è l'errore che il canary dei selettori ha già pagato.
+            warning: modelloAi.stato === 'mancante' ? descriviEsitoModelloAi(modelloAi) : null,
         },
         openIncidents: incidents.length,
     };
