@@ -34,20 +34,25 @@ export interface WorkerProcessor {
     process(job: { payload_json: string }, context: WorkerContext): Promise<WorkerExecutionResult>;
 }
 
-function parsePayload<T>(job: { payload_json: string }): T {
+// Si chiamava `parsePayload`, ESATTAMENTE come core/repositories/shared.ts:4 — ma con semantica
+// OPPOSTA: quello ripiega su `{}`, questo LANCIA (e deve farlo: qui un payload corrotto significa job
+// non eseguibile, e il fallimento va visto, non inghiottito). Due funzioni omonime e contrarie sono
+// una trappola per chi legge; il nome ora dichiara il contratto. Non unificate di proposito: servono
+// due comportamenti diversi, non uno solo.
+function parsePayloadOrThrow<T>(job: { payload_json: string }): T {
     return JSON.parse(job.payload_json) as T;
 }
 
 const inviteProcessor: WorkerProcessor = {
     async process(job, context) {
-        const payload = parsePayload<InviteJobPayload>(job);
+        const payload = parsePayloadOrThrow<InviteJobPayload>(job);
         return processInviteJob(payload, context);
     },
 };
 
 const acceptanceProcessor: WorkerProcessor = {
     async process(job, context) {
-        const payload = parsePayload<AcceptanceJobPayload>(job);
+        const payload = parsePayloadOrThrow<AcceptanceJobPayload>(job);
         return processAcceptanceJob(payload, context);
     },
 };
@@ -57,35 +62,35 @@ const messageProcessor: WorkerProcessor = {
         // Il literal inline che stava qui OMETTEVA timing? e metadata_json?, che messageWorker legge
         // davvero (`:559-569` decide strategy optimizer|baseline, delaySec, slotHour; `:96-98` il
         // metadata): il tipo mentiva proprio nel punto che governa il timing anti-ban.
-        const payload = parsePayload<MessageJobPayload>(job);
+        const payload = parsePayloadOrThrow<MessageJobPayload>(job);
         return processMessageJob(payload, context);
     },
 };
 
 const hygieneProcessor: WorkerProcessor = {
     async process(job, context) {
-        const payload = parsePayload<HygieneJobPayload>(job);
+        const payload = parsePayloadOrThrow<HygieneJobPayload>(job);
         return processHygieneJob(payload, context);
     },
 };
 
 const interactionProcessor: WorkerProcessor = {
     async process(job, context) {
-        const payload = parsePayload<InteractionJobPayload>(job);
+        const payload = parsePayloadOrThrow<InteractionJobPayload>(job);
         return processInteractionJob(payload, context);
     },
 };
 
 const enrichmentProcessor: WorkerProcessor = {
     async process(job, context) {
-        const payload = parsePayload<EnrichmentJobPayload>(job);
+        const payload = parsePayloadOrThrow<EnrichmentJobPayload>(job);
         return processEnrichmentJob(payload, context);
     },
 };
 
 const postCreationProcessor: WorkerProcessor = {
     async process(job, context) {
-        const payload = parsePayload<PostCreationJobPayload>(job);
+        const payload = parsePayloadOrThrow<PostCreationJobPayload>(job);
         const postResult = await createAndPublishPost(context.session.page, {
             accountId: payload.accountId,
             topic: payload.topic,
@@ -98,7 +103,7 @@ const postCreationProcessor: WorkerProcessor = {
 
 const inboxCheckProcessor: WorkerProcessor = {
     async process(job, context) {
-        const payload = parsePayload<InboxJobPayload>(job);
+        const payload = parsePayloadOrThrow<InboxJobPayload>(job);
         return processInboxJob(payload, context);
     },
 };

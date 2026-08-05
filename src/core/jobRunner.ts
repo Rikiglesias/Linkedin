@@ -34,7 +34,14 @@ import { runProxyQualityCheckIfDue } from '../proxyManager';
 import { randomInt } from '../utils/random';
 import { getSessionHistory, recordSessionPattern } from '../risk/sessionMemory';
 import { retryDelayMs } from '../utils/async';
-import { JobType } from '../types/domain';
+import { JobType, InviteJobPayload } from '../types/domain';
+
+// Viste MINIME del payload usate dai rami trasversali (campaign advance, challenge, dead-letter).
+// Sono DERIVATE dai tipi canonici, non literal scritti a mano: se un campo viene rinominato o spostato
+// in types/domain.ts, qui rompe a compile time invece di passare inosservato (zero-O). Regola gemella
+// di quella in workers/registry.ts: tipo nominato/derivato, mai `<{ ... }>` inline.
+type CampaignScopedPayload = Partial<Pick<InviteJobPayload, 'campaignStateId'>>;
+type LeadScopedPayload = Partial<Pick<InviteJobPayload, 'leadId'>>;
 import { WorkerContext, addBreadcrumb, formatBreadcrumbs } from '../workers/context';
 import {
     ChallengeDetectedError,
@@ -63,6 +70,9 @@ import {
     pushOutboxEvent,
     recordAccountHealthSnapshot,
 } from './repositories';
+// Import dalla FONTE: `repositories.ts` non ri-esporta `shared` (e un re-export di comodo sarebbe un
+// barrel travestito — decisione gia' a verbale in questo goal).
+import { tryParsePayload } from './repositories/shared';
 
 export interface RunJobsOptions {
     localDate: string;
@@ -723,9 +733,16 @@ async function runQueuedJobsForAccount(
                 // Se il job era parte di una Drip Campaign, avanza lo stato leadcampaign.
                 // Non blocca la pipeline, ma logga e marca ERROR per evitare stuck (NEW-8 fix).
                 try {
-                    const maybeCampaignPayload = parseJobPayload<{ campaignStateId?: number }>(job);
-                    if (typeof maybeCampaignPayload.payload.campaignStateId === 'number') {
-                        await advanceLeadCampaign(maybeCampaignPayload.payload.campaignStateId);
+                    // parseJobPayload ripiega su `{}` su payload corrotto SENZA lanciare: il catch qui
+                    // sotto non scatterebbe e failLeadCampaign (il fix NEW-8 contro lo stuck) non
+                    // verrebbe mai chiamata => campaign bloccata in silenzio. tryParsePayload distingue
+                    // "campo assente" (caso normale: job non di campagna) da "payload corrotto".
+                    const parsedCampaign = tryParsePayload<CampaignScopedPayload>(job.payload_json);
+                    if (!parsedCampaign.ok) {
+                        throw new Error('payload_json non parsabile: campaign state non determinabile');
+                    }
+                    if (typeof parsedCampaign.value.campaignStateId === 'number') {
+                        await advanceLeadCampaign(parsedCampaign.value.campaignStateId);
                     }
                 } catch (campaignError) {
                     const campaignMsg = campaignError instanceof Error ? campaignError.message : String(campaignError);
@@ -735,9 +752,12 @@ async function runQueuedJobsForAccount(
                         accountId: account.id,
                         error: campaignMsg,
                     });
-                    // Tenta di marcare il campaign state come ERROR per evitare stuck
+                    // Tenta di marcare il campaign state come ERROR per evitare stuck.
+                    // NB: se il payload e' corrotto qui non c'e' nulla da recuperare (il campaignStateId
+                    // vive dentro quel JSON) — il logWarn sopra resta l'unica traccia, ed e' il motivo
+                    // per cui deve esistere: prima non veniva emesso affatto.
                     try {
-                        const fallbackPayload = parseJobPayload<{ campaignStateId?: number }>(job);
+                        const fallbackPayload = parseJobPayload<CampaignScopedPayload>(job);
                         if (typeof fallbackPayload.payload.campaignStateId === 'number') {
                             await failLeadCampaign(fallbackPayload.payload.campaignStateId, campaignMsg);
                         }
@@ -826,7 +846,7 @@ async function runQueuedJobsForAccount(
                     let challengeLeadId: number | undefined;
                     if (job.type === 'INVITE' || job.type === 'MESSAGE' || job.type === 'ACCEPTANCE_CHECK') {
                         try {
-                            const parsed = parseJobPayload<{ leadId?: number }>(job);
+                            const parsed = parseJobPayload<LeadScopedPayload>(job);
                             if (typeof parsed.payload.leadId === 'number') {
                                 challengeLeadId = parsed.payload.leadId;
                             }
@@ -979,7 +999,7 @@ async function runQueuedJobsForAccount(
                 ) {
                     accountHealthMetrics.deadLetters += 1;
                     try {
-                        const parsed = parseJobPayload<{ leadId?: number }>(job);
+                        const parsed = parseJobPayload<LeadScopedPayload>(job);
                         if (parsed.payload.leadId) {
                             await transitionLead(
                                 parsed.payload.leadId,
@@ -1046,7 +1066,7 @@ async function runQueuedJobsForAccount(
                 // Dead-letter su qualsiasi job con campaignStateId → marca la campagna come ERROR
                 if (status === 'DEAD_LETTER') {
                     try {
-                        const maybeCampaignPayload = parseJobPayload<{ campaignStateId?: number }>(job);
+                        const maybeCampaignPayload = parseJobPayload<CampaignScopedPayload>(job);
                         if (typeof maybeCampaignPayload.payload.campaignStateId === 'number') {
                             await failLeadCampaign(maybeCampaignPayload.payload.campaignStateId, message);
                         }
