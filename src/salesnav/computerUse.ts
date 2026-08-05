@@ -15,6 +15,7 @@ import type { Page } from 'playwright';
 import { config } from '../config';
 import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 import { logInfo, logWarn } from '../telemetry/logger';
+import { premiTastoSpeciale } from '../browser/human/humanTyping';
 import {
     botWheel,
     humanMouseMoveToCoords,
@@ -282,7 +283,10 @@ async function executeAction(page: Page, action: ComputerAction): Promise<void> 
                 try {
                     for (const rawKey of action.keys) {
                         const key = KEY_MAP[rawKey.toUpperCase()] ?? rawKey;
-                        await page.keyboard.press(key);
+                        // Il flight c'era gia' (la riga sotto), il dwell no: `press(key)` nudo tiene
+                        // il tasto 0 ms. E' la stessa asimmetria chiusa in `01e7e23` per i caratteri,
+                        // sopravvissuta qui — flight gestito, pressione istantanea.
+                        await premiTastoSpeciale(page.keyboard, key);
                         await page.waitForTimeout(50 + Math.floor(Math.random() * 50));
                     }
                 } finally {
