@@ -18,109 +18,113 @@ const TIMEZONE_MAP: ReadonlyArray<{ patterns: RegExp; timeZone: string }> = [
     // Nord America
     {
         patterns:
-            /\b(new york|boston|miami|washington|philadelphia|atlanta|charlotte|orlando|tampa|detroit|pittsburgh|cleveland|cincinnati|nashville|est\b)/i,
+            /\b(new york|boston|miami|washington|philadelphia|atlanta|charlotte|orlando|tampa|detroit|pittsburgh|cleveland|cincinnati|nashville|est\b)\b/i,
         timeZone: 'America/New_York',
     },
     {
         patterns:
-            /\b(chicago|houston|dallas|austin|san antonio|minneapolis|milwaukee|st\.? louis|kansas city|memphis|new orleans|cst\b)/i,
+            /\b(chicago|houston|dallas|austin|san antonio|minneapolis|milwaukee|st\.? louis|kansas city|memphis|new orleans|cst\b)\b/i,
         timeZone: 'America/Chicago',
     },
     // Phoenix NON osserva l'ora legale, il resto del Mountain Time sì: separati, prima il caso
     // specifico. Con l'offset fisso erano indistinguibili e in estate uno dei due era sbagliato.
-    { patterns: /\b(phoenix|tucson|arizona)/i, timeZone: 'America/Phoenix' },
-    { patterns: /\b(denver|salt lake|albuquerque|el paso|mst\b)/i, timeZone: 'America/Denver' },
+    { patterns: /\b(phoenix|tucson|arizona)\b/i, timeZone: 'America/Phoenix' },
+    { patterns: /\b(denver|salt lake|albuquerque|el paso|mst\b)\b/i, timeZone: 'America/Denver' },
     {
-        patterns: /\b(los angeles|san francisco|seattle|portland|san diego|las vegas|sacramento|pst\b)/i,
+        patterns:
+            /\b(los angeles|san francisco|seattle|portland|san diego|san bernardino|las vegas|sacramento|riverside|fresno|pst\b)\b/i,
         timeZone: 'America/Los_Angeles',
     },
-    { patterns: /\b(anchorage|alaska)/i, timeZone: 'America/Anchorage' },
-    { patterns: /\b(honolulu|hawaii)/i, timeZone: 'Pacific/Honolulu' },
-    { patterns: /\b(toronto|montreal|ottawa|quebec)/i, timeZone: 'America/Toronto' },
+    { patterns: /\b(anchorage|alaska)\b/i, timeZone: 'America/Anchorage' },
+    { patterns: /\b(honolulu|hawaii)\b/i, timeZone: 'Pacific/Honolulu' },
+    { patterns: /\b(toronto|montreal|ottawa|quebec)\b/i, timeZone: 'America/Toronto' },
     // Vancouver è Pacific, Calgary/Edmonton sono Mountain: un'ora di differenza fra loro, che la
     // vecchia riga unica (-7 per tutte) sbagliava su Vancouver tutto l'anno.
-    { patterns: /\b(vancouver)/i, timeZone: 'America/Vancouver' },
-    { patterns: /\b(calgary|edmonton)/i, timeZone: 'America/Edmonton' },
-    { patterns: /\b(mexico city|guadalajara|monterrey|m[eé]xico)/i, timeZone: 'America/Mexico_City' },
-    { patterns: /\b(são paulo|sao paulo|rio de janeiro|brasilia|brasil|brazil)/i, timeZone: 'America/Sao_Paulo' },
-    { patterns: /\b(buenos aires|argentina)/i, timeZone: 'America/Argentina/Buenos_Aires' },
-    { patterns: /\b(santiago|chile)/i, timeZone: 'America/Santiago' },
-    { patterns: /\b(bogot[aá]|colombia)/i, timeZone: 'America/Bogota' },
-    { patterns: /\b(lima|per[uú])/i, timeZone: 'America/Lima' },
+    { patterns: /\b(vancouver)\b/i, timeZone: 'America/Vancouver' },
+    { patterns: /\b(calgary|edmonton)\b/i, timeZone: 'America/Edmonton' },
+    { patterns: /\b(mexico city|guadalajara|monterrey|m[eé]xico)\b/i, timeZone: 'America/Mexico_City' },
+    { patterns: /\b(são paulo|sao paulo|rio de janeiro|brasilia|brasil|brazil)\b/i, timeZone: 'America/Sao_Paulo' },
+    { patterns: /\b(buenos aires|argentina)\b/i, timeZone: 'America/Argentina/Buenos_Aires' },
+    { patterns: /\b(santiago|chile)\b/i, timeZone: 'America/Santiago' },
+    { patterns: /\b(bogot[aá]|colombia)\b/i, timeZone: 'America/Bogota' },
+    { patterns: /\b(lima|per[uú])\b/i, timeZone: 'America/Lima' },
 
     // Europa Occidentale (CET/CEST)
     {
         patterns:
-            /\b(milan|rome|roma|naples|napoli|turin|torino|florence|firenze|bologna|genova|palermo|catania|bari|padova|brescia|verona|italia|italy)/i,
+            /\b(milano|milan|rome|roma|naples|napoli|turin|torino|florence|firenze|bologna|genova|palermo|catania|bari|padova|brescia|verona|italia|italy)\b/i,
         timeZone: 'Europe/Rome',
     },
     {
-        patterns: /\b(paris|lyon|marseille|toulouse|nice|nantes|bordeaux|lille|strasbourg|france|francia)/i,
+        patterns: /\b(paris|lyon|marseille|toulouse|nice|nantes|bordeaux|lille|strasbourg|france|francia)\b/i,
         timeZone: 'Europe/Paris',
     },
     {
         patterns:
-            /\b(berlin|munich|m[uü]nchen|hamburg|frankfurt|cologne|k[oö]ln|düsseldorf|stuttgart|dortmund|essen|germany|deutschland|germania)/i,
+            /\b(berlin|munich|m[uü]nchen|hamburg|frankfurt|cologne|k[oö]ln|düsseldorf|stuttgart|dortmund|essen|germany|deutschland|germania)\b/i,
         timeZone: 'Europe/Berlin',
     },
-    { patterns: /\b(madrid|barcelona|valencia|sevilla|bilbao|malaga|spain|españa|spagna)/i, timeZone: 'Europe/Madrid' },
+    { patterns: /\b(madrid|barcelona|valencia|sevilla|bilbao|malaga|spain|españa|spagna)\b/i, timeZone: 'Europe/Madrid' },
     {
-        patterns: /\b(amsterdam|rotterdam|den haag|utrecht|netherlands|nederland|olanda|paesi bassi)/i,
+        patterns: /\b(amsterdam|rotterdam|den haag|utrecht|netherlands|nederland|olanda|paesi bassi)\b/i,
         timeZone: 'Europe/Amsterdam',
     },
-    { patterns: /\b(brussels|bruxelles|antwerp|belgium|belgio|belgique)/i, timeZone: 'Europe/Brussels' },
-    { patterns: /\b(vienna|wien|austria|graz|linz)/i, timeZone: 'Europe/Vienna' },
+    { patterns: /\b(brussels|bruxelles|antwerp|belgium|belgio|belgique)\b/i, timeZone: 'Europe/Brussels' },
+    { patterns: /\b(vienna|wien|austria|graz|linz)\b/i, timeZone: 'Europe/Vienna' },
     {
-        patterns: /\b(zurich|z[uü]rich|geneva|gen[eè]ve|bern|basel|switzerland|svizzera|schweiz)/i,
+        patterns: /\b(zurich|z[uü]rich|geneva|gen[eè]ve|bern|basel|switzerland|svizzera|schweiz)\b/i,
         timeZone: 'Europe/Zurich',
     },
-    { patterns: /\b(lisbon|lisboa|porto|portugal)/i, timeZone: 'Europe/Lisbon' },
+    { patterns: /\b(lisbon|lisboa|porto|portugal)\b/i, timeZone: 'Europe/Lisbon' },
 
     // Europa Orientale e Centrale
-    { patterns: /\b(athens|atene|greece|grecia)/i, timeZone: 'Europe/Athens' },
-    { patterns: /\b(helsinki|finland|finlandia)/i, timeZone: 'Europe/Helsinki' },
-    { patterns: /\b(bucharest|romania)/i, timeZone: 'Europe/Bucharest' },
-    { patterns: /\b(warsaw|varsavia|krakow|cracovia|poland|polonia)/i, timeZone: 'Europe/Warsaw' },
-    { patterns: /\b(prague|praga|czech|repubblica ceca)/i, timeZone: 'Europe/Prague' },
+    { patterns: /\b(athens|atene|greece|grecia)\b/i, timeZone: 'Europe/Athens' },
+    { patterns: /\b(helsinki|finland|finlandia)\b/i, timeZone: 'Europe/Helsinki' },
+    { patterns: /\b(bucharest|romania)\b/i, timeZone: 'Europe/Bucharest' },
+    { patterns: /\b(warsaw|varsavia|krakow|cracovia|poland|polonia)\b/i, timeZone: 'Europe/Warsaw' },
+    { patterns: /\b(prague|praga|czech|repubblica ceca)\b/i, timeZone: 'Europe/Prague' },
+    // Aggiunta col fix dei confini di parola: prima NON esisteva, e «Kyiv, Ukraine» finiva su
+    // Europe/London perche' `uk` matchava dentro «Ukraine». Tolta la collisione restava senza casa.
+    { patterns: /\b(kyiv|kiev|ukraine|ucraina|lviv|odesa|odessa)\b/i, timeZone: 'Europe/Kyiv' },
 
     // UK + Irlanda
     {
         patterns:
-            /\b(london|manchester|birmingham|leeds|glasgow|edinburgh|bristol|liverpool|uk|united kingdom|england|scotland|wales)/i,
+            /\b(london|manchester|birmingham|leeds|glasgow|edinburgh|bristol|liverpool|uk|united kingdom|england|scotland|wales)\b/i,
         timeZone: 'Europe/London',
     },
-    { patterns: /\b(dublin|cork|ireland|irlanda)/i, timeZone: 'Europe/Dublin' },
+    { patterns: /\b(dublin|cork|ireland|irlanda)\b/i, timeZone: 'Europe/Dublin' },
 
     // Medio Oriente
-    { patterns: /\b(dubai|abu dhabi|uae|emirati|emirates)/i, timeZone: 'Asia/Dubai' },
-    { patterns: /\b(riyadh|jeddah|saudi|arabia saudita)/i, timeZone: 'Asia/Riyadh' },
+    { patterns: /\b(dubai|abu dhabi|uae|emirati|emirates)\b/i, timeZone: 'Asia/Dubai' },
+    { patterns: /\b(riyadh|jeddah|saudi|arabia saudita)\b/i, timeZone: 'Asia/Riyadh' },
     // Israele ha un'ora legale con date proprie, diverse da quelle europee.
-    { patterns: /\b(tel aviv|jerusalem|israel|israele)/i, timeZone: 'Asia/Jerusalem' },
-    { patterns: /\b(istanbul|ankara|turkey|turchia|t[uü]rkiye)/i, timeZone: 'Europe/Istanbul' },
+    { patterns: /\b(tel aviv|jerusalem|israel|israele)\b/i, timeZone: 'Asia/Jerusalem' },
+    { patterns: /\b(istanbul|ankara|turkey|turchia|t[uü]rkiye)\b/i, timeZone: 'Europe/Istanbul' },
 
     // Asia
-    { patterns: /\b(mumbai|delhi|bangalore|bengaluru|hyderabad|chennai|pune|kolkata|india)/i, timeZone: 'Asia/Kolkata' },
-    { patterns: /\b(singapore|singapo)/i, timeZone: 'Asia/Singapore' },
-    { patterns: /\b(hong kong)/i, timeZone: 'Asia/Hong_Kong' },
-    { patterns: /\b(tokyo|osaka|japan|giappone)/i, timeZone: 'Asia/Tokyo' },
-    { patterns: /\b(seoul|south korea|corea)/i, timeZone: 'Asia/Seoul' },
-    { patterns: /\b(beijing|shanghai|shenzhen|guangzhou|china|cina)/i, timeZone: 'Asia/Shanghai' },
-    { patterns: /\b(bangkok|thailand|tailandia)/i, timeZone: 'Asia/Bangkok' },
-    { patterns: /\b(jakarta|indonesia)/i, timeZone: 'Asia/Jakarta' },
+    { patterns: /\b(mumbai|delhi|bangalore|bengaluru|hyderabad|chennai|pune|kolkata|india)\b/i, timeZone: 'Asia/Kolkata' },
+    { patterns: /\b(singapore|singapo)\b/i, timeZone: 'Asia/Singapore' },
+    { patterns: /\b(hong kong)\b/i, timeZone: 'Asia/Hong_Kong' },
+    { patterns: /\b(tokyo|osaka|japan|giappone)\b/i, timeZone: 'Asia/Tokyo' },
+    { patterns: /\b(seoul|south korea|corea)\b/i, timeZone: 'Asia/Seoul' },
+    { patterns: /\b(beijing|shanghai|shenzhen|guangzhou|china|cina)\b/i, timeZone: 'Asia/Shanghai' },
+    { patterns: /\b(bangkok|thailand|tailandia)\b/i, timeZone: 'Asia/Bangkok' },
+    { patterns: /\b(jakarta|indonesia)\b/i, timeZone: 'Asia/Jakarta' },
 
     // Oceania — quattro zone diverse che la vecchia riga unica schiacciava tutte su +10:
     // Perth ne dista 2 ore, Adelaide 30 minuti, e solo Sydney/Melbourne osservano l'ora legale.
-    { patterns: /\b(perth)/i, timeZone: 'Australia/Perth' },
-    { patterns: /\b(brisbane)/i, timeZone: 'Australia/Brisbane' },
-    { patterns: /\b(adelaide)/i, timeZone: 'Australia/Adelaide' },
-    { patterns: /\b(sydney|melbourne|canberra|australia)/i, timeZone: 'Australia/Sydney' },
-    { patterns: /\b(auckland|wellington|new zealand|nuova zelanda)/i, timeZone: 'Pacific/Auckland' },
+    { patterns: /\b(perth)\b/i, timeZone: 'Australia/Perth' },
+    { patterns: /\b(brisbane)\b/i, timeZone: 'Australia/Brisbane' },
+    { patterns: /\b(adelaide)\b/i, timeZone: 'Australia/Adelaide' },
+    { patterns: /\b(sydney|melbourne|canberra|australia)\b/i, timeZone: 'Australia/Sydney' },
+    { patterns: /\b(auckland|wellington|new zealand|nuova zelanda)\b/i, timeZone: 'Pacific/Auckland' },
 
     // Africa
-    { patterns: /\b(cairo|egypt|egitto)/i, timeZone: 'Africa/Cairo' },
-    { patterns: /\b(johannesburg|cape town|south africa|sudafrica)/i, timeZone: 'Africa/Johannesburg' },
-    { patterns: /\b(lagos|nigeria)/i, timeZone: 'Africa/Lagos' },
-    { patterns: /\b(nairobi|kenya)/i, timeZone: 'Africa/Nairobi' },
+    { patterns: /\b(cairo|egypt|egitto)\b/i, timeZone: 'Africa/Cairo' },
+    { patterns: /\b(johannesburg|cape town|south africa|sudafrica)\b/i, timeZone: 'Africa/Johannesburg' },
+    { patterns: /\b(lagos|nigeria)\b/i, timeZone: 'Africa/Lagos' },
+    { patterns: /\b(nairobi|kenya)\b/i, timeZone: 'Africa/Nairobi' },
 ];
 
 /**
