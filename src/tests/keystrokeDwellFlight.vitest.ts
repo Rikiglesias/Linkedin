@@ -20,6 +20,10 @@ vi.mock('../ai/typoGenerator', () => ({
     computeSessionTypoRate: () => 0,
     determineNextKeystroke: (char: string) => ({ char, isTypo: false }),
     getWordFlowMultiplier: () => 1,
+    // Seme neutro: 0.5 ⇒ mediana del dwell = 85 ms, cioe' il centro storico. Cosi' questo test
+    // continua a misurare il RAPPORTO dwell/flight (il suo oggetto) senza dipendere dall'account
+    // configurato nell'ambiente, che dalla Fase 3 sposta la finestra.
+    semeAccount01: () => 0.5,
 }));
 
 /** Page finta che REGISTRA i valori, non solo il fatto che la chiamata sia avvenuta. */

@@ -51,6 +51,29 @@ let _sessionTypoRate: number | null = null;
  *
  * The rate is computed once per session and cached.
  */
+/**
+ * Seme deterministico per-account, normalizzato in [0,1). FNV-1a su `ACCOUNT_ID` (o
+ * `LINKEDIN_ACCOUNT`).
+ *
+ * ESTRATTA da `computeSessionTypoRate`, non riscritta: serve anche al dwell dei tasti
+ * (`humanKeystrokeDwellMs`), che era hard-coded uguale su ogni account mentre questo vicino era gia'
+ * seedato **proprio per non fare fingerprint** — due parametri della stessa persona simulata devono
+ * derivare dallo STESSO seme, altrimenti si contraddicono. Un secondo hash con un'altra formula
+ * sarebbe una seconda identita' per lo stesso account.
+ *
+ * Account non configurato ⇒ stringa vuota ⇒ seme costante: e' voluto (deterministico per ambiente),
+ * la varianza vera la porta la distribuzione, non il seme.
+ */
+export function semeAccount01(): number {
+    const accountId = process.env.ACCOUNT_ID || process.env.LINKEDIN_ACCOUNT || '';
+    let seedHash = 2166136261;
+    for (let i = 0; i < accountId.length; i++) {
+        seedHash ^= accountId.charCodeAt(i);
+        seedHash = Math.imul(seedHash, 16777619);
+    }
+    return ((seedHash >>> 0) % 10000) / 10000;
+}
+
 export function computeSessionTypoRate(): number {
     if (_sessionTypoRate !== null) return _sessionTypoRate;
 
@@ -58,14 +81,7 @@ export function computeSessionTypoRate(): number {
     const BASE_MAX = 0.07;
 
     // 1. Account seed: deterministic baseline from ACCOUNT_ID (or fallback random)
-    const accountId = process.env.ACCOUNT_ID || process.env.LINKEDIN_ACCOUNT || '';
-    let seedHash = 2166136261;
-    for (let i = 0; i < accountId.length; i++) {
-        seedHash ^= accountId.charCodeAt(i);
-        seedHash = Math.imul(seedHash, 16777619);
-    }
-    // Normalize to 0–1
-    const accountSeed = ((seedHash >>> 0) % 10000) / 10000;
+    const accountSeed = semeAccount01();
     // Account baseline: 0.02–0.05 range
     const accountBaseline = 0.02 + accountSeed * 0.03;
 

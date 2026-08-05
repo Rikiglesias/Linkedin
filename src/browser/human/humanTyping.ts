@@ -10,8 +10,13 @@
  */
 
 import { Locator, Page } from 'playwright';
-import { logNormalDelayMs } from '../../utils/random';
-import { computeSessionTypoRate, determineNextKeystroke, getWordFlowMultiplier } from '../../ai/typoGenerator';
+import { logNormalDelayMs, logNormalDelayMsResampled } from '../../utils/random';
+import {
+    computeSessionTypoRate,
+    determineNextKeystroke,
+    getWordFlowMultiplier,
+    semeAccount01,
+} from '../../ai/typoGenerator';
 import { humanDelay } from './humanDelay';
 
 /**
@@ -64,7 +69,39 @@ export function humanKeystrokeDelayMs(char: string, lengthSlowFactor = 1, wordMu
  * intervallo non sono umani.
  */
 export function humanKeystrokeDwellMs(): number {
-    return logNormalDelayMs(85, 0.22, 62, 118);
+    const { medianaMs, minMs, maxMs } = finestraDwellDellAccount();
+    return logNormalDelayMsResampled(medianaMs, DWELL_SIGMA, minMs, maxMs);
+}
+
+const DWELL_SIGMA = 0.22;
+/** Mediana di riferimento, prima della personalizzazione per account. */
+const DWELL_MEDIANA_BASE = 85;
+/** Rapporti della finestra rispetto alla mediana: identici agli originali 62/85 e 118/85. */
+const DWELL_MIN_RATIO = 62 / DWELL_MEDIANA_BASE;
+const DWELL_MAX_RATIO = 118 / DWELL_MEDIANA_BASE;
+/** Floor assoluto: sotto i 50ms si entra nella zona-bot, e nessun seme puo' portarci li'. */
+const DWELL_FLOOR_MS = 55;
+
+/**
+ * Finestra di dwell PROPRIA di questo account: mediana spostata dal seme, bordi in proporzione.
+ *
+ * 🔴 Perche': centro e bordi erano hard-coded uguali su OGNI account, mentre il vicino
+ * `computeSessionTypoRate` e' seedato su `ACCOUNT_ID` proprio per non lasciare un fingerprint. Un
+ * hold-time identico su tutti gli account e' un **correlatore cross-account**: lega fra loro profili
+ * che dovrebbero sembrare persone diverse — piu' grave di una firma su un account solo, perche'
+ * trasforma N account in uno.
+ *
+ * La mediana si muove del ±12% (75-95 ms): abbastanza da distinguere due persone, non tanto da
+ * uscire dai tempi di battitura plausibili. I bordi seguono la mediana con gli STESSI rapporti
+ * originali, quindi la forma della distribuzione non cambia — cambia dove e' centrata.
+ */
+export function finestraDwellDellAccount(): { medianaMs: number; minMs: number; maxMs: number } {
+    const mediana = DWELL_MEDIANA_BASE * (0.88 + semeAccount01() * 0.24);
+    return {
+        medianaMs: mediana,
+        minMs: Math.max(DWELL_FLOOR_MS, mediana * DWELL_MIN_RATIO),
+        maxMs: mediana * DWELL_MAX_RATIO,
+    };
 }
 
 /**

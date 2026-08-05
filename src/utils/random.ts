@@ -53,6 +53,34 @@ export function logNormalDelayMs(medianMs: number, sigma: number, minMs: number,
 }
 
 /**
+ * Come {@link logNormalDelayMs}, ma i campioni fuori range vengono RIESTRATTI invece che schiacciati
+ * sul bordo.
+ *
+ * 🔴 Perche' serve: il clamp non e' neutro. Con mediana 85, sigma 0.22 e finestra [62,118] i limiti
+ * cadono a -1.43 e +1.49 sigma, quindi ~14% dei campioni viene appiattito su DUE soli interi (62 e
+ * 118), che diventano i valori piu' frequenti dell'istogramma — con i vicini quasi vuoti. Un
+ * istogramma troncato con picchi ai bordi e' una firma tanto quanto uno piatto: e' esattamente la
+ * cosa che la log-normale era stata scelta per evitare. Allargare la finestra NON e' il rimedio:
+ * porterebbe campioni sotto i 50 ms, cioe' nella zona-bot che il timing di questo progetto evita.
+ *
+ * Il tetto di tentativi impedisce il loop se la finestra e' troppo stretta per la sigma; nel caso
+ * peggiore si ricade sul clamp, cioe' sul comportamento precedente — mai su un valore fuori range.
+ */
+export function logNormalDelayMsResampled(
+    medianMs: number,
+    sigma: number,
+    minMs: number,
+    maxMs: number,
+    maxTentativi = 12,
+): number {
+    for (let i = 0; i < maxTentativi; i++) {
+        const sample = medianMs * Math.exp(sigma * sampleStandardNormal());
+        if (sample >= minMs && sample <= maxMs) return Math.round(sample);
+    }
+    return Math.round(Math.max(minMs, Math.min(maxMs, medianMs * Math.exp(sigma * sampleStandardNormal()))));
+}
+
+/**
  * Gemella in SECONDI di {@link logNormalDelayMs}: stessa forma log-normale (right-skew), clampata a
  * [minSec, maxSec]. Per gli spacing anti-burst dello scheduler, dove l'inter-arrival tra azioni
  * consecutive NON è uniforme (istogramma piatto rilevabile) ma right-skewed come i tempi umani reali.

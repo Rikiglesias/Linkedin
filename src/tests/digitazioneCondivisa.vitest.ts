@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { digitaTestoUmano, fattoreLunghezzaTesto } from '../browser/human/humanTyping';
+import { digitaTestoUmano, fattoreLunghezzaTesto, finestraDwellDellAccount } from '../browser/human/humanTyping';
 
 /**
  * F-b93d5f17 + F-08b7a53c: tre siti scrivevano con `.type(testo, { delay: 25 + random*20 })`.
@@ -51,18 +51,21 @@ describe('digitaTestoUmano — dwell e flight separati su ogni carattere', () =>
         expect(delayUnico).toBeLessThan(50);
     });
 
-    it('scrive OGNI carattere, ognuno con un dwell proprio nella finestra umana 62-118 ms', async () => {
+    it("scrive OGNI carattere, ognuno con un dwell proprio nella finestra dell'account", async () => {
         const page = pageFinta();
         const scrittore = scrittoreFinto();
         const testo = 'Lista Clienti Milano 2026';
 
         await digitaTestoUmano(page as never, scrittore.scrivi, testo);
 
+        // Dalla Fase 3 la finestra e' seedata sull'account (F-6ce4907b): due costanti qui
+        // passerebbero solo per fortuna su un testo corto, e mentirebbero su un altro account.
+        const finestra = finestraDwellDellAccount();
         expect(scrittore.scritti.join('')).toBe(testo);
         expect(scrittore.dwell).toHaveLength(testo.length);
         for (const d of scrittore.dwell) {
-            expect(d).toBeGreaterThanOrEqual(62);
-            expect(d).toBeLessThanOrEqual(118);
+            expect(d).toBeGreaterThanOrEqual(Math.floor(finestra.minMs));
+            expect(d).toBeLessThanOrEqual(Math.ceil(finestra.maxMs));
         }
         // Un dwell costante sarebbe una firma quanto uno a 0: serve dispersione reale.
         expect(new Set(scrittore.dwell).size).toBeGreaterThan(3);

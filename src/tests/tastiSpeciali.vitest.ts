@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { premiTastoSpeciale } from '../browser/human/humanTyping';
+import { finestraDwellDellAccount, premiTastoSpeciale } from '../browser/human/humanTyping';
 
 /**
  * F-4a6e88d1: i tasti NON-carattere passavano da `press(key)` nudo ⇒ in Playwright `down` e `up`
@@ -41,17 +41,21 @@ describe('premiTastoSpeciale — un tasto speciale si preme come lo premerebbe u
         expect(target.delays[0]).toBeUndefined();
     });
 
-    it('passa un dwell nella finestra umana (62-118 ms), diverso ogni volta', async () => {
+    it("passa un dwell nella finestra umana dell'account, diverso ogni volta", async () => {
         const target = targetFinto();
         for (let i = 0; i < 300; i++) {
             await premiTastoSpeciale(target, 'Backspace');
         }
 
+        // La finestra NON e' piu' fissa a 62-118: dalla Fase 3 la mediana e' seedata sull'account
+        // (F-6ce4907b), quindi si verifica contro la finestra REALE invece che contro due costanti
+        // — che erano proprio il correlatore cross-account da eliminare.
+        const finestra = finestraDwellDellAccount();
         const valori = target.delays as number[];
         expect(valori).toHaveLength(300);
         for (const v of valori) {
-            expect(v).toBeGreaterThanOrEqual(62);
-            expect(v).toBeLessThanOrEqual(118);
+            expect(v).toBeGreaterThanOrEqual(Math.floor(finestra.minMs));
+            expect(v).toBeLessThanOrEqual(Math.ceil(finestra.maxMs));
         }
         // Un valore costante sarebbe una firma quanto lo zero: serve dispersione reale.
         expect(new Set(valori).size).toBeGreaterThan(20);

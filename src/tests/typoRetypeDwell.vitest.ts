@@ -30,6 +30,9 @@ vi.mock('../ai/typoGenerator', () => ({
         return { char, isTypo: false };
     },
     getWordFlowMultiplier: () => 1,
+    // Seme neutro: 0.5 ⇒ mediana del dwell = 85 ms (il centro storico). Questo test misura che i
+    // caratteri RIDIGITATI dopo un typo non siano di serie B, non la finestra dell'account.
+    semeAccount01: () => 0.5,
 }));
 
 function pageFinta() {
