@@ -81,12 +81,6 @@ export async function updateAccountBackpressure(
     return nextLevel;
 }
 
-export interface AccountBackpressureSnapshot {
-    accountId: string;
-    level: number;
-    effectiveBatchSize: number;
-}
-
 // ─── M20: Worker-Type-Scoped Backpressure ────────────────────────────────────
 // Estende il sistema account-scoped per avere granularità per JobType.
 // Se inviti hanno alta failure rate ma messaggi no, solo il batch inviti viene ridotto.

@@ -111,22 +111,17 @@ export interface ParsedAutomationCommandRecord {
     updatedAt: string;
 }
 
-export const PUBLIC_AUTOMATION_COMMAND_KINDS: readonly PublicAutomationCommandKind[] = [
-    'sync-search',
-    'sync-list',
-    'send-invites',
-    'send-messages',
-];
+// NB: l'elenco RUNTIME dei kind pubblici non vive qui. I comandi in arrivo sono validati in due
+// punti, entrambi vivi: `PublicAutomationCommandRequestSchema` (api/schemas.ts:81), uno
+// `z.discriminatedUnion` che lega ogni kind al proprio payload — cosa che una lista piatta non può
+// fare — e `controls.ts:49-58`, che accetta solo workflow noti e li mappa con
+// `mapLegacyTriggerRunWorkflow`. Una terza lista qui non governava nulla e poteva divergere.
 
 export const TERMINAL_AUTOMATION_COMMAND_STATUSES: readonly AutomationCommandStatus[] = [
     'SUCCEEDED',
     'FAILED',
     'SKIPPED',
 ];
-
-export function isPublicAutomationCommandKind(kind: string): kind is PublicAutomationCommandKind {
-    return (PUBLIC_AUTOMATION_COMMAND_KINDS as readonly string[]).includes(kind);
-}
 
 export function isTerminalAutomationCommandStatus(status: AutomationCommandStatus): boolean {
     return (TERMINAL_AUTOMATION_COMMAND_STATUSES as readonly string[]).includes(status);

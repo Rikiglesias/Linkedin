@@ -38,9 +38,12 @@ Nessun client deve duplicare regole di:
 
 ## Request domain
 
-I service usano `WorkflowExecutionRequest` e varianti specifiche in:
+Ogni service usa la **propria** request (`SyncSearchWorkflowRequest`, `SyncListWorkflowRequest`,
+`SendInvitesWorkflowRequest`, `SendMessagesWorkflowRequest`), definita in:
 
 - `src/workflows/types.ts`
+
+NB: non esiste un tipo aggregato `WorkflowExecutionRequest` — c'era, ma nessun service lo nominava.
 
 Campi supportati:
 

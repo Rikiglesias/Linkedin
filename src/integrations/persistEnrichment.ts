@@ -28,16 +28,10 @@ export interface EnrichmentPersistInput {
     } | null;
 }
 
-/**
- * Controlla se il lead è già stato arricchito (guard anti-duplicato).
- */
-export async function isLeadAlreadyEnriched(leadId: number): Promise<boolean> {
-    const db = await getDatabase();
-    const row = await db.get<{ lead_id: number }>(`SELECT lead_id FROM lead_enrichment_data WHERE lead_id = ?`, [
-        leadId,
-    ]);
-    return !!row;
-}
+// NB: qui NON vive un guard "lead già arricchito". La selezione dei candidati è di
+// `getLeadsNeedingEnrichment` (leadsCore.ts:1412), che fa LEFT JOIN su lead_enrichment_data e
+// ri-accoda DI PROPOSITO un lead già arricchito quando manca `business_email` e c'è un
+// `account_name` su cui ritentare. Un guard "già presente in tabella" qui spegnerebbe quel ramo.
 
 /**
  * Persiste i risultati di enrichment: aggiorna campi core su leads + salva in lead_enrichment_data.

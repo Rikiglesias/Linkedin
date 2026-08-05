@@ -57,14 +57,6 @@ function computeControlPlaneHash(configs: ControlPlaneCampaignConfigInput[]): st
     return createHash('sha256').update(payload).digest('hex');
 }
 
-export interface ControlPlaneStatus {
-    enabled: boolean;
-    configured: boolean;
-    intervalMs: number;
-    maxCampaigns: number;
-    lastRunAt: string | null;
-}
-
 export interface ControlPlaneSyncReport {
     enabled: boolean;
     configured: boolean;

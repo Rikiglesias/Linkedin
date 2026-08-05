@@ -244,19 +244,6 @@ export interface SendMessagesWorkflowRequest {
     skipEnrichment?: boolean;
 }
 
-export type WorkflowExecutionRequest =
-    | SyncSearchWorkflowRequest
-    | SyncListWorkflowRequest
-    | SendInvitesWorkflowRequest
-    | SendMessagesWorkflowRequest;
-
-export interface WorkflowExecutionRequestMap {
-    'sync-search': SyncSearchWorkflowRequest;
-    'sync-list': SyncListWorkflowRequest;
-    'send-invites': SendInvitesWorkflowRequest;
-    'send-messages': SendMessagesWorkflowRequest;
-}
-
 export interface WorkflowReportListBreakdown {
     listName: string;
     invitesSent: number;

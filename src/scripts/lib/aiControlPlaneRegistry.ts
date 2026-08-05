@@ -487,27 +487,3 @@ export function classifyPrompt(
     };
 }
 
-export function formatDecisionSummary(decision: RoutingDecision, routingRegistry: RoutingRegistry): string[] {
-    if (decision.capabilityGap) {
-        return [
-            `Task class: ${decision.taskClass}`,
-            'Capability gap: routing non affidabile, non proporre una capability finta',
-        ];
-    }
-
-    const capabilityLabelById = new Map(
-        routingRegistry.capabilities.map((capability) => [capability.id, capability.label]),
-    );
-
-    return [
-        `Task class: ${decision.taskClass}`,
-        `Source of truth: ${decision.sourceOfTruth.join(', ')}`,
-        `Web/docs: ${decision.webPolicy}`,
-        `Capabilities da usare: ${decision.useCapabilities
-            .map((capabilityId) => capabilityLabelById.get(capabilityId) ?? capabilityId)
-            .join(', ')}`,
-        `Capabilities da non usare: ${decision.avoidCapabilities.join(', ') || 'nessuna esclusione forte'}`,
-        `Preferred environment: ${decision.preferredEnvironment}`,
-        `L2-L9 focus: ${decision.focusLevels.map((level) => level.level).join(', ')}`,
-    ];
-}

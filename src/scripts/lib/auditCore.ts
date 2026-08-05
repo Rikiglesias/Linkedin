@@ -50,14 +50,6 @@ export function getNestedCommands(entry: HookEntry): HookCommand[] {
     return entry.hooks.filter(isRecord) as HookCommand[];
 }
 
-export function findHookCommand(settings: Record<string, unknown>, eventName: string, commandPattern: string): boolean {
-    return getHookEntries(settings, eventName).some((entry) =>
-        getNestedCommands(entry).some(
-            (hook) => typeof hook.command === 'string' && hook.command.includes(commandPattern),
-        ),
-    );
-}
-
 export function findHookCommandParts(
     settings: Record<string, unknown>,
     eventName: string,
