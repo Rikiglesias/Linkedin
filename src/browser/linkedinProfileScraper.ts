@@ -7,7 +7,12 @@
  */
 
 import type { Page } from 'playwright';
-import { humanDelay, simulateHumanReading } from './index';
+// NON dal barrel `./index`: importarlo da dentro `src/browser/**` lo rende un percorso di
+// caricamento vivo, e il barrel esegue come side effect le tre bridge registration che
+// `src/browser.ts` fa già — due punti di registrazione per lo stesso bridge, di cui uno invisibile.
+// Il commento di `browser.ts:42` («il barrel non è importato da nessuno») era diventato falso
+// proprio per questa riga. Guardia meccanica in `browserBridgeRegistration.vitest.ts`.
+import { humanDelay, simulateHumanReading } from './humanBehavior';
 import { logInfo, logWarn } from '../telemetry/logger';
 
 // ─── Types ──────────────────────────────────────────────────────────────────────

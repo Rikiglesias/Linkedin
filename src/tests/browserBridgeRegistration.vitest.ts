@@ -65,4 +65,47 @@ describe('registrazione dei bridge sull entry point reale (src/browser.ts)', () 
         expect(entry).toMatch(/registerMouseMoveFn\(/);
         expect(entry).toMatch(/registerInteractWithFeedFn\(/);
     });
+
+    /**
+     * 🔴 L'invariante che mancava, e che ha permesso al difetto di rientrare.
+     *
+     * Il test sopra verifica DOVE stanno le registrazioni. Non verifica che il barrel resti fuori
+     * dai percorsi di caricamento — e infatti `linkedinProfileScraper.ts` aveva ripreso a importare
+     * `./index` (commit di lint `0269a87`), rendendo il barrel vivo e le sue tre registrazioni un
+     * SECONDO punto di verità. Nessun sintomo: registrare due volte le stesse funzioni è
+     * idempotente. Ma il commento di `browser.ts:42` che motiva l'intero design («il barrel non è
+     * importato da nessuno») era diventato falso, e nulla poteva segnalarlo.
+     *
+     * Perché è anti-ban e non stile: se un percorso caricasse un modulo di `src/browser/**` senza
+     * passare da `src/browser.ts`, l'unica registrazione superstite sarebbe quella del barrel;
+     * toglierla lascerebbe `callMouseMove` a no-op, cioè click di dismiss senza movimento del
+     * mouse — la firma che il fix del 2026-08-04 aveva eliminato.
+     */
+    test('nessun modulo di src/browser/** importa il barrel ./index', () => {
+        const dir = path.join(__dirname, '..', 'browser');
+        const colpevoli: string[] = [];
+
+        const cammina = (corrente: string): void => {
+            for (const voce of fs.readdirSync(corrente, { withFileTypes: true })) {
+                const completo = path.join(corrente, voce.name);
+                if (voce.isDirectory()) {
+                    cammina(completo);
+                    continue;
+                }
+                if (!voce.name.endsWith('.ts') || voce.name === 'index.ts') continue;
+                fs.readFileSync(completo, 'utf8')
+                    .split('\n')
+                    .forEach((riga, i) => {
+                        // Solo import reali: le righe di commento citano il barrel di proposito.
+                        const codice = riga.replace(/\/\/.*$/, '');
+                        if (/from\s+'\.\/index'|from\s+"\.\/index"|import\s*\(\s*'\.\/index'/.test(codice)) {
+                            colpevoli.push(`${path.relative(dir, completo).replace(/\\/g, '/')}:${i + 1}`);
+                        }
+                    });
+            }
+        };
+        cammina(dir);
+
+        expect(colpevoli).toEqual([]);
+    });
 });
