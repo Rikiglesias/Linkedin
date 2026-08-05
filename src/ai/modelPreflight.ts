@@ -53,6 +53,13 @@ export interface EsitoModelloAi {
     stato: StatoModelloAi;
     /** Il nome che la chiamata di chat userebbe davvero; `null` se l'AI non è in gioco. */
     modello: string | null;
+    /**
+     * La env var da correggere, DECISA AL MOMENTO DELLA VERIFICA (F-d9b06f13). Non si ricalcola in
+     * fase di descrizione: fra le due, in `doctor.ts`, gira il loop browser — minuti — e attraversare
+     * il confine della finestra green farebbe nominare la variabile sbagliata, cioè il difetto che
+     * F-6d3e88f1 aveva chiuso. `null` quando non c'è nessun modello in gioco.
+     */
+    variabile: string | null;
     /** Modelli offerti dal provider; vuoto quando non lo sappiamo. */
     disponibili: string[];
     motivo: string;
@@ -105,6 +112,7 @@ export async function verificaModelloAi(): Promise<EsitoModelloAi> {
     const nonApplicabile = (motivo: string): EsitoModelloAi => ({
         stato: 'non_applicabile',
         modello: null,
+        variabile: null,
         disponibili: [],
         motivo,
     });
@@ -124,6 +132,7 @@ export async function verificaModelloAi(): Promise<EsitoModelloAi> {
         return {
             stato: 'bloccato_da_policy',
             modello: resolveAiModel().trim() || null,
+            variabile: variabileDelModello(),
             disponibili: [],
             motivo: 'endpoint_remoto_bloccato_da_policy',
         };
@@ -131,12 +140,15 @@ export async function verificaModelloAi(): Promise<EsitoModelloAi> {
 
     const modello = resolveAiModel().trim();
     if (!modello) return nonApplicabile('modello_non_configurato');
+    // Decisa QUI, non al momento di descrivere: fra i due passa il loop browser (F-d9b06f13).
+    const variabile = variabileDelModello();
 
     const disponibili = await elencaModelli(baseUrl);
     if (disponibili === null) {
         return {
             stato: 'sconosciuto',
             modello,
+            variabile,
             disponibili: [],
             motivo: 'elenco_modelli_non_ottenibile',
         };
@@ -148,6 +160,7 @@ export async function verificaModelloAi(): Promise<EsitoModelloAi> {
     return {
         stato: presente ? 'ok' : 'mancante',
         modello,
+        variabile,
         disponibili,
         motivo: presente ? 'modello_presente' : 'modello_assente_dal_provider',
     };
@@ -173,7 +186,7 @@ export function descriviEsitoModelloAi(esito: EsitoModelloAi): string {
             // percorso AI funzioni (il registry può risolvere altrove — limite dichiarato in testa).
             return `modello AI '${esito.modello}' presente sull'endpoint configurato`;
         case 'mancante':
-            return `modello AI '${esito.modello}' NON esiste sul provider — ogni decisione AI cade nel fallback. Disponibili: ${elenco}. Correggere ${variabileDelModello()} o scaricare il modello.`;
+            return `modello AI '${esito.modello}' NON esiste sul provider — ogni decisione AI cade nel fallback. Disponibili: ${elenco}. Correggere ${esito.variabile ?? 'AI_MODEL'} o scaricare il modello.`;
         case 'bloccato_da_policy':
             return "endpoint AI remoto vietato da AI_ALLOW_REMOTE_ENDPOINT=false: OGNI chiamata AI fallisce. Puntare OPENAI_BASE_URL su un endpoint locale, oppure mettere AI_ALLOW_REMOTE_ENDPOINT=true se il remoto e' voluto.";
         case 'sconosciuto':

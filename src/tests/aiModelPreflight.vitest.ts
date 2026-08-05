@@ -257,4 +257,31 @@ describe('preflight del modello AI', () => {
         // Guardia contro una promozione futura del messaggio: il registry può risolvere altrove.
         expect(testo.toLowerCase()).not.toContain('funziona');
     });
+
+    /**
+     * F-d9b06f13. Verifica e descrizione NON sono contigue: in `doctor.ts` fra le due gira il loop
+     * browser, cioè minuti. Se il nome della variabile si ricalcola al momento di DESCRIVERE,
+     * attraversare il confine della finestra green fa nominare la variabile sbagliata — cioè il
+     * difetto che F-6d3e88f1 aveva chiuso, che rientra dalla porta del tempo.
+     */
+    it('la variabile da correggere è quella del momento della VERIFICA, non della descrizione', async () => {
+        configMock.aiModel = 'llama3.1:8b';
+        configMock.aiGreenModel = 'qwen3:8b';
+        stato.greenMode = true;
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async () => rispostaModelli(['altro:1b'])),
+        );
+
+        const esito = await verificaModelloAi();
+        expect(esito.stato).toBe('mancante');
+        expect(esito.modello).toBe('qwen3:8b'); // green mode → il modello verificato è quello green
+
+        // La finestra green si chiude mentre il loop browser lavora.
+        stato.greenMode = false;
+
+        const testo = descriviEsitoModelloAi(esito);
+        expect(testo).toContain('AI_GREEN_MODEL');
+        expect(testo).not.toContain('Correggere AI_MODEL');
+    });
 });
