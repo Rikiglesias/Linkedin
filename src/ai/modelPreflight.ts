@@ -35,7 +35,8 @@
  */
 
 import { config, isGreenModeWindow } from '../config';
-import { isLocalAiEndpoint, isLoopbackAiHost, resolveAiModel } from './openaiClient';
+import { isLocalAiEndpoint, isLoopbackAiHost } from '../config/env';
+import { resolveAiModel } from './openaiClient';
 
 /** Allineato al probe di `ollamaLifecycle`: un preflight non deve far aspettare il run. */
 const TIMEOUT_ELENCO_MS = 2_000;

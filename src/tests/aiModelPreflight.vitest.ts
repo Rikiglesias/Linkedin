@@ -35,7 +35,8 @@ vi.mock('../telemetry/logger', () => ({ logInfo: vi.fn(), logWarn: vi.fn() }));
 vi.mock('../core/integrationPolicy', () => ({ fetchWithRetryPolicy: vi.fn() }));
 
 import { descriviEsitoModelloAi, verificaModelloAi } from '../ai/modelPreflight';
-import { isLocalAiEndpoint, isLoopbackAiHost } from '../ai/openaiClient';
+// F-a3f17c02: la regola vive nella SSOT config/env, non più in openaiClient (erano 4 copie).
+import { isLocalAiEndpoint, isLoopbackAiHost } from '../config/env';
 
 /** Risposta reale di Ollama su `GET /v1/models`, misurata dal vivo (non inventata). */
 function rispostaModelli(ids: string[]): Response {

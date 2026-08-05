@@ -21,6 +21,7 @@
 
 import { spawn, type ChildProcess } from 'child_process';
 import { config } from '../config';
+import { isLoopbackAiHost } from '../config/env';
 import { logInfo, logWarn } from '../telemetry/logger';
 
 const OLLAMA_PROBE_TIMEOUT_MS = 2_000;
@@ -32,15 +33,11 @@ let startedByUs = false;
 let stopped = false;
 let child: ChildProcess | null = null;
 
-/** true se l'endpoint punta a un host loopback (server locale gestibile da noi). */
-export function isLoopbackEndpoint(endpoint: string): boolean {
-    try {
-        const host = new URL(endpoint).hostname.toLowerCase();
-        return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
-    } catch {
-        return false;
-    }
-}
+// F-a3f17c02: qui viveva `isLoopbackEndpoint`, QUARTA copia della stessa regola — e il bug delle
+// parentesi IPv6 vi era stato aggirato a mano (`host === '[::1]'`) invece che risolto: prova che il
+// difetto era noto localmente e propagato per copia. Il call site usa ora `isLoopbackAiHost`
+// (config/env), senza alias di compatibilità: un re-export tenuto per comodità è un barrel
+// travestito e nasconde da dove viene la regola.
 
 function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -74,7 +71,7 @@ export async function ensureOllamaRunning(): Promise<void> {
 
     // Endpoint remoto → non è nostro compito avviare un server: lo gestisce chi lo ospita.
     const endpoint = config.ollamaEndpoint;
-    if (!endpoint || !isLoopbackEndpoint(endpoint)) return;
+    if (!endpoint || !isLoopbackAiHost(endpoint)) return;
 
     // 1. Probe: se già su (utente/Odysseus) non tocchiamo nulla.
     if (await probeOllama(OLLAMA_PROBE_TIMEOUT_MS)) return;

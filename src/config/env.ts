@@ -1,4 +1,5 @@
 import path from 'path';
+import { isIP } from 'net';
 import fs from 'fs';
 import dotenv from 'dotenv';
 import { AccountProfileConfig, AiProviderSelection, EventSyncSink, ProxyType } from './types';
@@ -86,23 +87,60 @@ export function parseCsvEnv(name: string): string[] {
         .filter((item) => item.length > 0);
 }
 
-export function isLocalAiEndpoint(baseUrl: string): boolean {
+/**
+ * SSOT della domanda «questo endpoint AI è in casa?» (F-a3f17c02).
+ *
+ * La regola viveva in QUATTRO copie divergenti — `ai/openaiClient.ts`, qui, `ai/providerRegistry.ts`
+ * (`isLocalUrl`) e `ai/ollamaLifecycle.ts` (`isLoopbackEndpoint`) — e lo stesso URL riceveva verdetti
+ * diversi senza che nulla lo segnalasse: `http://[::1]:11434/v1` era locale per il client e remoto per
+ * il registry (⇒ i purpose PII-sensitive cadevano su `template`, che lancia), `http://0.0.0.0:11434/v1`
+ * era valido per la validazione e bloccato dal client. Vive qui perché `config/` è il livello più
+ * basso: `config/validation.ts` non può dipendere da `ai/`, e i test del registry mockano
+ * `ai/openaiClient`, il che romperebbe l'import se la SSOT stesse lì.
+ *
+ * NB: è una ALLOW-list («posso fidarmi, è la mia macchina»). La deny-list SSRF di
+ * `security/ssrfGuard.ts` risponde alla domanda OPPOSTA e resta deliberatamente separata:
+ * un'unica funzione usata nei due sensi si corrompe al primo cambio di perimetro.
+ */
+function hostnameAi(baseUrl: string): string {
     try {
-        const url = new URL(baseUrl);
-        const host = url.hostname.toLowerCase();
-        if (
-            host === 'localhost' ||
-            host === '127.0.0.1' ||
-            host === '::1' ||
-            host === '0.0.0.0' ||
-            host === '::ffff:127.0.0.1'
-        ) {
-            return true;
+        // Le parentesi vanno tolte: `new URL('http://[::1]').hostname` vale '[::1]' (spec WHATWG),
+        // quindi il confronto con '::1' era codice morto in tre copie su quattro.
+        const host = new URL(baseUrl).hostname.toLowerCase().replace(/^\[|\]$/g, '');
+        // IPv4-mapped: WHATWG comprime in esadecimale (`::ffff:127.0.0.1` → `::ffff:7f00:1`), quindi
+        // il confronto letterale con la forma puntata non poteva matchare. Si riporta all'IPv4.
+        const mapped = host.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+        if (mapped) {
+            const alto = parseInt(mapped[1], 16);
+            const basso = parseInt(mapped[2], 16);
+            return `${alto >> 8}.${alto & 0xff}.${basso >> 8}.${basso & 0xff}`;
         }
-        return host.endsWith('.local');
+        return host.replace(/^::ffff:/, '');
     } catch {
-        return false;
+        return '';
     }
+}
+
+/**
+ * Loopback STRETTO: la sola macchina corrente. È il perimetro che decide chi può ricevere
+ * `Authorization: Bearer`, quindi NON include `.local` (mDNS = un host qualsiasi della LAN).
+ * `127.0.0.0/8` è interamente loopback (RFC 1122); `0.0.0.0` come destinazione di un client viene
+ * instradato alla macchina locale dai SO su cui questo bot gira.
+ */
+export function isLoopbackAiHost(baseUrl: string): boolean {
+    const host = hostnameAi(baseUrl);
+    if (!host) return false;
+    if (host === 'localhost' || host === '::1') return true;
+    // 🔴 Il confronto DEVE passare da `isIP`: un prefisso testuale (`/^127\./`) accetterebbe
+    // `127.0.0.1.evil.com`, cioè un dominio esterno a cui spediremmo la chiave. È la stessa classe
+    // di F-0d84be2f — promuovere una funzione a oracolo di sicurezza senza rivalutarne il perimetro.
+    if (isIP(host) !== 4) return false;
+    return host === '0.0.0.0' || Number(host.split('.')[0]) === 127;
+}
+
+/** Loopback + mDNS: «è in casa», perimetro largo. Sovrainsieme di `isLoopbackAiHost`. */
+export function isLocalAiEndpoint(baseUrl: string): boolean {
+    return isLoopbackAiHost(baseUrl) || hostnameAi(baseUrl).endsWith('.local');
 }
 
 export function isAiRequestConfigured(baseUrl: string, apiKey: string): boolean {

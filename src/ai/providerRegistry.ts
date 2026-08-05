@@ -21,6 +21,10 @@
  */
 
 import { config, isGreenModeWindow } from '../config';
+// F-a3f17c02: la locality viene dalla SSOT in config/env, non da una copia locale — `isLocalUrl`
+// qui divergeva dal client (`[::1]` remoto per il registry, locale per il client) e faceva cadere
+// i purpose PII su `template`, che lancia, mentre l'Ollama locale era raggiungibile.
+import { isLocalAiEndpoint } from '../config/env';
 import { isOpenAIConfigured } from './openaiClient';
 import { isAnthropicConfigured } from './anthropicClient';
 import { isCircuitOpenForKey } from '../core/integrationPolicy';
@@ -110,7 +114,7 @@ export interface AiProviderResolution {
 function isOllamaConfigured(): boolean {
     const baseUrl = config.openaiBaseUrl;
     if (!baseUrl) return false;
-    return isLocalUrl(baseUrl);
+    return isLocalAiEndpoint(baseUrl);
 }
 
 /**
@@ -120,17 +124,7 @@ function isOllamaConfigured(): boolean {
 function isOllamaFallbackConfigured(): boolean {
     const fallbackUrl = config.ollamaFallbackUrl;
     if (!fallbackUrl) return false;
-    return isLocalUrl(fallbackUrl);
-}
-
-function isLocalUrl(baseUrl: string): boolean {
-    try {
-        const url = new URL(baseUrl);
-        const host = url.hostname.toLowerCase();
-        return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host.endsWith('.local');
-    } catch {
-        return false;
-    }
+    return isLocalAiEndpoint(fallbackUrl);
 }
 
 /**
