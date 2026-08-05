@@ -8,11 +8,6 @@
       ],
       "type": "stdio"
     },
-    "lean-ctx": {
-      "command": "${LEAN_CTX_PATH:-C:\\Users\\albie\\AppData\\Local\\lean-ctx\\lean-ctx.exe}",
-      "args": [],
-      "type": "stdio"
-    },
     "symdex": {
       "command": "uvx",
       "args": [
