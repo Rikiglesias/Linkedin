@@ -30,6 +30,7 @@ import {
 } from './selectors';
 import { isListFoundInSession, setListFoundInSession } from './bulkSaveState';
 import { digitaTestoUmano, premiTastoSpeciale } from '../browser/human/humanTyping';
+import { dimensioniFinestra } from '../browser/viewport';
 export async function clickSelectAll(page: Page, dryRun: boolean): Promise<void> {
     if (dryRun) return;
 
@@ -97,14 +98,20 @@ export async function clickSelectAll(page: Page, dryRun: boolean): Promise<void>
         console.log('[SELECT ALL] Strategia 4: invoco Vision AI (GPT-4o)...');
         // M38: Clip area alla toolbar superiore (top 200px) — riduce dimensione screenshot
         // e token AI del ~70%. La checkbox Select All è sempre nella toolbar, non nel body.
-        const vp = page.viewportSize() ?? { width: 1280, height: 800 };
+        // FASE 4: questo `clip` ritaglia lo screenshot che il modello di vision GUARDA. Con la
+        // larghezza inventata (1280 mentre la finestra e' 1920) il modello vedeva due terzi della
+        // toolbar e rispondeva su quel ritaglio — la checkbox poteva essere fuori inquadratura.
+        // Dimensioni ignote ⇒ nessun clip: si guarda lo screenshot INTERO, che e' sempre coerente
+        // con se stesso, invece di ritagliarlo su una misura inventata (stessa lezione della Fase 1:
+        // la region deve venire dall'immagine, non da una misura presa altrove).
+        const vp = await dimensioniFinestra(page);
         await safeVisionClick(
             page,
             'the checkbox or control to select all leads on this page. Look for a small checkbox at the top of the results list, usually labeled "Select all" or showing a count like "(25)"',
             {
                 retries: 3,
                 postClickDelayMs: 850,
-                clip: { x: 0, y: 0, width: vp.width, height: Math.min(250, vp.height) },
+                clip: vp ? { x: 0, y: 0, width: vp.width, height: Math.min(250, vp.height) } : undefined,
             },
         );
         clicked = true;
