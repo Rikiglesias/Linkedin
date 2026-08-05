@@ -1,7 +1,8 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { digitaTestoUmano, fattoreLunghezzaTesto, finestraDwellDellAccount } from '../browser/human/humanTyping';
+import { digitaTestoUmano } from '../browser/human/humanTyping';
+import { fattoreLunghezzaTesto, finestraDwellDellAccount } from '../browser/human/keystrokeTiming';
 
 /**
  * F-b93d5f17 + F-08b7a53c: tre siti scrivevano con `.type(testo, { delay: 25 + random*20 })`.

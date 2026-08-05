@@ -17,13 +17,8 @@ import {
 } from '../core/selectorLearning';
 import { humanDelay } from './humanBehavior';
 import { clickCoordinatesHumanLike, clickLocatorHumanLike, humanPointInBox } from './humanClick';
-import {
-    digitaTestoUmano,
-    humanKeystrokeDelayMs,
-    humanKeystrokeDwellMs,
-    humanType,
-    premiTastoSpeciale,
-} from './human/humanTyping';
+import { digitaTestoUmano, humanType, premiTastoSpeciale } from './human/humanTyping';
+import { humanKeystrokeDelayMs, humanKeystrokeDwellMs } from './human/keystrokeTiming';
 import { dimensioniFinestra } from './viewport';
 import { VisionSolver } from '../captcha/solver';
 

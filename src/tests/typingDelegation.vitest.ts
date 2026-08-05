@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { humanKeystrokeDelayMs, humanType } from '../browser/human/humanTyping';
+import { humanType } from '../browser/human/humanTyping';
+import { humanKeystrokeDelayMs } from '../browser/human/keystrokeTiming';
 
 /**
  * `typeWithFallback` riscriveva la digitazione invece di delegarla, e la sua copia era peggiore

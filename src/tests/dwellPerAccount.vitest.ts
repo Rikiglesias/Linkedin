@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { finestraDwellDellAccount, humanKeystrokeDwellMs } from '../browser/human/humanTyping';
+import { finestraDwellDellAccount, humanKeystrokeDwellMs } from '../browser/human/keystrokeTiming';
 import { impostaSemeAccount } from '../ai/typoGenerator';
 import { logNormalDelayMs, logNormalDelayMsResampled } from '../utils/random';
 

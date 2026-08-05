@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { finestraDwellDellAccount, premiTastoSpeciale } from '../browser/human/humanTyping';
+import { premiTastoSpeciale } from '../browser/human/humanTyping';
+import { finestraDwellDellAccount } from '../browser/human/keystrokeTiming';
 
 /**
  * F-4a6e88d1: i tasti NON-carattere passavano da `press(key)` nudo ⇒ in Playwright `down` e `up`
