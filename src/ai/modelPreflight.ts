@@ -22,13 +22,20 @@
  *   chat: un preflight su un endpoint dedotto potrebbe essere verde su un server diverso da
  *   quello poi usato. Forma della risposta (`{data:[{id}]}`) misurata dal vivo su Ollama 0.24.
  *
- * Confine dichiarato: qui si risponde a UNA domanda — «il modello configurato esiste
- * sull'endpoint configurato?». Il routing (guard zero-PII, fallback H28, green mode) resta di
- * `providerRegistry`; questo modulo non lo replica.
+ * 🔴 LIMITE, e va letto prima di fidarsi di un `ok` (trovato dal critico avversariale, F-3c9a1f42):
+ * questo modulo risponde a UNA domanda — «il nome del modello esiste sull'endpoint di
+ * `openaiBaseUrl`?» — e NON a «il percorso AI funziona». `providerRegistry.resolveAiProvider`
+ * può risolvere ALTROVE a seconda del purpose: i 7 purpose PII-sensitive cadono su `template`
+ * (che LANCIA, `aiTextClient.ts:83`) quando non esiste un endpoint locale, e con
+ * `AI_PROVIDER=anthropic` la chat usa `resolveAnthropicModelForPurpose` su api.anthropic.com.
+ * In quei casi un `ok` qui è VERO sulla sua domanda e FUORVIANTE sulla salute dell'AI.
+ * ⇒ Correzione pianificata (prima voce del prossimo blocco in `~/todos/audit-codebase.md`):
+ * derivare endpoint e modello da `resolveAiProvider(purpose)` invece che da `config`, e
+ * distinguere «modello assente» da «nessun provider per questo purpose».
  */
 
-import { config } from '../config';
-import { resolveAiModel } from './openaiClient';
+import { config, isGreenModeWindow } from '../config';
+import { isLocalAiEndpoint, resolveAiModel } from './openaiClient';
 
 /** Allineato al probe di `ollamaLifecycle`: un preflight non deve far aspettare il run. */
 const TIMEOUT_ELENCO_MS = 2_000;
@@ -98,6 +105,14 @@ export async function verificaModelloAi(): Promise<EsitoModelloAi> {
     const baseUrl = (config.openaiBaseUrl ?? '').trim();
     if (!baseUrl) return nonApplicabile('endpoint_non_configurato');
 
+    // Stessa policy di `requestOpenAIText` (`openaiClient.ts:67-73`): con endpoint remoto e
+    // `AI_ALLOW_REMOTE_ENDPOINT=false` il client NON chiama e NON manda la chiave. Un preflight che
+    // lo facesse comunque manderebbe `Authorization: Bearer` dove la policy lo vieta, a ogni ciclo
+    // del loop, e riferirebbe su un endpoint che nessuno userà. (Trovato dal critico, F-9f0c72ae.)
+    if (!config.aiAllowRemoteEndpoint && !isLocalAiEndpoint(baseUrl)) {
+        return nonApplicabile('endpoint_remoto_bloccato_da_policy');
+    }
+
     const modello = resolveAiModel().trim();
     if (!modello) return nonApplicabile('modello_non_configurato');
 
@@ -122,13 +137,27 @@ export async function verificaModelloAi(): Promise<EsitoModelloAi> {
     };
 }
 
+/** La variabile che l'utente deve davvero correggere: in green mode NON è `AI_MODEL`. */
+function variabileDelModello(): string {
+    return isGreenModeWindow() && config.aiGreenModel.trim().length > 0 ? 'AI_GREEN_MODEL' : 'AI_MODEL';
+}
+
 /** Riga leggibile per report e alert: dice cosa fare, non solo cosa è rotto (L5-LI.1). */
 export function descriviEsitoModelloAi(esito: EsitoModelloAi): string {
+    // Il catalogo di un provider cloud è ~80 voci: stamparlo intero a ogni ciclo del loop è rumore.
+    const MAX_ELENCO = 10;
+    const elenco =
+        esito.disponibili.length === 0
+            ? '(nessuno)'
+            : esito.disponibili.slice(0, MAX_ELENCO).join(', ') +
+              (esito.disponibili.length > MAX_ELENCO ? ` (+${esito.disponibili.length - MAX_ELENCO} altri)` : '');
     switch (esito.stato) {
         case 'ok':
-            return `modello AI '${esito.modello}' disponibile`;
+            // Claim STRETTO di proposito: dice che il nome esiste su QUELL'endpoint, non che il
+            // percorso AI funzioni (il registry può risolvere altrove — limite dichiarato in testa).
+            return `modello AI '${esito.modello}' presente sull'endpoint configurato`;
         case 'mancante':
-            return `modello AI '${esito.modello}' NON esiste sul provider — ogni decisione AI cade nel fallback. Disponibili: ${esito.disponibili.join(', ') || '(nessuno)'}. Correggere AI_MODEL o scaricare il modello.`;
+            return `modello AI '${esito.modello}' NON esiste sul provider — ogni decisione AI cade nel fallback. Disponibili: ${elenco}. Correggere ${variabileDelModello()} o scaricare il modello.`;
         case 'sconosciuto':
             return `provider AI non interrogabile: impossibile dire se '${esito.modello}' esiste (non è una prova che sia sbagliato)`;
         default:

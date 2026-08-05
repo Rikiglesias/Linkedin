@@ -22,6 +22,7 @@ const stato = vi.hoisted(() => ({
         aiModel: 'llama3.1:8b',
         aiGreenModel: '',
         aiProvider: 'auto' as string,
+        aiAllowRemoteEndpoint: false,
     },
     greenMode: false,
 }));
@@ -33,7 +34,7 @@ vi.mock('../telemetry/logger', () => ({ logInfo: vi.fn(), logWarn: vi.fn() }));
 // policy di retry: qui interessa solo la scelta del nome, non la rete del client.
 vi.mock('../core/integrationPolicy', () => ({ fetchWithRetryPolicy: vi.fn() }));
 
-import { verificaModelloAi } from '../ai/modelPreflight';
+import { descriviEsitoModelloAi, verificaModelloAi } from '../ai/modelPreflight';
 
 /** Risposta reale di Ollama su `GET /v1/models`, misurata dal vivo (non inventata). */
 function rispostaModelli(ids: string[]): Response {
@@ -51,6 +52,7 @@ describe('preflight del modello AI', () => {
         configMock.aiModel = 'llama3.1:8b';
         configMock.aiGreenModel = '';
         configMock.aiProvider = 'auto';
+        configMock.aiAllowRemoteEndpoint = false;
         stato.greenMode = false;
     });
     afterEach(() => {
@@ -146,12 +148,71 @@ describe('preflight del modello AI', () => {
         expect(esito.stato).toBe('ok');
     });
 
-    it('interroga la STESSA base URL che usa il client di chat, non un endpoint dedotto', async () => {
+    it('compone /models sulla base URL configurata (path, non un endpoint inventato altrove)', async () => {
         const fetchSpia = vi.fn(async (_url: string) => rispostaModelli(['llama3.1:8b']));
         vi.stubGlobal('fetch', fetchSpia);
         await verificaModelloAi();
         const urlChiamato = String(fetchSpia.mock.calls[0]?.[0] ?? '');
-        expect(urlChiamato.startsWith('http://127.0.0.1:11434/v1')).toBe(true);
-        expect(urlChiamato.endsWith('/models')).toBe(true);
+        expect(urlChiamato).toBe('http://127.0.0.1:11434/v1/models');
+    });
+
+    // ── Correzioni dal critico avversariale (fine turno 2026-08-05) ──────────────────────────
+
+    it('SICUREZZA: endpoint remoto con AI_ALLOW_REMOTE_ENDPOINT=false → nessuna fetch, la chiave NON esce', async () => {
+        configMock.openaiBaseUrl = 'https://api.openai.com/v1';
+        configMock.openaiApiKey = 'chiave-che-non-deve-uscire';
+        configMock.aiAllowRemoteEndpoint = false; // default del progetto
+        const fetchSpia = vi.fn();
+        vi.stubGlobal('fetch', fetchSpia);
+        const esito = await verificaModelloAi();
+        expect(esito.stato).toBe('non_applicabile');
+        expect(esito.motivo).toBe('endpoint_remoto_bloccato_da_policy');
+        // È il punto: il client di chat non chiamerebbe (openaiClient.ts:67-73), il preflight nemmeno.
+        expect(fetchSpia).not.toHaveBeenCalled();
+    });
+
+    it('endpoint remoto CONSENTITO dalla policy → il preflight interroga davvero', async () => {
+        configMock.openaiBaseUrl = 'https://api.openai.com/v1';
+        configMock.aiAllowRemoteEndpoint = true;
+        configMock.aiModel = 'gpt-5.4';
+        const fetchSpia = vi.fn(async (_url: string) => rispostaModelli(['gpt-5.4', 'gpt-5.4-mini']));
+        vi.stubGlobal('fetch', fetchSpia);
+        expect((await verificaModelloAi()).stato).toBe('ok');
+        expect(fetchSpia).toHaveBeenCalledTimes(1);
+    });
+
+    it('in green mode il messaggio nomina AI_GREEN_MODEL, non AI_MODEL (altrimenti si corregge la variabile sbagliata)', async () => {
+        stato.greenMode = true;
+        configMock.aiGreenModel = 'llama3.1:8b';
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async () => rispostaModelli(['qwen3:8b'])),
+        );
+        const testo = descriviEsitoModelloAi(await verificaModelloAi());
+        expect(testo).toContain('AI_GREEN_MODEL');
+        expect(testo).not.toContain('Correggere AI_MODEL');
+    });
+
+    it('elenco lungo troncato a 10 + conteggio (il catalogo cloud è ~80 voci, stampato a ogni ciclo)', async () => {
+        const molti = Array.from({ length: 25 }, (_, i) => `modello-${i}`);
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async () => rispostaModelli(molti)),
+        );
+        const testo = descriviEsitoModelloAi(await verificaModelloAi());
+        expect(testo).toContain('(+15 altri)');
+        expect(testo).not.toContain('modello-20');
+    });
+
+    it('il claim su `ok` resta STRETTO: dice che il nome esiste, non che l’AI funzioni', async () => {
+        configMock.aiModel = 'qwen3:8b';
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async () => rispostaModelli(['qwen3:8b'])),
+        );
+        const testo = descriviEsitoModelloAi(await verificaModelloAi());
+        expect(testo).toContain("sull'endpoint configurato");
+        // Guardia contro una promozione futura del messaggio: il registry può risolvere altrove.
+        expect(testo.toLowerCase()).not.toContain('funziona');
     });
 });

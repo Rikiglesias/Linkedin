@@ -13,7 +13,12 @@ interface OpenAITextRequest {
     model?: string;
 }
 
-function isLocalAiEndpoint(baseUrl: string): boolean {
+/**
+ * Esportata per il preflight (`modelPreflight.ts`): deve applicare la STESSA policy
+ * `aiAllowRemoteEndpoint` che applicano `requestOpenAIText` (:73) e :137 — un preflight che
+ * interroga un endpoint vietato dalla policy manderebbe la chiave dove il client non la manda.
+ */
+export function isLocalAiEndpoint(baseUrl: string): boolean {
     try {
         const url = new URL(baseUrl);
         const host = url.hostname.toLowerCase();
