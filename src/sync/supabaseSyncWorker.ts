@@ -19,9 +19,8 @@ import {
     updateCloudAccountHealth,
     incrementCloudDailyStatIdem,
     eraseCloudLead,
-    type CloudLeadUpsert,
-    type CloudDailyStatIncrement,
 } from '../cloud/supabaseDataClient';
+import type { CloudLeadUpsert, CloudDailyStatIncrement } from '../cloud/types';
 import { clampBackpressureLevel, computeBackpressureBatchSize, computeNextBackpressureLevel } from './backpressure';
 
 let client: SupabaseClient | null = null;

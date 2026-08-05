@@ -46,21 +46,6 @@ export interface CloudLeadUpsert {
     updated_at?: string | null;
 }
 
-export interface CloudJobUpsert {
-    local_job_id?: number | null;
-    account_id: string;
-    type: string;
-    status: string;
-    priority: number;
-    payload: Record<string, unknown>;
-    idempotency_key: string;
-    attempts: number;
-    max_attempts: number;
-    next_run_at: string;
-    error_message?: string | null;
-    proof_screenshot_url?: string | null;
-}
-
 export interface CloudDailyStatIncrement {
     local_date: string;
     account_id: string;

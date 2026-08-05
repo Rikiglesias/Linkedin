@@ -18,8 +18,8 @@ import {
     updateCloudLeadStatus,
     incrementCloudDailyStat,
     updateCloudAccountHealth,
-    CloudLeadUpsert,
 } from './supabaseDataClient';
+import type { CloudLeadUpsert } from './types';
 import { pushOutboxEvent } from '../core/repositories';
 import { logWarn } from '../telemetry/logger';
 

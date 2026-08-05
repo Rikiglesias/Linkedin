@@ -35,6 +35,16 @@ function quotaPiccoMassimo(campioni: number[]): number {
     return (massimo / campioni.length) * 100;
 }
 
+/**
+ * Soglia che SEPARA i due regimi, misurata sulle funzioni vere (40 ripetizioni x 10.000 campioni):
+ *   - resampling (atteso):  picco 2.64% - 2.94%
+ *   - clamp (il difetto):   picco 7.63% - 8.90%
+ * La soglia originale era 3: a 0.06 punti dal massimo reale del regime BUONO, quindi rossa a caso
+ * ogni tanto (colta dal gate il 2026-08-05). 5 lascia margine da entrambi i lati senza togliere
+ * potere discriminante: col clamp il test fallisce comunque, sempre.
+ */
+const QUOTA_PICCO_MAX_PCT = 5;
+
 describe('F-2f0c7b95 — il clamp creava due picchi, il resampling no', () => {
     const N = 10_000;
 
@@ -50,10 +60,10 @@ describe('F-2f0c7b95 — il clamp creava due picchi, il resampling no', () => {
         expect(conteggi.get(62) ?? 0).toBeGreaterThan(Math.max(...interni));
     });
 
-    it('col resampling nessun singolo valore supera il 3% dei campioni', () => {
+    it('col resampling nessun singolo valore domina i campioni', () => {
         const campioni = Array.from({ length: N }, () => logNormalDelayMsResampled(85, 0.22, 62, 118));
 
-        expect(quotaPiccoMassimo(campioni)).toBeLessThan(3);
+        expect(quotaPiccoMassimo(campioni)).toBeLessThan(QUOTA_PICCO_MAX_PCT);
         // E nessun campione esce comunque dalla finestra.
         expect(Math.min(...campioni)).toBeGreaterThanOrEqual(62);
         expect(Math.max(...campioni)).toBeLessThanOrEqual(118);
@@ -61,7 +71,7 @@ describe('F-2f0c7b95 — il clamp creava due picchi, il resampling no', () => {
 
     it('il dwell reale non ha piu' + " picchi ai bordi", () => {
         const campioni = Array.from({ length: N }, () => humanKeystrokeDwellMs());
-        expect(quotaPiccoMassimo(campioni)).toBeLessThan(3);
+        expect(quotaPiccoMassimo(campioni)).toBeLessThan(QUOTA_PICCO_MAX_PCT);
     });
 });
 

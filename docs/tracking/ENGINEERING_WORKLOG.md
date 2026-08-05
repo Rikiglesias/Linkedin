@@ -2115,3 +2115,62 @@ duplicato. L'auto-push si è fermato su entrambi (area anti-ban): review eseguit
 da `.claude/rules/git-commit-push.md`, verde, poi push manuale.
 **RESIDUI DICHIARATI**: 41 export ancora da verdettare; capability `missclick` inerte (leva utente,
 ①collegare/②rimuovere); i 244 `used in module` (igiene di visibilità, priorità rivalutata al ribasso).
+
+---
+
+## 2026-08-05 (sera) — C6 verdetto sui 41 export residui: non erano 41 casi, erano 6 classi
+
+**Tema**: `/goal audit-codebase`, criterio C6. I 41 residui di `ts-prune` sono stati ri-misurati alla
+fonte e verdettati **uno per uno** con le 3 domande (chi lo consuma · cosa cambia togliendolo · con
+input reali cosa succede), mai per statistica.
+
+**Il reperto centrale non è codice morto: il repo DICHIARA più di quello che fa.** Cinque capability
+promesse da codice o documentazione e mai eseguite — nessuna rotta, quindi invisibile a ogni lente:
+- **`config/featureFlags.ts`**: 8 flag, `isFeatureEnabled` **senza un solo chiamante**. Le capability
+  girano hardcoded, e **due flag dicono il falso** (`ai_decision_engine` e `observe_page_context` sono
+  `defaultEnabled: false` mentre `aiDecide` gira a `inviteWorker.ts:364/436` e `observePageContext` a
+  `:420`, senza gate). `search_click_result` promette una capability il cui marker non esiste in `src/`.
+  A valle: `todos/active.md:50` dichiara COMPLETATO il rollback plan A14 citando questo file ⇒ il
+  «rollback senza git revert» non è disponibile.
+- **`config/env.ts resolveSecret`**: legge i Docker Secrets (`/run/secrets`), zero chiamanti ⇒ in
+  Docker i segreti dai secrets non vengono letti, mentre `PRESET_PROFILES.md:51` li dichiara.
+- **`integrations/crmBridge.ts`**: integrazione CRM completa e non wired (la doc è onesta, `:52`).
+- **`sync/backpressure.ts` M20**: backpressure per worker-type; il solo lettore di
+  `getWorkerTypeBackpressureLevel` è la funzione che lo scrive ⇒ granularità per tipo mai attiva.
+- **`browser/uiFallback.ts clickWithShadowFallback`**: coperto da un test, usato da nessuno.
+
+**RIMOSSO (10 export) — ognuno con la ragione verificata, non «non importato»**:
+`safeAsync` · `AccountBackpressureSnapshot` · `ControlPlaneStatus` · `CloudJobUpsert` ·
+`isPublicAutomationCommandKind` + la sua costante · `formatDecisionSummary` · `findHookCommand` ·
+`WorkflowExecutionRequest` + `Map` · `isLeadAlreadyEnriched`.
+- 🔴 **`isLeadAlreadyEnriched` stava per essere COLLEGATA, non rimossa**: si chiama «guard
+  anti-duplicato». La verifica ha rovesciato il verdetto — `getLeadsNeedingEnrichment`
+  (`leadsCore.ts:1412`) ri-accoda **di proposito** un lead già arricchito quando manca
+  `business_email`: quel guard avrebbe spento un ramo voluto.
+- 🔴 **`isPublicAutomationCommandKind` era la TERZA lista dei command kind**: la validazione viva è
+  `z.discriminatedUnion` (`api/schemas.ts:81`) + la lista esplicita di `controls.ts:49-58`. Verificati
+  entrambi i punti d'ingresso prima di togliere: nessun canale accoda un `kind` arbitrario.
+
+**UNIFICATO, non cancellato**: `CampaignRunRecord` aveva **tre** definizioni (`domain.ts` con
+`status: RunStatus`, `frontend/types.ts` e `api/routes/stats.ts:23` con `status: string`). Il tipo
+giusto non era morto: gli mancava il consumatore. `stats.ts` ora importa da `types/domain`.
+Rimosso anche `export * from './types'` in `supabaseDataClient.ts` — barrel travestito: il typecheck
+ha subito smentito la mia premessa («nessuno importa tipi da lì»: erano due file), agganciati alla
+fonte vera; e il re-export mascherava la posizione reale di `CloudJobUpsert`, come il barrel di
+`auditLog` la settimana scorsa.
+
+**🔴 FALSO ROSSO NEL GATE, trovato e chiuso**: `dwellPerAccount.vitest.ts:56` chiedeva
+`quotaPiccoMassimo < 3`. Misurato sulle funzioni vere (40 ripetizioni × 10.000 campioni): il
+resampling produce un picco **2.64-2.94%**, il clamp **7.63-8.90%** ⇒ la soglia stava a **0.06 punti**
+dal massimo del regime BUONO. Portata a 5 (costante documentata coi numeri): separa i due regimi con
+margine da entrambi i lati e col clamp fallisce comunque. Pre-esistente, non introdotto qui: 5 run
+verdi su HEAD pulito con `git stash`, 6 verdi col diff applicato.
+
+**VERIFICA FINALE**: `conta-problemi` **exit 0 REALE — 210 file, 2101 test, 0 skip**, ri-eseguito dopo
+l'ultimo edit; `madge --circular` **0**; export morti **41 → 30**, quadrati col `diff` delle due liste;
+secret scan 851 file, nessun segreto.
+**ANTI-BAN**: `/antiban-review` **6/6 SICURO** su `src/automation/types.ts` (unico file nel glob).
+Nessun timing, delay, fingerprint, volume o sessione toccato.
+**RESIDUI DICHIARATI**: 30 export, di cui 5 capability inerti che sono **decisioni** e non rimozioni,
+3 letture GDPR da non toccare, 2 falsi positivi di `globalSetup`, 2 del modulo `frontend/` il cui
+destino è aperto in `active.md:51`.

@@ -19,18 +19,7 @@ import { publishLiveEvent } from '../../telemetry/liveEvents';
 import { handleApiError } from '../utils';
 import { resolveRequestIp } from '../helpers/requestIp';
 import { auditSecurityEvent } from '../helpers/audit';
-
-interface CampaignRunRecord {
-    id: number;
-    start_time: string;
-    end_time: string | null;
-    status: string;
-    profiles_discovered: number;
-    invites_sent: number;
-    messages_sent: number;
-    errors_count: number;
-    created_at: string;
-}
+import type { CampaignRunRecord } from '../../types/domain';
 
 function mapDailyToPredictiveSample(day: {
     invitesSent: number;
