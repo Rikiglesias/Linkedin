@@ -14,7 +14,10 @@ import {
 import { validateJa3Configuration, getLastJa3Report, type Ja3ValidationReport } from './proxy/ja3Validator';
 
 // ProxyConfig importato da proxy/types.ts (circular dep fix)
-export type { ProxyConfig, GetProxyChainOptions } from './proxy/types';
+// `ProxyConfig` resta ri-esportato: lo importano da QUI accountManager, proxyLaunchPlan,
+// createProfile e webrtcLeakCheck. `GetProxyChainOptions` no: nessuno lo importa da questo modulo
+// (solo uso interno, via l'import di riga 5), quindi il re-export era morto.
+export type { ProxyConfig } from './proxy/types';
 
 interface ProxyPoolCache {
     proxies: ProxyConfig[];

@@ -27,7 +27,10 @@ function toTypedAnswers<TAnswers extends object>(
 
 export { selectAccount } from './preflight/accountSelector';
 export { collectDbStats } from './preflight/statsCollector';
-export { collectConfigStatus, appendProxyReputationWarning } from './preflight/configInspector';
+// `collectConfigStatus` resta ri-esportato: lo importa da QUI `src/tests/e2eDry.ts:82`.
+// `appendProxyReputationWarning` no: i 4 service e i test lo prendono tutti dalla fonte
+// (`./preflight/configInspector`), quindi il re-export era morto.
+export { collectConfigStatus } from './preflight/configInspector';
 export { computeSessionRiskLevel } from './preflight/riskAssessor';
 
 export async function runPreflight<TAnswers extends object = Record<string, string>>(
