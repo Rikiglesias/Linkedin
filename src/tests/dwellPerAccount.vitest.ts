@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { finestraDwellDellAccount, humanKeystrokeDwellMs } from '../browser/human/humanTyping';
+import { impostaSemeAccount } from '../ai/typoGenerator';
 import { logNormalDelayMs, logNormalDelayMsResampled } from '../utils/random';
 
 /**
@@ -18,6 +19,8 @@ const ENV_ORIGINALE = process.env.ACCOUNT_ID;
 afterEach(() => {
     if (ENV_ORIGINALE === undefined) delete process.env.ACCOUNT_ID;
     else process.env.ACCOUNT_ID = ENV_ORIGINALE;
+    // Lo stato di sessione e' globale al modulo: senza reset un test inquinerebbe i successivi.
+    impostaSemeAccount('');
 });
 
 function istogramma(campioni: number[]): Map<number, number> {
@@ -71,6 +74,37 @@ describe('F-6ce4907b — due account non hanno lo stesso hold-time', () => {
         const beta = finestraDwellDellAccount().medianaMs;
 
         expect(alfa).not.toBeCloseTo(beta, 1);
+    });
+
+    it("ROSSO DI CONTROLLO: senza l'account della sessione il seme cade sulla stringa vuota ⇒ finestra UNICA", () => {
+        // `ACCOUNT_ID`/`LINKEDIN_ACCOUNT` non sono valorizzati DA NESSUNA PARTE in questo progetto
+        // (nessun .env.example, compose o config): affidarsi solo a loro significa seme costante,
+        // cioe' lo stesso hold-time su tutti gli account — il correlatore che si vuole eliminare.
+        delete process.env.ACCOUNT_ID;
+        impostaSemeAccount('');
+        const senzaAccount = finestraDwellDellAccount().medianaMs;
+        impostaSemeAccount('');
+        expect(finestraDwellDellAccount().medianaMs).toBe(senzaAccount);
+
+        // Con l'account REALE della sessione (quello che `launchBrowser` passa) le finestre divergono.
+        impostaSemeAccount('sessione-account-alfa');
+        const alfa = finestraDwellDellAccount().medianaMs;
+        impostaSemeAccount('sessione-account-beta');
+        const beta = finestraDwellDellAccount().medianaMs;
+
+        expect(alfa).not.toBeCloseTo(beta, 1);
+    });
+
+    it("l'account della sessione VINCE sull'env (la sorgente autorevole e' il launcher)", () => {
+        process.env.ACCOUNT_ID = 'da-env';
+        impostaSemeAccount('da-sessione');
+        const conSessione = finestraDwellDellAccount().medianaMs;
+
+        impostaSemeAccount('');
+        process.env.ACCOUNT_ID = 'da-env';
+        const soloEnv = finestraDwellDellAccount().medianaMs;
+
+        expect(conSessione).not.toBeCloseTo(soloEnv, 1);
     });
 
     it('lo stesso ACCOUNT_ID da sempre la stessa finestra (deterministico, non casuale)', () => {

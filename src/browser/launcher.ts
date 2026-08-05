@@ -32,6 +32,7 @@ import { HttpResponseThrottler } from '../risk/httpThrottler';
 import { DeviceProfile, registerPageDeviceProfile } from './deviceProfile';
 import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 import { FingerprintPool } from '../fingerprint/noiseGenerator';
+import { impostaSemeAccount } from '../ai/typoGenerator';
 
 const activeBrowsers = new Set<BrowserContext>();
 
@@ -295,6 +296,12 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
         const currentProxy = launchPlan[attempt];
         const cloudFingerprints = await fetchCloudFingerprints();
         const accountId = options.accountId ?? sessionDir;
+        // Lo STESSO account che seleziona il fingerprint seleziona anche il tempo di pressione dei
+        // tasti: due assi della stessa persona simulata non possono avere identita' diverse (zero-O).
+        // Senza questa riga il dwell ricadrebbe su `ACCOUNT_ID`, che in questo progetto non e'
+        // valorizzato da nessuna parte ⇒ seme costante ⇒ hold-time identico su TUTTI gli account,
+        // cioe' il correlatore cross-account che F-6ce4907b doveva eliminare.
+        impostaSemeAccount(accountId);
         const isMobileSession = options.forceDesktop ? false : pickFingerprintMode(accountId);
         const fingerprint = isMobileSession
             ? pickMobileFingerprint(cloudFingerprints, accountId)

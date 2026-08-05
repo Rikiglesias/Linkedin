@@ -64,8 +64,27 @@ let _sessionTypoRate: number | null = null;
  * Account non configurato ⇒ stringa vuota ⇒ seme costante: e' voluto (deterministico per ambiente),
  * la varianza vera la porta la distribuzione, non il seme.
  */
+/**
+ * Account della sessione browser in corso. Impostato da `launchBrowser`, che e' l'unico punto in cui
+ * l'identita' reale e' nota.
+ *
+ * 🔴 Perche' non basta l'env: `ACCOUNT_ID`/`LINKEDIN_ACCOUNT` non sono valorizzati **da nessuna
+ * parte** in questo progetto (nessun `.env.example`, nessun compose, nessuna config: l'unico
+ * riferimento era la riga che li legge). Il seme sarebbe quindi caduto sempre sulla stringa vuota =
+ * costante, e il dwell sarebbe rimasto **identico su tutti gli account** — cioe' F-6ce4907b chiuso
+ * sulla carta e aperto nella realta'. L'`accountId` vero esiste gia' e `launcher.ts:297-301` lo usa
+ * per seedare il FINGERPRINT: il dwell deve derivare dallo STESSO, altrimenti la stessa persona
+ * simulata avrebbe due identita' diverse su due assi (zero-O).
+ */
+let _accountCorrente: string | null = null;
+
+/** Chiamata da `launchBrowser` all'avvio della sessione, con l'account realmente in uso. */
+export function impostaSemeAccount(accountId: string): void {
+    _accountCorrente = accountId;
+}
+
 export function semeAccount01(): number {
-    const accountId = process.env.ACCOUNT_ID || process.env.LINKEDIN_ACCOUNT || '';
+    const accountId = _accountCorrente || process.env.ACCOUNT_ID || process.env.LINKEDIN_ACCOUNT || '';
     let seedHash = 2166136261;
     for (let i = 0; i < accountId.length; i++) {
         seedHash ^= accountId.charCodeAt(i);
