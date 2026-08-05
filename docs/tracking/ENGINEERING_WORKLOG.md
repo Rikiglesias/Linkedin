@@ -4,6 +4,39 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-08-05 — blocco 17b: tre payload erano ancora scritti a mano, e uno mentiva sul timing (`c019408`, `64cb344`)
+
+**Due passate di controllo hanno trovato, una dopo l'altra, che la correzione era incompleta e che la
+correzione della correzione era sbagliata.**
+
+**① La passata finale 360° ha trovato il difetto dentro la mia correzione** (`c019408`). Il commento
+riscritto poche ore prima per togliere un'affermazione falsa ne conteneva **altre tre**: «con i suoi
+**4** fratelli», «**5** payload di job», «gli altri **4** worker». In `types/domain.ts` i payload sono
+**sei** ⇒ i fratelli sono cinque.
+
+**② Il critico avversariale ha trovato che l'unificazione non era mai stata completa** (`64cb344`).
+`registry.ts` aveva ancora **tre** `parsePayload<{…}>` con literal inline: `:47` copia identica di
+`AcceptanceJobPayload`, `:61` copia identica di `HygieneJobPayload`, e soprattutto `:54`, che
+**divergeva già**: ometteva `timing?` e `metadata_json?` che `MessageJobPayload` dichiara
+(`domain.ts:123,125`) e che `messageWorker` **legge davvero** — `:559-569` ne ricava `strategy`
+optimizer|baseline, `delaySec`, `slotHour`; `:96-98` il metadata. **Il tipo mentiva nel punto che
+governa il timing anti-ban**: non un bug vivo (il cast di `parsePayload` non filtra), ma una trappola
+armata — chi avesse "ripulito" il payload fidandosi di quel tipo avrebbe spento l'optimizer di timing
+in silenzio.
+
+**La radice, che vale più delle due correzioni.** Quattro affermazioni false in questo goal, tre nello
+stesso commit, tutte della stessa forma: **prosa che asserisce un fatto verificabile** — un conteggio,
+o chi importa cosa. Nessuno mantiene quei fatti: invecchiano da soli e diventano esattamente ciò che il
+commento voleva togliere. Nessun typecheck, test o `ts-prune` guarda dentro un commento. Correzione
+applicata di conseguenza: i commenti ora spiegano il **perché** e portano **la regola dentro il file**
+(«tipo nominato, mai literal inline»; «niente conteggi qui»), così chi li tocca dopo la legge invece di
+doverla ricordare. Un fatto verificabile, se serve davvero, va in un test o in una guardia — dove
+qualcosa lo rompe quando smette di essere vero.
+
+**Verifiche**: `/antiban-review` 6/6 SICURO su entrambi i commit (runtime identico: la modifica di
+`registry.ts` **amplia** il tipo ai campi già letti dal worker). Gate `conta-problemi` exit 0 REALE —
+**210 file, 2101 test, 0 skip, invariati in tutti e tre i giri** del turno. Push verificato 0/0.
+
 ## 2026-08-05 — remediation audit-codebase, blocco 17: il commento che motivava il re-export diceva il falso (`2c2719f`)
 
 **Il residuo dichiarato della chat precedente era un secondo giro del critico avversariale. Eseguito, e
