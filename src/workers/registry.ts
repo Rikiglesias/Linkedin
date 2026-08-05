@@ -6,12 +6,15 @@
  * Ogni worker implementa l'interfaccia WorkerProcessor.
  */
 
-// Tutti e 5 i payload di job vengono da qui. Prima ne arrivavano 3 da types/domain e 2 dai worker,
-// e altri 2 erano riscritti a mano dentro parsePayload<{...}> in questo stesso file: e' il motivo
+// Ogni processor qui sotto tipizza il suo payload con il tipo NOMINATO, mai con un literal inline:
+// un literal scritto a mano diverge dal tipo canonico senza che niente lo segnali, ed e' il motivo
 // per cui i tipi canonici risultavano "export morti" pur avendo i loro consumatori.
+// NB: niente conteggi in questo commento — un numero scritto qui invecchia da solo.
 import {
     JobType,
     InviteJobPayload,
+    AcceptanceJobPayload,
+    MessageJobPayload,
     InteractionJobPayload,
     EnrichmentJobPayload,
     PostCreationJobPayload,
@@ -21,7 +24,7 @@ import { WorkerExecutionResult, workerResult } from './result';
 import { processInviteJob } from './inviteWorker';
 import { processAcceptanceJob } from './acceptanceWorker';
 import { processMessageJob } from './messageWorker';
-import { processHygieneJob } from './hygieneWorker';
+import { processHygieneJob, type HygieneJobPayload } from './hygieneWorker';
 import { processInteractionJob } from './interactionWorker';
 import { processEnrichmentJob } from './enrichmentWorker';
 import { createAndPublishPost, type PostCreatorOptions } from './postCreatorWorker';
@@ -44,21 +47,24 @@ const inviteProcessor: WorkerProcessor = {
 
 const acceptanceProcessor: WorkerProcessor = {
     async process(job, context) {
-        const payload = parsePayload<{ leadId: number }>(job);
+        const payload = parsePayload<AcceptanceJobPayload>(job);
         return processAcceptanceJob(payload, context);
     },
 };
 
 const messageProcessor: WorkerProcessor = {
     async process(job, context) {
-        const payload = parsePayload<{ leadId: number; acceptedAtDate: string; campaignStateId?: number }>(job);
+        // Il literal inline che stava qui OMETTEVA timing? e metadata_json?, che messageWorker legge
+        // davvero (`:559-569` decide strategy optimizer|baseline, delaySec, slotHour; `:96-98` il
+        // metadata): il tipo mentiva proprio nel punto che governa il timing anti-ban.
+        const payload = parsePayload<MessageJobPayload>(job);
         return processMessageJob(payload, context);
     },
 };
 
 const hygieneProcessor: WorkerProcessor = {
     async process(job, context) {
-        const payload = parsePayload<{ accountId: string }>(job);
+        const payload = parsePayload<HygieneJobPayload>(job);
         return processHygieneJob(payload, context);
     },
 };
