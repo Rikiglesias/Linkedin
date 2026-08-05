@@ -258,7 +258,7 @@ export async function resumeInputBlock(page: Page): Promise<void> {
 }
 
 export async function blockUserInput(page: Page): Promise<void> {
-    initializeMouseState(page);
+    await initializeMouseState(page);
     await enableVisualCursorOverlay(page);
     await ensureInputBlock(page);
     // Riapplica WS_EX_TRANSPARENT a TUTTE le finestre del processo browser.

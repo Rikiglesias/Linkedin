@@ -14,6 +14,7 @@
 
 import { Page } from 'playwright';
 import { logInfo } from '../telemetry/logger';
+import { dimensioniFinestra } from './viewport';
 
 export type MissclickContext = 'idle' | 'navigation' | 'feed' | 'critical';
 
@@ -128,14 +129,21 @@ async function computeSafeMissclickPoint(
     targetY: number,
     cfg: MissclickConfig,
 ): Promise<{ x: number; y: number } | null> {
-    const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
+    // Il viewport CLAMPA un punto derivato dal bersaglio reale, non lo genera. Col vecchio default
+    // il missclick di un bersaglio oltre 1275 px veniva schiacciato sul bordo: invece di "sbagliare
+    // di poco vicino al bottone" — che e' lo scopo — finiva sempre sullo stesso pixel di margine.
+    // Ignote => nessun tetto superiore: l'offset e' gia' limitato da `safeOffsetMaxPx` e il punto
+    // resta comunque verificato da `isNearDangerousElement` prima di essere usato.
+    const viewport = await dimensioniFinestra(page);
     const maxAttempts = 4;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
         const angle = Math.random() * Math.PI * 2;
         const distance = randomBetween(cfg.safeOffsetMinPx, cfg.safeOffsetMaxPx);
-        const missX = Math.max(5, Math.min(viewport.width - 5, targetX + Math.cos(angle) * distance));
-        const missY = Math.max(5, Math.min(viewport.height - 5, targetY + Math.sin(angle) * distance));
+        const grezzoX = targetX + Math.cos(angle) * distance;
+        const grezzoY = targetY + Math.sin(angle) * distance;
+        const missX = Math.max(5, viewport ? Math.min(viewport.width - 5, grezzoX) : grezzoX);
+        const missY = Math.max(5, viewport ? Math.min(viewport.height - 5, grezzoY) : grezzoY);
 
         const dangerous = await isNearDangerousElement(page, missX, missY);
         if (!dangerous) {

@@ -12,6 +12,7 @@ import { isMobilePage } from '../deviceProfile';
 import { getStartingPoint, updateMouseState } from './mouseState';
 import { syncVisualCursorOverlay } from './cursorOverlay';
 import { randomInt } from '../../utils/random';
+import { dimensioniFinestra } from '../viewport';
 
 export async function humanTap(page: Page, targetSelector: string): Promise<void> {
     try {
@@ -39,8 +40,14 @@ export async function humanTap(page: Page, targetSelector: string): Promise<void
 
 export async function humanSwipe(page: Page, direction: 'up' | 'down' = 'up'): Promise<void> {
     try {
-        const viewport = page.viewportSize() ?? { width: 390, height: 844 };
-        const startPoint = getStartingPoint(page);
+        // Il viewport GENERA la gesture: start, delta e fine dello swipe sono tutti frazioni di
+        // `height`. Con il default mobile 390x844 su una finestra diversa lo swipe ha la scala
+        // sbagliata (parte e finisce nei punti sbagliati) — e su desktop il default e' proprio
+        // implausibile. Dimensioni ignote => niente swipe: non esiste un range su cui scorrere.
+        const viewport = await dimensioniFinestra(page);
+        if (!viewport) return;
+        const startPoint = await getStartingPoint(page);
+        if (!startPoint) return;
 
         // Su mobile manteniamo la coordinata X organica se possibile, variamo la Y basata sulla gesture
         const startX = startPoint.x;

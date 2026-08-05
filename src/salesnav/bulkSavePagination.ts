@@ -23,6 +23,7 @@ import { visionRead } from './visionNavigator';
 import { premiTastoSpeciale } from '../browser/human/humanTyping';
 import { SALESNAV_NEXT_PAGE_SELECTOR as NEXT_PAGE_SELECTOR } from './selectors';
 import type { ScrollCollectedProfile } from './bulkSaveTypes';
+import { dimensioniFinestra } from '../browser/viewport';
 
 export interface ScrollResult {
     count: number;
@@ -302,7 +303,11 @@ export async function runAntiDetectionNoise(page: Page, totalProcessedPages: num
 // ─── Scroll & Read ───────────────────────────────────────────────────────────
 
 export async function scrollAndReadPage(page: Page, fast: boolean = false): Promise<ScrollResult> {
-    const viewport = page.viewportSize() ?? { width: 1400, height: 900 };
+    // Serve SOLO a posizionare il mouse nell'area risultati (piu' sotto), non alla raccolta lead:
+    // il degrado resta circoscritto a quel movimento. Col vecchio default 1400x900 il mouse finiva
+    // sistematicamente nello stesso punto sbagliato su ogni finestra diversa — sempre lo stesso
+    // scostamento, cioe' un pattern. Ignote => si salta il posizionamento e si legge comunque.
+    const viewport = await dimensioniFinestra(page);
 
     const collectedLeadIds = new Set<string>();
     const collectedProfiles = new Map<string, ScrollCollectedProfile>();
@@ -360,11 +365,16 @@ export async function scrollAndReadPage(page: Page, fast: boolean = false): Prom
         return collectedLeadIds.size;
     };
 
-    // Posiziona mouse nell'area risultati
-    const mouseX = Math.round(viewport.width * 0.6);
-    const mouseY = Math.round(viewport.height * 0.4);
-    await humanMouseMoveToCoords(page, mouseX, mouseY);
-    await page.waitForTimeout(100 + Math.floor(Math.random() * 150));
+    // Posiziona mouse nell'area risultati (solo se si sa dov'e' davvero quell'area). `null` qui
+    // spegne il posizionamento e il jitter piu' sotto, non la raccolta lead: quella non dipende
+    // dalle dimensioni della finestra e fermarla sarebbe un danno peggiore del difetto.
+    const areaRisultati = viewport
+        ? { x: Math.round(viewport.width * 0.6), y: Math.round(viewport.height * 0.4) }
+        : null;
+    if (areaRisultati) {
+        await humanMouseMoveToCoords(page, areaRisultati.x, areaRisultati.y);
+        await page.waitForTimeout(100 + Math.floor(Math.random() * 150));
+    }
 
     const initialCount = await collectVisibleLeads();
 
@@ -520,9 +530,9 @@ export async function scrollAndReadPage(page: Page, fast: boolean = false): Prom
             }
         }
 
-        if (!fast && Math.random() < 0.2) {
-            const jitterX = mouseX + Math.floor(Math.random() * 80 - 40);
-            const jitterY = mouseY + Math.floor(Math.random() * 50 - 25);
+        if (!fast && areaRisultati && Math.random() < 0.2) {
+            const jitterX = areaRisultati.x + Math.floor(Math.random() * 80 - 40);
+            const jitterY = areaRisultati.y + Math.floor(Math.random() * 50 - 25);
             await humanMouseMoveToCoords(page, jitterX, jitterY);
         }
     }

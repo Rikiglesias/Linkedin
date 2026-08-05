@@ -14,6 +14,7 @@ import { MouseGenerator, Point } from '../../ml/mouseGenerator';
 import { isMobilePage } from '../deviceProfile';
 import { logNormalDelayMs } from '../../utils/random';
 import { pageMouseState, getStartingPoint, updateMouseState } from './mouseState';
+import { dimensioniFinestra } from '../viewport';
 import { pauseInputBlockForMove, resumeInputBlockForMove } from './inputBlock';
 import { humanSwipe } from './touchGestures';
 
@@ -77,14 +78,22 @@ export async function humanMouseMove(page: Page, targetSelector: string): Promis
         const box = await page.locator(targetSelector).first().boundingBox();
         if (!box) return;
 
-        const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
-        const finalX = Math.max(0, Math.min(viewport.width - 1, box.x + box.width / 2 + (Math.random() * 8 - 4)));
-        const finalY = Math.max(0, Math.min(viewport.height - 1, box.y + box.height / 2 + (Math.random() * 8 - 4)));
+        // Il viewport qui CLAMPA un bersaglio che viene da altrove (`boundingBox()`, misura reale
+        // della pagina). Col vecchio default a 1280 un elemento a x=1500 finiva schiacciato su 1279:
+        // il mouse si muoveva verso un punto e il click avveniva altrove — due tracce incoerenti.
+        // Dimensioni ignote => nessun clamp: il bersaglio della pagina e' piu' affidabile di un
+        // limite inventato, e non lo si puo' migliorare con una misura che non si ha.
+        const viewport = await dimensioniFinestra(page);
+        const grezzoX = box.x + box.width / 2 + (Math.random() * 8 - 4);
+        const grezzoY = box.y + box.height / 2 + (Math.random() * 8 - 4);
+        const finalX = viewport ? Math.max(0, Math.min(viewport.width - 1, grezzoX)) : Math.max(0, grezzoX);
+        const finalY = viewport ? Math.max(0, Math.min(viewport.height - 1, grezzoY)) : Math.max(0, grezzoY);
 
         // Movimento mouse multi-fase: drift → approach → overshoot → correction.
         // Un umano reale non va mai diretto al target — prima si muove nell'area generale.
-        const startPt = pageMouseState.get(page) ?? getStartingPoint(page);
-        const path = MouseGenerator.generateHumanPath(startPt, { x: finalX, y: finalY }, viewport);
+        const startPt = pageMouseState.get(page) ?? (await getStartingPoint(page));
+        if (!startPt) return;
+        const path = MouseGenerator.generateHumanPath(startPt, { x: finalX, y: finalY }, viewport ?? undefined);
         // Durata ∝ legge di Fitts (più lontano = più tempo, sub-lineare), NON budget fisso ~300ms
         // (che dava l'OPPOSTO: path lunghi = MENO ms/punto = scatto robotico). Timing inter-punto
         // log-normale (right-skew biometrico), non uniforme (istogramma piatto = firma bot).
@@ -120,9 +129,13 @@ export async function humanMouseMoveToCoords(page: Page, targetX: number, target
     }
     await pauseInputBlockForMove(page);
     try {
-        const startPoint = getStartingPoint(page);
-        const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
-        const path = MouseGenerator.generateHumanPath(startPoint, { x: targetX, y: targetY }, viewport);
+        const startPoint = await getStartingPoint(page);
+        if (!startPoint) return;
+        // Anche qui il viewport CLAMPA (i punti intermedi di drift/overshoot), non genera: il
+        // bersaglio arriva dal chiamante. Ignote => si passa `undefined` e il generatore usa i suoi
+        // bound interni, senza che questo file dichiari una finestra che non ha misurato.
+        const viewport = await dimensioniFinestra(page);
+        const path = MouseGenerator.generateHumanPath(startPoint, { x: targetX, y: targetY }, viewport ?? undefined);
         // Durata ∝ Fitts + timing inter-punto log-normale (vedi humanMouseMove).
         const moveDistPx = Math.hypot(targetX - startPoint.x, targetY - startPoint.y);
         const moveTotalMs = 350 + 90 * Math.log2(moveDistPx / 40 + 1);
@@ -154,7 +167,13 @@ export async function randomMouseMove(page: Page): Promise<void> {
         return;
     }
     try {
-        const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
+        // 🔴 Qui il viewport GENERA il bersaglio (`random * width`), non lo valida: e' il sito
+        // peggiore del gruppo. Col default a 1280x800 su una finestra 1920x1080 questo movimento
+        // "casuale" non produceva MAI un punto nel terzo destro ne' in quello basso dello schermo.
+        // Dimensioni ignote => si salta: e' un movimento decorativo fra i job, e nell'unico stato in
+        // cui la misura manca (pagina chiusa / context distrutto) il movimento fallirebbe comunque.
+        const viewport = await dimensioniFinestra(page);
+        if (!viewport) return;
 
         const endX = Math.random() * viewport.width;
         const endY = Math.random() * viewport.height;
@@ -162,7 +181,8 @@ export async function randomMouseMove(page: Page): Promise<void> {
         // Movimento principale con curva Bezier (no più move lineari)
         await withMouseTimeout(async () => {
             // Punto intermedio per spezzare il pattern diretto
-            const startPt = getStartingPoint(page);
+            const startPt = await getStartingPoint(page);
+            if (!startPt) return;
             const midX = startPt.x + (endX - startPt.x) * 0.5 + (Math.random() * 20 - 10);
             const midY = startPt.y + (endY - startPt.y) * 0.5 + (Math.random() * 20 - 10);
             await humanMouseMoveToCoords(page, midX, midY);

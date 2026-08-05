@@ -86,7 +86,7 @@ async function main(): Promise<void> {
     const page = await context.newPage();
     await page.setContent(buildHtml(), { waitUntil: 'domcontentloaded' });
 
-    initializeMouseState(page);
+    await initializeMouseState(page);
     await humanPause(page, 800, 1400);
 
     // 1) MOUSE + CLICK: muove curvo (Fitts + log-normale) e clicca con atterraggio gaussiano.
