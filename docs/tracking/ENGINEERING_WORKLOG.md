@@ -4,6 +4,49 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-08-05 — blocco 17c: due `parsePayload` omonimi e opposti nascondevano una campagna bloccata (`d7d2f7d`, `ce1e8f3`)
+
+**Il quarto giro di critica ha trovato il difetto più grave del turno, e non era nel codice scritto oggi:
+era lì da prima, e nessuno strumento lo vedeva.**
+
+Nel repo esistevano **due funzioni `parsePayload` omonime con semantica opposta**:
+`core/repositories/shared.ts:4` ripiega su un oggetto vuoto, la locale di `workers/registry.ts:37`
+lancia. Il danno passa da `parseJobPayload` (`jobs.ts:214-217`), che usa quella che **inghiotte**: su un
+`payload_json` corrotto, `jobRunner.ts:726` riceveva `{}` **senza alcuna eccezione**, quindi il `catch`
+di `:730` non scattava e `failLeadCampaign` (`:742` — il fix «NEW-8» scritto proprio contro lo stuck)
+**non veniva mai chiamata**. Una lead campaign restava bloccata in silenzio. Ricade dentro il criterio
+**C1** di questo goal («nessun fallimento silenzioso»), non è un extra.
+
+**Correzione chirurgica, scelta contro il consolidamento.** Unificare le due funzioni avrebbe cambiato
+il comportamento di tutti i consumatori di `shared.parsePayload`: rischio alto per un turno a fine
+corsa. Invece: `tryParsePayload` **nuova**, che dice se il parse è riuscito, **senza toccare**
+`parsePayload` (zero impatto sui suoi altri 4 consumatori); `jobRunner:726` la usa per separare «campo
+assente» — job non di campagna, caso normale — da «payload corrotto», e in quel caso lancia, così il
+`catch` esistente torna a fare il suo lavoro. La funzione di `registry.ts` si chiama ora
+`parsePayloadOrThrow`: le due **non** sono state unificate di proposito, perché servono due
+comportamenti diversi — e ora il nome dichiara il contratto invece di nasconderlo.
+🔴 **Vincolo trovato prima di scrivere, non dopo**: nessun logger dentro `shared.ts` —
+`telemetry/logger` raggiunge quel modulo attraverso `repositories/system`, e importarlo avrebbe creato
+un ciclo. Il log lo fa il chiamante, che ha anche il contesto per renderlo utile. `madge --circular`: 0.
+
+**Prova che il fix non è cieco.** Test nuovo (`payloadParsingSemantics.vitest.ts`) che fissa le due
+semantiche, con **rosso di controllo eseguito**: rompendo `tryParsePayload` (ok sempre true) **3 test su
+5 falliscono**. Gate exit 0 REALE: **211 file, 2106 test** (erano 210 e 2101 — +1 file, +5 test, delta
+che quadra).
+
+**Nello stesso giro, due correzioni ai miei stessi claim.** ① I 5 `parseJobPayload<{…}>` inline di
+`jobRunner` erano i gemelli della regola che avevo scritto solo nell'header di `registry.ts`: ora sono
+tipi **derivati** dai canonici, così un rename rompe a compile time. ② Il claim «33 re-export esaminati,
+0 orfani residui» era **falso**, e per un motivo che vale come metodo: l'esame era stato fatto a
+granularità di **riga** invece che di **simbolo**, quindi una riga con un simbolo vivo e uno morto
+risultava «coperta» — `proxyManager.ts:17` e `preflight.ts:30` erano esattamente così (`ce1e8f3`).
+
+**Residui dichiarati, non taciuti.** `[skip-sast]` usato con evidenza misurata (9 empty-catch su `HEAD`,
+9 nel working tree ⇒ zero introdotti dal diff; restano debito tracciato). F5 (cast non validato sul
+`tone`, fallback muto) waived con motivo e tracciato in `improvements-proposed.md`. Un run del gate ha
+mostrato «1 error» con tutti i 2106 test passati, non riprodotto in 2 run successivi: segnalato come
+possibile flaky di runtime.
+
 ## 2026-08-05 — blocco 17b: tre payload erano ancora scritti a mano, e uno mentiva sul timing (`c019408`, `64cb344`)
 
 **Due passate di controllo hanno trovato, una dopo l'altra, che la correzione era incompleta e che la
