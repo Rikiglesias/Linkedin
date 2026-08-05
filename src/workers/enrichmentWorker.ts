@@ -5,11 +5,10 @@ import { persistEnrichmentResult } from '../integrations/persistEnrichment';
 import { getDatabase } from '../db';
 import { incrementEnrichmentDailyCount } from '../integrations/enrichmentDailyCap';
 import { logError, logInfo } from '../telemetry/logger';
+// Il payload vive in types/domain.ts coi suoi fratelli, qui era una copia alla lettera.
+import type { EnrichmentJobPayload } from '../types/domain';
 
-export interface EnrichmentJobPayload {
-    leadId: number;
-    campaignStateId?: number;
-}
+export type { EnrichmentJobPayload };
 
 export async function processEnrichmentJob(
     payload: EnrichmentJobPayload,

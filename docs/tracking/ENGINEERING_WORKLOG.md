@@ -2255,3 +2255,24 @@ su HEAD pulito ⇒ pre-esistente. **Rosso di controllo**: nascondendo il lastcha
 
 **VERIFICA**: `tsc` 0 · `conta-problemi` **exit 0 REALE — 210 file, 2101 test, 0 skip** ·
 `madge` 0 · `audit:ai-reasoning-hardening` **8/8, exit 0** (era 7/8) · export morti **23**.
+
+### Passata finale 360 — trovato lavoro VERDETTATO E MAI ESEGUITO (stessa sessione)
+
+La passata d'insieme di fine turno ha trovato ciò per cui esiste: **3 residui su 23 erano stati
+verdettati «da unificare» nel binding e non erano mai stati eseguiti**, senza che lo dichiarassi.
+`InteractionJobPayload`, `EnrichmentJobPayload`, `PostCreationJobPayload` erano finiti fuori dai
+chunk perché i loro consumatori stanno in `src/workers/**` (glob anti-ban) mentre i tipi stanno in
+`types/domain.ts` (fuori glob).
+
+**Il quadro completo**: dei 5 payload di job, 3 arrivavano da `types/domain` e 2 dai worker, e altri
+2 erano **riscritti a mano** dentro `parsePayload<{...}>` in `registry.ts:66/73`. È il motivo per cui
+i tipi canonici risultavano «export morti» pur avendo consumatori reali — la stessa forma di
+`CampaignRunRecord`. Ora tutti e 5 vengono da `types/domain`; i worker ri-esportano il proprio per
+non rompere chi li importa. `/antiban-review` SICURO: cambia da dove viene un tipo, zero runtime.
+
+**VERIFICA**: `tsc` 0 · gate **exit 0 REALE — 210 file, 2101 test, 0 skip** · export morti
+**23 → 20**. **Totale sessione: 41 → 20 (−51%)**, e i 20 residui sono **tutti verdettati**:
+9 capability inerti = decisioni utente · 2 `missclick` (leva) · 3 letture GDPR intoccabili ·
+2 falsi positivi `globalSetup` · 3 appesi al destino di `frontend/` · `findHookCommandParts`
+(API gemella della libreria condivisa, allineata alla copia AI-Control-Plane).
+**Nel non-gated di C6 non resta lavoro autonomo.**

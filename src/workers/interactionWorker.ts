@@ -19,12 +19,12 @@ import { ChallengeDetectedError, RetryableWorkerError } from './errors';
 import { config, getLocalDateString } from '../config';
 import { getDailyStat, incrementDailyStat } from '../core/repositories/stats';
 import { isBlacklisted } from '../core/repositories/blacklist';
+// Il payload del job vive con i suoi 4 fratelli in types/domain.ts, non qui: era duplicato
+// alla lettera, e 5 payload di job che stanno in 2 posti diversi sono la forma di isLocal*
+// prima che divergesse (zero-O). Ri-esportato perche' registry.ts lo importa da questo modulo.
+export type { InteractionJobPayload } from '../types/domain';
 
-export interface InteractionJobPayload {
-    leadId: number;
-    actionType: 'VIEW_PROFILE' | 'LIKE_POST' | 'FOLLOW';
-    campaignStateId?: number;
-}
+import type { InteractionJobPayload } from '../types/domain';
 
 // ─── Helpers Interni ────────────────────────────────────────────────────────────
 

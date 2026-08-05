@@ -6,14 +6,23 @@
  * Ogni worker implementa l'interfaccia WorkerProcessor.
  */
 
-import { JobType, InviteJobPayload } from '../types/domain';
+// Tutti e 5 i payload di job vengono da qui. Prima ne arrivavano 3 da types/domain e 2 dai worker,
+// e altri 2 erano riscritti a mano dentro parsePayload<{...}> in questo stesso file: e' il motivo
+// per cui i tipi canonici risultavano "export morti" pur avendo i loro consumatori.
+import {
+    JobType,
+    InviteJobPayload,
+    InteractionJobPayload,
+    EnrichmentJobPayload,
+    PostCreationJobPayload,
+} from '../types/domain';
 import { WorkerContext } from './context';
 import { WorkerExecutionResult, workerResult } from './result';
 import { processInviteJob } from './inviteWorker';
 import { processAcceptanceJob } from './acceptanceWorker';
 import { processMessageJob } from './messageWorker';
 import { processHygieneJob } from './hygieneWorker';
-import { processInteractionJob, type InteractionJobPayload } from './interactionWorker';
+import { processInteractionJob } from './interactionWorker';
 import { processEnrichmentJob } from './enrichmentWorker';
 import { createAndPublishPost, type PostCreatorOptions } from './postCreatorWorker';
 import { processInboxJob, type InboxJobPayload } from './inboxWorker';
@@ -63,14 +72,14 @@ const interactionProcessor: WorkerProcessor = {
 
 const enrichmentProcessor: WorkerProcessor = {
     async process(job, context) {
-        const payload = parsePayload<{ leadId: number; campaignStateId?: number }>(job);
+        const payload = parsePayload<EnrichmentJobPayload>(job);
         return processEnrichmentJob(payload, context);
     },
 };
 
 const postCreationProcessor: WorkerProcessor = {
     async process(job, context) {
-        const payload = parsePayload<{ accountId: string; topic?: string; tone?: string }>(job);
+        const payload = parsePayload<PostCreationJobPayload>(job);
         const postResult = await createAndPublishPost(context.session.page, {
             accountId: payload.accountId,
             topic: payload.topic,
