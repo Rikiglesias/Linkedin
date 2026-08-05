@@ -24,6 +24,7 @@ import {
     resumeInputBlock,
 } from '../browser/humanBehavior';
 import { humanDelay } from '../browser';
+import { dimensioniFinestra } from '../browser/viewport';
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -365,7 +366,17 @@ export async function computerUseTask(
     },
 ): Promise<ComputerUseResult> {
     const maxTurns = options?.maxTurns ?? 15;
-    const viewport = page.viewportSize() ?? { width: 1920, height: 1080 };
+    // FASE 4: questa misura NON resta interna — finisce nel prompt del modello (`:377`, `:410`:
+    // "The screen resolution is WxH pixels"). Con un default inventato l'AI calcola le coordinate su
+    // uno schermo che non esiste, e ogni click che ne deriva e' cieco. Dimensioni ignote ⇒ non si
+    // avvia affatto il computer-use: e' l'unico ramo onesto, perche' qui non esiste un "prosegui con
+    // meno precisione".
+    const viewport = await dimensioniFinestra(page);
+    if (!viewport) {
+        const msg = 'Dimensioni finestra non determinabili: computer-use non avviato (niente coordinate al buio)';
+        console.warn(`[COMPUTER-USE] ${msg}`);
+        return { success: false, turns: 0, totalActions: 0, error: msg };
+    }
     let totalActions = 0;
     let turn = 0;
     let previousResponseId: string | null = null;

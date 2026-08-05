@@ -24,6 +24,7 @@ import {
     humanType,
     premiTastoSpeciale,
 } from './human/humanTyping';
+import { dimensioniFinestra } from './viewport';
 import { VisionSolver } from '../captcha/solver';
 
 export interface ClickFallbackOptions {
@@ -352,9 +353,13 @@ export async function clickWithFallback(
         const base64Image = screenshotBuffer.toString('base64');
         const solver = new VisionSolver();
         const coords = await solver.findObjectCoordinates(base64Image, label);
-        const viewport = page.viewportSize() ?? { width: 1920, height: 1080 };
+        // FASE 4: qui il viewport e' il LIMITE con cui si validano le coordinate della vision. Col
+        // default inventato il limite mente in entrambi i versi — accetta punti oltre il bordo reale
+        // se la finestra e' piu' piccola di 1920x1080, e scarta punti validi se e' piu' grande.
+        // Dimensioni ignote ⇒ non si valida su un numero inventato: la coordinata viene scartata.
+        const viewport = await dimensioniFinestra(page);
 
-        if (coords && coords.x > 0 && coords.y > 0 && coords.x <= viewport.width && coords.y <= viewport.height) {
+        if (viewport && coords && coords.x > 0 && coords.y > 0 && coords.x <= viewport.width && coords.y <= viewport.height) {
             console.log(`[FALLBACK-VISION] Coordinate ottenute da LLaVA per "${label}": X:${coords.x}, Y:${coords.y}`);
             await clickCoordinatesHumanLike(page, coords.x, coords.y);
             if (options.postClickDelayMs > 0) {
@@ -419,9 +424,13 @@ export async function waitForSelectorWithFallback(
         const base64Image = screenshotBuffer.toString('base64');
         const solver = new VisionSolver();
         const coords = await solver.findObjectCoordinates(base64Image, label);
-        const viewport = page.viewportSize() ?? { width: 1920, height: 1080 };
+        // FASE 4: qui il viewport e' il LIMITE con cui si validano le coordinate della vision. Col
+        // default inventato il limite mente in entrambi i versi — accetta punti oltre il bordo reale
+        // se la finestra e' piu' piccola di 1920x1080, e scarta punti validi se e' piu' grande.
+        // Dimensioni ignote ⇒ non si valida su un numero inventato: la coordinata viene scartata.
+        const viewport = await dimensioniFinestra(page);
 
-        if (coords && coords.x > 0 && coords.y > 0 && coords.x <= viewport.width && coords.y <= viewport.height) {
+        if (viewport && coords && coords.x > 0 && coords.y > 0 && coords.x <= viewport.width && coords.y <= viewport.height) {
             console.log(
                 `[FALLBACK-VISION] Elemento trovato visivamente per "${label}" a (X:${coords.x}, Y:${coords.y})`,
             );
@@ -496,9 +505,13 @@ export async function typeWithFallback(
         const base64Image = screenshotBuffer.toString('base64');
         const solver = new VisionSolver();
         const coords = await solver.findObjectCoordinates(base64Image, label);
-        const viewport = page.viewportSize() ?? { width: 1920, height: 1080 };
+        // FASE 4: qui il viewport e' il LIMITE con cui si validano le coordinate della vision. Col
+        // default inventato il limite mente in entrambi i versi — accetta punti oltre il bordo reale
+        // se la finestra e' piu' piccola di 1920x1080, e scarta punti validi se e' piu' grande.
+        // Dimensioni ignote ⇒ non si valida su un numero inventato: la coordinata viene scartata.
+        const viewport = await dimensioniFinestra(page);
 
-        if (coords && coords.x > 0 && coords.y > 0 && coords.x <= viewport.width && coords.y <= viewport.height) {
+        if (viewport && coords && coords.x > 0 && coords.y > 0 && coords.x <= viewport.width && coords.y <= viewport.height) {
             console.log(
                 `[FALLBACK-VISION] Coordinate ottenute da LLaVA per digitazione "${label}": X:${coords.x}, Y:${coords.y}`,
             );
