@@ -122,8 +122,14 @@ describe('i call-site che partivano dal centro esatto sono stati convertiti', ()
         // capability persa in silenzio (zero-Q). Le dimensioni vere si chiedono al DOM prima di
         // arrendersi. Il test tiene insieme i due errori opposti: non fidarsi dell'ignoto, ma nemmeno
         // dichiararlo ignoto quando è conoscibile.
-        expect(src).toContain('dimensioniFinestra');
-        expect(src).toContain('window.innerWidth');
+        // 2026-08-05: `dimensioniFinestra` è stata ESTRATTA in `browser/viewport.ts` (lo stesso
+        // difetto vive in 17 punti su 11 file: una copia locale ne sanava uno solo). Qui resta la
+        // verifica che questo file USI la misura vera; il `window.innerWidth` non si cerca più nel
+        // testo di questo sorgente — starebbe controllando dove abita la funzione invece di cosa fa.
+        // Il COMPORTAMENTO (viewport dichiarato → DOM → null) è coperto da `viewportReale.vitest.ts`,
+        // che lo esegue invece di leggerlo: un test sulle stringhe non distingue una guardia che non
+        // scatta mai da una che scatta sempre (10º principio anti-ban).
+        expect(src).toContain("from '../browser/viewport'");
         expect(src).toMatch(/const viewport = await dimensioniFinestra\(page\)/);
     });
 

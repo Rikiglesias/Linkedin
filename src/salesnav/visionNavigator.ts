@@ -3,6 +3,7 @@ import type { VisionProvider } from '../captcha/visionProvider';
 import { createVisionProvider, getOpenAIProviderFromCurrent } from '../captcha/visionProviderFactory';
 import { clickCoordinatesHumanLike } from '../browser';
 import { humanPointInBox } from '../browser/humanClick';
+import { dimensioniFinestra, dimensioniPng } from '../browser/viewport';
 
 export interface VisionRegionClip {
     x: number;
@@ -77,8 +78,25 @@ function clampNumber(value: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, value));
 }
 
-function clampRegion(page: Page, clip: VisionRegionClip): VisionRegionClip {
-    const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
+/**
+ * Ritaglia il clip dentro la finestra REALE.
+ *
+ * Prima usava `viewportSize() ?? {1280,800}`: in non-headless (il default) `viewportSize()` e' null,
+ * quindi il clip veniva ritagliato su una finestra INVENTATA di 1280x800 anche su schermi piu'
+ * grandi — e tutto cio' che stava oltre finiva schiacciato. Ora la misura e' quella vera; se e'
+ * davvero ignota NON si inventa un ritaglio: si lascia il clip come chiesto e sara' Playwright a
+ * limitarlo ai bordi reali della pagina (meglio un clip non ritagliato che uno ritagliato sbagliato).
+ */
+async function clampRegion(page: Page, clip: VisionRegionClip): Promise<VisionRegionClip> {
+    const viewport = await dimensioniFinestra(page);
+    if (!viewport) {
+        return {
+            x: Math.max(0, Math.floor(clip.x)),
+            y: Math.max(0, Math.floor(clip.y)),
+            width: Math.max(1, Math.floor(clip.width)),
+            height: Math.max(1, Math.floor(clip.height)),
+        };
+    }
     const width = clampNumber(Math.floor(clip.width), 1, viewport.width);
     const height = clampNumber(Math.floor(clip.height), 1, viewport.height);
     const x = clampNumber(Math.floor(clip.x), 0, Math.max(0, viewport.width - width));
@@ -149,31 +167,10 @@ const VISION_FALLBACK_VIEWPORT = { width: 1280, height: 800 };
 /** Tolleranza stretta (±5%): oltre, il layout può già aver spostato il bottone. */
 const VISION_FALLBACK_TOLLERANZA = 0.05;
 
-/**
- * Dimensioni REALI della finestra, non solo quelle del viewport dichiarato.
- *
- * 🔴 Perche' esiste: `page.viewportSize()` restituisce null quando il context nasce con
- * `viewport: null`, e quello e' il caso di DEFAULT — `headless` e' `false` di default
- * (`config/domains.ts`), e in non-headless `launcher.ts` mette apposta `viewport = null` per far
- * riempire lo schermo al browser. Quindi una guardia basata sul solo `viewportSize()` non
- * "protegge": scatta SEMPRE, e trasforma la capability che protegge in codice morto (zero-Q,
- * "piu' pulito ma perde" = fallimento). Trovato dal critico avversariale subito dopo che il
- * problema opposto — il `??` che dava per buone dimensioni ignote — era stato chiuso.
- *
- * Ordine: viewport dichiarato, altrimenti la finestra vera dal DOM, altrimenti null (davvero ignote
- * → chi chiama decide, e la decisione presa qui e' saltare).
- */
-async function dimensioniFinestra(page: Page): Promise<{ width: number; height: number } | null> {
-    const dichiarato = page.viewportSize();
-    if (dichiarato) return dichiarato;
-    try {
-        const reale = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
-        return reale && reale.width > 0 && reale.height > 0 ? reale : null;
-    } catch {
-        // Pagina chiusa o contesto distrutto: dimensioni non conoscibili.
-        return null;
-    }
-}
+// `dimensioniFinestra` nasceva qui (2026-08-05, per la guardia del fallback vision). E' stata
+// ESTRATTA in `browser/viewport.ts` quando si e' visto che lo stesso `viewportSize() ?? {1280,800}`
+// vive in 17 punti su 11 file: una copia locale avrebbe sanato un punto solo e lasciato la classe
+// aperta. Vedi il modulo per il perche' quel default e' sempre attivo, non raro.
 
 function fallbackViewportCompatibile(viewport: { width: number; height: number }): boolean {
     const deltaW = Math.abs(viewport.width - VISION_FALLBACK_VIEWPORT.width) / VISION_FALLBACK_VIEWPORT.width;
@@ -246,7 +243,7 @@ async function captureVisionRegion(page: Page, options?: VisionInteractionOption
     }
 
     if (options?.clip) {
-        const region = clampRegion(page, options.clip);
+        const region = await clampRegion(page, options.clip);
         let buffer: Buffer;
         try {
             buffer = await page.screenshot({ type: 'png', clip: region, timeout: 8_000 });
@@ -262,7 +259,6 @@ async function captureVisionRegion(page: Page, options?: VisionInteractionOption
         };
     }
 
-    const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
     let buffer: Buffer;
     try {
         buffer = await page.screenshot({ type: 'png', timeout: 8_000 });
@@ -272,6 +268,25 @@ async function captureVisionRegion(page: Page, options?: VisionInteractionOption
         }
         buffer = await captureScreenshotViaCdp(page);
     }
+
+    // 🔴 La region DEVE coincidere con l'immagine che il provider guarda, perche' le coordinate che
+    // restituisce vengono clampate dentro questa region (vedi visionClick). Prima si dichiarava
+    // `viewportSize() ?? {1280,800}` mentre lo screenshot e' della finestra INTERA: in non-headless
+    // (il default) quel `??` scattava sempre, l'immagine era p.es. 1920x1080 e la region diceva
+    // 1280x800 ⇒ ogni coordinata oltre 1279/799 finiva schiacciata sul bordo, cioe' TUTTO il terzo
+    // destro e quello basso collassavano su una riga di pixel. Ora la misura viene dall'immagine
+    // stessa (header PNG), che e' l'unica fonte che non puo' divergere da cio' che l'AI ha visto.
+    const daImmagine = dimensioniPng(buffer);
+    const viewport = daImmagine ?? (await dimensioniFinestra(page));
+    if (!viewport) {
+        // Ne' l'immagine ne' la finestra sanno dire le dimensioni: mappare coordinate qui sarebbe
+        // indovinare, e a valle si trasforma in un click su un punto sbagliato.
+        throw new Error(
+            'Dimensioni dello screenshot non determinabili (header PNG illeggibile e finestra non misurabile): ' +
+                'coordinate non mappabili, meglio fallire che cliccare a caso',
+        );
+    }
+
     return {
         imageBase64: buffer.toString('base64'),
         region: {

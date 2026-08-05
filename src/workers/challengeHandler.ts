@@ -16,6 +16,7 @@ import type { VisionProvider } from '../captcha/visionProvider';
 import { clickCoordinatesHumanLike, clickLocatorHumanLike } from '../browser';
 import { humanPointInBox } from '../browser/humanClick';
 import { humanDelay } from '../browser/humanBehavior';
+import { dimensioniFinestra } from '../browser/viewport';
 import { logInfo, logWarn, logError } from '../telemetry/logger';
 import { getDailyStat, incrementDailyStat } from '../core/repositories/stats';
 import { config, getLocalDateString } from '../config';
@@ -164,7 +165,16 @@ export async function attemptChallengeResolution(page: Page): Promise<boolean> {
                     continue;
                 }
 
-                const vp = page.viewportSize() ?? { width: 1280, height: 800 };
+                // 🔴 Non `viewportSize() ?? {1280,800}`: in non-headless (il DEFAULT) `viewportSize()`
+                // e' null, quindi quel default era sempre attivo e le coordinate del captcha oltre
+                // 1279x799 venivano schiacciate sul bordo — cioe' si cliccava la tessera sbagliata,
+                // e sbagliare un captcha costa piu' di ogni altra cosa qui. Dimensioni ignote =>
+                // NON si clicca (stessa regola gia' adottata per il fallback vision in 596d58b).
+                const vp = await dimensioniFinestra(page);
+                if (!vp) {
+                    await logWarn('challenge.viewport_ignoto', { attempt });
+                    continue;
+                }
                 // Dispersione MINIMA attorno al punto scelto dal provider: le coordinate non sono
                 // fisse a listino (variano con l'immagine), ma per lo stesso captcha il provider
                 // tende a restituire lo stesso punto, e cliccarlo al pixel esatto e' ripetibile.
