@@ -2062,3 +2062,56 @@ A8 geo-coerenza exit-IP (feature mancante, opt-in), A9 challenge gate persistent
 - VERIFICA LIVE (evidenza reale): (1) probe+spawn+poll+stop con opzioni ESATTE del modulo → ready ~3s, kill ok, porta libera; (2) end-to-end con modello caricato → tree-kill, 0 orfani; (3) **modulo REALE compilato** (`dist/ai/ollamaLifecycle.js`) contro un'istanza pre-avviata → rilevata su, ZERO spawn, stop no-op, istanza NON toccata (garanzia «mai uccidere un'istanza preesistente» dimostrata).
 - QUALITY GATE: `pre-modifiche` verde baseline (1810 test); `post-modifiche` exit 0 → typecheck+lint OK, **1813 test** (186 file, +3 nuovi in `ollamaLifecycle.vitest.ts` su `isLoopbackEndpoint`), build:backend exit 0.
 - ANTI-BAN: NEUTRO — infra locale, zero superficie LinkedIn (nessun browser/timing/fingerprint/proxy/sessione toccati). File fuori dai glob LinkedIn-touch; nessuna varianza necessaria.
+
+## 2026-08-05 — goal `audit-codebase`: locality AI, bypass SSRF, C6 export morti (8 commit)
+
+**Tema**: chiusura di `F-a3f17c02` (copie divergenti di `isLocal*`) e del criterio C6 «serve davvero?»
+sugli export morti; nel farlo sono emersi tre difetti non previsti, due dei quali più gravi del task.
+
+- **`15b4358` SICUREZZA — bypass SSRF reale, misurato non dedotto.** `isBlockedIpv6` riconosceva
+  l'IPv4-mapped SOLO come `::ffff:a.b.c.d`, forma che **nessun parser produce**:
+  `new URL('http://[::ffff:169.254.169.254]/').hostname` vale `[::ffff:a9fe:a9fe]` e `dns.lookup`
+  restituisce la stessa forma canonica ⇒ ramo di codice morto sugli input reali e **metadata endpoint
+  cloud raggiungibile** da URL derivati dai dati lead (`personDataFinder:169`, `webSearchEnricher:156`,
+  entrambi con `blockPrivateHosts: true`). Il test esistente asseriva la forma puntata ⇒ copertura
+  APPARENTE. Confronto ora sui NUMERI (`espandiIpv6` → 8 gruppi da 16 bit, `ipv4Incapsulato`).
+  Perimetro triangolato su CVE 2025-2026 (`ip-address` CVE-2026-54272, `is-localhost-ip` CVE-2025-9960,
+  twenty-server GHSA-vrcj-hv2q-c58m, MCP Registry CVE-2026-44430, pydantic-ai GHSA-cg7w-rg45-pc59):
+  la ricerca ha **smentito** la mia decisione di escludere 6to4/NAT64. Rosso di controllo: 13/46.
+- **`4818af0` F-a3f17c02 — le copie erano QUATTRO, non tre.** `openaiClient`, `config/env`,
+  `providerRegistry.isLocalUrl`, `ollamaLifecycle.isLoopbackEndpoint`. Divergenza misurata su 8 URL:
+  `http://[::1]:11434/v1` locale per il client e remoto per il registry ⇒ i 7 purpose PII-sensitive
+  cadevano su `template`, che LANCIA (AI sui dati lead morta con il server acceso);
+  `http://0.0.0.0:11434/v1` valido per `validation.ts` e bloccato dal client. Radice comune: le
+  parentesi dell'hostname WHATWG. SSOT in `config/env.ts` (livello più basso: `validation` non può
+  dipendere da `ai/`, e i test del registry mockano `ai/openaiClient`). ⚠️ In corsa avevo scritto il
+  loopback come prefisso testuale `/^127\./`, che accetta `127.0.0.1.evil.com`: falla pescata da un
+  test scritto dal critico avversariale due giri prima. Ora passa da `isIP`.
+- **`6125b07` + `46ced01` + `097d90a` C6 export morti: da 163 a 41.** I 55 di `core` erano 4 file:
+  3 barrel di sola navigabilità con zero import in 4 mesi (già dati per dead code il 2026-06-07) e
+  `appContext.ts`, DI con «strategia di adozione in 5 passi» ferma al passo 1 — che **i test facevano
+  sembrare vivo** coprendo solo la propria factory. I «75 di `browser`» erano l'artefatto di un
+  barrel: rimuovere un file da 25 righe ne ha eliminati 70. 🔴 Verdetto OPPOSTO su 3 residui: le
+  letture di `auditLog` NON si rimuovono — sono la procedura di accesso art. 15 dichiarata in
+  `GDPR_ART30_REGISTER.md:86`, lì manca il consumatore, non la capability (tracciato).
+- **`35be0a2` F-d9b06f13**: il nome della env var da correggere si ricalcolava al momento di
+  DESCRIVERE, mentre in `doctor.ts` fra verifica e descrizione gira il loop browser ⇒ attraversando il
+  confine della finestra green il messaggio nominava la variabile sbagliata. Ora viaggia dentro
+  `EsitoModelloAi.variabile`, deciso alla verifica.
+- **`7853133` + `097d90a` ANTI-BAN**: `src/browser.ts:42` motivava l'intero design del bridge dicendo
+  «il barrel non è importato da nessuno» — era diventato FALSO (`linkedinProfileScraper.ts:10` via
+  commit di lint `0269a87`) ⇒ due punti di registrazione, senza sintomi perché idempotenti. Rischio:
+  chi ne modifica uno lascia l'altro indietro, e con un percorso scoperto `callMouseMove` tornerebbe
+  no-op = click di dismiss senza movimento del mouse. Barrel rimosso, invariante resa MECCANICA
+  (il test asserisce che un secondo entry point non esista). ⚠️ Le mie due premesse iniziali erano
+  entrambe sbagliate e le ha fermate l'`/antiban-review`.
+
+**VERIFICA FINALE**: `conta-problemi` **exit 0 REALE — 210 file, 2101 test, 0 skip** (ri-eseguito dopo
+l'ultimo edit, non ereditato); `madge --circular` 0; `graphify update` exit 0; 8 commit pushati,
+ahead/behind **0/0**, working tree pulito.
+**ANTI-BAN**: `/antiban-review` **6/6 SICURO** sui due commit LinkedIn-touch. Nessun timing, delay,
+fingerprint, volume o sessione toccato: cambia da dove viene un import e sparisce un entry point
+duplicato. L'auto-push si è fermato su entrambi (area anti-ban): review eseguita dall'AI come previsto
+da `.claude/rules/git-commit-push.md`, verde, poi push manuale.
+**RESIDUI DICHIARATI**: 41 export ancora da verdettare; capability `missclick` inerte (leva utente,
+①collegare/②rimuovere); i 244 `used in module` (igiene di visibilità, priorità rivalutata al ribasso).
