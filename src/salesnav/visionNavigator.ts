@@ -441,9 +441,17 @@ export async function visionClick(
                         region: { x: 0, y: 0, width: viewport.width, height: viewport.height },
                     };
                 }
-                // No fixed fallback available — log and rethrow
+                // Qui si arriva in DUE modi diversi, e dirli entrambi "nessun fallback" e' una
+                // diagnosi falsa: o il fallback non esiste per questa descrizione, oppure esiste ed
+                // e' stato SCARTATO dalla guardia sul viewport poco sopra (che ha gia' loggato il
+                // suo motivo). Nel secondo caso il messaggio contraddiceva la riga precedente
+                // sull'unico canale di osservabilita' che abbiamo: chi legge il log concludeva che
+                // le coordinate fisse non fossero mai state configurate.
+                const motivo = fallback
+                    ? `fallback fisso presente ma SCARTATO (viewport incompatibile, vedi riga precedente)`
+                    : `nessun fallback fisso configurato`;
                 console.warn(
-                    `[VISION-H07] Vision AI offline (skip #${_visionOfflineSkipCount}). Nessun fallback fisso per "${description}" — skip.`,
+                    `[VISION-H07] Vision AI offline (skip #${_visionOfflineSkipCount}). ${motivo} per "${description}" — skip.`,
                 );
                 throw error;
             }
