@@ -35,12 +35,18 @@
  */
 
 import { config, isGreenModeWindow } from '../config';
-import { isLocalAiEndpoint, resolveAiModel } from './openaiClient';
+import { isLocalAiEndpoint, isLoopbackAiHost, resolveAiModel } from './openaiClient';
 
 /** Allineato al probe di `ollamaLifecycle`: un preflight non deve far aspettare il run. */
 const TIMEOUT_ELENCO_MS = 2_000;
 
-export type StatoModelloAi = 'ok' | 'mancante' | 'sconosciuto' | 'non_applicabile';
+/**
+ * `bloccato_da_policy` è uno stato a sé e NON `non_applicabile`: quest'ultimo significa «non c'è
+ * niente da controllare», mentre lì il 100% delle chiamate AI fallisce (`requestOpenAIText` lancia).
+ * Confonderli rendeva il preflight MUTO proprio sul guasto più azionabile — regressione introdotta
+ * dalla correzione di sicurezza e trovata dal critico avversariale (F-b7e2d941).
+ */
+export type StatoModelloAi = 'ok' | 'mancante' | 'sconosciuto' | 'bloccato_da_policy' | 'non_applicabile';
 
 export interface EsitoModelloAi {
     stato: StatoModelloAi;
@@ -69,7 +75,10 @@ async function elencaModelli(baseUrl: string): Promise<string[] | null> {
     try {
         const headers: Record<string, string> = {};
         // Endpoint cloud: senza chiave `/models` risponde 401 e diventerebbe un finto «sconosciuto».
-        if (config.openaiApiKey) headers.authorization = `Bearer ${config.openaiApiKey}`;
+        // Ma la chiave esce SOLO verso loopback stretto o verso un remoto esplicitamente consentito:
+        // `.local` è mDNS, cioè un host qualsiasi della LAN, e non merita le credenziali (F-0d84be2f).
+        const puoRicevereLaChiave = config.aiAllowRemoteEndpoint || isLoopbackAiHost(baseUrl);
+        if (config.openaiApiKey && puoRicevereLaChiave) headers.authorization = `Bearer ${config.openaiApiKey}`;
         const res = await fetch(`${baseUrl.replace(/\/+$/, '')}/models`, { signal: controller.signal, headers });
         if (!res.ok) return null;
         const body: unknown = await res.json();
@@ -110,7 +119,13 @@ export async function verificaModelloAi(): Promise<EsitoModelloAi> {
     // lo facesse comunque manderebbe `Authorization: Bearer` dove la policy lo vieta, a ogni ciclo
     // del loop, e riferirebbe su un endpoint che nessuno userà. (Trovato dal critico, F-9f0c72ae.)
     if (!config.aiAllowRemoteEndpoint && !isLocalAiEndpoint(baseUrl)) {
-        return nonApplicabile('endpoint_remoto_bloccato_da_policy');
+        // NON `non_applicabile`: qui ogni chiamata AI fallisce, e tacere sarebbe il difetto opposto.
+        return {
+            stato: 'bloccato_da_policy',
+            modello: resolveAiModel().trim() || null,
+            disponibili: [],
+            motivo: 'endpoint_remoto_bloccato_da_policy',
+        };
     }
 
     const modello = resolveAiModel().trim();
@@ -158,6 +173,8 @@ export function descriviEsitoModelloAi(esito: EsitoModelloAi): string {
             return `modello AI '${esito.modello}' presente sull'endpoint configurato`;
         case 'mancante':
             return `modello AI '${esito.modello}' NON esiste sul provider — ogni decisione AI cade nel fallback. Disponibili: ${elenco}. Correggere ${variabileDelModello()} o scaricare il modello.`;
+        case 'bloccato_da_policy':
+            return "endpoint AI remoto vietato da AI_ALLOW_REMOTE_ENDPOINT=false: OGNI chiamata AI fallisce. Puntare OPENAI_BASE_URL su un endpoint locale, oppure mettere AI_ALLOW_REMOTE_ENDPOINT=true se il remoto e' voluto.";
         case 'sconosciuto':
             return `provider AI non interrogabile: impossibile dire se '${esito.modello}' esiste (non è una prova che sia sbagliato)`;
         default:

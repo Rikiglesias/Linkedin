@@ -19,15 +19,32 @@ interface OpenAITextRequest {
  * interroga un endpoint vietato dalla policy manderebbe la chiave dove il client non la manda.
  */
 export function isLocalAiEndpoint(baseUrl: string): boolean {
+    return isLoopbackAiHost(baseUrl) || hostnameDi(baseUrl).endsWith('.local');
+}
+
+/**
+ * Loopback STRETTO: la sola macchina corrente. Separato da `isLocalAiEndpoint` perché `.local` è
+ * mDNS, cioè un QUALSIASI host della LAN (`nas.local`) — accettabile per decidere se un endpoint è
+ * "in casa", NON per decidere se spedirgli `Authorization: Bearer`. Distinzione richiesta dal
+ * critico avversariale (F-0d84be2f), che ha fatto notare come questo commit avesse promosso
+ * `isLocalAiEndpoint` a oracolo di sicurezza senza rivalutarne il perimetro.
+ */
+export function isLoopbackAiHost(baseUrl: string): boolean {
+    const host = hostnameDi(baseUrl);
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+}
+
+/**
+ * Hostname normalizzato. 🔴 Le parentesi vanno tolte: `new URL('http://[::1]:11434').hostname`
+ * vale `'[::1]'` (serializzazione host WHATWG), quindi il confronto con `'::1'` era **codice
+ * morto** e un endpoint IPv6 di loopback risultava REMOTO — il client lo rifiutava come se fosse
+ * su internet. Verificato eseguendo `new URL(...)`, non dedotto.
+ */
+function hostnameDi(baseUrl: string): string {
     try {
-        const url = new URL(baseUrl);
-        const host = url.hostname.toLowerCase();
-        if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
-            return true;
-        }
-        return host.endsWith('.local');
+        return new URL(baseUrl).hostname.toLowerCase().replace(/^\[|\]$/g, '');
     } catch {
-        return false;
+        return '';
     }
 }
 

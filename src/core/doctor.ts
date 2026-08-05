@@ -426,7 +426,10 @@ export async function runDoctor(options: RunDoctorOptions = {}): Promise<DoctorR
             disponibili: modelloAi.disponibili,
             // Solo `mancante` è un guasto: `sconosciuto` significa che non l'abbiamo potuto sapere,
             // e trattarlo come colpa è l'errore che il canary dei selettori ha già pagato.
-            warning: modelloAi.stato === 'mancante' ? descriviEsitoModelloAi(modelloAi) : null,
+            warning:
+                modelloAi.stato === 'mancante' || modelloAi.stato === 'bloccato_da_policy'
+                    ? descriviEsitoModelloAi(modelloAi)
+                    : null,
         },
         openIncidents: incidents.length,
     };

@@ -35,6 +35,7 @@ vi.mock('../telemetry/logger', () => ({ logInfo: vi.fn(), logWarn: vi.fn() }));
 vi.mock('../core/integrationPolicy', () => ({ fetchWithRetryPolicy: vi.fn() }));
 
 import { descriviEsitoModelloAi, verificaModelloAi } from '../ai/modelPreflight';
+import { isLocalAiEndpoint, isLoopbackAiHost } from '../ai/openaiClient';
 
 /** Risposta reale di Ollama su `GET /v1/models`, misurata dal vivo (non inventata). */
 function rispostaModelli(ids: string[]): Response {
@@ -165,20 +166,41 @@ describe('preflight del modello AI', () => {
         const fetchSpia = vi.fn();
         vi.stubGlobal('fetch', fetchSpia);
         const esito = await verificaModelloAi();
-        expect(esito.stato).toBe('non_applicabile');
+        // NON `non_applicabile`: lì ogni chiamata AI fallisce, tacere sarebbe il difetto opposto.
+        expect(esito.stato).toBe('bloccato_da_policy');
         expect(esito.motivo).toBe('endpoint_remoto_bloccato_da_policy');
         // È il punto: il client di chat non chiamerebbe (openaiClient.ts:67-73), il preflight nemmeno.
         expect(fetchSpia).not.toHaveBeenCalled();
+        // ...e la condizione DEVE essere detta, non ingoiata (regressione F-b7e2d941).
+        expect(descriviEsitoModelloAi(esito)).toContain('AI_ALLOW_REMOTE_ENDPOINT');
     });
 
-    it('endpoint remoto CONSENTITO dalla policy → il preflight interroga davvero', async () => {
+    it('endpoint remoto CONSENTITO dalla policy → interroga davvero E allega la chiave', async () => {
         configMock.openaiBaseUrl = 'https://api.openai.com/v1';
+        configMock.openaiApiKey = 'chiave-consentita';
         configMock.aiAllowRemoteEndpoint = true;
         configMock.aiModel = 'gpt-5.4';
-        const fetchSpia = vi.fn(async (_url: string) => rispostaModelli(['gpt-5.4', 'gpt-5.4-mini']));
+        const fetchSpia = vi.fn(async (_url: string, _init?: RequestInit) =>
+            rispostaModelli(['gpt-5.4', 'gpt-5.4-mini']),
+        );
         vi.stubGlobal('fetch', fetchSpia);
         expect((await verificaModelloAi()).stato).toBe('ok');
         expect(fetchSpia).toHaveBeenCalledTimes(1);
+        // Senza header il provider cloud risponde 401 → `sconosciuto` PERMANENTE e muto: il test
+        // deve vedere l'header, non solo che la chiamata è partita (F-f60b3d5c).
+        const headers = (fetchSpia.mock.calls[0]?.[1]?.headers ?? {}) as Record<string, string>;
+        expect(headers.authorization).toBe('Bearer chiave-consentita');
+    });
+
+    it('host `.local` (mDNS = un PC qualsiasi della LAN) NON riceve la chiave, anche se conta come locale', async () => {
+        configMock.openaiBaseUrl = 'http://nas.local:11434/v1';
+        configMock.openaiApiKey = 'chiave-che-non-deve-uscire';
+        configMock.aiAllowRemoteEndpoint = false;
+        const fetchSpia = vi.fn(async (_url: string, _init?: RequestInit) => rispostaModelli(['llama3.1:8b']));
+        vi.stubGlobal('fetch', fetchSpia);
+        await verificaModelloAi();
+        const headers = (fetchSpia.mock.calls[0]?.[1]?.headers ?? {}) as Record<string, string>;
+        expect(headers.authorization).toBeUndefined();
     });
 
     it('in green mode il messaggio nomina AI_GREEN_MODEL, non AI_MODEL (altrimenti si corregge la variabile sbagliata)', async () => {
@@ -202,6 +224,25 @@ describe('preflight del modello AI', () => {
         const testo = descriviEsitoModelloAi(await verificaModelloAi());
         expect(testo).toContain('(+15 altri)');
         expect(testo).not.toContain('modello-20');
+    });
+
+    it('IPv6 loopback `[::1]` riconosciuto: `new URL().hostname` tiene le parentesi e il ramo era codice morto', () => {
+        // Misurato: new URL('http://[::1]:11434/v1').hostname === '[::1]', non '::1'.
+        expect(isLoopbackAiHost('http://[::1]:11434/v1')).toBe(true);
+        expect(isLocalAiEndpoint('http://[::1]:11434/v1')).toBe(true);
+    });
+
+    it('confine di sicurezza: loopback stretto ≠ «locale», e nessun suffisso ingannevole passa', () => {
+        expect(isLoopbackAiHost('http://127.0.0.1:11434/v1')).toBe(true);
+        expect(isLoopbackAiHost('http://localhost:11434/v1')).toBe(true);
+        // `.local` è mDNS: «in casa» sì, ma NON è questa macchina ⇒ niente credenziali.
+        expect(isLocalAiEndpoint('http://nas.local:11434/v1')).toBe(true);
+        expect(isLoopbackAiHost('http://nas.local:11434/v1')).toBe(false);
+        // Host che IMITANO il loopback non devono passare né l'uno né l'altro.
+        expect(isLoopbackAiHost('http://127.0.0.1.evil.com/v1')).toBe(false);
+        expect(isLocalAiEndpoint('http://127.0.0.1.evil.com/v1')).toBe(false);
+        expect(isLoopbackAiHost('https://api.openai.com/v1')).toBe(false);
+        expect(isLocalAiEndpoint('non-una-url')).toBe(false);
     });
 
     it('il claim su `ok` resta STRETTO: dice che il nome esiste, non che l’AI funzioni', async () => {
