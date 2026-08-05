@@ -8,8 +8,6 @@ import { logError, logInfo } from '../telemetry/logger';
 // Il payload vive in types/domain.ts coi suoi fratelli, qui era una copia alla lettera.
 import type { EnrichmentJobPayload } from '../types/domain';
 
-export type { EnrichmentJobPayload };
-
 export async function processEnrichmentJob(
     payload: EnrichmentJobPayload,
     context: WorkerContext,

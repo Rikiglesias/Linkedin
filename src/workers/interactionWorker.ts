@@ -20,10 +20,8 @@ import { config, getLocalDateString } from '../config';
 import { getDailyStat, incrementDailyStat } from '../core/repositories/stats';
 import { isBlacklisted } from '../core/repositories/blacklist';
 // Il payload del job vive con i suoi 4 fratelli in types/domain.ts, non qui: era duplicato
-// alla lettera, e 5 payload di job che stanno in 2 posti diversi sono la forma di isLocal*
-// prima che divergesse (zero-O). Ri-esportato perche' registry.ts lo importa da questo modulo.
-export type { InteractionJobPayload } from '../types/domain';
-
+// alla lettera, e 5 payload di job in 2 posti diversi sono la forma di isLocal* prima che
+// divergesse (zero-O). Questo modulo lo IMPORTA e basta, come gli altri 4 worker.
 import type { InteractionJobPayload } from '../types/domain';
 
 // ─── Helpers Interni ────────────────────────────────────────────────────────────
