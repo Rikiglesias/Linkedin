@@ -325,13 +325,10 @@ export function createVisionProvider(overrideConfig?: Partial<VisionProviderConf
     return provider;
 }
 
-/**
- * Resetta il provider cached. Utile per test o cambio config runtime.
- */
-export function resetVisionProvider(): void {
-    _cachedProvider = null;
-    _cachedConfigHash = '';
-}
+// NB: non serve un reset manuale della cache del provider. Il "cambio config runtime" che una
+// resetVisionProvider() prometteva e' gia' gestito da createVisionProvider: confronta
+// configHash(cfg) con _cachedConfigHash e ricrea il provider appena un valore cambia (riga ~217).
+// La funzione non aveva chiamanti, nemmeno nei test.
 
 /**
  * Estrae l'OpenAIVisionProvider dal provider corrente (se disponibile).

@@ -9,7 +9,6 @@
 
 import { Page } from 'playwright';
 import {
-    countOpenSelectorFailuresByActionLabels,
     getDynamicSelectors,
     listDynamicSelectorCandidates,
     recordSelectorFailure,
@@ -623,79 +622,18 @@ export async function clickWithShadowFallback(
 }
 
 // ─── Post-Action Verification ────────────────────────────────────────────────
-
-/**
- * Verifica generica post-azione: controlla che un elemento atteso sia apparso
- * dopo un click (es. modale nota dopo click Connect, textbox dopo click Message).
- * Ritorna true se l'elemento è apparso entro il timeout.
- */
-export async function verifyPostAction(
-    page: Page,
-    expectedSelector: string | readonly string[],
-    timeoutMs: number = 3000,
-): Promise<boolean> {
-    const selectors = typeof expectedSelector === 'string' ? [expectedSelector] : expectedSelector;
-    for (const sel of selectors) {
-        try {
-            await page.locator(sel).first().waitFor({ state: 'visible', timeout: timeoutMs });
-            return true;
-        } catch {
-            continue;
-        }
-    }
-    return false;
-}
+// NB: qui NON vive un helper generico di verifica post-azione. La regola 8 di
+// browser-antiban.md ("ogni azione LinkedIn verifica lo stato prima e dopo") e' rispettata
+// nei worker, ognuno con la forma adatta alla propria azione: inviteWorker.ts:705-768
+// (isVisible + log invite.not_confirmed), messageWorker.ts:374, followUpWorker.ts:255,
+// inboxWorker.ts:118, interactionWorker.ts:118. L'astrazione generica esisteva qui e non
+// l'ha mai adottata nessuno.
 
 // ─── Selector Drift Metrics ─────────────────────────────────────────────────
-
-export interface SelectorDriftReport {
-    label: string;
-    currentFailures: number;
-    previousFailures: number;
-    driftRate: number;
-    drifting: boolean;
-}
-
-/**
- * Calcola il "selector drift" per un insieme di label: quanto i selettori stanno
- * diventando instabili confrontando failure count attuale vs periodo precedente.
- * Un drift rate > 0.5 indica che LinkedIn probabilmente ha cambiato i class name.
- */
-export async function measureSelectorDrift(
-    labels: string[],
-    currentWindowDays: number = 3,
-    previousWindowDays: number = 7,
-): Promise<SelectorDriftReport[]> {
-    const reports: SelectorDriftReport[] = [];
-
-    for (const label of labels) {
-        try {
-            const [currentCount, previousCount] = await Promise.all([
-                countOpenSelectorFailuresByActionLabels([label], currentWindowDays).catch(() => 0),
-                countOpenSelectorFailuresByActionLabels([label], previousWindowDays).catch(() => 0),
-            ]);
-
-            const previousOnly = Math.max(0, previousCount - currentCount);
-            const baseline = Math.max(1, previousOnly);
-            const driftRate = currentCount / baseline;
-
-            reports.push({
-                label,
-                currentFailures: currentCount,
-                previousFailures: previousOnly,
-                driftRate: Number.parseFloat(driftRate.toFixed(3)),
-                drifting: driftRate > 1.5 && currentCount >= 3,
-            });
-        } catch {
-            reports.push({
-                label,
-                currentFailures: 0,
-                previousFailures: 0,
-                driftRate: 0,
-                drifting: false,
-            });
-        }
-    }
-
-    return reports;
-}
+// NB: il "selector drift" NON si misura qui. La domanda "LinkedIn ha cambiato i class name?"
+// ha gia' una risposta viva e COLLEGATA: assessSelectorModelDegradation
+// (selectors/learner.ts:205-215), che sulla stessa fonte dati
+// (countOpenSelectorFailuresByActionLabels) decide il ROLLBACK automatico dei selettori
+// promossi. Qui ne esisteva una seconda implementazione, con soglia diversa (1.5 hardcoded
+// contro degradeRatio configurabile) e mai eseguita: due risposte alla stessa domanda, di cui
+// una non governava nulla.

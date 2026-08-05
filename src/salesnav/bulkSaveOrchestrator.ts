@@ -41,10 +41,13 @@ import { setListFoundInSession } from './bulkSaveState';
 import { clickSelectAll, openSaveToListDialog, chooseTargetList } from './bulkSavePageActions';
 
 // Navigazione SalesNav (waitForManualLogin, navigateToSavedSearches) + costanti SEARCHES_URL e
-// VIEW_SAVED_SEARCH_SELECTOR estratte in bulkSaveNavigation.ts (A13). SEARCHES_URL re-esportata
-// (backward-compat); waitForManualLogin usata ancora internamente (navigateToSavedSearches + preSyncListToDb).
+// VIEW_SAVED_SEARCH_SELECTOR estratte in bulkSaveNavigation.ts (A13). waitForManualLogin usata
+// ancora internamente (navigateToSavedSearches + preSyncListToDb).
+// NB: SEARCHES_URL non e' piu' re-esportata da qui. Il re-export era dichiarato "backward-compat",
+// ma i due consumatori dell'orchestrator (workflows/services/syncSearchService.ts,
+// cli/commands/salesNavCommands.ts) importano solo runSalesNavBulkSave: la compatibilita' non
+// serviva a nessuno, e la costante ha una sola casa (bulkSaveNavigation.ts:18).
 import { waitForManualLogin, navigateToSavedSearches } from './bulkSaveNavigation';
-export { SEARCHES_URL } from './bulkSaveNavigation';
 
 // Discovery ricerche salvate (waitForSearchResultsReady, normalizeSearchName, extractSavedSearches,
 // ensureNoChallenge, verifyVisionSurface, clickSavedSearchView) estratta in bulkSaveSearchDiscovery.ts
@@ -64,10 +67,11 @@ export { extractSavedSearches };
 const _loadHandlerRegistered = new WeakSet<Page>();
 
 // Tipi e ChallengeDetectedError estratti in bulkSaveTypes.ts (A17: split file >1000 righe)
-// Re-export per backward compatibility con consumer esterni
+// Re-export per backward compatibility con consumer esterni.
+// SalesNavBulkSavePageReport tolto dall'elenco: era l'unico che nessuno importava da qui ne'
+// usava nell'orchestrator stesso. La sua casa e' bulkSaveTypes.ts:19.
 export type {
     SalesNavBulkSaveOptions,
-    SalesNavBulkSavePageReport,
     SalesNavBulkSaveSearchReport,
     SalesNavBulkSaveReport,
     SavedSearchDescriptor,

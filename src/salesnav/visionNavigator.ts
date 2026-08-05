@@ -138,10 +138,10 @@ export class OllamaDownError extends Error {
 // Reset per process — useful for observability in long-running sessions.
 let _visionOfflineSkipCount = 0;
 
-/** Returns the number of vision calls skipped due to Vision AI being offline this session. */
-export function getVisionOfflineSkipCount(): number {
-    return _visionOfflineSkipCount;
-}
+// NB: il contatore resta e continua a comparire nei log (`[VISION-H07] ... skip #N`, righe ~433
+// e ~454). Il getter pubblico invece non aveva consumatori: nessuna dashboard, doctor o telemetria
+// lo leggeva. Esporre la metrica e' una capability che oggi non esiste -> proposta tracciata in
+// ~/todos/improvements-proposed.md, non un export che finge di offrirla.
 
 /**
  * H07: Fixed-coordinate fallbacks for common SalesNav buttons.

@@ -5,7 +5,6 @@
  */
 
 import type { Locator, Page } from 'playwright';
-import { humanDelay } from '../browser';
 import {
     ensureVisualCursorOverlay,
     ensureInputBlock,
@@ -189,44 +188,10 @@ export async function safeVisionClick(
     }
 }
 
-/**
- * Navigazione vision-guided: DOM fast-path → Vision AI fallback.
- */
-export async function visionNavigationStep(
-    page: Page,
-    stepName: string,
-    prompt: string,
-    verifyFn: () => Promise<boolean>,
-    _domFallbackSelectors?: string[],
-    dismissFn?: (p: Page) => Promise<void>,
-): Promise<boolean> {
-    // AI-first: prova Vision AI per prima (più umana, clicca dove vede).
-    // Aspetta 2s che la pagina si stabilizzi prima di fare lo screenshot.
-    await page.waitForLoadState('domcontentloaded', { timeout: 10_000 }).catch(() => null);
-    await humanDelay(page, 1_000, 2_000);
-
-    for (let attempt = 1; attempt <= 2; attempt++) {
-        try {
-            console.log(`[AI-NAV] ${stepName}: analizzo screenshot (tentativo ${attempt})...`);
-            await visionClick(page, prompt, { retries: 1 });
-            await page.waitForLoadState('domcontentloaded', { timeout: 15_000 }).catch(() => null);
-            await humanDelay(page, 1_000, 2_000);
-            if (dismissFn) await dismissFn(page);
-
-            if (await verifyFn()) {
-                console.log(`[AI-NAV] ${stepName}: completato con successo via AI`);
-                return true;
-            }
-            console.log(`[AI-NAV] ${stepName}: click AI eseguito ma verifica fallita, riprovo...`);
-        } catch (error) {
-            const msg = error instanceof Error ? error.message : String(error);
-            console.log(`[AI-NAV] ${stepName}: tentativo AI ${attempt} fallito — ${msg}`);
-        }
-        await humanDelay(page, 500, 1_000);
-    }
-
-    return false;
-}
+// NB: la navigazione vision-guided del bot NON passa da un "visionNavigationStep" generico.
+// Il flusso vivo e' smartClick + safeVisionClick (usati da bulkSaveNavigation.ts:214/257).
+// Qui esisteva una terza astrazione con un proprio ciclo di 2 tentativi e i propri humanDelay,
+// senza un solo chiamante: l'unica traccia era un commento nell'orchestrator che la elencava.
 
 /**
  * Cerca nel DOM un elemento visibile il cui testo corrisponde a uno dei pattern.

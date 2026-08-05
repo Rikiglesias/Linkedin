@@ -2174,3 +2174,38 @@ Nessun timing, delay, fingerprint, volume o sessione toccato.
 **RESIDUI DICHIARATI**: 30 export, di cui 5 capability inerti che sono **decisioni** e non rimozioni,
 3 letture GDPR da non toccare, 2 falsi positivi di `globalSetup`, 2 del modulo `frontend/` il cui
 destino è aperto in `active.md:51`.
+
+### Chunk in area anti-ban dei residui C6 — export morti 30 → 23 (stessa sessione)
+
+`/antiban-review` **6/6 SICURO** per l'intero chunk, flag consumato per ogni singolo edit come vuole
+il gate. Rimosso **solo** ciò per cui è stato verificato che **la capability vive altrove**:
+- **`verifyPostAction`** (`browser/uiFallback.ts`) — la regola 8 di `browser-antiban.md` («ogni azione
+  LinkedIn verifica lo stato prima e dopo») è rispettata **in tutti e 5 i worker**, ognuno con la forma
+  adatta alla propria azione: `inviteWorker.ts:705-768`, `messageWorker.ts:374`, `followUpWorker.ts:255`,
+  `inboxWorker.ts:118`, `interactionWorker.ts:118`. L'astrazione generica non l'aveva adottata nessuno.
+  ⚠️ Verificato PRIMA di toccare: se i worker non avessero verificato, questa sarebbe stata la
+  capability mancante e non un duplicato — il verdetto opposto.
+- **`measureSelectorDrift` + `SelectorDriftReport`** — la domanda «LinkedIn ha cambiato i class name?»
+  ha già una risposta viva e **collegata al rollback automatico**: `assessSelectorModelDegradation`
+  (`selectors/learner.ts:205-215`), sulla **stessa** fonte dati. Erano due implementazioni con soglie
+  diverse (1.5 hardcoded contro `degradeRatio` configurabile), di cui una non governava nulla.
+- **`visionNavigationStep`** (`salesnav/bulkSaveHelpers.ts`) — il flusso vision-guided vivo è
+  `smartClick`/`safeVisionClick` (`bulkSaveNavigation.ts:214/257`). Terza astrazione, zero chiamanti:
+  l'unica traccia era un commento dell'orchestrator che la elencava.
+- **`getVisionOfflineSkipCount`** — il contatore H07 resta e continua a comparire nei log
+  (`:404/433/454`): orfano era solo il getter, che nessuna dashboard o telemetria leggeva.
+- **`resetVisionProvider`** — `createVisionProvider:217` confronta già `configHash` e ricrea il
+  provider quando la config cambia: il «cambio config runtime» promesso era già gestito.
+- **`SEARCHES_URL`** e **`SalesNavBulkSavePageReport`** — re-export dichiarati «backward-compat» che
+  nessuno importava (i 2 consumatori dell'orchestrator prendono solo `runSalesNavBulkSave`).
+
+**NON rimossi, sono decisioni**: `clickWithShadowFallback` e 🔴 **`visionContextualDelay`** — quest'ultima
+è **timing anti-ban**: chiede al modello di vision un delay contestuale alla pagina (fallback
+`3000+random*5000`) ed è una **catena morta a due livelli**, perché `suggestContextualDelay`
+(`openaiVisionProvider.ts:233`) è chiamata solo da lei, che non ha chiamanti. Sesta capability inerte.
+
+**VERIFICA**: `tsc` exit 0 · `conta-problemi` **exit 0 REALE — 210 file, 2101 test, 0 skip** ·
+`madge --circular` **0** · export morti **30 → 23**, quadrati col `diff` delle liste (8 spariti:
+i 7 di qui più `CloudJobUpsert`). Due import resi orfani **dalle mie stesse rimozioni**
+(`countOpenSelectorFailuresByActionLabels`, `humanDelay`) puliti, come vuole zero-I.3.
+**Totale sessione: export morti 41 → 23 (−44%).**
