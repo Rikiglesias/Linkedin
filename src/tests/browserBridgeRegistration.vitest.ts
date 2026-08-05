@@ -69,19 +69,28 @@ describe('registrazione dei bridge sull entry point reale (src/browser.ts)', () 
     /**
      * 🔴 L'invariante che mancava, e che ha permesso al difetto di rientrare.
      *
-     * Il test sopra verifica DOVE stanno le registrazioni. Non verifica che il barrel resti fuori
-     * dai percorsi di caricamento — e infatti `linkedinProfileScraper.ts` aveva ripreso a importare
-     * `./index` (commit di lint `0269a87`), rendendo il barrel vivo e le sue tre registrazioni un
-     * SECONDO punto di verità. Nessun sintomo: registrare due volte le stesse funzioni è
-     * idempotente. Ma il commento di `browser.ts:42` che motiva l'intero design («il barrel non è
-     * importato da nessuno») era diventato falso, e nulla poteva segnalarlo.
+     * Il test sopra verifica DOVE stanno le registrazioni. Non verificava che esistesse UN SOLO
+     * entry point del layer: `src/browser/index.ts` era un secondo barrel, irraggiungibile per
+     * costruzione (il file `src/browser.ts` oscura la directory omonima) ma con le stesse tre
+     * registrazioni dentro. `linkedinProfileScraper.ts` aveva ripreso a importarlo via `./index`
+     * (commit di lint `0269a87`), rendendolo vivo e creando un SECONDO punto di verità. Nessun
+     * sintomo — registrare due volte le stesse funzioni è idempotente — mentre il commento di
+     * `browser.ts:42` che motiva l'intero design («il barrel non è importato da nessuno») era
+     * diventato falso e nulla poteva segnalarlo.
      *
-     * Perché è anti-ban e non stile: se un percorso caricasse un modulo di `src/browser/**` senza
-     * passare da `src/browser.ts`, l'unica registrazione superstite sarebbe quella del barrel;
-     * toglierla lascerebbe `callMouseMove` a no-op, cioè click di dismiss senza movimento del
-     * mouse — la firma che il fix del 2026-08-04 aveva eliminato.
+     * Perché è anti-ban e non stile: con due punti di registrazione, chi ne modifica uno lascia
+     * l'altro indietro. Se poi un percorso caricasse un modulo di `src/browser/**` senza passare da
+     * `src/browser.ts`, l'unica registrazione superstite sarebbe quella del barrel; toglierla
+     * lascerebbe `callMouseMove` a no-op, cioè click di dismiss senza movimento del mouse — la
+     * firma che il fix del 2026-08-04 aveva eliminato.
+     *
+     * Il barrel è stato rimosso (C6: zero consumatori). Questi due casi impediscono che torni.
      */
-    test('nessun modulo di src/browser/** importa il barrel ./index', () => {
+    test('il layer browser ha UN SOLO entry point: src/browser/index.ts non esiste', () => {
+        expect(fs.existsSync(path.join(__dirname, '..', 'browser', 'index.ts'))).toBe(false);
+    });
+
+    test('nessun modulo di src/browser/** importa un barrel ./index', () => {
         const dir = path.join(__dirname, '..', 'browser');
         const colpevoli: string[] = [];
 
