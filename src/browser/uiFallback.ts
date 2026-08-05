@@ -17,7 +17,13 @@ import {
 } from '../core/selectorLearning';
 import { humanDelay } from './humanBehavior';
 import { clickCoordinatesHumanLike, clickLocatorHumanLike, humanPointInBox } from './humanClick';
-import { humanKeystrokeDelayMs, humanKeystrokeDwellMs, humanType, premiTastoSpeciale } from './human/humanTyping';
+import {
+    digitaTestoUmano,
+    humanKeystrokeDelayMs,
+    humanKeystrokeDwellMs,
+    humanType,
+    premiTastoSpeciale,
+} from './human/humanTyping';
 import { VisionSolver } from '../captcha/solver';
 
 export interface ClickFallbackOptions {
@@ -504,20 +510,27 @@ export async function typeWithFallback(
             // DWELL (attesa fra down e up), mentre l'intervallo fra i tasti va atteso a parte.
             // Passare humanKeystrokeDelayMs come `delay`, come si faceva prima, lasciava il flight a
             // ~0ms: la zona-bot che quelle costanti dicevano di evitare.
-            for (let j = 0; j < text.length; j++) {
-                if (Math.random() < 0.03 && text.length > 3) {
-                    const wrongChar = String.fromCharCode(97 + Math.floor(Math.random() * 26));
-                    await page.keyboard.type(wrongChar, { delay: humanKeystrokeDwellMs() });
-                    await page.waitForTimeout(humanKeystrokeDelayMs(wrongChar));
-                    await page.waitForTimeout(280 + Math.random() * 420);
-                    await premiTastoSpeciale(page.keyboard, 'Backspace');
-                    await page.waitForTimeout(180 + Math.random() * 250);
-                }
-                const char = text[j] ?? '';
-                await page.keyboard.type(char, { delay: humanKeystrokeDwellMs() });
-                await page.waitForTimeout(humanKeystrokeDelayMs(char));
-                if (Math.random() < 0.04) await humanDelay(page, 400, 1100);
-            }
+            // F-08b7a53c: il ciclo qui chiamava `humanKeystrokeDelayMs(char)` SENZA i moltiplicatori,
+            // mentre il commento di `premiTasto` dice esplicitamente di non ricrearli a parte — il
+            // testo scritto per vision aveva quindi una cadenza diversa da ogni altro campo del bot.
+            // Ora la curva viene da `digitaTestoUmano` (una sola definizione) e il ramo typo la
+            // RICEVE, invece di ricalcolarsene una propria.
+            await digitaTestoUmano(
+                page,
+                (char, dwellMs) => page.keyboard.type(char, { delay: dwellMs }),
+                text,
+                async (lengthSlowFactor, wordMultiplier) => {
+                    if (Math.random() < 0.03 && text.length > 3) {
+                        const wrongChar = String.fromCharCode(97 + Math.floor(Math.random() * 26));
+                        await page.keyboard.type(wrongChar, { delay: humanKeystrokeDwellMs() });
+                        await page.waitForTimeout(humanKeystrokeDelayMs(wrongChar, lengthSlowFactor, wordMultiplier));
+                        await page.waitForTimeout(280 + Math.random() * 420);
+                        await premiTastoSpeciale(page.keyboard, 'Backspace');
+                        await page.waitForTimeout(180 + Math.random() * 250);
+                    }
+                    if (Math.random() < 0.04) await humanDelay(page, 400, 1100);
+                },
+            );
             await trackSelectorSuccess(page, label, 'vision-layer-z');
             return;
         } else {

@@ -121,6 +121,82 @@ export async function premiTastoSpeciale(
     }
 }
 
+/**
+ * Rallentamento per testi lunghi (affaticamento naturale). ESTRATTA da `humanType`, non riscritta:
+ * stessi scaglioni, stessi valori. Esiste perche' ora la stessa cadenza serve anche fuori da
+ * `humanType` (`digitaTestoUmano`, ramo typo di `uiFallback`) e due copie della curva divergerebbero
+ * al primo ritocco — cioe' produrrebbero superfici con ritmi diversi, che e' la firma da evitare.
+ */
+export function fattoreLunghezzaTesto(text: string): number {
+    return text.length <= 30 ? 0.85 : text.length <= 150 ? 1.0 : text.length <= 400 ? 1.15 : 1.3;
+}
+
+/**
+ * Scrive UN carattere sulla superficie di destinazione, tenendolo premuto `dwellMs`.
+ *
+ * E' un callback e non un'interfaccia con un metodo comune perche' le due superfici reali NON hanno
+ * lo stesso metodo: un campo usa `pressSequentially`, la tastiera della pagina usa `type`. La
+ * differenza non e' cosmetica — `keyboard.press(char)` su un carattere accentato solleva
+ * `Unknown key` (verificato il 2026-08-04 su `a` accentata), quindi la scelta del metodo appartiene
+ * al chiamante, che sa su cosa sta scrivendo.
+ */
+export type ScrittoreDiCarattere = (char: string, dwellMs: number) => Promise<void>;
+
+/**
+ * Digita un testo carattere per carattere con dwell e flight SEPARATI, ovunque non ci sia il ciclo
+ * completo di `humanType` (typo, correzioni, distrazioni).
+ *
+ * 🔴 Perche' esiste: tre siti scrivevano con `.type(testo, { delay: 25 + random*20 })`. Quel `delay`
+ * e' il tempo di PRESSIONE e Playwright lo applica IDENTICO a ogni carattere, quindi producevano
+ * insieme le due cose peggiori: un dwell **costante** (una firma) e sotto la soglia dei 50ms (la
+ * zona-bot che il resto del file evita), con flight ~0. Passare qui un `humanKeystrokeDwellMs()`
+ * secco non basterebbe: darebbe di nuovo UNA costante, solo piu' alta. Serve estrarre il dwell a
+ * ogni carattere e attendere il flight a parte — cioe' esattamente questo ciclo.
+ *
+ * I moltiplicatori NON sono opzionali: senza, questa superficie avrebbe una cadenza diversa da ogni
+ * altra del bot (`humanType`), cioe' una discontinuita' misurabile fra i campi della stessa pagina.
+ */
+export async function digitaTestoUmano(
+    page: Page,
+    scriviCarattere: ScrittoreDiCarattere,
+    text: string,
+    /**
+     * Gancio eseguito PRIMA di ogni carattere, con la cadenza corrente gia' calcolata. Esiste per il
+     * ramo typo di `uiFallback`, che deve iniettare un errore + correzione **con gli stessi
+     * moltiplicatori** del testo che lo circonda: senza riceverli, quel ramo ricalcolerebbe una
+     * cadenza propria — cioe' una discontinuita' proprio nei punti in cui l'utente "si corregge"
+     * (F-08b7a53c). Cosi' la curva resta definita in UN solo posto.
+     */
+    primaDiOgniCarattere?: (lengthSlowFactor: number, wordMultiplier: number) => Promise<void>,
+): Promise<void> {
+    const lengthSlowFactor = fattoreLunghezzaTesto(text);
+    const words = text.split(/(?<=\s)|(?=\s)/);
+    let charIndex = 0;
+    let currentWordIdx = 0;
+    let currentWordMultiplier = words.length > 0 ? getWordFlowMultiplier(words[0]) : 1.0;
+
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i] ?? '';
+
+        // Avanzamento del word-flow: copiato da `humanType` perche' e' la stessa cadenza, non una
+        // variante — parole comuni piu' veloci, parole rare piu' lente.
+        charIndex++;
+        if (currentWordIdx < words.length) {
+            const currentWordLen = words[currentWordIdx].length;
+            if (charIndex > currentWordLen && currentWordIdx < words.length - 1) {
+                charIndex = 1;
+                currentWordIdx++;
+                currentWordMultiplier = getWordFlowMultiplier(words[currentWordIdx]);
+            }
+        }
+
+        if (primaDiOgniCarattere) await primaDiOgniCarattere(lengthSlowFactor, currentWordMultiplier);
+
+        await scriviCarattere(char, humanKeystrokeDwellMs());
+        await page.waitForTimeout(humanKeystrokeDelayMs(char, lengthSlowFactor, currentWordMultiplier));
+    }
+}
+
 export interface HumanTypeOptions {
     /**
      * Salta il click di messa a fuoco iniziale, per chi ha GIA' cliccato il campo in modo umano

@@ -20,6 +20,7 @@ import { config } from '../config';
 import { hasLocator, locatorBoundingBox, buildClipAroundLocator, smartClick, safeVisionClick } from './bulkSaveHelpers';
 import { botWheel, humanMouseMoveToCoords } from '../browser/humanBehavior';
 import { visionRead } from './visionNavigator';
+import { premiTastoSpeciale } from '../browser/human/humanTyping';
 import { SALESNAV_NEXT_PAGE_SELECTOR as NEXT_PAGE_SELECTOR } from './selectors';
 import type { ScrollCollectedProfile } from './bulkSaveTypes';
 
@@ -199,7 +200,8 @@ export async function restoreSearchPagePosition(page: Page, targetPageNumber: nu
 
 export async function dismissTransientUi(page: Page): Promise<void> {
     // Chiudi eventuali dialog/popup
-    await page.keyboard.press('Escape').catch(() => null);
+    // Gruppo D: hold umano invece di 0 ms; `.catch` preservato (la dismissal resta innocua).
+    await premiTastoSpeciale(page.keyboard, 'Escape').catch(() => null);
     await page.waitForTimeout(200).catch(() => null);
 
     // Dismiss "Continua nel browser" / mobile app prompt (se presente)

@@ -10,6 +10,7 @@ import {
 import { ensureViewportDwell, computeProfileDwellTime } from '../browser/humanBehavior';
 import { navigateToProfileWithContext } from '../browser/navigationContext';
 import { clickWithFallback } from '../browser/uiFallback';
+import { premiTastoSpeciale } from '../browser/human/humanTyping';
 import {
     checkAndIncrementDailyLimit,
     countWeeklyInvites,
@@ -205,7 +206,8 @@ async function handleInviteModal(
                 variant: generatedNote.variant,
             });
             // Chiudi il modale nota e ricadi su invio senza nota
-            await page.keyboard.press('Escape').catch(() => null);
+            // Gruppo D: hold umano; `.catch` preservato, l'attesa successiva fa da flight.
+            await premiTastoSpeciale(page.keyboard, 'Escape').catch(() => null);
             await humanDelay(page, 300, 600);
             const sendWithoutNote = page.locator(joinSelectors('sendWithoutNote')).first();
             if ((await sendWithoutNote.count()) > 0) {
@@ -708,7 +710,8 @@ export async function processInviteJob(
                 message: 'Modale invito non apparso dopo click Connect — abort',
             });
             // Escape per chiudere eventuali overlay residui
-            await context.session.page.keyboard.press('Escape').catch(() => {});
+            // Gruppo D: hold umano; `.catch` preservato, l'attesa successiva fa da flight.
+            await premiTastoSpeciale(context.session.page.keyboard, 'Escape').catch(() => {});
             await humanDelay(context.session.page, 500, 1000);
             // Compensazione: decrementa invites_sent (il click Connect non ha prodotto un invito reale)
             if (!context.dryRun) await incrementDailyStat(context.localDate, 'invites_sent', -1).catch(() => {});

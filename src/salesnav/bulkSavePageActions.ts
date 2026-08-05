@@ -29,6 +29,7 @@ import {
     SALESNAV_DIALOG_SELECTOR as DIALOG_SELECTOR,
 } from './selectors';
 import { isListFoundInSession, setListFoundInSession } from './bulkSaveState';
+import { digitaTestoUmano, premiTastoSpeciale } from '../browser/human/humanTyping';
 export async function clickSelectAll(page: Page, dryRun: boolean): Promise<void> {
     if (dryRun) return;
 
@@ -490,7 +491,17 @@ export async function chooseTargetList(page: Page, targetListName: string, dryRu
             await humanDelay(page, 150, 300);
             await searchInput.fill('');
             await humanDelay(page, 100, 200);
-            await searchInput.type(targetListName, { delay: 25 + Math.floor(Math.random() * 20) });
+            // F-b93d5f17: `.type(txt, {delay})` applicava lo STESSO valore a ogni carattere (dwell
+            // costante 25-44ms, sotto la zona-bot dei 50ms, flight ~0). `.type` su Locator e' anche
+            // deprecato da Playwright 1.38 in favore di `pressSequentially`.
+            // Il `.catch` cinge il ciclo: il campo e' un typeahead che si RI-RENDERIZZA a ogni
+            // carattere (e' il filtro che la riga sotto sfrutta), quindi un detach a meta' parola e'
+            // possibile — deve degradare sulla ricerca parziale, non far saltare l'intero salvataggio.
+            await digitaTestoUmano(
+                page,
+                (char, dwellMs) => searchInput.pressSequentially(char, { delay: dwellMs }),
+                targetListName,
+            ).catch(() => null);
             await humanDelay(page, 800, 1_200);
 
             // Strict match: exact or starts-with only
@@ -507,7 +518,12 @@ export async function chooseTargetList(page: Page, targetListName: string, dryRu
                 await searchInput.fill('');
                 await humanDelay(page, 100, 200);
                 const partialName = targetListName.substring(0, Math.min(25, targetListName.length));
-                await searchInput.type(partialName, { delay: 30 + Math.floor(Math.random() * 20) });
+                // Stesso rimedio del sito sopra (era 30-49ms costanti, sempre sotto i 50).
+                await digitaTestoUmano(
+                    page,
+                    (char, dwellMs) => searchInput.pressSequentially(char, { delay: dwellMs }),
+                    partialName,
+                ).catch(() => null);
                 await humanDelay(page, 800, 1_200);
                 box = await findVisibleClickTarget(page, [targetListName], dialogContainerSelector, true, true);
                 if (box) {
@@ -595,7 +611,9 @@ export async function chooseTargetList(page: Page, targetListName: string, dryRu
                 );
                 if (attempt < MAX_ATTEMPTS) {
                     console.warn('[CHOOSE LIST] ABORT — chiudo dialog e riprovo...');
-                    await page.keyboard.press('Escape');
+                    // Gruppo D: senza `delay` l'hold era 0 ms. Nessun flight qui — l'attesa
+                    // successiva c'e' gia': aggiungerne una seconda in fila e' meno umano, non piu'.
+                    await premiTastoSpeciale(page.keyboard, 'Escape');
                     await humanDelay(page, 500, 800);
                     // Re-open the dialog
                     const saveBtn = page.locator(SAVE_TO_LIST_SELECTOR).first();
@@ -617,7 +635,9 @@ export async function chooseTargetList(page: Page, targetListName: string, dryRu
                 console.error(`[CHOOSE LIST] ✗ Vision AI: lista "${targetListName}" NON sembra selezionata`);
                 if (attempt < MAX_ATTEMPTS) {
                     console.warn('[CHOOSE LIST] ABORT — chiudo dialog e riprovo...');
-                    await page.keyboard.press('Escape');
+                    // Gruppo D: senza `delay` l'hold era 0 ms. Nessun flight qui — l'attesa
+                    // successiva c'e' gia': aggiungerne una seconda in fila e' meno umano, non piu'.
+                    await premiTastoSpeciale(page.keyboard, 'Escape');
                     await humanDelay(page, 500, 800);
                     const saveBtn = page.locator(SAVE_TO_LIST_SELECTOR).first();
                     if (await hasLocator(saveBtn)) {
@@ -649,7 +669,8 @@ export async function chooseTargetList(page: Page, targetListName: string, dryRu
                 await smartClick(page, confirmBox);
                 await dialogLocator.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => null);
             } else {
-                await page.keyboard.press('Escape');
+                // Gruppo D: hold umano; il flight lo fornisce gia' l'attesa qui sotto.
+                await premiTastoSpeciale(page.keyboard, 'Escape');
                 await humanDelay(page, 300, 500);
                 const stillOpen = await dialogLocator.isVisible().catch(() => false);
                 if (stillOpen) {

@@ -20,6 +20,7 @@
 import { Page } from 'playwright';
 import { simulateHumanReading, humanType, humanDelay, dismissKnownOverlays } from '../browser';
 import { ensureInputBlock } from '../browser/humanBehavior';
+import { premiTastoSpeciale } from '../browser/human/humanTyping';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { config, isWorkingHour } from '../config';
 
@@ -228,7 +229,9 @@ export async function warmupSession(
                 await humanDelay(page, 800, 1500);
                 await searchInput.fill('');
                 await humanDelay(page, 500, 1000);
-                await page.keyboard.press('Escape');
+                // Gruppo D: hold umano. Unico degli 8 senza un'attesa subito dopo — ma non serve
+                // nemmeno qui: il flight e' l'intervallo FRA due tasti, e dopo questo non ce n'e'.
+                await premiTastoSpeciale(page.keyboard, 'Escape');
                 stepsExecuted.push('search');
             }
         }

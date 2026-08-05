@@ -15,7 +15,7 @@ import type { Page } from 'playwright';
 import { config } from '../config';
 import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 import { logInfo, logWarn } from '../telemetry/logger';
-import { premiTastoSpeciale } from '../browser/human/humanTyping';
+import { digitaTestoUmano, premiTastoSpeciale } from '../browser/human/humanTyping';
 import {
     botWheel,
     humanMouseMoveToCoords,
@@ -243,7 +243,15 @@ async function executeAction(page: Page, action: ComputerAction): Promise<void> 
             if (action.text) {
                 await pauseInputBlock(page);
                 try {
-                    await page.keyboard.type(action.text, { delay: 25 + Math.floor(Math.random() * 30) });
+                    // F-b93d5f17: era un dwell COSTANTE di 25-54ms su ogni carattere (zona-bot),
+                    // con flight ~0. Qui si scrive sulla TASTIERA, non su un campo: `keyboard.type`
+                    // e' corretto (non deprecato) e regge i caratteri accentati, che
+                    // `keyboard.press` rifiuterebbe con `Unknown key`.
+                    await digitaTestoUmano(
+                        page,
+                        (char, dwellMs) => page.keyboard.type(char, { delay: dwellMs }),
+                        action.text,
+                    );
                 } finally {
                     await resumeInputBlock(page);
                 }

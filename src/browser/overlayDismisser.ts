@@ -10,6 +10,7 @@
  */
 
 import { Page } from 'playwright';
+import { premiTastoSpeciale } from './human/humanTyping';
 
 // ─── Selectors noti per overlay LinkedIn ─────────────────────────────────────
 
@@ -173,7 +174,9 @@ export async function dismissKnownOverlays(page: Page): Promise<number> {
 
             // Escape key fallback
             if (rule.escFallback) {
-                await page.keyboard.press('Escape').catch(() => null);
+                // Gruppo D: hold umano invece di 0 ms. Il `.catch` resta QUI e non dentro l'helper:
+                // `premiTastoSpeciale` non cattura, e questa dismissal deve restare innocua.
+                await premiTastoSpeciale(page.keyboard, 'Escape').catch(() => null);
                 await page.waitForTimeout(200).catch(() => null);
                 // Verifica se l'overlay è scomparso
                 const stillThere = await page.locator(rule.containerSelector).count();
