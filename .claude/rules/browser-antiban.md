@@ -27,6 +27,7 @@ Si attiva quando l'AI tocca codice browser/sessione/timing/stealth LinkedIn.
 7. **Cookie/session**: non resettare cookie senza motivo. Una volta loggati, mantenere la sessione per le run brevi.
 8. **Azioni sicure con verify pre/post**: ogni azione LinkedIn verifica lo stato prima e dopo (mai click ciechi su esito assunto).
 9. **Monitoring attivo con alert chiari**: ogni nuovo failure mode ha log + alert attivabile (WHAT/WHY/DO), mai silent.
+10. **Ramo-che-decide: dichiara dove cade il DEFAULT** (2026-08-05, da errore reale). Se aggiungi una guardia, un flag o un early-return che decide **se** una capability si usa, verifica e dichiara — con evidenza, risolvendo i default reali e non leggendo il sorgente — **in quale ramo cade la configurazione di default**. Le due risposte da escludere sono «mai» (guardia inutile) e «sempre» (**capability uccisa in silenzio**, zero-Q). Un test che asserisce le *stringhe* del file non distingue i due casi: una guardia che non scatta mai e una che scatta sempre lo superano identiche. Caso reale: una guardia sul viewport sembrava proteggere il fallback vision e invece lo disattivava del tutto, perché `headless` è `false` di default e in non-headless `viewportSize()` è sempre `null` (ledger `verificata-la-rappresentazione-invece-della-cosa`, 2ª occ.).
 
 ## 6 domande pre-codice e pre-merge (obbligatorie — lista UNICA, fonde le ex "5 domande" di AGENTS.md)
 

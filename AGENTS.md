@@ -73,7 +73,7 @@ Regola globale on-demand: `~/.claude/on-demand/model-selection.md` (nudge automa
 Ogni modifica alla codebase del bot deve essere valutata prima di tutto dal punto di vista anti-ban.
 La domanda zero e': "questa modifica puo' farci bannare o farci rilevare da LinkedIn?"
 
-Le **6 domande pre-codice/pre-merge** (lista UNICA) e i **9 principi non negoziabili** vivono in
+Le **6 domande pre-codice/pre-merge** (lista UNICA) e i **10 principi non negoziabili** vivono in
 `.claude/rules/browser-antiban.md` (enforced: `pre-edit-antiban.ps1` blocking + skill `/antiban-review`).
 La domanda zero qui sopra vale per OGNI task del progetto (anche n8n/docs/config che toccano volumi
 o comportamento), non solo per i file nel glob della regola.
