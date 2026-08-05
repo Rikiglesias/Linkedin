@@ -4,6 +4,44 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-08-05 — remediation audit-codebase, blocco 17: il commento che motivava il re-export diceva il falso (`2c2719f`)
+
+**Il residuo dichiarato della chat precedente era un secondo giro del critico avversariale. Eseguito, e
+ha trovato una cosa sola — ma quella giusta.**
+Nel commit `eed65e5` avevo unificato i payload di job in `types/domain.ts` lasciando in due worker un
+re-export di comodo: `interactionWorker.ts` e `enrichmentWorker.ts`. Accanto al primo avevo scritto la
+motivazione: *«Ri-esportato perche' `registry.ts` lo importa da questo modulo»*. **Non è vero**:
+`registry.ts:14-17` importa i payload da `types/domain` e dai due worker prende solo le funzioni
+(`:25-26`); il test `enrichmentWorker.vitest.ts:21` idem. Zero consumatori, e una ragione scritta accanto
+che li faceva sembrare intenzionali.
+
+**Perché nessuno strumento li vedeva.** `ts-prune` non conta un re-export come export morto (non risulta
+«mai importato»), quindi il conteggio «41 → 20» su cui si appoggia il criterio C6 **non li includeva**.
+È un punto cieco della misura, ora dichiarato invece che subìto — e vale come promemoria che un numero
+verde non è una prova di completezza.
+
+**Il gemello, che il critico NON aveva visto.** Cercando altri casi della stessa classe è emerso che anche
+il mio claim di tracciamento era falso: «ora tutti e 5 i payload vengono da `types/domain`» — sono **4 su
+5**. `InboxJobPayload` è definito in `inboxWorker.ts:32` e `registry.ts:95` lo consuma da lì. Quadro reale:
+`types/domain.ts` ne contiene 6, due vivono fuori (`Inbox`, `Hygiene`). Verdetto tenuto **distinto** per i
+due casi invece di uniformare per statistica: `HygieneJobPayload` è usato solo dentro il suo worker e sta
+bene dov'è; `InboxJobPayload` è l'unico davvero incoerente, ed è **tracciato** in
+`~/todos/improvements-proposed.md` invece di essere spostato adesso (zero-I: non è rotto, e ogni edit in
+`src/workers/**` costa un giro di gate).
+
+**Verifiche.** `/antiban-review` **6/6 SICURO** (sola tipizzazione: nessun comportamento browser, timing,
+fingerprint, azione LinkedIn, volume o pattern), flag consumato per singolo file. Prima dell'edit,
+verificato **alla fonte** che `export type` è type-only e cancellato in emissione — `tsconfig.json` non ha
+`isolatedModules` né `verbatimModuleSyntax` e `module` è `CommonJS` ⇒ zero rischio runtime, misurato non
+dedotto. Gate `conta-problemi` exit 0 REALE: **210 file, 2101 test, 0 skip — identici a prima dell'edit**
+(zero-Q: nessuna capability persa, misurata). `madge --circular` **0** su 529 file. Secret-scan 851 file
+tracked + 2 staged, pulito. Push verificato **ahead/behind 0/0**.
+
+**Ri-conteggio del perimetro C6** (`npx ts-prune` eseguito, non ereditato): **263 righe = 243 `used in
+module` + 20 mai importati**. Il binding portava tre numeri diversi per i primi (243/244/245): ora è uno
+solo, misurato. E i 20 residui **quadrano uno a uno** col verdetto già scritto, per area — zero residui
+non verdettati.
+
 ## 2026-08-05 — remediation audit-codebase, blocco 14: il fallback vision cliccava un pixel fisso, e spesso quello sbagliato (`d19109f`)
 
 **Il finding diceva «coordinate fisse = firma». Vero, ma il difetto peggiore era un altro.**
