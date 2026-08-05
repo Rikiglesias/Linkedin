@@ -47,7 +47,16 @@ Regola: nessun punto AI e' chiuso solo perche' compare come `[x]` in una lista. 
 
 ## 📋 Media priorità
 
-5. ~~**A14 — No rollback plan**~~ — COMPLETATO (2026-04-09): `scripts/docker-release.sh` (build/promote/rollback/list), npm scripts `docker:*`, feature flags già in `src/config/featureFlags.ts`
+5. **A14 — rollback plan: metà COMPLETATO, metà FALSO** (corretto 2026-08-05, verificato alla fonte)
+   - ✅ VERO — rollback di **deploy**: `scripts/docker-release.sh` esiste (build/promote/rollback/list)
+     con i 4 npm script `docker:*` (`package.json:83-86`).
+   - 🔴 FALSO — rollback di **feature**: la voce diceva «feature flags già in
+     `src/config/featureFlags.ts`». Il file esiste ma **`isFeatureEnabled` non ha un solo
+     chiamante**: nessuna capability è governata dai flag, che girano tutte hardcoded. Due flag
+     dichiarano perfino `false` su codice attivo (`ai_decision_engine` → `aiDecide` a
+     `inviteWorker.ts:364/436`; `observe_page_context` → `:420`). ⇒ **«disabilitare una feature
+     senza deploy» oggi non si può fare.** Decisione aperta (collegare / rimuovere / ridurre al
+     vero) nel binding `~/todos/audit-codebase.md` § classe D.
 6. **`frontend/`** — decidere se tenere o eliminare (~2500 righe, stato incerto)
 7. **Sentry** — verificare che `src/telemetry/sentry.ts` riceva eventi reali in produzione
 
