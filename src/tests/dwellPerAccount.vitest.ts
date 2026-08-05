@@ -42,8 +42,17 @@ function quotaPiccoMassimo(campioni: number[]): number {
  * La soglia originale era 3: a 0.06 punti dal massimo reale del regime BUONO, quindi rossa a caso
  * ogni tanto (colta dal gate il 2026-08-05). 5 lascia margine da entrambi i lati senza togliere
  * potere discriminante: col clamp il test fallisce comunque, sempre.
+ *
+ * ⚠️ I due numeri sopra valgono per la finestra 62-118 e per il SEME FISSATO qui sotto. La finestra
+ * del dwell dipende dall'account (mediana 75-95 ms): con un seme che la stringe, il picco sale
+ * (~3.2% misurato al seme minimo). Per questo i test seedano esplicitamente invece di ereditare
+ * l'ACCOUNT_ID dell'ambiente — altrimenti la stessa asserzione misurerebbe regimi diversi a ogni
+ * macchina, ed e' il modo in cui si ricrea il rosso intermittente appena chiuso.
  */
 const QUOTA_PICCO_MAX_PCT = 5;
+
+/** Seme fisso dei test di distribuzione: rende la finestra del dwell riproducibile. */
+const SEME_TEST = 'dwell-test@example.com';
 
 describe('F-2f0c7b95 — il clamp creava due picchi, il resampling no', () => {
     const N = 10_000;
@@ -61,6 +70,7 @@ describe('F-2f0c7b95 — il clamp creava due picchi, il resampling no', () => {
     });
 
     it('col resampling nessun singolo valore domina i campioni', () => {
+        impostaSemeAccount(SEME_TEST);
         const campioni = Array.from({ length: N }, () => logNormalDelayMsResampled(85, 0.22, 62, 118));
 
         expect(quotaPiccoMassimo(campioni)).toBeLessThan(QUOTA_PICCO_MAX_PCT);
@@ -70,6 +80,7 @@ describe('F-2f0c7b95 — il clamp creava due picchi, il resampling no', () => {
     });
 
     it('il dwell reale non ha piu' + " picchi ai bordi", () => {
+        impostaSemeAccount(SEME_TEST);
         const campioni = Array.from({ length: N }, () => humanKeystrokeDwellMs());
         expect(quotaPiccoMassimo(campioni)).toBeLessThan(QUOTA_PICCO_MAX_PCT);
     });

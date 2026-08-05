@@ -83,7 +83,7 @@ const ChallengeDetectedError = BulkSaveChallengeDetectedError;
 // isPageClosedError, clampNumber, getSafeMaxSearches, getSafeSessionLimit,
 // getViewButtonLocator, hasLocator, locatorBoundingBox, buildClipFromBox,
 // buildClipAroundLocator, reInjectOverlays, findVisibleClickTarget,
-// smartClick, safeVisionClick, visionNavigationStep
+// smartClick, safeVisionClick
 
 // Azioni pagina (clickSelectAll, openSaveToListDialog, verifyToast, chooseTargetList, etc.)
 // estratte in bulkSavePageActions.ts (A17)

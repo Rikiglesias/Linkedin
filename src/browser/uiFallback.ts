@@ -622,18 +622,23 @@ export async function clickWithShadowFallback(
 }
 
 // ─── Post-Action Verification ────────────────────────────────────────────────
-// NB: qui NON vive un helper generico di verifica post-azione. La regola 8 di
-// browser-antiban.md ("ogni azione LinkedIn verifica lo stato prima e dopo") e' rispettata
-// nei worker, ognuno con la forma adatta alla propria azione: inviteWorker.ts:705-768
-// (isVisible + log invite.not_confirmed), messageWorker.ts:374, followUpWorker.ts:255,
-// inboxWorker.ts:118, interactionWorker.ts:118. L'astrazione generica esisteva qui e non
-// l'ha mai adottata nessuno.
+// NB: qui NON vive un helper generico di verifica post-azione, e nessuno lo usava.
+// Dove la regola 8 di browser-antiban.md ("ogni azione LinkedIn verifica lo stato prima e dopo")
+// e' rispettata, ogni worker la implementa con la forma adatta alla propria azione:
+// inviteWorker.ts:749-768 (delay 2-5s, ri-lettura dello stato, log invite.not_confirmed),
+// messageWorker.ts:374 e followUpWorker.ts:255 (attesa della textbox dopo il click).
+// ⚠️ GAP REALE, tracciato in ~/todos/improvements-proposed.md e NON chiuso qui: sono 3 worker su 5.
+// interactionWorker.ts:118-124 verifica solo PRIMA (isVisible del bottone Like), poi clicca e
+// ritorna senza rileggere aria-pressed; inboxWorker.ts:331-339 clicca Invia e imposta
+// autoReplySent = true sull'esito ASSUNTO. Un like o una risposta che falliscono in silenzio
+// vengono contati come riusciti (ACK != EFFETTO).
 
 // ─── Selector Drift Metrics ─────────────────────────────────────────────────
-// NB: il "selector drift" NON si misura qui. La domanda "LinkedIn ha cambiato i class name?"
-// ha gia' una risposta viva e COLLEGATA: assessSelectorModelDegradation
-// (selectors/learner.ts:205-215), che sulla stessa fonte dati
-// (countOpenSelectorFailuresByActionLabels) decide il ROLLBACK automatico dei selettori
-// promossi. Qui ne esisteva una seconda implementazione, con soglia diversa (1.5 hardcoded
-// contro degradeRatio configurabile) e mai eseguita: due risposte alla stessa domanda, di cui
-// una non governava nulla.
+// NB: il "selector drift" NON si misura qui. La domanda "LinkedIn ha cambiato i class name?" ha
+// gia' una risposta collegata al ROLLBACK automatico: assessSelectorModelDegradation
+// (selectors/learner.ts:205-215), sulla stessa fonte dati
+// (countOpenSelectorFailuresByActionLabels). Qui ne esisteva una seconda implementazione, con
+// soglia diversa (1.5 hardcoded contro degradeRatio configurabile) e senza un solo chiamante.
+// ⚠️ Copertura REALE della risposta viva, da non sopravvalutare: gira solo con
+// !dryRun && autoRollback e solo sulle label promosse dall'ultima run di learning
+// (learner.ts:197-208). Fuori da quel perimetro oggi il drift non lo misura nessuno.

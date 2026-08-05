@@ -5,9 +5,13 @@
  * auditabile e coperto almeno da hook Claude + parity minima Codex.
  */
 
-import { existsSync, readFileSync } from 'fs';
+import { existsSync } from 'fs';
 import { homedir } from 'os';
 import { join, resolve } from 'path';
+// Helper condivisi: questo file ne teneva NOVE copie locali identiche (7 funzioni + 2 interfacce),
+// cioe' proprio la duplicazione che lib/auditCore era stato estratto per chiudere. Riagganciato il
+// 2026-08-05: `eventHasCommand` era la copia locale di `findHookCommand`.
+import { readText, readJson, isRecord, missingSnippets, findHookCommand } from './lib/auditCore';
 
 interface CheckResult {
     area: string;
@@ -16,72 +20,11 @@ interface CheckResult {
     detail: string;
 }
 
-interface HookCommand {
-    command?: unknown;
-}
-
-interface HookEntry {
-    hooks?: unknown;
-}
-
 interface CodexHookConfig {
     hooks?: Record<string, unknown>;
 }
 
 type Scope = 'all' | 'orchestrator' | 'reasoning' | 'hook-coverage' | 'continuation' | 'codex';
-
-function readText(path: string): string | null {
-    if (!existsSync(path)) {
-        return null;
-    }
-    return readFileSync(path, 'utf8');
-}
-
-function readJson<T>(path: string): T | null {
-    const text = readText(path);
-    if (!text) {
-        return null;
-    }
-
-    try {
-        return JSON.parse(text) as T;
-    } catch {
-        return null;
-    }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function missingSnippets(text: string | null, snippets: string[]): string[] {
-    if (!text) {
-        return snippets;
-    }
-    return snippets.filter((snippet) => !text.includes(snippet));
-}
-
-function getHookEntries(settings: Record<string, unknown>, eventName: string): HookEntry[] {
-    const hooks = isRecord(settings.hooks) ? settings.hooks : {};
-    const eventHooks = hooks[eventName];
-    if (!Array.isArray(eventHooks)) {
-        return [];
-    }
-    return eventHooks.filter(isRecord) as HookEntry[];
-}
-
-function getNestedCommands(entry: HookEntry): HookCommand[] {
-    if (!Array.isArray(entry.hooks)) {
-        return [];
-    }
-    return entry.hooks.filter(isRecord) as HookCommand[];
-}
-
-function eventHasCommand(settings: Record<string, unknown>, eventName: string, commandPart: string): boolean {
-    return getHookEntries(settings, eventName).some((entry) =>
-        getNestedCommands(entry).some((hook) => typeof hook.command === 'string' && hook.command.includes(commandPart)),
-    );
-}
 
 function commandFileExists(command: string): boolean {
     const match = command.match(/-File\s+"?([^"\r\n]+?\.ps1)"?/i);
@@ -259,7 +202,7 @@ function checkClaudeHookCoverage(): CheckResult {
     ];
 
     const missing = required
-        .filter(([eventName, commandPart]) => !eventHasCommand(settings, eventName, commandPart))
+        .filter(([eventName, commandPart]) => !findHookCommand(settings, eventName, commandPart))
         .map(([eventName, commandPart]) => `${eventName}:${commandPart}`);
 
     if (missing.length > 0) {
@@ -288,22 +231,34 @@ function checkHookPlanDoc(): CheckResult {
     );
 }
 
+/**
+ * Continuità di sessione.
+ *
+ * 🔴 Corretto il 2026-08-05: questo check puntava a `.claude/CONTINUATION.md`, un file **eliminato
+ * per decisione** il 2026-06-07 (AGENTS.md § "Cambio chat e continuita'": CONTINUATION /
+ * SESSION_HANDOFF / SESSION_PROMPT rimossi, la continuità è UN solo sistema = LASTCHAT).
+ * Verificava quindi un file che non può esistere: `[FAIL]` permanente, cioè rumore che maschera i
+ * fallimenti veri — e un audit che si ignora non è un audit. Ora guarda il sistema VIVO, il
+ * lastchat per-progetto `~/.claude/lastchat/<slug-del-cwd>.md`, con le sezioni del suo formato.
+ */
 function checkContinuationCompleteness(): CheckResult {
-    const path = resolve('.claude', 'CONTINUATION.md');
+    const slug = process.cwd().replace(/[^A-Za-z0-9]/g, '-');
+    const path = join(homedir(), '.claude', 'lastchat', `${slug}.md`);
     const text = readText(path);
-    const required = [
-        '## PROBLEMA CHE STAVAMO RISOLVENDO',
-        '## COSA E STATO COMPLETATO',
-        '## DECISIONI CHIAVE',
-        '## DA NON RIPETERE',
-        '## STATO TECNICO ESATTO',
-        '## PROSSIMO PASSO ESATTO',
-        '## CORREZIONI UTENTE QUESTA SESSIONE',
-        '## TASK APERTI',
-    ];
+    const required = ['## Obiettivo', '## Stato corrente', '## Prossimi passi', '## Ripresa'];
+
+    // File assente e file incompleto sono due guasti diversi e hanno due rimedi diversi: dirlo.
+    if (text === null) {
+        return {
+            area: 'Continuation',
+            name: 'Lastchat del progetto completo',
+            passed: false,
+            detail: `${path} non esiste: questo progetto non ha ancora un ponte di continuita'. Rimedio: lancia \`/lastchat save\`.`,
+        };
+    }
 
     const missing = missingSnippets(text, required);
-    const hasPlaceholder = text?.includes('TODO: [AI:') ?? true;
+    const hasPlaceholder = text.includes('TODO: [AI:');
     if (missing.length > 0 || hasPlaceholder) {
         const details = [...missing];
         if (hasPlaceholder) {
@@ -311,17 +266,17 @@ function checkContinuationCompleteness(): CheckResult {
         }
         return {
             area: 'Continuation',
-            name: 'Continuation non contiene placeholder',
+            name: 'Lastchat del progetto completo',
             passed: false,
-            detail: `${path} incompleto. ${details.join(' | ')}`,
+            detail: `${path} incompleto. Mancano: ${details.join(' | ')}. Rimedio: rilancia \`/lastchat save\`.`,
         };
     }
 
     return {
         area: 'Continuation',
-        name: 'Continuation non contiene placeholder',
+        name: 'Lastchat del progetto completo',
         passed: true,
-        detail: 'Continuation ha sezioni minime e nessun placeholder AI.',
+        detail: `${path} ha le sezioni minime e nessun placeholder AI.`,
     };
 }
 

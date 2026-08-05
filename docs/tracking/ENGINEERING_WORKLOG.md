@@ -2209,3 +2209,49 @@ il gate. Rimosso **solo** ciò per cui è stato verificato che **la capability v
 i 7 di qui più `CloudJobUpsert`). Due import resi orfani **dalle mie stesse rimozioni**
 (`countOpenSelectorFailuresByActionLabels`, `humanDelay`) puliti, come vuole zero-I.3.
 **Totale sessione: export morti 41 → 23 (−44%).**
+
+### 🔴 Critico avversariale sul verdetto C6 — 6 finding, 6 affrontati (stessa sessione)
+
+Spawnato `completeness-critic` (richiesto dallo Stop-gate, saltato nelle 2 sessioni precedenti).
+**Ha trovato un mio claim FALSO, ed era della classe che questo goal esiste per chiudere.**
+
+- 🔴 **F-7c1f4a92 (high) — «tutti e 5 i worker verificano post-azione» ERA FALSO.** Avevo letto il
+  grep, non il comportamento: `interactionWorker.ts:118` è `isVisible()` **prima** del click (poi
+  clicca e ritorna senza rileggere `aria-pressed`), `inboxWorker.ts:337` imposta
+  `autoReplySent = true` **sull'esito assunto**. Verificano **3 su 5** (invite, message, followUp).
+  ⇒ È ACK ≠ EFFETTO, la classe #8 del mio ledger, commessa mentre la citavo. Corretto il commento in
+  `uiFallback.ts`, il worklog e il binding; il **gap reale** (like e auto-reply contati come riusciti
+  anche quando falliscono) è ora tracciato in `improvements-proposed.md` — tocca il comportamento su
+  LinkedIn, quindi è una decisione, non una patch.
+- **F-5a83c1ee → ha ROVESCIATO una mia rimozione.** Avevo tolto `findHookCommand` da `auditCore`
+  giustificandolo con «findHookCommandParts resta, ed è usata»: **anche quella era falsa** (zero
+  consumatori, ancora in lista ts-prune). E rimuovendo `findHookCommandParts` sono emersi
+  `getHookEntries`/`getNestedCommands` — stavo smontando pezzo per pezzo una libreria condivisa.
+  Il verdetto giusto è quello applicato a `CampaignRunRecord`: **non era morta, le mancava il
+  consumatore**. `aiReasoningHardeningAudit.ts` teneva **NOVE copie locali** degli helper (7 funzioni
+  + 2 interfacce), incluso `eventHasCommand` = `findHookCommand`. ⇒ Funzioni **ripristinate**, il
+  consumatore **agganciato** alla libreria: chiusa la duplicazione vera e riallineata la copia
+  `AI-Control-Plane/06-audit` (che `findHookCommand` la usa già). Prova comportamentale: l'audit
+  gira e «Copertura semantica hook Claude» resta `[OK]`.
+- **F-3e9b0d41 / F-b2d47f06** — riferimenti rimasti a codice rimosso: il commento
+  `bulkSaveOrchestrator.ts:86` citava ancora `visionNavigationStep`, e
+  `docs/research/LINKEDIN_STUDY_2026.md:109` indicava `uiFallback.measureSelectorDrift` come
+  early-warning anti-ban. Corretti entrambi, col perimetro reale della difesa viva.
+- **F-9d2e6b57** — il mio commento presentava `assessSelectorModelDegradation` come sostituto
+  incondizionato: gira solo con `!dryRun && autoRollback` e solo sulle label promosse dall'ultima
+  run. Qualificato.
+- **F-c48a15b3** — i due test di distribuzione non fissavano il seme, mentre la finestra del dwell
+  dipende dall'account: i numeri «2.64-2.94%» valevano per un seme solo. Seme ora fissato
+  (`SEME_TEST`), con la ragione scritta.
+
+**BONUS trovato eseguendo l'audit dal vivo** (zero-K: esercitare il comportamento, non solo
+compilare): `checkContinuationCompleteness` verificava `.claude/CONTINUATION.md`, file **eliminato
+per decisione** il 2026-06-07 ⇒ `[FAIL]` permanente da mesi, cioè rumore che maschera i fallimenti
+veri. **Ripuntato al sistema vivo** (lastchat per-progetto) invece di cancellarlo, con messaggi che
+distinguono «file assente» da «incompleto» e dicono il rimedio. Isolato con `git stash`: 7/8 identico
+su HEAD pulito ⇒ pre-esistente. **Rosso di controllo**: nascondendo il lastchat il check torna `[FAIL]`
+(7/8), col file `[OK]` (8/8) ⇒ non è una guardia cieca. File ripristinato e verificato identico
+(262 righe, `diff` vuoto).
+
+**VERIFICA**: `tsc` 0 · `conta-problemi` **exit 0 REALE — 210 file, 2101 test, 0 skip** ·
+`madge` 0 · `audit:ai-reasoning-hardening` **8/8, exit 0** (era 7/8) · export morti **23**.
