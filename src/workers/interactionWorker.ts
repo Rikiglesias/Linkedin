@@ -19,9 +19,11 @@ import { ChallengeDetectedError, RetryableWorkerError } from './errors';
 import { config, getLocalDateString } from '../config';
 import { getDailyStat, incrementDailyStat } from '../core/repositories/stats';
 import { isBlacklisted } from '../core/repositories/blacklist';
-// Il payload del job vive con i suoi 4 fratelli in types/domain.ts, non qui: era duplicato
-// alla lettera, e 5 payload di job in 2 posti diversi sono la forma di isLocal* prima che
-// divergesse (zero-O). Questo modulo lo IMPORTA e basta, come gli altri 4 worker.
+// Il payload del job vive in types/domain.ts insieme agli altri payload di job, non qui: era
+// duplicato alla lettera, e lo stesso tipo definito in due posti e' la forma di isLocal* prima
+// che divergesse (zero-O). Questo modulo lo IMPORTA e basta, non lo ri-esporta.
+// NB: niente conteggi in questo commento — un numero scritto qui invecchia da solo e diventa
+// l'affermazione falsa che questo stesso commento e' nato per togliere.
 import type { InteractionJobPayload } from '../types/domain';
 
 // ─── Helpers Interni ────────────────────────────────────────────────────────────
