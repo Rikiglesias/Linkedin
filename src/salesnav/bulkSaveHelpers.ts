@@ -15,6 +15,7 @@ import {
     pulseVisualCursorOverlay,
 } from '../browser/humanBehavior';
 import { visionClick, type VisionRegionClip } from './visionNavigator';
+import { dimensioniFinestra } from '../browser/viewport';
 
 /**
  * Per-Page state: quando true per una data Page, reInjectOverlays skippa tutti gli overlay.
@@ -92,12 +93,23 @@ export async function locatorBoundingBox(
     }
 }
 
-export function buildClipFromBox(
+/**
+ * FASE 4: il clip viene CLAMPATO dentro la finestra, quindi con una misura inventata il ritaglio
+ * mandato al modello di vision e' sbagliato in modo silenzioso — su una finestra piu' grande di
+ * 1280x800 tutto cio' che sta oltre quel bordo veniva tagliato via, e l'elemento da cliccare poteva
+ * finire fuori dall'immagine. Dimensioni ignote ⇒ nessun clip (`undefined`): si guarda lo screenshot
+ * intero, che e' sempre coerente con se stesso.
+ *
+ * E' `async` per questo: unico chiamante `buildClipAroundLocator`, gia' async, e i suoi caller
+ * gestiscono gia' `undefined` — il contratto verso l'esterno non cambia.
+ */
+export async function buildClipFromBox(
     page: Page,
     box: { x: number; y: number; width: number; height: number },
     padding: { top: number; right: number; bottom: number; left: number },
-): VisionRegionClip {
-    const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
+): Promise<VisionRegionClip | undefined> {
+    const viewport = await dimensioniFinestra(page);
+    if (!viewport) return undefined;
     const x = clampNumber(Math.floor(box.x - padding.left), 0, viewport.width);
     const y = clampNumber(Math.floor(box.y - padding.top), 0, viewport.height);
     const maxWidth = viewport.width - x;
