@@ -56,16 +56,77 @@ function isBlockedIpv4(ip: string): boolean {
     return false;
 }
 
-function isBlockedIpv6(ip: string): boolean {
-    if (ip === '::' || ip === '::1') return true; // unspecified + loopback
-    // IPv4-mapped (::ffff:a.b.c.d) → valida l'IPv4 sottostante
-    const mapped = ip.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
-    if (mapped) return isBlockedIpv4(mapped[1]);
-    const head = ip.split(':')[0];
-    if (head.startsWith('fe8') || head.startsWith('fe9') || head.startsWith('fea') || head.startsWith('feb')) {
-        return true; // fe80::/10 link-local
+/**
+ * Espande un IPv6 nei suoi 8 gruppi da 16 bit, `null` se non interpretabile.
+ * Serve perché il confronto su STRINGA è inaffidabile: lo stesso indirizzo ha molte scritture
+ * legali (`::ffff:127.0.0.1`, `::ffff:7f00:1`, `0:0:0:0:0:ffff:7f00:1`) e i parser non producono
+ * quella che il codice si aspetta — è così che nasceva il bypass. Sui numeri l'ambiguità sparisce.
+ */
+function espandiIpv6(ip: string): number[] | null {
+    let resto = ip;
+    const codaV4: number[] = [];
+    // Forma mista: gli ultimi 32 bit scritti come IPv4 (`::ffff:1.2.3.4`).
+    const mista = resto.match(/^(.*:)(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+    if (mista) {
+        const ottetti = mista[2].split('.').map(Number);
+        if (ottetti.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return null;
+        codaV4.push((ottetti[0] << 8) | ottetti[1], (ottetti[2] << 8) | ottetti[3]);
+        resto = mista[1].replace(/:$/, '');
     }
-    if (head.startsWith('fc') || head.startsWith('fd')) return true; // fc00::/7 ULA
+    const parti = resto.split('::');
+    if (parti.length > 2) return null;
+    const aGruppi = (s: string): number[] =>
+        s.length === 0 ? [] : s.split(':').map((g) => (/^[0-9a-f]{1,4}$/.test(g) ? parseInt(g, 16) : NaN));
+    const testa = aGruppi(parti[0]);
+    const coda = parti.length === 2 ? aGruppi(parti[1]) : [];
+    const noti = [...testa, ...coda, ...codaV4];
+    if (noti.some((n) => Number.isNaN(n))) return null;
+    if (parti.length === 1) return noti.length === 8 ? noti : null;
+    const mancanti = 8 - noti.length;
+    if (mancanti < 0) return null;
+    return [...testa, ...new Array<number>(mancanti).fill(0), ...coda, ...codaV4];
+}
+
+/**
+ * IPv4 trasportato da un meccanismo di transizione IPv6, `null` se l'indirizzo non ne trasporta.
+ *
+ * 🔴 Ogni meccanismo di transizione incapsula un IPv4: chi non lo decodifica ha una blocklist che
+ * "dimentica IPv6". È la classe di CVE 2025-2026 di `ip-address` (CVE-2026-54272),
+ * `is-localhost-ip` (CVE-2025-9960), twenty-server (GHSA-vrcj-hv2q-c58m) per l'IPv4-mapped, e di
+ * MCP Registry (CVE-2026-44430) / pydantic-ai (GHSA-cg7w-rg45-pc59) per 6to4 e NAT64.
+ */
+function ipv4Incapsulato(g: number[]): string | null {
+    const daCoppia = (alto: number, basso: number): string =>
+        `${alto >> 8}.${alto & 0xff}.${basso >> 8}.${basso & 0xff}`;
+    const primi80Zero = g[0] === 0 && g[1] === 0 && g[2] === 0 && g[3] === 0 && g[4] === 0;
+    // ::ffff:0:0/96 IPv4-mapped · ::/96 IPv4-compatible (deprecato, difesa in profondità).
+    // `::` e `::1` ricadono qui come 0.0.0.0 / 0.0.0.1, entrambi bloccati da isBlockedIpv4.
+    if (primi80Zero && (g[5] === 0xffff || g[5] === 0)) return daCoppia(g[6], g[7]);
+    // 2002::/16 6to4: i 32 bit dopo il prefisso SONO l'IPv4 (2002:a9fe:a9fe:: = 169.254.169.254).
+    if (g[0] === 0x2002) return daCoppia(g[1], g[2]);
+    // 64:ff9b::/96 NAT64 well-known (RFC 6052).
+    if (g[0] === 0x0064 && g[1] === 0xff9b && g[2] === 0 && g[3] === 0 && g[4] === 0 && g[5] === 0) {
+        return daCoppia(g[6], g[7]);
+    }
+    return null;
+}
+
+function isBlockedIpv6(ip: string): boolean {
+    const g = espandiIpv6(ip);
+    if (!g) return true; // non interpretabile → blocca per sicurezza, come per l'IPv4 malformato
+
+    const v4 = ipv4Incapsulato(g);
+    if (v4 !== null) return isBlockedIpv4(v4);
+
+    // 64:ff9b:1::/48 (RFC 8215) è per definizione local-use: nessun servizio pubblico legittimo
+    // ci vive, e la codifica dell'IPv4 varia con la lunghezza del prefisso ⇒ si blocca il blocco.
+    if (g[0] === 0x0064 && g[1] === 0xff9b && g[2] === 0x0001) return true;
+    // Teredo 2001:0::/32: deprecato, incapsula IPv4 offuscato ⇒ blocco del prefisso.
+    if (g[0] === 0x2001 && g[1] === 0x0000) return true;
+
+    if ((g[0] & 0xffc0) === 0xfe80) return true; // fe80::/10 link-local
+    if ((g[0] & 0xfe00) === 0xfc00) return true; // fc00::/7 ULA
+    if ((g[0] & 0xffc0) === 0xfec0) return true; // fec0::/10 site-local (deprecato)
     return false;
 }
 
