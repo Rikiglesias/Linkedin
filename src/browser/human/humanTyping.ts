@@ -89,6 +89,38 @@ async function premiTasto(
     await page.waitForTimeout(humanKeystrokeDelayMs(char, lengthSlowFactor, wordMultiplier));
 }
 
+/**
+ * Qualunque cosa sappia premere un tasto: `Locator` e `page.keyboard` hanno entrambi questa firma,
+ * quindi l'helper vale sia dentro un campo di testo sia sulla tastiera della pagina.
+ */
+interface TastoPremibile {
+    press(key: string, options?: { delay?: number }): Promise<void>;
+}
+
+/**
+ * Preme un tasto NON-carattere (Backspace, Delete, Escape, Control+A, frecce) con un tempo di
+ * pressione umano.
+ *
+ * 🔴 Perche' esiste: `premiTasto` qui sopra cura dwell e flight, ma **solo per i caratteri**. Tutti
+ * i tasti speciali passavano da `press(key)` nudo, che in Playwright significa `down` e `up` senza
+ * attesa in mezzo ⇒ hold time **0 ms**. Dopo che i caratteri normali sono stati portati a 62-118 ms
+ * (`01e7e23`), il contrasto e' diventato piu' netto di prima del fix: nella stessa sequenza di tasti
+ * convivono pressioni umane e pressioni istantanee, che nessun dito puo' produrre.
+ *
+ * Il flight successivo si chiede passando `page`: fra due tasti speciali consecutivi (es. `Control+A`
+ * poi `Delete`) un intervallo ~0 e' improbabile quanto il dwell ~0.
+ */
+export async function premiTastoSpeciale(
+    target: TastoPremibile,
+    key: string,
+    opzioni?: { page?: Page },
+): Promise<void> {
+    await target.press(key, { delay: humanKeystrokeDwellMs() });
+    if (opzioni?.page) {
+        await opzioni.page.waitForTimeout(humanKeystrokeDelayMs(key));
+    }
+}
+
 export interface HumanTypeOptions {
     /**
      * Salta il click di messa a fuoco iniziale, per chi ha GIA' cliccato il campo in modo umano

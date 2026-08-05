@@ -9,6 +9,7 @@ import {
     simulateHumanReading,
     typeWithFallback,
 } from '../browser';
+import { premiTastoSpeciale } from '../browser/human/humanTyping';
 import { isValidLeadTransition, transitionLead } from '../core/leadStateService';
 import { isBlacklisted } from '../core/repositories/blacklist';
 import {
@@ -393,8 +394,15 @@ export async function processMessageJob(
             await clickLocatorHumanLike(context.session.page, textbox, {
                 selectorForDwell: joinSelectors('messageTextbox'),
             });
-            await context.session.page.keyboard.press('Control+A');
-            await context.session.page.keyboard.press('Delete');
+            // Tempo di pressione umano anche sui tasti speciali: `press()` nudo tiene il tasto
+            // 0 ms, e qui succede sulla textbox del messaggio subito PRIMA del typing umanizzato
+            // (62-118 ms per carattere) — due cadenze incompatibili nella stessa sequenza.
+            await premiTastoSpeciale(context.session.page.keyboard, 'Control+A', {
+                page: context.session.page,
+            });
+            await premiTastoSpeciale(context.session.page.keyboard, 'Delete', {
+                page: context.session.page,
+            });
             await humanDelay(context.session.page, 200, 400);
         }
     } catch (draftErr) {
