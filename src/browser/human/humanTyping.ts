@@ -190,7 +190,7 @@ export async function humanType(
             if (correctionStyle < 0.55) {
                 // Stile 1 (55%): Backspace singolo + retype (classico)
                 await page.waitForTimeout(280 + Math.random() * 420);
-                await element.press('Backspace');
+                await premiTastoSpeciale(element, 'Backspace');
                 await page.waitForTimeout(180 + Math.random() * 250);
                 await premiTasto(page, element, originalChar, lengthSlowFactor, currentWordMultiplier);
             } else if (correctionStyle < 0.75) {
@@ -198,7 +198,7 @@ export async function humanType(
                 const charsBack = Math.min(i, 1 + Math.floor(Math.random() * 2));
                 await page.waitForTimeout(350 + Math.random() * 500);
                 for (let b = 0; b <= charsBack; b++) {
-                    await element.press('Backspace');
+                    await premiTastoSpeciale(element, 'Backspace');
                     await page.waitForTimeout(60 + Math.random() * 80);
                 }
                 await page.waitForTimeout(200 + Math.random() * 300);
@@ -213,7 +213,7 @@ export async function humanType(
                 // Stile 4 (10%): Seleziona char sbagliato + sovrascrive (Shift+Left → type)
                 await page.waitForTimeout(300 + Math.random() * 400);
                 await page.keyboard.down('Shift');
-                await element.press('ArrowLeft');
+                await premiTastoSpeciale(element, 'ArrowLeft');
                 await page.keyboard.up('Shift');
                 await page.waitForTimeout(100 + Math.random() * 150);
                 await premiTasto(page, element, originalChar, lengthSlowFactor, currentWordMultiplier);
@@ -235,7 +235,7 @@ export async function humanType(
                 // Tipo 2: Correzione riflessiva — cancella e riscrive ultimi 2-3 char
                 const charsToRetype = Math.min(i, 2 + Math.floor(Math.random() * 2));
                 for (let b = 0; b < charsToRetype; b++) {
-                    await element.press('Backspace');
+                    await premiTastoSpeciale(element, 'Backspace');
                     await page.waitForTimeout(80 + Math.random() * 120);
                 }
                 await page.waitForTimeout(400 + Math.random() * 600);

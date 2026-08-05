@@ -17,7 +17,7 @@ import {
 } from '../core/selectorLearning';
 import { humanDelay } from './humanBehavior';
 import { clickCoordinatesHumanLike, clickLocatorHumanLike, humanPointInBox } from './humanClick';
-import { humanKeystrokeDelayMs, humanKeystrokeDwellMs, humanType } from './human/humanTyping';
+import { humanKeystrokeDelayMs, humanKeystrokeDwellMs, humanType, premiTastoSpeciale } from './human/humanTyping';
 import { VisionSolver } from '../captcha/solver';
 
 export interface ClickFallbackOptions {
@@ -510,7 +510,7 @@ export async function typeWithFallback(
                     await page.keyboard.type(wrongChar, { delay: humanKeystrokeDwellMs() });
                     await page.waitForTimeout(humanKeystrokeDelayMs(wrongChar));
                     await page.waitForTimeout(280 + Math.random() * 420);
-                    await page.keyboard.press('Backspace');
+                    await premiTastoSpeciale(page.keyboard, 'Backspace');
                     await page.waitForTimeout(180 + Math.random() * 250);
                 }
                 const char = text[j] ?? '';
