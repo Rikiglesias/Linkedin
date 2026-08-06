@@ -69,6 +69,7 @@ export async function updateCloudAccountHealth(
     const { error } = await sb.from('accounts').update(patch).eq('id', accountId);
     if (error) {
         await logWarn('cloud.accounts.health.update.error', { accountId, error: error.message });
+        throw new Error(`cloud.accounts.health.update failed: ${error.message}`);
     }
 }
 
@@ -78,7 +79,14 @@ export async function updateCloudAccountHealth(
 
 /**
  * Upserta un lead nel cloud. linkedin_url è la chiave di conflitto.
- * Non-bloccante: errori sono loggati ma non propagati.
+ *
+ * CONTRATTO (vale per tutte le funzioni di scrittura di questo modulo): un fallimento della
+ * scrittura viene LOGGATO e PROPAGATO. Non è la funzione a decidere di ignorarlo — lo decide
+ * il chiamante, che è già attrezzato: `cloudBridge` la invoca fire-and-forget e nel `.catch`
+ * deposita l'evento in outbox, e `applyOutboxOperation` misura il successo del drain proprio
+ * sull'assenza di eccezione (`supabaseSyncWorker.ts:209` dentro `executeWithRetryPolicy`).
+ * Se qui si inghiottisse l'errore, quei due meccanismi crederebbero riuscito ciò che non lo è.
+ * Client assente (`getClient()` → null) NON è un errore: è il sink cloud spento, quindi no-op.
  */
 export async function upsertCloudLead(lead: CloudLeadUpsert): Promise<void> {
     const sb = getClient();
@@ -89,6 +97,7 @@ export async function upsertCloudLead(lead: CloudLeadUpsert): Promise<void> {
         .upsert({ ...lead, updated_at: new Date().toISOString() }, { onConflict: 'linkedin_url' });
     if (error) {
         await logWarn('cloud.leads.upsert.error', { linkedinUrl: lead.linkedin_url, error: error.message });
+        throw new Error(`cloud.leads.upsert failed: ${error.message}`);
     }
 }
 
@@ -113,6 +122,7 @@ export async function updateCloudLeadStatus(
     const { error } = await sb.from('leads').update(record).eq('linkedin_url', linkedinUrl);
     if (error) {
         await logWarn('cloud.leads.status.update.error', { linkedinUrl, status, error: error.message });
+        throw new Error(`cloud.leads.status.update failed: ${error.message}`);
     }
 }
 
@@ -168,13 +178,27 @@ export async function incrementCloudDailyStat(opts: CloudDailyStatIncrement): Pr
     });
     if (error) {
         const MAX_RETRIES = 2;
+        let lastError = error.message;
+        let recovered = false;
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-            const { data } = await sb
+            // La SELECT non è opzionale: `current` diventa la BASE della riscrittura. Se fallisce e
+            // si prosegue col default 0, l'upsert scrive `0 + amount` e AZZERA il contatore reale —
+            // un errore di lettura si trasformerebbe in perdita di dato. PGRST116 (0 righe) è invece
+            // il caso legittimo "prima scrittura del giorno" → base 0 corretta.
+            const { data, error: selectErr } = await sb
                 .from('daily_stats_cloud')
                 .select(opts.field)
                 .eq('local_date', opts.local_date)
                 .eq('account_id', opts.account_id)
-                .single();
+                .maybeSingle();
+            if (selectErr) {
+                lastError = `read-modify-write: select failed: ${selectErr.message}`;
+                if (attempt < MAX_RETRIES) {
+                    await new Promise((r) => setTimeout(r, 50 + Math.random() * 150));
+                    continue;
+                }
+                break;
+            }
             const current = (data as Record<string, number> | null)?.[opts.field] ?? 0;
             const { error: upsertErr } = await sb.from('daily_stats_cloud').upsert(
                 {
@@ -185,10 +209,22 @@ export async function incrementCloudDailyStat(opts: CloudDailyStatIncrement): Pr
                 },
                 { onConflict: 'local_date,account_id' },
             );
-            if (!upsertErr) break;
+            if (!upsertErr) {
+                recovered = true;
+                break;
+            }
+            lastError = `read-modify-write: upsert failed: ${upsertErr.message}`;
             if (attempt < MAX_RETRIES) {
                 await new Promise((r) => setTimeout(r, 50 + Math.random() * 150));
             }
+        }
+        if (!recovered) {
+            await logWarn('cloud.daily_stat.increment.error', {
+                accountId: opts.account_id,
+                field: opts.field,
+                error: lastError,
+            });
+            throw new Error(`cloud.daily_stat.increment failed: ${lastError}`);
         }
     }
 }

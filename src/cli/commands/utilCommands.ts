@@ -321,7 +321,16 @@ async function saveDeepEnrichment(leadId: number, result: PersonDataResult): Pro
             if (bestPhone) cloudPatch.phone = lead.phone || bestPhone;
             if (bestEmail) cloudPatch.email = lead.email || bestEmail;
             if (result.overallConfidence > 0) cloudPatch.confidence_score = result.overallConfidence;
-            void updateCloudLeadStatus(lead.linkedin_url, lead.status ?? 'NEW', cloudPatch);
+            // `updateCloudLeadStatus` PROPAGA i fallimenti (contratto in supabaseDataClient.ts).
+            // Qui la replica cloud è accessoria a un comando CLI già riuscito in locale, quindi resta
+            // fire-and-forget — ma il `.catch` non è opzionale: senza, sarebbe unhandled rejection.
+            void updateCloudLeadStatus(lead.linkedin_url, lead.status ?? 'NEW', cloudPatch).catch(
+                (err: unknown) => {
+                    console.warn(
+                        `[ENRICH] replica cloud non riuscita: ${err instanceof Error ? err.message : String(err)}`,
+                    );
+                },
+            );
         }
     }
 }
