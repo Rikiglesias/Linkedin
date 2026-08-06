@@ -11,6 +11,38 @@ interface PreflightCheck {
     detail: string;
 }
 
+/**
+ * Le DUE chiavi che descrivono lo stesso server Ollama puntano allo stesso posto?
+ *
+ * `OLLAMA_ENDPOINT` governa la sonda del preflight e l'avvio automatico del server
+ * (`ollamaLifecycle.ensureOllamaRunning` → `${ollamaEndpoint}/api/tags`), mentre `OPENAI_BASE_URL`
+ * governa la SCELTA del provider (`providerRegistry.isOllamaConfigured`) ed è l'endpoint verso cui
+ * partono davvero le chiamate. Divergendo, il preflight dichiara «Ollama OK» su un server che
+ * nessuno userà e il lifecycle avvia (o si astiene dall'avviare) quello sbagliato — due decisioni
+ * prese su un endpoint diverso da quello usato, oggi senza alcun segnale. Coi default coincidono.
+ *
+ * Confronto sull'ORIGIN e non sull'URL intero: i path sono legittimamente diversi (`/v1` = API
+ * OpenAI-compatible, nudo = API nativa di Ollama), è l'host:porta che deve coincidere.
+ *
+ * @returns i due origin quando divergono, `null` quando coincidono o non sono confrontabili.
+ */
+export function rilevaDivergenzaEndpointOllama(
+    ollamaEndpoint: string,
+    openaiBaseUrl: string,
+): { origineSonda: string; origineChiamate: string } | null {
+    const origine = (url: string): string | null => {
+        try {
+            return new URL(url).origin;
+        } catch {
+            return null; // URL malformato: non è questo check a doverlo diagnosticare
+        }
+    };
+    const origineSonda = origine(ollamaEndpoint);
+    const origineChiamate = origine(openaiBaseUrl);
+    if (!origineSonda || !origineChiamate) return null;
+    return origineSonda === origineChiamate ? null : { origineSonda, origineChiamate };
+}
+
 export async function runPreflightEnvCommand(): Promise<void> {
     console.log('\n  Preflight Environment Check\n');
     const checks: PreflightCheck[] = [];
@@ -78,6 +110,22 @@ export async function runPreflightEnvCommand(): Promise<void> {
                 name: 'Ollama',
                 status: config.aiAllowRemoteEndpoint ? 'WARN' : 'FAIL',
                 detail: `NON raggiungibile: ${config.ollamaEndpoint}`,
+            });
+        }
+    }
+
+    // 3-bis. Le due chiavi dello stesso server Ollama devono puntare allo stesso posto (vedi
+    // `rilevaDivergenzaEndpointOllama` per il perché: il check 3 qui sopra è uno dei due ingannati).
+    if (config.ollamaEndpoint && config.openaiBaseUrl) {
+        const divergenza = rilevaDivergenzaEndpointOllama(config.ollamaEndpoint, config.openaiBaseUrl);
+        if (divergenza) {
+            checks.push({
+                name: 'Ollama (coerenza config)',
+                status: 'WARN',
+                detail:
+                    `OLLAMA_ENDPOINT (${divergenza.origineSonda}) e OPENAI_BASE_URL ` +
+                    `(${divergenza.origineChiamate}) puntano a server diversi: la sonda qui sopra e ` +
+                    `l'avvio automatico valgono per il primo, le chiamate AI partono verso il secondo`,
             });
         }
     }
