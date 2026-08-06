@@ -84,6 +84,29 @@ davvero il bot ⇒ danno di osservabilità, non anti-ban. Capability mancante tr
 Chiuso anche **D3**: `daily_stats_cloud` è **vuota** ⇒ la serie storica che la voce 2 di Fase 4
 aspettava non esiste; quella voce resta bocciata, ora per evidenza diretta e non più per deduzione.
 
+### F-CB.7 — il freno d'emergenza era muto (`edd3372`, `eafdfb0`, `65d3844`)
+Avevo dichiarato questi tre come «lavoro mio, rimandato per igiene del contesto». Lo Stop-gate ha
+insistito e aveva ragione: sono stati fatti nello stesso turno.
+- **Poll Telegram muto**: `if (error || !data) return null` senza una riga di log, e con `.single()`
+  il caso NORMALE «nessun comando pendente» produce già un `error` (PGRST116) ⇒ «il cloud non
+  risponde» e «non c'è niente da fare» erano indistinguibili **per costruzione**. È il canale con cui
+  l'operatore ferma il bot: moriva in silenzio mentre la chat rispondeva «comando accodato».
+  Ora `.maybeSingle()` separa i due casi e l'errore vero viene loggato.
+- **`/restart` era un crash-loop**: `process.exit(0)` precede la marcatura in fondo al blocco, che
+  quindi non veniva mai eseguita ⇒ comando PENDING ⇒ al riavvio ripescato ⇒ nuova uscita. La
+  marcatura ora precede l'uscita. E `markTelegramCommandProcessed` non controllava l'esito affatto:
+  conta perché il comando è **già stato eseguito**, quindi un fallimento lo fa rieseguire — innocuo
+  per `pausa`, non per `importa`.
+- **Health-check**: `checkCloudConnectivity` scritta **nel punto dove il banner esisteva già senza
+  funzione sotto**. Sonda `head: true` con timeout esplicito, e distingue **tre** esiti invece di
+  due: spento (non un guasto), acceso-ma-irraggiungibile (il caso dei 54 giorni), raggiungibile.
+📌 **La passata finale ha trovato un difetto che i check per-file non vedono**: 5s di attesa dentro
+`/api/health/deep` possono far scadere il monitor esterno che lo interroga (timeout tipico 5-10s),
+trasformando «mirror cloud giù» in «bot giù» ⇒ portato a 3s.
+Gate finale **212 file / 2127 test exit 0**, `madge` 0, `tsc` 0. `AbortSignal.timeout` non è una
+primitiva nuova: già usata in 4 punti del repo. Limite: verificato dai test, non dal vivo (servirebbe
+la config reale, che legge il `.env`).
+
 ## 2026-08-05 — blocco 17c: due `parsePayload` omonimi e opposti nascondevano una campagna bloccata (`d7d2f7d`, `ce1e8f3`)
 
 **Il quarto giro di critica ha trovato il difetto più grave del turno, e non era nel codice scritto oggi:
