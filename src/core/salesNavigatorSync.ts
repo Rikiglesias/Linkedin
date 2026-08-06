@@ -570,13 +570,36 @@ async function postSyncEnrichment(
                 });
             }
             if (cloudLeads.length > 0) {
-                const synced = await batchUpsertCloudLeads(cloudLeads);
+                const { synced, failed } = await batchUpsertCloudLeads(cloudLeads);
                 enrichReport.cloudSynced = synced; // conteggio REALE (non length): no-client e chunk falliti esclusi
-                if (synced < cloudLeads.length) {
+                if (failed.length > 0) {
+                    // Chunk RIFIUTATI dal cloud: qui i lead esistono e vanno recuperati. Il catch
+                    // sotto non scatta (batchUpsertCloudLeads non propaga, di proposito), quindi
+                    // senza questo ramo sparirebbero senza retry — era il difetto.
                     enrichReport.cloudErrors += 1;
                     console.warn(
-                        `  [CLOUD] Solo ${synced}/${cloudLeads.length} lead sincronizzati su Supabase (client assente o chunk falliti).`,
+                        `  [CLOUD] ${synced}/${cloudLeads.length} lead sincronizzati; ${failed.length} rifiutati dal cloud → outbox.`,
                     );
+                    let inOutbox = 0;
+                    for (const lead of failed) {
+                        try {
+                            await pushOutboxEvent(
+                                'cloud.lead.upsert',
+                                { lead, error: 'batch chunk rifiutato' },
+                                `cloud.lead.upsert:${lead.linkedin_url}:${Date.now()}`,
+                            );
+                            inOutbox += 1;
+                        } catch (outboxErr) {
+                            console.warn(
+                                `[A04] Outbox push failed: ${outboxErr instanceof Error ? outboxErr.message : String(outboxErr)}`,
+                            );
+                        }
+                    }
+                    console.log(`  [CLOUD-SYNC] ${inOutbox}/${failed.length} lead salvati in outbox per retry.`);
+                } else if (synced < cloudLeads.length) {
+                    // synced basso SENZA falliti = sink cloud spento: non è un errore e non c'è
+                    // nulla da ritentare. Prima i due casi erano indistinguibili.
+                    console.log(`  [CLOUD] replica cloud disattivata: nessun lead sincronizzato.`);
                 } else {
                     console.log(`  [CLOUD] ${synced} lead sincronizzati su Supabase.`);
                 }

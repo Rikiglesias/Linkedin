@@ -130,19 +130,30 @@ export async function updateCloudLeadStatus(
  * Batch upsert di un array di lead. Usare nella prima sync
  * o durante l'importazione CSV massiva.
  */
-/** @returns numero di lead REALMENTE upsertati (esclude client assente e chunk falliti) — il caller
- *  deve usarlo come cloudSynced veritiero invece di assumere leads.length. */
-export async function batchUpsertCloudLeads(leads: CloudLeadUpsert[]): Promise<number> {
-    if (leads.length === 0) return 0;
+/**
+ * A differenza delle scritture singole, questa NON propaga: un batch è parzialmente riuscibile e
+ * un throw butterebbe via l'informazione sui chunk andati a buon fine. Riporta invece un esito
+ * ESPLICITO, perché il solo conteggio era ambiguo: `synced < leads.length` valeva sia «Supabase
+ * spento» sia «chunk rifiutati», due casi con rimedi opposti, e il caller non poteva distinguerli.
+ *
+ * @returns `synced` = lead REALMENTE upsertati (mai `leads.length` assunto) e `failed` = i lead da
+ *  ritentare. Sink spento ⇒ `failed: []`: non c'è nulla da recuperare, la replica cloud è disattivata.
+ */
+export async function batchUpsertCloudLeads(
+    leads: CloudLeadUpsert[],
+): Promise<{ synced: number; failed: CloudLeadUpsert[] }> {
+    if (leads.length === 0) return { synced: 0, failed: [] };
     const sb = getClient();
-    if (!sb) return 0; // Supabase non configurato → 0 sincronizzati (NON contarli come synced)
+    // Supabase non configurato → 0 sincronizzati (NON contarli come synced) e nulla da ritentare.
+    if (!sb) return { synced: 0, failed: [] };
 
-    const records = leads.map((l) => ({ ...l, updated_at: new Date().toISOString() }));
     const CHUNK_SIZE = 200;
     let synced = 0;
+    const failed: CloudLeadUpsert[] = [];
 
-    for (let i = 0; i < records.length; i += CHUNK_SIZE) {
-        const chunk = records.slice(i, i + CHUNK_SIZE);
+    for (let i = 0; i < leads.length; i += CHUNK_SIZE) {
+        const chunkLeads = leads.slice(i, i + CHUNK_SIZE);
+        const chunk = chunkLeads.map((l) => ({ ...l, updated_at: new Date().toISOString() }));
         const { error } = await sb.from('leads').upsert(chunk, { onConflict: 'linkedin_url' });
         if (error) {
             await logWarn('cloud.leads.batch_upsert.error', {
@@ -150,11 +161,12 @@ export async function batchUpsertCloudLeads(leads: CloudLeadUpsert[]): Promise<n
                 count: chunk.length,
                 error: error.message,
             });
+            failed.push(...chunkLeads); // i lead originali, non i record con updated_at riscritto
         } else {
             synced += chunk.length; // conta solo i chunk realmente upsertati
         }
     }
-    return synced;
+    return { synced, failed };
 }
 
 // ──────────────────────────────────────────────────────────────

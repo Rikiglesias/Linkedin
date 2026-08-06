@@ -19,7 +19,11 @@ const mocks = vi.hoisted(() => ({
     blockUserInput: vi.fn(),
     enableWindowClickThrough: vi.fn(),
     disableWindowClickThrough: vi.fn(),
-    batchUpsertCloudLeads: vi.fn(),
+    // Il contratto è `{ synced, failed }`: un `vi.fn()` nudo restituirebbe undefined e il
+    // destructuring nel caller esploderebbe. Nessun test di QUESTO file esercita oggi quel ramo
+    // (il mock non è mai asserito), ma il default deve restare valido — copertura vera del
+    // contratto in `cloudWriteContract.vitest.ts`.
+    batchUpsertCloudLeads: vi.fn(async () => ({ synced: 0, failed: [] })),
     syncSalesNavMembersToCloud: vi.fn(),
     getDatabase: vi.fn(),
     enrichLeadAuto: vi.fn(),

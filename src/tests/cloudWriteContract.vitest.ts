@@ -172,6 +172,39 @@ describe('incrementCloudDailyStat — il fallback non può corrompere il contato
     });
 });
 
+describe('batchUpsertCloudLeads — «spento» e «rifiutato» non sono più lo stesso esito', () => {
+    it('chunk rifiutato ⇒ i lead da ritentare sono NOMINATI, non solo contati', async () => {
+        const { batchUpsertCloudLeads } = await importaDataClient();
+        stato.upsertError = ERRORE_DI_RETE;
+
+        const esito = await batchUpsertCloudLeads([LEAD_DI_TEST]);
+
+        expect(esito.synced).toBe(0);
+        expect(esito.failed).toHaveLength(1);
+        expect(esito.failed[0]?.linkedin_url).toBe(LEAD_DI_TEST.linkedin_url);
+    });
+
+    it('sink cloud SPENTO ⇒ niente da ritentare (prima era indistinguibile dal fallimento)', async () => {
+        stato.config.supabaseSyncEnabled = false;
+        const { batchUpsertCloudLeads } = await importaDataClient();
+
+        const esito = await batchUpsertCloudLeads([LEAD_DI_TEST]);
+
+        expect(esito.synced).toBe(0);
+        expect(esito.failed).toEqual([]);
+    });
+
+    it('scrittura riuscita ⇒ contati e nessun residuo', async () => {
+        const { batchUpsertCloudLeads } = await importaDataClient();
+        stato.upsertError = null;
+
+        const esito = await batchUpsertCloudLeads([LEAD_DI_TEST]);
+
+        expect(esito.synced).toBe(1);
+        expect(esito.failed).toEqual([]);
+    });
+});
+
 describe('cloudBridge — il fallback outbox ora scatta davvero', () => {
     it('scrittura cloud fallita ⇒ pushOutboxEvent chiamato (prima era codice irraggiungibile)', async () => {
         vi.resetModules();
