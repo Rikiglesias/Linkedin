@@ -43,6 +43,8 @@ const stato = vi.hoisted(() => ({
     // Righe realmente toccate dall'UPDATE: `count: 'exact'`. 0 = la riga non esisteva, che per
     // Postgres NON è un errore (verificato dal vivo sul progetto reale).
     updateCount: 1 as number,
+    // Esito della sonda `head: true` di checkCloudConnectivity
+    headError: null as { message: string } | null,
     // Osservazione: cosa è finito davvero nell'upsert di daily_stats_cloud
     upsertPayloads: [] as Record<string, unknown>[],
 }));
@@ -76,9 +78,14 @@ vi.mock('@supabase/supabase-js', () => ({
                 builder.eq = self;
                 builder.order = self;
                 builder.limit = self;
+                builder.abortSignal = self;
                 // `maybeSingle`: 0 righe ⇒ data null SENZA error (postgrest-js 2.100.1)
                 builder.maybeSingle = () =>
                     Promise.resolve({ data: stato.selectData, error: stato.selectError });
+                // La catena di checkCloudConnectivity NON finisce con maybeSingle: si attende
+                // direttamente il builder (come il PostgrestBuilder reale, che è thenable).
+                builder.then = (resolve: (v: unknown) => unknown) =>
+                    Promise.resolve({ error: stato.headError, count: 0, data: null }).then(resolve);
                 return builder;
             },
         }),
@@ -103,6 +110,7 @@ beforeEach(() => {
     stato.selectError = null;
     stato.selectData = null;
     stato.updateCount = 1;
+    stato.headError = null;
     stato.upsertPayloads = [];
     vi.clearAllMocks();
 });
@@ -223,6 +231,37 @@ describe('incrementCloudDailyStat — il fallback non può corrompere il contato
         ).resolves.toBeUndefined();
 
         expect(stato.upsertPayloads[0]?.acceptances).toBe(42);
+    });
+});
+
+describe('checkCloudConnectivity — «spento» e «irraggiungibile» sono due esiti diversi', () => {
+    it('sink spento ⇒ configured false, e NON è un guasto', async () => {
+        stato.config.supabaseSyncEnabled = false;
+        const { checkCloudConnectivity } = await importaDataClient();
+
+        const esito = await checkCloudConnectivity();
+
+        expect(esito.configured).toBe(false);
+        expect(esito.detail).toMatch(/disattivat/i);
+    });
+
+    it('acceso ma il cloud rifiuta ⇒ reachable false col motivo (era il caso dei 54 giorni)', async () => {
+        const { checkCloudConnectivity } = await importaDataClient();
+        stato.headError = ERRORE_DI_RETE;
+
+        const esito = await checkCloudConnectivity();
+
+        expect(esito).toMatchObject({ configured: true, reachable: false });
+        expect(esito.detail).toContain('timeout');
+    });
+
+    it('acceso e raggiungibile ⇒ reachable true', async () => {
+        const { checkCloudConnectivity } = await importaDataClient();
+        stato.headError = null;
+
+        const esito = await checkCloudConnectivity();
+
+        expect(esito).toMatchObject({ configured: true, reachable: true });
     });
 });
 

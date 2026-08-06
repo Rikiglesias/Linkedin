@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { getDatabase } from '../../db';
 import { config } from '../../config';
 import { getAutomationPauseState, countPendingOutboxEvents } from '../../core/repositories';
+import { checkCloudConnectivity } from '../../cloud/supabaseDataClient';
 
 export const healthRouter = Router();
 
@@ -97,6 +98,22 @@ healthRouter.get('/deep', async (_req, res) => {
         if (zombies > 0) allOk = false;
     } catch {
         checks.automationZombies = { ok: false, detail: 'Unable to read automation_commands' };
+        allOk = false;
+    }
+
+    // 7. Raggiungibilità del cloud (Supabase). Prima di questo check i sei sopra erano TUTTI sul DB
+    // locale: un outage del cloud durato ~54 giorni non ha fatto scattare nulla.
+    // Sink spento ⇒ ok:true: è una scelta di configurazione, non un guasto — e non deve far virare
+    // l'intero endpoint in `degraded` per chi non usa il mirror cloud.
+    try {
+        const cloud = await checkCloudConnectivity();
+        checks.cloudSupabase = {
+            ok: !cloud.configured || cloud.reachable,
+            detail: cloud.configured ? cloud.detail : 'disattivato (SUPABASE_SYNC_ENABLED off o non configurato)',
+        };
+        if (cloud.configured && !cloud.reachable) allOk = false;
+    } catch (err: unknown) {
+        checks.cloudSupabase = { ok: false, detail: err instanceof Error ? err.message : String(err) };
         allOk = false;
     }
 

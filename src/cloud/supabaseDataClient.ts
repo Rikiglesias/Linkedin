@@ -672,6 +672,48 @@ export async function eraseCloudLead(linkedinUrl: string, urlHash: string): Prom
 // ──────────────────────────────────────────────────────────────
 
 /**
+ * Verifica la RAGGIUNGIBILITÀ reale del cloud, non la sua configurazione.
+ *
+ * Questo banner esisteva già senza nulla sotto, e la distinzione è esattamente ciò che mancava:
+ * il doctor gate e `supabaseSyncWorker.configured` guardano solo se URL e chiave sono PRESENTI,
+ * `/api/health/deep` faceva sei controlli tutti sul DB locale, e `core/doctor.ts` non nomina mai
+ * Supabase. Risultato: il progetto è rimasto irraggiungibile per ~54 giorni senza che un solo
+ * controllo lo dicesse.
+ *
+ * `configured: false` NON è un guasto: è il sink cloud spento per scelta, e chi legge deve poterlo
+ * distinguere da «acceso ma irraggiungibile» — è la stessa confusione già corretta in
+ * `batchUpsertCloudLeads`.
+ * Timeout esplicito: senza, un cloud che non risponde bloccherebbe l'endpoint di health.
+ */
+export async function checkCloudConnectivity(
+    timeoutMs = 5_000,
+): Promise<{ configured: boolean; reachable: boolean; detail: string }> {
+    const sb = getClient();
+    if (!sb) return { configured: false, reachable: false, detail: 'sink cloud disattivato' };
+
+    const inizio = Date.now();
+    try {
+        // `head: true` → nessuna riga trasferita, solo lo status: la sonda più leggera possibile.
+        const { error } = await sb
+            .from('leads')
+            .select('linkedin_url', { head: true, count: 'exact' })
+            .limit(1)
+            .abortSignal(AbortSignal.timeout(timeoutMs));
+        if (error) {
+            return { configured: true, reachable: false, detail: error.message };
+        }
+        return { configured: true, reachable: true, detail: `ok in ${Date.now() - inizio}ms` };
+    } catch (err: unknown) {
+        // Un abort per timeout arriva qui come rejection: è il caso del progetto in pausa.
+        return {
+            configured: true,
+            reachable: false,
+            detail: err instanceof Error ? err.message : String(err),
+        };
+    }
+}
+
+/**
  * Legge le configurazioni campagne dal Control Plane Supabase.
  * La tabella attesa e `campaigns`.
  */
