@@ -24,7 +24,9 @@ const mocks = vi.hoisted(() => ({
     // (il mock non è mai asserito), ma il default deve restare valido — copertura vera del
     // contratto in `cloudWriteContract.vitest.ts`.
     batchUpsertCloudLeads: vi.fn(async () => ({ synced: 0, failed: [] })),
-    syncSalesNavMembersToCloud: vi.fn(),
+    // Stesso motivo della riga sopra: il contratto è `{ synced, failed }` (qui `failed` è un
+    // CONTEGGIO, non un array — per i salesnav_list_members non esiste un topic outbox).
+    syncSalesNavMembersToCloud: vi.fn(async () => ({ synced: 0, failed: 0 })),
     getDatabase: vi.fn(),
     enrichLeadAuto: vi.fn(),
     handleChallengeDetected: vi.fn(),

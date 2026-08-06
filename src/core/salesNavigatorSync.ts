@@ -605,10 +605,15 @@ async function postSyncEnrichment(
                 }
             }
 
-            // Sync anche salesnav_list_members
-            const membersSynced = await syncSalesNavMembersToCloud(db);
+            // Sync anche salesnav_list_members. Stessa distinzione dei lead qui sopra: «0 perché il
+            // sink è spento» e «0 perché il cloud li ha rifiutati» non sono lo stesso esito.
+            const { synced: membersSynced, failed: membersFailed } = await syncSalesNavMembersToCloud(db);
             if (membersSynced > 0) {
                 console.log(`  [CLOUD] ${membersSynced} salesnav_list_members sincronizzati.`);
+            }
+            if (membersFailed > 0) {
+                console.error(`  [CLOUD] ${membersFailed} salesnav_list_members RIFIUTATI dal cloud (persi).`);
+                enrichReport.cloudErrors += 1;
             }
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);

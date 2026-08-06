@@ -437,9 +437,14 @@ export async function runEnrichDeepCommand(args: string[]): Promise<void> {
     if (!dryRun && enriched > 0) {
         try {
             const db = await getDatabase();
-            const synced = await syncEnrichmentDataToCloud(db);
+            // `synced` conta ora i soli record ACCETTATI dal cloud: prima era un conteggio delle
+            // iterazioni del loop, quindi questa riga poteva annunciare N record mai arrivati.
+            const { synced, failed } = await syncEnrichmentDataToCloud(db);
             if (synced > 0) {
                 console.log(`[CLOUD] ${synced} enrichment record sincronizzati su Supabase.`);
+            }
+            if (failed > 0) {
+                console.error(`[CLOUD] ${failed} enrichment record RIFIUTATI dal cloud (non ritentati).`);
             }
         } catch (err) {
             console.log(`[CLOUD] Sync fallita (non bloccante): ${err instanceof Error ? err.message : String(err)}`);
@@ -738,9 +743,12 @@ export async function runEnrichProfilesCommand(args: string[]): Promise<void> {
     // Sync to Supabase
     if (enriched > 0 || scraped > 0) {
         try {
-            const synced = await syncEnrichmentDataToCloud(db);
+            const { synced, failed } = await syncEnrichmentDataToCloud(db);
             if (synced > 0) {
                 console.log(`[CLOUD] ${synced} record sincronizzati su Supabase.`);
+            }
+            if (failed > 0) {
+                console.error(`[CLOUD] ${failed} record RIFIUTATI dal cloud (non ritentati).`);
             }
         } catch (err) {
             console.log(`[CLOUD] Sync fallita: ${err instanceof Error ? err.message : String(err)}`);

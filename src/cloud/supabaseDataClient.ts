@@ -356,12 +356,24 @@ export async function markTelegramCommandProcessed(commandId: number): Promise<v
 /**
  * Batch upsert di profili SalesNav estratti verso Supabase.
  * Usa salesnav_url come chiave di conflitto per dedup.
- * Non-bloccante: errori loggati ma non propagati.
+ *
+ * Come `batchUpsertCloudLeads` questa NON propaga (un batch è parzialmente riuscibile), ma per lo
+ * stesso motivo riporta un esito ESPLICITO: il solo conteggio era ambiguo, `synced === 0` valeva sia
+ * «Supabase spento» sia «tutti i chunk rifiutati», due casi con rimedi opposti che il caller non
+ * poteva distinguere — e in entrambi taceva, perché logga solo quando `synced > 0`.
+ *
+ * @returns `synced` = membri REALMENTE upsertati, `failed` = quanti sono stati rifiutati.
+ *  `failed` è un CONTEGGIO e non l'array dei record: a differenza dei lead non esiste un topic
+ *  outbox per i salesnav_list_members, quindi nessun caller può ritentarli. Se un giorno il topic
+ *  verrà aggiunto, qui serve l'array (il cambio è locale ai 2 call-site).
  */
-export async function batchUpsertCloudSalesNavMembers(members: CloudSalesNavMember[]): Promise<number> {
-    if (members.length === 0) return 0;
+export async function batchUpsertCloudSalesNavMembers(
+    members: CloudSalesNavMember[],
+): Promise<{ synced: number; failed: number }> {
+    if (members.length === 0) return { synced: 0, failed: 0 };
     const sb = getClient();
-    if (!sb) return 0;
+    // Sink spento: 0 sincronizzati e NIENTE da recuperare (≠ rifiutati).
+    if (!sb) return { synced: 0, failed: 0 };
 
     const records = members.map((m) => ({
         ...m,
@@ -371,6 +383,7 @@ export async function batchUpsertCloudSalesNavMembers(members: CloudSalesNavMemb
 
     const CHUNK_SIZE = 200;
     let synced = 0;
+    let failed = 0;
 
     for (let i = 0; i < records.length; i += CHUNK_SIZE) {
         const chunk = records.slice(i, i + CHUNK_SIZE);
@@ -384,23 +397,25 @@ export async function batchUpsertCloudSalesNavMembers(members: CloudSalesNavMemb
                 count: chunk.length,
                 error: error.message,
             });
+            failed += chunk.length;
         } else {
             synced += count ?? chunk.length;
         }
     }
 
-    return synced;
+    return { synced, failed };
 }
 
 /**
  * Sincronizza i profili SalesNav non ancora sincronizzati dal DB locale a Supabase.
  * Legge dal DB locale i record con synced_at IS NULL o più vecchi di lastSyncAt.
- * Ritorna il numero di record sincronizzati.
+ * Propaga l'esito di `batchUpsertCloudSalesNavMembers`: `failed > 0` significa RIFIUTATI dal cloud,
+ * mentre `{0, 0}` significa «niente da fare o replica disattivata». Il caller deve poterli separare.
  */
 export async function syncSalesNavMembersToCloud(localDb: {
     query: (sql: string, params?: unknown[]) => Promise<Array<Record<string, unknown>>>;
-}): Promise<number> {
-    if (!isConfigured()) return 0;
+}): Promise<{ synced: number; failed: number }> {
+    if (!isConfigured()) return { synced: 0, failed: 0 };
 
     const rows = await localDb.query(
         `SELECT id, list_name, linkedin_url, salesnav_url, profile_name,
@@ -415,7 +430,7 @@ export async function syncSalesNavMembersToCloud(localDb: {
          LIMIT 500`,
     );
 
-    if (rows.length === 0) return 0;
+    if (rows.length === 0) return { synced: 0, failed: 0 };
 
     const members: CloudSalesNavMember[] = rows.map((r) => ({
         local_id: r.id as number,
@@ -457,6 +472,11 @@ export async function syncSalesNavMembersToCloud(localDb: {
 /**
  * Upserta i dati di deep enrichment (Person Data Finder) nel cloud.
  * Richiede il lead_id Supabase (non locale) — il chiamante deve risolvere il mapping.
+ *
+ * Scrittura SINGOLA ⇒ logga e PROPAGA, come le altre di questo file (contratto sopra
+ * `upsertCloudLead`). Prima inghiottiva l'errore, e `syncEnrichmentDataToCloud` contava come
+ * sincronizzato ogni record a prescindere: il conteggio riportato all'utente poteva essere N con
+ * zero record arrivati nel cloud. Client assente = no-op (sink spento ≠ scrittura fallita).
  */
 export async function upsertCloudEnrichmentData(data: CloudEnrichmentData): Promise<void> {
     const sb = getClient();
@@ -467,19 +487,26 @@ export async function upsertCloudEnrichmentData(data: CloudEnrichmentData): Prom
         .upsert({ ...data, updated_at: new Date().toISOString() }, { onConflict: 'lead_id' });
     if (error) {
         await logWarn('cloud.enrichment.upsert.error', { leadId: data.lead_id, error: error.message });
+        throw new Error(`cloud.enrichment.upsert failed: ${error.message}`);
     }
 }
 
 /**
  * Sync batch di enrichment data dal DB locale a Supabase.
  * Risolve il mapping local_lead_id → cloud lead_id tramite linkedin_url.
+ *
+ * Batch ⇒ NON propaga (parzialmente riuscibile) ma riporta l'esito ESPLICITO: `synced` conta i soli
+ * record realmente accettati dal cloud — prima era un `synced++` incondizionato dopo una chiamata che
+ * inghiottiva l'errore, quindi il numero stampato all'utente non misurava nulla.
+ * `failed` è un CONTEGGIO e non l'array: non esiste un topic outbox per l'enrichment, nessun caller
+ * può ritentarli (se il topic verrà aggiunto, qui serve l'array).
  */
 export async function syncEnrichmentDataToCloud(localDb: {
     query: (sql: string, params?: unknown[]) => Promise<Array<Record<string, unknown>>>;
-}): Promise<number> {
-    if (!isConfigured()) return 0;
+}): Promise<{ synced: number; failed: number }> {
+    if (!isConfigured()) return { synced: 0, failed: 0 };
     const sb = getClient();
-    if (!sb) return 0;
+    if (!sb) return { synced: 0, failed: 0 };
 
     // Legge enrichment data locale con il linkedin_url del lead per risolvere il mapping
     const rows = await localDb.query(
@@ -494,7 +521,7 @@ export async function syncEnrichmentDataToCloud(localDb: {
          LIMIT 500`,
     );
 
-    if (rows.length === 0) return 0;
+    if (rows.length === 0) return { synced: 0, failed: 0 };
 
     // Risolve linkedin_url → cloud lead_id
     const urls = rows.map((r) => r.linkedin_url as string).filter(Boolean);
@@ -506,6 +533,7 @@ export async function syncEnrichmentDataToCloud(localDb: {
     }
 
     let synced = 0;
+    let failed = 0;
     for (const r of rows) {
         const cloudLeadId = urlToCloudId.get(r.linkedin_url as string);
         if (!cloudLeadId) continue;
@@ -524,11 +552,17 @@ export async function syncEnrichmentDataToCloud(localDb: {
             enriched_at: (r.enriched_at as string) || null,
         };
 
-        await upsertCloudEnrichmentData(record);
-        synced++;
+        // La singola PROPAGA: il catch per-record è ciò che rende il batch parzialmente riuscibile
+        // senza far passare per «sincronizzato» un record rifiutato (l'errore è già loggato dentro).
+        try {
+            await upsertCloudEnrichmentData(record);
+            synced++;
+        } catch {
+            failed++;
+        }
     }
 
-    return synced;
+    return { synced, failed };
 }
 
 // ──────────────────────────────────────────────────────────────

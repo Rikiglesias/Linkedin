@@ -109,9 +109,15 @@ async function syncLeadsDown() {
 async function syncSalesNavUp() {
     try {
         const db = await getDatabase();
-        const synced = await syncSalesNavMembersToCloud(db);
+        const { synced, failed } = await syncSalesNavMembersToCloud(db);
         if (synced > 0) {
             await logInfo('control_plane.salesnav.upsync', { count: synced });
+        }
+        if (failed > 0) {
+            // Rifiutati dal cloud ≠ replica disattivata: prima uscivano entrambi da qui in silenzio,
+            // perché si logga solo quando synced > 0. Nessun retry (non esiste un topic outbox per i
+            // salesnav_list_members): il log È il rimedio, e va letto come perdita reale di dati.
+            await logWarn('control_plane.salesnav.upsync.rejected', { count: failed });
         }
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);

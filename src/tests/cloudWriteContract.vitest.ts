@@ -47,6 +47,10 @@ const stato = vi.hoisted(() => ({
     headError: null as { message: string } | null,
     // Osservazione: cosa è finito davvero nell'upsert di daily_stats_cloud
     upsertPayloads: [] as Record<string, unknown>[],
+    // F-CB.8 — righe accettate da `.upsert(...).select('id')` (batch salesnav_list_members)
+    upsertCount: null as number | null,
+    // F-CB.8 — risultato di `select().in()`: la risoluzione linkedin_url → cloud lead_id
+    selectInData: [] as Array<{ id: number; linkedin_url: string }>,
 }));
 
 vi.mock('../config', () => ({ config: stato.config }));
@@ -64,7 +68,14 @@ vi.mock('@supabase/supabase-js', () => ({
                     stato.upsertPayloads.push(payload);
                     return Promise.resolve({ error: stato.updateError });
                 }
-                return Promise.resolve({ error: stato.upsertError });
+                const esito = { error: stato.upsertError, count: stato.upsertCount };
+                // Thenable CON `.select()`: `batchUpsertCloudSalesNavMembers` incatena
+                // `.upsert(...).select('id')` per farsi dire il `count`, le altre attendono
+                // direttamente l'upsert. Il PostgrestBuilder reale supporta entrambe le forme.
+                return {
+                    select: () => Promise.resolve(esito),
+                    then: (resolve: (v: unknown) => unknown) => Promise.resolve(esito).then(resolve),
+                };
             },
             update: () => ({
                 eq: () => Promise.resolve({ error: stato.updateError, count: stato.updateCount }),
@@ -79,6 +90,9 @@ vi.mock('@supabase/supabase-js', () => ({
                 builder.order = self;
                 builder.limit = self;
                 builder.abortSignal = self;
+                // `.in()` CHIUDE la catena in `syncEnrichmentDataToCloud`
+                // (`select('id, linkedin_url').in('linkedin_url', urls)`) ⇒ risolve, non concatena.
+                builder.in = () => Promise.resolve({ data: stato.selectInData, error: null });
                 // `maybeSingle`: 0 righe ⇒ data null SENZA error (postgrest-js 2.100.1)
                 builder.maybeSingle = () =>
                     Promise.resolve({ data: stato.selectData, error: stato.selectError });
@@ -112,6 +126,8 @@ beforeEach(() => {
     stato.updateCount = 1;
     stato.headError = null;
     stato.upsertPayloads = [];
+    stato.upsertCount = null;
+    stato.selectInData = [];
     vi.clearAllMocks();
 });
 
@@ -373,5 +389,91 @@ describe('cloudBridge — il fallback outbox ora scatta davvero', () => {
         expect(pushOutboxEvent).not.toHaveBeenCalled();
 
         vi.doUnmock('../core/repositories');
+    });
+});
+
+/**
+ * F-CB.8 — i due gemelli che F-CB aveva mancato, perché il perimetro era stato dedotto dai
+ * CONSUMATORI DEL BRIDGE e non dall'inventario delle scritture del data client. Chi non passa dal
+ * bridge (enrichment, salesnav_list_members) era fuori dal perimetro, ed è rimasto rotto.
+ */
+describe('enrichment — il conteggio deve misurare i record ACCETTATI, non i giri del loop', () => {
+    const RIGA_LOCALE = {
+        local_lead_id: 7,
+        linkedin_url: 'https://www.linkedin.com/in/tizio',
+        company_json: null,
+        phones_json: null,
+        socials_json: null,
+        seniority: 'senior',
+        department: 'eng',
+        data_points: 3,
+        confidence: 90,
+        sources_json: null,
+        enriched_at: '2026-08-06T10:00:00.000Z',
+    };
+    const dbConUnaRiga = { query: async () => [RIGA_LOCALE] };
+
+    it('upsertCloudEnrichmentData propaga invece di inghiottire', async () => {
+        const { upsertCloudEnrichmentData } = await importaDataClient();
+        stato.upsertError = ERRORE_DI_RETE;
+        await expect(
+            upsertCloudEnrichmentData({ lead_id: 1, local_lead_id: 7, data_points: 0, confidence: 0 }),
+        ).rejects.toThrow('cloud.enrichment.upsert failed');
+    });
+
+    it('record RIFIUTATO ⇒ failed, mai contato fra i sincronizzati', async () => {
+        const { syncEnrichmentDataToCloud } = await importaDataClient();
+        stato.selectInData = [{ id: 42, linkedin_url: RIGA_LOCALE.linkedin_url }];
+        stato.upsertError = ERRORE_DI_RETE;
+
+        const esito = await syncEnrichmentDataToCloud(dbConUnaRiga);
+
+        // Prima del fix: { synced: 1 } — il `synced++` era incondizionato dopo una chiamata che
+        // inghiottiva l'errore, quindi la CLI annunciava record mai arrivati nel cloud.
+        expect(esito).toEqual({ synced: 0, failed: 1 });
+    });
+
+    it('record accettato ⇒ synced, nessun failed', async () => {
+        const { syncEnrichmentDataToCloud } = await importaDataClient();
+        stato.selectInData = [{ id: 42, linkedin_url: RIGA_LOCALE.linkedin_url }];
+        stato.upsertError = null;
+
+        expect(await syncEnrichmentDataToCloud(dbConUnaRiga)).toEqual({ synced: 1, failed: 0 });
+    });
+
+    it('sink spento ⇒ {0,0}: niente da recuperare, non è un rifiuto', async () => {
+        stato.config.supabaseSyncEnabled = false;
+        const { syncEnrichmentDataToCloud } = await importaDataClient();
+        expect(await syncEnrichmentDataToCloud(dbConUnaRiga)).toEqual({ synced: 0, failed: 0 });
+    });
+});
+
+describe('salesnav_list_members — «spento» e «rifiutato» non sono più lo stesso zero', () => {
+    const MEMBRO = {
+        list_name: 'lista-di-test',
+        linkedin_url: 'https://www.linkedin.com/in/tizio',
+        salesnav_url: 'https://www.linkedin.com/sales/lead/ABC',
+    };
+
+    it('chunk RIFIUTATO ⇒ failed valorizzato (prima: synced 0 e silenzio)', async () => {
+        const { batchUpsertCloudSalesNavMembers } = await importaDataClient();
+        stato.upsertError = ERRORE_DI_RETE;
+
+        expect(await batchUpsertCloudSalesNavMembers([MEMBRO])).toEqual({ synced: 0, failed: 1 });
+    });
+
+    it('sink spento ⇒ {0,0}, distinguibile dal rifiuto totale', async () => {
+        stato.config.supabaseSyncEnabled = false;
+        const { batchUpsertCloudSalesNavMembers } = await importaDataClient();
+
+        expect(await batchUpsertCloudSalesNavMembers([MEMBRO])).toEqual({ synced: 0, failed: 0 });
+    });
+
+    it('chunk accettato ⇒ synced dal count reale del cloud, non dalla lunghezza assunta', async () => {
+        const { batchUpsertCloudSalesNavMembers } = await importaDataClient();
+        stato.upsertError = null;
+        stato.upsertCount = 1;
+
+        expect(await batchUpsertCloudSalesNavMembers([MEMBRO])).toEqual({ synced: 1, failed: 0 });
     });
 });
