@@ -106,7 +106,10 @@ healthRouter.get('/deep', async (_req, res) => {
     // Sink spento ⇒ ok:true: è una scelta di configurazione, non un guasto — e non deve far virare
     // l'intero endpoint in `degraded` per chi non usa il mirror cloud.
     try {
-        const cloud = await checkCloudConnectivity();
+        // 3s e non il default di 5: questo è l'UNICO check non locale della lista, e un monitor
+        // esterno che interroga /deep ha tipicamente un timeout di 5-10s — attenderne 5 qui
+        // rischia di far scadere il monitor stesso, trasformando «mirror cloud giù» in «bot giù».
+        const cloud = await checkCloudConnectivity(3_000);
         checks.cloudSupabase = {
             ok: !cloud.configured || cloud.reachable,
             detail: cloud.configured ? cloud.detail : 'disattivato (SUPABASE_SYNC_ENABLED off o non configurato)',
