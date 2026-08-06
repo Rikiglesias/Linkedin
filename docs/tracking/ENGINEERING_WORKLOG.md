@@ -2563,3 +2563,49 @@ I/O ovunque. **Rosso di controllo**: stringendo il confronto all'URL intera cado
 Un test fissa i default reali del repo, così se qualcuno ne cambia uno solo il verde cade.
 
 **VERIFICA**: gate **exit 0 — 213 file / 2139 test** (era 212/2134), `tsc` 0, `madge` 0.
+
+### F-CB.8-bis — il critico ha trovato il silenzio DENTRO il fix che lo eliminava (`604d53f`)
+
+Il CRITIC-GATE ha imposto un `completeness-critic` sullo snapshot del turno. **7 finding, 6 reali,
+4 introdotti da me in questo stesso turno.** Il critical è il reperto della giornata:
+
+`syncEnrichmentDataToCloud` — la funzione riscritta poche ore prima proprio per eliminare i
+conteggi ciechi — non destrutturava `error` dalla query di mapping `url → cloud_id`. Se quella
+fallisce (rete giù, o **414 URI Too Long** perché 500 URL LinkedIn in una GET PostgREST sfondano il
+buffer header), `cloudLeads` è null, **ogni** record cade nel `continue` e la funzione ritorna
+`{0,0}` — che nel docstring appena scritto significa «niente da fare o replica disattivata».
+⇒ Nel suo scenario di guasto più probabile, la funzione diceva **«tutto a posto»**.
+
+**Root cause**: ho trattato il perimetro come *le righe che stavo cambiando*, non come *la funzione*.
+Le scritture le avevo enumerate una per una — l'inventario delle 13 è corretto, il critico l'ha
+confermato — ma il difetto era in una **`select`**, e io cercavo negli `upsert`. È la variante
+dell'errore che avevo appena corretto e documentato nello stesso turno (perimetro dai chiamanti):
+la classe non era chiusa, era solo più piccola. → ledger `il-fix-ha-spostato-il-silenzio-di-due-righe`.
+
+**Gli altri finding affrontati**:
+- `if (!cloudLeadId) continue` scartava senza contare un TERZO esito, quello **dominante** (il lead
+  non esiste nel cloud) ⇒ esito ora a tre assi `{synced, failed, skipped}`, e `{0,0,0}` significa
+  davvero «niente da fare».
+- Il check Ollama scattava con `OPENAI_BASE_URL=https://api.openai.com/v1`, che è configurazione
+  **documentata** (`docs/CONFIG_REFERENCE.md`) ⇒ avrei prodotto un **WARN permanente su un guasto
+  inesistente**. Ora gated su `isLocalAiEndpoint`, lo stesso predicato che decide il provider.
+- 🔴 Avevo **ricopiato** la regola di località con un confronto testuale di `origin` (che direbbe
+  `localhost` ≠ `127.0.0.1`), mentre il repo ha una SSOT — `config/env.ts:isLoopbackAiHost`, nata
+  unificando 4 copie divergenti, **con un test che vieta di ricopiarla**. Era la quinta copia.
+- Le `JSON.parse` stavano fuori dal `try`: un solo `company_json` malformato abortiva il batch
+  distruggendo i conteggi, contro il contratto «parzialmente riuscibile» scritto 40 righe sopra.
+- Il cappello del contratto («tutte le scritture loggano e propagano») era **falso per 3 delle 13**
+  ⇒ riscritto come tassonomia. Classe «commento che asserisce un fatto», 6ª istanza in questo goal.
+- **Waive motivato**: `LIMIT 500` senza filtro di sync (preesistente, richiede una migration).
+
+Chiuso anche il debito `js-empty-catch@utilCommands.ts:259` invece di skipparlo la terza volta: il
+tracker chiedeva di renderlo esplicito «quando si tocca quel file», e lo stavo toccando.
+
+**Trovato dalla passata 360 (prima del critico)**: `conta-problemi` **non copre il build**, e
+`dist/` era del **04-08** contro sorgenti del 06-08. Siccome `npm start` è `node dist/index.js`, il
+bot esegue la build: né i fix della chat #18 né questi erano attivi lì. **L1.7 non lo stavo
+eseguendo** — ora incluso, `build:backend` exit 0 verificato nel merito (i simboli nuovi sono in `dist`).
+
+**VERIFICA**: rosso di controllo sul critical (rimosso il check, il test cade) · gate **exit 0 —
+213 file / 2146 test** (era 2139 a metà turno, 2127 a inizio chat) · `tsc` 0 · `madge` 0 ·
+`build:backend` exit 0 · secret-scan pulito.
