@@ -4,6 +4,70 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-08-06 — blocco 18: il ponte verso il cloud non sapeva dire di aver fallito (`b5aff02`, `4f1bae4`)
+
+**Il turno è partito da «riprova supabase» e ha finito per spiegare perché 54 giorni di guasto non
+hanno lasciato una sola riga di log.**
+
+### La diagnosi, e l'errore che ho commesso dentro
+Supabase non rispondeva. Misurato: control-plane vivo (`get_storage_config` → 200 con
+`migrationVersion` reale, non interpolabile), piano dati in timeout, DNS del progetto **NXDOMAIN**.
+Da lì ho scritto in chat che «un progetto in pausa mantiene il DNS» — **premessa mai verificata, e
+falsa**. Il test che mancava era il **gruppo di controllo**: un progetto Supabase *attivo* sulla
+stessa macchina (`yrsilvbuqhohgznpdles`) risolve, il nostro no, un ref inventato nemmeno; e via DoH
+l'NXDOMAIN arriva con SOA dai nameserver **autoritativi** di `supabase.co`. Le docs primarie hanno
+chiuso il quadro: pausa free-plan a 7 giorni, **restore 1-click entro 90**. Riccardo ha premuto
+Resume → `select 1` → `[{"ping":1}]`, DNS `172.64.149.246`. Diagnosi confermata dai fatti.
+📌 Guardia che ne esce (ledger `2026-08-06-comportamento-provider-asserito-per-assunzione`): **un
+segnale negativo usato come discriminante richiede prima un positivo noto**. Senza controllo, un
+NXDOMAIN non porta informazione.
+✅ Effetto collaterale utile: **identità del progetto provata POSITIVAMENTE** guardando lo schema (18
+tabelle del bot, `leads` a 58 colonne) — chiude la classe dell'error-memory del 12 giugno, dove
+l'identità era stata stabilita *per esclusione*.
+
+### Il difetto vero: un `catch` che non poteva scattare
+`cloudBridge` deposita l'evento in outbox dentro `.catch(...)`, ma le scritture di
+`supabaseDataClient` destrutturavano `{ error }` e facevano solo `logWarn`. E supabase-js con
+`shouldThrowOnError = false` (default; **zero** `.throwOnError()` nel repo) converte **anche gli
+errori di rete** in una promise *risolta* — `postgrest-js/src/PostgrestBuilder.ts:26,74,239-240`, dove
+il commento cita esplicitamente «DNS errors, network failures».
+⇒ Il fallback era **codice morto** e il commento accanto — «garantisce retry via sync worker (CC-28
+fix)» — diceva il falso. **Peggio**: `applyOutboxOperation` (`supabaseSyncWorker.ts:209`) misura il
+successo del drain sull'assenza di eccezione, quindi marcava consegnati anche gli eventi rifiutati.
+Nello stesso `switch`, `cloud.lead.erase` è deliberatamente fail-loud: **il contratto giusto era già
+scritto lì accanto**, e tre casi su quattro non lo rispettavano.
+
+Le quattro funzioni ora **loggano e propagano**. Non è un contratto nuovo: è quello già applicato da
+`cloud.lead.erase` e `incrementCloudDailyStatIdem`. Il «non bloccante» lo garantisce **chi chiama**
+(`void` + `.catch`), non la funzione che inghiotte. Sink spento resta no-op: assente ≠ rotto.
+🔴 Dentro `incrementCloudDailyStat` c'era di peggio del silenzio: il fallback read-modify-write
+**ignorava l'errore della SELECT**, quindi `current` diventava 0 e l'upsert scriveva `0 + amount`
+**azzerando il contatore**. Ora `.maybeSingle()` separa «prima scrittura del giorno» (0 righe →
+`data: null` *senza* error, verificato su postgrest-js **2.100.1**) da «non ho potuto leggere».
+
+### Il gemello che NON era un gemello
+`salesNavigatorSync` falliva per il motivo **opposto**: `batchUpsertCloudLeads` non propaga *di
+proposito* (un batch è parzialmente riuscibile). Il difetto era il **ritorno ambiguo** —
+`synced < length` valeva sia «sink spento» sia «chunk rifiutati», e il messaggio a video lo ammetteva.
+Ora ritorna `{ synced, failed }`. Uniformarlo col throw sarebbe stato il riflesso sbagliato.
+
+### Verifiche
+Rosso di controllo **eseguito**: tolto il solo `throw` di `upsertCloudLead` → 2 test su 9 falliscono,
+incluso quello che dimostra il fallback outbox. I test mockano il **client supabase**, non il data
+client: mockare il data client (`outboxDispatch`, `salesNavSyncSplit`) simula un reject che nella
+realtà non avveniva — un verde che non prova nulla.
+Gate **212 file / 2118 test exit 0** (era 211/2106), `madge` 0, `tsc` 0. Nessun file sotto il glob
+anti-ban; niente timing/fingerprint/volumi, e la quarantena locale resta la SSOT che ferma il bot.
+
+### 🔴 Residuo dichiarato, trovato col DB vivo
+Un **UPDATE che non matcha righe non è un errore** (misurato dal vivo). Con `accounts` a **0 righe**,
+`updateCloudAccountHealth` non ha mai avuto una riga da aggiornare: il segnale di quarantena RED verso
+il Control Plane **non arriva mai**. Stessa forma per i ~39 lead presenti in locale (348) e non nel
+cloud (309). Il fix richiede una decisione («0 righe = errore?» ha risposte diverse per caso d'uso) →
+tracciato in `~/todos/audit-codebase.md` § F-CB.6, primo lavoro della prossima fase.
+Chiuso invece **D3**: `daily_stats_cloud` è **vuota** ⇒ la serie storica che la voce 2 di Fase 4
+aspettava non esiste; quella voce resta bocciata, ora per evidenza diretta e non più per deduzione.
+
 ## 2026-08-05 — blocco 17c: due `parsePayload` omonimi e opposti nascondevano una campagna bloccata (`d7d2f7d`, `ce1e8f3`)
 
 **Il quarto giro di critica ha trovato il difetto più grave del turno, e non era nel codice scritto oggi:
