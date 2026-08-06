@@ -4,6 +4,9 @@ import { checkProxyHealth } from '../../proxyManager';
 import fs from 'fs';
 import path from 'path';
 import { META_FILENAME } from '../../browser/sessionCookieMonitor';
+// SSOT della località di un endpoint AI (`config/env.ts`, nata unificando 4 copie divergenti —
+// F-a3f17c02). Ricopiarne la regola qui sarebbe la quinta copia: si importa, non si riscrive.
+import { isLocalAiEndpoint, isLoopbackAiHost } from '../../config/env';
 
 interface PreflightCheck {
     name: string;
@@ -21,15 +24,27 @@ interface PreflightCheck {
  * nessuno userà e il lifecycle avvia (o si astiene dall'avviare) quello sbagliato — due decisioni
  * prese su un endpoint diverso da quello usato, oggi senza alcun segnale. Coi default coincidono.
  *
- * Confronto sull'ORIGIN e non sull'URL intero: i path sono legittimamente diversi (`/v1` = API
- * OpenAI-compatible, nudo = API nativa di Ollama), è l'host:porta che deve coincidere.
+ * 🔴 **Vale SOLO quando Ollama è davvero il provider risolto.** Con la config documentata
+ * `OPENAI_BASE_URL=https://api.openai.com/v1` (`docs/CONFIG_REFERENCE.md`, con
+ * `AI_ALLOW_REMOTE_ENDPOINT=true`) le due chiavi NON descrivono lo stesso server e `isOllamaConfigured`
+ * è false: segnalare una divergenza lì significherebbe annunciare un guasto inesistente a ogni run.
+ * Il gate è `isLocalAiEndpoint(openaiBaseUrl)`, lo stesso predicato che decide il provider.
  *
- * @returns i due origin quando divergono, `null` quando coincidono o non sono confrontabili.
+ * Il confronto usa `isLoopbackAiHost` (SSOT `config/env.ts`, nata unificando 4 copie divergenti):
+ * `localhost`, `127.0.0.1`, `::1` e `0.0.0.0` sono LA STESSA macchina, un confronto testuale di
+ * `origin` li direbbe diversi. Fuori dal loopback si confronta l'origin — non l'URL intera, perché
+ * i path devono poter divergere (`/v1` = API OpenAI-compatible, nudo = API nativa di Ollama).
+ *
+ * @returns i due origin quando divergono davvero, `null` quando coincidono, quando sono entrambi
+ *  loopback, quando Ollama non è il provider, o quando gli URL non sono confrontabili.
  */
 export function rilevaDivergenzaEndpointOllama(
     ollamaEndpoint: string,
     openaiBaseUrl: string,
 ): { origineSonda: string; origineChiamate: string } | null {
+    // Ollama non è il provider risolto ⇒ le due chiavi descrivono cose diverse per DESIGN.
+    if (!isLocalAiEndpoint(openaiBaseUrl)) return null;
+
     const origine = (url: string): string | null => {
         try {
             return new URL(url).origin;
@@ -40,7 +55,21 @@ export function rilevaDivergenzaEndpointOllama(
     const origineSonda = origine(ollamaEndpoint);
     const origineChiamate = origine(openaiBaseUrl);
     if (!origineSonda || !origineChiamate) return null;
-    return origineSonda === origineChiamate ? null : { origineSonda, origineChiamate };
+    if (origineSonda === origineChiamate) return null;
+
+    // Due modi diversi di scrivere «questa macchina» non sono una divergenza. La porta invece sì:
+    // due server distinti sullo stesso host restano due server.
+    const entrambiLoopback = isLoopbackAiHost(ollamaEndpoint) && isLoopbackAiHost(openaiBaseUrl);
+    const stessaPorta = (() => {
+        try {
+            return new URL(ollamaEndpoint).port === new URL(openaiBaseUrl).port;
+        } catch {
+            return false;
+        }
+    })();
+    if (entrambiLoopback && stessaPorta) return null;
+
+    return { origineSonda, origineChiamate };
 }
 
 export async function runPreflightEnvCommand(): Promise<void> {

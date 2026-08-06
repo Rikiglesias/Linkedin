@@ -90,13 +90,27 @@ export async function updateCloudAccountHealth(
 /**
  * Upserta un lead nel cloud. linkedin_url è la chiave di conflitto.
  *
- * CONTRATTO (vale per tutte le funzioni di scrittura di questo modulo): un fallimento della
- * scrittura viene LOGGATO e PROPAGATO. Non è la funzione a decidere di ignorarlo — lo decide
- * il chiamante, che è già attrezzato: `cloudBridge` la invoca fire-and-forget e nel `.catch`
- * deposita l'evento in outbox, e `applyOutboxOperation` misura il successo del drain proprio
- * sull'assenza di eccezione (`supabaseSyncWorker.ts:209` dentro `executeWithRetryPolicy`).
- * Se qui si inghiottisse l'errore, quei due meccanismi crederebbero riuscito ciò che non lo è.
- * Client assente (`getClient()` → null) NON è un errore: è il sink cloud spento, quindi no-op.
+ * CONTRATTO DI SCRITTURA del modulo — è una TASSONOMIA, non una regola unica. La versione
+ * precedente diceva «tutte le scritture loggano e propagano»: falso per 3 delle 13, e un commento
+ * che asserisce una garanzia inesistente è peggio di nessun commento (classe già a ledger qui).
+ *
+ * - **Singole** (`upsertCloudLead`, `updateCloudLeadStatus`, `updateCloudAccountHealth`,
+ *   `upsertCloudEnrichmentData`, `eraseCloudLead`, `scrubCpEventsForUrl`) → **logga e PROPAGA**.
+ *   Non è la funzione a decidere di ignorare l'errore: lo decide il chiamante, già attrezzato —
+ *   `cloudBridge` la invoca fire-and-forget e nel `.catch` deposita in outbox, e
+ *   `applyOutboxOperation` misura il successo del drain sull'assenza di eccezione
+ *   (`supabaseSyncWorker.ts:209`). Inghiottendo qui, quei due crederebbero riuscito ciò che non lo è.
+ * - **Batch** (`batchUpsertCloudLeads`, `batchUpsertCloudSalesNavMembers`,
+ *   `syncSalesNavMembersToCloud`, `syncEnrichmentDataToCloud`) → **NON propagano**: sono
+ *   parzialmente riuscibili e un throw butterebbe l'informazione sui chunk riusciti. Riportano un
+ *   esito esplicito (`{synced, failed[, skipped]}`), mai un conteggio ambiguo.
+ * - **Eccezioni motivate, ognuna col perché accanto alla sua funzione**:
+ *   `incrementCloudDailyStatIdem` propaga SENZA loggare (l'unico chiamante è il drain dell'outbox,
+ *   che logga lui); `markTelegramCommandProcessed` logga SENZA propagare (il comando è già stato
+ *   eseguito: propagare non lo disfa).
+ * - **`count === 0`** (UPDATE che non trova la riga) non è un errore per Postgres: si logga un
+ *   `*.no_row` dedicato, mai un throw — ritentare un mismatch d'identità non lo risolve.
+ * - **Client assente** (`getClient()` → null) NON è un errore: è il sink cloud spento, quindi no-op.
  */
 export async function upsertCloudLead(lead: CloudLeadUpsert): Promise<void> {
     const sb = getClient();
@@ -495,18 +509,24 @@ export async function upsertCloudEnrichmentData(data: CloudEnrichmentData): Prom
  * Sync batch di enrichment data dal DB locale a Supabase.
  * Risolve il mapping local_lead_id → cloud lead_id tramite linkedin_url.
  *
- * Batch ⇒ NON propaga (parzialmente riuscibile) ma riporta l'esito ESPLICITO: `synced` conta i soli
- * record realmente accettati dal cloud — prima era un `synced++` incondizionato dopo una chiamata che
- * inghiottiva l'errore, quindi il numero stampato all'utente non misurava nulla.
- * `failed` è un CONTEGGIO e non l'array: non esiste un topic outbox per l'enrichment, nessun caller
- * può ritentarli (se il topic verrà aggiunto, qui serve l'array).
+ * Batch ⇒ NON propaga (parzialmente riuscibile) ma riporta l'esito ESPLICITO su TRE assi, perché
+ * tre cose diverse possono andare storte e collassarle su un numero solo le rende invisibili:
+ * - `synced`  = record realmente accettati dal cloud (prima era un `synced++` incondizionato dopo
+ *               una chiamata che inghiottiva l'errore: il numero stampato non misurava nulla);
+ * - `failed`  = scrittura tentata e RIFIUTATA, o payload locale illeggibile (JSON malformato);
+ * - `skipped` = il lead non esiste nel cloud, quindi l'enrichment non ha dove attaccarsi. Non è un
+ *               fallimento di scrittura, ed è il caso dominante finché i lead cloud li popola solo
+ *               il percorso salesnav.
+ * `{0,0,0}` significa quindi davvero «niente da fare o replica disattivata», e nient'altro.
+ * Sono CONTEGGI e non array: non esiste un topic outbox per l'enrichment, nessun caller può
+ * ritentarli (se il topic verrà aggiunto, qui servono gli array).
  */
 export async function syncEnrichmentDataToCloud(localDb: {
     query: (sql: string, params?: unknown[]) => Promise<Array<Record<string, unknown>>>;
-}): Promise<{ synced: number; failed: number }> {
-    if (!isConfigured()) return { synced: 0, failed: 0 };
+}): Promise<{ synced: number; failed: number; skipped: number }> {
+    if (!isConfigured()) return { synced: 0, failed: 0, skipped: 0 };
     const sb = getClient();
-    if (!sb) return { synced: 0, failed: 0 };
+    if (!sb) return { synced: 0, failed: 0, skipped: 0 };
 
     // Legge enrichment data locale con il linkedin_url del lead per risolvere il mapping
     const rows = await localDb.query(
@@ -521,48 +541,78 @@ export async function syncEnrichmentDataToCloud(localDb: {
          LIMIT 500`,
     );
 
-    if (rows.length === 0) return { synced: 0, failed: 0 };
+    if (rows.length === 0) return { synced: 0, failed: 0, skipped: 0 };
 
-    // Risolve linkedin_url → cloud lead_id
+    // Risolve linkedin_url → cloud lead_id.
+    // 🔴 `error` NON era destrutturato: se questa query fallisce (rete giù, o 414 perché 500 URL in
+    // una GET PostgREST sfondano il buffer header), `cloudLeads` è null, OGNI record cade nel
+    // `continue` qui sotto e la funzione ritorna {0,0} — cioè «niente da fare». Era la scrittura
+    // silenziosa che questa stessa funzione è stata riscritta per eliminare. Chunk da 100 per non
+    // costruire la URL che provoca il 414.
     const urls = rows.map((r) => r.linkedin_url as string).filter(Boolean);
-    const { data: cloudLeads } = await sb.from('leads').select('id, linkedin_url').in('linkedin_url', urls);
-
     const urlToCloudId = new Map<string, number>();
-    for (const cl of cloudLeads ?? []) {
-        urlToCloudId.set(cl.linkedin_url as string, cl.id as number);
+    const CHUNK_URLS = 100;
+    for (let i = 0; i < urls.length; i += CHUNK_URLS) {
+        const { data: cloudLeads, error } = await sb
+            .from('leads')
+            .select('id, linkedin_url')
+            .in('linkedin_url', urls.slice(i, i + CHUNK_URLS));
+        if (error) {
+            await logWarn('cloud.enrichment.map.error', { chunk: i / CHUNK_URLS, error: error.message });
+            // Senza il mapping non si può sincronizzare NULLA di questo lotto: dirlo, non tacere.
+            return { synced: 0, failed: rows.length, skipped: 0 };
+        }
+        for (const cl of cloudLeads ?? []) {
+            urlToCloudId.set(cl.linkedin_url as string, cl.id as number);
+        }
     }
 
     let synced = 0;
     let failed = 0;
+    let skipped = 0;
     for (const r of rows) {
         const cloudLeadId = urlToCloudId.get(r.linkedin_url as string);
-        if (!cloudLeadId) continue;
+        if (!cloudLeadId) {
+            // TERZO esito: il lead non esiste nel cloud, quindi l'enrichment non ha dove attaccarsi.
+            // Non è un fallimento di scrittura e non è «niente da fare» — collassarlo su {0,0}
+            // renderebbe invisibile il caso DOMINANTE (i lead cloud li popola solo il percorso salesnav).
+            skipped++;
+            continue;
+        }
 
-        const record: CloudEnrichmentData = {
-            lead_id: cloudLeadId,
-            local_lead_id: r.local_lead_id as number,
-            company_json: r.company_json ? JSON.parse(r.company_json as string) : null,
-            phones_json: r.phones_json ? JSON.parse(r.phones_json as string) : null,
-            socials_json: r.socials_json ? JSON.parse(r.socials_json as string) : null,
-            seniority: (r.seniority as string) || null,
-            department: (r.department as string) || null,
-            data_points: (r.data_points as number) || 0,
-            confidence: (r.confidence as number) || 0,
-            sources_json: r.sources_json ? JSON.parse(r.sources_json as string) : null,
-            enriched_at: (r.enriched_at as string) || null,
-        };
-
-        // La singola PROPAGA: il catch per-record è ciò che rende il batch parzialmente riuscibile
-        // senza far passare per «sincronizzato» un record rifiutato (l'errore è già loggato dentro).
+        // Il parse sta DENTRO il try: un `company_json` malformato nel DB locale deve costare UN
+        // record, non l'intero batch coi conteggi già accumulati (il contratto qui è «parzialmente
+        // riuscibile»). La scrittura singola PROPAGA, ed è il catch a renderla per-record.
         try {
-            await upsertCloudEnrichmentData(record);
+            await upsertCloudEnrichmentData({
+                lead_id: cloudLeadId,
+                local_lead_id: r.local_lead_id as number,
+                company_json: r.company_json ? JSON.parse(r.company_json as string) : null,
+                phones_json: r.phones_json ? JSON.parse(r.phones_json as string) : null,
+                socials_json: r.socials_json ? JSON.parse(r.socials_json as string) : null,
+                seniority: (r.seniority as string) || null,
+                department: (r.department as string) || null,
+                data_points: (r.data_points as number) || 0,
+                confidence: (r.confidence as number) || 0,
+                sources_json: r.sources_json ? JSON.parse(r.sources_json as string) : null,
+                enriched_at: (r.enriched_at as string) || null,
+            });
             synced++;
-        } catch {
+        } catch (err: unknown) {
+            // `upsertCloudEnrichmentData` logga già l'errore di scrittura; qui arriva anche il parse
+            // fallito, che invece nessuno ha ancora dichiarato.
+            await logWarn('cloud.enrichment.record.failed', {
+                localLeadId: r.local_lead_id,
+                error: err instanceof Error ? err.message : String(err),
+            });
             failed++;
         }
     }
 
-    return { synced, failed };
+    if (skipped > 0) {
+        await logWarn('cloud.enrichment.map.miss', { skipped, total: rows.length });
+    }
+    return { synced, failed, skipped };
 }
 
 // ──────────────────────────────────────────────────────────────

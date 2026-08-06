@@ -253,15 +253,25 @@ export async function runEnrichTargetsCommand(args: string[]): Promise<void> {
 
 // ─── Deep Enrichment ─────────────────────────────────────────────────────────
 
+/**
+ * `website` è un campo libero, spesso compilato a mano: un valore non parsabile NON è un errore da
+ * propagare, è il caso normale che manda al fallback sul nome azienda. Isolato qui perché un
+ * `catch { }` inline è indistinguibile da uno swallow vero, per il SAST e per chi legge.
+ */
+function hostnameDaWebsite(raw: string): string | null {
+    try {
+        const parsed = raw.startsWith('http') ? new URL(raw) : new URL(`https://${raw}`);
+        return parsed.hostname.replace(/^www\./i, '').toLowerCase();
+    } catch {
+        return null;
+    }
+}
+
 function inferDomainFromLead(lead: LeadRecord): string {
     const raw = (lead.website ?? '').trim();
     if (raw) {
-        try {
-            const parsed = raw.startsWith('http') ? new URL(raw) : new URL(`https://${raw}`);
-            return parsed.hostname.replace(/^www\./i, '').toLowerCase();
-        } catch {
-            /* ignore */
-        }
+        const hostname = hostnameDaWebsite(raw);
+        if (hostname) return hostname;
     }
     const company = ((lead.account_name as string) ?? '').trim();
     if (company) {
@@ -439,12 +449,17 @@ export async function runEnrichDeepCommand(args: string[]): Promise<void> {
             const db = await getDatabase();
             // `synced` conta ora i soli record ACCETTATI dal cloud: prima era un conteggio delle
             // iterazioni del loop, quindi questa riga poteva annunciare N record mai arrivati.
-            const { synced, failed } = await syncEnrichmentDataToCloud(db);
+            const { synced, failed, skipped } = await syncEnrichmentDataToCloud(db);
             if (synced > 0) {
                 console.log(`[CLOUD] ${synced} enrichment record sincronizzati su Supabase.`);
             }
             if (failed > 0) {
                 console.error(`[CLOUD] ${failed} enrichment record RIFIUTATI dal cloud (non ritentati).`);
+            }
+            if (skipped > 0) {
+                console.warn(
+                    `[CLOUD] ${skipped} enrichment record saltati: il lead non esiste nel cloud (serve prima la sync dei lead).`,
+                );
             }
         } catch (err) {
             console.log(`[CLOUD] Sync fallita (non bloccante): ${err instanceof Error ? err.message : String(err)}`);
@@ -743,12 +758,17 @@ export async function runEnrichProfilesCommand(args: string[]): Promise<void> {
     // Sync to Supabase
     if (enriched > 0 || scraped > 0) {
         try {
-            const { synced, failed } = await syncEnrichmentDataToCloud(db);
+            const { synced, failed, skipped } = await syncEnrichmentDataToCloud(db);
             if (synced > 0) {
                 console.log(`[CLOUD] ${synced} record sincronizzati su Supabase.`);
             }
             if (failed > 0) {
                 console.error(`[CLOUD] ${failed} record RIFIUTATI dal cloud (non ritentati).`);
+            }
+            if (skipped > 0) {
+                console.warn(
+                    `[CLOUD] ${skipped} record saltati: il lead non esiste nel cloud (serve prima la sync dei lead).`,
+                );
             }
         } catch (err) {
             console.log(`[CLOUD] Sync fallita: ${err instanceof Error ? err.message : String(err)}`);

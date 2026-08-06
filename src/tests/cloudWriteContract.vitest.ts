@@ -51,6 +51,9 @@ const stato = vi.hoisted(() => ({
     upsertCount: null as number | null,
     // F-CB.8 — risultato di `select().in()`: la risoluzione linkedin_url → cloud lead_id
     selectInData: [] as Array<{ id: number; linkedin_url: string }>,
+    // F-CB.8-bis — errore della query di MAPPING (url → cloud id): il critical trovato dal critico
+    // era che `error` non veniva destrutturato affatto, quindi questo caso non era esprimibile.
+    selectInError: null as { message: string } | null,
 }));
 
 vi.mock('../config', () => ({ config: stato.config }));
@@ -92,7 +95,11 @@ vi.mock('@supabase/supabase-js', () => ({
                 builder.abortSignal = self;
                 // `.in()` CHIUDE la catena in `syncEnrichmentDataToCloud`
                 // (`select('id, linkedin_url').in('linkedin_url', urls)`) ⇒ risolve, non concatena.
-                builder.in = () => Promise.resolve({ data: stato.selectInData, error: null });
+                builder.in = () =>
+                    Promise.resolve({
+                        data: stato.selectInError ? null : stato.selectInData,
+                        error: stato.selectInError,
+                    });
                 // `maybeSingle`: 0 righe ⇒ data null SENZA error (postgrest-js 2.100.1)
                 builder.maybeSingle = () =>
                     Promise.resolve({ data: stato.selectData, error: stato.selectError });
@@ -128,6 +135,7 @@ beforeEach(() => {
     stato.upsertPayloads = [];
     stato.upsertCount = null;
     stato.selectInData = [];
+    stato.selectInError = null;
     vi.clearAllMocks();
 });
 
@@ -430,7 +438,7 @@ describe('enrichment — il conteggio deve misurare i record ACCETTATI, non i gi
 
         // Prima del fix: { synced: 1 } — il `synced++` era incondizionato dopo una chiamata che
         // inghiottiva l'errore, quindi la CLI annunciava record mai arrivati nel cloud.
-        expect(esito).toEqual({ synced: 0, failed: 1 });
+        expect(esito).toEqual({ synced: 0, failed: 1, skipped: 0 });
     });
 
     it('record accettato ⇒ synced, nessun failed', async () => {
@@ -438,13 +446,13 @@ describe('enrichment — il conteggio deve misurare i record ACCETTATI, non i gi
         stato.selectInData = [{ id: 42, linkedin_url: RIGA_LOCALE.linkedin_url }];
         stato.upsertError = null;
 
-        expect(await syncEnrichmentDataToCloud(dbConUnaRiga)).toEqual({ synced: 1, failed: 0 });
+        expect(await syncEnrichmentDataToCloud(dbConUnaRiga)).toEqual({ synced: 1, failed: 0, skipped: 0 });
     });
 
     it('sink spento ⇒ {0,0}: niente da recuperare, non è un rifiuto', async () => {
         stato.config.supabaseSyncEnabled = false;
         const { syncEnrichmentDataToCloud } = await importaDataClient();
-        expect(await syncEnrichmentDataToCloud(dbConUnaRiga)).toEqual({ synced: 0, failed: 0 });
+        expect(await syncEnrichmentDataToCloud(dbConUnaRiga)).toEqual({ synced: 0, failed: 0, skipped: 0 });
     });
 });
 
@@ -475,5 +483,63 @@ describe('salesnav_list_members — «spento» e «rifiutato» non sono più lo 
         stato.upsertCount = 1;
 
         expect(await batchUpsertCloudSalesNavMembers([MEMBRO])).toEqual({ synced: 1, failed: 0 });
+    });
+});
+
+/**
+ * F-CB.8-bis — i buchi che il critico avversariale ha trovato DENTRO la funzione riscritta per
+ * eliminare i silenzi. Prova che il fix non aveva chiuso la classe, l'aveva spostata di due righe.
+ */
+describe('enrichment — i tre esiti non devono collassare su «niente da fare»', () => {
+    const RIGA = {
+        local_lead_id: 7,
+        linkedin_url: 'https://www.linkedin.com/in/tizio',
+        company_json: null,
+        phones_json: null,
+        socials_json: null,
+        seniority: 'senior',
+        department: 'eng',
+        data_points: 3,
+        confidence: 90,
+        sources_json: null,
+        enriched_at: '2026-08-06T10:00:00.000Z',
+    };
+    const dbConUnaRiga = { query: async () => [RIGA] };
+
+    it('mapping FALLITO ⇒ failed, non {0,0,0} (il critical: `error` non era destrutturato)', async () => {
+        const { syncEnrichmentDataToCloud } = await importaDataClient();
+        stato.selectInError = ERRORE_DI_RETE;
+
+        // Prima: cloudLeads null ⇒ ogni record nel `continue` ⇒ {0,0} = «niente da fare».
+        expect(await syncEnrichmentDataToCloud(dbConUnaRiga)).toEqual({ synced: 0, failed: 1, skipped: 0 });
+    });
+
+    it('lead ASSENTE nel cloud ⇒ skipped, distinto sia da synced sia da failed', async () => {
+        const { syncEnrichmentDataToCloud } = await importaDataClient();
+        stato.selectInData = []; // nessun mapping: il lead non e' mai stato sincronizzato
+
+        expect(await syncEnrichmentDataToCloud(dbConUnaRiga)).toEqual({ synced: 0, failed: 0, skipped: 1 });
+    });
+
+    it('JSON locale malformato ⇒ UN record failed, il batch NON aborta', async () => {
+        const { syncEnrichmentDataToCloud } = await importaDataClient();
+        stato.selectInData = [
+            { id: 42, linkedin_url: RIGA.linkedin_url },
+            { id: 43, linkedin_url: 'https://www.linkedin.com/in/caio' },
+        ];
+        const dbConUnaRottaEUnaBuona = {
+            query: async () => [
+                { ...RIGA, company_json: '{ questo non e JSON' },
+                { ...RIGA, local_lead_id: 8, linkedin_url: 'https://www.linkedin.com/in/caio' },
+            ],
+        };
+
+        // Prima il parse stava FUORI dal try: l'eccezione usciva dalla funzione e i conteggi
+        // gia' accumulati sparivano, contro il contratto «batch parzialmente riuscibile».
+        expect(await syncEnrichmentDataToCloud(dbConUnaRottaEUnaBuona)).toEqual({
+            synced: 1,
+            failed: 1,
+            skipped: 0,
+        });
     });
 });
