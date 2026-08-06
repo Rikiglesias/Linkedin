@@ -2539,3 +2539,27 @@ secret-scan 853 file. `[skip-sast]` con prova (empty-catch preesistente, funzion
 **C1 resta 3,5/4** — il numero non cambia perché il mancante è sempre lo stesso (percorso **inviti**,
 gated sulla scelta ①/② di Riccardo). Ma il ✅ su bridge ora poggia sull'**inventario verificato di
 tutte e 13 le scritture** del data client: nessuna silenziosa residua.
+
+### F-CB.9 — due chiavi per lo stesso server Ollama (stessa sessione, `c84ec74`)
+
+Il lastchat lo annotava come «due env per lo stesso server, i predicati sono coerenti e documentati
+— il difetto è la doppia chiave, che può divergere». Guardandolo alla fonte è **più grosso**: non è
+che «possono divergere», è che **divergendo ingannano due meccanismi diversi**.
+
+`OLLAMA_ENDPOINT` governa la sonda del preflight e l'avvio automatico del server; `OPENAI_BASE_URL`
+governa la scelta del provider **ed è l'endpoint delle chiamate**. Se divergono, il preflight stampa
+«Ollama OK» sondando un server che nessuno chiamerà — falso verde nel diagnostico, la classe
+«verifica la rappresentazione invece della cosa» già a ledger — e il lifecycle avvia (o non avvia)
+quello sbagliato. Coi default coincidono: **invisibile finché qualcuno non sposta Ollama**.
+
+**Scartato** derivare una chiave dall'altra: cambierebbe la precedenza di una config che non posso
+ispezionare (il `.env` è fuori dalla mia portata per policy), quindi non potrei verificare di non
+aver rotto un setup esistente. **Scelto** un check di coerenza additivo, messo **dentro il check
+Ollama che già esisteva** — che è proprio uno dei due ingannati.
+
+Confronto sull'**origin**, non sull'URL intera: i path devono poter divergere (`/v1` = API
+OpenAI-compatible, nudo = API nativa). Predicato estratto come funzione pura perché il comando fa
+I/O ovunque. **Rosso di controllo**: stringendo il confronto all'URL intera cadono **4 test su 5**.
+Un test fissa i default reali del repo, così se qualcuno ne cambia uno solo il verde cade.
+
+**VERIFICA**: gate **exit 0 — 213 file / 2139 test** (era 212/2134), `tsc` 0, `madge` 0.
