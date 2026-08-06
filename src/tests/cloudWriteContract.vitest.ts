@@ -67,14 +67,20 @@ vi.mock('@supabase/supabase-js', () => ({
             update: () => ({
                 eq: () => Promise.resolve({ error: stato.updateError, count: stato.updateCount }),
             }),
-            select: () => ({
-                eq: () => ({
-                    eq: () => ({
-                        // `maybeSingle`: 0 righe ⇒ data null SENZA error (postgrest-js 2.100.1)
-                        maybeSingle: () => Promise.resolve({ data: stato.selectData, error: stato.selectError }),
-                    }),
-                }),
-            }),
+            // Builder fluente: le due catene reali hanno forma diversa
+            // (`select().eq().eq().maybeSingle()` per daily_stats,
+            //  `select().eq().eq().order().limit().maybeSingle()` per telegram_commands).
+            select: () => {
+                const builder: Record<string, unknown> = {};
+                const self = () => builder;
+                builder.eq = self;
+                builder.order = self;
+                builder.limit = self;
+                // `maybeSingle`: 0 righe ⇒ data null SENZA error (postgrest-js 2.100.1)
+                builder.maybeSingle = () =>
+                    Promise.resolve({ data: stato.selectData, error: stato.selectError });
+                return builder;
+            },
         }),
         rpc: () => Promise.resolve({ error: stato.rpcError }),
     }),
@@ -217,6 +223,46 @@ describe('incrementCloudDailyStat — il fallback non può corrompere il contato
         ).resolves.toBeUndefined();
 
         expect(stato.upsertPayloads[0]?.acceptances).toBe(42);
+    });
+});
+
+describe('canale di controllo Telegram — il freno d\'emergenza non può essere muto', () => {
+    it('cloud irraggiungibile ⇒ logWarn, non un silenzioso «nessun comando»', async () => {
+        const { pollPendingTelegramCommand } = await importaDataClient();
+        const { logWarn } = await import('../telemetry/logger');
+        stato.selectError = ERRORE_DI_RETE;
+
+        await expect(pollPendingTelegramCommand('account-1')).resolves.toBeNull();
+
+        expect(logWarn).toHaveBeenCalledWith(
+            'cloud.telegram.poll.error',
+            expect.objectContaining({ accountId: 'account-1' }),
+        );
+    });
+
+    it('nessun comando pendente ⇒ null SENZA allarme (è il caso normale, non deve fare rumore)', async () => {
+        const { pollPendingTelegramCommand } = await importaDataClient();
+        const { logWarn } = await import('../telemetry/logger');
+        stato.selectError = null;
+        stato.selectData = null; // `maybeSingle` a 0 righe: nessun error, a differenza di `.single()`
+
+        await expect(pollPendingTelegramCommand('account-1')).resolves.toBeNull();
+
+        expect(logWarn).not.toHaveBeenCalled();
+    });
+
+    it('marcatura del comando che non trova la riga ⇒ visibile (prima l\'esito era ignorato del tutto)', async () => {
+        const { markTelegramCommandProcessed } = await importaDataClient();
+        const { logWarn } = await import('../telemetry/logger');
+        stato.updateError = null;
+        stato.updateCount = 0;
+
+        await markTelegramCommandProcessed(42);
+
+        expect(logWarn).toHaveBeenCalledWith(
+            'cloud.telegram.mark_processed.no_row',
+            expect.objectContaining({ commandId: 42 }),
+        );
     });
 });
 

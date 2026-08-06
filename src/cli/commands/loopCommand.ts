@@ -278,6 +278,10 @@ async function processCloudCommands(): Promise<void> {
                 await clearPauseState();
                 console.log(`[CLOUD] Automazione globale ripresa.`);
             } else if (cmd.command === 'restart') {
+                // La marcatura DEVE precedere l'uscita: `process.exit(0)` non torna mai, quindi la
+                // `markTelegramCommandProcessed` in fondo al blocco era irraggiungibile e il comando
+                // restava PENDING → al riavvio veniva ripescato → nuova uscita: crash-loop.
+                await markTelegramCommandProcessed(cmd.id);
                 console.warn('[CLOUD] Restart comandato. Uscita 0...');
                 process.exit(0);
             } else if (cmd.command === 'importa') {

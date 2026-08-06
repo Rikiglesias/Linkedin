@@ -298,6 +298,11 @@ export async function pollPendingTelegramCommand(accountId: string): Promise<Pen
     const sb = getClient();
     if (!sb) return null;
 
+    // `.maybeSingle()` e non `.single()`: con `single()` anche il caso NORMALE «nessun comando
+    // pendente» produce un `error` (PGRST116), quindi «il cloud non risponde» e «non c'è niente da
+    // fare» erano indistinguibili PER COSTRUZIONE — e il vecchio `if (error || !data) return null`
+    // li scartava entrambi senza una riga di log. Questo è il canale con cui l'operatore ferma il
+    // bot da Telegram: se muore, muore in silenzio mentre la chat risponde «comando accodato».
     const { data, error } = await sb
         .from('telegram_commands')
         .select('id, account_id, command, args')
@@ -305,9 +310,13 @@ export async function pollPendingTelegramCommand(accountId: string): Promise<Pen
         .eq('account_id', accountId)
         .order('created_at', { ascending: true })
         .limit(1)
-        .single();
+        .maybeSingle();
 
-    if (error || !data) return null;
+    if (error) {
+        await logWarn('cloud.telegram.poll.error', { accountId, error: error.message });
+        return null;
+    }
+    if (!data) return null; // nessun comando pendente: caso normale, nessun allarme
     return data as PendingTelegramCommand;
 }
 
@@ -318,13 +327,26 @@ export async function markTelegramCommandProcessed(commandId: number): Promise<v
     const sb = getClient();
     if (!sb) return;
 
-    await sb
+    // L'esito qui NON era controllato affatto. Conta: il comando è già stato ESEGUITO, quindi se la
+    // marcatura fallisce resta PENDING e al giro dopo viene rieseguito — innocuo per `pausa`,
+    // non per `importa`. Non un throw (il comando è fatto: propagare non lo disfa e non aiuta il
+    // chiamante), ma deve essere VISIBILE.
+    const { error, count } = await sb
         .from('telegram_commands')
-        .update({
-            status: 'PROCESSED',
-            processed_at: new Date().toISOString(),
-        })
+        .update(
+            {
+                status: 'PROCESSED',
+                processed_at: new Date().toISOString(),
+            },
+            { count: 'exact' },
+        )
         .eq('id', commandId);
+
+    if (error) {
+        await logWarn('cloud.telegram.mark_processed.error', { commandId, error: error.message });
+    } else if (count === 0) {
+        await logWarn('cloud.telegram.mark_processed.no_row', { commandId });
+    }
 }
 
 // ──────────────────────────────────────────────────────────────
