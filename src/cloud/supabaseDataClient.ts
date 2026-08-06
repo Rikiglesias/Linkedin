@@ -66,10 +66,20 @@ export async function updateCloudAccountHealth(
     if (quarantineReason !== undefined) patch['quarantine_reason'] = quarantineReason;
     if (quarantineUntil !== undefined) patch['quarantine_until'] = quarantineUntil;
 
-    const { error } = await sb.from('accounts').update(patch).eq('id', accountId);
+    const { error, count } = await sb.from('accounts').update(patch, { count: 'exact' }).eq('id', accountId);
     if (error) {
         await logWarn('cloud.accounts.health.update.error', { accountId, error: error.message });
         throw new Error(`cloud.accounts.health.update failed: ${error.message}`);
+    }
+    if (count === 0) {
+        // Un UPDATE che non trova la riga NON è un errore per Postgres: senza questo controllo il
+        // segnale di quarantena verso il Control Plane sparirebbe in silenzio — ed è ciò che accade
+        // oggi, perché la tabella `accounts` cloud non viene popolata da NESSUNA parte del repo
+        // (solo letta in fetchCloudAccounts e aggiornata qui: zero insert/upsert).
+        // Deliberatamente NON un throw: il retry dell'outbox rifarebbe lo stesso UPDATE a vuoto
+        // all'infinito fino alla DLQ. Un mismatch di identità non si risolve ritentando; va
+        // risolto creando l'account cloud, che è una capability a sé.
+        await logWarn('cloud.accounts.health.update.no_row', { accountId, health });
     }
 }
 
@@ -119,10 +129,19 @@ export async function updateCloudLeadStatus(
         updated_at: new Date().toISOString(),
     };
 
-    const { error } = await sb.from('leads').update(record).eq('linkedin_url', linkedinUrl);
+    const { error, count } = await sb
+        .from('leads')
+        .update(record, { count: 'exact' })
+        .eq('linkedin_url', linkedinUrl);
     if (error) {
         await logWarn('cloud.leads.status.update.error', { linkedinUrl, status, error: error.message });
         throw new Error(`cloud.leads.status.update failed: ${error.message}`);
+    }
+    if (count === 0) {
+        // Lead assente nel cloud: la transizione di status è appena andata perduta. Come sopra NON
+        // è un throw — ritentare QUESTO update non aiuta, perché ciò che manca è l'upsert iniziale
+        // del lead e qui non abbiamo il record completo per ricostruirlo.
+        await logWarn('cloud.leads.status.update.no_row', { linkedinUrl, status });
     }
 }
 

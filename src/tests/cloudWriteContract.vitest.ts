@@ -40,6 +40,9 @@ const stato = vi.hoisted(() => ({
     rpcError: null as { message: string } | null,
     selectError: null as { message: string } | null,
     selectData: null as Record<string, number> | null,
+    // Righe realmente toccate dall'UPDATE: `count: 'exact'`. 0 = la riga non esisteva, che per
+    // Postgres NON è un errore (verificato dal vivo sul progetto reale).
+    updateCount: 1 as number,
     // Osservazione: cosa è finito davvero nell'upsert di daily_stats_cloud
     upsertPayloads: [] as Record<string, unknown>[],
 }));
@@ -62,7 +65,7 @@ vi.mock('@supabase/supabase-js', () => ({
                 return Promise.resolve({ error: stato.upsertError });
             },
             update: () => ({
-                eq: () => Promise.resolve({ error: stato.updateError }),
+                eq: () => Promise.resolve({ error: stato.updateError, count: stato.updateCount }),
             }),
             select: () => ({
                 eq: () => ({
@@ -93,8 +96,53 @@ beforeEach(() => {
     stato.rpcError = null;
     stato.selectError = null;
     stato.selectData = null;
+    stato.updateCount = 1;
     stato.upsertPayloads = [];
     vi.clearAllMocks();
+});
+
+describe('scrivere su NULLA non è un errore per Postgres, ma non deve essere invisibile', () => {
+    it('health su account inesistente ⇒ logWarn dedicato, e NON un throw', async () => {
+        const { updateCloudAccountHealth } = await importaDataClient();
+        const { logWarn } = await import('../telemetry/logger');
+        stato.updateError = null;
+        stato.updateCount = 0; // la riga non esiste: `accounts` cloud non è popolata da nessuno
+
+        // Nessun throw: il retry dell'outbox rifarebbe lo stesso UPDATE a vuoto fino alla DLQ.
+        await expect(updateCloudAccountHealth('account-mai-creato', 'RED', 'quarantena')).resolves.toBeUndefined();
+
+        expect(logWarn).toHaveBeenCalledWith(
+            'cloud.accounts.health.update.no_row',
+            expect.objectContaining({ accountId: 'account-mai-creato', health: 'RED' }),
+        );
+    });
+
+    it('status su lead non presente nel cloud ⇒ logWarn dedicato', async () => {
+        const { updateCloudLeadStatus } = await importaDataClient();
+        const { logWarn } = await import('../telemetry/logger');
+        stato.updateError = null;
+        stato.updateCount = 0;
+
+        await expect(
+            updateCloudLeadStatus('https://www.linkedin.com/in/mai-sincronizzato', 'INVITED'),
+        ).resolves.toBeUndefined();
+
+        expect(logWarn).toHaveBeenCalledWith(
+            'cloud.leads.status.update.no_row',
+            expect.objectContaining({ status: 'INVITED' }),
+        );
+    });
+
+    it('riga trovata ⇒ nessun allarme (il controllo non deve diventare rumore)', async () => {
+        const { updateCloudAccountHealth } = await importaDataClient();
+        const { logWarn } = await import('../telemetry/logger');
+        stato.updateError = null;
+        stato.updateCount = 1;
+
+        await updateCloudAccountHealth('account-esistente', 'GREEN');
+
+        expect(logWarn).not.toHaveBeenCalled();
+    });
 });
 
 describe('supabaseDataClient — un fallimento di scrittura viene PROPAGATO', () => {
