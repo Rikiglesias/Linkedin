@@ -2493,3 +2493,49 @@ non rompere chi li importa. `/antiban-review` SICURO: cambia da dove viene un ti
 2 falsi positivi `globalSetup` · 3 appesi al destino di `frontend/` · `findHookCommandParts`
 (API gemella della libreria condivisa, allineata alla copia AI-Control-Plane).
 **Nel non-gated di C6 non resta lavoro autonomo.**
+
+---
+
+## 2026-08-06 — chat #19 — F-CB.8: ri-contare un criterio ha trovato i difetti che il criterio dava per chiusi
+
+**Tema**: goal `audit-codebase`, primo passo della ripresa = ri-contare C1 («nessun fallimento
+silenzioso sui 4 percorsi») con la sua definizione sotto gli occhi, invece di ereditare il «3,5/4».
+
+### Il reperto di METODO, che vale più dei due fix
+Il ✅ su **bridge** poggiava sul perimetro di F-CB.0: *«4 funzioni bridge, 5 consumatori»*. Quel
+perimetro era stato dedotto dai **CONSUMATORI del bridge**, non dall'**inventario delle scritture del
+data client**. Chi non passa dal bridge non era nel perimetro — ed è esattamente ciò che è rimasto rotto.
+📌 **Un perimetro dedotto dai chiamanti non è il perimetro delle funzioni.**
+
+### I due difetti trovati (`97f69f1`, pushato)
+- **`syncEnrichmentDataToCloud:527-528` — `synced++` incondizionato.** `upsertCloudEnrichmentData:468`
+  loggava e non propagava ⇒ il loop contava come sincronizzato ogni record, anche i rifiutati. È lo
+  **stesso difetto di `applyOutboxOperation`**, il reperto centrale di F-CB1: successo misurato
+  sull'assenza di eccezione, con l'eccezione resa impossibile a monte. Impatto: `utilCommands:440` e
+  `:741` stampavano «N enrichment record sincronizzati su Supabase» con **N arbitrario**, e il loro
+  `try/catch` era codice morto per gli errori di scrittura.
+- **`batchUpsertCloudSalesNavMembers:361` — ritorno `number` ambiguo.** `synced === 0` valeva sia
+  «sink spento» sia «tutti i chunk rifiutati», e **entrambi** i call-site loggano solo se `synced > 0`
+  ⇒ il rifiuto totale era il caso più silenzioso di tutti. Il commento `:359` «errori loggati ma non
+  propagati» era **la stessa frase falsa** che F-CB.1 aveva già rimosso da `upsertCloudLead`.
+  🔴 Il gemello stava **5 righe sotto** il fix di F-CB.3, dentro la stessa funzione.
+
+### Decisione: `failed` è un CONTEGGIO, non l'array
+Criterio dominante: **nessun caller può ritentare**. I topic outbox sono 5 (`cloud.lead.upsert|status|
+erase`, `cloud.account.health`, `cloud.daily_stat`) e nessuno copre salesnav o enrichment. Un array che
+nessuno consuma sarebbe la classe «capability promessa e mai eseguita» già trovata nella chat #16.
+Scartato creare il topic: capability nuova dentro un fix di error-handling = la trappola evitata in
+F-CB.6. **Residuo dichiarato**: i rifiutati non si recuperano, ma ora si vedono.
+
+### Verifiche
+**Rosso di controllo su entrambi**: tolto il throw dell'enrichment → **2 test cadono** (incluso quello
+del conteggio); tolto `failed += chunk.length` → **1 cade**. Ripristinati, grep a 0 residui.
+Trovato per strada: il mock `salesNavSyncSplit:27` aveva **lo stesso difetto che il commento due righe
+sopra descriveva** (`vi.fn()` nudo ⇒ `undefined` ⇒ destructuring esplosivo).
+Gate **exit 0 — 212 file / 2134 test** (baseline 2127 misurata a inizio chat), `madge` 0, `tsc` 0,
+secret-scan 853 file. `[skip-sast]` con prova (empty-catch preesistente, funzione byte-identica a HEAD).
+
+### Esito sul criterio
+**C1 resta 3,5/4** — il numero non cambia perché il mancante è sempre lo stesso (percorso **inviti**,
+gated sulla scelta ①/② di Riccardo). Ma il ✅ su bridge ora poggia sull'**inventario verificato di
+tutte e 13 le scritture** del data client: nessuna silenziosa residua.
