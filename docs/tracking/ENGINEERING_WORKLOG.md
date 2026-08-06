@@ -59,13 +59,29 @@ realtà non avveniva — un verde che non prova nulla.
 Gate **212 file / 2118 test exit 0** (era 211/2106), `madge` 0, `tsc` 0. Nessun file sotto il glob
 anti-ban; niente timing/fingerprint/volumi, e la quarantena locale resta la SSOT che ferma il bot.
 
-### 🔴 Residuo dichiarato, trovato col DB vivo
-Un **UPDATE che non matcha righe non è un errore** (misurato dal vivo). Con `accounts` a **0 righe**,
-`updateCloudAccountHealth` non ha mai avuto una riga da aggiornare: il segnale di quarantena RED verso
-il Control Plane **non arriva mai**. Stessa forma per i ~39 lead presenti in locale (348) e non nel
-cloud (309). Il fix richiede una decisione («0 righe = errore?» ha risposte diverse per caso d'uso) →
-tracciato in `~/todos/audit-codebase.md` § F-CB.6, primo lavoro della prossima fase.
-Chiuso invece **D3**: `daily_stats_cloud` è **vuota** ⇒ la serie storica che la voce 2 di Fase 4
+### 🔴 F-CB.6 — scrivere su NULLA non è un errore, e la quarantena non arrivava (`b92d697`)
+Trovato col DB vivo e **misurato**, non dedotto: `update accounts set health='RED' where
+id='<inesistente>'` non dà alcun errore. Il throw introdotto in `b5aff02` non copriva questo caso.
+Non è teoria: `accounts` cloud ha **0 righe**, e non per sbaglio — in tutto il repo (`.ts` + `.sql`)
+**non esiste un solo insert/upsert su `accounts`**: viene solo letta (`fetchCloudAccounts`) e
+aggiornata. Quindi `bridgeAccountHealth(..., 'RED', ...)` **non ha mai avuto una riga da aggiornare**:
+il segnale di quarantena verso il Control Plane non è mai arrivato. Stessa forma per i ~39 lead
+presenti in locale (348) e non nel cloud (309).
+
+**La scelta non è quella ovvia, ed è il punto del blocco.** NON un throw: l'outbox ritenterebbe lo
+stesso UPDATE a vuoto fino alla DLQ — un **mismatch di identità non si risolve ritentando**, e avrei
+scambiato un silenzio con un rumore irrisolvibile. NON un upsert su `accounts`: creerebbe righe
+parziali su 19 colonne in una tabella che il **downsync legge**, cioè account fantasma di ritorno al
+bot, e sarebbe inventare la capability «registrazione account cloud» dentro un fix di error-handling.
+⇒ `update(..., { count: 'exact' })` + `logWarn` dedicato a `count === 0`: rende **visibile** ciò che
+era invisibile. Rosso di controllo eseguito (tolto il check, il test cade). Gate **212 file / 2121
+test exit 0**.
+📌 **Residuo onesto**: il log non risolve. Finché nessuno popola `accounts`, la quarantena RED
+continua a non arrivare — la mitigazione che regge è che la quarantena **locale** è la SSOT e ferma
+davvero il bot ⇒ danno di osservabilità, non anti-ban. Capability mancante tracciata in
+`~/todos/improvements-proposed.md`.
+
+Chiuso anche **D3**: `daily_stats_cloud` è **vuota** ⇒ la serie storica che la voce 2 di Fase 4
 aspettava non esiste; quella voce resta bocciata, ora per evidenza diretta e non più per deduzione.
 
 ## 2026-08-05 — blocco 17c: due `parsePayload` omonimi e opposti nascondevano una campagna bloccata (`d7d2f7d`, `ce1e8f3`)
