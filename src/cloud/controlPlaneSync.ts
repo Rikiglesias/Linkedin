@@ -17,6 +17,46 @@ import {
     syncSalesNavMembersToCloud,
 } from './supabaseDataClient';
 
+/**
+ * Nomi dei rami lanciati insieme in `runControlPlaneSync`, NELLO STESSO ORDINE delle promise.
+ * Serve a dare un nome al fallimento: `allSettled` restituisce solo la posizione.
+ */
+const NOMI_RAMI_SYNC = ['accounts_down', 'leads_down', 'salesnav_up'] as const;
+
+/**
+ * Estrae i rami rigettati da un `Promise.allSettled`, con il loro nome e un messaggio sempre
+ * valorizzato.
+ *
+ * Perché esiste: `Promise.allSettled` **non rigetta mai**, quindi un `await` sul suo risultato senza
+ * ispezionarlo scarta ogni fallimento in silenzio — ed è ciò che accadeva qui, dove due dei tre rami
+ * (`syncAccountsDown`, `syncLeadsDown`) non hanno nemmeno un try/catch proprio.
+ *
+ * Puro di proposito: `runControlPlaneSync` richiederebbe di mockare config + supabase + db + runtime
+ * flags per essere esercitato, quindi la REGOLA si prova qui e il wiring si legge sopra.
+ */
+export function ramiFallitiDaEsiti(
+    nomi: string[],
+    esiti: PromiseSettledResult<unknown>[],
+): Array<{ ramo: string; errore: string }> {
+    const falliti: Array<{ ramo: string; errore: string }> = [];
+    for (let i = 0; i < esiti.length; i++) {
+        const esito = esiti[i];
+        if (esito.status !== 'rejected') continue;
+        // Un ramo senza nome resta visibile con la sua posizione: se domani se ne aggiunge uno alle
+        // promise e si dimentica il nome, il fallimento non deve tornare invisibile.
+        const ramo = nomi[i] ?? `ramo_${i}`;
+        const reason: unknown = esito.reason;
+        const errore =
+            reason instanceof Error
+                ? reason.message
+                : typeof reason === 'string' && reason.length > 0
+                  ? reason
+                  : `errore non descritto (${String(reason)})`;
+        falliti.push({ ramo, errore });
+    }
+    return falliti;
+}
+
 const CONTROL_PLANE_LAST_RUN_KEY = 'control_plane.campaigns.last_run_at';
 const CONTROL_PLANE_LAST_HASH_KEY = 'control_plane.campaigns.last_hash';
 const CONTROL_PLANE_ACCOUNTS_LAST_SYNC_KEY = 'control_plane.accounts.last_sync_at';
@@ -183,7 +223,13 @@ export async function runControlPlaneSync(options: { force?: boolean } = {}): Pr
             reason = force ? 'forced_sync' : 'synced';
         }
 
-        await Promise.allSettled([syncAccountsDown(), syncLeadsDown(), syncSalesNavUp()]);
+        const esitiRami = await Promise.allSettled([syncAccountsDown(), syncLeadsDown(), syncSalesNavUp()]);
+        for (const fallito of ramiFallitiDaEsiti([...NOMI_RAMI_SYNC], esitiRami)) {
+            // `allSettled` non rigetta MAI: senza questa ispezione un ramo morto era invisibile.
+            // Nessun retry: `syncSalesNavUp` ha già il suo catch, gli altri due rigirano al ciclo
+            // successivo del control plane. Il log È il rimedio, come per salesnav in F-CB.8.
+            await logWarn('control_plane.branch.rejected', { branch: fallito.ramo, error: fallito.errore });
+        }
 
         await setRuntimeFlag(CONTROL_PLANE_LAST_RUN_KEY, nowIso);
         await setRuntimeFlag(CONTROL_PLANE_LAST_HASH_KEY, nextHash);
