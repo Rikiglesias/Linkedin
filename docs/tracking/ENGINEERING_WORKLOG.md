@@ -4,6 +4,72 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-08-14 — blocco 20: accertare il perimetro di una costruzione ha trovato la bomba che quella costruzione avrebbe innescato (`c414f6f`)
+
+**Il compito era costruire «chi dichiara un account al cloud». Il primo atto — accertare il perimetro
+invece di progettare — ha cambiato la forma del problema: non è una capability mancante, sono tre
+difetti, e uno esplode proprio quando la capability viene aggiunta.**
+
+### Cosa c'era davvero
+
+L'identità di un account **è config-driven, non persistita**: `accountManager.ts:105` legge i profili
+dalla config e, se non ce ne sono, ne **sintetizza uno al volo** (`{id:'default'}`). Non esiste una
+tabella `accounts` locale — e non serve, perché la SSOT locale è la config. Manca solo il *proiettore*
+verso il cloud. I punti di contatto con la tabella cloud sono **esattamente due**
+(`supabaseDataClient.ts:69` update, `:872` select): **zero insert, zero upsert**.
+
+### I tre difetti, e perché l'ordine non è libero
+
+- **D1** (capability mancante) — nessuno popola `accounts` sul cloud ⇒ ogni `updateCloudAccountHealth`
+  colpisce **0 righe** e la quarantena RED non raggiunge il Control Plane.
+- **D2** (bug latente, **reperto nuovo**) — `system.ts:1182` `applyCloudAccountUpdates` esegue
+  `UPDATE accounts … WHERE id = ?` su una tabella **che nel DB locale non esiste**: verificato al DB
+  vivo (**57 tabelle**, nessuna `accounts`; solo `account_incidents` con 6 righe e
+  `account_health_snapshots` a 0) e nelle **73 migration** (zero `CREATE TABLE accounts`). Non esplode
+  solo perché il cloud è vuoto *per via di D1* ⇒ `updates.length > 0` non passa mai.
+  **I due difetti si mascherano a vicenda: chiudere D1 per primo accende D2.**
+  Peggio: lo stato locale di quarantena vive in **`sync_state`** (`system.ts:593` legge i runtime flag
+  `${ACCOUNT_QUARANTINE_FLAG}:<id>`), quindi quell'UPDATE non ha solo la tabella sbagliata, ha la
+  **destinazione** sbagliata — creare una tabella locale produrrebbe un secondo stato divergente.
+- **D3** (silenzio, **reperto nuovo, CHIUSO in questo blocco**) — `controlPlaneSync.ts:186` faceva
+  `await Promise.allSettled([...])` **senza mai guardare il risultato**: `allSettled` non rigetta mai,
+  e due dei tre rami non hanno un try/catch proprio ⇒ il downsync di account e lead poteva fallire a
+  ogni ciclo senza una riga di log.
+
+### Lo stato reale del cloud, misurato e non dedotto
+
+Lo schema cloud non è versionato nel repo e l'MCP `supabase-account` non vede il progetto del bot
+(`{"projects":[]}`). Risolto con un **probe read-only** eseguito col client del processo (fuori dal
+repo, nessuna credenziale letta né stampata): `accounts` **esiste, 0 righe** — D1 confermato nella
+forma esatta. Contorno: `leads` 309 · `salesnav_list_members` 119 · `cp_events` 2 · **`campaigns` 0**
+(il control plane gira sempre a vuoto sulle campagne: da riconciliare a parte).
+
+🔴 **Lo schema reale smentisce il tipo `CloudAccount`**: la tabella ha **19 colonne** contro i 15 del
+tipo, e fra le mancanti c'è **`metadata` jsonb NOT NULL senza default** ⇒ un insert costruito dal tipo
+TypeScript — la cosa più naturale da fare — **sarebbe fallito**. Il tipo è un'aspettativa, lo schema è
+il fatto. Emergono anche tre vincoli che il codice non poteva dare: `email`/`proxy_url`/`session_dir`
+**non vanno proiettati** (PII, credenziali del proxy, leak d'ambiente), e i contatori giornalieri sono
+**posseduti dal cloud** — protetti per **omissione**, poiché con `resolution=merge-duplicates`
+(verificato in `postgrest-js/src/PostgrestQueryBuilder.ts:1341-1400`) l'UPDATE tocca solo le colonne
+presenti nel payload.
+
+### Il fix consegnato
+
+`control_plane.branch.rejected` con il **nome** del ramo fallito; predicato `ramiFallitiDaEsiti`
+estratto puro (l'end-to-end vorrebbe config + supabase + db + runtime flags da mockare); un ramo senza
+nome prende `ramo_<i>` invece di sparire. **Rosso di controllo eseguito** (6/6 rossi prima; mutando il
+fallback, 1 cade; file ripristinato e verificato identico con `diff -q`). Gate **exit 0, 214 file /
+2152 test**, `madge` 0, **`build:backend` exit 0 verificato nel merito** (simbolo presente in `dist/`).
+
+### Cosa resta, e perché
+
+D2 e D1 hanno il design completo (tre architetture confrontate, scelta **A2** = proiezione dentro il
+control-plane sync con hash-gate, auto-riparante; scartata la lazy-su-`count===0` perché fonde
+«dichiarare l'identità» con «aggiornare lo stato» dentro un fix di error-handling — la trappola già
+evitata in F-CB.6 e F-CB.8, e perché creerebbe **righe fantasma** dall'id di fallback `'default'`).
+Sono fermi sul **gate ④** (review avversariale cross-model + contratto negoziato), che questo binding
+impone per la fase e che richiede una leva utente. Dettaglio in `~/todos/audit-codebase.md` § F-CB.10.
+
 ## 2026-08-06 — blocco 18: il ponte verso il cloud non sapeva dire di aver fallito (`b5aff02`, `4f1bae4`)
 
 **Il turno è partito da «riprova supabase» e ha finito per spiegare perché 54 giorni di guasto non
