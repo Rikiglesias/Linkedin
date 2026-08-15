@@ -99,7 +99,11 @@ se richiesto (`:4069`) ⇒ le colonne omesse vanno a **NULL**, non al default n�
 | C11 | Gate e build verdi **a ogni passo**, con evidenza per passo: ledger `docs/tracking/F-CB10-EVIDENCE.md` con comando, exit code e SHA del commit | il ledger esiste e ha una riga per commit del lavoro | 1 riga per SHA |
 | C12 | Nessun file del perimetro anti-ban toccato, su base **congelata** e includendo staged/unstaged | `git diff --name-only <BASE_SHA>..HEAD` + `git status --porcelain`, entrambi filtrati su `src/(browser\|risk\|salesnav\|captcha\|workers)/` | `0` in entrambi |
 
-`BASE_SHA` da congelare al freeze: **`28cdfbd`** (HEAD al momento della R1-PROPOSTA-c).
+`BASE_SHA` = **il commit del freeze**, cioè l'ultimo prima che parta una riga di codice di D1 — non un
+commit precedente al contratto, altrimenti il diff include lavoro che C12 non deve giudicare. Si
+scrive qui **alla ratifica**, non prima: finché il contratto è in revisione il valore cambierebbe a
+ogni commit. (Correzione di una premessa falsa della prima stesura, che indicava `28cdfbd`
+chiamandolo «HEAD al momento della R1-PROPOSTA-c» quando HEAD era già `421b348`.)
 
 ## Criteri fuzzy (CF\*) — gradati, MAI criteri di DONE
 - **CF1** — Nessun nome, commento o tipo racconta un ramo che non esiste più.
