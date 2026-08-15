@@ -159,11 +159,29 @@ describe('F3 — chi dichiara una identita\' propria deve avere il proprio cooki
         expect(estratto).toContain('accountId');
     });
 
-    it('nessun call-site passa `accountId` a launchBrowser senza passare anche `sessionDir`', () => {
+    /**
+     * Il jar e' PROPRIO se `sessionDir` e' passato (anche in forma abbreviata `sessionDir,`, che
+     * `webrtcLeakCheck.ts:135` usa gia': cercare solo `sessionDir:` bocciava il codice CORRETTO)
+     * e NON e' il jar condiviso dell'account default. `sessionDir: config.sessionDir` insieme a un
+     * `accountId` e' il bug appena corretto scritto in modo esplicito: due identita', un solo jar.
+     */
+    const haJarProprio = (chiamata: string): boolean => {
+        if (/\bsessionDir\s*:\s*config\.sessionDir\b/.test(chiamata)) return false;
+        return /\bsessionDir\s*[:,}]/.test(chiamata);
+    };
+
+    it('riconosce il jar proprio anche in forma abbreviata, e NON lo riconosce se e\' quello condiviso', () => {
+        expect(haJarProprio('launchBrowser({ sessionDir, headless })')).toBe(true);
+        expect(haJarProprio('launchBrowser({ sessionDir: dir, accountId: X })')).toBe(true);
+        expect(haJarProprio('launchBrowser({ sessionDir: config.sessionDir, accountId: X })')).toBe(false);
+        expect(haJarProprio('launchBrowser({ forceDesktop: true })')).toBe(false);
+    });
+
+    it('nessun call-site dichiara una identita\' propria senza avere un cookie jar proprio', () => {
         const colpevoli: string[] = [];
         for (const { file, testo } of FILE_PRODUZIONE) {
             for (const chiamata of argomentiDiLaunchBrowser(testo)) {
-                if (/\baccountId\s*:/.test(chiamata) && !/\bsessionDir\s*:/.test(chiamata)) {
+                if (/\baccountId\s*[:,}]/.test(chiamata) && !haJarProprio(chiamata)) {
                     colpevoli.push(`${file}: ${chiamata.replace(/\s+/g, ' ').slice(0, 90)}`);
                 }
             }

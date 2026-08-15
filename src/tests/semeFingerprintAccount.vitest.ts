@@ -1,8 +1,9 @@
 /**
  * P1 anti-ban / F1 — il seme di fingerprint non deve dipendere da un percorso del disco.
  *
- * Difetto: `launcher.ts:298` fa `options.accountId ?? sessionDir`, e i siti di lancio sono **19**
- * (non 7, come diceva questa riga prima del ri-conteggio), nessuno dei quali passa oggi
+ * Difetto: `launcher.ts:298` fa `options.accountId ?? sessionDir`, e i siti di lancio sono **18**
+ * (non 7 come diceva questa riga, e non 19: quel conteggio includeva un commento a
+ * `createProfile.ts:59` — trovato da una review indipendente), nessuno dei quali passa oggi
  * `accountId` ⇒ il seme è `config.sessionDir`, che `env.ts:154-160` risolve **su
  * `process.cwd()`**. Quel seme entra in `pickDeterministicFingerprint` (hash FNV-1a → **indice nel
  * pool**) e in `semeAccount01` (typo rate + hold-time dei tasti): spostare la repo o cambiare cwd

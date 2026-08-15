@@ -4,7 +4,7 @@
  *
  * ## Il problema che questo modulo risolve
  *
- * Il seme era `options.accountId ?? sessionDir` e i **19** siti di lancio non passavano `accountId`
+ * Il seme era `options.accountId ?? sessionDir` e i **18** siti di lancio non passavano `accountId`
  * — con UNA eccezione che questa riga taceva: `companyEnrichment.ts:276` lo passava pur riusando il
  * cookie jar dell'account default, cioe' mostrava DUE dispositivi sulla stessa sessione autenticata.
  * Rimossa, insieme al test F3 «un jar, un dispositivo»: oggi i siti che passano `accountId` sono
