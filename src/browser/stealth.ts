@@ -93,12 +93,13 @@ export function pickBrowserFingerprint(
     const cloudPool = coherentCloud.length > 0 ? coherentCloud : cloudPoolByDevice;
 
     if (cloudPool.length > 0) {
-        // Selezione deterministica anche dal cloud pool: stesso account → stesso fingerprint per ~1 settimana
-        const now = new Date();
-        const weekNumber = Math.floor(
-            (now.getTime() - new Date(now.getFullYear(), 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000),
-        );
-        const seed = `${accountId}:cloud:week${weekNumber}`;
+        // Selezione deterministica dal cloud pool: stesso account → SEMPRE lo stesso fingerprint.
+        // Il seme conteneva il numero di settimana, cioe' prometteva di ruotare il dispositivo ogni
+        // 7 giorni su una sessione LinkedIn autenticata. Misurato prima di toglierlo: in FNV-1a
+        // l'ultimo carattere entra in una sola moltiplicazione, quindi ruotava davvero solo l'1,4%
+        // degli account (28 su 2000) — la rotazione promessa non c'era, e quel residuo era un cambio
+        // di dispositivo gratuito. Il dispositivo si congela sull'IDENTITA', come il seme (P1).
+        const seed = `${accountId}:cloud`;
         let hash = 0x811c9dc5;
         for (let i = 0; i < seed.length; i++) {
             hash ^= seed.charCodeAt(i);
@@ -125,12 +126,10 @@ export function pickBrowserFingerprint(
 export function pickFingerprintMode(accountId?: string): boolean {
     if (!accountId || config.mobileProbability <= 0) return false;
     if (config.mobileProbability >= 1) return true;
-    // Deterministico per account+settimana: lo stesso account è sempre mobile o desktop per tutta la settimana
-    const now = new Date();
-    const weekNumber = Math.floor(
-        (now.getTime() - new Date(now.getFullYear(), 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000),
-    );
-    const seed = `${accountId}:mode:week${weekNumber}`;
+    // Deterministico per ACCOUNT: lo stesso account e' sempre mobile oppure sempre desktop.
+    // Prima il seme includeva la settimana dell'anno: un utente vero non cambia telefono/PC ogni
+    // lunedi', e la quota mobile resta comunque rispettata FRA account (misurata 29,9% con 0.3).
+    const seed = `${accountId}:mode`;
     let hash = 0x811c9dc5;
     for (let i = 0; i < seed.length; i++) {
         hash ^= seed.charCodeAt(i);
