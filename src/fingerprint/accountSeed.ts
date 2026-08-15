@@ -4,8 +4,12 @@
  *
  * ## Il problema che questo modulo risolve
  *
- * Il seme era `options.accountId ?? sessionDir`, e nessuno dei siti di lancio passa `accountId`
- * ⇒ in pratica era `config.sessionDir`, che `config/env.ts` risolve **su `process.cwd()`**.
+ * Il seme era `options.accountId ?? sessionDir` e i **19** siti di lancio non passavano `accountId`
+ * — con UNA eccezione che questa riga taceva: `companyEnrichment.ts:276` lo passava pur riusando il
+ * cookie jar dell'account default, cioe' mostrava DUE dispositivi sulla stessa sessione autenticata.
+ * Rimossa, insieme al test F3 «un jar, un dispositivo»: oggi i siti che passano `accountId` sono
+ * **zero**, ed e' la sentinella a tenerli tali.
+ * ⇒ in pratica il seme era `config.sessionDir`, che `config/env.ts` risolve **su `process.cwd()`**.
  * Conseguenza: spostare la repo, o lanciarla da una working directory diversa, cambiava
  * **fingerprint e tempi di battitura a parità di cookie jar** — cioè il segnale «stesso account,
  * dispositivo nuovo», esattamente ciò che l'anti-ban esiste per non produrre.

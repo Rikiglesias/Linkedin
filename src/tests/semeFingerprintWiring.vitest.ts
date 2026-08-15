@@ -11,10 +11,15 @@
  * Il wiring impuro vive in `fingerprint/seedRuntime.ts`, non nel launcher (che è oltre le 900
  * righe): i test seguono quella divisione — `launcher.ts` deve solo CHIAMARLO, al posto giusto.
  *
- * 🔴 Il caso che il design ha rischiato di perdere: `companyEnrichment.ts:276` passa
- * `accountId: 'company-enrichment'` pur usando la stessa `sessionDir` dell'account default. Se la
- * chiave del runtime flag derivasse dalla cartella, i due si scambierebbero il seme ⇒ uno dei due
+ * 🔴 Il caso che il design ha rischiato di perdere: se la chiave del runtime flag derivasse dalla
+ * cartella, due account con la stessa `sessionDir` si scambierebbero il seme ⇒ uno dei due
  * cambierebbe dispositivo. La chiave deve venire dall'IDENTITÀ.
+ *
+ * ⚠️ Questa premessa era scritta su `companyEnrichment.ts:276`, che passava
+ * `accountId: 'company-enrichment'` **riusando il jar dell'account default**: proteggerne la chiave
+ * significava tenere in piedi DUE dispositivi sulla stessa sessione autenticata. Il caso e' stato
+ * risolto alla radice (l'`accountId` non si passa piu' li') e la regola generale vive ora nel
+ * gruppo F3 in fondo a questo file. La regola sopra resta valida per due jar DIVERSI.
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
@@ -91,5 +96,53 @@ describe('F2 — il seme di fingerprint passa dalla regola, non dal percorso', (
         // `npx madge --circular` deve restare a zero (L1.5). Il contratto e' a parametri primitivi.
         expect(seedRuntime).not.toMatch(/from\s*'\.\.\/browser\//);
         expect(seedRuntime).toMatch(/congelaSemeFingerprint\(\s*sessionDir:\s*string,\s*accountIdEsplicito\?:\s*string/);
+    });
+});
+
+/**
+ * F3 — un cookie jar, un dispositivo.
+ *
+ * F2 ha protetto la CHIAVE di persistenza («due account non si scambiano il seme») e nel farlo ha
+ * dato per corretto che `companyEnrichment` avesse un'identita' propria pur riusando la `sessionDir`
+ * dell'account default. La domanda che nessuno aveva fatto e' quella zero: se il jar e' lo stesso ed
+ * e' AUTENTICATO (`companyEnrichment.ts:278` fa `checkLogin`), LinkedIn vede la stessa sessione
+ * presentarsi con DUE fingerprint — un segnale di cambio-dispositivo, cioe' esattamente cio' che il
+ * lavoro sul seme esisteva per eliminare.
+ *
+ * La regola generale, non l'istanza: passare un `accountId` a `launchBrowser` significa dichiarare
+ * un'identita' diversa; un'identita' diversa deve avere il PROPRIO cookie jar. Chi passa l'uno senza
+ * l'altro sta creando un secondo dispositivo su una sessione altrui.
+ */
+describe('F3 — chi dichiara una identita\' propria deve avere il proprio cookie jar', () => {
+    const FILE_PRODUZIONE = (() => {
+        const risultati: Array<{ file: string; testo: string }> = [];
+        const visita = (dir: string): void => {
+            for (const voce of fs.readdirSync(dir, { withFileTypes: true })) {
+                const completo = path.join(dir, voce.name);
+                if (voce.isDirectory()) {
+                    if (voce.name === 'tests' || voce.name === 'node_modules') continue;
+                    visita(completo);
+                } else if (voce.name.endsWith('.ts') && !voce.name.endsWith('.d.ts')) {
+                    risultati.push({ file: path.relative(SRC, completo), testo: fs.readFileSync(completo, 'utf8') });
+                }
+            }
+        };
+        visita(SRC);
+        return risultati;
+    })();
+
+    it('nessun call-site passa `accountId` a launchBrowser senza passare anche `sessionDir`', () => {
+        const colpevoli: string[] = [];
+        for (const { file, testo } of FILE_PRODUZIONE) {
+            // Le chiamate stanno su una riga sola in tutto il repo; se un domani si spezzassero,
+            // il match sull'oggetto letterale seguirebbe comunque fino alla graffa chiusa.
+            const chiamate = testo.match(/launchBrowser\(\s*\{[^}]*\}/g) ?? [];
+            for (const chiamata of chiamate) {
+                if (/\baccountId\s*:/.test(chiamata) && !/\bsessionDir\s*:/.test(chiamata)) {
+                    colpevoli.push(`${file}: ${chiamata.replace(/\s+/g, ' ').slice(0, 90)}`);
+                }
+            }
+        }
+        expect(colpevoli).toEqual([]);
     });
 });

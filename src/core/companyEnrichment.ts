@@ -273,7 +273,13 @@ export async function runCompanyEnrichmentBatch(
         return report;
     }
 
-    const session = await launchBrowser({ forceDesktop: true, accountId: ENRICHMENT_ACCOUNT_ID });
+    // Niente `accountId` qui, ed e' deliberato: questa sessione riusa il cookie jar dell'account
+    // default (`config.sessionDir`, vedi `launcher.ts:246`) e lo usa AUTENTICATO (`checkLogin` sotto).
+    // Passare un'identita' propria faceva derivare da essa il seme di fingerprint, quindi lo stesso
+    // jar si presentava a LinkedIn con DUE dispositivi (coincidenza 1 su 23). Un'identita' separata
+    // richiede un cookie jar separato: finche' il jar e' condiviso, il device dev'essere lo stesso.
+    // `ENRICHMENT_ACCOUNT_ID` resta l'etichetta degli INCIDENTI, che non e' l'identita' del device.
+    const session = await launchBrowser({ forceDesktop: true });
     try {
         const loggedIn = await checkLogin(session.page);
         if (!loggedIn) {
