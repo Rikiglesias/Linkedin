@@ -232,7 +232,15 @@ safe per costruzione, perché `applyOutboxOperation` ha già girato sul payload 
   `jobRunner`, ma passarlo **cambia fingerprint e dwell di un account già autenticato**, cioè produce
   proprio il segnale «cambio dispositivo» che si vuole evitare. Serve una **migrazione progettata**
   (seme stabile per gli account esistenti, flip solo su sessione nuova), non un fix a reflex.
-  ⇒ `antiban-review` dedicata, **task separato**.
+  ⇒ **`antiban-review` ESEGUITA (2026-08-15): verdetto 🔴 BLOCCO** sulla migrazione «passa
+  `account.id`» — cambierebbe l'indice nel pool fingerprint di **ogni** account in un colpo solo, su
+  cookie già autenticati. **Soluzione approvata: persistere il seme invece di sostituirlo** (esistenti
+  = valore odierno ⇒ zero segnale; nuovi = `account.id`). Dettaglio e catena in
+  `~/todos/audit-codebase.md` § «antiban-review ESEGUITA». **Task separato, non in questa fase.**
+- 🟡 **Capability inerte trovata durante quella review** (ricade in C6, non qui): tutti e 7 i siti di
+  lancio passano `forceDesktop: true`, e `launcher.ts:305` è
+  `options.forceDesktop ? false : pickFingerprintMode(accountId)` ⇒ il ramo mobile non è **mai**
+  consultato in produzione (`mobileProbability`, `mobileFingerprintPool`, `pickMobileFingerprint`).
 - `quarantine_until` cloud ha **semantica sbagliata**: la scrive `pauseAutomation` col `pausedUntil`
   di una pausa WARN. Sotto B nessuno la legge ⇒ non bloccante, ma è una bugia di modellazione che
   morderà il primo che costruisce una dashboard. Tocca `src/risk/**` → tracciare.
