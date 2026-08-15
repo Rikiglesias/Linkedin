@@ -2785,3 +2785,48 @@ eseguendo** — ora incluso, `build:backend` exit 0 verificato nel merito (i sim
 **VERIFICA**: rosso di controllo sul critical (rimosso il check, il test cade) · gate **exit 0 —
 213 file / 2146 test** (era 2139 a metà turno, 2127 a inizio chat) · `tsc` 0 · `madge` 0 ·
 `build:backend` exit 0 · secret-scan pulito.
+
+## 2026-08-15 — chat #22 — P1/F2: il seme di fingerprint si congela sull'identità, e il gate SAST torna leggibile
+
+**Goal `p1-seme-fingerprint` CHIUSO, 6/6 criteri.** Commit `dca82cb` (pushato).
+
+### Il difetto e perché la cura non era quella ovvia
+Il seme che sceglie il fingerprint (`pickDeterministicFingerprint`, hash FNV-1a → indice nel pool)
+e il ritmo di battitura (`semeAccount01`) era `options.accountId ?? sessionDir`, cioè in pratica un
+percorso che `env.ts` risolve su `process.cwd()`: **spostare la repo cambiava il dispositivo a
+parità di cookie jar**. `/antiban-review` (chat #21) aveva già **bloccato** la cura ovvia — passare
+`account.id` sposterebbe l'indice con probabilità ~(N-1)/N, cambiando dispositivo a **ogni** account
+già autenticato in un colpo solo. Cura approvata: **fissare** il seme, non sostituirlo.
+
+### La premessa del piano era falsa, e cambiava il design
+Il binding diceva «nessuno dei 7 siti di lancio passa `accountId`». Verificato alla fonte:
+**`companyEnrichment.ts:276` lo passa** (`'company-enrichment'`), e i siti sono **18**, 16 con
+`forceDesktop: true`. Conseguenza concreta: enrichment gira sulla **stessa `sessionDir`** dell'account
+default ⇒ una chiave di persistenza per-cartella li avrebbe fatti **scambiare il fingerprint**. La
+chiave segue l'**identità**: `accountId` esplicito, altrimenti l'id del profilo che matcha la cartella;
+profilo sconosciuto o **ambiguo** ⇒ nessuna persistenza, cioè comportamento odierno invariato
+(copre `createProfile.ts` e `webrtcLeakCheck.ts`, gli unici 2 siti con `sessionDir` ad-hoc).
+
+### Verificato dal vivo, non dedotto
+Canary read-only sulla config reale: profilo risolto `default` ⇒ **il fix non è inerte qui**;
+cartella di sessione con **52 voci** ⇒ al prossimo avvio scatta il ramo «congela il seme odierno»,
+**fingerprint invariato**. In più chiude una leva aperta: **`SESSION_DIR` è assoluto** ⇒ il P1 era
+**latente**, non attivo su questa macchina.
+
+**Residuo DICHIARATO**: fra il deploy e il primo avvio, cancellare la cartella di sessione di un
+account esistente ne cambierebbe il fingerprint (oggi non accadrebbe). Dal primo avvio il flag
+congelato vince anche a cartella cancellata.
+
+### Il gate SAST: chiuso invece di aggirato per la terza volta
+`pre-bash-sast-gate.ps1` scansiona i blob **staged interi** (giusto: chiude add-then-edit) ma
+**bloccava su tutti i finding del file**, anche su righe che il commit non tocca. Costo reale: due
+`[skip-sast]` motivati di fila — e un gate aggirato di routine smette di essere letto.
+Ora blocca solo sui finding **introdotti** (sovrapposizione con le righe aggiunte dal diff staged,
+non contenimento: un `catch` aperto prima e svuotato adesso deve firare); i **preesistenti restano
+nel log** come non bloccanti. Ripiego prudente: path non mappabile o file nuovo ⇒ blocca come prima.
+Test `test-g2-sast-gate.ps1`: 20 → **23 assert**, con rosso di controllo mirato prima del fix
+(DIFF1/DIFF3 rossi, DIFF2 già verde ⇒ il caso da NON perdere non è stato toccato).
+
+**VERIFICA**: `conta-problemi` **exit 0 — 217 file / 2179 test** · `build:backend` exit 0 ·
+`madge` 0 cicli su 537 file · `security:scan` 0 secret · sentinella wiring rossa 5/6 prima del fix,
+6/6 dopo — tutte le misure **posteriori** all'ultimo edit.
