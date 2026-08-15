@@ -131,13 +131,38 @@ describe('F3 — chi dichiara una identita\' propria deve avere il proprio cooki
         return risultati;
     })();
 
+    /**
+     * Estrae gli oggetti letterali passati a `launchBrowser(` contando le graffe.
+     * NON una regex: `\{[^}]*\}` si ferma alla PRIMA graffa chiusa, quindi
+     * `launchBrowser({ proxy: { url }, accountId: X })` verrebbe troncato a `{ proxy: { url }`
+     * e l'`accountId` sfuggirebbe alla guardia. Un oggetto annidato non deve poterla aggirare.
+     */
+    const argomentiDiLaunchBrowser = (testo: string): string[] => {
+        const trovati: string[] = [];
+        const marcatore = /launchBrowser\(\s*\{/g;
+        let m: RegExpExecArray | null;
+        while ((m = marcatore.exec(testo)) !== null) {
+            let profondita = 1;
+            let i = m.index + m[0].length;
+            for (; i < testo.length && profondita > 0; i++) {
+                if (testo[i] === '{') profondita++;
+                else if (testo[i] === '}') profondita--;
+            }
+            trovati.push(testo.slice(m.index, i));
+        }
+        return trovati;
+    };
+
+    it('l\'estrattore vede dentro gli oggetti annidati (altrimenti la guardia sotto è aggirabile)', () => {
+        const finto = 'launchBrowser({ proxy: { url: "x" }, accountId: ACC })';
+        const [estratto] = argomentiDiLaunchBrowser(finto);
+        expect(estratto).toContain('accountId');
+    });
+
     it('nessun call-site passa `accountId` a launchBrowser senza passare anche `sessionDir`', () => {
         const colpevoli: string[] = [];
         for (const { file, testo } of FILE_PRODUZIONE) {
-            // Le chiamate stanno su una riga sola in tutto il repo; se un domani si spezzassero,
-            // il match sull'oggetto letterale seguirebbe comunque fino alla graffa chiusa.
-            const chiamate = testo.match(/launchBrowser\(\s*\{[^}]*\}/g) ?? [];
-            for (const chiamata of chiamate) {
+            for (const chiamata of argomentiDiLaunchBrowser(testo)) {
                 if (/\baccountId\s*:/.test(chiamata) && !/\bsessionDir\s*:/.test(chiamata)) {
                     colpevoli.push(`${file}: ${chiamata.replace(/\s+/g, ' ').slice(0, 90)}`);
                 }
