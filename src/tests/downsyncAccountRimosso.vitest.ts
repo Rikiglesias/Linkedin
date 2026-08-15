@@ -41,8 +41,9 @@ function occorrenze(pattern: RegExp): string[] {
     for (const file of fileDiProduzione(SRC)) {
         const righe = fs.readFileSync(file, 'utf8').split('\n');
         righe.forEach((riga, i) => {
+            // I pattern non hanno il flag `g`: `test()` non avanza `lastIndex`, quindi non c'e'
+            // stato da azzerare fra una riga e l'altra. (Se un domani si aggiunge `g`, serve il reset.)
             if (pattern.test(riga)) trovate.push(`${path.relative(SRC, file)}:${i + 1}`);
-            pattern.lastIndex = 0;
         });
     }
     return trovate;
