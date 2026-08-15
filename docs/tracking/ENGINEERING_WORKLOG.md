@@ -2859,6 +2859,29 @@ semantica identica.
 risolti a runtime, ritorna il seme odierno). Il congelamento reale del flag **non** e' stato forzato:
 e' una scrittura sul DB di produzione, avverra' al primo avvio del bot.
 
+## 2026-08-15 — chat #24 (2) — i due anti-ban aperti chiusi, e la misura ha ribaltato la diagnosi di uno
+
+**Tema**: reperti anti-ban lasciati «verificati ma non chiusi» dalla chat #23.
+
+**`stealth.ts` (`c265244`)** — i semi contenevano il numero di settimana e il commento prometteva una
+rotazione del dispositivo ogni 7 giorni su sessione autenticata. Misurato invece di dedotto: in FNV-1a
+l'ultimo carattere pesa quasi nulla ⇒ ruotava solo l'**1,4%** degli account (28 su 2000), banda di
+0,05 sul valore normalizzato. La rotazione promessa non esisteva e il residuo era un cambio di
+dispositivo gratuito. Tolta la componente calendario; due test difendono quota mobile (29,9% misurata)
+e diversità fra account. Sicuro ora: `fingerprint.seed:%` = 0 righe in `sync_state`, pool cloud non
+configurato. Correzione di premessa: 9 dei 19 call-site di `launchBrowser` **non** passano
+`forceDesktop` (il binding diceva 7/7, perimetro parziale).
+
+**`companyEnrichment.ts` (`8d842f7`)** — la quarantena da login mancante usava `accountId:
+'company-enrichment'`, che in `quarantineAccount` è la CHIAVE e non un'etichetta: nessun gate
+interroga quell'id, quindi il fail-safe era inerte mentre il jar dell'account default — quello appena
+giudicato non autenticato — restava operativo. Omesso l'id ⇒ flag globale. Verificato che il gemello a
+`:169` non è un difetto: `handleChallengeDetected` mette in pausa globale, non in quarantena
+per-account.
+
+**Verifica**: `npm run conta-problemi` exit 0 — 221 file / 2212 test, lint 0, `tsc` 0. Entrambi
+pushati, `git ls-remote` = `8d842f7`.
+
 ## 2026-08-15 — chat #24 — il canale remoto smette di poter spegnere un fail-safe (e i gemelli erano tre)
 
 **Tema**: prerequisito ① di D1 (goal `audit-codebase`) — rendere monotono-restrittivo il canale che
