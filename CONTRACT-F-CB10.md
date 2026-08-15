@@ -1,7 +1,8 @@
 # CONTRATTO F-CB.10 — «chi dichiara un account al Control Plane»
 
 > Artefatto di negoziazione del contratto (tier `full`, GATE-COSTRUZIONE-360).
-> Stato: **R1-PROPOSTA-c** — riscritta dopo DUE verdetti `REVISE` indipendenti. NON ratificata, NON frozen.
+> Stato: **R1-PROPOSTA-d** — dopo DUE verdetti `REVISE` + un completeness-critic che ha trovato 3 CRITICI
+> sulla versione gia corretta. NON ratificata, NON frozen. **D1 e FERMO** (vedi CRITICO 1).
 > Il **cosa si fa** è in `PLAN.md`; il **perché** della rotta è in `PLAN-REVIEW-VERDICT.md`.
 > Qui SOLO i criteri con cui il lavoro sarà giudicato fatto o non fatto.
 
@@ -32,10 +33,22 @@ contatori) puntano allo stesso errore di progetto: **il piano tratta la proiezio
   YELLOW ritorna `any:false`. Aggravante: il merge non azzera `quarantine_until`
   (`src/cloud/supabaseDataClient.ts:67`) ⇒ riga `GREEN` **con scadenza di quarantena nel futuro**.
 
-E l'omissione **non protegge**: `postgrest-js@2.100.1` ha `defaultToNull = true`
-(`node_modules/@supabase/postgrest-js/dist/index.cjs:4062`) e aggiunge `Prefer: missing=default` solo
-se richiesto (`:4069`) ⇒ le colonne omesse vanno a **NULL**, non al default né al valore esistente.
-«Ometto i campi posseduti dal cloud per proteggerli» era **falso**: li azzerava.
+🔴 **CORREZIONE (R1-PROPOSTA-d) — la terza obiezione era MIA e SBAGLIATA.** La R1-PROPOSTA-c
+affermava: «`defaultToNull = true` ⇒ le colonne omesse vanno a NULL, quindi omettere i campi del
+cloud li azzera». **Falso per il nostro payload**, verificato alla riga: `postgrest-js@2.100.1`
+costruisce `?columns=` come **unione delle chiavi presenti negli oggetti**
+(`dist/index.cjs:4071-4074`, `values.reduce((acc,x) => acc.concat(Object.keys(x)), [])`) ⇒ una
+colonna **assente da TUTTI** gli elementi non entra in `columns` e PostgREST **non la tocca**: prende
+il DEFAULT nell'insert, resta intatta nel merge. `missing=default` governa solo le chiavi presenti in
+**alcuni** oggetti e assenti in altri (payload **eterogeneo**).
+⇒ Vincolo che resta, in forma corretta: **il payload dev'essere OMOGENEO** — stesse chiavi per ogni
+account, mai costruito con campi condizionali. Un payload eterogeneo (es. `display_name` solo per
+alcuni) azzererebbe davvero, e nessun criterio lo intercetta oggi.
+📌 Errore mio della stessa famiglia già a ledger: ho verificato che il flag **esiste**, non **come
+agisce**. Ereditato da Codex e non ri-verificato alla fonte.
+
+La decisione **INSERT ≠ MERGE resta**, perché poggiava su altri due piedi indipendenti (il declassamento
+di `health` e la sostituzione integrale di `metadata`), non su questo.
 
 ⇒ **Forma ratificata**: due operazioni distinte.
 1. **INSERT con `ignoreDuplicates: true`** (ON CONFLICT DO NOTHING) — nasce solo ciò che non esiste,
@@ -109,6 +122,62 @@ chiamandolo «HEAD al momento della R1-PROPOSTA-c» quando HEAD era già `421b34
 - **CF1** — Nessun nome, commento o tipo racconta un ramo che non esiste più.
 - **CF2** — I test provano la **regola** (funzione pura), non il wiring.
 - **CF3** — I residui dichiarati restano **visibili**, non evaporano nella chiusura.
+
+## 🔴 R1-PROPOSTA-d — cosa cambia dopo il `completeness-critic` (13 finding, 3 CRITICI)
+
+Il critico è stato lanciato **sulla -c**, cioè sulla versione già corretta da due revisori: cercava
+ciò che una riscrittura fatta sotto 22 obiezioni tende a lasciare aperto — non le obiezioni ricevute,
+ma quelle che nessuno ha nominato. Ne ha trovate tre che fermano il lavoro.
+
+### ⛔ CRITICO 1 — D1 riaccende un canale che RILASCIA lo stop (U6 è già falso)
+`loopCommand.ts:263` polla la tabella **cloud** `telegram_commands`; `:277-279` su `riprendi`/`resume`
+chiama `clearPauseState()` (= `clearAutomationPause`, import a `:30`) ⇒ **cancella una pausa imposta
+dall'incident manager**; `:286` su `restart` fa `process.exit(0)`. È inerte **solo** perché `accounts`
+è vuota (FK 23503) ⇒ **D1 lo accende**, mentre `PLAN.md:55-58` lo celebra come «sblocca tre canali».
+⇒ **D1 NON PARTE** finché il canale non è monotono-restrittivo. U6 va riscritto come **constatazione**
+(«il canale esiste ed è non-monotono»), + un C\* che asserisca il rifiuto di `resume`/`restart` dal cloud.
+
+### ⛔ CRITICO 2 — la redazione pianificata di `cp_events` ucciderebbe l'audit log
+`sanitizeObject` redige il valore quando la **chiave** è sensibile (`security/redaction.ts:70-74`) e
+`isSensitiveKey` splitta su `_` ⇒ `idempotency_key` → contiene `'key'` (`:9`) → `[REDACTED]`. Il piano
+applica `sanitizeForLogs` al `loggedPayload` intero, che va in upsert con
+`onConflict:'idempotency_key'` (`supabaseSyncWorker.ts:223-226`) ⇒ **ogni evento scriverebbe la stessa
+riga** e l'audit trail collasserebbe su una, con C10 verde.
+⇒ Redigere **solo `payload.payload`**, mai `idempotency_key`/`topic`/`created_at`. Nuovo criterio:
+«N eventi distinti ⇒ N righe con chiavi distinte».
+
+### ⛔ CRITICO 3 — il filtro «id configurato» di C9 è process-scoped e perde la RED
+`getRuntimeAccountProfiles()` sotto `--account` ritorna solo quell'account, o `[]`
+(`accountManager.ts:91-102`). Il drain gira nell'orchestrator (`orchestrator.ts:750`), lanciabile con
+`--account acc2` ⇒ un evento di `acc1` verrebbe classificato «non configurato», loggato senza throw, e
+**marcato CONSEGNATO** (`supabaseSyncWorker.ts:241`): la RED sparisce in silenzio.
+⇒ Confrontare con **`config.accountProfiles`** (lista configurata), mai col runtime filtrato dalla CLI.
+
+### Correzioni ai criteri (accolte, da applicare nella -d)
+- **C5** — dire QUALE quarantena per QUALE id: globale ⇒ **tutti** RED · per-account ⇒ solo quello ·
+  nessuna ⇒ GREEN. Un test sul solo per-account passa mentre il codice ignora il flag globale.
+- **C8** — il «rosso» **non è rosso**: `shouldRun` è `!ctx.dryRun && config.supabaseControlPlaneEnabled`
+  e il flag è **spento** ⇒ il test passerebbe oggi, prima del fix, misurando il flag e non il gate.
+  Va forzato `supabaseControlPlaneEnabled=true` e asseriti **entrambi** i versi.
+- **C9** — il VERIFY ordinava di invertire il caso `account-mai-creato`, che è un id **non**
+  configurato e quindi NON deve lanciare: il test esistente va **conservato**, se ne **aggiunge** uno
+  con id configurato. E «rifiuta prima dell'I/O» va disambiguato (throw vs skip+log).
+- **C13** — è scritto **solo in negativo**, quindi il nulla lo soddisfa: un'implementazione che non
+  emette mai l'UPDATE è verde. Serve la **metà positiva**: «riga preesistente ⇒ `last_declared_at`
+  avanzato **e** `health` invariato», più l'**allow-list** delle colonne ammesse nell'UPDATE.
+- **C15** — «`count` inatteso» è indefinito e con `ignoreDuplicates` `count===0` è lo stato **normale**:
+  definire l'atteso **per fase** (insert: `count ∈ [0..N]`, la prova è l'assenza di errore; update
+  mirato: `count === N`). Senza, C14 e C15 non possono essere veri insieme.
+- **C1/C14/C16** — VERIFY ciechi: C1 è tautologico sul tipo (i nomi derivano dagli stessi oggetti), C16
+  non può provare da un test puro che nessun percorso di **produzione** emetta DELETE, C14 usa un
+  `grep -A3` che non è un'asserzione ⇒ servono **sentinelle di sorgente**, come già fa C2.
+- **U1/U2** — entrambi allargati oltre ciò che il lavoro copre: il retry di U1 non parte perché in
+  quarantena il `doctor_gate` (`loopCommand.ts:447-457`, `onError:'abort'`) interrompe il ciclo prima
+  del drain; U2 include il deposito in outbox, che `cloudBridge.ts:141-148` inghiotte in un `catch {}`
+  muto. Vanno ristretti o il lavoro va esteso — tenerli così li rende **non falsificabili**.
+- **`health` è monotono-degradante**: nessuno riscrive mai GREEN verso il cloud ⇒ una riga nata YELLOW
+  durante una pausa resta YELLOW **per sempre**. Serve un C\* sul percorso di ritorno, o la
+  dichiarazione esplicita che nessun consumatore deve fidarsi di quel campo.
 
 ## Residui DICHIARATI (non silenti, non chiusi)
 1. **Discrepanza sulle FK**: lo schema versionato dichiara **cinque** FK verso `accounts`
