@@ -221,8 +221,18 @@ safe per costruzione, perché `applyOutboxOperation` ha già girato sul payload 
   `const accountId = options.accountId ?? sessionDir` e i chiamanti principali (`jobRunner.ts:171-174,
   :220-225`, `workflowEntryGuards.ts:89-96`, `loopCommand.ts:555-560`) **non passano `accountId`**.
   Quel valore seeda **fingerprint e tempo di pressione dei tasti**, e `sessionDir` è risolto su
-  `process.cwd()`: spostare la repo o lanciare da `dist/` cambia il seme **a parità di cookie jar** =
-  segnale di cambio-dispositivo sulla stessa sessione autenticata. Richiede `antiban-review`.
+  `process.cwd()` (`config/domains.ts:85` → `env.ts:154-160`, `path.resolve(process.cwd(), …)` su
+  ogni valore non assoluto): spostare la repo o cambiare cwd altera il seme **a parità di cookie
+  jar** = segnale di cambio-dispositivo sulla stessa sessione autenticata.
+  **Ri-verificato alla fonte il 2026-08-15, con due correzioni al verdetto:**
+  ① **il difetto è CONDIZIONALE** — con `SESSION_DIR` impostato a un path *assoluto* nell'`.env` il
+  seme è stabile e il sintomo non compare (l'`.env` non è leggibile dall'AI ⇒ stato odierno non
+  determinabile da qui); resta latente perché cambiare quel valore muta il fingerprint.
+  ② 🔴 **il fix è più rischioso del difetto**: `account.id` è disponibile nelle righe adiacenti di
+  `jobRunner`, ma passarlo **cambia fingerprint e dwell di un account già autenticato**, cioè produce
+  proprio il segnale «cambio dispositivo» che si vuole evitare. Serve una **migrazione progettata**
+  (seme stabile per gli account esistenti, flip solo su sessione nuova), non un fix a reflex.
+  ⇒ `antiban-review` dedicata, **task separato**.
 - `quarantine_until` cloud ha **semantica sbagliata**: la scrive `pauseAutomation` col `pausedUntil`
   di una pausa WARN. Sotto B nessuno la legge ⇒ non bloccante, ma è una bugia di modellazione che
   morderà il primo che costruisce una dashboard. Tocca `src/risk/**` → tracciare.
