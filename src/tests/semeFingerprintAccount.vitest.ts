@@ -1,0 +1,119 @@
+/**
+ * P1 anti-ban / F1 — il seme di fingerprint non deve dipendere da un percorso del disco.
+ *
+ * Difetto: `launcher.ts:298` fa `options.accountId ?? sessionDir`, e NESSUNO dei 7 siti di lancio
+ * passa `accountId` ⇒ il seme è `config.sessionDir`, che `env.ts:154-160` risolve **su
+ * `process.cwd()`**. Quel seme entra in `pickDeterministicFingerprint` (hash FNV-1a → **indice nel
+ * pool**) e in `semeAccount01` (typo rate + hold-time dei tasti): spostare la repo o cambiare cwd
+ * cambia il **dispositivo** a parità di cookie jar.
+ *
+ * 🔴 Perché NON si passa semplicemente `account.id`: `/antiban-review` ha dato BLOCCO. Cambiare il
+ * seme sposta l'indice con probabilità ~(N-1)/N ⇒ **ogni account cambierebbe dispositivo in un colpo
+ * solo**, su sessioni già autenticate — cioè il segnale «stesso account, nuovo dispositivo».
+ * Il difetto non è «il seme è sbagliato», è «il seme è RICALCOLATO da un percorso» ⇒ si **fissa**.
+ *
+ * Il test che conta è `P1.2`: prova un **NON-cambiamento**. Se un giorno qualcuno "semplificherà"
+ * questa funzione facendole ritornare `profiloId` sempre, quel test cade — ed è l'unico modo per
+ * accorgersene prima che se ne accorga LinkedIn.
+ */
+import { describe, it, expect } from 'vitest';
+import { risolviSemeFingerprint } from '../fingerprint/accountSeed';
+import { desktopFingerprintPool, pickDeterministicFingerprint } from '../fingerprint/pool';
+
+const SESSION_DIR = 'C:\\Users\\albie\\Desktop\\Programmi\\Linkedin\\data\\session';
+
+describe('risolviSemeFingerprint — fissare il seme, non sostituirlo', () => {
+    it('P1.2 (il test che conta): account GIÀ autenticato senza seme persistito → stesso indice di fingerprint di oggi', () => {
+        const esito = risolviSemeFingerprint({
+            semePersistito: null,
+            profiloId: 'default',
+            sessionDir: SESSION_DIR,
+            sessioneGiaAutenticata: true,
+        });
+
+        // Il comportamento ODIERNO: il seme è il sessionDir.
+        const fingerprintOggi = pickDeterministicFingerprint(desktopFingerprintPool, SESSION_DIR);
+        const fingerprintDopoIlFix = pickDeterministicFingerprint(desktopFingerprintPool, esito.seme);
+
+        expect(fingerprintDopoIlFix).toEqual(fingerprintOggi);
+        // e il valore va persistito, altrimenti al prossimo avvio da un'altra cwd cambierebbe.
+        expect(esito.daPersistere).toBe(SESSION_DIR);
+    });
+
+    it('P1.2-bis: una volta persistito, spostare la repo NON cambia più il fingerprint', () => {
+        const dopoLoSpostamento = risolviSemeFingerprint({
+            semePersistito: SESSION_DIR,
+            profiloId: 'default',
+            sessionDir: 'D:\\altrove\\Linkedin\\data\\session', // repo spostata
+            sessioneGiaAutenticata: true,
+        });
+        expect(dopoLoSpostamento.seme).toBe(SESSION_DIR);
+        expect(dopoLoSpostamento.daPersistere).toBeNull();
+        expect(pickDeterministicFingerprint(desktopFingerprintPool, dopoLoSpostamento.seme)).toEqual(
+            pickDeterministicFingerprint(desktopFingerprintPool, SESSION_DIR),
+        );
+    });
+
+    it('P1.3: account NUOVO (cookie jar assente) → seme = profiloId, mai il percorso', () => {
+        const esito = risolviSemeFingerprint({
+            semePersistito: null,
+            profiloId: 'acc-2',
+            sessionDir: 'C:\\qualunque\\data\\session-acc2',
+            sessioneGiaAutenticata: false,
+        });
+        expect(esito.seme).toBe('acc-2');
+        expect(esito.daPersistere).toBe('acc-2');
+        expect(esito.seme).not.toContain('\\');
+        expect(esito.seme).not.toContain('/');
+    });
+
+    it('P1.4: il seme persistito VINCE sempre, anche su un account nuovo', () => {
+        const esito = risolviSemeFingerprint({
+            semePersistito: 'seme-storico',
+            profiloId: 'acc-9',
+            sessionDir: SESSION_DIR,
+            sessioneGiaAutenticata: false,
+        });
+        expect(esito.seme).toBe('seme-storico');
+        expect(esito.daPersistere).toBeNull();
+    });
+
+    it('un seme persistito vuoto o di soli spazi non conta come persistito', () => {
+        for (const vuoto of ['', '   ']) {
+            const esito = risolviSemeFingerprint({
+                semePersistito: vuoto,
+                profiloId: 'acc-3',
+                sessionDir: SESSION_DIR,
+                sessioneGiaAutenticata: false,
+            });
+            expect(esito.seme).toBe('acc-3');
+        }
+    });
+
+    it('due account diversi non condividono MAI il seme, nemmeno con cartelle omonime', () => {
+        // La trappola evitata nel design: il basename come chiave avrebbe fatto collidere questi due.
+        const a = risolviSemeFingerprint({
+            semePersistito: null,
+            profiloId: 'acc-a',
+            sessionDir: 'C:\\ramo-1\\session',
+            sessioneGiaAutenticata: false,
+        });
+        const b = risolviSemeFingerprint({
+            semePersistito: null,
+            profiloId: 'acc-b',
+            sessionDir: 'C:\\ramo-2\\session',
+            sessioneGiaAutenticata: false,
+        });
+        expect(a.seme).not.toBe(b.seme);
+    });
+
+    it('è puro: stessi input → stesso output', () => {
+        const input = {
+            semePersistito: null,
+            profiloId: 'acc-1',
+            sessionDir: SESSION_DIR,
+            sessioneGiaAutenticata: true,
+        };
+        expect(risolviSemeFingerprint(input)).toEqual(risolviSemeFingerprint(input));
+    });
+});
