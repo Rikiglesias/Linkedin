@@ -2830,3 +2830,31 @@ Test `test-g2-sast-gate.ps1`: 20 → **23 assert**, con rosso di controllo mirat
 **VERIFICA**: `conta-problemi` **exit 0 — 217 file / 2179 test** · `build:backend` exit 0 ·
 `madge` 0 cicli su 537 file · `security:scan` 0 secret · sentinella wiring rossa 5/6 prima del fix,
 6/6 dopo — tutte le misure **posteriori** all'ultimo edit.
+
+### Passata finale: due cose che nessun criterio chiedeva
+
+Il goal era gia' 6/6 quando la passata sull'insieme ha trovato lavoro vero.
+
+**`eb6ff02` — la mia sentinella era fragile in due modi.** ① Le regex pretendevano gli argomenti
+sulla STESSA riga: un reformat che spezza `pickDesktopFingerprint(cloudFingerprints, semeFingerprint)`
+l'avrebbe fatta cadere su un comportamento **corretto**, e un test che grida al lupo si disattiva da
+solo nella testa di chi lo legge. ② Il divieto era sul NOME della variabile: rimettere il ricalcolo
+chiamandolo `acc` sarebbe passato. Ora si vieta la FORMA e si asserisce l'elenco COMPLETO delle
+occorrenze. Provato con due mutazioni sul file reale: reformat su 3 righe → 6/6 PASS; reintroduzione
+mascherata → cade **esattamente quel test e solo quello**.
+
+**`9e842b4` — il wiring era nel posto sbagliato.** L'avevo messo in `launcher.ts`, portandolo da 958
+a **1048 righe**, in un file gia' il piu' grosso dell'area anti-ban. Estratto in
+`src/fingerprint/seedRuntime.ts` (105 righe), accanto alla regola pura; launcher torna a **957** e
+importa. Contratto a **parametri primitivi**, non `LaunchBrowserOptions`: quel tipo vive nel launcher,
+che importa il modulo ⇒ prenderlo avrebbe creato un **ciclo di import** (`madge` resta 0).
+Nessuna asserzione di COMPORTAMENTO cambiata nella sentinella: e' la prova che lo spostamento e' a
+semantica identica.
+
+**Prova incidentale che il fix del gate SAST funziona in produzione**: il commit `9e842b4` tocca
+`launcher.ts` (8 `js-empty-catch` preesistenti) e **non e' stato bloccato**, senza `[skip-sast]`.
+
+**VERIFICA**: `conta-problemi` **EXIT 0 — 217 file / 2181 test** · `build:backend` EXIT 0 · `madge`
+0 cicli · canary del modulo nuovo eseguito dal vivo sul ramo che non tocca il DB (si carica, import
+risolti a runtime, ritorna il seme odierno). Il congelamento reale del flag **non** e' stato forzato:
+e' una scrittura sul DB di produzione, avverra' al primo avvio del bot.
