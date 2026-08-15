@@ -4,6 +4,7 @@
  * Lifecycle browser Playwright: launch, close, GC e gestione proxy.
  */
 
+import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 import { chromium, firefox, BrowserContext, Page } from 'playwright';
@@ -32,6 +33,9 @@ import { HttpResponseThrottler } from '../risk/httpThrottler';
 import { DeviceProfile, registerPageDeviceProfile } from './deviceProfile';
 import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 import { FingerprintPool } from '../fingerprint/noiseGenerator';
+import { risolviProfiloId, risolviSemeFingerprint } from '../fingerprint/accountSeed';
+import { getRuntimeAccountProfiles } from '../accountManager';
+import { getRuntimeFlag, setRuntimeFlag } from '../core/repositories';
 import { impostaSemeAccount } from '../ai/typoGenerator';
 
 const activeBrowsers = new Set<BrowserContext>();
@@ -241,6 +245,95 @@ async function resolveProxyGeoip(proxy: ProxyConfig | undefined, fallbackEnabled
     }
 }
 
+// ── P1 anti-ban: il seme di identità si CONGELA, non si ricalcola ────────────────────────────────
+// Regola pura e motivazione integrale: `../fingerprint/accountSeed.ts`. Qui sotto c'è solo il wiring
+// impuro (config, filesystem, runtime flag), tenuto separato apposta: la regola si prova senza
+// browser, il wiring si legge.
+
+function normalizzaPercorso(percorso: string): string {
+    const risolto = path.resolve(percorso);
+    // Windows non distingue le maiuscole nei path: due grafie della stessa cartella sono lo STESSO
+    // account, e trattarle come diverse spaccherebbe la chiave del seme in due.
+    return process.platform === 'win32' ? risolto.toLowerCase() : risolto;
+}
+
+function profiloIdDellaSessione(sessionDir: string, accountIdEsplicito?: string): string | null {
+    // Un `accountId` passato dal chiamante È già l'identità e ha la precedenza: `companyEnrichment`
+    // gira sulla STESSA cartella dell'account default: cercare per cartella li farebbe collidere
+    // sulla stessa chiave, e il secondo ad avviarsi erediterebbe il seme del primo.
+    const esplicito = accountIdEsplicito?.trim();
+    if (esplicito) return esplicito;
+    try {
+        return risolviProfiloId(
+            getRuntimeAccountProfiles().map((profilo) => ({
+                id: profilo.id,
+                sessionDirNormalizzato: normalizzaPercorso(profilo.sessionDir),
+            })),
+            normalizzaPercorso(sessionDir),
+        );
+    } catch {
+        return null; // config illeggibile: si resta al comportamento odierno, mai una chiave a caso
+    }
+}
+
+/**
+ * Il cookie jar decide se LinkedIn ha già visto questo dispositivo: cartella con contenuto = sì.
+ * Errore di lettura ⇒ `true`, perché congelare il seme ODIERNO è il lato che non cambia dispositivo.
+ */
+function sessioneGiaAutenticata(sessionDir: string): boolean {
+    try {
+        return fs.readdirSync(sessionDir).length > 0;
+    } catch {
+        return true;
+    }
+}
+
+async function congelaSemeFingerprint(sessionDir: string, options: LaunchBrowserOptions): Promise<string> {
+    // Il seme che il bot userebbe OGGI: è quello da preservare sugli account già autenticati.
+    const semeOdierno = options.accountId ?? sessionDir;
+    const profiloId = profiloIdDellaSessione(sessionDir, options.accountId);
+    // Identità che la config non conosce (`createProfile`, `webrtcLeakCheck`): non esiste una chiave
+    // stabile su cui congelare senza rischiare di condividerla ⇒ comportamento odierno, invariato.
+    if (!profiloId) return semeOdierno;
+
+    const chiave = `fingerprint.seed:${profiloId}`;
+    let semePersistito: string | null = null;
+    try {
+        semePersistito = await getRuntimeFlag(chiave);
+    } catch (errore) {
+        void logWarn('browser.fingerprint_seed_read_failed', { profiloId, errore: String(errore) });
+        return semeOdierno; // fail-safe: su una lettura incerta non si scrive e non si cambia nulla
+    }
+
+    const giaAutenticata = sessioneGiaAutenticata(sessionDir);
+    const esito = risolviSemeFingerprint({
+        semePersistito,
+        profiloId,
+        // `sessionDir` per la regola è «il seme storico di fatto», che con un accountId esplicito
+        // non è la cartella ma quell'id: è il valore che LinkedIn ha già visto.
+        sessionDir: semeOdierno,
+        sessioneGiaAutenticata: giaAutenticata,
+    });
+
+    if (esito.daPersistere !== null) {
+        try {
+            await setRuntimeFlag(chiave, esito.daPersistere);
+            void logInfo('browser.fingerprint_seed_frozen', {
+                profiloId,
+                // MAI il valore: può essere un percorso assoluto. Basta sapere quale ramo ha deciso —
+                // e il ramo è questo, non un confronto col valore (con un accountId esplicito il seme
+                // odierno COINCIDE col profiloId, e il confronto direbbe il falso).
+                daSessioneEsistente: giaAutenticata,
+            });
+        } catch (errore) {
+            // Il seme in uso resta quello odierno ⇒ nessun cambio di dispositivo; si riproverà al
+            // prossimo avvio. Silenziarlo nasconderebbe un flag che non si fissa mai.
+            void logWarn('browser.fingerprint_seed_write_failed', { profiloId, errore: String(errore) });
+        }
+    }
+    return esito.seme;
+}
+
 export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise<BrowserSession> {
     const sessionDirRaw = options.sessionDir ?? config.sessionDir;
     const sessionDir = path.isAbsolute(sessionDirRaw) ? sessionDirRaw : path.resolve(process.cwd(), sessionDirRaw);
@@ -292,26 +385,29 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
     let retriedProxy = false;
     let retriedLock = false;
 
+    // P1 anti-ban: risolto UNA volta sola, FUORI dal ciclo di retry. Dentro, ogni tentativo di proxy
+    // rileggerebbe e riscriverebbe il flag del seme senza alcun motivo.
+    const semeFingerprint = await congelaSemeFingerprint(sessionDir, options);
+
     for (let attempt = 0; attempt < launchPlan.length; attempt++) {
         const currentProxy = launchPlan[attempt];
         const cloudFingerprints = await fetchCloudFingerprints();
-        const accountId = options.accountId ?? sessionDir;
-        // Lo STESSO account che seleziona il fingerprint seleziona anche il tempo di pressione dei
+        // Lo STESSO seme che seleziona il fingerprint seleziona anche il tempo di pressione dei
         // tasti: due assi della stessa persona simulata non possono avere identita' diverse (zero-O).
         // Senza questa riga il dwell ricadrebbe su `ACCOUNT_ID`, che in questo progetto non e'
         // valorizzato da nessuna parte ⇒ seme costante ⇒ hold-time identico su TUTTI gli account,
         // cioe' il correlatore cross-account che F-6ce4907b doveva eliminare.
-        impostaSemeAccount(accountId);
-        const isMobileSession = options.forceDesktop ? false : pickFingerprintMode(accountId);
+        impostaSemeAccount(semeFingerprint);
+        const isMobileSession = options.forceDesktop ? false : pickFingerprintMode(semeFingerprint);
         const fingerprint = isMobileSession
-            ? pickMobileFingerprint(cloudFingerprints, accountId)
-            : pickDesktopFingerprint(cloudFingerprints, accountId);
+            ? pickMobileFingerprint(cloudFingerprints, semeFingerprint)
+            : pickDesktopFingerprint(cloudFingerprints, semeFingerprint);
         const consistentNoise = FingerprintPool.generateConsistentProfile(fingerprint);
         validateFingerprintConsistency(fingerprint);
         await logInfo('browser.fingerprint_selected', {
             fingerprintId: fingerprint.id,
             isMobile: isMobileSession,
-            accountId,
+            accountId: semeFingerprint,
             canvasNoise: consistentNoise.canvasNoise,
             attempt,
         });

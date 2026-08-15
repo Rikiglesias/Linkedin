@@ -41,6 +41,31 @@ export interface IngressoSemeFingerprint {
     sessioneGiaAutenticata: boolean;
 }
 
+/** Un profilo della config, ridotto a cio' che serve per riconoscerlo: id + cartella normalizzata. */
+export interface ProfiloConSessione {
+    readonly id: string;
+    readonly sessionDirNormalizzato: string;
+}
+
+/**
+ * Da quale identità prende il nome la chiave di persistenza del seme.
+ *
+ * `null` significa «identità che la config non conosce» (profilo ad-hoc di `createProfile.ts`,
+ * diagnostica di `webrtcLeakCheck.ts`): in quel caso il chiamante NON deve persistere nulla, perché
+ * l'unica chiave disponibile sarebbe condivisa con un altro account. Anche il caso ambiguo — due
+ * profili sulla stessa cartella — è trattato come sconosciuto per la stessa ragione: meglio restare
+ * al comportamento odierno che far ereditare a un account il seme di un altro.
+ */
+export function risolviProfiloId(
+    profili: ReadonlyArray<ProfiloConSessione>,
+    sessionDirNormalizzato: string,
+): string | null {
+    const candidati = profili.filter((p) => p.sessionDirNormalizzato === sessionDirNormalizzato);
+    if (candidati.length !== 1) return null;
+    const id = candidati[0]?.id.trim();
+    return id ? id : null;
+}
+
 export interface EsitoSemeFingerprint {
     /** Il seme da usare adesso. */
     seme: string;

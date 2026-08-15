@@ -17,7 +17,7 @@
  * accorgersene prima che se ne accorga LinkedIn.
  */
 import { describe, it, expect } from 'vitest';
-import { risolviSemeFingerprint } from '../fingerprint/accountSeed';
+import { risolviProfiloId, risolviSemeFingerprint } from '../fingerprint/accountSeed';
 import { desktopFingerprintPool, pickDeterministicFingerprint } from '../fingerprint/pool';
 
 const SESSION_DIR = 'C:\\Users\\albie\\Desktop\\Programmi\\Linkedin\\data\\session';
@@ -115,5 +115,48 @@ describe('risolviSemeFingerprint — fissare il seme, non sostituirlo', () => {
             sessioneGiaAutenticata: true,
         };
         expect(risolviSemeFingerprint(input)).toEqual(risolviSemeFingerprint(input));
+    });
+});
+
+/**
+ * P1.4 — la CHIAVE su cui il seme viene congelato.
+ *
+ * 🔴 Il caso reale che ha imposto questa funzione: `companyEnrichment.ts:276` lancia con
+ * `accountId: 'company-enrichment'` ma **sulla stessa `sessionDir` dell'account default**. Una
+ * chiave derivata dalla cartella li farebbe scrivere sullo stesso flag ⇒ il secondo ad avviarsi
+ * erediterebbe il seme del primo = cambio di dispositivo su una sessione già autenticata.
+ */
+describe('risolviProfiloId — la chiave viene dall’identità, mai dalla cartella', () => {
+    const PROFILI = [
+        { id: 'default', sessionDirNormalizzato: 'c:\\bot\\data\\session' },
+        { id: 'acc-2', sessionDirNormalizzato: 'c:\\bot\\data\\session-2' },
+    ] as const;
+
+    it('riconosce il profilo dalla cartella normalizzata', () => {
+        expect(risolviProfiloId(PROFILI, 'c:\\bot\\data\\session')).toBe('default');
+        expect(risolviProfiloId(PROFILI, 'c:\\bot\\data\\session-2')).toBe('acc-2');
+    });
+
+    it('cartella che la config non conosce → null (niente persistenza, mai una chiave condivisa)', () => {
+        // createProfile.ts e webrtcLeakCheck.ts lanciano con una sessionDir ad-hoc: restano al
+        // comportamento odierno invece di scrivere sul flag di un altro account.
+        expect(risolviProfiloId(PROFILI, 'c:\\temp\\profilo-nuovo')).toBeNull();
+    });
+
+    it('due profili sulla stessa cartella → null: nessuno eredita il seme dell’altro', () => {
+        const ambigui = [
+            { id: 'a', sessionDirNormalizzato: 'c:\\bot\\data\\session' },
+            { id: 'b', sessionDirNormalizzato: 'c:\\bot\\data\\session' },
+        ];
+        expect(risolviProfiloId(ambigui, 'c:\\bot\\data\\session')).toBeNull();
+    });
+
+    it('un id vuoto o di soli spazi non è una chiave valida', () => {
+        const rotti = [{ id: '   ', sessionDirNormalizzato: 'c:\\bot\\data\\session' }];
+        expect(risolviProfiloId(rotti, 'c:\\bot\\data\\session')).toBeNull();
+    });
+
+    it('nessun profilo configurato → null', () => {
+        expect(risolviProfiloId([], 'c:\\bot\\data\\session')).toBeNull();
     });
 });

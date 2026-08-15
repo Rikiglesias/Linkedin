@@ -1,0 +1,69 @@
+/**
+ * P1 anti-ban / F2 — sentinella sul WIRING del seme di fingerprint in `launcher.ts`.
+ *
+ * F1 ha reso pura la REGOLA (`risolviSemeFingerprint`), ma una regola non cablata è inerte: fino a
+ * F2 il launcher continuava a fare `options.accountId ?? sessionDir`, cioè a **ricalcolare** il seme
+ * da un percorso che `env.ts` risolve su `process.cwd()`. Questi test guardano il sorgente di
+ * produzione perché il comportamento vero sta in una funzione che lancia Playwright: quello che si
+ * può provare senza browser è che il seme **passi dalla regola** e che la chiave di persistenza non
+ * sia mai un percorso.
+ *
+ * 🔴 Il caso che il design ha rischiato di perdere: `companyEnrichment.ts:276` passa
+ * `accountId: 'company-enrichment'` pur usando la stessa `sessionDir` dell'account default. Se la
+ * chiave del runtime flag derivasse dalla cartella, i due si scambierebbero il seme ⇒ uno dei due
+ * cambierebbe dispositivo. La chiave deve venire dall'IDENTITÀ.
+ */
+import { describe, it, expect } from 'vitest';
+import fs from 'fs';
+import path from 'path';
+
+const LAUNCHER = path.resolve(__dirname, '..', 'browser', 'launcher.ts');
+const sorgente = fs.readFileSync(LAUNCHER, 'utf8');
+
+describe('F2 — il seme di fingerprint passa dalla regola, non dal percorso', () => {
+    it('launcher.ts usa la funzione pura `risolviSemeFingerprint`', () => {
+        expect(sorgente).toMatch(
+            /import\s*\{[^}]*risolviSemeFingerprint[^}]*\}\s*from\s*'\.\.\/fingerprint\/accountSeed'/,
+        );
+        expect(sorgente).toMatch(/risolviSemeFingerprint\(/);
+    });
+
+    it('il seme NON è più ricalcolato come `options.accountId ?? sessionDir`', () => {
+        // Sentinella anti-inerzia: è la riga esatta che il fix rimuove.
+        expect(sorgente).not.toMatch(/const\s+accountId\s*=\s*options\.accountId\s*\?\?\s*sessionDir/);
+    });
+
+    it('la chiave del runtime flag è costruita sul profiloId, mai su un percorso', () => {
+        const chiave = sorgente.match(/`fingerprint\.seed:\$\{([^}]+)\}`/);
+        expect(chiave, 'chiave `fingerprint.seed:${...}` assente in launcher.ts').not.toBeNull();
+        const espressione = chiave?.[1] ?? '';
+        expect(espressione).toContain('profiloId');
+        expect(espressione).not.toContain('sessionDir');
+        expect(espressione).not.toContain('basename');
+    });
+
+    it('il seme risolto alimenta ENTRAMBI gli assi: fingerprint e ritmo di battitura', () => {
+        // zero-O: due assi della stessa persona simulata non possono avere identità diverse.
+        const seme = sorgente.match(/impostaSemeAccount\((\w+)\)/);
+        expect(seme, 'impostaSemeAccount non trovato').not.toBeNull();
+        const nomeSeme = seme?.[1] ?? '';
+        expect(sorgente).toMatch(new RegExp(`pickDesktopFingerprint\\(cloudFingerprints,\\s*${nomeSeme}\\)`));
+        expect(sorgente).toMatch(new RegExp(`pickMobileFingerprint\\(cloudFingerprints,\\s*${nomeSeme}\\)`));
+    });
+
+    it('la persistenza avviene una sola volta, solo quando la regola lo chiede', () => {
+        // `daPersistere !== null` è il contratto della funzione pura: scrivere a ogni avvio
+        // sovrascriverebbe il seme congelato con quello del giorno.
+        expect(sorgente).toMatch(/daPersistere\s*!==\s*null|daPersistere\s*!=\s*null/);
+        expect(sorgente).toMatch(/setRuntimeFlag\(/);
+    });
+
+    it('la risoluzione del seme avviene fuori dal ciclo di retry del proxy', () => {
+        const inizioCiclo = sorgente.indexOf('for (let attempt = 0; attempt < launchPlan.length; attempt++)');
+        const usoRegola = sorgente.indexOf('risolviSemeFingerprint(');
+        expect(inizioCiclo).toBeGreaterThan(0);
+        expect(usoRegola).toBeGreaterThan(0);
+        // Dentro il ciclo si riscriverebbe il flag a ogni tentativo di proxy.
+        expect(usoRegola).toBeLessThan(inizioCiclo);
+    });
+});
