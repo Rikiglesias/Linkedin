@@ -17,7 +17,9 @@
  * accorgersene prima che se ne accorga LinkedIn.
  */
 import { describe, it, expect } from 'vitest';
+import path from 'path';
 import { risolviProfiloId, risolviSemeFingerprint } from '../fingerprint/accountSeed';
+import { normalizzaPercorso } from '../fingerprint/seedRuntime';
 import { desktopFingerprintPool, pickDeterministicFingerprint } from '../fingerprint/pool';
 
 const SESSION_DIR = 'C:\\Users\\albie\\Desktop\\Programmi\\Linkedin\\data\\session';
@@ -158,5 +160,38 @@ describe('risolviProfiloId — la chiave viene dall’identità, mai dalla carte
 
     it('nessun profilo configurato → null', () => {
         expect(risolviProfiloId([], 'c:\\bot\\data\\session')).toBeNull();
+    });
+});
+
+/**
+ * `normalizzaPercorso` decide se il fix è ATTIVO o INERTE: e' lei a far combaciare la cartella di
+ * lancio con quella del profilo. Se sbaglia, `risolviProfiloId` non trova nulla, niente viene
+ * persistito e si resta al comportamento odierno **in silenzio** — degrada dal lato sicuro, ma
+ * «funziona» e «non fa niente» diventano indistinguibili. Per questo si prova la funzione REALE:
+ * il canary che aveva stabilito «fix non inerte su questa macchina» ne usava una copia.
+ */
+describe('normalizzaPercorso — il confronto che rende il fix attivo invece che inerte', () => {
+    it('è idempotente e assoluto', () => {
+        const unaVolta = normalizzaPercorso('data/session');
+        expect(normalizzaPercorso(unaVolta)).toBe(unaVolta);
+        expect(path.isAbsolute(unaVolta)).toBe(true);
+    });
+
+    it('la stessa cartella scritta in due modi dà la stessa chiave', () => {
+        // Il caso reale: la config ha un path relativo, il launcher lo risolve su process.cwd().
+        expect(normalizzaPercorso('data/session')).toBe(normalizzaPercorso(path.resolve('data/session')));
+        expect(normalizzaPercorso('data/session')).toBe(normalizzaPercorso('data\\session'));
+        expect(normalizzaPercorso('data/./session')).toBe(normalizzaPercorso('data/session'));
+    });
+
+    it('su Windows le maiuscole non spaccano la chiave in due', () => {
+        const atteso = process.platform === 'win32';
+        const uguali = normalizzaPercorso('C:\\Bot\\Data\\Session') === normalizzaPercorso('c:\\bot\\data\\session');
+        // Su Windows DEVONO coincidere (stesso account); altrove il filesystem distingue davvero.
+        expect(uguali).toBe(atteso);
+    });
+
+    it('cartelle diverse restano diverse (mai due account sulla stessa chiave)', () => {
+        expect(normalizzaPercorso('data/session')).not.toBe(normalizzaPercorso('data/session-2'));
     });
 });

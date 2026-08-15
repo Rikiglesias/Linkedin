@@ -17,7 +17,13 @@ import { getRuntimeFlag, setRuntimeFlag } from '../core/repositories';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { risolviProfiloId, risolviSemeFingerprint } from './accountSeed';
 
-function normalizzaPercorso(percorso: string): string {
+/**
+ * Esportata APPOSTA per il test: è la funzione che decide se il fix è attivo o inerte. Se il
+ * confronto fra la cartella di lancio e quella del profilo fallisce, `risolviProfiloId` non trova
+ * nulla ⇒ nessuna persistenza ⇒ si resta al comportamento odierno, in silenzio. Degrada dal lato
+ * sicuro, ma senza un test qui la differenza fra «funziona» e «non fa niente» non è osservabile.
+ */
+export function normalizzaPercorso(percorso: string): string {
     const risolto = path.resolve(percorso);
     // Windows non distingue le maiuscole nei path: due grafie della stessa cartella sono lo STESSO
     // account, e trattarle come diverse spaccherebbe la chiave del seme in due.
