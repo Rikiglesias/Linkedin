@@ -2859,6 +2859,27 @@ semantica identica.
 risolti a runtime, ritorna il seme odierno). Il congelamento reale del flag **non** e' stato forzato:
 e' una scrittura sul DB di produzione, avverra' al primo avvio del bot.
 
+## 2026-08-15 — chat #24 (3) — la passata finale ha trovato una race che avevo introdotto io oggi
+
+**Tema**: PASSATA-360 di fine turno (zero-L) sui 6 file toccati.
+
+**Reperto**: per applicare la monotonia, `setAutomationPause` era diventata read-modify-write (prima
+era write-only). CLI, API e loop sono processi distinti sullo stesso DB ⇒ un `/pausa 5` che legge lo
+stato prima che l'incident manager abbia scritto la sua pausa da 60' la sovrascrive con una pausa di
+origine utente, rilasciabile da remoto: **il buco chiuso in `1e997e6` si riapriva sotto concorrenza**.
+
+**Fix** (`05571db`): read+write dentro `withTransaction` (BEGIN IMMEDIATE, `db.ts:157`) sia in
+`setAutomationPause` sia in `releaseAutomationPause` (che decide su tre letture e poi scrive).
+Contro-verifica: l'annidamento e' gia' gestito con SAVEPOINT (`db.ts:169-186`).
+
+**Nota di metodo**: il primo rosso passava **per caso** — avevo rallentato la lettura sbagliata e le
+due scritture si erano ordinate nel modo innocuo. Ri-mirato sul punto dove la corsa fa danno, il rosso
+e' diventato deterministico (300 secondi invece di 3600). Un rosso che passa non e' una prova: va
+verificato che stia misurando la cosa giusta.
+
+**Verifica**: 222 file / **2214 test** exit 0, `tsc` 0, lint 0, `madge` 0. Pushato, `ls-remote` =
+`05571db`.
+
 ## 2026-08-15 — chat #24 (2) — i due anti-ban aperti chiusi, e la misura ha ribaltato la diagnosi di uno
 
 **Tema**: reperti anti-ban lasciati «verificati ma non chiusi» dalla chat #23.
