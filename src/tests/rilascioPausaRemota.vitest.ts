@@ -38,6 +38,9 @@ vi.mock('../db', () => ({
             }
             throw new Error(`SQL non gestito dal fake: ${sql}`);
         },
+        // `setAutomationPause`/`releaseAutomationPause` leggono e poi scrivono: nel codice
+        // vero la coppia sta dentro BEGIN IMMEDIATE. Qui basta eseguire il callback.
+        withTransaction: async <T>(cb: () => Promise<T>): Promise<T> => cb(),
     }),
 }));
 

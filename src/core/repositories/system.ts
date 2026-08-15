@@ -655,6 +655,19 @@ export async function setAutomationPause(
     const richiesta = minutes === null ? null : new Date(Date.now() + Math.max(1, minutes) * 60_000).toISOString();
     const motivoRichiesto = reason.trim() || 'manual_pause';
 
+    // La monotonia richiede di LEGGERE la pausa in corso prima di scrivere, e CLI, API e loop
+    // sono processi distinti sullo stesso DB: senza transazione un `/pausa 5` che legge prima
+    // che l'incident manager abbia scritto la sua pausa da 60' la sovrascrive, e il buco si
+    // riapre esattamente dove il gate lo chiudeva. `withTransaction` usa BEGIN IMMEDIATE.
+    const db = await getDatabase();
+    return db.withTransaction(async () => applicaPausa(richiesta, motivoRichiesto, origin));
+}
+
+async function applicaPausa(
+    richiesta: string | null,
+    motivoRichiesto: string,
+    origin: PauseOrigin,
+): Promise<string | null> {
     const inCorso = await getAutomationPauseState();
     const origineInCorso = inCorso.paused ? await readPauseOrigin() : null;
     const sistemaCoinvolto = origin === 'SYSTEM' || origineInCorso === 'SYSTEM';
@@ -698,6 +711,14 @@ export async function clearAutomationPause(): Promise<void> {
  * di chi e' davanti alla macchina.
  */
 export async function releaseAutomationPause(request: PauseReleaseRequest): Promise<PauseReleaseResult> {
+    // Stessa ragione di `setAutomationPause`: qui si decide su tre letture (pausa, quarantena,
+    // challenge) e poi si scrive. Fuori da una transazione, una pausa di sistema imposta nel
+    // frattempo verrebbe rilasciata da una decisione presa su uno stato gia' vecchio.
+    const db = await getDatabase();
+    return db.withTransaction(async () => valutaRilascio(request));
+}
+
+async function valutaRilascio(request: PauseReleaseRequest): Promise<PauseReleaseResult> {
     const force = request.channel === 'OPERATOR' && request.force === true;
     const stato = await getAutomationPauseState();
     const reason = stato.reason;
