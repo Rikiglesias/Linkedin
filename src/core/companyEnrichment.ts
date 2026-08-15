@@ -283,8 +283,15 @@ export async function runCompanyEnrichmentBatch(
     try {
         const loggedIn = await checkLogin(session.page);
         if (!loggedIn) {
+            // Niente `accountId` qui: in `quarantineAccount` quel campo non e' un'etichetta, e'
+            // la CHIAVE della quarantena (`resolveAccountId`). Con `company-enrichment` il flag
+            // finiva su un id che nessun gate interroga (`loopCommand.ts:407`, `jobRunner.ts:1437`,
+            // `workflowEntryGuards.ts:358` chiedono il profilo ATTIVO) ⇒ fail-safe inerte, proprio
+            // mentre il jar sospetto e' quello dell'account default che questa sessione sta usando.
+            // Omettendolo si cade sul flag globale, che e' il comportamento voluto per un incidente
+            // non attribuibile a un singolo account (vedi `incidentManager.ts:36-41`).
             await quarantineAccount('COMPANY_ENRICHMENT_LOGIN_MISSING', {
-                accountId: ENRICHMENT_ACCOUNT_ID,
+                source: ENRICHMENT_ACCOUNT_ID,
                 reason: 'Sessione non autenticata durante enrichment automatico',
             });
             await logWarn('company_enrichment.skipped.login_missing', { targets: targets.length });
