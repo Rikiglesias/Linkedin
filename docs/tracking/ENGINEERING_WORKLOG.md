@@ -4,6 +4,116 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-08-15 — blocco 21: il piano bocciato riscritto, e il probe che ha trovato una terza foreign key (`cc5a773`, `6a45e68`)
+
+**Ripresa di F-CB.10 dopo il gate ④, che aveva bocciato il piano con `REVISE` su due canali
+indipendenti. Tre risultati: il probe bloccante eseguito, il piano riscritto sulla rotta ratificata,
+e i primi due passi implementati — via il ramo che poteva sbloccare tutti gli account.**
+
+### Riordino: il probe PRIMA della riscrittura del piano
+
+Il piano di ripresa metteva la riscrittura di `PLAN.md` al primo posto e il probe dello schema cloud
+al passo 2. Invertito: `supabase.full.schema.sql:7-14` **dichiara sé stesso in drift**, quindi
+riscrivere il piano prima del probe significava fondarlo su premesse ancora marcate «assunte». Il
+probe è read-only, costa poco, e va prima di ciò che dipende da lui.
+
+**Probe** (scratchpad fuori dal repo, nessun valore di credenziale letto né stampato): `HEAD` con
+`Prefer: count=exact` per i conteggi + OpenAPI di PostgREST per colonne e FK.
+
+| Misura | Valore |
+|---|---|
+| `accounts` | HTTP 200, **0 righe**, 19 colonne, PK `id` text |
+| `daily_stats_cloud.account_id` · `jobs_cloud.account_id` | **FK → accounts.id** (confermate) |
+| 🆕 `telegram_commands.account_id` | **FK → accounts.id** — il verdetto ne citava due |
+| `daily_stats` / `jobs` (senza `_cloud`) | **HTTP 404, non esistono** |
+| `metadata` jsonb | NOT NULL, default **non esposto** (OpenAPI cieco su tutti i jsonb) |
+
+🔴 **La terza FK cambia il valore di D1**: `telegram_commands` è il canale-comando che la Strada B+
+elegge a successore del downsync rimosso — e ha una FK viva verso `accounts`. Finché quella tabella
+è vuota, un comando con `account_id` valorizzato muore in **23503**. Il successore designato è
+bloccato dallo stesso prerequisito che sblocca le statistiche.
+
+📌 **La premessa che non si poteva misurare è stata chiusa per DESIGN, non per misura.** Il default
+di `accounts.metadata` non è osservabile read-only: l'OpenAPI non espone i default jsonb e la
+tabella ha 0 righe, quindi non esiste la prova empirica che aveva chiuso il caso analogo su `leads`
+(309 righe vive senza mai passare `metadata`). Ma la correzione ③ del verdetto impone di passare
+`metadata` **sempre**, in insert e in merge ⇒ **il default diventa irrilevante alla correttezza**.
+Rimuovere la dipendenza dall'ignoto è più forte che inseguirne la misura. Residuo dichiarato.
+
+Corretta anche un'annotazione precedente: «`daily_stats` ritorna `count=null`» non era un'anomalia
+di conteggio, era una **tabella inesistente** (404).
+
+### `PLAN.md` riscritto (`cc5a773`)
+
+La versione `d8799e0` era quella bocciata. Il nuovo file è il **cosa si fa** (7 passi, ognuno col
+proprio rosso di controllo; il payload di D1 come tabella di decisioni campo per campo; i criteri di
+accettazione riscritti; il fuori-scope tracciato). Il **perché** resta in `PLAN-REVIEW-VERDICT.md`:
+puntato, non ricopiato.
+
+### Passo 0 — de-posizionalizzare il registro dei rami (`6a45e68`)
+
+`NOMI_RAMI_SYNC` era un array separato dalle promise di `Promise.allSettled`, tenuto allineato da una
+convenzione scritta in un commento. Sostituito da `RAMI_SYNC: readonly RamoSync[]` (`{nome, esegui}`)
++ `eseguiRami(rami)`: unica fonte sia dei nomi sia delle promise.
+
+**Non era un abbellimento**: il passo 1 rimuove il **primo** ramo. Senza il passo 0, il primo
+fallimento di `leads_down` sarebbe uscito nei log etichettato `accounts_down` — cioè il fix di D3
+della sessione precedente (dare un nome al ramo che fallisce) sarebbe stato disfatto dal passo
+successivo, in silenzio.
+
+**Rosso**: 3 FAIL → **10/10** verdi. Aggiunto anche un test di **caratterizzazione** che passa già e
+fissa il difetto vecchio: con 3 nomi fissi e 2 rami superstiti, **entrambe** le etichette sono
+sbagliate. I 6 test preesistenti provavano solo il predicato puro e sarebbero rimasti verdi col
+registro rotto: è esattamente il motivo per cui il blocco nuovo esiste.
+
+### Passo 1 — D2 = Strada B+ (`6a45e68`)
+
+Rimossa l'intera catena downsync: `syncAccountsDown`, `applyCloudAccountUpdates`,
+`fetchCloudAccountsUpdates`, il cursore `control_plane.accounts.last_sync_at`, l'import `CloudAccount`
+rimasto orfano. Blast radius verificato prima: **un solo chiamante per funzione, 3 file**, `export *`
+nel barrel ⇒ nessuna modifica al barrel.
+
+**zero-Q col metro del comportamento**: quel ramo consegnava **zero capability** — poteva solo
+lanciare `no such table` (la tabella `accounts` non esiste nel DB locale), e se non avesse lanciato
+avrebbe scritto colonne che **nessun gate legge**, perché i gate leggono i runtime flag di
+`sync_state`. Dopo la rimozione il sistema fa ≥ di prima, con una mina in meno.
+
+**Sentinella nuova** `src/tests/downsyncAccountRimosso.vitest.ts`: scansiona il codice di produzione
+(test esclusi) e fallisce se tornano `UPDATE accounts`, `from('accounts').select`, i nomi delle tre
+funzioni o il cursore orfano. È la guardia contro il ritorno **per inerzia**.
+
+**Parte «+» di B+ scritta nel codice**: il commento su `RAMI_SYNC` dichiara `telegram_commands` come
+canale-comando corretto per il futuro, con le tre precondizioni obbligatorie (monotono-restrittivo ·
+allow-list sugli id · `'default'` rifiutato per costruzione) e il motivo per cui `accounts_down` non
+va reintrodotto. Il canale si **dichiara**, non si costruisce dentro un fix.
+
+**Rosso**: 5/5 FAIL → **15/15** verdi.
+
+### Il gate SAST ha chiesto una scorciatoia, e la scorciatoia andava motivata
+
+Il commit è stato bloccato da 3 finding in `system.ts` — tutti **preesistenti**: il diff su quel file
+era `1 insertion / 35 deletions` (solo la riga di import). Il gate scansiona il **file staged
+intero**, non il diff. Nel merito: `sql-update-without-where` :528 e :928 sono
+`INSERT … ON CONFLICT(key) DO UPDATE SET`, cioè **upsert** — il target del conflitto seleziona la
+riga e un `WHERE` sarebbe semanticamente sbagliato; `js-empty-catch` :666 ha la motivazione scritta
+dentro ed è l'ultimo anello della catena di logging, dove non esiste un posto dove loggare.
+⇒ `[skip-sast]` con la motivazione per esteso nel messaggio, e il **gap del detector tracciato** in
+`~/todos/improvements-proposed.md`: un file con 2 upsert legittimi costringe al bypass **ogni**
+commit che lo tocca, e un gate che si aggira di routine smette di essere letto.
+
+### Contratto: perimetro accertato invece di ereditato
+
+Il frontmatter del binding impone il contratto «prima degli edit» per la **costruzione**. Verificato
+cosa sia costruzione: **D1** (capability nuova). I passi 0 e 1 sono remediation di difetti esistenti
+— de-posizionalizzare un registro e **rimuovere** una catena morta ⇒ ricadono nel `contract_exempt`
+del binding. Il contratto gate il **passo 3 in poi**. Scritta la R1-PROPOSTA (U1-U6 dal verdetto §5,
+C1-C12 con VERIFY eseguibili, CF1-CF3): resta da farla attaccare da un evaluator a contesto vergine.
+
+**VERIFICA**: `conta-problemi` **EXIT=0 — 215 file / 2161 test** (erano 214/2152) · `build:backend`
+**EXIT=0** · `madge --circular` **0** su 534 file · secret-scan pulito · rosso di controllo eseguito
+prima di ognuno dei due fix · zero file del perimetro anti-ban toccati (verificato meccanicamente
+sui path staged) · tutti gli exit code misurati **senza pipe**.
+
 ## 2026-08-14 — blocco 20: accertare il perimetro di una costruzione ha trovato la bomba che quella costruzione avrebbe innescato (`c414f6f`)
 
 **Il compito era costruire «chi dichiara un account al cloud». Il primo atto — accertare il perimetro
