@@ -2858,3 +2858,59 @@ semantica identica.
 0 cicli · canary del modulo nuovo eseguito dal vivo sul ramo che non tocca il DB (si carica, import
 risolti a runtime, ritorna il seme odierno). Il congelamento reale del flag **non** e' stato forzato:
 e' una scrittura sul DB di produzione, avverra' al primo avvio del bot.
+
+## 2026-08-15 — chat #23 — il contratto va in review a due canali, e un critico trova un ban-signal attivo
+
+**Tema**: sbloccata la leva subagent su `/goal audit-codebase`, il contratto di F-CB.10 e' entrato
+nel gate previsto dal suo tier (`full`). Nessuna riga di D1 scritta: il gate non era ancora chiuso.
+
+**Il contratto esce dal binding** (`28cdfbd`): i criteri vivevano dentro `~/todos/audit-codebase.md`,
+illeggibile per un revisore esterno. Estratti in `CONTRACT-F-CB10.md` auto-contenuto, con sei punti
+marcati «ATTACCA QUI» dove sospettavo debolezze mie.
+
+**Due criteri erano rotti PRIMA della review**, trovati misurando e non rileggendo: C2 e C3
+contavano la sentinella `downsyncAccountRimosso.vitest.ts`, che quelle stringhe le contiene apposta
+=> non potevano diventare verdi per costruzione (C2 = 2 match, C3 = 1, tutti nel test). C8 fissava
+la soglia a ">= 6 (oggi 5)" mentre `isLeader` in loopCommand.ts conta 9 occorrenze reali.
+
+**Verdetti**: evaluator a contesto vergine `REVISE` (3 premesse su 5 false o incomplete), Codex
+cross-model `REVISE` (22 obiezioni, 17 bloccanti). Convergenza a tre - loro due piu' le mie
+verifiche - su due punti: la premessa "unico task periodico senza leader gate" e' falsa (i task col
+gate sono 5, tutti gli altri ne sono privi, inclusi `cloud_commands` e `automation_commands`), e
+`health` derivato dalla sola quarantena riscrive GREEN sopra un YELLOW vivo.
+
+**La radice era una sola per tre obiezioni indipendenti** (`421b348`): il piano trattava la
+proiezione come un'unica upsert. Alla nascita `health` deve esserci (il DDL ha `default 'GREEN'`),
+all'aggiornamento no (cancella l'allarme). E omettere i campi del cloud non li protegge:
+postgrest-js 2.100.1 ha `defaultToNull = true` (dist/index.cjs:4062) e manda `Prefer:
+missing=default` solo se richiesto => le colonne omesse vanno a NULL, cioe' i contatori si azzerano.
+Forma ratificata: INSERT con `ignoreDuplicates` + UPDATE mirato per la sola liveness.
+
+**Due voci sono uscite dai criteri di DONE perche' sono leve utente**: il Control Plane e' spento
+(`supabaseControlPlaneEnabled` default false, e nel DB vivo non esiste `control_plane.campaigns.
+last_run_at` => il ciclo non e' mai stato completato: D1 nascerebbe inerte), e le email dei lead
+gia' oggi partono verso il cloud (`salesNavigatorSync.ts:561,568`), il che rendeva U4 falso di
+partenza.
+
+**Passata finale**: ha trovato un mio errore reale (`d495f25`) - `BASE_SHA` di C12 puntava a un
+commit ANTERIORE al contratto stesso, con la riga che lo chiamava "HEAD al momento della
+R1-PROPOSTA-c" mentre HEAD era gia' un altro.
+
+### Il reperto che vale piu' del resto (`ab5e1c1`) - ban-signal ATTIVO
+
+Il `completeness-critic` sul lavoro P1 ha trovato che `companyEnrichment.ts:276` lanciava il browser
+con `accountId: 'company-enrichment'` ma senza `sessionDir` => usava il cookie jar dell'account
+default, AUTENTICATO, con un seme di fingerprint diverso: **la stessa sessione LinkedIn si
+presentava con due dispositivi**. Verificato da me riga per riga prima di accettarlo.
+
+Correzione al critic: non era una regressione di P1 (prima il seme era `options.accountId ??
+sessionDir`, divergenza identica), ma P1 l'aveva CONGELATA e scritta come design corretto.
+
+Il fix era sicuro solo adesso, ed e' misurato: nel DB non esiste ancora nessun seme congelato, quindi
+non si cambia un device stabilito - si impedisce alla divergenza di nascere. Rosso di controllo sulla
+CLASSE (nessun call-site puo' passare `accountId` senza `sessionDir`): 1 FAIL su 9 -> 25/25 verdi.
+`/antiban-review` SICURO. Corrette tre premesse false nei docstring di P1 ("7 siti", "nessuno passa
+accountId": sono 19 e uno lo passava).
+
+**VERIFICA**: `conta-problemi` EXIT 0 (217 file / 2186 test), `build:backend` EXIT 0, `madge` 0
+cicli - tutti misurati senza pipe.
