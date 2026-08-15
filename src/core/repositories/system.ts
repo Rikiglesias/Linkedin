@@ -4,7 +4,7 @@
  */
 
 import { createHash } from 'crypto';
-import { getDatabase } from '../../db';
+import { getDatabase, type DatabaseManager } from '../../db';
 import { config } from '../../config';
 import { OutboxEventRecord } from '../../types/domain';
 import type { CloudLeadUpsert } from '../../cloud/types';
@@ -622,6 +622,24 @@ export interface PauseReleaseResult {
 
 const PAUSE_ORIGIN_FLAG = 'automation_pause_origin';
 
+/** Chiave dell'advisory lock della sezione critica «pausa» (costante arbitraria ma STABILE). */
+const PAUSE_LOCK_KEY = 4271;
+
+/**
+ * Serializza la sezione critica leggi-poi-scrivi della pausa.
+ *
+ * Su SQLite basta la transazione: `withTransaction` apre `BEGIN IMMEDIATE`, che prende subito il
+ * lock di scrittura. Su **Postgres no**: `BEGIN` e' READ COMMITTED e la nostra lettura e' una
+ * SELECT senza lock, quindi due transazioni concorrenti leggono entrambe lo stato vecchio e la
+ * seconda sovrascrive la prima (lost update) - proprio sul database di produzione, visto che
+ * SQLite in produzione e' rifiutato (`db.ts:727`). L'advisory lock e' di transazione: si rilascia
+ * da solo al COMMIT o al ROLLBACK, quindi non puo' restare appeso.
+ */
+async function serializzaSezionePausa(tx: DatabaseManager): Promise<void> {
+    if (!tx.isPostgres) return;
+    await tx.query('SELECT pg_advisory_xact_lock($1)', [PAUSE_LOCK_KEY]);
+}
+
 async function readPauseOrigin(): Promise<PauseOrigin> {
     // Fail-closed: una pausa scritta prima che questo flag esistesse (o con un valore
     // illeggibile) vale come pausa di sistema. Sbagliando, si sbaglia restando fermi.
@@ -656,11 +674,14 @@ export async function setAutomationPause(
     const motivoRichiesto = reason.trim() || 'manual_pause';
 
     // La monotonia richiede di LEGGERE la pausa in corso prima di scrivere, e CLI, API e loop
-    // sono processi distinti sullo stesso DB: senza transazione un `/pausa 5` che legge prima
-    // che l'incident manager abbia scritto la sua pausa da 60' la sovrascrive, e il buco si
-    // riapre esattamente dove il gate lo chiudeva. `withTransaction` usa BEGIN IMMEDIATE.
+    // sono processi distinti sullo stesso DB: senza serializzazione un `/pausa 5` che legge
+    // prima che l'incident manager abbia scritto la sua pausa da 60' la sovrascrive, e il buco
+    // si riapre esattamente dove il gate lo chiudeva.
     const db = await getDatabase();
-    return db.withTransaction(async () => applicaPausa(richiesta, motivoRichiesto, origin));
+    return db.withTransaction(async (tx) => {
+        await serializzaSezionePausa(tx);
+        return applicaPausa(richiesta, motivoRichiesto, origin);
+    });
 }
 
 async function applicaPausa(
@@ -712,10 +733,13 @@ export async function clearAutomationPause(): Promise<void> {
  */
 export async function releaseAutomationPause(request: PauseReleaseRequest): Promise<PauseReleaseResult> {
     // Stessa ragione di `setAutomationPause`: qui si decide su tre letture (pausa, quarantena,
-    // challenge) e poi si scrive. Fuori da una transazione, una pausa di sistema imposta nel
+    // challenge) e poi si scrive. Senza serializzazione, una pausa di sistema imposta nel
     // frattempo verrebbe rilasciata da una decisione presa su uno stato gia' vecchio.
     const db = await getDatabase();
-    return db.withTransaction(async () => valutaRilascio(request));
+    return db.withTransaction(async (tx) => {
+        await serializzaSezionePausa(tx);
+        return valutaRilascio(request);
+    });
 }
 
 async function valutaRilascio(request: PauseReleaseRequest): Promise<PauseReleaseResult> {

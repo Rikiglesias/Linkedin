@@ -24,13 +24,23 @@ const CANALI_REMOTI = [
     'api/helpers/controlActions.ts', // route REST /controls/resume e /v1/automation/controls/resume
 ];
 
-/** Estrae i simboli importati (nome canonico, prima di un eventuale `as`) da un sorgente. */
+/**
+ * Estrae i simboli importati (nome canonico, prima di un eventuale `as`) da un sorgente.
+ *
+ * Copre DUE forme, perche' guardarne una sola rende la sentinella aggirabile senza rinominare
+ * niente: l'import statico `import { X } from '...'` e quello dinamico
+ * `const { X } = await import('...')`, che in `loopCommand.ts` e' idioma corrente (7 occorrenze,
+ * una delle quali importa proprio da `repositories/system`).
+ */
 function simboliImportati(sorgente: string): string[] {
     const simboli: string[] = [];
-    const importBlocks = sorgente.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"][^'"]+['"]/gs);
-    for (const block of importBlocks) {
-        for (const voce of block[1].split(',')) {
-            const nome = voce.trim().split(/\s+as\s+/)[0].trim();
+    const blocchi = [
+        ...sorgente.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"][^'"]+['"]/gs),
+        ...sorgente.matchAll(/(?:const|let|var)\s*\{([^}]*)\}\s*=\s*await\s+import\s*\(/gs),
+    ];
+    for (const blocco of blocchi) {
+        for (const voce of blocco[1].split(',')) {
+            const nome = voce.trim().split(/\s*:\s*/)[0].split(/\s+as\s+/)[0].trim();
             if (nome) simboli.push(nome);
         }
     }
@@ -50,6 +60,19 @@ describe('il canale remoto è monotono-restrittivo', () => {
                 `${modulo} importa ${vietati.join(', ')}: da lì una richiesta remota può spegnere ` +
                     'una pausa aperta dall\'incident manager. Usare releaseAutomationPause({ channel }).',
             ).toEqual([]);
+        });
+    }
+
+    for (const modulo of CANALI_REMOTI) {
+        test(`${modulo} non spegne la pausa scrivendo il flag a mano`, () => {
+            // Il livello sotto: si aggira il rilascio condizionato scrivendo direttamente
+            // `setRuntimeFlag('automation_paused', 'false')`. Nessun import da vietare, stesso
+            // effetto. La sentinella deve chiudere anche questa porta.
+            const sorgente = readFileSync(join(ROOT, modulo), 'utf8');
+
+            expect(sorgente, `${modulo} scrive direttamente il flag di pausa`).not.toMatch(
+                /setRuntimeFlag\(\s*['"]automation_paused/,
+            );
         });
     }
 

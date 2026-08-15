@@ -239,9 +239,20 @@ export class DashboardApi {
         return resp.ok;
     }
 
-    async resume(): Promise<boolean> {
+    /**
+     * Riprende l'automazione. Il server puo' RIFIUTARE (409) quando la pausa e' stata imposta
+     * da una protezione: in quel caso il motivo va mostrato, altrimenti l'utente vede solo
+     * «errore» e non sa che deve risolvere un incidente.
+     */
+    async resume(): Promise<{ ok: boolean; motivo?: string }> {
         const resp = await this.apiFetch('/api/controls/resume', { method: 'POST' });
-        return resp.ok;
+        if (resp.ok) return { ok: true };
+        try {
+            const corpo = (await resp.json()) as { error?: { message?: string } };
+            return { ok: false, motivo: corpo?.error?.message };
+        } catch {
+            return { ok: false };
+        }
     }
 
     async triggerRun(workflow: string = 'all'): Promise<boolean> {

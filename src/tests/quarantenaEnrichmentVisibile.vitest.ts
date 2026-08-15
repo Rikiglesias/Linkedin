@@ -33,7 +33,11 @@ vi.mock('../db', () => ({
         query: async () => [],
         // `setAutomationPause`/`releaseAutomationPause` leggono e poi scrivono: nel codice
         // vero la coppia sta dentro BEGIN IMMEDIATE. Qui basta eseguire il callback.
-        withTransaction: async <T>(cb: () => Promise<T>): Promise<T> => cb(),
+        // Il codice vero riceve il manager della transazione e ne legge `isPostgres`
+        // (su Postgres serve l'advisory lock, su SQLite basta BEGIN IMMEDIATE): il fake
+        // deve rispettare quel contratto, altrimenti verifica una firma che non esiste.
+        withTransaction: async <T>(cb: (tx: { isPostgres: boolean }) => Promise<T>): Promise<T> =>
+            cb({ isPostgres: false }),
     }),
 }));
 

@@ -40,10 +40,16 @@ vi.mock('../db', () => ({
         },
         // `setAutomationPause`/`releaseAutomationPause` leggono e poi scrivono: nel codice
         // vero la coppia sta dentro BEGIN IMMEDIATE. Qui basta eseguire il callback.
-        withTransaction: async <T>(cb: () => Promise<T>): Promise<T> => cb(),
+        // Il codice vero riceve il manager della transazione e ne legge `isPostgres`
+        // (su Postgres serve l'advisory lock, su SQLite basta BEGIN IMMEDIATE): il fake
+        // deve rispettare quel contratto, altrimenti verifica una firma che non esiste.
+        withTransaction: async <T>(cb: (tx: { isPostgres: boolean }) => Promise<T>): Promise<T> =>
+            cb({ isPostgres: false }),
     }),
 }));
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
     getAutomationPauseState,
     releaseAutomationPause,
@@ -51,6 +57,10 @@ import {
     setAutomationPause,
     setRuntimeFlag,
 } from '../core/repositories/system';
+
+function leggiSorgente(...parti: string[]): string {
+    return readFileSync(join(__dirname, '..', ...parti), 'utf8');
+}
 
 async function isPaused(): Promise<boolean> {
     return (await getAutomationPauseState()).paused;
@@ -212,5 +222,53 @@ describe('una pausa non può indebolire quella già in corso', () => {
 
         const esito = await releaseAutomationPause({ channel: 'REMOTE_BLIND' });
         expect(esito.released).toBe(true);
+    });
+});
+
+describe('il ciclo reale: chi mette in pausa a mano riesce a riprendere', () => {
+    beforeEach(() => {
+        syncState.clear();
+    });
+
+    test('pausa manuale dalla dashboard → il resume della dashboard la rilascia', async () => {
+        // Il difetto che questo test difende (trovato dal critico avversariale): `pauseAutomation`
+        // non aveva il parametro `origin`, quindi cadeva sul default SYSTEM e anche
+        // `MANUAL_DASHBOARD_PAUSE` nasceva come fail-safe. Risultato: metti in pausa dalla
+        // dashboard e poi la dashboard stessa riceve 409, mentre Telegram risponde «l'ha imposto
+        // l'incident manager» - che e' falso. I 13 test sopra NON lo vedevano: passano tutti
+        // `origin` esplicito, cioe' verificano la funzione e non cio' che i call-site producono.
+        await setAutomationPause(30, 'MANUAL_DASHBOARD_PAUSE', 'USER');
+
+        const esito = await releaseAutomationPause({ channel: 'OPERATOR' });
+
+        expect(esito.released).toBe(true);
+        expect(esito.forced).toBe(false);
+    });
+
+    test('pausa manuale → anche il canale cieco la rilascia (l’ha chiesta l’utente)', async () => {
+        await setAutomationPause(30, 'MANUAL_API_V1_PAUSE', 'USER');
+
+        expect((await releaseAutomationPause({ channel: 'REMOTE_BLIND' })).released).toBe(true);
+    });
+});
+
+describe('i call-site passano l’origine giusta (sentinella di forma)', () => {
+    test('i percorsi MANUAL_* dichiarano origine utente', () => {
+        const sorgente = leggiSorgente('api', 'helpers', 'controlActions.ts');
+        const chiamata = sorgente.match(/pauseAutomation\([\s\S]{0,200}?\);/);
+
+        expect(chiamata?.[0], 'pauseAutomation non trovata in controlActions.ts').toBeTruthy();
+        expect(chiamata?.[0]).toMatch(/'USER'/);
+    });
+
+    test('gli incident NON dichiarano origine utente: restano fail-safe', () => {
+        // `incidentManager` apre le pause automatiche (429, burst, challenge): se una di queste
+        // passasse 'USER', il canale remoto potrebbe spegnerla.
+        const sorgente = leggiSorgente('risk', 'incidentManager.ts');
+        const chiamate = sorgente.match(/pauseAutomation\([\s\S]{0,200}?\);/g) ?? [];
+
+        for (const chiamata of chiamate) {
+            expect(chiamata, 'un incident non deve aprire una pausa di origine utente').not.toMatch(/'USER'/);
+        }
     });
 });

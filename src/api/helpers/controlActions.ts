@@ -47,7 +47,8 @@ export async function handlePauseAction(
     const parsed = PauseSchema.safeParse(payload);
     if (!parsed.success) throw parsed.error;
     const minutes = parsed.data.minutes;
-    await pauseAutomation(`MANUAL_${source.toUpperCase()}_PAUSE`, { source }, minutes);
+    // Pausa messa a mano: origine USER, altrimenti chi l'ha messa non puo' piu' toglierla.
+    await pauseAutomation(`MANUAL_${source.toUpperCase()}_PAUSE`, { source }, minutes, 'USER');
     auditSecurityEvent({
         category: 'runtime_control',
         action: 'pause',
@@ -59,11 +60,15 @@ export async function handlePauseAction(
 }
 
 export async function handleResumeAction(req: Request, source: string): Promise<void> {
-    // Canale OPERATOR: chi clicca ha l'incidente a schermo. Senza `force` esplicito nel body,
-    // una pausa aperta dal sistema NON si spegne per un click distratto; con `force` si', e
-    // resta scritto nell'audit che e' stata una decisione presa, non un resume di routine.
-    const force = req.body?.force === true;
-    const esito = await releaseAutomationPause({ channel: 'OPERATOR', force });
+    // Il canale NON si deduce dalla route ma da CHI la usa. `/api/v1/...` e' il namespace
+    // esterno documentato (docs/INTEGRATIONS.md), consumato dai workflow n8n con una chiave:
+    // li' chi chiama e' un automa che non ha l'incidente sotto gli occhi, quindi vale la
+    // regola del canale cieco - e `force` non gli e' concesso. Solo la dashboard, dove
+    // l'incidente e' a schermo, puo' forzare con una conferma esplicita.
+    const esito =
+        source === 'dashboard'
+            ? await releaseAutomationPause({ channel: 'OPERATOR', force: req.body?.force === true })
+            : await releaseAutomationPause({ channel: 'REMOTE_BLIND' });
     auditSecurityEvent({
         category: 'runtime_control',
         action: 'resume',

@@ -7,6 +7,7 @@ import {
     recordSecurityAuditEvent,
     setAccountQuarantine,
     setAutomationPause,
+    type PauseOrigin,
     setRuntimeFlag,
 } from '../core/repositories';
 import { logWarn } from '../telemetry/logger';
@@ -107,6 +108,11 @@ export async function pauseAutomation(
     type: string,
     details: Record<string, unknown>,
     baseMinutes: number | null,
+    // Chi ha chiesto la pausa. Default `SYSTEM` = fail-safe, che e' il caso di TUTTI gli incident
+    // (429, burst di selettori, challenge): quelli non li rilascia il canale remoto. I percorsi
+    // MANUAL_* passano 'USER', altrimenti una pausa messa a mano dalla dashboard nascerebbe come
+    // fail-safe e la dashboard stessa non potrebbe piu' riprenderla (409) - regressione d'uso.
+    origin: PauseOrigin = 'SYSTEM',
 ): Promise<number> {
     // baseMinutes === null => pausa indefinita (manual resume): usata dal challenge gate persistente (A9).
     let finalMinutes = baseMinutes;
@@ -126,7 +132,7 @@ export async function pauseAutomation(
     }
 
     const incidentId = await createIncident(type, 'WARN', details);
-    const pausedUntil = await setAutomationPause(finalMinutes, type);
+    const pausedUntil = await setAutomationPause(finalMinutes, type, origin);
     await recordAuditSafe({
         category: 'runtime_control',
         action: 'pause_automation',

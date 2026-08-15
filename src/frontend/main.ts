@@ -397,12 +397,13 @@ function bindControls(): void {
     byId<HTMLButtonElement>('btn-resume').addEventListener('click', () => {
         void api
             .resume()
-            .then((ok) => {
-                if (ok) {
+            .then((esito) => {
+                if (esito.ok) {
                     showToast('Automazione ripresa', 'success');
                     void refreshDashboard();
                 } else {
-                    showToast('Errore durante la ripresa', 'error');
+                    // Il rifiuto di una protezione non e' un errore generico: dice cosa risolvere.
+                    showToast(esito.motivo ?? 'Errore durante la ripresa', 'error');
                 }
             })
             .catch(() => showToast('Errore di rete durante la ripresa', 'error'));

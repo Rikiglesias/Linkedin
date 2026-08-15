@@ -142,7 +142,11 @@ Available endpoints:
 - `GET /api/v1/automation/snapshot`
 - `GET /api/v1/automation/incidents?limit=25`
 - `POST /api/v1/automation/controls/pause` body: `{ "minutes": 60 }`
-- `POST /api/v1/automation/controls/resume`
+- `POST /api/v1/automation/controls/resume` — rilascia **solo** una pausa chiesta dall'utente.
+  Se la pausa e' stata imposta da una protezione (incident, quarantena, challenge in attesa)
+  risponde **409** `CONTROL_ACTION_REJECTED` con `error.details.blockedBy`. Questo namespace e'
+  per automazioni, che non vedono l'incidente: `force` non e' disponibile qui, serve la
+  dashboard (`POST /api/controls/resume` con `{"force": true}`) o la CLI.
 - `POST /api/v1/automation/controls/quarantine` body: `{ "enabled": true }`
 
 Quick example:

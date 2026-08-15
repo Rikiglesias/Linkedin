@@ -43,7 +43,7 @@ vi.mock('../db', () => ({
         },
         query: async () => [],
         // Il fake serializza come fa `BEGIN IMMEDIATE` su SQLite: una transazione alla volta.
-        withTransaction: async <T>(cb: () => Promise<T>): Promise<T> => {
+        withTransaction: async <T>(cb: (tx: { isPostgres: boolean }) => Promise<T>): Promise<T> => {
             const precedente = transazioneInCorso;
             let sblocca: () => void = () => {};
             transazioneInCorso = new Promise<void>((r) => {
@@ -51,7 +51,7 @@ vi.mock('../db', () => ({
             });
             await precedente;
             try {
-                return await cb();
+                return await cb({ isPostgres: false });
             } finally {
                 sblocca();
             }

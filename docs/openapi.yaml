@@ -306,9 +306,30 @@ paths:
     post:
       tags: [Controls]
       summary: Riprendi automazione
+      description: >
+        Rilascia la pausa. Se la pausa e' stata imposta da una protezione (incident, quarantena,
+        challenge in attesa) la richiesta viene RIFIUTATA con 409: questo canale e' la dashboard,
+        dove l'incidente e' a schermo, quindi puo' forzare con `force: true` - scelta che resta
+        tracciata nel security audit.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                force:
+                  type: boolean
+                  default: false
+                  description: Rilascia anche una pausa imposta dal sistema (mai la quarantena).
       responses:
         '200':
           description: Automazione ripresa
+        '409':
+          description: >
+            Rifiutata da una protezione attiva. Il corpo riporta `error.code =
+            CONTROL_ACTION_REJECTED` e, in `error.details`, `blockedBy`
+            (SYSTEM_PAUSE | QUARANTINE | CHALLENGE_PENDING) e `pauseReason`.
 
   # ── Security ────────────────────────────────────────────────────
   /api/accounts/health:
@@ -462,9 +483,18 @@ paths:
     post:
       tags: [Automation API v1]
       summary: Resume automazione (v1)
+      description: >
+        Rilascia la pausa. Questo namespace e' consumato da automazioni (workflow n8n), che non
+        hanno l'incidente sotto gli occhi: vale la regola del canale cieco, quindi rilascia SOLO
+        una pausa chiesta dall'utente e `force` NON e' disponibile. Per forzare serve la
+        dashboard o la CLI.
       responses:
         '200':
           description: Resumed
+        '409':
+          description: >
+            Rifiutata da una protezione attiva (`error.code = CONTROL_ACTION_REJECTED`,
+            `error.details.blockedBy` = SYSTEM_PAUSE | QUARANTINE | CHALLENGE_PENDING).
 
   /api/v1/automation/controls/quarantine:
     post:
