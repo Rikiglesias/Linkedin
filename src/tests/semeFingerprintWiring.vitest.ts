@@ -29,8 +29,11 @@ describe('F2 — il seme di fingerprint passa dalla regola, non dal percorso', (
     });
 
     it('il seme NON è più ricalcolato come `options.accountId ?? sessionDir`', () => {
-        // Sentinella anti-inerzia: è la riga esatta che il fix rimuove.
-        expect(sorgente).not.toMatch(/const\s+accountId\s*=\s*options\.accountId\s*\?\?\s*sessionDir/);
+        // Sentinella anti-inerzia. Il nome della variabile NON fa parte del divieto: rimetterla
+        // chiamandola `acc` sarebbe lo stesso difetto, quindi si vieta la FORMA. Unica eccezione
+        // legittima: `semeOdierno` dentro `congelaSemeFingerprint`, che è il valore da CONGELARE.
+        const ricalcoli = [...sorgente.matchAll(/const\s+(\w+)\s*=\s*options\.accountId\s*\?\?\s*sessionDir/g)];
+        expect(ricalcoli.map((m) => m[1])).toEqual(['semeOdierno']);
     });
 
     it('la chiave del runtime flag è costruita sul profiloId, mai su un percorso', () => {
@@ -47,8 +50,13 @@ describe('F2 — il seme di fingerprint passa dalla regola, non dal percorso', (
         const seme = sorgente.match(/impostaSemeAccount\((\w+)\)/);
         expect(seme, 'impostaSemeAccount non trovato').not.toBeNull();
         const nomeSeme = seme?.[1] ?? '';
-        expect(sorgente).toMatch(new RegExp(`pickDesktopFingerprint\\(cloudFingerprints,\\s*${nomeSeme}\\)`));
-        expect(sorgente).toMatch(new RegExp(`pickMobileFingerprint\\(cloudFingerprints,\\s*${nomeSeme}\\)`));
+        // `\s*` ovunque e virgola finale opzionale: un reformat che spezza la chiamata su piu'
+        // righe non deve far cadere il test: sarebbe un rosso FALSO su un comportamento corretto,
+        // e un test che grida al lupo si disattiva da solo nella testa di chi lo legge.
+        const chiamata = (fn: string) =>
+            new RegExp(`${fn}\\(\\s*cloudFingerprints\\s*,\\s*${nomeSeme}\\s*,?\\s*\\)`);
+        expect(sorgente).toMatch(chiamata('pickDesktopFingerprint'));
+        expect(sorgente).toMatch(chiamata('pickMobileFingerprint'));
     });
 
     it('la persistenza avviene una sola volta, solo quando la regola lo chiede', () => {
