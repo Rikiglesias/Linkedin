@@ -1,8 +1,10 @@
 # CONTRATTO F-CB.10 — «chi dichiara un account al Control Plane»
 
 > Artefatto di negoziazione del contratto (tier `full`, GATE-COSTRUZIONE-360).
-> Stato: **R1-PROPOSTA-d** — dopo DUE verdetti `REVISE` + un completeness-critic che ha trovato 3 CRITICI
-> sulla versione gia corretta. NON ratificata, NON frozen. **D1 e FERMO** (vedi CRITICO 1).
+> Stato: **R1-PROPOSTA-e** — dopo DUE verdetti `REVISE` + un completeness-critic che ha trovato 3 CRITICI
+> sulla versione gia corretta. NON ratificata, NON frozen.
+> **CRITICO 1 CHIUSO** (`1e997e6`): il canale remoto non rilascia piu' una pausa di sistema (U6 -> C17).
+> D1 resta fermo solo su ratifica + freeze e sui due prerequisiti che sono leve di Riccardo.
 > Il **cosa si fa** è in `PLAN.md`; il **perché** della rotta è in `PLAN-REVIEW-VERDICT.md`.
 > Qui SOLO i criteri con cui il lavoro sarà giudicato fatto o non fatto.
 
@@ -89,11 +91,18 @@ di `health` e la sostituzione integrale di `metadata`), non su questo.
   l'email del profilo account** — su nessun canale, `cp_events` incluso.
 - **U5** — Il bot non crea account fantasma, e la proiezione **non è mai un censimento**: nessuna
   cancellazione dedotta da un'assenza.
-- **U6** *(riscritto nella -d: la forma precedente era FALSA)* — **Nessuno stato cloud può far
-  ripartire il bot.** ⚠️ Oggi **può**: `loopCommand.ts:277-279` rilascia una pausa su comando cloud e
-  `:286` fa ripartire il processo (vedi CRITICO 1). Quindi U6 non è un'invariante da mantenere, è un
-  **obiettivo da raggiungere**: il canale va reso monotono-restrittivo — il remoto può solo IMPORRE
-  uno stop, mai toglierlo — **prima** che D1 lo renda raggiungibile.
+- **U6** *(riscritto nella -d, ✅ **RAGGIUNTO** nella -e — commit `1e997e6`)* — **Nessuno stato
+  cloud può far ripartire il bot.** Era un obiettivo, non un'invariante: `loopCommand.ts` rilasciava
+  la pausa su comando cloud. Ora il rilascio passa da `releaseAutomationPause({ channel })`
+  (`src/core/repositories/system.ts`), che dal canale cieco ammette **solo** la pausa di origine
+  utente e mai con quarantena o challenge accesi — e una pausa non può più indebolire quella in
+  corso (il bypass `/pausa 5` sopra una pausa di sistema da 60′, trovato dalla `/antiban-review`).
+  Il fix è stato fatto **prima** di D1, come imponeva il CRITICO 1, e copre anche i due gemelli che
+  nessuno dei due revisori aveva visto: le route REST `/controls/resume` e
+  `/v1/automation/controls/resume`. VERIFY: **C17**.
+  🔻 Residuo dichiarato: `restart` dal cloud resta. Misurato prima di lasciarlo: nessun fail-safe
+  vive in memoria — pausa, quarantena e cooldown captcha stanno tutti in `sync_state`
+  (`challengeHandler.ts:52-60` lo persiste da M26) ⇒ un riavvio **non rilascia** niente.
   ~~forma precedente: «il canale cloud→locale per gli account non esiste, e se verrà costruito potrà
   solo imporre uno stop»~~ — scritta credendo che il canale non esistesse.
 
@@ -117,6 +126,7 @@ di `health` e la sostituzione integrale di `metadata`), non su questo.
 | **C16** | **U5 ha una guardia**: nessun percorso di produzione emette `DELETE` verso `accounts`, e i casi «zero profili», «override CLI inesistente» (`src/accountManager.ts:108-110` ⇒ `[]`) e «lista parziale» producono **zero cancellazioni** | `npx vitest run src/tests/proiezioneAdditiva.vitest.ts` | exit 0, 3 casi |
 | C11 | Gate e build verdi **a ogni passo**, con evidenza per passo: ledger `docs/tracking/F-CB10-EVIDENCE.md` con comando, exit code e SHA del commit | il ledger esiste e ha una riga per commit del lavoro | 1 riga per SHA |
 | C12 | Nessun file del perimetro anti-ban toccato, su base **congelata** e includendo staged/unstaged | `git diff --name-only <BASE_SHA>..HEAD` + `git status --porcelain`, entrambi filtrati su `src/(browser\|risk\|salesnav\|captcha\|workers)/` | `0` in entrambi |
+| **C17** | **Il canale remoto è monotono-restrittivo** (VERIFY di U6): dal canale cieco una pausa di sistema, una quarantena o un challenge in attesa **non** si rilasciano; una pausa non indebolisce quella in corso; nessun modulo che esegue ordini da fuori importa un rilascio incondizionato | `npx vitest run src/tests/rilascioPausaRemota.vitest.ts src/tests/canaleRemotoMonotono.vitest.ts` | exit 0, **17 test** (13 comportamento + 3 sentinelle di forma + 1 mappatura 409) |
 
 `BASE_SHA` = **il commit del freeze**, cioè l'ultimo prima che parta una riga di codice di D1 — non un
 commit precedente al contratto, altrimenti il diff include lavoro che C12 non deve giudicare. Si
@@ -135,13 +145,18 @@ Il critico è stato lanciato **sulla -c**, cioè sulla versione già corretta da
 ciò che una riscrittura fatta sotto 22 obiezioni tende a lasciare aperto — non le obiezioni ricevute,
 ma quelle che nessuno ha nominato. Ne ha trovate tre che fermano il lavoro.
 
-### ⛔ CRITICO 1 — D1 riaccende un canale che RILASCIA lo stop (U6 è già falso)
+### ✅ CRITICO 1 — CHIUSO in `1e997e6` — D1 riaccendeva un canale che RILASCIAVA lo stop (U6 era già falso)
 `loopCommand.ts:263` polla la tabella **cloud** `telegram_commands`; `:277-279` su `riprendi`/`resume`
 chiama `clearPauseState()` (= `clearAutomationPause`, import a `:30`) ⇒ **cancella una pausa imposta
 dall'incident manager**; `:286` su `restart` fa `process.exit(0)`. È inerte **solo** perché `accounts`
 è vuota (FK 23503) ⇒ **D1 lo accende**, mentre `PLAN.md:55-58` lo celebra come «sblocca tre canali».
-⇒ **D1 NON PARTE** finché il canale non è monotono-restrittivo. U6 va riscritto come **constatazione**
-(«il canale esiste ed è non-monotono»), + un C\* che asserisca il rifiuto di `resume`/`restart` dal cloud.
+⇒ **D1 NON PARTIVA** finché il canale non fosse monotono-restrittivo. **Fatto prima di D1**, come
+imponeva questo blocco: il rilascio passa da `releaseAutomationPause({ channel })` e dal canale cieco
+ammette solo la pausa di origine utente (`1e997e6`). U6 è ora una constatazione RISOLTA e il C\*
+richiesto esiste: **C17**. Il perimetro reale era più largo di quanto scritto qui — le bocche di
+rilascio erano **tre** (canale cloud + due route REST), e il gate è stato messo dove sta lo stato.
+Su `restart`: resta, ma è stato misurato che nessun fail-safe vive in memoria ⇒ un riavvio non
+rilascia nulla (dettaglio sotto U6).
 
 ### ⛔ CRITICO 2 — la redazione pianificata di `cp_events` ucciderebbe l'audit log
 `sanitizeObject` redige il valore quando la **chiave** è sensibile (`security/redaction.ts:70-74`) e

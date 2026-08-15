@@ -2859,6 +2859,35 @@ semantica identica.
 risolti a runtime, ritorna il seme odierno). Il congelamento reale del flag **non** e' stato forzato:
 e' una scrittura sul DB di produzione, avverra' al primo avvio del bot.
 
+## 2026-08-15 — chat #24 — il canale remoto smette di poter spegnere un fail-safe (e i gemelli erano tre)
+
+**Tema**: prerequisito ① di D1 (goal `audit-codebase`) — rendere monotono-restrittivo il canale che
+esegue comandi arrivati da fuori il processo.
+
+**Interventi**
+- `src/core/repositories/system.ts`: `PauseOrigin` (`USER`/`SYSTEM`, default `SYSTEM` fail-closed) su
+  `setAutomationPause`, con **monotonia** (una pausa non indebolisce quella in corso: se una delle due
+  è di sistema vince la scadenza più lontana e l'origine resta `SYSTEM`); nuova
+  `releaseAutomationPause({ channel })` con esito tipizzato (`released`/`forced`/`blockedBy`/`reason`).
+- `src/cli/commands/loopCommand.ts`: il ramo `riprendi`/`resume` del canale cloud passa da
+  `REMOTE_BLIND` e, quando viene rifiutato, lo **dice su Telegram** con la causa e la mossa giusta.
+- `src/api/helpers/controlActions.ts`: le due route REST passano da `OPERATOR`, con `force` esplicito
+  nel body e audit `ALLOW`/`DENY`; l'evento live `automation.resumed` ripubblicato qui (lo emetteva
+  `resumeAutomation`, che non è più sul percorso remoto).
+- `src/api/helpers/controlErrors.ts` (nuovo) + `src/api/utils.ts`: il rifiuto esce **409** con motivo,
+  non 500 muto. Modulo separato per non creare l'import incrociato `utils ↔ controlActions`.
+- `src/cli/commands/adminCommands.ts`: pausa CLI = origine `USER`; `runResumeCommand` usa
+  `resumeAutomation` (spegne anche `challenge_review_pending`, che prima restava acceso).
+- Test nuovi: `rilascioPausaRemota.vitest.ts` (13) + `canaleRemotoMonotono.vitest.ts` (4, incluse due
+  sentinelle di **forma** sul simbolo importato e la mappatura 409).
+
+**Perché più largo del previsto**: il piano parlava del solo canale Telegram. La ricerca dei gemelli ha
+trovato **tre** bocche di rilascio; il gate è stato messo dove sta lo stato, così le copre tutte.
+
+**Verifica finale**: `npm run conta-problemi` **exit 0** — 219 file / 2205 test (baseline 217/2187),
+lint 0 warning, `tsc` 0, `madge --circular` 0. `/antiban-review` **SICURO**, 0 file nel perimetro
+anti-ban. Commit `1e997e6`, pushato (`git ls-remote` = `1e997e6`, ahead 0).
+
 ## 2026-08-15 — chat #23 — il contratto va in review a due canali, e un critico trova un ban-signal attivo
 
 **Tema**: sbloccata la leva subagent su `/goal audit-codebase`, il contratto di F-CB.10 e' entrato
