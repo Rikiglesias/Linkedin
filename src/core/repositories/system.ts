@@ -600,18 +600,77 @@ export async function getQuarantineStatus(): Promise<QuarantineStatus> {
     return { global, accounts, any: global || accounts.length > 0 };
 }
 
-export async function setAutomationPause(minutes: number | null, reason: string): Promise<string | null> {
+/** Chi ha chiesto la pausa. `SYSTEM` = fail-safe (incident, challenge, 429): non lo spegne il remoto. */
+export type PauseOrigin = 'USER' | 'SYSTEM';
+
+/** Canale che chiede il rilascio. `REMOTE_BLIND` = ordine arrivato da fuori senza contesto
+ *  (comando cloud/Telegram). `OPERATOR` = richiesta dalla dashboard, dove l'incidente e' a schermo. */
+export type PauseReleaseChannel = 'REMOTE_BLIND' | 'OPERATOR';
+
+/** Perche' un rilascio e' stato rifiutato. */
+export type PauseReleaseBlocker = 'SYSTEM_PAUSE' | 'QUARANTINE' | 'CHALLENGE_PENDING';
+
+export type PauseReleaseRequest = { channel: 'REMOTE_BLIND' } | { channel: 'OPERATOR'; force?: boolean };
+
+export interface PauseReleaseResult {
+    released: boolean;
+    forced: boolean;
+    blockedBy: PauseReleaseBlocker | null;
+    /** Motivo della pausa rilasciata, o di quella che ha bloccato il rilascio (per audit/alert). */
+    reason: string | null;
+}
+
+const PAUSE_ORIGIN_FLAG = 'automation_pause_origin';
+
+async function readPauseOrigin(): Promise<PauseOrigin> {
+    // Fail-closed: una pausa scritta prima che questo flag esistesse (o con un valore
+    // illeggibile) vale come pausa di sistema. Sbagliando, si sbaglia restando fermi.
+    const raw = (await getRuntimeFlag(PAUSE_ORIGIN_FLAG))?.trim().toUpperCase();
+    return raw === 'USER' ? 'USER' : 'SYSTEM';
+}
+
+/** Confronta due scadenze: `null` = pausa indefinita, quindi la piu' restrittiva di tutte. */
+function scadenzaPiuRestrittiva(corrente: string | null, nuova: string | null): string | null {
+    if (corrente === null || nuova === null) return null;
+    return Date.parse(corrente) >= Date.parse(nuova) ? corrente : nuova;
+}
+
+/**
+ * Impone una pausa all'automazione.
+ *
+ * MONOTONIA: una pausa non puo' mai indebolire quella in corso. Se una delle due (in corso o
+ * nuova) e' di sistema, resta la scadenza PIU' LONTANA e l'origine resta `SYSTEM` - altrimenti
+ * un `/pausa 5` mandato da Telegram sopra una pausa da 60 minuti aperta dall'incident manager
+ * la accorcerebbe e la declasserebbe a utente, rendendola rilasciabile dal canale remoto.
+ * Fra due pause utente non c'e' nessun fail-safe di mezzo: li' l'ultima vince.
+ *
+ * @param origin default `SYSTEM`: un call-site che dimentica il parametro produce una pausa
+ *               PROTETTA, non una rilasciabile da remoto.
+ */
+export async function setAutomationPause(
+    minutes: number | null,
+    reason: string,
+    origin: PauseOrigin = 'SYSTEM',
+): Promise<string | null> {
+    const richiesta = minutes === null ? null : new Date(Date.now() + Math.max(1, minutes) * 60_000).toISOString();
+    const motivoRichiesto = reason.trim() || 'manual_pause';
+
+    const inCorso = await getAutomationPauseState();
+    const origineInCorso = inCorso.paused ? await readPauseOrigin() : null;
+    const sistemaCoinvolto = origin === 'SYSTEM' || origineInCorso === 'SYSTEM';
+
+    const until =
+        inCorso.paused && sistemaCoinvolto ? scadenzaPiuRestrittiva(inCorso.pausedUntil, richiesta) : richiesta;
+    const origineFinale: PauseOrigin = sistemaCoinvolto ? 'SYSTEM' : origin;
+    // Il motivo mostrato e' quello della causa dominante: se e' il sistema a tenere fermo il
+    // bot, l'operatore deve leggere l'incidente, non l'ultimo comando che ha digitato.
+    const motivoFinale =
+        origineInCorso === 'SYSTEM' && origin === 'USER' ? (inCorso.reason ?? motivoRichiesto) : motivoRichiesto;
+
     await setRuntimeFlag('automation_paused', 'true');
-    await setRuntimeFlag('automation_pause_reason', reason.trim() || 'manual_pause');
-
-    if (minutes === null) {
-        await setRuntimeFlag('automation_paused_until', '');
-        return null;
-    }
-
-    const safeMinutes = Math.max(1, minutes);
-    const until = new Date(Date.now() + safeMinutes * 60_000).toISOString();
-    await setRuntimeFlag('automation_paused_until', until);
+    await setRuntimeFlag('automation_pause_reason', motivoFinale);
+    await setRuntimeFlag(PAUSE_ORIGIN_FLAG, origineFinale);
+    await setRuntimeFlag('automation_paused_until', until ?? '');
     return until;
 }
 
@@ -619,6 +678,55 @@ export async function clearAutomationPause(): Promise<void> {
     await setRuntimeFlag('automation_paused', 'false');
     await setRuntimeFlag('automation_paused_until', '');
     await setRuntimeFlag('automation_pause_reason', '');
+    await setRuntimeFlag(PAUSE_ORIGIN_FLAG, '');
+}
+
+/**
+ * Rilascio CONDIZIONATO della pausa, per i canali che eseguono ordini arrivati da fuori.
+ *
+ * Il canale cloud `telegram_commands` e le route REST di resume chiamavano `clearAutomationPause`
+ * diretta: un `/riprendi` alla cieca spegneva anche la pausa aperta dall'incident manager, cioe'
+ * un fail-safe anti-ban (429 col suo backoff, burst di selettori, challenge). Da qui in poi il
+ * remoto puo' solo IMPORRE una restrizione; toglierla e' ammesso soltanto sulla pausa che
+ * l'utente ha chiesto lui, e solo se non c'e' nessun'altra protezione accesa.
+ *
+ * `force` esiste solo sul canale `OPERATOR` (dashboard: l'incidente e' sotto gli occhi di chi
+ * clicca) e supera la pausa di sistema e il challenge in attesa - mai la quarantena, che ha il
+ * suo canale dedicato (`setAccountQuarantine`).
+ *
+ * Il rilascio LOCALE resta incondizionato: `clearAutomationPause` dalla CLI e' l'ultima risorsa
+ * di chi e' davanti alla macchina.
+ */
+export async function releaseAutomationPause(request: PauseReleaseRequest): Promise<PauseReleaseResult> {
+    const force = request.channel === 'OPERATOR' && request.force === true;
+    const stato = await getAutomationPauseState();
+    const reason = stato.reason;
+
+    const quarantena = await getQuarantineStatus();
+    if (quarantena.any) {
+        return { released: false, forced: false, blockedBy: 'QUARANTINE', reason };
+    }
+
+    const challengePending = (await getRuntimeFlag('challenge_review_pending')) === 'true';
+    if (challengePending && !force) {
+        return { released: false, forced: false, blockedBy: 'CHALLENGE_PENDING', reason };
+    }
+
+    if (stato.paused) {
+        const origine = await readPauseOrigin();
+        if (origine === 'SYSTEM' && !force) {
+            return { released: false, forced: false, blockedBy: 'SYSTEM_PAUSE', reason };
+        }
+    }
+
+    await clearAutomationPause();
+    if (force) {
+        // Chi forza dalla dashboard dichiara di aver visto e gestito la causa: il flag del
+        // challenge va con la pausa, altrimenti resterebbe acceso senza nessun canale che possa
+        // spegnerlo (lo faceva `resumeAutomation`, che da remoto non e' piu' raggiungibile).
+        await setRuntimeFlag('challenge_review_pending', 'false');
+    }
+    return { released: true, forced: force, blockedBy: null, reason };
 }
 
 export async function getAutomationPauseState(now: Date = new Date()): Promise<AutomationPauseState> {

@@ -1,6 +1,7 @@
 import type { Response } from 'express';
 import { ZodError } from 'zod';
 import { logError } from '../telemetry/logger';
+import { ControlActionRejected } from './helpers/controlErrors';
 
 export interface ApiV1Envelope<TData> {
     apiVersion: 'v1';
@@ -27,6 +28,20 @@ export function handleApiError(res: Response, err: unknown, context: string): vo
             error: { code: 'VALIDATION_ERROR', message: 'Input non valido', details: issues },
         };
         res.status(400).json(body);
+        return;
+    }
+
+    if (err instanceof ControlActionRejected) {
+        // Non e' un guasto: e' una protezione che ha detto no. 409 + motivo azionabile, cosi'
+        // la dashboard mostra cosa risolvere invece di "Errore interno del server".
+        const body: ApiErrorBody = {
+            error: {
+                code: 'CONTROL_ACTION_REJECTED',
+                message: err.message,
+                details: { blockedBy: err.blockedBy, pauseReason: err.pauseReason },
+            },
+        };
+        res.status(409).json(body);
         return;
     }
 

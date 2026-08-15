@@ -49,7 +49,7 @@ import {
 import { getAiQualitySnapshot, runAiValidationPipeline } from '../../core/repositories/aiQuality';
 import { runSecretRotationWorker } from '../../core/secretRotationWorker';
 import { calculateDynamicWeeklyInviteLimit, evaluateComplianceHealthScore } from '../../risk/riskEngine';
-import { setQuarantine } from '../../risk/incidentManager';
+import { resumeAutomation, setQuarantine } from '../../risk/incidentManager';
 import { getEventSyncStatus } from '../../sync/eventSync';
 import { getRuntimeAccountProfiles } from '../../accountManager';
 import { getIntegrationProxyPoolStatus, getProxyPoolStatus } from '../../proxyManager';
@@ -439,7 +439,8 @@ export async function runPauseCommand(args: string[]): Promise<void> {
         getOptionValue(args, '--reason') ?? (positional.length > 1 ? positional.slice(1).join(' ') : 'manual_pause');
 
     const minutes = minutesRaw ? parsePauseMinutes(minutesRaw, '--minutes') : config.autoPauseMinutesOnFailureBurst;
-    const pausedUntil = await setAutomationPause(minutes, reasonRaw);
+    // CLI locale: chi la lancia e' davanti alla macchina -> pausa di origine utente.
+    const pausedUntil = await setAutomationPause(minutes, reasonRaw, 'USER');
     const renderedUntil = pausedUntil ?? 'manual resume';
     // CL12 fix (security): le azioni di controllo da CLI vanno tracciate nel security audit come fa
     // gia' l'API. Prima nessuna traccia: chiunque con accesso shell poteva pausare/sbloccare senza log.
@@ -454,7 +455,11 @@ export async function runPauseCommand(args: string[]): Promise<void> {
 }
 
 export async function runResumeCommand(): Promise<void> {
-    await clearPauseState();
+    // Rilascio LOCALE, ultima risorsa di chi e' davanti alla macchina: passa da
+    // `resumeAutomation` (non dal gate remoto) perche' qui la decisione e' gia' informata.
+    // In piu' spegne `challenge_review_pending` e pubblica l'evento live, cosa che il vecchio
+    // `clearPauseState()` nudo non faceva: un resume da CLI lasciava il flag challenge acceso.
+    await resumeAutomation();
     await recordSecurityAuditEvent({
         category: 'runtime_control',
         action: 'resume',

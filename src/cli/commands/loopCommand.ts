@@ -27,7 +27,7 @@ import {
     releaseRuntimeLock,
     setRuntimeFlag,
     setAutomationPause,
-    clearAutomationPause as clearPauseState,
+    releaseAutomationPause,
     startCampaignRun,
     finishCampaignRun,
 } from '../../core/repositories';
@@ -257,6 +257,15 @@ async function evaluateLoopDoctorGate(dryRun: boolean): Promise<LoopDoctorGate> 
     return { proceed: true, reason: 'doctor_ok' };
 }
 
+/** Cosa dire all'utente quando il rilascio remoto viene rifiutato: la causa e la mossa giusta. */
+const RIPRESA_RIFIUTATA: Record<string, string> = {
+    SYSTEM_PAUSE:
+        "l'ha imposto l'incident manager. Risolvi la causa, poi riprendi dalla dashboard (conferma esplicita) o dalla CLI.",
+    QUARANTINE: "c'e' una quarantena account attiva. Va tolta prima, dal suo comando dedicato.",
+    CHALLENGE_PENDING:
+        "c'e' un challenge LinkedIn in attesa di revisione umana. Risolvilo prima di far ripartire il bot.",
+};
+
 async function processCloudCommands(): Promise<void> {
     const activeProfiles = getRuntimeAccountProfiles();
     for (const profile of activeProfiles) {
@@ -270,13 +279,28 @@ async function processCloudCommands(): Promise<void> {
 
             if (cmd.command === 'pausa' || cmd.command === 'pause') {
                 const minutes = cmd.args && /^[0-9]+$/.test(cmd.args) ? parseInt(cmd.args, 10) : null;
-                await setAutomationPause(minutes || null, 'TELEGRAM_COMMAND');
+                // Origine USER: e' l'utente che chiede la pausa, non un fail-safe. Se una pausa di
+                // sistema e' gia' in corso, `setAutomationPause` tiene la piu' restrittiva delle due.
+                await setAutomationPause(minutes || null, 'TELEGRAM_COMMAND', 'USER');
                 console.log(
                     `[CLOUD] Automazione globale in pausa ${minutes ? 'per ' + minutes + ' min' : 'indefinitamente'}.`,
                 );
             } else if (cmd.command === 'riprendi' || cmd.command === 'resume') {
-                await clearPauseState();
-                console.log(`[CLOUD] Automazione globale ripresa.`);
+                // Canale CIECO: chi manda il comando non vede perche' il bot e' fermo. Puo'
+                // rilasciare solo la pausa che ha chiesto lui; una pausa aperta dall'incident
+                // manager (429, burst di selettori, challenge) resta dov'e'.
+                const esito = await releaseAutomationPause({ channel: 'REMOTE_BLIND' });
+                if (esito.released) {
+                    console.log(`[CLOUD] Automazione globale ripresa.`);
+                } else {
+                    console.warn(`[CLOUD] Ripresa RIFIUTATA (${esito.blockedBy}).`);
+                    await sendTelegramAlert(
+                        `Ripresa rifiutata. Il blocco non l'hai chiesto tu: ${RIPRESA_RIFIUTATA[esito.blockedBy ?? 'SYSTEM_PAUSE']}` +
+                            (esito.reason ? `\n\nMotivo registrato: ${esito.reason}` : ''),
+                        'Automazione ancora ferma',
+                        'warn',
+                    );
+                }
             } else if (cmd.command === 'restart') {
                 // La marcatura DEVE precedere l'uscita: `process.exit(0)` non torna mai, quindi la
                 // `markTelegramCommandProcessed` in fondo al blocco era irraggiungibile e il comando

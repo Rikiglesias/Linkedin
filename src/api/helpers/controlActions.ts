@@ -8,7 +8,10 @@
 
 import type { Request } from 'express';
 import { PauseSchema, QuarantineSchema } from '../schemas';
-import { pauseAutomation, resumeAutomation, setQuarantine } from '../../risk/incidentManager';
+import { pauseAutomation, setQuarantine } from '../../risk/incidentManager';
+import { releaseAutomationPause } from '../../core/repositories';
+import { ControlActionRejected } from './controlErrors';
+import { publishLiveEvent } from '../../telemetry/liveEvents';
 import { recordSecurityAuditEvent } from '../../core/repositories';
 import { resolveRequestIp } from './requestIp';
 
@@ -56,14 +59,24 @@ export async function handlePauseAction(
 }
 
 export async function handleResumeAction(req: Request, source: string): Promise<void> {
-    await resumeAutomation();
+    // Canale OPERATOR: chi clicca ha l'incidente a schermo. Senza `force` esplicito nel body,
+    // una pausa aperta dal sistema NON si spegne per un click distratto; con `force` si', e
+    // resta scritto nell'audit che e' stata una decisione presa, non un resume di routine.
+    const force = req.body?.force === true;
+    const esito = await releaseAutomationPause({ channel: 'OPERATOR', force });
     auditSecurityEvent({
         category: 'runtime_control',
         action: 'resume',
         actor: resolveRequestIp(req),
-        result: 'ALLOW',
-        metadata: { source },
+        result: esito.released ? 'ALLOW' : 'DENY',
+        metadata: { source, forced: esito.forced, blockedBy: esito.blockedBy, pauseReason: esito.reason },
     });
+    if (!esito.released) {
+        throw new ControlActionRejected(esito.blockedBy ?? 'SYSTEM_PAUSE', esito.reason);
+    }
+    // `resumeAutomation` non e' piu' sul percorso remoto: l'evento live che pubblicava va
+    // ripubblicato qui, altrimenti la dashboard non vedrebbe piu' la ripresa in tempo reale.
+    publishLiveEvent('automation.resumed', { source, forced: esito.forced });
 }
 
 export async function handleQuarantineAction(
