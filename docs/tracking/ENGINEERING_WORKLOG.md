@@ -2859,6 +2859,27 @@ semantica identica.
 risolti a runtime, ritorna il seme odierno). Il congelamento reale del flag **non** e' stato forzato:
 e' una scrittura sul DB di produzione, avverra' al primo avvio del bot.
 
+## 2026-08-15 — chat #24 (4) — il critico avversariale ha trovato 8 cose, 7 erano vere
+
+**Tema**: passata indipendente di fine turno (Layer C) sul lavoro della giornata.
+
+| Gravita' | Reperto | Esito |
+|---|---|---|
+| critical | `pauseAutomation` senza `origin` ⇒ anche `MANUAL_DASHBOARD_PAUSE` nasceva SYSTEM: chi metteva in pausa dalla dashboard non poteva piu' riprendere (409), e Telegram dava una causa falsa | **fix** — `origin` con default SYSTEM, MANUAL_* passa USER |
+| high | canale dedotto dalla ROUTE: `/api/v1/...` (namespace esterno, 18 workflow n8n) era OPERATOR ⇒ un automa con `force:true` spegneva pausa di sistema e challenge | **fix** — canale dedotto da `source`, force solo su dashboard |
+| high | la «terza via di rilascio» dichiarata non esisteva: il client leggeva solo `resp.ok`, il 409 non arrivava a schermo | **fix parziale** — il motivo ora si vede; il pulsante `force` resta da proporre (UI nuova su un fail-safe) |
+| medium | la transazione non basta su Postgres (READ COMMITTED + SELECT senza lock) e in produzione gira Postgres | **fix** — advisory lock di transazione |
+| medium | la suite restava verde col difetto critico attivo: tutti i test passavano `origin` esplicito | **fix** — ciclo reale + 2 sentinelle sui call-site |
+| medium | sentinella aggirabile: guardava solo l'import statico, mentre `await import()` e' idioma corrente | **fix** — entrambe le forme + divieto di scrivere il flag a mano; **mutation check** superato |
+| low | `openapi.yaml` e `INTEGRATIONS.md` dichiaravano solo 200 sulle route resume | **fix** — 409 e `force` documentati |
+| low | il messaggio di rifiuto su Telegram indicava un comando che su Telegram non esiste | **fix** — azione eseguibile davvero |
+
+**Lezione**: i tre finding piu' gravi erano tutti **fuori dal file che stavo guardando** — il default di
+un parametro in un altro modulo, il significato di `withTransaction` sull'altro backend, e un pezzo di
+frontend. La mia passata 360 aveva trovato la race, ma si era fermata al perimetro che avevo in mente.
+
+**Verifica**: `npm run conta-problemi` exit 0 — 222 file / **2220 test**. Commit `3c6f2d7`, pushato.
+
 ## 2026-08-15 — chat #24 (3) — la passata finale ha trovato una race che avevo introdotto io oggi
 
 **Tema**: PASSATA-360 di fine turno (zero-L) sui 6 file toccati.
@@ -2868,9 +2889,14 @@ era write-only). CLI, API e loop sono processi distinti sullo stesso DB ⇒ un `
 stato prima che l'incident manager abbia scritto la sua pausa da 60' la sovrascrive con una pausa di
 origine utente, rilasciabile da remoto: **il buco chiuso in `1e997e6` si riapriva sotto concorrenza**.
 
-**Fix** (`05571db`): read+write dentro `withTransaction` (BEGIN IMMEDIATE, `db.ts:157`) sia in
-`setAutomationPause` sia in `releaseAutomationPause` (che decide su tre letture e poi scrive).
-Contro-verifica: l'annidamento e' gia' gestito con SAVEPOINT (`db.ts:169-186`).
+**Fix** (`05571db`): read+write dentro `withTransaction` sia in `setAutomationPause` sia in
+`releaseAutomationPause`. Contro-verifica: l'annidamento e' gia' gestito con SAVEPOINT
+(`db.ts:169-186`).
+⚠️ **CORREZIONE (`3c6f2d7`, dal critico avversariale)**: quel fix valeva **solo in sviluppo**.
+`BEGIN IMMEDIATE` e' del ramo SQLite; `PostgresManager.withTransaction` (`db.ts:314`) apre un `BEGIN`
+READ COMMITTED e la lettura e' una SELECT senza lock ⇒ lost update. E SQLite in produzione e'
+**rifiutato** (`db.ts:727`) ⇒ in produzione la race restava aperta. Chiusa con
+`pg_advisory_xact_lock` sulla sezione critica quando `isPostgres`.
 
 **Nota di metodo**: il primo rosso passava **per caso** — avevo rallentato la lettura sbagliata e le
 due scritture si erano ordinate nel modo innocuo. Ri-mirato sul punto dove la corsa fa danno, il rosso
