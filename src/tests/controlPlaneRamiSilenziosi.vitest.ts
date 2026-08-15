@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ramiFallitiDaEsiti } from '../cloud/controlPlaneSync';
+import { RAMI_SYNC, eseguiRami, ramiFallitiDaEsiti } from '../cloud/controlPlaneSync';
 
 /**
  * F-CB.10 / D3 — `Promise.allSettled` scartava i `rejected` senza ispezionarli: i tre rami del
@@ -66,5 +66,59 @@ describe('ramiFallitiDaEsiti — nessun ramo del control-plane sync fallisce in 
         expect(falliti).toHaveLength(1);
         expect(falliti[0].ramo).toContain('1');
         expect(falliti[0].errore).toContain('ramo senza nome');
+    });
+});
+
+/**
+ * F-CB.10 / passo 0 — de-posizionalizzare il registro dei rami.
+ *
+ * Il difetto che questi test chiudono: i nomi vivevano in un array SEPARATO dalle promise, tenuti
+ * allineati da una convenzione scritta in un commento. Rimuovere un ramo rinominava tutti gli altri
+ * esattamente come aggiungerne uno — e il passo 1 rimuove proprio un ramo (`accounts_down`), quindi
+ * senza questo passo il primo fallimento di `leads_down` sarebbe uscito etichettato `accounts_down`.
+ *
+ * I 6 test qui sopra provano il predicato puro e resterebbero VERDI anche col registro rotto:
+ * quello è esattamente il punto per cui questo blocco esiste.
+ */
+describe('RAMI_SYNC — il registro dei rami non è più posizionale', () => {
+    it('caratterizzazione del difetto: con i nomi in un array separato, togliere un ramo rinomina i rimanenti', () => {
+        // Meccanismo VECCHIO simulato: 3 nomi fissi, ma solo i 2 rami sopravvissuti eseguiti.
+        const nomiSeparatiDallePromise = ['accounts_down', 'leads_down', 'salesnav_up'];
+        const esitiDeiDueSopravvissuti: PromiseSettledResult<unknown>[] = [
+            { status: 'rejected', reason: new Error('boom-leads') },
+            { status: 'rejected', reason: new Error('boom-salesnav') },
+        ];
+        expect(ramiFallitiDaEsiti(nomiSeparatiDallePromise, esitiDeiDueSopravvissuti).map((f) => f.ramo)).toEqual([
+            'accounts_down',
+            'leads_down',
+        ]);
+        // ⇒ due etichette sbagliate su due. È il motivo per cui il registro deve essere UNO.
+    });
+
+    it('ogni nome viaggia nello stesso oggetto che porta il suo esecutore', () => {
+        expect(RAMI_SYNC.length).toBeGreaterThan(0);
+        for (const ramo of RAMI_SYNC) {
+            expect(typeof ramo.nome).toBe('string');
+            expect(ramo.nome.length).toBeGreaterThan(0);
+            expect(typeof ramo.esegui).toBe('function');
+        }
+    });
+
+    it('amputare un ramo dal registro NON rinomina i rimanenti', async () => {
+        const registroAmputato = RAMI_SYNC.filter((r) => r.nome !== 'accounts_down').map((r) => ({
+            nome: r.nome,
+            esegui: () => Promise.reject(new Error(`boom-${r.nome}`)),
+        }));
+        const falliti = await eseguiRami(registroAmputato);
+        expect(falliti.map((f) => f.ramo)).toEqual(['leads_down', 'salesnav_up']);
+        expect(falliti[0].errore).toContain('boom-leads_down');
+    });
+
+    it('un ramo che riesce non compare fra i falliti', async () => {
+        const falliti = await eseguiRami([
+            { nome: 'ok', esegui: () => Promise.resolve() },
+            { nome: 'ko', esegui: () => Promise.reject(new Error('boom')) },
+        ]);
+        expect(falliti.map((f) => f.ramo)).toEqual(['ko']);
     });
 });

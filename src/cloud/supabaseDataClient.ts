@@ -858,40 +858,6 @@ export async function fetchCloudCampaignConfigs(limit: number): Promise<CloudCam
 // ──────────────────────────────────────────────────────────────
 
 /**
- * Legge gli accounts modificati sul cloud dopo lastSyncAt.
- */
-export async function fetchCloudAccountsUpdates(
-    lastSyncAt: string | null,
-    limit: number = 100,
-): Promise<CloudAccount[]> {
-    const sb = getClient();
-    if (!sb) return [];
-
-    const safeLimit = Math.max(1, limit);
-    try {
-        let query = sb.from('accounts').select('*').order('updated_at', { ascending: true }).limit(safeLimit);
-
-        if (lastSyncAt) {
-            query = query.gt('updated_at', lastSyncAt);
-        }
-
-        const { data, error } = await query;
-
-        if (error || !data) {
-            await logWarn('cloud.accounts.fetch_updates.error', { error: error?.message ?? 'unknown' });
-            return [];
-        }
-
-        // Cast safely
-        return data as CloudAccount[];
-    } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        await logWarn('cloud.accounts.fetch_updates.exception', { error: message });
-        return [];
-    }
-}
-
-/**
  * Legge i leads modificati sul cloud dopo lastSyncAt.
  */
 export async function fetchCloudLeadsUpdates(

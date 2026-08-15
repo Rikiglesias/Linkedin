@@ -7,7 +7,7 @@ import { createHash } from 'crypto';
 import { getDatabase } from '../../db';
 import { config } from '../../config';
 import { OutboxEventRecord } from '../../types/domain';
-import type { CloudAccount, CloudLeadUpsert } from '../../cloud/types';
+import type { CloudLeadUpsert } from '../../cloud/types';
 import { getCorrelationId } from '../../telemetry/correlation';
 import {
     type AcquireRuntimeLockResult,
@@ -1171,40 +1171,6 @@ export async function cleanupPrivacyData(
             staleMessageHistory,
             staleLeads,
         };
-    });
-}
-
-/**
- * Applies partial updates from cloud sync. COALESCE(?, field) semantics:
- * if the cloud value is NULL (not provided), keep the current local value.
- * This prevents cloud sync from erasing locally-set fields.
- */
-export async function applyCloudAccountUpdates(updates: CloudAccount[]): Promise<void> {
-    if (updates.length === 0) return;
-    const db = await getDatabase();
-    await withTransaction(db, async () => {
-        for (const acc of updates) {
-            await db.run(
-                `
-                UPDATE accounts
-                SET
-                    tier = COALESCE(?, tier),
-                    health = COALESCE(?, health),
-                    quarantine_reason = COALESCE(?, quarantine_reason),
-                    quarantine_until = COALESCE(?, quarantine_until),
-                    updated_at = COALESCE(?, updated_at)
-                WHERE id = ?
-                `,
-                [
-                    acc.tier,
-                    acc.health,
-                    acc.quarantine_reason,
-                    acc.quarantine_until,
-                    acc.updated_at || new Date().toISOString(),
-                    acc.id,
-                ],
-            );
-        }
     });
 }
 

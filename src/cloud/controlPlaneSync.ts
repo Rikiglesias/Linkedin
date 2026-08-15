@@ -5,31 +5,33 @@ import {
     ControlPlaneCampaignConfigInput,
     getRuntimeFlag,
     setRuntimeFlag,
-    applyCloudAccountUpdates,
     applyCloudLeadUpdates,
 } from '../core/repositories';
 import { getDatabase } from '../db';
 import { logInfo, logWarn } from '../telemetry/logger';
 import {
     fetchCloudCampaignConfigs,
-    fetchCloudAccountsUpdates,
     fetchCloudLeadsUpdates,
     syncSalesNavMembersToCloud,
 } from './supabaseDataClient';
 
 /**
- * Nomi dei rami lanciati insieme in `runControlPlaneSync`, NELLO STESSO ORDINE delle promise.
- * Serve a dare un nome al fallimento: `allSettled` restituisce solo la posizione.
+ * Un ramo del control-plane sync: il nome e l'esecutore viaggiano nello STESSO oggetto.
+ *
+ * Perché non due array paralleli (com'era prima): `Promise.allSettled` restituisce solo la
+ * posizione, quindi i nomi stavano in un array separato tenuto allineato alle promise da una
+ * convenzione scritta in un commento. Rimuovere un ramo rinominava tutti gli altri esattamente come
+ * aggiungerne uno — e il passo successivo di questa fase rimuove proprio un ramo.
  */
-const NOMI_RAMI_SYNC = ['accounts_down', 'leads_down', 'salesnav_up'] as const;
+export type RamoSync = { nome: string; esegui: () => Promise<void> };
 
 /**
  * Estrae i rami rigettati da un `Promise.allSettled`, con il loro nome e un messaggio sempre
  * valorizzato.
  *
  * Perché esiste: `Promise.allSettled` **non rigetta mai**, quindi un `await` sul suo risultato senza
- * ispezionarlo scarta ogni fallimento in silenzio — ed è ciò che accadeva qui, dove due dei tre rami
- * (`syncAccountsDown`, `syncLeadsDown`) non hanno nemmeno un try/catch proprio.
+ * ispezionarlo scarta ogni fallimento in silenzio — ed è ciò che accadeva qui, dove `syncLeadsDown`
+ * non ha nemmeno un try/catch proprio.
  *
  * Puro di proposito: `runControlPlaneSync` richiederebbe di mockare config + supabase + db + runtime
  * flags per essere esercitato, quindi la REGOLA si prova qui e il wiring si legge sopra.
@@ -59,7 +61,6 @@ export function ramiFallitiDaEsiti(
 
 const CONTROL_PLANE_LAST_RUN_KEY = 'control_plane.campaigns.last_run_at';
 const CONTROL_PLANE_LAST_HASH_KEY = 'control_plane.campaigns.last_hash';
-const CONTROL_PLANE_ACCOUNTS_LAST_SYNC_KEY = 'control_plane.accounts.last_sync_at';
 const CONTROL_PLANE_LEADS_LAST_SYNC_KEY = 'control_plane.leads.last_sync_at';
 
 function isControlPlaneConfigured(): boolean {
@@ -112,23 +113,6 @@ export interface ControlPlaneSyncReport {
     skippedInvalid: number;
 }
 
-async function syncAccountsDown() {
-    const lastSyncAt = await getRuntimeFlag(CONTROL_PLANE_ACCOUNTS_LAST_SYNC_KEY);
-    const updates = await fetchCloudAccountsUpdates(lastSyncAt, 100);
-    if (updates.length > 0) {
-        await applyCloudAccountUpdates(updates);
-        // Calcola il max updated_at
-        let maxUpdatedAt = lastSyncAt || new Date(0).toISOString();
-        for (const u of updates) {
-            if (u.updated_at && u.updated_at > maxUpdatedAt) {
-                maxUpdatedAt = u.updated_at;
-            }
-        }
-        await setRuntimeFlag(CONTROL_PLANE_ACCOUNTS_LAST_SYNC_KEY, maxUpdatedAt);
-        await logInfo('control_plane.accounts.downsync', { count: updates.length });
-    }
-}
-
 async function syncLeadsDown() {
     const lastSyncAt = await getRuntimeFlag(CONTROL_PLANE_LEADS_LAST_SYNC_KEY);
     const updates = await fetchCloudLeadsUpdates(lastSyncAt, 500);
@@ -163,6 +147,42 @@ async function syncSalesNavUp() {
         const message = error instanceof Error ? error.message : String(error);
         await logWarn('control_plane.salesnav.upsync.error', { error: message });
     }
+}
+
+/**
+ * Registro UNICO dei rami lanciati insieme dal control-plane sync: è la sola fonte sia dei nomi sia
+ * delle promise. Aggiungere o togliere un ramo qui non può più disallineare le etichette.
+ *
+ * ⚠️ NON reintrodurre un ramo `accounts_down`. Il downsync degli account è stato rimosso (F-CB.10,
+ * D2 = Strada B+) perché dava a una tabella cloud senza comandante l'autorità di **rilasciare** la
+ * quarantena: con un solo account configurato l'id degrada al sintetico `'default'`, e
+ * `setAccountQuarantine('default', false)` scrive il flag GLOBALE che sblocca OGNI account. La
+ * sentinella `src/tests/downsyncAccountRimosso.vitest.ts` fallisce se il ramo torna per inerzia.
+ *
+ * Il canale corretto per un comando remoto, quando servirà, è la tabella cloud `telegram_commands`
+ * (per-account, one-shot, consumato ⇒ non può oscillare), con tre precondizioni da scrivere NEL
+ * codice prima di usarla:
+ *   1. **monotono-restrittivo**: il remoto può solo IMPORRE uno stop, mai rilasciarlo;
+ *   2. **allow-list** esplicita degli id ammessi;
+ *   3. **`'default'` rifiutato per costruzione** (e ogni id che vi normalizza: vuoto, whitespace),
+ *      perché in locale è la wildcard «tutti gli account», non un identificatore.
+ */
+export const RAMI_SYNC: readonly RamoSync[] = [
+    { nome: 'leads_down', esegui: syncLeadsDown },
+    { nome: 'salesnav_up', esegui: syncSalesNavUp },
+];
+
+/**
+ * Esegue i rami in parallelo e restituisce SOLO quelli rigettati, col nome preso dallo stesso
+ * oggetto che ha fornito l'esecutore. Estratto per essere esercitabile con un registro finto:
+ * `runControlPlaneSync` richiederebbe di mockare config + supabase + db + runtime flags.
+ */
+export async function eseguiRami(rami: readonly RamoSync[]): Promise<Array<{ ramo: string; errore: string }>> {
+    const esiti = await Promise.allSettled(rami.map((ramo) => ramo.esegui()));
+    return ramiFallitiDaEsiti(
+        rami.map((ramo) => ramo.nome),
+        esiti,
+    );
 }
 
 export async function runControlPlaneSync(options: { force?: boolean } = {}): Promise<ControlPlaneSyncReport> {
@@ -223,8 +243,7 @@ export async function runControlPlaneSync(options: { force?: boolean } = {}): Pr
             reason = force ? 'forced_sync' : 'synced';
         }
 
-        const esitiRami = await Promise.allSettled([syncAccountsDown(), syncLeadsDown(), syncSalesNavUp()]);
-        for (const fallito of ramiFallitiDaEsiti([...NOMI_RAMI_SYNC], esitiRami)) {
+        for (const fallito of await eseguiRami(RAMI_SYNC)) {
             // `allSettled` non rigetta MAI: senza questa ispezione un ramo morto era invisibile.
             // Nessun retry: `syncSalesNavUp` ha già il suo catch, gli altri due rigirano al ciclo
             // successivo del control plane. Il log È il rimedio, come per salesnav in F-CB.8.
