@@ -6,13 +6,14 @@
 > Il **cosa si fa** è in `PLAN.md`; il **perché** della rotta è in `PLAN-REVIEW-VERDICT.md`.
 > Qui SOLO i criteri con cui il lavoro sarà giudicato fatto o non fatto.
 
-## Esito della review — due canali, entrambi `REVISE`
+## Esito della review — tre canali indipendenti, nessuno APPROVED
 
 | Canale | Verdetto | Peso |
 |---|---|---|
 | Evaluator a contesto vergine (read-only) | `VERDICT:REVISE` | 5 premesse esaminate, 3 false o incomplete |
 | Codex cross-model (read-only) | `VERDICT:REVISE` | 22 obiezioni, 17 bloccanti |
-| Verifiche mie alla fonte | — | 2 reperti indipendenti, entrambi poi confermati dai revisori |
+| `completeness-critic` sulla **-c già corretta** | 13 finding, **3 CRITICI** | ha trovato ciò che i primi due non avevano nominato, e ha smontato una premessa che veniva da Codex |
+| Verifiche mie alla fonte | — | 2 reperti indipendenti confermati dai revisori · 3 miei errori trovati dalle passate |
 
 **Convergenza a tre** su due punti: la premessa del leader gate è falsa, e `health` derivato dalla sola
 quarantena declassa a GREEN un allarme YELLOW vivo.
@@ -88,8 +89,13 @@ di `health` e la sostituzione integrale di `metadata`), non su questo.
   l'email del profilo account** — su nessun canale, `cp_events` incluso.
 - **U5** — Il bot non crea account fantasma, e la proiezione **non è mai un censimento**: nessuna
   cancellazione dedotta da un'assenza.
-- **U6** — **Nessuno stato cloud può fermare né far ripartire il bot**: il canale cloud→locale per gli
-  account non esiste, e se verrà costruito potrà solo imporre uno stop, mai rilasciarlo.
+- **U6** *(riscritto nella -d: la forma precedente era FALSA)* — **Nessuno stato cloud può far
+  ripartire il bot.** ⚠️ Oggi **può**: `loopCommand.ts:277-279` rilascia una pausa su comando cloud e
+  `:286` fa ripartire il processo (vedi CRITICO 1). Quindi U6 non è un'invariante da mantenere, è un
+  **obiettivo da raggiungere**: il canale va reso monotono-restrittivo — il remoto può solo IMPORRE
+  uno stop, mai toglierlo — **prima** che D1 lo renda raggiungibile.
+  ~~forma precedente: «il canale cloud→locale per gli account non esiste, e se verrà costruito potrà
+  solo imporre uno stop»~~ — scritta credendo che il canale non esistesse.
 
 ## Criteri di contratto (C\*)
 
