@@ -2914,3 +2914,28 @@ accountId": sono 19 e uno lo passava).
 
 **VERIFICA**: `conta-problemi` EXIT 0 (217 file / 2186 test), `build:backend` EXIT 0, `madge` 0
 cicli - tutti misurati senza pipe.
+
+### ⛔ Coda del blocco 23: D1 e' FERMO — il canale che rilascia lo stop esiste gia', e D1 lo accende
+
+Il `completeness-critic` sul contratto riscritto ha trovato cio' che il gate ④ aveva mancato.
+Verificato da me riga per riga: `loopCommand.ts:263` polla la tabella CLOUD `telegram_commands`,
+e `:277-279` sul comando `riprendi` chiama `clearPauseState()` = `clearAutomationPause` ⇒ **cancella
+una pausa imposta dall'incident manager**; `:286` su `restart` fa `process.exit(0)`.
+
+Quindi U6 («il canale cloud→locale non esiste, e se verra' costruito potra' solo imporre uno stop»)
+non e' un'invariante da mantenere: e' **gia' falsa**. E quel canale e' inerte SOLO perche' `accounts`
+e' vuota (FK 23503 su `telegram_commands.account_id`) ⇒ **D1 lo accende**, mentre `PLAN.md:55-58` lo
+celebra come «sblocca tre canali».
+
+E' lo stesso errore per cui la Strada A era stata bocciata («la proiezione spegne da sola il
+fail-safe»), sopravvissuto in B+ perche' tutti — Codex, il workflow a 6 lenti, io — guardavamo i
+canali che D1 CREA, nessuno quelli che D1 RISVEGLIA.
+
+Ordine di lavoro cambiato: ① rendere il canale monotono-restrittivo (togliere `riprendi`/`resume`/
+`restart` dal cloud, con la sua `/antiban-review`) ② solo dopo, D1. Contratto a R1-PROPOSTA-d.
+
+Altri due CRITICI dello stesso critico, da verificare prima di accettarli: la redazione pianificata
+di `cp_events` redigerebbe anche `idempotency_key` (`redaction.ts:9` — `isSensitiveKey` splitta su
+`_` e 'key' e' sensibile) facendo collassare l'audit log cloud su UNA riga; e il filtro «id
+configurato» di C9 e' process-scoped, quindi un drain lanciato con `--account acc2` scarterebbe in
+silenzio la RED di `acc1` marcandola CONSEGNATA.
