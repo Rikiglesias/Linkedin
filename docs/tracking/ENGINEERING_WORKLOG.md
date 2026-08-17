@@ -3038,3 +3038,50 @@ di `cp_events` redigerebbe anche `idempotency_key` (`redaction.ts:9` — `isSens
 `_` e 'key' e' sensibile) facendo collassare l'audit log cloud su UNA riga; e il filtro «id
 configurato» di C9 e' process-scoped, quindi un drain lanciato con `--account acc2` scarterebbe in
 silenzio la RED di `acc1` marcandola CONSEGNATA.
+
+## 2026-08-17 — chat #25 — il commit di ieri era verde nei test e monco in produzione (`52f9003`)
+
+**Il gate di fine-sessione segnalava `public/assets/bundle.js` dirty. La prima lettura — «artefatto
+di build rigenerato da un altro processo, non mio, lascialo» — era sbagliata, e il diagnostico
+l'ha ribaltata.**
+
+### Cosa conteneva davvero il diff
+
+Non rumore di minificatore. Le due righe cambiate erano la controparte UI del 409 introdotto ieri:
+
+```
+HEAD : async resume(){ return (await apiFetch("/api/controls/resume",{method:"POST"})).ok }
+       n ? toast("Automazione ripresa") : toast("Errore durante la ripresa")
+WT   : async resume(){ ...; return {ok:false, motivo:(await t.json())?.error?.message} }
+       n.ok ? ... : toast(n.motivo ?? "Errore durante la ripresa")
+```
+
+I sorgenti erano gia' committati in `3c6f2d7` (`src/frontend/apiClient.ts:247`,
+`src/frontend/main.ts:406`) con `src/frontend/` pulito: era **il bundle dentro HEAD a essere stale**.
+Chi avesse fatto il deploy da quell'HEAD serviva una dashboard che, al rifiuto «non posso rilasciare
+una pausa di sistema», mostrava `Errore durante la ripresa` generico — cioe' proprio il messaggio che
+il critico avversariale aveva imposto di non perdere.
+
+### Verifica prima di committare 250KB non letti
+
+Backup del dirty nello scratchpad, poi `npm run build:frontend`: hash **identico**
+(`72bec2c7894d97ee...`) prima e dopo. Il file era gia' l'output deterministico dei sorgenti verdi,
+nessun contenuto estraneo. `conta-problemi` exit 0 (222 file / 2220 test, typecheck
+backend+frontend, lint 0 warning), `security:scan` pulito su 871 file.
+
+### Il gate L1 ha bloccato il primo commit, e aveva ragione
+
+`pre-bash-l1-gate.ps1:110` pretende un `(exit 0)` attribuibile in `quality-hook-log.txt`. Il mio
+`conta-problemi` era stato lanciato dentro una pipeline (`| tail -25` + comandi concatenati) e il
+logger l'aveva marcato `(pipeline: esito non attribuibile)`. Root cause mia, non del gate:
+rilanciato il quality-check **da solo**, non aggirato con `[skip-l1]`. Stessa classe subito dopo: un
+comando che concatenava append-al-file e `git commit` e' stato negato valutando il tree PRIMA che
+l'append girasse ⇒ scrittura e commit vanno in due comandi separati.
+
+### Reperto tracciato, non chiuso
+
+Misurati i 12 commit piu' recenti che toccano `src/frontend/`: **9 non contengono il bundle
+rigenerato**. I gate non possono prenderlo — typecheck e lint girano sui SORGENTI, quindi un bundle
+stale passa tutto: falso verde per costruzione. Proposta di sentinella (rigenera e confronta l'hash
+quando il diff tocca `src/frontend/**`) in `~/todos/improvements-proposed.md`, NON costruita:
+capability nuova, leva utente.
