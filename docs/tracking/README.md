@@ -19,6 +19,8 @@ Questa cartella esiste per evitare che audit, tentativi, verifiche e decisioni t
 
 ## File di supporto al tracking
 
+- [STATO_BOT_360_2026-09-02.md](STATO_BOT_360_2026-09-02.md)
+  Punto della situazione a 360° del bot (goal `bot-operativo`, F0): stato misurato, config effettiva, Codex riconciliato, versione migliore per area, gate e fasi verso il primo invito end-to-end.
 - [codebase-debt.md](codebase-debt.md)
   Snapshot del debito tecnico strutturale. Non e' un backlog vivo autonomo: serve a supportare i file canonici sopra.
 - [AI_CAPABILITY_ROUTING.json](AI_CAPABILITY_ROUTING.json)
