@@ -3147,3 +3147,44 @@ pushato. Chat chiusa a contesto 51% con il Workflow ancora in corsa: §4-9 trava
 `ts-node -T` non compila col tsconfig NodeNext → usare `dist/`. Nei Workflow: apostrofi in backtick,
 `model:` esplicito su ogni `agent()`. Il guard FS-SERIALIZE nega scritture parallele a Workflow attivo.
 Il canale `SUBAGENT_RESULT` ha emesso 3 volte «/goal bot-operativo»: eco, mai input.
+
+## 2026-09-03 — chat #28 — il contratto F1 è congelato e il primo invito non manda più il bot in quarantena
+
+**Tema**: goal `bot-operativo`, Fase 1 (gate pre-LinkedIn). Ripresa da `/lastchat` #27 con il round 2 del contratto ancora aperto.
+
+**Negoziazione chiusa (tier light, round 2 = ultimo)**
+- L'evaluator opus rilanciato è caduto per `529 Overloaded` (2ª volta), poi è RIPRESO su `SendMessage` e ha consegnato:
+  **CONTRACT_REVISE, 11 obiezioni, 46 claim letti** (`evaluator-round2.md`). In parallelo **Codex cieco cross-model**
+  (`codex exec -s read-only`, gpt-5.6): **CONTRACT_REVISE, 12 obiezioni, 78 claim letti** — 7 coincidenti, 5 nuove.
+- Tutte le 23 riconciliate alla fonte (righe rilette) e accolte. Le più pesanti: il **guardian euristico**
+  (`guardian.ts:86`, soglie 0.78/0.35 senza campione, attivo anche con `AI_GUARDIAN_ENABLED=false` perché
+  `evaluateAiGuardian` ritorna `heuristic_critical_block` PRIMA del check) avrebbe messo in pausa 180 min il run
+  successivo al primo invito — seconda porta dello stesso deadlock, ora **C21**; `GET /api/stats` non esiste
+  (route reali `/kpis`, `/risk/explain`); `buildSchedule` era un helper di TEST, la funzione vera è `scheduleJobs`
+  e il dry-run di `runWorkflow` esce (`:433`) PRIMA di quarantena e guardian → C7 = integrazione reale;
+  il DB di test è una copia della PRODUZIONE condivisa (`globalSetup.ts`) → i test costruiscono il proprio stato;
+  gemelli nuovi: trust score (`stats.ts:927-932`) e `antiBanChecklist` (denominatore = TUTTI i lead, literal `> 10`);
+  lock `workflow.runner` vs `workflow.runner:<account>` → due runner sullo stesso account.
+- Contratto finale **C1-C21**, 127 VERIFY tutti sicuri, **frozen** (`contract_hash` `3336bd29…`, 3 eventi HMAC
+  negotiate/ratify/freeze nel ledger `~/.claude/state/goal-contract/bot-operativo.events.jsonl`).
+
+**Blocco 1 implementato — C1 + C2 + C6 (campione minimo nel risk engine)**
+- `src/risk/sampleGate.ts` (nuovo): `pendingRatioSample` (20 invitati all-time), `attemptsSample` (5 tentativi 24h),
+  `isPendingRatioValid`, `INVALID_RISK_INPUTS_FALLBACK`. Fail-closed su campione NaN/negativo o coppia incoerente
+  (0 invitati con ratio > 0: è ciò che un fallback a zeri produrrebbe); ratio non finito/negativo/>1 → STOP con
+  trigger `invalid_risk_inputs` (prima `clampRatio` lo azzerava e APRIVA il gate).
+- `riskEngine.ts`: `gateRiskInputs`/`computeScore`; lo snapshot espone i valori GREZZI (verità per i report), lo
+  score e le soglie usano quelli gated; `explainRisk` spiega il campione (`threshold` «campione insufficiente
+  (<20 invitati: 1)», `sample`). `RiskInputs.invitedTotal` e `attemptsTotal24h` OBBLIGATORI: `tsc` ha trovato i
+  59 letterali nei test (ora 100/100 = comportamento odierno) e il produttore reale `api/routes/stats.ts:117`.
+  Config `PENDING_RATIO_MIN_INVITED` / `RISK_MIN_ATTEMPTS_SAMPLE` (domains/types/validation, `docs:config`
+  rigenerato); il fallback DB di `sessionDataHelper` → input invalidi (STOP); `riskAssessor.errorFactorFromSample`.
+- **Rosso-prima dimostrato**: `minSample=1 → 1/1 pending = STOP` (deadlock), `minSample=20 → NORMAL`.
+- Gate: 2 rossi intermedi in `workflowPreflightRiskAssessor` (mock parziale di `config`; fixture a 4 operazioni
+  sotto il campione) → corretti. **`conta-problemi` exit 0 = 225 file / 2258 test** (da 222/2220), `tsc` 0,
+  lint 0, madge 0. `/antiban-review` **SICURO** (soglie 0.55/0.65, cap, timing, stealth invariati; residuo
+  dichiarato: sotto 20 inviti il ratio non frena, restano cap giornalieri e limite settimanale).
+- Commit (gate ≤15 file → 3): `8d5e02d` codice+docs · `4fa7cbc` test risk engine · `d6434e7` letterali.
+
+**Cosa resta di F1**: C3-C5, C7-C21 (blocco 2 = C4/C5/C21 gemelli + C3 consumer; blocco 3 = C8-C11; blocco 4 =
+C12-C17; C18-C20 = leve). Binding `~/todos/bot-operativo.md` § Stato.
