@@ -98,6 +98,8 @@ export interface AppConfig {
     riskStopThreshold: number;
     pendingRatioWarn: number;
     pendingRatioStop: number;
+    pendingRatioMinInvited: number;
+    riskMinAttemptsSample: number;
     adaptiveCapsEnabled: boolean;
     adaptiveCapsPendingWarn: number;
     adaptiveCapsPendingStop: number;

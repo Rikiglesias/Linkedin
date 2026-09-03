@@ -813,6 +813,9 @@ export async function getRiskInputs(localDate: string, hardInviteCap: number): P
         selectorFailureRate,
         challengeCount,
         inviteVelocityRatio,
+        // Campioni per il gate del risk engine (contratto bot-operativo C2/C6): il ratio da solo non basta.
+        invitedTotal,
+        attemptsTotal24h: totalAttempts,
     };
 }
 

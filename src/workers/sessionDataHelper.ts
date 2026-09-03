@@ -5,6 +5,7 @@
 import { config } from '../config';
 import { getDailyStat, getRiskInputs } from '../core/repositories';
 import { evaluateRisk } from '../risk/riskEngine';
+import { INVALID_RISK_INPUTS_FALLBACK } from '../risk/sampleGate';
 import type { WorkerContext } from './context';
 
 export interface RealSessionData {
@@ -26,13 +27,8 @@ export async function buildSessionSnapshot(context: WorkerContext): Promise<Real
         getDailyStat(context.localDate, 'invites_sent').catch(() => 0),
         getDailyStat(context.localDate, 'messages_sent').catch(() => 0),
         getDailyStat(context.localDate, 'challenges_count').catch(() => 0),
-        getRiskInputs(context.localDate, config.hardInviteCap).catch(() => ({
-            pendingRatio: 0,
-            errorRate: 0,
-            selectorFailureRate: 0,
-            challengeCount: 0,
-            inviteVelocityRatio: 0,
-        })),
+        // DB irraggiungibile → input INVALIDI (STOP con trigger), non zeri che aprirebbero il gate (contratto C2c).
+        getRiskInputs(context.localDate, config.hardInviteCap).catch(() => INVALID_RISK_INPUTS_FALLBACK),
     ]);
 
     const riskSnapshot = evaluateRisk(riskInputs);

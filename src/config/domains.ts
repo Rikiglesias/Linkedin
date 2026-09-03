@@ -142,6 +142,14 @@ export function buildLimitsAndRiskDomainConfig() {
         // per mantenere l'escalation warn<stop (allineato ad adaptiveCapsPendingWarn). Override via env.
         pendingRatioWarn: parseFloatEnv('PENDING_RATIO_WARN', 0.55),
         pendingRatioStop: parseFloatEnv('PENDING_RATIO_STOP', 0.65),
+        // Campione minimo perché il pending ratio CONTI (contratto bot-operativo C1): il primo invito dava
+        // 1 pending / 1 invitato = 1.0 ≥ pendingRatioStop → STOP → quarantena. Denominatore ALL-TIME
+        // (`invited_at IS NOT NULL`), distinto dal lookback di COMPLIANCE_HEALTH_MIN_INVITE_SAMPLE /
+        // COMPLIANCE_PENDING_RATIO_ALERT_MIN_INVITED (finestra N giorni). Funzione unica: risk/sampleGate.ts.
+        pendingRatioMinInvited: Math.max(1, parseIntEnv('PENDING_RATIO_MIN_INVITED', 20)),
+        // Stessa classe per errorRate/selectorFailureRate: sotto N tentativi (24h) non contribuiscono allo score
+        // (1 tentativo fallito + 1 selector failure oggi = 60 punti = WARN). challengeCount NON è campionato.
+        riskMinAttemptsSample: Math.max(1, parseIntEnv('RISK_MIN_ATTEMPTS_SAMPLE', 5)),
         adaptiveCapsEnabled: parseBoolEnv('ADAPTIVE_CAPS_ENABLED', true),
         // Soglie DISTINTE da pendingRatioStop/Warn (sopra). Questi cap adattivi agiscono sul pending ratio
         // PER-LISTA (scheduler.evaluateAdaptiveBudgetContext, su statusCounts della singola lista), NON sul

@@ -116,6 +116,10 @@ statsRouter.get('/stats/trend', async (req, res) => {
             const operations = Math.max(1, invites + messages);
             const estimatedRisk = evaluateRisk({
                 pendingRatio: pendingRatioReference,
+                // Campioni reali (contratto bot-operativo C2/C6): il ratio di riferimento porta il suo campione
+                // all-time, l'errorRate del giorno il numero di operazioni di quel giorno.
+                invitedTotal: currentRiskInputs.invitedTotal,
+                attemptsTotal24h: invites + messages,
                 errorRate: runErrors / operations,
                 selectorFailureRate: 0,
                 challengeCount: challenges,

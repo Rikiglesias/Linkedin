@@ -287,6 +287,14 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
         when: (cfg) => cfg.compliancePendingRatioAlertMinInvited < 1,
     },
     {
+        message: '[CONFIG] PENDING_RATIO_MIN_INVITED deve essere >= 1',
+        when: (cfg) => cfg.pendingRatioMinInvited < 1,
+    },
+    {
+        message: '[CONFIG] RISK_MIN_ATTEMPTS_SAMPLE deve essere >= 1',
+        when: (cfg) => cfg.riskMinAttemptsSample < 1,
+    },
+    {
         message: '[CONFIG] COMPLIANCE_HEALTH_MIN_INVITE_SAMPLE deve essere >= 1',
         when: (cfg) => cfg.complianceHealthMinInviteSample < 1,
     },

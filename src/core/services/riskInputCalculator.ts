@@ -40,5 +40,8 @@ export function calculateRiskInputs(raw: RiskRawData): RiskInputs {
         selectorFailureRate,
         challengeCount: raw.challengeCountToday,
         inviteVelocityRatio,
+        // Campioni propagati per il gate (contratto bot-operativo C2/C6): prima venivano consumati e buttati.
+        invitedTotal: raw.invitedTotal,
+        attemptsTotal24h: raw.totalAttempts24h,
     };
 }

@@ -1,5 +1,6 @@
 import { config } from '../config';
 import { RiskInputs, RiskSnapshot } from '../types/domain';
+import { attemptsSample, isPendingRatioValid, pendingRatioSample, SampleGateResult } from './sampleGate';
 
 function clampScore(value: number): number {
     if (!Number.isFinite(value)) return 0;
@@ -16,44 +17,88 @@ function clampPercentage(value: number): number {
     return Math.max(0, Math.min(100, value));
 }
 
-export function evaluateRisk(inputs: RiskInputs): RiskSnapshot {
-    const errorRate = clampRatio(inputs.errorRate);
-    const selectorFailureRate = clampRatio(inputs.selectorFailureRate);
-    const pendingRatio = clampRatio(inputs.pendingRatio);
-    const inviteVelocityRatio = clampRatio(inputs.inviteVelocityRatio);
-    const challengeCount = Math.max(0, Math.floor(Number.isFinite(inputs.challengeCount) ? inputs.challengeCount : 0));
+/**
+ * Valori che entrano nello score e nei trigger, dopo il gate di campione (contratto bot-operativo C1/C2/C6).
+ * I valori GREZZI (clampati) restano nello snapshot: sono la verità per report e dashboard; solo lo score e le
+ * decisioni usano quelli "effettivi" (0 sotto campione).
+ */
+interface GatedRiskValues {
+    pendingGate: SampleGateResult;
+    attemptsGate: SampleGateResult;
+    /** ratio non finito / negativo / > 1 = dato corrotto → STOP (prima veniva clampato a 0 e APRIVA il gate). */
+    invalidInputs: boolean;
+    raw: { errorRate: number; selectorFailureRate: number; pendingRatio: number; inviteVelocityRatio: number };
+    effective: { errorRate: number; selectorFailureRate: number; pendingRatio: number };
+    challengeCount: number;
+}
 
-    const score = clampScore(
-        errorRate * 40 +
-            selectorFailureRate * 20 +
-            pendingRatio * 25 +
-            Math.min(30, challengeCount * 10) +
-            inviteVelocityRatio * 15,
+function gateRiskInputs(inputs: RiskInputs): GatedRiskValues {
+    const pendingGate = pendingRatioSample({ pendingRatio: inputs.pendingRatio, invitedTotal: inputs.invitedTotal });
+    const attemptsGate = attemptsSample({
+        attemptsTotal24h: inputs.attemptsTotal24h,
+        errorRate: inputs.errorRate,
+        selectorFailureRate: inputs.selectorFailureRate,
+    });
+    const raw = {
+        errorRate: clampRatio(inputs.errorRate),
+        selectorFailureRate: clampRatio(inputs.selectorFailureRate),
+        pendingRatio: clampRatio(inputs.pendingRatio),
+        inviteVelocityRatio: clampRatio(inputs.inviteVelocityRatio),
+    };
+    return {
+        pendingGate,
+        attemptsGate,
+        invalidInputs: !isPendingRatioValid(inputs.pendingRatio),
+        raw,
+        effective: {
+            errorRate: attemptsGate.sufficient ? raw.errorRate : 0,
+            selectorFailureRate: attemptsGate.sufficient ? raw.selectorFailureRate : 0,
+            pendingRatio: pendingGate.sufficient ? raw.pendingRatio : 0,
+        },
+        challengeCount: Math.max(0, Math.floor(Number.isFinite(inputs.challengeCount) ? inputs.challengeCount : 0)),
+    };
+}
+
+function computeScore(gated: GatedRiskValues): number {
+    return clampScore(
+        gated.effective.errorRate * 40 +
+            gated.effective.selectorFailureRate * 20 +
+            gated.effective.pendingRatio * 25 +
+            Math.min(30, gated.challengeCount * 10) +
+            gated.raw.inviteVelocityRatio * 15,
     );
+}
+
+export function evaluateRisk(inputs: RiskInputs): RiskSnapshot {
+    const gated = gateRiskInputs(inputs);
+    const score = computeScore(gated);
+    // Il pending ratio entra nelle soglie SOLO sopra campione (o fail-closed): 1 pending / 1 invitato non è più STOP.
+    const pendingForThresholds = gated.pendingGate.sufficient ? inputs.pendingRatio : 0;
 
     let action: RiskSnapshot['action'] = 'NORMAL';
     if (
+        gated.invalidInputs ||
         score >= config.riskStopThreshold ||
-        inputs.pendingRatio >= config.pendingRatioStop ||
+        pendingForThresholds >= config.pendingRatioStop ||
         inputs.challengeCount > 0
     ) {
         action = 'STOP';
     } else if (
         config.lowActivityEnabled &&
-        (score >= config.lowActivityRiskThreshold || inputs.pendingRatio >= config.lowActivityPendingThreshold)
+        (score >= config.lowActivityRiskThreshold || pendingForThresholds >= config.lowActivityPendingThreshold)
     ) {
         action = 'LOW_ACTIVITY';
-    } else if (score >= config.riskWarnThreshold || inputs.pendingRatio >= config.pendingRatioWarn) {
+    } else if (score >= config.riskWarnThreshold || pendingForThresholds >= config.pendingRatioWarn) {
         action = 'WARN';
     }
 
     return {
         score,
-        pendingRatio,
-        errorRate,
-        selectorFailureRate,
-        challengeCount,
-        inviteVelocityRatio,
+        pendingRatio: gated.raw.pendingRatio,
+        errorRate: gated.raw.errorRate,
+        selectorFailureRate: gated.raw.selectorFailureRate,
+        challengeCount: gated.challengeCount,
+        inviteVelocityRatio: gated.raw.inviteVelocityRatio,
         action,
     };
 }
@@ -75,15 +120,31 @@ export interface RiskExplanation {
         pendingRatioWarn: number;
         pendingRatioStop: number;
     };
+    /** Campioni del gate (contratto bot-operativo C1/C6): perché un fattore conta o no. */
+    sample: {
+        pending: { sufficient: boolean; sampleSize: number; minSample: number; reason: SampleGateResult['reason'] };
+        attempts: { sufficient: boolean; sampleSize: number; minSample: number; reason: SampleGateResult['reason'] };
+    };
+}
+
+function sampleThreshold(gate: SampleGateResult, unit: string, factorName: string, whenSufficient: string): string {
+    if (!gate.sufficient) {
+        return `campione insufficiente (<${gate.minSample} ${unit}: ${gate.sampleSize}) → ${factorName} non contribuisce`;
+    }
+    if (gate.reason !== 'sample_ok') {
+        return `campione ${gate.reason === 'invalid_sample_fail_closed' ? 'invalido' : 'incoerente'} (${gate.sampleSize}) → fail-closed: ${whenSufficient}`;
+    }
+    return whenSufficient;
 }
 
 export function explainRisk(inputs: RiskInputs): RiskExplanation {
     const snapshot = evaluateRisk(inputs);
-    const errorContrib = clampRatio(inputs.errorRate) * 40;
-    const selectorContrib = clampRatio(inputs.selectorFailureRate) * 20;
-    const pendingContrib = clampRatio(inputs.pendingRatio) * 25;
-    const challengeContrib = Math.min(30, Math.max(0, Math.floor(inputs.challengeCount ?? 0)) * 10);
-    const velocityContrib = clampRatio(inputs.inviteVelocityRatio) * 15;
+    const gated = gateRiskInputs(inputs);
+    const errorContrib = gated.effective.errorRate * 40;
+    const selectorContrib = gated.effective.selectorFailureRate * 20;
+    const pendingContrib = gated.effective.pendingRatio * 25;
+    const challengeContrib = Math.min(30, gated.challengeCount * 10);
+    const velocityContrib = gated.raw.inviteVelocityRatio * 15;
 
     const factors = [
         {
@@ -91,21 +152,31 @@ export function explainRisk(inputs: RiskInputs): RiskExplanation {
             rawValue: inputs.errorRate,
             weight: 40,
             contribution: Math.round(errorContrib * 100) / 100,
-            threshold: `score += errorRate × 40`,
+            threshold: sampleThreshold(gated.attemptsGate, 'tentativi', 'errorRate', `score += errorRate × 40`),
         },
         {
             name: 'selectorFailureRate',
             rawValue: inputs.selectorFailureRate,
             weight: 20,
             contribution: Math.round(selectorContrib * 100) / 100,
-            threshold: `score += selectorFailureRate × 20`,
+            threshold: sampleThreshold(
+                gated.attemptsGate,
+                'tentativi',
+                'selectorFailureRate',
+                `score += selectorFailureRate × 20`,
+            ),
         },
         {
             name: 'pendingRatio',
             rawValue: inputs.pendingRatio,
             weight: 25,
             contribution: Math.round(pendingContrib * 100) / 100,
-            threshold: `WARN ≥ ${config.pendingRatioWarn}, STOP ≥ ${config.pendingRatioStop}`,
+            threshold: sampleThreshold(
+                gated.pendingGate,
+                'invitati',
+                'pendingRatio',
+                `WARN ≥ ${config.pendingRatioWarn}, STOP ≥ ${config.pendingRatioStop}`,
+            ),
         },
         {
             name: 'challengeCount',
@@ -124,8 +195,10 @@ export function explainRisk(inputs: RiskInputs): RiskExplanation {
     ];
 
     const triggers: string[] = [];
+    if (gated.invalidInputs)
+        triggers.push(`invalid_risk_inputs: pendingRatio=${String(inputs.pendingRatio)} fuori da [0, 1] → STOP (fail-closed)`);
     if (inputs.challengeCount > 0) triggers.push(`challengeCount=${inputs.challengeCount} > 0 → STOP`);
-    if (inputs.pendingRatio >= config.pendingRatioStop)
+    if (gated.pendingGate.sufficient && inputs.pendingRatio >= config.pendingRatioStop)
         triggers.push(
             `pendingRatio=${(inputs.pendingRatio * 100).toFixed(1)}% ≥ ${(config.pendingRatioStop * 100).toFixed(0)}% → STOP`,
         );
@@ -135,6 +208,13 @@ export function explainRisk(inputs: RiskInputs): RiskExplanation {
         triggers.push(
             `score=${snapshot.score} ≥ ${config.riskWarnThreshold} or pendingRatio ≥ ${(config.pendingRatioWarn * 100).toFixed(0)}% → WARN`,
         );
+
+    const describeGate = (gate: SampleGateResult) => ({
+        sufficient: gate.sufficient,
+        sampleSize: gate.sampleSize,
+        minSample: gate.minSample,
+        reason: gate.reason,
+    });
 
     return {
         score: snapshot.score,
@@ -146,6 +226,10 @@ export function explainRisk(inputs: RiskInputs): RiskExplanation {
             riskStop: config.riskStopThreshold,
             pendingRatioWarn: config.pendingRatioWarn,
             pendingRatioStop: config.pendingRatioStop,
+        },
+        sample: {
+            pending: describeGate(gated.pendingGate),
+            attempts: describeGate(gated.attemptsGate),
         },
     };
 }

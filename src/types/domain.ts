@@ -148,6 +148,10 @@ export interface RiskInputs {
     selectorFailureRate: number;
     challengeCount: number;
     inviteVelocityRatio: number;
+    /** Campione del pending ratio: lead con `invited_at IS NOT NULL` (all-time). OBBLIGATORIO: il gate fallisce chiuso su -1/NaN. */
+    invitedTotal: number;
+    /** Campione dei rapporti sui tentativi: `job_attempts` nelle ultime 24h. OBBLIGATORIO, stessa regola fail-closed. */
+    attemptsTotal24h: number;
 }
 
 export interface RiskSnapshot {

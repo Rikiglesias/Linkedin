@@ -2,7 +2,19 @@ import { checkDiskSpace, getDatabase } from '../../db';
 import { getLocalDateString } from '../../config';
 import { getRuntimeAccountProfiles } from '../../accountManager';
 import { getDailyStat, getRuntimeFlag, setRuntimeFlag } from '../../core/repositories';
+import { attemptsSample } from '../../risk/sampleGate';
 import type { PreflightConfigStatus, SessionRiskAssessment } from '../types';
+
+/**
+ * Fattore errori del preflight (0-20) con lo STESSO campione minimo del risk engine (contratto bot-operativo C6):
+ * 1 errore su 1 operazione valeva 20 punti su una scala il cui STOP è a 60. Funzione pura, testabile.
+ */
+export function errorFactorFromSample(args: { errorsToday: number; processedToday: number }): number {
+    const errorRate = args.processedToday > 0 ? args.errorsToday / args.processedToday : 0;
+    const gate = attemptsSample({ attemptsTotal24h: args.processedToday, errorRate, selectorFailureRate: 0 });
+    if (!gate.sufficient) return 0;
+    return Math.min(20, Math.floor(errorRate * 50));
+}
 
 export async function computeSessionRiskLevel(cfgStatus: PreflightConfigStatus): Promise<SessionRiskAssessment> {
     const localDate = getLocalDateString();
@@ -27,8 +39,7 @@ export async function computeSessionRiskLevel(cfgStatus: PreflightConfigStatus):
 
     const errorsToday = await getDailyStat(localDate, 'run_errors');
     const processedToday = cfgStatus.invitesSentToday + cfgStatus.messagesSentToday;
-    const errorRate = processedToday > 0 ? errorsToday / processedToday : 0;
-    const errorFactor = Math.min(20, Math.floor(errorRate * 50));
+    const errorFactor = errorFactorFromSample({ errorsToday, processedToday });
 
     const proxyFactor =
         cfgStatus.proxyIpReputation && !cfgStatus.proxyIpReputation.isSafe
