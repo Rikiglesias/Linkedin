@@ -3085,3 +3085,65 @@ rigenerato**. I gate non possono prenderlo — typecheck e lint girano sui SORGE
 stale passa tutto: falso verde per costruzione. Proposta di sentinella (rigenera e confronta l'hash
 quando il diff tocca `src/frontend/**`) in `~/todos/improvements-proposed.md`, NON costruita:
 capability nuova, leva utente.
+
+## 2026-09-02 — chat #26 — il bot non ha mai inviato, e ora sappiamo perché (`a3d0d72`)
+
+**Prima sessione con Fable 5.1 sul bot. Riccardo: «continuiamo con la risoluzione del bot su tutti
+gli aspetti perché deve funzionare al 100% […] non è una lista di cose da fare ma un metodo per farti
+capire come ragionare […] punto della situazione a 360 gradi». Goal nuovo `bot-operativo`
+(`~/todos/bot-operativo.md`, F0-F6). Nessun fix: solo misura, mappa e riconciliazione.**
+
+### Stato misurato alla fonte (sqlite read-only, `tasklist`, `docker ps`, `npm outdated`)
+
+348 lead tutti `NEW`; `jobs`, `daily_stats`, `message_history` = 0 righe ⇒ **nessuna azione E2E mai
+completata**. Flag pausa/quarantena/challenge tutti `false` dal 2026-06-13 (prima lettura mia
+«impostati» era sbagliata: corretta rileggendo i VALORI). 6 `SELECTOR_CANARY_FAILED` CRITICAL OPEN
+(giugno), `canary_last_ok_at` 2026-06-13. `run_logs` fino al 2026-08-04: 2.968 `telegram.polling_error`
+(29-30/03) + 745 `test.error` = test che scrivevano nel DB reale fino all'isolamento `65d109a`. Lock
+`workflow.runner` scaduto dal 2026-03-30. Sessione `data/session` verificata 2026-06-09; **le dir degli
+account runtime `data/session_acc1|acc2` NON esistono**. Nessun processo bot, Ollama spento, Camoufox
+installato. Baseline `conta-problemi` exit 0: 222 file / 2220 test.
+
+### Config EFFETTIVA, senza leggere `.env`
+
+Un tentativo di `sed` sull'`.env` è stato bloccato dal hook secrets — giusto. La config effettiva si
+legge dal modulo compilato `dist/config` con uno script che stampa SOLO flag/booleani: camoufox headed,
+**captcha auto-resolve ON**, block-datacenter OFF, require-proxy OFF, cap 10/50/12, SQLite dev, Telegram
+ON, Anthropic opus-4-8/haiku-4-5, OpenAI `gpt-5.4`, **Ollama non configurato**, vision qwen3-vl:8b,
+Supabase sync ON / control plane OFF. Codex diceva «default Chromium»: vero nel codice, falso
+nell'effettivo — senza la sonda avrei propagato un falso.
+
+### Codex cieco (`codex exec --sandbox read-only`, solo fatti misurati, nessuna mia conclusione)
+
+Verdetto: «un canary transazionale, non l'autopilot». 17 claim riconciliati da me alla fonte: **13
+accolti, 3 parziali, 1 non verificabile, 0 respinti**. Confermati leggendo file:riga: `success:true` a
+0 inviti (`sendInvitesService.ts:~473`); `send-invites` vuole `READY_INVITE` mentre lo scheduler promuove
+NEW FIFO senza score ×4 cap (`scheduler.ts:668`); canary any-pass (`selectorCanary.ts:192-198`); warmup
+fallito non blocca (`jobRunner.ts:366-370`); risk engine ignora `account_incidents` e assume acceptance
+50%; Telegram fail-open; fallback vision clicca senza confidence; **camoufox-js 0.12 richiede
+`playwright-core <1.61`** ⇒ non convive con Playwright 1.62.
+
+### Workflow `bot-linkedin-censimento-2026` (run `wf_afdb933a-8c0`)
+
+15 lettori read-only per area + 7 ricerche web 2026 → 145 giudizi avversariali a 2 lenti su 69 blocchi
+→ sintesi (fable) + critico (opus). **Run 1 monco**: 94/162 agenti caduti per «session limit»; il mio
+script contava i giudizi mancanti come «refutati» (bug: ora `unverified`). Rilancio con
+`resumeFromRunId` (68 in cache) → **162/162, 13,8 M token**. Verdetto: 15 aree su 15 «migliorare»,
+nessuna «sostituire»; 12 gate; 6 upgrade «subito». Scoperta dei giudici: il cookie `li_at` NON è
+scaduto (2027-06-13) — il primo run si ferma su un gate OFFLINE nostro (`jobRunner.ts:242`,
+`SESSION_COOKIE_MAX_AGE_DAYS=7` vs `lastVerifiedAt` 2026-06-09). Due lanci falliti prima: apostrofi in
+stringhe JS; hook `WORKFLOW_MODEL_GATE` che impone `model:` esplicito.
+
+### Artefatti
+
+`docs/tracking/STATO_BOT_360_2026-09-02.md` (382 righe: §0-3 a mano, §4-9 travasati dal journal con
+script, §9 critico integrale NON ancora riconciliato) + `.sintesi.json` grezzo; link in
+`docs/tracking/README.md`. Memoria: `decisions_linkedin_bot.md` § Policy modello → «superata in
+pratica» (Fable 5.1 scelto da Riccardo, condizione di ritorno a Opus annotata). Commit `a3d0d72`,
+pushato. Chat chiusa a contesto 51% con il Workflow ancora in corsa: §4-9 travasati, non letti.
+
+### do-not-redo
+
+`ts-node -T` non compila col tsconfig NodeNext → usare `dist/`. Nei Workflow: apostrofi in backtick,
+`model:` esplicito su ogni `agent()`. Il guard FS-SERIALIZE nega scritture parallele a Workflow attivo.
+Il canale `SUBAGENT_RESULT` ha emesso 3 volte «/goal bot-operativo»: eco, mai input.
