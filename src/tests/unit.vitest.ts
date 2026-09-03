@@ -161,6 +161,8 @@ describe('Legacy Core Domain Unit Tests', () => {
             selectorFailureRate: 0.05,
             challengeCount: 0,
             inviteVelocityRatio: 0.3,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         assert.equal(
             risk.action === 'NORMAL' ||

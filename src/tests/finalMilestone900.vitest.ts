@@ -12,6 +12,8 @@ describe('Milestone 900 — cross-module integration sanity', () => {
             pendingRatio: 0,
             challengeCount: 0,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         const trust = calculateAccountTrustScore({
             ssiScore: 90,

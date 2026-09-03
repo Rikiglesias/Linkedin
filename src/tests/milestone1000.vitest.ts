@@ -36,6 +36,8 @@ describe('Milestone 1000 — full system integration', () => {
             pendingRatio: 0.2,
             challengeCount: 0,
             inviteVelocityRatio: 0.3,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         const trust = calculateAccountTrustScore({
             ssiScore: 80,
@@ -121,6 +123,8 @@ describe('Milestone 1000 — full system integration', () => {
             pendingRatio: 0.3,
             challengeCount: 0,
             inviteVelocityRatio: 0.2,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
 
         expect(health.score).toBeGreaterThan(0);
@@ -134,6 +138,8 @@ describe('Milestone 1000 — full system integration', () => {
             pendingRatio: 0.3,
             challengeCount: 0,
             inviteVelocityRatio: 0.1,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
 
         expect(explanation.factors.length).toBe(5);
@@ -156,6 +162,8 @@ describe('Milestone 1000 — full system integration', () => {
                 pendingRatio: 0.35,
                 challengeCount: 0,
                 inviteVelocityRatio: 0.25,
+                invitedTotal: 100,
+                attemptsTotal24h: 100,
             });
             calculateAccountTrustScore({
                 ssiScore: 65,

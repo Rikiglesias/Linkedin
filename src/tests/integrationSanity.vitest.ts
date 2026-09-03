@@ -40,6 +40,8 @@ describe('Integration Sanity — every module callable', () => {
                 pendingRatio: 0,
                 challengeCount: 0,
                 inviteVelocityRatio: 0,
+                invitedTotal: 100,
+                attemptsTotal24h: 100,
             }).score,
         ).toBe(0));
     it('trust score', () =>

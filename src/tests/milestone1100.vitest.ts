@@ -13,6 +13,8 @@ describe('Milestone 1100 — final integration', () => {
             pendingRatio: 0.25,
             challengeCount: 0,
             inviteVelocityRatio: 0.15,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         const trust = calculateAccountTrustScore({
             ssiScore: 75,

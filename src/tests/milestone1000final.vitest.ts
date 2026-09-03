@@ -10,6 +10,8 @@ describe('MILESTONE 1000 — final 2 tests', () => {
             pendingRatio: 0,
             challengeCount: 0,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(r.score).toBe(0);
         expect(r.action).toBe('NORMAL');
