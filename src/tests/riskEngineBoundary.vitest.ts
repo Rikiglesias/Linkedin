@@ -21,6 +21,8 @@ describe('evaluateRisk — boundary values', () => {
                 pendingRatio: 0,
                 challengeCount: 0,
                 inviteVelocityRatio: 0,
+                invitedTotal: 100,
+                attemptsTotal24h: 100,
             }).score,
         ).toBe(20);
     });
@@ -33,6 +35,8 @@ describe('evaluateRisk — boundary values', () => {
                 pendingRatio: 0,
                 challengeCount: 0,
                 inviteVelocityRatio: 0,
+                invitedTotal: 100,
+                attemptsTotal24h: 100,
             }).score,
         ).toBe(10);
     });
@@ -44,6 +48,8 @@ describe('evaluateRisk — boundary values', () => {
             pendingRatio: 0.5,
             challengeCount: 0,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(r.score).toBe(13); // 0.5 * 25 = 12.5 → round 13
     });
@@ -56,6 +62,8 @@ describe('evaluateRisk — boundary values', () => {
                 pendingRatio: 0,
                 challengeCount: 0,
                 inviteVelocityRatio: 1.0,
+                invitedTotal: 100,
+                attemptsTotal24h: 100,
             }).score,
         ).toBe(15);
     });
@@ -67,6 +75,8 @@ describe('evaluateRisk — boundary values', () => {
             pendingRatio: 0,
             challengeCount: 1,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(r.score).toBe(10);
         expect(r.action).toBe('STOP');
@@ -80,6 +90,8 @@ describe('evaluateRisk — boundary values', () => {
                 pendingRatio: 0,
                 challengeCount: 2,
                 inviteVelocityRatio: 0,
+                invitedTotal: 100,
+                attemptsTotal24h: 100,
             }).score,
         ).toBe(20);
     });
@@ -92,6 +104,8 @@ describe('evaluateRisk — boundary values', () => {
             pendingRatio: 0,
             challengeCount: 0,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(r.score).toBe(30);
         expect(r.action).toBe('WARN');

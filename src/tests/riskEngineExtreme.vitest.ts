@@ -20,6 +20,8 @@ describe('evaluateRisk — extreme inputs', () => {
             pendingRatio: 10,
             challengeCount: 100,
             inviteVelocityRatio: 10,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(r.score).toBe(100);
     });
@@ -31,6 +33,8 @@ describe('evaluateRisk — extreme inputs', () => {
             pendingRatio: -1,
             challengeCount: -1,
             inviteVelocityRatio: -1,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(r.score).toBe(0);
     });
@@ -42,6 +46,8 @@ describe('evaluateRisk — extreme inputs', () => {
             pendingRatio: 0,
             challengeCount: 0,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(r.score).toBe(40); // errorRate * 40
     });
@@ -53,6 +59,8 @@ describe('evaluateRisk — extreme inputs', () => {
             pendingRatio: 0,
             challengeCount: 0,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(r.score).toBe(20); // selectorFailureRate * 20
     });
@@ -64,6 +72,8 @@ describe('evaluateRisk — extreme inputs', () => {
             pendingRatio: 1.0,
             challengeCount: 0,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(r.score).toBe(25); // pendingRatio * 25
     });
@@ -75,6 +85,8 @@ describe('evaluateRisk — extreme inputs', () => {
             pendingRatio: 0,
             challengeCount: 0,
             inviteVelocityRatio: 1.0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(r.score).toBe(15); // inviteVelocityRatio * 15
     });
@@ -86,6 +98,8 @@ describe('evaluateRisk — extreme inputs', () => {
             pendingRatio: 0,
             challengeCount: 3,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(r.score).toBe(30); // min(30, 3*10)
     });
@@ -97,6 +111,8 @@ describe('evaluateRisk — extreme inputs', () => {
             pendingRatio: 0,
             challengeCount: 5,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(r.score).toBe(30); // min(30, 5*10) = 30
     });
@@ -108,6 +124,8 @@ describe('evaluateRisk — extreme inputs', () => {
             pendingRatio: 1,
             challengeCount: 3,
             inviteVelocityRatio: 1,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(r.score).toBe(100);
     });
@@ -119,6 +137,8 @@ describe('evaluateRisk — extreme inputs', () => {
             pendingRatio: 0,
             challengeCount: 0,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(r.score).toBeLessThanOrEqual(100);
     });

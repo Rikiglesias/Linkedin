@@ -17,6 +17,8 @@ describe('explainRisk — advanced', () => {
             pendingRatio: 0.3,
             challengeCount: 0,
             inviteVelocityRatio: 0.1,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         const names = e.factors.map((f) => f.name);
         expect(names).toContain('errorRate');
@@ -33,6 +35,8 @@ describe('explainRisk — advanced', () => {
             pendingRatio: 0.4,
             challengeCount: 1,
             inviteVelocityRatio: 0.2,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         for (const f of e.factors) {
             expect(f.weight).toBeGreaterThan(0);
@@ -46,6 +50,8 @@ describe('explainRisk — advanced', () => {
             pendingRatio: 0.4,
             challengeCount: 0,
             inviteVelocityRatio: 0.2,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         for (const f of e.factors) {
             // Contribution dovrebbe essere proporzionale a rawValue * weight
@@ -61,6 +67,8 @@ describe('explainRisk — advanced', () => {
             pendingRatio: 0,
             challengeCount: 0,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(e.triggers).toEqual([]);
     });
@@ -72,6 +80,8 @@ describe('explainRisk — advanced', () => {
             pendingRatio: 0,
             challengeCount: 1,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(e.triggers.length).toBeGreaterThan(0);
     });
@@ -83,6 +93,8 @@ describe('explainRisk — advanced', () => {
             pendingRatio: 0,
             challengeCount: 0,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(e.thresholds.riskWarn).toBe(config.riskWarnThreshold);
         expect(e.thresholds.riskStop).toBe(config.riskStopThreshold);
@@ -95,6 +107,8 @@ describe('explainRisk — advanced', () => {
             pendingRatio: 0.4,
             challengeCount: 0,
             inviteVelocityRatio: 0.1,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         };
         const e = explainRisk(inputs);
         const { evaluateRisk } = await import('../risk/riskEngine');

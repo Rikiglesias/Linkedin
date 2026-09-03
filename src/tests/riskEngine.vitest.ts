@@ -28,6 +28,8 @@ describe('Risk Engine', () => {
             pendingRatio: 0,
             challengeCount: 0,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(result.score).toBe(0);
         expect(result.action).toBe('NORMAL');
@@ -40,6 +42,8 @@ describe('Risk Engine', () => {
             pendingRatio: 0,
             challengeCount: 1,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(result.action).toBe('STOP');
         expect(result.score).toBeGreaterThan(0);
@@ -52,6 +56,8 @@ describe('Risk Engine', () => {
             pendingRatio: 0.75,
             challengeCount: 0,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         // Con pendingRatio alto, il risk score sale e l'azione è STOP o LOW_ACTIVITY
         // (dipende dai threshold configurati — LOW_ACTIVITY può scattare prima di STOP)
@@ -65,6 +71,8 @@ describe('Risk Engine', () => {
             pendingRatio: 0.4,
             challengeCount: 0,
             inviteVelocityRatio: 0.2,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(result.score).toBeGreaterThan(0);
         // (prima qui c'era una tautologia: l'array elencava TUTTI i valori dell'union `action`)
@@ -79,6 +87,8 @@ describe('Risk Engine', () => {
             pendingRatio: -1,
             challengeCount: NaN,
             inviteVelocityRatio: -Infinity,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(Number.isFinite(result.score)).toBe(true);
         expect(result.score).toBeGreaterThanOrEqual(0);
@@ -92,6 +102,8 @@ describe('Risk Engine', () => {
             pendingRatio: 0.5,
             challengeCount: 0,
             inviteVelocityRatio: 0.1,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(explanation.factors.length).toBeGreaterThan(0);
         expect(explanation.factors[0]).toHaveProperty('name');

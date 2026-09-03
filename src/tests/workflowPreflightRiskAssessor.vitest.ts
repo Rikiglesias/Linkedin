@@ -17,6 +17,8 @@ vi.mock('../db', () => ({
 
 vi.mock('../config', () => ({
     getLocalDateString: mocks.getLocalDateString,
+    // Campioni minimi del gate (contratto bot-operativo C1/C6): il riskAssessor li legge via risk/sampleGate.
+    config: { riskMinAttemptsSample: 5, pendingRatioMinInvited: 20 },
 }));
 
 vi.mock('../accountManager', () => ({
@@ -111,7 +113,8 @@ describe('preflight riskAssessor', () => {
             warmupEnabled: false,
             budgetInvites: 10,
             budgetMessages: 10,
-            invitesSentToday: 2,
+            // 5 operazioni = campione minimo (C6): sotto, l'errorRate non contribuisce più (1 errore su 1 op ≠ 20 punti).
+            invitesSentToday: 3,
             messagesSentToday: 2,
             weeklyInvitesSent: 0,
             weeklyInviteLimit: 100,

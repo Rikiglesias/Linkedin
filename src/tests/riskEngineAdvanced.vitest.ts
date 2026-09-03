@@ -20,6 +20,8 @@ describe('Risk Engine — advanced', () => {
             pendingRatio: 0,
             challengeCount: 0,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         const high = evaluateRisk({
             errorRate: 0.8,
@@ -27,6 +29,8 @@ describe('Risk Engine — advanced', () => {
             pendingRatio: 0,
             challengeCount: 0,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(high.score).toBeGreaterThan(low.score);
     });
@@ -38,6 +42,8 @@ describe('Risk Engine — advanced', () => {
             pendingRatio: 0,
             challengeCount: 0,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         const high = evaluateRisk({
             errorRate: 0,
@@ -45,6 +51,8 @@ describe('Risk Engine — advanced', () => {
             pendingRatio: 0,
             challengeCount: 0,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(high.score).toBeGreaterThan(low.score);
     });
@@ -56,6 +64,8 @@ describe('Risk Engine — advanced', () => {
             pendingRatio: 0,
             challengeCount: 3,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         const c10 = evaluateRisk({
             errorRate: 0,
@@ -63,6 +73,8 @@ describe('Risk Engine — advanced', () => {
             pendingRatio: 0,
             challengeCount: 10,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         // Entrambi dovrebbero avere lo stesso contributo challenge (cap 30)
         expect(c3.score).toBe(c10.score);
@@ -75,6 +87,8 @@ describe('Risk Engine — advanced', () => {
             pendingRatio: 0,
             challengeCount: 1,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(explanation.triggers.length).toBeGreaterThan(0);
     });
@@ -86,6 +100,8 @@ describe('Risk Engine — advanced', () => {
             pendingRatio: 0,
             challengeCount: 0,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(explanation.thresholds).toHaveProperty('riskWarn');
         expect(explanation.thresholds).toHaveProperty('riskStop');
@@ -100,6 +116,8 @@ describe('evaluateRisk — action thresholds', () => {
             pendingRatio: 0.3,
             challengeCount: 0,
             inviteVelocityRatio: 0.5,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(['WARN', 'LOW_ACTIVITY', 'STOP']).toContain(result.action);
     });
@@ -111,6 +129,8 @@ describe('evaluateRisk — action thresholds', () => {
             pendingRatio: 0,
             challengeCount: 0,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(result.action).toBe('NORMAL');
     });
@@ -122,6 +142,8 @@ describe('evaluateRisk — action thresholds', () => {
             pendingRatio: 0.22,
             challengeCount: 0,
             inviteVelocityRatio: 0.11,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(result.score % 1).toBe(0);
     });

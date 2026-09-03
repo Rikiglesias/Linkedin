@@ -21,6 +21,8 @@ describe('evaluateRisk — comprehensive action mapping', () => {
                 pendingRatio: 0,
                 challengeCount: 0,
                 inviteVelocityRatio: 0,
+                invitedTotal: 100,
+                attemptsTotal24h: 100,
             }).action,
         ).toBe('NORMAL');
     });
@@ -34,6 +36,8 @@ describe('evaluateRisk — comprehensive action mapping', () => {
                 pendingRatio: 0,
                 challengeCount: 0,
                 inviteVelocityRatio: 0,
+                invitedTotal: 100,
+                attemptsTotal24h: 100,
             }).score,
         ).toBe(29);
     });
@@ -46,6 +50,8 @@ describe('evaluateRisk — comprehensive action mapping', () => {
                 pendingRatio: 0,
                 challengeCount: 1,
                 inviteVelocityRatio: 0,
+                invitedTotal: 100,
+                attemptsTotal24h: 100,
             }).action,
         ).toBe('STOP');
     });
@@ -57,6 +63,8 @@ describe('evaluateRisk — comprehensive action mapping', () => {
             pendingRatio: 0.75,
             challengeCount: 0,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(['STOP', 'LOW_ACTIVITY']).toContain(r.action);
     });
@@ -68,6 +76,8 @@ describe('evaluateRisk — comprehensive action mapping', () => {
             pendingRatio: 0.4,
             challengeCount: 0,
             inviteVelocityRatio: 0.1,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(r).toHaveProperty('score');
         expect(r).toHaveProperty('pendingRatio');
@@ -86,6 +96,8 @@ describe('evaluateRisk — comprehensive action mapping', () => {
                 pendingRatio: 0.3,
                 challengeCount: 0,
                 inviteVelocityRatio: 0.4,
+                invitedTotal: 100,
+                attemptsTotal24h: 100,
             },
             {
                 errorRate: 0.9,
@@ -93,8 +105,12 @@ describe('evaluateRisk — comprehensive action mapping', () => {
                 pendingRatio: 0.7,
                 challengeCount: 2,
                 inviteVelocityRatio: 0.6,
+                invitedTotal: 100,
+                attemptsTotal24h: 100,
             },
-            { errorRate: 0, selectorFailureRate: 0, pendingRatio: 0, challengeCount: 0, inviteVelocityRatio: 0 },
+            { errorRate: 0, selectorFailureRate: 0, pendingRatio: 0, challengeCount: 0, inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,},
         ];
         for (const input of inputs) {
             const r = evaluateRisk(input);
@@ -111,6 +127,8 @@ describe('evaluateRisk — comprehensive action mapping', () => {
             pendingRatio: 0.42,
             challengeCount: 0,
             inviteVelocityRatio: 0,
+            invitedTotal: 100,
+            attemptsTotal24h: 100,
         });
         expect(r.pendingRatio).toBeCloseTo(0.42, 2);
     });
