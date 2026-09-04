@@ -11,6 +11,7 @@ import {
     type ControlPlaneCampaignConfigInput,
     type LeadListCampaignConfig,
     type LeadListRow,
+    type ListLeadInvitedTotal,
     type ListLeadStatusCount,
     type SalesNavListRecord,
     type SalesNavListSummary,
@@ -1186,6 +1187,30 @@ export async function getLeadStatusCountsForLists(listNames: string[]): Promise<
         FROM leads
         WHERE list_name IN (${placeholders})
         GROUP BY list_name, status
+    `,
+        listNames,
+    );
+}
+
+/**
+ * Invitati REALI per lista (`invited_at IS NOT NULL`): denominatore E campione del pending ratio per-lista
+ * (contratto bot-operativo C4). Accanto a `getLeadStatusCountsForLists` perché lo scheduler li legge insieme:
+ * la somma di status escluderebbe i lead invitati poi BLOCKED/DEAD/REVIEW_REQUIRED/SKIPPED, che conservano
+ * `invited_at`. Una lista senza inviti non ha riga (il chiamante legge 0).
+ */
+export async function getLeadInvitedTotalsForLists(listNames: string[]): Promise<ListLeadInvitedTotal[]> {
+    if (listNames.length === 0) {
+        return [];
+    }
+
+    const db = await getDatabase();
+    const placeholders = listNames.map(() => '?').join(', ');
+    return db.query<ListLeadInvitedTotal>(
+        `
+        SELECT list_name, COUNT(*) as invited_total
+        FROM leads
+        WHERE list_name IN (${placeholders}) AND invited_at IS NOT NULL
+        GROUP BY list_name
     `,
         listNames,
     );

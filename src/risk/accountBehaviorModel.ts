@@ -17,6 +17,7 @@
  */
 
 import { config } from '../config';
+import { pendingRatioSample } from './sampleGate';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -157,6 +158,13 @@ export interface AccountTrustInputs {
     acceptanceRatePct: number;
     challengesLast7d: number;
     pendingRatio: number;
+    /**
+     * Campione del pending ratio: invitati all-time (`invited_at IS NOT NULL`), contratto bot-operativo C5 ⑥.
+     * Opzionale perché l'unico produttore è `getAccountTrustInputs`; ASSENTE = fail-closed (il pending pesa come
+     * oggi, mai un bypass). Sotto `pendingRatioMinInvited` il pending è NEUTRO: 1 pending su 1 invitato non è
+     * "targeting scarso" e non deve ridurre il budget dal primo invito.
+     */
+    invitedTotal?: number;
 }
 
 export interface AccountTrustResult {
@@ -177,14 +185,21 @@ export interface AccountTrustResult {
  *   Account age (25%): account vecchi hanno più credito
  *   Acceptance rate (25%): alto acceptance = inviti rilevanti
  *   Challenge history (10%): challenge recenti = account sotto osservazione
- *   Pending ratio (10%): pending alto = targeting scarso
+ *   Pending ratio (10%): pending alto = targeting scarso — solo sopra il campione minimo (C5 ⑥)
  */
 export function calculateAccountTrustScore(inputs: AccountTrustInputs): AccountTrustResult {
     const ssiNorm = Math.min(100, Math.max(0, inputs.ssiScore));
     const ageNorm = Math.min(100, Math.max(0, inputs.ageDays) / 3.65);
     const acceptanceNorm = Math.min(100, Math.max(0, inputs.acceptanceRatePct));
     const challengeNorm = Math.max(0, 100 - inputs.challengesLast7d * 25);
-    const pendingNorm = Math.max(0, 100 - inputs.pendingRatio * 150);
+    // Gate condiviso di C1 (`risk/sampleGate`): sotto campione `effectiveRatio` = 0 (neutro = come un account
+    // senza inviti); campione assente/NaN → fail-closed = il ratio conta per intero (comportamento odierno).
+    const pendingGate = pendingRatioSample({
+        pendingRatio: inputs.pendingRatio,
+        invitedTotal: inputs.invitedTotal ?? Number.NaN,
+    });
+    const pendingRatioGated = pendingGate.effectiveRatio;
+    const pendingNorm = Math.max(0, 100 - pendingRatioGated * 150);
 
     const factors = {
         ssi: Math.round(ssiNorm * 100) / 100,
@@ -204,11 +219,12 @@ export function calculateAccountTrustScore(inputs: AccountTrustInputs): AccountT
     // Score 0-50: multiplier 0.3-0.8 (riduzione). Score 50-75: 0.8-1.0 (neutro).
     // Score 75-100: 1.0-1.3 (accelerazione). Max +30% per account affidabili.
     // Prerequisiti acceleration: challengesLast7d === 0 AND pendingRatio < 0.50 AND acceptanceRatePct > 25.
+    // Il pending è quello GATED (C5 ⑥): sotto campione non blocca l'accelerazione, come per un account senza inviti.
     let budgetMultiplier: number;
     if (
         clampedScore >= 75 &&
         inputs.challengesLast7d === 0 &&
-        inputs.pendingRatio < 0.5 &&
+        pendingRatioGated < 0.5 &&
         inputs.acceptanceRatePct > 25
     ) {
         // Accelerazione: 1.0 + (score - 75) / 25 * 0.30 → da 1.0 a 1.30

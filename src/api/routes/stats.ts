@@ -13,6 +13,7 @@ import {
     resolveIncident,
 } from '../../core/repositories';
 import { evaluateRisk, explainRisk, evaluatePredictiveRiskAlerts, calculateDynamicBudget } from '../../risk/riskEngine';
+import { pendingRatioSample } from '../../risk/sampleGate';
 import { getCircuitBreakerSnapshot } from '../../core/integrationPolicy';
 import { getProxyPoolStatus, getProxyQualityStatus, runFullProxyDiagnostic } from '../../proxyManager';
 import { publishLiveEvent } from '../../telemetry/liveEvents';
@@ -45,6 +46,11 @@ statsRouter.get('/kpis', async (_req, res) => {
         const localDate = getLocalDateString();
         const riskInputs = await getRiskInputs(localDate, config.hardInviteCap);
         const risk = evaluateRisk(riskInputs);
+        // Contratto bot-operativo C3: ratio GREZZO insieme al campione (lo snapshot non porta il campione).
+        const pendingGate = pendingRatioSample({
+            pendingRatio: riskInputs.pendingRatio,
+            invitedTotal: riskInputs.invitedTotal,
+        });
         const runtimePause = await getRuntimeFlag('automation_paused_until');
         // G5-F2: true se globale O almeno un account in quarantena (consumer invariati).
         const quarantineStatus = await getQuarantineStatus();
@@ -59,6 +65,11 @@ statsRouter.get('/kpis', async (_req, res) => {
                 withdrawn: kpi.statusCounts['WITHDRAWN'] ?? 0,
             },
             risk,
+            riskInputs: {
+                pendingRatio: riskInputs.pendingRatio,
+                invitedTotal: riskInputs.invitedTotal,
+                pendingSampleSufficient: pendingGate.sufficient,
+            },
             activeCampaigns: kpi.activeCampaigns,
             system: {
                 pausedUntil: runtimePause ?? null,

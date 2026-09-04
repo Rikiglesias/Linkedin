@@ -5,6 +5,7 @@ import { getSessionMaturity } from '../browser/sessionCookieMonitor';
 import { applyGrowthModel, calculateAccountTrustScore } from '../risk/accountBehaviorModel';
 import { getSessionHistory } from '../risk/sessionMemory';
 import { getTodayStrategy } from '../risk/strategyPlanner';
+import { pendingRatioSample } from '../risk/sampleGate';
 import { pickAccountIdForLead, getRuntimeAccountProfiles } from '../accountManager';
 import {
     calculateAccountWarmupMultiplier,
@@ -21,6 +22,7 @@ import {
     ensureLeadList,
     enqueueJob,
     getDailyStat,
+    getLeadInvitedTotalsForLists,
     getLeadStatusCountsForLists,
     getLeadsByStatusForList,
     getLeadsNeedingEnrichment,
@@ -85,8 +87,15 @@ export interface ListScheduleBreakdown {
     queuedMessageJobs: number;
     adaptiveFactor: number;
     adaptiveReasons: string[];
+    /** Ratio GREZZO pending/invitati reali della lista: esposto sempre, pesa solo se `pendingSampleSufficient`. */
     pendingRatio: number;
     blockedRatio: number;
+    /** Campione del pending ratio: invitati reali della lista (`invited_at IS NOT NULL`), contratto bot-operativo C4. */
+    pendingInvitedTotal: number;
+    /** false sotto `pendingRatioMinInvited`: il guardian (C21) e i consumer non devono agire sul ratio. */
+    pendingSampleSufficient: boolean;
+    /** Stesso campione minimo sul denominatore del blockedRatio (invitati + esiti + bloccati), C21. */
+    blockedSampleSufficient: boolean;
     maxScheduledDelaySec: number;
 }
 
@@ -183,6 +192,14 @@ interface AdaptiveBudgetContext {
     reasons: string[];
     pendingRatio: number;
     blockedRatio: number;
+    pendingInvitedTotal: number;
+    pendingSampleSufficient: boolean;
+    blockedSampleSufficient: boolean;
+}
+
+/** Campione per-lista del pending ratio (C4): invitati REALI della lista (`invited_at IS NOT NULL`). */
+export interface ListPendingSample {
+    invitedTotal: number;
 }
 
 interface NoBurstPlanner {
@@ -275,6 +292,7 @@ export function applyHourIntensityToBudget(budget: number, intensity: number): n
 export function evaluateAdaptiveBudgetContext(
     statusCounts: Record<string, number>,
     riskAction: RiskSnapshot['action'],
+    sample: ListPendingSample,
 ): AdaptiveBudgetContext {
     if (!config.adaptiveCapsEnabled) {
         return {
@@ -282,23 +300,30 @@ export function evaluateAdaptiveBudgetContext(
             reasons: riskAction === 'STOP' ? ['global_risk_stop'] : [],
             pendingRatio: 0,
             blockedRatio: 0,
+            pendingInvitedTotal: sample.invitedTotal,
+            pendingSampleSufficient: false,
+            blockedSampleSufficient: false,
         };
     }
 
     const invited = statusCounts.INVITED ?? 0;
     const acceptedLike =
         (statusCounts.ACCEPTED ?? 0) + (statusCounts.READY_MESSAGE ?? 0) + (statusCounts.MESSAGED ?? 0);
-    // Tutti i lead che hanno ricevuto un invito (allineato con stats.ts getRiskInputs
-    // che usa `invited_at IS NOT NULL` come denominatore globale — CC-4 fix).
-    const everInvitedOutcome =
-        acceptedLike + (statusCounts.REPLIED ?? 0) + (statusCounts.CONNECTED ?? 0) + (statusCounts.WITHDRAWN ?? 0);
     const blockedSkipped = (statusCounts.BLOCKED ?? 0) + (statusCounts.SKIPPED ?? 0);
 
-    const pendingRatioDenominator = Math.max(1, invited + everInvitedOutcome);
-    const pendingRatio = invited / pendingRatioDenominator;
+    // Contratto bot-operativo C4: denominatore E campione = invitati REALI della lista (`invited_at IS NOT NULL`,
+    // stessa base di `getRiskInputs`). La somma di status escludeva i lead invitati poi BLOCKED/DEAD/SKIPPED.
+    // Sotto `pendingRatioMinInvited` (gate di C1) il ratio resta esposto ma non riduce il budget: 1 INVITED su 1
+    // dava 1.0 → factor 0.25 → budget 0. Campione non finito = dato corrotto → fail-closed (ratio pieno).
+    const pendingRatioRaw = invited / Math.max(1, sample.invitedTotal);
+    const pendingRatio = Number.isFinite(pendingRatioRaw) ? pendingRatioRaw : 1;
+    const pendingGate = pendingRatioSample({ pendingRatio, invitedTotal: sample.invitedTotal });
 
-    const blockedRatioDenominator = Math.max(1, invited + acceptedLike + blockedSkipped);
-    const blockedRatio = blockedSkipped / blockedRatioDenominator;
+    const blockedRatioDenominator = invited + acceptedLike + blockedSkipped;
+    const blockedRatio = blockedSkipped / Math.max(1, blockedRatioDenominator);
+    // Stesso campione minimo sul denominatore del blockedRatio, letto dal guardian (C21): 1 SKIPPED su una lista
+    // senza inviti vale 1.0. Qui `list_blocked_warn` (×0.6) resta come oggi: residuo dichiarato nel binding.
+    const blockedGate = pendingRatioSample({ pendingRatio: blockedRatio, invitedTotal: blockedRatioDenominator });
 
     let factor = 1;
     const reasons: string[] = [];
@@ -314,10 +339,10 @@ export function evaluateAdaptiveBudgetContext(
         reasons.push('global_risk_warn');
     }
 
-    if (pendingRatio >= config.adaptiveCapsPendingStop) {
+    if (pendingGate.sufficient && pendingRatio >= config.adaptiveCapsPendingStop) {
         factor = Math.min(factor, clamp01(config.adaptiveCapsMinFactor));
         reasons.push('list_pending_high');
-    } else if (pendingRatio >= config.adaptiveCapsPendingWarn) {
+    } else if (pendingGate.sufficient && pendingRatio >= config.adaptiveCapsPendingWarn) {
         factor = Math.min(factor, 0.5);
         reasons.push('list_pending_warn');
     }
@@ -332,6 +357,9 @@ export function evaluateAdaptiveBudgetContext(
         reasons,
         pendingRatio: Number.parseFloat(pendingRatio.toFixed(4)),
         blockedRatio: Number.parseFloat(blockedRatio.toFixed(4)),
+        pendingInvitedTotal: sample.invitedTotal,
+        pendingSampleSufficient: pendingGate.sufficient,
+        blockedSampleSufficient: blockedGate.sufficient,
     };
 }
 
@@ -389,6 +417,9 @@ function initListBreakdown(listNames: string[]): Map<string, ListScheduleBreakdo
             adaptiveReasons: [],
             pendingRatio: 0,
             blockedRatio: 0,
+            pendingInvitedTotal: 0,
+            pendingSampleSufficient: false,
+            blockedSampleSufficient: false,
             maxScheduledDelaySec: 0,
         });
     }
@@ -622,6 +653,9 @@ export async function scheduleJobs(
     const listBreakdown = initListBreakdown(activeListNames);
     const listConfigMap = new Map(listConfigs.map((list) => [list.name, list]));
     const statusRows = await getLeadStatusCountsForLists(activeListNames);
+    // C4: invitati reali per lista = denominatore e campione del ratio (una lista senza inviti non ha riga → 0).
+    const invitedTotalRows = await getLeadInvitedTotalsForLists(activeListNames);
+    const listInvitedTotals = new Map(invitedTotalRows.map((row) => [row.list_name, row.invited_total]));
     const listStatusCounts = new Map<string, Record<string, number>>();
     for (const row of statusRows) {
         const statusName = row.status;
@@ -635,7 +669,9 @@ export async function scheduleJobs(
     const adaptiveContextMap = new Map<string, AdaptiveBudgetContext>();
     for (const listName of activeListNames) {
         const statusCounts = listStatusCounts.get(listName) ?? {};
-        const context = evaluateAdaptiveBudgetContext(statusCounts, riskSnapshot.action);
+        const context = evaluateAdaptiveBudgetContext(statusCounts, riskSnapshot.action, {
+            invitedTotal: listInvitedTotals.get(listName) ?? 0,
+        });
         adaptiveContextMap.set(listName, context);
         const breakdown = listBreakdown.get(listName);
         if (breakdown) {
@@ -643,6 +679,9 @@ export async function scheduleJobs(
             breakdown.adaptiveReasons = context.reasons;
             breakdown.pendingRatio = context.pendingRatio;
             breakdown.blockedRatio = context.blockedRatio;
+            breakdown.pendingInvitedTotal = context.pendingInvitedTotal;
+            breakdown.pendingSampleSufficient = context.pendingSampleSufficient;
+            breakdown.blockedSampleSufficient = context.blockedSampleSufficient;
         }
     }
     const noBurstPlanner = !dryRun && config.noBurstEnabled ? createNoBurstPlanner() : null;

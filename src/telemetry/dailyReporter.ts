@@ -2,6 +2,7 @@ import { sendTelegramAlert } from './alerts';
 import { maskName } from '../security/redaction';
 import { getDailyStatsSnapshot, getOperationalObservabilitySnapshot, getRiskInputs } from '../core/repositories';
 import { evaluateRisk } from '../risk/riskEngine';
+import { pendingRatioSample } from '../risk/sampleGate';
 import { getDatabase } from '../db';
 import { config, getLocalDateString } from '../config';
 import { getTimingExperimentReport, getTopTimeSlots } from '../ml/timingOptimizer';
@@ -18,6 +19,12 @@ export async function generateAndSendDailyReport(targetDate?: string): Promise<b
     // Risk snapshot per pending ratio e risk score — i KPI più importanti per l'utente
     const riskInputs = await getRiskInputs(localDate, config.hardInviteCap);
     const riskSnapshot = evaluateRisk(riskInputs);
+    // Contratto bot-operativo C3: il report stampa ratio grezzo E campione — sotto `pendingRatioMinInvited` non pesa.
+    const pendingGate = pendingRatioSample({
+        pendingRatio: riskInputs.pendingRatio,
+        invitedTotal: riskInputs.invitedTotal,
+    });
+    const pendingSampleNote = pendingGate.sufficient ? '' : `, campione < ${pendingGate.minSample}: non pesa`;
 
     // Contiamo le conversioni e l'impatto funnel globale attingendo alla tabella leads
     const db = await getDatabase();
@@ -223,7 +230,7 @@ export async function generateAndSendDailyReport(targetDate?: string): Promise<b
         `\n*⚠️ Risk & Health*`,
         `• Risk Score: *${riskSnapshot.score}/100* (${riskSnapshot.action})`,
         await buildBanProbabilitySection(riskSnapshot),
-        `• Pending Ratio: *${(riskSnapshot.pendingRatio * 100).toFixed(1)}%*${pendingTrendText}`,
+        `• Pending Ratio: *${(riskSnapshot.pendingRatio * 100).toFixed(1)}%* (${riskInputs.invitedTotal} invitati totali${pendingSampleNote})${pendingTrendText}`,
         `• Errori Esecuzione (Job/Orchestrator): *${stats.runErrors}*`,
         `• Problemi Selettori UI: *${stats.selectorFailures}*`,
         `• Challenge LinkedIn Apparse: *${stats.challengesCount}*`,

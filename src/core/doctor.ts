@@ -16,6 +16,7 @@ import { closeDatabase, getDatabase, initDatabase } from '../db';
 import fs from 'fs';
 import path from 'path';
 import { calculateDynamicWeeklyInviteLimit, evaluateComplianceHealthScore } from '../risk/riskEngine';
+import { pendingRatioSample } from '../risk/sampleGate';
 import { getSecurityAdvisorPosture } from './securityAdvisor';
 import { descriviEsitoModelloAi, verificaModelloAi, type StatoModelloAi } from '../ai/modelPreflight';
 
@@ -75,7 +76,11 @@ export interface DoctorReport {
             accountAgeDays: number;
             weeklyInvitesSent: number;
             weeklyInviteLimitEffective: number;
+            /** Ratio GREZZO pending/invitati: esposto sempre, pesa come violazione solo se `pendingSampleSufficient`. */
             pendingRatio: number;
+            /** Campione del pending ratio (invitati all-time), contratto bot-operativo C3. */
+            invitedTotal: number;
+            pendingSampleSufficient: boolean;
             healthScore: number | null;
         };
     };
@@ -107,7 +112,8 @@ export interface DoctorReport {
     openIncidents: number;
 }
 
-async function evaluateCompliance(): Promise<DoctorReport['compliance']> {
+/** @internal — esportata per il test del contratto bot-operativo C3 (`riskInputsConsumersExposeSample`). */
+export async function evaluateCompliance(): Promise<DoctorReport['compliance']> {
     const violations: string[] = [];
     const localDate = getLocalDateString();
     const weekStart = getWeekStartDate();
@@ -156,7 +162,13 @@ async function evaluateCompliance(): Promise<DoctorReport['compliance']> {
             `INVITI_SETTIMANA (${weeklyInvitesSent}) oltre limite dinamico (${weeklyInviteLimitEffective})`,
         );
     }
-    if (riskInputs.pendingRatio > config.complianceHealthPendingWarnThreshold) {
+    // Contratto bot-operativo C3: PENDING_RATIO passa dal gate di C1. È un GATE reale (`compliance.enforced && !ok`
+    // blocca il preflight obbligatorio e il loop) e 1 pending su 1 invitato non è un segnale; sopra campione come oggi.
+    const pendingGate = pendingRatioSample({
+        pendingRatio: riskInputs.pendingRatio,
+        invitedTotal: riskInputs.invitedTotal,
+    });
+    if (pendingGate.sufficient && riskInputs.pendingRatio > config.complianceHealthPendingWarnThreshold) {
         violations.push(
             `PENDING_RATIO (${riskInputs.pendingRatio.toFixed(3)}) oltre soglia (${config.complianceHealthPendingWarnThreshold})`,
         );
@@ -209,6 +221,8 @@ async function evaluateCompliance(): Promise<DoctorReport['compliance']> {
             weeklyInvitesSent,
             weeklyInviteLimitEffective,
             pendingRatio: Number.parseFloat(riskInputs.pendingRatio.toFixed(4)),
+            invitedTotal: riskInputs.invitedTotal,
+            pendingSampleSufficient: pendingGate.sufficient,
             healthScore,
         },
     };

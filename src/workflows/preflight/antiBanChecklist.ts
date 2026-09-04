@@ -1,7 +1,8 @@
 import { getRuntimeAccountProfiles } from '../../accountManager';
-import { config } from '../../config';
+import { config, getLocalDateString } from '../../config';
 import { askConfirmation } from '../../cli/stdinHelper';
-import { getRuntimeFlag } from '../../core/repositories';
+import { getRiskInputs, getRuntimeFlag } from '../../core/repositories';
+import { pendingRatioSample } from '../../risk/sampleGate';
 import type { PreflightConfigStatus, PreflightDbStats } from '../types';
 
 export async function runAntiBanChecklist(
@@ -25,9 +26,14 @@ export async function runAntiBanChecklist(
         }
     }
 
-    const pendingCount = dbStats?.byStatus['INVITED'] ?? 0;
-    const totalInvited = dbStats ? Object.values(dbStats.byStatus).reduce((s, v) => s + v, 0) : 0;
-    const pendingRatio = totalInvited > 0 ? pendingCount / totalInvited : 0;
+    // Contratto bot-operativo C5 ⑦: il pending ratio è quello del risk engine (`getRiskInputs`, denominatore
+    // `invited_at IS NOT NULL`), NON pending / TUTTI i lead del DB (348 NEW nel denominatore nascondevano 15/20 = 75%);
+    // e il literal `pendingCount > 10` è sostituito dal gate condiviso di C1 (`pendingRatioMinInvited`).
+    const riskInputs = await getRiskInputs(getLocalDateString(), config.hardInviteCap);
+    const pendingRatio = riskInputs.pendingRatio;
+    const pendingInvitedTotal = riskInputs.invitedTotal;
+    const pendingGate = pendingRatioSample({ pendingRatio, invitedTotal: pendingInvitedTotal });
+    const pendingCount = dbStats?.byStatus['INVITED'] ?? Math.round(pendingRatio * Math.max(0, pendingInvitedTotal));
     const readyInvite = dbStats?.byStatus['READY_INVITE'] ?? 0;
     const readyMessage = (dbStats?.byStatus['ACCEPTED'] ?? 0) + (dbStats?.byStatus['READY_MESSAGE'] ?? 0);
     const lastSyncDaysAgo = dbStats?.lastSyncAt
@@ -67,9 +73,10 @@ export async function runAntiBanChecklist(
     // -> rischio flag/ban. Ora, oltre config.pendingRatioStop, chiediamo conferma esplicita
     // (default NO) e abortiamo se l'utente non forza. Sotto la soglia di stop ma sopra quella di
     // warn resta il warning informativo. Soglie canoniche da config (no magic number hardcoded).
-    if (isOutreach && pendingCount > 10 && pendingRatio >= config.pendingRatioStop) {
+    // Il ratio pesa solo sopra il campione minimo (C1): 1 pending su 1 invitato non e' un segnale.
+    if (isOutreach && pendingGate.sufficient && pendingRatio >= config.pendingRatioStop) {
         console.log(
-            `    [!!!] Pending ratio: ${Math.round(pendingRatio * 100)}% (${pendingCount} inviti in attesa) — oltre la soglia di STOP (${Math.round(config.pendingRatioStop * 100)}%).`,
+            `    [!!!] Pending ratio: ${Math.round(pendingRatio * 100)}% (${pendingCount} inviti in attesa su ${pendingInvitedTotal} invitati) — oltre la soglia di STOP (${Math.round(config.pendingRatioStop * 100)}%).`,
         );
         console.log('        LinkedIn flagga gli account con pending ratio alto: inviare ora peggiora il rischio.');
         console.log('        Consiglio: ritira gli inviti vecchi con "bot.ps1 run check" prima di inviarne di nuovi.');
@@ -81,8 +88,10 @@ export async function runAntiBanChecklist(
             console.log('      -> Sessione interrotta. Lancia "bot.ps1 run check" per abbassare il pending ratio.');
             return false;
         }
-    } else if (isOutreach && pendingCount > 10 && pendingRatio > config.pendingRatioWarn) {
-        console.log(`    [!] Pending ratio: ${Math.round(pendingRatio * 100)}% (${pendingCount} inviti in attesa)`);
+    } else if (isOutreach && pendingGate.sufficient && pendingRatio > config.pendingRatioWarn) {
+        console.log(
+            `    [!] Pending ratio: ${Math.round(pendingRatio * 100)}% (${pendingCount} inviti in attesa su ${pendingInvitedTotal} invitati)`,
+        );
         console.log(
             `        Soglia di stop a ${Math.round(config.pendingRatioStop * 100)}%. Consiglio: ritira inviti vecchi con "bot.ps1 run check" prima di inviare nuovi.`,
         );

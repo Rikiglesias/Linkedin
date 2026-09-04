@@ -83,7 +83,15 @@ export function enforceCriticalPauseFloor(decision: AiGuardianDecision): AiGuard
 
 /** @internal */
 export function heuristics(schedule: ScheduleResult): AiGuardianDecision {
-    const criticalList = schedule.listBreakdown.find((list) => list.pendingRatio >= 0.78 || list.blockedRatio >= 0.35);
+    // Contratto bot-operativo C21: i ratio per-lista contano solo sopra il campione minimo — gate condiviso di
+    // `risk/sampleGate` (C1), applicato dallo scheduler in C4 ed esposto qui come `pendingSampleSufficient`:
+    // 1 INVITED su 1 = 1.0 e 1 SKIPPED su una lista senza inviti = 1.0 non sono segnali, ma davano `critical` →
+    // pausa di 180 min al primo invito, anche con AI_GUARDIAN_ENABLED=false. Soglie 0.78/0.35 invariate.
+    const criticalList = schedule.listBreakdown.find(
+        (list) =>
+            (list.pendingSampleSufficient && list.pendingRatio >= 0.78) ||
+            (list.blockedSampleSufficient && list.blockedRatio >= 0.35),
+    );
 
     if (schedule.riskSnapshot.action === 'STOP' || criticalList) {
         return {

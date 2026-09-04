@@ -362,6 +362,12 @@ export interface ListLeadStatusCount {
     total: number;
 }
 
+/** Invitati REALI per lista (`invited_at IS NOT NULL`): denominatore e campione del pending ratio per-lista (C4). */
+export interface ListLeadInvitedTotal {
+    list_name: string;
+    invited_total: number;
+}
+
 export interface PrivacyCleanupStats {
     runLogs: number;
     jobAttempts: number;

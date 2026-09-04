@@ -2,7 +2,7 @@ import { checkDiskSpace, getDatabase } from '../../db';
 import { getLocalDateString } from '../../config';
 import { getRuntimeAccountProfiles } from '../../accountManager';
 import { getDailyStat, getRuntimeFlag, setRuntimeFlag } from '../../core/repositories';
-import { attemptsSample } from '../../risk/sampleGate';
+import { attemptsSample, pendingRatioSample } from '../../risk/sampleGate';
 import type { PreflightConfigStatus, SessionRiskAssessment } from '../types';
 
 /**
@@ -35,7 +35,10 @@ export async function computeSessionRiskLevel(cfgStatus: PreflightConfigStatus):
     `);
     const pendingTotal = pendingRow?.total ?? 0;
     const pendingRatio = pendingTotal > 0 ? (pendingRow?.pending ?? 0) / pendingTotal : 0;
-    const pendingFactor = Math.min(25, Math.floor(pendingRatio * 40));
+    // Contratto bot-operativo C5 ③: stesso campione minimo del risk engine (C1). Sotto `pendingRatioMinInvited` il
+    // pending non pesa (1 pending su 1 invitato valeva 25 punti su una scala con STOP a 60); sopra, identico a oggi.
+    const pendingGate = pendingRatioSample({ pendingRatio, invitedTotal: pendingTotal });
+    const pendingFactor = pendingGate.sufficient ? Math.min(25, Math.floor(pendingGate.effectiveRatio * 40)) : 0;
 
     const errorsToday = await getDailyStat(localDate, 'run_errors');
     const processedToday = cfgStatus.invitesSentToday + cfgStatus.messagesSentToday;

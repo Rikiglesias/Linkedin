@@ -1,5 +1,6 @@
 import { config } from '../config';
 import { RiskInputs, RiskSnapshot } from '../types/domain';
+// Campione minimo condiviso da tutti i siti che decidono su un pending ratio: `risk/sampleGate` (contratto C1/C5).
 import { attemptsSample, isPendingRatioValid, pendingRatioSample, SampleGateResult } from './sampleGate';
 
 function clampScore(value: number): number {

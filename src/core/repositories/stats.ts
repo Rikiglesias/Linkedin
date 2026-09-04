@@ -897,6 +897,8 @@ export interface AccountTrustQueryInputs {
     acceptanceRatePct: number;
     challengesLast7d: number;
     pendingRatio: number;
+    /** Campione del pending ratio: invitati all-time (`invited_at IS NOT NULL`), contratto bot-operativo C5 ⑥. */
+    invitedTotal: number;
 }
 
 /**
@@ -941,6 +943,7 @@ export async function getAccountTrustInputs(ssiScore: number, ageDays: number): 
         acceptanceRatePct: Math.round(acceptanceRatePct * 100) / 100,
         challengesLast7d,
         pendingRatio: Math.round(pendingRatio * 10000) / 10000,
+        invitedTotal,
     };
 }
 
