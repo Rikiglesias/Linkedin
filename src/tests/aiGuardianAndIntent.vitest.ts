@@ -62,6 +62,10 @@ function makeSchedule(
                   adaptiveReasons: [],
                   pendingRatio: 0,
                   blockedRatio: 0,
+                  // Liste SOPRA campione: i casi legacy testano le soglie, il campione è in guardianHeuristicsSample.
+                  pendingInvitedTotal: 100,
+                  pendingSampleSufficient: true,
+                  blockedSampleSufficient: true,
                   maxScheduledDelaySec: 0,
                   ...lo,
               }))
@@ -77,6 +81,9 @@ function makeSchedule(
                       adaptiveReasons: [],
                       pendingRatio: 0,
                       blockedRatio: 0,
+                      pendingInvitedTotal: 100,
+                      pendingSampleSufficient: true,
+                      blockedSampleSufficient: true,
                       maxScheduledDelaySec: 0,
                   },
               ],

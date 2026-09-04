@@ -404,40 +404,40 @@ describe('applyHourIntensityToBudget', () => {
 
 describe('evaluateAdaptiveBudgetContext', () => {
     it('STOP → factor 0', () => {
-        const ctx = evaluateAdaptiveBudgetContext({}, 'STOP');
+        const ctx = evaluateAdaptiveBudgetContext({}, 'STOP', { invitedTotal: 0 });
         expect(ctx.factor).toBe(0);
         expect(ctx.reasons).toContain('global_risk_stop');
     });
 
     it('NORMAL senza pending → factor 1', () => {
-        const ctx = evaluateAdaptiveBudgetContext({ ACCEPTED: 50, INVITED: 10 }, 'NORMAL');
+        const ctx = evaluateAdaptiveBudgetContext({ ACCEPTED: 50, INVITED: 10 }, 'NORMAL', { invitedTotal: 60 });
         expect(ctx.factor).toBe(1);
         expect(ctx.reasons).toHaveLength(0);
     });
 
     it('LOW_ACTIVITY → factor ridotto', () => {
-        const ctx = evaluateAdaptiveBudgetContext({}, 'LOW_ACTIVITY');
+        const ctx = evaluateAdaptiveBudgetContext({}, 'LOW_ACTIVITY', { invitedTotal: 0 });
         expect(ctx.factor).toBeLessThan(1);
         expect(ctx.reasons).toContain('global_risk_low_activity');
     });
 
     it('WARN → factor ridotto', () => {
-        const ctx = evaluateAdaptiveBudgetContext({}, 'WARN');
+        const ctx = evaluateAdaptiveBudgetContext({}, 'WARN', { invitedTotal: 0 });
         expect(ctx.factor).toBeLessThan(1);
         expect(ctx.reasons).toContain('global_risk_warn');
     });
 
     it('pending ratio alto → list_pending_high + factor basso', () => {
-        // 80 INVITED / (80 + 10 ACCEPTED) = 0.89 > 0.65 pendingStop
-        const ctx = evaluateAdaptiveBudgetContext({ INVITED: 80, ACCEPTED: 10 }, 'NORMAL');
+        // 80 INVITED / 90 invitati reali = 0.89 > 0.65 pendingStop (campione 90 ≥ pendingRatioMinInvited)
+        const ctx = evaluateAdaptiveBudgetContext({ INVITED: 80, ACCEPTED: 10 }, 'NORMAL', { invitedTotal: 90 });
         expect(ctx.pendingRatio).toBeGreaterThan(0.65);
         expect(ctx.reasons).toContain('list_pending_high');
         expect(ctx.factor).toBeLessThanOrEqual(0.2);
     });
 
     it('pending ratio medio → list_pending_warn', () => {
-        // 50 INVITED / (50 + 60 ACCEPTED) = 0.45 ≈ pendingWarn
-        const ctx = evaluateAdaptiveBudgetContext({ INVITED: 55, ACCEPTED: 60 }, 'NORMAL');
+        // 55 INVITED / 115 invitati reali = 0.478 ≥ 0.45 pendingWarn
+        const ctx = evaluateAdaptiveBudgetContext({ INVITED: 55, ACCEPTED: 60 }, 'NORMAL', { invitedTotal: 115 });
         expect(ctx.pendingRatio).toBeGreaterThanOrEqual(0.45);
         expect(ctx.pendingRatio).toBeLessThan(0.65);
         expect(ctx.reasons).toContain('list_pending_warn');
@@ -446,20 +446,22 @@ describe('evaluateAdaptiveBudgetContext', () => {
 
     it('blocked ratio alto → list_blocked_warn', () => {
         // BLOCKED 20 / (10 INVITED + 20 ACCEPTED + 20 BLOCKED) = 0.4 > 0.15
-        const ctx = evaluateAdaptiveBudgetContext({ INVITED: 10, ACCEPTED: 20, BLOCKED: 20 }, 'NORMAL');
+        const ctx = evaluateAdaptiveBudgetContext({ INVITED: 10, ACCEPTED: 20, BLOCKED: 20 }, 'NORMAL', {
+            invitedTotal: 50,
+        });
         expect(ctx.blockedRatio).toBeGreaterThan(0.15);
         expect(ctx.reasons).toContain('list_blocked_warn');
         expect(ctx.factor).toBeLessThanOrEqual(0.6);
     });
 
     it('pending e blocked combinati → fattore minimo', () => {
-        const ctx = evaluateAdaptiveBudgetContext({ INVITED: 90, BLOCKED: 30 }, 'WARN');
+        const ctx = evaluateAdaptiveBudgetContext({ INVITED: 90, BLOCKED: 30 }, 'WARN', { invitedTotal: 120 });
         expect(ctx.factor).toBeLessThanOrEqual(0.2);
         expect(ctx.reasons.length).toBeGreaterThanOrEqual(2);
     });
 
     it('statusCounts vuoto + NORMAL → factor 1, ratio 0', () => {
-        const ctx = evaluateAdaptiveBudgetContext({}, 'NORMAL');
+        const ctx = evaluateAdaptiveBudgetContext({}, 'NORMAL', { invitedTotal: 0 });
         expect(ctx.factor).toBe(1);
         expect(ctx.pendingRatio).toBe(0);
         expect(ctx.blockedRatio).toBe(0);

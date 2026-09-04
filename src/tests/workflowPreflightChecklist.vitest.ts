@@ -4,7 +4,21 @@ const mocks = vi.hoisted(() => ({
     getRuntimeAccountProfiles: vi.fn(),
     askConfirmation: vi.fn(),
     getRuntimeFlag: vi.fn(),
+    getRiskInputs: vi.fn(),
 }));
+
+// Risk inputs del risk engine (contratto bot-operativo C5 ⑦: la checklist legge il pending da qui, non da dbStats).
+function riskInputs(pendingRatio: number, invitedTotal: number) {
+    return {
+        pendingRatio,
+        errorRate: 0,
+        selectorFailureRate: 0,
+        challengeCount: 0,
+        inviteVelocityRatio: 0,
+        invitedTotal,
+        attemptsTotal24h: 0,
+    };
+}
 
 vi.mock('../accountManager', () => ({
     getRuntimeAccountProfiles: mocks.getRuntimeAccountProfiles,
@@ -16,6 +30,7 @@ vi.mock('../cli/stdinHelper', () => ({
 
 vi.mock('../core/repositories', () => ({
     getRuntimeFlag: mocks.getRuntimeFlag,
+    getRiskInputs: mocks.getRiskInputs,
 }));
 
 import { runAntiBanChecklist } from '../workflows/preflight/antiBanChecklist';
@@ -25,6 +40,7 @@ describe('preflight antiBanChecklist', () => {
         vi.clearAllMocks();
         mocks.getRuntimeAccountProfiles.mockReturnValue([{ id: 'acc-1' }]);
         mocks.getRuntimeFlag.mockResolvedValue(null);
+        mocks.getRiskInputs.mockResolvedValue(riskInputs(0, 0));
     });
 
     test('fallisce subito se il browser non è pronto', async () => {
@@ -68,8 +84,9 @@ describe('preflight antiBanChecklist', () => {
         // getRuntimeFlag=null -> nessuna sessione recente, quindi il 2o askConfirmation e' il pending-gate.
         mocks.askConfirmation.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
 
-        // pendingRatio = 18/20 = 0.9 -> oltre qualsiasi pendingRatioStop di profilo (max 0.7);
-        // pendingCount = 18 > 10. readyInvite = 2 (>0, niente warning "0 READY_INVITE").
+        // pendingRatio = 18/20 = 0.9 dal risk engine -> oltre qualsiasi pendingRatioStop di profilo (max 0.7);
+        // campione 20 invitati >= pendingRatioMinInvited (C5 ⑦). readyInvite = 2 (>0, niente warning "0 READY_INVITE").
+        mocks.getRiskInputs.mockResolvedValue(riskInputs(0.9, 20));
         const result = await runAntiBanChecklist('send-invites', {
             totalLeads: 20,
             byStatus: { INVITED: 18, READY_INVITE: 2 },

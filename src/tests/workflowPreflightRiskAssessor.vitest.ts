@@ -92,7 +92,8 @@ describe('preflight riskAssessor', () => {
 
     test('calcola livello STOP con fattori alti e aggiorna la history esistente', async () => {
         const db = {
-            get: vi.fn().mockResolvedValueOnce({ total: 3 }).mockResolvedValueOnce({ pending: 10, total: 10 }),
+            // 20/20 pending: campione >= pendingRatioMinInvited (C5 ③), altrimenti il pending non peserebbe (25 punti).
+            get: vi.fn().mockResolvedValueOnce({ total: 3 }).mockResolvedValueOnce({ pending: 20, total: 20 }),
         };
         mocks.getDatabase.mockResolvedValue(db);
         mocks.getDailyStat.mockResolvedValue(4);
