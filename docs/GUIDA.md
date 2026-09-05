@@ -51,6 +51,46 @@ I lead vanno importati da Sales Navigator nel database del bot.
 
 **Come verificare**: `.\bot.ps1 funnel` → mostra quanti lead hai per stato (NEW, READY_INVITE, ecc.)
 
+### 4. Primo invito (percorso guidato, un lead alla volta)
+
+La promozione automatica dei lead NEW è **spenta** (`AUTO_PROMOTE_NEW_LEADS_ENABLED=false`, valore predefinito): il bot
+non promuove più da solo decine di lead a READY_INVITE, quindi il primo invito lo scegli tu, un lead per volta.
+
+1. Scegli un lead NEW e approvalo a mano (il comando verifica l'eleggibilità, poi lo porta NEW → READY_INVITE):
+```powershell
+.\bot.ps1 lead-approve <id>
+```
+Gli id li vedi con `.\bot.ps1 funnel` o dalla dashboard. Se il lead non è eleggibile il comando esce con codice 1 e dice
+quale filtro lo ferma (lista vuota, lista non attiva, opt-out GDPR, campagna attiva, score sotto soglia) e come sanarlo.
+Anche `.\bot.ps1 send-invites` con 0 lead READY_INVITE ti stampa il comando `lead-approve <id>` esatto da lanciare.
+
+2. Controlla il `.env` del primo run (poi `npm run build`):
+```ini
+# .env del primo run: anti-ban prima di tutto
+CHALLENGE_AUTO_RESOLVE_ENABLED=false
+AI_PERSONALIZATION_ENABLED=false
+INVITE_WITH_NOTE=false
+REQUIRE_PROXY_FOR_AUTH=true
+PROXY_BLOCK_DATACENTER=true
+USE_JA3_PROXY=false
+AUTO_PROMOTE_NEW_LEADS_ENABLED=false
+# WEEKLY_INVITE_LIMIT: non sopra il limite dinamico dell'account
+# NON portare HARD_INVITE_CAP a 1: satura il rapporto di velocità degli inviti e il risk engine frena.
+# L'unicità del primo invito si impone con --limit 1 (sotto).
+```
+
+3. Anteprima senza inviare nulla, poi l'invio vero a schermo (browser visibile, orario 10-17 feriale):
+```powershell
+.\bot.ps1 send-invites --list "<lista>" --limit 1 --note none --no-enrich --dry-run
+.\bot.ps1 send-invites --list "<lista>" --limit 1 --note none --no-enrich
+```
+`--no-enrich` sempre al primo run: l'enrichment manda i dati del lead a servizi esterni (Apollo/Hunter).
+
+Quando il primo invito è andato bene e vuoi i volumi normali, riattiva la promozione automatica:
+`AUTO_PROMOTE_NEW_LEADS_ENABLED=true` nel `.env`, poi `npm run build`.
+
+**Come verificare**: `.\bot.ps1 funnel` → il lead approvato è READY_INVITE; dopo l'invio reale è INVITED.
+
 ---
 
 ## Uso quotidiano
@@ -173,6 +213,7 @@ Le impostazioni principali:
 | BROWSER_ENGINE | firefox | Browser usato (firefox = anti-detect migliore) |
 | HEADLESS | false | Browser visibile sullo schermo |
 | WEEKLY_INVITE_LIMIT | 50 | Max inviti a settimana |
+| AUTO_PROMOTE_NEW_LEADS_ENABLED | false | Promozione automatica NEW → READY_INVITE (spenta: il primo invito passa da `lead-approve <id>`) |
 | WITHDRAW_INVITES_ENABLED | true | Ritira inviti non accettati dopo 21 giorni |
 | DAILY_REPORT_AUTO_ENABLED | true | Report Telegram automatico alle 20:00 |
 | TELEGRAM_BOT_TOKEN | (tuo token) | Token del bot Telegram |
