@@ -29,11 +29,27 @@ export async function runAntiBanChecklist(
     // Contratto bot-operativo C5 ⑦: il pending ratio è quello del risk engine (`getRiskInputs`, denominatore
     // `invited_at IS NOT NULL`), NON pending / TUTTI i lead del DB (348 NEW nel denominatore nascondevano 15/20 = 75%);
     // e il literal `pendingCount > 10` è sostituito dal gate condiviso di C1 (`pendingRatioMinInvited`).
-    const riskInputs = await getRiskInputs(getLocalDateString(), config.hardInviteCap);
-    const pendingRatio = riskInputs.pendingRatio;
-    const pendingInvitedTotal = riskInputs.invitedTotal;
-    const pendingGate = pendingRatioSample({ pendingRatio, invitedTotal: pendingInvitedTotal });
-    const pendingCount = dbStats?.byStatus['INVITED'] ?? Math.round(pendingRatio * Math.max(0, pendingInvitedTotal));
+    // Letto SOLO per i workflow outreach (gli altri non hanno il gate); una lettura fallita = checklist NON superata
+    // (fail-closed esplicito: mai zeri che aprirebbero il gate, mai un'eccezione muta a metà preflight).
+    let pendingRatio = 0;
+    let pendingInvitedTotal = 0;
+    let pendingSampleSufficient = false;
+    if (isOutreach) {
+        try {
+            const riskInputs = await getRiskInputs(getLocalDateString(), config.hardInviteCap);
+            pendingRatio = riskInputs.pendingRatio;
+            pendingInvitedTotal = riskInputs.invitedTotal;
+            pendingSampleSufficient = pendingRatioSample({ pendingRatio, invitedTotal: pendingInvitedTotal }).sufficient;
+        } catch (error) {
+            console.log('');
+            console.log(
+                `  [!!!] Risk inputs non leggibili dal DB (${error instanceof Error ? error.message : String(error)}): checklist anti-ban NON superata.`,
+            );
+            console.log('        Verifica il DB con "bot.ps1 doctor" prima di inviare.');
+            return false;
+        }
+    }
+    const pendingCount = dbStats?.byStatus['INVITED'] ?? 0;
     const readyInvite = dbStats?.byStatus['READY_INVITE'] ?? 0;
     const readyMessage = (dbStats?.byStatus['ACCEPTED'] ?? 0) + (dbStats?.byStatus['READY_MESSAGE'] ?? 0);
     const lastSyncDaysAgo = dbStats?.lastSyncAt
@@ -74,7 +90,7 @@ export async function runAntiBanChecklist(
     // (default NO) e abortiamo se l'utente non forza. Sotto la soglia di stop ma sopra quella di
     // warn resta il warning informativo. Soglie canoniche da config (no magic number hardcoded).
     // Il ratio pesa solo sopra il campione minimo (C1): 1 pending su 1 invitato non e' un segnale.
-    if (isOutreach && pendingGate.sufficient && pendingRatio >= config.pendingRatioStop) {
+    if (isOutreach && pendingSampleSufficient && pendingRatio >= config.pendingRatioStop) {
         console.log(
             `    [!!!] Pending ratio: ${Math.round(pendingRatio * 100)}% (${pendingCount} inviti in attesa su ${pendingInvitedTotal} invitati) — oltre la soglia di STOP (${Math.round(config.pendingRatioStop * 100)}%).`,
         );
@@ -88,7 +104,7 @@ export async function runAntiBanChecklist(
             console.log('      -> Sessione interrotta. Lancia "bot.ps1 run check" per abbassare il pending ratio.');
             return false;
         }
-    } else if (isOutreach && pendingGate.sufficient && pendingRatio > config.pendingRatioWarn) {
+    } else if (isOutreach && pendingSampleSufficient && pendingRatio > config.pendingRatioWarn) {
         console.log(
             `    [!] Pending ratio: ${Math.round(pendingRatio * 100)}% (${pendingCount} inviti in attesa su ${pendingInvitedTotal} invitati)`,
         );

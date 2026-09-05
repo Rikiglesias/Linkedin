@@ -230,7 +230,7 @@ export async function generateAndSendDailyReport(targetDate?: string): Promise<b
         `\n*⚠️ Risk & Health*`,
         `• Risk Score: *${riskSnapshot.score}/100* (${riskSnapshot.action})`,
         await buildBanProbabilitySection(riskSnapshot),
-        `• Pending Ratio: *${(riskSnapshot.pendingRatio * 100).toFixed(1)}%* (${riskInputs.invitedTotal} invitati totali${pendingSampleNote})${pendingTrendText}`,
+        `• Pending Ratio: *${(riskSnapshot.pendingRatio * 100).toFixed(1)}%* (${riskInputs.invitedTotal} ${riskInputs.invitedTotal === 1 ? 'invitato totale' : 'invitati totali'}${pendingSampleNote})${pendingTrendText}`,
         `• Errori Esecuzione (Job/Orchestrator): *${stats.runErrors}*`,
         `• Problemi Selettori UI: *${stats.selectorFailures}*`,
         `• Challenge LinkedIn Apparse: *${stats.challengesCount}*`,

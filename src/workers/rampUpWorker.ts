@@ -143,7 +143,9 @@ export async function runRampUpWorker(): Promise<RampUpWorkerReport> {
                 warmupDays: config.rampUpModelWarmupDays,
                 riskAction: risk.action,
                 riskScore: risk.score,
-                pendingRatio: riskInputs.pendingRatio,
+                // Gemello del campione (review blocco 2): sotto `pendingRatioMinInvited` il pending non dimezza il cap
+                // (1 pending su 1 invitato non è targeting scarso); il flag viene dallo snapshot del risk engine.
+                pendingRatio: risk.pendingSampleSufficient === false ? 0 : riskInputs.pendingRatio,
                 errorRate: riskInputs.errorRate,
                 healthScore: complianceHealth.score,
             });
@@ -156,7 +158,7 @@ export async function runRampUpWorker(): Promise<RampUpWorkerReport> {
                 warmupDays: config.rampUpModelWarmupDays,
                 riskAction: risk.action,
                 riskScore: risk.score,
-                pendingRatio: riskInputs.pendingRatio,
+                pendingRatio: risk.pendingSampleSufficient === false ? 0 : riskInputs.pendingRatio,
                 errorRate: riskInputs.errorRate,
                 healthScore: complianceHealth.score,
             });

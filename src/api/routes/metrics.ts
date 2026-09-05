@@ -9,6 +9,7 @@ import { Router } from 'express';
 import { getDatabase } from '../../db';
 import { logError } from '../../telemetry/logger';
 import { evaluateRisk } from '../../risk/riskEngine';
+import { pendingRatioSample } from '../../risk/sampleGate';
 import { getLocalDateString, config } from '../../config';
 import { getProxyPoolStatus, getProxyQualityStatus } from '../../proxyManager';
 import { secureEquals } from '../wsAuth';
@@ -112,6 +113,13 @@ router.get('/', async (req, res) => {
             '# HELP lkbot_pending_ratio Pending invite ratio 0-1',
             '# TYPE lkbot_pending_ratio gauge',
             `lkbot_pending_ratio ${riskSnapshot.pendingRatio.toFixed(4)}`,
+            // Campione del pending ratio (C3): una alerting rule esterna deve filtrare sotto campione.
+            '# HELP lkbot_pending_invited_total Invited leads all-time (sample of the pending ratio)',
+            '# TYPE lkbot_pending_invited_total gauge',
+            `lkbot_pending_invited_total ${riskInputs.invitedTotal}`,
+            '# HELP lkbot_pending_sample_sufficient 1 when the pending ratio sample reaches PENDING_RATIO_MIN_INVITED',
+            '# TYPE lkbot_pending_sample_sufficient gauge',
+            `lkbot_pending_sample_sufficient ${pendingRatioSample({ pendingRatio: riskInputs.pendingRatio, invitedTotal: riskInputs.invitedTotal }).sufficient ? 1 : 0}`,
             // ── Queue ─────────────────────────────────────────────────────
             '# HELP lkbot_queue_depth Number of queued jobs',
             '# TYPE lkbot_queue_depth gauge',

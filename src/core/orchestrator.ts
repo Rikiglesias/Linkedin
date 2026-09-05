@@ -11,7 +11,7 @@ import {
 } from '../risk/riskEngine';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { runEventSyncOnce } from '../sync/eventSync';
-import { ListScheduleBreakdown, scheduleJobs, workflowToJobTypes } from './scheduler';
+import { ListScheduleBreakdown, scheduleJobs, selectWorstPendingList, workflowToJobTypes } from './scheduler';
 import { runSiteCheck } from './audit';
 import { closeBrowser, type BrowserSession } from '../browser';
 import { disableWindowClickThrough } from '../browser/windowInputBlock';
@@ -170,9 +170,8 @@ async function evaluateComplianceHealthGuard(
         }
     }
 
-    const worstPendingList = [...listBreakdown]
-        .filter((entry) => entry.pendingRatio >= config.compliancePendingRatioAlertThreshold)
-        .sort((a, b) => b.pendingRatio - a.pendingRatio)[0];
+    // Alert per-lista SOLO sopra campione (C4/C21, review blocco 2): 1/1 al primo invito non è «100% pending».
+    const worstPendingList = selectWorstPendingList(listBreakdown, config.compliancePendingRatioAlertThreshold);
     if (worstPendingList) {
         const listFlagKey = `compliance_pending_alert_list:${toFlagSafeToken(worstPendingList.listName)}`;
         const listAlertDate = await getRuntimeFlag(listFlagKey);

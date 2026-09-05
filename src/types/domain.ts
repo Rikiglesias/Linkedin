@@ -156,12 +156,18 @@ export interface RiskInputs {
 
 export interface RiskSnapshot {
     score: number;
+    /** Ratio GREZZO (verità per report/dashboard); pesa nelle decisioni solo se `pendingSampleSufficient`. */
     pendingRatio: number;
     errorRate: number;
     selectorFailureRate: number;
     challengeCount: number;
     inviteVelocityRatio: number;
     action: 'NORMAL' | 'WARN' | 'LOW_ACTIVITY' | 'STOP';
+    /**
+     * Campione del pending ratio sufficiente (gate `risk/sampleGate`, contratto bot-operativo C1). Opzionale per i
+     * letterali legacy: ASSENTE = come oggi (il ratio conta), mai un bypass. Consumer: cooldown, guardian `watch`.
+     */
+    pendingSampleSufficient?: boolean;
 }
 
 export interface IncidentRecord {

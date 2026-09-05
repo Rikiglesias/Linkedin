@@ -1,4 +1,4 @@
-import { Pool, PoolClient } from 'pg';
+import { Pool, PoolClient, types as pgTypes } from 'pg';
 import sqlite3 from 'sqlite3';
 import { open, Database as SQLiteDatabase } from 'sqlite';
 import { AsyncLocalStorage } from 'async_hooks';
@@ -238,6 +238,10 @@ class PostgresManager implements DatabaseManager {
         const parsedTimeout = Number.parseInt(process.env.PG_STATEMENT_TIMEOUT_MS ?? '30000', 10);
         // >= 0: 0 = disabilitato. NON usare `|| 30000` (azzererebbe il valore 0 valido).
         const statementTimeout = Number.isFinite(parsedTimeout) && parsedTimeout >= 0 ? parsedTimeout : 30_000;
+        // Postgres restituisce COUNT(*)/SUM(int) come int8 e node-pg li consegna come STRINGHE: i gate a campione
+        // (`risk/sampleGate`, `Number.isFinite`) li scartavano come invalidi → fail-closed = deadlock intatto in
+        // produzione (review blocco 2, 2026-09-05). Parser globale: i conteggi arrivano come number ovunque.
+        pgTypes.setTypeParser(pgTypes.builtins.INT8, (value: string) => Number.parseInt(value, 10));
         this.pool = new Pool({
             connectionString,
             max: poolMax,

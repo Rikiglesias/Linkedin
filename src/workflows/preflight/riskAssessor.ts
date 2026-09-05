@@ -33,12 +33,13 @@ export async function computeSessionRiskLevel(cfgStatus: PreflightConfigStatus):
             COUNT(CASE WHEN invited_at IS NOT NULL THEN 1 END) AS total
         FROM leads
     `);
-    const pendingTotal = pendingRow?.total ?? 0;
-    const pendingRatio = pendingTotal > 0 ? (pendingRow?.pending ?? 0) / pendingTotal : 0;
+    // Coercizione: su Postgres COUNT arriva come stringa (int8) e il gate a campione vuole un number finito.
+    const pendingTotal = Number(pendingRow?.total ?? 0);
+    const pendingRatio = pendingTotal > 0 ? Number(pendingRow?.pending ?? 0) / pendingTotal : 0;
     // Contratto bot-operativo C5 ③: stesso campione minimo del risk engine (C1). Sotto `pendingRatioMinInvited` il
-    // pending non pesa (1 pending su 1 invitato valeva 25 punti su una scala con STOP a 60); sopra, identico a oggi.
+    // pending non pesa (`effectiveRatio` = 0; 1 pending su 1 invitato valeva 25 punti su una scala con STOP a 60).
     const pendingGate = pendingRatioSample({ pendingRatio, invitedTotal: pendingTotal });
-    const pendingFactor = pendingGate.sufficient ? Math.min(25, Math.floor(pendingGate.effectiveRatio * 40)) : 0;
+    const pendingFactor = Math.min(25, Math.floor(pendingGate.effectiveRatio * 40));
 
     const errorsToday = await getDailyStat(localDate, 'run_errors');
     const processedToday = cfgStatus.invitesSentToday + cfgStatus.messagesSentToday;

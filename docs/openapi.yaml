@@ -570,6 +570,16 @@ components:
               enum: [GO, SLOW, STOP]
             pendingRatio:
               type: number
+        riskInputs:
+          type: object
+          description: Pending ratio GREZZO con il suo campione (contratto bot-operativo C3). Sotto `pendingRatioMinInvited` il ratio non pesa nelle decisioni.
+          properties:
+            pendingRatio:
+              type: number
+            invitedTotal:
+              type: integer
+            pendingSampleSufficient:
+              type: boolean
         activeCampaigns:
           type: integer
 

@@ -101,6 +101,8 @@ export function evaluateRisk(inputs: RiskInputs): RiskSnapshot {
         challengeCount: gated.challengeCount,
         inviteVelocityRatio: gated.raw.inviteVelocityRatio,
         action,
+        // Il campione viaggia con lo snapshot: cooldown e guardian `watch` non devono agire sul ratio grezzo sotto campione.
+        pendingSampleSufficient: gated.pendingGate.sufficient,
     };
 }
 
@@ -288,8 +290,10 @@ export function evaluateCooldownDecision(snapshot: RiskSnapshot): CooldownDecisi
         return { activate: false, tier: 'none', minutes: 0, reason: null };
     }
 
-    const high =
-        snapshot.score >= config.cooldownHighScore || snapshot.pendingRatio >= config.cooldownPendingHighThreshold;
+    // Il pending pesa nel tier solo sopra campione (flag dello snapshot; assente = come oggi): sotto campione l'azione
+    // WARN/LOW_ACTIVITY viene da un'altra causa e 1/1 = 1.0 non deve promuovere il cooldown a `high`.
+    const pendingForCooldown = snapshot.pendingSampleSufficient === false ? 0 : snapshot.pendingRatio;
+    const high = snapshot.score >= config.cooldownHighScore || pendingForCooldown >= config.cooldownPendingHighThreshold;
     if (high) {
         return {
             activate: true,
@@ -299,7 +303,7 @@ export function evaluateCooldownDecision(snapshot: RiskSnapshot): CooldownDecisi
         };
     }
 
-    const warn = snapshot.score >= config.cooldownWarnScore || snapshot.pendingRatio >= config.cooldownPendingThreshold;
+    const warn = snapshot.score >= config.cooldownWarnScore || pendingForCooldown >= config.cooldownPendingThreshold;
     if (warn) {
         return {
             activate: true,

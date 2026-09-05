@@ -792,19 +792,21 @@ export async function getRiskInputs(localDate: string, hardInviteCap: number): P
         ),
     ]);
 
-    const invitedTotal = invitedTotalRow?.total ?? 0;
+    // Coercizione al bordo: su Postgres COUNT(*)/SUM arrivano come stringhe (int8) e il gate a campione
+    // (`Number.isFinite`) le scarterebbe come invalide → fail-closed. Il parser INT8 in db.ts è la difesa primaria.
+    const invitedTotal = Number(invitedTotalRow?.total ?? 0);
     const pendingRatio = invitedTotal > 0 ? pendingInvites / invitedTotal : 0;
 
-    const totalAttempts = attemptsRow?.total ?? 0;
-    const failedAttempts = failedRow?.total ?? 0;
+    const totalAttempts = Number(attemptsRow?.total ?? 0);
+    const failedAttempts = Number(failedRow?.total ?? 0);
     const errorRate = totalAttempts > 0 ? failedAttempts / totalAttempts : 0;
 
-    const selectorFailures = dailyRow?.selector_failures ?? 0;
+    const selectorFailures = Number(dailyRow?.selector_failures ?? 0);
     const denominator = Math.max(1, totalAttempts);
     const selectorFailureRate = selectorFailures / denominator;
 
-    const challengeCount = dailyRow?.challenges_count ?? 0;
-    const invitesSent = dailyRow?.invites_sent ?? 0;
+    const challengeCount = Number(dailyRow?.challenges_count ?? 0);
+    const invitesSent = Number(dailyRow?.invites_sent ?? 0);
     const inviteVelocityRatio = hardInviteCap > 0 ? invitesSent / hardInviteCap : 0;
 
     return {
@@ -917,8 +919,8 @@ export async function getAccountTrustInputs(ssiScore: number, ageDays: number): 
         FROM daily_stats
         WHERE date >= DATE('now', '-30 days')
     `);
-    const invites30d = acceptanceRow?.invites ?? 0;
-    const acceptances30d = acceptanceRow?.acceptances ?? 0;
+    const invites30d = Number(acceptanceRow?.invites ?? 0);
+    const acceptances30d = Number(acceptanceRow?.acceptances ?? 0);
     const acceptanceRatePct = invites30d > 0 ? (acceptances30d / invites30d) * 100 : 50; // default 50% se no data
 
     // Challenges ultimi 7 giorni
@@ -927,14 +929,14 @@ export async function getAccountTrustInputs(ssiScore: number, ageDays: number): 
         FROM daily_stats
         WHERE date >= DATE('now', '-7 days')
     `);
-    const challengesLast7d = challengeRow?.total ?? 0;
+    const challengesLast7d = Number(challengeRow?.total ?? 0);
 
-    // Pending ratio
+    // Pending ratio (coercizione: su Postgres COUNT(*) arriva come stringa, il gate a campione vuole un number)
     const pendingInvites = await countLeadsByStatuses(['INVITED']);
-    const invitedTotalRow = await db.get<{ total: number }>(
+    const invitedTotalRow = await db.get<{ total: number | string }>(
         `SELECT COUNT(*) as total FROM leads WHERE invited_at IS NOT NULL`,
     );
-    const invitedTotal = invitedTotalRow?.total ?? 0;
+    const invitedTotal = Number(invitedTotalRow?.total ?? 0);
     const pendingRatio = invitedTotal > 0 ? pendingInvites / invitedTotal : 0;
 
     return {

@@ -87,7 +87,10 @@ export interface ListScheduleBreakdown {
     queuedMessageJobs: number;
     adaptiveFactor: number;
     adaptiveReasons: string[];
-    /** Ratio GREZZO pending/invitati reali della lista: esposto sempre, pesa solo se `pendingSampleSufficient`. */
+    /**
+     * Ratio GREZZO pending/invitati reali della lista (clampato a [0,1]), pesa solo se `pendingSampleSufficient`.
+     * Con `adaptiveCapsEnabled=false` è 0 e i flag di campione sono false a prescindere dal campione.
+     */
     pendingRatio: number;
     blockedRatio: number;
     /** Campione del pending ratio: invitati reali della lista (`invited_at IS NOT NULL`), contratto bot-operativo C4. */
@@ -315,15 +318,20 @@ export function evaluateAdaptiveBudgetContext(
     // stessa base di `getRiskInputs`). La somma di status escludeva i lead invitati poi BLOCKED/DEAD/SKIPPED.
     // Sotto `pendingRatioMinInvited` (gate di C1) il ratio resta esposto ma non riduce il budget: 1 INVITED su 1
     // dava 1.0 → factor 0.25 → budget 0. Campione non finito = dato corrotto → fail-closed (ratio pieno).
+    // Numeratore (status INVITED) e denominatore (`invited_at`) sono popolazioni diverse: un ratio > 1 è un dato
+    // incoerente, clampato a 1 (= freno massimo, fail-closed) invece di propagare un numero senza senso.
     const pendingRatioRaw = invited / Math.max(1, sample.invitedTotal);
-    const pendingRatio = Number.isFinite(pendingRatioRaw) ? pendingRatioRaw : 1;
+    const pendingRatio = Number.isFinite(pendingRatioRaw) ? Math.min(1, pendingRatioRaw) : 1;
     const pendingGate = pendingRatioSample({ pendingRatio, invitedTotal: sample.invitedTotal });
 
     const blockedRatioDenominator = invited + acceptedLike + blockedSkipped;
     const blockedRatio = blockedSkipped / Math.max(1, blockedRatioDenominator);
-    // Stesso campione minimo sul denominatore del blockedRatio, letto dal guardian (C21): 1 SKIPPED su una lista
-    // senza inviti vale 1.0. Qui `list_blocked_warn` (×0.6) resta come oggi: residuo dichiarato nel binding.
-    const blockedGate = pendingRatioSample({ pendingRatio: blockedRatio, invitedTotal: blockedRatioDenominator });
+    // Campione del blockedRatio (letto dal guardian, C21) = gli INVITI REALI della lista, come per il pending: il
+    // denominatore include gli SKIPPED, e 20 lead skippati senza un solo invito darebbero 1.0 «con campione» →
+    // pausa 180 min (review blocco 2). Niente regola «coppia incoerente» qui: skippati senza inviti sono normali.
+    // Campione non finito/negativo = dato corrotto → fail-closed. `list_blocked_warn` (×0.6) resta come oggi.
+    const invitedSampleValid = Number.isFinite(sample.invitedTotal) && sample.invitedTotal >= 0;
+    const blockedSampleSufficient = invitedSampleValid ? sample.invitedTotal >= pendingGate.minSample : true;
 
     let factor = 1;
     const reasons: string[] = [];
@@ -359,8 +367,41 @@ export function evaluateAdaptiveBudgetContext(
         blockedRatio: Number.parseFloat(blockedRatio.toFixed(4)),
         pendingInvitedTotal: sample.invitedTotal,
         pendingSampleSufficient: pendingGate.sufficient,
-        blockedSampleSufficient: blockedGate.sufficient,
+        blockedSampleSufficient,
     };
+}
+
+/**
+ * Copia il contesto adattivo nel breakdown della lista: i campi di campione (C4) sono ciò che guardian (C21) e alert
+ * per-lista leggono — dimenticarne uno = gate fail-open silenzioso. Funzione pura: il test la esercita direttamente.
+ * @internal
+ */
+export function applyAdaptiveContextToBreakdown(
+    breakdown: ListScheduleBreakdown,
+    context: AdaptiveBudgetContext,
+): ListScheduleBreakdown {
+    breakdown.adaptiveFactor = context.factor;
+    breakdown.adaptiveReasons = context.reasons;
+    breakdown.pendingRatio = context.pendingRatio;
+    breakdown.blockedRatio = context.blockedRatio;
+    breakdown.pendingInvitedTotal = context.pendingInvitedTotal;
+    breakdown.pendingSampleSufficient = context.pendingSampleSufficient;
+    breakdown.blockedSampleSufficient = context.blockedSampleSufficient;
+    return breakdown;
+}
+
+/**
+ * Lista peggiore per pending ratio SOPRA campione (alert Telegram per-lista dell'orchestrator): al primo invito
+ * 1/1 = 1.0 non è un segnale e prima faceva partire «Pending ratio elevato nella lista (100%)».
+ * @internal
+ */
+export function selectWorstPendingList(
+    listBreakdown: ListScheduleBreakdown[],
+    threshold: number,
+): ListScheduleBreakdown | undefined {
+    return [...listBreakdown]
+        .filter((entry) => entry.pendingSampleSufficient && entry.pendingRatio >= threshold)
+        .sort((a, b) => b.pendingRatio - a.pendingRatio)[0];
 }
 
 /** @internal */
@@ -675,13 +716,7 @@ export async function scheduleJobs(
         adaptiveContextMap.set(listName, context);
         const breakdown = listBreakdown.get(listName);
         if (breakdown) {
-            breakdown.adaptiveFactor = context.factor;
-            breakdown.adaptiveReasons = context.reasons;
-            breakdown.pendingRatio = context.pendingRatio;
-            breakdown.blockedRatio = context.blockedRatio;
-            breakdown.pendingInvitedTotal = context.pendingInvitedTotal;
-            breakdown.pendingSampleSufficient = context.pendingSampleSufficient;
-            breakdown.blockedSampleSufficient = context.blockedSampleSufficient;
+            applyAdaptiveContextToBreakdown(breakdown, context);
         }
     }
     const noBurstPlanner = !dryRun && config.noBurstEnabled ? createNoBurstPlanner() : null;

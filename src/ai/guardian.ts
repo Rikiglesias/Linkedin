@@ -83,10 +83,8 @@ export function enforceCriticalPauseFloor(decision: AiGuardianDecision): AiGuard
 
 /** @internal */
 export function heuristics(schedule: ScheduleResult): AiGuardianDecision {
-    // Contratto bot-operativo C21: i ratio per-lista contano solo sopra il campione minimo — gate condiviso di
-    // `risk/sampleGate` (C1), applicato dallo scheduler in C4 ed esposto qui come `pendingSampleSufficient`:
-    // 1 INVITED su 1 = 1.0 e 1 SKIPPED su una lista senza inviti = 1.0 non sono segnali, ma davano `critical` →
-    // pausa di 180 min al primo invito, anche con AI_GUARDIAN_ENABLED=false. Soglie 0.78/0.35 invariate.
+    // C21: i ratio per-lista contano solo sopra il campione (gate `risk/sampleGate` di C1, applicato dallo scheduler
+    // in C4): 1/1 al primo invito dava `critical` → pausa 180 min anche con AI_GUARDIAN_ENABLED=false. Soglie invariate.
     const criticalList = schedule.listBreakdown.find(
         (list) =>
             (list.pendingSampleSufficient && list.pendingRatio >= 0.78) ||
@@ -107,10 +105,14 @@ export function heuristics(schedule: ScheduleResult): AiGuardianDecision {
         };
     }
 
+    // Ramo `watch`: il pending globale pesa solo sopra campione (flag dello snapshot; assente = come oggi).
+    const pendingWatch =
+        schedule.riskSnapshot.pendingSampleSufficient !== false &&
+        schedule.riskSnapshot.pendingRatio >= config.pendingRatioWarn;
     if (
         schedule.riskSnapshot.action === 'WARN' ||
         schedule.riskSnapshot.action === 'LOW_ACTIVITY' ||
-        schedule.riskSnapshot.pendingRatio >= config.pendingRatioWarn ||
+        pendingWatch ||
         schedule.riskSnapshot.errorRate >= 0.2
     ) {
         return {
@@ -245,6 +247,7 @@ export async function evaluateAiGuardian(
         'Assess the operational context and respond with ONLY a valid JSON object — no prose, no markdown fences.',
         'JSON schema: {"severity":"normal|watch|critical","summary":"<1 sentence>","recommendations":["<action>",...],"pauseMinutes":<number>}',
         'Use a conservative approach. When in doubt, escalate severity.',
+        'Ratios below the minimum sample are NOT signals: ignore riskSnapshot.pendingRatio when riskSnapshot.pendingSampleSufficient is false, and ignore a list pendingRatio/blockedRatio when its pendingSampleSufficient/blockedSampleSufficient is false.',
         'pauseMinutes must be 0 for normal/watch severity, and between 30-480 for critical.',
         'Provide 2-4 concise, actionable recommendations.',
     ].join(' ');

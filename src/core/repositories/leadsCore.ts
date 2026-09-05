@@ -1167,11 +1167,12 @@ export async function countLeadsByStatuses(statuses: LeadStatus[]): Promise<numb
     const db = await getDatabase();
     const normalized = statuses.map((status) => normalizeLegacyStatus(status));
     const placeholders = normalized.map(() => '?').join(', ');
-    const row = await db.get<{ total: number }>(
+    const row = await db.get<{ total: number | string }>(
         `SELECT COUNT(*) as total FROM leads WHERE status IN (${placeholders})`,
         normalized,
     );
-    return row?.total ?? 0;
+    // Su Postgres COUNT(*) può arrivare come stringa (int8): coercizione al bordo, il risk engine vuole un number.
+    return Number(row?.total ?? 0);
 }
 
 export async function getLeadStatusCountsForLists(listNames: string[]): Promise<ListLeadStatusCount[]> {
@@ -1181,7 +1182,7 @@ export async function getLeadStatusCountsForLists(listNames: string[]): Promise<
 
     const db = await getDatabase();
     const placeholders = listNames.map(() => '?').join(', ');
-    return db.query<ListLeadStatusCount>(
+    const rows = await db.query<ListLeadStatusCount>(
         `
         SELECT list_name, status, COUNT(*) as total
         FROM leads
@@ -1190,6 +1191,8 @@ export async function getLeadStatusCountsForLists(listNames: string[]): Promise<
     `,
         listNames,
     );
+    // Su Postgres COUNT(*) può arrivare come stringa (int8): lo scheduler somma questi totali.
+    return rows.map((row) => ({ ...row, total: Number(row.total) }));
 }
 
 /**
@@ -1205,7 +1208,7 @@ export async function getLeadInvitedTotalsForLists(listNames: string[]): Promise
 
     const db = await getDatabase();
     const placeholders = listNames.map(() => '?').join(', ');
-    return db.query<ListLeadInvitedTotal>(
+    const rows = await db.query<ListLeadInvitedTotal>(
         `
         SELECT list_name, COUNT(*) as invited_total
         FROM leads
@@ -1214,6 +1217,8 @@ export async function getLeadInvitedTotalsForLists(listNames: string[]): Promise
     `,
         listNames,
     );
+    // Su Postgres COUNT(*) può arrivare come stringa (int8): il gate a campione vuole un number finito.
+    return rows.map((row) => ({ ...row, invited_total: Number(row.invited_total) }));
 }
 
 export async function setLeadStatus(

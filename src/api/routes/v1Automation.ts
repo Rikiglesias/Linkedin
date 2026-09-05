@@ -21,6 +21,7 @@ import {
 import { handlePauseAction, handleResumeAction, handleQuarantineAction } from '../helpers/controlActions';
 import { sendApiV1, handleApiError } from '../utils';
 import { evaluateRisk } from '../../risk/riskEngine';
+import { pendingRatioSample } from '../../risk/sampleGate';
 import { getLocalDateString, config } from '../../config';
 import { getEventSyncStatus } from '../../sync/eventSync';
 import { PublicAutomationCommandRequestSchema } from '../schemas';
@@ -116,6 +117,16 @@ router.get('/automation/snapshot', async (_req, res) => {
                 selectorFailureRate: risk.selectorFailureRate,
                 challengeCount: risk.challengeCount,
                 inviteVelocityRatio: risk.inviteVelocityRatio,
+            },
+            // Gemello di /api/kpis (contratto bot-operativo C3): ratio GREZZO insieme al campione, così n8n/automazioni
+            // esterne non leggono «100% pending» al primo invito come un segnale.
+            riskInputs: {
+                pendingRatio: riskInputs.pendingRatio,
+                invitedTotal: riskInputs.invitedTotal,
+                pendingSampleSufficient: pendingRatioSample({
+                    pendingRatio: riskInputs.pendingRatio,
+                    invitedTotal: riskInputs.invitedTotal,
+                }).sufficient,
             },
             incidents: {
                 openCount: incidents.length,
