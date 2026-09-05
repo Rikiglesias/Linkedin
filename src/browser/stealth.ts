@@ -15,25 +15,40 @@ import {
 import { detectBrowserFamily } from '../proxy/ja3Validator';
 
 // Filtra il pool fingerprint per coerenza con il browser engine effettivo.
-// Con Firefox → solo UA Firefox. Con Chromium → solo UA Chrome/Edge.
+// Con Firefox/Camoufox → solo UA Firefox. Con Chromium → solo UA Chrome/Edge.
 // Incoerenza UA↔engine (es. UA Chrome su browser Firefox) è un marker di spoofing
 // rilevabile immediatamente da LinkedIn/Cloudflare.
 // #3/GAP-1: il fingerprint UA dev'essere coerente col TLS stack reale dell'engine (Chrome/Edge su
 // chromium, Firefox su camoufox), altrimenti UA↔JA3 incoerente = flag LinkedIn (layer rete 2026).
-// Con CycleTLS (useJa3Proxy) il JA3 è spoofato coerente → ogni UA è sicuro.
+// C12 (bot-operativo): `useJa3Proxy` NON bypassa più la guardia. CycleTLS spoofa il JA3 delle richieste
+// che passano dal proxy, ma l'engine resta osservabile dalla pagina (Gecko vs Blink: navigator, rendering,
+// API): uno UA Chrome su Camoufox è spoofing rilevabile a prescindere dal TLS. E la guardia è FAIL-CLOSED:
+// nessun fallback al pool intero, su nessuno dei due pool.
+function expectedUaFamilyForEngine(): { engine: string; expected: string; isFirefoxEngine: boolean } {
+    const engine = config.browserEngine;
+    const isFirefoxEngine = engine === 'firefox' || engine === 'camoufox';
+    return { engine, expected: isFirefoxEngine ? 'firefox' : 'chrome/edge', isFirefoxEngine };
+}
+
 function isUaTlsCoherentWithEngine(userAgent: string): boolean {
-    if (config.useJa3Proxy) return true;
     const family = detectBrowserFamily(userAgent);
-    const isFirefoxEngine = config.browserEngine === 'firefox' || config.browserEngine === 'camoufox';
+    const { isFirefoxEngine } = expectedUaFamilyForEngine();
     return isFirefoxEngine
         ? family === 'firefox' || family === 'unknown'
         : family === 'chrome' || family === 'edge' || family === 'unknown';
 }
 
-function filterTlsCoherentPool(pool: ReadonlyArray<Fingerprint>): ReadonlyArray<Fingerprint> {
-    if (config.useJa3Proxy) return pool; // CycleTLS attivo → tutti i fingerprint sono sicuri
+function filterTlsCoherentPool(pool: ReadonlyArray<Fingerprint>, device: 'desktop' | 'mobile'): ReadonlyArray<Fingerprint> {
     const filtered = pool.filter((fp) => isUaTlsCoherentWithEngine(fp.userAgent));
-    return filtered.length > 0 ? filtered : pool;
+    if (filtered.length === 0) {
+        const { engine, expected } = expectedUaFamilyForEngine();
+        throw new Error(
+            `[STEALTH] Nessun fingerprint ${device} coerente con l'engine ${engine}: attesa famiglia UA ${expected}, ` +
+                `il pool locale ne ha 0 su ${pool.length}. Niente fallback al pool intero (UA↔engine incoerente = spoofing ` +
+                `rilevabile): aggiungere UA ${expected} in fingerprint/pool.ts oppure cambiare BROWSER_ENGINE.`,
+        );
+    }
+    return filtered;
 }
 
 const FINGERPRINT_VERSION = '1';
@@ -77,6 +92,7 @@ export function pickBrowserFingerprint(
     isMobile: boolean,
     accountId: string,
 ): BrowserFingerprint {
+    const device = isMobile ? 'mobile' : 'desktop';
     const mobileFiltered = cloudFingerprints.filter((item) => item.isMobile === true);
     const desktopFiltered = cloudFingerprints.filter((item) => item.isMobile !== true);
     const cloudPoolByDevice = isMobile
@@ -88,9 +104,17 @@ export function pickBrowserFingerprint(
           : cloudFingerprints;
     // #3/GAP-1: applica la coerenza UA↔TLS ANCHE al pool cloud (prima filtrata solo sul pool locale,
     // riga ~103: un UA cloud incoerente con l'engine bypassava il controllo = il gap reale di GAP-1).
-    // Soft-fallback al pool pieno se nessuno coerente (mirror di filterTlsCoherentPool, no kill-switch brusco).
+    // C12: pool cloud misto → solo i coerenti; pool cloud TUTTO incoerente → fingerprint LOCALE della famiglia
+    // attesa + warn (prima ricadeva sul pool cloud incoerente: un UA Chrome su Camoufox pur di usare il cloud).
     const coherentCloud = cloudPoolByDevice.filter((item) => isUaTlsCoherentWithEngine(item.userAgent));
-    const cloudPool = coherentCloud.length > 0 ? coherentCloud : cloudPoolByDevice;
+    if (cloudPoolByDevice.length > 0 && coherentCloud.length === 0) {
+        const { engine, expected } = expectedUaFamilyForEngine();
+        console.warn(
+            `[STEALTH] Pool cloud ${device} tutto incoerente con l'engine ${engine} (${cloudPoolByDevice.length} voci, ` +
+                `attesa famiglia UA ${expected}): uso il fingerprint LOCALE della famiglia attesa.`,
+        );
+    }
+    const cloudPool = coherentCloud;
 
     if (cloudPool.length > 0) {
         // Selezione deterministica dal cloud pool: stesso account → SEMPRE lo stesso fingerprint.
@@ -111,7 +135,7 @@ export function pickBrowserFingerprint(
     }
 
     const rawPool = isMobile ? mobileFingerprintPool : desktopFingerprintPool;
-    const localPool = filterTlsCoherentPool(rawPool);
+    const localPool = filterTlsCoherentPool(rawPool, device);
     const selected = pickDeterministicFingerprint(localPool, accountId);
     return {
         ...selected,

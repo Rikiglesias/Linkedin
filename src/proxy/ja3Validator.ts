@@ -133,9 +133,19 @@ export async function validateJa3Configuration(): Promise<Ja3ValidationReport> {
         status = 'GAP';
         recommendation = `USE_JA3_PROXY=true ma CycleTLS non raggiungibile su porta ${ja3Port}. Avviare CycleTLS o disabilitare USE_JA3_PROXY`;
     } else if (hasProxy && !useJa3Proxy) {
-        status = 'GAP';
-        recommendation =
-            'Proxy configurato ma JA3 spoofing disabilitato — LinkedIn può rilevare incoerenza UA↔TLS fingerprint. Configurare CycleTLS e abilitare USE_JA3_PROXY';
+        const isFirefoxEngine = config.browserEngine === 'firefox' || config.browserEngine === 'camoufox';
+        if (isFirefoxEngine) {
+            // C12 (bot-operativo): Camoufox/Firefox parlano TLS con lo stack NSS di Firefox e il pool UA è
+            // solo-Firefox (guardia fail-closed in browser/stealth.ts) → JA3 e UA sono coerenti in modo NATIVO.
+            // CycleTLS spoofa un JA3 configurato a mano: accenderlo qui creerebbe proprio l'incoerenza che
+            // questo validatore dice di evitare. Quindi con questo engine NON si raccomanda USE_JA3_PROXY.
+            status = 'SECURE';
+            recommendation = `Engine ${config.browserEngine} con proxy: JA3 nativo di Firefox coerente con lo UA Firefox del pool — CycleTLS non serve, lasciare USE_JA3_PROXY=false`;
+        } else {
+            status = 'GAP';
+            recommendation =
+                'Proxy configurato ma JA3 spoofing disabilitato — con engine chromium LinkedIn può rilevare incoerenza UA↔TLS fingerprint. Configurare CycleTLS con USE_JA3_PROXY=true e un JA3 Chrome coerente con JA3_USER_AGENT';
+        }
     } else {
         status = 'DIRECT';
         recommendation =

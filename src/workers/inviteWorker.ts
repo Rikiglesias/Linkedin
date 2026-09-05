@@ -24,6 +24,7 @@ import { getLeadById } from '../core/repositories/leadsCore';
 import { isBlacklisted } from '../core/repositories/blacklist';
 import { isValidLeadTransition, transitionLead } from '../core/leadStateService';
 import { joinSelectors, SELECTORS } from '../selectors';
+import { detectInviteProofAnchored, hasPendingInviteIndicator, hasWeeklyInviteLimitNotice } from '../browser/inviteStateProbe';
 import { InviteJobPayload, LeadRecord } from '../types/domain';
 import { WorkerContext } from './context';
 import { ChallengeDetectedError, RetryableWorkerError } from './errors';
@@ -108,32 +109,16 @@ async function clickConnectOnProfile(page: Page): Promise<boolean> {
     }
 }
 
+// C13 (bot-operativo): la prova di invio e il limite settimanale si leggono da un CONTENITORE risolto
+// (azioni del profilo target; modale/toast/alert di sistema), MAI dal body della pagina: un «Pending» nella
+// sidebar «altri profili» o un post che cita il «weekly invitation limit» producevano una prova falsa o una
+// pausa di 7 giorni. L'helper è condiviso con la sonda pre-click di C14 (`browser/inviteStateProbe.ts`).
 async function detectInviteProof(page: Page): Promise<boolean> {
-    const pendingCount = await page.locator(joinSelectors('invitePendingIndicators')).count();
-    if (pendingCount > 0) {
-        return true;
-    }
-
-    const pageText = await page.textContent('body').catch(() => '');
-    if (!pageText) {
-        return false;
-    }
-    return /invitation sent|in attesa|pending/i.test(pageText);
+    return detectInviteProofAnchored(page);
 }
 
 async function detectWeeklyInviteLimit(page: Page): Promise<boolean> {
-    const selectorCount = await page.locator(joinSelectors('inviteWeeklyLimitSignals')).count();
-    if (selectorCount > 0) {
-        return true;
-    }
-
-    const pageText = await page.textContent('body').catch(() => '');
-    if (!pageText) {
-        return false;
-    }
-    return /weekly invitation limit|limite settimanale(?: degli)? inviti|hai raggiunto il limite settimanale/i.test(
-        pageText,
-    );
+    return hasWeeklyInviteLimitNotice(page);
 }
 
 /**
@@ -424,6 +409,24 @@ export async function processInviteJob(
     if (pageObs.isProfileDeleted) {
         await logWarn('invite.profile_deleted_observed', { leadId: lead.id, url: pageObs.currentUrl });
         await transitionLead(lead.id, 'REVIEW_REQUIRED', 'profile_deleted_observed');
+        return workerResult(1);
+    }
+
+    // C14 (bot-operativo): un proof fallito non deve produrre un SECONDO invito. Al retry di
+    // INVITE_NOT_CONFIRMED (maxAttempts 2) il click precedente può essere andato a segno senza che la
+    // prova sia arrivata in tempo: prima di ogni click — e prima del cap, che incrementa invites_sent —
+    // si guarda se le azioni del profilo TARGET mostrano già «Pending» (helper ancorato di C13).
+    // Se sì: lead INVITED senza click e senza toccare invites_sent (il tentativo che ha inviato
+    // l'invito ha già compensato il proprio contatore: residuo dichiarato nel binding).
+    if (!context.dryRun && (await hasPendingInviteIndicator(context.session.page))) {
+        await logInfo('invite.already_pending_before_click', {
+            leadId: lead.id,
+            linkedinUrl: lead.linkedin_url.substring(0, 60),
+        });
+        await transitionLead(lead.id, 'INVITED', 'invite_already_pending', {
+            dryRun: context.dryRun,
+            source: 'pre_click_pending_probe',
+        });
         return workerResult(1);
     }
 

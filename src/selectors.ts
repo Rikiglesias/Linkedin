@@ -63,6 +63,27 @@ export const SELECTORS = {
         '//button[contains(.,"Pending") or contains(.,"In attesa")]',
     ],
 
+    // C13 (bot-operativo): contenitore delle azioni del profilo TARGET (Connect / Pending / Message).
+    // La prova di invio e il «già pending» si cercano QUI, non nel body: un Pending nella sidebar
+    // «altri profili» non riguarda questo lead. Ultimo candidato = il top card (la sezione con l'h1).
+    profileActionsContainer: [
+        '.pv-top-card-v2-ctas',
+        '.pvs-profile-actions',
+        '.profile-topcard-actions',
+        'main section:has(h1)',
+    ],
+
+    // C13: avvisi di SISTEMA (modale, dialog, toast, alert). Il limite settimanale e «Invitation sent»
+    // valgono solo qui: lo stesso testo in un post del feed non è un avviso.
+    systemNoticeContainer: [
+        '.artdeco-modal',
+        '[role="dialog"]',
+        '[role="alertdialog"]',
+        '.artdeco-toast-item',
+        '[role="alert"]',
+        '.ip-fuse-limit-alert',
+    ],
+
     messageButton: [
         'button[aria-label^="Message"]',
         'button[aria-label^="Invia messaggio"]',
