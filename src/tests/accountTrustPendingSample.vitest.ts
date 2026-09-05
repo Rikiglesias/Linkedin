@@ -27,10 +27,14 @@ describe('C5 ⑥ — pending sotto campione = neutro', () => {
     });
 
     it('N-1 tutti pending → neutro; N tutti pending → penalità odierna (factor 0, score più basso)', () => {
-        expect(calculateAccountTrustScore({ ...base, pendingRatio: 1, invitedTotal: N - 1 }).factors.pendingRatio).toBe(100);
+        expect(calculateAccountTrustScore({ ...base, pendingRatio: 1, invitedTotal: N - 1 }).factors.pendingRatio).toBe(
+            100,
+        );
         const pieno = calculateAccountTrustScore({ ...base, pendingRatio: 1, invitedTotal: N });
         expect(pieno.factors.pendingRatio).toBe(0);
-        expect(pieno.score).toBeLessThan(calculateAccountTrustScore({ ...base, pendingRatio: 0, invitedTotal: N }).score);
+        expect(pieno.score).toBeLessThan(
+            calculateAccountTrustScore({ ...base, pendingRatio: 0, invitedTotal: N }).score,
+        );
     });
 
     it('sopra campione lo snapshot è quello odierno: ratio 0.4 su N+1 → factor 100 - 0.4 × 150 = 40', () => {
@@ -63,12 +67,22 @@ describe('C5 ⑥ — getAccountTrustInputs espone il campione reale', () => {
                 `INSERT INTO leads (linkedin_url, status, list_name, invited_at) VALUES (?, 'INVITED', ?, CURRENT_TIMESTAMP)`,
                 [`https://www.linkedin.com/in/c5-trust-${Date.now()}`, LIST],
             );
-            const atteso = await db.get<{ total: number }>(
-                `SELECT COUNT(*) as total FROM leads WHERE invited_at IS NOT NULL`,
-            );
+            // Il DB di test è condiviso fra i worker: altri file inseriscono/cancellano lead con `invited_at` nello
+            // stesso momento → il conteggio si confronta con la finestra [prima, dopo], non con un solo istante.
+            const conta = async () =>
+                Number(
+                    (
+                        await db.get<{ total: number }>(
+                            `SELECT COUNT(*) as total FROM leads WHERE invited_at IS NOT NULL`,
+                        )
+                    )?.total ?? -1,
+                );
+            const prima = await conta();
             const inputs = await getAccountTrustInputs(50, 365);
-            expect(inputs.invitedTotal).toBe(atteso?.total ?? -1);
+            const dopo = await conta();
             expect(inputs.invitedTotal).toBeGreaterThanOrEqual(1);
+            expect(inputs.invitedTotal).toBeGreaterThanOrEqual(Math.min(prima, dopo));
+            expect(inputs.invitedTotal).toBeLessThanOrEqual(Math.max(prima, dopo));
         } finally {
             await db.run(`DELETE FROM leads WHERE list_name = ?`, [LIST]);
         }

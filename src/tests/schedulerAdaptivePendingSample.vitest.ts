@@ -76,6 +76,18 @@ describe('C4 — denominatore = invitati reali, non somma di status', () => {
         expect(ctx.reasons).toContain('list_pending_warn');
         expect(ctx.factor).toBeLessThanOrEqual(0.5);
     });
+
+    it('caso DIVERGENTE dichiarato (C4): 30 INVITED + 10 ACCEPTED con 100 invitati reali → 0.30, nessun freno (prima 30/40 = 0.75)', () => {
+        const ctx = evaluateAdaptiveBudgetContext({ INVITED: 30, ACCEPTED: 10 }, 'NORMAL', { invitedTotal: 100 });
+        expect(ctx.pendingRatio).toBe(0.3);
+        expect(ctx.reasons.filter((reason) => reason.startsWith('list_pending'))).toHaveLength(0);
+    });
+
+    it('ratio > 1 (popolazioni divergenti) → clampato a 1 e freno massimo', () => {
+        const ctx = evaluateAdaptiveBudgetContext({ INVITED: 30 }, 'NORMAL', { invitedTotal: 20 });
+        expect(ctx.pendingRatio).toBe(1);
+        expect(ctx.reasons).toContain('list_pending_high');
+    });
 });
 
 describe('C4 — fail-closed sul campione (C2 applicato per-lista)', () => {
@@ -92,48 +104,63 @@ describe('C4 — fail-closed sul campione (C2 applicato per-lista)', () => {
     });
 });
 
-describe('C4/C21 — campione del blockedRatio esposto per il guardian', () => {
+describe('C4/C21 — campione del blockedRatio esposto per il guardian = inviti REALI', () => {
     it('1 SKIPPED su una lista senza inviti → blockedRatio 1 ma campione insufficiente', () => {
         const ctx = evaluateAdaptiveBudgetContext({ SKIPPED: 1 }, 'NORMAL', { invitedTotal: 0 });
         expect(ctx.blockedRatio).toBe(1);
         expect(ctx.blockedSampleSufficient).toBe(false);
     });
 
-    it('10 INVITED + 10 BLOCKED → denominatore 20 = campione sufficiente', () => {
+    it('20 SKIPPED senza un solo invito (review blocco 2) → blockedRatio 1 ma campione insufficiente', () => {
+        const ctx = evaluateAdaptiveBudgetContext({ SKIPPED: 20 }, 'NORMAL', { invitedTotal: 0 });
+        expect(ctx.blockedRatio).toBe(1);
+        expect(ctx.blockedSampleSufficient).toBe(false);
+    });
+
+    it('10 INVITED + 10 BLOCKED con 20 invitati reali → campione sufficiente', () => {
         const ctx = evaluateAdaptiveBudgetContext({ INVITED: 10, BLOCKED: 10 }, 'NORMAL', { invitedTotal: 20 });
         expect(ctx.blockedSampleSufficient).toBe(true);
         expect(ctx.reasons).toContain('list_blocked_warn');
+    });
+
+    it('19 invitati reali → campione insufficiente anche con molti bloccati', () => {
+        const ctx = evaluateAdaptiveBudgetContext({ INVITED: 9, BLOCKED: 30 }, 'NORMAL', { invitedTotal: 19 });
+        expect(ctx.blockedSampleSufficient).toBe(false);
     });
 });
 
 describe('C4 — query reale accanto a getLeadStatusCountsForLists', () => {
     const LIST = '__c4_pending_sample__';
 
-    it('conta invited_at IS NOT NULL per lista: INVITED + BLOCKED-con-invited_at = 2, NEW escluso, lista vuota assente', async () => {
+    const LIST_B = '__c4_pending_sample_b__';
+    const LIST_OUT = '__c4_pending_sample_fuori__';
+
+    it('conta invited_at IS NOT NULL PER lista (GROUP BY + IN): 2 e 3 invitati, NEW escluso, lista fuori filtro assente', async () => {
         const db = await getDatabase();
         const stamp = Date.now();
-        await db.run(`DELETE FROM leads WHERE list_name = ?`, [LIST]);
+        const insert = (list: string, status: string, invited: boolean, tag: string) =>
+            db.run(
+                `INSERT INTO leads (linkedin_url, status, list_name, invited_at) VALUES (?, ?, ?, ${invited ? 'CURRENT_TIMESTAMP' : 'NULL'})`,
+                [`https://www.linkedin.com/in/c4-${tag}-${stamp}`, status, list],
+            );
+        await db.run(`DELETE FROM leads WHERE list_name IN (?, ?, ?)`, [LIST, LIST_B, LIST_OUT]);
         try {
-            await db.run(
-                `INSERT INTO leads (linkedin_url, status, list_name, invited_at) VALUES (?, 'INVITED', ?, CURRENT_TIMESTAMP)`,
-                [`https://www.linkedin.com/in/c4-invited-${stamp}`, LIST],
-            );
-            await db.run(
-                `INSERT INTO leads (linkedin_url, status, list_name, invited_at) VALUES (?, 'BLOCKED', ?, CURRENT_TIMESTAMP)`,
-                [`https://www.linkedin.com/in/c4-blocked-${stamp}`, LIST],
-            );
-            await db.run(`INSERT INTO leads (linkedin_url, status, list_name) VALUES (?, 'NEW', ?)`, [
-                `https://www.linkedin.com/in/c4-new-${stamp}`,
-                LIST,
-            ]);
+            await insert(LIST, 'INVITED', true, 'a-invited');
+            await insert(LIST, 'BLOCKED', true, 'a-blocked');
+            await insert(LIST, 'NEW', false, 'a-new');
+            await insert(LIST_B, 'INVITED', true, 'b-1');
+            await insert(LIST_B, 'ACCEPTED', true, 'b-2');
+            await insert(LIST_B, 'INVITED', true, 'b-3');
+            await insert(LIST_OUT, 'INVITED', true, 'out-1');
 
-            const rows = await getLeadInvitedTotalsForLists([LIST, '__c4_lista_vuota__']);
-            const row = rows.find((candidate) => candidate.list_name === LIST);
-            expect(row?.invited_total).toBe(2);
+            const rows = await getLeadInvitedTotalsForLists([LIST, LIST_B, '__c4_lista_vuota__']);
+            expect(rows.find((candidate) => candidate.list_name === LIST)?.invited_total).toBe(2);
+            expect(rows.find((candidate) => candidate.list_name === LIST_B)?.invited_total).toBe(3);
+            expect(rows.find((candidate) => candidate.list_name === LIST_OUT)).toBeUndefined();
             expect(rows.find((candidate) => candidate.list_name === '__c4_lista_vuota__')).toBeUndefined();
             expect(await getLeadInvitedTotalsForLists([])).toEqual([]);
         } finally {
-            await db.run(`DELETE FROM leads WHERE list_name = ?`, [LIST]);
+            await db.run(`DELETE FROM leads WHERE list_name IN (?, ?, ?)`, [LIST, LIST_B, LIST_OUT]);
         }
     });
 });

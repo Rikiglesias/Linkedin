@@ -53,7 +53,8 @@ beforeAll(async () => {
     config.riskWarnThreshold = 30;
     config.riskStopThreshold = 60;
     config.lowActivityEnabled = false;
-    // Compliance deterministica: l'unica violazione possibile in questo test è PENDING_RATIO.
+    // Compliance: cap e limiti fissati sotto i massimi; `weeklyInvitesSent` viene dal DB di test (copia con 0 inviti
+    // storici, + al più le poche righe che i test paralleli inseriscono) → resta sotto il limite 50.
     config.complianceEnforced = true;
     config.complianceHealthPendingWarnThreshold = 0.55;
     config.complianceHealthScoreEnabled = false;
@@ -171,8 +172,19 @@ describe('C3 — daily report Telegram stampa ratio grezzo e invitati totali', (
         expect(ok).toBe(true);
         expect(mocks.sendTelegramAlert).toHaveBeenCalledTimes(1);
         const text = String(mocks.sendTelegramAlert.mock.calls[0]?.[0] ?? '');
-        expect(text).toContain('invitati totali');
-        expect(text).toMatch(/Pending Ratio: \*100\.0%\*/);
-        expect(text).toMatch(/1 invitati totali/);
+        expect(text).toMatch(/Pending Ratio: \*100\.0%\* \(1 invitato totale, campione < 20: non pesa\)/);
+    });
+
+    test('sopra campione: plurale e NESSUNA nota sul campione', async () => {
+        mocks.sendTelegramAlert.mockClear();
+        mocks.getRiskInputs.mockResolvedValue(inputs(1, N));
+        mocks.sendTelegramAlert.mockResolvedValue(true);
+
+        const ok = await generateAndSendDailyReport('2026-09-04');
+
+        expect(ok).toBe(true);
+        const text = String(mocks.sendTelegramAlert.mock.calls[0]?.[0] ?? '');
+        expect(text).toMatch(/Pending Ratio: \*100\.0%\* \(20 invitati totali\)/);
+        expect(text).not.toContain('non pesa');
     });
 });

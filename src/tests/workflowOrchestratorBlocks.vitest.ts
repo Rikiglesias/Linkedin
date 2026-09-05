@@ -98,6 +98,8 @@ vi.mock('../sync/eventSync', () => ({
 vi.mock('../core/scheduler', () => ({
     scheduleJobs: mocks.scheduleJobs,
     workflowToJobTypes: vi.fn(),
+    // Alert per-lista sopra campione (review blocco 2): qui nessuna lista da allertare.
+    selectWorstPendingList: vi.fn(() => undefined),
 }));
 
 vi.mock('../core/audit', () => ({
