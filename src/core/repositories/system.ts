@@ -384,6 +384,25 @@ export async function getRuntimeLock(lockKey: string): Promise<RuntimeLockRecord
     return row ?? null;
 }
 
+/**
+ * C17: i lock dei runner hanno un namespace per account (`workflow.runner:<accountId>`): chi osserva «c'è un runner
+ * vivo?» (health, diagnostica) deve guardare TUTTE le chiavi con quel prefisso. `prefix` entra in un LIKE letterale
+ * (i prefissi usati non contengono `%`/`_`); ordine = heartbeat più recente per primo.
+ */
+export async function listRuntimeLocksByPrefix(
+    prefix: string,
+    options: { activeOnly?: boolean } = {},
+): Promise<RuntimeLockRecord[]> {
+    const db = await getDatabase();
+    const activeClause = options.activeOnly ? " AND expires_at > DATETIME('now')" : '';
+    return db.query<RuntimeLockRecord>(
+        `SELECT ${RUNTIME_LOCK_SELECT_COLUMNS} FROM runtime_locks
+         WHERE lock_key LIKE ?${activeClause}
+         ORDER BY heartbeat_at DESC`,
+        [`${prefix}%`],
+    );
+}
+
 export async function acquireRuntimeLock(
     lockKey: string,
     ownerId: string,

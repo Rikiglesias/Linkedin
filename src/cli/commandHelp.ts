@@ -122,10 +122,16 @@ const COMMAND_HELP: Record<string, CommandHelp> = {
         examples: ['bot test-connection', 'bot test-connection --account main --no-proxy'],
     },
     doctor: {
-        usage: 'doctor',
-        description: 'Diagnostica completa: DB, sessione, proxy, compliance, selettori.',
-        options: [],
-        examples: ['bot doctor'],
+        usage: 'doctor [--no-browser]',
+        description: 'Diagnostica completa: DB, sessione, proxy, compliance, selettori. Stdout = solo JSON.',
+        options: [
+            {
+                flag: '--no-browser',
+                description:
+                    'Salta il check di login via browser (nessuna sessione aperta su LinkedIn); gli altri check restano',
+            },
+        ],
+        examples: ['bot doctor', 'bot doctor --no-browser'],
     },
     status: {
         usage: 'status',

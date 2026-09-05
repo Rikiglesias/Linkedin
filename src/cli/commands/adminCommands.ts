@@ -32,7 +32,6 @@ import {
     listSelectorFallbackAggregates,
     getQuarantineStatus,
     getRuntimeFlag,
-    getRuntimeLock,
     listLatestAccountHealthSnapshots,
     listCompanyTargets,
     listLeadCampaignConfigs,
@@ -66,8 +65,9 @@ import {
     getPositionalArgs,
 } from '../cliParser';
 import { askConfirmation } from '../stdinHelper';
+import { listWorkflowRunnerLocks, WORKFLOW_RUNNER_LOCK_PREFIX } from '../../core/workflowRunnerLock';
+import { writeJsonResult } from '../jsonStdout';
 
-const WORKFLOW_RUNNER_LOCK_KEY = 'workflow.runner';
 const AUTO_SITE_CHECK_LAST_RUN_KEY = 'site_check.last_run_at';
 const SALESNAV_LAST_SYNC_KEY = 'salesnav.last_sync_at';
 const DR_RESTORE_TEST_LAST_RUN_KEY = 'dr_restore_test_last_run_at';
@@ -161,7 +161,8 @@ export async function runStatusCommand(): Promise<void> {
         getJobStatusCounts(),
         getDailyStatsSnapshot(localDate),
         getEventSyncStatus(),
-        getRuntimeLock(WORKFLOW_RUNNER_LOCK_KEY),
+        // C17: il lock più recente fra i namespace per-account (`workflow.runner:<accountId>`).
+        listWorkflowRunnerLocks().then((locks) => locks[0] ?? null),
         getRuntimeFlag(AUTO_SITE_CHECK_LAST_RUN_KEY),
         getRuntimeFlag(SALESNAV_LAST_SYNC_KEY),
         getRuntimeFlag(DR_RESTORE_TEST_LAST_RUN_KEY),
@@ -272,7 +273,7 @@ export async function runStatusCommand(): Promise<void> {
             guardianPauseMinutes: config.aiGuardianPauseMinutes,
         },
     };
-    console.log(JSON.stringify(payload, null, 2));
+    writeJsonResult(payload);
 }
 
 export async function runDiagnosticsCommand(args: string[]): Promise<void> {
@@ -365,17 +366,19 @@ export async function runDiagnosticsCommand(args: string[]): Promise<void> {
     }
 
     if (includeSection('locks')) {
-        const [summary, metrics, runnerLock] = await Promise.all([
+        const [summary, metrics, runnerLocks] = await Promise.all([
             getLockContentionSummary(localDate),
             listLockMetricsByDate(localDate),
-            getRuntimeLock(WORKFLOW_RUNNER_LOCK_KEY),
+            listWorkflowRunnerLocks(),
         ]);
         payload.locks = {
             summary,
             metrics: metrics.slice(0, lockMetricsLimit),
             metricsTotal: metrics.length,
-            runnerLockKey: WORKFLOW_RUNNER_LOCK_KEY,
-            runnerLock,
+            // C17: un namespace per account (`workflow.runner:<accountId>`); `runnerLock` = il più recente.
+            runnerLockKey: WORKFLOW_RUNNER_LOCK_PREFIX,
+            runnerLock: runnerLocks[0] ?? null,
+            runnerLocks,
         };
     }
 
@@ -429,7 +432,7 @@ export async function runDiagnosticsCommand(args: string[]): Promise<void> {
         payload.alerts = observability.alerts;
     }
 
-    console.log(JSON.stringify(payload, null, 2));
+    writeJsonResult(payload);
 }
 
 export async function runPauseCommand(args: string[]): Promise<void> {
@@ -1168,7 +1171,7 @@ export async function runConfigValidateCommand(): Promise<void> {
         },
     };
 
-    console.log(JSON.stringify(report, null, 2));
+    writeJsonResult(report);
 
     if (!report.valid) {
         process.exitCode = 1;

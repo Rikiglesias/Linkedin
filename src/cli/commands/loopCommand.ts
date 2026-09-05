@@ -63,12 +63,15 @@ import { sendTelegramAlert } from '../../telemetry/alerts';
 import { LoopSubTask, LoopCycleContext, runLoopCycle } from '../../core/loopOrchestrator';
 import { onConfigReload, startConfigWatcher, stopConfigWatcher } from '../../config/hotReload';
 import { dispatchAutomationCommand } from '../../automation/dispatcher';
+import { currentWorkflowRunnerLockKey } from '../../core/workflowRunnerLock';
 
 // ─── Costanti lock ────────────────────────────────────────────────────────────
 
-let _workflowRunnerLockKey = 'workflow.runner';
+// C17: un solo namespace per account — `workflow.runner:<accountId>` (`default` incluso). La chiave la risolve
+// `runLoopCommand` DOPO l'eventuale `--account`; finché non è risolta si ricade sull'account runtime.
+let _workflowRunnerLockKey: string | null = null;
 function getWorkflowRunnerLockKey(): string {
-    return _workflowRunnerLockKey;
+    return _workflowRunnerLockKey ?? currentWorkflowRunnerLockKey();
 }
 const WORKFLOW_RUNNER_MIN_TTL_SECONDS = 120;
 const WORKFLOW_RUNNER_HEARTBEAT_MS = 30_000;
@@ -817,8 +820,8 @@ function buildLoopSubTasks(buildCtx: LoopSubTaskBuildContext): LoopSubTask[] {
 // ─── Command handlers ─────────────────────────────────────────────────────────
 
 export async function runLoopCommand(args: string[]): Promise<void> {
-    // Reset lock key al valore default per evitare stato residuo da chiamate precedenti
-    _workflowRunnerLockKey = 'workflow.runner';
+    // Reset della chiave del lock: niente stato residuo da chiamate precedenti (si risolve più sotto).
+    _workflowRunnerLockKey = null;
 
     const workflow = parseWorkflow(getWorkflowValue(args));
     const positional = getPositionalArgs(args);
@@ -835,11 +838,13 @@ export async function runLoopCommand(args: string[]): Promise<void> {
     let isLeader = true;
     if (accountOverride) {
         setOverrideAccountId(accountOverride);
-        _workflowRunnerLockKey = `workflow.runner:${accountOverride}`;
         const defaultProfileId = config.accountProfiles[0]?.id || 'default';
         isLeader = accountOverride === defaultProfileId;
         console.log(`[LOOP] Account override: ${accountOverride} (Leader: ${isLeader})`);
     }
+    // C17: senza flag e con `--account <stesso id>` la chiave è la STESSA → due runner sullo stesso account
+    // si vedono (il secondo ha `acquired:false`).
+    _workflowRunnerLockKey = currentWorkflowRunnerLockKey(accountOverride || null);
 
     let intervalMs = config.workflowLoopIntervalMs;
     if (intervalMsRaw) {

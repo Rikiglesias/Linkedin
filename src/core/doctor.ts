@@ -295,7 +295,8 @@ export interface RunDoctorOptions {
      * jobRunner verifica gia il login all'apertura della sessione di lavoro, jobRunner.ts:199, e
      * mette in quarantena se manca -> i cicli successivi sono bloccati a costo zero dal flag
      * quarantine). I check economici (DB/quarantine/sync/compliance/isolation) restano attivi.
-     * I comandi one-shot (preflight, comando `doctor`) NON passano questo flag -> check completo.
+     * Il preflight obbligatorio NON passa questo flag -> check completo; il comando `doctor` lo passa
+     * SOLO con `--no-browser` (C15, `cli/commands/doctorCommand.ts`), altrimenti check completo.
      */
     skipBrowserSessionCheck?: boolean;
 }

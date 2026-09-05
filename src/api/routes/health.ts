@@ -3,6 +3,7 @@ import { getDatabase } from '../../db';
 import { config } from '../../config';
 import { getAutomationPauseState, countPendingOutboxEvents } from '../../core/repositories';
 import { checkCloudConnectivity } from '../../cloud/supabaseDataClient';
+import { listWorkflowRunnerLocks } from '../../core/workflowRunnerLock';
 
 export const healthRouter = Router();
 
@@ -61,15 +62,9 @@ healthRouter.get('/deep', async (_req, res) => {
         allOk = false;
     }
 
-    // 5. Daemon liveness (runtime_locks)
+    // 5. Daemon liveness (runtime_locks) — C17: un namespace per account, si osservano tutti (`workflow.runner%`).
     try {
-        const db = await getDatabase();
-        const lock = await db.get<{ owner_id: string; heartbeat_at: string }>(
-            `SELECT owner_id, heartbeat_at FROM runtime_locks
-             WHERE lock_key = 'workflow.runner'
-               AND expires_at > DATETIME('now')
-             LIMIT 1`,
-        );
+        const [lock] = await listWorkflowRunnerLocks({ activeOnly: true });
         checks.daemon = {
             ok: !!lock,
             detail: lock

@@ -8,6 +8,12 @@ process.on('uncaughtException', (error) => {
     void performGracefulShutdown('Uncaught Exception').catch(() => process.exit(1));
 });
 
+// C15: per i comandi che rispondono con un JSON (`doctor`, `kpi`, `sync-status`, `config-validate`, `incidents`)
+// lo stdout resta SOLO il risultato: il rumore di bootstrap (dotenv, config, logger INFO) va su stderr.
+// Deve stare PRIMA di ogni import che carichi config/dotenv (l'ordine degli import qui è significativo).
+import { installJsonStdoutGuard, writeJsonResult } from './cli/jsonStdout';
+installJsonStdoutGuard();
+
 import { initSentry, flushSentry } from './telemetry/sentry';
 initSentry();
 
@@ -30,6 +36,7 @@ import { hasOption, parseWorkflow, getWorkflowValue } from './cli/cliParser';
 import { runLoopCommand, runAutopilotCommand, runWorkflowCommand } from './cli/commands/loopCommand';
 import { runReplCommand } from './cli/commands/replCommand';
 import { runLeadApproveCommand } from './cli/commands/leadApproveCommand';
+import { runDoctorCommand } from './cli/commands/doctorCommand';
 import {
     runLoginCommand,
     runImportCommand,
@@ -585,11 +592,10 @@ async function main(): Promise<void> {
         case 'create-profile':
             await runCreateProfileCommand(commandArgs);
             break;
-        case 'doctor': {
-            const report = await runDoctor();
-            console.log(JSON.stringify(report, null, 2));
+        case 'doctor':
+            // C15: `doctor [--no-browser]` — il comando decide se aprire il browser; stdout = solo JSON.
+            await runDoctorCommand(commandArgs);
             break;
-        }
         case 'funnel':
             await runFunnelCommand();
             break;
@@ -658,7 +664,7 @@ async function main(): Promise<void> {
         }
         case 'kpi': {
             const kpi = await getGlobalKPIData();
-            console.log(JSON.stringify(kpi, null, 2));
+            writeJsonResult(kpi);
             break;
         }
         case 'proxy-status':
@@ -687,7 +693,7 @@ async function main(): Promise<void> {
                 break;
             }
             const incidents = await listOpenIncidents();
-            console.log(JSON.stringify(incidents, null, 2));
+            writeJsonResult(incidents);
             break;
         }
         case 'incident-resolve':
@@ -716,7 +722,7 @@ async function main(): Promise<void> {
             break;
         case 'sync-status': {
             const status = await getEventSyncStatus();
-            console.log(JSON.stringify(status, null, 2));
+            writeJsonResult(status);
             break;
         }
         case 'sync-run-once':
