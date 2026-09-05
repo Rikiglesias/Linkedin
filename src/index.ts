@@ -29,6 +29,7 @@ import { startServer } from './api/server';
 import { hasOption, parseWorkflow, getWorkflowValue } from './cli/cliParser';
 import { runLoopCommand, runAutopilotCommand, runWorkflowCommand } from './cli/commands/loopCommand';
 import { runReplCommand } from './cli/commands/replCommand';
+import { runLeadApproveCommand } from './cli/commands/leadApproveCommand';
 import {
     runLoginCommand,
     runImportCommand,
@@ -238,6 +239,7 @@ function printHelp(): void {
     console.log('  privacy-cleanup [days]');
     console.log('  lists');
     console.log('  review-queue [--limit <n>]');
+    console.log('  lead-approve <id> [--reason <testo>] [--min-score <n>]   (approva a mano NEW → READY_INVITE: primo invito)');
     console.log('  company-targets [list] [limit]');
     console.log('  list-config <nome_lista> [priority] [inviteCap|none] [messageCap|none] [active]');
     console.log('    (oppure con opzioni: --list, --priority, --invite-cap, --message-cap, --active)');
@@ -696,6 +698,9 @@ async function main(): Promise<void> {
             break;
         case 'lists':
             await runListsCommand();
+            break;
+        case 'lead-approve':
+            await runLeadApproveCommand(commandArgs);
             break;
         case 'review-queue':
             await runReviewQueueCommand(commandArgs);

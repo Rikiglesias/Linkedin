@@ -739,7 +739,9 @@ export async function scheduleJobs(
         return getTimingDecisionForLead(action, jobTitle);
     }
 
-    if (!dryRun && riskSnapshot.action !== 'STOP') {
+    // C8 (bot-operativo): promozione bulk NEW→READY_INVITE solo con AUTO_PROMOTE_NEW_LEADS_ENABLED (default OFF):
+    // il primo invito parte da un lead approvato a mano (`lead-approve <id>`), non da 100 NEW promossi alla cieca.
+    if (!dryRun && riskSnapshot.action !== 'STOP' && config.autoPromoteNewLeadsEnabled) {
         try {
             await promoteNewLeadsToReadyInvite(config.hardInviteCap * 4);
         } catch (e) {
@@ -793,7 +795,15 @@ export async function scheduleJobs(
                     listBudget,
                     options.minScore,
                 );
-                const newCandidates = await getLeadsByStatusForList('NEW', listName, listBudget);
+                // C8, parità dry-run/run reale: i NEW contano solo se il run reale li promuoverebbe, e con lo
+                // stesso tetto della promozione (hardInviteCap * 4); flag OFF → il dry-run vede solo i READY_INVITE.
+                const newCandidates = config.autoPromoteNewLeadsEnabled
+                    ? await getLeadsByStatusForList(
+                          'NEW',
+                          listName,
+                          Math.min(listBudget, config.hardInviteCap * 4),
+                      )
+                    : [];
                 const orderedCandidates = [...readyCandidates, ...newCandidates];
                 const seenLeadIds = new Set<number>();
                 let planned = 0;

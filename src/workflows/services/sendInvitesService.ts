@@ -1,5 +1,10 @@
 import { config, getLocalDateString } from '../../config';
 import { getDatabase } from '../../db';
+import {
+    countEligibleInviteCandidates,
+    findFirstEligibleNewLeadId,
+    previewEligibleInviteCandidates,
+} from '../../core/leadInviteEligibility';
 import { runWorkflow } from '../../core/orchestrator';
 import { computeListPerformanceMultiplier, getDailyStat, getListDailyStatsBatch } from '../../core/repositories';
 import { enrichLeadsParallel } from '../../integrations/parallelEnricher';
@@ -16,6 +21,7 @@ import type {
 } from '../types';
 import { appendProxyReputationWarning } from '../preflight/configInspector';
 import { broadcastWarning } from '../../telemetry/broadcaster';
+import { buildLeadApproveNextAction, buildZeroReadyInviteWarning, type LeadApproveHint } from './leadApproveHint';
 import {
     buildBlockedResult,
     buildPreflightBlockedResult,
@@ -64,6 +70,7 @@ function generateWarnings(
     stats: PreflightDbStats,
     cfgStatus: PreflightConfigStatus,
     answers: Record<string, string>,
+    approveHint: Pick<LeadApproveHint, 'firstEligibleNewLeadId' | 'listName'>,
 ): PreflightWarning[] {
     const warnings: PreflightWarning[] = [];
 
@@ -71,10 +78,8 @@ function generateWarnings(
 
     const readyInvite = stats.byStatus['READY_INVITE'] ?? 0;
     if (readyInvite === 0) {
-        warnings.push({
-            level: 'critical',
-            message: 'Nessun lead READY_INVITE — esegui prima sync-list con enrichment',
-        });
+        // C10: con la promozione automatica spenta (C8) il passo giusto è `lead-approve <id>`, non l'enrichment.
+        warnings.push(buildZeroReadyInviteWarning({ ...approveHint, newCount: stats.byStatus['NEW'] ?? 0 }));
     }
 
     const remaining = cfgStatus.budgetInvites - cfgStatus.invitesSentToday;
@@ -182,6 +187,15 @@ export async function executeSendInvitesWorkflow(
     const localDate = getLocalDateString();
     const invitesBefore = await getDailyStat(localDate, 'invites_sent').catch(() => 0);
 
+    // C10: se non c'è nulla in coda, il preflight suggerisce il `lead-approve <id>` ESATTO, con l'id scelto dalla
+    // stessa eleggibilità dello scheduler (C9). Best-effort: un errore qui non deve fermare il preflight.
+    const approveHint = {
+        firstEligibleNewLeadId: await findFirstEligibleNewLeadId(request.listName ?? null, request.minScore ?? 0).catch(
+            () => null,
+        ),
+        listName: request.listName ?? null,
+    };
+
     const preflight = await runPreflight<SendInvitesPreflightAnswers>({
         workflowName: 'send-invites',
         questions: [
@@ -214,7 +228,7 @@ export async function executeSendInvitesWorkflow(
             },
         ],
         listFilter: request.listName,
-        generateWarnings,
+        generateWarnings: (stats, cfgStatus, answers) => generateWarnings(stats, cfgStatus, answers, approveHint),
         skipPreflight: request.skipPreflight,
         cliOverrides: buildCliOverrides(request),
         cliAccountId: request.accountId,
@@ -254,38 +268,14 @@ export async function executeSendInvitesWorkflow(
 
     const scoreStats = await getScoreStats(listFilter, minScore);
     const db = await getDatabase();
-    const params: unknown[] = [];
-    let countQuery = `SELECT COUNT(*) as cnt FROM leads WHERE status = 'READY_INVITE'`;
-    if (listFilter) {
-        countQuery += ` AND list_name = ?`;
-        params.push(listFilter);
-    }
-    if (minScore > 0) {
-        countQuery += ` AND lead_score >= ?`;
-        params.push(minScore);
-    }
-    const row = await db.get<{ cnt: number }>(countQuery, params);
-    const candidateCount = row?.cnt ?? 0;
+    // C9: stessa eleggibilità dello scheduler (lista attiva, GDPR, campagna attiva, score): il preflight promette
+    // solo i candidati che verranno accodati davvero, non tutti i READY_INVITE.
+    const candidateQuery = { listName: listFilter, minScore };
+    const candidateCount = await countEligibleInviteCandidates(candidateQuery);
 
     let previewLeads: WorkflowPreviewLead[] = [];
     if (candidateCount > 0) {
-        const previewParams: unknown[] = [];
-        let previewQuery = `SELECT first_name, last_name, job_title, lead_score FROM leads WHERE status = 'READY_INVITE'`;
-        if (listFilter) {
-            previewQuery += ` AND list_name = ?`;
-            previewParams.push(listFilter);
-        }
-        if (minScore > 0) {
-            previewQuery += ` AND lead_score >= ?`;
-            previewParams.push(minScore);
-        }
-        previewQuery += ` ORDER BY lead_score DESC NULLS LAST LIMIT 5`;
-        const rows = await db.query<{
-            first_name: string;
-            last_name: string;
-            job_title: string | null;
-            lead_score: number | null;
-        }>(previewQuery, previewParams);
+        const rows = await previewEligibleInviteCandidates(candidateQuery, 5);
         previewLeads = rows.map((lead) => ({
             label: `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim() || 'N/A',
             secondary: lead.job_title || 'N/A',
@@ -332,10 +322,12 @@ export async function executeSendInvitesWorkflow(
                     candidateCount,
                     extra: { totalInDb, newCount, scoreStats },
                 }),
-                nextAction:
-                    newCount > 0
-                        ? 'Esegui enrichment dei lead NEW prima di inviare inviti.'
-                        : 'Sincronizza o arricchisci una lista prima di lanciare send-invites.',
+                // C10: la stessa mossa del warning, ricalcolata sulla lista scelta nel preflight.
+                nextAction: buildLeadApproveNextAction({
+                    firstEligibleNewLeadId: await findFirstEligibleNewLeadId(listFilter, minScore).catch(() => null),
+                    newCount,
+                    listName: listFilter,
+                }),
             },
         );
     }

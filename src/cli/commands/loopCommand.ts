@@ -262,7 +262,7 @@ const RIPRESA_RIFIUTATA: Record<string, string> = {
     SYSTEM_PAUSE:
         "l'ha imposto l'incident manager. Risolvi la causa, poi riprendi dalla dashboard (conferma esplicita) o dalla CLI.",
     QUARANTINE:
-        "c'e' una quarantena account attiva. Toglila dalla dashboard, oppure da terminale con `npm run cli -- unquarantine`: da Telegram non esiste un comando per farlo.",
+        "c'e' una quarantena account attiva. Toglila dalla dashboard, oppure da terminale con `.\\bot.ps1 unquarantine`: da Telegram non esiste un comando per farlo.",
     CHALLENGE_PENDING:
         "c'e' un challenge LinkedIn in attesa di revisione umana. Risolvilo prima di far ripartire il bot.",
 };

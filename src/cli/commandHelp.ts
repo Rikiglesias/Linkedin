@@ -67,6 +67,20 @@ const COMMAND_HELP: Record<string, CommandHelp> = {
         ],
         examples: ['bot import --file leads.csv --list "Tech Companies"'],
     },
+    'lead-approve': {
+        usage: 'lead-approve <id> [--reason <testo>] [--min-score <n>]',
+        description:
+            'Approva a mano un lead NEW → READY_INVITE (verifica → transizione → ricontrollo, evento manual_approval). È il passo del primo invito con AUTO_PROMOTE_NEW_LEADS_ENABLED=false.',
+        options: [
+            { flag: '--reason <testo>', description: "Motivo registrato nei metadati dell'evento manual_approval" },
+            {
+                flag: '--min-score <n>',
+                description: 'Score minimo richiesto: lead senza score o sotto soglia = non eleggibile',
+                default: '0 (nessun filtro)',
+            },
+        ],
+        examples: ['bot lead-approve 42', 'bot lead-approve 42 --reason "primo invito"'],
+    },
     login: {
         usage: 'login [timeoutSec] [--account <id>]',
         description: 'Apre il browser per login manuale su LinkedIn.',

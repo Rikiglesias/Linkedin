@@ -49,7 +49,7 @@ export function buildProxyLaunchPlan(params: {
         throw new Error(
             'AB-24: proxy gestito configurato ma nessun proxy disponibile (failover chain vuota) — ' +
                 "avvio annullato per non esporre l'IP diretto a LinkedIn. " +
-                'Verifica i proxy (npm run proxy:doctor) o usa bypassProxy/--allow-direct per una ' +
+                'Verifica i proxy (bot.ps1 proxy-status) o usa bypassProxy/--allow-direct per una ' +
                 'connessione diretta intenzionale.',
         );
     }

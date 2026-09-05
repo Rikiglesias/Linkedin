@@ -36,6 +36,19 @@ import { mergedLeadValue, normalizeLegacyStatus, normalizeTextValue, withTransac
  * (`getLeadsByStatusForSiteCheck`) non tocca la persona.
  */
 export const GDPR_NO_CONTACT_CLAUSE = 'AND (gdpr_opt_out IS NULL OR gdpr_opt_out != 1)';
+/**
+ * Un lead già dentro una campagna attiva del control plane (ENROLLED/PENDING) non riceve inviti dallo scheduler.
+ * Clausola UNICA: la usano la selezione dei candidati (`getLeadsByStatusForList`), l'eleggibilità di
+ * `lead-approve` e il conteggio del preflight di send-invites (contratto bot-operativo C9).
+ */
+export const INVITE_NO_ACTIVE_CAMPAIGN_CLAUSE = `AND NOT EXISTS (
+              SELECT 1
+              FROM lead_campaign_state lcs
+              JOIN campaigns c ON lcs.campaign_id = c.id
+              WHERE lcs.lead_id = leads.id
+                AND lcs.status IN ('ENROLLED', 'PENDING')
+                AND c.active = 1
+          )`;
 
 function normalizeLeadListRow(row: LeadListRow): LeadListCampaignConfig {
     return {
@@ -1131,14 +1144,7 @@ export async function getLeadsByStatusForList(
           ${GDPR_NO_CONTACT_CLAUSE}
           ${scoreClause}
           ${invitedAgeClause}
-          AND NOT EXISTS (
-              SELECT 1
-              FROM lead_campaign_state lcs
-              JOIN campaigns c ON lcs.campaign_id = c.id
-              WHERE lcs.lead_id = leads.id
-                AND lcs.status IN ('ENROLLED', 'PENDING')
-                AND c.active = 1
-          )
+          ${INVITE_NO_ACTIVE_CAMPAIGN_CLAUSE}
         ORDER BY
             COALESCE(lead_score, -1) DESC,
             created_at ASC

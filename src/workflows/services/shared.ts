@@ -84,9 +84,13 @@ export function buildPreflightBlockedResult<TAnswers extends object>(
         };
     }
 
+    // Nel path non interattivo (scheduler/PM2) i warning non vengono stampati: la «Prossima azione» del report porta
+    // il testo dei warning critici, che dicono COSA fare (es. il comando `lead-approve <id>` esatto, C10).
+    const criticalMessages = preflight.warnings.filter((warning) => warning.level === 'critical').map((w) => w.message);
     return buildBlockedResult(workflow, blocked, {
         riskAssessment: preflight.riskAssessment,
         artifacts: { preflight },
+        nextAction: criticalMessages.length > 0 ? criticalMessages.join(' | ') : undefined,
     });
 }
 

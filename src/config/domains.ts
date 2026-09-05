@@ -150,6 +150,10 @@ export function buildLimitsAndRiskDomainConfig() {
         // Stessa classe per errorRate/selectorFailureRate: sotto N tentativi (24h) non contribuiscono allo score
         // (1 tentativo fallito + 1 selector failure oggi = 60 punti = WARN). challengeCount NON è campionato.
         riskMinAttemptsSample: Math.max(1, parseIntEnv('RISK_MIN_ATTEMPTS_SAMPLE', 5)),
+        // Promozione automatica NEW→READY_INVITE nello scheduler (contratto bot-operativo C8): SPENTA di default.
+        // Con AUTO_PROMOTE_NEW_LEADS_ENABLED=false il primo invito passa da `lead-approve <id>` (scelta esplicita
+        // dell'operatore) e il dry-run resta in parità col run reale (non conta i NEW). Unico default cambiato in F1.
+        autoPromoteNewLeadsEnabled: parseBoolEnv('AUTO_PROMOTE_NEW_LEADS_ENABLED', false),
         adaptiveCapsEnabled: parseBoolEnv('ADAPTIVE_CAPS_ENABLED', true),
         // Soglie DISTINTE da pendingRatioStop/Warn (sopra). Questi cap adattivi agiscono sul pending ratio
         // PER-LISTA (scheduler.evaluateAdaptiveBudgetContext, su statusCounts della singola lista), NON sul

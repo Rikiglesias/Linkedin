@@ -100,6 +100,7 @@ export interface AppConfig {
     pendingRatioStop: number;
     pendingRatioMinInvited: number;
     riskMinAttemptsSample: number;
+    autoPromoteNewLeadsEnabled: boolean;
     adaptiveCapsEnabled: boolean;
     adaptiveCapsPendingWarn: number;
     adaptiveCapsPendingStop: number;
