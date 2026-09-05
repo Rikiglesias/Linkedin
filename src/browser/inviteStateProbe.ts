@@ -9,12 +9,16 @@
  *    un «Pending» riguarda davvero questo lead;
  *  - `systemNoticeContainer` = modale, dialog, toast, alert di LinkedIn: è l'unico posto in cui il limite settimanale
  *    o «Invitation sent» sono avvisi di sistema e non testo di un utente.
- * Nessun contenitore risolto → false (fail-closed: nessuna prova, nessun limite). Solo letture DOM: zero click,
- * zero navigazione, zero attese. Provato su browser vero in `tests/harnessInviteProofAnchored.ts`.
+ * Nessun contenitore risolto → false (fail-closed: nessuna prova, nessun limite). Un errore Playwright (pagina chiusa,
+ * frame staccato, navigazione in corso) NON è silenzioso: log `invite_probe.dom_error` con il passo fallito, poi lo
+ * stesso valore neutro — il chiamante decide come prima, ma l'evento resta visibile (regola anti-ban 9, L5-LI.4).
+ * Solo letture DOM: zero click, zero navigazione, zero attese. Provato su browser vero in
+ * `tests/harnessInviteProofAnchored.ts`.
  */
 import type { Locator, Page } from 'playwright';
 
 import { joinSelectors } from '../selectors';
+import { logWarn } from '../telemetry/logger';
 
 /** Estensione Playwright (`:text-matches`), valutata SOLO sui bottoni del contenitore delle azioni. */
 const PENDING_BUTTON_TEXT = 'button:text-matches("pending|in attesa", "i")';
@@ -23,14 +27,26 @@ const WEEKLY_LIMIT_TEXT = /weekly invitation limit|limite settimanale(?: degli)?
 
 type ContainerKey = 'profileActionsContainer' | 'systemNoticeContainer';
 
+/**
+ * Gestore degli errori DOM: logga (fire-and-forget, senza aggiungere attese alla sonda) e ritorna il valore neutro.
+ * `step` dice QUALE lettura è fallita, così un errore ricorrente si diagnostica dal log e non dal silenzio.
+ */
+function onDomError<T>(step: string, neutral: T): (error: unknown) => T {
+    return (error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        logWarn('invite_probe.dom_error', { step, error: message }).catch(() => undefined);
+        return neutral;
+    };
+}
+
 async function resolveContainers(page: Page, key: ContainerKey): Promise<Locator[]> {
     const all = page.locator(joinSelectors(key));
-    const total = await all.count().catch(() => 0);
+    const total = await all.count().catch(onDomError(`resolve:${key}`, 0));
     return Array.from({ length: total }, (_, index) => all.nth(index));
 }
 
 async function countIn(container: Locator, selector: string): Promise<number> {
-    return container.locator(selector).count().catch(() => 0);
+    return container.locator(selector).count().catch(onDomError(`count:${selector}`, 0));
 }
 
 /** Il profilo TARGET ha già un invito in attesa (bottone Pending / In attesa nelle sue azioni). */
@@ -45,7 +61,7 @@ export async function hasPendingInviteIndicator(page: Page): Promise<boolean> {
 async function systemNoticeMatches(page: Page, selectorKey: 'inviteWeeklyLimitSignals' | null, pattern: RegExp): Promise<boolean> {
     for (const container of await resolveContainers(page, 'systemNoticeContainer')) {
         if (selectorKey && (await countIn(container, joinSelectors(selectorKey))) > 0) return true;
-        const text = await container.innerText().catch(() => '');
+        const text = await container.innerText().catch(onDomError('innerText:systemNoticeContainer', ''));
         if (pattern.test(text)) return true;
     }
     return false;
