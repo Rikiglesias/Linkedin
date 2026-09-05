@@ -17,11 +17,20 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 // a mobile e `acc-0` cambia riga del pool cloud fra il 4 e il 12 maggio 2026.
 
 const h = vi.hoisted(() => ({
-    config: { mobileProbability: 0.3, useJa3Proxy: false, timezone: 'Europe/Rome', ja3Fingerprint: '' },
+    config: {
+        mobileProbability: 0.3,
+        useJa3Proxy: false,
+        timezone: 'Europe/Rome',
+        ja3Fingerprint: '',
+        browserEngine: 'chromium',
+    },
 }));
 
 vi.mock('../config', () => ({ config: h.config }));
-vi.mock('../proxy/ja3Validator', () => ({ detectBrowserFamily: () => 'chromium' }));
+// Il pool sintetico è tutto Chrome e l'engine è chromium: la famiglia rilevata deve essere `chrome` (quella
+// reale). Prima il mock rispondeva `chromium`, una famiglia che non esiste: il test passava solo grazie al
+// fallback «nessuno coerente → pool intero», che C12 ha tolto (UA↔engine incoerente = spoofing rilevabile).
+vi.mock('../proxy/ja3Validator', () => ({ detectBrowserFamily: () => 'chrome' }));
 
 import { pickBrowserFingerprint, pickFingerprintMode } from '../browser/stealth';
 import type { CloudFingerprint } from '../browser/stealth';
