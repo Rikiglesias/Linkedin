@@ -41,13 +41,14 @@ export const GDPR_NO_CONTACT_CLAUSE = 'AND (gdpr_opt_out IS NULL OR gdpr_opt_out
  * Clausola UNICA: la usano la selezione dei candidati (`getLeadsByStatusForList`), l'eleggibilità di
  * `lead-approve` e il conteggio del preflight di send-invites (contratto bot-operativo C9).
  */
+/** Predicato «il lead è dentro una campagna attiva» (alias `lcs` = lead_campaign_state, `c` = campaigns): UNA sola copia. */
+export const ACTIVE_CAMPAIGN_STATE_PREDICATE = `lcs.status IN ('ENROLLED', 'PENDING') AND c.active = 1`;
 export const INVITE_NO_ACTIVE_CAMPAIGN_CLAUSE = `AND NOT EXISTS (
               SELECT 1
               FROM lead_campaign_state lcs
               JOIN campaigns c ON lcs.campaign_id = c.id
               WHERE lcs.lead_id = leads.id
-                AND lcs.status IN ('ENROLLED', 'PENDING')
-                AND c.active = 1
+                AND ${ACTIVE_CAMPAIGN_STATE_PREDICATE}
           )`;
 
 function normalizeLeadListRow(row: LeadListRow): LeadListCampaignConfig {

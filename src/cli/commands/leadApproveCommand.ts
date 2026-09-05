@@ -11,8 +11,10 @@ import { getOptionValue, getPositionalArgs, parseIntStrict } from '../cliParser'
 export const LEAD_APPROVE_USAGE = 'lead-approve <id> [--reason <testo>] [--min-score <n>]';
 
 export async function runLeadApproveCommand(args: string[]): Promise<void> {
-    // Il valore di --reason è un positional per il parser: l'id è il primo positional fatto solo di cifre.
-    const idRaw = getPositionalArgs(args).find((value) => /^\d+$/.test(value));
+    // Convenzione di tutti i comandi CLI: l'id è il PRIMO positional, e deve essere solo cifre (mai «il primo numero
+    // ovunque sia»: `lead-approve --reason 100 42` non deve scambiare 100 per l'id).
+    const first = getPositionalArgs(args)[0];
+    const idRaw = first !== undefined && /^\d+$/.test(first) ? first : undefined;
     if (!idRaw) {
         console.error(`[lead-approve] Manca l'id del lead. Uso: .\\bot.ps1 ${LEAD_APPROVE_USAGE}`);
         console.error('[lead-approve] Gli id si leggono con `.\\bot.ps1 funnel` oppure dalla dashboard.');

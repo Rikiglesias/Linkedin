@@ -15,7 +15,11 @@
 import { getDatabase } from '../db';
 import type { LeadRecord, LeadStatus } from '../types/domain';
 import { getLeadById } from './repositories';
-import { GDPR_NO_CONTACT_CLAUSE, INVITE_NO_ACTIVE_CAMPAIGN_CLAUSE } from './repositories/leadsCore';
+import {
+    ACTIVE_CAMPAIGN_STATE_PREDICATE,
+    GDPR_NO_CONTACT_CLAUSE,
+    INVITE_NO_ACTIVE_CAMPAIGN_CLAUSE,
+} from './repositories/leadsCore';
 
 export const INVITE_INELIGIBILITY_FILTERS = [
     'list_name_empty',
@@ -173,10 +177,11 @@ export async function evaluateLeadInviteEligibility(
         );
     }
 
+    // Stesso predicato della clausola NOT EXISTS usata da conteggio/anteprima/scheduler: qui serve il NOME della campagna.
     const campaign = await db.get<{ name: string }>(
         `SELECT c.name FROM lead_campaign_state lcs
          JOIN campaigns c ON lcs.campaign_id = c.id
-         WHERE lcs.lead_id = ? AND lcs.status IN ('ENROLLED', 'PENDING') AND c.active = 1
+         WHERE lcs.lead_id = ? AND ${ACTIVE_CAMPAIGN_STATE_PREDICATE}
          LIMIT 1`,
         [leadId],
     );
