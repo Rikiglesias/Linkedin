@@ -1,8 +1,13 @@
-import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { loadDotEnv } from '../config/env';
+
+/**
+ * `loadDotEnv` e' idempotente per processo (C28/C45, 2026-09-06) e `vitestSetup` l'ha gia' chiamata: ogni caso
+ * importa il modulo FRESCO (`vi.resetModules`) cosi' la guardia riparte da zero e il caricamento avviene davvero.
+ */
+let loadDotEnv: () => void;
 
 /**
  * Protegge la divisione segreti/configurazione introdotta il 2026-08-01:
@@ -22,7 +27,9 @@ const origEnv = { ...process.env };
 const origCwd = process.cwd();
 let tmpDir: string;
 
-beforeEach(() => {
+beforeEach(async () => {
+    vi.resetModules();
+    ({ loadDotEnv } = await import('../config/env'));
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'env-twofile-'));
     fs.mkdirSync(path.join(tmpDir, 'config'));
     // Le due chiavi non devono preesistere: dotenv non sovrascrive cio' che e' gia' in process.env,
