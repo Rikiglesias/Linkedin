@@ -461,6 +461,7 @@ export function buildVisionDomainConfig() {
         camoufoxGeoip: parseBoolEnv('CAMOUFOX_GEOIP', true),
         camoufoxHumanize: parseBoolEnv('CAMOUFOX_HUMANIZE', true),
         camoufoxBlockWebrtc: parseBoolEnv('CAMOUFOX_BLOCK_WEBRTC', true),
+        camoufoxBinaryVersion: parseStringEnv('CAMOUFOX_BINARY_VERSION'),
         warmupTwoSessionsPerDay: parseBoolEnv('WARMUP_TWO_SESSIONS_PER_DAY', false),
         weeklyStrategyEnabled: parseBoolEnv('WEEKLY_STRATEGY_ENABLED', true),
         growthModelEnabled: parseBoolEnv('GROWTH_MODEL_ENABLED', true),

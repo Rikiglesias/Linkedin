@@ -27,6 +27,7 @@ const JSON_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
     'kpi',
     'sync-status',
     'config-validate',
+    'camoufox-fetch',
     'incidents',
     'status',
     'diagnostics',

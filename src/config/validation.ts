@@ -480,6 +480,13 @@ const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
         when: (cfg) => cfg.browserEngine === 'camoufox' && cfg.useJa3Proxy,
         severity: 'warn',
     },
+    {
+        // C22: pin ESATTO del binario collaudato (es. 135.0.1-beta.24). Senza, il lancio non può verificare la cache.
+        message:
+            '[CONFIG] BROWSER_ENGINE=camoufox richiede CAMOUFOX_BINARY_VERSION (es. 135.0.1-beta.24) in config/bot-settings.conf — pin del binario collaudato (C22)',
+        when: (cfg) => cfg.browserEngine === 'camoufox' && !/^\d+(\.\d+)+-[A-Za-z0-9.]+$/.test(cfg.camoufoxBinaryVersion),
+        severity: 'error',
+    },
 ];
 
 export interface ConfigValidationResult {

@@ -662,6 +662,11 @@ async function main(): Promise<void> {
             await runPreflightEnvCommand();
             break;
         }
+        case 'camoufox-fetch': {
+            const { runCamoufoxFetchCommand } = await import('./cli/commands/camoufoxFetch');
+            await runCamoufoxFetchCommand(commandArgs);
+            break;
+        }
         case 'kpi': {
             const kpi = await getGlobalKPIData();
             writeJsonResult(kpi);

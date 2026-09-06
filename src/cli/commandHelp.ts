@@ -155,6 +155,13 @@ const COMMAND_HELP: Record<string, CommandHelp> = {
         options: [],
         examples: ['bot config-validate', 'bot config-validate | jq .summary'],
     },
+    'camoufox-fetch': {
+        usage: 'camoufox-fetch [--check]',
+        description:
+            'Installa il binario Camoufox alla versione ESATTA dichiarata in config/bot-settings.conf (CAMOUFOX_BINARY_VERSION), mai «latest». Con --check verifica soltanto e stampa un JSON.',
+        options: [{ flag: '--check', description: 'Verifica binario e addon senza scaricare (exit 1 se mancano o differiscono)' }],
+        examples: ['bot camoufox-fetch --check', 'bot camoufox-fetch'],
+    },
     pause: {
         usage: 'pause [minutes|indefinite] [reason]',
         description: "Mette in pausa l'automazione per N minuti.",

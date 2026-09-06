@@ -28,6 +28,7 @@ import {
     pickMobileFingerprint,
 } from './stealth';
 import { buildStealthInitScript } from './stealthScripts';
+import { assertCamoufoxRuntimePinned } from './camoufoxRuntime';
 import { HttpResponseThrottler } from '../risk/httpThrottler';
 import { DeviceProfile, registerPageDeviceProfile } from './deviceProfile';
 import { fetchWithRetryPolicy } from '../core/integrationPolicy';
@@ -436,6 +437,11 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                 // Camoufox: browser stealth basato su Firefox con fingerprint a livello C++.
                 // Usa Camoufox() con user_data_dir per sessioni persistenti (cookie/localStorage).
                 const { Camoufox } = await import('camoufox-js');
+
+                // C22: binario e addon di default DEVONO essere presenti e = pin PRIMA del lancio. camoufox-js
+                // risolve la cache a ogni launch con downloadIfMissing=true (pkgman.js:276-295) e scaricherebbe
+                // l'ULTIMA release, non la nostra → device che cambia sotto l'account. Fail-closed, mai download.
+                assertCamoufoxRuntimePinned({ pinned: config.camoufoxBinaryVersion });
 
                 // Snapshot PID Firefox pre-lancio per trovare il PID di Camoufox dopo.
                 // Camoufox non espone browser.process() → usiamo diff pre/post per il PID.

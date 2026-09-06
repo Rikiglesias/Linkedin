@@ -356,6 +356,8 @@ export interface AppConfig {
     camoufoxGeoip: boolean;
     camoufoxHumanize: boolean;
     camoufoxBlockWebrtc: boolean;
+    /** Pin ESATTO del binario Camoufox collaudato (C22), es. `135.0.1-beta.24`; dichiarato in `config/bot-settings.conf`. */
+    camoufoxBinaryVersion: string;
     warmupTwoSessionsPerDay: boolean;
     weeklyStrategyEnabled: boolean;
     growthModelEnabled: boolean;
