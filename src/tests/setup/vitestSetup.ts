@@ -1,6 +1,17 @@
 import { inject } from 'vitest';
 
+import { loadDotEnv } from '../../config/env';
 import { TEST_DB_KEY } from './testDatabase';
+
+/**
+ * C28/C45 — la suite non deve MAI vedere un backend remoto: `DATABASE_URL` farebbe scegliere Postgres a
+ * `db.ts` e `SUPABASE_URL` accenderebbe i client cloud. I file `.env`/`bot-settings.conf` si caricano QUI
+ * (una volta per processo: `loadDotEnv` è idempotente) e le due chiavi si cancellano DOPO, così nessun
+ * import successivo di `src/config` può rimetterle.
+ */
+loadDotEnv();
+delete process.env.DATABASE_URL;
+delete process.env.SUPABASE_URL;
 
 /**
  * Dirotta la suite sulla copia del database preparata da `globalSetup`.

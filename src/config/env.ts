@@ -40,7 +40,14 @@ export function resolveSecret(key: string, fallback: string = ''): string {
  * `.env` va per primo affinche' il file dell'utente abbia sempre l'ultima parola su una chiave
  * definita in entrambi. Entrambi i file sono opzionali: se mancano, valgono i default del codice.
  */
+let dotEnvLoaded = false;
+
 export function loadDotEnv(): void {
+    // Idempotente per processo (C28/C45): dotenv non sovrascrive le chiavi presenti ma RI-AGGIUNGE quelle
+    // assenti, quindi un secondo caricamento annullerebbe una cancellazione voluta (es. la suite che toglie
+    // DATABASE_URL/SUPABASE_URL per restare su SQLite locale). Il primo chiamante carica, gli altri no.
+    if (dotEnvLoaded) return;
+    dotEnvLoaded = true;
     const envPath = path.resolve(process.cwd(), '.env');
     if (fs.existsSync(envPath)) {
         dotenv.config({ path: envPath });

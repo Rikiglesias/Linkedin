@@ -12,11 +12,13 @@
  *  4. lo stesso testo in un post del feed → false (prima: `div:has-text(...)` sulla pagina intera → true);
  *  5. caso C14: contenitore con Pending → l'helper risponde true PRIMA di ogni click (nessun Connect da premere).
  *
- * Uso:  npx ts-node src/tests/harnessInviteProofAnchored.ts
- * Exit: 0 = tutti i contratti rispettati, 1 = almeno uno rotto (stampa quale).
+ * Uso:  npm run harness:invite-proof   (= npx ts-node src/tests/harnessInviteProofAnchored.ts)
+ * Exit: 0 = tutti i contratti rispettati, 1 = almeno uno rotto (stampa quale), 2 = sonda rotta (vedi harnessRuntime).
  */
 
-import { chromium, type Page } from 'playwright';
+// Il runtime va importato per PRIMO: isola env/sessionDir/DB prima che `src/config` venga caricato (C28).
+import { runHarness, type HarnessRun } from './harnessRuntime';
+import type { Page } from 'playwright';
 
 import { hasInviteSentNotice, hasPendingInviteIndicator, hasWeeklyInviteLimitNotice } from '../browser/inviteStateProbe';
 import { joinSelectors } from '../selectors';
@@ -79,16 +81,19 @@ const INVITATION_SENT_TOAST_HTML = `${HEAD}
 <main><section class="pv-top-card"><h1>Mario Rossi</h1><div class="pv-top-card-v2-ctas"><button>Connect</button></div></section></main>
 <div class="artdeco-toast-item"><p class="artdeco-toast-item__message">Invitation sent</p></div>`;
 
+/** Fixture servite dal server locale del runtime (mai `setContent`: le richieste locali vanno contate). */
+let serve: HarnessRun['serve'];
+
 async function contract(page: Page, name: string, html: string, run: (p: Page) => Promise<unknown>, expected: unknown): Promise<Contract> {
-    await page.setContent(html);
+    await page.goto(serve(html));
     const got = await run(page);
     return { name, got, expected: String(expected), ok: got === expected };
 }
 
 async function main(): Promise<void> {
-    const browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage();
-    try {
+    await runHarness('invite-proof', 'chromium', async (run) => {
+        serve = run.serve;
+        const { page } = run;
         const contracts: Contract[] = [];
         contracts.push(
             await contract(page, '1. Pending DENTRO il contenitore delle azioni → prova positiva', PROFILE_PENDING_HTML, hasPendingInviteIndicator, true),
@@ -136,10 +141,8 @@ async function main(): Promise<void> {
             console.log(`       misurato: ${String(c.got)}\n`);
         }
         console.log(broken === 0 ? 'Tutti i contratti rispettati.' : `${broken} contratti ROTTI.`);
-        process.exitCode = broken === 0 ? 0 : 1;
-    } finally {
-        await browser.close();
-    }
+        return broken;
+    });
 }
 
 void main();

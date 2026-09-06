@@ -9,12 +9,17 @@
  * Qui non si mocka niente: si costruisce il DOM come LinkedIn lo espone e si chiede al browser
  * cosa succede davvero. Nessuna richiesta di rete, nessun contatto con LinkedIn.
  *
- * Uso:  npx ts-node src/tests/harnessDomContracts.ts
- * Exit: 0 = tutti i contratti rispettati, 1 = almeno uno rotto (stampa quale).
+ * Uso:  npm run harness:dom   (= npx ts-node src/tests/harnessDomContracts.ts)
+ * Exit: 0 = tutti i contratti rispettati, 1 = almeno uno rotto (stampa quale), 2 = sonda rotta (vedi harnessRuntime).
  */
 
-import { chromium, type Page } from 'playwright';
+// Il runtime va importato per PRIMO: isola env/sessionDir/DB prima che `src/config` venga caricato (C28).
+import { runHarness, type HarnessRun } from './harnessRuntime';
+import type { Page } from 'playwright';
 import { SELECTORS } from '../selectors';
+
+/** Fixture servite dal server locale del runtime (mai `setContent`: le richieste locali vanno contate). */
+let serve: HarnessRun['serve'];
 
 /** DOM della casella messaggi come LinkedIn la espone: un div contenteditable, non un input. */
 const MESSAGE_BOX_HTML = `<!doctype html><meta charset="utf-8">
@@ -33,7 +38,7 @@ const joinSelectors = (list: readonly string[]): string => list.join(', ');
  */
 async function contractReadsBackTypedText(page: Page): Promise<Contract[]> {
     const typed = 'Ciao Mario, ho visto il tuo profilo';
-    await page.setContent(MESSAGE_BOX_HTML.replace('TESTO_DIGITATO', typed));
+    await page.goto(serve(MESSAGE_BOX_HTML.replace('TESTO_DIGITATO', typed)));
     const box = page.locator(joinSelectors(SELECTORS.messageTextbox)).first();
 
     const viaInnerText = await box.innerText({ timeout: 2000 }).catch(() => '');
@@ -70,7 +75,7 @@ async function contractReadsBackTypedText(page: Page): Promise<Contract[]> {
 
 /** Casella vuota: la rilettura deve dare vuoto, altrimenti il bot crede di aver scritto. */
 async function contractEmptyBoxReadsEmpty(page: Page): Promise<Contract> {
-    await page.setContent(MESSAGE_BOX_HTML.replace('TESTO_DIGITATO', ''));
+    await page.goto(serve(MESSAGE_BOX_HTML.replace('TESTO_DIGITATO', '')));
     const box = page.locator(joinSelectors(SELECTORS.messageTextbox)).first();
     const value = await box.innerText({ timeout: 2000 }).catch(() => 'ERRORE');
     return {
@@ -82,9 +87,9 @@ async function contractEmptyBoxReadsEmpty(page: Page): Promise<Contract> {
 }
 
 async function main(): Promise<void> {
-    const browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage();
-    try {
+    await runHarness('dom', 'chromium', async (run) => {
+        serve = run.serve;
+        const { page } = run;
         const contracts: Contract[] = [];
         contracts.push(...(await contractReadsBackTypedText(page)));
         contracts.push(await contractEmptyBoxReadsEmpty(page));
@@ -98,10 +103,8 @@ async function main(): Promise<void> {
             console.log(`       misurato: ${c.got}\n`);
         }
         console.log(broken === 0 ? 'Tutti i contratti rispettati.' : `${broken} contratti ROTTI.`);
-        process.exitCode = broken === 0 ? 0 : 1;
-    } finally {
-        await browser.close();
-    }
+        return broken;
+    });
 }
 
 void main();

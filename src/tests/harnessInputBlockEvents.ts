@@ -11,11 +11,13 @@
  *   2. mousemove del bot con overlay attivo → la pagina lo riceve?
  *   3. firme lasciate nel DOM dall'overlay (attributi `data-*`, testo leggibile)
  *
- * Uso:  npx ts-node src/tests/harnessInputBlockEvents.ts
- * Exit: 0 = tutte le misure attese, 1 = almeno una misura fuori attesa (stampa quale).
+ * Uso:  npm run harness:input-block   (= npx ts-node src/tests/harnessInputBlockEvents.ts)
+ * Exit: 0 = tutte le misure attese, 1 = almeno una fuori attesa (stampa quale), 2 = sonda rotta (vedi harnessRuntime).
  */
 
-import { chromium, type Page } from 'playwright';
+// Il runtime va importato per PRIMO: isola env/sessionDir/DB prima che `src/config` venga caricato (C28).
+import { runHarness } from './harnessRuntime';
+import type { Page } from 'playwright';
 import { ensureInputBlock, pauseInputBlockForMove, resumeInputBlockForMove } from '../browser/human/inputBlock';
 import { simulateHumanReading } from '../browser/human/readingSimulation';
 
@@ -124,10 +126,9 @@ async function measureDomSignatures(page: Page): Promise<Measure[]> {
 }
 
 async function main(): Promise<void> {
-    const browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage();
-    try {
-        await page.setContent(PAGE_HTML);
+    await runHarness('input-block', 'chromium', async (run) => {
+        const { page } = run;
+        await page.goto(run.serve(PAGE_HTML));
         await ensureInputBlock(page);
 
         const measures: Measure[] = [];
@@ -147,10 +148,8 @@ async function main(): Promise<void> {
             console.log(`       misurato: ${JSON.stringify(m.got)}\n`);
         }
         console.log(failed === 0 ? 'Tutte le misure nell atteso.' : `${failed} misure fuori atteso.`);
-        process.exitCode = failed === 0 ? 0 : 1;
-    } finally {
-        await browser.close();
-    }
+        return failed;
+    });
 }
 
 void main();
