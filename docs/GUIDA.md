@@ -14,6 +14,7 @@ Guida passo-passo per usare il bot. Ogni step spiega COSA fare, PERCHÉ, e COME 
 ### 1. Requisiti
 - Node.js 22+ installato
 - `npm install` eseguito
+- Binario Camoufox alla versione collaudata: `.\bot.ps1 camoufox-fetch --check` (se manca o è diversa: `.\bot.ps1 camoufox-fetch`, scarica SOLO quella versione)
 - File `.env` configurato (copia da `.env.example` e compila)
 
 ### 2. Primo login

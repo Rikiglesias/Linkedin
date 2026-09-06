@@ -272,6 +272,7 @@ Questo file è generato automaticamente da `scripts/generate-config-docs.mjs` le
 
 ### buildVisionDomainConfig
 - `BROWSER_LOCALE`
+- `CAMOUFOX_BINARY_VERSION`
 - `CAMOUFOX_BLOCK_WEBRTC`
 - `CAMOUFOX_GEOIP`
 - `CAMOUFOX_HUMANIZE`

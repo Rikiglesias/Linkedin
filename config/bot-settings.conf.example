@@ -29,3 +29,10 @@ SALESNAV_SYNC_MAX_SAVES_PER_DAY=0
 # HARD_INVITE_CAP=20
 # INTER_JOB_MIN_DELAY_SEC=45
 # INTER_JOB_MAX_DELAY_SEC=180
+
+# --- Camoufox: versione ESATTA del binario collaudato (C22, goal bot-operativo) ------
+# Il bot si RIFIUTA di partire se la cache (%LOCALAPPDATA%\camoufox\camoufox\Cache) non contiene
+# questa versione o gli addon di default: mai auto-download al lancio (un binario diverso =
+# fingerprint diverso = device che cambia sotto l'account). Verifica: .\bot.ps1 camoufox-fetch --check
+# Installa SOLO questa versione: .\bot.ps1 camoufox-fetch
+CAMOUFOX_BINARY_VERSION=135.0.1-beta.24

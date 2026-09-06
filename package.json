@@ -98,7 +98,7 @@
         "@anthropic-ai/sdk": "^0.104.1",
         "@sentry/node": "^10.46.0",
         "@supabase/supabase-js": "^2.100.1",
-        "camoufox-js": "^0.9.3",
+        "camoufox-js": "0.9.3",
         "chart.js": "^4.5.1",
         "cheerio": "^1.2.0",
         "cors": "^2.8.6",
@@ -111,7 +111,7 @@
         "libphonenumber-js": "^1.12.41",
         "otpauth": "^9.5.0",
         "pg": "^8.20.0",
-        "playwright": "^1.58.2",
+        "playwright": "1.58.2",
         "pm2": "^6.0.14",
         "sqlite": "^5.1.1",
         "sqlite3": "^5.1.7",
@@ -138,8 +138,12 @@
         "typescript": "^5.9.3",
         "vitest": "^4.0.18"
     },
+    "engines": {
+        "node": ">=22"
+    },
     "overrides": {
         "node-gyp": "^11.5.0",
+        "playwright-core": "1.58.2",
         "tar": "^7.5.8",
         "minimatch": "^10.2.2"
     }
