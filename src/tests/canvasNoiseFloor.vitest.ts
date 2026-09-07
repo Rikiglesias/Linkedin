@@ -34,7 +34,9 @@ function canvasNoiseCampione(quanti: number): number[] {
     const valori: number[] = [];
     for (let i = 0; i < quanti; i++) {
         const base = desktopFingerprintPool[i % desktopFingerprintPool.length];
-        const profilo = FingerprintPool.generateConsistentProfile({ ...base, id: `account-${i}` });
+        // C25: l'account e' un argomento, non un `id` iniettato nella entry — cosi' il campione
+        // esercita il percorso reale (entry del pool + accountId), non una forma addomesticata.
+        const profilo = FingerprintPool.generateConsistentProfile(base, `account-${i}`);
         valori.push(profilo.canvasNoise);
     }
     return valori;
@@ -99,8 +101,8 @@ describe('canvas noise — pavimento dell ampiezza', () => {
 
         it('il rumore resta deterministico per profilo (stesso input, stesso valore)', () => {
             const base = desktopFingerprintPool[0];
-            const primo = FingerprintPool.generateConsistentProfile({ ...base, id: 'account-stabile' });
-            const secondo = FingerprintPool.generateConsistentProfile({ ...base, id: 'account-stabile' });
+            const primo = FingerprintPool.generateConsistentProfile(base, 'account-stabile');
+            const secondo = FingerprintPool.generateConsistentProfile(base, 'account-stabile');
             expect(primo.canvasNoise).toBe(secondo.canvasNoise);
         });
     });

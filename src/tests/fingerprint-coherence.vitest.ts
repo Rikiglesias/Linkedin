@@ -45,8 +45,8 @@ describe('Fingerprint Coherence', () => {
 
     test('noise deterministico e in range', () => {
         const fp = desktopFingerprintPool[0];
-        const n1 = FingerprintPool.generateConsistentProfile(fp);
-        const n2 = FingerprintPool.generateConsistentProfile(fp);
+        const n1 = FingerprintPool.generateConsistentProfile(fp, 'account-coerenza');
+        const n2 = FingerprintPool.generateConsistentProfile(fp, 'account-coerenza');
         expect(n1.canvasNoise).toBe(n2.canvasNoise);
         expect(n1.canvasNoise).toBeGreaterThan(0);
         expect(n1.canvasNoise).toBeLessThanOrEqual(0.01);

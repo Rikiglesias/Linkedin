@@ -302,7 +302,9 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
     });
     const fingerprint = identityToBrowserFingerprint(identity);
     const stealthInputs = stealthInputsFromIdentity(identity);
-    const consistentNoise = FingerprintPool.generateConsistentProfile(fingerprint);
+    // C25: il rumore e' seedato sull'account dell'identita' persistita, non sulla sola entry del
+    // pool — due account che collidono sulla stessa entry devono restare distinguibili.
+    const consistentNoise = FingerprintPool.generateConsistentProfile(fingerprint, identity.accountId);
     validateFingerprintConsistency(fingerprint);
 
     for (let attempt = 0; attempt < launchPlan.length; attempt++) {

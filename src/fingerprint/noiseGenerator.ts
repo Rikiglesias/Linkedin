@@ -39,8 +39,24 @@ export class FingerprintPool {
         return Math.max(0.000001, (hash % 10000) / 1000000);
     }
 
-    public static generateConsistentProfile(base: Fingerprint): FingerprintSet {
-        const seedBase = `${base.userAgent}|${base.id}`;
+    /**
+     * C25 anti-ban: il seme include l'ACCOUNT, non solo la entry del pool.
+     * `pickDeterministicFingerprint` mappa gli account su ~20 entry desktop: due account che
+     * collidono sulla stessa entry avrebbero canvas/webgl/audio identici ⇒ correlatore
+     * cross-account (stessa classe gia' chiusa sul dwell dei tasti, `launcher.ts:288`).
+     * Il valore resta DETERMINISTICO per profilo: stesso account ⇒ stesso rumore a ogni lancio
+     * (un rumore che cambia fra due sessioni dello stesso profilo e' esso stesso un segnale).
+     * `accountId` e' obbligatorio e non vuoto: un seme vuoto tornerebbe a essere condiviso in
+     * silenzio (fail-open). L'identita' persistita lo garantisce sempre valorizzato e stabile
+     * per profilo (`browserIdentityRuntime.ts:289`, `IDENTITY_ACCOUNT_MISMATCH` di C52).
+     */
+    public static generateConsistentProfile(base: Fingerprint, accountId: string): FingerprintSet {
+        if (accountId.trim() === '') {
+            throw new Error(
+                '[FINGERPRINT] accountId vuoto: il rumore canvas/webgl/audio sarebbe condiviso fra account',
+            );
+        }
+        const seedBase = `${base.userAgent}|${base.id}|${accountId}`;
 
         return {
             id: base.id,
