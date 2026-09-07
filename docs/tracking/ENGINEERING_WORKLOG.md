@@ -3463,4 +3463,10 @@ C12-C17; C18-C20 = leve). Binding `~/todos/bot-operativo.md` § Stato.
 
 **Tracker**: binding `C64 [pass]` + § Stato 22:1x; `GRADING.md` C64 → PASS, `grade` firmato **31 PASS / 30 FAIL**, digest `a781f9ae…` invariato; `active.md` aggiornato.
 
-**Prossimo**: review indipendente pre-push del blocco A sul diff `e706b36..HEAD`, poi il push dei 29 commit, poi il grade di chiusura del blocco.
+**Passata finale dopo il primo «fatto» — due cose vere, commit `a3006bc`.** Il turno era già dichiarato chiuso: la passata sull'insieme (non sul singolo file) ha trovato ciò che i controlli per-edit non potevano vedere.
+1. **La sonda non aveva un test.** `engine-pin.cjs` ne ha uno che la ESEGUE davvero (`enginePin.vitest.ts:66`, `spawnSync`): la convenzione della casa è che ogni sonda ha la sua sentinella. I casi negativi di C64 erano stati provati a mano su un branch usa-e-getta — e una prova fatta a mano non resta: al primo refactor nessuno la rifà. Aggiunto `src/tests/antibanCoverageProbe.vitest.ts`, 10 casi che eseguono la sonda su artefatti sintetici e range storici immutabili.
+2. **Bug vero nella sonda**: leggeva `HEAD:<file>` per il blob attuale invece dell'estremo DESTRO del range. Su `<base>..HEAD` è corretto; su un range che finisce altrove dà la risposta giusta solo finché HEAD e l'estremo destro coincidono — una coincidenza, non una garanzia. Dallo stesso difetto nascono un falso rosso (voce corretta dichiarata scaduta) e un **falso verde** (voce che descrive un contenuto che in quel range non esisteva ancora): esattamente ciò che la sonda esiste per impedire. Corretto con `refFinale(range)`.
+
+**Contro-prove eseguite, non assunte**: con la sonda precedente il caso del ref FALLISCE (1 failed / 9 passed); mutando il confronto dei blob in `if (false)` fallisce il caso «voce scaduta». Il primo tentativo del test sul ref era TAUTOLOGICO — passava anche sulla sonda bacata, perché nel range scelto il blob finale coincideva con HEAD — ed è emerso dalla contro-prova, non dall'intuito. Gate dopo il fix: `post-modifiche` **exit 0 = 263 file / 2557 test** (da 262/2547); sonda verde 23/23 sul range del blocco.
+
+**Prossimo**: review indipendente pre-push del blocco A sul diff `e706b36..HEAD`, poi il push dei 31 commit, poi il grade di chiusura del blocco.
