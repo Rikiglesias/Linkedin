@@ -1,7 +1,8 @@
 import { config } from '../../config';
 import { getAccountProfileById } from '../../accountManager';
 import { awaitManualLogin, blockUserInput } from '../../browser/humanBehavior';
-import { closeBrowser, launchBrowser, checkLogin } from '../../browser';
+import { closeBrowser, launchBrowser } from '../../browser';
+import { valutaSessionePrimaDelLavoro } from '../../risk/loginFailureHandler';
 import { releaseRuntimeLock, getRuntimeFlag, setRuntimeFlag } from '../../core/repositories';
 import { getAccountAgeDays } from '../../core/repositories/stats';
 import {
@@ -217,7 +218,38 @@ export async function executeSyncSearchWorkflow(
     const exitCleanupHandler = () => cleanupWindowClickThrough();
 
     try {
-        let loggedIn = await checkLogin(session.page);
+        // C27 (review pre-push del blocco A): il booleano `checkLogin` diceva `false` anche sotto un
+        // 429, e `awaitManualLogin` — che guarda navbar e cookie — tornava `true` in pochi secondi
+        // perche' il cookie e' ancora valido: la sincronizzazione RIPARTIVA proprio mentre LinkedIn
+        // chiedeva di rallentare. Ora l'esito e' tipizzato: sul throttling la reazione e' gia'
+        // applicata dentro la funzione e qui ci si ferma, senza attese finte.
+        const esito = await valutaSessionePrimaDelLavoro(session.page, {
+            accountId: account.id,
+            sessionDir: account.sessionDir,
+            proxy: session.proxy ?? account.proxy ?? null,
+            source: 'sync_search',
+        });
+        if (esito.state !== 'logged-in' && esito.state !== 'logged-out') {
+            // Stessi due esiti che usa `workflowEntryGuards` per le stesse due situazioni.
+            return buildBlockedResult(
+                'sync-search',
+                {
+                    reason: esito.state === 'throttled' ? 'AUTOMATION_PAUSED' : 'CANARY_PAGE_UNREACHABLE',
+                    message:
+                        esito.state === 'throttled'
+                            ? 'LinkedIn ha risposto con un blocco temporaneo: pausa applicata, sincronizzazione non avviata'
+                            : 'Stato della sessione non determinabile (la pagina non e arrivata): sincronizzazione non avviata',
+                },
+                {
+                    riskAssessment: preflight.riskAssessment,
+                    artifacts: buildWorkflowArtifacts({
+                        preflight,
+                        estimatedMinutes: estimateExecutionMinutes(dryRun, maxPages, 90, 20),
+                    }),
+                },
+            );
+        }
+        let loggedIn = esito.state === 'logged-in';
         if (!loggedIn) {
             loggedIn = await awaitManualLogin(session.page, 'sync-search');
             if (!loggedIn) {

@@ -3,7 +3,9 @@ import { maskName, maskEmail, maskPhone } from '../security/redaction';
 import { cleanText } from '../utils/text';
 import { cleanLeadDataWithAI } from '../ai/leadDataCleaner';
 import { scoreLeadProfile } from '../ai/leadScorer';
-import { checkLogin, closeBrowser, detectChallenge, humanDelay, launchBrowser, type BrowserSession } from '../browser';
+import { closeBrowser, detectChallenge, humanDelay, launchBrowser, type BrowserSession } from '../browser';
+import { valutaSessionePrimaDelLavoro } from '../risk/loginFailureHandler';
+import { resolveSessionDir } from '../accountManager';
 import { attemptChallengeResolution } from '../workers/challengeHandler';
 import { awaitManualLogin, blockUserInput } from '../browser/humanBehavior';
 import { enableWindowClickThrough, disableWindowClickThrough } from '../browser/windowInputBlock';
@@ -741,10 +743,26 @@ async function ensureLoggedInOrAwaitManual(
     accountId: string,
     interactive: boolean,
 ): Promise<void> {
-    let loggedIn = await checkLogin(session.page);
+    // C27 (review pre-push del blocco A): NON si usa il booleano. Un `false` puo' essere un 429, e
+    // trattarlo da «cookie scaduti» porta a navigare su /login e poi a RIPRENDERE il sync, perche'
+    // `awaitManualLogin` vede il cookie ancora valido. Qui l'esito e' tipizzato e la reazione al
+    // throttling l'ha gia' applicata la funzione: resta solo da fermarsi.
+    const esito = await valutaSessionePrimaDelLavoro(session.page, {
+        accountId,
+        // Stessa chiave dello sticky proxy che ha aperto questa sessione: la funzione unica di C53.
+        sessionDir: resolveSessionDir(accountId),
+        proxy: session.proxy ?? null,
+        source: 'salesnav_sync',
+    });
+    if (esito.state !== 'logged-in' && esito.state !== 'logged-out') {
+        throw new Error(
+            `Sales Navigator sync fermato: LinkedIn non ha dato una sessione utilizzabile (${esito.state}) — reazione applicata, account=${accountId}.`,
+        );
+    }
+    let loggedIn = esito.state === 'logged-in';
     if (!loggedIn) {
-        // Cookie scaduti: se c'è un utente davanti al terminale, aspetta il login manuale.
-        // Non serve il flag --interactive — basta che sia un TTY.
+        // Cookie scaduti DAVVERO (`logged-out`): se c'è un utente davanti al terminale, aspetta il
+        // login manuale. Non serve il flag --interactive — basta che sia un TTY.
         const { isInteractiveTTY } = await import('../cli/stdinHelper');
         if (interactive || isInteractiveTTY()) {
             const currentUrl = session.page.url().toLowerCase();

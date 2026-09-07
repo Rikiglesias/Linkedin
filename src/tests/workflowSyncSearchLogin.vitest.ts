@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
     blockUserInput: vi.fn(),
     closeBrowser: vi.fn(),
     launchBrowser: vi.fn(),
-    checkLogin: vi.fn(),
+    valutaSessionePrimaDelLavoro: vi.fn(),
     cleanupWindowClickThrough: vi.fn(),
     disableWindowClickThrough: vi.fn(),
     enableWindowClickThrough: vi.fn(),
@@ -39,7 +39,12 @@ vi.mock('../browser/humanBehavior', () => ({
 vi.mock('../browser', () => ({
     closeBrowser: mocks.closeBrowser,
     launchBrowser: mocks.launchBrowser,
-    checkLogin: mocks.checkLogin,
+}));
+
+// C27: il servizio non chiede piu' un booleano ma l'esito TIPIZZATO, perche' un `false` poteva
+// essere un 429 e il percorso «attendi il login manuale» lo faceva ripartire sotto throttling.
+vi.mock('../risk/loginFailureHandler', () => ({
+    valutaSessionePrimaDelLavoro: mocks.valutaSessionePrimaDelLavoro,
 }));
 
 vi.mock('../browser/windowInputBlock', () => ({
@@ -137,8 +142,19 @@ describe('sync-search service login path', () => {
             browser: {},
         });
         mocks.closeBrowser.mockResolvedValue(undefined);
-        mocks.checkLogin.mockResolvedValue(false);
+        mocks.valutaSessionePrimaDelLavoro.mockResolvedValue({ state: 'logged-out' });
         mocks.awaitManualLogin.mockResolvedValue(false);
+    });
+
+    test('sotto throttling NON si attende un login: run bloccato e nessuna attesa finta', async () => {
+        // Il difetto chiuso dalla review pre-push: `checkLogin` diceva `false` anche sul 429 e
+        // `awaitManualLogin` tornava `true` guardando il cookie ancora valido → il sync ripartiva
+        // proprio mentre LinkedIn chiedeva di rallentare.
+        mocks.valutaSessionePrimaDelLavoro.mockResolvedValue({ state: 'throttled', status: 429 });
+        const result = await executeSyncSearchWorkflow({ listName: 'lista-a', skipPreflight: true, dryRun: false });
+        expect(result.blocked?.reason).toBe('AUTOMATION_PAUSED');
+        expect(mocks.awaitManualLogin).not.toHaveBeenCalled();
+        expect(mocks.runSalesNavBulkSave).not.toHaveBeenCalled();
     });
 
     test('ritorna LOGIN_REQUIRED se il login non viene completato', async () => {

@@ -19,8 +19,11 @@
  *   listener voyager storico) e quello breve `timeout` (5') sul guasto di proxy.
  */
 import path from 'path';
+import type { Page } from 'playwright';
 import type { ProxyConfig } from '../proxy/types';
-import type { LoginFailureAction } from '../browser/loginFailurePolicy';
+import { resolveLoginFailureAction, type LoginCheckOutcome, type LoginFailureAction } from '../browser/loginFailurePolicy';
+import { checkLoginDetailed } from '../browser/auth';
+import { config } from '../config';
 import { pauseAutomation, quarantineAccount } from './incidentManager';
 import { setAutomationPause } from '../core/repositories';
 import { markProxyFailed, releaseStickyProxy } from '../proxyManager';
@@ -36,6 +39,34 @@ export interface LoginFailureContext {
     /** Chi ha osservato il fallimento: `canary`, `job_runner.session`, `job_runner.probe`, `voyager_response`. */
     source: string;
     details?: Record<string, unknown>;
+}
+
+/**
+ * Il controllo di sessione PRIMA di un lavoro lungo (sync SalesNav, sync ricerca), con la reazione
+ * gia' applicata quando serve.
+ *
+ * Perche' esiste: il booleano storico `checkLogin` collassa su `false` anche `throttled` (429/403) e
+ * `unknown` (rete muta). Chi lo usava trattava quel `false` da «cookie scaduti» e chiamava
+ * `awaitManualLogin`, che decide guardando la NAVBAR e il cookie (`isLoggedIn`): sotto un 429 il
+ * cookie c'e' ancora, quindi tornava `true` in pochi secondi e il lavoro RIPRENDEVA proprio mentre
+ * LinkedIn chiedeva di rallentare — dopo aver anche navigato a `/login`. E' il difetto che C27
+ * dichiara chiuso, rimasto su due chiamanti che non passavano dalla politica.
+ *
+ * Contratto: ritorna l'esito REALE. Su `throttled`/`two-factor`/`unknown` la reazione (incident,
+ * pausa, quarantena, proxy) e' gia' stata applicata qui e il chiamante deve solo fermarsi; su
+ * `logged-out` non si applica nulla, perche' li' il rimedio e' il login — manuale se c'e' un umano,
+ * altrimenti lo decide il chiamante.
+ */
+export async function valutaSessionePrimaDelLavoro(page: Page, ctx: LoginFailureContext): Promise<LoginCheckOutcome> {
+    const esito = await checkLoginDetailed(page, ctx.accountId ? { accountId: ctx.accountId } : {});
+    if (esito.state === 'logged-in' || esito.state === 'logged-out') {
+        return esito;
+    }
+    await applyLoginFailureAction(
+        resolveLoginFailureAction(esito, { autoPauseMinutes: config.autoPauseMinutesOnFailureBurst }),
+        ctx,
+    );
+    return esito;
 }
 
 export async function applyLoginFailureAction(action: LoginFailureAction, ctx: LoginFailureContext): Promise<void> {

@@ -116,7 +116,7 @@ import {
     type LoginCheckOutcome,
 } from '../browser/loginFailurePolicy';
 import { checkLogin, checkLoginDetailed, probeLinkedInStatus } from '../browser/auth';
-import { applyLoginFailureAction } from '../risk/loginFailureHandler';
+import { applyLoginFailureAction, valutaSessionePrimaDelLavoro } from '../risk/loginFailureHandler';
 import { recordSuccessfulAuth } from '../browser/sessionCookieMonitor';
 import { getAccountQuarantine, getAutomationPauseState } from '../core/repositories/system';
 
@@ -273,6 +273,37 @@ describe('C27 — innesto: il browser produce la causa, un solo handler applica 
         expect(syncState.get('account_quarantine:default')).toBe('true');
         expect(syncState.has('account_quarantine')).toBe(false);
         expect(mocks.createIncident).toHaveBeenCalledWith('LOGIN_2FA_REQUIRED', 'CRITICAL', expect.objectContaining({ accountId: 'default' }));
+    });
+
+    it('valutaSessionePrimaDelLavoro: sotto 429 la reazione e gia applicata e il lavoro NON parte', async () => {
+        // Il buco che chiude (review pre-push): i due sync usavano il booleano `checkLogin`, che
+        // sotto 429 dice `false`; poi `awaitManualLogin` vedeva il cookie ancora valido e tornava
+        // `true` → il lavoro ripartiva sotto throttling. Qui l'esito e' tipizzato e la pausa c'e'.
+        const esito = await valutaSessionePrimaDelLavoro(paginaFinta({ gotoStatus: 429 }), {
+            accountId: 'acc-1',
+            sessionDir,
+            proxy: { server: 'http://gw.example:7777' },
+            source: 'test',
+        });
+        expect(esito).toEqual({ state: 'throttled', status: 429 });
+        const stato = await getAutomationPauseState();
+        expect(stato.paused).toBe(true);
+        expect(stato.reason).toBe('HTTP_429_RATE_LIMIT');
+        expect(mocks.releaseStickyProxy).toHaveBeenCalled();
+    });
+
+    it('valutaSessionePrimaDelLavoro: su cookie scaduti NON decide lei — il rimedio e il login', async () => {
+        // `logged-out` esce senza reazione: il chiamante ha ancora la strada del login manuale, che
+        // qui e' legittima (a differenza del throttling, dove attendere un login e' una finzione).
+        const esito = await valutaSessionePrimaDelLavoro(paginaFinta({ url: 'https://www.linkedin.com/login' }), {
+            accountId: 'acc-1',
+            sessionDir,
+            source: 'test',
+        });
+        expect(esito).toEqual({ state: 'logged-out' });
+        expect(mocks.createIncident).not.toHaveBeenCalled();
+        expect((await getAutomationPauseState()).paused).toBe(false);
+        expect(syncState.has('account_quarantine:acc-1')).toBe(false);
     });
 
     it('2FA con la scrittura di quarantena ROTTA: l esito lo DICE, non lo nasconde in un console.error', async () => {
