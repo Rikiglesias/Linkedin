@@ -123,9 +123,9 @@
     },
     {
       "file": "src/browser/launcher.ts",
-      "blob_sha": "e5f94903838e3d7cda95b19499e825f59d38e746",
+      "blob_sha": "677370c493b1030cbab20e7899cfdb3a7bcf862d",
       "answers": [
-        "browser_behavior: SICURO — il kill-switch 429 sulle API voyager non puo' piu' spegnersi in silenzio: se la scrittura della pausa fallisce l'errore va a `logError` e il flag `throttlingTrattato` torna giu', cosi' il 429 successivo riprova invece di essere scartato. Nessuna azione, nessun timing e nessun lancio di browser toccato (review pre-push blocco A)",
+        "browser_behavior: SICURO — due difetti chiusi dalla review pre-push. Il kill-switch 429 non puo' piu' spegnersi in silenzio (errore a `logError`, flag riabbassato per il 429 successivo). E un `CamoufoxRuntimeError` — binario fuori pin — rilancia PRIMA di `markProxyFailed`, invece di far marcare fallito il proxy corrente per ogni elemento del piano: prima bastava un binario aggiornato per mandare in cooldown l'intera catena dell'account, escalation mobile inclusa, e far cambiare IP alla sessione dopo sotto lo stesso account. Nessun timing ne' fingerprint toccato",
         "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
         "fingerprint_session: SICURO — una sola identità per pagina (le sezioni native di Camoufox non vengono più ridefinite in JS), rumore canvas/webgl/audio seedato sull'account, finestra coerente con lo screen dichiarato, cartella di sessione risolta dall'unica funzione che sa rispondere (C53)",
         "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
@@ -133,16 +133,16 @@
         "behavioral_pattern: SICURO — toglie due correlatori (doppia identità sulla stessa pagina, rumore identico fra account che collidono sul pool) e sostituisce N incident con backoff esponenziale con UN evento per burst di 429"
       ],
       "verdict": "SICURO",
-      "commit": "7ac8765186e963cbf4e8c6a2a8f92b83366f9d7d",
+      "commit": "0589afc896b688bc65f5b8582b7410995167fc8f",
       "date": "2026-09-08",
       "criterio": "C22-C27, C53 + review pre-push blocco A",
       "vincolo": null
     },
     {
       "file": "src/browser/loginFailurePolicy.ts",
-      "blob_sha": "f7d218a8394dae9e9a462dffc69d09bf0f9cf2e8",
+      "blob_sha": "3e75a633f5cb6855f7a8358420f2bf8984aaeaf2",
       "answers": [
-        "browser_behavior: SICURO — politica PURA, invariata nella forma: l'unico delta e' il ramo `two-factor`, che ora ri-quarantena quando la scrittura alla fonte e' fallita (`quarantineApplied: false`). Con quarantena riuscita il comportamento e' identico a prima (nessun secondo incident). Nessun I/O, nessuna pagina (review pre-push blocco A)",
+        "browser_behavior: SICURO — politica PURA. Delta: il ramo `two-factor` ri-quarantena quando la scrittura alla fonte e' fallita (`quarantineApplied: false`), e i due messaggi indicano ora `bot.ps1 unquarantine` invece del placeholder letterale `--account <id>`, che l'operatore non poteva risolvere. Nessun I/O, nessuna pagina, nessun timing",
         "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
         "fingerprint_session: SICURO — separa «sessione scaduta» da «429/403» da «rete/proxy muti»: sono tre situazioni che chiedono tre reazioni diverse e prima ne ricevevano una sola",
         "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
@@ -150,7 +150,7 @@
         "behavioral_pattern: SICURO — sotto throttling la reazione è pausa lunga e proxy rilasciato, mai insistere: il comportamento più conservativo dei tre"
       ],
       "verdict": "SICURO",
-      "commit": "7ac8765186e963cbf4e8c6a2a8f92b83366f9d7d",
+      "commit": "0589afc896b688bc65f5b8582b7410995167fc8f",
       "date": "2026-09-08",
       "criterio": "C27 + review pre-push blocco A",
       "vincolo": null
