@@ -24,6 +24,7 @@
  *
  * Esito: exit 0 = PASS (WebRTC killato, nessun candidate ICE) | exit 1 = FAIL (RTC disponibile o leak).
  */
+import { resolveSessionDir } from '../accountManager';
 import { config } from '../config';
 import { launchBrowser, closeBrowser } from '../browser/launcher';
 import { getProxyFailoverChainAsync, getStickyProxy, type ProxyConfig } from '../proxyManager';
@@ -108,7 +109,7 @@ async function resolveTestProxy(sessionDir: string): Promise<{ proxy: ProxyConfi
 export async function runWebrtcLeakCheck(args: string[] = []): Promise<boolean> {
     const headless = hasFlag(args, '--headless');
     const allowDirect = hasFlag(args, '--allow-direct');
-    const sessionDir = config.sessionDir;
+    const sessionDir = resolveSessionDir();
 
     let proxy: ProxyConfig | undefined;
     let managed = false;

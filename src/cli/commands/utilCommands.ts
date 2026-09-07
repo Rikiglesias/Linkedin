@@ -25,7 +25,7 @@ import type { LeadRecord } from '../../types/domain';
 import { runRandomLinkedinActivity } from '../../workers/randomActivityWorker';
 import { createPersistentProfile, resolveProfileDir } from '../../scripts/createProfile';
 import { recordSuccessfulAuth } from '../../browser/sessionCookieMonitor';
-import { getAccountProfileById, getRuntimeAccountProfiles } from '../../accountManager';
+import { getAccountProfileById, getRuntimeAccountProfiles, resolveSessionDir } from '../../accountManager';
 import {
     checkProxyHealth,
     getIntegrationProxyFailoverChain,
@@ -73,9 +73,13 @@ export async function runLoginCommand(args: string[]): Promise<void> {
     }
 
     const noProxy = args.includes('--no-proxy');
+    // C53: la cartella dei cookie la decide la funzione unica, la stessa che risolve il path per
+    // `send-invites` — se `login` scrivesse il jar altrove, LinkedIn vedrebbe due dispositivi. Una
+    // sola variabile per il lancio E per la baseline di freschezza: due letture = due cartelle.
+    const sessionDir = resolveSessionDir(selectedAccount.id);
     const session = await launchBrowser({
         headless: false,
-        sessionDir: selectedAccount.sessionDir,
+        sessionDir,
         proxy: noProxy ? undefined : selectedAccount.proxy,
         bypassProxy: noProxy,
         forceDesktop: true,
@@ -116,7 +120,7 @@ export async function runLoginCommand(args: string[]): Promise<void> {
                     // CL-setup: registra la baseline di freshness della sessione al login reale
                     // (allinea il comando login a jobRunner/create-profile: il countdown di rotazione
                     // 7gg parte da ora, non dalla prima run di automazione).
-                    await recordSuccessfulAuth(selectedAccount.sessionDir, 'login');
+                    await recordSuccessfulAuth(sessionDir, 'login');
                     console.log('Login sessione completato con successo.');
                     return;
                 }
@@ -134,7 +138,7 @@ export async function runLoginCommand(args: string[]): Promise<void> {
         if (!loggedIn) {
             throw new Error(`Login non rilevato entro ${timeoutSeconds} secondi.`);
         }
-        await recordSuccessfulAuth(selectedAccount.sessionDir, 'login');
+        await recordSuccessfulAuth(sessionDir, 'login');
         console.log('Login sessione completato con successo.');
     } finally {
         await closeBrowserSession(session);

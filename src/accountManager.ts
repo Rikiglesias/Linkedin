@@ -1,3 +1,4 @@
+import path from 'path';
 import { AccountProfileConfig, config } from './config';
 import { ProxyConfig } from './proxyManager';
 import { logWarn } from './telemetry/logger';
@@ -102,6 +103,31 @@ function getConfiguredRuntimeProfiles(): RuntimeAccountProfile[] {
     return deduped;
 }
 
+/**
+ * C53 — UNICO punto che risponde a «quale cartella di sessione per questo account».
+ *
+ * Prima la regola era ripetuta a mano (`config.sessionDir` letto nel launcher, nell'arricchimento
+ * aziende, nella sonda WebRTC, qui due volte): due risposte diverse alla stessa domanda significano
+ * `login` che scrive i cookie in una cartella e `send-invites` che ne apre un'altra — per LinkedIn
+ * sono due dispositivi sullo stesso account. Il path torna sempre ASSOLUTO (`config.sessionDir` e i
+ * profili configurati lo sono già: `env.ts` li risolve su `process.cwd()`, quindi `resolve` è
+ * idempotente e nessuna cartella esistente si sposta).
+ *
+ * Non passa da `getAccountProfileById` di proposito: quello ricade su questa funzione per il profilo
+ * di default, e la ricorsione non sarebbe terminante. La semantica resta identica — profili
+ * configurati e multi-account attivo → il profilo chiesto (o il primo, come fa `getAccountProfileById`
+ * con un id sconosciuto); in ogni altro caso la cartella globale.
+ */
+export function resolveSessionDir(accountId?: string | null): string {
+    const configurati = config.multiAccountEnabled ? getConfiguredRuntimeProfiles() : [];
+    if (configurati.length > 0) {
+        const richiesto = typeof accountId === 'string' ? accountId.trim() : '';
+        const profilo = (richiesto ? configurati.find((p) => p.id === richiesto) : undefined) ?? configurati[0];
+        return path.resolve(profilo.sessionDir);
+    }
+    return path.resolve(config.sessionDir);
+}
+
 export function getRuntimeAccountProfiles(): RuntimeAccountProfile[] {
     const configured = getConfiguredRuntimeProfiles();
     if (!config.multiAccountEnabled || configured.length === 0) {
@@ -111,7 +137,7 @@ export function getRuntimeAccountProfiles(): RuntimeAccountProfile[] {
         return [
             {
                 id: 'default',
-                sessionDir: config.sessionDir,
+                sessionDir: resolveSessionDir(),
                 inviteWeight: 1,
                 messageWeight: 1,
                 warmupEnabled: config.warmupEnabled,
@@ -151,7 +177,7 @@ export function getAccountProfileById(accountId: string | null | undefined): Run
     if (accounts.length === 0) {
         return {
             id: 'default',
-            sessionDir: config.sessionDir,
+            sessionDir: resolveSessionDir(),
             inviteWeight: 1,
             messageWeight: 1,
             warmupEnabled: config.warmupEnabled,

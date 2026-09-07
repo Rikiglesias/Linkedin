@@ -1,5 +1,6 @@
 import { checkLoginDetailed, closeBrowser, detectChallenge, humanDelay, launchBrowser } from '../browser';
 import { attemptChallengeResolution } from '../workers/challengeHandler';
+import { resolveSessionDir } from '../accountManager';
 import { config } from '../config';
 import { handleChallengeDetected, quarantineAccount } from '../risk/incidentManager';
 import { resolveLoginFailureAction } from '../browser/loginFailurePolicy';
@@ -276,7 +277,7 @@ export async function runCompanyEnrichmentBatch(
     }
 
     // Niente `accountId` qui, ed e' deliberato: questa sessione riusa il cookie jar dell'account
-    // default (`config.sessionDir`, vedi `launcher.ts:246`) e lo usa AUTENTICATO (`checkLogin` sotto).
+    // corrente (la cartella che risolve `resolveSessionDir()`, C53) e lo usa AUTENTICATO (`checkLogin` sotto).
     // Passare un'identita' propria faceva derivare da essa il seme di fingerprint, quindi lo stesso
     // jar si presentava a LinkedIn con DUE dispositivi (coincidenza 1 su 23). Un'identita' separata
     // richiede un cookie jar separato: finche' il jar e' condiviso, il device dev'essere lo stesso.
@@ -289,7 +290,7 @@ export async function runCompanyEnrichmentBatch(
             // la quarantena sotto: incidente non attribuibile), MAI quarantena, MAI «rifai il login».
             await applyLoginFailureAction(
                 resolveLoginFailureAction(esitoLogin, { autoPauseMinutes: config.autoPauseMinutesOnFailureBurst }),
-                { sessionDir: config.sessionDir, proxy: session.proxy ?? null, source: 'company_enrichment' },
+                { sessionDir: resolveSessionDir(), proxy: session.proxy ?? null, source: 'company_enrichment' },
             );
             await logWarn('company_enrichment.skipped.login_check', { targets: targets.length, esito: esitoLogin.state });
             return report;

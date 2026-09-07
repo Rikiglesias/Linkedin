@@ -6,6 +6,7 @@
 
 import path from 'path';
 import { chromium, firefox, BrowserContext, Page } from 'playwright';
+import { resolveSessionDir } from '../accountManager';
 import { config, ProxyType } from '../config';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { ensureDirectoryPrivate } from '../security/filesystem';
@@ -230,7 +231,10 @@ async function resolveProxyGeoip(proxy: ProxyConfig | undefined, fallbackEnabled
 }
 
 export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise<BrowserSession> {
-    const sessionDirRaw = options.sessionDir ?? config.sessionDir;
+    // C53: chi non dichiara la cartella la fa risolvere all'UNICA funzione che sa rispondere
+    // (`resolveSessionDir`), mai a una lettura locale di `config`: due risposte diverse alla stessa
+    // domanda spezzerebbero il cookie jar dell'account fra due cartelle = due dispositivi per LinkedIn.
+    const sessionDirRaw = options.sessionDir ?? resolveSessionDir(options.accountId);
     const sessionDir = path.isAbsolute(sessionDirRaw) ? sessionDirRaw : path.resolve(process.cwd(), sessionDirRaw);
     ensureDirectoryPrivate(sessionDir);
 
