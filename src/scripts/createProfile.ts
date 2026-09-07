@@ -94,7 +94,7 @@ export async function createPersistentProfile(options: Partial<CreateProfileOpti
         if (loginDetected) {
             // CL3: registra la baseline di freshness al momento del login reale, cosi' il countdown
             // di rotazione sessione (7gg) parte da ora e non dalla prima run di automazione.
-            recordSuccessfulAuth(profileDir, 'create-profile');
+            await recordSuccessfulAuth(profileDir, 'create-profile');
             console.log('[PROFILE] Login rilevato e profilo persistente aggiornato.');
         } else {
             console.log('[PROFILE] Timeout raggiunto. Il profilo è stato comunque salvato con lo stato corrente.');

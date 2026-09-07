@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
     launchBrowser: vi.fn(),
     closeBrowser: vi.fn(),
     checkLogin: vi.fn(),
+    checkLoginDetailed: vi.fn(),
     runSelectorCanaryDetailed: vi.fn(),
     humanDelay: vi.fn(),
     getRuntimeAccountProfiles: vi.fn(),
@@ -20,6 +21,7 @@ const mocks = vi.hoisted(() => ({
     getAccountQuarantine: vi.fn(),
     getRuntimeFlag: vi.fn(),
     setRuntimeFlag: vi.fn(),
+    setAutomationPause: vi.fn(),
     acquireRuntimeLock: vi.fn(),
     releaseRuntimeLock: vi.fn(),
     getSessionVarianceFactor: vi.fn(),
@@ -30,6 +32,7 @@ vi.mock('../browser', () => ({
     launchBrowser: mocks.launchBrowser,
     closeBrowser: mocks.closeBrowser,
     checkLogin: mocks.checkLogin,
+    checkLoginDetailed: mocks.checkLoginDetailed,
     runSelectorCanaryDetailed: mocks.runSelectorCanaryDetailed,
 }));
 
@@ -71,6 +74,7 @@ vi.mock('../telemetry/logger', () => ({
 
 vi.mock('../core/repositories', () => ({
     pushOutboxEvent: mocks.pushOutboxEvent,
+    setAutomationPause: mocks.setAutomationPause,
     getAutomationPauseState: mocks.getAutomationPauseState,
     getDailyStat: mocks.getDailyStat,
     getAccountQuarantine: mocks.getAccountQuarantine,
@@ -102,6 +106,8 @@ describe('workflowEntryGuards', () => {
         mocks.launchBrowser.mockResolvedValue(createSession());
         mocks.closeBrowser.mockResolvedValue(undefined);
         mocks.checkLogin.mockResolvedValue(true);
+        mocks.checkLoginDetailed.mockResolvedValue({ state: 'logged-in' });
+        mocks.setAutomationPause.mockResolvedValue(null);
         mocks.runSelectorCanaryDetailed.mockResolvedValue({
             ok: true,
             optionalFailed: 0,
@@ -270,19 +276,53 @@ describe('workflowEntryGuards', () => {
     test('blocca con LOGIN_REQUIRED (non SELECTOR_CANARY_FAILED) quando la sessione è sloggata', async () => {
         // Regressione: una sessione sloggata (li_at assente → checkLogin=false) veniva quarantinata
         // ed etichettata SELECTOR_CANARY_FAILED, mandando la diagnosi a caccia di selettori inesistenti.
-        mocks.checkLogin.mockResolvedValue(false);
+        mocks.checkLoginDetailed.mockResolvedValue({ state: 'logged-out' });
 
         const result = await evaluateWorkflowEntryGuards({ workflow: 'sync-list', dryRun: false });
 
         expect(result.allowed).toBe(false);
         expect(result.blocked?.reason).toBe('LOGIN_REQUIRED');
         // G5-F2: LOGIN_REQUIRED è account-specific → la quarantena è attribuita all'account del canary.
-        expect(mocks.quarantineAccount).toHaveBeenCalledWith('LOGIN_REQUIRED', {
-            workflow: 'sync-list',
-            accountId: 'acc-1',
-        });
+        expect(mocks.quarantineAccount).toHaveBeenCalledWith(
+            'LOGIN_REQUIRED',
+            expect.objectContaining({ workflow: 'sync-list', accountId: 'acc-1' }),
+        );
+        // C27: al logout si aggiunge la pausa di 60' (senza un secondo incident WARN), proxy intatto.
+        expect(mocks.setAutomationPause).toHaveBeenCalledWith(60, 'LOGIN_REQUIRED', 'SYSTEM');
+        expect(mocks.pauseAutomation).not.toHaveBeenCalled();
         // Il selector canary non deve nemmeno essere valutato se non siamo loggati.
         expect(mocks.runSelectorCanaryDetailed).not.toHaveBeenCalled();
+    });
+
+    test('C27: 429 dal canary → pausa lunga HTTP_429_RATE_LIMIT, NESSUNA quarantena e NESSUN «rifai il login»', async () => {
+        // Il buco reale: il rate-limit letto come «sloggato» mandava l'account in quarantena
+        // LOGIN_REQUIRED e l'operatore a rifare il login proprio sotto throttling.
+        mocks.checkLoginDetailed.mockResolvedValue({ state: 'throttled', status: 429 });
+
+        const result = await evaluateWorkflowEntryGuards({ workflow: 'sync-list', dryRun: false });
+
+        expect(result.allowed).toBe(false);
+        expect(result.blocked?.reason).toBe('AUTOMATION_PAUSED');
+        expect(result.blocked?.message).toContain('NON rifare il login');
+        expect(mocks.quarantineAccount).not.toHaveBeenCalled();
+        // config.autoPauseMinutesOnFailureBurst del mock e' 60: vince il pavimento anti-ban di 180.
+        expect(mocks.pauseAutomation).toHaveBeenCalledWith(
+            'HTTP_429_RATE_LIMIT',
+            expect.objectContaining({ accountId: 'acc-1', source: 'canary' }),
+            180,
+        );
+        expect(mocks.runSelectorCanaryDetailed).not.toHaveBeenCalled();
+    });
+
+    test('C27: feed mai arrivato (timeout) → pausa breve senza quarantena, blocco CANARY_PAGE_UNREACHABLE', async () => {
+        mocks.checkLoginDetailed.mockResolvedValue({ state: 'unknown', cause: 'timeout' });
+
+        const result = await evaluateWorkflowEntryGuards({ workflow: 'sync-list', dryRun: false });
+
+        expect(result.allowed).toBe(false);
+        expect(result.blocked?.reason).toBe('CANARY_PAGE_UNREACHABLE');
+        expect(mocks.quarantineAccount).not.toHaveBeenCalled();
+        expect(mocks.setAutomationPause).toHaveBeenCalledWith(15, 'login_check_unknown', 'SYSTEM');
     });
 
     test('salta la sessione quando la varianza giornaliera è zero', async () => {
@@ -328,7 +368,7 @@ describe('workflowEntryGuards', () => {
     });
 
     test('reuseSession ma login fallito: blocca e chiude la sessione (nessun handoff di sessione sloggata)', async () => {
-        mocks.checkLogin.mockResolvedValue(false);
+        mocks.checkLoginDetailed.mockResolvedValue({ state: 'logged-out' });
 
         const result = await evaluateWorkflowEntryGuards({
             workflow: 'sync-list',

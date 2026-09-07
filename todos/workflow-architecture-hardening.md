@@ -51,7 +51,7 @@ Questo file e' il backlog tecnico operativo da usare durante i prossimi blocchi 
 
 ## P0 — Proxy, sessione e classificazione incidenti
 
-- [ ] Separare `LOGIN_MISSING` da `rate limit`, `403`, timeout, proxy failure e rete degradata
+- [x] Separare `LOGIN_MISSING` da `rate limit`, `403`, timeout, proxy failure e rete degradata — 2026-09-07, C27 `bot-operativo` (`src/browser/loginFailurePolicy.ts` + `src/risk/loginFailureHandler.ts`)
 - [ ] Rafforzare il gate "proxy healthy" con verifica reale di auth, `CONNECT`, exit IP e browsing minimo
 - [ ] Valutare coerenza geo sull'exit IP reale e non sul gateway del provider
 - [ ] Ripristinare il controllo UA <-> engine anche con `USE_JA3_PROXY=true` o sostituirlo con una regola equivalente

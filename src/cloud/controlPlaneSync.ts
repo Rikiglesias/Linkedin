@@ -155,8 +155,9 @@ async function syncSalesNavUp() {
  *
  * ⚠️ NON reintrodurre un ramo `accounts_down`. Il downsync degli account è stato rimosso (F-CB.10,
  * D2 = Strada B+) perché dava a una tabella cloud senza comandante l'autorità di **rilasciare** la
- * quarantena: con un solo account configurato l'id degrada al sintetico `'default'`, e
- * `setAccountQuarantine('default', false)` scrive il flag GLOBALE che sblocca OGNI account. La
+ * quarantena: con un solo account configurato l'id degrada al sintetico `'default'`, e all'epoca
+ * `setAccountQuarantine('default', false)` scriveva il flag GLOBALE che sblocca OGNI account (oggi
+ * `default` e' per-account, C27, ma l'autorita' di rilascio resta comunque fuori posto). La
  * sentinella `src/tests/downsyncAccountRimosso.vitest.ts` fallisce se il ramo torna per inerzia.
  *
  * Il canale corretto per un comando remoto, quando servirà, è la tabella cloud `telegram_commands`

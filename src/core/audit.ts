@@ -1,8 +1,10 @@
-import { checkLogin, closeBrowser, detectChallenge, humanDelay, launchBrowser } from '../browser';
+import { checkLoginDetailed, closeBrowser, detectChallenge, humanDelay, launchBrowser } from '../browser';
 import { attemptChallengeResolution } from '../workers/challengeHandler';
 import { getAccountProfileById, pickAccountIdForLead } from '../accountManager';
 import { config } from '../config';
 import { handleChallengeDetected, quarantineAccount } from '../risk/incidentManager';
+import { resolveLoginFailureAction } from '../browser/loginFailurePolicy';
+import { applyLoginFailureAction } from '../risk/loginFailureHandler';
 import { joinSelectors } from '../selectors';
 import { LeadRecord } from '../types/domain';
 import { reconcileLeadStatus, transitionLead } from './leadStateService';
@@ -362,12 +364,27 @@ export async function runSiteCheck(options: SiteCheckOptions): Promise<SiteCheck
             forceDesktop: true,
         });
         try {
-            const loggedIn = await checkLogin(session.page);
-            if (!loggedIn) {
-                await quarantineAccount('SITE_CHECK_LOGIN_MISSING', {
-                    reason: 'Sessione non autenticata durante site-check',
-                    accountId,
-                });
+            const esitoLogin = await checkLoginDetailed(session.page, { accountId });
+            if (esitoLogin.state !== 'logged-in') {
+                if (esitoLogin.state === 'throttled' || esitoLogin.state === 'unknown') {
+                    // C27: 429/403 o pagina mai arrivata NON sono una sessione scaduta — stessa politica
+                    // del canary: pausa, MAI quarantena, MAI «rifai il login».
+                    await applyLoginFailureAction(
+                        resolveLoginFailureAction(esitoLogin, { autoPauseMinutes: config.autoPauseMinutesOnFailureBurst }),
+                        {
+                            accountId,
+                            sessionDir: account.sessionDir,
+                            proxy: session.proxy ?? account.proxy ?? null,
+                            source: 'site_check',
+                        },
+                    );
+                } else if (esitoLogin.state === 'logged-out') {
+                    // (la 2FA e' gia' in quarantena per-account alla fonte: niente doppione)
+                    await quarantineAccount('SITE_CHECK_LOGIN_MISSING', {
+                        reason: 'Sessione non autenticata durante site-check',
+                        accountId,
+                    });
+                }
                 return report;
             }
 

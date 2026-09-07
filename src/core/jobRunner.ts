@@ -3,7 +3,7 @@ import {
     closeBrowser,
     interJobDelay,
     launchBrowser,
-    checkLogin,
+    checkLoginDetailed,
     probeLinkedInStatus,
     performDecoyBurst,
     performBrowserGC,
@@ -27,6 +27,8 @@ import {
 import { getRuntimeAccountProfiles, isMultiAccountRuntimeEnabled, RuntimeAccountProfile } from '../accountManager';
 import { config } from '../config';
 import { handleChallengeDetected, pauseAutomation, quarantineAccount } from '../risk/incidentManager';
+import { classifyProbeReason, resolveLoginFailureAction } from '../browser/loginFailurePolicy';
+import { applyLoginFailureAction } from '../risk/loginFailureHandler';
 import { logError, logInfo, logWarn } from '../telemetry/logger';
 import { sendTelegramAlert } from '../telemetry/alerts';
 import { broadcast } from '../telemetry/broadcaster';
@@ -174,14 +176,20 @@ async function rotateSessionWithLoginCheck(
         preferredProxyType: config.proxyMobilePriorityEnabled ? 'mobile' : undefined,
         forceDesktop: true,
     });
-    const loggedIn = await checkLogin(rotated.page);
-    if (!loggedIn) {
+    const esitoLogin = await checkLoginDetailed(rotated.page, { accountId: account.id });
+    if (esitoLogin.state !== 'logged-in') {
         await closeBrowser(rotated);
-        await quarantineAccount('LOGIN_MISSING', {
-            message: 'Sessione non autenticata su LinkedIn dopo rotazione proxy/sessione',
-            reason,
-            accountId: account.id,
-        });
+        // C27: stessa politica del canary — un 429 dopo la rotazione non e' una sessione scaduta.
+        await applyLoginFailureAction(
+            resolveLoginFailureAction(esitoLogin, { autoPauseMinutes: config.autoPauseMinutesOnFailureBurst }),
+            {
+                accountId: account.id,
+                sessionDir: account.sessionDir,
+                proxy: rotated.proxy ?? account.proxy ?? null,
+                source: 'job_runner.session_rotate',
+                details: { reason },
+            },
+        );
         return null;
     }
 
@@ -230,12 +238,18 @@ async function runQueuedJobsForAccount(
     // Simmetria con syncSearchService; deregistrato nel finally per non accumulare listener su run multipli.
     const exitCleanupHandler = () => cleanupWindowClickThrough();
     try {
-        const loggedIn = await checkLogin(session.page);
-        if (!loggedIn) {
-            await quarantineAccount('LOGIN_MISSING', {
-                message: 'Sessione non autenticata su LinkedIn',
-                accountId: account.id,
-            });
+        const esitoLogin = await checkLoginDetailed(session.page, { accountId: account.id });
+        if (esitoLogin.state !== 'logged-in') {
+            // C27: la causa decide (era `LOGIN_MISSING` in quarantena per qualunque `false`, 429 incluso).
+            await applyLoginFailureAction(
+                resolveLoginFailureAction(esitoLogin, { autoPauseMinutes: config.autoPauseMinutesOnFailureBurst }),
+                {
+                    accountId: account.id,
+                    sessionDir: account.sessionDir,
+                    proxy: session.proxy ?? account.proxy ?? null,
+                    source: 'job_runner.session',
+                },
+            );
             return;
         }
 
@@ -259,7 +273,7 @@ async function runQueuedJobsForAccount(
             return;
         }
 
-        recordSuccessfulAuth(account.sessionDir, account.id);
+        await recordSuccessfulAuth(account.sessionDir, account.id);
 
         // M25: Chiudi modali residui al boot (cookie consent, premium upsell, download app).
         // Se un modale è aperto da una sessione precedente, blocca i click sui bottoni target.
@@ -312,25 +326,6 @@ async function runQueuedJobsForAccount(
             reason: probe.reason,
         });
         if (!probe.ok) {
-            if (probe.reason === 'HTTP_429_RATE_LIMITED') {
-                await pauseAutomation(
-                    'LINKEDIN_PRE_THROTTLED',
-                    {
-                        accountId: account.id,
-                        responseTimeMs: probe.responseTimeMs,
-                        message: 'LinkedIn ha risposto 429 alla probe iniziale — sessione già rate-limited.',
-                    },
-                    config.autoPauseMinutesOnFailureBurst ?? 60,
-                );
-                return;
-            }
-            if (probe.reason === 'SESSION_EXPIRED') {
-                await quarantineAccount('LOGIN_MISSING', {
-                    accountId: account.id,
-                    message: 'Sessione LinkedIn scaduta rilevata dalla probe pre-sessione.',
-                });
-                return;
-            }
             if (probe.challengeDetected) {
                 await handleChallengeDetected({
                     source: 'linkedin_probe_pre_session',
@@ -338,12 +333,23 @@ async function runQueuedJobsForAccount(
                 });
                 return;
             }
-            // SLOW_RESPONSE o PROBE_ERROR: log warning ma procedi con cautela
-            await logWarn('job_runner.linkedin_probe.degraded', {
-                accountId: account.id,
-                reason: probe.reason,
-                responseTimeMs: probe.responseTimeMs,
-            });
+            // C27: 429/403, sessione scaduta e pagina mai arrivata passano dalla STESSA politica del
+            // canary e di `checkLoginDetailed`: una causa, una reazione. Prima erano tre reazioni per
+            // lo stesso segnale (pausa `LINKEDIN_PRE_THROTTLED`, quarantena `LOGIN_MISSING`,
+            // «procedi con cautela» su SLOW_RESPONSE/PROBE_ERROR).
+            await applyLoginFailureAction(
+                resolveLoginFailureAction(classifyProbeReason(probe.reason), {
+                    autoPauseMinutes: config.autoPauseMinutesOnFailureBurst,
+                }),
+                {
+                    accountId: account.id,
+                    sessionDir: account.sessionDir,
+                    proxy: session.proxy ?? account.proxy ?? null,
+                    source: 'job_runner.probe',
+                    details: { reason: probe.reason, responseTimeMs: probe.responseTimeMs },
+                },
+            );
+            return;
         }
 
         // ── Session Warmup integrato (A.1a + A.2) ──────────────────────────

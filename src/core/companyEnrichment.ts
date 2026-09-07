@@ -1,7 +1,9 @@
-import { checkLogin, closeBrowser, detectChallenge, humanDelay, launchBrowser } from '../browser';
+import { checkLoginDetailed, closeBrowser, detectChallenge, humanDelay, launchBrowser } from '../browser';
 import { attemptChallengeResolution } from '../workers/challengeHandler';
 import { config } from '../config';
 import { handleChallengeDetected, quarantineAccount } from '../risk/incidentManager';
+import { resolveLoginFailureAction } from '../browser/loginFailurePolicy';
+import { applyLoginFailureAction } from '../risk/loginFailureHandler';
 import { logInfo, logWarn } from '../telemetry/logger';
 import {
     addLead,
@@ -148,7 +150,7 @@ async function extractProfiles(
 async function processCompanyTarget(
     target: CompanyTargetRecord,
     options: Required<CompanyEnrichmentOptions>,
-    page: Parameters<typeof checkLogin>[0],
+    page: Parameters<typeof checkLoginDetailed>[0],
 ): Promise<{ matched: boolean; createdLeads: number; noMatch: boolean; error: string | null }> {
     const queries = buildSearchQueries(target);
     if (queries.length === 0) {
@@ -281,8 +283,18 @@ export async function runCompanyEnrichmentBatch(
     // `ENRICHMENT_ACCOUNT_ID` resta l'etichetta degli INCIDENTI, che non e' l'identita' del device.
     const session = await launchBrowser({ forceDesktop: true });
     try {
-        const loggedIn = await checkLogin(session.page);
-        if (!loggedIn) {
+        const esitoLogin = await checkLoginDetailed(session.page);
+        if (esitoLogin.state === 'throttled' || esitoLogin.state === 'unknown') {
+            // C27: 429/403 o pagina mai arrivata NON sono una sessione scaduta — pausa (globale, come
+            // la quarantena sotto: incidente non attribuibile), MAI quarantena, MAI «rifai il login».
+            await applyLoginFailureAction(
+                resolveLoginFailureAction(esitoLogin, { autoPauseMinutes: config.autoPauseMinutesOnFailureBurst }),
+                { sessionDir: config.sessionDir, proxy: session.proxy ?? null, source: 'company_enrichment' },
+            );
+            await logWarn('company_enrichment.skipped.login_check', { targets: targets.length, esito: esitoLogin.state });
+            return report;
+        }
+        if (esitoLogin.state === 'logged-out' || esitoLogin.state === 'two-factor') {
             // Niente `accountId` qui: in `quarantineAccount` quel campo non e' un'etichetta, e'
             // la CHIAVE della quarantena (`resolveAccountId`). Con `company-enrichment` il flag
             // finiva su un id che nessun gate interroga (`loopCommand.ts:407`, `jobRunner.ts:1437`,
@@ -290,10 +302,13 @@ export async function runCompanyEnrichmentBatch(
             // mentre il jar sospetto e' quello dell'account default che questa sessione sta usando.
             // Omettendolo si cade sul flag globale, che e' il comportamento voluto per un incidente
             // non attribuibile a un singolo account (vedi `incidentManager.ts:36-41`).
-            await quarantineAccount('COMPANY_ENRICHMENT_LOGIN_MISSING', {
-                source: ENRICHMENT_ACCOUNT_ID,
-                reason: 'Sessione non autenticata durante enrichment automatico',
-            });
+            if (esitoLogin.state === 'logged-out') {
+                await quarantineAccount('COMPANY_ENRICHMENT_LOGIN_MISSING', {
+                    source: ENRICHMENT_ACCOUNT_ID,
+                    reason: 'Sessione non autenticata durante enrichment automatico',
+                });
+            }
+            // two-factor: quarantena gia' applicata alla fonte (`checkLoginDetailed`), niente doppione.
             await logWarn('company_enrichment.skipped.login_missing', { targets: targets.length });
             return report;
         }

@@ -74,7 +74,7 @@ A13-igiene. `[Refactor][medio]` **Split 4 file anti-ban >300** (bulkSaveOrchestr
 
 20. `[Anti-ban][breve/medio]` Fare un audit completo dei workflow pubblici su proxy, sessione, account health e preflight reale.
 
-21. `[Anti-ban][breve/medio]` Separare in modo affidabile `LOGIN_MISSING` da rate limit, `403`, timeout, proxy failure e rete degradata.
+21. `[Anti-ban][breve/medio]` ~~Separare in modo affidabile `LOGIN_MISSING` da rate limit, `403`, timeout, proxy failure e rete degradata.~~ **FATTO 2026-09-07 (C27 `bot-operativo`)**: `checkLoginDetailed` + `loginFailurePolicy` + `loginFailureHandler` — logout / esito ignoto / 429-403 sono tre rami con UNA reazione a testa.
 
 22. `[Anti-ban][breve/medio]` Rafforzare il gate "proxy healthy" con verifica reale di auth, `CONNECT`, exit IP e browsing minimo.
 

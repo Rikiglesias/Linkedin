@@ -1,10 +1,12 @@
-import { checkLogin, closeBrowser, launchBrowser, runSelectorCanaryDetailed, type BrowserSession } from '../browser';
+import { checkLoginDetailed, closeBrowser, launchBrowser, runSelectorCanaryDetailed, type BrowserSession } from '../browser';
 import { enableWindowClickThrough, disableWindowClickThrough } from '../browser/windowInputBlock';
 import { humanDelay } from '../browser/humanBehavior';
 import { getRuntimeAccountProfiles } from '../accountManager';
 import { config, getLocalDateString, isWorkingHour } from '../config';
 import { checkDiskSpace } from '../db';
 import { quarantineAccount, pauseAutomation } from '../risk/incidentManager';
+import { resolveLoginFailureAction } from '../browser/loginFailurePolicy';
+import { applyLoginFailureAction } from '../risk/loginFailureHandler';
 import { logInfo, logWarn } from '../telemetry/logger';
 import {
     pushOutboxEvent,
@@ -108,16 +110,32 @@ async function runCanaryIfNeeded(
         enableWindowClickThrough(session.browser);
         let handedOff = false;
         try {
-            const loggedIn = await checkLogin(session.page);
-            if (!loggedIn) {
-                // Sessione sloggata (li_at assente / redirect a /login): NON è un selector-fail.
-                // Reason dedicato LOGIN_REQUIRED → diagnosi corretta + azione chiara (`bot.ps1 login`).
+            const esitoLogin = await checkLoginDetailed(session.page, { accountId: account.id });
+            if (esitoLogin.state !== 'logged-in') {
+                // C27: la CAUSA decide la reazione, non il booleano. Sloggato → quarantena per-account
+                // + pausa (rifare il login); 429/403 → pausa lunga e proxy rilasciato, MAI quarantena
+                // ne' «rifai il login»; pagina mai arrivata → pausa breve. Applica tutto l'handler
+                // unico: il caller NON deve ri-quarantinare (quarantineType null).
+                const azione = resolveLoginFailureAction(esitoLogin, {
+                    autoPauseMinutes: config.autoPauseMinutesOnFailureBurst,
+                });
+                await applyLoginFailureAction(azione, {
+                    accountId: account.id,
+                    sessionDir: account.sessionDir,
+                    proxy: session.proxy ?? account.proxy ?? null,
+                    source: 'canary',
+                    details: { workflow },
+                });
                 return {
                     ok: false,
-                    blockReason: 'LOGIN_REQUIRED',
-                    quarantineType: 'LOGIN_REQUIRED',
-                    message: 'Sessione LinkedIn non autenticata (cookie li_at assente) — eseguire `bot.ps1 login`',
-                    // Account-specific: è QUESTA sessione a essere sloggata → quarantena sul suo account.
+                    blockReason:
+                        azione.reason === 'LOGIN_REQUIRED' || azione.reason === 'LOGIN_2FA_REQUIRED'
+                            ? 'LOGIN_REQUIRED'
+                            : azione.reason === 'login_check_unknown'
+                              ? 'CANARY_PAGE_UNREACHABLE'
+                              : 'AUTOMATION_PAUSED',
+                    quarantineType: null,
+                    message: azione.message,
                     accountId: account.id,
                 };
             }
@@ -539,8 +557,9 @@ export async function evaluateWorkflowEntryGuards(
         if (accountLock) await releaseRuntimeLock(accountLock.lockKey, accountLock.ownerId);
         if (canary.quarantineType) {
             // G5-F2: attribuisci la quarantena all'account SOLO se il canary l'ha identificato
-            // (fallimento account-specific, es. LOGIN_REQUIRED). Senza accountId → quarantena
-            // globale fail-safe (fallimenti platform-wide come SELECTOR_CANARY_FAILED).
+            // (fallimento account-specific). Senza accountId → quarantena globale fail-safe
+            // (fallimenti platform-wide come SELECTOR_CANARY_FAILED). Il login fallito NON passa
+            // di qui: la sua quarantena la applica gia' l'handler di C27 nel canary.
             await quarantineAccount(canary.quarantineType, {
                 workflow: options.workflow,
                 ...(canary.accountId ? { accountId: canary.accountId } : {}),
