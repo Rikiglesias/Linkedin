@@ -20,7 +20,7 @@ import {
 } from '../proxyManager';
 import { isSameProxy, buildProxyLaunchPlan } from './proxyLaunchPlan';
 import { CloudFingerprint, BrowserFingerprint, pickFingerprintMode } from './stealth';
-import { buildStealthInitScript } from './stealthScripts';
+import { CAMOUFOX_NATIVE_SECTIONS, buildStealthInitScript } from './stealthScripts';
 import { assertCamoufoxRuntimePinned } from './camoufoxRuntime';
 import { camoufoxIdentityLaunchOptions, identityToBrowserFingerprint, stealthInputsFromIdentity } from './browserIdentityProjection';
 import { ensureLaunchIdentity, identityWindow } from './browserIdentityRuntime';
@@ -33,18 +33,6 @@ import { impostaSemeAccount } from '../ai/typoGenerator';
 
 const activeBrowsers = new Set<BrowserContext>();
 
-// Sezioni stealth gestite nativamente da Camoufox a livello C++.
-// NON iniettare JS per queste — doppia patch = marker di bot.
-// Elenca SOLO le sezioni con guard `_skip.has()` in stealthScripts.ts.
-const CAMOUFOX_NATIVE_SECTIONS = new Set([
-    'webrtc', // protocol-level IP spoofing
-    'plugins', // N/A Firefox
-    'hwconcurrency', // C++ level
-    'audio', // C++ level
-    'battery', // C++ level
-    'canvas', // C++ rendering level
-    'webgl', // C++ webgl_config
-]);
 
 export const cleanupBrowsers = async (): Promise<void> => {
     for (const browser of activeBrowsers) {
@@ -698,17 +686,20 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             // Stealth init script: WebRTC kill, navigator normalization, chrome mock, permissions override
             // C23: hardware, lingue, viewport e UA vengono dall'identità persistita (congelati alla creazione,
             // `browserIdentityRuntime.ts`), mai derivati o ripescati al lancio.
+            // C24: su Camoufox `skipIfCloak` = CAMOUFOX_NATIVE_SECTIONS → lo script non definisce nulla di nativo.
             const stealthScript = buildStealthInitScript({
                 locale: stealthInputs.locale,
                 languages: stealthInputs.languages,
                 isHeadless: headless,
-                viewportWidth: stealthInputs.viewportWidth,
-                viewportHeight: stealthInputs.viewportHeight,
+                // Il mock finestra (solo headless, solo engine non-Camoufox) deve dire ciò che il context rende
+                // DAVVERO: il viewport headless forzato sopra, non il viewport del file (screen ≠ layout = rilevabile).
+                viewportWidth: viewport?.width ?? stealthInputs.viewportWidth,
+                viewportHeight: viewport?.height ?? stealthInputs.viewportHeight,
                 audioNoise: deviceProfile.audioNoise,
                 hardwareConcurrency: stealthInputs.hardwareConcurrency,
-                // Firefox non espone navigator.deviceMemory (null nel file): l'iniezione su Camoufox è preesistente
-                // e la toglie C24 (sezione nativa); qui resta il default desktop finché C24 non chiude.
-                deviceMemory: stealthInputs.deviceMemory ?? 8,
+                // `null` nel file = Firefox non espone navigator.deviceMemory: nessuna iniezione (sezione saltata
+                // da `_isFirefox` e, su Camoufox, da 'devicememory').
+                deviceMemory: stealthInputs.deviceMemory ?? undefined,
                 colorDepth: stealthInputs.colorDepth,
                 userAgent: stealthInputs.userAgent,
                 skipSections: skipIfCloak,

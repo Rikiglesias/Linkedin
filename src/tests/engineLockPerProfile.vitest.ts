@@ -274,9 +274,13 @@ describe('Critico C23 (chat #38) — fix accolti', () => {
         const start = src.indexOf('buildStealthInitScript({');
         expect(start).toBeGreaterThan(0);
         const block = src.slice(start, src.indexOf('});', start));
-        for (const key of ['locale', 'languages', 'viewportWidth', 'viewportHeight', 'hardwareConcurrency', 'colorDepth', 'userAgent']) {
+        for (const key of ['locale', 'languages', 'hardwareConcurrency', 'colorDepth', 'userAgent']) {
             expect(block).toMatch(new RegExp(`${key}: stealthInputs\\.${key}`));
         }
+        // C24: il mock finestra (solo headless, solo engine non-Camoufox) dice ciò che il context rende DAVVERO — il
+        // viewport headless forzato — e ricade sul file quando il context non ne impone uno. Mai il pool.
+        expect(block).toContain('viewportWidth: viewport?.width ?? stealthInputs.viewportWidth');
+        expect(block).toContain('viewportHeight: viewport?.height ?? stealthInputs.viewportHeight');
         expect(block).not.toMatch(/fingerprint\.|pickDesktopFingerprint|pickMobileFingerprint|cloudFingerprints/);
         // La proiezione stessa nasce dal file, mai dal pool: `stealthInputsFromIdentity(identity)` subito dopo la guardia.
         expect(src.indexOf('ensureLaunchIdentity({')).toBeLessThan(src.indexOf('stealthInputsFromIdentity(identity)'));

@@ -1,100 +1,42 @@
 /**
  * harnessIdentity.ts — identità del browser su Camoufox VERO, pagina locale, zero LinkedIn.
  *
- * C28 (base): Camoufox parte, la pagina locale è servita e contata, l'egress è negato; navigator.userAgent e
- * l'header `User-Agent` ricevuto dal server coincidono (due identità per pagina = rilevabile).
- * C23: TRE lanci DAL PATH DI PRODUZIONE (`launchBrowser`, quindi `.fingerprint.json` + guardie + Camoufox con
- * `fingerprint`/`os`/`fonts:spacing_seed` dal file) sulla STESSA sessionDir isolata: ciò che la pagina vede
- * (navigator, screen, finestra, metriche font) deve essere identico nei 3 lanci e uguale al file; il file non
- * cambia di un byte. CONTROL-CASE: una copia dell'identità con un altro `fontsSpacingSeed` in una cartella a
- * parte deve dare metriche font DIVERSE, altrimenti «il seme viene applicato» non sarebbe misurato.
+ * C28: Camoufox parte, pagina locale servita e contata, egress negato, navigator.userAgent = header User-Agent.
+ * C23: TRE lanci dal PATH DI PRODUZIONE (`launchBrowser` → `.fingerprint.json` + guardie + Camoufox dal file) sulla
+ * stessa sessionDir isolata: ciò che la pagina vede è identico nei 3 lanci e uguale al file, che non cambia di un
+ * byte; CONTROL-CASE con altro `fontsSpacingSeed` in cartella a parte → metriche font DIVERSE.
+ * C24: UNA sola identità per pagina (nessuna proprietà propria, API che Firefox non ha assenti, funzioni `[native
+ * code]`, larghezze ripetibili, tz stabile, languages = Accept-Language, finestra ≤ screen ≤ monitor); CONTROL-CASE
+ * os=linux (`harnessIdentityControls.ts`): «Segoe UI» ricade sul fallback come su un vero linux.
+ * NB: `document.fonts.check()` è true per OGNI famiglia senza FontFace da caricare (spec FontFaceSet, misurato
+ * 2026-09-07 anche su linux) → la disponibilità di un font si misura con le larghezze, mai con check().
  *
  * Uso:  npm run harness:identity   (= npx ts-node src/tests/harnessIdentity.ts)
  * Exit: 0 = misure nell'atteso, 1 = almeno una fuori atteso, 2 = sonda rotta (vedi harnessRuntime).
  */
 
 // Il runtime va importato per PRIMO: isola env/sessionDir/DB prima che `src/config` venga caricato (C28).
-import { isLocalRequestUrl, runHarness } from './harnessRuntime';
+import { runHarness } from './harnessRuntime';
 
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import type { Page, Route } from 'playwright';
+import type { Page } from 'playwright';
 import { FONTS_SPACING_SEED_MAX, IDENTITY_FILE_NAME, readBrowserIdentity } from '../browser/browserIdentity';
-import { identityWindow } from '../browser/browserIdentityRuntime';
+import { hostScreenGeometry } from '../browser/browserIdentityRuntime';
 import { closeBrowser, launchBrowser } from '../browser/launcher';
 import { config } from '../config';
+import { type Egress, denyEgress, linuxControlSnapshot } from './harnessIdentityControls';
+import { type Snapshot, snapshotPage } from './harnessIdentitySnapshot';
 
 type Measure = { name: string; got: unknown; expected: string; ok: boolean };
 
-interface Snapshot {
-    userAgent: string;
-    platform: string;
-    oscpu: string | undefined;
-    hardwareConcurrency: number;
-    languages: readonly string[];
-    screen: { width: number; height: number; colorDepth: number };
-    outer: { width: number; height: number };
-    /** Larghezze di testo (canvas + layout) per 4 font × 2 stringhe: la traccia del seme font. */
-    fontWidths: number[];
-}
-
 const FIXTURE = '<!doctype html><title>identity</title><body><p id="t">identità</p></body>';
-const FONTS = ['16px Arial', '16px "Times New Roman"', '16px "Courier New"', '14px Verdana'];
-const TEXTS = ['The quick brown fox jumps over the lazy dog', 'mmmmmmmmmm iiiiiiiiii 0123456789'];
-
-async function snapshotPage(page: Page): Promise<Snapshot> {
-    return page.evaluate<Snapshot, { fonts: string[]; texts: string[] }>(
-        ({ fonts, texts }) => {
-            const widths: number[] = [];
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            for (const font of fonts) {
-                for (const text of texts) {
-                    if (ctx) {
-                        ctx.font = font;
-                        widths.push(ctx.measureText(text).width);
-                    }
-                    const span = document.createElement('span');
-                    span.style.font = font;
-                    span.style.whiteSpace = 'pre';
-                    span.textContent = text;
-                    document.body.appendChild(span);
-                    widths.push(span.getBoundingClientRect().width);
-                    span.remove();
-                }
-            }
-            return {
-                userAgent: navigator.userAgent,
-                platform: navigator.platform,
-                oscpu: (navigator as Navigator & { oscpu?: string }).oscpu,
-                hardwareConcurrency: navigator.hardwareConcurrency,
-                languages: navigator.languages,
-                screen: { width: screen.width, height: screen.height, colorDepth: screen.colorDepth },
-                outer: { width: window.outerWidth, height: window.outerHeight },
-                fontWidths: widths,
-            };
-        },
-        { fonts: FONTS, texts: TEXTS },
-    );
-}
-
-interface Egress {
-    blocked: number;
-    external: number;
-}
 
 /** Lancio DI PRODUZIONE sulla sessionDir data, con lo stesso divieto di egress del runtime C28. */
 async function productionLaunch(sessionDir: string, egress: Egress, accountId?: string): Promise<{ page: Page; close(): Promise<void> }> {
     const session = await launchBrowser({ sessionDir, accountId, headless: true, bypassProxy: true, allowDirectIp: true, forceDesktop: true });
-    await session.browser.route('**/*', (route: Route) => {
-        if (isLocalRequestUrl(route.request().url())) return route.continue();
-        egress.blocked++;
-        return route.abort('blockedbyclient');
-    });
-    session.page.on('requestfinished', (req) => {
-        if (!isLocalRequestUrl(req.url())) egress.external++;
-    });
+    await denyEgress(session.browser, session.page, egress);
     return { page: session.page, close: () => closeBrowser(session) };
 }
 
@@ -102,6 +44,10 @@ function platformCoherentWithOs(snapshot: Snapshot, identityOs: string): boolean
     if (identityOs === 'windows') return snapshot.platform === 'Win32' && (snapshot.oscpu ?? '').startsWith('Windows');
     if (identityOs === 'macos') return snapshot.platform === 'MacIntel';
     return snapshot.platform.startsWith('Linux');
+}
+
+function firstLanguageTag(acceptLanguage: string | undefined): string {
+    return (acceptLanguage ?? '').split(',')[0]?.split(';')[0]?.trim().toLowerCase() ?? '';
 }
 
 async function main(): Promise<void> {
@@ -114,6 +60,7 @@ async function main(): Promise<void> {
         const fixtureUrl = run.serve(FIXTURE);
         const snapshots: Snapshot[] = [];
         const uaHeaders: string[] = [];
+        const acceptLanguageHeaders: string[] = [];
         let fileAfterFirst: Buffer | null = null;
 
         for (let launch = 0; launch < 3; launch++) {
@@ -122,6 +69,7 @@ async function main(): Promise<void> {
                 await launched.page.goto(run.echoHeadersUrl());
                 const headers = JSON.parse(await launched.page.locator('body').innerText()) as Record<string, string | undefined>;
                 uaHeaders.push(headers['user-agent'] ?? '');
+                acceptLanguageHeaders.push(headers['accept-language'] ?? '');
                 await launched.page.goto(fixtureUrl);
                 snapshots.push(await snapshotPage(launched.page));
             } finally {
@@ -149,7 +97,11 @@ async function main(): Promise<void> {
             await control.close();
         }
 
+        // C24 control-case: profilo di prova os=linux, isolato.
+        const linux = await linuxControlSnapshot(fixtureUrl, egress);
+
         const [first] = snapshots;
+        const geometry = hostScreenGeometry(true);
         const same = (pick: (s: Snapshot) => unknown): boolean => snapshots.every((s) => JSON.stringify(pick(s)) === JSON.stringify(pick(first)));
         const measures: Measure[] = [
             {
@@ -175,21 +127,84 @@ async function main(): Promise<void> {
                     first.screen.colorDepth === identity.colorDepth,
             },
             {
-                name: 'languages[0] = locale del file',
-                got: { languages: first.languages, file: identity.locale },
-                expected: `«${identity.locale}» in testa`,
-                ok: first.languages[0] === identity.locale,
+                name: 'languages[0] = locale del file = primo tag di Accept-Language (C24: una sola lingua per pagina)',
+                got: { languages: first.languages, file: identity.locale, acceptLanguage: acceptLanguageHeaders },
+                expected: `«${identity.locale}» in testa e nell'header`,
+                ok: first.languages[0] === identity.locale && acceptLanguageHeaders.every((h) => firstLanguageTag(h) === identity.locale.toLowerCase()),
             },
             {
                 name: 'platform/oscpu coerenti con os del file; finestra e screen frizzati (identici nei 3 lanci)',
-                got: { platform: first.platform, oscpu: first.oscpu, outer: first.outer, screen: first.screen, os: identity.os, window: identityWindow(true) },
-                // Con un `fingerprint` custom camoufox-js ignora `window` (entra solo in generateFingerprint) e la
-                // finestra riportata viene dai dati screen di browserforge (misurato: 1920x1165 e 2752x1237 su due
-                // identità diverse): NON è «= identityWindow». Ciò che deve reggere: piattaforma dell'host e
-                // finestra/screen identici a ogni lancio (misura 1). Il vincolo screen ≤ monitor reale è tracciato
-                // per C24 (`improvements-proposed.md`).
+                got: { platform: first.platform, oscpu: first.oscpu, outer: first.outer, inner: first.inner, screen: first.screen, os: identity.os },
                 expected: 'platform della piattaforma dichiarata; outer/screen positivi e stabili',
                 ok: platformCoherentWithOs(first, identity.os) && first.outer.width > 0 && first.outer.height > 0 && same((s) => s.outer),
+            },
+            {
+                name: 'C24: finestra ≤ screen ≤ monitor (headless: 1920x1080) e inner ≤ outer ≤ screen',
+                got: { screen: first.screen, outer: first.outer, inner: first.inner, geometry },
+                expected: `screen fra ${geometry.window.join('x')} e ${geometry.monitor.join('x')}; inner ≤ outer ≤ screen`,
+                ok:
+                    first.screen.width >= geometry.window[0] &&
+                    first.screen.height >= geometry.window[1] &&
+                    first.screen.width <= geometry.monitor[0] &&
+                    first.screen.height <= geometry.monitor[1] &&
+                    first.inner.width <= first.outer.width &&
+                    first.inner.height <= first.outer.height &&
+                    first.outer.width <= first.screen.width &&
+                    first.outer.height <= first.screen.height,
+            },
+            {
+                name: 'C24: nessuna proprietà PROPRIA su navigator/screen (lo script non ha definito nulla di nativo)',
+                got: first.ownProps,
+                expected: '{ navigator: [], screen: [] }',
+                ok: first.ownProps.navigator.length === 0 && first.ownProps.screen.length === 0,
+            },
+            {
+                name: 'C24: navigator.deviceMemory e performance.memory assenti (Firefox non le espone)',
+                got: { deviceMemory: first.deviceMemory, performanceMemory: first.performanceMemory },
+                expected: 'entrambi undefined',
+                ok: first.deviceMemory === undefined && first.performanceMemory === undefined,
+            },
+            {
+                name: 'C24: fonts.check, measureText, permissions.query, getter webdriver e innerWidth sono [native code]',
+                got: first.natives,
+                expected: 'tutti true',
+                ok: Object.values(first.natives).every(Boolean),
+            },
+            {
+                name: 'C24: stessa stringa misurata 2× nella pagina → larghezza identica (nessun noise JS su measureText)',
+                got: snapshots.map((s) => s.repeatedWidthsEqual),
+                expected: 'true nei 3 lanci',
+                ok: snapshots.every((s) => s.repeatedWidthsEqual),
+            },
+            {
+                name: 'C24: ciò che le sezioni saltate coprivano resta vero NATIVAMENTE (webdriver false, Notification default, notifications prompt)',
+                got: { webdriver: first.webdriver, notificationPermission: first.notificationPermission, notificationsQueryState: first.notificationsQueryState },
+                expected: 'false / default / prompt',
+                ok: first.webdriver === false && first.notificationPermission === 'default' && first.notificationsQueryState === 'prompt',
+            },
+            {
+                name: 'C24: timezone non vuota e identica nei 3 lanci',
+                got: snapshots.map((s) => s.timeZone),
+                expected: 'tre stringhe uguali, non vuote',
+                ok: first.timeZone.length > 0 && same((s) => s.timeZone),
+            },
+            {
+                name: 'C24 (spec): fonts.check è true anche per una famiglia inesistente; sul profilo windows «Segoe UI» è DISPONIBILE (larghezza ≠ fallback)',
+                got: { fontsCheckUnknownFamily: first.fontsCheckUnknownFamily, fontProbe: first.fontProbe },
+                expected: 'check true; segoeMono ≠ mono e segoeSans ≠ sans',
+                ok: first.fontsCheckUnknownFamily === true && first.fontProbe.segoeMono !== first.fontProbe.mono && first.fontProbe.segoeSans !== first.fontProbe.sans,
+            },
+            {
+                name: 'C24 control-case os=linux (Camoufox + stesso script del launcher): «Segoe UI» ricade sul fallback, platform Linux, zero proprietà proprie, funzioni native',
+                got: { fontProbe: linux.fontProbe, platform: linux.platform, ownProps: linux.ownProps, natives: linux.natives },
+                expected: 'segoeMono = mono e segoeSans = sans; platform Linux…; ownProps vuote; natives tutti true',
+                ok:
+                    linux.fontProbe.segoeMono === linux.fontProbe.mono &&
+                    linux.fontProbe.segoeSans === linux.fontProbe.sans &&
+                    linux.platform.startsWith('Linux') &&
+                    linux.ownProps.navigator.length === 0 &&
+                    linux.ownProps.screen.length === 0 &&
+                    Object.values(linux.natives).every(Boolean),
             },
             {
                 name: 'control-case: altro fontsSpacingSeed → metriche font DIVERSE (il seme del file è applicato)',
@@ -210,15 +225,15 @@ async function main(): Promise<void> {
                 ok: fileAfterFirst !== null && Buffer.compare(fileAfterFirst, fileAfterThird) === 0,
             },
             {
-                name: 'egress dai lanci di produzione = 0 (bloccate 0, esterne completate 0)',
+                name: 'egress dai lanci di produzione e dai control-case = 0 (bloccate 0, esterne completate 0)',
                 got: egress,
                 expected: '{ blocked: 0, external: 0 }',
                 ok: egress.blocked === 0 && egress.external === 0,
             },
         ];
 
-        console.log('\n=== IDENTITÀ — Camoufox vero dal path di produzione, 3 lanci + control, pagina locale, egress negato ===\n');
-        console.log(`file: ${JSON.stringify({ engine: identity.engine, engineBuild: identity.engineBuild, os: identity.os, seed: identity.fontsSpacingSeed })}\n`);
+        console.log('\n=== IDENTITÀ — Camoufox vero dal path di produzione, 3 lanci + 2 control (seme font, os=linux), pagina locale, egress negato ===\n');
+        console.log(`file: ${JSON.stringify({ engine: identity.engine, engineBuild: identity.engineBuild, os: identity.os, seed: identity.fontsSpacingSeed, viewport: identity.viewport })}\n`);
         let failed = 0;
         for (const m of measures) {
             if (!m.ok) failed++;

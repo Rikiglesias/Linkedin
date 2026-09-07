@@ -16,11 +16,22 @@
  *  9. Battery API mock (navigator.getBattery)
  * 10. Notification.permission mock
  * 11. AudioContext Fingerprint Spoofing
+ * 12. navigator.deviceMemory mock (solo Chromium: Firefox non la espone)
+ * 12-bis. performance.memory mock (solo Chromium: Firefox non la espone)
+ * 13. screen.colorDepth / pixelDepth mock
+ * 14. Font enumeration defense (document.fonts.check + measureText noise, H22)
  * 15. getHasLiedOs bypass (OS consistency: userAgent vs platform vs oscpu)
  * 16. getHasLiedLanguages bypass (language === languages[0])
  * 17. CDP leak detection bypass (Runtime.enable / Debugger artifacts)
  * 18. WebGL renderer consistency (GPU matches claimed OS)
  * 19. iframe contentWindow.chrome consistency
+ *
+ * C24 (contratto `bot-operativo`) — UNA sola identità per pagina: ogni sezione che definisce una proprietà che
+ * Camoufox fornisce già a livello C++ ha una guardia `_skip.has('<chiave>')`; il registro delle chiavi native è
+ * `CAMOUFOX_NATIVE_SECTIONS` (sotto) e il launcher lo passa come `skipSections` sul ramo Camoufox. Il motivo:
+ * `Object.defineProperty(navigator, …)` crea una proprietà PROPRIA (`Object.getOwnPropertyNames(navigator) ≠ []`) e
+ * una funzione JS al posto di un getter nativo perde `[native code]` in `toString()` — due identità sulla stessa
+ * pagina, rilevabili con una riga di JS. Sul ramo Chromium (set vuoto) tutte le sezioni girano come prima.
  */
 
 export interface StealthScriptOptions {
@@ -34,12 +45,41 @@ export interface StealthScriptOptions {
     colorDepth?: number;
     audioNoise?: number;
     /** User-Agent string per determinare il browser family (Chrome vs Firefox).
-     * Se contiene 'Firefox', le sezioni Chrome-specific (plugins, window.chrome) vengono saltate. */
+     * Se contiene 'Firefox', le sezioni Chrome-specific (plugins, window.chrome, deviceMemory,
+     * performance.memory, navigator.connection) vengono saltate: Firefox non ha quelle API. */
     userAgent?: string;
-    /** Sezioni da saltare se CloakBrowser gestisce già queste API a livello binario.
-     * Valori: 'canvas', 'webgl', 'hwconcurrency', 'plugins', 'audio', 'battery', 'webrtc' */
+    /** Sezioni da saltare se il binario (Camoufox/CloakBrowser) gestisce già queste API a livello nativo.
+     * Valori: le chiavi di `CAMOUFOX_NATIVE_SECTIONS` (ogni chiave ha la sua guardia `_skip.has()` nello script). */
     skipSections?: Set<string>;
 }
+
+/**
+ * Sezioni che Camoufox fornisce a livello C++ — dal mapping `camoufox-js/dist/mappings/browserforge.config.js`
+ * (navigator.*, screen.*, window.inner/outer*) più WebRTC/audio/canvas/webgl/battery/font nel binario.
+ * NON iniettare JS per queste: doppia patch = marker di bot (C24). Ogni voce, tranne `canvas`/`webgl` che vivono
+ * nello script del launcher, ha la sua guardia `_skip.has()` qui sotto — invariante verificata da
+ * `src/tests/camoufoxNativeSections.vitest.ts`.
+ */
+export const CAMOUFOX_NATIVE_SECTIONS: ReadonlySet<string> = new Set([
+    'webrtc', // protocol-level IP spoofing
+    'plugins', // N/A Firefox
+    'hwconcurrency', // C++ level
+    'audio', // C++ level
+    'battery', // C++ level
+    'canvas', // C++ rendering level (script del launcher)
+    'webgl', // C++ webgl_config (script del launcher)
+    // C24 — una sola identità per pagina
+    'webdriver', // dom.webdriver.enabled=false + patch del binario
+    'languages', // navigator.languages dal fingerprint/locale
+    'language', // navigator.language dal fingerprint/locale
+    'permissions', // permissions.query e Notification.permission: default Firefox 'prompt'/'default'
+    'window', // window.inner/outer* dal fingerprint (handleWindowSize)
+    'devicememory', // Firefox non espone navigator.deviceMemory
+    'colordepth', // screen.colorDepth/pixelDepth dal fingerprint
+    'perfmemory', // Firefox non espone performance.memory
+    'fonts', // lista font per os + fonts:spacing_seed nel binario (document.fonts.check e measureText nativi)
+    'platform', // navigator.platform/oscpu dal fingerprint
+]);
 
 const DEFAULT_OPTIONS: StealthScriptOptions = {
     locale: 'it-IT',
@@ -104,6 +144,8 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
     // ─── 2. navigator.webdriver force-delete ─────────────────────────────────
     // Doppia protezione: il flag --disable-blink-features=AutomationControlled
     // copre il Chrome flag, ma alcuni test JS lo checkano direttamente.
+    // C24: su Camoufox è nativo (pref + patch) → proprietà propria = marker: saltata.
+    if (!_skip.has('webdriver')) {
     try {
         Object.defineProperty(navigator, 'webdriver', {
             get: () => false,
@@ -120,6 +162,7 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
             });
         }
     } catch {}
+    } // end webdriver skip
 
     // ─── 3. navigator.plugins normalization (PluginArray-compliant) ──────────
     // Playwright/headless ha plugins vuoti. Chrome reale ne ha almeno 3.
@@ -225,7 +268,8 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
 
     // ─── 4. navigator.languages normalization ────────────────────────────────
     // Playwright setta solo il locale singolo. Chrome reale ha una lista.
-    try {
+    // C24: su Camoufox viene dal fingerprint/locale (nativo) → saltata.
+    if (!_skip.has('languages')) try {
         Object.defineProperty(navigator, 'languages', {
             get: () => ${languagesJson},
             configurable: true
@@ -290,6 +334,8 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
     // ─── 6. navigator.permissions.query override ─────────────────────────────
     // Playwright risponde "denied" a permissions.query({name:'notifications'}).
     // Chrome reale risponde "prompt" (l'utente non ha mai risposto).
+    // C24: su Camoufox il default Firefox è già 'prompt' e una query JS perde [native code] → saltata.
+    if (!_skip.has('permissions')) {
     const originalPermissionsQuery = navigator.permissions?.query?.bind(navigator.permissions);
     if (originalPermissionsQuery) {
         navigator.permissions.query = function(descriptor) {
@@ -299,21 +345,24 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
             return originalPermissionsQuery(descriptor);
         };
     }
+    } // end permissions skip
 
     // ─── 7. Anti-headless guards (condizionali) ──────────────────────────────
     ${
         opts.isHeadless
             ? `
-    // In headless mode: normalizza le dimensioni della finestra per sembrare reale
-    try {
+    // In headless mode: normalizza le dimensioni della finestra per sembrare reale.
+    // C24: su Camoufox inner/outer vengono dal fingerprint (handleWindowSize) → saltata.
+    if (!_skip.has('window')) try {
         Object.defineProperty(window, 'outerWidth', { get: () => ${opts.viewportWidth}, configurable: true });
         Object.defineProperty(window, 'outerHeight', { get: () => ${opts.viewportHeight + 85}, configurable: true }); // +85 per toolbar Chrome
         Object.defineProperty(window, 'innerWidth', { get: () => ${opts.viewportWidth}, configurable: true });
         Object.defineProperty(window, 'innerHeight', { get: () => ${opts.viewportHeight}, configurable: true });
     } catch {}
 
-    // Mock navigator.connection (assente in headless)
-    if (!navigator.connection) {
+    // Mock navigator.connection (assente in headless). Firefox desktop non ha la Network Information API:
+    // definirla sotto una UA Firefox è un marker (C24).
+    if (!_isFirefox && !navigator.connection) {
         try {
             Object.defineProperty(navigator, 'connection', {
                 get: () => ({
@@ -351,7 +400,7 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
         if (!navigator.getBattery || navigator.getBattery.toString().includes('native code')) {
             const mockStartTime = Date.now();
             const startLevel = 0.85 + (Math.floor(Date.now() % 10) / 100);
-            
+
             navigator.getBattery = function() {
                 // drain fittizio dell'1% ogni 10 minuti
                 const elapsedMinutes = (Date.now() - mockStartTime) / 60000;
@@ -363,7 +412,7 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
                 const batteryMock = {
                     charging: charging,
                     chargingTime: charging ? (1 - currentLevel) * 7200 : Infinity,
-                    dischargingTime: charging ? Infinity : (currentLevel / 0.1) * 600, // stima restanti proporzionale al livello 
+                    dischargingTime: charging ? Infinity : (currentLevel / 0.1) * 600, // stima restanti proporzionale al livello
                     level: currentLevel,
                     onchargingchange: null,
                     onchargingtimechange: null,
@@ -382,7 +431,8 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
     // Notification.permission uses 'default'/'granted'/'denied' (NOT 'prompt').
     // permissions.query({name:'notifications'}) uses 'prompt'/'granted'/'denied'.
     // Both APIs represent the same "never asked" state with different values.
-    try {
+    // C24: stessa chiave della sezione 6 — su Camoufox il default Firefox è già 'default'.
+    if (!_skip.has('permissions')) try {
         if (typeof Notification !== 'undefined') {
             Object.defineProperty(Notification, 'permission', {
                 get: () => 'default',
@@ -421,7 +471,7 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
                 }
                 return results;
             };
-            
+
             if (typeof AnalyserNode !== 'undefined' && AnalyserNode.prototype.getFloatFrequencyData) {
                 const originalGetFloatFrequencyData = AnalyserNode.prototype.getFloatFrequencyData;
                 AnalyserNode.prototype.getFloatFrequencyData = function(array) {
@@ -458,7 +508,8 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
 
     // ─── 12. navigator.deviceMemory mock ─────────────────────────────────────
     // Headless browser spesso espongono deviceMemory bassi (es. docker).
-    try {
+    // C24: Firefox (e quindi Camoufox) NON espone navigator.deviceMemory — definirla sotto una UA Firefox è un marker.
+    if (!_skip.has('devicememory') && !_isFirefox) try {
         Object.defineProperty(navigator, 'deviceMemory', {
             get: () => ${deviceMemory},
             configurable: true
@@ -466,7 +517,8 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
     } catch {}
 
     // ─── 13. screen.colorDepth e screen.pixelDepth mock ──────────────────────
-    try {
+    // C24: su Camoufox vengono dal fingerprint (nativo) → saltata.
+    if (!_skip.has('colordepth')) try {
         if (window.screen) {
             Object.defineProperty(window.screen, 'colorDepth', {
                 get: () => ${colorDepth},
@@ -478,16 +530,14 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
             });
         }
     } catch {}
-    // ─── 12. AB-6: performance.memory mock ─────────────────────────────────────
+    // ─── 12-bis. AB-6: performance.memory mock ─────────────────────────────────
     // Chromium espone performance.memory (non-standard) — un browser headless
     // fresco ha un heap piccolo e costante. Un browser reale con tab aperte
     // ha un heap che cresce nel tempo. Simuliamo crescita progressiva.
-    // M41: In Firefox, performance.memory e' ASSENTE by design (non-standard W3C).
-    // Il check !performance.memory e' true in Firefox, quindi il mock viene creato.
-    // Se Camoufox/CloakBrowser patcha performance.memory a livello C++,
-    // il nostro mock JS viene saltato (il check e' false). Questo e' corretto:
-    // il browser engine lo gestisce meglio di noi. Nessuna azione necessaria per Firefox.
-    try {
+    // C24 (sostituisce M41): in Firefox performance.memory è ASSENTE by design, quindi il check
+    // !performance.memory è vero e il mock verrebbe CREATO — un Firefox con performance.memory è un marker.
+    // Sotto una UA Firefox, e su Camoufox (chiave 'perfmemory'), la sezione non gira.
+    if (!_skip.has('perfmemory') && !_isFirefox) try {
         if (typeof performance !== 'undefined' && !performance.memory) {
             // AB8 (backend-audit 2026-06-13, antiban-review SICURO): il valore è una funzione
             // DETERMINISTICA del tempo, NON di Math.random() per-call. Prima il getter randomizzava
@@ -529,7 +579,9 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
     // FingerprintJS 4.x usa document.fonts.check() per enumerare font installati.
     // Headless browser riportano disponibilità font diversa dai browser reali.
     // Mock: restituisce true per font di sistema comuni, false per font esotici.
-    try {
+    // C24: su Camoufox la lista font è quella dell'os dichiarato (binario) e document.fonts.check resta nativa →
+    // saltata; il mock diceva «Segoe UI presente» anche su un profilo linux.
+    if (!_skip.has('fonts')) try {
         if (typeof document !== 'undefined' && document.fonts && document.fonts.check) {
             const commonFonts = new Set([
                 'Arial', 'Verdana', 'Helvetica', 'Times New Roman', 'Georgia',
@@ -556,7 +608,8 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
     // FingerprintJS and similar libraries measure glyph dimensions via canvas to enumerate fonts.
     // Adds ±0.5px deterministic noise to TextMetrics.width using Mulberry32 PRNG seeded
     // with the font string. Consistent with the existing canvas fingerprint noise approach.
-    try {
+    // C24: su Camoufox il seme font (fonts:spacing_seed) vive nel binario e measureText resta nativa → stessa chiave 'fonts'.
+    if (!_skip.has('fonts')) try {
         if (typeof CanvasRenderingContext2D !== 'undefined') {
             const originalMeasureText = CanvasRenderingContext2D.prototype.measureText;
             CanvasRenderingContext2D.prototype.measureText = function(text) {
@@ -585,7 +638,8 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
     // LinkedIn (via FingerprintJS) chiama getHasLiedOs: controlla che userAgent,
     // navigator.platform e navigator.oscpu siano coerenti con lo stesso OS.
     // Se uno dice "Windows" e l'altro dice "Mac", il fingerprint è "forged".
-    try {
+    // C24: su Camoufox platform/oscpu vengono dal fingerprint (nativi e coerenti con la UA) → saltata.
+    if (!_skip.has('platform')) try {
         const ua = navigator.userAgent || '';
         let expectedPlatform, expectedOscpu;
         if (/iPhone/.test(ua)) {
@@ -621,7 +675,8 @@ export function buildStealthInitScript(options?: Partial<StealthScriptOptions>):
     // ─── 16. getHasLiedLanguages bypass ───────────────────────────────────────
     // LinkedIn verifica che navigator.language === navigator.languages[0].
     // Se non corrispondono, è un segnale di spoofing.
-    try {
+    // C24: su Camoufox navigator.language è nativa e coerente con languages → saltata.
+    if (!_skip.has('language')) try {
         const langs = ${languagesJson};
         if (langs && langs.length > 0) {
             Object.defineProperty(navigator, 'language', {

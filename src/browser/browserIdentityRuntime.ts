@@ -52,26 +52,129 @@ export function resolveEngineBuild(engine: IdentityEngine): string {
     return playwrightBrowserVersion(engine);
 }
 
+/** Geometria dell'host con cui l'identità NASCE (C23/C24). */
+export interface HostScreenGeometry {
+    /** Finestra reale = WorkingArea (schermo meno taskbar): Camoufox ne fa l'outer size (`handleWindowSize`). Headless = viewport headless del launcher. */
+    window: [number, number];
+    /** Monitor reale = Bounds: tetto (di igiene) dello screen dichiarato dal fingerprint. Headless = la finestra stessa. */
+    monitor: [number, number];
+}
+
+const FALLBACK_GEOMETRY: HostScreenGeometry = { window: [1366, 768], monitor: [1366, 768] };
+
+function numbersAfter(label: string, text: string): number[] {
+    const found: number[] = [];
+    const re = new RegExp(`${label}\\s*:\\s*(\\d+)`, 'g');
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) found.push(parseInt(m[1], 10));
+    return found;
+}
+
 /**
- * Finestra con cui l'identità NASCE: Camoufox ne deriva screen/outer size (`fingerprints.js:handleWindowSize`) e
- * la riapplica a ogni lancio. Headless = il viewport headless del launcher; altrimenti la WorkingArea reale.
+ * Finestra e monitor reali dell'host, letti UNA volta alla creazione dell'identità (e riusati dal launcher per la
+ * finestra). Headless = 1920x1080 per entrambi; altrimenti WorkingArea + Bounds dello schermo primario.
  */
-export function identityWindow(headless: boolean): [number, number] {
-    if (headless) return [1920, 1080];
+export function hostScreenGeometry(headless: boolean): HostScreenGeometry {
+    if (headless) return { window: [1920, 1080], monitor: [1920, 1080] };
     if (process.platform === 'win32') {
         try {
             const out = execSync(
-                'powershell -NoProfile -c "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea | Format-List Width,Height"',
+                'powershell -NoProfile -c "Add-Type -AssemblyName System.Windows.Forms; $s = [System.Windows.Forms.Screen]::PrimaryScreen; $s.WorkingArea | Format-List Width,Height; $s.Bounds | Format-List Width,Height"',
                 { encoding: 'utf8', timeout: 5000 },
             );
-            const width = out.match(/Width\s*:\s*(\d+)/);
-            const height = out.match(/Height\s*:\s*(\d+)/);
-            if (width && height) return [parseInt(width[1], 10), parseInt(height[1], 10)];
+            const widths = numbersAfter('Width', out);
+            const heights = numbersAfter('Height', out);
+            if (widths.length === 2 && heights.length === 2) {
+                return { window: [widths[0], heights[0]], monitor: [widths[1], heights[1]] };
+            }
         } catch (error) {
-            console.warn('[IDENTITY] WorkingArea non leggibile, finestra di fallback 1366x768:', error instanceof Error ? error.message : String(error));
+            console.warn('[IDENTITY] WorkingArea/Bounds non leggibili, geometria di fallback 1366x768:', error instanceof Error ? error.message : String(error));
         }
     }
-    return [1366, 768];
+    return FALLBACK_GEOMETRY;
+}
+
+/** Finestra con cui l'identità è nata e che Camoufox riapplica a ogni lancio (stessa regola di `hostScreenGeometry`). */
+export function identityWindow(headless: boolean): [number, number] {
+    return hostScreenGeometry(headless).window;
+}
+
+export type ScreenConstraint = { minWidth?: number; minHeight?: number; maxWidth?: number; maxHeight?: number };
+
+export interface BrowserforgeScreenLike {
+    screen?: { width?: unknown; height?: unknown };
+}
+
+function screenOf(fingerprint: BrowserforgeScreenLike): { width: number; height: number } {
+    const width = fingerprint.screen?.width;
+    const height = fingerprint.screen?.height;
+    if (typeof width !== 'number' || typeof height !== 'number') throw new Error('[IDENTITY] browserforge ha restituito un fingerprint senza screen.width/height');
+    return { width, height };
+}
+
+/** Invariante DURA di C24: lo screen dichiarato contiene la finestra — `handleWindowSize` centra la finestra nello screen, uno screen più piccolo dà screenX/Y negativi visibili alla pagina. */
+export function assertScreenContainsWindow(screen: { width: number; height: number }, window: [number, number]): void {
+    if (screen.width < window[0] || screen.height < window[1]) {
+        throw new Error(`[IDENTITY] screen browserforge ${screen.width}x${screen.height} più piccolo della finestra ${window[0]}x${window[1]}`);
+    }
+}
+
+export type ScreenAttempt = 1 | 2 | 3 | 4;
+
+/** Riduzione massima «soft» della finestra quando lo screen ≤ monitor è più piccolo di lei (una finestra non massimizzata è plausibile, una minuscola no). */
+const SOFT_SHRINK = { width: 0.9, height: 0.85 } as const;
+
+/**
+ * C24 — sceglie lo screen browserforge più coerente con l'host, in quattro tentativi dal migliore al minimo accettabile:
+ *  ① finestra ≤ screen ≤ monitor (host e dataset d'accordo: es. 1920x1040 / 1920x1080 → 1920x1080);
+ *  ② screen ≤ monitor ma ≥ 90%×85% della finestra, finestra RIDOTTA allo screen — host con risoluzione logica fuori
+ *     dataset (misurato: laptop a 125% = finestra 1463x866, monitor 1463x914 → 1366x768): una finestra non
+ *     massimizzata è plausibile, uno screen più piccolo della finestra no;
+ *  ③ come ② senza pavimento (qualunque screen ≤ monitor);
+ *  ④ screen ≥ finestra, monitor ignorato con avviso: il tetto del monitor è igiene (la pagina non vede l'hardware),
+ *     l'invariante «screen contiene la finestra» è ciò che la pagina vede.
+ * `generate` riceve la finestra da passare a `handleWindowSize` e il vincolo `screen` (`strict`: fingerprint-generator
+ * altrimenti rilassa in silenzio). La finestra usata finisce nel fingerprint (outerWidth/outerHeight) e quindi nel file.
+ */
+export function generateBrowserforgeWithinHost<T extends BrowserforgeScreenLike>(
+    generate: (window: [number, number], constraint: ScreenConstraint) => T,
+    geometry: HostScreenGeometry,
+): { fingerprint: T; window: [number, number]; attempt: ScreenAttempt } {
+    const { window, monitor } = geometry;
+    const cap: ScreenConstraint = { maxWidth: monitor[0], maxHeight: monitor[1] };
+    const floor: ScreenConstraint = { minWidth: window[0], minHeight: window[1] };
+    const softFloor: ScreenConstraint = { minWidth: Math.round(window[0] * SOFT_SHRINK.width), minHeight: Math.round(window[1] * SOFT_SHRINK.height) };
+    const shrinkToScreen = (constraint: ScreenConstraint, attempt: ScreenAttempt) => (): { fingerprint: T; window: [number, number]; attempt: ScreenAttempt } => {
+        const probe = screenOf(generate(window, constraint));
+        const shrunk: [number, number] = [Math.min(window[0], probe.width), Math.min(window[1], probe.height)];
+        const exact: ScreenConstraint = { minWidth: probe.width, maxWidth: probe.width, minHeight: probe.height, maxHeight: probe.height };
+        return { fingerprint: generate(shrunk, exact), window: shrunk, attempt };
+    };
+    const attempts: Array<() => { fingerprint: T; window: [number, number]; attempt: ScreenAttempt }> = [
+        () => ({ fingerprint: generate(window, { ...floor, ...cap }), window, attempt: 1 }),
+        shrinkToScreen({ ...softFloor, ...cap }, 2),
+        shrinkToScreen(cap, 3),
+        () => ({ fingerprint: generate(window, floor), window, attempt: 4 }),
+    ];
+    let lastError: unknown;
+    for (const attempt of attempts) {
+        try {
+            const result = attempt();
+            const screen = screenOf(result.fingerprint);
+            assertScreenContainsWindow(screen, result.window);
+            if (result.attempt === 4) {
+                console.warn(
+                    `[IDENTITY] nessuno screen browserforge ≤ monitor ${monitor.join('x')} contiene la finestra ${window.join('x')}: screen ${screen.width}x${screen.height} oltre il monitor (invisibile alla pagina)`,
+                );
+            }
+            return result;
+        } catch (error) {
+            lastError = error;
+        }
+    }
+    throw new Error(
+        `[IDENTITY] nessuno screen browserforge coerente con finestra ${window.join('x')} / monitor ${monitor.join('x')}: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+    );
 }
 
 function languagesFor(locale: string): string[] {
@@ -90,15 +193,19 @@ function deriveCoherentHardware(fingerprintId: string, isMobile: boolean): Pick<
     };
 }
 
-interface BrowserforgeShape {
+interface BrowserforgeShape extends BrowserforgeScreenLike {
     navigator?: { userAgent?: unknown; hardwareConcurrency?: unknown };
     screen?: { width?: unknown; height?: unknown; colorDepth?: unknown };
 }
 
 async function generateCamoufoxIdentity(os: IdentityOs, major: number, headless: boolean): Promise<GeneratedIdentity> {
     const { generateFingerprint } = await import('camoufox-js/dist/fingerprints.js');
-    const raw: unknown = generateFingerprint(identityWindow(headless), { operatingSystems: [os] });
-    const bf = rewriteVersionStrings(raw, major) as BrowserforgeShape;
+    // C24: screen coerente con la geometria reale dell'host (vedi generateBrowserforgeWithinHost).
+    const chosen = generateBrowserforgeWithinHost(
+        (window, screen) => generateFingerprint(window, { operatingSystems: [os], screen, strict: true }) as BrowserforgeShape,
+        hostScreenGeometry(headless),
+    );
+    const bf = rewriteVersionStrings(chosen.fingerprint, major) as BrowserforgeShape;
     const userAgent = bf.navigator?.userAgent;
     const hardwareConcurrency = bf.navigator?.hardwareConcurrency;
     const width = bf.screen?.width;
