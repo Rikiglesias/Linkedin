@@ -848,9 +848,21 @@ export async function runCreateProfileCommand(args: string[]): Promise<void> {
     const timeoutRaw = getOptionValue(args, '--timeout') ?? positional.find((value) => /^\d+$/.test(value));
     const url = getOptionValue(args, '--url') ?? 'https://www.linkedin.com/login';
     const timeoutSeconds = timeoutRaw ? Math.max(60, parseIntStrict(timeoutRaw, '--timeout')) : 900;
+    // F-7c1a9e04: senza --dir si scrive nella cartella dell'account, la stessa che apre `login`.
+    // `--account` esiste qui per la stessa ragione per cui esiste in `login`: in multi-account il
+    // jar giusto e' quello di QUEL account, non il primo configurato.
+    const accountRaw = getOptionValue(args, '--account');
+    const selectedAccount = getAccountProfileById(accountRaw || undefined);
+    if (accountRaw && accountRaw !== selectedAccount.id) {
+        console.warn(
+            `[PROFILE] account=${accountRaw} non trovato. Uso account=${selectedAccount.id}. Disponibili: ${getRuntimeAccountProfiles()
+                .map((account) => account.id)
+                .join(', ')}`,
+        );
+    }
 
     await createPersistentProfile({
-        profileDir: resolveProfileDir(dirRaw),
+        profileDir: resolveProfileDir(dirRaw, selectedAccount.id),
         timeoutSeconds,
         loginUrl: url,
     });

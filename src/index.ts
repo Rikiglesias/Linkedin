@@ -213,7 +213,7 @@ function printHelp(): void {
     console.log('  run-loop [workflow] [intervalSec] [--cycles <n>] [--dry-run]');
     console.log('  autopilot [intervalSec] [--cycles <n>] [--dry-run]');
     console.log('  login [timeoutSec] [--account <id_account>]');
-    console.log('  create-profile [--dir <path>] [--timeout <sec>] [--url <linkedin_login_url>]');
+    console.log('  create-profile [--account <id>] [--dir <path>] [--timeout <sec>] [--url <linkedin_login_url>]');
     console.log('  doctor');
     console.log('  status');
     console.log('  diagnostics [--sections <all|health,locks,queue,sync,selectors>] [--date <YYYY-MM-DD>]');

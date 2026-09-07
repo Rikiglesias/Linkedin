@@ -21,6 +21,9 @@ const mocks = vi.hoisted(() => ({
     ensureDirectoryPrivate: vi.fn(),
     config: {
         browserEngine: 'chromium',
+        // F-7c1a9e04: il default del profilo passa da resolveSessionDir(), che legge queste due.
+        sessionDir: './data/session',
+        multiAccountEnabled: false,
         proxyUrl: '',
         proxyListPath: '',
         proxyProviderApiEndpoint: undefined as string | undefined,
@@ -50,18 +53,20 @@ vi.mock('../browser/sessionCookieMonitor', () => ({
 
 import { createPersistentProfile } from '../scripts/createProfile';
 
-function fakeSession() {
+/**
+ * `giaAutenticato` (F-7c1a9e04): il PRIMO `cookies()` decide se il jar era gia' loggato PRIMA di
+ * questo comando. Default = jar vuoto al primo controllo e `li_at` al secondo, cioe' un login vero
+ * avvenuto durante il comando (niente loop da 900s). Con `gia: true` il jar e' gia' autenticato.
+ */
+function fakeSession(opzioni: { gia?: boolean } = {}) {
     const page = {
         goto: vi.fn().mockResolvedValue(undefined),
         waitForTimeout: vi.fn().mockResolvedValue(undefined),
     };
-    return {
-        page,
-        // li_at presente al primo giro -> loginDetected, esce subito (niente loop da 900s).
-        browser: {
-            cookies: vi.fn().mockResolvedValue([{ name: 'li_at' }]),
-        },
-    };
+    const cookies = opzioni.gia
+        ? vi.fn().mockResolvedValue([{ name: 'li_at' }])
+        : vi.fn().mockResolvedValueOnce([]).mockResolvedValue([{ name: 'li_at' }]);
+    return { page, browser: { cookies } };
 }
 
 describe('createProfile AB-24 — login mai su IP diretto', () => {
@@ -108,6 +113,17 @@ describe('createProfile AB-24 — login mai su IP diretto', () => {
         expect(mocks.launchBrowser).toHaveBeenCalledTimes(1);
         const launchOptions = mocks.launchBrowser.mock.calls[0][0];
         expect(launchOptions.proxy).toBeUndefined();
+    });
+
+    test('jar GIA autenticato -> nessun login nuovo, baseline di freschezza NON toccata', async () => {
+        // F-7c1a9e04: col default sulla cartella dell'account il jar puo' essere gia' loggato.
+        // Registrare la baseline qui direbbe al bot che la sessione e' fresca di oggi e ritarderebbe
+        // la rotazione dei 7 giorni su cookie vecchi.
+        mocks.launchBrowser.mockResolvedValue(fakeSession({ gia: true }));
+        await createPersistentProfile({ timeoutSeconds: 60 });
+        expect(mocks.launchBrowser).toHaveBeenCalledTimes(1);
+        expect(mocks.recordSuccessfulAuth).not.toHaveBeenCalled();
+        expect(mocks.closeBrowser).toHaveBeenCalledTimes(1);
     });
 
     test('preferisce lo sticky proxy quando disponibile', async () => {

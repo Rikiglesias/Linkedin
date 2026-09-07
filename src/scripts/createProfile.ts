@@ -1,4 +1,5 @@
 import path from 'path';
+import { resolveSessionDir } from '../accountManager';
 import { config } from '../config';
 import { ensureDirectoryPrivate } from '../security/filesystem';
 import { getProxyFailoverChainAsync, getStickyProxy, type ProxyConfig } from '../proxyManager';
@@ -11,12 +12,19 @@ export interface CreateProfileOptions {
     timeoutSeconds: number;
 }
 
-const DEFAULT_PROFILE_DIR = path.resolve(process.cwd(), 'profiles', 'linkedin-profile');
 const DEFAULT_LOGIN_URL = 'https://www.linkedin.com/login';
 
-export function resolveProfileDir(rawDir: string | null | undefined): string {
+/**
+ * F-7c1a9e04 (anti-ban, trovato dal critico di fine blocco A): il default NON puo' essere una
+ * costante di modulo. Era `<cwd>/profiles/linkedin-profile`, mentre `login`, `send-invites` e
+ * `identity-init` passano da `resolveSessionDir()` (`data/session`): due cookie jar e due
+ * `.fingerprint.json` per lo STESSO account, cioe' due dispositivi diversi per LinkedIn nel
+ * momento piu' sensibile (il login che setta `li_at`). Il default e' ora la funzione unica di C53;
+ * `--dir` resta sovrano per i profili usa-e-getta e la diagnostica.
+ */
+export function resolveProfileDir(rawDir: string | null | undefined, accountId?: string | null): string {
     if (!rawDir || !rawDir.trim()) {
-        return DEFAULT_PROFILE_DIR;
+        return resolveSessionDir(accountId);
     }
     const trimmed = rawDir.trim();
     return path.isAbsolute(trimmed) ? trimmed : path.resolve(process.cwd(), trimmed);
@@ -80,9 +88,15 @@ export async function createPersistentProfile(options: Partial<CreateProfileOpti
             `[PROFILE] Completa il login manualmente entro ${timeoutSeconds}s. I cookie verranno salvati nel profilo.`,
         );
 
+        // F-7c1a9e04 (secondo effetto, trovato dalla review anti-ban): ora che il default e' la
+        // cartella dell'account, il jar puo' essere GIA' autenticato. Se `li_at` c'e' gia' al primo
+        // controllo non e' avvenuto nessun login nuovo: registrare la baseline di freschezza
+        // azzererebbe il countdown di rotazione (7gg) su una sessione vecchia, facendola sembrare
+        // fresca. La baseline si scrive SOLO per un login davvero avvenuto in questo comando.
+        const giaAutenticato = (await session.browser.cookies()).some((cookie) => cookie.name === 'li_at');
         const timeoutAt = Date.now() + timeoutSeconds * 1000;
         let loginDetected = false;
-        while (Date.now() < timeoutAt) {
+        while (!giaAutenticato && Date.now() < timeoutAt) {
             const cookies = await session.browser.cookies();
             if (cookies.some((cookie) => cookie.name === 'li_at')) {
                 loginDetected = true;
@@ -91,7 +105,11 @@ export async function createPersistentProfile(options: Partial<CreateProfileOpti
             await page.waitForTimeout(2500);
         }
 
-        if (loginDetected) {
+        if (giaAutenticato) {
+            console.log(
+                `[PROFILE] Sessione gia' autenticata in ${profileDir}: nessun login eseguito, baseline di freschezza NON toccata. Usa --dir per un profilo separato.`,
+            );
+        } else if (loginDetected) {
             // CL3: registra la baseline di freshness al momento del login reale, cosi' il countdown
             // di rotazione sessione (7gg) parte da ora e non dalla prima run di automazione.
             await recordSuccessfulAuth(profileDir, 'create-profile');

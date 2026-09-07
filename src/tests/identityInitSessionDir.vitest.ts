@@ -23,6 +23,7 @@ import {
     type PersistedBrowserIdentity,
 } from '../browser/browserIdentity';
 import { resolveIdentityInitTarget, runIdentityInitCommand } from '../cli/commands/identityInit';
+import { resolveProfileDir } from '../scripts/createProfile';
 
 const ROOT = process.cwd();
 const SRC = path.join(ROOT, 'src');
@@ -298,5 +299,56 @@ describe('C53 — contratto di identity-init', () => {
             () => ({ sessionDir: tmpDir('hint2'), accountId: 'default', newSession: false }),
         );
         expect(senzaFlag.out.configHint).toBeNull();
+    });
+});
+
+describe('F-7c1a9e04 — create-profile apre la stessa cartella di login', () => {
+    // Il critico di fine task ha trovato che `create-profile` fa un login LinkedIn REALE su un default
+    // hardcoded (`<cwd>/profiles/linkedin-profile`) mentre `login`/`send-invites`/`identity-init`
+    // risolvono la funzione unica: due cookie jar e due `.fingerprint.json` per lo stesso account,
+    // cioe' due dispositivi per LinkedIn. Stesso buco di C53, su un comando che C53 non aveva toccato.
+    it('senza --dir il profilo e la cartella della funzione unica, non una costante di modulo', () => {
+        expect(resolveProfileDir(undefined)).toBe(resolveSessionDir());
+        expect(resolveProfileDir(null)).toBe(resolveSessionDir());
+        expect(resolveProfileDir('   ')).toBe(resolveSessionDir());
+    });
+
+    it('--account sceglie la cartella di QUEL account, come fa login', () => {
+        for (const profilo of getRuntimeAccountProfiles()) {
+            expect(resolveProfileDir(undefined, profilo.id)).toBe(resolveSessionDir(profilo.id));
+        }
+    });
+
+    it('--dir esplicito resta sovrano: assoluto invariato, relativo risolto sul cwd', () => {
+        const assoluto = path.join(os.tmpdir(), 'c53-dir-esplicito');
+        expect(resolveProfileDir(assoluto)).toBe(assoluto);
+        expect(resolveProfileDir('profili/uno')).toBe(path.resolve(process.cwd(), 'profili', 'uno'));
+    });
+
+    it('nessun file di src/ costruisce piu una cartella di profilo hardcoded', () => {
+        const colpevoli: string[] = [];
+        for (const file of listTsFiles(SRC)) {
+            const testo = fs.readFileSync(file, 'utf8');
+            const source = ts.createSourceFile(file, testo, ts.ScriptTarget.Latest, true);
+            const visita = (node: ts.Node): void => {
+                if (ts.isStringLiteral(node) && node.text === 'linkedin-profile') {
+                    colpevoli.push(
+                        `${path.relative(ROOT, file).split(path.sep).join('/')}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1}`,
+                    );
+                }
+                ts.forEachChild(node, visita);
+            };
+            visita(source);
+        }
+        expect(colpevoli).toEqual([]);
+    });
+
+    it('forma: il comando passa --account al resolver, non lo ignora', () => {
+        const testo = fs.readFileSync(path.join(SRC, 'cli', 'commands', 'utilCommands.ts'), 'utf8');
+        const inizio = testo.indexOf('export async function runCreateProfileCommand');
+        expect(inizio).toBeGreaterThan(0);
+        const blocco = testo.slice(inizio, testo.indexOf('\nexport ', inizio + 1));
+        expect(blocco).toMatch(/getOptionValue\(args, '--account'\)/);
+        expect(blocco).toMatch(/resolveProfileDir\(dirRaw, /);
     });
 });
