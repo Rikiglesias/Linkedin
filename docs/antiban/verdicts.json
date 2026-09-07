@@ -276,9 +276,9 @@
     },
     {
       "file": "src/config/validation.ts",
-      "blob_sha": "ab424d75ecd07b8edc8da3e62a3815d855f86ff8",
+      "blob_sha": "ec69daf70532e43cef3c4d292decfa8869c6443d",
       "answers": [
-        "browser_behavior: SICURO — nuova regola di validazione: con engine camoufox il pin del binario è obbligatorio e in forma esatta",
+        "browser_behavior: SICURO - nessun comportamento del browser cambia: si aggiunge una regola di validazione a severita warn che rende VISIBILE il fail-closed AB1 spento di default (REQUIRE_PROXY_FOR_AUTH=false). Il default non e toccato: accenderlo bloccherebbe chi non ha ancora un proxy. Review pre-push blocco A",
         "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
         "fingerprint_session: SICURO — impedisce di avviare una campagna con un binario non dichiarato, cioè con un dispositivo diverso da quello con cui il profilo è nato",
         "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
@@ -286,8 +286,8 @@
         "behavioral_pattern: SICURO — fail-closed in configurazione, prima ancora del lancio"
       ],
       "verdict": "SICURO",
-      "commit": "149dbfc9dde4bc7996df494a530b1098f003e66c",
-      "date": "2026-09-07",
+      "commit": "4fb3ea7ced04b996be004828fdece8c91b429b0e",
+      "date": "2026-09-08",
       "criterio": "C22",
       "vincolo": null
     },
