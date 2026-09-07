@@ -16,6 +16,7 @@ Guida passo-passo per usare il bot. Ogni step spiega COSA fare, PERCHÉ, e COME 
 - `npm install` eseguito
 - Binario Camoufox alla versione collaudata: `.\bot.ps1 camoufox-fetch --check` (se manca o è diversa: `.\bot.ps1 camoufox-fetch`, scarica SOLO quella versione)
 - File `.env` configurato (copia da `.env.example` e compila)
+- Identità del browser creata UNA volta, PRIMA del primo login: `.\bot.ps1 identity-init` (scrive `<sessionDir>/.fingerprint.json`: è il «dispositivo» che LinkedIn vedrà per sempre su quel profilo; se il profilo ha già cookie il comando rifiuta → `.\bot.ps1 identity-init --new-session` crea una cartella nuova e stampa la riga `SESSION_DIR=` da mettere in `config/bot-settings.conf`). Se poi il lancio dice «[IDENTITY] …» il dispositivo non è più coerente col binario o con questo PC: NON si rigenera da solo, si riparte con `--new-session`
 
 ### 2. Primo login
 ```powershell
