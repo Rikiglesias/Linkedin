@@ -29,6 +29,7 @@ const JSON_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
     'config-validate',
     'camoufox-fetch',
     'identity-init',
+    'preflight-identity',
     'incidents',
     'status',
     'diagnostics',

@@ -173,6 +173,17 @@ const COMMAND_HELP: Record<string, CommandHelp> = {
         ],
         examples: ['bot identity-init', 'bot identity-init --new-session', 'bot identity-init --account default'],
     },
+    'preflight-identity': {
+        usage: 'preflight-identity --offline [--account <id>] [--session-dir <path>]',
+        description:
+            "Verifica PRIMA del login che cio' che la pagina vede coincida con l'identita' dichiarata dal profilo (.fingerprint.json): userAgent, timezone, locale, piattaforma. La misura avviene su una pagina LOCALE (about:blank), mai su linkedin.com, quindi non mostra alcun IP alla piattaforma. Stampa un JSON; exit 1 se le due facce divergono.",
+        options: [
+            { flag: '--offline', description: 'Misura solo quello che la pagina espone, senza uscire in rete (unica modalita disponibile oggi)' },
+            { flag: '--account <id>', description: 'Account (default: quello di default): si legge la sua sessionDir' },
+            { flag: '--session-dir <path>', description: 'Cartella sessione alternativa: serve a verificare un profilo di prova senza toccare quello vero' },
+        ],
+        examples: ['bot preflight-identity --offline', 'bot preflight-identity --offline --account default'],
+    },
     pause: {
         usage: 'pause [minutes|indefinite] [reason]',
         description: "Mette in pausa l'automazione per N minuti.",

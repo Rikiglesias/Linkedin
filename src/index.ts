@@ -317,7 +317,7 @@ async function main(): Promise<void> {
         const args0 = process.argv[2];
         // CL-setup: 'preflight-env' e' un diagnostico read-only dell'ambiente: deve poter girare
         // ANCHE con config errors critici (e' lo strumento che aiuta a diagnosticarli), come 'doctor'.
-        const safeCommands = ['doctor', 'help', '--help', 'login', 'create-profile', 'preflight-env', undefined];
+        const safeCommands = ['doctor', 'help', '--help', 'login', 'create-profile', 'preflight-env', 'preflight-identity', undefined];
         if (!safeCommands.includes(args0)) {
             process.exit(1);
         }
@@ -670,6 +670,11 @@ async function main(): Promise<void> {
         case 'identity-init': {
             const { runIdentityInitCommand } = await import('./cli/commands/identityInit');
             await runIdentityInitCommand(commandArgs);
+            break;
+        }
+        case 'preflight-identity': {
+            const { runPreflightIdentityCommand } = await import('./cli/commands/preflightIdentity');
+            await runPreflightIdentityCommand(commandArgs);
             break;
         }
         case 'kpi': {
