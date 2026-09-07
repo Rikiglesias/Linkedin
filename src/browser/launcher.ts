@@ -8,7 +8,7 @@ import path from 'path';
 import { chromium, firefox, BrowserContext, Page } from 'playwright';
 import { resolveSessionDir } from '../accountManager';
 import { config, ProxyType } from '../config';
-import { logInfo, logWarn } from '../telemetry/logger';
+import { logError, logInfo, logWarn } from '../telemetry/logger';
 import { ensureDirectoryPrivate } from '../security/filesystem';
 import { applyLoginFailureAction } from '../risk/loginFailureHandler';
 import { classifyVoyagerStatus, resolveLoginFailureAction } from './loginFailurePolicy';
@@ -762,13 +762,28 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                     const azione = resolveLoginFailureAction(classifyVoyagerStatus(429), {
                         autoPauseMinutes: config.autoPauseMinutesOnFailureBurst,
                     });
-                    await applyLoginFailureAction(azione, {
-                        accountId: options.accountId,
-                        sessionDir,
-                        proxy: currentProxy ?? null,
-                        source: 'voyager_response',
-                        details: { url },
-                    }).catch(() => {});
+                    try {
+                        await applyLoginFailureAction(azione, {
+                            accountId: options.accountId,
+                            sessionDir,
+                            proxy: currentProxy ?? null,
+                            source: 'voyager_response',
+                            details: { url },
+                        });
+                    } catch (errore) {
+                        // Il kill-switch NON e' scattato: la pausa non e' stata scritta (DB lockato,
+                        // disco pieno) e senza questo ramo il bot resterebbe a lavorare sotto rate
+                        // limit convinto di essere in pausa, con ogni 429 successivo scartato dal
+                        // flag. Il flag torna giu' perche' il prossimo 429 deve poter riprovare:
+                        // «uno per sessione» vale per il trattamento RIUSCITO, non per il tentativo.
+                        throttlingTrattato = false;
+                        await logError('voyager_429.kill_switch_fallito', {
+                            url,
+                            accountId: options.accountId ?? null,
+                            impatto: 'PAUSA NON APPLICATA — automazione ancora attiva sotto rate limit',
+                            errore: errore instanceof Error ? errore.message : String(errore),
+                        }).catch(() => {});
+                    }
                 }
             });
 

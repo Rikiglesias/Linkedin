@@ -27,8 +27,13 @@
 export type LoginCheckOutcome =
     | { state: 'logged-in' }
     | { state: 'logged-out' }
-    /** LinkedIn chiede la verifica in due passaggi: la sessione non e' scaduta, manca un umano. */
-    | { state: 'two-factor' }
+    /**
+     * LinkedIn chiede la verifica in due passaggi: la sessione non e' scaduta, manca un umano.
+     * `quarantineApplied` dice se chi ha VISTO la pagina e' riuscito a scrivere la quarantena:
+     * `false` significa che la scrittura e' fallita e la reazione va rifatta qui, altrimenti
+     * l'account resta libero con una challenge pendente e il ciclo dopo ci rientra dentro.
+     */
+    | { state: 'two-factor'; quarantineApplied: boolean }
     /** Non lo sappiamo: la richiesta non e' arrivata a destinazione. Non e' una sessione scaduta. */
     | { state: 'unknown'; cause: 'timeout' | 'network' | 'proxy' }
     /** La piattaforma ha risposto, e ha detto di rallentare o ha bloccato. */
@@ -82,12 +87,14 @@ export function resolveLoginFailureAction(outcome: LoginCheckOutcome, opts: Logi
         case 'two-factor':
             // La quarantena per-account, l'incident e l'alert li applica gia' chi ha VISTO la pagina di
             // verifica (`checkLoginDetailed`): devono valere anche per chi usa il booleano `checkLogin`
-            // e non passa di qui. Ripeterli qui li raddoppierebbe.
+            // e non passa di qui. Ripeterli qui li raddoppierebbe — MA solo se sono davvero riusciti.
+            // Quando `quarantineApplied` e' false quella scrittura e' fallita: qui c'e' la seconda
+            // rete, altrimenti il bot rientrerebbe nella challenge a ogni ciclo con l'account libero.
             return {
                 reason: 'LOGIN_2FA_REQUIRED',
-                incidentType: null,
+                incidentType: outcome.quarantineApplied ? null : 'LOGIN_2FA_REQUIRED',
                 pauseMinutes: null,
-                quarantine: false,
+                quarantine: !outcome.quarantineApplied,
                 releaseProxy: false,
                 message: 'LinkedIn richiede la verifica 2FA: completarla nel browser, poi `bot.ps1 unquarantine --account <id>`',
             };

@@ -267,10 +267,23 @@ describe('C27 — innesto: il browser produce la causa, un solo handler applica 
         const esito = await checkLoginDetailed(paginaFinta({ url: 'https://www.linkedin.com/checkpoint/challenge/abc' }), {
             accountId: 'default',
         });
-        expect(esito).toEqual({ state: 'two-factor' });
+        // `quarantineApplied: true` non e' cosmetico: e' il segnale che dice alla politica di NON
+        // ri-quarantenare. Qui la scrittura e' riuscita davvero (la riga sotto lo prova).
+        expect(esito).toEqual({ state: 'two-factor', quarantineApplied: true });
         expect(syncState.get('account_quarantine:default')).toBe('true');
         expect(syncState.has('account_quarantine')).toBe(false);
         expect(mocks.createIncident).toHaveBeenCalledWith('LOGIN_2FA_REQUIRED', 'CRITICAL', expect.objectContaining({ accountId: 'default' }));
+    });
+
+    it('2FA con la scrittura di quarantena ROTTA: l esito lo DICE, non lo nasconde in un console.error', async () => {
+        // Prima della review pre-push il fallimento moriva in un `console.error` e l'esito era
+        // identico al caso riuscito: nessuno a valle poteva rimediare. Ora il chiamante lo sa.
+        mocks.createIncident.mockRejectedValueOnce(new Error('SQLITE_BUSY: database is locked'));
+        const esito = await checkLoginDetailed(paginaFinta({ url: 'https://www.linkedin.com/checkpoint/challenge/abc' }), {
+            accountId: 'default',
+        });
+        expect(esito).toEqual({ state: 'two-factor', quarantineApplied: false });
+        expect(syncState.has('account_quarantine:default')).toBe(false);
     });
 
     it('2FA sull account `default`: il secondo account NON e in quarantena', async () => {
@@ -344,10 +357,10 @@ describe('C27 — innesto: il browser produce la causa, un solo handler applica 
         expect(stato.reason).toBe('HTTP_429_RATE_LIMIT');
     });
 
-    it('2FA passata all handler: nessuna SECONDA quarantena e nessuna pausa — la applica gia chi ha visto la pagina', async () => {
+    it('2FA gia quarantenata alla fonte: nessuna SECONDA quarantena e nessuna pausa', async () => {
         // Il canary chiama l'handler per OGNI esito diverso da `logged-in`, 2FA inclusa: se la politica
         // qui chiedesse di nuovo quarantena/pausa, un solo checkpoint 2FA produrrebbe due incident.
-        await applyLoginFailureAction(resolveLoginFailureAction({ state: 'two-factor' }, opts), {
+        await applyLoginFailureAction(resolveLoginFailureAction({ state: 'two-factor', quarantineApplied: true }, opts), {
             accountId: 'acc-1',
             sessionDir,
             proxy: { server: 'http://gw.example:7777' },
@@ -355,6 +368,24 @@ describe('C27 — innesto: il browser produce la causa, un solo handler applica 
         });
         expect(mocks.createIncident).not.toHaveBeenCalled();
         expect(syncState.has('account_quarantine:acc-1')).toBe(false);
+        expect((await getAutomationPauseState()).paused).toBe(false);
+        expect(mocks.releaseStickyProxy).not.toHaveBeenCalled();
+    });
+
+    it('2FA con quarantena FALLITA alla fonte: qui scatta la seconda rete, l account non resta libero', async () => {
+        // Trovato dalla review pre-push del blocco A: `checkLoginDetailed` quarantena e, se la
+        // scrittura fallisce, lo diceva solo a `console.error`. Con la politica che si fidava sempre,
+        // l'account restava fuori quarantena con una challenge 2FA pendente e il ciclo dopo il bot
+        // rientrava nella stessa pagina. Ora l'esito viaggia nel tipo e qui c'e' il rimedio.
+        await applyLoginFailureAction(resolveLoginFailureAction({ state: 'two-factor', quarantineApplied: false }, opts), {
+            accountId: 'acc-1',
+            sessionDir,
+            proxy: { server: 'http://gw.example:7777' },
+            source: 'test',
+        });
+        expect(syncState.has('account_quarantine:acc-1')).toBe(true);
+        // Resta UN solo incident (quello della quarantena) e nessuna pausa globale: la 2FA blocca
+        // l'account, non l'intera automazione degli altri account.
         expect((await getAutomationPauseState()).paused).toBe(false);
         expect(mocks.releaseStickyProxy).not.toHaveBeenCalled();
     });

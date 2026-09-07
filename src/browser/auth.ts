@@ -8,6 +8,7 @@
 import { Page } from 'playwright';
 import { joinSelectors } from '../selectors';
 import { classifyCheckLoginStatus, classifyNavigationError, type LoginCheckOutcome } from './loginFailurePolicy';
+import { logError } from '../telemetry/logger';
 
 /** Verifica la presenza del cookie `li_at` (sessione LinkedIn valida). */
 async function hasLinkedinAuthCookie(page: Page): Promise<boolean> {
@@ -138,6 +139,11 @@ export async function checkLoginDetailed(page: Page, options: CheckLoginOptions 
         // Comando di sblocco ESATTO: con l'account la quarantena e' per-account (C27), senza e' globale.
         const sblocco = options.accountId ? `bot.ps1 unquarantine --account ${options.accountId}` : 'bot.ps1 unquarantine';
         // GAP6-H01: quarantineAccount + alert Telegram per visibilità immediata
+        // L'esito NON e' decorativo: `loginFailurePolicy` non ri-quarantena la 2FA proprio perche'
+        // la applica qui chi ha VISTO la pagina. Se questa scrittura fallisce e nessuno lo sa,
+        // l'account resta fuori quarantena e al ciclo dopo il bot rilancia il browser dentro la
+        // stessa challenge, all'infinito: il chiamante deve poter rimediare (seconda rete).
+        let quarantineApplied = false;
         try {
             const { quarantineAccount } = await import('../risk/incidentManager');
             await quarantineAccount('LOGIN_2FA_REQUIRED', {
@@ -145,11 +151,18 @@ export async function checkLoginDetailed(page: Page, options: CheckLoginOptions 
                 url: finalUrl,
                 ...(options.accountId ? { accountId: options.accountId } : {}),
             });
+            quarantineApplied = true;
         } catch (quarantineErr) {
             console.error(
                 '[AUTH] ⚠️ quarantineAccount fallito — account NON in quarantena:',
                 quarantineErr instanceof Error ? quarantineErr.message : String(quarantineErr),
             );
+            await logError('auth.2fa_quarantena_fallita', {
+                url: finalUrl,
+                accountId: options.accountId ?? null,
+                impatto: 'account NON in quarantena con challenge 2FA pendente — rimedia il chiamante',
+                errore: quarantineErr instanceof Error ? quarantineErr.message : String(quarantineErr),
+            }).catch(() => {});
         }
         try {
             const { sendTelegramAlert } = await import('../telemetry/alerts');
@@ -165,7 +178,7 @@ export async function checkLoginDetailed(page: Page, options: CheckLoginOptions 
                 alertErr instanceof Error ? alertErr.message : String(alertErr),
             );
         }
-        return { state: 'two-factor' };
+        return { state: 'two-factor', quarantineApplied };
     }
     // Lo status HTTP (429 = rate limited, 403 = bloccato) e' una CAUSA a se': la sessione puo' essere
     // valida, e' la piattaforma che chiede di sparire. Non e' un logout.
