@@ -344,6 +344,21 @@ describe('C27 — innesto: il browser produce la causa, un solo handler applica 
         expect(stato.reason).toBe('HTTP_429_RATE_LIMIT');
     });
 
+    it('2FA passata all handler: nessuna SECONDA quarantena e nessuna pausa — la applica gia chi ha visto la pagina', async () => {
+        // Il canary chiama l'handler per OGNI esito diverso da `logged-in`, 2FA inclusa: se la politica
+        // qui chiedesse di nuovo quarantena/pausa, un solo checkpoint 2FA produrrebbe due incident.
+        await applyLoginFailureAction(resolveLoginFailureAction({ state: 'two-factor' }, opts), {
+            accountId: 'acc-1',
+            sessionDir,
+            proxy: { server: 'http://gw.example:7777' },
+            source: 'test',
+        });
+        expect(mocks.createIncident).not.toHaveBeenCalled();
+        expect(syncState.has('account_quarantine:acc-1')).toBe(false);
+        expect((await getAutomationPauseState()).paused).toBe(false);
+        expect(mocks.releaseStickyProxy).not.toHaveBeenCalled();
+    });
+
     it('probeLinkedInStatus: 403 sul feed → HTTP_403_BLOCKED, non SESSION_EXPIRED (era il buco gemello del 429)', async () => {
         const esito = await probeLinkedInStatus(paginaFinta({ gotoStatus: 403 }));
         expect(esito.ok).toBe(false);
