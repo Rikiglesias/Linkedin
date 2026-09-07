@@ -81,7 +81,7 @@ export function resolveLoginFailureAction(outcome: LoginCheckOutcome, opts: Logi
                 quarantine: true,
                 releaseProxy: false,
                 message:
-                    'Sessione LinkedIn non autenticata (cookie li_at assente) — eseguire `bot.ps1 login`, poi `bot.ps1 unquarantine --account <id>`',
+                    'Sessione LinkedIn non autenticata (cookie li_at assente) — eseguire `bot.ps1 login`, poi `bot.ps1 unquarantine`',
             };
 
         case 'two-factor':
@@ -96,7 +96,7 @@ export function resolveLoginFailureAction(outcome: LoginCheckOutcome, opts: Logi
                 pauseMinutes: null,
                 quarantine: !outcome.quarantineApplied,
                 releaseProxy: false,
-                message: 'LinkedIn richiede la verifica 2FA: completarla nel browser, poi `bot.ps1 unquarantine --account <id>`',
+                message: 'LinkedIn richiede la verifica 2FA: completarla nel browser, poi `bot.ps1 unquarantine`',
             };
 
         case 'unknown':

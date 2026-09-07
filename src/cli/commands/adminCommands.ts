@@ -476,7 +476,22 @@ export async function runUnquarantineCommand(args: string[] = []): Promise<void>
     // G5-F2: `--account <id>` sblocca SOLO quell'account; senza opzione sblocca il flag
     // globale legacy (comportamento storico, single-account).
     const accountId = getOptionValue(args, '--account') ?? undefined;
-    await setQuarantine(false, accountId);
+    // Review pre-push del blocco A: da C27 la quarantena e' PER-ACCOUNT anche quando l'account si
+    // chiama `default` (chiave `account_quarantine:default`), mentre questo comando senza `--account`
+    // toccava solo il flag globale legacy. L'operatore eseguiva il comando che i messaggi gli
+    // indicano e restava bloccato lo stesso. Senza `--account` ora si sblocca TUTTO: flag globale
+    // piu' ogni chiave per-account attiva. Con `--account` il comportamento mirato resta invariato.
+    const sbloccati: string[] = [];
+    if (accountId) {
+        await setQuarantine(false, accountId);
+    } else {
+        await setQuarantine(false, undefined);
+        const attive = await getQuarantineStatus();
+        for (const id of attive.accounts) {
+            await setQuarantine(false, id);
+            sbloccati.push(id);
+        }
+    }
     await clearPauseState();
     // CL12 fix (security): unquarantine sblocca una protezione impostata dal risk engine durante un
     // incidente -> deve sempre lasciare traccia nel security audit (actor cli).
@@ -487,7 +502,9 @@ export async function runUnquarantineCommand(args: string[] = []): Promise<void>
         result: 'ALLOW',
         metadata: { accountId: accountId ?? 'default' },
     }).catch(() => null);
-    console.log(`Quarantine disattivata (${accountId ?? 'globale'}) e pausa rimossa.`);
+    console.log(
+        `Quarantine disattivata (${accountId ?? (sbloccati.length > 0 ? `globale + ${sbloccati.join(', ')}` : 'globale')}) e pausa rimossa.`,
+    );
     // L5: se restano altre quarantene attive l'operatore deve saperlo subito, non scoprirlo al
     // prossimo run bloccato.
     const residual = await getQuarantineStatus();
