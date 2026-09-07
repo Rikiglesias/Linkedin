@@ -1126,6 +1126,16 @@ export async function runConfigValidateCommand(): Promise<void> {
 
     const configResult = validateConfigFull(config);
 
+    // Proxy PER ACCOUNT dalla stessa funzione di `preflight-env` (C26/4): la diagnostica globale qui
+    // sotto guarda il pool e non sa nulla degli account, quindi non poteva dire quale account resta
+    // senza uscita. Campi distinti (tcp/auth/egress/sticky) e nessuna credenziale nel risultato.
+    const { accountProxyDepsFromRuntime, diagnoseAccountProxy } = await import('../../proxy/accountProxyDiagnosis');
+    const { getRuntimeAccountProfiles: profiliRuntime } = await import('../../accountManager');
+    const perAccount = [];
+    for (const account of profiliRuntime()) {
+        perAccount.push(await diagnoseAccountProxy(account.id, accountProxyDepsFromRuntime(account)));
+    }
+
     // Proxy & JA3 diagnostica (non bloccante)
     let proxyDiag: Awaited<ReturnType<typeof runFullProxyDiagnostic>> | null = null;
     try {
@@ -1139,6 +1149,7 @@ export async function runConfigValidateCommand(): Promise<void> {
         valid: configResult.errors.length === 0,
         errors: configResult.errors,
         warnings: configResult.warnings,
+        proxyPerAccount: perAccount,
         proxy: proxyDiag
             ? {
                   pool: proxyDiag.pool,

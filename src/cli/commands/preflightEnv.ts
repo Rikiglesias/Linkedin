@@ -1,6 +1,6 @@
 import { config } from '../../config';
 import { getRuntimeAccountProfiles } from '../../accountManager';
-import { checkProxyHealth } from '../../proxyManager';
+import { accountProxyDepsFromRuntime, describeProxyDiagnosis, diagnoseAccountProxy, proxyCheckStatus } from '../../proxy/accountProxyDiagnosis';
 import fs from 'fs';
 import path from 'path';
 import { META_FILENAME } from '../../browser/sessionCookieMonitor';
@@ -94,31 +94,18 @@ export async function runPreflightEnvCommand(): Promise<void> {
         checks.push({ name: 'Disk space', status: 'WARN', detail: 'Impossibile verificare spazio disco' });
     }
 
-    // 2. Proxy reachability
+    // 2. Proxy per account — una sola diagnosi condivisa con `config-validate` (C26/4): prima qui
+    // c'era un booleano secco, che diceva «non raggiungibile» anche quando il proxy rispondeva
+    // benissimo e a mancare era la password. Ora il guasto si legge con la parola giusta, e il
+    // dettaglio non stampa piu' l'URL grezzo (che puo' contenere le credenziali).
     const accounts = getRuntimeAccountProfiles();
     for (const account of accounts) {
-        if (account.proxy) {
-            try {
-                const healthy = await checkProxyHealth(account.proxy);
-                checks.push({
-                    name: `Proxy (${account.id})`,
-                    status: healthy ? 'OK' : 'FAIL',
-                    detail: healthy ? account.proxy.server : `NON raggiungibile: ${account.proxy.server}`,
-                });
-            } catch {
-                checks.push({
-                    name: `Proxy (${account.id})`,
-                    status: 'FAIL',
-                    detail: `Errore verifica: ${account.proxy.server}`,
-                });
-            }
-        } else {
-            checks.push({
-                name: `Proxy (${account.id})`,
-                status: 'WARN',
-                detail: 'Nessun proxy configurato — connessione diretta',
-            });
-        }
+        const d = await diagnoseAccountProxy(account.id, accountProxyDepsFromRuntime(account));
+        checks.push({
+            name: `Proxy (${account.id})`,
+            status: proxyCheckStatus(d.reason),
+            detail: describeProxyDiagnosis(d),
+        });
     }
 
     // 3. Ollama reachability (if AI local-first configured)
