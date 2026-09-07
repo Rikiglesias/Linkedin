@@ -3,6 +3,312 @@
   "_nota": "Verdetti /antiban-review versionati (C64). Una voce per FILE del perimetro anti-ban. Il verdetto SCADE quando il file cambia: la sonda scripts/probe/antiban-coverage.cjs confronta blob_sha con `git rev-parse HEAD:<file>` e segnala `stale`. Le voci si aggiungono DOPO il commit che contiene il file recensito, mai a memoria.",
   "verdicts": [
     {
+      "file": "src/browser/auth.ts",
+      "blob_sha": "0fe253c7932088ec8cbcd6c82d9c42a4795615c4",
+      "answers": [
+        "browser_behavior: SICURO — stessa navigazione al feed (endpoint protetto, 2 tentativi come prima); cambia solo COSA viene riportato: `checkLoginDetailed` distingue sessione scaduta, 2FA, esito ignoto e throttling 429/403",
+        "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
+        "fingerprint_session: SICURO — cookie e sessione intatti; la 2FA ora quarantena PER-ACCOUNT (anche quando l'account si chiama `default`) invece del flag globale, e il messaggio dice il comando esatto di sblocco",
+        "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
+        "volumi: SICURO — cap, budget, pending ratio e limiti giornalieri invariati",
+        "behavioral_pattern: SICURO — elimina la reazione sbagliata al 429 (prima un rate-limit veniva letto come «sloggato» e la risposta era rifare il login: la mossa peggiore sotto throttling)"
+      ],
+      "verdict": "SICURO",
+      "commit": "149dbfc9dde4bc7996df494a530b1098f003e66c",
+      "date": "2026-09-07",
+      "criterio": "C27",
+      "vincolo": null
+    },
+    {
+      "file": "src/browser/browserIdentity.ts",
+      "blob_sha": "49f12a021d351cbb5da2aae096cb243635347b4c",
+      "answers": [
+        "browser_behavior: SICURO — nessun comportamento di pagina: regola pura che legge, valida e scrive UNA volta `<sessionDir>/.fingerprint.json`",
+        "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
+        "fingerprint_session: SICURO — è il cuore della coerenza: l'identità nasce una volta per profilo, dichiara l'os dell'host e un UA col major del binario, e ogni lancio successivo la RILEGGE invece di rigenerarla; scrittura atomica ed esclusiva (temp + hard link) così due processi non producono due identità",
+        "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
+        "volumi: SICURO — cap, budget, pending ratio e limiti giornalieri invariati",
+        "behavioral_pattern: SICURO — toglie la variabilità fra lanci dello stesso profilo, che è essa stessa un segnale"
+      ],
+      "verdict": "SICURO",
+      "commit": "149dbfc9dde4bc7996df494a530b1098f003e66c",
+      "date": "2026-09-07",
+      "criterio": "C23/C52",
+      "vincolo": null
+    },
+    {
+      "file": "src/browser/browserIdentityProjection.ts",
+      "blob_sha": "bf2128797f4af12de455c66d12cd9c6af8439cac",
+      "answers": [
+        "browser_behavior: SICURO — funzioni pure: proiettano l'identità persistita verso init script, contextOptions e Camoufox; nessun accesso a pagina o rete",
+        "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
+        "fingerprint_session: SICURO — garantiscono che ciò che la pagina vede venga SOLO dal file identità: il pool non può rientrare da qui (verificato byte a byte fra due lanci con pool diversi)",
+        "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
+        "volumi: SICURO — cap, budget, pending ratio e limiti giornalieri invariati",
+        "behavioral_pattern: SICURO — una sola sorgente per tutte le facce dell'identità = nessuna contraddizione osservabile"
+      ],
+      "verdict": "SICURO",
+      "commit": "149dbfc9dde4bc7996df494a530b1098f003e66c",
+      "date": "2026-09-07",
+      "criterio": "C23",
+      "vincolo": null
+    },
+    {
+      "file": "src/browser/browserIdentityRuntime.ts",
+      "blob_sha": "ac5eb2b40e3c3e4128a70c37b881553dd8d55f1d",
+      "answers": [
+        "browser_behavior: SICURO — unico punto in cui un'identità NASCE: browserforge su Camoufox, pool sugli altri engine; nessuna azione LinkedIn",
+        "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
+        "fingerprint_session: SICURO — os dell'host, UA riscritta al major del binario reale, `accountId` validato contro il file (IDENTITY_ACCOUNT_MISMATCH), planner della finestra con invariante screen ⊇ finestra: tutte coerenze in più, nessuna in meno",
+        "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
+        "volumi: SICURO — cap, budget, pending ratio e limiti giornalieri invariati",
+        "behavioral_pattern: SICURO — l'identità è deterministica per profilo e diversa fra profili: niente pattern condiviso fra account"
+      ],
+      "verdict": "SICURO",
+      "commit": "149dbfc9dde4bc7996df494a530b1098f003e66c",
+      "date": "2026-09-07",
+      "criterio": "C23/C52/C24",
+      "vincolo": null
+    },
+    {
+      "file": "src/browser/browserIdentityVersion.ts",
+      "blob_sha": "4b41267ba45c6201532c357d1aea691b28f112e1",
+      "answers": [
+        "browser_behavior: SICURO — funzioni pure su stringhe di versione (major UA, famiglia dell'engine); nessun I/O",
+        "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
+        "fingerprint_session: SICURO — serve a impedire la contraddizione più grossolana — UA di una major diversa dal binario che gira",
+        "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
+        "volumi: SICURO — cap, budget, pending ratio e limiti giornalieri invariati",
+        "behavioral_pattern: SICURO — nessun ritmo introdotto"
+      ],
+      "verdict": "SICURO",
+      "commit": "149dbfc9dde4bc7996df494a530b1098f003e66c",
+      "date": "2026-09-07",
+      "criterio": "C22/C23",
+      "vincolo": null
+    },
+    {
+      "file": "src/browser/camoufoxRuntime.ts",
+      "blob_sha": "d32480fdd2a099ed94209bc072138369cd2737f5",
+      "answers": [
+        "browser_behavior: SICURO — guardia PRIMA del lancio: se il binario pinnato non è in cache il lancio si ferma, invece di lasciare che camoufox-js scarichi l'ULTIMA release in fire-and-forget",
+        "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
+        "fingerprint_session: SICURO — impedisce il cambio silenzioso di binario sotto lo stesso profilo — che è un cambio di dispositivo agli occhi di LinkedIn",
+        "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
+        "volumi: SICURO — cap, budget, pending ratio e limiti giornalieri invariati",
+        "behavioral_pattern: SICURO — fail-closed: rifiuta, non scarica; nessuna richiesta di rete aggiunta al percorso di lancio"
+      ],
+      "verdict": "SICURO",
+      "commit": "149dbfc9dde4bc7996df494a530b1098f003e66c",
+      "date": "2026-09-07",
+      "criterio": "C22",
+      "vincolo": null
+    },
+    {
+      "file": "src/browser/identitySnapshot.ts",
+      "blob_sha": "64b1ddadb2a138365048a9f923fdae29234130aa",
+      "answers": [
+        "browser_behavior: SICURO — misura dentro il browser ciò che la PAGINA vede, su pagina LOCALE (about:blank / fixture): mai su linkedin.com",
+        "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
+        "fingerprint_session: SICURO — è la sonda che confronta le due facce (pagina vs file): serve proprio a scoprire un profilo incoerente PRIMA del login",
+        "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
+        "volumi: SICURO — cap, budget, pending ratio e limiti giornalieri invariati",
+        "behavioral_pattern: SICURO — non produce traffico verso la piattaforma, quindi non genera alcun pattern osservabile"
+      ],
+      "verdict": "SICURO",
+      "commit": "149dbfc9dde4bc7996df494a530b1098f003e66c",
+      "date": "2026-09-07",
+      "criterio": "C23/C24/C26",
+      "vincolo": null
+    },
+    {
+      "file": "src/browser/launcher.ts",
+      "blob_sha": "d2a051aacc779dff0a7e6383fb08be986bf9f0a0",
+      "answers": [
+        "browser_behavior: SICURO — il lancio applica ora l'identità persistita (letta e validata a ogni avvio), la guardia sul binario pinnato, il fail-closed AB1 sulla connessione diretta con cookie, e il listener voyager che tratta il 429 una volta per sessione; la navigazione resta quella di prima",
+        "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
+        "fingerprint_session: SICURO — una sola identità per pagina (le sezioni native di Camoufox non vengono più ridefinite in JS), rumore canvas/webgl/audio seedato sull'account, finestra coerente con lo screen dichiarato, cartella di sessione risolta dall'unica funzione che sa rispondere (C53)",
+        "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
+        "volumi: SICURO — cap, budget, pending ratio e limiti giornalieri invariati",
+        "behavioral_pattern: SICURO — toglie due correlatori (doppia identità sulla stessa pagina, rumore identico fra account che collidono sul pool) e sostituisce N incident con backoff esponenziale con UN evento per burst di 429"
+      ],
+      "verdict": "SICURO",
+      "commit": "149dbfc9dde4bc7996df494a530b1098f003e66c",
+      "date": "2026-09-07",
+      "criterio": "C22-C27, C53",
+      "vincolo": null
+    },
+    {
+      "file": "src/browser/loginFailurePolicy.ts",
+      "blob_sha": "ed7178d268de22c6cbc10f11abb63a8dbdc67869",
+      "answers": [
+        "browser_behavior: SICURO — politica PURA: nessun I/O, nessuna pagina; classifica l'esito del controllo di login e dice quale reazione spetta",
+        "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
+        "fingerprint_session: SICURO — separa «sessione scaduta» da «429/403» da «rete/proxy muti»: sono tre situazioni che chiedono tre reazioni diverse e prima ne ricevevano una sola",
+        "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
+        "volumi: SICURO — cap, budget, pending ratio e limiti giornalieri invariati",
+        "behavioral_pattern: SICURO — sotto throttling la reazione è pausa lunga e proxy rilasciato, mai insistere: il comportamento più conservativo dei tre"
+      ],
+      "verdict": "SICURO",
+      "commit": "149dbfc9dde4bc7996df494a530b1098f003e66c",
+      "date": "2026-09-07",
+      "criterio": "C27",
+      "vincolo": null
+    },
+    {
+      "file": "src/browser/proxyLaunchPlan.ts",
+      "blob_sha": "b4c6fde611d0184843974bc68461d388bf490098",
+      "answers": [
+        "browser_behavior: SICURO — costruisce il piano dei tentativi di lancio; con una sessionDir che ha già cookie e `REQUIRE_PROXY_FOR_AUTH` attivo la connessione diretta non è più rappresentabile in nessun piano",
+        "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
+        "fingerprint_session: SICURO — chiude il buco peggiore: senza proxy configurati la vecchia guardia non scattava e si usciva dall'IP reale con i cookie di LinkedIn addosso — la configurazione che chiedeva più sicurezza degradava per prima",
+        "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
+        "volumi: SICURO — cap, budget, pending ratio e limiti giornalieri invariati",
+        "behavioral_pattern: SICURO — fail-closed più severo, mai più permissivo; l'unica uscita è esplicita (`allowDirectIp`, per create-profile e diagnostica)"
+      ],
+      "verdict": "SICURO",
+      "commit": "149dbfc9dde4bc7996df494a530b1098f003e66c",
+      "date": "2026-09-07",
+      "criterio": "C26",
+      "vincolo": null
+    },
+    {
+      "file": "src/browser/sessionCookieMonitor.ts",
+      "blob_sha": "4bbcd069e0416b38046968a3d73a8b8f75396449",
+      "answers": [
+        "browser_behavior: SICURO — nessuna azione di pagina: registra la baseline di freschezza della sessione al login riuscito",
+        "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
+        "fingerprint_session: SICURO — il login riuscito toglie SOLO la pausa `LOGIN_REQUIRED`, che è quella che il login cura; una pausa più lunga da 429 o challenge si riconosce dalla scadenza e resta in piedi",
+        "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
+        "volumi: SICURO — cap, budget, pending ratio e limiti giornalieri invariati",
+        "behavioral_pattern: SICURO — non può accorciare una pausa protettiva: la regola è scritta perché il caso ambiguo resti conservativo"
+      ],
+      "verdict": "SICURO",
+      "commit": "149dbfc9dde4bc7996df494a530b1098f003e66c",
+      "date": "2026-09-07",
+      "criterio": "C27",
+      "vincolo": null
+    },
+    {
+      "file": "src/browser/stealth.ts",
+      "blob_sha": "b780499c3fa18e2ca9448088e5e5c4d3dd825fe0",
+      "answers": [
+        "browser_behavior: SICURO — sola modifica: la funzione di coerenza UA/TLS diventa esportata (era già usata internamente)",
+        "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
+        "fingerprint_session: SICURO — permette di valutare la coerenza a OGNI lancio e anche su profilo vergine, non solo dentro la scelta del fingerprint",
+        "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
+        "volumi: SICURO — cap, budget, pending ratio e limiti giornalieri invariati",
+        "behavioral_pattern: SICURO — nessun comportamento cambiato"
+      ],
+      "verdict": "SICURO",
+      "commit": "149dbfc9dde4bc7996df494a530b1098f003e66c",
+      "date": "2026-09-07",
+      "criterio": "C23",
+      "vincolo": null
+    },
+    {
+      "file": "src/browser/stealthScripts.ts",
+      "blob_sha": "acc8e7508d43dfc3caade1ba87a0f5d06c223b9f",
+      "answers": [
+        "browser_behavior: SICURO — lo script iniettato SALTA ogni sezione che Camoufox fornisce già nativamente (registro `CAMOUFOX_NATIVE_SECTIONS` con guardia per chiave)",
+        "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
+        "fingerprint_session: SICURO — è il fix di un marker vero: ridefinire in JS una proprietà nativa lascia una proprietà propria dove dovrebbe esserci un getter del prototipo, e `toString()` perde `[native code]` — due identità sulla stessa pagina",
+        "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
+        "volumi: SICURO — cap, budget, pending ratio e limiti giornalieri invariati",
+        "behavioral_pattern: SICURO — rimuove tracce statiche di automazione; verificato su Camoufox reale (18/18 misure dal path di produzione)"
+      ],
+      "verdict": "SICURO",
+      "commit": "149dbfc9dde4bc7996df494a530b1098f003e66c",
+      "date": "2026-09-07",
+      "criterio": "C24",
+      "vincolo": null
+    },
+    {
+      "file": "src/config/domains.ts",
+      "blob_sha": "143a31b1487c19e3cc5cf27e2b090a27e7ff3c72",
+      "answers": [
+        "browser_behavior: SICURO — aggiunge la lettura di `CAMOUFOX_BINARY_VERSION` dalla configurazione; nessun comportamento di browser",
+        "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
+        "fingerprint_session: SICURO — è il pin che permette alla guardia di lancio di rifiutare un binario diverso da quello collaudato",
+        "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
+        "volumi: SICURO — cap, budget, pending ratio e limiti giornalieri invariati",
+        "behavioral_pattern: SICURO — nessun ritmo introdotto"
+      ],
+      "verdict": "SICURO",
+      "commit": "149dbfc9dde4bc7996df494a530b1098f003e66c",
+      "date": "2026-09-07",
+      "criterio": "C22",
+      "vincolo": null
+    },
+    {
+      "file": "src/config/env.ts",
+      "blob_sha": "6133f2a2e9f27e5273f9442c835c75c28b00b311",
+      "answers": [
+        "browser_behavior: SICURO — guardia di idempotenza sul caricamento del file di ambiente; nessun effetto su browser o rete",
+        "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
+        "fingerprint_session: SICURO — evita che un secondo caricamento RI-AGGIUNGA chiavi cancellate di proposito (la suite che resta su database locale); nessun valore di sessione o proxy cambia",
+        "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
+        "volumi: SICURO — cap, budget, pending ratio e limiti giornalieri invariati",
+        "behavioral_pattern: SICURO — nessun ritmo introdotto"
+      ],
+      "verdict": "SICURO",
+      "commit": "149dbfc9dde4bc7996df494a530b1098f003e66c",
+      "date": "2026-09-07",
+      "criterio": "C28",
+      "vincolo": null
+    },
+    {
+      "file": "src/config/types.ts",
+      "blob_sha": "4ac02b6a6287177fd0a856e9358c2db24c5c362d",
+      "answers": [
+        "browser_behavior: SICURO — sola dichiarazione di tipo del campo del pin",
+        "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
+        "fingerprint_session: SICURO — nessun valore di runtime cambia",
+        "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
+        "volumi: SICURO — cap, budget, pending ratio e limiti giornalieri invariati",
+        "behavioral_pattern: SICURO — nessun ritmo introdotto"
+      ],
+      "verdict": "SICURO",
+      "commit": "149dbfc9dde4bc7996df494a530b1098f003e66c",
+      "date": "2026-09-07",
+      "criterio": "C22",
+      "vincolo": null
+    },
+    {
+      "file": "src/config/validation.ts",
+      "blob_sha": "ab424d75ecd07b8edc8da3e62a3815d855f86ff8",
+      "answers": [
+        "browser_behavior: SICURO — nuova regola di validazione: con engine camoufox il pin del binario è obbligatorio e in forma esatta",
+        "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
+        "fingerprint_session: SICURO — impedisce di avviare una campagna con un binario non dichiarato, cioè con un dispositivo diverso da quello con cui il profilo è nato",
+        "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
+        "volumi: SICURO — cap, budget, pending ratio e limiti giornalieri invariati",
+        "behavioral_pattern: SICURO — fail-closed in configurazione, prima ancora del lancio"
+      ],
+      "verdict": "SICURO",
+      "commit": "149dbfc9dde4bc7996df494a530b1098f003e66c",
+      "date": "2026-09-07",
+      "criterio": "C22",
+      "vincolo": null
+    },
+    {
+      "file": "src/core/workflowEntryGuards.ts",
+      "blob_sha": "3a6bb44762e7f86684c6eba3d478e4324344fe56",
+      "answers": [
+        "browser_behavior: SICURO — il canary apre la stessa pagina di prima; cambia la reazione a un login non riuscito, che ora passa dall'handler unico invece di decidere da solo",
+        "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
+        "fingerprint_session: SICURO — un 429 dal canary non quarantena più l'account e non chiede di rifare il login: pausa lunga e proxy rilasciato",
+        "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
+        "volumi: SICURO — cap, budget, pending ratio e limiti giornalieri invariati",
+        "behavioral_pattern: SICURO — un burst di rate-limit produce UN evento, non una catena di incident con backoff moltiplicativo"
+      ],
+      "verdict": "SICURO",
+      "commit": "149dbfc9dde4bc7996df494a530b1098f003e66c",
+      "date": "2026-09-07",
+      "criterio": "C27",
+      "vincolo": null
+    },
+    {
       "file": "src/fingerprint/noiseGenerator.ts",
       "blob_sha": "5a33de1519777793a19441373322804be9fdbb27",
       "answers": [
@@ -20,20 +326,71 @@
       "vincolo": "Il profilo data/session (login del 2026-06-09, 24 cookie linkedin.com) non va riusato: rientrare con quei cookie da un device con canvas diverso e' il segnale che si vuole evitare. Ripresa prevista: identity-init --new-session + login nuovo."
     },
     {
-      "file": "src/browser/launcher.ts",
-      "blob_sha": "d55f05ed125a9046a541f1d8c4c43e6bfedce72f",
+      "file": "src/fingerprint/seedRuntime.ts",
+      "blob_sha": "d3f5f9700982a513f7d4f1681eea35fa5fb58182",
       "answers": [
-        "browser_behavior: SICURO — una sola riga cambiata: il rumore riceve identity.accountId invece del solo fingerprint",
+        "browser_behavior: SICURO — nessun comportamento di pagina: decide se una sessionDir è vergine ai fini del seme",
         "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
-        "fingerprint_session: SICURO — accountId sempre valorizzato e stabile per profilo (browserIdentityRuntime.ts:289, IDENTITY_ACCOUNT_MISMATCH di C52)",
-        "nuova_azione_linkedin: SICURO — nessuna azione aggiunta",
-        "volumi: SICURO — nessun cambio a cap o budget",
-        "behavioral_pattern: SICURO — nessun ritmo introdotto"
+        "fingerprint_session: SICURO — il file identità scritto da noi non conta come «dispositivo già visto da LinkedIn»: senza questa esclusione il primo login congelerebbe un seme storico che non corrisponde a nulla",
+        "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
+        "volumi: SICURO — cap, budget, pending ratio e limiti giornalieri invariati",
+        "behavioral_pattern: SICURO — il seme resta deterministico per profilo"
       ],
       "verdict": "SICURO",
-      "commit": "f8bbb3073c80e81c07f77ed1d04d056949f24f34",
+      "commit": "149dbfc9dde4bc7996df494a530b1098f003e66c",
       "date": "2026-09-07",
-      "criterio": "C25",
+      "criterio": "C23",
+      "vincolo": null
+    },
+    {
+      "file": "src/proxy/accountProxyDiagnosis.ts",
+      "blob_sha": "2ef656294e6d9d6192cdc3cf8915b2176d6e307d",
+      "answers": [
+        "browser_behavior: SICURO — diagnosi PRE-flight del proxy di un account: al massimo 2 sonde verso l'endpoint di eco IP già in uso nel repo, MAI verso linkedin.com",
+        "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
+        "fingerprint_session: SICURO — distingue guasti che prima erano indistinguibili (407 = password sbagliata, non host morto) e segnala come guasto di primo livello un IP che cambia a metà finestra sticky",
+        "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
+        "volumi: SICURO — cap, budget, pending ratio e limiti giornalieri invariati",
+        "behavioral_pattern: SICURO — vincolo scritto nel file: è un pre-flight, non si lancia mentre una sessione è viva perché consumerebbe la finestra sticky"
+      ],
+      "verdict": "SICURO",
+      "commit": "149dbfc9dde4bc7996df494a530b1098f003e66c",
+      "date": "2026-09-07",
+      "criterio": "C26",
+      "vincolo": "Non eseguire la diagnosi mentre una sessione del bot è aperta: consumerebbe la finestra sticky del proxy di quell'account."
+    },
+    {
+      "file": "src/risk/incidentManager.ts",
+      "blob_sha": "ec88f2fab4731adc4267fd3842784102849e3e56",
+      "answers": [
+        "browser_behavior: SICURO — nessuna azione di pagina: decide a quale account attribuire un incidente",
+        "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
+        "fingerprint_session: SICURO — la quarantena diventa per-account anche quando l'account si chiama `default` (il nome reale dell'account runtime); l'incidente non attribuibile continua a scrivere il flag globale, fail-safe invariato",
+        "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
+        "volumi: SICURO — cap, budget, pending ratio e limiti giornalieri invariati",
+        "behavioral_pattern: SICURO — un problema di un account non ferma più gli altri, e un problema di piattaforma continua a fermarli tutti"
+      ],
+      "verdict": "SICURO",
+      "commit": "149dbfc9dde4bc7996df494a530b1098f003e66c",
+      "date": "2026-09-07",
+      "criterio": "C27",
+      "vincolo": null
+    },
+    {
+      "file": "src/risk/loginFailureHandler.ts",
+      "blob_sha": "9931ed49f80730fb416319f793da2fce835c0f55",
+      "answers": [
+        "browser_behavior: SICURO — nessuna azione di pagina: applica la reazione già decisa dalla politica pura (incident, pausa, quarantena, cooldown del proxy)",
+        "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
+        "fingerprint_session: SICURO — è l'UNICO punto che applica quelle reazioni: prima canary, job runner, listener e i gemelli site-check ed enrichment decidevano ognuno per conto proprio, con esiti diversi sullo stesso evento",
+        "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
+        "volumi: SICURO — cap, budget, pending ratio e limiti giornalieri invariati",
+        "behavioral_pattern: SICURO — sul logout scrive UN incident e una pausa (non due), sul throttling pausa con backoff e proxy in cooldown, sull'esito ignoto una pausa breve senza incident"
+      ],
+      "verdict": "SICURO",
+      "commit": "149dbfc9dde4bc7996df494a530b1098f003e66c",
+      "date": "2026-09-07",
+      "criterio": "C27",
       "vincolo": null
     }
   ]
