@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "_nota": "Verdetti /antiban-review versionati (C64). Una voce per FILE del perimetro anti-ban. Il verdetto SCADE quando il file cambia: la sonda scripts/probe/antiban-coverage.cjs confronta blob_sha con `git rev-parse HEAD:<file>` e segnala `stale`. Le voci si aggiungono DOPO il commit che contiene il file recensito, mai a memoria.",
+  "verdicts": [
+    {
+      "file": "src/fingerprint/noiseGenerator.ts",
+      "blob_sha": "5a33de1519777793a19441373322804be9fdbb27",
+      "answers": [
+        "browser_behavior: SICURO — cambiano i valori di canvas/webgl/audio applicati alla pagina, non il modo in cui il rumore viene applicato",
+        "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
+        "fingerprint_session: SICURO — determinismo per profilo preservato (stesso account 2x = stesso rumore), distinzione fra account aggiunta; proxy, cookie e sessione intatti",
+        "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
+        "volumi: SICURO — cap, budget, pending ratio e limiti giornalieri invariati",
+        "behavioral_pattern: SICURO — rimuove un correlatore statico cross-account, non introduce alcun ritmo matematico"
+      ],
+      "verdict": "SICURO",
+      "commit": "f8bbb3073c80e81c07f77ed1d04d056949f24f34",
+      "date": "2026-09-07",
+      "criterio": "C25",
+      "vincolo": "Il profilo data/session (login del 2026-06-09, 24 cookie linkedin.com) non va riusato: rientrare con quei cookie da un device con canvas diverso e' il segnale che si vuole evitare. Ripresa prevista: identity-init --new-session + login nuovo."
+    },
+    {
+      "file": "src/browser/launcher.ts",
+      "blob_sha": "d55f05ed125a9046a541f1d8c4c43e6bfedce72f",
+      "answers": [
+        "browser_behavior: SICURO — una sola riga cambiata: il rumore riceve identity.accountId invece del solo fingerprint",
+        "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
+        "fingerprint_session: SICURO — accountId sempre valorizzato e stabile per profilo (browserIdentityRuntime.ts:289, IDENTITY_ACCOUNT_MISMATCH di C52)",
+        "nuova_azione_linkedin: SICURO — nessuna azione aggiunta",
+        "volumi: SICURO — nessun cambio a cap o budget",
+        "behavioral_pattern: SICURO — nessun ritmo introdotto"
+      ],
+      "verdict": "SICURO",
+      "commit": "f8bbb3073c80e81c07f77ed1d04d056949f24f34",
+      "date": "2026-09-07",
+      "criterio": "C25",
+      "vincolo": null
+    }
+  ]
+}
