@@ -15,7 +15,7 @@ import { hostScreenGeometry } from '../browser/browserIdentityRuntime';
 import { assertCamoufoxRuntimePinned } from '../browser/camoufoxRuntime';
 import { CAMOUFOX_NATIVE_SECTIONS, buildStealthInitScript } from '../browser/stealthScripts';
 import { config } from '../config';
-import { type Snapshot, snapshotPage } from './harnessIdentitySnapshot';
+import { type Snapshot, snapshotPage } from '../browser/identitySnapshot';
 import { isLocalRequestUrl } from './harnessRuntime';
 
 export interface Egress {

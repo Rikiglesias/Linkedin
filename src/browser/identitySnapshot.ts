@@ -1,5 +1,5 @@
 /**
- * harnessIdentitySnapshot.ts — ciò che la PAGINA vede dell'identità (C23 + C24), misurato dentro il browser.
+ * identitySnapshot.ts — ciò che la PAGINA vede dell'identità (C23 + C24), misurato dentro il browser.
  *
  * Pura rispetto al launcher: prende una `Page` e restituisce uno `Snapshot` serializzabile. Le misure C24 sono
  * quelle che distinguono «una sola identità» (prototipi nativi, nessuna proprietà propria, funzioni `[native code]`)

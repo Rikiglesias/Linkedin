@@ -27,7 +27,7 @@ import { hostScreenGeometry } from '../browser/browserIdentityRuntime';
 import { closeBrowser, launchBrowser } from '../browser/launcher';
 import { config } from '../config';
 import { type Egress, denyEgress, linuxControlSnapshot } from './harnessIdentityControls';
-import { type Snapshot, snapshotPage } from './harnessIdentitySnapshot';
+import { type Snapshot, snapshotPage } from '../browser/identitySnapshot';
 
 type Measure = { name: string; got: unknown; expected: string; ok: boolean };
 
