@@ -4,6 +4,7 @@ import { checkProxyHealth } from '../../proxyManager';
 import fs from 'fs';
 import path from 'path';
 import { META_FILENAME } from '../../browser/sessionCookieMonitor';
+import { checkEngineLockPerProfile } from './preflightEngineLock';
 // SSOT della località di un endpoint AI (`config/env.ts`, nata unificando 4 copie divergenti —
 // F-a3f17c02). Ricopiarne la regola qui sarebbe la quinta copia: si importa, non si riscrive.
 import { isLocalAiEndpoint, isLoopbackAiHost } from '../../config/env';
@@ -239,6 +240,18 @@ export async function runPreflightEnvCommand(): Promise<void> {
                 detail: 'Nessuna sessione LinkedIn trovata — eseguire `login` prima di avviare il bot',
             });
         }
+    }
+
+    // 5b. C52: engine bloccato per la vita del profilo (rispecchia la guardia del launcher, prima del lancio)
+    for (const account of accounts) {
+        checks.push(
+            checkEngineLockPerProfile({
+                accountId: account.id,
+                sessionDir: path.resolve(account.sessionDir),
+                rawBrowserEngine: process.env.BROWSER_ENGINE,
+                configuredEngine: config.browserEngine,
+            }),
+        );
     }
 
     // 6. Database accessible

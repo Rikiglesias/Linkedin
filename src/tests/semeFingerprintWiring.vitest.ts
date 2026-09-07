@@ -71,10 +71,11 @@ describe('F2 — il seme di fingerprint passa dalla regola, non dal percorso', (
         // righe non deve far cadere il test: sarebbe un rosso FALSO su un comportamento corretto,
         // e un test che grida al lupo si disattiva da solo nella testa di chi lo legge.
         // C23: il pool non è più chiamato dal launcher ma dal runtime dell'identità persistita, UNA volta per
-        // profilo: il launcher passa il seme come `accountId` a `ensureLaunchIdentity`, e lì il seme arriva al pool.
-        expect(launcher).toMatch(new RegExp(`ensureLaunchIdentity\\(\\{[^}]*accountId:\\s*${nomeSeme}\\b[^}]*\\}`, 's'));
+        // profilo: il launcher passa il seme come `poolSeed` a `ensureLaunchIdentity`, e lì il seme arriva al pool
+        // (C52: `accountId` è il profilo, validato contro il file — il seme resta la SOLA chiave del pool).
+        expect(launcher).toMatch(new RegExp(`ensureLaunchIdentity\\(\\{[^}]*poolSeed:\\s*${nomeSeme}\\b[^}]*\\}`, 's'));
         const runtime = fs.readFileSync(path.join(SRC, 'browser', 'browserIdentityRuntime.ts'), 'utf8');
-        expect(runtime).toMatch(/generatePoolIdentity\(\s*params\.accountId\b/);
+        expect(runtime).toMatch(/generatePoolIdentity\(\s*params\.poolSeed\b/);
         const chiamata = (fn: string) => new RegExp(`${fn}\\(\\s*cloud\\s*,\\s*seme\\s*,?\\s*\\)`);
         expect(runtime).toMatch(chiamata('pickDesktopFingerprint'));
         expect(runtime).toMatch(chiamata('pickMobileFingerprint'));

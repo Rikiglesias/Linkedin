@@ -9,11 +9,13 @@
  *  - `--new-session`: cartella NUOVA accanto a quella configurata (`<sessionDir>-<yyyyMMdd-HHmmss>`) e la riga da
  *    mettere in `config/bot-settings.conf`; senza flag, un profilo che ha già cookie viene RIFIUTATO (mai un device
  *    nuovo sotto un account già visto da LinkedIn);
- *  - idempotente: identità già presente e valida → `created: false`, exit 0.
+ *  - idempotente: identità già presente e valida → `created: false`, exit 0;
+ *  - `--account <id>` deve esistere in configurazione: sconosciuto = exit 1, 0 scritture (mai il fallback silenzioso
+ *    sul primo profilo di `getAccountProfileById`).
  * Sugli engine da pool usa SOLO il pool locale (nessuna rete): su Camoufox (produzione) il pool non entra.
  */
 import fs from 'fs';
-import { getAccountProfileById } from '../../accountManager';
+import { getAccountProfileById, getRuntimeAccountProfiles } from '../../accountManager';
 import {
     BrowserIdentityError,
     hostIdentityOs,
@@ -46,18 +48,42 @@ function stamp(now = new Date()): string {
     return `${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}-${p(now.getHours())}${p(now.getMinutes())}${p(now.getSeconds())}`;
 }
 
+/** `--account <id>` sconosciuto: `getAccountProfileById` ricadrebbe sul PRIMO profilo con un solo log → qui è un errore. */
+export class IdentityInitTargetError extends Error {
+    constructor(
+        readonly code: 'IDENTITY_ACCOUNT_UNKNOWN',
+        message: string,
+    ) {
+        super(message);
+        this.name = 'IdentityInitTargetError';
+    }
+}
+
+/** Bersaglio del comando dalla configurazione reale (iniettabile nei test tramite `IdentityInitDeps`). */
+export function resolveIdentityInitTarget(args: string[]): IdentityInitTarget {
+    const requested = getOptionValue(args, '--account');
+    const profile = getAccountProfileById(requested);
+    if (requested !== undefined && profile.id !== requested) {
+        const known = getRuntimeAccountProfiles().map((p) => p.id);
+        throw new IdentityInitTargetError(
+            'IDENTITY_ACCOUNT_UNKNOWN',
+            `--account ${requested}: profilo sconosciuto (configurati: ${known.length > 0 ? known.join(', ') : 'default'}) — nessuna identità scritta sul profilo sbagliato`,
+        );
+    }
+    const newSession = args.includes('--new-session');
+    return {
+        sessionDir: newSession ? `${profile.sessionDir}-${stamp()}` : profile.sessionDir,
+        accountId: profile.id,
+        newSession,
+    };
+}
+
 const defaultDeps: IdentityInitDeps = {
-    resolveTarget: (args) => {
-        const profile = getAccountProfileById(getOptionValue(args, '--account'));
-        const newSession = args.includes('--new-session');
-        return {
-            sessionDir: newSession ? `${profile.sessionDir}-${stamp()}` : profile.sessionDir,
-            accountId: profile.id,
-            newSession,
-        };
-    },
+    resolveTarget: resolveIdentityInitTarget,
+    // `accountId` = profilo (validato contro il file a ogni lancio); il seme del pool decide solo QUALE voce del pool
+    // alla creazione, una volta per profilo — su Camoufox (produzione) il pool non entra affatto.
     createIdentity: (sessionDir, accountId) =>
-        ensureLaunchIdentity({ sessionDir, accountId, isMobile: false, headless: false, loadCloudFingerprints: async () => [] }),
+        ensureLaunchIdentity({ sessionDir, accountId, poolSeed: accountId, isMobile: false, headless: false, loadCloudFingerprints: async () => [] }),
 };
 
 function fail(payload: Record<string, unknown>): void {
@@ -67,7 +93,16 @@ function fail(payload: Record<string, unknown>): void {
 
 export async function runIdentityInitCommand(args: string[], deps: IdentityInitDeps = defaultDeps): Promise<void> {
     const hostOs = (deps.hostOs ?? hostIdentityOs)();
-    const target = deps.resolveTarget(args);
+    let target: IdentityInitTarget;
+    try {
+        target = deps.resolveTarget(args);
+    } catch (error) {
+        fail({
+            code: error instanceof IdentityInitTargetError ? error.code : 'IDENTITY_INIT_FAILED',
+            error: error instanceof Error ? error.message : String(error),
+        });
+        return;
+    }
     const osFlag = getOptionValue(args, '--os');
     if (osFlag !== undefined && (!VALID_OS.has(osFlag) || osFlag !== hostOs)) {
         fail({

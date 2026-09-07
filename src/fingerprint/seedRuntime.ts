@@ -30,7 +30,8 @@ export function normalizzaPercorso(percorso: string): string {
     return process.platform === 'win32' ? risolto.toLowerCase() : risolto;
 }
 
-function profiloIdDellaSessione(sessionDir: string, accountIdEsplicito?: string): string | null {
+/** Esportata per l'identità persistita (C23/C52): l'`accountId` del file è QUESTO id, la stessa chiave del seme. */
+export function profiloIdDellaSessione(sessionDir: string, accountIdEsplicito?: string): string | null {
     // Un `accountId` passato dal chiamante È già l'identità e ha la precedenza: `companyEnrichment`
     // gira sulla STESSA cartella dell'account default: cercare per cartella li farebbe collidere
     // sulla stessa chiave, e il secondo ad avviarsi erediterebbe il seme del primo.

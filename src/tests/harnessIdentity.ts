@@ -85,8 +85,8 @@ interface Egress {
 }
 
 /** Lancio DI PRODUZIONE sulla sessionDir data, con lo stesso divieto di egress del runtime C28. */
-async function productionLaunch(sessionDir: string, egress: Egress): Promise<{ page: Page; close(): Promise<void> }> {
-    const session = await launchBrowser({ sessionDir, headless: true, bypassProxy: true, allowDirectIp: true, forceDesktop: true });
+async function productionLaunch(sessionDir: string, egress: Egress, accountId?: string): Promise<{ page: Page; close(): Promise<void> }> {
+    const session = await launchBrowser({ sessionDir, accountId, headless: true, bypassProxy: true, allowDirectIp: true, forceDesktop: true });
     await session.browser.route('**/*', (route: Route) => {
         if (isLocalRequestUrl(route.request().url())) return route.continue();
         egress.blocked++;
@@ -138,7 +138,9 @@ async function main(): Promise<void> {
         fs.mkdirSync(controlDir, { recursive: true });
         const controlSeed = (identity.fontsSpacingSeed + 123_456_789) % FONTS_SPACING_SEED_MAX;
         fs.writeFileSync(path.join(controlDir, IDENTITY_FILE_NAME), `${JSON.stringify({ ...identity, fontsSpacingSeed: controlSeed }, null, 2)}\n`, 'utf8');
-        const control = await productionLaunch(controlDir, egress);
+        // C52: la cartella di controllo non è un profilo configurato → si dichiara l'account, altrimenti il file copiato
+        // (accountId «default») verrebbe rifiutato come identità di un altro profilo (IDENTITY_ACCOUNT_MISMATCH: voluto).
+        const control = await productionLaunch(controlDir, egress, identity.accountId);
         let controlSnapshot: Snapshot;
         try {
             await control.page.goto(fixtureUrl);

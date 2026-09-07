@@ -303,9 +303,11 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
     // prima di qualunque launch e fuori dal ciclo di retry: il pool/cloud entra solo alla creazione, su profilo
     // vergine. Incoerenza col binario/host, file corrotto o identità assente su profilo con cookie ⇒
     // BrowserIdentityError (0 pagine) con il comando che risolve; mai rigenerazione.
+    // C52: l'engine (e il profilo) del file sono bloccati per la vita della sessionDir; il seme resta SOLO la chiave del pool.
     const identity = await ensureLaunchIdentity({
         sessionDir,
-        accountId: semeFingerprint,
+        accountId: options.accountId,
+        poolSeed: semeFingerprint,
         isMobile: isMobileSession,
         headless,
         loadCloudFingerprints: fetchCloudFingerprints,
@@ -322,7 +324,8 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             engineBuild: identity.engineBuild,
             identityOs: identity.os,
             isMobile: isMobileSession,
-            accountId: semeFingerprint,
+            accountId: identity.accountId,
+            poolSeed: semeFingerprint,
             canvasNoise: consistentNoise.canvasNoise,
             attempt,
         });

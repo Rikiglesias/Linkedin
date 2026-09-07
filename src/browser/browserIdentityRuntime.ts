@@ -14,6 +14,7 @@ import crypto from 'node:crypto';
 import { execSync } from 'child_process';
 import fs from 'fs';
 import { config } from '../config';
+import { profiloIdDellaSessione } from '../fingerprint/seedRuntime';
 import { defaultCamoufoxCacheDir, readInstalledCamoufoxVersion } from './camoufoxRuntime';
 import { type CloudFingerprint, isUaTlsCoherentWithEngine, pickDesktopFingerprint, pickMobileFingerprint } from './stealth';
 import {
@@ -158,8 +159,14 @@ export function identityContextFromConfig(): IdentityContext {
 
 export interface LaunchIdentityParams {
     sessionDir: string;
-    /** Il seme già congelato da `congelaSemeFingerprint`: registrato nel file, usato dal pool. */
-    accountId: string;
+    /**
+     * Id del profilo se il chiamante lo conosce; altrimenti si risolve dalla sessionDir configurata
+     * (`profiloIdDellaSessione`) e, per i profili che la config non conosce, ricade sul seme. È ciò che il file
+     * registra come `accountId` e che ogni lancio valida (`IDENTITY_ACCOUNT_MISMATCH`).
+     */
+    accountId?: string;
+    /** Il seme già congelato da `congelaSemeFingerprint`: decide SOLO quale voce del pool alla creazione. */
+    poolSeed: string;
     /** Solo per il pool (Camoufox è desktop: ignorato su quell'engine). */
     isMobile: boolean;
     headless: boolean;
@@ -172,9 +179,10 @@ export async function ensureLaunchIdentity(params: LaunchIdentityParams): Promis
     const ctx = identityContextFromConfig();
     const major = engineBuildMajor(ctx.engineBuild);
     if (major === null) throw new Error(`[IDENTITY] build «${ctx.engineBuild}» senza major leggibile`);
-    return ensureBrowserIdentity(params.sessionDir, params.accountId, ctx, async () =>
+    const accountId = profiloIdDellaSessione(params.sessionDir, params.accountId) ?? params.poolSeed;
+    return ensureBrowserIdentity(params.sessionDir, accountId, ctx, async () =>
         ctx.engine === 'camoufox'
             ? generateCamoufoxIdentity(ctx.hostOs, major, params.headless)
-            : generatePoolIdentity(params.accountId, params.isMobile, major, await params.loadCloudFingerprints()),
+            : generatePoolIdentity(params.poolSeed, params.isMobile, major, await params.loadCloudFingerprints()),
     );
 }
