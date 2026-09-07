@@ -4,12 +4,15 @@ import { config } from '../config';
 import { ensureDirectoryPrivate } from '../security/filesystem';
 import { getProxyFailoverChainAsync, getStickyProxy, type ProxyConfig } from '../proxyManager';
 import { launchBrowser, closeBrowser } from '../browser/launcher';
+import { profileHasCookies } from '../browser/browserIdentity';
 import { recordSuccessfulAuth } from '../browser/sessionCookieMonitor';
 
 export interface CreateProfileOptions {
     profileDir: string;
     loginUrl: string;
     timeoutSeconds: number;
+    /** Account di cui aprire il jar quando `profileDir` non e' dato: senza, si aprirebbe il PRIMO. */
+    accountId: string | null;
 }
 
 const DEFAULT_LOGIN_URL = 'https://www.linkedin.com/login';
@@ -31,9 +34,23 @@ export function resolveProfileDir(rawDir: string | null | undefined, accountId?:
 }
 
 export async function createPersistentProfile(options: Partial<CreateProfileOptions> = {}): Promise<void> {
-    const profileDir = resolveProfileDir(options.profileDir);
+    // L'`accountId` va propagato: senza, un chiamante che passa solo `{timeoutSeconds}` aprirebbe il
+    // PRIMO profilo configurato ignorando `--account`, cioe' il jar dell'account sbagliato proprio
+    // durante un login — la classe che C53 e F-7c1a9e04 hanno appena chiuso.
+    const profileDir = resolveProfileDir(options.profileDir, options.accountId);
     const loginUrl = options.loginUrl?.trim() || DEFAULT_LOGIN_URL;
     const timeoutSeconds = Math.max(60, Math.floor(options.timeoutSeconds ?? 900));
+
+    // Il profilo e' GIA' autenticato: aprire il browser qui vorrebbe dire caricare la pagina di login
+    // da loggati (redirect al feed) e chiudere entro un paio di secondi, perche' il loop di attesa non
+    // gira. Ripetuto, e' un pattern di micro-sessioni da 2 secondi contro il principio delle sessioni
+    // credibili — e il comando non farebbe comunque nulla di utile. Si controlla PRIMA di lanciare,
+    // come fa gia' `identity-init`.
+    if (profileHasCookies(profileDir)) {
+        console.log(`[PROFILE] ${profileDir} ha gia' una sessione LinkedIn: nessun browser aperto.`);
+        console.log('[PROFILE] Per un profilo separato usa --dir <path>; per rifare il login usa `bot.ps1 login`.');
+        return;
+    }
 
     ensureDirectoryPrivate(profileDir);
 

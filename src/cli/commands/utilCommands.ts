@@ -863,6 +863,7 @@ export async function runCreateProfileCommand(args: string[]): Promise<void> {
 
     await createPersistentProfile({
         profileDir: resolveProfileDir(dirRaw, selectedAccount.id),
+        accountId: selectedAccount.id,
         timeoutSeconds,
         loginUrl: url,
     });

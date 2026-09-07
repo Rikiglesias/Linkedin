@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
     getStickyProxy: vi.fn(),
     getProxyFailoverChainAsync: vi.fn(),
     ensureDirectoryPrivate: vi.fn(),
+    profileHasCookies: vi.fn(() => false),
     config: {
         browserEngine: 'chromium',
         // F-7c1a9e04: il default del profilo passa da resolveSessionDir(), che legge queste due.
@@ -51,6 +52,12 @@ vi.mock('../browser/sessionCookieMonitor', () => ({
     recordSuccessfulAuth: mocks.recordSuccessfulAuth,
 }));
 
+// Il jar gia' autenticato ferma il comando PRIMA di aprire il browser (review pre-push, finding #4):
+// qui il default e' «profilo vuoto», cosi' i casi AB-24 sotto arrivano davvero a launchBrowser.
+vi.mock('../browser/browserIdentity', () => ({
+    profileHasCookies: mocks.profileHasCookies,
+}));
+
 import { createPersistentProfile } from '../scripts/createProfile';
 
 /**
@@ -81,6 +88,17 @@ describe('createProfile AB-24 — login mai su IP diretto', () => {
         mocks.getProxyFailoverChainAsync.mockResolvedValue([]);
         mocks.launchBrowser.mockResolvedValue(fakeSession());
         mocks.closeBrowser.mockResolvedValue(undefined);
+        mocks.profileHasCookies.mockReturnValue(false);
+    });
+
+    test('profilo GIA autenticato: nessun browser aperto, nessuna micro-sessione da 2 secondi', async () => {
+        // Review pre-push (finding #4): col default unificato sulla cartella dell'account il jar puo'
+        // essere gia' loggato. Aprire il browser per navigare su /login da autenticati e chiudere
+        // subito e' una sessione di 2 secondi vista da LinkedIn, e non serve a niente.
+        mocks.profileHasCookies.mockReturnValue(true);
+        await createPersistentProfile({ timeoutSeconds: 60 });
+        expect(mocks.launchBrowser).not.toHaveBeenCalled();
+        expect(mocks.recordSuccessfulAuth).not.toHaveBeenCalled();
     });
 
     test('managed proxy ON + pool vuoto -> HALT (throw AB-24), nessun browser lanciato', async () => {

@@ -22,7 +22,7 @@ import {
 import { isSameProxy, buildProxyLaunchPlan } from './proxyLaunchPlan';
 import { CloudFingerprint, BrowserFingerprint, pickFingerprintMode } from './stealth';
 import { CAMOUFOX_NATIVE_SECTIONS, buildStealthInitScript } from './stealthScripts';
-import { assertCamoufoxRuntimePinned } from './camoufoxRuntime';
+import { assertCamoufoxRuntimePinned, CamoufoxRuntimeError } from './camoufoxRuntime';
 import { camoufoxIdentityLaunchOptions, identityToBrowserFingerprint, stealthInputsFromIdentity } from './browserIdentityProjection';
 import { ensureLaunchIdentity, identityWindow } from './browserIdentityRuntime';
 import { profileHasCookies } from './browserIdentity';
@@ -794,6 +794,14 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             return { browser, page, deviceProfile, fingerprint, httpThrottler, proxy: currentProxy ?? null };
         } catch (error) {
             lastError = error;
+            // Il binario Camoufox fuori pin non e' un guasto del proxy: la guardia vive dentro questo
+            // ciclo, e senza questo ramo l'errore cadrebbe nel catch generico che marca fallito il
+            // proxy corrente — per OGNI elemento del piano, escalation mobile inclusa. Risultato: la
+            // catena dell'account in cooldown per un motivo che coi proxy non c'entra, e alla sessione
+            // dopo un IP diverso sotto lo stesso account (proprio il segnale che la stickiness evita).
+            if (error instanceof CamoufoxRuntimeError) {
+                throw error;
+            }
             const errMsg = error instanceof Error ? error.message : String(error);
 
             // Retry same proxy once with backoff on transient errors

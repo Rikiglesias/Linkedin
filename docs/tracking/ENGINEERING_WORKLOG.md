@@ -3470,3 +3470,76 @@ C12-C17; C18-C20 = leve). Binding `~/todos/bot-operativo.md` § Stato.
 **Contro-prove eseguite, non assunte**: con la sonda precedente il caso del ref FALLISCE (1 failed / 9 passed); mutando il confronto dei blob in `if (false)` fallisce il caso «voce scaduta». Il primo tentativo del test sul ref era TAUTOLOGICO — passava anche sulla sonda bacata, perché nel range scelto il blob finale coincideva con HEAD — ed è emerso dalla contro-prova, non dall'intuito. Gate dopo il fix: `post-modifiche` **exit 0 = 263 file / 2557 test** (da 262/2547); sonda verde 23/23 sul range del blocco.
 
 **Prossimo**: review indipendente pre-push del blocco A sul diff `e706b36..HEAD`, poi il push dei 31 commit, poi il grade di chiusura del blocco.
+
+
+## 2026-09-08 — Blocco 48: la review pre-push del blocco A trova tre gate che si spegnevano in silenzio
+
+**Contesto**: il contratto `bot-operativo` mette una *review indipendente pre-push* fra la chiusura del
+blocco A e il push (binding riga 311). Quattro lenti hanno letto il diff `e706b36..HEAD` (34 commit, 89
+file) con mandati diversi: correttezza e contratti, anti-ban contro `.claude/rules/browser-antiban.md`,
+fallimenti silenziosi, test che passano a vuoto. Ogni finding è stato verificato alla fonte prima di essere
+accettato: alle lenti si delega la raccolta, mai il verdetto.
+
+**Prima ancora, il passo 0 rimasto dalla sessione precedente — `F-7c1a9e04` (commit `f87e4ef`)**.
+`create-profile` fa un login LinkedIn reale e scriveva il cookie jar in `<cwd>/profiles/linkedin-profile`
+(costante di modulo), mentre `login`, `send-invites` e `identity-init` risolvono `data/session`: due jar e
+due `.fingerprint.json` per lo stesso account, cioè i «due dispositivi» che C53 dichiarava eliminati. Ora
+`resolveProfileDir(raw, accountId?)` ricade sulla funzione unica di C53 e il comando accetta `--account`
+come `login`. Rosso-prima 4/15 col colpevole esatto stampato. **La review anti-ban del fix ha trovato un
+secondo difetto dentro il fix stesso**: col nuovo default il jar può essere già autenticato (`data/session`
+ha 24 cookie), quindi il comando avrebbe visto `li_at` al primo giro e chiamato `recordSuccessfulAuth`,
+azzerando il countdown di rotazione dei 7 giorni su cookie vecchi. La baseline ora si scrive solo per un
+login davvero avvenuto nel comando.
+
+**① Il kill-switch 429 poteva spegnersi da solo** (`launcher.ts:757`, commit `7ac8765`). Il flag
+`throttlingTrattato` veniva alzato PRIMA dell'azione e `applyLoginFailureAction` finiva in
+`.catch(() => {})`. Se la scrittura della pausa falliva — SQLite lockato da un altro processo, disco pieno —
+non restava niente: nessun incident, nessuna pausa, proxy non in cooldown, sticky non rilasciato, e ogni 429
+successivo della sessione scartato dal flag. Il bot continuava a lavorare sotto rate limit convinto che una
+pausa da 180 minuti fosse attiva. Ora l'errore va a `logError` con l'impatto scritto in chiaro e il flag
+torna giù: «uno per sessione» vale per il trattamento RIUSCITO, non per il tentativo.
+
+**② La quarantena 2FA aveva perso la sua seconda rete** (`auth.ts` + `loginFailurePolicy.ts`, stesso
+commit). `checkLoginDetailed` quarantena l'account alla fonte e, se la scrittura falliva, lo diceva solo a
+`console.error`; la politica non ri-quarantenava di proposito («la applica già chi ha visto la pagina») e il
+canary era passato a `quarantineType: null` per ogni causa. Prima del refactor `workflowEntryGuards.ts:118`
+tornava `'LOGIN_REQUIRED'` e `:540-544` ri-quarantenava: la scrittura aveva un secondo tentativo su un
+percorso diverso, e non c'è più. Risultato: account libero con una challenge 2FA pendente, e al ciclo dopo
+il bot rilancia il browser dentro la stessa pagina. Ora l'esito porta `quarantineApplied` e la politica
+rimedia quando è `false`.
+
+**③ I due sync ripartivano proprio sotto throttling** (commit `ad20d31`). Il commento in `auth.ts:80-84` lo
+diceva già — «un `false` qui può essere un 429, e trattarlo da sloggato è il difetto che C27 chiude» — ma
+`salesNavigatorSync.ts` e `syncSearchService.ts` usavano ancora il booleano `checkLogin`, che collassa su
+`false` anche `throttled` e `unknown`. Da lì chiamavano `awaitManualLogin`, che decide guardando navbar e
+cookie (`isLoggedIn`, `auth.ts:41-69`): sotto un 429 il cookie è ancora valido, quindi tornava `true` in
+pochi secondi e il lavoro riprendeva — dopo aver anche navigato su `/login`. Introdotta
+`valutaSessionePrimaDelLavoro` in `risk/loginFailureHandler.ts`: un solo punto che chiede l'esito tipizzato
+e applica già la reazione su throttled/2FA/unknown, lasciando `logged-out` al chiamante (lì il rimedio è il
+login, e solo il chiamante sa se c'è un umano davanti). `syncSearchService` blocca il run con
+`AUTOMATION_PAUSED` o `CANARY_PAGE_UNREACHABLE`, gli stessi due esiti che `workflowEntryGuards` usa per le
+stesse due situazioni: nessun allargamento di `WorkflowBlockedReason`.
+
+**VERIFY**: `post-modifiche` exit 0 CATTURATO = **263 file / 2568 test** (da 263/2557); tsc 0; lint 0;
+`madge --circular` 0 su 612 file (l'import nuovo `risk → browser/auth` non ne crea); `security:scan` 0
+secret / 953 file. **Contro-prova per mutazione su OGNI fix**, perché un test verde non è ancora una prova:
+mutata la guardia `giaAutenticato` a `false` → cade il caso del jar già autenticato; mutato
+`quarantine: !outcome.quarantineApplied` a `false` → cade solo il caso della seconda rete; forzato il ramo
+di `valutaSessionePrimaDelLavoro` a uscire sempre → cade solo il caso 429.
+
+**La sonda C64 ha fatto il suo mestiere due volte**: dopo `7ac8765` è uscita 1 elencando per nome i tre file
+del perimetro toccati (verdetto recensito su contenuto vecchio), e di nuovo dopo `ad20d31` su
+`loginFailureHandler.ts`. Verdetti riscritti con il `blob_sha` riletto da git, mai digitato (`b2fb0e3`,
+`840ff71`), e sonda tornata **verde 23/23**.
+
+**Residui dichiarati** (in `~/todos/improvements-proposed.md`, non silenti): la pausa globale su una causa
+per-account resta com'è finché non c'è il ramo multi-account, perché restringerla toglie protezione; il ramo
+di errore del listener voyager non ha un test (vive dentro `launchBrowser`, estrarlo sarebbe più invasivo
+del fix); un giro della suite ha mostrato un flake dipendente dall'ordine in
+`primoInvitoPercorsoDocumentato` (il file passa 6/6 da solo e la suite intera ri-eseguita passa 2568/2568),
+visto una volta sola e quindi da confermare prima di inseguirlo; il perimetro C64 non copre
+`salesNavigatorSync.ts` né `syncSearchService.ts`, che pure aprono browser — stessa lacuna di `F-3b52d10c`,
+da rinegoziare col contratto e non da allargare di nascosto.
+
+**Prossimo**: raccogliere i finding delle due lenti rimaste (arrivano troncati dal canale, li stanno
+scrivendo su file), poi il push dei commit e il grade di chiusura del blocco A.
