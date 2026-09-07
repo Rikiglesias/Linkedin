@@ -163,7 +163,16 @@ describe('C53 — una sola risoluzione della cartella di sessione', () => {
         // I flussi che gia' hanno il profilo in mano (`send-invites` e i suoi fratelli: jobRunner,
         // syncSearch, salesnav, audit, doctor) passano `account.sessionDir` a `launchBrowser`. Non li
         // riscrivo — sarebbero 14 punti in area anti-ban per un valore identico — ma l'uguaglianza va
-        // PROVATA, non assunta: se un profilo arrivasse con un path relativo, qui si vedrebbe subito.
+        // PROVATA, non assunta.
+        //
+        // LIMITE DICHIARATO (trovato dal critico di fine task, 2026-09-07): in questo ambiente
+        // `multiAccountEnabled` è false, quindi `getRuntimeAccountProfiles()` restituisce il profilo
+        // sintetico costruito con `sessionDir: resolveSessionDir()` — cioè questo caso confronta la
+        // funzione con sé stessa sul ramo single-account, e NON dimostra nulla sul ramo multi-account
+        // (dove i profili portano il loro `sessionDir` dalla configurazione). Il ramo multi-account
+        // va coperto montando una config finta con due profili: tracciato in
+        // `~/todos/improvements-proposed.md`. Finché non c'è, questo caso vale come guardia di
+        // non-regressione del ramo attivo, non come prova dell'invariante generale.
         const profili = getRuntimeAccountProfiles();
         expect(profili.length).toBeGreaterThan(0);
         for (const profilo of profili) {
