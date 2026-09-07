@@ -30,7 +30,9 @@ function expectedUaFamilyForEngine(): { engine: string; expected: string; isFire
     return { engine, expected: isFirefoxEngine ? 'firefox' : 'chrome/edge', isFirefoxEngine };
 }
 
-function isUaTlsCoherentWithEngine(userAgent: string): boolean {
+// C23: esportata perché l'identità persistita (`browserIdentity.ts`) la valuta a OGNI lancio prima di `launch`,
+// su entrambi gli engine e anche su sessionDir vergine — non più solo dentro `pickBrowserFingerprint`.
+export function isUaTlsCoherentWithEngine(userAgent: string): boolean {
     const family = detectBrowserFamily(userAgent);
     const { isFirefoxEngine } = expectedUaFamilyForEngine();
     return isFirefoxEngine

@@ -5,7 +5,6 @@
  */
 
 import path from 'path';
-import { execSync } from 'child_process';
 import { chromium, firefox, BrowserContext, Page } from 'playwright';
 import { config, ProxyType } from '../config';
 import { logInfo, logWarn } from '../telemetry/logger';
@@ -20,15 +19,11 @@ import {
     releaseStickyProxy,
 } from '../proxyManager';
 import { isSameProxy, buildProxyLaunchPlan } from './proxyLaunchPlan';
-import {
-    CloudFingerprint,
-    BrowserFingerprint,
-    pickDesktopFingerprint,
-    pickFingerprintMode,
-    pickMobileFingerprint,
-} from './stealth';
+import { CloudFingerprint, BrowserFingerprint, pickFingerprintMode } from './stealth';
 import { buildStealthInitScript } from './stealthScripts';
 import { assertCamoufoxRuntimePinned } from './camoufoxRuntime';
+import { camoufoxIdentityLaunchOptions, identityToBrowserFingerprint, stealthInputsFromIdentity } from './browserIdentityProjection';
+import { ensureLaunchIdentity, identityWindow } from './browserIdentityRuntime';
 import { HttpResponseThrottler } from '../risk/httpThrottler';
 import { DeviceProfile, registerPageDeviceProfile } from './deviceProfile';
 import { fetchWithRetryPolicy } from '../core/integrationPolicy';
@@ -297,24 +292,35 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
     // P1 anti-ban: risolto UNA volta sola, FUORI dal ciclo di retry. Dentro, ogni tentativo di proxy
     // rileggerebbe e riscriverebbe il flag del seme senza alcun motivo.
     const semeFingerprint = await congelaSemeFingerprint(sessionDir, options.accountId);
+    // Lo STESSO seme che seleziona il fingerprint seleziona anche il tempo di pressione dei
+    // tasti: due assi della stessa persona simulata non possono avere identita' diverse (zero-O).
+    // Senza questa riga il dwell ricadrebbe su `ACCOUNT_ID`, che in questo progetto non e'
+    // valorizzato da nessuna parte ⇒ seme costante ⇒ hold-time identico su TUTTI gli account,
+    // cioe' il correlatore cross-account che F-6ce4907b doveva eliminare.
+    impostaSemeAccount(semeFingerprint);
+    const isMobileSession = options.forceDesktop ? false : pickFingerprintMode(semeFingerprint);
+    // C23: l'identità è UNA per profilo e vive in `<sessionDir>/.fingerprint.json`. Si legge e si valida QUI,
+    // prima di qualunque launch e fuori dal ciclo di retry: il pool/cloud entra solo alla creazione, su profilo
+    // vergine. Incoerenza col binario/host, file corrotto o identità assente su profilo con cookie ⇒
+    // BrowserIdentityError (0 pagine) con il comando che risolve; mai rigenerazione.
+    const identity = await ensureLaunchIdentity({
+        sessionDir,
+        accountId: semeFingerprint,
+        isMobile: isMobileSession,
+        headless,
+        loadCloudFingerprints: fetchCloudFingerprints,
+    });
+    const fingerprint = identityToBrowserFingerprint(identity);
+    const stealthInputs = stealthInputsFromIdentity(identity);
+    const consistentNoise = FingerprintPool.generateConsistentProfile(fingerprint);
+    validateFingerprintConsistency(fingerprint);
 
     for (let attempt = 0; attempt < launchPlan.length; attempt++) {
         const currentProxy = launchPlan[attempt];
-        const cloudFingerprints = await fetchCloudFingerprints();
-        // Lo STESSO seme che seleziona il fingerprint seleziona anche il tempo di pressione dei
-        // tasti: due assi della stessa persona simulata non possono avere identita' diverse (zero-O).
-        // Senza questa riga il dwell ricadrebbe su `ACCOUNT_ID`, che in questo progetto non e'
-        // valorizzato da nessuna parte ⇒ seme costante ⇒ hold-time identico su TUTTI gli account,
-        // cioe' il correlatore cross-account che F-6ce4907b doveva eliminare.
-        impostaSemeAccount(semeFingerprint);
-        const isMobileSession = options.forceDesktop ? false : pickFingerprintMode(semeFingerprint);
-        const fingerprint = isMobileSession
-            ? pickMobileFingerprint(cloudFingerprints, semeFingerprint)
-            : pickDesktopFingerprint(cloudFingerprints, semeFingerprint);
-        const consistentNoise = FingerprintPool.generateConsistentProfile(fingerprint);
-        validateFingerprintConsistency(fingerprint);
         await logInfo('browser.fingerprint_selected', {
             fingerprintId: fingerprint.id,
+            engineBuild: identity.engineBuild,
+            identityOs: identity.os,
             isMobile: isMobileSession,
             accountId: semeFingerprint,
             canvasNoise: consistentNoise.canvasNoise,
@@ -448,27 +454,10 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                 const windowBlock = process.platform === 'win32' ? await import('./windowInputBlock') : null;
                 const preLaunchPids = windowBlock ? new Set(windowBlock.getFirefoxLikePids()) : undefined;
 
-                // Dimensioni finestra: legge la risoluzione schermo dall'OS per adattarsi
-                // a qualsiasi monitor. window.resizeTo non funziona in Firefox (security).
-                let cfxWindow: [number, number] | undefined;
-                if (viewport) {
-                    cfxWindow = [viewport.width, viewport.height];
-                } else if (!headless) {
-                    try {
-                        const out = execSync(
-                            'powershell -NoProfile -c "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea | Format-List Width,Height"',
-                            { encoding: 'utf8', timeout: 5000 },
-                        );
-                        const wMatch = out.match(/Width\s*:\s*(\d+)/);
-                        const hMatch = out.match(/Height\s*:\s*(\d+)/);
-                        if (wMatch && hMatch) {
-                            cfxWindow = [parseInt(wMatch[1], 10), parseInt(hMatch[1], 10)];
-                        }
-                    } catch {
-                        // Fallback: dimensione conservativa per laptop comuni
-                        cfxWindow = [1366, 768];
-                    }
-                }
+                // Dimensioni finestra: la STESSA regola con cui l'identità è nata (`identityWindow`: viewport
+                // headless, altrimenti la WorkingArea reale). Con un `fingerprint` custom camoufox-js applica le
+                // dimensioni frizzate nel file (`window` entra solo in `generateFingerprint`): qui serve al log.
+                const cfxWindow: [number, number] = identityWindow(headless);
 
                 const cfxProxy = currentProxy
                     ? {
@@ -487,6 +476,10 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                 }
                 browser = await Camoufox({
                     user_data_dir: sessionDir,
+                    // C23: identità dal file — fingerprint browserforge, `os` dell'host e seme font congelati alla
+                    // creazione. camoufox-js non sovrascrive una chiave di `config` già presente (`setInto`), quindi
+                    // `fonts:spacing_seed` resta quello del profilo a ogni lancio.
+                    ...(camoufoxIdentityLaunchOptions(identity) as Partial<Parameters<typeof Camoufox>[0]>),
                     headless: headless,
                     // Timeout esplicito (propagato a Playwright launchPersistentContext via catch-all):
                     // fail-fast a 60s su lock conflict invece dei 180s di default, poi retry (retriedLock).
@@ -700,37 +693,21 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             }
 
             // Stealth init script: WebRTC kill, navigator normalization, chrome mock, permissions override
-            // Derive hardware specs coherent with the fingerprint's device class
-            const isMobileDevice = fingerprint.isMobile ?? false;
-            const fpHash = fingerprint.id.split('').reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0) >>> 0;
-            const mobileHwOptions = [4, 6, 8];
-            const desktopHwOptions = [4, 8, 12, 16];
-            const coherentHwConcurrency = isMobileDevice
-                ? mobileHwOptions[fpHash % mobileHwOptions.length]
-                : desktopHwOptions[fpHash % desktopHwOptions.length];
-            const mobileMemOptions = [2, 3, 4, 6];
-            const desktopMemOptions = [4, 8, 16];
-            const coherentDeviceMemory = isMobileDevice
-                ? mobileMemOptions[(fpHash >> 4) % mobileMemOptions.length]
-                : desktopMemOptions[(fpHash >> 4) % desktopMemOptions.length];
-            const coherentColorDepth = isMobileDevice ? 32 : 24;
-
+            // C23: hardware, lingue, viewport e UA vengono dall'identità persistita (congelati alla creazione,
+            // `browserIdentityRuntime.ts`), mai derivati o ripescati al lancio.
             const stealthScript = buildStealthInitScript({
-                locale: fingerprint.locale ?? config.browserLocale,
-                languages: [
-                    fingerprint.locale ?? config.browserLocale,
-                    (fingerprint.locale ?? config.browserLocale).split('-')[0] ?? 'it',
-                    'en-US',
-                    'en',
-                ],
+                locale: stealthInputs.locale,
+                languages: stealthInputs.languages,
                 isHeadless: headless,
-                viewportWidth: fingerprint.viewport?.width ?? 1280,
-                viewportHeight: fingerprint.viewport?.height ?? 800,
+                viewportWidth: stealthInputs.viewportWidth,
+                viewportHeight: stealthInputs.viewportHeight,
                 audioNoise: deviceProfile.audioNoise,
-                hardwareConcurrency: coherentHwConcurrency,
-                deviceMemory: coherentDeviceMemory,
-                colorDepth: coherentColorDepth,
-                userAgent: fingerprint.userAgent,
+                hardwareConcurrency: stealthInputs.hardwareConcurrency,
+                // Firefox non espone navigator.deviceMemory (null nel file): l'iniezione su Camoufox è preesistente
+                // e la toglie C24 (sezione nativa); qui resta il default desktop finché C24 non chiude.
+                deviceMemory: stealthInputs.deviceMemory ?? 8,
+                colorDepth: stealthInputs.colorDepth,
+                userAgent: stealthInputs.userAgent,
                 skipSections: skipIfCloak,
             });
             await browser.addInitScript({ content: stealthScript });

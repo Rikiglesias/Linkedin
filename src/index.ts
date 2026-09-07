@@ -667,6 +667,11 @@ async function main(): Promise<void> {
             await runCamoufoxFetchCommand(commandArgs);
             break;
         }
+        case 'identity-init': {
+            const { runIdentityInitCommand } = await import('./cli/commands/identityInit');
+            await runIdentityInitCommand(commandArgs);
+            break;
+        }
         case 'kpi': {
             const kpi = await getGlobalKPIData();
             writeJsonResult(kpi);

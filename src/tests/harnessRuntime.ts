@@ -208,6 +208,13 @@ export async function runHarness(name: string, engine: HarnessEngine, body: (run
         const exitCode = harnessExitCode(summary, measuresFailed);
         console.log(`HARNESS_RESULT ${JSON.stringify({ ...summary, measures_failed: measuresFailed, exit_code: exitCode })}`);
         process.exitCode = exitCode;
-        fs.rmSync(HARNESS_TMP, { recursive: true, force: true, maxRetries: 3 });
+        // La rimozione non può cambiare il verdetto (stesso criterio di setup/globalSetup.ts): i lanci di
+        // produzione (C23) aprono il DB sqlite e su Windows l'handle può restare agganciato un istante →
+        // EBUSY. Una cartella temporanea rimasta indietro è innocua; un exit 1 con misure verdi sarebbe falso.
+        try {
+            fs.rmSync(HARNESS_TMP, { recursive: true, force: true, maxRetries: 3 });
+        } catch (error) {
+            console.warn(`[harness] cleanup di ${HARNESS_TMP} rinviato: ${error instanceof Error ? error.message : String(error)}`);
+        }
     }
 }

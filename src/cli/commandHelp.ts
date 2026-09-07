@@ -162,6 +162,17 @@ const COMMAND_HELP: Record<string, CommandHelp> = {
         options: [{ flag: '--check', description: 'Verifica binario e addon senza scaricare (exit 1 se mancano o differiscono)' }],
         examples: ['bot camoufox-fetch --check', 'bot camoufox-fetch'],
     },
+    'identity-init': {
+        usage: 'identity-init [--new-session] [--account <id>] [--os <windows|macos|linux>]',
+        description:
+            'Crea UNA volta l\'identità persistita del browser (<sessionDir>/.fingerprint.json: fingerprint, os dell\'host, build del binario, seme font) PRIMA del primo login. Idempotente; rifiuta un profilo che ha già cookie (usa --new-session). Stampa un JSON.',
+        options: [
+            { flag: '--new-session', description: 'Crea una cartella sessione NUOVA accanto a quella configurata e stampa la riga SESSION_DIR= da mettere in config' },
+            { flag: '--account <id>', description: 'Account (default: quello di default): l\'identità va nella sua sessionDir' },
+            { flag: '--os <os>', description: 'Deve essere la piattaforma dell\'host; un valore diverso = exit 1 senza scritture' },
+        ],
+        examples: ['bot identity-init', 'bot identity-init --new-session', 'bot identity-init --account default'],
+    },
     pause: {
         usage: 'pause [minutes|indefinite] [reason]',
         description: "Mette in pausa l'automazione per N minuti.",

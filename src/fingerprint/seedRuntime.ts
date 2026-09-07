@@ -52,10 +52,15 @@ function profiloIdDellaSessione(sessionDir: string, accountIdEsplicito?: string)
 /**
  * Il cookie jar decide se LinkedIn ha già visto questo dispositivo: cartella con contenuto = sì.
  * Errore di lettura ⇒ `true`, perché congelare il seme ODIERNO è il lato che non cambia dispositivo.
+ * C23: `.fingerprint.json` NON conta — `identity-init` lo scrive PRIMA del primo lancio, e un file nostro non è
+ * un dispositivo che LinkedIn ha visto (senza questa esclusione il primo login congelerebbe il seme «storico»).
+ * Il nome è il literal di `browser/browserIdentity.ts` (`IDENTITY_FILE_NAME`): non si importa da `browser/` (guardia
+ * anti-ciclo in `semeFingerprintWiring.vitest.ts`); l'allineamento lo controlla `fingerprintPersistence.vitest.ts`.
  */
+const FILE_IDENTITA = '.fingerprint.json';
 function sessioneGiaAutenticata(sessionDir: string): boolean {
     try {
-        return fs.readdirSync(sessionDir).length > 0;
+        return fs.readdirSync(sessionDir).some((entry) => entry !== FILE_IDENTITA);
     } catch {
         return true;
     }
