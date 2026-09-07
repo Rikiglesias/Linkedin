@@ -88,15 +88,28 @@ describe('C2(d) — getRiskInputs propaga i conteggi REALI', () => {
         const { getRiskInputs } = await import('../core/repositories');
         const { getLocalDateString, config } = await import('../config');
         const db = await getDatabase();
-        const invitedRow = await db.get<{ total: number }>(
-            `SELECT COUNT(*) as total FROM leads WHERE invited_at IS NOT NULL`,
-        );
-        const attemptsRow = await db.get<{ total: number }>(
-            `SELECT COUNT(*) as total FROM job_attempts WHERE started_at >= DATETIME('now', '-24 hours')`,
-        );
+        const contaInvitati = async (): Promise<number> =>
+            (await db.get<{ total: number }>(`SELECT COUNT(*) as total FROM leads WHERE invited_at IS NOT NULL`))
+                ?.total ?? 0;
+        const contaTentativi24h = async (): Promise<number> =>
+            (
+                await db.get<{ total: number }>(
+                    `SELECT COUNT(*) as total FROM job_attempts WHERE started_at >= DATETIME('now', '-24 hours')`,
+                )
+            )?.total ?? 0;
+        // La copia del DB è UNA per esecuzione e condivisa fra i worker (setup/globalSetup.ts): altri file di
+        // test scrivono `invited_at`/`job_attempts` mentre questo caso gira, e tre COUNT in sequenza non sono
+        // atomici (2026-09-07: atteso 0, ricevuto 1, verde in isolamento). Si misura PRIMA e DOPO e si
+        // pretende che `getRiskInputs` cada nell'intervallo: propaga il conteggio reale, non un valore fisso.
+        const invitatiPrima = await contaInvitati();
+        const tentativiPrima = await contaTentativi24h();
         const riskInputs = await getRiskInputs(getLocalDateString(), config.hardInviteCap);
-        expect(riskInputs.invitedTotal).toBe(invitedRow?.total ?? 0);
-        expect(riskInputs.attemptsTotal24h).toBe(attemptsRow?.total ?? 0);
+        const invitatiDopo = await contaInvitati();
+        const tentativiDopo = await contaTentativi24h();
+        expect(riskInputs.invitedTotal).toBeGreaterThanOrEqual(Math.min(invitatiPrima, invitatiDopo));
+        expect(riskInputs.invitedTotal).toBeLessThanOrEqual(Math.max(invitatiPrima, invitatiDopo));
+        expect(riskInputs.attemptsTotal24h).toBeGreaterThanOrEqual(Math.min(tentativiPrima, tentativiDopo));
+        expect(riskInputs.attemptsTotal24h).toBeLessThanOrEqual(Math.max(tentativiPrima, tentativiDopo));
         expect(Number.isFinite(riskInputs.invitedTotal)).toBe(true);
         expect(riskInputs.invitedTotal).toBeGreaterThanOrEqual(0);
     });
