@@ -87,6 +87,17 @@ function leggiRange(args) {
     return null;
 }
 
+/**
+ * Il ref su cui leggere il blob ATTUALE: l'estremo DESTRO del range, non `HEAD`.
+ * Su `<base>..HEAD` (l'uso normale) coincidono; su `A..B` con B ≠ HEAD no, e confrontare il verdetto
+ * col contenuto di HEAD invece che con quello di B è un falso verde silenzioso — la classe di errore
+ * che questa sonda esiste per impedire.
+ */
+function refFinale(range) {
+    const destra = range.split(/\.{2,3}/)[1];
+    return destra && destra.trim().length > 0 ? destra.trim() : 'HEAD';
+}
+
 function caricaVerdetti() {
     if (!fs.existsSync(verdictsPath)) {
         throw new Error(`artefatto dei verdetti assente: ${verdictsPath} (C64: il verdetto vive nel repo, non nel binding)`);
@@ -109,6 +120,7 @@ function main() {
     }
 
     const verdetti = caricaVerdetti();
+    const ref = refFinale(range);
     // `--diff-filter=d` esclude le CANCELLAZIONI: un file che non esiste più in HEAD non ha un blob da
     // recensire, e pretenderne il verdetto bloccherebbe per sempre chi fa pulizia.
     const cambiati = gitOrFail(['diff', '--name-only', '--diff-filter=d', range])
@@ -128,7 +140,7 @@ function main() {
             uncovered.push(file);
             continue;
         }
-        const blobAttuale = gitOrFail(['rev-parse', `HEAD:${file}`]).trim();
+        const blobAttuale = gitOrFail(['rev-parse', `${ref}:${file}`]).trim();
         if (voce.blob_sha !== blobAttuale) {
             stale.push({ file, recensito: voce.blob_sha, attuale: blobAttuale, criterio: voce.criterio ?? null });
             continue;
