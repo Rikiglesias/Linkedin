@@ -10,6 +10,16 @@ interface ConfigValidationRule {
 
 const CONFIG_VALIDATION_RULES: ConfigValidationRule[] = [
     {
+        // Review pre-push del blocco A: il fail-closed AB1 (C26) non lascia partire un browser su IP
+        // diretto quando il profilo ha gia' i cookie, ma il suo interruttore ha default `false` — con
+        // la configurazione spedita la guardia non scatta MAI e nessuno lo diceva. Qui non si cambia
+        // il default (bloccherebbe chi non ha proxy): lo si rende visibile dove l'operatore guarda.
+        message:
+            "[CONFIG] REQUIRE_PROXY_FOR_AUTH=false: senza proxy il browser esce sull'IP reale con i cookie di sessione (fail-closed AB1 inattivo). Metti REQUIRE_PROXY_FOR_AUTH=true se hai un proxy configurato.",
+        when: (cfg) => !cfg.requireProxyForAuth,
+        severity: 'warn',
+    },
+    {
         message: '[CONFIG] SUPABASE_URL mancante ma SUPABASE_SYNC_ENABLED=true',
         when: (cfg) => cfg.supabaseSyncEnabled && !cfg.supabaseUrl,
     },
