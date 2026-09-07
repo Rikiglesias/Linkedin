@@ -18,12 +18,20 @@ import { publishLiveEvent } from '../telemetry/liveEvents';
 import { reconcileLeadStatus } from '../core/leadStateService';
 import { config } from '../config';
 
-function resolveAccountId(details: Record<string, unknown>): string {
+/**
+ * L'account a cui l'incidente e' ATTRIBUITO, o `undefined` se non lo e'. E' la CHIAVE della
+ * quarantena (`setAccountQuarantine`): senza id si scrive il flag globale che ferma tutti (fail-safe
+ * per gli incidenti platform-wide); con l'id — anche `default`, il nome reale dell'account runtime
+ * single-account — si ferma solo quell'account (C27).
+ */
+function attributedAccountId(details: Record<string, unknown>): string | undefined {
     const accountId = details.accountId;
-    if (typeof accountId === 'string' && accountId.trim().length > 0) {
-        return accountId.trim();
-    }
-    return 'default';
+    return typeof accountId === 'string' && accountId.trim().length > 0 ? accountId.trim() : undefined;
+}
+
+/** Etichetta per audit/alert/bridge: qui `default` e' solo il nome mostrato quando l'id manca. */
+function resolveAccountId(details: Record<string, unknown>): string {
+    return attributedAccountId(details) ?? 'default';
 }
 
 async function recordAuditSafe(payload: Parameters<typeof recordSecurityAuditEvent>[0]): Promise<void> {
@@ -37,9 +45,10 @@ async function recordAuditSafe(payload: Parameters<typeof recordSecurityAuditEve
 export async function quarantineAccount(type: string, details: Record<string, unknown>): Promise<number> {
     const incidentId = await createIncident(type, 'CRITICAL', details);
     // G5-F2: quarantena per-account. Se `details.accountId` manca (incidente non attribuibile,
-    // es. SELECTOR_FAILURE_BURST platform-wide) resolveAccountId → 'default' → flag GLOBALE
-    // legacy che blocca tutti gli account (fail-safe).
-    await setAccountQuarantine(resolveAccountId(details), true);
+    // es. SELECTOR_FAILURE_BURST platform-wide) si passa `undefined` → flag GLOBALE legacy che
+    // blocca tutti gli account (fail-safe). C27: NON si degrada piu' a 'default', che e' il nome
+    // reale dell'account runtime e deve avere la sua chiave per-account.
+    await setAccountQuarantine(attributedAccountId(details), true);
     // F3 ai-stack: classifica la sorgente DOPO l'insert (l'incident corrente è incluso nel conteggio).
     // La classificazione arricchisce alert/dashboard (WHAT/WHY/DO), NON cambia il fail-safe sopra.
     const source = await classifyIncidentSource(type);

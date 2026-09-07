@@ -569,18 +569,23 @@ function accountQuarantineKey(accountId: string): string {
     return `${ACCOUNT_QUARANTINE_FLAG}:${accountId}`;
 }
 
-function normalizeQuarantineAccountId(accountId: string | null | undefined): string {
+/**
+ * `null` = quarantena NON attribuita a un account (flag globale). Qualunque id non vuoto — anche
+ * `default`, che e' il nome REALE dell'account runtime in single-account — e' per-account (C27: la
+ * 2FA dell'account `default` deve fermare LUI, con la chiave `account_quarantine:default`, non tutti).
+ */
+function normalizeQuarantineAccountId(accountId: string | null | undefined): string | null {
     const trimmed = (accountId ?? '').trim();
-    return trimmed.length > 0 ? trimmed : 'default';
+    return trimmed.length > 0 ? trimmed : null;
 }
 
 /**
- * Attiva/disattiva la quarantena per un account. `accountId` assente o 'default'
- * (incidente non attribuibile) scrive il flag GLOBALE legacy → blocca tutti.
+ * Attiva/disattiva la quarantena per un account. `accountId` assente (incidente non attribuibile)
+ * scrive il flag GLOBALE legacy → blocca tutti.
  */
 export async function setAccountQuarantine(accountId: string | null | undefined, enabled: boolean): Promise<void> {
     const normalized = normalizeQuarantineAccountId(accountId);
-    const key = normalized === 'default' ? ACCOUNT_QUARANTINE_FLAG : accountQuarantineKey(normalized);
+    const key = normalized === null ? ACCOUNT_QUARANTINE_FLAG : accountQuarantineKey(normalized);
     await setRuntimeFlag(key, enabled ? 'true' : 'false');
 }
 
@@ -590,7 +595,7 @@ export async function setAccountQuarantine(accountId: string | null | undefined,
  */
 export async function getAccountQuarantine(accountId: string | null | undefined): Promise<boolean> {
     const normalized = normalizeQuarantineAccountId(accountId);
-    if (normalized !== 'default') {
+    if (normalized !== null) {
         const perAccount = await getRuntimeFlag(accountQuarantineKey(normalized));
         if (perAccount === 'true') {
             return true;

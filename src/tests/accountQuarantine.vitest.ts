@@ -59,14 +59,27 @@ describe('quarantena per-account (G5-F2)', () => {
         expect(await getAccountQuarantine(undefined)).toBe(true);
     });
 
-    test("accountId assente o 'default' scrive il flag GLOBALE (fail-safe non-attribuibile)", async () => {
+    test('accountId ASSENTE scrive il flag GLOBALE (fail-safe non-attribuibile)', async () => {
         await setAccountQuarantine(undefined, true);
         expect(syncState.get('account_quarantine')).toBe('true');
         expect(await getAccountQuarantine('acc-qualunque')).toBe(true);
 
-        await setAccountQuarantine('default', false);
+        await setAccountQuarantine(undefined, false);
         expect(syncState.get('account_quarantine')).toBe('false');
         expect(await getAccountQuarantine('acc-qualunque')).toBe(false);
+    });
+
+    test("'default' e' un account come gli altri: chiave per-account, flag globale intatto (C27)", async () => {
+        // `default` e' il nome REALE dell'account runtime single-account: la sua 2FA deve fermare lui,
+        // non spegnere tutto; e `unquarantine --account default` deve poterla togliere da sola.
+        await setAccountQuarantine('default', true);
+        expect(syncState.get('account_quarantine:default')).toBe('true');
+        expect(syncState.has('account_quarantine')).toBe(false);
+        expect(await getAccountQuarantine('default')).toBe(true);
+        expect(await getAccountQuarantine('acc-2')).toBe(false);
+
+        await setAccountQuarantine('default', false);
+        expect(await getAccountQuarantine('default')).toBe(false);
     });
 
     test('disattivazione per-account non tocca il flag globale né gli altri account', async () => {

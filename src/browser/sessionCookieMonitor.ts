@@ -14,6 +14,8 @@ import fs from 'fs';
 import path from 'path';
 import { Page } from 'playwright';
 import { logInfo, logWarn } from '../telemetry/logger';
+import { clearAutomationPause, getAutomationPauseState } from '../core/repositories';
+import { LOGGED_OUT_PAUSE_MINUTES } from './loginFailurePolicy';
 
 // Esportata (C1 fix audit collaudo): preflight-env e altri consumer devono usare LO STESSO nome
 // file, non una stringa hardcoded divergente (era il bug 'session_meta.json' vs '.session-meta.json').
@@ -79,8 +81,15 @@ function writeMeta(sessionDir: string, meta: SessionMeta): void {
 /**
  * Registra una verifica di autenticazione avvenuta con successo.
  * Chiamare dopo ogni `checkLogin()` che ritorna `true`.
+ *
+ * C27: il login riuscito e' il RIMEDIO del ramo `LOGIN_REQUIRED`, quindi toglie QUELLA pausa e
+ * nessun'altra — una pausa da 429/403 o da challenge non si cura rifacendo il login.
  */
-export function recordSuccessfulAuth(sessionDir: string, actor: string = 'orchestrator', cookieHash?: string): void {
+export async function recordSuccessfulAuth(
+    sessionDir: string,
+    actor: string = 'orchestrator',
+    cookieHash?: string,
+): Promise<void> {
     const existing = readMeta(sessionDir);
     const now = new Date().toISOString();
     writeMeta(sessionDir, {
@@ -90,6 +99,26 @@ export function recordSuccessfulAuth(sessionDir: string, actor: string = 'orches
         rotationCount: existing?.rotationCount ?? 0,
         cookieHash: cookieHash ?? existing?.cookieHash,
     });
+    try {
+        await liftLoginRequiredPause(actor);
+    } catch (error) {
+        // Best-effort: il meta e' gia' scritto; una pausa non tolta e' visibile in `status` e scade da sola.
+        await logWarn('session.login_required_pause_lift_failed', {
+            actor,
+            error: error instanceof Error ? error.message : String(error),
+        });
+    }
+}
+
+async function liftLoginRequiredPause(actor: string): Promise<void> {
+    const stato = await getAutomationPauseState();
+    if (!stato.paused || stato.reason !== 'LOGIN_REQUIRED' || !stato.pausedUntil) return;
+    // Per la monotonia di `setAutomationPause` sotto lo stesso motivo puo' essersi fusa una pausa di
+    // sistema PIU' LUNGA (429, challenge): la si riconosce dalla scadenza, e non si tocca.
+    const residuoMin = (Date.parse(stato.pausedUntil) - Date.now()) / 60_000;
+    if (residuoMin > LOGGED_OUT_PAUSE_MINUTES) return;
+    await clearAutomationPause();
+    await logInfo('session.login_required_pause_lifted', { actor, residuoMin: Math.round(residuoMin) });
 }
 
 export interface SessionFreshnessCheck {

@@ -12,7 +12,9 @@
  * `LINKEDIN_PRE_THROTTLED`, quarantena, proxy bruciato).
  *
  * Qui la causa diventa un DATO tipizzato e la politica una funzione pura, cosi' i tre punti di
- * lettura non possono piu' divergere: chi osserva classifica, questa funzione decide.
+ * lettura non possono piu' divergere: chi osserva classifica (`checkLoginDetailed`,
+ * `probeLinkedInStatus`, il listener voyager del launcher), questa funzione decide, e UN solo
+ * handler applica (`risk/loginFailureHandler.ts`).
  *
  * Anti-ban: sul throttling si sceglie la reazione piu' conservativa — pausa lunga (default REALE
  * `autoPauseMinutesOnFailureBurst` = 180, `domains.ts:68`) con backoff `2^n` applicato a valle da
@@ -25,6 +27,8 @@
 export type LoginCheckOutcome =
     | { state: 'logged-in' }
     | { state: 'logged-out' }
+    /** LinkedIn chiede la verifica in due passaggi: la sessione non e' scaduta, manca un umano. */
+    | { state: 'two-factor' }
     /** Non lo sappiamo: la richiesta non e' arrivata a destinazione. Non e' una sessione scaduta. */
     | { state: 'unknown'; cause: 'timeout' | 'network' | 'proxy' }
     /** La piattaforma ha risposto, e ha detto di rallentare o ha bloccato. */
@@ -32,7 +36,7 @@ export type LoginCheckOutcome =
 
 export interface LoginFailureAction {
     /** Nome del ramo: e' anche il `blockReason` mostrato e il type dell'incident quando ce n'e' uno. */
-    reason: 'ok' | 'LOGIN_REQUIRED' | 'login_check_unknown' | 'HTTP_429_RATE_LIMIT' | 'HTTP_403_BLOCKED';
+    reason: 'ok' | 'LOGIN_REQUIRED' | 'LOGIN_2FA_REQUIRED' | 'login_check_unknown' | 'HTTP_429_RATE_LIMIT' | 'HTTP_403_BLOCKED';
     incidentType: string | null;
     /** `null` = nessuna pausa. Il backoff sul 429 lo applica `incidentManager`, non questa funzione. */
     pauseMinutes: number | null;
@@ -71,7 +75,21 @@ export function resolveLoginFailureAction(outcome: LoginCheckOutcome, opts: Logi
                 pauseMinutes: LOGGED_OUT_PAUSE_MINUTES,
                 quarantine: true,
                 releaseProxy: false,
-                message: 'Sessione LinkedIn non autenticata (cookie li_at assente) — eseguire `bot.ps1 login`',
+                message:
+                    'Sessione LinkedIn non autenticata (cookie li_at assente) — eseguire `bot.ps1 login`, poi `bot.ps1 unquarantine --account <id>`',
+            };
+
+        case 'two-factor':
+            // La quarantena per-account, l'incident e l'alert li applica gia' chi ha VISTO la pagina di
+            // verifica (`checkLoginDetailed`): devono valere anche per chi usa il booleano `checkLogin`
+            // e non passa di qui. Ripeterli qui li raddoppierebbe.
+            return {
+                reason: 'LOGIN_2FA_REQUIRED',
+                incidentType: null,
+                pauseMinutes: null,
+                quarantine: false,
+                releaseProxy: false,
+                message: 'LinkedIn richiede la verifica 2FA: completarla nel browser, poi `bot.ps1 unquarantine --account <id>`',
             };
 
         case 'unknown':
@@ -117,18 +135,26 @@ export function classifyVoyagerStatus(status: number): LoginCheckOutcome {
     return classifyCheckLoginStatus(status);
 }
 
+/**
+ * Un `goto` fallito diventa una causa: la pagina non e' MAI arrivata, quindi sullo stato della
+ * sessione non sappiamo nulla. Il proxy si riconosce dal messaggio (`ERR_PROXY_*`, `ERR_TUNNEL_*`)
+ * e vince sul timeout: un timeout "connecting to proxy" e' un guasto del proxy.
+ */
+export function classifyNavigationError(error: unknown): LoginCheckOutcome {
+    const msg = error instanceof Error ? error.message : String(error);
+    if (/proxy|ERR_TUNNEL/i.test(msg)) return { state: 'unknown', cause: 'proxy' };
+    if (/timed?[_ ]?out|ETIMEDOUT/i.test(msg)) return { state: 'unknown', cause: 'timeout' };
+    return { state: 'unknown', cause: 'network' };
+}
+
 /** Il `reason` testuale del probe del feed (`probeLinkedInStatus`) mappato sulla stessa scala. */
 export function classifyProbeReason(reason: string | null): LoginCheckOutcome {
     if (reason === null) return { state: 'logged-in' };
     if (reason.includes('429')) return { state: 'throttled', status: 429 };
     if (reason.includes('403')) return { state: 'throttled', status: 403 };
     if (reason === 'SESSION_EXPIRED') return { state: 'logged-out' };
-    // `PROBE_ERROR: …` copre timeout di navigazione, DNS, proxy caduto: la pagina non e' mai
-    // arrivata, quindi sullo stato della sessione non sappiamo nulla.
-    if (reason.startsWith('PROBE_ERROR')) {
-        const causa = /timed?[_ ]?out|ETIMEDOUT/i.test(reason) ? 'timeout' : /proxy/i.test(reason) ? 'proxy' : 'network';
-        return { state: 'unknown', cause: causa };
-    }
+    // `PROBE_ERROR: …` copre timeout di navigazione, DNS, proxy caduto: stessa scala del `goto` fallito.
+    if (reason.startsWith('PROBE_ERROR')) return classifyNavigationError(reason);
     if (reason === 'SLOW_RESPONSE') return { state: 'unknown', cause: 'timeout' };
     return { state: 'unknown', cause: 'network' };
 }

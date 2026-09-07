@@ -30,8 +30,8 @@ export type { SelectorCanaryStepResult, SelectorCanaryReport } from './browser/s
 
 export { clickWithFallback, waitForSelectorWithFallback, typeWithFallback } from './browser/uiFallback';
 
-export { isLoggedIn, checkLogin, detectChallenge, probeLinkedInStatus } from './browser/auth';
-export type { LinkedInProbeResult } from './browser/auth';
+export { isLoggedIn, checkLogin, checkLoginDetailed, detectChallenge, probeLinkedInStatus } from './browser/auth';
+export type { LinkedInProbeResult, CheckLoginOptions } from './browser/auth';
 
 export { dismissKnownOverlays, hasBlockingOverlay } from './browser/overlayDismisser';
 

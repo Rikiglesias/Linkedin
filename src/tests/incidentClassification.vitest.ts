@@ -126,7 +126,7 @@ describe('quarantineAccount — wire della classificazione (fail-safe INVARIATO)
     it('senza accountId la quarantena resta GLOBALE (default) — la classificazione non ammorbidisce', async () => {
         mocks.countDistinctIncidentAccounts.mockResolvedValue({ count: 1, accounts: ['default'] });
         await quarantineAccount('SELECTOR_FAILURE_BURST', { workflow: 'invites' });
-        expect(mocks.setAccountQuarantine).toHaveBeenCalledWith('default', true);
+        expect(mocks.setAccountQuarantine).toHaveBeenCalledWith(undefined, true);
     });
 
     it('con accountId la quarantena è per-account (G5-F2 invariato)', async () => {
@@ -139,7 +139,7 @@ describe('quarantineAccount — wire della classificazione (fail-safe INVARIATO)
         mocks.countDistinctIncidentAccounts.mockRejectedValue(new Error('db down'));
         const incidentId = await quarantineAccount('SELECTOR_FAILURE_BURST', { workflow: 'invites' });
         expect(incidentId).toBe(42);
-        expect(mocks.setAccountQuarantine).toHaveBeenCalledWith('default', true);
+        expect(mocks.setAccountQuarantine).toHaveBeenCalledWith(undefined, true);
         expect(mocks.broadcastCritical).toHaveBeenCalled();
     });
 });

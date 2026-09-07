@@ -7,6 +7,7 @@
 
 import { Page } from 'playwright';
 import { joinSelectors } from '../selectors';
+import { classifyCheckLoginStatus, classifyNavigationError, type LoginCheckOutcome } from './loginFailurePolicy';
 
 /** Verifica la presenza del cookie `li_at` (sessione LinkedIn valida). */
 async function hasLinkedinAuthCookie(page: Page): Promise<boolean> {
@@ -67,8 +68,29 @@ export async function isLoggedIn(page: Page): Promise<boolean> {
     return hasLinkedinAuthCookie(page);
 }
 
-/** Naviga al feed (endpoint protetto, redirect a login se sessione scaduta) e verifica il login. */
+export interface CheckLoginOptions {
+    /**
+     * Account a cui attribuire la quarantena 2FA. Con l'id la chiave e' PER-ACCOUNT (anche se
+     * l'account si chiama `default`); senza, la quarantena e' globale (incidente non attribuibile).
+     */
+    accountId?: string;
+}
+
+/**
+ * Il booleano storico: `true` solo se la sessione e' viva. Va bene per chi deve solo sapere se puo'
+ * procedere; chi DECIDE una reazione (quarantena, pausa, proxy) usa `checkLoginDetailed` — un
+ * `false` qui puo' essere un 429, e trattarlo da «sloggato» e' il difetto che C27 chiude.
+ */
 export async function checkLogin(page: Page): Promise<boolean> {
+    return (await checkLoginDetailed(page)).state === 'logged-in';
+}
+
+/**
+ * Naviga al feed (endpoint protetto, redirect a login se sessione scaduta) e dice COSA e' successo,
+ * non solo se e' andata: sessione viva, sessione scaduta, verifica 2FA, esito ignoto (la pagina non
+ * e' mai arrivata) o throttling (429/403). La reazione la decide `resolveLoginFailureAction`.
+ */
+export async function checkLoginDetailed(page: Page, options: CheckLoginOptions = {}): Promise<LoginCheckOutcome> {
     // Timeout 90s: i proxy mobili (Oxylabs sticky) possono avere latenza 10-30s sul primo goto.
     // Se fallisce al primo tentativo, riproviamo una volta con timeout più lungo.
     let response: Awaited<ReturnType<Page['goto']>> = null;
@@ -79,12 +101,12 @@ export async function checkLogin(page: Page): Promise<boolean> {
                 timeout: attempt === 1 ? 60_000 : 90_000,
             });
             break;
-        } catch {
+        } catch (error) {
             if (attempt === 2) {
                 console.error(
-                    `[AUTH] Timeout navigazione al feed dopo 2 tentativi — proxy lento o LinkedIn irraggiungibile.`,
+                    `[AUTH] Navigazione al feed fallita dopo 2 tentativi — proxy lento o LinkedIn irraggiungibile: esito IGNOTO, non una sessione scaduta.`,
                 );
-                return false;
+                return classifyNavigationError(error);
             }
             console.warn(`[AUTH] Timeout navigazione (tentativo ${attempt}/2) — riprovo...`);
         }
@@ -97,7 +119,7 @@ export async function checkLogin(page: Page): Promise<boolean> {
     // ma dopo il redirect siamo su /login → isLoggedIn lo rileva via URL
     const finalUrl = page.url().toLowerCase();
     if (finalUrl.includes('/login') || finalUrl.includes('/authwall') || finalUrl.includes('/uas/login')) {
-        return false;
+        return { state: 'logged-out' };
     }
     // H01: Rileva pagina di verifica 2FA (TOTP, SMS, email).
     // Se LinkedIn richiede 2FA, il bot resta sulla pagina di verifica senza errore esplicito.
@@ -113,12 +135,15 @@ export async function checkLogin(page: Page): Promise<boolean> {
         console.error(
             '[AUTH] ❌ LinkedIn richiede verifica 2FA/TOTP. Azione: completare la verifica manualmente, poi riprovare.',
         );
+        // Comando di sblocco ESATTO: con l'account la quarantena e' per-account (C27), senza e' globale.
+        const sblocco = options.accountId ? `bot.ps1 unquarantine --account ${options.accountId}` : 'bot.ps1 unquarantine';
         // GAP6-H01: quarantineAccount + alert Telegram per visibilità immediata
         try {
             const { quarantineAccount } = await import('../risk/incidentManager');
             await quarantineAccount('LOGIN_2FA_REQUIRED', {
                 message: 'LinkedIn richiede verifica 2FA/TOTP — intervento manuale necessario.',
                 url: finalUrl,
+                ...(options.accountId ? { accountId: options.accountId } : {}),
             });
         } catch (quarantineErr) {
             console.error(
@@ -129,21 +154,26 @@ export async function checkLogin(page: Page): Promise<boolean> {
         try {
             const { sendTelegramAlert } = await import('../telemetry/alerts');
             await sendTelegramAlert(
-                `🔐 **LinkedIn richiede verifica 2FA**\n\nURL: ${finalUrl}\n\nAzione richiesta:\n1. Aprire il browser manualmente\n2. Completare la verifica\n3. Eseguire \`bot.ps1 unquarantine\` per riprendere`,
+                `🔐 **LinkedIn richiede verifica 2FA**\n\nURL: ${finalUrl}\n\nAzione richiesta:\n1. Aprire il browser manualmente\n2. Completare la verifica\n3. Eseguire \`${sblocco}\` per riprendere`,
                 'Login 2FA Required',
                 'critical',
             ).catch(() => null);
-        } catch {
-            /* best-effort */
+        } catch (alertErr) {
+            // Best-effort: la quarantena e' gia' scritta; l'alert mancato va comunque lasciato a log.
+            console.error(
+                '[AUTH] ⚠️ alert Telegram 2FA non inviato:',
+                alertErr instanceof Error ? alertErr.message : String(alertErr),
+            );
         }
-        return false;
+        return { state: 'two-factor' };
     }
-    // Controlla anche lo status HTTP (429 = rate limited, 403 = bloccato)
+    // Lo status HTTP (429 = rate limited, 403 = bloccato) e' una CAUSA a se': la sessione puo' essere
+    // valida, e' la piattaforma che chiede di sparire. Non e' un logout.
     const status = response?.status() ?? 200;
     if (status === 429 || status === 403) {
-        return false;
+        return classifyCheckLoginStatus(status);
     }
-    return isLoggedIn(page);
+    return (await isLoggedIn(page)) ? { state: 'logged-in' } : { state: 'logged-out' };
 }
 
 /**
@@ -169,13 +199,15 @@ export async function probeLinkedInStatus(page: Page): Promise<LinkedInProbeResu
         const responseTimeMs = Date.now() - startMs;
         const httpStatus = response?.status() ?? 0;
 
-        if (httpStatus === 429) {
+        // 429 e 403 sono throttling/blocco della piattaforma, NON una sessione scaduta: senza questo
+        // ramo il 403 cadeva in `isLoggedIn` → SESSION_EXPIRED → quarantena (il gemello del bug 429).
+        if (httpStatus === 429 || httpStatus === 403) {
             return {
                 ok: false,
                 loggedIn: false,
                 challengeDetected: false,
                 responseTimeMs,
-                reason: 'HTTP_429_RATE_LIMITED',
+                reason: httpStatus === 429 ? 'HTTP_429_RATE_LIMITED' : 'HTTP_403_BLOCKED',
             };
         }
 

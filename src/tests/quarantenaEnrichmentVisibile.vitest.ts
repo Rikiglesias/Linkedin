@@ -58,7 +58,7 @@ describe('la quarantena dell’enrichment è visibile ai gate', () => {
     });
 
     test('quarantena senza id esplicito: diventa il flag globale, e i gate la vedono', async () => {
-        await setAccountQuarantine('default', true);
+        await setAccountQuarantine(undefined, true);
 
         expect(await getAccountQuarantine('default')).toBe(true);
         expect(await getAccountQuarantine('un-altro-account')).toBe(true);

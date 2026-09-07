@@ -9,14 +9,14 @@ import { chromium, firefox, BrowserContext, Page } from 'playwright';
 import { config, ProxyType } from '../config';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { ensureDirectoryPrivate } from '../security/filesystem';
-import { pauseAutomation } from '../risk/incidentManager';
+import { applyLoginFailureAction } from '../risk/loginFailureHandler';
+import { classifyVoyagerStatus, resolveLoginFailureAction } from './loginFailurePolicy';
 import {
     ProxyConfig,
     getProxyFailoverChainAsync,
     getStickyProxy,
     markProxyFailed,
     markProxyHealthy,
-    releaseStickyProxy,
 } from '../proxyManager';
 import { isSameProxy, buildProxyLaunchPlan } from './proxyLaunchPlan';
 import { CloudFingerprint, BrowserFingerprint, pickFingerprintMode } from './stealth';
@@ -170,6 +170,8 @@ export interface BrowserSession {
     deviceProfile: DeviceProfile;
     fingerprint: BrowserFingerprint;
     httpThrottler: HttpResponseThrottler;
+    /** Proxy con cui la sessione e' stata lanciata (`null` = diretto): serve al cooldown di C27. */
+    proxy?: ProxyConfig | null;
 }
 
 export interface LaunchBrowserOptions {
@@ -731,6 +733,10 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
 
             const httpThrottler = new HttpResponseThrottler();
 
+            // C27: UN solo trattamento per sessione. Un burst di 429 sulle API voyager e' UN evento:
+            // trattarne N creava N incident, e ogni incident in piu' raddoppiava il backoff di
+            // `pauseAutomation` (2^n) fino al tetto di 24h per una sola pagina caricata male.
+            let throttlingTrattato = false;
             page.on('response', async (response) => {
                 const url = response.url();
                 // Traccia i response time delle API LinkedIn per adaptive throttling
@@ -741,20 +747,24 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                     }
                 }
 
-                if (response.status() === 429) {
-                    if (url.includes('linkedin.com/voyager')) {
-                        console.error('\n[GLOBAL KILL-SWITCH] HTTP 429 (Too Many Requests) da LinkedIn APIs:', url);
-                        if (currentProxy) {
-                            console.error(`[PROXY] Proxy bruciato: ${currentProxy.server} `);
-                            markProxyFailed(currentProxy);
-                            releaseStickyProxy(sessionDir);
-                        }
-                        await pauseAutomation(
-                            'HTTP_429_RATE_LIMIT',
-                            { url },
-                            config.autoPauseMinutesOnFailureBurst ?? 60,
-                        ).catch(() => {});
-                    }
+                // Solo il 429: un 403 su una singola API voyager e' spesso legittimo (risorsa non
+                // permessa, CSRF) e non e' un blocco della piattaforma — lo si legge sul feed
+                // (`checkLoginDetailed` / `probeLinkedInStatus`), non qui.
+                if (response.status() === 429 && url.includes('linkedin.com/voyager') && !throttlingTrattato) {
+                    throttlingTrattato = true;
+                    console.error('\n[GLOBAL KILL-SWITCH] HTTP 429 (Too Many Requests) da LinkedIn APIs:', url);
+                    // Stessa politica del canary e del job runner: incident `HTTP_429_RATE_LIMIT`, pausa
+                    // >= 180' con backoff, proxy in cooldown e sticky rilasciato per il prossimo lancio.
+                    const azione = resolveLoginFailureAction(classifyVoyagerStatus(429), {
+                        autoPauseMinutes: config.autoPauseMinutesOnFailureBurst,
+                    });
+                    await applyLoginFailureAction(azione, {
+                        accountId: options.accountId,
+                        sessionDir,
+                        proxy: currentProxy ?? null,
+                        source: 'voyager_response',
+                        details: { url },
+                    }).catch(() => {});
                 }
             });
 
@@ -762,7 +772,7 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
                 markProxyHealthy(currentProxy);
             }
             activeBrowsers.add(browser);
-            return { browser, page, deviceProfile, fingerprint, httpThrottler };
+            return { browser, page, deviceProfile, fingerprint, httpThrottler, proxy: currentProxy ?? null };
         } catch (error) {
             lastError = error;
             const errMsg = error instanceof Error ? error.message : String(error);
