@@ -24,6 +24,7 @@ import { CAMOUFOX_NATIVE_SECTIONS, buildStealthInitScript } from './stealthScrip
 import { assertCamoufoxRuntimePinned } from './camoufoxRuntime';
 import { camoufoxIdentityLaunchOptions, identityToBrowserFingerprint, stealthInputsFromIdentity } from './browserIdentityProjection';
 import { ensureLaunchIdentity, identityWindow } from './browserIdentityRuntime';
+import { profileHasCookies } from './browserIdentity';
 import { HttpResponseThrottler } from '../risk/httpThrottler';
 import { DeviceProfile, registerPageDeviceProfile } from './deviceProfile';
 import { fetchWithRetryPolicy } from '../core/integrationPolicy';
@@ -271,7 +272,18 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
             : [];
     // FAIL-CLOSED sul leak IP (AB-24): managed-proxy senza proxy disponibili -> throw, mai IP diretto.
     // const: il plan viene poi solo MUTATO (push per mobile-escalation a valle), mai riassegnato.
-    const launchPlan = buildProxyLaunchPlan({ explicitProxy, managedProxyEnabled, stickyProxy, failoverChain });
+    // C26: `sessionHasCookies` legge il profilo REALE (entrambi i layout di cookie jar, `profileHasCookies`)
+    // invece di dedurre l'autenticazione dalla presenza di proxy: senza proxy configurati la vecchia
+    // guardia AB1 non scattava e si usciva in diretta con i cookie addosso.
+    const launchPlan = buildProxyLaunchPlan({
+        explicitProxy,
+        managedProxyEnabled,
+        stickyProxy,
+        failoverChain,
+        requireProxyForAuth: config.requireProxyForAuth,
+        sessionHasCookies: profileHasCookies(sessionDir),
+        allowDirectIp: options.allowDirectIp,
+    });
     let mobileEscalationAppended = false;
     let lastError: unknown = null;
     let retriedProxy = false;
