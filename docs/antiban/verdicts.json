@@ -378,9 +378,9 @@
     },
     {
       "file": "src/risk/loginFailureHandler.ts",
-      "blob_sha": "9931ed49f80730fb416319f793da2fce835c0f55",
+      "blob_sha": "7a359847f134a3d7276753b72442d47684d7024d",
       "answers": [
-        "browser_behavior: SICURO — nessuna azione di pagina: applica la reazione già decisa dalla politica pura (incident, pausa, quarantena, cooldown del proxy)",
+        "browser_behavior: SICURO — resta l'unico punto che applica la reazione a un login fallito, e ora ne espone anche l'ingresso: `valutaSessionePrimaDelLavoro` chiede l'esito TIPIZZATO prima di un lavoro lungo e ferma i due sync sotto throttling, dove prima ripartivano perche' il booleano `checkLogin` faceva sembrare il 429 un logout. Nessuna azione LinkedIn aggiunta: due tolte (il goto su /login e la ripresa dopo l'attesa finta). Review pre-push blocco A",
         "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
         "fingerprint_session: SICURO — è l'UNICO punto che applica quelle reazioni: prima canary, job runner, listener e i gemelli site-check ed enrichment decidevano ognuno per conto proprio, con esiti diversi sullo stesso evento",
         "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
@@ -388,9 +388,9 @@
         "behavioral_pattern: SICURO — sul logout scrive UN incident e una pausa (non due), sul throttling pausa con backoff e proxy in cooldown, sull'esito ignoto una pausa breve senza incident"
       ],
       "verdict": "SICURO",
-      "commit": "149dbfc9dde4bc7996df494a530b1098f003e66c",
-      "date": "2026-09-07",
-      "criterio": "C27",
+      "commit": "ad20d31cc52ce99e27e2a0051fef273dfa5ac488",
+      "date": "2026-09-08",
+      "criterio": "C27 + review pre-push blocco A",
       "vincolo": null
     }
   ]
