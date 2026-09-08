@@ -140,17 +140,17 @@
     },
     {
       "file": "src/browser/loginFailurePolicy.ts",
-      "blob_sha": "dff03d54f9a2c270947a8e29df76f1659edafaab",
+      "blob_sha": "ec6fa306964d01c9b05b51b48da39aaa7cef3900",
       "answers": [
         "browser_behavior: SICURO - aggiunta solo `descriviEsitoSessione`, funzione PURA che formatta la frase per l'operatore. Nessuna navigazione, nessun selettore, nessuna chiamata al browser",
         "timing_delay: SICURO - nessuna costante di timing toccata; le soglie di pausa (UNKNOWN 15', LOGGED_OUT 60', THROTTLED_MIN 180') restano identiche",
         "fingerprint_session: SICURO - non tocca cookie, fingerprint ne' proxy; la politica resta pura, gli effetti restano in loginFailureHandler",
-        "nuova_azione_linkedin: SICURO - zero azioni LinkedIn aggiunte. Il testo del ramo logged-out ora cita il comando reale `bot.ps1 login` (prima citava `npm run login`, che non esiste: corretto dalla sentinella citedCommandsExist)",
+        "nuova_azione_linkedin: SICURO - zero azioni LinkedIn. Cambia solo il TESTO mostrato all'operatore: il ramo logged-out non consiglia piu' `unquarantine` (finding B1 della review: su quel ramo la politica non applica nulla, quindi mandava a togliere una quarantena mai messa, e senza --account) e cita il comando reale `bot.ps1 login`",
         "volumi: SICURO - nessun cap, budget o limite toccato",
         "behavioral_pattern: SICURO - nessun ritmo introdotto. Il messaggio del ramo throttled dice esplicitamente di NON rifare il login, che era il gesto sbagliato indotto dal vecchio booleano"
       ],
       "verdict": "SICURO",
-      "commit": "e98c7f352fbc366d1f4b6d79e88ad71b4ece4a7f",
+      "commit": "3c1d8f668e45e66ad66946910f223fd34816156c",
       "date": "2026-09-08",
       "criterio": "C27 - chiusura della classe «429 letto come logout»",
       "vincolo": null
