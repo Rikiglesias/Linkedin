@@ -429,19 +429,19 @@
     },
     {
       "file": "src/browser/human/inputBlock.ts",
-      "blob_sha": "89d80f1798701edc29ead7d797fb884e4c89cdbd",
+      "blob_sha": "bd0ef6196badb3ebc3d852d38350964fd86745f3",
       "answers": [
         "browser_behavior: SICURO - nessuna azione LinkedIn nuova. TOGLIE una firma: col watchdog a 150 ms fissi il click del bot (pre-click fino a 259 ms) arrivava con l'overlay gia' tornato pointer-events:auto, quindi il target di mousedown/mouseup era il nostro div full-screen z-index 2147483645 invece del bottone. Misurato: 60 gesti reali col watchdog originale = 14 al bersaglio, 14 all'overlay, 32 senza alcun evento di click",
         "timing_delay: SICURO - nessuna attesa aggiunta, rimossa o modificata in questo file; l'unico numero nuovo e' la durata del watchdog (rete di sicurezza lato pagina), che non entra in nessuna sequenza osservabile da LinkedIn. timingCoreFrozen (C63) resta 4/4: le sequenze sono byte-identiche",
         "fingerprint_session: SICURO - nessun tocco a cookie, proxy, UA, sessione. Il watchdog vive come property JS `__restoreTimer` sull'elemento, non come attributo DOM: nessuna nuova stringa in outerHTML (harness: data-bot* = [], testo leggibile = [])",
         "nuova_azione_linkedin: SICURO - nessun click, goto o typing nuovo. Il fail-closed AGGIUNGE un caso in cui il gesto NON parte (evaluate fallita o pagina chiusa), mai uno in cui parte di piu'",
         "volumi: SICURO - cap e budget invariati. Il throw non gonfia i contatori: inviteWorker.ts:778-781 compensa invites_sent -1 e ri-solleva, quindi il lead non transita a INVITED (verificato alla fonte)",
-        "behavioral_pattern: SICURO - la finestra in cui l'overlay DOM e' trasparente passa da 150 ms a max 1000 ms per gesto, ma il blocco primario dell'utente fisico e' a livello OS (WS_EX_TRANSPARENT, windowInputBlock.ts:212 e :242): l'overlay DOM e' il secondo strato. Clamp duro a 1000 ms per costruzione"
+        "behavioral_pattern: SICURO - la finestra in cui l'overlay DOM e' trasparente passa da 150 ms a max 1000 ms per gesto, ma il blocco primario dell'utente fisico e' a livello OS (WS_EX_TRANSPARENT, windowInputBlock.ts:212 e :242): l'overlay DOM e' il secondo strato. Clamp duro a 1000 ms per costruzione. AGGIORNATO dopo il fix di privacy: il `console.warn` di ultima risorsa stampava il messaggio di Playwright grezzo, che porta spesso l'URL della pagina (il profilo di un lead); ora passa da `sanitizeForLogs` (`redaction.ts:34` redige `linkedin.com/in|profile`), importato staticamente perche' `redaction.ts` non ha alcun import e quindi non ricrea la dipendenza dal DB che l'import dinamico della telemetria evita. `madge --circular` resta 0"
       ],
       "verdict": "SICURO",
-      "commit": "1fced829fe735bd7ed6178215d83c062bdb73042",
+      "commit": "d0cede8d0ea652c6cd4b3271b3b830439683a94f",
       "date": "2026-09-08",
-      "criterio": "C29 - il gesto di click possiede l'input per tutta la sua durata (watchdog dimensionato + acquisizione fail-closed)",
+      "criterio": "C29 - il gesto di click possiede l'input per tutta la sua durata (watchdog dimensionato + acquisizione fail-closed) + redazione del log di ripiego",
       "vincolo": null
     },
     {
