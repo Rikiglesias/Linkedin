@@ -3685,3 +3685,58 @@ muore il flag resta per sempre; un watchdog naïf lì rimetterebbe il `preventDe
 cioè la classe già chiusa dello `scrollY 0`). Per entrambi la forma giusta è un heartbeat che rinnova il
 watchdog finché l'operazione è viva. `inputBlock.ts` è passato a 341 righe: sopra L1.6, split proposto e
 rimandato a dopo B1 per non mescolare refactor e fix anti-ban.
+
+## 2026-09-08 — Blocco 50 (chat #46): la review di C29 trova una regressione che C29 stesso aveva creato
+
+**Due lenti indipendenti sul diff `30c27a9..HEAD`** (correttezza/contratti/fallimenti silenziosi;
+anti-ban/test-a-vuoto), read-only, mandati disgiunti. **24 finding: 2 ALTA, 16 MEDIA, 6 BASSA.**
+Report integrali archiviati in `~/todos/review-c29/`.
+
+**A1 [ALTA] — la regressione l'avevo introdotta io.** Prima di C29 `pauseInputBlock` non lanciava
+mai, quindi il caso non esisteva. Da C29 lancia, e **nessun call site distingueva
+`InputBlockAcquireError`**: i `catch` per-candidato delle catene di ripiego lo leggevano come «questo
+selettore non funziona». Tre conseguenze verificate alla fonte: fail-closed **annullato** (la catena
+prova gli altri candidati e poi il Vision Layer-Z, che rispara il gesto); **falso drift persistito**
+su una catena sana (`trackSelectorFailure`; la guardia `bodyLength < 200` non protegge quando il
+context è stato distrutto da una navigazione, perché la pagina nuova carica); e quel falso drift che
+**entra nel punteggio di rischio** — `daily_stats.selector_failures` → `orchestrator.ts:85` →
+`riskEngine.ts:147` — cioè la strada verso la quarantena ingiusta che il commento a
+`uiFallback.ts:245-248` descrive. A valle: `inviteWorker` trasformava un input non acquisito in
+`SKIPPED / connect_not_found` (lead fuori dal funnel per sempre, causale falsa, job contato come
+riuscito) e `messageWorker` lo travestiva in `TEXTBOX_NOT_FOUND` / `SEND_NOT_AVAILABLE`
+incrementando `selector_failures` **a mano**. **Fix di classe**: `rilanciaSeInputNonAcquisito(errore)`
+esportata da `inputBlock.ts`, chiamata per prima nei sei siti che catturano per provare un'altra
+strada. Chi ripiega rilancia; chi contabilizza un errore vero resta com'è.
+
+**F1 [ALTA] — la mia sentinella dava falso verde sulla regressione che dichiarava di sorvegliare.**
+`ripresaNelFinally` accettava un `try/finally` *qualsiasi* più avanti nella stessa funzione: in
+`computerUse.executeAction` (quattro pause in uno switch, quattro `finally`) solo l'ULTIMA era
+sorvegliata. Ora il `try` dev'essere lo statement immediatamente successivo a quello della pausa.
+**Vale anche il rimprovero sul metodo**: la mia contro-prova aveva mutato `smartClick`, l'unico sito
+con una pausa e un `finally`, cioè l'unico dove il buco non può manifestarsi — mutazione fatta sul
+sito facile. Verificato con la fixture della review: da 1 violazione vista (solo l'ultimo case) a 2
+(`:213` e `:293`).
+
+**Correzione a un mio claim di questa stessa chat**: avevo detto che la sentinella prendeva la
+regressione, avendo eseguito lo script della lente quando sul disco c'era già la versione del
+*controllo negativo* (due case mutati). Sul caso del finding la sentinella era verde.
+
+**Chiusi anche** F3 (il commento di `computerUse.ts:248` rimandava a `F-inputblock-battitura`, id
+inesistente) e F6 (PII nel log di ripiego, già trovato e chiuso nella mia passata).
+
+**VERIFY**: `inputBlockAlwaysReleased` 13/13 (guardia + sentinella AST con lista versionata dei sei
+siti, che ha già bocciato una mia voce sbagliata — `<top-level>` invece di `processMessageJob` —
+quindi non è tautologica); contro-prova per mutazione con controllo positivo 13/13 → guardia tolta a
+`clickWithFallback` → 1 rosso → ripristino 13/13; `conta-problemi` exit 0 **catturato senza pipe** =
+268 file / 2598 test; tsc 0; madge 0; sonda C64 **8/8**. Push `30c27a9..bb82a05`, ahead 0.
+
+**Residui in `F-8e2b41c9`**, il più importante dei quali NON è un bug: **F2** — il fix moltiplica il
+volume REALE. Monte Carlo su 200.000 campioni delle formule esatte: col watchdog a 150 ms il gesto
+atterrava sul bersaglio il **42,8%** delle volte; a 670 ms il **100%**. Un invito richiede due gesti,
+quindi P(invito completo) passa da **≈18% a ≈100%**, e `invites_sent` veniva compensato a −1 sui
+tentativi falliti, quindi il cap non li consumava. La prima run dopo questo fix è **la prima volta che
+l'account vede davvero il volume configurato**: cap e ramp-up vanno ri-tarati prima di far girare il
+bot. È una decisione, non un fix. Restano F4 (le expando property dell'overlay sono enumerabili e la
+sonda delle firme non può vederle), F5 (in CI la garanzia poggia su costanti confrontate con costanti:
+l'unica prova reale, l'harness, non è in `vitest.config.ts`), F7, e **14 finding MEDIA/BASSA non letti**
+per tetto di contesto, integrali in `~/todos/review-c29/finding-correttezza.md`.
