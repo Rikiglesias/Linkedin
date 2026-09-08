@@ -15,6 +15,21 @@ export class ChallengeDetectedError extends Error {
     }
 }
 
+/**
+ * Motivi per cui l'acquisizione dell'input-block puo' fallire (fail-closed di C29).
+ *
+ * Questa lista e' la FONTE del tipo usato da `src/browser/human/inputBlock.ts`: tipo e valori
+ * runtime non possono divergere, quindi un motivo nuovo e' visibile sia al compilatore sia alla
+ * sentinella di copertura (`inputBlockRetryPolicy.vitest.ts`) e non puo' cadere in silenzio nel
+ * ramo di retry permissivo.
+ */
+export const INPUT_BLOCK_ACQUIRE_REASONS = ['page_closed', 'evaluate_failed'] as const;
+
+export type InputBlockAcquireReason = (typeof INPUT_BLOCK_ACQUIRE_REASONS)[number];
+
+/** Nome della classe d'errore, condiviso per riconoscerla senza importare la catena browser. */
+export const INPUT_BLOCK_ACQUIRE_ERROR_NAME = 'InputBlockAcquireError';
+
 type RetryCategory = 'ui_selector' | 'ui_transient' | 'quota' | 'data' | 'workflow' | 'unknown';
 
 interface RetryPolicyTemplate {
@@ -77,6 +92,41 @@ export function isProxyConnectionError(error: unknown): boolean {
     return PROXY_ERROR_PATTERNS.some((pattern) => pattern.test(msg));
 }
 
+/**
+ * Policy per motivo dell'acquisizione fallita. Si legge il campo TIPIZZATO `reason`, mai il testo
+ * del messaggio: la classificazione per stringa e' la fragilita' che ha prodotto la regressione
+ * (`input_block_acquire_failed:page_closed` non contiene nessun pattern transitorio, quindi finiva
+ * in `UNCLASSIFIED` = ritentabile a piena capacita' su una sessione ormai morta — ritmo anomalo
+ * verso LinkedIn).
+ */
+const INPUT_BLOCK_RETRY_POLICY: Record<
+    InputBlockAcquireReason,
+    { code: string; retryable: boolean; maxAttempts: number; category: RetryCategory }
+> = {
+    // La pagina non c'e' piu': ritentare significa ri-navigare e ri-attendere per ri-fallire.
+    page_closed: { code: 'INPUT_BLOCK_PAGE_CLOSED', retryable: false, maxAttempts: 1, category: 'workflow' },
+    // La `evaluate` e' caduta durante una navigazione: transitorio vero, ma a capacita' ridotta.
+    evaluate_failed: {
+        code: 'INPUT_BLOCK_EVALUATE_FAILED',
+        retryable: true,
+        maxAttempts: 3,
+        category: 'ui_transient',
+    },
+};
+
+/**
+ * Riconosce l'errore per NOME e forma, senza importare `src/browser/human/inputBlock.ts`: quel
+ * modulo tira dentro playwright e l'intera catena browser, che non deve entrare nei worker.
+ */
+function isInputBlockAcquireError(error: unknown): error is Error & { reason: InputBlockAcquireReason } {
+    if (!(error instanceof Error) || error.name !== INPUT_BLOCK_ACQUIRE_ERROR_NAME) return false;
+    const reason = (error as { reason?: unknown }).reason;
+    return (
+        typeof reason === 'string' &&
+        (INPUT_BLOCK_ACQUIRE_REASONS as readonly string[]).includes(reason)
+    );
+}
+
 export function resolveWorkerRetryPolicy(
     error: unknown,
     defaultMaxAttempts: number,
@@ -110,6 +160,18 @@ export function resolveWorkerRetryPolicy(
             baseDelayMs: safeDefaultBaseDelay,
             fixedDelay: false,
             category: 'unknown',
+        };
+    }
+
+    if (isInputBlockAcquireError(error)) {
+        const policy = INPUT_BLOCK_RETRY_POLICY[error.reason];
+        return {
+            code: policy.code,
+            retryable: policy.retryable,
+            maxAttempts: policy.retryable ? Math.max(1, Math.min(safeDefaultMaxAttempts, policy.maxAttempts)) : 1,
+            baseDelayMs: policy.retryable ? Math.max(100, Math.floor(safeDefaultBaseDelay * 1.75)) : 0,
+            fixedDelay: false,
+            category: policy.category,
         };
     }
 

@@ -237,6 +237,21 @@ describe('C29 — la pausa dell input-block si rilascia SEMPRE (sentinella AST)'
         expect(esito.totalePause).toBeGreaterThanOrEqual(8);
     });
 
+    /**
+     * CONTROLLO POSITIVO (finding della review: senza questo, una `ripresaNelFinally` che ritornasse
+     * sempre `true` lascerebbe tutti i casi verdi e la sentinella non guarderebbe piu' niente).
+     * La fixture ha violazioni NOTE: se la scansione non le vede, e' rotta lei, non il codice.
+     */
+    it('la sentinella vede le violazioni note della fixture (controllo positivo)', () => {
+        const fixture = path.join(TESTS_DIR, 'fixtures', 'input-block');
+        const esitoFixture = scansionaInputBlock(fixture);
+        const funzioni = esitoFixture.violazioni.map((v) => v.funzione).sort();
+
+        expect(funzioni).toEqual(['finallyNonAncorato', 'pausaSenzaFinally']);
+        // La pausa corretta e' contata ma non segnalata: la sonda distingue, non boccia tutto.
+        expect(esitoFixture.totalePause).toBe(3);
+    });
+
     it('ogni voce della allowlist corrisponde ancora a un call site reale', () => {
         const mancanti = CONSENTITI.filter((c) => !esito.consentitiVisti.has(`${c.file}#${c.funzione}`)).map(
             (c) => `${c.file}#${c.funzione}`,

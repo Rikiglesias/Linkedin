@@ -14,6 +14,10 @@ import { initializeMouseState } from './mouseState';
 import { enableVisualCursorOverlay } from './cursorOverlay';
 import { INPUT_BLOCK_TOAST_ID, INPUT_BLOCK_OVERLAY_ID } from './overlayIds';
 import { sanitizeForLogs } from '../../security/redaction';
+import {
+    INPUT_BLOCK_ACQUIRE_ERROR_NAME,
+    type InputBlockAcquireReason,
+} from '../../workers/errors';
 
 /**
  * Finestra del watchdog lato pagina che ripristina l'overlay da solo se il processo muore fra la
@@ -35,12 +39,12 @@ export const INPUT_BLOCK_HOLD_DEFAULT_MS = 400;
  * quindi veniva intercettato, e il chiamante lo contava come eseguito.
  */
 export class InputBlockAcquireError extends Error {
-    readonly reason: 'page_closed' | 'evaluate_failed';
+    readonly reason: InputBlockAcquireReason;
     readonly detail: string;
 
-    constructor(reason: 'page_closed' | 'evaluate_failed', detail = '') {
+    constructor(reason: InputBlockAcquireReason, detail = '') {
         super(`input_block_acquire_failed:${reason}${detail ? ` (${detail})` : ''}`);
-        this.name = 'InputBlockAcquireError';
+        this.name = INPUT_BLOCK_ACQUIRE_ERROR_NAME;
         this.reason = reason;
         this.detail = detail;
     }
@@ -301,7 +305,7 @@ export async function pauseInputBlock(page: Page, holdMs: number = INPUT_BLOCK_H
  * La telemetria non puo' mascherare il fallimento: se anche il log fallisce, l'errore vero passa.
  */
 async function segnalaAcquisizioneFallita(
-    reason: 'page_closed' | 'evaluate_failed',
+    reason: InputBlockAcquireReason,
     holdMs: number,
     detail: string,
 ): Promise<void> {
