@@ -395,19 +395,19 @@
     },
     {
       "file": "src/salesnav/listActions.ts",
-      "blob_sha": "66b839b369563ff701069a6a7d86e2bd0500eb77",
+      "blob_sha": "5249af48e40fca1ae9e03c1c186046c5ed8b41ac",
       "answers": [
-        "browser_behavior: SICURO - `checkLogin` era gia' un wrapper di `checkLoginDetailed` (auth.ts:86): stessa lettura della pagina, stesse navigazioni. Cambia solo COSA si fa dell'esito",
-        "timing_delay: SICURO - `humanDelay` e `clickLocatorHumanLike` invariati, nessuna costante toccata",
-        "fingerprint_session: SICURO - sotto throttling si rilascia lo sticky per il PROSSIMO lancio e si mette in cooldown il proxy RISOLTO della sessione (`ownSession?.proxy ?? account.proxy ?? null`), non quello del profilo: correzione del finding A1 della review anti-ban, che rendeva la meta' `markProxyFailed` irraggiungibile col pool gestito. Il browser aperto tiene il suo IP fino alla chiusura",
-        "nuova_azione_linkedin: SICURO - nessuna azione aggiunta; sotto 429 ora ce ne sono ZERO (prima si usciva subito ma senza reazione, e il ciclo dopo ripartiva identico)",
-        "volumi: SICURO - nessun cap toccato; il 429 ora produce una pausa >=180' dove prima non ne produceva nessuna, quindi le azioni/giorno scendono",
-        "behavioral_pattern: SICURO - fermarsi quando la piattaforma chiede di rallentare riduce il segnale «bot che insiste». Nota tracciata: la pausa e' globale su causa per-account, latente gia' noto del multi-account, non peggiorato qui"
+        "browser_behavior: SICURO - sul percorso vivo (sessione propria, l'unico usato dai comandi CLI oggi) il comportamento e' identico: su una sessione appena aperta il click-through non risulta attivo prima, quindi il `finally` lo spegne come faceva. Cambia solo il caso `externalPage`, dove prima la finestra restava bot-only dopo un throw",
+        "timing_delay: ATTENZIONE-VALUTATA -> SICURO - `pauseInputBlock` attorno alla `fill` passa da 400 ms (default) a 1000 ms: la finestra in cui il mouse fisico dell'utente puo' raggiungere la pagina si allunga, ma resta dentro il clamp duro [150, 1000] fissato in C29, il blocco primario e' quello a livello OS (appena acceso da `enableWindowClickThrough`), e a 400 ms l'overlay tornava opaco a meta' di un gesto che attende l'actionability fino a 30 s - la stessa classe che C29 ha chiuso",
+        "fingerprint_session: SICURO - nessun tocco a cookie, proxy o UA; la valutazione della sessione resta quella di C27",
+        "nuova_azione_linkedin: SICURO - nessun click, goto o typing aggiunto",
+        "volumi: SICURO - cap e budget invariati; nessun contatore toccato",
+        "behavioral_pattern: SICURO - il gesto (`fill` sul nome della lista) non cambia forma ne' durata. Il ripristino del click-through protegge il pattern del CHIAMANTE: spegnerlo avrebbe lasciato il mouse dell'utente libero di interferire con le azioni del bot"
       ],
       "verdict": "SICURO",
-      "commit": "faf0dd9bad883360d93acaef4a8c109a1daae32c",
+      "commit": "5dca15a",
       "date": "2026-09-08",
-      "criterio": "C27 - chiusura della classe «429 letto come logout» + fix A1 della review",
+      "criterio": "Triage della review di C29 - M7 (click-through ripristinato, non spento) + M8 (contratto tastiera corretto) + M9 (overlay non iniettato ora visibile) + B1/B4/B5",
       "vincolo": null
     },
     {
@@ -429,19 +429,19 @@
     },
     {
       "file": "src/browser/human/inputBlock.ts",
-      "blob_sha": "b57f646954ad7c81a0537a76736b9c85b3a40c5c",
+      "blob_sha": "05f70874c51aad72edd960afb1641dcbb4688c59",
       "answers": [
-        "browser_behavior: SICURO - il diff su questo file e' di soli TIPI: `reason` usa ora `InputBlockAcquireReason` importato da `workers/errors.ts` e il nome della classe viene da `INPUT_BLOCK_ACQUIRE_ERROR_NAME`, che vale la stessa stringa 'InputBlockAcquireError'. Nessuna azione, nessun selettore, nessun ramo di esecuzione cambiato (git diff verificato)",
-        "timing_delay: SICURO - nessuna attesa aggiunta, rimossa o modificata in questo file; le costanti del watchdog (INPUT_BLOCK_HOLD_MIN/MAX/DEFAULT) sono intatte e `timingCoreFrozen` resta 4/4",
-        "fingerprint_session: SICURO - nessun tocco a cookie, proxy, UA o sessione. L'overlay e il suo watchdog restano identici, quindi nessuna nuova firma DOM ne' finestra di esposizione diversa",
+        "browser_behavior: SICURO - il gesto non cambia. L'unica differenza osservabile e' che il fallimento dell'iniezione dell'overlay non e' piu' muto (evento `input_block.overlay_not_injected`): prima l'utente poteva cliccare sulla stessa pagina del bot e nessuno lo sapeva. Il gesto continua a non dipendere dall'overlay, come deciso in C29 (sulle pagine mobile non lo iniettiamo affatto)",
+        "timing_delay: SICURO - nessuna attesa aggiunta o modificata; le costanti del watchdog sono intatte e `timingCoreFrozen` resta 4/4",
+        "fingerprint_session: SICURO - nessun tocco a cookie, proxy, UA o sessione. Il log porta due campi in piu' (`holdMsRichiesto` numerico, `impact` testo fisso), nessun dato di lead",
         "nuova_azione_linkedin: SICURO - nessun click, goto o typing aggiunto",
-        "volumi: SICURO - cap e budget invariati; questo file non tocca contatori",
-        "behavioral_pattern: SICURO - comportamento runtime identico byte per byte nella logica; cambia solo da dove viene letto il tipo del motivo di fallimento"
+        "volumi: SICURO - cap e budget invariati",
+        "behavioral_pattern: SICURO - nessuna nuova firma nel DOM: i tre listener di tastiera restano dove erano (il commento ora dice il vero, cioe' che non bloccano niente finche' l'overlay non prende il focus), e la telemetria e' lato Node, non lato pagina"
       ],
       "verdict": "SICURO",
-      "commit": "c03b910",
+      "commit": "5dca15a",
       "date": "2026-09-08",
-      "criterio": "C29-residuo (review) - la policy di retry legge il campo tipizzato `reason` invece del testo del messaggio + controllo positivo della sentinella in CI",
+      "criterio": "Triage della review di C29 - M7 (click-through ripristinato, non spento) + M8 (contratto tastiera corretto) + M9 (overlay non iniettato ora visibile) + B1/B4/B5",
       "vincolo": null
     },
     {
@@ -497,20 +497,20 @@
     },
     {
       "file": "src/salesnav/computerUse.ts",
-      "blob_sha": "f09894b1531a79bc1cdf44b377ae6bc0f7e2ff5b",
+      "blob_sha": "0ee6ab679362786a8bb99a8e38ee7ae57eff4d25",
       "answers": [
-        "browser_behavior: SICURO - i quattro rami (click, dblclick, type, keys) fanno gli stessi gesti; cambia solo la durata del watchdog per type e keys. AGGIORNATO: corretto il puntatore al residuo nel commento (`F-inputblock-battitura` non esisteva, l'id vero e' `F-1c7a93e5-a`). Solo testo, nessun cambiamento di comportamento",
-        "timing_delay: SICURO - nessuna formula toccata: jitterCoord, i delay di click/dblclick e digitaTestoUmano restano identici",
-        "fingerprint_session: SICURO - nessun tocco a sessione, proxy o fingerprint",
-        "nuova_azione_linkedin: SICURO - nessuna azione nuova",
-        "volumi: SICURO - nessun cap toccato",
-        "behavioral_pattern: SICURO CON RESIDUO - la MODIFICA migliora in senso stretto (watchdog da 150 ms al massimo di 1000 per `type` e `keys`, che hanno durata non limitabile a priori) e non introduce nulla di nuovo. Il RESIDUO e' preesistente e resta aperto: oltre il secondo l'overlay torna opaco e blockEvent fa preventDefault sui keydown; che questo faccia cadere i caratteri iniettati via CDP NON e' misurato (per il click lo e': 32 gesti su 60 svaniti col watchdog originale). Tracciato in ~/todos/improvements-proposed.md F-1c7a93e5-a con la misura da fare e la forma del fix (heartbeat che rinnova il watchdog finche' l'operazione e' viva)"
+        "browser_behavior: SICURO - solo commento. Il residuo dichiarato per il case `type` era sovrastimato (descriveva un danno impossibile: ripristinare pointer-events non tocca la tastiera) e nascondeva quello vero, ora scritto e tracciato",
+        "timing_delay: SICURO - nessuna riga di codice cambiata, nessun valore toccato",
+        "fingerprint_session: SICURO - nessun tocco",
+        "nuova_azione_linkedin: SICURO - nessuna azione",
+        "volumi: SICURO - invariati",
+        "behavioral_pattern: SICURO - nessun cambiamento eseguibile"
       ],
       "verdict": "SICURO",
-      "commit": "b341d11de3b5daf643a49dae865e17beba7f86ac",
+      "commit": "5dca15a",
       "date": "2026-09-08",
-      "criterio": "C29 - il gesto di click possiede l'input per tutta la sua durata (watchdog dimensionato + acquisizione fail-closed)",
-      "vincolo": "verdetto SICURO CON RISERVA su type/keys: la copertura del watchdog resta parziale, residuo dichiarato in F-1c7a93e5-a"
+      "criterio": "Triage della review di C29 - M7 (click-through ripristinato, non spento) + M8 (contratto tastiera corretto) + M9 (overlay non iniettato ora visibile) + B1/B4/B5",
+      "vincolo": null
     },
     {
       "file": "src/browser/uiFallback.ts",
@@ -578,6 +578,23 @@
       "commit": "c03b910",
       "date": "2026-09-08",
       "criterio": "C29-residuo (review) - la policy di retry legge il campo tipizzato `reason` invece del testo del messaggio + controllo positivo della sentinella in CI",
+      "vincolo": null
+    },
+    {
+      "file": "src/browser/windowInputBlock.ts",
+      "blob_sha": "7fcbaf2cdf736572cf216efa1e43ebd6e3e7e65f",
+      "answers": [
+        "browser_behavior: SICURO - una sola funzione NUOVA di sola lettura (`isWindowClickThroughActive`): legge `_activePids`, la stessa fonte di `disableWindowClickThrough`, e non chiama PowerShell ne' tocca finestre",
+        "timing_delay: SICURO - nessun timer, nessuna attesa. Il re-apply continuo resta invariato",
+        "fingerprint_session: SICURO - non tocca browser, cookie o proxy",
+        "nuova_azione_linkedin: SICURO - nessuna azione",
+        "volumi: SICURO - invariati",
+        "behavioral_pattern: SICURO - serve a RIPRISTINARE il click-through invece di spegnerlo: senza, chi riceve una pagina altrui doveva scegliere fra lasciare la finestra inutilizzabile all'utente e spegnere una protezione anti-ban del chiamante"
+      ],
+      "verdict": "SICURO",
+      "commit": "5dca15a",
+      "date": "2026-09-08",
+      "criterio": "Triage della review di C29 - M7 (click-through ripristinato, non spento) + M8 (contratto tastiera corretto) + M9 (overlay non iniettato ora visibile) + B1/B4/B5",
       "vincolo": null
     }
   ]
