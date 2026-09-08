@@ -166,12 +166,18 @@ export async function smartClick(
     const targetY = box.y + box.height / 2 + (Math.random() * maxJitterY * 2 - maxJitterY);
     await humanMouseMoveToCoords(page, targetX, targetY);
     await pulseVisualCursorOverlay(page);
-    await pauseInputBlock(page);
-    // 30ms wait per garantire che il browser applichi pointer-events:none
-    // prima del click (race condition render loop → click intercettato dall'overlay)
-    await page.waitForTimeout(30);
-    await page.mouse.click(targetX, targetY, { delay: 40 + Math.floor(Math.random() * 70) });
-    await resumeInputBlock(page);
+    // Durata del gesto: 30 ms di attesa render + dwell del bottone (40 + fino a 69), piu' margine CDP.
+    await pauseInputBlock(page, 30 + 40 + 70 + 300);
+    try {
+        // 30ms wait per garantire che il browser applichi pointer-events:none
+        // prima del click (race condition render loop → click intercettato dall'overlay)
+        await page.waitForTimeout(30);
+        await page.mouse.click(targetX, targetY, { delay: 40 + Math.floor(Math.random() * 70) });
+    } finally {
+        // Senza il `finally` un click che rigetta lasciava l'overlay trasparente fino allo scadere
+        // del watchdog: finestra in cui il mouse fisico dell'utente raggiungeva la pagina.
+        await resumeInputBlock(page);
+    }
 }
 
 /** Wrapper per visionClick che disabilita l'overlay durante il click. */

@@ -3622,3 +3622,57 @@ da rinegoziare col contratto e non da allargare di nascosto.
 
 **Prossimo**: raccogliere i finding delle due lenti rimaste (arrivano troncati dal canale, li stanno
 scrivendo su file), poi il push dei commit e il grade di chiusura del blocco A.
+
+## 2026-09-08 — Blocco 49 (chat #46): C29 — il gesto di click si mangiava da solo un invito su tre
+
+**Il difetto, misurato dal vivo prima del fix.** `pauseInputBlock` piazzava un watchdog lato pagina di
+**150 ms fissi**: passato quel tempo l'overlay tornava `pointer-events:auto` da solo. Ma il gesto di click
+dura pre-click 40-259 ms più dwell del bottone 40-109 ms, cioè fino a **368 ms**. L'harness con 60 gesti
+reali e il watchdog originale: **14 click arrivati al bersaglio, 14 finiti sull'overlay, 32 spariti senza
+produrre alcun evento** — quando il watchdog scatta *fra* `mousedown` e `mouseup` i due eventi hanno target
+diversi e il browser non sintetizza nessun `click`. Tradotto sul path dell'invito: il bottone Connetti
+riceve un click su tre, e negli altri casi o LinkedIn vede un click su un `div` full-screen sconosciuto
+(firma), o non vede niente e l'invito non parte in silenzio.
+
+**Il fix.** Il watchdog non si toglie — è l'unica cosa che ripristina l'overlay se il processo muore fra la
+pausa e la ripresa — si **dimensiona**: `pauseInputBlock(page, holdMs)` con clamp duro `[150, 1000]` ms.
+`clickCoordinatesHumanLike` passa `GESTO_CLICK_DURATA_MAX_MS + 300` = 670 ms, dove i quattro numeri sono
+gli stessi congelati da C63 (`humanClick.gesto` = [40, 220, 40, 70]): se qualcuno li cambia, `timingCoreFrozen`
+diventa rosso e obbliga a rileggere anche la costante del watchdog. `smartClick` passa 440 ms.
+
+**Acquisizione fail-closed.** `pauseInputBlock` ingoiava l'errore della `evaluate` con un `catch {}`: il
+click partiva comunque, su un input di cui il bot non aveva la proprietà, e il chiamante lo contava come
+eseguito. Ora lancia `InputBlockAcquireError` (`page_closed` / `evaluate_failed`) e registra
+`input_block.acquire_failed` via import dinamico della telemetria (lo stesso pattern già usato in questo
+file per `windowInputBlock` e `overlayBridge`: una primitiva del browser non si tira dentro il DB
+staticamente — `madge --circular` resta 0). Verificato alla fonte che il fail-closed non gonfia i contatori:
+`inviteWorker.ts:778-781` intercetta, compensa `invites_sent -1` e ri-solleva, quindi il lead non transita a
+`INVITED`. Overlay assente non è un fallimento: sulle pagine mobile `ensureInputBlock` non lo inietta e
+senza overlay non c'è nulla che possa intercettare.
+
+**`smartClick` rilasciava fuori dal `finally`** (`bulkSaveHelpers.ts`): un click che rigetta lasciava
+l'overlay trasparente fino allo scadere del watchdog. Ora `try/finally`. `bulkSaveNavigation.ts` è l'unico
+punto in cui la pausa non protegge un gesto — cede il controllo all'utente per il login manuale — e lì il
+fail-closed è disinnescato con un `.catch()` esplicito e motivato.
+
+**VERIFY**: `src/tests/inputBlockAlwaysReleased.vitest.ts` (nuovo, 11 test) = sentinella AST che pretende la
+ripresa dentro un `finally` per ogni `pauseInputBlock`/`pauseInputBlockForMove` in `src/**`, con allowlist
+di 1 voce che fallisce anche se la voce sparisce, più i test di comportamento (fail-closed, clamp del
+watchdog, un click e una ripresa per gesto). **Contro-prova per mutazione con controllo positivo**: 11/11
+verde a codice integro, poi `smartClick` senza `finally` → 1 rosso, `pauseInputBlock` che torna a ingoiare →
+1 rosso, `humanClick` che torna al watchdog di default → 1 rosso, ripristino → 11/11. (Il primo giro di
+mutazioni era stato invalidato da `--reporter=basic`, che in vitest 4 non esiste più: il controllo positivo
+usciva 1 e i tre rossi non provavano nulla.) `npm run harness:input-block` esteso con la sonda dei click e
+il suo controllo positivo (click grezzo con overlay opaco → intercettato, altrimenti la sonda non misura
+nulla): **200 gesti reali → 200 al bersaglio, 0 intercettati, 0 svaniti**, watchdog che ripristina da solo
+senza ripresa entro 1 s. `timingCoreFrozen` 4/4 verde: le sequenze non sono cambiate di un byte.
+`madge --circular` 0, `eslint` 0 sui 7 file.
+
+**Residui tracciati con causa** in `~/todos/improvements-proposed.md` `F-1c7a93e5`: il watchdog copre il
+click, non la battitura (`computerUse` `type`/`keys`, durata non nota a priori: portati da 150 ms al massimo
+di 1000, migliora ma non chiude — e che il `preventDefault` sui `keydown` faccia cadere i caratteri CDP **non
+è misurato**, è un'inferenza) né il movimento (`pauseInputBlockForMove` non ha alcun timer: se il processo
+muore il flag resta per sempre; un watchdog naïf lì rimetterebbe il `preventDefault` sul `wheel` del bot,
+cioè la classe già chiusa dello `scrollY 0`). Per entrambi la forma giusta è un heartbeat che rinnova il
+watchdog finché l'operazione è viva. `inputBlock.ts` è passato a 341 righe: sopra L1.6, split proposto e
+rimandato a dopo B1 per non mescolare refactor e fix anti-ban.

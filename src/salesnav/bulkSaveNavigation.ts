@@ -38,7 +38,10 @@ export async function waitForManualLogin(page: Page, context: string): Promise<v
     // Sospendi l'input blocker globalmente — impedisce che reInjectOverlays lo riattivi.
     // DEVE essere PRIMA di removeAllOverlays: così il page.on('load') non ri-inietta durante la rimozione.
     setInputBlockSuspended(page, true);
-    await pauseInputBlock(page);
+    // Unico punto in cui la pausa NON protegge un gesto del bot: qui si CEDE il controllo all'utente
+    // per il login manuale, e due righe sotto `removeAllOverlays` toglie l'overlay del tutto. Il
+    // fail-closed di `pauseInputBlock` non deve impedire il login manuale → best effort esplicito.
+    await pauseInputBlock(page).catch(() => {});
 
     // Sblocca il click-through OS (WS_EX_TRANSPARENT): senza questo la finestra resta
     // bot-only (impostata da syncSearchService:215 enableWindowClickThrough prima del bulk-save)

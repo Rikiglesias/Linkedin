@@ -16,6 +16,7 @@ import { config } from '../config';
 import { fetchWithRetryPolicy } from '../core/integrationPolicy';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { digitaTestoUmano, premiTastoSpeciale } from '../browser/human/humanTyping';
+import { INPUT_BLOCK_HOLD_MAX_MS } from '../browser/human/inputBlock';
 import {
     botWheel,
     humanMouseMoveToCoords,
@@ -242,7 +243,10 @@ async function executeAction(page: Page, action: ComputerAction): Promise<void> 
 
         case 'type': {
             if (action.text) {
-                await pauseInputBlock(page);
+                // Durata non limitabile a priori (dipende dalla lunghezza del testo): si tiene il
+                // watchdog al massimo consentito. Residuo dichiarato: su testi che superano il
+                // secondo l'overlay torna opaco a meta' battitura — vedi F-inputblock-battitura.
+                await pauseInputBlock(page, INPUT_BLOCK_HOLD_MAX_MS);
                 try {
                     // F-b93d5f17: era un dwell COSTANTE di 25-54ms su ogni carattere (zona-bot),
                     // con flight ~0. Qui si scrive sulla TASTIERA, non su un campo: `keyboard.type`
@@ -288,7 +292,8 @@ async function executeAction(page: Page, action: ComputerAction): Promise<void> 
                     F4: 'F4',
                     F5: 'F5',
                 };
-                await pauseInputBlock(page);
+                // Come sopra: il ciclo di tasti non ha una durata nota a priori.
+                await pauseInputBlock(page, INPUT_BLOCK_HOLD_MAX_MS);
                 try {
                     for (const rawKey of action.keys) {
                         const key = KEY_MAP[rawKey.toUpperCase()] ?? rawKey;

@@ -15,6 +15,37 @@ import { enableVisualCursorOverlay } from './cursorOverlay';
 import { INPUT_BLOCK_TOAST_ID, INPUT_BLOCK_OVERLAY_ID } from './overlayIds';
 
 /**
+ * Finestra del watchdog lato pagina che ripristina l'overlay da solo se il processo muore fra la
+ * pausa e la ripresa. Il watchdog NON si rimuove (e' l'unica rete quando il bot non torna piu'):
+ * si DIMENSIONA sul gesto. A 150 ms fissi tornava opaco A META' del gesto di click — pre-click
+ * 40-259 ms + dwell del bottone 40-109 ms, cioe' fino a 368 ms — e l'overlay riattivato
+ * intercettava il click del bot stesso. Chi chiama passa la durata massima del PROPRIO gesto piu'
+ * un margine; il valore viene comunque clampato, cosi' la finestra in cui il mouse fisico
+ * dell'utente puo' raggiungere la pagina resta sotto il secondo anche se un chiamante sbaglia il
+ * conto.
+ */
+export const INPUT_BLOCK_HOLD_MIN_MS = 150;
+export const INPUT_BLOCK_HOLD_MAX_MS = 1000;
+export const INPUT_BLOCK_HOLD_DEFAULT_MS = 400;
+
+/**
+ * L'acquisizione dell'input non e' riuscita: il gesto NON deve partire (fail-closed).
+ * Prima questo caso era ingoiato da un `catch {}` — il click partiva con l'overlay ancora opaco,
+ * quindi veniva intercettato, e il chiamante lo contava come eseguito.
+ */
+export class InputBlockAcquireError extends Error {
+    readonly reason: 'page_closed' | 'evaluate_failed';
+    readonly detail: string;
+
+    constructor(reason: 'page_closed' | 'evaluate_failed', detail = '') {
+        super(`input_block_acquire_failed:${reason}${detail ? ` (${detail})` : ''}`);
+        this.name = 'InputBlockAcquireError';
+        this.reason = reason;
+        this.detail = detail;
+    }
+}
+
+/**
  * Inietta un overlay trasparente full-screen che blocca click/tastiera dell'utente.
  * L'overlay ha pointer-events: auto → intercetta i click dell'utente.
  * Prima dei click del bot, chiamare pauseInputBlock() per disabilitarlo temporaneamente.
@@ -211,28 +242,68 @@ export async function resumeInputBlockForMove(page: Page): Promise<void> {
 
 /**
  * Disabilita temporaneamente l'overlay di blocco input per CLICK.
- * Breve finestra pointer-events:none (~150ms) per far arrivare il click al target LinkedIn.
- * Chiamare PRIMA di ogni click del bot (smartClick, visionClick).
+ * Finestra pointer-events:none per far arrivare il click al target LinkedIn; `holdMs` e' la durata
+ * MASSIMA del gesto che sta per partire piu' un margine — oltre quella il watchdog lato pagina
+ * ripristina l'overlay (rete di sicurezza per il caso in cui il processo muoia prima della ripresa).
+ * Chiamare PRIMA di ogni click del bot, e SEMPRE con la ripresa in un `finally`.
+ *
+ * FAIL-CLOSED: se la pagina e' chiusa o la `evaluate` fallisce lancia `InputBlockAcquireError` — il
+ * gesto non deve partire su un input di cui non si ha la proprieta'.
+ * Overlay assente (`el` null) NON e' un fallimento: sulle pagine mobile `ensureInputBlock` non lo
+ * inietta affatto, e senza overlay non c'e' nulla che possa intercettare il click del bot.
  */
-export async function pauseInputBlock(page: Page): Promise<void> {
-    if (page.isClosed()) return;
+export async function pauseInputBlock(page: Page, holdMs: number = INPUT_BLOCK_HOLD_DEFAULT_MS): Promise<void> {
+    const hold = Math.min(INPUT_BLOCK_HOLD_MAX_MS, Math.max(INPUT_BLOCK_HOLD_MIN_MS, Math.round(holdMs)));
+    if (page.isClosed()) {
+        await segnalaAcquisizioneFallita('page_closed', hold, '');
+        throw new InputBlockAcquireError('page_closed');
+    }
     try {
-        await page.evaluate((id) => {
-            const el = document.getElementById(id);
-            if (el) {
-                el.style.pointerEvents = 'none';
-                const elRec = el as unknown as Record<string, unknown>;
-                elRec.__botClicking = true;
-                const prev = elRec.__restoreTimer as ReturnType<typeof setTimeout> | undefined;
-                if (prev) clearTimeout(prev);
-                elRec.__restoreTimer = setTimeout(() => {
-                    el.style.pointerEvents = 'auto';
-                    delete elRec.__botClicking;
-                }, 150);
-            }
-        }, INPUT_BLOCK_OVERLAY_ID);
-    } catch {
-        /* best effort */
+        await page.evaluate(
+            ({ id, restoreAfterMs }) => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.style.pointerEvents = 'none';
+                    const elRec = el as unknown as Record<string, unknown>;
+                    elRec.__botClicking = true;
+                    const prev = elRec.__restoreTimer as ReturnType<typeof setTimeout> | undefined;
+                    if (prev) clearTimeout(prev);
+                    elRec.__restoreTimer = setTimeout(() => {
+                        el.style.pointerEvents = 'auto';
+                        delete elRec.__botClicking;
+                    }, restoreAfterMs);
+                }
+            },
+            { id: INPUT_BLOCK_OVERLAY_ID, restoreAfterMs: hold },
+        );
+    } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        await segnalaAcquisizioneFallita('evaluate_failed', hold, detail);
+        throw new InputBlockAcquireError('evaluate_failed', detail);
+    }
+}
+
+/**
+ * Import dinamico come per `windowInputBlock`/`overlayBridge` piu' sotto: questo modulo e' una
+ * primitiva del browser e non deve tirarsi dentro staticamente la telemetria (che passa dal DB).
+ * La telemetria non puo' mascherare il fallimento: se anche il log fallisce, l'errore vero passa.
+ */
+async function segnalaAcquisizioneFallita(
+    reason: 'page_closed' | 'evaluate_failed',
+    holdMs: number,
+    detail: string,
+): Promise<void> {
+    try {
+        const { logWarn } = await import('../../telemetry/logger');
+        await logWarn('input_block.acquire_failed', { reason, holdMs, error: detail });
+    } catch (errTelemetria) {
+        // Ultima risorsa: se anche la telemetria e' rotta l'evento non deve sparire del tutto.
+        // Non si rilancia da qui — a fallire davvero e' l'acquisizione, e quell'errore lo alza
+        // `pauseInputBlock` al chiamante.
+        const causa = errTelemetria instanceof Error ? errTelemetria.message : String(errTelemetria);
+        console.warn(
+            `[input-block] acquisizione fallita (${reason}, hold ${holdMs} ms): ${detail} — telemetria non disponibile: ${causa}`,
+        );
     }
 }
 

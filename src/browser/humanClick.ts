@@ -9,10 +9,21 @@ export interface HumanLocatorClickOptions {
     scrollTimeoutMs?: number;
 }
 
+/**
+ * Durata massima del gesto sotto: pre-click (40 + fino a 219) + dwell del bottone (40 + fino a 69).
+ * I quattro numeri sono gli stessi congelati da `timingCoreFrozen.vitest.ts` (`humanClick.gesto`):
+ * se qualcuno li cambia quel test diventa rosso e obbliga a rileggere anche questa costante.
+ */
+export const GESTO_CLICK_DURATA_MAX_MS = 40 + 220 + 40 + 70;
+/** Margine per i round-trip CDP fra la fine del click e la ripresa dell'overlay. */
+const GESTO_CLICK_MARGINE_MS = 300;
+
 export async function clickCoordinatesHumanLike(page: Page, x: number, y: number): Promise<void> {
     await humanMouseMoveToCoords(page, x, y);
     await pulseVisualCursorOverlay(page);
-    await pauseInputBlock(page);
+    // Fail-closed: se l'input-block non si acquisisce, `pauseInputBlock` lancia e il click NON parte.
+    // Il watchdog lato pagina copre TUTTO il gesto (prima erano 150 ms fissi: tornava opaco a meta').
+    await pauseInputBlock(page, GESTO_CLICK_DURATA_MAX_MS + GESTO_CLICK_MARGINE_MS);
 
     try {
         // Pre-click non uniforme (right-skew): un umano non aspetta esattamente 30ms prima di
