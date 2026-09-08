@@ -4,6 +4,58 @@ Questo file tiene traccia dei blocchi tecnici realmente analizzati, provati o ve
 
 Archivio mensile: [2026-04](ENGINEERING_WORKLOG_2026-04.md).
 
+## 2026-09-08 — blocco 22: la classe «429 letto come logout» chiusa per intero, e la baseline dei timing congelata (`e98c7f3`, `3898b32`, `2be952f`)
+
+**Due lavori, entrambi con la stessa forma: prima la rete che misura, poi il cambiamento.**
+
+### La conta era sbagliata, e l'ha detto una sentinella
+
+Il passo lasciato in coda alla sessione precedente diceva «restano due call site che leggono il 429
+come un logout». Invece di fidarmi di quella conta ho scritto prima la sentinella AST
+(`src/tests/checkLoginBooleanoNonGovernaIlLavoro.vitest.ts`), che cerca ogni chiamata al booleano
+`checkLogin` e la confronta con una allowlist motivata. È nata rossa su **otto** siti, sei dei quali
+da correggere. La differenza fra due e sei non è un dettaglio: erano il preflight che consiglia a un
+umano di rifare il login mentre LinkedIn sta rallentando, e un comando SalesNav che navigava a
+`/login` sotto throttling.
+
+Corretti: `salesnav/listActions.ts` ×2 e `workers/randomActivityWorker.ts` (ora passano da
+`valutaSessionePrimaDelLavoro`, quindi pausa, incident e cooldown del proxy scattano davvero);
+`core/doctor.ts`, che ora LEGGE con `checkLoginDetailed` e riporta il campo nuovo
+`sessionLoginState` senza applicare reazioni — la reazione resta di chi fa il lavoro — con i
+consumatori `index.ts` e `loopCommand.ts` che distinguono `linkedin_throttled` /`doctor_throttled`
+da `linkedin_login_missing`; `utilCommands.ts` (enrich-deep, che è un ciclo di scraping);
+`salesNavCommands.ts`, che sotto throttling/2FA/rete-muta si ferma invece di andare a `/login`.
+
+Il booleano sopravvive in tre siti dove la domanda è davvero binaria (conferma di un login manuale
+con l'umano alla tastiera ×2, campo `loggedIn` di un report diagnostico), elencati nel test con il
+motivo. L'allowlist fallisce anche quando una voce SPARISCE: una rete che invecchia in silenzio non
+è una rete.
+
+Contro-prova per mutazione: neutralizzate le tre guardie nuove, 3 test su 5 falliscono; ripristinate,
+5 su 5. Una sentinella già esistente (`citedCommandsExist`) ha corretto un mio errore nel messaggio
+all'operatore, che citava `npm run login` — script inesistente.
+
+### La baseline dei timing, e il PRNG che non si semina
+
+`src/tests/timingCoreFrozen.vitest.ts` (commit solo-test, per costruzione: il criterio chiede che
+preceda ogni modifica del gesto) congela le costanti TIMING-CORE lette dal sorgente via AST — anche
+le cinque non esportate — più otto sequenze generate dalle funzioni **reali**, con hash SHA-256,
+primi 20 valori in chiaro e statistiche, e la lista ordinata delle sette attese che `inviteWorker`
+mette fra la decisione dell'AI e il gesto.
+
+Il ritrovamento che ha cambiato il disegno: il timing di battitura non passa da `Math.random` ma da
+`crypto.randomInt` (`utils/random.ts`), che per costruzione non si semina. La baseline lo sostituisce
+**dentro il test** con un Mulberry32, senza toccare la produzione: ciò che si protegge è la forma
+della distribuzione, non l'entropia. L'entropia ha la sua sentinella separata — nessun uso di
+`Math.random` in quel file, verificato sull'AST perché nel testo compare dentro un commento che
+spiega perché non si usa. Determinismo provato confrontando gli hash di due esecuzioni indipendenti;
+sensibilità provata mutando `DWELL_MEDIANA_BASE` di 1 ms e il pre-click di 5 ms: due test su quattro
+diventano rossi.
+
+**Verifiche**: `npm run post-modifiche` exit 0 = 267 file / 2584 test; `madge --circular` 0;
+`security:scan` 0 secret su 956 file; sonda di copertura anti-ban C64 exit 0 (12 file cambiati, 3 nel
+perimetro, 3 con verdetto SICURO registrato in `docs/antiban/verdicts.json`).
+
 ## 2026-08-15 — blocco 21: il piano bocciato riscritto, e il probe che ha trovato una terza foreign key (`cc5a773`, `6a45e68`)
 
 **Ripresa di F-CB.10 dopo il gate ④, che aveva bocciato il piano con `REVISE` su due canali
