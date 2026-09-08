@@ -429,19 +429,19 @@
     },
     {
       "file": "src/browser/human/inputBlock.ts",
-      "blob_sha": "9b86119ab2b335a2e19b8f902f94c76995d34da5",
+      "blob_sha": "b57f646954ad7c81a0537a76736b9c85b3a40c5c",
       "answers": [
-        "browser_behavior: SICURO - nessuna azione LinkedIn nuova. TOGLIE una firma: col watchdog a 150 ms fissi il click del bot (pre-click fino a 259 ms) arrivava con l'overlay gia' tornato pointer-events:auto, quindi il target di mousedown/mouseup era il nostro div full-screen z-index 2147483645 invece del bottone. Misurato: 60 gesti reali col watchdog originale = 14 al bersaglio, 14 all'overlay, 32 senza alcun evento di click. AGGIORNATO per A1: esporta `rilanciaSeInputNonAcquisito`, la guardia che i sei siti di ripiego chiamano per non ingoiare il fail-closed. Nessun cambiamento di comportamento del browser: e' un `instanceof` che rilancia",
-        "timing_delay: SICURO - nessuna attesa aggiunta, rimossa o modificata in questo file; l'unico numero nuovo e' la durata del watchdog (rete di sicurezza lato pagina), che non entra in nessuna sequenza osservabile da LinkedIn. timingCoreFrozen (C63) resta 4/4: le sequenze sono byte-identiche",
-        "fingerprint_session: SICURO - nessun tocco a cookie, proxy, UA, sessione. Il watchdog vive come property JS `__restoreTimer` sull'elemento, non come attributo DOM: nessuna nuova stringa in outerHTML (harness: data-bot* = [], testo leggibile = [])",
-        "nuova_azione_linkedin: SICURO - nessun click, goto o typing nuovo. Il fail-closed AGGIUNGE un caso in cui il gesto NON parte (evaluate fallita o pagina chiusa), mai uno in cui parte di piu'",
-        "volumi: SICURO - cap e budget invariati. Il throw non gonfia i contatori: inviteWorker.ts:778-781 compensa invites_sent -1 e ri-solleva, quindi il lead non transita a INVITED (verificato alla fonte)",
-        "behavioral_pattern: SICURO - la finestra in cui l'overlay DOM e' trasparente passa da 150 ms a max 1000 ms per gesto, ma il blocco primario dell'utente fisico e' a livello OS (WS_EX_TRANSPARENT, windowInputBlock.ts:212 e :242): l'overlay DOM e' il secondo strato. Clamp duro a 1000 ms per costruzione. AGGIORNATO dopo il fix di privacy: il `console.warn` di ultima risorsa stampava il messaggio di Playwright grezzo, che porta spesso l'URL della pagina (il profilo di un lead); ora passa da `sanitizeForLogs` (`redaction.ts:34` redige `linkedin.com/in|profile`), importato staticamente perche' `redaction.ts` non ha alcun import e quindi non ricrea la dipendenza dal DB che l'import dinamico della telemetria evita. `madge --circular` resta 0"
+        "browser_behavior: SICURO - il diff su questo file e' di soli TIPI: `reason` usa ora `InputBlockAcquireReason` importato da `workers/errors.ts` e il nome della classe viene da `INPUT_BLOCK_ACQUIRE_ERROR_NAME`, che vale la stessa stringa 'InputBlockAcquireError'. Nessuna azione, nessun selettore, nessun ramo di esecuzione cambiato (git diff verificato)",
+        "timing_delay: SICURO - nessuna attesa aggiunta, rimossa o modificata in questo file; le costanti del watchdog (INPUT_BLOCK_HOLD_MIN/MAX/DEFAULT) sono intatte e `timingCoreFrozen` resta 4/4",
+        "fingerprint_session: SICURO - nessun tocco a cookie, proxy, UA o sessione. L'overlay e il suo watchdog restano identici, quindi nessuna nuova firma DOM ne' finestra di esposizione diversa",
+        "nuova_azione_linkedin: SICURO - nessun click, goto o typing aggiunto",
+        "volumi: SICURO - cap e budget invariati; questo file non tocca contatori",
+        "behavioral_pattern: SICURO - comportamento runtime identico byte per byte nella logica; cambia solo da dove viene letto il tipo del motivo di fallimento"
       ],
       "verdict": "SICURO",
-      "commit": "b341d11de3b5daf643a49dae865e17beba7f86ac",
+      "commit": "c03b910",
       "date": "2026-09-08",
-      "criterio": "C29 - il gesto di click possiede l'input per tutta la sua durata (watchdog dimensionato + acquisizione fail-closed) + redazione del log di ripiego",
+      "criterio": "C29-residuo (review) - la policy di retry legge il campo tipizzato `reason` invece del testo del messaggio + controllo positivo della sentinella in CI",
       "vincolo": null
     },
     {
@@ -561,6 +561,23 @@
       "commit": "b341d11de3b5daf643a49dae865e17beba7f86ac",
       "date": "2026-09-08",
       "criterio": "A1 della review indipendente di C29 - il fail-closed non viene piu' letto come selettore rotto",
+      "vincolo": null
+    },
+    {
+      "file": "src/workers/errors.ts",
+      "blob_sha": "74ac972e4bf1a2083952ea16aa20ab2d20515c77",
+      "answers": [
+        "browser_behavior: SICURO - modulo di sola policy, non apre pagine e non tocca il browser. Cambia COSA fa il worker dopo un fallimento di acquisizione dell'input: su `page_closed` smette invece di riprovare",
+        "timing_delay: SICURO (migliora) - il ritmo dei RETRY cambia in direzione prudente: `evaluate_failed` passa da delay base x1 a x1.75 e da max 5 a max 3 tentativi; `page_closed` passa da 5 tentativi a 0. Backoff esponenziale e jitter 0-500 ms di `utils/async.ts:21` intatti. Nessuna formula del gesto umano toccata",
+        "fingerprint_session: SICURO - non tocca cookie, proxy o fingerprint. Al contrario riconosce che la sessione e' finita e smette di lavorarci sopra",
+        "nuova_azione_linkedin: SICURO - nessuna azione aggiunta; ne toglie. Su sessione morta il job passava 4 ri-navigazioni + 4 attese prima di arrendersi, ora 0",
+        "volumi: SICURO - cap, budget e contatori giornalieri invariati. Il volume EFFETTIVO di richieste verso LinkedIn scende",
+        "behavioral_pattern: SICURO - il pattern rimosso («ri-navigo e ri-attendo N volte su una pagina che non esiste piu'») e' esattamente il ritmo meccanico che il rilevamento ML flagga. Residuo dichiarato: un `page_closed` spurio ora costa il job (dead-letter) invece di ritentare - costo asimmetrico accettato"
+      ],
+      "verdict": "SICURO",
+      "commit": "c03b910",
+      "date": "2026-09-08",
+      "criterio": "C29-residuo (review) - la policy di retry legge il campo tipizzato `reason` invece del testo del messaggio + controllo positivo della sentinella in CI",
       "vincolo": null
     }
   ]
