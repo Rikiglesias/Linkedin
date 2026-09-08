@@ -52,9 +52,36 @@ spiega perché non si usa. Determinismo provato confrontando gli hash di due ese
 sensibilità provata mutando `DWELL_MEDIANA_BASE` di 1 ms e il pre-click di 5 ms: due test su quattro
 diventano rossi.
 
-**Verifiche**: `npm run post-modifiche` exit 0 = 267 file / 2584 test; `madge --circular` 0;
-`security:scan` 0 secret su 956 file; sonda di copertura anti-ban C64 exit 0 (12 file cambiati, 3 nel
-perimetro, 3 con verdetto SICURO registrato in `docs/antiban/verdicts.json`).
+### La review ha trovato che una protezione dichiarata non poteva scattare
+
+Due lenti indipendenti sul diff (correttezza/contratti e anti-ban) hanno trovato **lo stesso difetto
+ALTA, separatamente**: i quattro call site nuovi passavano `account.proxy` al cooldown, ma con il pool
+gestito quel campo è `undefined` **esattamente quando** esiste uno sticky proxy da mettere in cooldown
+(`launcher.ts:260-268` chiede lo sticky solo se non c'è un proxy esplicito). Le due metà della reazione
+— `markProxyFailed` e `releaseStickyProxy` — non potevano quindi scattare insieme in nessuna
+configurazione: con il pool l'IP che aveva preso il 429 restava pescabile subito dopo.
+
+Due aggravanti che rendono il caso istruttivo. Il verdetto anti-ban che avevo committato affermava il
+contrario («il cooldown colpisce lo sticky giusto»), e il test usava un account mockato **con** proxy,
+quindi non distingueva la guardia che non scatta mai da quella che scatta sempre — il caso letterale
+della regola 10 di `browser-antiban.md`. Il fix (`faf0dd9`) passa il proxy risolto della sessione, che è
+il pattern già usato da `salesNavigatorSync`, `syncSearchService`, `jobRunner` e dal listener voyager;
+il test nuovo ha l'account senza proxy e la sessione con proxy, e fallisce se si rimette il bug.
+
+Chiusi nello stesso giro (`9b6c291`): un messaggio che prometteva «la pausa è già attiva» su un percorso
+dove nessuna pausa veniva scritta; la baseline dei timing che escludeva il **movimento del mouse** — la
+componente più grande dell'attesa — con una motivazione scritta che non reggeva alla lettura della
+funzione (ora è reale: la catena osservazione→click passa da 1099 a 1840 ms); e una sentinella che si
+aggirava rinominando l'import. Un difetto l'ho introdotto e chiuso nello stesso turno: il controllo
+positivo scriveva un file dentro `src/workers/` e faceva morire con ENOENT un altro test che scansiona
+l'albero in parallelo.
+
+Residui tracciati con causa in `~/todos/improvements-proposed.md` (`F-4e77b1c3`): i due che restano
+aperti — chi può scrivere una pausa globale, e con quale soglia — sono decisioni di policy, non fix.
+
+**Verifiche**: `npm run post-modifiche` exit 0 = 267 file / 2585 test; `madge --circular` 0;
+`security:scan` 0 secret su 956 file; sonda di copertura anti-ban C64 exit 0 (14 file cambiati, 3 nel
+perimetro, 3 con verdetto SICURO sul blob attuale). Pushato: `35117e5..9b6c291`.
 
 ## 2026-08-15 — blocco 21: il piano bocciato riscritto, e il probe che ha trovato una terza foreign key (`cc5a773`, `6a45e68`)
 
