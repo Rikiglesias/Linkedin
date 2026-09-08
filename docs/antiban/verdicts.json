@@ -426,6 +426,91 @@
       "date": "2026-09-08",
       "criterio": "C27 - chiusura della classe «429 letto come logout» + fix A1 della review",
       "vincolo": null
+    },
+    {
+      "file": "src/browser/human/inputBlock.ts",
+      "blob_sha": "89d80f1798701edc29ead7d797fb884e4c89cdbd",
+      "answers": [
+        "browser_behavior: SICURO - nessuna azione LinkedIn nuova. TOGLIE una firma: col watchdog a 150 ms fissi il click del bot (pre-click fino a 259 ms) arrivava con l'overlay gia' tornato pointer-events:auto, quindi il target di mousedown/mouseup era il nostro div full-screen z-index 2147483645 invece del bottone. Misurato: 60 gesti reali col watchdog originale = 14 al bersaglio, 14 all'overlay, 32 senza alcun evento di click",
+        "timing_delay: SICURO - nessuna attesa aggiunta, rimossa o modificata in questo file; l'unico numero nuovo e' la durata del watchdog (rete di sicurezza lato pagina), che non entra in nessuna sequenza osservabile da LinkedIn. timingCoreFrozen (C63) resta 4/4: le sequenze sono byte-identiche",
+        "fingerprint_session: SICURO - nessun tocco a cookie, proxy, UA, sessione. Il watchdog vive come property JS `__restoreTimer` sull'elemento, non come attributo DOM: nessuna nuova stringa in outerHTML (harness: data-bot* = [], testo leggibile = [])",
+        "nuova_azione_linkedin: SICURO - nessun click, goto o typing nuovo. Il fail-closed AGGIUNGE un caso in cui il gesto NON parte (evaluate fallita o pagina chiusa), mai uno in cui parte di piu'",
+        "volumi: SICURO - cap e budget invariati. Il throw non gonfia i contatori: inviteWorker.ts:778-781 compensa invites_sent -1 e ri-solleva, quindi il lead non transita a INVITED (verificato alla fonte)",
+        "behavioral_pattern: SICURO - la finestra in cui l'overlay DOM e' trasparente passa da 150 ms a max 1000 ms per gesto, ma il blocco primario dell'utente fisico e' a livello OS (WS_EX_TRANSPARENT, windowInputBlock.ts:212 e :242): l'overlay DOM e' il secondo strato. Clamp duro a 1000 ms per costruzione"
+      ],
+      "verdict": "SICURO",
+      "commit": "1fced829fe735bd7ed6178215d83c062bdb73042",
+      "date": "2026-09-08",
+      "criterio": "C29 - il gesto di click possiede l'input per tutta la sua durata (watchdog dimensionato + acquisizione fail-closed)",
+      "vincolo": null
+    },
+    {
+      "file": "src/browser/humanClick.ts",
+      "blob_sha": "97785d824484f06c8815b86bfdc8832a0c804362",
+      "answers": [
+        "browser_behavior: SICURO - il gesto e' lo stesso; cambia solo la durata della finestra di proprieta' dell'input, che ora lo copre per intero (670 ms contro un massimo reale di 368 ms). Harness: 200 gesti reali = 200 al bersaglio, 0 intercettati, 0 svaniti",
+        "timing_delay: SICURO - le due formule restano VERBATIM (`waitForTimeout(40 + Math.floor(Math.random() * Math.random() * 220))` e `delay: 40 + Math.floor(Math.random() * 70)`), stesso ordine di chiamata dei random. C63 4/4: hash di sequenza invariati. La costante GESTO_CLICK_DURATA_MAX_MS e' derivata da quei quattro numeri e un test la confronta col sorgente, quindi non puo' sfasarsi in silenzio",
+        "fingerprint_session: SICURO - nessun tocco a fingerprint, cookie o sessione",
+        "nuova_azione_linkedin: SICURO - stesso singolo click; con l'acquisizione fallita i click diventano zero, mai due",
+        "volumi: SICURO - nessun cap toccato",
+        "behavioral_pattern: SICURO - la dispersione gaussiana del punto di click e il pre-click right-skew sono invariati; il fix elimina i gesti che prima non producevano alcun evento, cioe' una sorgente di ritentativi e di comportamento incoerente"
+      ],
+      "verdict": "SICURO",
+      "commit": "1fced829fe735bd7ed6178215d83c062bdb73042",
+      "date": "2026-09-08",
+      "criterio": "C29 - il gesto di click possiede l'input per tutta la sua durata (watchdog dimensionato + acquisizione fail-closed)",
+      "vincolo": null
+    },
+    {
+      "file": "src/salesnav/bulkSaveHelpers.ts",
+      "blob_sha": "24cdad46f478830faf7e07f41ecd902e3b992ca9",
+      "answers": [
+        "browser_behavior: SICURO - `smartClick` fa lo stesso gesto; il rilascio dell'overlay passa dentro un `finally`, quindi un click che rigetta non lascia piu' la pagina scoperta fino allo scadere del watchdog",
+        "timing_delay: SICURO - l'attesa di 30 ms per il render e il `delay: 40 + Math.floor(Math.random() * 70)` sono invariati; il watchdog e' dimensionato su quella somma (440 ms)",
+        "fingerprint_session: SICURO - nessun tocco a sessione, proxy o fingerprint",
+        "nuova_azione_linkedin: SICURO - nessuna azione nuova; `safeVisionClick` era gia' in try/finally e resta com'e'",
+        "volumi: SICURO - nessun cap toccato",
+        "behavioral_pattern: SICURO - il gesto resta uno solo per chiamata; il `finally` chiude una finestra in cui il mouse fisico dell'utente poteva raggiungere la pagina durante l'automazione"
+      ],
+      "verdict": "SICURO",
+      "commit": "1fced829fe735bd7ed6178215d83c062bdb73042",
+      "date": "2026-09-08",
+      "criterio": "C29 - il gesto di click possiede l'input per tutta la sua durata (watchdog dimensionato + acquisizione fail-closed)",
+      "vincolo": null
+    },
+    {
+      "file": "src/salesnav/bulkSaveNavigation.ts",
+      "blob_sha": "73eb71a2ab6c16c9f0cbc25c2363620856d4a1dc",
+      "answers": [
+        "browser_behavior: SICURO - unico punto in cui la pausa NON protegge un gesto del bot: `waitForManualLogin` cede il controllo all'utente e due righe sotto `removeAllOverlays` toglie l'overlay del tutto. Il fail-closed di pauseInputBlock e' disinnescato con un `.catch()` esplicito perche' un errore di telemetria non deve impedire il login manuale",
+        "timing_delay: SICURO - poll di 5 s e timeout di 3 minuti invariati",
+        "fingerprint_session: SICURO - nessun tocco a cookie o proxy; il click-through OS viene disabilitato come prima",
+        "nuova_azione_linkedin: SICURO - nessuna azione nuova",
+        "volumi: SICURO - nessun cap toccato",
+        "behavioral_pattern: SICURO - il comportamento visibile e' identico; la voce e' registrata nella allowlist della sentinella AST con il motivo, quindi non puo' sparire in silenzio"
+      ],
+      "verdict": "SICURO",
+      "commit": "1fced829fe735bd7ed6178215d83c062bdb73042",
+      "date": "2026-09-08",
+      "criterio": "C29 - il gesto di click possiede l'input per tutta la sua durata (watchdog dimensionato + acquisizione fail-closed)",
+      "vincolo": "unico call site consentito senza ripresa: e' in allowlist versionata in src/tests/inputBlockAlwaysReleased.vitest.ts"
+    },
+    {
+      "file": "src/salesnav/computerUse.ts",
+      "blob_sha": "44aa20da14438c2bbcfaf1fe83258565c686c190",
+      "answers": [
+        "browser_behavior: SICURO - i quattro rami (click, dblclick, type, keys) fanno gli stessi gesti; cambia solo la durata del watchdog per type e keys",
+        "timing_delay: SICURO - nessuna formula toccata: jitterCoord, i delay di click/dblclick e digitaTestoUmano restano identici",
+        "fingerprint_session: SICURO - nessun tocco a sessione, proxy o fingerprint",
+        "nuova_azione_linkedin: SICURO - nessuna azione nuova",
+        "volumi: SICURO - nessun cap toccato",
+        "behavioral_pattern: SICURO CON RESIDUO - la MODIFICA migliora in senso stretto (watchdog da 150 ms al massimo di 1000 per `type` e `keys`, che hanno durata non limitabile a priori) e non introduce nulla di nuovo. Il RESIDUO e' preesistente e resta aperto: oltre il secondo l'overlay torna opaco e blockEvent fa preventDefault sui keydown; che questo faccia cadere i caratteri iniettati via CDP NON e' misurato (per il click lo e': 32 gesti su 60 svaniti col watchdog originale). Tracciato in ~/todos/improvements-proposed.md F-1c7a93e5-a con la misura da fare e la forma del fix (heartbeat che rinnova il watchdog finche' l'operazione e' viva)"
+      ],
+      "verdict": "SICURO",
+      "commit": "1fced829fe735bd7ed6178215d83c062bdb73042",
+      "date": "2026-09-08",
+      "criterio": "C29 - il gesto di click possiede l'input per tutta la sua durata (watchdog dimensionato + acquisizione fail-closed)",
+      "vincolo": "verdetto SICURO CON RISERVA su type/keys: la copertura del watchdog resta parziale, residuo dichiarato in F-1c7a93e5-a"
     }
   ]
 }
