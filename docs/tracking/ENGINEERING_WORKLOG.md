@@ -3650,6 +3650,13 @@ staticamente — `madge --circular` resta 0). Verificato alla fonte che il fail-
 `INVITED`. Overlay assente non è un fallimento: sulle pagine mobile `ensureInputBlock` non lo inietta e
 senza overlay non c'è nulla che possa intercettare.
 
+**Trovato durante la mia passata, non dalle lenti: PII nel log di ripiego.** Il `console.warn` di ultima
+risorsa stampava `detail` grezzo, cioe' il messaggio di Playwright — che porta spesso l'URL della pagina,
+quindi il profilo di un lead. Sul percorso della telemetria lo redige `log()` (`logger.ts:29` →
+`sanitizeForLogs`), sul ripiego no. Chiuso importando `sanitizeForLogs` staticamente: `redaction.ts` non ha
+**alcun** import, quindi non ricrea la dipendenza che l'import dinamico della telemetria evita
+(`madge --circular` resta 0).
+
 **`smartClick` rilasciava fuori dal `finally`** (`bulkSaveHelpers.ts`): un click che rigetta lasciava
 l'overlay trasparente fino allo scadere del watchdog. Ora `try/finally`. `bulkSaveNavigation.ts` è l'unico
 punto in cui la pausa non protegge un gesto — cede il controllo all'utente per il login manuale — e lì il
@@ -3659,8 +3666,10 @@ fail-closed è disinnescato con un `.catch()` esplicito e motivato.
 ripresa dentro un `finally` per ogni `pauseInputBlock`/`pauseInputBlockForMove` in `src/**`, con allowlist
 di 1 voce che fallisce anche se la voce sparisce, più i test di comportamento (fail-closed, clamp del
 watchdog, un click e una ripresa per gesto). **Contro-prova per mutazione con controllo positivo**: 11/11
-verde a codice integro, poi `smartClick` senza `finally` → 1 rosso, `pauseInputBlock` che torna a ingoiare →
-1 rosso, `humanClick` che torna al watchdog di default → 1 rosso, ripristino → 11/11. (Il primo giro di
+verde a codice integro, poi ogni mutazione fa fallire **il test giusto**, non un test qualsiasi (verificato
+catturando il nome del caso rosso, non solo l'exit): `smartClick` senza `finally` → «ogni pausa ha la sua
+ripresa in un finally»; `pauseInputBlock` che torna a ingoiare → «evaluate che fallisce: lancia invece di
+ingoiare»; `humanClick` che torna al watchdog di default → «il watchdog copre TUTTO il gesto»; ripristino → 11/11. (Il primo giro di
 mutazioni era stato invalidato da `--reporter=basic`, che in vitest 4 non esiste più: il controllo positivo
 usciva 1 e i tre rossi non provavano nulla.) `npm run harness:input-block` esteso con la sonda dei click e
 il suo controllo positivo (click grezzo con overlay opaco → intercettato, altrimenti la sonda non misura

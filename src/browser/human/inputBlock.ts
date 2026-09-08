@@ -13,6 +13,7 @@ import { isMobilePage } from '../deviceProfile';
 import { initializeMouseState } from './mouseState';
 import { enableVisualCursorOverlay } from './cursorOverlay';
 import { INPUT_BLOCK_TOAST_ID, INPUT_BLOCK_OVERLAY_ID } from './overlayIds';
+import { sanitizeForLogs } from '../../security/redaction';
 
 /**
  * Finestra del watchdog lato pagina che ripristina l'overlay da solo se il processo muore fra la
@@ -300,9 +301,14 @@ async function segnalaAcquisizioneFallita(
         // Ultima risorsa: se anche la telemetria e' rotta l'evento non deve sparire del tutto.
         // Non si rilancia da qui — a fallire davvero e' l'acquisizione, e quell'errore lo alza
         // `pauseInputBlock` al chiamante.
+        // Il messaggio di Playwright porta spesso l'URL della pagina, cioe' il profilo di un lead:
+        // sul percorso della telemetria lo redige `log()` (`logger.ts:29`), qui no. `redaction.ts`
+        // non ha alcun import, quindi importarlo non ricrea la dipendenza che l'import dinamico evita.
         const causa = errTelemetria instanceof Error ? errTelemetria.message : String(errTelemetria);
         console.warn(
-            `[input-block] acquisizione fallita (${reason}, hold ${holdMs} ms): ${detail} — telemetria non disponibile: ${causa}`,
+            sanitizeForLogs(
+                `[input-block] acquisizione fallita (${reason}, hold ${holdMs} ms): ${detail} — telemetria non disponibile: ${causa}`,
+            ),
         );
     }
 }
