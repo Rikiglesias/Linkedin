@@ -177,7 +177,10 @@ export function descriviEsitoSessione(outcome: LoginCheckOutcome): string {
         case 'logged-in':
             return 'Sessione attiva';
         case 'logged-out':
-            return 'Sessione non autenticata: serve un login manuale (`bot.ps1 login`), poi `bot.ps1 unquarantine`.';
+            // B1 della review: qui NON si applica nessuna reazione (`valutaSessionePrimaDelLavoro`
+            // esce prima sul ramo `logged-out`), quindi consigliare `unquarantine` mandava a togliere
+            // una quarantena che nessuno ha messo. Il rimedio e' il login e basta.
+            return 'Sessione non autenticata (cookie scaduti): serve un login manuale con `bot.ps1 login`.';
         case 'two-factor':
             return 'LinkedIn chiede la verifica in due passaggi: completala a mano nel browser, il bot resta fermo.';
         case 'throttled':
