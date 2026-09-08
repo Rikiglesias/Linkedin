@@ -140,19 +140,19 @@
     },
     {
       "file": "src/browser/loginFailurePolicy.ts",
-      "blob_sha": "3e75a633f5cb6855f7a8358420f2bf8984aaeaf2",
+      "blob_sha": "dff03d54f9a2c270947a8e29df76f1659edafaab",
       "answers": [
-        "browser_behavior: SICURO — politica PURA. Delta: il ramo `two-factor` ri-quarantena quando la scrittura alla fonte e' fallita (`quarantineApplied: false`), e i due messaggi indicano ora `bot.ps1 unquarantine` invece del placeholder letterale `--account <id>`, che l'operatore non poteva risolvere. Nessun I/O, nessuna pagina, nessun timing",
-        "timing_delay: SICURO — nessun timing, delay o ordine di azioni toccato",
-        "fingerprint_session: SICURO — separa «sessione scaduta» da «429/403» da «rete/proxy muti»: sono tre situazioni che chiedono tre reazioni diverse e prima ne ricevevano una sola",
-        "nuova_azione_linkedin: SICURO — nessun click, navigazione o typing aggiunto",
-        "volumi: SICURO — cap, budget, pending ratio e limiti giornalieri invariati",
-        "behavioral_pattern: SICURO — sotto throttling la reazione è pausa lunga e proxy rilasciato, mai insistere: il comportamento più conservativo dei tre"
+        "browser_behavior: SICURO - aggiunta solo `descriviEsitoSessione`, funzione PURA che formatta la frase per l'operatore. Nessuna navigazione, nessun selettore, nessuna chiamata al browser",
+        "timing_delay: SICURO - nessuna costante di timing toccata; le soglie di pausa (UNKNOWN 15', LOGGED_OUT 60', THROTTLED_MIN 180') restano identiche",
+        "fingerprint_session: SICURO - non tocca cookie, fingerprint ne' proxy; la politica resta pura, gli effetti restano in loginFailureHandler",
+        "nuova_azione_linkedin: SICURO - zero azioni LinkedIn aggiunte. Il testo del ramo logged-out ora cita il comando reale `bot.ps1 login` (prima citava `npm run login`, che non esiste: corretto dalla sentinella citedCommandsExist)",
+        "volumi: SICURO - nessun cap, budget o limite toccato",
+        "behavioral_pattern: SICURO - nessun ritmo introdotto. Il messaggio del ramo throttled dice esplicitamente di NON rifare il login, che era il gesto sbagliato indotto dal vecchio booleano"
       ],
       "verdict": "SICURO",
-      "commit": "0589afc896b688bc65f5b8582b7410995167fc8f",
+      "commit": "e98c7f352fbc366d1f4b6d79e88ad71b4ece4a7f",
       "date": "2026-09-08",
-      "criterio": "C27 + review pre-push blocco A",
+      "criterio": "C27 - chiusura della classe «429 letto come logout»",
       "vincolo": null
     },
     {
@@ -391,6 +391,40 @@
       "commit": "ad20d31cc52ce99e27e2a0051fef273dfa5ac488",
       "date": "2026-09-08",
       "criterio": "C27 + review pre-push blocco A",
+      "vincolo": null
+    },
+    {
+      "file": "src/salesnav/listActions.ts",
+      "blob_sha": "0fa26f6d892816c8aa32d472dac8d474f552a322",
+      "answers": [
+        "browser_behavior: SICURO - `checkLogin` era gia' un wrapper di `checkLoginDetailed` (auth.ts:86): stessa lettura della pagina, stesse navigazioni. Cambia solo COSA si fa dell'esito",
+        "timing_delay: SICURO - `humanDelay` e `clickLocatorHumanLike` invariati, nessuna costante toccata",
+        "fingerprint_session: SICURO - sotto throttling `valutaSessionePrimaDelLavoro` rilascia lo sticky proxy per il PROSSIMO lancio; il browser aperto tiene il suo IP fino alla chiusura, nessun cambio IP a sessione viva",
+        "nuova_azione_linkedin: SICURO - nessuna azione aggiunta; sotto 429 ora ce ne sono ZERO (prima si usciva subito ma senza reazione, e il ciclo dopo ripartiva identico)",
+        "volumi: SICURO - nessun cap toccato; il 429 ora produce una pausa >=180' dove prima non ne produceva nessuna, quindi le azioni/giorno scendono",
+        "behavioral_pattern: SICURO - fermarsi quando la piattaforma chiede di rallentare riduce il segnale «bot che insiste». Nota tracciata: la pausa e' globale su causa per-account, latente gia' noto del multi-account, non peggiorato qui"
+      ],
+      "verdict": "SICURO",
+      "commit": "e98c7f352fbc366d1f4b6d79e88ad71b4ece4a7f",
+      "date": "2026-09-08",
+      "criterio": "C27 - chiusura della classe «429 letto come logout»",
+      "vincolo": null
+    },
+    {
+      "file": "src/workers/randomActivityWorker.ts",
+      "blob_sha": "1812c182aa0491b386f6e41d856cd27bae72d099",
+      "answers": [
+        "browser_behavior: SICURO - stessa lettura di sessione di prima (wrapper della stessa funzione); il riscaldamento parte solo su `logged-in`",
+        "timing_delay: SICURO - `humanDelay(1200,2800)` fra le attivita' e lo shuffle del pool restano invariati",
+        "fingerprint_session: SICURO - il contesto passato porta sessionDir e proxy dell'account, cosi' il cooldown colpisce lo sticky giusto; nessun cambio IP a sessione aperta",
+        "nuova_azione_linkedin: SICURO - nessuna attivita' nuova; sotto 429 zero attivita' eseguite, verificato dal test (0 goto, 0 locator)",
+        "volumi: SICURO - `maxActions` invariato; il warmup ora si ferma sotto throttling, quindi il monte azioni scende",
+        "behavioral_pattern: SICURO - l'evento loggato dice lo stato reale (`sessione_non_utilizzabile` + stato) invece di `not_logged_in`: la diagnosi corretta evita il rimedio sbagliato (rifare il login sotto 429)"
+      ],
+      "verdict": "SICURO",
+      "commit": "e98c7f352fbc366d1f4b6d79e88ad71b4ece4a7f",
+      "date": "2026-09-08",
+      "criterio": "C27 - chiusura della classe «429 letto come logout»",
       "vincolo": null
     }
   ]
