@@ -395,36 +395,36 @@
     },
     {
       "file": "src/salesnav/listActions.ts",
-      "blob_sha": "0fa26f6d892816c8aa32d472dac8d474f552a322",
+      "blob_sha": "66b839b369563ff701069a6a7d86e2bd0500eb77",
       "answers": [
         "browser_behavior: SICURO - `checkLogin` era gia' un wrapper di `checkLoginDetailed` (auth.ts:86): stessa lettura della pagina, stesse navigazioni. Cambia solo COSA si fa dell'esito",
         "timing_delay: SICURO - `humanDelay` e `clickLocatorHumanLike` invariati, nessuna costante toccata",
-        "fingerprint_session: SICURO - sotto throttling `valutaSessionePrimaDelLavoro` rilascia lo sticky proxy per il PROSSIMO lancio; il browser aperto tiene il suo IP fino alla chiusura, nessun cambio IP a sessione viva",
+        "fingerprint_session: SICURO - sotto throttling si rilascia lo sticky per il PROSSIMO lancio e si mette in cooldown il proxy RISOLTO della sessione (`ownSession?.proxy ?? account.proxy ?? null`), non quello del profilo: correzione del finding A1 della review anti-ban, che rendeva la meta' `markProxyFailed` irraggiungibile col pool gestito. Il browser aperto tiene il suo IP fino alla chiusura",
         "nuova_azione_linkedin: SICURO - nessuna azione aggiunta; sotto 429 ora ce ne sono ZERO (prima si usciva subito ma senza reazione, e il ciclo dopo ripartiva identico)",
         "volumi: SICURO - nessun cap toccato; il 429 ora produce una pausa >=180' dove prima non ne produceva nessuna, quindi le azioni/giorno scendono",
         "behavioral_pattern: SICURO - fermarsi quando la piattaforma chiede di rallentare riduce il segnale «bot che insiste». Nota tracciata: la pausa e' globale su causa per-account, latente gia' noto del multi-account, non peggiorato qui"
       ],
       "verdict": "SICURO",
-      "commit": "e98c7f352fbc366d1f4b6d79e88ad71b4ece4a7f",
+      "commit": "faf0dd9bad883360d93acaef4a8c109a1daae32c",
       "date": "2026-09-08",
-      "criterio": "C27 - chiusura della classe «429 letto come logout»",
+      "criterio": "C27 - chiusura della classe «429 letto come logout» + fix A1 della review",
       "vincolo": null
     },
     {
       "file": "src/workers/randomActivityWorker.ts",
-      "blob_sha": "1812c182aa0491b386f6e41d856cd27bae72d099",
+      "blob_sha": "92023d8a3e2a69698855f0ad14dc64c0d8405605",
       "answers": [
         "browser_behavior: SICURO - stessa lettura di sessione di prima (wrapper della stessa funzione); il riscaldamento parte solo su `logged-in`",
         "timing_delay: SICURO - `humanDelay(1200,2800)` fra le attivita' e lo shuffle del pool restano invariati",
-        "fingerprint_session: SICURO - il contesto passato porta sessionDir e proxy dell'account, cosi' il cooldown colpisce lo sticky giusto; nessun cambio IP a sessione aperta",
+        "fingerprint_session: SICURO - il contesto porta sessionDir e il proxy RISOLTO della sessione (`session.proxy ?? account.proxy ?? null`). CORRETTO dopo la review anti-ban (finding A1): il verdetto precedente diceva «il proxy dell'account», ma col pool gestito `account.proxy` e' `undefined` proprio quando esiste uno sticky da mettere in cooldown, quindi la reazione era inerte e l'IP che aveva preso il 429 restava pescabile. Nessun cambio IP a sessione aperta: le mappe del proxyManager si leggono al lancio",
         "nuova_azione_linkedin: SICURO - nessuna attivita' nuova; sotto 429 zero attivita' eseguite, verificato dal test (0 goto, 0 locator)",
         "volumi: SICURO - `maxActions` invariato; il warmup ora si ferma sotto throttling, quindi il monte azioni scende",
         "behavioral_pattern: SICURO - l'evento loggato dice lo stato reale (`sessione_non_utilizzabile` + stato) invece di `not_logged_in`: la diagnosi corretta evita il rimedio sbagliato (rifare il login sotto 429)"
       ],
       "verdict": "SICURO",
-      "commit": "e98c7f352fbc366d1f4b6d79e88ad71b4ece4a7f",
+      "commit": "faf0dd9bad883360d93acaef4a8c109a1daae32c",
       "date": "2026-09-08",
-      "criterio": "C27 - chiusura della classe «429 letto come logout»",
+      "criterio": "C27 - chiusura della classe «429 letto come logout» + fix A1 della review",
       "vincolo": null
     }
   ]
