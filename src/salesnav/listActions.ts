@@ -5,7 +5,12 @@ import { clickLocatorHumanLike, closeBrowser, humanDelay, launchBrowser } from '
 import { descriviEsitoSessione } from '../browser/loginFailurePolicy';
 import { valutaSessionePrimaDelLavoro } from '../risk/loginFailureHandler';
 import { blockUserInput, pauseInputBlock, resumeInputBlock } from '../browser/humanBehavior';
-import { enableWindowClickThrough, disableWindowClickThrough } from '../browser/windowInputBlock';
+import { INPUT_BLOCK_HOLD_MAX_MS } from '../browser/human/inputBlock';
+import {
+    enableWindowClickThrough,
+    disableWindowClickThrough,
+    isWindowClickThroughActive,
+} from '../browser/windowInputBlock';
 import { normalizeLinkedInUrl } from '../linkedinUrl';
 import { navigateToSavedLists, SalesNavSavedList } from './listScraper';
 import { SALESNAV_SAVE_TO_LIST_SELECTOR } from './selectors';
@@ -98,6 +103,7 @@ export async function createSalesNavList(
           });
     const page = externalPage ?? ownSession?.page;
     if (!page) return { ok: false, accountId: account.id, message: 'Nessuna pagina disponibile' };
+    let clickThroughEraAttivo = false;
     try {
         // C27: il booleano collassava throttling (429/403) e cookie scaduti su un solo «non
         // autenticata». La lettura tipizzata applica gia' pausa e cooldown del proxy sul 429:
@@ -113,6 +119,10 @@ export async function createSalesNavList(
         if (esitoSessione.state !== 'logged-in') {
             return { ok: false, accountId: account.id, message: descriviEsitoSessione(esitoSessione) };
         }
+        // M7: lo stato PRECEDENTE va ricordato, perche' il `finally` deve ripristinarlo e non
+        // spegnere. Con una pagina esterna il click-through puo' essere gia' acceso dal chiamante:
+        // spegnerlo qui lascerebbe il mouse dell'utente libero di interferire col bot.
+        clickThroughEraAttivo = isWindowClickThroughActive(page.context());
         enableWindowClickThrough(page.context());
         await blockUserInput(page);
 
@@ -134,7 +144,11 @@ export async function createSalesNavList(
         if ((await nameInput.count()) === 0) {
             return { ok: false, accountId: account.id, message: 'Input nome lista non trovato' };
         }
-        await pauseInputBlock(page);
+        // B5 (review C29): il default di 400 ms non e' dimensionato su questo gesto — `fill` attende
+        // l'actionability e puo' arrivare a 30 s. Allo scadere del watchdog l'overlay torna a
+        // bloccare (direzione sicura, e `fill` non fa hit-test), ma il numero deve seguire il gesto
+        // come nel resto del diff: si tiene il massimo consentito.
+        await pauseInputBlock(page, INPUT_BLOCK_HOLD_MAX_MS);
         try {
             await nameInput.fill(normalizedListName);
         } finally {
@@ -158,8 +172,15 @@ export async function createSalesNavList(
             message: `Lista creata (best-effort): ${normalizedListName}`,
         };
     } finally {
+        // M7 (review C29): prima il ripristino stava DENTRO `if (ownSession)`, quindi con una pagina
+        // esterna qualsiasi throw usciva lasciando WS_EX_TRANSPARENT attivo — finestra bot-only, il
+        // mouse dell'utente ci passa attraverso e il browser resta inutilizzabile. Il fail-closed di
+        // C29 ha aggiunto una via di throw proprio qui (`pauseInputBlock` prima della `fill`), dove
+        // prima non se ne poteva alzare nessuna.
+        if (!clickThroughEraAttivo) {
+            disableWindowClickThrough(page.context());
+        }
         if (ownSession) {
-            disableWindowClickThrough(ownSession.browser);
             await closeBrowser(ownSession);
         }
     }
@@ -191,6 +212,7 @@ export async function addLeadToSalesNavList(
           });
     const page = externalPage ?? ownSession?.page;
     if (!page) return { ok: false, accountId: account.id, message: 'Nessuna pagina disponibile' };
+    let clickThroughEraAttivo = false;
     try {
         // C27: il booleano collassava throttling (429/403) e cookie scaduti su un solo «non
         // autenticata». La lettura tipizzata applica gia' pausa e cooldown del proxy sul 429:
@@ -204,6 +226,10 @@ export async function addLeadToSalesNavList(
         if (esitoSessione.state !== 'logged-in') {
             return { ok: false, accountId: account.id, message: descriviEsitoSessione(esitoSessione) };
         }
+        // M7: lo stato PRECEDENTE va ricordato, perche' il `finally` deve ripristinarlo e non
+        // spegnere. Con una pagina esterna il click-through puo' essere gia' acceso dal chiamante:
+        // spegnerlo qui lascerebbe il mouse dell'utente libero di interferire col bot.
+        clickThroughEraAttivo = isWindowClickThroughActive(page.context());
         enableWindowClickThrough(page.context());
         await blockUserInput(page);
 
@@ -245,8 +271,15 @@ export async function addLeadToSalesNavList(
             message: `Lead aggiunto (best-effort) a lista: ${normalizedListName}`,
         };
     } finally {
+        // M7 (review C29): prima il ripristino stava DENTRO `if (ownSession)`, quindi con una pagina
+        // esterna qualsiasi throw usciva lasciando WS_EX_TRANSPARENT attivo — finestra bot-only, il
+        // mouse dell'utente ci passa attraverso e il browser resta inutilizzabile. Il fail-closed di
+        // C29 ha aggiunto una via di throw proprio qui (`pauseInputBlock` prima della `fill`), dove
+        // prima non se ne poteva alzare nessuna.
+        if (!clickThroughEraAttivo) {
+            disableWindowClickThrough(page.context());
+        }
         if (ownSession) {
-            disableWindowClickThrough(ownSession.browser);
             await closeBrowser(ownSession);
         }
     }

@@ -1,7 +1,7 @@
 /**
  * browser/human/inputBlock.ts
  * ─────────────────────────────────────────────────────────────────
- * Overlay DOM full-screen che blocca click/scroll/tastiera/mouse dell'utente durante
+ * Overlay DOM full-screen che blocca click/scroll/mouse dell'utente durante
  * l'automazione, + pause/resume per i click e i movimenti del bot, + blockUserInput
  * (entry point). Estratto da humanBehavior.ts (A13, split SRP). Codice VERBATIM.
  * NON-timing comportamentale: i setTimeout (150ms passthrough click, 2500ms toast) sono
@@ -118,6 +118,16 @@ export async function ensureInputBlock(page: Page): Promise<void> {
                     const blockOpts = { capture: true, passive: false } as AddEventListenerOptions;
                     overlay.addEventListener('wheel', blockEvent, blockOpts);
                     overlay.addEventListener('touchmove', blockEvent, blockOpts);
+                    // M8 (review C29): questi tre NON bloccano niente e non vanno letti come se lo
+                    // facessero. L'overlay e' un <div> senza tabindex appeso a documentElement: non
+                    // riceve mai il focus, quindi non e' mai nel percorso di propagazione di un
+                    // evento di tastiera (`capture: true` non aiuta — la cattura passa solo per gli
+                    // ANTENATI del target). Restano perche' diventano vivi nel momento in cui
+                    // l'overlay prende il focus, ma oggi la tastiera dell'utente e' fermata SOLO dal
+                    // blocco a livello OS (`windowInputBlock.ts`, WS_EX_TRANSPARENT), che e' Windows.
+                    // Bloccarla anche nel DOM va misurato prima: un preventDefault su document
+                    // rischia di far cadere i caratteri che il bot stesso inietta via CDP.
+                    // Tracciato in ~/todos/improvements-proposed.md.
                     overlay.addEventListener('keydown', blockEvent, blockOpts);
                     overlay.addEventListener('keyup', blockEvent, blockOpts);
                     overlay.addEventListener('keypress', blockEvent, blockOpts);
@@ -191,8 +201,37 @@ export async function ensureInputBlock(page: Page): Promise<void> {
                 showToast: process.env.SHOW_AUTOMATION_TOAST === 'true',
             },
         );
-    } catch {
-        // Best effort.
+    } catch (err) {
+        // M9 (review C29): resta best-effort per DECISIONE — il gesto del bot non dipende
+        // dall'overlay (senza overlay non c'e' nulla che possa intercettarlo, ed e' il caso normale
+        // sulle pagine mobile, dove non lo iniettiamo). Ma l'overlay ha DUE mestieri: proteggere il
+        // gesto del bot e tenere fuori il mouse dell'utente. Se l'iniezione fallisce (CSP, context
+        // distrutto, pagina non pronta) il secondo sparisce, e prima spariva in SILENZIO: ogni
+        // `pauseInputBlock` successiva rispondeva OK e nessuno sapeva che l'utente poteva cliccare
+        // sulla stessa pagina su cui stava lavorando il bot. Ora l'evento si vede.
+        await segnalaOverlayNonIniettato(err);
+    }
+}
+
+/**
+ * Import dinamico come in `segnalaAcquisizioneFallita`: la primitiva del browser non tira dentro
+ * staticamente la telemetria. Non rilancia: chiudere il gesto qui violerebbe la decisione sopra.
+ */
+async function segnalaOverlayNonIniettato(err: unknown): Promise<void> {
+    const detail = err instanceof Error ? err.message : String(err);
+    try {
+        const { logWarn } = await import('../../telemetry/logger');
+        await logWarn('input_block.overlay_not_injected', {
+            error: detail,
+            impact: "l'input dell'utente non e' bloccato a livello DOM su questa pagina",
+        });
+    } catch (errTelemetria) {
+        const causa = errTelemetria instanceof Error ? errTelemetria.message : String(errTelemetria);
+        console.warn(
+            sanitizeForLogs(
+                `[input-block] overlay non iniettato: ${detail} — telemetria non disponibile: ${causa}`,
+            ),
+        );
     }
 }
 
@@ -271,7 +310,7 @@ export function rilanciaSeInputNonAcquisito(errore: unknown): void {
 export async function pauseInputBlock(page: Page, holdMs: number = INPUT_BLOCK_HOLD_DEFAULT_MS): Promise<void> {
     const hold = Math.min(INPUT_BLOCK_HOLD_MAX_MS, Math.max(INPUT_BLOCK_HOLD_MIN_MS, Math.round(holdMs)));
     if (page.isClosed()) {
-        await segnalaAcquisizioneFallita('page_closed', hold, '');
+        await segnalaAcquisizioneFallita('page_closed', hold, '', holdMs);
         throw new InputBlockAcquireError('page_closed');
     }
     try {
@@ -294,7 +333,7 @@ export async function pauseInputBlock(page: Page, holdMs: number = INPUT_BLOCK_H
         );
     } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
-        await segnalaAcquisizioneFallita('evaluate_failed', hold, detail);
+        await segnalaAcquisizioneFallita('evaluate_failed', hold, detail, holdMs);
         throw new InputBlockAcquireError('evaluate_failed', detail);
     }
 }
@@ -308,10 +347,14 @@ async function segnalaAcquisizioneFallita(
     reason: InputBlockAcquireReason,
     holdMs: number,
     detail: string,
+    // B4 (review C29): `holdMs` arriva gia' clampato, quindi la telemetria diceva sempre un valore
+    // dentro [150, 1000] e un chiamante che avesse sbagliato il conto non poteva accorgersene —
+    // proprio lo scenario che il commento del clamp dichiara di voler tollerare.
+    holdMsRichiesto: number = holdMs,
 ): Promise<void> {
     try {
         const { logWarn } = await import('../../telemetry/logger');
-        await logWarn('input_block.acquire_failed', { reason, holdMs, error: detail });
+        await logWarn('input_block.acquire_failed', { reason, holdMs, holdMsRichiesto, error: detail });
     } catch (errTelemetria) {
         // Ultima risorsa: se anche la telemetria e' rotta l'evento non deve sparire del tutto.
         // Non si rilancia da qui — a fallire davvero e' l'acquisizione, e quell'errore lo alza
@@ -322,7 +365,7 @@ async function segnalaAcquisizioneFallita(
         const causa = errTelemetria instanceof Error ? errTelemetria.message : String(errTelemetria);
         console.warn(
             sanitizeForLogs(
-                `[input-block] acquisizione fallita (${reason}, hold ${holdMs} ms): ${detail} — telemetria non disponibile: ${causa}`,
+                `[input-block] acquisizione fallita (${reason}, hold ${holdMs} ms, richiesto ${holdMsRichiesto} ms): ${detail} — telemetria non disponibile: ${causa}`,
             ),
         );
     }

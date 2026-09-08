@@ -54,6 +54,8 @@ vi.mock('../browser/humanBehavior', () => ({
 vi.mock('../browser/windowInputBlock', () => ({
     enableWindowClickThrough: mocks.enableWindowClickThrough,
     disableWindowClickThrough: mocks.disableWindowClickThrough,
+    // Questi test non toccano il ripristino dello stato (vedi listActionsClickThrough): basta un falso.
+    isWindowClickThroughActive: () => false,
 }));
 
 vi.mock('../salesnav/listScraper', () => ({ navigateToSavedLists: mocks.navigateToSavedLists }));

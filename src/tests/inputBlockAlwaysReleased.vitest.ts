@@ -234,7 +234,9 @@ describe('C29 — la pausa dell input-block si rilascia SEMPRE (sentinella AST)'
     });
 
     it('la scansione vede davvero dei call site (sonda non muta)', () => {
-        expect(esito.totalePause).toBeGreaterThanOrEqual(8);
+        // B1 (review C29): la soglia era 8 con 13 call site reali — cinque potevano sparire, o
+        // essere rinominati in una forma non riconosciuta, prima che la sonda diventasse muta.
+        expect(esito.totalePause).toBeGreaterThanOrEqual(12);
     });
 
     /**

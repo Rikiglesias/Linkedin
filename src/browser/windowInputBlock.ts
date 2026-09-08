@@ -234,6 +234,20 @@ export function enableWindowClickThrough(browserContext: BrowserContext): boolea
 }
 
 /**
+ * Dice se la finestra di questo contesto e' GIA' click-through.
+ *
+ * Serve a chi deve ripristinare lo stato precedente invece di spegnere: una funzione che riceve una
+ * pagina altrui non puo' decidere per il chiamante (spegnere un click-through che serviva al bot
+ * lascia il mouse dell'utente libero di interferire; lasciarlo acceso rende la finestra
+ * inutilizzabile all'utente). Legge la stessa fonte che usa `disableWindowClickThrough`.
+ */
+export function isWindowClickThroughActive(browserContext: BrowserContext): boolean {
+    if (process.platform !== 'win32') return false;
+    const pid = getBrowserPid(browserContext);
+    return pid !== null && pid !== undefined && _activePids.has(pid);
+}
+
+/**
  * Riapplica click-through a TUTTE le finestre bot attive.
  * Chiamato da blockUserInput dopo ogni navigazione — il browser crea nuove
  * finestre child durante page.goto e queste non ereditano WS_EX_TRANSPARENT.

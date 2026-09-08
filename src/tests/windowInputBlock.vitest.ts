@@ -21,6 +21,7 @@ import { buildPowerShellScript } from '../browser/windowInputBlockScript';
 import {
     enableWindowClickThrough,
     disableWindowClickThrough,
+    isWindowClickThroughActive,
     cleanupWindowClickThrough,
     registerBrowserPid,
 } from '../browser/windowInputBlock';
@@ -93,6 +94,24 @@ describe('windowInputBlock — runtime (stato multi-PID + observability)', () =>
         execSyncMock.mockReturnValue('0');
         expect(enableWindowClickThrough(ctx)).toBe(false);
         expect(logWarnMock).toHaveBeenCalledWith('window_block.no_windows', expect.any(Object));
+    });
+
+    it('isWindowClickThroughActive distingue una finestra protetta da una non protetta', () => {
+        const ctx = {} as BrowserContext;
+        registerBrowserPid(ctx, 4245);
+        execSyncMock.mockReturnValue('1');
+
+        expect(isWindowClickThroughActive(ctx)).toBe(false); // mai acceso
+        enableWindowClickThrough(ctx);
+        expect(isWindowClickThroughActive(ctx)).toBe(true);
+        disableWindowClickThrough(ctx);
+        expect(isWindowClickThroughActive(ctx)).toBe(false);
+    });
+
+    it('isWindowClickThroughActive senza PID o fuori win32 risponde false, non lancia', () => {
+        expect(isWindowClickThroughActive({ browser: () => null } as unknown as BrowserContext)).toBe(false);
+        setPlatform('linux');
+        expect(isWindowClickThroughActive({} as BrowserContext)).toBe(false);
     });
 
     it('cleanupWindowClickThrough sblocca tutte le finestre attive', () => {

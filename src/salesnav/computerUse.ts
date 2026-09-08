@@ -244,8 +244,14 @@ async function executeAction(page: Page, action: ComputerAction): Promise<void> 
         case 'type': {
             if (action.text) {
                 // Durata non limitabile a priori (dipende dalla lunghezza del testo): si tiene il
-                // watchdog al massimo consentito. Residuo dichiarato: su testi che superano il
-                // secondo l'overlay torna opaco a meta' battitura — vedi F-1c7a93e5-a in ~/todos/improvements-proposed.md.
+                // watchdog al massimo consentito.
+                // M8 (review C29) — il residuo scritto qui prima era SOVRASTIMATO: diceva che su
+                // testi lunghi «l'overlay torna opaco a meta' battitura», ma ripristinare
+                // pointer-events non tocca la tastiera, e l'overlay non blocca comunque gli eventi
+                // di tastiera (`inputBlock.ts`, listener su un nodo che non prende mai il focus).
+                // Il residuo VERO e' un altro ed e' piu' grande: durante una battitura lunga la
+                // tastiera dell'utente e' fermata solo dal blocco OS. Tracciato in
+                // ~/todos/improvements-proposed.md (F-1c7a93e5-a, riscritto).
                 await pauseInputBlock(page, INPUT_BLOCK_HOLD_MAX_MS);
                 try {
                     // F-b93d5f17: era un dwell COSTANTE di 25-54ms su ogni carattere (zona-bot),
