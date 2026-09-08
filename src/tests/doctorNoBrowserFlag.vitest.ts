@@ -25,9 +25,10 @@ import { printCommandHelp } from '../cli/commandHelp';
 const FAKE_REPORT = {
     dbIntegrityOk: true,
     sessionLoginOk: true,
+    sessionLoginState: 'non-verificato' as const,
     quarantine: false,
     compliance: { ok: true, enforced: true, violations: [] },
-    accountSessions: [{ accountId: 'default', sessionDir: 'data/session', sessionLoginOk: true }],
+    accountSessions: [{ accountId: 'default', sessionDir: 'data/session', sessionLoginOk: true, sessionLoginState: 'non-verificato' as const }],
 };
 
 describe('C15 — doctor --no-browser', () => {

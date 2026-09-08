@@ -56,19 +56,27 @@ vi.mock('crypto', async (importOriginal) => {
     };
 });
 
-vi.mock('../browser/deviceProfile', () => ({
-    getPageDeviceProfile: () => ({ profileMultiplier: 1 }),
-}));
+vi.mock('../browser/deviceProfile', async (importOriginal) => {
+    const reale = await importOriginal<typeof import('../browser/deviceProfile')>();
+    // Solo il moltiplicatore di profilo e' fissato (dipende dall'account); il resto — ,
+    // che decide fra percorso del mouse e swipe — resta VERO.
+    return { ...reale, getPageDeviceProfile: () => ({ profileMultiplier: 1 }) };
+});
 
 vi.mock('../browser/humanBehavior', async () => {
     const reale = await vi.importActual<typeof import('../browser/human/humanDelay')>(
         '../browser/human/humanDelay',
     );
+    const movimento = await vi.importActual<typeof import('../browser/human/mouseMovement')>(
+        '../browser/human/mouseMovement',
+    );
     return {
-        // La catena del click passa di qui: `ensureViewportDwell` deve restare REALE (e' timing),
-        // mentre movimento del mouse e overlay non producono attese da congelare.
+        // `ensureViewportDwell` e `humanMouseMoveToCoords` restano REALI: sono timing, e il movimento
+        // del mouse e' anzi la componente PIU' GRANDE dell'attesa fra osservazione e click
+        // (`mouseMovement.ts:140-150`: durata ~ Fitts, un `waitForTimeout` log-normale per ogni punto
+        // del percorso). Restano finti solo gli overlay e il blocco input, che non producono attese.
         ensureViewportDwell: reale.ensureViewportDwell,
-        humanMouseMoveToCoords: async () => undefined,
+        humanMouseMoveToCoords: movimento.humanMouseMoveToCoords,
         pulseVisualCursorOverlay: async () => undefined,
         pauseInputBlock: async () => undefined,
         resumeInputBlock: async () => undefined,
@@ -83,6 +91,7 @@ import {
     humanKeystrokeDwellMs,
 } from '../browser/human/keystrokeTiming';
 import { clickCoordinatesHumanLike, clickLocatorHumanLike } from '../browser/humanClick';
+import { updateMouseState } from '../browser/human/mouseState';
 
 // ─── Parametri del patto (cambiarli cambia la baseline) ──────────────────────
 const SEME = 0xc63;
@@ -138,7 +147,10 @@ function paginaCheRegistra(attese: number[], clickDelays: number[]) {
                 scrollIntoViewIfNeeded: async () => undefined,
             }),
         }),
+        isClosed: () => false,
+        viewportSize: () => ({ width: 1920, height: 1080 }),
         mouse: {
+            move: async () => undefined,
             click: async (_x: number, _y: number, opts?: { delay?: number }) => {
                 clickDelays.push(opts?.delay ?? -1);
             },
@@ -176,15 +188,22 @@ async function sequenzaViewportDwell(): Promise<number[]> {
 }
 
 /** Pre-click e dwell del bottone del mouse, presi dalla funzione reale del gesto. */
-async function sequenzeDelGesto(): Promise<{ preClick: number[]; clickDelay: number[] }> {
+async function sequenzeDelGesto(): Promise<{ preClick: number[]; movimento: number[]; clickDelay: number[] }> {
     seminaDaCapo();
-    const attese: number[] = [];
+    const preClick: number[] = [];
+    const movimento: number[] = [];
     const clickDelays: number[] = [];
-    const page = paginaCheRegistra(attese, clickDelays);
     for (let i = 0; i < N_PRIMITIVE; i++) {
+        const attese: number[] = [];
+        const page = paginaCheRegistra(attese, clickDelays);
+        updateMouseState(page as never, { x: 100, y: 100 });
         await clickCoordinatesHumanLike(page as never, 320, 480);
+        // L'ULTIMA attesa e' il pre-click (`humanClick.ts:19`); quelle prima sono il percorso del
+        // mouse, una per punto: si congelano separate perche' misurano cose diverse.
+        preClick.push(attese[attese.length - 1]);
+        movimento.push(attese.slice(0, -1).reduce((acc, v) => acc + v, 0));
     }
-    return { preClick: attese, clickDelay: clickDelays };
+    return { preClick, movimento, clickDelay: clickDelays };
 }
 
 /**
@@ -300,40 +319,50 @@ BASELINE.sequenze = {
         p95: 1364,
     },
     pre_click: {
-        hash: 'ac5432f7194cbccc49bc14d333be938260e31940aaefb33267e01f07489c6523',
-        primi: [63, 177, 45, 60, 65, 43, 67, 92, 116, 195, 46, 66, 74, 186, 54, 162, 44, 115, 71, 217],
-        mean: 95.62,
+        hash: '2d0ece9feb62263e529a640f9c88adedd636e9f5be21c948cff28c4d26981aa9',
+        primi: [75, 50, 100, 254, 178, 59, 58, 41, 106, 55, 58, 139, 50, 110, 74, 64, 49, 118, 114, 107],
+        mean: 94.53,
         p50: 80,
-        p95: 198,
+        p95: 191,
+    },
+    percorso_mouse: {
+        hash: 'a6439f18c7500c881d3b9ffdca736e58ae8be9a3a99cf42608796bb1bfbdc01d',
+        primi: [758, 826, 683, 710, 494, 578, 499, 455, 728, 586, 749, 567, 507, 675, 683, 761, 488, 702, 693, 525],
+        mean: 597.08,
+        p50: 574,
+        p95: 777,
     },
     mouse_click_delay: {
-        hash: '51c64d52989ec776cc4a9ecb9129222f0b3a34abd745fddee08fc14054a28bbe',
-        primi: [70, 88, 86, 95, 89, 95, 80, 90, 77, 78, 50, 92, 83, 57, 75, 46, 62, 83, 54, 90],
-        mean: 74.34,
+        hash: '3c88cc8c593e519fc40e36dc9d04fdc9f0d59bd06ddcfed31e4f15d1a7ff3ebd',
+        primi: [58, 65, 85, 53, 70, 67, 95, 41, 96, 94, 85, 93, 76, 48, 65, 79, 107, 68, 107, 63],
+        mean: 74.63,
         p50: 75,
-        p95: 105,
+        p95: 106,
     },
     catena_invito_senza_suggerimento: {
-        hash: 'a1cc44073c07d510b69bc61e59158eb9a36e7aa3c4b6d6fb9b927d25da77d126',
-        primi: [1399, 1313, 825, 1017, 853, 1321, 981, 882, 1155, 1336, 873, 1106, 974, 1291, 1297, 989, 985, 948, 910, 1280],
-        mean: 1098.85,
-        p50: 1095,
-        p95: 1453,
+        hash: '15f42781663f62c6c40748895ffd84bfeca00044017d08d64303532f9f6d1fb3',
+        primi: [2135, 1562, 1735, 2162, 1629, 1029, 1958, 1640, 2000, 2315, 2268, 2126, 1766, 1281, 1892, 1932, 2193, 1879, 1947, 1483],
+        mean: 1839.83,
+        p50: 1837,
+        p95: 2290,
     },
     catena_invito_con_suggerimento: {
-        hash: '6a0b999f4cf07a0241071d0ce7845dc4dbd70761f2decb9f78b7b63237011de0',
-        primi: [7294, 7548, 7948, 7203, 7637, 7166, 6975, 6936, 7835, 7872, 8631, 6698, 8038, 6104, 6048, 6432, 7077, 5831, 7605, 16364],
-        mean: 8202.23,
-        p50: 7294,
-        p95: 14682,
+        hash: '6a056852e0da169354a07aec3a7a40e1588c93b608ee6ccde76dc87d4350a950',
+        primi: [8180, 8622, 7139, 8698, 7792, 17125, 15892, 8938, 7882, 7694, 8933, 7132, 15344, 7075, 7747, 8120, 8316, 8823, 6556, 7235],
+        mean: 8967.06,
+        p50: 8120,
+        p95: 15758,
     },
 };
 
 let stampa: Record<string, unknown> = {};
 
+let accountIdPrecedente: string | undefined;
+
 beforeAll(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(ORA_FISSA));
+    accountIdPrecedente = process.env.ACCOUNT_ID;
     process.env.ACCOUNT_ID = ACCOUNT_BASELINE;
     vi.spyOn(Math, 'random').mockImplementation(() => rnd());
     seminaDaCapo();
@@ -342,6 +371,10 @@ beforeAll(() => {
 afterAll(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    // B8 della review: l'env va restituita com'era, altrimenti il seme dell'account resta appiccicato
+    // ai test che girano dopo nello stesso processo.
+    if (accountIdPrecedente === undefined) delete process.env.ACCOUNT_ID;
+    else process.env.ACCOUNT_ID = accountIdPrecedente;
     if (process.env.C63_PRINT) {
         console.log('\n=== BASELINE C63 (incolla in BASELINE.sequenze) ===\n' + JSON.stringify(stampa, null, 4));
     }
@@ -392,6 +425,7 @@ describe('C63 — baseline dei timing congelata prima di toccare il gesto', () =
         };
         const gesto = await sequenzeDelGesto();
         misurate.pre_click = gesto.preClick;
+        misurate.percorso_mouse = gesto.movimento;
         misurate.mouse_click_delay = gesto.clickDelay;
         misurate.catena_invito_senza_suggerimento = await sequenzaCatenaInvito(null);
         misurate.catena_invito_con_suggerimento = await sequenzaCatenaInvito(5);

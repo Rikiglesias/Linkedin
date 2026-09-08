@@ -14,6 +14,7 @@
  * e un campo di report diagnostico — e quei siti sono elencati qui con il motivo.
  */
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
@@ -84,13 +85,45 @@ interface Chiamata {
     riga: number;
 }
 
+/**
+ * Nomi locali sotto cui `checkLogin` entra in un file: l'identificatore nudo, ogni alias
+ * (`import { checkLogin as verifica }`) e ogni namespace import (`import * as auth` → `auth.checkLogin`).
+ * Senza questo, la sentinella si aggirava rinominando l'import — il difetto rientrava in silenzio.
+ */
+function nomiLocaliDiCheckLogin(source: ts.SourceFile): { diretti: Set<string>; namespace: Set<string> } {
+    const diretti = new Set<string>(['checkLogin']);
+    const namespace = new Set<string>();
+    for (const statement of source.statements) {
+        if (!ts.isImportDeclaration(statement) || !statement.importClause) continue;
+        const bindings = statement.importClause.namedBindings;
+        if (bindings && ts.isNamespaceImport(bindings)) {
+            namespace.add(bindings.name.text);
+        } else if (bindings && ts.isNamedImports(bindings)) {
+            for (const specifier of bindings.elements) {
+                const originale = specifier.propertyName?.text ?? specifier.name.text;
+                if (originale === 'checkLogin') diretti.add(specifier.name.text);
+            }
+        }
+    }
+    return { diretti, namespace };
+}
+
 /** Chiamate VERE a `checkLogin(...)` (AST: CallExpression; stringhe e commenti non contano). */
-function chiamateCheckLogin(): Chiamata[] {
+function chiamateCheckLogin(radice: string = SRC): Chiamata[] {
     const trovate: Chiamata[] = [];
-    for (const file of listTsFiles(SRC)) {
+    for (const file of listTsFiles(radice)) {
         const source = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
+        const { diretti, namespace } = nomiLocaliDiCheckLogin(source);
         const visita = (node: ts.Node): void => {
-            if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'checkLogin') {
+            const chiamataDiretta =
+                ts.isCallExpression(node) && ts.isIdentifier(node.expression) && diretti.has(node.expression.text);
+            const chiamataSuNamespace =
+                ts.isCallExpression(node) &&
+                ts.isPropertyAccessExpression(node.expression) &&
+                ts.isIdentifier(node.expression.expression) &&
+                namespace.has(node.expression.expression.text) &&
+                node.expression.name.text === 'checkLogin';
+            if (chiamataDiretta || chiamataSuNamespace) {
                 trovate.push({
                     file: path.relative(ROOT, file).split(path.sep).join('/'),
                     funzione: funzioneContenitrice(node),
@@ -121,9 +154,32 @@ describe('C27 — il booleano checkLogin non governa il lavoro', () => {
         expect(scomparse).toEqual([]);
     });
 
-    it('controllo positivo: un sito finto fuori allowlist viene visto come violazione', () => {
-        const consentite = new Set(CONSENTITI.map(chiave));
-        const finto = { file: 'src/workers/fintoWorker.ts', funzione: 'processaQualcosa', riga: 1 };
-        expect(consentite.has(chiave(finto))).toBe(false);
+    it('controllo positivo: il rilevatore vede davvero una violazione nuova, alias compreso', () => {
+        // Prima confrontava due letterali e sarebbe passato anche col rilevatore rotto (B6 della
+        // review). Ora scrive un file vero sotto `src/` e lo fa analizzare: se la scansione o la
+        // risoluzione degli alias smettessero di funzionare, questo test fallirebbe.
+        // Il file finto vive in una cartella TEMPORANEA, mai dentro `src/`: altri test scansionano
+        // l'albero sorgente in parallelo e un file che appare e sparisce li fa fallire a caso
+        // (successo davvero: `identityInitSessionDir` è morto con ENOENT alla prima esecuzione).
+        const cartella = fs.mkdtempSync(path.join(os.tmpdir(), 'c27-controllo-'));
+        const finto = path.join(cartella, 'fintoWorker.ts');
+        fs.writeFileSync(
+            finto,
+            [
+                "import { checkLogin as verificaSessione } from '../browser';",
+                'export async function lavoroFinto(page: unknown): Promise<void> {',
+                '    if (await verificaSessione(page as never)) return;',
+                '}',
+                '',
+            ].join(String.fromCharCode(10)),
+            'utf8',
+        );
+        try {
+            const consentite = new Set(CONSENTITI.map(chiave));
+            const violazioni = chiamateCheckLogin(cartella).filter((c) => !consentite.has(chiave(c)));
+            expect(violazioni.map((c) => c.funzione)).toContain('lavoroFinto');
+        } finally {
+            fs.rmSync(cartella, { recursive: true, force: true });
+        }
     });
 });

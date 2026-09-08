@@ -9,12 +9,12 @@ import {
     launchBrowser,
     closeBrowser as closeBrowserSession,
     checkLogin,
-    checkLoginDetailed,
     isLoggedIn,
     humanDelay,
     detectChallenge,
 } from '../../browser';
 import { descriviEsitoSessione } from '../../browser/loginFailurePolicy';
+import { valutaSessionePrimaDelLavoro } from '../../risk/loginFailureHandler';
 import { blockUserInput } from '../../browser/humanBehavior';
 import { enableWindowClickThrough, disableWindowClickThrough } from '../../browser/windowInputBlock';
 import {
@@ -297,7 +297,17 @@ async function ensureSalesNavSession(args: string[], opts?: { interactive?: bool
 
     // Auto-detect login. C27: il ramo «else» naviga a `/login`; sotto un 429 e' esattamente il
     // gesto da non fare, quindi throttling/2FA/rete-muta fermano il comando invece di procedere.
-    const esitoSessione = await checkLoginDetailed(session.page, { accountId: account.id });
+    // La lettura passa dalla politica UNICA, non da `checkLoginDetailed` nudo: cosi' la pausa e il
+    // cooldown del proxy sono davvero applicati e il messaggio «la pausa e' gia' attiva» e' VERO
+    // (finding M1 della review: prima quel testo era una promessa che nessuno manteneva).
+    const esitoSessione = await valutaSessionePrimaDelLavoro(session.page, {
+        accountId: account.id,
+        sessionDir: account.sessionDir,
+        // Proxy RISOLTO della sessione: col pool gestito `account.proxy` e' undefined proprio quando
+        // c'e' uno sticky da mettere in cooldown (finding A1 della review).
+        proxy: session.proxy ?? account.proxy ?? null,
+        source: 'cli.salesnav_session',
+    });
     if (esitoSessione.state === 'logged-in') {
         console.log("[OK] Sessione LinkedIn gia' attiva.");
     } else if (esitoSessione.state !== 'logged-out') {
