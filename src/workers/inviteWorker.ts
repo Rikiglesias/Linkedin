@@ -45,6 +45,7 @@ import { normalizeNameForComparison, jaroWinklerSimilarity } from '../utils/text
 import { observePageContext, logObservation } from '../browser/observePageContext';
 import { aiDecide } from '../ai/aiDecisionEngine';
 import { type NavigationStrategy } from '../core/navigationStrategy';
+import { rilanciaSeInputNonAcquisito } from '../browser/human/inputBlock';
 
 // Parole attese nel bottone Connect per confidence check pre-click.
 // Previene click su bottone sbagliato se LinkedIn cambia il layout.
@@ -104,7 +105,10 @@ async function clickConnectOnProfile(page: Page): Promise<boolean> {
                 (await p.locator(joinSelectors('sendWithoutNote')).count()) > 0,
         });
         return true;
-    } catch {
+    } catch (error) {
+        // A1: senza questo, un input non acquisito diventava `connect_not_found` e il lead usciva
+        // dal funnel per sempre con una causale falsa, per giunta contato come job riuscito.
+        rilanciaSeInputNonAcquisito(error);
         return false;
     }
 }

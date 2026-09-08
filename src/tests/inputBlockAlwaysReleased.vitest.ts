@@ -250,6 +250,53 @@ describe('C29 — la pausa dell input-block si rilascia SEMPRE (sentinella AST)'
     });
 });
 
+/**
+ * Siti che catturano un errore per PROVARE UN'ALTRA STRADA e che quindi devono rilanciare il
+ * fail-closed. Lista versionata: fallisce sia se un sito perde la guardia, sia se un sito
+ * elencato non esiste piu' (finding A1 della review 2026-09-08).
+ */
+const DEVONO_RILANCIARE: { file: string; funzione: string; motivo: string }[] = [
+    { file: 'src/browser/uiFallback.ts', funzione: 'clickWithFallback', motivo: 'prova i candidati successivi e poi il Vision Layer-Z' },
+    { file: 'src/browser/uiFallback.ts', funzione: 'typeWithFallback', motivo: 'prova i candidati successivi' },
+    { file: 'src/browser/uiFallback.ts', funzione: 'clickWithShadowFallback', motivo: 'ripiega sullo Shadow DOM' },
+    { file: 'src/workers/inviteWorker.ts', funzione: 'clickConnectOnProfile', motivo: 'il false diventa SKIPPED connect_not_found, definitivo' },
+    { file: 'src/workers/messageWorker.ts', funzione: 'processMessageJob', motivo: 'i due .catch che travestono l errore in TEXTBOX_NOT_FOUND / SEND_NOT_AVAILABLE e gonfiano selector_failures' },
+];
+
+describe('C29/A1 — il fail-closed non viene ingoiato da chi prova un altra strada', () => {
+    it('la guardia rilancia SOLO InputBlockAcquireError', async () => {
+        const { rilanciaSeInputNonAcquisito, InputBlockAcquireError } = await import('../browser/human/inputBlock');
+        expect(() => rilanciaSeInputNonAcquisito(new InputBlockAcquireError('page_closed'))).toThrow(
+            InputBlockAcquireError,
+        );
+        expect(() => rilanciaSeInputNonAcquisito(new Error('selettore non trovato'))).not.toThrow();
+        expect(() => rilanciaSeInputNonAcquisito(undefined)).not.toThrow();
+    });
+
+    it('ogni sito dichiarato chiama la guardia, e ogni sito dichiarato esiste ancora', () => {
+        const mancanti: string[] = [];
+        for (const sito of DEVONO_RILANCIARE) {
+            const testo = fs.readFileSync(path.join(ROOT, sito.file), 'utf8');
+            const source = ts.createSourceFile(sito.file, testo, ts.ScriptTarget.Latest, true);
+            let visto = false;
+            const visita = (node: ts.Node): void => {
+                if (
+                    ts.isCallExpression(node) &&
+                    ts.isIdentifier(node.expression) &&
+                    node.expression.text === 'rilanciaSeInputNonAcquisito' &&
+                    funzioneContenitrice(node) === sito.funzione
+                ) {
+                    visto = true;
+                }
+                ts.forEachChild(node, visita);
+            };
+            visita(source);
+            if (!visto) mancanti.push(`${sito.file}#${sito.funzione} (${sito.motivo})`);
+        }
+        expect(mancanti, 'siti che catturano il fail-closed senza rilanciarlo').toEqual([]);
+    });
+});
+
 // ─── Comportamento: acquisizione fail-closed e watchdog dimensionato ──────────
 
 /** Pagina finta minima: registra cosa arriva alla `evaluate` e quanti click partono. */

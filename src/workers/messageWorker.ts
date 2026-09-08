@@ -45,6 +45,7 @@ import { aiDecide } from '../ai/aiDecisionEngine';
 import { WorkerExecutionResult, workerResult } from './result';
 import { inferLeadSegment } from '../ml/segments';
 import { type NavigationStrategy } from '../core/navigationStrategy';
+import { rilanciaSeInputNonAcquisito } from '../browser/human/inputBlock';
 
 export async function processMessageJob(
     payload: MessageJobPayload,
@@ -485,7 +486,10 @@ export async function processMessageJob(
     }
 
     await typeWithFallback(context.session.page, SELECTORS.messageTextbox, message, 'messageTextbox', 5000).catch(
-        async () => {
+        async (error) => {
+            // A1: un input non acquisito non e' una textbox mancante, e non deve gonfiare
+            // `selector_failures` (che alimenta il punteggio di rischio).
+            rilanciaSeInputNonAcquisito(error);
             await incrementDailyStat(context.localDate, 'selector_failures');
             throw new RetryableWorkerError('Textbox messaggio non trovata', 'TEXTBOX_NOT_FOUND');
         },
@@ -543,7 +547,9 @@ export async function processMessageJob(
             await humanMouseMove(context.session.page, joinSelectors('messageSendButton'));
             await humanDelay(context.session.page, 100, 300);
             await clickWithFallback(context.session.page, SELECTORS.messageSendButton, 'messageSendButton').catch(
-                async () => {
+                async (error) => {
+                    // A1: come sopra, sul bottone di invio.
+                    rilanciaSeInputNonAcquisito(error);
                     await incrementDailyStat(context.localDate, 'selector_failures');
                     throw new RetryableWorkerError('Bottone invio non disponibile', 'SEND_NOT_AVAILABLE');
                 },

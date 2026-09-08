@@ -242,6 +242,17 @@ export async function resumeInputBlockForMove(page: Page): Promise<void> {
 }
 
 /**
+ * Il fail-closed NON e' un fallimento di selettore: dice «non hai la proprieta' dell'input, non
+ * partire». Chi cattura un errore per PROVARE UN'ALTRA STRADA (catene di fallback, Vision, retry)
+ * deve rilanciarlo, altrimenti annulla la protezione e per giunta scrive un falso drift del
+ * selettore, che alimenta `selector_failures` e quindi il punteggio di rischio.
+ * Trovato dalla review indipendente del 2026-09-08 (finding A1).
+ */
+export function rilanciaSeInputNonAcquisito(errore: unknown): void {
+    if (errore instanceof InputBlockAcquireError) throw errore;
+}
+
+/**
  * Disabilita temporaneamente l'overlay di blocco input per CLICK.
  * Finestra pointer-events:none per far arrivare il click al target LinkedIn; `holdMs` e' la durata
  * MASSIMA del gesto che sta per partire piu' un margine — oltre quella il watchdog lato pagina

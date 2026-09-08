@@ -20,6 +20,7 @@ import { digitaTestoUmano, humanType, premiTastoSpeciale } from './human/humanTy
 import { humanKeystrokeDelayMs, humanKeystrokeDwellMs } from './human/keystrokeTiming';
 import { dimensioniFinestra } from './viewport';
 import { VisionSolver } from '../captcha/solver';
+import { rilanciaSeInputNonAcquisito } from './human/inputBlock';
 
 export interface ClickFallbackOptions {
     timeoutPerSelector?: number;
@@ -330,6 +331,10 @@ export async function clickWithFallback(
             }
             return;
         } catch (error) {
+            // A1: un input non acquisito non e' un selettore rotto. Se lo trattassimo come tale
+            // proveremmo gli altri candidati e poi il Vision Layer-Z, rispanrando il gesto che il
+            // fail-closed vuole impedire, e registreremmo un drift falso su una catena sana.
+            rilanciaSeInputNonAcquisito(error);
             const message = error instanceof Error ? error.message : 'selector_click_failed';
             errors.push(`${sel.substring(0, 80)} => ${message}`);
             if (i < rankedChain.length - 1) {
@@ -485,7 +490,10 @@ export async function typeWithFallback(
                 );
             }
             return;
-        } catch {
+        } catch (error) {
+            // A1: come sopra. Qui il `catch` era nudo, quindi il fail-closed spariva senza nemmeno
+            // una traccia diagnostica, lasciando a log una causa falsa («livello non disponibile»).
+            rilanciaSeInputNonAcquisito(error);
             if (i < selectorChain.length - 1) {
                 console.warn(`[FALLBACK] typeWithFallback("${label}"): livello ${i} non disponibile, prossimo...`);
             }
@@ -596,7 +604,9 @@ export async function clickWithShadowFallback(
 ): Promise<void> {
     try {
         await clickWithFallback(page, selectors, label, options ?? 5000);
-    } catch {
+    } catch (error) {
+        // A1: il ripiego sullo Shadow DOM e' un'altra strada, quindi vale la stessa regola.
+        rilanciaSeInputNonAcquisito(error);
         for (const sel of selectors) {
             const coords = await findInShadowDom(page, sel);
             if (coords) {
