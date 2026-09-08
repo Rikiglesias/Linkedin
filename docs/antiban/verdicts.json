@@ -429,9 +429,9 @@
     },
     {
       "file": "src/browser/human/inputBlock.ts",
-      "blob_sha": "bd0ef6196badb3ebc3d852d38350964fd86745f3",
+      "blob_sha": "9b86119ab2b335a2e19b8f902f94c76995d34da5",
       "answers": [
-        "browser_behavior: SICURO - nessuna azione LinkedIn nuova. TOGLIE una firma: col watchdog a 150 ms fissi il click del bot (pre-click fino a 259 ms) arrivava con l'overlay gia' tornato pointer-events:auto, quindi il target di mousedown/mouseup era il nostro div full-screen z-index 2147483645 invece del bottone. Misurato: 60 gesti reali col watchdog originale = 14 al bersaglio, 14 all'overlay, 32 senza alcun evento di click",
+        "browser_behavior: SICURO - nessuna azione LinkedIn nuova. TOGLIE una firma: col watchdog a 150 ms fissi il click del bot (pre-click fino a 259 ms) arrivava con l'overlay gia' tornato pointer-events:auto, quindi il target di mousedown/mouseup era il nostro div full-screen z-index 2147483645 invece del bottone. Misurato: 60 gesti reali col watchdog originale = 14 al bersaglio, 14 all'overlay, 32 senza alcun evento di click. AGGIORNATO per A1: esporta `rilanciaSeInputNonAcquisito`, la guardia che i sei siti di ripiego chiamano per non ingoiare il fail-closed. Nessun cambiamento di comportamento del browser: e' un `instanceof` che rilancia",
         "timing_delay: SICURO - nessuna attesa aggiunta, rimossa o modificata in questo file; l'unico numero nuovo e' la durata del watchdog (rete di sicurezza lato pagina), che non entra in nessuna sequenza osservabile da LinkedIn. timingCoreFrozen (C63) resta 4/4: le sequenze sono byte-identiche",
         "fingerprint_session: SICURO - nessun tocco a cookie, proxy, UA, sessione. Il watchdog vive come property JS `__restoreTimer` sull'elemento, non come attributo DOM: nessuna nuova stringa in outerHTML (harness: data-bot* = [], testo leggibile = [])",
         "nuova_azione_linkedin: SICURO - nessun click, goto o typing nuovo. Il fail-closed AGGIUNGE un caso in cui il gesto NON parte (evaluate fallita o pagina chiusa), mai uno in cui parte di piu'",
@@ -439,7 +439,7 @@
         "behavioral_pattern: SICURO - la finestra in cui l'overlay DOM e' trasparente passa da 150 ms a max 1000 ms per gesto, ma il blocco primario dell'utente fisico e' a livello OS (WS_EX_TRANSPARENT, windowInputBlock.ts:212 e :242): l'overlay DOM e' il secondo strato. Clamp duro a 1000 ms per costruzione. AGGIORNATO dopo il fix di privacy: il `console.warn` di ultima risorsa stampava il messaggio di Playwright grezzo, che porta spesso l'URL della pagina (il profilo di un lead); ora passa da `sanitizeForLogs` (`redaction.ts:34` redige `linkedin.com/in|profile`), importato staticamente perche' `redaction.ts` non ha alcun import e quindi non ricrea la dipendenza dal DB che l'import dinamico della telemetria evita. `madge --circular` resta 0"
       ],
       "verdict": "SICURO",
-      "commit": "d0cede8d0ea652c6cd4b3271b3b830439683a94f",
+      "commit": "b341d11de3b5daf643a49dae865e17beba7f86ac",
       "date": "2026-09-08",
       "criterio": "C29 - il gesto di click possiede l'input per tutta la sua durata (watchdog dimensionato + acquisizione fail-closed) + redazione del log di ripiego",
       "vincolo": null
@@ -497,9 +497,9 @@
     },
     {
       "file": "src/salesnav/computerUse.ts",
-      "blob_sha": "44aa20da14438c2bbcfaf1fe83258565c686c190",
+      "blob_sha": "f09894b1531a79bc1cdf44b377ae6bc0f7e2ff5b",
       "answers": [
-        "browser_behavior: SICURO - i quattro rami (click, dblclick, type, keys) fanno gli stessi gesti; cambia solo la durata del watchdog per type e keys",
+        "browser_behavior: SICURO - i quattro rami (click, dblclick, type, keys) fanno gli stessi gesti; cambia solo la durata del watchdog per type e keys. AGGIORNATO: corretto il puntatore al residuo nel commento (`F-inputblock-battitura` non esisteva, l'id vero e' `F-1c7a93e5-a`). Solo testo, nessun cambiamento di comportamento",
         "timing_delay: SICURO - nessuna formula toccata: jitterCoord, i delay di click/dblclick e digitaTestoUmano restano identici",
         "fingerprint_session: SICURO - nessun tocco a sessione, proxy o fingerprint",
         "nuova_azione_linkedin: SICURO - nessuna azione nuova",
@@ -507,10 +507,61 @@
         "behavioral_pattern: SICURO CON RESIDUO - la MODIFICA migliora in senso stretto (watchdog da 150 ms al massimo di 1000 per `type` e `keys`, che hanno durata non limitabile a priori) e non introduce nulla di nuovo. Il RESIDUO e' preesistente e resta aperto: oltre il secondo l'overlay torna opaco e blockEvent fa preventDefault sui keydown; che questo faccia cadere i caratteri iniettati via CDP NON e' misurato (per il click lo e': 32 gesti su 60 svaniti col watchdog originale). Tracciato in ~/todos/improvements-proposed.md F-1c7a93e5-a con la misura da fare e la forma del fix (heartbeat che rinnova il watchdog finche' l'operazione e' viva)"
       ],
       "verdict": "SICURO",
-      "commit": "1fced829fe735bd7ed6178215d83c062bdb73042",
+      "commit": "b341d11de3b5daf643a49dae865e17beba7f86ac",
       "date": "2026-09-08",
       "criterio": "C29 - il gesto di click possiede l'input per tutta la sua durata (watchdog dimensionato + acquisizione fail-closed)",
       "vincolo": "verdetto SICURO CON RISERVA su type/keys: la copertura del watchdog resta parziale, residuo dichiarato in F-1c7a93e5-a"
+    },
+    {
+      "file": "src/browser/uiFallback.ts",
+      "blob_sha": "7ad4117baa5093dd347d7f14d6f8fa9db4d07e50",
+      "answers": [
+        "browser_behavior: SICURO - nessuna azione LinkedIn nuova. La catena di ripiego smette di REAGIRE a un input non acquisito provando un'altra strada: prima il fail-closed veniva annullato e il gesto veniva risparato (fino al Vision Layer-Z), ora l'errore risale",
+        "timing_delay: SICURO - nessuna formula di attesa, delay o ordine di azioni toccato; l'unica aggiunta e' una guardia `instanceof` in testa a un catch",
+        "fingerprint_session: SICURO - nessun tocco a cookie, proxy, UA o sessione",
+        "nuova_azione_linkedin: SICURO - il cambiamento TOGLIE azioni (i tentativi di ripiego su una catena sana), non ne aggiunge",
+        "volumi: SICURO E MIGLIORATIVO - il falso drift non gonfia piu' `daily_stats.selector_failures`, che via `orchestrator.ts:85` entra nel punteggio di rischio",
+        "behavioral_pattern: SICURO E MIGLIORATIVO - toglie una sorgente di ritentativi ravvicinati su una pagina gia' navigata via, che e' esattamente il ritmo che LinkedIn flagga; e impedisce che `selector_failures` salga per un difetto che non e' dei selettori, cosa che alimenta `riskEngine.ts:147` e puo' portare a una quarantena ingiusta (lo dice il commento a `uiFallback.ts:245-248`)"
+      ],
+      "verdict": "SICURO",
+      "commit": "b341d11de3b5daf643a49dae865e17beba7f86ac",
+      "date": "2026-09-08",
+      "criterio": "A1 della review indipendente di C29 - il fail-closed non viene piu' letto come selettore rotto",
+      "vincolo": null
+    },
+    {
+      "file": "src/workers/inviteWorker.ts",
+      "blob_sha": "3c83af16941de0c2d63d76c19131f54805628859",
+      "answers": [
+        "browser_behavior: SICURO - nessuna azione LinkedIn nuova. Il Layer-Z di `clickConnectOnProfile` smette di REAGIRE a un input non acquisito provando un'altra strada: prima il fail-closed veniva annullato e il gesto veniva risparato (fino al Vision Layer-Z), ora l'errore risale",
+        "timing_delay: SICURO - nessuna formula di attesa, delay o ordine di azioni toccato; l'unica aggiunta e' una guardia `instanceof` in testa a un catch",
+        "fingerprint_session: SICURO - nessun tocco a cookie, proxy, UA o sessione",
+        "nuova_azione_linkedin: SICURO - il cambiamento TOGLIE azioni (i tentativi di ripiego su una catena sana), non ne aggiunge",
+        "volumi: SICURO E MIGLIORATIVO - un input non acquisito non marca piu' il lead `SKIPPED / connect_not_found` (definitivo, con causale falsa) contando il job come riuscito: l'errore risale e il worker compensa `invites_sent -1`",
+        "behavioral_pattern: SICURO E MIGLIORATIVO - toglie una sorgente di ritentativi ravvicinati su una pagina gia' navigata via, che e' esattamente il ritmo che LinkedIn flagga; e impedisce che `selector_failures` salga per un difetto che non e' dei selettori, cosa che alimenta `riskEngine.ts:147` e puo' portare a una quarantena ingiusta (lo dice il commento a `uiFallback.ts:245-248`)"
+      ],
+      "verdict": "SICURO",
+      "commit": "b341d11de3b5daf643a49dae865e17beba7f86ac",
+      "date": "2026-09-08",
+      "criterio": "A1 della review indipendente di C29 - il fail-closed non viene piu' letto come selettore rotto",
+      "vincolo": null
+    },
+    {
+      "file": "src/workers/messageWorker.ts",
+      "blob_sha": "919ab0db73b1a1ecf3b797873361b80e70ca06ca",
+      "answers": [
+        "browser_behavior: SICURO - nessuna azione LinkedIn nuova. I due `.catch` sul textbox e sul bottone di invio smette di REAGIRE a un input non acquisito provando un'altra strada: prima il fail-closed veniva annullato e il gesto veniva risparato (fino al Vision Layer-Z), ora l'errore risale",
+        "timing_delay: SICURO - nessuna formula di attesa, delay o ordine di azioni toccato; l'unica aggiunta e' una guardia `instanceof` in testa a un catch",
+        "fingerprint_session: SICURO - nessun tocco a cookie, proxy, UA o sessione",
+        "nuova_azione_linkedin: SICURO - il cambiamento TOGLIE azioni (i tentativi di ripiego su una catena sana), non ne aggiunge",
+        "volumi: SICURO E MIGLIORATIVO - `selector_failures` non viene piu' incrementato A MANO per un difetto che non e' del selettore",
+        "behavioral_pattern: SICURO E MIGLIORATIVO - toglie una sorgente di ritentativi ravvicinati su una pagina gia' navigata via, che e' esattamente il ritmo che LinkedIn flagga; e impedisce che `selector_failures` salga per un difetto che non e' dei selettori, cosa che alimenta `riskEngine.ts:147` e puo' portare a una quarantena ingiusta (lo dice il commento a `uiFallback.ts:245-248`)"
+      ],
+      "verdict": "SICURO",
+      "commit": "b341d11de3b5daf643a49dae865e17beba7f86ac",
+      "date": "2026-09-08",
+      "criterio": "A1 della review indipendente di C29 - il fail-closed non viene piu' letto come selettore rotto",
+      "vincolo": null
     }
   ]
 }
