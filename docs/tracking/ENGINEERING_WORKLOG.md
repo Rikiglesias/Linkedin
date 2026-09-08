@@ -3740,3 +3740,69 @@ bot. È una decisione, non un fix. Restano F4 (le expando property dell'overlay 
 sonda delle firme non può vederle), F5 (in CI la garanzia poggia su costanti confrontate con costanti:
 l'unica prova reale, l'harness, non è in `vitest.config.ts`), F7, e **14 finding MEDIA/BASSA non letti**
 per tetto di contesto, integrali in `~/todos/review-c29/finding-correttezza.md`.
+
+## 2026-09-08 — Blocco 51 (chat #47): il triage della review chiude la regressione del retry e trova un difetto che nessuna lente aveva ancora visto
+
+**Tema.** Chiusura del passo 0 lasciato dal blocco 50 (una regressione introdotta dal fix di C29) e
+triage integrale dei 14 finding MEDIA/BASSA che la chat precedente non aveva letto per il tetto di
+contesto.
+
+**Il passo 0 era mio.** Prima di C29 `pauseInputBlock` su pagina chiusa usciva in silenzio e il
+successivo `page.mouse.click` lanciava «Target page… has been closed», che `resolveWorkerRetryPolicy`
+riconosceva come transitorio. Dopo C29 l'errore diventa `InputBlockAcquireError`, il cui messaggio
+(`input_block_acquire_failed:page_closed`) non contiene nessuno dei pattern transitori: cadeva in
+`UNCLASSIFIED` → `retryable: true` a piena capacità. Su una sessione morta il worker ri-navigava e
+ri-attendeva a ogni tentativo per ri-fallire — ritmo meccanico verso LinkedIn.
+
+La root cause non era il caso singolo ma la **classificazione per stringa**: `evaluate_failed` si
+salvava solo perché il testo di Playwright contiene «navigation». Il campo tipizzato `reason` che
+avevo aggiunto in C29 **non lo leggeva nessuno**. Ora la policy legge quello:
+`INPUT_BLOCK_ACQUIRE_REASONS` in `workers/errors.ts` è la fonte del tipo che `inputBlock.ts` usa,
+quindi valori runtime e tipo non possono divergere e una sentinella di copertura pretende una policy
+esplicita per ogni motivo. Il riconoscimento è per nome + forma, non per import: `errors.ts` non ha
+dipendenze e non deve acquisire la catena playwright dei worker. `page_closed` → non ritentabile
+(1 tentativo, delay 0); `evaluate_failed` → 3 tentativi, delay ×1.75. Commit `c03b910`.
+
+**Il triage ha trovato un difetto che nessuna delle due lenti aveva marcato come tale.** M7: le due
+funzioni di `listActions.ts` accendono sempre il click-through della finestra (`WS_EX_TRANSPARENT`:
+il mouse fisico dell'utente passa SOTTO la finestra del bot) ma lo ripristinavano solo dentro
+`if (ownSession)`. Con una pagina esterna qualsiasi throw usciva lasciando la finestra bot-only, cioè
+un browser su cui **l'utente non può più cliccare**. Il buco era latente da sempre; il fail-closed di
+C29 ha aggiunto una via di throw proprio lì (`pauseInputBlock` prima della `fill`), dove prima non se
+ne poteva alzare nessuna. Il fix non spegne lo stato, lo **ripristina** — spegnere un click-through
+acceso dal chiamante libererebbe il mouse dell'utente addosso al bot (anti-ban) — e per farlo serviva
+poterlo leggere: `isWindowClickThroughActive`, sulla stessa fonte che `disableWindowClickThrough`
+già usa.
+
+**Due contratti che mentivano.** M8: l'intestazione di `inputBlock.ts` diceva di bloccare la tastiera
+dell'utente, ma `keydown`/`keyup`/`keypress` sono registrati solo sull'overlay — un `<div>` senza
+`tabindex` appeso a `documentElement`, che non riceve mai il focus e non è mai nel percorso di
+propagazione di un evento di tastiera (`capture: true` non aiuta: la cattura passa solo per gli
+antenati del target). Di riflesso il residuo che avevo scritto io in `computerUse.ts` era
+**sovrastimato** e nascondeva quello vero, che è più grande: durante una battitura lunga la tastiera
+è fermata solo dal blocco a livello OS, che è Windows. Implementarlo nel DOM va misurato prima — un
+`preventDefault` su `document` rischia di far cadere i caratteri che il bot stesso inietta via CDP.
+
+**Il gate SAST ha salvato un finding dal tracker.** M9 stava per finire fra i «tracciati»: il gate ha
+segnalato il `catch {}` dell'iniezione dell'overlay, che è esattamente quel finding. Chiuso invece di
+aggirato: il gesto continua a non dipendere dall'overlay (decisione di C29, e sulle pagine mobile non
+lo iniettiamo affatto), ma l'overlay ha **due** mestieri e il secondo — tenere fuori il mouse
+dell'utente — spariva in silenzio. Ora emette `input_block.overlay_not_injected` con l'impatto scritto.
+
+**M6 era già chiuso alla fonte** (`d0cede8`, `sanitizeForLogs` c'è). Un report di review è una FOTO:
+riconciliarlo prima di agirci ha risparmiato una modifica inutile.
+
+**Cosa resta, con la ragione** (`~/todos/improvements-proposed.md`): il blocco tastiera nel DOM (da
+misurare), `F-7d20a5b1` (preesistente, ANTI-BAN: su `INVITE_NOT_CONFIRMED` il contatore viene
+decrementato anche quando l'invito È partito, quindi il bot ne manda più del cap — stessa grandezza
+di F2), la sentinella cieca agli import dinamici, e la copertura dei rami di ultima risorsa.
+
+**Verifica finale.** `conta-problemi` exit 0 catturato senza pipe = **270 file / 2609 test** (era
+268/2598); `tsc` 0; `eslint` 0; `madge --circular` 0; `security:scan` 0 secret su 960; sonda C64
+**4/4** dei file del perimetro con verdetto SICURO sul blob attuale. Contro-prova per mutazione CON
+controllo positivo su tutte e tre le sentinelle: policy di retry (integro 5/5 → tre mutazioni da 2, 4
+e 1 rosso → ripristino 5/5), sentinella del rilascio (la mutazione che prima lasciava tutto verde ora
+produce 1 rosso, grazie alla fixture versionata), click-through (rimettendo il codice pre-fix, 2 test
+su 3 rossi). Commit `c03b910`, `60ddad2`, `5dca15a`, `96d5b71` — **ahead 4, non pushati**: l'area è
+anti-ban e il branch va rivisto prima del push.
+
