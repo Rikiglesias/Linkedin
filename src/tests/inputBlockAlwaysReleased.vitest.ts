@@ -85,23 +85,6 @@ function funzioneContenitrice(node: ts.Node): string {
     return '<top-level>';
 }
 
-/** Nodo funzione che contiene il nodo (delimita la ricerca del `finally`). */
-function nodoFunzioneContenitore(node: ts.Node): ts.Node | undefined {
-    let corrente: ts.Node | undefined = node.parent;
-    while (corrente) {
-        if (
-            ts.isFunctionDeclaration(corrente) ||
-            ts.isMethodDeclaration(corrente) ||
-            ts.isFunctionExpression(corrente) ||
-            ts.isArrowFunction(corrente)
-        ) {
-            return corrente;
-        }
-        corrente = corrente.parent;
-    }
-    return undefined;
-}
-
 /**
  * Nomi locali sotto cui una funzione entra in un file: l'identificatore nudo, ogni alias
  * (`import { pauseInputBlock as pausa }`) e ogni namespace import (`import * as hb` ->
@@ -139,28 +122,59 @@ function eChiamataA(
     return false;
 }
 
-/** La ripresa deve stare in un `finally` DENTRO la stessa funzione, aperto dopo la pausa. */
+/** Statement che contiene direttamente il nodo dentro un blocco (per trovarne il fratello dopo). */
+function statementContenitore(node: ts.Node): ts.Statement | undefined {
+    let corrente: ts.Node | undefined = node;
+    while (corrente && corrente.parent) {
+        const genitore: ts.Node = corrente.parent;
+        if (ts.isBlock(genitore) || ts.isSourceFile(genitore) || ts.isCaseClause(genitore) || ts.isDefaultClause(genitore)) {
+            return corrente as ts.Statement;
+        }
+        corrente = genitore;
+    }
+    return undefined;
+}
+
+/** Gli statement fratelli del blocco (o del `case`) che contiene lo statement dato. */
+function fratelli(statement: ts.Statement): readonly ts.Statement[] | undefined {
+    const genitore = statement.parent;
+    if (ts.isBlock(genitore) || ts.isSourceFile(genitore)) return genitore.statements;
+    if (ts.isCaseClause(genitore) || ts.isDefaultClause(genitore)) return genitore.statements;
+    return undefined;
+}
+
+/**
+ * La ripresa deve stare nel `finally` del `try` ANCORATO alla pausa: il `try` dev'essere lo statement
+ * IMMEDIATAMENTE successivo a quello della pausa, nello stesso blocco.
+ *
+ * La prima versione accettava un `try/finally` qualsiasi piu' avanti nella stessa funzione, e in una
+ * funzione con piu' pause (`computerUse.executeAction` ne ha quattro in uno switch, con quattro
+ * `finally`) solo l'ULTIMA era davvero sorvegliata: togliendo il `finally` al `case 'click'` la
+ * sentinella restava verde. Trovato dalla review indipendente del 2026-09-08 con una fixture mutata;
+ * la mia contro-prova non l'aveva visto perche' aveva mutato `smartClick`, l'unico sito con UNA pausa
+ * e UN `finally`, cioe' l'unico in cui il difetto non puo' manifestarsi.
+ */
 function ripresaNelFinally(
     chiamataPausa: ts.CallExpression,
     nomiRipresa: { diretti: Set<string>; namespace: Set<string> },
     originaleRipresa: string,
 ): boolean {
-    const contenitore = nodoFunzioneContenitore(chiamataPausa);
-    if (!contenitore) return false;
+    const statement = statementContenitore(chiamataPausa);
+    if (!statement) return false;
+    const lista = fratelli(statement);
+    if (!lista) return false;
+    const indice = lista.indexOf(statement);
+    if (indice < 0 || indice + 1 >= lista.length) return false;
+    const successivo = lista[indice + 1];
+    if (!ts.isTryStatement(successivo) || !successivo.finallyBlock) return false;
+
     let trovata = false;
-    const visita = (node: ts.Node): void => {
+    const cerca = (n: ts.Node): void => {
         if (trovata) return;
-        if (ts.isTryStatement(node) && node.finallyBlock && node.getStart() > chiamataPausa.getStart()) {
-            const cerca = (n: ts.Node): void => {
-                if (trovata) return;
-                if (ts.isCallExpression(n) && eChiamataA(n, nomiRipresa, originaleRipresa)) trovata = true;
-                ts.forEachChild(n, cerca);
-            };
-            cerca(node.finallyBlock);
-        }
-        ts.forEachChild(node, visita);
+        if (ts.isCallExpression(n) && eChiamataA(n, nomiRipresa, originaleRipresa)) trovata = true;
+        ts.forEachChild(n, cerca);
     };
-    visita(contenitore);
+    cerca(successivo.finallyBlock);
     return trovata;
 }
 

@@ -245,7 +245,7 @@ async function executeAction(page: Page, action: ComputerAction): Promise<void> 
             if (action.text) {
                 // Durata non limitabile a priori (dipende dalla lunghezza del testo): si tiene il
                 // watchdog al massimo consentito. Residuo dichiarato: su testi che superano il
-                // secondo l'overlay torna opaco a meta' battitura — vedi F-inputblock-battitura.
+                // secondo l'overlay torna opaco a meta' battitura — vedi F-1c7a93e5-a in ~/todos/improvements-proposed.md.
                 await pauseInputBlock(page, INPUT_BLOCK_HOLD_MAX_MS);
                 try {
                     // F-b93d5f17: era un dwell COSTANTE di 25-54ms su ogni carattere (zona-bot),
