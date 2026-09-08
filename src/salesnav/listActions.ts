@@ -105,7 +105,9 @@ export async function createSalesNavList(
         const esitoSessione = await valutaSessionePrimaDelLavoro(page, {
             accountId: account.id,
             sessionDir: account.sessionDir,
-            proxy: account.proxy,
+            // Il proxy RISOLTO della sessione: col pool gestito `account.proxy` e' undefined proprio
+            // quando esiste uno sticky da mettere in cooldown (`launcher.ts:260-268`).
+            proxy: ownSession?.proxy ?? account.proxy ?? null,
             source: 'salesnav.create_list',
         });
         if (esitoSessione.state !== 'logged-in') {
@@ -196,7 +198,7 @@ export async function addLeadToSalesNavList(
         const esitoSessione = await valutaSessionePrimaDelLavoro(page, {
             accountId: account.id,
             sessionDir: account.sessionDir,
-            proxy: account.proxy,
+            proxy: ownSession?.proxy ?? account.proxy ?? null,
             source: 'salesnav.add_lead',
         });
         if (esitoSessione.state !== 'logged-in') {

@@ -141,7 +141,7 @@ export async function runRandomLinkedinActivity(options: RandomActivityOptions):
         const esitoSessione = await valutaSessionePrimaDelLavoro(session.page, {
             accountId: account.id,
             sessionDir: account.sessionDir,
-            proxy: account.proxy,
+            proxy: session.proxy ?? account.proxy ?? null,
             source: 'random_activity',
         });
         if (esitoSessione.state !== 'logged-in') {

@@ -150,6 +150,24 @@ describe('C27 — sotto throttling il lavoro non parte', () => {
         expect(mocks.logWarn.mock.calls[0][1]).toMatchObject({ stato: 'throttled' });
     });
 
+    it('il cooldown riceve il proxy RISOLTO della sessione, anche quando il profilo account non ne ha uno', async () => {
+        // Regressione trovata dalla review anti-ban (A1): col pool gestito `account.proxy` e' `undefined`
+        // PROPRIO quando esiste uno sticky da mettere in cooldown, quindi passare il proxy del profilo
+        // rendeva la reazione inerte — l'IP che aveva preso il 429 restava pescabile subito dopo.
+        // Questo caso e' discriminante: l'account NON ha proxy, la sessione si'.
+        const proxyDellaSessione = { server: 'http://sticky.pool:7000', username: 's', password: 'p' };
+        mocks.getAccountProfileById.mockReturnValue({ id: 'acc-1', sessionDir: 'data/session', proxy: undefined });
+        mocks.valutaSessionePrimaDelLavoro.mockResolvedValue({ state: 'throttled', status: 429 });
+        mocks.launchBrowser.mockResolvedValue({ page: paginaFinta([]), browser: {}, proxy: proxyDellaSessione });
+
+        await runRandomLinkedinActivity({ accountId: 'acc-1', maxActions: 2, dryRun: false });
+
+        expect(mocks.valutaSessionePrimaDelLavoro).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.objectContaining({ proxy: proxyDellaSessione }),
+        );
+    });
+
     it('randomActivityWorker: logout esplicito → si ferma comunque, ma con lo stato giusto', async () => {
         const page = paginaFinta([]);
         mocks.valutaSessionePrimaDelLavoro.mockResolvedValue({ state: 'logged-out' });

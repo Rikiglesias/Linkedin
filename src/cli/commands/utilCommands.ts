@@ -579,7 +579,7 @@ export async function runEnrichProfilesCommand(args: string[]): Promise<void> {
         const esitoSessione = await valutaSessionePrimaDelLavoro(session.page, {
             accountId: account.id,
             sessionDir: account.sessionDir,
-            proxy: noProxy ? null : account.proxy,
+            proxy: noProxy ? null : (session.proxy ?? account.proxy ?? null),
             source: 'cli.enrich_deep',
         });
         if (esitoSessione.state !== 'logged-in') {

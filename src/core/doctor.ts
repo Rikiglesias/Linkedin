@@ -372,8 +372,12 @@ export async function runDoctor(options: RunDoctorOptions = {}): Promise<DoctorR
                 forceDesktop: true,
             });
             try {
-                // La diagnosi LEGGE e riporta; la reazione (pausa, quarantena, proxy) resta di chi
-                // fa il lavoro — jobRunner e canary — cosi' la stessa causa non produce due effetti.
+                // La diagnosi LEGGE e riporta: pausa e cooldown del proxy restano di chi fa il lavoro
+                // (jobRunner, canary), cosi' la stessa causa non produce due effetti. UNICA eccezione, ed
+                // e' voluta: sul ramo 2FA la quarantena la scrive `checkLoginDetailed` stessa
+                // (`auth.ts:146-156`), perche' la applica chi ha VISTO la challenge. Passare `accountId`
+                // non aggiunge quell'effetto — c'era gia' col vecchio `checkLogin`, solo GLOBALE invece
+                // che per-account.
                 const esitoLogin = await checkLoginDetailed(session.page, { accountId: account.id });
                 accountSessions.push({
                     accountId: account.id,
