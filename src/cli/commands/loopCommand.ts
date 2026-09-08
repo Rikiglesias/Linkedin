@@ -242,7 +242,8 @@ async function evaluateLoopDoctorGate(dryRun: boolean): Promise<LoopDoctorGate> 
     // sessionLoginOk e' true quando il check browser e' skippato (login delegato a jobRunner):
     // questo branch resta come difesa se in futuro il gate tornasse a verificare il login qui.
     if (!report.sessionLoginOk) {
-        return { proceed: false, reason: 'doctor_login_missing' };
+        const throttled = report.accountSessions.some((entry) => entry.sessionLoginState === 'throttled');
+        return { proceed: false, reason: throttled ? 'doctor_throttled' : 'doctor_login_missing' };
     }
     if (report.quarantine) {
         return { proceed: false, reason: 'doctor_quarantine_active' };

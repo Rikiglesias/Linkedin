@@ -25,6 +25,8 @@ import type { LeadRecord } from '../../types/domain';
 import { runRandomLinkedinActivity } from '../../workers/randomActivityWorker';
 import { createPersistentProfile, resolveProfileDir } from '../../scripts/createProfile';
 import { recordSuccessfulAuth } from '../../browser/sessionCookieMonitor';
+import { descriviEsitoSessione } from '../../browser/loginFailurePolicy';
+import { valutaSessionePrimaDelLavoro } from '../../risk/loginFailureHandler';
 import { getAccountProfileById, getRuntimeAccountProfiles, resolveSessionDir } from '../../accountManager';
 import {
     checkProxyHealth,
@@ -572,9 +574,16 @@ export async function runEnrichProfilesCommand(args: string[]): Promise<void> {
     let failed = 0;
 
     try {
-        const loggedIn = await checkLogin(session.page);
-        if (!loggedIn) {
-            console.error('[ERRORE] Sessione non autenticata. Esegui prima "create-profile".');
+        // C27: qui parte un ciclo di scraping. Sotto un 429 il vecchio booleano diceva «rifai il
+        // profilo» e usciva senza pausa: la lettura tipizzata applica la reazione e spiega cosa fare.
+        const esitoSessione = await valutaSessionePrimaDelLavoro(session.page, {
+            accountId: account.id,
+            sessionDir: account.sessionDir,
+            proxy: noProxy ? null : account.proxy,
+            source: 'cli.enrich_deep',
+        });
+        if (esitoSessione.state !== 'logged-in') {
+            console.error(`[ERRORE] ${descriviEsitoSessione(esitoSessione)}`);
             return;
         }
 

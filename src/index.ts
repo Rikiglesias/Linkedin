@@ -515,7 +515,12 @@ async function main(): Promise<void> {
         const preflight = await runDoctor();
         const failures: string[] = [];
         if (!preflight.dbIntegrityOk) failures.push('database_integrity_failed');
-        if (!preflight.sessionLoginOk) failures.push('linkedin_login_missing');
+        if (!preflight.sessionLoginOk) {
+            // C27: un 429 non e' un login mancante. Il failure resta (non si lavora comunque), ma il
+            // nome dice la verita', altrimenti l'operatore rifa' il login sotto throttling.
+            const throttled = preflight.accountSessions.some((s) => s.sessionLoginState === 'throttled');
+            failures.push(throttled ? 'linkedin_throttled' : 'linkedin_login_missing');
+        }
         if (!preflight.accountIsolation.ok) failures.push('account_isolation_failed');
         if (preflight.quarantine) failures.push('account_quarantine_enabled');
         if (preflight.compliance.enforced && !preflight.compliance.ok) failures.push('compliance_guardrail_violated');

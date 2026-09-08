@@ -1,7 +1,9 @@
 import { Page } from 'playwright';
 import { getAccountProfileById } from '../accountManager';
 import { cleanText } from '../utils/text';
-import { checkLogin, clickLocatorHumanLike, closeBrowser, humanDelay, launchBrowser } from '../browser';
+import { clickLocatorHumanLike, closeBrowser, humanDelay, launchBrowser } from '../browser';
+import { descriviEsitoSessione } from '../browser/loginFailurePolicy';
+import { valutaSessionePrimaDelLavoro } from '../risk/loginFailureHandler';
 import { blockUserInput, pauseInputBlock, resumeInputBlock } from '../browser/humanBehavior';
 import { enableWindowClickThrough, disableWindowClickThrough } from '../browser/windowInputBlock';
 import { normalizeLinkedInUrl } from '../linkedinUrl';
@@ -97,9 +99,17 @@ export async function createSalesNavList(
     const page = externalPage ?? ownSession?.page;
     if (!page) return { ok: false, accountId: account.id, message: 'Nessuna pagina disponibile' };
     try {
-        const loggedIn = await checkLogin(page);
-        if (!loggedIn) {
-            return { ok: false, accountId: account.id, message: 'Sessione non autenticata' };
+        // C27: il booleano collassava throttling (429/403) e cookie scaduti su un solo «non
+        // autenticata». La lettura tipizzata applica gia' pausa e cooldown del proxy sul 429:
+        // qui resta solo da fermarsi, dicendo quale delle tre cose e' successa.
+        const esitoSessione = await valutaSessionePrimaDelLavoro(page, {
+            accountId: account.id,
+            sessionDir: account.sessionDir,
+            proxy: account.proxy,
+            source: 'salesnav.create_list',
+        });
+        if (esitoSessione.state !== 'logged-in') {
+            return { ok: false, accountId: account.id, message: descriviEsitoSessione(esitoSessione) };
         }
         enableWindowClickThrough(page.context());
         await blockUserInput(page);
@@ -180,9 +190,17 @@ export async function addLeadToSalesNavList(
     const page = externalPage ?? ownSession?.page;
     if (!page) return { ok: false, accountId: account.id, message: 'Nessuna pagina disponibile' };
     try {
-        const loggedIn = await checkLogin(page);
-        if (!loggedIn) {
-            return { ok: false, accountId: account.id, message: 'Sessione non autenticata' };
+        // C27: il booleano collassava throttling (429/403) e cookie scaduti su un solo «non
+        // autenticata». La lettura tipizzata applica gia' pausa e cooldown del proxy sul 429:
+        // qui resta solo da fermarsi, dicendo quale delle tre cose e' successa.
+        const esitoSessione = await valutaSessionePrimaDelLavoro(page, {
+            accountId: account.id,
+            sessionDir: account.sessionDir,
+            proxy: account.proxy,
+            source: 'salesnav.add_lead',
+        });
+        if (esitoSessione.state !== 'logged-in') {
+            return { ok: false, accountId: account.id, message: descriviEsitoSessione(esitoSessione) };
         }
         enableWindowClickThrough(page.context());
         await blockUserInput(page);

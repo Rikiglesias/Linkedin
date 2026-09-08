@@ -165,3 +165,24 @@ export function classifyProbeReason(reason: string | null): LoginCheckOutcome {
     if (reason === 'SLOW_RESPONSE') return { state: 'unknown', cause: 'timeout' };
     return { state: 'unknown', cause: 'network' };
 }
+
+/**
+ * Frase per chi ha chiesto lo stato della sessione e deve fermarsi. Sta qui, nella politica pura,
+ * perche' la stessa domanda arriva da CLI, worker e diagnostica: una causa, una reazione, UN testo.
+ * Dice COSA FARE, non solo cosa e' successo (L5-LI.1): sotto throttling la cosa da NON fare e'
+ * proprio rifare il login.
+ */
+export function descriviEsitoSessione(outcome: LoginCheckOutcome): string {
+    switch (outcome.state) {
+        case 'logged-in':
+            return 'Sessione attiva';
+        case 'logged-out':
+            return 'Sessione non autenticata: serve un login manuale (`bot.ps1 login`), poi `bot.ps1 unquarantine`.';
+        case 'two-factor':
+            return 'LinkedIn chiede la verifica in due passaggi: completala a mano nel browser, il bot resta fermo.';
+        case 'throttled':
+            return `LinkedIn ha risposto ${outcome.status}: sta chiedendo di rallentare. NON rifare il login ora, la pausa e' gia' attiva.`;
+        case 'unknown':
+            return `Controllo di sessione non concluso (${outcome.cause}): non e' un logout. Riprova dopo la pausa breve.`;
+    }
+}

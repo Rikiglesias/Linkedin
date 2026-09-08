@@ -9,10 +9,12 @@ import {
     launchBrowser,
     closeBrowser as closeBrowserSession,
     checkLogin,
+    checkLoginDetailed,
     isLoggedIn,
     humanDelay,
     detectChallenge,
 } from '../../browser';
+import { descriviEsitoSessione } from '../../browser/loginFailurePolicy';
 import { blockUserInput } from '../../browser/humanBehavior';
 import { enableWindowClickThrough, disableWindowClickThrough } from '../../browser/windowInputBlock';
 import {
@@ -293,10 +295,14 @@ async function ensureSalesNavSession(args: string[], opts?: { interactive?: bool
         forceDesktop: true,
     });
 
-    // Auto-detect login
-    const alreadyLoggedIn = await checkLogin(session.page);
-    if (alreadyLoggedIn) {
+    // Auto-detect login. C27: il ramo «else» naviga a `/login`; sotto un 429 e' esattamente il
+    // gesto da non fare, quindi throttling/2FA/rete-muta fermano il comando invece di procedere.
+    const esitoSessione = await checkLoginDetailed(session.page, { accountId: account.id });
+    if (esitoSessione.state === 'logged-in') {
         console.log("[OK] Sessione LinkedIn gia' attiva.");
+    } else if (esitoSessione.state !== 'logged-out') {
+        await closeBrowserSession(session).catch(() => null);
+        throw new Error(descriviEsitoSessione(esitoSessione));
     } else {
         const currentUrl = session.page.url().toLowerCase();
         if (!currentUrl.includes('/login')) {

@@ -1,5 +1,6 @@
 import { config, getLocalDateString, getWeekStartDate, isWorkingHour } from '../config';
-import { checkLogin, closeBrowser, launchBrowser } from '../browser';
+import { checkLoginDetailed, closeBrowser, launchBrowser } from '../browser';
+import type { LoginCheckOutcome } from '../browser/loginFailurePolicy';
 import { getRuntimeAccountProfiles } from '../accountManager';
 import { getEventSyncStatus } from '../sync/eventSync';
 import {
@@ -24,6 +25,12 @@ export interface DoctorAccountSessionReport {
     accountId: string;
     sessionDir: string;
     sessionLoginOk: boolean;
+    /**
+     * C27: `sessionLoginOk: false` non basta piu'. Un 429 non e' un login mancante, e il preflight
+     * che diceva «rifai il login» spingeva un umano a farlo proprio mentre LinkedIn rallentava.
+     * `non-verificato` = check browser saltato (CL4b), non «tutto a posto».
+     */
+    sessionLoginState: LoginCheckOutcome['state'] | 'non-verificato';
 }
 
 export interface DoctorReport {
@@ -354,6 +361,7 @@ export async function runDoctor(options: RunDoctorOptions = {}): Promise<DoctorR
                 accountId: account.id,
                 sessionDir: account.sessionDir,
                 sessionLoginOk: true,
+                sessionLoginState: 'non-verificato',
             });
         }
     } else {
@@ -364,11 +372,14 @@ export async function runDoctor(options: RunDoctorOptions = {}): Promise<DoctorR
                 forceDesktop: true,
             });
             try {
-                const sessionLoginOk = await checkLogin(session.page);
+                // La diagnosi LEGGE e riporta; la reazione (pausa, quarantena, proxy) resta di chi
+                // fa il lavoro — jobRunner e canary — cosi' la stessa causa non produce due effetti.
+                const esitoLogin = await checkLoginDetailed(session.page, { accountId: account.id });
                 accountSessions.push({
                     accountId: account.id,
                     sessionDir: account.sessionDir,
-                    sessionLoginOk,
+                    sessionLoginOk: esitoLogin.state === 'logged-in',
+                    sessionLoginState: esitoLogin.state,
                 });
             } finally {
                 await closeBrowser(session);

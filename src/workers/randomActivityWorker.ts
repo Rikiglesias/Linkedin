@@ -2,7 +2,6 @@ import { getAccountProfileById } from '../accountManager';
 import { randomElement } from '../utils/random';
 import {
     BrowserSession,
-    checkLogin,
     clickLocatorHumanLike,
     closeBrowser,
     dismissKnownOverlays,
@@ -11,6 +10,8 @@ import {
     randomMouseMove,
     simulateHumanReading,
 } from '../browser';
+import { descriviEsitoSessione } from '../browser/loginFailurePolicy';
+import { valutaSessionePrimaDelLavoro } from '../risk/loginFailureHandler';
 import { logInfo, logWarn } from '../telemetry/logger';
 import { WorkerContext } from './context';
 
@@ -135,9 +136,20 @@ export async function runRandomLinkedinActivity(options: RandomActivityOptions):
         });
     }
     try {
-        const loggedIn = await checkLogin(session.page);
-        if (!loggedIn) {
-            await logWarn('random_activity.not_logged_in', { accountId: account.id });
+        // C27: sotto un 429 il booleano diceva «non loggato» e il riscaldamento semplicemente non
+        // partiva — senza pausa ne' cooldown del proxy, quindi il ciclo dopo ci riprovava identico.
+        const esitoSessione = await valutaSessionePrimaDelLavoro(session.page, {
+            accountId: account.id,
+            sessionDir: account.sessionDir,
+            proxy: account.proxy,
+            source: 'random_activity',
+        });
+        if (esitoSessione.state !== 'logged-in') {
+            await logWarn('random_activity.sessione_non_utilizzabile', {
+                accountId: account.id,
+                stato: esitoSessione.state,
+                messaggio: descriviEsitoSessione(esitoSessione),
+            });
             return report;
         }
 
